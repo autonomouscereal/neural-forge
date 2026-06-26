@@ -20,10 +20,18 @@ license = { text = "MIT" }
 dev = [
   "pytest>=8.0",
 ]
+hf = [
+  "accelerate>=1.0",
+  "num2words>=0.5",
+  "pillow>=10.0",
+  "safetensors>=0.4",
+  "sentencepiece>=0.2",
+  "torch>=2.5",
+  "transformers>=4.51",
+]
 
 [project.scripts]
 neural-forge = "neural_forge.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-

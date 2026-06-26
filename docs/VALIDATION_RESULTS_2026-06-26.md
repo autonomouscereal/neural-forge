@@ -1,0 +1,83 @@
+# Validation Results - 2026-06-26
+
+Hardware: AI server `192.168.50.222`, RTX 3090 target device, PyTorch
+2.11.0+cu128, Transformers 5.12.1.
+
+Run directory on the AI server:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen3_real_validation_20260626
+```
+
+## Text Merge And Surgery
+
+Text parents:
+
+- `Qwen/Qwen3-0.6B-Base`
+- `Qwen/Qwen3-0.6B`
+
+The merged checkpoint is a same-shape 50/50 weight average. The expanded
+checkpoint takes that merged model and expands every gated FFN intermediate
+dimension by 5%.
+
+| Model | Params | Mean PPL | Choice Acc | Result |
+|---|---:|---:|---:|---|
+| Qwen3-0.6B-Base | 596,049,920 | 280.375 | 1.00 | Parent baseline |
+| Qwen3-0.6B | 596,049,920 | 535.942 | 1.00 | Parent baseline |
+| 50/50 merged | 596,049,920 | 383.395 | 1.00 | Passed behavior smoke test |
+| merged + FFN fold 0.900 | 569,643,008 | 1,615,475.234 | 0.00 | Failed; collapsed |
+| merged + FFN fold 0.990 | 593,383,424 | 954.659 | 1.00 | Loaded, but degraded/repetitive |
+| merged + FFN fold 0.995 | 594,759,680 | 611.624 | 1.00 | Loaded, but degraded |
+| merged + FFN expand 1.050 | 609,296,384 | 383.855 | 1.00 | Passed; near-preserved behavior |
+
+Behavior samples:
+
+- 50/50 merged model answered simple choice probes 4/4 and generated coherent
+  text for pruning, Python addition, and merge-risk prompts.
+- 10% blind FFN folding produced blank-ish continuations and failed all choice
+  probes. This is a real negative result: making the target shape valid is not
+  enough.
+- 5% FFN expansion stayed on the merged model's behavior curve. This matches the
+  expected Net2Wider-style property: duplicated channels split their outgoing
+  path and preserve the function much better than blind folding.
+
+## Vision Parent Probe
+
+Vision model:
+
+- `HuggingFaceTB/SmolVLM2-256M-Video-Instruct`
+- Params: 256,484,928
+
+Synthetic probes:
+
+- red square plus blue circle
+- black `42` in a bordered image
+
+Outputs:
+
+- Shape probe: "A red square and a blue circle are placed side by side."
+- OCR probe: "The text or number visible in the image is \"42\"."
+
+## Composite Frankenstack Probe
+
+Composite:
+
+- vision parent: `HuggingFaceTB/SmolVLM2-256M-Video-Instruct`
+- text backend: `text_merged_ffn_105`, the expanded Qwen3 50/50 merge
+
+This is not a native multimodal graft. It is a transitional stitched system:
+image observation from the VLM is handed to the merged/expanded text model.
+
+Results:
+
+- Shape chain answered with the correct red-square/blue-circle description.
+- OCR chain answered `42`, then became repetitive.
+
+Interpretation:
+
+- The merged text model can participate in a useful vision-language chain.
+- The chain is verbose and repetitive; native vision expansion needs training and
+  decoding/eval gates.
+- The next safe technical milestone is calibration-aware FFN folding plus a
+  trainable raw-patch/token vision graft, not blind large compression.
+

@@ -1,0 +1,578 @@
+"""Hugging Face checkpoint surgery and lightweight behavior probes.
+
+This module is imported lazily by the CLI so the NumPy-only dense engine remains
+usable without installing torch/transformers.
+"""
+
+from __future__ import annotations
+
+import json
+import math
+from pathlib import Path
+from typing import Any, Iterable, Sequence
+
+
+TEXT_EVALS = [
+    "In 2026, compact language models are useful when they preserve reasoning while reducing latency.",
+    "A careful model merge should be evaluated with perplexity, answer probes, and generation samples.",
+    "Neural pruning removes or folds redundant channels, but aggressive compression often needs recovery training.",
+    "Vision-language models can describe simple objects, read short text, and ground answers in pixels.",
+]
+
+CHOICE_PROBES = [
+    {
+        "id": "math_addition",
+        "prompt": "Question: What is 17 + 28?\nAnswer:",
+        "choices": [" 45", " 44", " 46", " 39"],
+        "answer": 0,
+    },
+    {
+        "id": "paper_tool",
+        "prompt": "Question: Which tool is usually used to cut paper?\nA. spoon\nB. scissors\nC. pillow\nD. cloud\nAnswer:",
+        "choices": [" A", " B", " C", " D"],
+        "answer": 1,
+    },
+    {
+        "id": "python_len",
+        "prompt": "Question: In Python, which expression returns the length of list x?\nA. size(x)\nB. count(x)\nC. len(x)\nD. width(x)\nAnswer:",
+        "choices": [" A", " B", " C", " D"],
+        "answer": 2,
+    },
+    {
+        "id": "causal_reasoning",
+        "prompt": "Question: A glass fell from a table and shattered. What most likely caused the shattered pieces?\nA. gravity pulled it down\nB. it became colder\nC. the table grew taller\nD. the room got darker\nAnswer:",
+        "choices": [" A", " B", " C", " D"],
+        "answer": 0,
+    },
+]
+
+GENERATION_PROMPTS = [
+    "Explain neural pruning in two concise sentences.",
+    "Write a tiny Python function that adds two numbers.",
+    "Give one risk when merging two language models.",
+]
+
+
+def same_shape_merge(
+    model_ids: Sequence[str],
+    output_dir: str | Path,
+    weights: Sequence[float] | None = None,
+    torch_dtype: str = "float16",
+    trust_remote_code: bool = False,
+) -> dict[str, Any]:
+    torch, transformers = _torch_and_transformers()
+    if len(model_ids) < 2:
+        raise ValueError("Need at least two models to merge.")
+    merge_weights = _normalized_weights(len(model_ids), weights)
+    dtype = _dtype_from_name(torch, torch_dtype)
+
+    base_id = model_ids[0]
+    base = transformers.AutoModelForCausalLM.from_pretrained(
+        base_id,
+        torch_dtype=dtype,
+        device_map="cpu",
+        trust_remote_code=trust_remote_code,
+    )
+    tokenizer = transformers.AutoTokenizer.from_pretrained(base_id, trust_remote_code=trust_remote_code)
+    merged_state = {name: tensor.detach().cpu().to(torch.float32).mul_(merge_weights[0]) for name, tensor in base.state_dict().items()}
+    shapes = {name: tuple(tensor.shape) for name, tensor in merged_state.items()}
+
+    for weight, model_id in zip(merge_weights[1:], model_ids[1:]):
+        other = transformers.AutoModelForCausalLM.from_pretrained(
+            model_id,
+            torch_dtype=dtype,
+            device_map="cpu",
+            trust_remote_code=trust_remote_code,
+        )
+        other_state = other.state_dict()
+        if set(other_state) != set(merged_state):
+            missing = sorted(set(merged_state) - set(other_state))[:8]
+            extra = sorted(set(other_state) - set(merged_state))[:8]
+            raise ValueError(f"State dict key mismatch for {model_id}; missing={missing}; extra={extra}")
+        for name, tensor in other_state.items():
+            if tuple(tensor.shape) != shapes[name]:
+                raise ValueError(f"Shape mismatch for {name}: {tuple(tensor.shape)} != {shapes[name]}")
+            merged_state[name].add_(tensor.detach().cpu().to(torch.float32), alpha=weight)
+        del other
+
+    cast_state = {name: tensor.to(dtype) if tensor.is_floating_point() else tensor for name, tensor in merged_state.items()}
+    base.load_state_dict(cast_state, strict=True)
+    target = Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    base.save_pretrained(target, safe_serialization=True)
+    tokenizer.save_pretrained(target)
+    report = {
+        "operation": "same_shape_merge",
+        "models": list(model_ids),
+        "weights": merge_weights,
+        "output_dir": str(target),
+        "param_count": sum(p.numel() for p in base.parameters()),
+    }
+    _write_json(target / "neural_forge_merge_report.json", report)
+    return report
+
+
+def resize_gated_ffn(
+    model_id_or_path: str,
+    output_dir: str | Path,
+    ratio: float | None = None,
+    target_intermediate_size: int | None = None,
+    torch_dtype: str = "float16",
+    trust_remote_code: bool = False,
+    assignment: str = "down-cosine",
+) -> dict[str, Any]:
+    torch, transformers = _torch_and_transformers()
+    if ratio is None and target_intermediate_size is None:
+        raise ValueError("Provide ratio or target_intermediate_size.")
+    if ratio is not None and ratio <= 0:
+        raise ValueError("ratio must be positive.")
+    dtype = _dtype_from_name(torch, torch_dtype)
+    model = transformers.AutoModelForCausalLM.from_pretrained(
+        model_id_or_path,
+        torch_dtype=dtype,
+        device_map="cpu",
+        trust_remote_code=trust_remote_code,
+    )
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_id_or_path, trust_remote_code=trust_remote_code)
+    layers = _decoder_layers(model)
+    if not layers:
+        raise ValueError("Could not find decoder layers with gated MLP modules.")
+    old_size = int(layers[0].mlp.gate_proj.weight.shape[0])
+    new_size = int(target_intermediate_size or round(old_size * float(ratio)))
+    if new_size <= 0:
+        raise ValueError("target intermediate size must be positive.")
+
+    changes = []
+    for idx, layer in enumerate(layers):
+        before = int(layer.mlp.gate_proj.weight.shape[0])
+        if new_size < before:
+            _shrink_gated_mlp_layer(torch, layer, new_size, assignment=assignment)
+        elif new_size > before:
+            _expand_gated_mlp_layer(torch, layer, new_size)
+        after = int(layer.mlp.gate_proj.weight.shape[0])
+        changes.append({"layer": idx, "before": before, "after": after})
+
+    _update_intermediate_size(model.config, new_size)
+    target = Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    model.save_pretrained(target, safe_serialization=True)
+    tokenizer.save_pretrained(target)
+    report = {
+        "operation": "resize_gated_ffn",
+        "source": model_id_or_path,
+        "output_dir": str(target),
+        "old_intermediate_size": old_size,
+        "new_intermediate_size": new_size,
+        "ratio": new_size / old_size,
+        "assignment": assignment,
+        "layers": changes,
+        "param_count": sum(p.numel() for p in model.parameters()),
+    }
+    _write_json(target / "neural_forge_resize_report.json", report)
+    return report
+
+
+def evaluate_text_model(
+    model_id_or_path: str,
+    output_file: str | Path,
+    torch_dtype: str = "float16",
+    device: str = "cuda:0",
+    trust_remote_code: bool = False,
+    max_new_tokens: int = 96,
+) -> dict[str, Any]:
+    torch, transformers = _torch_and_transformers()
+    dtype = _dtype_from_name(torch, torch_dtype)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_id_or_path, trust_remote_code=trust_remote_code)
+    model = transformers.AutoModelForCausalLM.from_pretrained(
+        model_id_or_path,
+        torch_dtype=dtype,
+        device_map=None,
+        trust_remote_code=trust_remote_code,
+    )
+    model.to(device)
+    model.eval()
+    if tokenizer.pad_token_id is None and tokenizer.eos_token_id is not None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    with torch.no_grad():
+        ppls = [_perplexity(torch, model, tokenizer, text, device) for text in TEXT_EVALS]
+        probes = [_score_choice_probe(torch, model, tokenizer, probe, device) for probe in CHOICE_PROBES]
+        generations = [_generate_text(torch, model, tokenizer, prompt, device, max_new_tokens) for prompt in GENERATION_PROMPTS]
+
+    report = {
+        "model": model_id_or_path,
+        "param_count": sum(p.numel() for p in model.parameters()),
+        "perplexity": {
+            "mean": float(sum(ppls) / len(ppls)),
+            "items": ppls,
+        },
+        "choice_accuracy": {
+            "correct": sum(1 for item in probes if item["correct"]),
+            "total": len(probes),
+            "accuracy": sum(1 for item in probes if item["correct"]) / len(probes),
+            "items": probes,
+        },
+        "generations": generations,
+    }
+    _write_json(output_file, report)
+    return report
+
+
+def vision_probe(
+    model_id_or_path: str,
+    output_file: str | Path,
+    image_dir: str | Path,
+    torch_dtype: str = "float16",
+    device: str = "cuda:0",
+    trust_remote_code: bool = False,
+    max_new_tokens: int = 80,
+) -> dict[str, Any]:
+    torch, transformers = _torch_and_transformers()
+    from PIL import Image, ImageDraw
+
+    image_root = Path(image_dir)
+    image_root.mkdir(parents=True, exist_ok=True)
+    images = _make_probe_images(Image, ImageDraw, image_root)
+    processor = transformers.AutoProcessor.from_pretrained(model_id_or_path, trust_remote_code=trust_remote_code)
+    model_cls = getattr(transformers, "AutoModelForImageTextToText", None)
+    if model_cls is None:
+        model_cls = getattr(transformers, "AutoModelForVision2Seq")
+    model = model_cls.from_pretrained(
+        model_id_or_path,
+        torch_dtype=_dtype_from_name(torch, torch_dtype),
+        device_map=None,
+        trust_remote_code=trust_remote_code,
+    )
+    model.to(device)
+    model.eval()
+
+    prompts = [
+        ("shapes", images["shapes"], "Describe the image in one sentence."),
+        ("ocr", images["ocr"], "What text or number is visible in this image?"),
+    ]
+    outputs = []
+    with torch.no_grad():
+        for probe_id, image_path, question in prompts:
+            image = Image.open(image_path).convert("RGB")
+            text = _apply_vision_template(processor, question)
+            inputs = processor(text=text, images=image, return_tensors="pt")
+            inputs = {key: value.to(device) if hasattr(value, "to") else value for key, value in inputs.items()}
+            generated = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+            decoded = processor.batch_decode(generated, skip_special_tokens=True)[0]
+            outputs.append({"id": probe_id, "image": str(image_path), "question": question, "output": decoded})
+
+    report = {
+        "model": model_id_or_path,
+        "param_count": sum(p.numel() for p in model.parameters()),
+        "outputs": outputs,
+    }
+    _write_json(output_file, report)
+    return report
+
+
+def vision_text_chain(
+    vision_model_id_or_path: str,
+    text_model_id_or_path: str,
+    output_file: str | Path,
+    image_dir: str | Path,
+    torch_dtype: str = "float16",
+    device: str = "cuda:0",
+    trust_remote_code: bool = False,
+    max_new_tokens: int = 80,
+) -> dict[str, Any]:
+    torch, transformers = _torch_and_transformers()
+    from PIL import Image, ImageDraw
+
+    image_root = Path(image_dir)
+    image_root.mkdir(parents=True, exist_ok=True)
+    images = _make_probe_images(Image, ImageDraw, image_root)
+
+    processor = transformers.AutoProcessor.from_pretrained(vision_model_id_or_path, trust_remote_code=trust_remote_code)
+    model_cls = getattr(transformers, "AutoModelForImageTextToText", None)
+    if model_cls is None:
+        model_cls = getattr(transformers, "AutoModelForVision2Seq")
+    vision_model = model_cls.from_pretrained(
+        vision_model_id_or_path,
+        torch_dtype=_dtype_from_name(torch, torch_dtype),
+        device_map=None,
+        trust_remote_code=trust_remote_code,
+    )
+    vision_model.to(device)
+    vision_model.eval()
+    vision_param_count = sum(p.numel() for p in vision_model.parameters())
+
+    observations = []
+    with torch.no_grad():
+        for probe_id, image_path, question in [
+            ("shapes", images["shapes"], "Describe the image in one sentence."),
+            ("ocr", images["ocr"], "What text or number is visible in this image?"),
+        ]:
+            image = Image.open(image_path).convert("RGB")
+            text = _apply_vision_template(processor, question)
+            inputs = processor(text=text, images=image, return_tensors="pt")
+            inputs = {key: value.to(device) if hasattr(value, "to") else value for key, value in inputs.items()}
+            generated = vision_model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+            decoded = processor.batch_decode(generated, skip_special_tokens=True)[0]
+            observations.append({"id": probe_id, "image": str(image_path), "question": question, "observation": decoded})
+
+    del vision_model
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    tokenizer = transformers.AutoTokenizer.from_pretrained(text_model_id_or_path, trust_remote_code=trust_remote_code)
+    text_model = transformers.AutoModelForCausalLM.from_pretrained(
+        text_model_id_or_path,
+        torch_dtype=_dtype_from_name(torch, torch_dtype),
+        device_map=None,
+        trust_remote_code=trust_remote_code,
+    )
+    text_model.to(device)
+    text_model.eval()
+    if tokenizer.pad_token_id is None and tokenizer.eos_token_id is not None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    answers = []
+    with torch.no_grad():
+        for item in observations:
+            prompt = (
+                "You are validating a stitched vision-language system.\n"
+                f"Vision observation: {item['observation']}\n"
+                f"Original question: {item['question']}\n"
+                "Answer concisely:"
+            )
+            answers.append(
+                {
+                    **item,
+                    "text_prompt": prompt,
+                    "text_answer": _generate_text(torch, text_model, tokenizer, prompt, device, max_new_tokens)["output"],
+                }
+            )
+
+    report = {
+        "operation": "vision_text_chain",
+        "vision_model": vision_model_id_or_path,
+        "text_model": text_model_id_or_path,
+        "vision_param_count": vision_param_count,
+        "text_param_count": sum(p.numel() for p in text_model.parameters()),
+        "outputs": answers,
+    }
+    _write_json(output_file, report)
+    return report
+
+
+def _torch_and_transformers():
+    import torch
+    import transformers
+
+    return torch, transformers
+
+
+def _dtype_from_name(torch, name: str):
+    lowered = name.lower()
+    mapping = {
+        "float16": torch.float16,
+        "fp16": torch.float16,
+        "bfloat16": torch.bfloat16,
+        "bf16": torch.bfloat16,
+        "float32": torch.float32,
+        "fp32": torch.float32,
+    }
+    if lowered not in mapping:
+        raise ValueError(f"Unsupported torch dtype: {name}")
+    return mapping[lowered]
+
+
+def _normalized_weights(count: int, weights: Sequence[float] | None) -> list[float]:
+    if weights is None:
+        return [1.0 / count] * count
+    if len(weights) != count:
+        raise ValueError(f"Expected {count} weights, got {len(weights)}.")
+    values = [float(weight) for weight in weights]
+    total = sum(values)
+    if total == 0:
+        raise ValueError("Merge weights must not sum to zero.")
+    return [weight / total for weight in values]
+
+
+def _decoder_layers(model) -> list[Any]:
+    candidates = [
+        getattr(getattr(model, "model", None), "layers", None),
+        getattr(getattr(getattr(model, "language_model", None), "model", None), "layers", None),
+        getattr(getattr(model, "transformer", None), "h", None),
+    ]
+    for layers in candidates:
+        if layers is None:
+            continue
+        layer_list = list(layers)
+        if layer_list and hasattr(layer_list[0], "mlp") and hasattr(layer_list[0].mlp, "gate_proj"):
+            return layer_list
+    return []
+
+
+def _update_intermediate_size(config, new_size: int) -> None:
+    for attr in ("intermediate_size", "ffn_dim"):
+        if hasattr(config, attr):
+            setattr(config, attr, int(new_size))
+    if hasattr(config, "text_config"):
+        _update_intermediate_size(config.text_config, new_size)
+
+
+def _shrink_gated_mlp_layer(torch, layer, new_size: int, assignment: str = "down-cosine") -> None:
+    gate = layer.mlp.gate_proj.weight.data.detach().cpu().to(torch.float32)
+    up = layer.mlp.up_proj.weight.data.detach().cpu().to(torch.float32)
+    down = layer.mlp.down_proj.weight.data.detach().cpu().to(torch.float32)
+    old_size = gate.shape[0]
+    if new_size >= old_size:
+        return
+
+    importance = gate.norm(dim=1) + up.norm(dim=1) + down.norm(dim=0)
+    survivor_idx = torch.argsort(importance, descending=True)[:new_size]
+    dropped_idx = torch.argsort(importance, descending=True)[new_size:]
+    survivor_idx = torch.sort(survivor_idx).values
+    survivor_set = {int(idx) for idx in survivor_idx.tolist()}
+    dropped_idx = torch.tensor([idx for idx in range(old_size) if idx not in survivor_set], dtype=torch.long)
+
+    new_gate = gate[survivor_idx].clone()
+    new_up = up[survivor_idx].clone()
+    new_down = down[:, survivor_idx].clone()
+    counts = torch.ones(new_size, dtype=torch.float32)
+
+    if dropped_idx.numel() > 0:
+        if assignment == "round-robin":
+            assigned = torch.arange(dropped_idx.numel()) % new_size
+        else:
+            surv_feat = _row_normalize(down[:, survivor_idx].T)
+            drop_feat = _row_normalize(down[:, dropped_idx].T)
+            assigned = []
+            chunk = 128
+            for start in range(0, drop_feat.shape[0], chunk):
+                sims = drop_feat[start : start + chunk] @ surv_feat.T
+                assigned.append(torch.argmax(sims, dim=1))
+            assigned = torch.cat(assigned, dim=0)
+        for source_pos, target_pos in zip(dropped_idx.tolist(), assigned.tolist()):
+            count = counts[target_pos]
+            new_gate[target_pos] = (new_gate[target_pos] * count + gate[source_pos]) / (count + 1.0)
+            new_up[target_pos] = (new_up[target_pos] * count + up[source_pos]) / (count + 1.0)
+            new_down[:, target_pos] += down[:, source_pos]
+            counts[target_pos] += 1.0
+
+    _replace_linear(torch, layer.mlp.gate_proj, new_gate, axis="out")
+    _replace_linear(torch, layer.mlp.up_proj, new_up, axis="out")
+    _replace_linear(torch, layer.mlp.down_proj, new_down, axis="in")
+
+
+def _expand_gated_mlp_layer(torch, layer, new_size: int) -> None:
+    gate = layer.mlp.gate_proj.weight.data.detach().cpu().to(torch.float32)
+    up = layer.mlp.up_proj.weight.data.detach().cpu().to(torch.float32)
+    down = layer.mlp.down_proj.weight.data.detach().cpu().to(torch.float32)
+    old_size = gate.shape[0]
+    if new_size <= old_size:
+        return
+    importance = gate.norm(dim=1) + up.norm(dim=1) + down.norm(dim=0)
+    order = torch.argsort(importance, descending=True).tolist()
+    counts = torch.ones(old_size, dtype=torch.long)
+    for extra_idx in range(new_size - old_size):
+        counts[order[extra_idx % old_size]] += 1
+
+    gate_rows = []
+    up_rows = []
+    down_cols = []
+    for idx, copies in enumerate(counts.tolist()):
+        for _ in range(copies):
+            gate_rows.append(gate[idx])
+            up_rows.append(up[idx])
+            down_cols.append(down[:, idx] / float(copies))
+    new_gate = torch.stack(gate_rows, dim=0)
+    new_up = torch.stack(up_rows, dim=0)
+    new_down = torch.stack(down_cols, dim=1)
+    _replace_linear(torch, layer.mlp.gate_proj, new_gate, axis="out")
+    _replace_linear(torch, layer.mlp.up_proj, new_up, axis="out")
+    _replace_linear(torch, layer.mlp.down_proj, new_down, axis="in")
+
+
+def _replace_linear(torch, linear, new_weight, axis: str) -> None:
+    dtype = linear.weight.dtype
+    device = linear.weight.device
+    linear.out_features = int(new_weight.shape[0])
+    linear.in_features = int(new_weight.shape[1])
+    linear.weight = torch.nn.Parameter(new_weight.to(device=device, dtype=dtype), requires_grad=linear.weight.requires_grad)
+    if linear.bias is not None:
+        if axis == "out":
+            linear.bias = torch.nn.Parameter(linear.bias.data[: new_weight.shape[0]].clone(), requires_grad=linear.bias.requires_grad)
+        elif linear.bias.shape[0] != new_weight.shape[0]:
+            raise ValueError("Cannot resize an input-axis linear layer with unexpected bias shape.")
+
+
+def _row_normalize(torch_tensor):
+    return torch_tensor / torch_tensor.norm(dim=1, keepdim=True).clamp_min(1e-12)
+
+
+def _perplexity(torch, model, tokenizer, text: str, device: str) -> float:
+    encoded = tokenizer(text, return_tensors="pt")
+    input_ids = encoded["input_ids"].to(device)
+    outputs = model(input_ids=input_ids, labels=input_ids)
+    return float(math.exp(min(20.0, float(outputs.loss.detach().cpu()))))
+
+
+def _score_choice_probe(torch, model, tokenizer, probe: dict[str, Any], device: str) -> dict[str, Any]:
+    scores = []
+    prompt_ids = tokenizer(probe["prompt"], return_tensors="pt")["input_ids"].to(device)
+    prompt_len = prompt_ids.shape[1]
+    for choice in probe["choices"]:
+        full_ids = tokenizer(probe["prompt"] + choice, return_tensors="pt")["input_ids"].to(device)
+        labels = full_ids.clone()
+        labels[:, :prompt_len] = -100
+        outputs = model(input_ids=full_ids, labels=labels)
+        token_count = int((labels != -100).sum().item())
+        scores.append(float(-outputs.loss.detach().cpu() * max(1, token_count)))
+    pred = int(max(range(len(scores)), key=lambda idx: scores[idx]))
+    return {
+        "id": probe["id"],
+        "prediction": pred,
+        "answer": int(probe["answer"]),
+        "correct": pred == int(probe["answer"]),
+        "scores": scores,
+        "choices": probe["choices"],
+    }
+
+
+def _generate_text(torch, model, tokenizer, prompt: str, device: str, max_new_tokens: int) -> dict[str, str]:
+    inputs = tokenizer(prompt, return_tensors="pt").to(device)
+    output_ids = model.generate(
+        **inputs,
+        max_new_tokens=max_new_tokens,
+        do_sample=False,
+        pad_token_id=tokenizer.eos_token_id,
+    )
+    decoded = tokenizer.decode(output_ids[0], skip_special_tokens=True)
+    return {"prompt": prompt, "output": decoded}
+
+
+def _make_probe_images(Image, ImageDraw, image_root: Path) -> dict[str, Path]:
+    shapes = image_root / "red_square_blue_circle.png"
+    img = Image.new("RGB", (320, 220), "white")
+    draw = ImageDraw.Draw(img)
+    draw.rectangle((35, 50, 135, 150), fill="red")
+    draw.ellipse((190, 55, 290, 155), fill="blue")
+    img.save(shapes)
+
+    ocr = image_root / "number_42.png"
+    img2 = Image.new("RGB", (320, 180), "white")
+    draw2 = ImageDraw.Draw(img2)
+    draw2.rectangle((0, 0, 319, 179), outline="black", width=4)
+    draw2.text((105, 55), "42", fill="black")
+    img2.save(ocr)
+    return {"shapes": shapes, "ocr": ocr}
+
+
+def _apply_vision_template(processor, question: str) -> str:
+    messages = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": question}]}]
+    if hasattr(processor, "apply_chat_template"):
+        return processor.apply_chat_template(messages, add_generation_prompt=True)
+    return f"<image>\n{question}\nAnswer:"
+
+
+def _write_json(path: str | Path, data: dict[str, Any]) -> None:
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")

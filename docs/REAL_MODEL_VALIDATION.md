@@ -1,0 +1,66 @@
+# Real Model Validation
+
+The toy dense tests prove tensor surgery invariants. They do not prove that a
+real checkpoint still behaves. This validation path runs small public
+checkpoints through behavior probes before and after surgery.
+
+## Default Run
+
+```bash
+python experiments/run_real_model_validation.py \
+  --run-dir runs/real-model-validation \
+  --device cuda:0 \
+  --dtype float16
+```
+
+Defaults:
+
+- text base: `Qwen/Qwen3-0.6B-Base`
+- text tuned parent: `Qwen/Qwen3-0.6B`
+- VLM sanity parent: `HuggingFaceTB/SmolVLM2-256M-Video-Instruct`
+
+The run writes:
+
+- `reports/text_base.json`
+- `reports/text_tuned.json`
+- `reports/text_merged_alpha_050.json`
+- `reports/text_merged_ffn_099.json` by default, unless `--shrink-ratio` is changed
+- `reports/vision_probe.json`
+- `reports/vision_chain.json` when the optional composite chain is run
+- `reports/summary.json`
+
+## What Counts As Evidence
+
+Minimum useful evidence:
+
+- parent models load and generate;
+- merged model loads and generates;
+- FFN-resized model loads and generates;
+- perplexity and choice probes do not collapse to nonsense;
+- VLM probe produces grounded text for synthetic images.
+
+This is not a claim that a heavily frankensteined model is production-good
+without recovery training. It is a behavioral smoke test that distinguishes
+actual model survival from merely making tensor dimensions line up.
+
+## Current Safe Scope
+
+Supported real-checkpoint surgery:
+
+- same-shape Hugging Face causal LM checkpoint averaging;
+- Qwen/Gemma/Llama-style gated FFN intermediate resize by folding or copying
+  channels;
+- lightweight causal LM behavior probes;
+- small VLM image-description/OCR sanity probes.
+- transitional VLM-observation -> merged-text-model chains for grounded behavior
+  checks before native multimodal training exists.
+
+Not yet supported:
+
+- direct cross-architecture merge of Qwen + Gemma + LFM into one valid decoder;
+- untrained native vision grafting that magically understands pixels;
+- aggressive compression without calibration/recovery training.
+
+The safe next step is adding calibration-aware ridge compensation after FFN
+folding, then adding a trainable native vision expansion module with an explicit
+recovery-training recipe.

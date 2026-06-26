@@ -57,6 +57,39 @@ The parameter target is best-effort. Some targets are mathematically impossible
 for a fixed input/output shape; in that case the planner returns the closest
 reachable hidden widths.
 
+## Real Hugging Face Checkpoints
+
+Install the optional HF stack before running these:
+
+```powershell
+py -3.11 -m pip install -e ".[hf]"
+```
+
+Same-shape text-model merge:
+
+```powershell
+neural-forge hf-merge runs/qwen-merged `
+  --models Qwen/Qwen3-0.6B-Base Qwen/Qwen3-0.6B `
+  --dtype float16
+```
+
+Gated-MLP FFN shrink or expansion for Qwen/Gemma/Llama-like decoder blocks:
+
+```powershell
+neural-forge hf-resize-ffn runs/qwen-merged runs/qwen-merged-shrunk --ratio 0.95
+```
+
+Behavior probes:
+
+```powershell
+neural-forge hf-eval Qwen/Qwen3-0.6B runs/qwen3-report.json
+neural-forge hf-eval runs/qwen-merged-shrunk runs/qwen-merged-shrunk-report.json
+neural-forge vision-probe HuggingFaceTB/SmolVLM2-256M-Video-Instruct runs/vision-report.json
+neural-forge vision-chain runs/vision-chain-report.json `
+  --vision-model HuggingFaceTB/SmolVLM2-256M-Video-Instruct `
+  --text-model runs/qwen-merged
+```
+
 ## Checkpoint format
 
 The current format is a compressed NumPy `.npz` with:
