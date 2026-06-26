@@ -77,6 +77,7 @@ def same_shape_merge(
     tokenizer = transformers.AutoTokenizer.from_pretrained(base_id, trust_remote_code=trust_remote_code)
     merged_state = {name: tensor.detach().cpu().to(torch.float32).mul_(merge_weights[0]) for name, tensor in base.state_dict().items()}
     shapes = {name: tuple(tensor.shape) for name, tensor in merged_state.items()}
+    source_dtypes = {name: tensor.dtype for name, tensor in base.state_dict().items()}
 
     for weight, model_id in zip(merge_weights[1:], model_ids[1:]):
         other = transformers.AutoModelForCausalLM.from_pretrained(
@@ -96,7 +97,10 @@ def same_shape_merge(
             merged_state[name].add_(tensor.detach().cpu().to(torch.float32), alpha=weight)
         del other
 
-    cast_state = {name: tensor.to(dtype) if tensor.is_floating_point() else tensor for name, tensor in merged_state.items()}
+    cast_state = {
+        name: tensor.to(source_dtypes[name] if dtype is None else dtype) if tensor.is_floating_point() else tensor
+        for name, tensor in merged_state.items()
+    }
     base.load_state_dict(cast_state, strict=True)
     target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)
@@ -110,6 +114,77 @@ def same_shape_merge(
         "param_count": sum(p.numel() for p in base.parameters()),
     }
     _write_json(target / "neural_forge_merge_report.json", report)
+    return report
+
+
+def task_arithmetic_merge(
+    base_model: str,
+    tuned_model: str,
+    output_dir: str | Path,
+    alpha: float = 1.0,
+    torch_dtype: str = "auto",
+    trust_remote_code: bool = False,
+) -> dict[str, Any]:
+    """Create `base + alpha * (tuned - base)` for same-shape HF causal LMs."""
+
+    alpha_value = _finite_float(alpha, "alpha")
+    torch, transformers = _torch_and_transformers()
+    dtype = _dtype_from_name(torch, torch_dtype)
+    base = transformers.AutoModelForCausalLM.from_pretrained(
+        base_model,
+        torch_dtype=dtype,
+        device_map="cpu",
+        trust_remote_code=trust_remote_code,
+    )
+    tuned = transformers.AutoModelForCausalLM.from_pretrained(
+        tuned_model,
+        torch_dtype=dtype,
+        device_map="cpu",
+        trust_remote_code=trust_remote_code,
+    )
+    tokenizer = transformers.AutoTokenizer.from_pretrained(base_model, trust_remote_code=trust_remote_code)
+    tuned_tokenizer = transformers.AutoTokenizer.from_pretrained(tuned_model, trust_remote_code=trust_remote_code)
+    tokenizer_report = _assert_tokenizers_compatible(tokenizer, tuned_tokenizer)
+    base_state = base.state_dict()
+    tuned_state = tuned.state_dict()
+    if set(base_state) != set(tuned_state):
+        missing = sorted(set(base_state) - set(tuned_state))[:8]
+        extra = sorted(set(tuned_state) - set(base_state))[:8]
+        raise ValueError(f"State dict key mismatch; missing={missing}; extra={extra}")
+
+    merged_state = {}
+    for name, base_tensor in base_state.items():
+        tuned_tensor = tuned_state[name]
+        if tuple(base_tensor.shape) != tuple(tuned_tensor.shape):
+            raise ValueError(f"Shape mismatch for {name}: {tuple(base_tensor.shape)} != {tuple(tuned_tensor.shape)}")
+        if base_tensor.is_floating_point():
+            merged = base_tensor.detach().cpu().to(torch.float32)
+            merged.add_(tuned_tensor.detach().cpu().to(torch.float32) - merged, alpha=alpha_value)
+            merged_state[name] = merged.to(base_tensor.dtype if dtype is None else dtype)
+        else:
+            base_cpu = base_tensor.detach().cpu()
+            tuned_cpu = tuned_tensor.detach().cpu()
+            if not torch.equal(base_cpu, tuned_cpu):
+                raise ValueError(f"Non-floating tensor mismatch for {name}; task merge requires matching buffers.")
+            merged_state[name] = base_cpu
+
+    base.load_state_dict(merged_state, strict=True)
+    target = Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    base.save_pretrained(target, safe_serialization=True)
+    tokenizer.save_pretrained(target)
+    report = {
+        "operation": "task_arithmetic_merge",
+        "base_model": base_model,
+        "tuned_model": tuned_model,
+        "alpha": alpha_value,
+        "torch_dtype": torch_dtype,
+        "tokenizer_source": base_model,
+        "tokenizer_compatibility": tokenizer_report,
+        "output_dir": str(target),
+        "param_count": sum(p.numel() for p in base.parameters()),
+    }
+    _write_json(target / "neural_forge_task_merge_report.json", report)
     return report
 
 
@@ -519,6 +594,111 @@ def sweep_gated_ffn_resize(
     return summary
 
 
+def sweep_task_arithmetic(
+    base_model: str,
+    tuned_model: str,
+    output_dir: str | Path,
+    alphas: Sequence[float],
+    baseline_report: str | Path | None = None,
+    torch_dtype: str = "auto",
+    device: str = "cuda:0",
+    trust_remote_code: bool = False,
+    max_new_tokens: int = 80,
+    max_ppl_ratio: float = 2.0,
+    max_accuracy_drop: float = 0.25,
+    min_choice_accuracy: float = 0.75,
+) -> dict[str, Any]:
+    """Sweep task-arithmetic alphas, evaluate each candidate, and gate results."""
+
+    if not alphas:
+        raise ValueError("At least one alpha is required.")
+    alpha_values = [_finite_float(alpha, "alpha") for alpha in alphas]
+    _ensure_unique_ratio_tags(alpha_values, "alpha")
+    root = Path(output_dir)
+    model_root = root / "models"
+    report_root = root / "reports"
+    model_root.mkdir(parents=True, exist_ok=True)
+    report_root.mkdir(parents=True, exist_ok=True)
+
+    if baseline_report is None:
+        baseline_path = report_root / "baseline_base.json"
+        baseline = evaluate_text_model(
+            base_model,
+            baseline_path,
+            torch_dtype=torch_dtype,
+            device=device,
+            trust_remote_code=trust_remote_code,
+            max_new_tokens=max_new_tokens,
+        )
+    else:
+        baseline_path = Path(baseline_report)
+        baseline = _load_report(baseline_path)
+
+    candidates = []
+    for alpha_value in alpha_values:
+        tag = _ratio_tag(alpha_value)
+        candidate_dir = model_root / f"task_alpha_{tag}"
+        candidate_report_path = report_root / f"task_alpha_{tag}.json"
+        gate_path = report_root / f"task_alpha_{tag}_gate.json"
+        merge_report = task_arithmetic_merge(
+            base_model=base_model,
+            tuned_model=tuned_model,
+            output_dir=candidate_dir,
+            alpha=alpha_value,
+            torch_dtype=torch_dtype,
+            trust_remote_code=trust_remote_code,
+        )
+        candidate_report = evaluate_text_model(
+            str(candidate_dir),
+            candidate_report_path,
+            torch_dtype=torch_dtype,
+            device=device,
+            trust_remote_code=trust_remote_code,
+            max_new_tokens=max_new_tokens,
+        )
+        gate = gate_text_report(
+            baseline,
+            candidate_report,
+            output_file=gate_path,
+            max_ppl_ratio=max_ppl_ratio,
+            max_accuracy_drop=max_accuracy_drop,
+            min_choice_accuracy=min_choice_accuracy,
+        )
+        candidates.append(
+            {
+                "alpha": alpha_value,
+                "tag": tag,
+                "model_dir": str(candidate_dir),
+                "report": str(candidate_report_path),
+                "gate_report": str(gate_path),
+                "passed": gate["passed"],
+                "merge": merge_report,
+                "metrics": gate["candidate"],
+            }
+        )
+
+    summary = {
+        "operation": "sweep_task_arithmetic",
+        "base_model": base_model,
+        "tuned_model": tuned_model,
+        "baseline_report": str(baseline_path),
+        "baseline_metrics": {
+            "param_count": baseline.get("param_count"),
+            "perplexity_mean": float(baseline["perplexity"]["mean"]),
+            "choice_accuracy": float(baseline["choice_accuracy"]["accuracy"]),
+        },
+        "gate_thresholds": {
+            "max_ppl_ratio": max_ppl_ratio,
+            "max_accuracy_drop": max_accuracy_drop,
+            "min_choice_accuracy": min_choice_accuracy,
+        },
+        "candidates": candidates,
+        "passed_candidates": [item for item in candidates if item["passed"]],
+    }
+    _write_json(report_root / "task_sweep_summary.json", summary)
+    return summary
+
+
 def vision_probe(
     model_id_or_path: str,
     output_file: str | Path,
@@ -670,6 +850,8 @@ def _torch_and_transformers():
 
 def _dtype_from_name(torch, name: str):
     lowered = name.lower()
+    if lowered in {"auto", "source"}:
+        return None
     mapping = {
         "float16": torch.float16,
         "fp16": torch.float16,
@@ -693,6 +875,46 @@ def _normalized_weights(count: int, weights: Sequence[float] | None) -> list[flo
     if total == 0:
         raise ValueError("Merge weights must not sum to zero.")
     return [weight / total for weight in values]
+
+
+def _finite_float(value: float, name: str) -> float:
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"{name} must be finite.")
+    return result
+
+
+def _ensure_unique_ratio_tags(values: Sequence[float], name: str) -> None:
+    seen: dict[str, float] = {}
+    for value in values:
+        tag = _ratio_tag(value)
+        if tag in seen:
+            raise ValueError(f"Duplicate {name} output tag {tag!r} for values {seen[tag]} and {value}.")
+        seen[tag] = value
+
+
+def _assert_tokenizers_compatible(base_tokenizer, tuned_tokenizer) -> dict[str, Any]:
+    try:
+        base_len = len(base_tokenizer)
+        tuned_len = len(tuned_tokenizer)
+    except TypeError:
+        base_len = tuned_len = None
+    if base_len is not None and base_len != tuned_len:
+        raise ValueError(f"Tokenizer length mismatch: base={base_len} tuned={tuned_len}")
+
+    special_tokens_match = getattr(base_tokenizer, "special_tokens_map", None) == getattr(tuned_tokenizer, "special_tokens_map", None)
+
+    vocab_match = None
+    if hasattr(base_tokenizer, "get_vocab") and hasattr(tuned_tokenizer, "get_vocab"):
+        vocab_match = base_tokenizer.get_vocab() == tuned_tokenizer.get_vocab()
+        if not vocab_match:
+            raise ValueError("Tokenizer vocabularies differ; task merge requires compatible tokenization.")
+
+    return {
+        "length": base_len,
+        "vocab_match": vocab_match,
+        "special_tokens_match": special_tokens_match,
+    }
 
 
 def _load_report(report: str | Path | dict[str, Any]) -> dict[str, Any]:

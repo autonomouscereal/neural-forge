@@ -79,6 +79,15 @@ def build_parser() -> argparse.ArgumentParser:
     hf_merge.add_argument("--trust-remote-code", action="store_true")
     hf_merge.set_defaults(func=cmd_hf_merge)
 
+    hf_task_merge = sub.add_parser("hf-task-merge", help="Create base + alpha * (tuned - base) for same-shape HF causal LMs.")
+    hf_task_merge.add_argument("output")
+    hf_task_merge.add_argument("--base-model", required=True)
+    hf_task_merge.add_argument("--tuned-model", required=True)
+    hf_task_merge.add_argument("--alpha", type=float, default=1.0)
+    hf_task_merge.add_argument("--dtype", default="auto")
+    hf_task_merge.add_argument("--trust-remote-code", action="store_true")
+    hf_task_merge.set_defaults(func=cmd_hf_task_merge)
+
     hf_resize = sub.add_parser("hf-resize-ffn", help="Shrink or expand gated FFN intermediate size in HF decoder models.")
     hf_resize.add_argument("model")
     hf_resize.add_argument("output")
@@ -137,6 +146,21 @@ def build_parser() -> argparse.ArgumentParser:
     hf_sweep.add_argument("--repair-ridge", type=float, default=1e-3)
     hf_sweep.add_argument("--repair-max-tokens", type=int, default=512)
     hf_sweep.set_defaults(func=cmd_hf_sweep)
+
+    hf_task_sweep = sub.add_parser("hf-sweep-task", help="Sweep task-arithmetic alphas, evaluate candidates, and gate results.")
+    hf_task_sweep.add_argument("output_dir")
+    hf_task_sweep.add_argument("--base-model", required=True)
+    hf_task_sweep.add_argument("--tuned-model", required=True)
+    hf_task_sweep.add_argument("--alphas", required=True, help="Comma-separated alphas, e.g. 0,0.5,1,1.25.")
+    hf_task_sweep.add_argument("--baseline-report")
+    hf_task_sweep.add_argument("--dtype", default="auto")
+    hf_task_sweep.add_argument("--device", default="cuda:0")
+    hf_task_sweep.add_argument("--trust-remote-code", action="store_true")
+    hf_task_sweep.add_argument("--max-new-tokens", type=int, default=80)
+    hf_task_sweep.add_argument("--max-ppl-ratio", type=float, default=2.0)
+    hf_task_sweep.add_argument("--max-accuracy-drop", type=float, default=0.25)
+    hf_task_sweep.add_argument("--min-choice-accuracy", type=float, default=0.75)
+    hf_task_sweep.set_defaults(func=cmd_hf_task_sweep)
 
     vision = sub.add_parser("vision-probe", help="Run simple image-description/OCR probes for an HF vision-language model.")
     vision.add_argument("model")
@@ -243,6 +267,19 @@ def cmd_hf_merge(args: argparse.Namespace) -> dict[str, object]:
     )
 
 
+def cmd_hf_task_merge(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_tools import task_arithmetic_merge
+
+    return task_arithmetic_merge(
+        base_model=args.base_model,
+        tuned_model=args.tuned_model,
+        output_dir=args.output,
+        alpha=args.alpha,
+        torch_dtype=args.dtype,
+        trust_remote_code=args.trust_remote_code,
+    )
+
+
 def cmd_hf_resize(args: argparse.Namespace) -> dict[str, object]:
     from neural_forge.hf_tools import resize_gated_ffn
 
@@ -320,6 +357,26 @@ def cmd_hf_sweep(args: argparse.Namespace) -> dict[str, object]:
         repair_shrinks=args.repair_shrinks,
         repair_ridge=args.repair_ridge,
         repair_max_tokens=args.repair_max_tokens,
+    )
+
+
+def cmd_hf_task_sweep(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_tools import sweep_task_arithmetic
+
+    alphas = [float(part.strip()) for part in args.alphas.split(",") if part.strip()]
+    return sweep_task_arithmetic(
+        base_model=args.base_model,
+        tuned_model=args.tuned_model,
+        output_dir=args.output_dir,
+        alphas=alphas,
+        baseline_report=args.baseline_report,
+        torch_dtype=args.dtype,
+        device=args.device,
+        trust_remote_code=args.trust_remote_code,
+        max_new_tokens=args.max_new_tokens,
+        max_ppl_ratio=args.max_ppl_ratio,
+        max_accuracy_drop=args.max_accuracy_drop,
+        min_choice_accuracy=args.min_choice_accuracy,
     )
 
 

@@ -41,6 +41,69 @@ Behavior samples:
   expected Net2Wider-style property: duplicated channels split their outgoing
   path and preserve the function much better than blind folding.
 
+## Task-Arithmetic Merge Sweep
+
+A second merge run used `hf-sweep-task` to create
+`base + alpha * (tuned - base)` candidates from the two Qwen3 parents, then
+evaluated and gated each candidate against the base-model report.
+
+Run directory on the AI server:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen3_task_sweep_20260626
+```
+
+Sweep:
+
+```text
+base: Qwen/Qwen3-0.6B-Base
+tuned: Qwen/Qwen3-0.6B
+baseline report: text_base.json
+alphas: 0.25, 0.5, 0.75, 1.0, 1.25
+dtype: float16
+max_ppl_ratio: 2.25
+min_choice_accuracy: 0.75
+max_accuracy_drop: 0.0
+```
+
+| Alpha | Params | Mean PPL | PPL Ratio | Choice Acc | Gate |
+|---:|---:|---:|---:|---:|---|
+| 0.25 | 596,049,920 | 321.469 | 1.147 | 1.00 | Passed |
+| 0.50 | 596,049,920 | 383.395 | 1.367 | 1.00 | Passed |
+| 0.75 | 596,049,920 | 449.954 | 1.605 | 1.00 | Failed: generation health |
+| 1.00 | 596,049,920 | 535.942 | 1.912 | 1.00 | Passed |
+| 1.25 | 596,049,920 | 665.984 | 2.375 | 1.00 | Failed: PPL ratio |
+
+Useful generation samples from passed candidates:
+
+- Alpha `0.25` explained pruning coherently as removing unnecessary connections
+  and neurons to improve efficiency.
+- Alpha `0.50` produced a plausible short explanation of pruning and sketched an
+  `add_numbers(a, b)` function task in natural language.
+- Alpha `1.00`, the tuned parent end of the task vector, still answered choice
+  probes 4/4, but some generations were more instruction-repetitive than alpha
+  `0.25` or `0.50`.
+
+Interpretation:
+
+- Task arithmetic gives a controllable same-shape cross-model merge path for
+  related checkpoints that share a base.
+- Alpha sweeps are necessary. Passing scalar choice probes alone is not enough;
+  alpha `0.75` hit acceptable PPL and choice accuracy but failed the generation
+  health gate.
+- This is a merge-plus-eval workflow, not a blind tensor operation.
+
+Post-audit smoke:
+
+- A patched `hf-task-merge` alpha `0.25` run was repeated after adding finite
+  alpha validation, duplicate-tag rejection, and tokenizer compatibility
+  reporting.
+- The Qwen base/tuned tokenizers had matching vocabulary length `151,669` and
+  matching vocab entries, with different special-token maps recorded in the
+  merge report.
+- The patched candidate reproduced the same metrics: mean PPL `321.469`, choice
+  accuracy `1.00`, and gate passed.
+
 ## Automated Gate Sweep
 
 A follow-up sweep used `hf-sweep-ffn` with:

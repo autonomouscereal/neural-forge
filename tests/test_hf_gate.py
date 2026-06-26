@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import pytest
+
 from neural_forge.hf_tools import gate_text_report
+from neural_forge.hf_tools import _assert_tokenizers_compatible
+from neural_forge.hf_tools import _ensure_unique_ratio_tags
+from neural_forge.hf_tools import _finite_float
+from neural_forge.hf_tools import _ratio_tag
 
 
 def _report(ppl: float, acc: float, continuation: str = " This is a healthy continuation with enough varied words.") -> dict:
@@ -29,3 +35,46 @@ def test_gate_text_report_rejects_blank_generation() -> None:
     assert verdict["passed"] is False
     assert any(check["name"] == "generation_health" and not check["passed"] for check in verdict["checks"])
 
+
+def test_ratio_tag_handles_alpha_values() -> None:
+    assert _ratio_tag(1.25) == "1p2500"
+    assert _ratio_tag(-0.5) == "m0p5000"
+
+
+def test_finite_float_rejects_nan_and_inf() -> None:
+    with pytest.raises(ValueError, match="alpha must be finite"):
+        _finite_float(float("nan"), "alpha")
+    with pytest.raises(ValueError, match="alpha must be finite"):
+        _finite_float(float("inf"), "alpha")
+
+
+def test_unique_ratio_tags_rejects_collisions() -> None:
+    with pytest.raises(ValueError, match="Duplicate alpha output tag"):
+        _ensure_unique_ratio_tags([0.123440, 0.123441], "alpha")
+
+
+class _Tokenizer:
+    def __init__(self, vocab: dict[str, int], special_tokens_map: dict[str, str] | None = None) -> None:
+        self._vocab = vocab
+        self.special_tokens_map = special_tokens_map or {"eos_token": "</s>"}
+
+    def __len__(self) -> int:
+        return len(self._vocab)
+
+    def get_vocab(self) -> dict[str, int]:
+        return self._vocab
+
+
+def test_tokenizer_compatibility_rejects_vocab_mismatch() -> None:
+    left = _Tokenizer({"hello": 0, "world": 1})
+    right = _Tokenizer({"hello": 0, "there": 1})
+    with pytest.raises(ValueError, match="vocabularies differ"):
+        _assert_tokenizers_compatible(left, right)
+
+
+def test_tokenizer_compatibility_reports_special_token_differences() -> None:
+    left = _Tokenizer({"hello": 0}, {"eos_token": "</s>"})
+    right = _Tokenizer({"hello": 0}, {"eos_token": "<|endoftext|>"})
+    report = _assert_tokenizers_compatible(left, right)
+    assert report["vocab_match"] is True
+    assert report["special_tokens_match"] is False

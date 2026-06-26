@@ -49,6 +49,7 @@ actual model survival from merely making tensor dimensions line up.
 Supported real-checkpoint surgery:
 
 - same-shape Hugging Face causal LM checkpoint averaging;
+- task-arithmetic Hugging Face merges with alpha sweeps;
 - Qwen/Gemma/Llama-style gated FFN intermediate resize by folding or copying
   channels;
 - calibration-aware gated FFN repair using ridge least squares on parent FFN

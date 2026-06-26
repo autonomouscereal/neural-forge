@@ -1,13 +1,14 @@
 # Neural Forge
 
 Neural Forge is a small, working toolkit for neural checkpoint shape surgery:
-shrinking dense models with neuron merging, expanding models with function-preserving
-width/depth growth, and merging multiple models into a requested target shape.
+shrinking dense models with neuron merging, expanding models with
+function-preserving width/depth growth, and merging multiple models into a
+requested target shape.
 
-This first release is intentionally scoped to dense feed-forward checkpoints.
-That is the right place to prove the mechanics because hidden neurons have an
-explicit axis: a row in one layer and the matching column in the next. Transformer
-MLP blocks and attention heads can be adapted onto the same primitives next.
+The dense feed-forward path is the clean-room core because hidden neurons have an
+explicit axis: a row in one layer and the matching column in the next. The repo
+also includes experimental Hugging Face causal-LM checkpoint surgery and a tiny
+native early-fusion multimodal training sandbox for real-model validation.
 
 ## What works now
 
@@ -20,6 +21,14 @@ MLP blocks and attention heads can be adapted onto the same primitives next.
   align hidden neurons by greedy cosine matching, then average or SLERP the weights.
 - `toy`: create tiny checkpoints for testing and experiments.
 - `inspect`: print architecture and parameter count.
+- `hf-merge` / `hf-task-merge`: same-shape Hugging Face causal-LM averaging and
+  task-arithmetic merge.
+- `hf-resize-ffn` / `hf-repair-ffn`: gated-MLP FFN shrink, expansion, and
+  calibration repair for Qwen/Gemma/Llama-like decoder blocks.
+- `hf-eval`, `hf-gate`, and sweep commands: behavior checks so shape-valid
+  checkpoints are not promoted blindly.
+- `native-vlm-demo`: tiny raw-patch plus text-token transformer for native
+  early-fusion multimodal experiments.
 
 ## Roadmap
 
@@ -71,7 +80,20 @@ Same-shape text-model merge:
 neural-forge hf-merge runs/qwen-merged `
   --models Qwen/Qwen3-0.6B-Base Qwen/Qwen3-0.6B `
   --dtype float16
+neural-forge hf-task-merge runs/qwen-task-alpha-075 `
+  --base-model Qwen/Qwen3-0.6B-Base `
+  --tuned-model Qwen/Qwen3-0.6B `
+  --alpha 0.75
+neural-forge hf-sweep-task runs/qwen-task-sweep `
+  --base-model Qwen/Qwen3-0.6B-Base `
+  --tuned-model Qwen/Qwen3-0.6B `
+  --alphas 0.25,0.5,0.75,1.0
 ```
+
+Task arithmetic defaults to `--dtype auto` and saves the base tokenizer after
+verifying that the tuned tokenizer has the same vocabulary. Special-token map
+differences are recorded in the merge report. Use an explicit dtype such as
+`--dtype float16` when you want smaller/faster validation artifacts.
 
 Gated-MLP FFN shrink or expansion for Qwen/Gemma/Llama-like decoder blocks:
 
