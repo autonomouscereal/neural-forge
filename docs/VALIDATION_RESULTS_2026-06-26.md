@@ -160,6 +160,116 @@ Interpretation:
   milestone should add sequential layer repair and/or short recovery training,
   then re-run the same gate.
 
+## Cross-Family Vocabulary Transplant
+
+The corrected cross-family path keeps a host runtime architecture and folds
+donor signal through shared decoded-token anchors into host embedding and
+lm-head rows. It does not average mismatched transformer blocks.
+
+SmolLM2 host with Qwen3 donor:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/xfamily_smollm2_qwen3_20260626
+```
+
+| Candidate | Params | Shared Anchors | Mean PPL | Choice Acc | Gate |
+|---|---:|---:|---:|---:|---|
+| SmolLM2-135M host | 134,515,008 | - | 347.405 | 0.50 | Baseline |
+| Qwen3-0.6B donor | 596,049,920 | - | 280.375 | 1.00 | Donor reference |
+| host <- donor alpha 0.01 | 134,515,008 | 31,977 | 344.662 | 0.50 | Passed |
+| host <- donor alpha 0.05 | 134,515,008 | 31,977 | 336.179 | 0.50 | Passed |
+| host <- donor alpha 0.10 | 134,515,008 | 31,977 | 334.584 | 0.50 | Passed |
+
+Pythia/GPT-NeoX host with SmolLM2 donor:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/xfamily_pythia_smollm2_small_alpha_20260626
+```
+
+| Candidate | Params | Shared Anchors | Mean PPL | Choice Acc | Gate |
+|---|---:|---:|---:|---:|---|
+| Pythia-160M host | 162,322,944 | - | 361.452 | 0.25 | Baseline |
+| host <- donor alpha 0.001 | 162,322,944 | 29,291 | 355.177 | 0.25 | Passed |
+| host <- donor alpha 0.005 | 162,322,944 | 29,291 | 367.867 | 0.25 | Passed |
+| host <- donor alpha 0.010 | 162,322,944 | 29,291 | 376.080 | 0.25 | Failed: generation health |
+| host <- donor alpha 0.020 | 162,322,944 | 29,291 | 413.958 | 0.25 | Passed |
+| host <- donor alpha 0.050 | 162,322,944 | 29,291 | 698.400 | 0.25 | Failed |
+| host <- donor alpha 0.100 | 162,322,944 | 29,291 | 4,178.032 | 0.25 | Failed |
+
+Interpretation:
+
+- Cross-family/tokenizer mismatch is now handled by an explicit anchor map and
+  ridge projection, not by pretending incompatible state dicts line up.
+- Alpha search is required. Pythia tolerated very small donor injection but
+  failed at larger alphas.
+- This is a constrained cross-family transplant, not yet a full donor-block
+  architecture merge.
+
+## Merge-First Width And Depth Folding
+
+After the pruning-first baseline failed, the Qwen3 run was repeated with
+merge/fold-first operations:
+
+- width: combined SwiGLU channel similarity over `gate_proj`, `up_proj`, and
+  `down_proj`, then average incoming gate/up paths and sum outgoing down paths;
+- depth: residual decoder layer groups are merged into a survivor layer, then
+  duplicate layer slots are removed.
+
+Width-only run:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen3_width_combined_20260626
+```
+
+| Candidate | Params | Shrink | Mean PPL | Choice Acc | Gate |
+|---|---:|---:|---:|---:|---|
+| Qwen3-0.6B-Base | 596,049,920 | - | 280.375 | 1.00 | Baseline |
+| FFN 0.9975 combined-cosine | 595,361,792 | 0.115% | 295.301 | 1.00 | Passed |
+| FFN 0.9950 combined-cosine | 594,759,680 | 0.216% | 294.778 | 1.00 | Passed |
+
+Depth-only run:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen3_layer_merge_20260626
+```
+
+| Candidate | Params | Shrink | Mean PPL | Choice Acc | Gate |
+|---|---:|---:|---:|---:|---|
+| average layers 13+14 | 580,318,976 | 2.64% | 282.380 | 0.75 | Passed |
+| fold layers 13+14 | 580,318,976 | 2.64% | 295.854 | 0.75 | Passed |
+| average layers 19+20 | 580,318,976 | 2.64% | 343.944 | 0.50 | Failed |
+| fold layers 19+20 | 580,318,976 | 2.64% | 317.273 | 0.50 | Failed |
+| average layers 8+9 and 19+20 | 564,588,032 | 5.28% | 319.927 | 0.25 | Failed |
+| fold layers 8+9 and 19+20 | 564,588,032 | 5.28% | 315.499 | 0.25 | Failed |
+
+Width plus depth chain:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen3_width_depth_combo_20260626
+```
+
+| Candidate | Params | Shrink | Mean PPL | Choice Acc | Gate |
+|---|---:|---:|---:|---:|---|
+| width 0.995 combined-cosine | 594,759,680 | 0.216% | 294.778 | 1.00 | Passed |
+| width 0.995 + average layers 13+14 | 579,074,816 | 2.848% | 305.656 | 0.75 | Passed |
+| width 0.995 + fold layers 13+14 | 579,074,816 | 2.848% | 320.186 | 1.00 | Passed |
+
+Useful generation samples from the combined pass:
+
+- pruning prompt: explained pruning as eliminating unnecessary connections and
+  neurons for efficient information processing;
+- Python prompt: generated a valid `add_numbers(a, b): return a + b` function;
+- merge-risk prompt: warned about loss of diversity/nuance when merging models.
+
+Interpretation:
+
+- The merge-first correction matters. The old down-only FFN fold failed even at
+  small ratios; the combined SwiGLU similarity fold passed at 0.995.
+- Depth folding is layer-location sensitive. Layer group `13+14` survived; later
+  and multi-group folds failed behavior gates.
+- The current proven checkpoint is modest compression, not arbitrary 70B->7B.
+  The safe workflow is search merge candidates, gate them, then iterate.
+
 ## Vision Parent Probe
 
 Vision model:

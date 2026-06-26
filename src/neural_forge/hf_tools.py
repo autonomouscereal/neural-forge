@@ -195,9 +195,11 @@ def resize_gated_ffn(
     target_intermediate_size: int | None = None,
     torch_dtype: str = "float16",
     trust_remote_code: bool = False,
-    assignment: str = "down-cosine",
+    assignment: str = "combined-cosine",
 ) -> dict[str, Any]:
     torch, transformers = _torch_and_transformers()
+    if assignment not in {"combined-cosine", "down-cosine", "round-robin", "topk"}:
+        raise ValueError("assignment must be combined-cosine, down-cosine, round-robin, or topk.")
     if ratio is None and target_intermediate_size is None:
         raise ValueError("Provide ratio or target_intermediate_size.")
     if ratio is not None and ratio <= 0:
@@ -345,6 +347,131 @@ def repair_gated_ffn_with_calibration(
     return report
 
 
+def merge_decoder_layers(
+    model_id_or_path: str,
+    output_dir: str | Path,
+    groups: Sequence[Sequence[int]],
+    torch_dtype: str = "float16",
+    trust_remote_code: bool = False,
+    method: str = "fold",
+) -> dict[str, Any]:
+    """Fold groups of residual decoder blocks into one block per group.
+
+    This is a merge-first depth reduction. The output keeps the source runtime
+    architecture and replaces each group with a merged copy of the first block.
+    """
+
+    if method not in {"fold", "average"}:
+        raise ValueError("method must be fold or average.")
+    normalized_groups = _normalize_layer_groups(groups)
+    torch, transformers = _torch_and_transformers()
+    dtype = _dtype_from_name(torch, torch_dtype)
+    model = transformers.AutoModelForCausalLM.from_pretrained(
+        model_id_or_path,
+        torch_dtype=dtype,
+        device_map="cpu",
+        trust_remote_code=trust_remote_code,
+    )
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_id_or_path, trust_remote_code=trust_remote_code)
+    parent, attr, layers = _decoder_layer_container(model)
+    layer_list = list(layers)
+    old_count = len(layer_list)
+    flat = [idx for group in normalized_groups for idx in group]
+    bad = sorted(idx for idx in flat if idx < 0 or idx >= old_count)
+    if bad:
+        raise ValueError(f"Layer indices out of range for {old_count} layers: {bad}")
+
+    group_by_start = {group[0]: group for group in normalized_groups}
+    folded_indices = {idx for group in normalized_groups for idx in group[1:]}
+    new_layers = []
+    merge_reports = []
+    for idx, layer in enumerate(layer_list):
+        if idx in folded_indices:
+            continue
+        group = group_by_start.get(idx)
+        if group is None:
+            new_layers.append(layer)
+            continue
+        merged_state = _merge_layer_state_dicts(torch, [layer_list[item].state_dict() for item in group], method=method)
+        layer.load_state_dict(merged_state, strict=True)
+        new_layers.append(layer)
+        merge_reports.append({"group": group, "survivor": idx, "folded": group[1:]})
+
+    setattr(parent, attr, torch.nn.ModuleList(new_layers))
+    _merge_config_layer_metadata(model.config, normalized_groups, old_count)
+    _update_layer_count(model.config, len(new_layers))
+
+    target = Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    model.save_pretrained(target, safe_serialization=True)
+    tokenizer.save_pretrained(target)
+    report = {
+        "operation": "merge_decoder_layers",
+        "source": model_id_or_path,
+        "output_dir": str(target),
+        "old_layer_count": old_count,
+        "new_layer_count": len(new_layers),
+        "groups": merge_reports,
+        "method": method,
+        "torch_dtype": torch_dtype,
+        "param_count": sum(p.numel() for p in model.parameters()),
+    }
+    _write_json(target / "neural_forge_layer_merge_report.json", report)
+    return report
+
+
+def drop_decoder_layers(
+    model_id_or_path: str,
+    output_dir: str | Path,
+    drop_layers: Sequence[int],
+    torch_dtype: str = "float16",
+    trust_remote_code: bool = False,
+) -> dict[str, Any]:
+    """Remove selected residual decoder blocks from an HF causal LM."""
+
+    torch, transformers = _torch_and_transformers()
+    dtype = _dtype_from_name(torch, torch_dtype)
+    model = transformers.AutoModelForCausalLM.from_pretrained(
+        model_id_or_path,
+        torch_dtype=dtype,
+        device_map="cpu",
+        trust_remote_code=trust_remote_code,
+    )
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_id_or_path, trust_remote_code=trust_remote_code)
+    parent, attr, layers = _decoder_layer_container(model)
+    old_count = len(layers)
+    drop_set = {int(idx) for idx in drop_layers}
+    if not drop_set:
+        raise ValueError("drop_layers must contain at least one layer index.")
+    bad = sorted(idx for idx in drop_set if idx < 0 or idx >= old_count)
+    if bad:
+        raise ValueError(f"Layer indices out of range for {old_count} layers: {bad}")
+    if len(drop_set) >= old_count:
+        raise ValueError("Cannot drop every decoder layer.")
+
+    kept_layers = [layer for idx, layer in enumerate(layers) if idx not in drop_set]
+    setattr(parent, attr, torch.nn.ModuleList(kept_layers))
+    _drop_config_layer_metadata(model.config, drop_set, old_count)
+    _update_layer_count(model.config, len(kept_layers))
+
+    target = Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    model.save_pretrained(target, safe_serialization=True)
+    tokenizer.save_pretrained(target)
+    report = {
+        "operation": "drop_decoder_layers",
+        "source": model_id_or_path,
+        "output_dir": str(target),
+        "old_layer_count": old_count,
+        "new_layer_count": len(kept_layers),
+        "dropped_layers": sorted(drop_set),
+        "torch_dtype": torch_dtype,
+        "param_count": sum(p.numel() for p in model.parameters()),
+    }
+    _write_json(target / "neural_forge_layer_drop_report.json", report)
+    return report
+
+
 def evaluate_text_model(
     model_id_or_path: str,
     output_file: str | Path,
@@ -486,6 +613,7 @@ def sweep_gated_ffn_resize(
     repair_shrinks: bool = False,
     repair_ridge: float = 1e-3,
     repair_max_tokens: int = 512,
+    assignment: str = "combined-cosine",
 ) -> dict[str, Any]:
     """Resize a source model across ratios, evaluate each candidate, and gate it."""
 
@@ -524,6 +652,7 @@ def sweep_gated_ffn_resize(
             ratio=ratio_value,
             torch_dtype=torch_dtype,
             trust_remote_code=trust_remote_code,
+            assignment=assignment,
         )
         repair_report = None
         eval_dir = candidate_dir
@@ -587,6 +716,7 @@ def sweep_gated_ffn_resize(
         "repair_shrinks": repair_shrinks,
         "repair_ridge": repair_ridge,
         "repair_max_tokens": repair_max_tokens,
+        "assignment": assignment,
         "candidates": candidates,
         "passed_candidates": [item for item in candidates if item["passed"]],
     }
@@ -1035,18 +1165,31 @@ def _relative_mlp_error(torch, mlp, inputs, targets) -> float:
 
 
 def _decoder_layers(model) -> list[Any]:
+    try:
+        layers = list(_decoder_layer_container(model)[2])
+    except ValueError:
+        return []
+    if layers and hasattr(layers[0], "mlp") and hasattr(layers[0].mlp, "gate_proj"):
+        return layers
+    return []
+
+
+def _decoder_layer_container(model):
     candidates = [
-        getattr(getattr(model, "model", None), "layers", None),
-        getattr(getattr(getattr(model, "language_model", None), "model", None), "layers", None),
-        getattr(getattr(model, "transformer", None), "h", None),
+        (getattr(model, "model", None), "layers"),
+        (getattr(getattr(model, "language_model", None), "model", None), "layers"),
+        (getattr(model, "transformer", None), "h"),
     ]
-    for layers in candidates:
+    for parent, attr in candidates:
+        if parent is None:
+            continue
+        layers = getattr(parent, attr, None)
         if layers is None:
             continue
         layer_list = list(layers)
-        if layer_list and hasattr(layer_list[0], "mlp") and hasattr(layer_list[0].mlp, "gate_proj"):
-            return layer_list
-    return []
+        if layer_list:
+            return parent, attr, layers
+    raise ValueError("Could not find decoder layer container on model.")
 
 
 def _update_intermediate_size(config, new_size: int) -> None:
@@ -1057,7 +1200,97 @@ def _update_intermediate_size(config, new_size: int) -> None:
         _update_intermediate_size(config.text_config, new_size)
 
 
-def _shrink_gated_mlp_layer(torch, layer, new_size: int, assignment: str = "down-cosine") -> None:
+def _update_layer_count(config, new_count: int) -> None:
+    for attr in ("num_hidden_layers", "n_layer", "num_layers"):
+        if hasattr(config, attr):
+            setattr(config, attr, int(new_count))
+    if hasattr(config, "text_config"):
+        _update_layer_count(config.text_config, new_count)
+
+
+def _normalize_layer_groups(groups: Sequence[Sequence[int]]) -> list[list[int]]:
+    normalized = [sorted({int(idx) for idx in group}) for group in groups]
+    normalized = [group for group in normalized if group]
+    if not normalized:
+        raise ValueError("Need at least one layer group.")
+    for group in normalized:
+        if len(group) < 2:
+            raise ValueError("Each merge group must contain at least two layers.")
+    seen: set[int] = set()
+    for group in normalized:
+        overlap = sorted(seen & set(group))
+        if overlap:
+            raise ValueError(f"Layer merge groups overlap at indices: {overlap}")
+        seen.update(group)
+    return sorted(normalized, key=lambda group: group[0])
+
+
+def _merge_layer_state_dicts(torch, states: Sequence[dict[str, Any]], method: str) -> dict[str, Any]:
+    if not states:
+        raise ValueError("Need at least one layer state.")
+    keys = set(states[0])
+    for state in states[1:]:
+        if set(state) != keys:
+            raise ValueError("Layer state dict keys differ; cannot merge these layers.")
+
+    merged = {}
+    count = float(len(states))
+    for name in states[0]:
+        first = states[0][name]
+        if not first.is_floating_point():
+            merged[name] = first.detach().clone()
+            continue
+        tensors = [state[name].detach().cpu().to(torch.float32) for state in states]
+        shape = tuple(tensors[0].shape)
+        if any(tuple(tensor.shape) != shape for tensor in tensors):
+            raise ValueError(f"Layer parameter shape mismatch for {name}.")
+        if method == "fold" and _is_residual_output_param(name):
+            merged_tensor = sum(tensors)
+        else:
+            merged_tensor = sum(tensors) / count
+        merged[name] = merged_tensor.to(first.dtype)
+    return merged
+
+
+def _is_residual_output_param(name: str) -> bool:
+    output_markers = (
+        "o_proj.",
+        "down_proj.",
+        "attention.dense.",
+        "self_attention.dense.",
+        "dense_4h_to_h.",
+    )
+    return any(marker in name for marker in output_markers)
+
+
+def _drop_config_layer_metadata(config, drop_set: set[int], old_count: int) -> None:
+    layer_types = getattr(config, "layer_types", None)
+    if isinstance(layer_types, list) and len(layer_types) == old_count:
+        config.layer_types = [value for idx, value in enumerate(layer_types) if idx not in drop_set]
+    if hasattr(config, "text_config"):
+        _drop_config_layer_metadata(config.text_config, drop_set, old_count)
+
+
+def _merge_config_layer_metadata(config, groups: Sequence[Sequence[int]], old_count: int) -> None:
+    group_by_start = {group[0]: group for group in groups}
+    folded_indices = {idx for group in groups for idx in group[1:]}
+    layer_types = getattr(config, "layer_types", None)
+    if isinstance(layer_types, list) and len(layer_types) == old_count:
+        merged_types = []
+        for idx, value in enumerate(layer_types):
+            if idx in folded_indices:
+                continue
+            group = group_by_start.get(idx)
+            if group is None:
+                merged_types.append(value)
+            else:
+                merged_types.append(value)
+        config.layer_types = merged_types
+    if hasattr(config, "text_config"):
+        _merge_config_layer_metadata(config.text_config, groups, old_count)
+
+
+def _shrink_gated_mlp_layer(torch, layer, new_size: int, assignment: str = "combined-cosine") -> None:
     gate = layer.mlp.gate_proj.weight.data.detach().cpu().to(torch.float32)
     up = layer.mlp.up_proj.weight.data.detach().cpu().to(torch.float32)
     down = layer.mlp.down_proj.weight.data.detach().cpu().to(torch.float32)
@@ -1077,18 +1310,24 @@ def _shrink_gated_mlp_layer(torch, layer, new_size: int, assignment: str = "down
     new_down = down[:, survivor_idx].clone()
     counts = torch.ones(new_size, dtype=torch.float32)
 
-    if dropped_idx.numel() > 0:
+    if dropped_idx.numel() > 0 and assignment != "topk":
         if assignment == "round-robin":
             assigned = torch.arange(dropped_idx.numel()) % new_size
-        else:
-            surv_feat = _row_normalize(down[:, survivor_idx].T)
-            drop_feat = _row_normalize(down[:, dropped_idx].T)
+        elif assignment in {"combined-cosine", "down-cosine"}:
+            if assignment == "combined-cosine":
+                surv_feat = _gated_channel_features(torch, gate, up, down, survivor_idx)
+                drop_feat = _gated_channel_features(torch, gate, up, down, dropped_idx)
+            else:
+                surv_feat = _row_normalize(down[:, survivor_idx].T)
+                drop_feat = _row_normalize(down[:, dropped_idx].T)
             assigned = []
             chunk = 128
             for start in range(0, drop_feat.shape[0], chunk):
                 sims = drop_feat[start : start + chunk] @ surv_feat.T
                 assigned.append(torch.argmax(sims, dim=1))
             assigned = torch.cat(assigned, dim=0)
+        else:
+            raise ValueError("assignment must be combined-cosine, down-cosine, round-robin, or topk.")
         for source_pos, target_pos in zip(dropped_idx.tolist(), assigned.tolist()):
             count = counts[target_pos]
             new_gate[target_pos] = (new_gate[target_pos] * count + gate[source_pos]) / (count + 1.0)
@@ -1145,6 +1384,15 @@ def _replace_linear(torch, linear, new_weight, axis: str) -> None:
 
 def _row_normalize(torch_tensor):
     return torch_tensor / torch_tensor.norm(dim=1, keepdim=True).clamp_min(1e-12)
+
+
+def _gated_channel_features(torch, gate, up, down, indices):
+    parts = [
+        _row_normalize(gate[indices]),
+        _row_normalize(up[indices]),
+        _row_normalize(down[:, indices].T),
+    ]
+    return _row_normalize(torch.cat(parts, dim=1))
 
 
 def _perplexity(torch, model, tokenizer, text: str, device: str) -> float:

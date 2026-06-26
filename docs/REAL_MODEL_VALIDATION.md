@@ -35,7 +35,7 @@ Minimum useful evidence:
 
 - parent models load and generate;
 - merged model loads and generates;
-- FFN-resized model loads and generates;
+- FFN-width-folded and/or depth-folded model loads and generates;
 - perplexity and choice probes do not collapse to nonsense;
 - `hf-gate` passes for any candidate being called safe;
 - VLM probe produces grounded text for synthetic images.
@@ -50,10 +50,14 @@ Supported real-checkpoint surgery:
 
 - same-shape Hugging Face causal LM checkpoint averaging;
 - task-arithmetic Hugging Face merges with alpha sweeps;
-- Qwen/Gemma/Llama-style gated FFN intermediate resize by folding or copying
-  channels;
+- Qwen/Gemma/Llama-style gated FFN intermediate width folding with combined
+  SwiGLU channel similarity;
+- residual decoder layer group folding with `hf-merge-layers`;
+- constrained cross-family vocabulary/embedding/lm-head transplant with
+  `hf-xfamily-vocab-merge` and `hf-sweep-xfamily`;
 - calibration-aware gated FFN repair using ridge least squares on parent FFN
   inputs/outputs;
+- lightweight same-tokenizer recovery training with held-out eval prompts;
 - lightweight causal LM behavior probes;
 - report gates and FFN resize sweeps that reject unsafe candidates;
 - small VLM image-description/OCR sanity probes.
@@ -67,9 +71,13 @@ Supported real-checkpoint surgery:
 Not yet supported:
 
 - direct cross-architecture merge of Qwen + Gemma + LFM into one valid decoder;
+- arbitrary large-ratio shrink to a requested parameter count with guaranteed
+  behavior retention;
 - untrained native vision grafting that magically understands pixels;
-- aggressive compression without calibration/recovery training.
+- aggressive compression without merge search, calibration, and recovery
+  training.
 
-The safe next step is improving the recovery path: sequential activation repair
-after FFN folding, larger real multimodal datasets for the graft path, and
-behavior gates that score both text retention and grounded multimodal answers.
+The safe next step is improving the search path: score more layer-pair and
+channel-fold candidates, add activation-aware sequential repair after each fold,
+and broaden behavior gates for both text retention and grounded multimodal
+answers.

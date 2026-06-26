@@ -23,8 +23,13 @@ native early-fusion multimodal training sandbox for real-model validation.
 - `inspect`: print architecture and parameter count.
 - `hf-merge` / `hf-task-merge`: same-shape Hugging Face causal-LM averaging and
   task-arithmetic merge.
-- `hf-resize-ffn` / `hf-repair-ffn`: gated-MLP FFN shrink, expansion, and
-  calibration repair for Qwen/Gemma/Llama-like decoder blocks.
+- `hf-resize-ffn` / `hf-repair-ffn`: gated-MLP FFN width merge/fold,
+  expansion, and calibration repair for Qwen/Gemma/Llama-like decoder blocks.
+- `hf-merge-layers`: merge/fold residual decoder layer groups before reducing
+  depth.
+- `hf-xfamily-vocab-merge` / `hf-sweep-xfamily`: constrained cross-family
+  embedding/lm-head transplant through shared decoded-token anchors.
+- `hf-recover`: lightweight same-tokenizer KD/LM recovery after surgery.
 - `hf-eval`, `hf-gate`, and sweep commands: behavior checks so shape-valid
   checkpoints are not promoted blindly.
 - `native-vlm-demo`: tiny raw-patch plus text-token transformer for native
@@ -97,11 +102,31 @@ verifying that the tuned tokenizer has the same vocabulary. Special-token map
 differences are recorded in the merge report. Use an explicit dtype such as
 `--dtype float16` when you want smaller/faster validation artifacts.
 
-Gated-MLP FFN shrink or expansion for Qwen/Gemma/Llama-like decoder blocks:
+Merge-first FFN width fold or expansion for Qwen/Gemma/Llama-like decoder
+blocks:
 
 ```powershell
-neural-forge hf-resize-ffn runs/qwen-merged runs/qwen-merged-shrunk --ratio 0.95
+neural-forge hf-resize-ffn Qwen/Qwen3-0.6B-Base runs/qwen-width-0995 `
+  --ratio 0.995 `
+  --assignment combined-cosine
 neural-forge hf-repair-ffn runs/qwen-merged runs/qwen-merged-shrunk runs/qwen-merged-shrunk-repaired
+```
+
+Merge-first depth fold:
+
+```powershell
+neural-forge hf-merge-layers runs/qwen-width-0995 runs/qwen-width-depth `
+  --groups 13+14 `
+  --method average
+```
+
+Cross-family host/donor vocabulary transplant:
+
+```powershell
+neural-forge hf-sweep-xfamily runs/pythia-smollm2-xfamily `
+  --host-model EleutherAI/pythia-160m `
+  --donor-model HuggingFaceTB/SmolLM2-135M `
+  --alphas 0.001,0.005,0.01,0.02
 ```
 
 Behavior probes:

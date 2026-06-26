@@ -95,7 +95,11 @@ def build_parser() -> argparse.ArgumentParser:
     hf_resize.add_argument("--target-intermediate-size", type=int)
     hf_resize.add_argument("--dtype", default="float16")
     hf_resize.add_argument("--trust-remote-code", action="store_true")
-    hf_resize.add_argument("--assignment", choices=["down-cosine", "round-robin"], default="down-cosine")
+    hf_resize.add_argument(
+        "--assignment",
+        choices=["combined-cosine", "down-cosine", "round-robin", "topk"],
+        default="combined-cosine",
+    )
     hf_resize.set_defaults(func=cmd_hf_resize)
 
     hf_repair = sub.add_parser("hf-repair-ffn", help="Ridge-repair a resized gated FFN model against a source model.")
@@ -109,6 +113,23 @@ def build_parser() -> argparse.ArgumentParser:
     hf_repair.add_argument("--max-length", type=int, default=128)
     hf_repair.add_argument("--max-tokens-per-layer", type=int, default=512)
     hf_repair.set_defaults(func=cmd_hf_repair)
+
+    hf_merge_layers = sub.add_parser("hf-merge-layers", help="Merge/fold residual decoder layer groups before reducing depth.")
+    hf_merge_layers.add_argument("model")
+    hf_merge_layers.add_argument("output")
+    hf_merge_layers.add_argument("--groups", required=True, help="Comma-separated groups, e.g. 14+15,20+21.")
+    hf_merge_layers.add_argument("--method", choices=["fold", "average"], default="fold")
+    hf_merge_layers.add_argument("--dtype", default="float16")
+    hf_merge_layers.add_argument("--trust-remote-code", action="store_true")
+    hf_merge_layers.set_defaults(func=cmd_hf_merge_layers)
+
+    hf_drop_layers = sub.add_parser("hf-drop-layers", help="Drop selected residual decoder layers from an HF causal LM.")
+    hf_drop_layers.add_argument("model")
+    hf_drop_layers.add_argument("output")
+    hf_drop_layers.add_argument("--layers", required=True, help="Comma-separated zero-based layer indices to drop.")
+    hf_drop_layers.add_argument("--dtype", default="float16")
+    hf_drop_layers.add_argument("--trust-remote-code", action="store_true")
+    hf_drop_layers.set_defaults(func=cmd_hf_drop_layers)
 
     hf_eval = sub.add_parser("hf-eval", help="Run lightweight behavior probes for an HF causal LM.")
     hf_eval.add_argument("model")
@@ -145,6 +166,11 @@ def build_parser() -> argparse.ArgumentParser:
     hf_sweep.add_argument("--repair-shrinks", action="store_true")
     hf_sweep.add_argument("--repair-ridge", type=float, default=1e-3)
     hf_sweep.add_argument("--repair-max-tokens", type=int, default=512)
+    hf_sweep.add_argument(
+        "--assignment",
+        choices=["combined-cosine", "down-cosine", "round-robin", "topk"],
+        default="combined-cosine",
+    )
     hf_sweep.set_defaults(func=cmd_hf_sweep)
 
     hf_task_sweep = sub.add_parser("hf-sweep-task", help="Sweep task-arithmetic alphas, evaluate candidates, and gate results.")
@@ -161,6 +187,52 @@ def build_parser() -> argparse.ArgumentParser:
     hf_task_sweep.add_argument("--max-accuracy-drop", type=float, default=0.25)
     hf_task_sweep.add_argument("--min-choice-accuracy", type=float, default=0.75)
     hf_task_sweep.set_defaults(func=cmd_hf_task_sweep)
+
+    xfamily = sub.add_parser("hf-xfamily-vocab-merge", help="Blend donor embedding/lm-head signal into a host HF architecture.")
+    xfamily.add_argument("output")
+    xfamily.add_argument("--host-model", required=True)
+    xfamily.add_argument("--donor-model", required=True)
+    xfamily.add_argument("--alpha", type=float, default=0.05)
+    xfamily.add_argument("--ridge", type=float, default=1e-3)
+    xfamily.add_argument("--max-anchors", type=int, default=50_000)
+    xfamily.add_argument("--dtype", default="float16")
+    xfamily.add_argument("--trust-remote-code", action="store_true")
+    xfamily.set_defaults(func=cmd_hf_xfamily_vocab_merge)
+
+    xfamily_sweep = sub.add_parser("hf-sweep-xfamily", help="Sweep cross-family vocab-transplant alphas, evaluate, and gate.")
+    xfamily_sweep.add_argument("output_dir")
+    xfamily_sweep.add_argument("--host-model", required=True)
+    xfamily_sweep.add_argument("--donor-model", required=True)
+    xfamily_sweep.add_argument("--alphas", required=True, help="Comma-separated alphas, e.g. 0.005,0.01,0.05.")
+    xfamily_sweep.add_argument("--baseline-report")
+    xfamily_sweep.add_argument("--ridge", type=float, default=1e-3)
+    xfamily_sweep.add_argument("--max-anchors", type=int, default=50_000)
+    xfamily_sweep.add_argument("--dtype", default="float16")
+    xfamily_sweep.add_argument("--device", default="cuda:0")
+    xfamily_sweep.add_argument("--trust-remote-code", action="store_true")
+    xfamily_sweep.add_argument("--max-new-tokens", type=int, default=80)
+    xfamily_sweep.add_argument("--max-ppl-ratio", type=float, default=1.5)
+    xfamily_sweep.add_argument("--max-accuracy-drop", type=float, default=0.25)
+    xfamily_sweep.add_argument("--min-choice-accuracy", type=float, default=0.5)
+    xfamily_sweep.set_defaults(func=cmd_hf_xfamily_sweep)
+
+    recover = sub.add_parser("hf-recover", help="Run lightweight same-tokenizer recovery training after HF surgery.")
+    recover.add_argument("source_model")
+    recover.add_argument("candidate_model")
+    recover.add_argument("output")
+    recover.add_argument("--steps", type=int, default=80)
+    recover.add_argument("--batch-size", type=int, default=1)
+    recover.add_argument("--max-length", type=int, default=96)
+    recover.add_argument("--lr", type=float, default=5e-5)
+    recover.add_argument("--kd-weight", type=float, default=0.5)
+    recover.add_argument("--lm-weight", type=float, default=0.5)
+    recover.add_argument("--temperature", type=float, default=2.0)
+    recover.add_argument("--train-scope", default="all")
+    recover.add_argument("--dtype", default="float32")
+    recover.add_argument("--device", default="cuda:0")
+    recover.add_argument("--trust-remote-code", action="store_true")
+    recover.add_argument("--grad-clip", type=float, default=1.0)
+    recover.set_defaults(func=cmd_hf_recover)
 
     vision = sub.add_parser("vision-probe", help="Run simple image-description/OCR probes for an HF vision-language model.")
     vision.add_argument("model")
@@ -327,6 +399,32 @@ def cmd_hf_repair(args: argparse.Namespace) -> dict[str, object]:
     )
 
 
+def cmd_hf_merge_layers(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_tools import merge_decoder_layers
+
+    return merge_decoder_layers(
+        model_id_or_path=args.model,
+        output_dir=args.output,
+        groups=_parse_layer_groups(args.groups),
+        torch_dtype=args.dtype,
+        trust_remote_code=args.trust_remote_code,
+        method=args.method,
+    )
+
+
+def cmd_hf_drop_layers(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_tools import drop_decoder_layers
+
+    layers = [int(part.strip()) for part in args.layers.split(",") if part.strip()]
+    return drop_decoder_layers(
+        model_id_or_path=args.model,
+        output_dir=args.output,
+        drop_layers=layers,
+        torch_dtype=args.dtype,
+        trust_remote_code=args.trust_remote_code,
+    )
+
+
 def cmd_hf_eval(args: argparse.Namespace) -> dict[str, object]:
     from neural_forge.hf_tools import evaluate_text_model
 
@@ -374,6 +472,7 @@ def cmd_hf_sweep(args: argparse.Namespace) -> dict[str, object]:
         repair_shrinks=args.repair_shrinks,
         repair_ridge=args.repair_ridge,
         repair_max_tokens=args.repair_max_tokens,
+        assignment=args.assignment,
     )
 
 
@@ -394,6 +493,65 @@ def cmd_hf_task_sweep(args: argparse.Namespace) -> dict[str, object]:
         max_ppl_ratio=args.max_ppl_ratio,
         max_accuracy_drop=args.max_accuracy_drop,
         min_choice_accuracy=args.min_choice_accuracy,
+    )
+
+
+def cmd_hf_xfamily_vocab_merge(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_xfamily import cross_family_vocab_merge
+
+    return cross_family_vocab_merge(
+        host_model=args.host_model,
+        donor_model=args.donor_model,
+        output_dir=args.output,
+        alpha=args.alpha,
+        ridge=args.ridge,
+        max_anchors=args.max_anchors,
+        torch_dtype=args.dtype,
+        trust_remote_code=args.trust_remote_code,
+    )
+
+
+def cmd_hf_xfamily_sweep(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_xfamily import sweep_cross_family_vocab_merge
+
+    alphas = [float(part.strip()) for part in args.alphas.split(",") if part.strip()]
+    return sweep_cross_family_vocab_merge(
+        host_model=args.host_model,
+        donor_model=args.donor_model,
+        output_dir=args.output_dir,
+        alphas=alphas,
+        baseline_report=args.baseline_report,
+        ridge=args.ridge,
+        max_anchors=args.max_anchors,
+        torch_dtype=args.dtype,
+        device=args.device,
+        trust_remote_code=args.trust_remote_code,
+        max_new_tokens=args.max_new_tokens,
+        max_ppl_ratio=args.max_ppl_ratio,
+        max_accuracy_drop=args.max_accuracy_drop,
+        min_choice_accuracy=args.min_choice_accuracy,
+    )
+
+
+def cmd_hf_recover(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_recovery import recover_causal_lm
+
+    return recover_causal_lm(
+        source_model=args.source_model,
+        candidate_model=args.candidate_model,
+        output_dir=args.output,
+        steps=args.steps,
+        batch_size=args.batch_size,
+        max_length=args.max_length,
+        lr=args.lr,
+        kd_weight=args.kd_weight,
+        lm_weight=args.lm_weight,
+        temperature=args.temperature,
+        train_scope=args.train_scope,
+        torch_dtype=args.dtype,
+        device=args.device,
+        trust_remote_code=args.trust_remote_code,
+        grad_clip=args.grad_clip,
     )
 
 
@@ -472,6 +630,17 @@ def _resolve_widths(model, widths_text: str | None, target_params: int | None, m
     if target_params:
         return plan_widths_for_target_params(model, target_params, min_width=min_width).hidden_widths
     raise ValueError("Provide --widths or --target-params.")
+
+
+def _parse_layer_groups(text: str) -> list[list[int]]:
+    groups = []
+    for group_text in text.split(","):
+        parts = [part.strip() for part in group_text.split("+") if part.strip()]
+        if parts:
+            groups.append([int(part) for part in parts])
+    if not groups:
+        raise ValueError("Need at least one layer merge group.")
+    return groups
 
 
 if __name__ == "__main__":
