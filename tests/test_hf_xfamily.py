@@ -12,7 +12,10 @@ from neural_forge.hf_tools import _layer_groups_tag
 from neural_forge.hf_tools import _normalize_layer_groups
 from neural_forge.hf_xfamily import _canonical_token
 from neural_forge.hf_xfamily import _canonical_token_map
+from neural_forge.hf_xfamily import _mlp_spec
+from neural_forge.hf_xfamily import _proportional_index
 from neural_forge.hf_xfamily import sweep_cross_family_vocab_merge
+from neural_forge.hf_xfamily import sweep_cross_family_mlp_merge
 
 
 class _Tokenizer:
@@ -30,6 +33,11 @@ class _Tokenizer:
 
     def get_vocab(self) -> dict[str, int]:
         return {text: idx for idx, text in enumerate(self._decoded)}
+
+
+class _Obj:
+    def __init__(self, **kwargs) -> None:
+        self.__dict__.update(kwargs)
 
 
 def test_canonical_token_normalizes_common_tokenizer_markers() -> None:
@@ -58,6 +66,16 @@ def test_recovery_defaults_do_not_reuse_evaluation_prompts() -> None:
 def test_cross_family_sweep_rejects_duplicate_alpha_tags(tmp_path) -> None:
     with pytest.raises(ValueError, match="Duplicate alpha output tag"):
         sweep_cross_family_vocab_merge(
+            host_model="host",
+            donor_model="donor",
+            output_dir=tmp_path,
+            alphas=[0.1, 0.10001],
+        )
+
+
+def test_cross_family_mlp_sweep_rejects_duplicate_alpha_tags(tmp_path) -> None:
+    with pytest.raises(ValueError, match="Duplicate alpha output tag"):
+        sweep_cross_family_mlp_merge(
             host_model="host",
             donor_model="donor",
             output_dir=tmp_path,
@@ -95,6 +113,22 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.02",
         ]
     )
+    xfamily_mlp_args = parser.parse_args(
+        [
+            "hf-sweep-xfamily-mlp",
+            "out",
+            "--host-model",
+            "host",
+            "--donor-model",
+            "donor",
+            "--alphas",
+            "0.001,0.005",
+            "--max-host-channels",
+            "128",
+            "--max-donor-channels",
+            "256",
+        ]
+    )
     assert sweep_args.output_dir == "out"
     assert resize_args.assignment == "topk"
     assert merge_layer_args.groups == "3+4,7+8"
@@ -102,6 +136,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert search_args.width_ratios == "0.9975,0.995"
     assert search_args.layer_groups == ["13+14"]
     assert search_args.target_shrink == 0.02
+    assert xfamily_mlp_args.max_host_channels == 128
+    assert xfamily_mlp_args.max_donor_channels == 256
 
 
 def test_parse_layer_groups() -> None:
@@ -119,3 +155,17 @@ def test_layer_group_tags_are_stable() -> None:
     groups = _normalize_layer_groups([[14, 13], [20, 19]])
     assert _layer_groups_tag(groups) == "13-14_19-20"
     assert _layer_groups_for_report(groups) == [[13, 14], [19, 20]]
+
+
+def test_proportional_layer_index_maps_depths() -> None:
+    assert [_proportional_index(idx, 4, 2) for idx in range(4)] == [0, 0, 1, 1]
+    assert [_proportional_index(idx, 3, 5) for idx in range(3)] == [0, 2, 4]
+
+
+def test_mlp_spec_detects_lfm_feed_forward_names() -> None:
+    layer = _Obj(feed_forward=_Obj(w1=object(), w3=object(), w2=object()))
+    spec = _mlp_spec(layer)
+    assert spec is not None
+    assert spec["kind"] == "gated"
+    assert spec["input_names"] == ["w1", "w3"]
+    assert spec["output_name"] == "w2"

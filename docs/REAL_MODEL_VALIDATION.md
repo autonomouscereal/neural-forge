@@ -56,6 +56,9 @@ Supported real-checkpoint surgery:
 - automated merge-first width/depth candidate search with `hf-search-compress`;
 - constrained cross-family vocabulary/embedding/lm-head transplant with
   `hf-xfamily-vocab-merge` and `hf-sweep-xfamily`;
+- constrained cross-family MLP-channel transplant with `hf-xfamily-mlp-merge`
+  and `hf-sweep-xfamily-mlp`, including LFM2.5 `feed_forward.w1/w3/w2`
+  layers, Qwen/Llama-style gated MLPs, and GPT-NeoX/Pythia dense MLPs;
 - calibration-aware gated FFN repair using ridge least squares on parent FFN
   inputs/outputs;
 - lightweight same-tokenizer recovery training with held-out eval prompts;

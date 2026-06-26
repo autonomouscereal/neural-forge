@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from neural_forge.hf_tools import (
+    _decoder_layer_container,
     _dtype_from_name,
     _ensure_unique_ratio_tags,
     _finite_float,
@@ -236,6 +237,245 @@ def sweep_cross_family_vocab_merge(
     return summary
 
 
+def cross_family_mlp_merge(
+    host_model: str,
+    donor_model: str,
+    output_dir: str | Path,
+    alpha: float = 0.01,
+    vocab_alpha: float | None = None,
+    ridge: float = 1e-3,
+    max_anchors: int = 50_000,
+    max_host_channels: int = 512,
+    max_donor_channels: int = 512,
+    torch_dtype: str = "float16",
+    trust_remote_code: bool = False,
+) -> dict[str, Any]:
+    """Merge donor MLP channel signal into a host architecture.
+
+    The output remains a normal host checkpoint. Shared decoded-token anchors
+    solve a donor-hidden -> host-hidden projection. Donor FFN channels are then
+    projected into host hidden space, assigned to similar host FFN channels, and
+    blended into the host MLP weights. This is intentionally merge-first: no host
+    channels are cut here.
+    """
+
+    alpha_value = _bounded_alpha(alpha, "alpha")
+    vocab_alpha_value = alpha_value if vocab_alpha is None else _bounded_alpha(vocab_alpha, "vocab_alpha")
+    if ridge < 0:
+        raise ValueError("ridge must be non-negative.")
+    if max_anchors <= 0:
+        raise ValueError("max_anchors must be positive.")
+    if max_host_channels <= 0 or max_donor_channels <= 0:
+        raise ValueError("max channel limits must be positive.")
+
+    torch, transformers = _torch_and_transformers()
+    dtype = _dtype_from_name(torch, torch_dtype)
+    host = transformers.AutoModelForCausalLM.from_pretrained(
+        host_model,
+        torch_dtype=dtype,
+        device_map="cpu",
+        trust_remote_code=trust_remote_code,
+    )
+    donor = transformers.AutoModelForCausalLM.from_pretrained(
+        donor_model,
+        torch_dtype=dtype,
+        device_map="cpu",
+        trust_remote_code=trust_remote_code,
+    )
+    host_tokenizer = transformers.AutoTokenizer.from_pretrained(host_model, trust_remote_code=trust_remote_code)
+    donor_tokenizer = transformers.AutoTokenizer.from_pretrained(donor_model, trust_remote_code=trust_remote_code)
+
+    anchors, host_map, donor_map = _shared_anchor_tokens(host_tokenizer, donor_tokenizer, max_anchors)
+    torch_anchor_idx_host = torch.tensor([host_map[token] for token in anchors], dtype=torch.long)
+    torch_anchor_idx_donor = torch.tensor([donor_map[token] for token in anchors], dtype=torch.long)
+    host_emb = host.get_input_embeddings().weight.data.detach().cpu().to(torch.float32)
+    donor_emb = donor.get_input_embeddings().weight.data.detach().cpu().to(torch.float32)
+    hidden_map = _ridge_map(torch, donor_emb[torch_anchor_idx_donor], host_emb[torch_anchor_idx_host], ridge)
+
+    if vocab_alpha_value > 0:
+        projected_emb = donor_emb[torch_anchor_idx_donor].matmul(hidden_map)
+        host_emb[torch_anchor_idx_host] = (1.0 - vocab_alpha_value) * host_emb[torch_anchor_idx_host] + vocab_alpha_value * projected_emb
+        host.get_input_embeddings().weight.data.copy_(host_emb.to(host.get_input_embeddings().weight.dtype))
+        _merge_lm_head_rows(torch, host, donor, torch_anchor_idx_host, torch_anchor_idx_donor, hidden_map, vocab_alpha_value, ridge)
+
+    host_layers = _compatible_mlp_layers(host)
+    donor_layers = _compatible_mlp_layers(donor)
+    if not host_layers:
+        raise ValueError("Host model has no supported MLP layers.")
+    if not donor_layers:
+        raise ValueError("Donor model has no supported MLP layers.")
+
+    layer_reports = []
+    for host_idx, host_layer in enumerate(host_layers):
+        donor_idx = _proportional_index(host_idx, len(host_layers), len(donor_layers))
+        donor_layer = donor_layers[donor_idx]
+        report = _merge_mlp_layer_channels(
+            torch,
+            host_layer,
+            donor_layer,
+            hidden_map,
+            alpha_value,
+            max_host_channels=max_host_channels,
+            max_donor_channels=max_donor_channels,
+        )
+        report["host_layer"] = host_idx
+        report["donor_layer"] = donor_idx
+        layer_reports.append(report)
+
+    if getattr(host.config, "tie_word_embeddings", False):
+        host.tie_weights()
+
+    target = Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    host.save_pretrained(target, safe_serialization=True)
+    host_tokenizer.save_pretrained(target)
+    report = {
+        "operation": "cross_family_mlp_merge",
+        "host_model": host_model,
+        "donor_model": donor_model,
+        "output_dir": str(target),
+        "alpha": alpha_value,
+        "vocab_alpha": vocab_alpha_value,
+        "ridge": ridge,
+        "host_vocab_size": len(host_tokenizer),
+        "donor_vocab_size": len(donor_tokenizer),
+        "shared_decoded_tokens": len(set(_canonical_token_map(host_tokenizer)) & set(_canonical_token_map(donor_tokenizer))),
+        "anchors_used": len(anchors),
+        "host_hidden_size": int(host_emb.shape[1]),
+        "donor_hidden_size": int(donor_emb.shape[1]),
+        "host_layers": len(host_layers),
+        "donor_layers": len(donor_layers),
+        "max_host_channels": max_host_channels,
+        "max_donor_channels": max_donor_channels,
+        "layers": layer_reports,
+        "param_count": sum(param.numel() for param in host.parameters()),
+    }
+    _write_json(target / "neural_forge_xfamily_mlp_report.json", report)
+    return report
+
+
+def sweep_cross_family_mlp_merge(
+    host_model: str,
+    donor_model: str,
+    output_dir: str | Path,
+    alphas: list[float],
+    baseline_report: str | Path | None = None,
+    vocab_alpha: float | None = None,
+    ridge: float = 1e-3,
+    max_anchors: int = 50_000,
+    max_host_channels: int = 512,
+    max_donor_channels: int = 512,
+    torch_dtype: str = "float16",
+    device: str = "cuda:0",
+    trust_remote_code: bool = False,
+    max_new_tokens: int = 80,
+    max_ppl_ratio: float = 1.5,
+    max_accuracy_drop: float = 0.25,
+    min_choice_accuracy: float = 0.5,
+) -> dict[str, Any]:
+    """Sweep cross-family MLP-channel transplants and gate each result."""
+
+    if not alphas:
+        raise ValueError("At least one alpha is required.")
+    alpha_values = [_finite_float(alpha, "alpha") for alpha in alphas]
+    for alpha_value in alpha_values:
+        _bounded_alpha(alpha_value, "alpha")
+    _ensure_unique_ratio_tags(alpha_values, "alpha")
+
+    root = Path(output_dir)
+    model_root = root / "models"
+    report_root = root / "reports"
+    model_root.mkdir(parents=True, exist_ok=True)
+    report_root.mkdir(parents=True, exist_ok=True)
+
+    if baseline_report is None:
+        baseline_path = report_root / "baseline_host.json"
+        baseline = evaluate_text_model(
+            host_model,
+            baseline_path,
+            torch_dtype=torch_dtype,
+            device=device,
+            trust_remote_code=trust_remote_code,
+            max_new_tokens=max_new_tokens,
+        )
+    else:
+        baseline_path = Path(baseline_report)
+        baseline = _load_report(baseline_path)
+
+    candidates = []
+    for alpha_value in alpha_values:
+        tag = _ratio_tag(alpha_value)
+        candidate_dir = model_root / f"xfamily_mlp_alpha_{tag}"
+        candidate_report_path = report_root / f"xfamily_mlp_alpha_{tag}.json"
+        gate_path = report_root / f"xfamily_mlp_alpha_{tag}_gate.json"
+        merge_report = cross_family_mlp_merge(
+            host_model=host_model,
+            donor_model=donor_model,
+            output_dir=candidate_dir,
+            alpha=alpha_value,
+            vocab_alpha=vocab_alpha,
+            ridge=ridge,
+            max_anchors=max_anchors,
+            max_host_channels=max_host_channels,
+            max_donor_channels=max_donor_channels,
+            torch_dtype=torch_dtype,
+            trust_remote_code=trust_remote_code,
+        )
+        candidate_report = evaluate_text_model(
+            str(candidate_dir),
+            candidate_report_path,
+            torch_dtype=torch_dtype,
+            device=device,
+            trust_remote_code=trust_remote_code,
+            max_new_tokens=max_new_tokens,
+        )
+        gate = gate_text_report(
+            baseline,
+            candidate_report,
+            output_file=gate_path,
+            max_ppl_ratio=max_ppl_ratio,
+            max_accuracy_drop=max_accuracy_drop,
+            min_choice_accuracy=min_choice_accuracy,
+        )
+        candidates.append(
+            {
+                "alpha": alpha_value,
+                "tag": tag,
+                "model_dir": str(candidate_dir),
+                "report": str(candidate_report_path),
+                "gate_report": str(gate_path),
+                "passed": gate["passed"],
+                "merge": merge_report,
+                "metrics": gate["candidate"],
+            }
+        )
+
+    summary = {
+        "operation": "sweep_cross_family_mlp_merge",
+        "host_model": host_model,
+        "donor_model": donor_model,
+        "baseline_report": str(baseline_path),
+        "baseline_metrics": {
+            "param_count": baseline.get("param_count"),
+            "perplexity_mean": float(baseline["perplexity"]["mean"]),
+            "choice_accuracy": float(baseline["choice_accuracy"]["accuracy"]),
+        },
+        "ridge": ridge,
+        "max_anchors": max_anchors,
+        "max_host_channels": max_host_channels,
+        "max_donor_channels": max_donor_channels,
+        "gate_thresholds": {
+            "max_ppl_ratio": max_ppl_ratio,
+            "max_accuracy_drop": max_accuracy_drop,
+            "min_choice_accuracy": min_choice_accuracy,
+        },
+        "candidates": candidates,
+        "passed_candidates": [item for item in candidates if item["passed"]],
+    }
+    _write_json(report_root / "xfamily_mlp_sweep_summary.json", summary)
+    return summary
+
+
 def _canonical_token_map(tokenizer) -> dict[str, int]:
     special_ids = set(getattr(tokenizer, "all_special_ids", []) or [])
     mapping: dict[str, int] = {}
@@ -260,6 +500,239 @@ def _canonical_token(text: str) -> str:
     if any(ord(ch) < 32 for ch in text):
         return ""
     return text
+
+
+def _bounded_alpha(value: float, name: str) -> float:
+    alpha = _finite_float(value, name)
+    if not 0.0 <= alpha <= 1.0:
+        raise ValueError(f"{name} must be in [0, 1].")
+    return alpha
+
+
+def _shared_anchor_tokens(host_tokenizer, donor_tokenizer, max_anchors: int) -> tuple[list[str], dict[str, int], dict[str, int]]:
+    host_map = _canonical_token_map(host_tokenizer)
+    donor_map = _canonical_token_map(donor_tokenizer)
+    shared = sorted(set(host_map) & set(donor_map), key=lambda item: (len(item), item))
+    if not shared:
+        raise ValueError("No shared decoded-token anchors found.")
+    anchors = shared[: min(max_anchors, len(shared))]
+    return anchors, host_map, donor_map
+
+
+def _merge_lm_head_rows(torch, host, donor, host_idx, donor_idx, hidden_map, alpha: float, ridge: float) -> None:
+    host_lm = host.get_output_embeddings()
+    donor_lm = donor.get_output_embeddings()
+    if host_lm is None or donor_lm is None:
+        return
+    host_head = host_lm.weight.data.detach().cpu().to(torch.float32)
+    donor_head = donor_lm.weight.data.detach().cpu().to(torch.float32)
+    head_map = _ridge_map(torch, donor_head[donor_idx], host_head[host_idx], ridge)
+    projected_head = donor_head[donor_idx].matmul(head_map)
+    host_head[host_idx] = (1.0 - alpha) * host_head[host_idx] + alpha * projected_head
+    host_lm.weight.data.copy_(host_head.to(host_lm.weight.dtype))
+
+
+def _compatible_mlp_layers(model) -> list[Any]:
+    try:
+        layers = list(_decoder_layer_container(model)[2])
+    except ValueError:
+        return []
+    return [layer for layer in layers if _mlp_spec(layer) is not None]
+
+
+def _mlp_spec(layer) -> dict[str, Any] | None:
+    mlp = getattr(layer, "mlp", None)
+    feed_forward = getattr(layer, "feed_forward", None)
+    if feed_forward is not None and all(hasattr(feed_forward, name) for name in ("w1", "w3", "w2")):
+        return {
+            "kind": "gated",
+            "mlp": feed_forward,
+            "inputs": [feed_forward.w1, feed_forward.w3],
+            "input_names": ["w1", "w3"],
+            "output": feed_forward.w2,
+            "output_name": "w2",
+        }
+    if mlp is None:
+        return None
+    if all(hasattr(mlp, name) for name in ("gate_proj", "up_proj", "down_proj")):
+        return {
+            "kind": "gated",
+            "mlp": mlp,
+            "inputs": [mlp.gate_proj, mlp.up_proj],
+            "input_names": ["gate_proj", "up_proj"],
+            "output": mlp.down_proj,
+            "output_name": "down_proj",
+        }
+    if all(hasattr(mlp, name) for name in ("dense_h_to_4h", "dense_4h_to_h")):
+        return {
+            "kind": "dense",
+            "mlp": mlp,
+            "inputs": [mlp.dense_h_to_4h],
+            "input_names": ["dense_h_to_4h"],
+            "output": mlp.dense_4h_to_h,
+            "output_name": "dense_4h_to_h",
+        }
+    if all(hasattr(mlp, name) for name in ("fc1", "fc2")):
+        return {
+            "kind": "dense",
+            "mlp": mlp,
+            "inputs": [mlp.fc1],
+            "input_names": ["fc1"],
+            "output": mlp.fc2,
+            "output_name": "fc2",
+        }
+    return None
+
+
+def _merge_mlp_layer_channels(
+    torch,
+    host_layer,
+    donor_layer,
+    hidden_map,
+    alpha: float,
+    max_host_channels: int,
+    max_donor_channels: int,
+) -> dict[str, Any]:
+    host_spec = _mlp_spec(host_layer)
+    donor_spec = _mlp_spec(donor_layer)
+    if host_spec is None or donor_spec is None:
+        raise ValueError("Both layers must have supported MLP modules.")
+    host_channels = int(host_spec["inputs"][0].weight.shape[0])
+    donor_channels = int(donor_spec["inputs"][0].weight.shape[0])
+    host_idx = _important_channels(torch, host_spec, min(max_host_channels, host_channels), None)
+    donor_idx = _important_channels(torch, donor_spec, min(max_donor_channels, donor_channels), hidden_map)
+    host_features = _mlp_channel_features(torch, host_spec, host_idx, None)
+    donor_features = _mlp_channel_features(torch, donor_spec, donor_idx, hidden_map)
+    assignment = _assign_donor_to_host(torch, donor_features, host_features)
+
+    donor_input_branches = [_project_rows(torch, linear.weight.data.detach().cpu().to(torch.float32)[donor_idx], hidden_map) for linear in donor_spec["inputs"]]
+    donor_input_summary = _average_rows(torch, donor_input_branches)
+    donor_output_cols = _project_rows(
+        torch,
+        donor_spec["output"].weight.data.detach().cpu().to(torch.float32)[:, donor_idx].T,
+        hidden_map,
+    )
+
+    host_positions = {int(channel): pos for pos, channel in enumerate(host_idx.tolist())}
+    assigned_counts = torch.zeros(len(host_idx), dtype=torch.float32)
+    input_sums = torch.zeros((len(host_idx), host_spec["inputs"][0].weight.shape[1]), dtype=torch.float32)
+    output_sums = torch.zeros((len(host_idx), host_spec["output"].weight.shape[0]), dtype=torch.float32)
+    for donor_pos, host_pos in enumerate(assignment.tolist()):
+        input_sums[host_pos] += donor_input_summary[donor_pos]
+        output_sums[host_pos] += donor_output_cols[donor_pos]
+        assigned_counts[host_pos] += 1.0
+
+    updated = 0
+    for host_channel in host_idx.tolist():
+        host_pos = host_positions[int(host_channel)]
+        count = assigned_counts[host_pos]
+        if count <= 0:
+            continue
+        donor_input = input_sums[host_pos] / count
+        donor_output = output_sums[host_pos] / count
+        for host_input in host_spec["inputs"]:
+            weight = host_input.weight.data.detach().cpu().to(torch.float32)
+            weight[int(host_channel)] = (1.0 - alpha) * weight[int(host_channel)] + alpha * donor_input
+            host_input.weight.data.copy_(weight.to(host_input.weight.dtype))
+        output_weight = host_spec["output"].weight.data.detach().cpu().to(torch.float32)
+        output_weight[:, int(host_channel)] = (1.0 - alpha) * output_weight[:, int(host_channel)] + alpha * donor_output
+        host_spec["output"].weight.data.copy_(output_weight.to(host_spec["output"].weight.dtype))
+        updated += 1
+
+    _merge_input_biases(torch, host_spec, donor_spec, host_idx, donor_idx, assignment, alpha)
+    _merge_output_bias(torch, host_spec, donor_spec, hidden_map, alpha)
+    return {
+        "host_mlp_kind": host_spec["kind"],
+        "donor_mlp_kind": donor_spec["kind"],
+        "host_channels": host_channels,
+        "donor_channels": donor_channels,
+        "host_channels_considered": int(host_idx.numel()),
+        "donor_channels_considered": int(donor_idx.numel()),
+        "host_channels_updated": updated,
+    }
+
+
+def _important_channels(torch, spec: dict[str, Any], limit: int, hidden_map) -> Any:
+    input_scores = sum(linear.weight.data.detach().cpu().to(torch.float32).norm(dim=1) for linear in spec["inputs"])
+    output_scores = spec["output"].weight.data.detach().cpu().to(torch.float32).norm(dim=0)
+    scores = input_scores + output_scores
+    return torch.sort(torch.argsort(scores, descending=True)[:limit]).values
+
+
+def _mlp_channel_features(torch, spec: dict[str, Any], indices, hidden_map) -> Any:
+    input_rows = [_project_rows(torch, linear.weight.data.detach().cpu().to(torch.float32)[indices], hidden_map) for linear in spec["inputs"]]
+    input_summary = _average_rows(torch, [_row_normalize(rows) for rows in input_rows])
+    output_cols = _project_rows(
+        torch,
+        spec["output"].weight.data.detach().cpu().to(torch.float32)[:, indices].T,
+        hidden_map,
+    )
+    return _row_normalize(torch.cat([_row_normalize(input_summary), _row_normalize(output_cols)], dim=1))
+
+
+def _project_rows(torch, rows, hidden_map):
+    rows = rows.to(torch.float32)
+    if hidden_map is None:
+        return rows
+    return rows.matmul(hidden_map.to(torch.float32))
+
+
+def _average_rows(torch, row_sets: list[Any]) -> Any:
+    stacked = torch.stack(row_sets, dim=0)
+    return stacked.mean(dim=0)
+
+
+def _row_normalize(rows):
+    return rows / rows.norm(dim=1, keepdim=True).clamp_min(1e-12)
+
+
+def _assign_donor_to_host(torch, donor_features, host_features):
+    assignments = []
+    chunk = 128
+    for start in range(0, donor_features.shape[0], chunk):
+        sims = donor_features[start : start + chunk] @ host_features.T
+        assignments.append(torch.argmax(sims, dim=1))
+    return torch.cat(assignments, dim=0)
+
+
+def _merge_input_biases(torch, host_spec, donor_spec, host_idx, donor_idx, assignment, alpha: float) -> None:
+    donor_biases = [getattr(linear, "bias", None) for linear in donor_spec["inputs"]]
+    host_biases = [getattr(linear, "bias", None) for linear in host_spec["inputs"]]
+    if not any(bias is not None for bias in donor_biases) or not any(bias is not None for bias in host_biases):
+        return
+    donor_values = [bias.data.detach().cpu().to(torch.float32)[donor_idx] for bias in donor_biases if bias is not None]
+    donor_summary = _average_rows(torch, [values.unsqueeze(1) for values in donor_values]).squeeze(1)
+    sums = torch.zeros(len(host_idx), dtype=torch.float32)
+    counts = torch.zeros(len(host_idx), dtype=torch.float32)
+    for donor_pos, host_pos in enumerate(assignment.tolist()):
+        sums[host_pos] += donor_summary[donor_pos]
+        counts[host_pos] += 1.0
+    for host_bias in host_biases:
+        if host_bias is None:
+            continue
+        values = host_bias.data.detach().cpu().to(torch.float32)
+        for host_pos, host_channel in enumerate(host_idx.tolist()):
+            if counts[host_pos] > 0:
+                donor_value = sums[host_pos] / counts[host_pos]
+                values[int(host_channel)] = (1.0 - alpha) * values[int(host_channel)] + alpha * donor_value
+        host_bias.data.copy_(values.to(host_bias.dtype))
+
+
+def _merge_output_bias(torch, host_spec, donor_spec, hidden_map, alpha: float) -> None:
+    host_bias = getattr(host_spec["output"], "bias", None)
+    donor_bias = getattr(donor_spec["output"], "bias", None)
+    if host_bias is None or donor_bias is None:
+        return
+    donor_projected = _project_rows(torch, donor_bias.data.detach().cpu().to(torch.float32).unsqueeze(0), hidden_map).squeeze(0)
+    host_values = host_bias.data.detach().cpu().to(torch.float32)
+    host_values = (1.0 - alpha) * host_values + alpha * donor_projected
+    host_bias.data.copy_(host_values.to(host_bias.dtype))
+
+
+def _proportional_index(index: int, host_count: int, donor_count: int) -> int:
+    if donor_count <= 1 or host_count <= 1:
+        return 0
+    return int(round(index * (donor_count - 1) / (host_count - 1)))
 
 
 def _ridge_map(torch, source, target, ridge: float):

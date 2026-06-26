@@ -31,6 +31,8 @@ native early-fusion multimodal training sandbox for real-model validation.
   behavior gates.
 - `hf-xfamily-vocab-merge` / `hf-sweep-xfamily`: constrained cross-family
   embedding/lm-head transplant through shared decoded-token anchors.
+- `hf-xfamily-mlp-merge` / `hf-sweep-xfamily-mlp`: constrained cross-family
+  MLP-channel transplant through shared-token hidden projections.
 - `hf-recover`: lightweight same-tokenizer KD/LM recovery after surgery.
 - `hf-eval`, `hf-gate`, and sweep commands: behavior checks so shape-valid
   checkpoints are not promoted blindly.
@@ -139,6 +141,18 @@ neural-forge hf-sweep-xfamily runs/pythia-smollm2-xfamily `
   --host-model EleutherAI/pythia-160m `
   --donor-model HuggingFaceTB/SmolLM2-135M `
   --alphas 0.001,0.005,0.01,0.02
+```
+
+Cross-family MLP-channel transplant:
+
+```powershell
+neural-forge hf-sweep-xfamily-mlp runs/qwen-lfm25-mlp `
+  --host-model Qwen/Qwen3-0.6B-Base `
+  --donor-model LiquidAI/LFM2.5-230M `
+  --alphas 0.0005,0.001 `
+  --vocab-alpha 0 `
+  --max-host-channels 128 `
+  --max-donor-channels 128
 ```
 
 Behavior probes:

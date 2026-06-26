@@ -205,6 +205,72 @@ Interpretation:
 - This is a constrained cross-family transplant, not yet a full donor-block
   architecture merge.
 
+## Cross-Family MLP-Channel Transplant
+
+The next cross-family path keeps a host runtime architecture and merges donor
+MLP channel signal into the host MLP weights. Shared decoded-token anchors solve
+a donor-hidden to host-hidden projection. Donor MLP channels are projected,
+assigned to similar host MLP channels, then blended into the host weights. This
+does not use an adapter at inference time; the output is a normal host
+checkpoint.
+
+Supported layer families in this pass:
+
+- Qwen/Llama/SmolLM-style gated MLPs: `gate_proj`, `up_proj`, `down_proj`;
+- Liquid LFM2.5 gated MLPs: `feed_forward.w1`, `feed_forward.w3`,
+  `feed_forward.w2`;
+- GPT-NeoX/Pythia dense MLPs: `dense_h_to_4h`, `dense_4h_to_h`.
+
+Qwen3 host with Pythia donor:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/xfamily_mlp_qwen3_pythia_20260626
+```
+
+| Candidate | Host | Donor | Params | Mean PPL | Choice Acc | Gate |
+|---|---|---|---:|---:|---:|---|
+| baseline | Qwen3-0.6B-Base | - | 596,049,920 | 280.375 | 1.00 | Baseline |
+| alpha 0.0005 | Qwen3-0.6B-Base | Pythia-160M | 596,049,920 | 279.701 | 1.00 | Passed |
+| alpha 0.0010 | Qwen3-0.6B-Base | Pythia-160M | 596,049,920 | 279.810 | 1.00 | Passed |
+
+Qwen3 host with LFM2.5 donor:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/xfamily_mlp_qwen3_lfm25_20260626
+```
+
+| Candidate | Host | Donor | Params | Mean PPL | Choice Acc | Gate |
+|---|---|---|---:|---:|---:|---|
+| baseline | Qwen3-0.6B-Base | - | 596,049,920 | 280.375 | 1.00 | Baseline |
+| alpha 0.0005 | Qwen3-0.6B-Base | LFM2.5-230M | 596,049,920 | 280.324 | 1.00 | Passed |
+| alpha 0.0010 | Qwen3-0.6B-Base | LFM2.5-230M | 596,049,920 | 279.878 | 1.00 | Passed |
+
+LFM2.5 host with Qwen3 donor:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/xfamily_mlp_lfm25_qwen3_20260626
+```
+
+| Candidate | Host | Donor | Params | Mean PPL | Choice Acc | Gate |
+|---|---|---|---:|---:|---:|---|
+| baseline | LFM2.5-230M | - | 229,693,184 | 404.602 | 1.00 | Baseline |
+| alpha 0.0005 | LFM2.5-230M | Qwen3-0.6B-Base | 229,693,184 | 403.082 | 1.00 | Failed: generation health |
+| alpha 0.0010 | LFM2.5-230M | Qwen3-0.6B-Base | 229,693,184 | 401.442 | 1.00 | Failed: generation health |
+
+Interpretation:
+
+- This proves a real cross-family, cross-architecture MLP transplant path:
+  gated Qwen host from dense Pythia donor passed, and gated Qwen host from
+  gated LFM2.5 donor passed.
+- The LFM2.5-host run proves the tool can emit a valid 230M LFM-shaped
+  checkpoint after merging Qwen donor channels. It preserved PPL and choice
+  accuracy, but the strict text gate rejected it because the LFM baseline and
+  candidates all stopped immediately on one generic merge-risk generation
+  prompt.
+- These runs still use very small alphas and only the top 128 MLP channels per
+  layer. They are safe cross-family signal transplants, not proof that large
+  donor capability transfer works without recovery training.
+
 ## Merge-First Width And Depth Folding
 
 After the pruning-first baseline failed, the Qwen3 run was repeated with

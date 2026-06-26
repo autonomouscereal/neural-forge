@@ -1366,6 +1366,7 @@ def _decoder_layer_container(model):
     candidates = [
         (getattr(model, "model", None), "layers"),
         (getattr(getattr(model, "language_model", None), "model", None), "layers"),
+        (getattr(model, "gpt_neox", None), "layers"),
         (getattr(model, "transformer", None), "h"),
     ]
     for parent, attr in candidates:

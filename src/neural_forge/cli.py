@@ -247,6 +247,46 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_sweep.add_argument("--min-choice-accuracy", type=float, default=0.5)
     xfamily_sweep.set_defaults(func=cmd_hf_xfamily_sweep)
 
+    xfamily_mlp = sub.add_parser(
+        "hf-xfamily-mlp-merge",
+        help="Merge donor MLP channels into a host HF architecture through shared-token hidden projection.",
+    )
+    xfamily_mlp.add_argument("output")
+    xfamily_mlp.add_argument("--host-model", required=True)
+    xfamily_mlp.add_argument("--donor-model", required=True)
+    xfamily_mlp.add_argument("--alpha", type=float, default=0.01)
+    xfamily_mlp.add_argument("--vocab-alpha", type=float)
+    xfamily_mlp.add_argument("--ridge", type=float, default=1e-3)
+    xfamily_mlp.add_argument("--max-anchors", type=int, default=50_000)
+    xfamily_mlp.add_argument("--max-host-channels", type=int, default=512)
+    xfamily_mlp.add_argument("--max-donor-channels", type=int, default=512)
+    xfamily_mlp.add_argument("--dtype", default="float16")
+    xfamily_mlp.add_argument("--trust-remote-code", action="store_true")
+    xfamily_mlp.set_defaults(func=cmd_hf_xfamily_mlp_merge)
+
+    xfamily_mlp_sweep = sub.add_parser(
+        "hf-sweep-xfamily-mlp",
+        help="Sweep cross-family MLP-channel transplant alphas, evaluate, and gate.",
+    )
+    xfamily_mlp_sweep.add_argument("output_dir")
+    xfamily_mlp_sweep.add_argument("--host-model", required=True)
+    xfamily_mlp_sweep.add_argument("--donor-model", required=True)
+    xfamily_mlp_sweep.add_argument("--alphas", required=True, help="Comma-separated alphas, e.g. 0.001,0.005,0.01.")
+    xfamily_mlp_sweep.add_argument("--baseline-report")
+    xfamily_mlp_sweep.add_argument("--vocab-alpha", type=float)
+    xfamily_mlp_sweep.add_argument("--ridge", type=float, default=1e-3)
+    xfamily_mlp_sweep.add_argument("--max-anchors", type=int, default=50_000)
+    xfamily_mlp_sweep.add_argument("--max-host-channels", type=int, default=512)
+    xfamily_mlp_sweep.add_argument("--max-donor-channels", type=int, default=512)
+    xfamily_mlp_sweep.add_argument("--dtype", default="float16")
+    xfamily_mlp_sweep.add_argument("--device", default="cuda:0")
+    xfamily_mlp_sweep.add_argument("--trust-remote-code", action="store_true")
+    xfamily_mlp_sweep.add_argument("--max-new-tokens", type=int, default=80)
+    xfamily_mlp_sweep.add_argument("--max-ppl-ratio", type=float, default=1.5)
+    xfamily_mlp_sweep.add_argument("--max-accuracy-drop", type=float, default=0.25)
+    xfamily_mlp_sweep.add_argument("--min-choice-accuracy", type=float, default=0.5)
+    xfamily_mlp_sweep.set_defaults(func=cmd_hf_xfamily_mlp_sweep)
+
     recover = sub.add_parser("hf-recover", help="Run lightweight same-tokenizer recovery training after HF surgery.")
     recover.add_argument("source_model")
     recover.add_argument("candidate_model")
@@ -582,6 +622,49 @@ def cmd_hf_xfamily_sweep(args: argparse.Namespace) -> dict[str, object]:
         baseline_report=args.baseline_report,
         ridge=args.ridge,
         max_anchors=args.max_anchors,
+        torch_dtype=args.dtype,
+        device=args.device,
+        trust_remote_code=args.trust_remote_code,
+        max_new_tokens=args.max_new_tokens,
+        max_ppl_ratio=args.max_ppl_ratio,
+        max_accuracy_drop=args.max_accuracy_drop,
+        min_choice_accuracy=args.min_choice_accuracy,
+    )
+
+
+def cmd_hf_xfamily_mlp_merge(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_xfamily import cross_family_mlp_merge
+
+    return cross_family_mlp_merge(
+        host_model=args.host_model,
+        donor_model=args.donor_model,
+        output_dir=args.output,
+        alpha=args.alpha,
+        vocab_alpha=args.vocab_alpha,
+        ridge=args.ridge,
+        max_anchors=args.max_anchors,
+        max_host_channels=args.max_host_channels,
+        max_donor_channels=args.max_donor_channels,
+        torch_dtype=args.dtype,
+        trust_remote_code=args.trust_remote_code,
+    )
+
+
+def cmd_hf_xfamily_mlp_sweep(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_xfamily import sweep_cross_family_mlp_merge
+
+    alphas = [float(part.strip()) for part in args.alphas.split(",") if part.strip()]
+    return sweep_cross_family_mlp_merge(
+        host_model=args.host_model,
+        donor_model=args.donor_model,
+        output_dir=args.output_dir,
+        alphas=alphas,
+        baseline_report=args.baseline_report,
+        vocab_alpha=args.vocab_alpha,
+        ridge=args.ridge,
+        max_anchors=args.max_anchors,
+        max_host_channels=args.max_host_channels,
+        max_donor_channels=args.max_donor_channels,
         torch_dtype=args.dtype,
         device=args.device,
         trust_remote_code=args.trust_remote_code,
