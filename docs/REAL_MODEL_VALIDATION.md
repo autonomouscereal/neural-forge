@@ -51,6 +51,8 @@ Supported real-checkpoint surgery:
 - same-shape Hugging Face causal LM checkpoint averaging;
 - Qwen/Gemma/Llama-style gated FFN intermediate resize by folding or copying
   channels;
+- calibration-aware gated FFN repair using ridge least squares on parent FFN
+  inputs/outputs;
 - lightweight causal LM behavior probes;
 - report gates and FFN resize sweeps that reject unsafe candidates;
 - small VLM image-description/OCR sanity probes.

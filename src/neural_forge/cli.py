@@ -89,6 +89,18 @@ def build_parser() -> argparse.ArgumentParser:
     hf_resize.add_argument("--assignment", choices=["down-cosine", "round-robin"], default="down-cosine")
     hf_resize.set_defaults(func=cmd_hf_resize)
 
+    hf_repair = sub.add_parser("hf-repair-ffn", help="Ridge-repair a resized gated FFN model against a source model.")
+    hf_repair.add_argument("source_model")
+    hf_repair.add_argument("resized_model")
+    hf_repair.add_argument("output")
+    hf_repair.add_argument("--dtype", default="float16")
+    hf_repair.add_argument("--device", default="cuda:0")
+    hf_repair.add_argument("--trust-remote-code", action="store_true")
+    hf_repair.add_argument("--ridge", type=float, default=1e-3)
+    hf_repair.add_argument("--max-length", type=int, default=128)
+    hf_repair.add_argument("--max-tokens-per-layer", type=int, default=512)
+    hf_repair.set_defaults(func=cmd_hf_repair)
+
     hf_eval = sub.add_parser("hf-eval", help="Run lightweight behavior probes for an HF causal LM.")
     hf_eval.add_argument("model")
     hf_eval.add_argument("output")
@@ -121,6 +133,9 @@ def build_parser() -> argparse.ArgumentParser:
     hf_sweep.add_argument("--max-ppl-ratio", type=float, default=1.25)
     hf_sweep.add_argument("--max-accuracy-drop", type=float, default=0.0)
     hf_sweep.add_argument("--min-choice-accuracy", type=float, default=0.75)
+    hf_sweep.add_argument("--repair-shrinks", action="store_true")
+    hf_sweep.add_argument("--repair-ridge", type=float, default=1e-3)
+    hf_sweep.add_argument("--repair-max-tokens", type=int, default=512)
     hf_sweep.set_defaults(func=cmd_hf_sweep)
 
     vision = sub.add_parser("vision-probe", help="Run simple image-description/OCR probes for an HF vision-language model.")
@@ -229,6 +244,22 @@ def cmd_hf_resize(args: argparse.Namespace) -> dict[str, object]:
     )
 
 
+def cmd_hf_repair(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_tools import repair_gated_ffn_with_calibration
+
+    return repair_gated_ffn_with_calibration(
+        source_model=args.source_model,
+        resized_model=args.resized_model,
+        output_dir=args.output,
+        torch_dtype=args.dtype,
+        device=args.device,
+        trust_remote_code=args.trust_remote_code,
+        ridge=args.ridge,
+        max_length=args.max_length,
+        max_tokens_per_layer=args.max_tokens_per_layer,
+    )
+
+
 def cmd_hf_eval(args: argparse.Namespace) -> dict[str, object]:
     from neural_forge.hf_tools import evaluate_text_model
 
@@ -273,6 +304,9 @@ def cmd_hf_sweep(args: argparse.Namespace) -> dict[str, object]:
         max_ppl_ratio=args.max_ppl_ratio,
         max_accuracy_drop=args.max_accuracy_drop,
         min_choice_accuracy=args.min_choice_accuracy,
+        repair_shrinks=args.repair_shrinks,
+        repair_ridge=args.repair_ridge,
+        repair_max_tokens=args.repair_max_tokens,
     )
 
 

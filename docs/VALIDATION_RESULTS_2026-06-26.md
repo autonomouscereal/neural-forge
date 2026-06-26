@@ -70,6 +70,33 @@ probes measure them, and `hf-gate` / `hf-sweep-ffn` decide whether the candidate
 is safe enough to promote. Dimension-valid checkpoints are not automatically
 accepted.
 
+## Calibration Repair Attempt
+
+A follow-up run used `hf-repair-ffn` on the failed `FFN 0.995` shrink. The
+repair refits each resized gated FFN `down_proj` with ridge least squares using
+parent-model FFN inputs/outputs collected from calibration text.
+
+Run directory on the AI server:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen3_repair_0995_20260626
+```
+
+| Candidate | Params | Mean PPL | Choice Acc | Gate |
+|---|---:|---:|---:|---|
+| FFN 0.995 unrepaired | 594,759,680 | 611.624 | 1.00 | Failed |
+| FFN 0.995 repaired | 594,759,680 | 432.449 | 1.00 | Failed: generation repetition |
+
+Interpretation:
+
+- Calibration repair substantially improved perplexity: PPL ratio moved from
+  `1.595` down to `1.128` against the merged baseline.
+- The repaired candidate still failed the generation-health gate because outputs
+  became repetitive on two of three generation probes.
+- This confirms the repair direction is useful but incomplete. The next shrink
+  milestone should add sequential layer repair and/or short recovery training,
+  then re-run the same gate.
+
 ## Vision Parent Probe
 
 Vision model:

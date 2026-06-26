@@ -77,6 +77,7 @@ Gated-MLP FFN shrink or expansion for Qwen/Gemma/Llama-like decoder blocks:
 
 ```powershell
 neural-forge hf-resize-ffn runs/qwen-merged runs/qwen-merged-shrunk --ratio 0.95
+neural-forge hf-repair-ffn runs/qwen-merged runs/qwen-merged-shrunk runs/qwen-merged-shrunk-repaired
 ```
 
 Behavior probes:
@@ -87,7 +88,8 @@ neural-forge hf-eval runs/qwen-merged-shrunk runs/qwen-merged-shrunk-report.json
 neural-forge hf-gate runs/qwen-merged-report.json runs/qwen-merged-shrunk-report.json
 neural-forge hf-sweep-ffn runs/qwen-merged runs/qwen-sweep `
   --baseline-report runs/qwen-merged-report.json `
-  --ratios 0.995,1.05
+  --ratios 0.995,1.05 `
+  --repair-shrinks
 neural-forge vision-probe HuggingFaceTB/SmolVLM2-256M-Video-Instruct runs/vision-report.json
 neural-forge vision-chain runs/vision-chain-report.json `
   --vision-model HuggingFaceTB/SmolVLM2-256M-Video-Instruct `

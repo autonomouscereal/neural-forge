@@ -173,6 +173,103 @@ def resize_gated_ffn(
     return report
 
 
+def repair_gated_ffn_with_calibration(
+    source_model: str,
+    resized_model: str,
+    output_dir: str | Path,
+    calibration_texts: Sequence[str] | None = None,
+    torch_dtype: str = "float16",
+    device: str = "cuda:0",
+    trust_remote_code: bool = False,
+    ridge: float = 1e-3,
+    max_length: int = 128,
+    max_tokens_per_layer: int = 512,
+) -> dict[str, Any]:
+    """Refit resized gated-FFN down projections against source FFN outputs.
+
+    This is a lightweight GRAIL/RegMean-style compensation pass: no gradient
+    training, no new parameters, just ridge least squares on calibration tokens.
+    It assumes source and resized models share depth and hidden size, while FFN
+    intermediate widths may differ.
+    """
+
+    if ridge < 0:
+        raise ValueError("ridge must be non-negative.")
+    if max_tokens_per_layer <= 0:
+        raise ValueError("max_tokens_per_layer must be positive.")
+    torch, transformers = _torch_and_transformers()
+    dtype = _dtype_from_name(torch, torch_dtype)
+    texts = list(calibration_texts or _default_calibration_texts())
+    if not texts:
+        raise ValueError("Need at least one calibration text.")
+
+    source = transformers.AutoModelForCausalLM.from_pretrained(
+        source_model,
+        torch_dtype=dtype,
+        device_map=None,
+        trust_remote_code=trust_remote_code,
+    )
+    candidate = transformers.AutoModelForCausalLM.from_pretrained(
+        resized_model,
+        torch_dtype=dtype,
+        device_map=None,
+        trust_remote_code=trust_remote_code,
+    )
+    tokenizer = transformers.AutoTokenizer.from_pretrained(source_model, trust_remote_code=trust_remote_code)
+    if tokenizer.pad_token_id is None and tokenizer.eos_token_id is not None:
+        tokenizer.pad_token = tokenizer.eos_token
+    source.to(device)
+    candidate.to(device)
+    source.eval()
+    candidate.eval()
+
+    source_layers = _decoder_layers(source)
+    candidate_layers = _decoder_layers(candidate)
+    if len(source_layers) != len(candidate_layers):
+        raise ValueError(f"Layer count mismatch: source={len(source_layers)} candidate={len(candidate_layers)}")
+
+    encoded_batches = _encode_calibration_batches(tokenizer, texts, device, max_length=max_length)
+    repairs = []
+    with torch.no_grad():
+        for layer_idx, (source_layer, candidate_layer) in enumerate(zip(source_layers, candidate_layers)):
+            inputs, targets = _collect_mlp_calibration(torch, source, source_layer.mlp, encoded_batches, max_tokens_per_layer)
+            hidden = _gated_mlp_hidden(torch, candidate_layer.mlp, inputs.to(device)).to(torch.float32)
+            target = targets.to(device=device, dtype=torch.float32)
+            solved = _ridge_solve_features(torch, hidden, target, ridge)
+            _replace_linear(torch, candidate_layer.mlp.down_proj, solved.T, axis="in")
+            err_before = _relative_mlp_error(torch, candidate_layer.mlp, inputs.to(device), target)
+            repairs.append(
+                {
+                    "layer": layer_idx,
+                    "tokens": int(hidden.shape[0]),
+                    "intermediate_size": int(hidden.shape[1]),
+                    "relative_error_after": err_before,
+                }
+            )
+            del inputs, targets, hidden, target, solved
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+    target_dir = Path(output_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    candidate.save_pretrained(target_dir, safe_serialization=True)
+    tokenizer.save_pretrained(target_dir)
+    report = {
+        "operation": "repair_gated_ffn_with_calibration",
+        "source_model": source_model,
+        "resized_model": resized_model,
+        "output_dir": str(target_dir),
+        "ridge": ridge,
+        "max_length": max_length,
+        "max_tokens_per_layer": max_tokens_per_layer,
+        "calibration_text_count": len(texts),
+        "repairs": repairs,
+        "param_count": sum(p.numel() for p in candidate.parameters()),
+    }
+    _write_json(target_dir / "neural_forge_repair_report.json", report)
+    return report
+
+
 def evaluate_text_model(
     model_id_or_path: str,
     output_file: str | Path,
@@ -311,6 +408,9 @@ def sweep_gated_ffn_resize(
     max_ppl_ratio: float = 1.25,
     max_accuracy_drop: float = 0.0,
     min_choice_accuracy: float = 0.75,
+    repair_shrinks: bool = False,
+    repair_ridge: float = 1e-3,
+    repair_max_tokens: int = 512,
 ) -> dict[str, Any]:
     """Resize a source model across ratios, evaluate each candidate, and gate it."""
 
@@ -350,8 +450,23 @@ def sweep_gated_ffn_resize(
             torch_dtype=torch_dtype,
             trust_remote_code=trust_remote_code,
         )
+        repair_report = None
+        eval_dir = candidate_dir
+        if repair_shrinks and ratio_value < 1.0:
+            repaired_dir = model_root / f"ffn_{tag}_repaired"
+            repair_report = repair_gated_ffn_with_calibration(
+                source_model=source_model,
+                resized_model=str(candidate_dir),
+                output_dir=repaired_dir,
+                torch_dtype=torch_dtype,
+                device=device,
+                trust_remote_code=trust_remote_code,
+                ridge=repair_ridge,
+                max_tokens_per_layer=repair_max_tokens,
+            )
+            eval_dir = repaired_dir
         candidate_report = evaluate_text_model(
-            str(candidate_dir),
+            str(eval_dir),
             candidate_report_path,
             torch_dtype=torch_dtype,
             device=device,
@@ -370,11 +485,12 @@ def sweep_gated_ffn_resize(
             {
                 "ratio": ratio_value,
                 "tag": tag,
-                "model_dir": str(candidate_dir),
+                "model_dir": str(eval_dir),
                 "report": str(candidate_report_path),
                 "gate_report": str(gate_path),
                 "passed": gate["passed"],
                 "resize": resize_report,
+                "repair": repair_report,
                 "metrics": gate["candidate"],
             }
         )
@@ -393,6 +509,9 @@ def sweep_gated_ffn_resize(
             "max_accuracy_drop": max_accuracy_drop,
             "min_choice_accuracy": min_choice_accuracy,
         },
+        "repair_shrinks": repair_shrinks,
+        "repair_ridge": repair_ridge,
+        "repair_max_tokens": repair_max_tokens,
         "candidates": candidates,
         "passed_candidates": [item for item in candidates if item["passed"]],
     }
@@ -604,6 +723,93 @@ def _generation_health(item: dict[str, Any], min_continuation_chars: int, min_un
 
 def _ratio_tag(ratio: float) -> str:
     return f"{ratio:.4f}".replace(".", "p").replace("-", "m")
+
+
+def _default_calibration_texts() -> list[str]:
+    texts = list(TEXT_EVALS)
+    texts.extend(GENERATION_PROMPTS)
+    texts.extend(probe["prompt"] + probe["choices"][probe["answer"]] for probe in CHOICE_PROBES)
+    texts.extend(
+        [
+            "A small repaired model should keep the parent model's local activations close.",
+            "Calibration repair can reduce the damage from folding redundant feed-forward channels.",
+        ]
+    )
+    return texts
+
+
+def _encode_calibration_batches(tokenizer, texts: Sequence[str], device: str, max_length: int) -> list[dict[str, Any]]:
+    batches = []
+    for text in texts:
+        encoded = tokenizer(
+            text,
+            return_tensors="pt",
+            truncation=True,
+            max_length=max_length,
+            padding=False,
+        )
+        batches.append({key: value.to(device) for key, value in encoded.items()})
+    return batches
+
+
+def _collect_mlp_calibration(torch, model, source_mlp, encoded_batches: Sequence[dict[str, Any]], max_tokens: int):
+    collected_inputs = []
+    collected_outputs = []
+
+    def hook(_module, inputs, output):
+        collected_inputs.append(inputs[0].detach().cpu().to(torch.float32))
+        collected_outputs.append(output.detach().cpu().to(torch.float32))
+
+    handle = source_mlp.register_forward_hook(hook)
+    try:
+        for batch in encoded_batches:
+            model(**batch, use_cache=False)
+            if sum(tensor.numel() // tensor.shape[-1] for tensor in collected_inputs) >= max_tokens:
+                break
+    finally:
+        handle.remove()
+
+    if not collected_inputs:
+        raise RuntimeError("No calibration activations were collected.")
+    inputs = torch.cat([item.reshape(-1, item.shape[-1]) for item in collected_inputs], dim=0)
+    outputs = torch.cat([item.reshape(-1, item.shape[-1]) for item in collected_outputs], dim=0)
+    if inputs.shape[0] > max_tokens:
+        inputs = inputs[:max_tokens]
+        outputs = outputs[:max_tokens]
+    return inputs, outputs
+
+
+def _gated_mlp_hidden(torch, mlp, inputs):
+    activation = getattr(mlp, "act_fn", None)
+    if activation is None:
+        activation = torch.nn.functional.silu
+    module_inputs = inputs.to(device=mlp.gate_proj.weight.device, dtype=mlp.gate_proj.weight.dtype)
+    return activation(mlp.gate_proj(module_inputs)) * mlp.up_proj(module_inputs)
+
+
+def _ridge_solve_features(torch, features, targets, ridge: float):
+    features = torch.nan_to_num(features.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    targets = torch.nan_to_num(targets.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    token_count = features.shape[0]
+    eye = torch.eye(token_count, dtype=torch.float32, device=features.device)
+    gram = features @ features.T
+    scale = float((torch.trace(gram) / max(1, token_count)).detach().cpu())
+    regularization = max(float(ridge) * max(scale, 1e-6), 1e-6)
+    gram = gram + regularization * eye
+    try:
+        dual = torch.linalg.solve(gram, targets)
+    except RuntimeError:
+        dual = torch.linalg.pinv(gram) @ targets
+    return features.T @ dual
+
+
+def _relative_mlp_error(torch, mlp, inputs, targets) -> float:
+    module_inputs = inputs.to(device=mlp.gate_proj.weight.device, dtype=mlp.gate_proj.weight.dtype)
+    outputs = mlp(module_inputs).to(torch.float32)
+    targets = targets.to(device=outputs.device, dtype=torch.float32)
+    error = torch.linalg.norm(outputs - targets)
+    scale = torch.linalg.norm(targets).clamp_min(1e-12)
+    return float((error / scale).detach().cpu())
 
 
 def _decoder_layers(model) -> list[Any]:
