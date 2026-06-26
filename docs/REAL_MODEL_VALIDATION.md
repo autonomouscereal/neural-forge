@@ -37,6 +37,7 @@ Minimum useful evidence:
 - merged model loads and generates;
 - FFN-resized model loads and generates;
 - perplexity and choice probes do not collapse to nonsense;
+- `hf-gate` passes for any candidate being called safe;
 - VLM probe produces grounded text for synthetic images.
 
 This is not a claim that a heavily frankensteined model is production-good
@@ -51,6 +52,7 @@ Supported real-checkpoint surgery:
 - Qwen/Gemma/Llama-style gated FFN intermediate resize by folding or copying
   channels;
 - lightweight causal LM behavior probes;
+- report gates and FFN resize sweeps that reject unsafe candidates;
 - small VLM image-description/OCR sanity probes.
 - transitional VLM-observation -> merged-text-model chains for grounded behavior
   checks before native multimodal training exists.

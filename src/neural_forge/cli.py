@@ -98,6 +98,31 @@ def build_parser() -> argparse.ArgumentParser:
     hf_eval.add_argument("--max-new-tokens", type=int, default=96)
     hf_eval.set_defaults(func=cmd_hf_eval)
 
+    hf_gate = sub.add_parser("hf-gate", help="Compare an HF eval report to a baseline and return a pass/fail verdict.")
+    hf_gate.add_argument("baseline_report")
+    hf_gate.add_argument("candidate_report")
+    hf_gate.add_argument("--output")
+    hf_gate.add_argument("--max-ppl-ratio", type=float, default=1.25)
+    hf_gate.add_argument("--max-accuracy-drop", type=float, default=0.0)
+    hf_gate.add_argument("--min-choice-accuracy", type=float, default=0.75)
+    hf_gate.add_argument("--min-continuation-chars", type=int, default=24)
+    hf_gate.add_argument("--min-unique-token-ratio", type=float, default=0.20)
+    hf_gate.set_defaults(func=cmd_hf_gate)
+
+    hf_sweep = sub.add_parser("hf-sweep-ffn", help="Sweep gated FFN resize ratios, evaluate each candidate, and gate results.")
+    hf_sweep.add_argument("source_model")
+    hf_sweep.add_argument("output_dir")
+    hf_sweep.add_argument("--ratios", required=True, help="Comma-separated ratios, e.g. 0.995,1.05.")
+    hf_sweep.add_argument("--baseline-report")
+    hf_sweep.add_argument("--dtype", default="float16")
+    hf_sweep.add_argument("--device", default="cuda:0")
+    hf_sweep.add_argument("--trust-remote-code", action="store_true")
+    hf_sweep.add_argument("--max-new-tokens", type=int, default=80)
+    hf_sweep.add_argument("--max-ppl-ratio", type=float, default=1.25)
+    hf_sweep.add_argument("--max-accuracy-drop", type=float, default=0.0)
+    hf_sweep.add_argument("--min-choice-accuracy", type=float, default=0.75)
+    hf_sweep.set_defaults(func=cmd_hf_sweep)
+
     vision = sub.add_parser("vision-probe", help="Run simple image-description/OCR probes for an HF vision-language model.")
     vision.add_argument("model")
     vision.add_argument("output")
@@ -214,6 +239,40 @@ def cmd_hf_eval(args: argparse.Namespace) -> dict[str, object]:
         device=args.device,
         trust_remote_code=args.trust_remote_code,
         max_new_tokens=args.max_new_tokens,
+    )
+
+
+def cmd_hf_gate(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_tools import gate_text_report
+
+    return gate_text_report(
+        baseline_report=args.baseline_report,
+        candidate_report=args.candidate_report,
+        output_file=args.output,
+        max_ppl_ratio=args.max_ppl_ratio,
+        max_accuracy_drop=args.max_accuracy_drop,
+        min_choice_accuracy=args.min_choice_accuracy,
+        min_continuation_chars=args.min_continuation_chars,
+        min_unique_token_ratio=args.min_unique_token_ratio,
+    )
+
+
+def cmd_hf_sweep(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_tools import sweep_gated_ffn_resize
+
+    ratios = [float(part.strip()) for part in args.ratios.split(",") if part.strip()]
+    return sweep_gated_ffn_resize(
+        source_model=args.source_model,
+        output_dir=args.output_dir,
+        ratios=ratios,
+        baseline_report=args.baseline_report,
+        torch_dtype=args.dtype,
+        device=args.device,
+        trust_remote_code=args.trust_remote_code,
+        max_new_tokens=args.max_new_tokens,
+        max_ppl_ratio=args.max_ppl_ratio,
+        max_accuracy_drop=args.max_accuracy_drop,
+        min_choice_accuracy=args.min_choice_accuracy,
     )
 
 

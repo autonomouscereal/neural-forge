@@ -41,6 +41,35 @@ Behavior samples:
   expected Net2Wider-style property: duplicated channels split their outgoing
   path and preserve the function much better than blind folding.
 
+## Automated Gate Sweep
+
+A follow-up sweep used `hf-sweep-ffn` with:
+
+```text
+source: text_merged_alpha_050
+baseline report: text_merged_alpha_050.json
+ratios: 0.995, 1.05
+max_ppl_ratio: 1.25
+min_choice_accuracy: 0.75
+max_accuracy_drop: 0.0
+```
+
+Run directory on the AI server:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen3_safe_sweep_20260626
+```
+
+| Candidate | Params | Mean PPL | Choice Acc | Gate |
+|---|---:|---:|---:|---|
+| FFN 0.995 | 594,759,680 | 611.624 | 1.00 | Failed: PPL ratio 1.595 > 1.25 |
+| FFN 1.050 | 609,296,384 | 383.855 | 1.00 | Passed |
+
+This is now the expected workflow: model surgery creates candidates, behavior
+probes measure them, and `hf-gate` / `hf-sweep-ffn` decide whether the candidate
+is safe enough to promote. Dimension-valid checkpoints are not automatically
+accepted.
+
 ## Vision Parent Probe
 
 Vision model:
@@ -80,4 +109,3 @@ Interpretation:
   decoding/eval gates.
 - The next safe technical milestone is calibration-aware FFN folding plus a
   trainable raw-patch/token vision graft, not blind large compression.
-

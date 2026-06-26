@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
 
 TEXT_EVALS = [
@@ -218,6 +219,187 @@ def evaluate_text_model(
     return report
 
 
+def gate_text_report(
+    baseline_report: str | Path | dict[str, Any],
+    candidate_report: str | Path | dict[str, Any],
+    output_file: str | Path | None = None,
+    max_ppl_ratio: float = 1.25,
+    max_accuracy_drop: float = 0.0,
+    min_choice_accuracy: float = 0.75,
+    min_continuation_chars: int = 24,
+    min_unique_token_ratio: float = 0.20,
+) -> dict[str, Any]:
+    """Compare candidate behavior to a baseline report and produce a gate verdict."""
+
+    if max_ppl_ratio <= 0:
+        raise ValueError("max_ppl_ratio must be positive.")
+    if max_accuracy_drop < 0:
+        raise ValueError("max_accuracy_drop must be non-negative.")
+    baseline = _load_report(baseline_report)
+    candidate = _load_report(candidate_report)
+
+    base_ppl = float(baseline["perplexity"]["mean"])
+    cand_ppl = float(candidate["perplexity"]["mean"])
+    base_acc = float(baseline["choice_accuracy"]["accuracy"])
+    cand_acc = float(candidate["choice_accuracy"]["accuracy"])
+    ppl_ratio = cand_ppl / max(base_ppl, 1e-12)
+    generation_checks = [
+        _generation_health(item, min_continuation_chars, min_unique_token_ratio)
+        for item in candidate.get("generations", [])
+    ]
+
+    checks = [
+        {
+            "name": "perplexity_ratio",
+            "passed": ppl_ratio <= max_ppl_ratio,
+            "value": ppl_ratio,
+            "threshold": max_ppl_ratio,
+        },
+        {
+            "name": "choice_accuracy_floor",
+            "passed": cand_acc >= min_choice_accuracy,
+            "value": cand_acc,
+            "threshold": min_choice_accuracy,
+        },
+        {
+            "name": "choice_accuracy_drop",
+            "passed": cand_acc >= base_acc - max_accuracy_drop,
+            "value": base_acc - cand_acc,
+            "threshold": max_accuracy_drop,
+        },
+        {
+            "name": "generation_health",
+            "passed": all(item["passed"] for item in generation_checks),
+            "value": generation_checks,
+            "threshold": {
+                "min_continuation_chars": min_continuation_chars,
+                "min_unique_token_ratio": min_unique_token_ratio,
+            },
+        },
+    ]
+    verdict = {
+        "operation": "gate_text_report",
+        "passed": all(check["passed"] for check in checks),
+        "baseline_model": baseline.get("model"),
+        "candidate_model": candidate.get("model"),
+        "baseline": {
+            "param_count": baseline.get("param_count"),
+            "perplexity_mean": base_ppl,
+            "choice_accuracy": base_acc,
+        },
+        "candidate": {
+            "param_count": candidate.get("param_count"),
+            "perplexity_mean": cand_ppl,
+            "choice_accuracy": cand_acc,
+        },
+        "checks": checks,
+    }
+    if output_file is not None:
+        _write_json(output_file, verdict)
+    return verdict
+
+
+def sweep_gated_ffn_resize(
+    source_model: str,
+    output_dir: str | Path,
+    ratios: Sequence[float],
+    baseline_report: str | Path | None = None,
+    torch_dtype: str = "float16",
+    device: str = "cuda:0",
+    trust_remote_code: bool = False,
+    max_new_tokens: int = 80,
+    max_ppl_ratio: float = 1.25,
+    max_accuracy_drop: float = 0.0,
+    min_choice_accuracy: float = 0.75,
+) -> dict[str, Any]:
+    """Resize a source model across ratios, evaluate each candidate, and gate it."""
+
+    if not ratios:
+        raise ValueError("At least one ratio is required.")
+    root = Path(output_dir)
+    model_root = root / "models"
+    report_root = root / "reports"
+    model_root.mkdir(parents=True, exist_ok=True)
+    report_root.mkdir(parents=True, exist_ok=True)
+
+    if baseline_report is None:
+        baseline_path = report_root / "baseline.json"
+        baseline = evaluate_text_model(
+            source_model,
+            baseline_path,
+            torch_dtype=torch_dtype,
+            device=device,
+            trust_remote_code=trust_remote_code,
+            max_new_tokens=max_new_tokens,
+        )
+    else:
+        baseline_path = Path(baseline_report)
+        baseline = _load_report(baseline_path)
+
+    candidates = []
+    for ratio in ratios:
+        ratio_value = float(ratio)
+        tag = _ratio_tag(ratio_value)
+        candidate_dir = model_root / f"ffn_{tag}"
+        candidate_report_path = report_root / f"ffn_{tag}.json"
+        gate_path = report_root / f"ffn_{tag}_gate.json"
+        resize_report = resize_gated_ffn(
+            source_model,
+            candidate_dir,
+            ratio=ratio_value,
+            torch_dtype=torch_dtype,
+            trust_remote_code=trust_remote_code,
+        )
+        candidate_report = evaluate_text_model(
+            str(candidate_dir),
+            candidate_report_path,
+            torch_dtype=torch_dtype,
+            device=device,
+            trust_remote_code=trust_remote_code,
+            max_new_tokens=max_new_tokens,
+        )
+        gate = gate_text_report(
+            baseline,
+            candidate_report,
+            output_file=gate_path,
+            max_ppl_ratio=max_ppl_ratio,
+            max_accuracy_drop=max_accuracy_drop,
+            min_choice_accuracy=min_choice_accuracy,
+        )
+        candidates.append(
+            {
+                "ratio": ratio_value,
+                "tag": tag,
+                "model_dir": str(candidate_dir),
+                "report": str(candidate_report_path),
+                "gate_report": str(gate_path),
+                "passed": gate["passed"],
+                "resize": resize_report,
+                "metrics": gate["candidate"],
+            }
+        )
+
+    summary = {
+        "operation": "sweep_gated_ffn_resize",
+        "source_model": source_model,
+        "baseline_report": str(baseline_path),
+        "baseline_metrics": {
+            "param_count": baseline.get("param_count"),
+            "perplexity_mean": float(baseline["perplexity"]["mean"]),
+            "choice_accuracy": float(baseline["choice_accuracy"]["accuracy"]),
+        },
+        "gate_thresholds": {
+            "max_ppl_ratio": max_ppl_ratio,
+            "max_accuracy_drop": max_accuracy_drop,
+            "min_choice_accuracy": min_choice_accuracy,
+        },
+        "candidates": candidates,
+        "passed_candidates": [item for item in candidates if item["passed"]],
+    }
+    _write_json(report_root / "sweep_summary.json", summary)
+    return summary
+
+
 def vision_probe(
     model_id_or_path: str,
     output_file: str | Path,
@@ -392,6 +574,36 @@ def _normalized_weights(count: int, weights: Sequence[float] | None) -> list[flo
     if total == 0:
         raise ValueError("Merge weights must not sum to zero.")
     return [weight / total for weight in values]
+
+
+def _load_report(report: str | Path | dict[str, Any]) -> dict[str, Any]:
+    if isinstance(report, dict):
+        return report
+    return json.loads(Path(report).read_text(encoding="utf-8"))
+
+
+def _generation_health(item: dict[str, Any], min_continuation_chars: int, min_unique_token_ratio: float) -> dict[str, Any]:
+    prompt = str(item.get("prompt", ""))
+    output = str(item.get("output", ""))
+    continuation = output[len(prompt) :] if prompt and output.startswith(prompt) else output
+    continuation = continuation.strip()
+    tokens = re.findall(r"[A-Za-z0-9_]+", continuation.lower())
+    unique_ratio = (len(set(tokens)) / len(tokens)) if tokens else 0.0
+    long_enough = len(continuation) >= min_continuation_chars
+    diverse_enough = len(tokens) < 20 or unique_ratio >= min_unique_token_ratio
+    return {
+        "prompt": prompt,
+        "passed": long_enough and diverse_enough,
+        "continuation_chars": len(continuation),
+        "token_count": len(tokens),
+        "unique_token_ratio": unique_ratio,
+        "long_enough": long_enough,
+        "diverse_enough": diverse_enough,
+    }
+
+
+def _ratio_tag(ratio: float) -> str:
+    return f"{ratio:.4f}".replace(".", "p").replace("-", "m")
 
 
 def _decoder_layers(model) -> list[Any]:

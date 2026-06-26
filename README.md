@@ -84,6 +84,10 @@ Behavior probes:
 ```powershell
 neural-forge hf-eval Qwen/Qwen3-0.6B runs/qwen3-report.json
 neural-forge hf-eval runs/qwen-merged-shrunk runs/qwen-merged-shrunk-report.json
+neural-forge hf-gate runs/qwen-merged-report.json runs/qwen-merged-shrunk-report.json
+neural-forge hf-sweep-ffn runs/qwen-merged runs/qwen-sweep `
+  --baseline-report runs/qwen-merged-report.json `
+  --ratios 0.995,1.05
 neural-forge vision-probe HuggingFaceTB/SmolVLM2-256M-Video-Instruct runs/vision-report.json
 neural-forge vision-chain runs/vision-chain-report.json `
   --vision-model HuggingFaceTB/SmolVLM2-256M-Video-Instruct `
