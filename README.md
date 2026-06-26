@@ -27,6 +27,8 @@ native early-fusion multimodal training sandbox for real-model validation.
   expansion, and calibration repair for Qwen/Gemma/Llama-like decoder blocks.
 - `hf-merge-layers`: merge/fold residual decoder layer groups before reducing
   depth.
+- `hf-search-compress`: automated merge-first width/depth candidate search with
+  behavior gates.
 - `hf-xfamily-vocab-merge` / `hf-sweep-xfamily`: constrained cross-family
   embedding/lm-head transplant through shared decoded-token anchors.
 - `hf-recover`: lightweight same-tokenizer KD/LM recovery after surgery.
@@ -118,6 +120,16 @@ Merge-first depth fold:
 neural-forge hf-merge-layers runs/qwen-width-0995 runs/qwen-width-depth `
   --groups 13+14 `
   --method average
+```
+
+Automated merge-first width/depth search:
+
+```powershell
+neural-forge hf-search-compress Qwen/Qwen3-0.6B-Base runs/qwen-search `
+  --width-ratios 0.995 `
+  --layer-groups 13+14 `
+  --depth-methods average,fold `
+  --target-shrink 0.028
 ```
 
 Cross-family host/donor vocabulary transplant:

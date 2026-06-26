@@ -254,6 +254,38 @@ Width plus depth chain:
 | width 0.995 + average layers 13+14 | 579,074,816 | 2.848% | 305.656 | 0.75 | Passed |
 | width 0.995 + fold layers 13+14 | 579,074,816 | 2.848% | 320.186 | 1.00 | Passed |
 
+Automated merge-first search:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen3_merge_first_search_20260626
+```
+
+Search settings:
+
+```text
+source: Qwen/Qwen3-0.6B-Base
+width_ratios: 0.995
+layer_groups: 13+14
+depth_methods: average,fold
+target_shrink: 0.028
+assignment: combined-cosine
+max_ppl_ratio: 1.5
+min_choice_accuracy: 0.75
+max_accuracy_drop: 0.25
+```
+
+| Candidate | Kind | Params | Shrink | Mean PPL | Choice Acc | Gate |
+|---|---|---:|---:|---:|---:|---|
+| width_0p9950 | width | 594,759,680 | 0.216% | 294.778 | 1.00 | Passed |
+| depth_average_13-14 | depth | 580,318,976 | 2.639% | 282.380 | 0.75 | Passed |
+| depth_fold_13-14 | depth | 580,318,976 | 2.639% | 295.854 | 0.75 | Passed |
+| width_0p9950_depth_average_13-14 | width_depth | 579,074,816 | 2.848% | 305.656 | 0.75 | Passed |
+| width_0p9950_depth_fold_13-14 | width_depth | 579,074,816 | 2.848% | 320.186 | 1.00 | Passed |
+
+The search summary selected `width_0p9950_depth_average_13-14` as the best
+target-passing candidate. Both width+depth candidates met `target_shrink=0.028`,
+so the automated path reproduced the manual merge-first result.
+
 Useful generation samples from the combined pass:
 
 - pruning prompt: explained pruning as eliminating unnecessary connections and

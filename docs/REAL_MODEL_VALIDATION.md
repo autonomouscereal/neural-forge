@@ -53,6 +53,7 @@ Supported real-checkpoint surgery:
 - Qwen/Gemma/Llama-style gated FFN intermediate width folding with combined
   SwiGLU channel similarity;
 - residual decoder layer group folding with `hf-merge-layers`;
+- automated merge-first width/depth candidate search with `hf-search-compress`;
 - constrained cross-family vocabulary/embedding/lm-head transplant with
   `hf-xfamily-vocab-merge` and `hf-sweep-xfamily`;
 - calibration-aware gated FFN repair using ridge least squares on parent FFN
@@ -77,7 +78,7 @@ Not yet supported:
 - aggressive compression without merge search, calibration, and recovery
   training.
 
-The safe next step is improving the search path: score more layer-pair and
-channel-fold candidates, add activation-aware sequential repair after each fold,
-and broaden behavior gates for both text retention and grounded multimodal
-answers.
+The safe next step is expanding the merge-first search space: score more
+layer-pair and channel-fold candidates, add activation-aware sequential repair
+after each fold, and broaden behavior gates for both text retention and grounded
+multimodal answers.

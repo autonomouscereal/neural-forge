@@ -724,6 +724,194 @@ def sweep_gated_ffn_resize(
     return summary
 
 
+def search_merge_first_compression(
+    source_model: str,
+    output_dir: str | Path,
+    width_ratios: Sequence[float] | None = None,
+    layer_group_specs: Sequence[Sequence[Sequence[int]]] | None = None,
+    depth_methods: Sequence[str] = ("average", "fold"),
+    baseline_report: str | Path | None = None,
+    torch_dtype: str = "float16",
+    device: str = "cuda:0",
+    trust_remote_code: bool = False,
+    max_new_tokens: int = 80,
+    max_ppl_ratio: float = 1.5,
+    max_accuracy_drop: float = 0.25,
+    min_choice_accuracy: float = 0.75,
+    assignment: str = "combined-cosine",
+    include_combinations: bool = True,
+    target_shrink: float | None = None,
+) -> dict[str, Any]:
+    """Search merge-first width/depth compression candidates and gate each one."""
+
+    ratios = [float(ratio) for ratio in (width_ratios or [])]
+    group_specs = [_normalize_layer_groups(spec) for spec in (layer_group_specs or [])]
+    methods = [str(method).lower() for method in depth_methods]
+    if not ratios and not group_specs:
+        raise ValueError("Provide at least one width ratio or one layer group spec.")
+    for ratio in ratios:
+        if ratio <= 0:
+            raise ValueError("width ratios must be positive.")
+    for method in methods:
+        if method not in {"average", "fold"}:
+            raise ValueError("depth methods must be average or fold.")
+    if target_shrink is not None and target_shrink < 0:
+        raise ValueError("target_shrink must be non-negative.")
+
+    root = Path(output_dir)
+    model_root = root / "models"
+    report_root = root / "reports"
+    model_root.mkdir(parents=True, exist_ok=True)
+    report_root.mkdir(parents=True, exist_ok=True)
+
+    if baseline_report is None:
+        baseline_path = report_root / "baseline.json"
+        baseline = evaluate_text_model(
+            source_model,
+            baseline_path,
+            torch_dtype=torch_dtype,
+            device=device,
+            trust_remote_code=trust_remote_code,
+            max_new_tokens=max_new_tokens,
+        )
+    else:
+        baseline_path = Path(baseline_report)
+        baseline = _load_report(baseline_path)
+    baseline_params = int(baseline.get("param_count") or 0)
+
+    candidates = []
+    width_sources: list[dict[str, Any]] = []
+
+    def evaluate_candidate(kind: str, tag: str, model_dir: Path, surgery_report: dict[str, Any]) -> dict[str, Any]:
+        report_path = report_root / f"{tag}.json"
+        gate_path = report_root / f"{tag}_gate.json"
+        candidate_report = evaluate_text_model(
+            str(model_dir),
+            report_path,
+            torch_dtype=torch_dtype,
+            device=device,
+            trust_remote_code=trust_remote_code,
+            max_new_tokens=max_new_tokens,
+        )
+        gate = gate_text_report(
+            baseline,
+            candidate_report,
+            output_file=gate_path,
+            max_ppl_ratio=max_ppl_ratio,
+            max_accuracy_drop=max_accuracy_drop,
+            min_choice_accuracy=min_choice_accuracy,
+        )
+        candidate_params = int(candidate_report.get("param_count") or 0)
+        shrink = (baseline_params - candidate_params) / baseline_params if baseline_params else 0.0
+        item = {
+            "kind": kind,
+            "tag": tag,
+            "model_dir": str(model_dir),
+            "report": str(report_path),
+            "gate_report": str(gate_path),
+            "passed": gate["passed"],
+            "surgery": surgery_report,
+            "metrics": gate["candidate"],
+            "shrink": shrink,
+        }
+        candidates.append(item)
+        return item
+
+    for ratio in ratios:
+        ratio_tag = _ratio_tag(ratio)
+        tag = f"width_{ratio_tag}"
+        candidate_dir = model_root / tag
+        surgery_report = resize_gated_ffn(
+            source_model,
+            candidate_dir,
+            ratio=ratio,
+            torch_dtype=torch_dtype,
+            trust_remote_code=trust_remote_code,
+            assignment=assignment,
+        )
+        item = evaluate_candidate("width", tag, candidate_dir, surgery_report)
+        width_sources.append({"ratio": ratio, "tag": tag, "model_dir": candidate_dir, "candidate": item})
+
+    for spec in group_specs:
+        groups_tag = _layer_groups_tag(spec)
+        for method in methods:
+            tag = f"depth_{method}_{groups_tag}"
+            candidate_dir = model_root / tag
+            surgery_report = merge_decoder_layers(
+                source_model,
+                candidate_dir,
+                groups=spec,
+                torch_dtype=torch_dtype,
+                trust_remote_code=trust_remote_code,
+                method=method,
+            )
+            evaluate_candidate("depth", tag, candidate_dir, surgery_report)
+
+    if include_combinations:
+        for width in width_sources:
+            for spec in group_specs:
+                groups_tag = _layer_groups_tag(spec)
+                for method in methods:
+                    tag = f"{width['tag']}_depth_{method}_{groups_tag}"
+                    candidate_dir = model_root / tag
+                    surgery_report = merge_decoder_layers(
+                        str(width["model_dir"]),
+                        candidate_dir,
+                        groups=spec,
+                        torch_dtype=torch_dtype,
+                        trust_remote_code=trust_remote_code,
+                        method=method,
+                    )
+                    combo_report = {
+                        "operation": "width_then_depth_merge",
+                        "width": width["candidate"]["surgery"],
+                        "depth": surgery_report,
+                    }
+                    evaluate_candidate("width_depth", tag, candidate_dir, combo_report)
+
+    passed = sorted(
+        [item for item in candidates if item["passed"]],
+        key=lambda item: (item["shrink"], -float(item["metrics"]["perplexity_mean"])),
+        reverse=True,
+    )
+    if target_shrink is None:
+        target_passed = []
+        best_at_or_below_target = None
+    else:
+        target_passed = [item for item in passed if item["shrink"] >= target_shrink]
+        below = [item for item in passed if item["shrink"] < target_shrink]
+        best_at_or_below_target = below[0] if below else None
+
+    summary = {
+        "operation": "search_merge_first_compression",
+        "source_model": source_model,
+        "baseline_report": str(baseline_path),
+        "baseline_metrics": {
+            "param_count": baseline.get("param_count"),
+            "perplexity_mean": float(baseline["perplexity"]["mean"]),
+            "choice_accuracy": float(baseline["choice_accuracy"]["accuracy"]),
+        },
+        "width_ratios": ratios,
+        "layer_group_specs": [_layer_groups_for_report(spec) for spec in group_specs],
+        "depth_methods": methods,
+        "assignment": assignment,
+        "include_combinations": include_combinations,
+        "target_shrink": target_shrink,
+        "gate_thresholds": {
+            "max_ppl_ratio": max_ppl_ratio,
+            "max_accuracy_drop": max_accuracy_drop,
+            "min_choice_accuracy": min_choice_accuracy,
+        },
+        "candidates": candidates,
+        "passed_candidates": passed,
+        "target_passed_candidates": target_passed,
+        "best_passed_candidate": passed[0] if passed else None,
+        "best_passed_below_target": best_at_or_below_target,
+    }
+    _write_json(report_root / "merge_first_search_summary.json", summary)
+    return summary
+
+
 def sweep_task_arithmetic(
     base_model: str,
     tuned_model: str,
@@ -1223,6 +1411,14 @@ def _normalize_layer_groups(groups: Sequence[Sequence[int]]) -> list[list[int]]:
             raise ValueError(f"Layer merge groups overlap at indices: {overlap}")
         seen.update(group)
     return sorted(normalized, key=lambda group: group[0])
+
+
+def _layer_groups_tag(groups: Sequence[Sequence[int]]) -> str:
+    return "_".join("-".join(str(idx) for idx in group) for group in groups)
+
+
+def _layer_groups_for_report(groups: Sequence[Sequence[int]]) -> list[list[int]]:
+    return [list(group) for group in groups]
 
 
 def _merge_layer_state_dicts(torch, states: Sequence[dict[str, Any]], method: str) -> dict[str, Any]:

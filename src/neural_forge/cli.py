@@ -173,6 +173,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hf_sweep.set_defaults(func=cmd_hf_sweep)
 
+    hf_search_compress = sub.add_parser(
+        "hf-search-compress",
+        help="Search merge-first width/depth compression candidates and gate each result.",
+    )
+    hf_search_compress.add_argument("source_model")
+    hf_search_compress.add_argument("output_dir")
+    hf_search_compress.add_argument("--width-ratios", help="Comma-separated ratios, e.g. 0.9975,0.995.")
+    hf_search_compress.add_argument(
+        "--layer-groups",
+        action="append",
+        default=[],
+        help="Repeatable layer group spec, e.g. --layer-groups 13+14 --layer-groups 8+9,19+20.",
+    )
+    hf_search_compress.add_argument("--depth-methods", default="average,fold")
+    hf_search_compress.add_argument("--baseline-report")
+    hf_search_compress.add_argument("--dtype", default="float16")
+    hf_search_compress.add_argument("--device", default="cuda:0")
+    hf_search_compress.add_argument("--trust-remote-code", action="store_true")
+    hf_search_compress.add_argument("--max-new-tokens", type=int, default=80)
+    hf_search_compress.add_argument("--max-ppl-ratio", type=float, default=1.5)
+    hf_search_compress.add_argument("--max-accuracy-drop", type=float, default=0.25)
+    hf_search_compress.add_argument("--min-choice-accuracy", type=float, default=0.75)
+    hf_search_compress.add_argument(
+        "--assignment",
+        choices=["combined-cosine", "down-cosine", "round-robin", "topk"],
+        default="combined-cosine",
+    )
+    hf_search_compress.add_argument("--target-shrink", type=float)
+    hf_search_compress.add_argument("--no-combinations", action="store_true")
+    hf_search_compress.set_defaults(func=cmd_hf_search_compress)
+
     hf_task_sweep = sub.add_parser("hf-sweep-task", help="Sweep task-arithmetic alphas, evaluate candidates, and gate results.")
     hf_task_sweep.add_argument("output_dir")
     hf_task_sweep.add_argument("--base-model", required=True)
@@ -473,6 +504,34 @@ def cmd_hf_sweep(args: argparse.Namespace) -> dict[str, object]:
         repair_ridge=args.repair_ridge,
         repair_max_tokens=args.repair_max_tokens,
         assignment=args.assignment,
+    )
+
+
+def cmd_hf_search_compress(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_tools import search_merge_first_compression
+
+    width_ratios = None
+    if args.width_ratios:
+        width_ratios = [float(part.strip()) for part in args.width_ratios.split(",") if part.strip()]
+    layer_group_specs = [_parse_layer_groups(spec) for spec in args.layer_groups]
+    depth_methods = [part.strip() for part in args.depth_methods.split(",") if part.strip()]
+    return search_merge_first_compression(
+        source_model=args.source_model,
+        output_dir=args.output_dir,
+        width_ratios=width_ratios,
+        layer_group_specs=layer_group_specs,
+        depth_methods=depth_methods,
+        baseline_report=args.baseline_report,
+        torch_dtype=args.dtype,
+        device=args.device,
+        trust_remote_code=args.trust_remote_code,
+        max_new_tokens=args.max_new_tokens,
+        max_ppl_ratio=args.max_ppl_ratio,
+        max_accuracy_drop=args.max_accuracy_drop,
+        min_choice_accuracy=args.min_choice_accuracy,
+        assignment=args.assignment,
+        include_combinations=not args.no_combinations,
+        target_shrink=args.target_shrink,
     )
 
 
