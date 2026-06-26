@@ -61,6 +61,8 @@ Supported real-checkpoint surgery:
   checks before native multimodal training exists.
 - native early-fusion sandbox training via `native-vlm-demo`, using raw image
   patches plus text tokens in one transformer.
+- merged-parent raw-patch vision graft training via `hf-vision-graft`, using an
+  existing HF causal LM parent and no external vision encoder.
 
 Not yet supported:
 
@@ -68,6 +70,6 @@ Not yet supported:
 - untrained native vision grafting that magically understands pixels;
 - aggressive compression without calibration/recovery training.
 
-The safe next step is adding calibration-aware ridge compensation after FFN
-folding, then adding a trainable native vision expansion module with an explicit
-recovery-training recipe.
+The safe next step is improving the recovery path: sequential activation repair
+after FFN folding, larger real multimodal datasets for the graft path, and
+behavior gates that score both text retention and grounded multimodal answers.

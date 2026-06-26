@@ -255,3 +255,70 @@ Interpretation:
   family needed for raw-patch/domain expansion experiments: image patches and
   text tokens share the transformer stack and the model learns answers
   end-to-end.
+
+## Merged-Parent Native Vision Graft
+
+The repo now also includes `hf-vision-graft`, which feeds raw image patch
+embeddings into an existing Hugging Face causal LM parent. For this run, the
+parent was the already merged Qwen3 alpha `0.25` task-arithmetic checkpoint:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen3_task_guard_smoke_20260626
+```
+
+The successful all-task graft run:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen3_alpha025_native_graft_all_patch_20260626
+```
+
+Run:
+
+```text
+parent params: 596,049,920
+graft params: 66,560
+trainable parent params: 0
+steps: 900
+batch_size: 16
+eval_batches: 8
+device: cuda:0
+dtype: float16
+tasks: square_color, circle_color, digit
+```
+
+Result:
+
+| Metric | Before Graft Training | After Graft Training |
+|---|---:|---:|
+| Eval samples | 64 | 64 |
+| Exact answer accuracy | 0.234 | 1.000 |
+| Mean gold loss | 5.045 | 0.0015 |
+| Non-finite losses | no | no |
+
+Sample generated answers after graft training:
+
+- square-color question: expected `red`, predicted `red`, generated `red`;
+- circle-color question: expected `green`, predicted `green`, generated
+  `green`;
+- digit question: expected `one`, predicted `one`, generated `one`;
+- digit question: expected `zero`, predicted `zero`, generated `zero`.
+
+Negative runs:
+
+- A short frozen-parent all-task run learned answer-format priors but not stable
+  pixel grounding.
+- Unfreezing the last decoder block in `float16` produced NaN losses. The tool
+  now rejects `--train-last-layers > 0` with `--dtype float16` and aborts before
+  saving if any non-finite loss appears.
+
+Interpretation:
+
+- This is the current strongest proof that the repo can combine existing text
+  parents, preserve the merged parent's language behavior, and add a small
+  native vision input path that produces useful text answers from pixels.
+- The parent LM was frozen in the successful run, so text behavior cannot drift
+  from parent weights in this graft. The trainable addition is a raw patch
+  projection into the same causal token stream, not an external frozen vision
+  encoder.
+- The task is still synthetic and small. It proves the mechanics and validation
+  harness, not general open-world visual reasoning.

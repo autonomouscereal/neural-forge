@@ -33,7 +33,9 @@ Future model-family adapters should expose equivalent axes:
 
 The `native-vlm-demo` command is the smallest concrete version of that idea in
 this repo: raw image patches are projected into the same sequence as text tokens
-and trained through one causal transformer.
+and trained through one causal transformer. The `hf-vision-graft` command
+extends the same idea to a real HF causal LM parent by prepending learned raw
+patch embeddings before the text prompt.
 
 Adapters should provide:
 

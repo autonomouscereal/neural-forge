@@ -29,6 +29,8 @@ native early-fusion multimodal training sandbox for real-model validation.
   checkpoints are not promoted blindly.
 - `native-vlm-demo`: tiny raw-patch plus text-token transformer for native
   early-fusion multimodal experiments.
+- `hf-vision-graft`: train/evaluate a raw-patch image prefix directly against a
+  Hugging Face causal LM parent; no external vision encoder is used.
 
 ## Roadmap
 
@@ -122,11 +124,21 @@ Native early-fusion sandbox:
 
 ```powershell
 neural-forge native-vlm-demo runs/native-vlm-demo --device cuda:0 --steps 600
+neural-forge hf-vision-graft runs/qwen-task-alpha-025 runs/qwen-native-graft `
+  --steps 900 `
+  --batch-size 16 `
+  --eval-batches 8 `
+  --device cuda:0 `
+  --dtype float16 `
+  --task-keys square_color,circle_color,digit
 ```
 
 This trains a tiny single-transformer model over raw image patches plus text
-tokens on synthetic shape/color VQA. It is an experimental native multimodal
-path, separate from the transitional `vision-chain`.
+tokens on synthetic shape/color VQA. `hf-vision-graft` takes the next step: it
+feeds raw image patch embeddings into an existing merged text checkpoint and
+trains a tiny patch projection while leaving the parent LM frozen by default.
+It is an experimental native multimodal path, separate from the transitional
+`vision-chain`.
 
 ## Checkpoint format
 

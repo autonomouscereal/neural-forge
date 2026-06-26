@@ -196,6 +196,23 @@ def build_parser() -> argparse.ArgumentParser:
     native_vlm.add_argument("--lr", type=float, default=3e-4)
     native_vlm.set_defaults(func=cmd_native_vlm_demo)
 
+    hf_vision_graft = sub.add_parser("hf-vision-graft", help="Train/evaluate a raw-patch vision graft on an HF causal LM parent.")
+    hf_vision_graft.add_argument("model")
+    hf_vision_graft.add_argument("output_dir")
+    hf_vision_graft.add_argument("--steps", type=int, default=300)
+    hf_vision_graft.add_argument("--batch-size", type=int, default=8)
+    hf_vision_graft.add_argument("--eval-batches", type=int, default=8)
+    hf_vision_graft.add_argument("--seed", type=int, default=11)
+    hf_vision_graft.add_argument("--device", default="cuda:0")
+    hf_vision_graft.add_argument("--dtype", default="float16")
+    hf_vision_graft.add_argument("--lr", type=float, default=3e-3)
+    hf_vision_graft.add_argument("--train-last-layers", type=int, default=0)
+    hf_vision_graft.add_argument("--trust-remote-code", action="store_true")
+    hf_vision_graft.add_argument("--max-new-tokens", type=int, default=6)
+    hf_vision_graft.add_argument("--task-keys", default=None, help="Comma-separated subset: square_color,circle_color,digit.")
+    hf_vision_graft.add_argument("--grad-clip", type=float, default=1.0)
+    hf_vision_graft.set_defaults(func=cmd_hf_vision_graft)
+
     return parser
 
 
@@ -423,6 +440,27 @@ def cmd_native_vlm_demo(args: argparse.Namespace) -> dict[str, object]:
         layers=args.layers,
         heads=args.heads,
         lr=args.lr,
+    )
+
+
+def cmd_hf_vision_graft(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_vision_graft import train_hf_native_vision_graft
+
+    return train_hf_native_vision_graft(
+        model_id_or_path=args.model,
+        output_dir=args.output_dir,
+        steps=args.steps,
+        batch_size=args.batch_size,
+        eval_batches=args.eval_batches,
+        seed=args.seed,
+        device=args.device,
+        torch_dtype=args.dtype,
+        lr=args.lr,
+        train_last_layers=args.train_last_layers,
+        trust_remote_code=args.trust_remote_code,
+        max_new_tokens=args.max_new_tokens,
+        task_keys=None if args.task_keys is None else [part.strip() for part in args.task_keys.split(",") if part.strip()],
+        grad_clip=args.grad_clip,
     )
 
 
