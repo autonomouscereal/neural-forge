@@ -29,6 +29,9 @@ hf = [
   "torch>=2.5",
   "transformers>=4.51",
 ]
+native = [
+  "torch>=2.5",
+]
 
 [project.scripts]
 neural-forge = "neural_forge.cli:main"

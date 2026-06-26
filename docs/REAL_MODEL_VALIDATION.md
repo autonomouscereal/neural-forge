@@ -58,6 +58,8 @@ Supported real-checkpoint surgery:
 - small VLM image-description/OCR sanity probes.
 - transitional VLM-observation -> merged-text-model chains for grounded behavior
   checks before native multimodal training exists.
+- native early-fusion sandbox training via `native-vlm-demo`, using raw image
+  patches plus text tokens in one transformer.
 
 Not yet supported:
 

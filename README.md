@@ -96,6 +96,16 @@ neural-forge vision-chain runs/vision-chain-report.json `
   --text-model runs/qwen-merged
 ```
 
+Native early-fusion sandbox:
+
+```powershell
+neural-forge native-vlm-demo runs/native-vlm-demo --device cuda:0 --steps 600
+```
+
+This trains a tiny single-transformer model over raw image patches plus text
+tokens on synthetic shape/color VQA. It is an experimental native multimodal
+path, separate from the transitional `vision-chain`.
+
 ## Checkpoint format
 
 The current format is a compressed NumPy `.npz` with:

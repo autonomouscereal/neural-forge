@@ -136,3 +136,59 @@ Interpretation:
   decoding/eval gates.
 - The next safe technical milestone is calibration-aware FFN folding plus a
   trainable raw-patch/token vision graft, not blind large compression.
+
+## Native Early-Fusion Sandbox
+
+The repo now includes `native-vlm-demo`, a tiny native multimodal transformer
+that trains over raw image patches and text tokens in one causal sequence. This
+is not a frozen vision encoder plus bridge. The image path is patch projection
+into the same transformer stream used for text tokens.
+
+Run directory on the AI server:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/native_vlm_ocr_full_20260626
+```
+
+Task:
+
+- 16x16 synthetic RGB images;
+- colored square and colored circle;
+- seven-segment OCR-lite digit `zero` through `three`;
+- questions: `what color is square ?`, `what color is circle ?`, and
+  `what number ?`;
+- answer generated as a text token.
+
+Run:
+
+```text
+steps: 1600
+batch_size: 96
+eval_batches: 32
+params: 350,227
+device: cuda:0
+```
+
+Result:
+
+| Metric | Value |
+|---|---:|
+| Final logged loss | 0.000534 |
+| Eval samples | 1,024 |
+| Exact answer accuracy | 1.000 |
+
+Sample predictions:
+
+- expected `green`, predicted `green`;
+- expected `three`, predicted `three`;
+- expected `red`, predicted `red`;
+- expected `zero`, predicted `zero`.
+
+Interpretation:
+
+- This proves the repo has a working native early-fusion multimodal training
+  path, not only a VLM-to-text chain.
+- The scale is deliberately tiny and synthetic, but the mechanics are the same
+  family needed for raw-patch/domain expansion experiments: image patches and
+  text tokens share the transformer stack and the model learns answers
+  end-to-end.

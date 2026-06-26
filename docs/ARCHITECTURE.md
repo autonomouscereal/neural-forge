@@ -31,6 +31,10 @@ Future model-family adapters should expose equivalent axes:
 - Native multimodal expansion maps to added token streams or input projections
   plus modality and positional metadata.
 
+The `native-vlm-demo` command is the smallest concrete version of that idea in
+this repo: raw image patches are projected into the same sequence as text tokens
+and trained through one causal transformer.
+
 Adapters should provide:
 
 1. `inspect`: shapes, tied weights, config metadata, and parameter counts.
@@ -46,4 +50,3 @@ Adapters should provide:
 - Use calibration data only when the user supplies it.
 - Keep database-free local operation; no ORM, Pydantic, or SQLAlchemy.
 - Avoid vendoring GPL or no-license research code. Mirror algorithms cleanly.
-

@@ -159,6 +159,19 @@ def build_parser() -> argparse.ArgumentParser:
     vision_chain.add_argument("--max-new-tokens", type=int, default=80)
     vision_chain.set_defaults(func=cmd_vision_chain)
 
+    native_vlm = sub.add_parser("native-vlm-demo", help="Train/evaluate a tiny native raw-patch + text-token transformer.")
+    native_vlm.add_argument("output_dir")
+    native_vlm.add_argument("--steps", type=int, default=600)
+    native_vlm.add_argument("--batch-size", type=int, default=64)
+    native_vlm.add_argument("--eval-batches", type=int, default=16)
+    native_vlm.add_argument("--seed", type=int, default=7)
+    native_vlm.add_argument("--device", default="cpu")
+    native_vlm.add_argument("--d-model", type=int, default=96)
+    native_vlm.add_argument("--layers", type=int, default=3)
+    native_vlm.add_argument("--heads", type=int, default=4)
+    native_vlm.add_argument("--lr", type=float, default=3e-4)
+    native_vlm.set_defaults(func=cmd_native_vlm_demo)
+
     return parser
 
 
@@ -336,6 +349,23 @@ def cmd_vision_chain(args: argparse.Namespace) -> dict[str, object]:
         device=args.device,
         trust_remote_code=args.trust_remote_code,
         max_new_tokens=args.max_new_tokens,
+    )
+
+
+def cmd_native_vlm_demo(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.native_multimodal import train_native_vlm_sandbox
+
+    return train_native_vlm_sandbox(
+        output_dir=args.output_dir,
+        steps=args.steps,
+        batch_size=args.batch_size,
+        eval_batches=args.eval_batches,
+        seed=args.seed,
+        device=args.device,
+        d_model=args.d_model,
+        layers=args.layers,
+        heads=args.heads,
+        lr=args.lr,
     )
 
 
