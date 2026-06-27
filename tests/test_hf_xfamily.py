@@ -15,6 +15,8 @@ from neural_forge.hf_recovery import _fit_activation_map
 from neural_forge.hf_recovery import _fit_lm_head_from_hidden_logits
 from neural_forge.hf_recovery import _fit_shared_embedding_hidden_projection
 from neural_forge.hf_recovery import _fold_groups_from_report
+from neural_forge.hf_recovery import _hidden_representation_loss
+from neural_forge.hf_recovery import _linear_cka_tensor
 from neural_forge.hf_recovery import _mlp_projection_spec
 from neural_forge.hf_recovery import _project_candidate_probs_to_source_vocab
 from neural_forge.hf_recovery import _project_source_logits_to_candidate_vocab
@@ -480,6 +482,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.02",
             "--hidden-layer",
             "middle",
+            "--hidden-kd-metric",
+            "cka",
             "--hidden-max-anchors",
             "77",
             "--temperature",
@@ -634,6 +638,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_recover_args.span_max_pairs == 66
     assert xfamily_recover_args.hidden_ridge == 0.02
     assert xfamily_recover_args.hidden_layer == "middle"
+    assert xfamily_recover_args.hidden_kd_metric == "cka"
     assert xfamily_recover_args.hidden_max_anchors == 77
     assert xfamily_recover_args.max_anchors == 123
     assert xfamily_recover_args.anchor_selection == "longest"
@@ -819,6 +824,26 @@ def test_linear_cka_detects_similar_activation_spaces() -> None:
 
     assert _linear_cka(torch, first, second) == pytest.approx(1.0)
     assert _linear_cka(torch, first, unrelated) == pytest.approx(0.0)
+
+
+def test_hidden_representation_loss_supports_direct_cka_dimension_mismatch() -> None:
+    torch = pytest.importorskip("torch")
+    student = torch.tensor(
+        [[-1.0, 0.0], [1.0, 0.0], [-1.0, 0.0], [1.0, 0.0]],
+        requires_grad=True,
+    )
+    teacher = torch.tensor(
+        [[-2.0, 0.0, 0.0], [2.0, 0.0, 0.0], [-2.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+        requires_grad=False,
+    )
+
+    cka = _linear_cka_tensor(torch, student, teacher)
+    loss = _hidden_representation_loss(torch, student, teacher, hidden_projection=None, hidden_kd_metric="cka")
+    loss.backward()
+
+    assert cka.item() == pytest.approx(1.0)
+    assert loss.item() == pytest.approx(0.0)
+    assert student.grad is not None
 
 
 def test_resize_tensor_to_shape_mean_folds_axes() -> None:
@@ -1274,6 +1299,7 @@ def test_cross_tokenizer_recovery_loss_uses_anchor_subspace() -> None:
         entropy_aware_kd_sharpness=8.0,
         hidden_projection=None,
         hidden_layer="last",
+        hidden_kd_metric="projected",
         span_pairs=None,
         projected_vocab_groups=None,
         projected_vocab_mask=None,
@@ -1325,6 +1351,7 @@ def test_cross_tokenizer_recovery_loss_uses_projected_hidden_states() -> None:
         entropy_aware_kd_sharpness=8.0,
         hidden_projection=projection,
         hidden_layer="last",
+        hidden_kd_metric="projected",
         span_pairs=None,
         projected_vocab_groups=None,
         projected_vocab_mask=None,
@@ -1396,6 +1423,7 @@ def test_cross_tokenizer_recovery_loss_uses_span_pairs() -> None:
         entropy_aware_kd_sharpness=8.0,
         hidden_projection=None,
         hidden_layer="last",
+        hidden_kd_metric="projected",
         span_pairs=torch.tensor([[0, 0, 0], [0, 1, 1]]),
         projected_vocab_groups=None,
         projected_vocab_mask=None,
@@ -1883,6 +1911,8 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "0.03",
             "--hidden-layer",
             "middle",
+            "--hidden-kd-metric",
+            "both",
             "--hidden-max-anchors",
             "99",
             "--temperature",
@@ -1942,6 +1972,7 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "span_max_pairs": 88,
         "hidden_ridge": 0.03,
         "hidden_layer": "middle",
+        "hidden_kd_metric": "both",
         "hidden_max_anchors": 99,
         "temperature": 1.7,
         "max_anchors": 321,

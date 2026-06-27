@@ -535,6 +535,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--span-max-pairs", type=int, default=512)
     xfamily_recover.add_argument("--hidden-ridge", type=float, default=1e-3)
     xfamily_recover.add_argument("--hidden-layer", choices=["last", "middle"], default="last")
+    xfamily_recover.add_argument("--hidden-kd-metric", choices=["projected", "cka", "both"], default="projected")
     xfamily_recover.add_argument("--hidden-max-anchors", type=int, default=2048)
     xfamily_recover.add_argument("--temperature", type=float, default=2.0)
     xfamily_recover.add_argument("--max-anchors", type=int, default=20_000)
@@ -1222,6 +1223,7 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         span_max_pairs=args.span_max_pairs,
         hidden_ridge=args.hidden_ridge,
         hidden_layer=args.hidden_layer,
+        hidden_kd_metric=args.hidden_kd_metric,
         hidden_max_anchors=args.hidden_max_anchors,
         temperature=args.temperature,
         max_anchors=args.max_anchors,

@@ -231,6 +231,7 @@ def recover_cross_tokenizer_causal_lm(
     span_max_pairs: int = 512,
     hidden_ridge: float = 1e-3,
     hidden_layer: str = "last",
+    hidden_kd_metric: str = "projected",
     hidden_max_anchors: int = 2048,
     temperature: float = 2.0,
     max_anchors: int = 20_000,
@@ -307,6 +308,8 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("hidden_ridge must be non-negative.")
     if hidden_layer not in {"last", "middle"}:
         raise ValueError("hidden_layer must be last or middle.")
+    if hidden_kd_metric not in {"projected", "cka", "both"}:
+        raise ValueError("hidden_kd_metric must be projected, cka, or both.")
     if hidden_max_anchors <= 0:
         raise ValueError("hidden_max_anchors must be positive.")
     if temperature <= 0:
@@ -400,7 +403,10 @@ def recover_cross_tokenizer_causal_lm(
 
     hidden_projection_report = None
     hidden_projection = None
-    if hidden_kd_weight > 0 or span_hidden_kd_weight > 0:
+    needs_projected_hidden = hidden_kd_metric in {"projected", "both"} and (
+        hidden_kd_weight > 0 or span_hidden_kd_weight > 0
+    )
+    if needs_projected_hidden:
         hidden_projection_report = _fit_shared_embedding_hidden_projection(
             torch,
             source,
@@ -491,6 +497,7 @@ def recover_cross_tokenizer_causal_lm(
             entropy_aware_kd_sharpness,
             hidden_projection,
             hidden_layer,
+            hidden_kd_metric,
             span_pairs,
             projected_vocab_groups,
             projected_vocab_mask,
@@ -557,6 +564,7 @@ def recover_cross_tokenizer_causal_lm(
         "span_pair_count_observed": span_pair_counts,
         "hidden_ridge": hidden_ridge,
         "hidden_layer": hidden_layer,
+        "hidden_kd_metric": hidden_kd_metric,
         "hidden_max_anchors": hidden_max_anchors,
         "hidden_projection": hidden_projection_report
         and {key: value for key, value in hidden_projection_report.items() if key != "map"},
@@ -2045,6 +2053,7 @@ def _cross_tokenizer_recovery_loss(
     entropy_aware_kd_sharpness: float,
     hidden_projection,
     hidden_layer: str,
+    hidden_kd_metric: str,
     span_pairs,
     projected_vocab_groups,
     projected_vocab_mask,
@@ -2091,7 +2100,7 @@ def _cross_tokenizer_recovery_loss(
         )
         total = total + float(anchor_kd_weight) * kd
     if hidden_kd_weight > 0:
-        if hidden_projection is None:
+        if hidden_projection is None and hidden_kd_metric in {"projected", "both"}:
             raise ValueError("hidden_projection is required when hidden_kd_weight is positive.")
         hidden = _cross_tokenizer_hidden_loss(
             torch,
@@ -2101,6 +2110,7 @@ def _cross_tokenizer_recovery_loss(
             source_attention_mask,
             hidden_projection,
             hidden_layer,
+            hidden_kd_metric,
         )
         total = total + float(hidden_kd_weight) * hidden
     if span_kd_weight > 0 and span_pairs is not None and int(span_pairs.numel()) > 0:
@@ -2118,7 +2128,7 @@ def _cross_tokenizer_recovery_loss(
         )
         total = total + float(span_kd_weight) * span
     if span_hidden_kd_weight > 0 and span_pairs is not None and int(span_pairs.numel()) > 0:
-        if hidden_projection is None:
+        if hidden_projection is None and hidden_kd_metric in {"projected", "both"}:
             raise ValueError("hidden_projection is required when span_hidden_kd_weight is positive.")
         span_hidden = _cross_tokenizer_span_hidden_loss(
             torch,
@@ -2127,6 +2137,7 @@ def _cross_tokenizer_recovery_loss(
             span_pairs,
             hidden_projection,
             hidden_layer,
+            hidden_kd_metric,
         )
         total = total + float(span_hidden_kd_weight) * span_hidden
     if projected_vocab_kd_weight > 0 and span_pairs is not None and int(span_pairs.numel()) > 0:
@@ -2313,6 +2324,44 @@ def _entropy_aware_kl_from_log_probs(
     return mixed.mean() * (temperature**2)
 
 
+def _linear_cka_tensor(torch, first, second):
+    x = torch.nan_to_num(first.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    y = torch.nan_to_num(second.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    if x.dim() != 2:
+        x = x.reshape(-1, x.shape[-1])
+    if y.dim() != 2:
+        y = y.reshape(-1, y.shape[-1])
+    if int(x.shape[0]) != int(y.shape[0]):
+        raise ValueError("CKA rows must be aligned.")
+    x = x - x.mean(dim=0, keepdim=True)
+    y = y - y.mean(dim=0, keepdim=True)
+    cross = torch.linalg.norm(x.t().matmul(y), ord="fro") ** 2
+    x_norm = torch.linalg.norm(x.t().matmul(x), ord="fro")
+    y_norm = torch.linalg.norm(y.t().matmul(y), ord="fro")
+    return cross / (x_norm * y_norm).clamp_min(1e-12)
+
+
+def _hidden_representation_loss(torch, student_rows, teacher_rows, hidden_projection, hidden_kd_metric: str):
+    if hidden_kd_metric not in {"projected", "cka", "both"}:
+        raise ValueError("hidden_kd_metric must be projected, cka, or both.")
+    student = torch.nan_to_num(student_rows.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    teacher = torch.nan_to_num(teacher_rows.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    losses = []
+    if hidden_kd_metric in {"projected", "both"}:
+        if hidden_projection is None:
+            raise ValueError("hidden_projection is required for projected hidden KD.")
+        teacher_projected = teacher.matmul(hidden_projection.to(device=teacher.device, dtype=torch.float32))
+        student_norm = _normalize_hidden_rows(torch, student)
+        teacher_norm = _normalize_hidden_rows(torch, teacher_projected)
+        cosine = torch.nn.functional.cosine_similarity(student_norm, teacher_norm, dim=-1, eps=1e-8)
+        cosine_loss = 1.0 - cosine.mean()
+        mse_loss = torch.nn.functional.mse_loss(student_norm, teacher_norm)
+        losses.append(0.5 * cosine_loss + 0.5 * mse_loss)
+    if hidden_kd_metric in {"cka", "both"}:
+        losses.append(1.0 - _linear_cka_tensor(torch, student, teacher))
+    return torch.stack(losses).mean()
+
+
 def _cross_tokenizer_span_loss(
     torch,
     shift_student,
@@ -2356,18 +2405,13 @@ def _cross_tokenizer_hidden_loss(
     source_attention_mask,
     hidden_projection,
     hidden_layer: str,
+    hidden_kd_metric: str = "projected",
 ):
     student_hidden = _select_hidden_state(student.hidden_states, hidden_layer)
     teacher_hidden = _select_hidden_state(teacher.hidden_states, hidden_layer)
     student_pooled = _masked_mean_hidden(torch, student_hidden, candidate_attention_mask)
     teacher_pooled = _masked_mean_hidden(torch, teacher_hidden, source_attention_mask)
-    teacher_projected = teacher_pooled.matmul(hidden_projection.to(device=teacher_pooled.device, dtype=torch.float32))
-    student_norm = _normalize_hidden_rows(torch, student_pooled)
-    teacher_norm = _normalize_hidden_rows(torch, teacher_projected)
-    cosine = torch.nn.functional.cosine_similarity(student_norm, teacher_norm, dim=-1, eps=1e-8)
-    cosine_loss = 1.0 - cosine.mean()
-    mse_loss = torch.nn.functional.mse_loss(student_norm, teacher_norm)
-    return 0.5 * cosine_loss + 0.5 * mse_loss
+    return _hidden_representation_loss(torch, student_pooled, teacher_pooled, hidden_projection, hidden_kd_metric)
 
 
 def _cross_tokenizer_span_hidden_loss(
@@ -2377,6 +2421,7 @@ def _cross_tokenizer_span_hidden_loss(
     span_pairs,
     hidden_projection,
     hidden_layer: str,
+    hidden_kd_metric: str = "projected",
 ):
     student_hidden = _select_hidden_state(student.hidden_states, hidden_layer)
     teacher_hidden = _select_hidden_state(teacher.hidden_states, hidden_layer)
@@ -2386,13 +2431,7 @@ def _cross_tokenizer_span_hidden_loss(
     source_pos = pair_idx[:, 2]
     student_rows = student_hidden[batch_idx, candidate_pos].to(torch.float32)
     teacher_rows = teacher_hidden[batch_idx, source_pos].to(torch.float32)
-    teacher_projected = teacher_rows.matmul(hidden_projection.to(device=teacher_rows.device, dtype=torch.float32))
-    student_norm = _normalize_hidden_rows(torch, student_rows)
-    teacher_norm = _normalize_hidden_rows(torch, teacher_projected)
-    cosine = torch.nn.functional.cosine_similarity(student_norm, teacher_norm, dim=-1, eps=1e-8)
-    cosine_loss = 1.0 - cosine.mean()
-    mse_loss = torch.nn.functional.mse_loss(student_norm, teacher_norm)
-    return 0.5 * cosine_loss + 0.5 * mse_loss
+    return _hidden_representation_loss(torch, student_rows, teacher_rows, hidden_projection, hidden_kd_metric)
 
 
 def _cross_tokenizer_projected_vocab_loss(
