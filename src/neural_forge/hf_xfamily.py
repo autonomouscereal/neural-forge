@@ -11,7 +11,7 @@ import json
 import math
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from neural_forge.hf_tools import (
     _decoder_layer_container,
@@ -19,6 +19,7 @@ from neural_forge.hf_tools import (
     _ensure_unique_ratio_tags,
     _finite_float,
     _load_report,
+    _merge_layer_state_dicts,
     _ratio_tag,
     _torch_and_transformers,
     evaluate_text_model,
@@ -249,6 +250,8 @@ def donor_projected_init(
     max_anchors: int = 50_000,
     fold_mode: str = "mean",
     activation_fold_assignment: str = "balanced",
+    donor_layer_fold_mode: str = "representative",
+    projection_scale: str = "none",
     activation_calibration_texts: list[str] | None = None,
     activation_max_length: int = 128,
     activation_device: str = "cuda:0",
@@ -272,6 +275,10 @@ def donor_projected_init(
         raise ValueError("fold_mode must be mean or rms.")
     if activation_fold_assignment not in {"balanced", "similarity"}:
         raise ValueError("activation_fold_assignment must be balanced or similarity.")
+    if donor_layer_fold_mode not in {"representative", "average", "fold"}:
+        raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
+    if projection_scale not in {"none", "target-rms"}:
+        raise ValueError("projection_scale must be none or target-rms.")
     if activation_max_length <= 1:
         raise ValueError("activation_max_length must be greater than 1.")
 
@@ -315,6 +322,7 @@ def donor_projected_init(
     target_state = target.state_dict()
     donor_state = donor.state_dict()
     donor_layer_keys = _layer_tensor_index(donor_state)
+    folded_donor_layer_cache: dict[int, dict[str, Any]] = {}
     layer_reports = []
     changed_keys = []
     skipped_layer_keys = []
@@ -324,11 +332,35 @@ def donor_projected_init(
             continue
         target_layer_idx, suffix = parsed
         donor_layer_idx = _proportional_index(target_layer_idx, len(target_layers), len(donor_layers))
-        donor_key = donor_layer_keys.get((donor_layer_idx, suffix))
-        if donor_key is None:
-            skipped_layer_keys.append({"target_key": target_key, "reason": "no_matching_donor_suffix"})
+        donor_layer_group = (
+            [donor_layer_idx]
+            if donor_layer_fold_mode == "representative"
+            else _donor_layer_group_for_target(target_layer_idx, len(target_layers), len(donor_layers))
+        )
+        if donor_layer_fold_mode == "representative":
+            donor_key = donor_layer_keys.get((donor_layer_idx, suffix))
+            donor_tensor = None if donor_key is None else donor_state[donor_key]
+        else:
+            donor_key = f"folded_donor_layers.{target_layer_idx}.{suffix}"
+            folded_state = _folded_donor_layer_state(
+                torch,
+                donor_layers,
+                target_layer_idx=target_layer_idx,
+                target_layer_count=len(target_layers),
+                donor_layer_fold_mode=donor_layer_fold_mode,
+                cache=folded_donor_layer_cache,
+            )
+            donor_tensor = folded_state.get(suffix)
+        if donor_tensor is None:
+            skipped_layer_keys.append(
+                {
+                    "target_key": target_key,
+                    "reason": "no_matching_donor_suffix",
+                    "donor_layer_group": donor_layer_group,
+                    "donor_layer_fold_mode": donor_layer_fold_mode,
+                }
+            )
             continue
-        donor_tensor = donor_state[donor_key]
         if not _projectable_tensor(torch, target_tensor, donor_tensor):
             skipped_layer_keys.append({"target_key": target_key, "donor_key": donor_key, "reason": "not_floating_tensor"})
             continue
@@ -348,6 +380,7 @@ def donor_projected_init(
             axis_weights=axis_weights,
             activation_fold_assignment=activation_fold_assignment,
         )
+        projected = _scale_projection_to_target(torch, projected, target_tensor, projection_scale)
         target_state[target_key] = projected.to(dtype=target_tensor.dtype)
         changed_keys.append(target_key)
         layer_reports.append(
@@ -356,6 +389,8 @@ def donor_projected_init(
                 "donor_key": donor_key,
                 "target_layer": target_layer_idx,
                 "donor_layer": donor_layer_idx,
+                "donor_layer_group": donor_layer_group,
+                "donor_layer_fold_mode": donor_layer_fold_mode,
                 "target_shape": list(target_tensor.shape),
                 "donor_shape": list(donor_tensor.shape),
             }
@@ -377,6 +412,7 @@ def donor_projected_init(
             "features": activation_profile.get("hidden_features"),
         },
         activation_fold_assignment=activation_fold_assignment,
+        projection_scale=projection_scale,
     )
     if getattr(target.config, "tie_word_embeddings", False):
         target.tie_weights()
@@ -396,6 +432,8 @@ def donor_projected_init(
         "max_anchors": int(max_anchors),
         "fold_mode": fold_mode,
         "activation_fold_assignment": activation_fold_assignment,
+        "donor_layer_fold_mode": donor_layer_fold_mode,
+        "projection_scale": projection_scale,
         "activation_calibration_text_count": len(activation_calibration_texts or []),
         "activation_max_length": activation_max_length,
         "activation_device": activation_device if activation_calibration_texts else None,
@@ -1242,6 +1280,51 @@ def _projectable_tensor(torch, target_tensor, donor_tensor) -> bool:
     )
 
 
+def _scale_projection_to_target(torch, projected, target_tensor, projection_scale: str):
+    if projection_scale == "none":
+        return projected
+    if projection_scale != "target-rms":
+        raise ValueError("projection_scale must be none or target-rms.")
+    target_values = target_tensor.detach().cpu().to(torch.float32)
+    projected_values = projected.to(torch.float32)
+    target_rms = target_values.pow(2).mean().sqrt()
+    projected_rms = projected_values.pow(2).mean().sqrt()
+    return projected_values * (target_rms / projected_rms.clamp_min(1e-12))
+
+
+def _donor_layer_group_for_target(target_layer_idx: int, target_layer_count: int, donor_layer_count: int) -> list[int]:
+    if target_layer_count <= 0 or donor_layer_count <= 0:
+        raise ValueError("Layer counts must be positive.")
+    start = int(math.floor(int(target_layer_idx) * donor_layer_count / target_layer_count))
+    end = int(math.floor((int(target_layer_idx) + 1) * donor_layer_count / target_layer_count))
+    if end <= start:
+        end = start + 1
+    start = max(0, min(start, donor_layer_count - 1))
+    end = max(start + 1, min(end, donor_layer_count))
+    return list(range(start, end))
+
+
+def _folded_donor_layer_state(
+    torch,
+    donor_layers: Sequence[Any],
+    target_layer_idx: int,
+    target_layer_count: int,
+    donor_layer_fold_mode: str,
+    cache: dict[int, dict[str, Any]],
+) -> dict[str, Any]:
+    if donor_layer_fold_mode not in {"average", "fold"}:
+        raise ValueError("donor_layer_fold_mode must be average or fold for folded donor states.")
+    if target_layer_idx not in cache:
+        group = _donor_layer_group_for_target(target_layer_idx, target_layer_count, len(donor_layers))
+        method = "average" if donor_layer_fold_mode == "average" else "fold"
+        cache[target_layer_idx] = _merge_layer_state_dicts(
+            torch,
+            [donor_layers[layer_idx].state_dict() for layer_idx in group],
+            method=method,
+        )
+    return cache[target_layer_idx]
+
+
 def _resize_tensor_to_shape(
     torch,
     source,
@@ -1539,6 +1622,7 @@ def _initialize_token_weights_from_donor(
     fold_mode: str = "mean",
     hidden_axis_weights=None,
     activation_fold_assignment: str = "balanced",
+    projection_scale: str = "none",
 ) -> dict[str, Any]:
     anchors, target_map, donor_map = _shared_anchor_tokens(target_tokenizer, donor_tokenizer, max_anchors)
     target_idx = torch.tensor([target_map[token] for token in anchors], dtype=torch.long)
@@ -1556,6 +1640,12 @@ def _initialize_token_weights_from_donor(
         axis_weights={} if hidden_axis_weights is None else {1: hidden_axis_weights},
         activation_fold_assignment=activation_fold_assignment,
     )
+    projected_embeddings = _scale_projection_to_target(
+        torch,
+        projected_embeddings,
+        target_emb_weight[target_idx],
+        projection_scale,
+    )
     target_emb_weight[target_idx] = projected_embeddings
     target_embeddings.weight.data.copy_(target_emb_weight.to(target_embeddings.weight.dtype))
 
@@ -1572,6 +1662,12 @@ def _initialize_token_weights_from_donor(
             fold_mode=fold_mode,
             axis_weights={} if hidden_axis_weights is None else {1: hidden_axis_weights},
             activation_fold_assignment=activation_fold_assignment,
+        )
+        projected_head = _scale_projection_to_target(
+            torch,
+            projected_head,
+            target_head[target_idx],
+            projection_scale,
         )
         target_head[target_idx] = projected_head
         target_lm.weight.data.copy_(target_head.to(target_lm.weight.dtype))

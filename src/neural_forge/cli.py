@@ -110,6 +110,18 @@ def build_parser() -> argparse.ArgumentParser:
     hf_donor_init.add_argument("--max-anchors", type=int, default=50_000)
     hf_donor_init.add_argument("--fold-mode", choices=["mean", "rms"], default="mean")
     hf_donor_init.add_argument("--activation-fold-assignment", choices=["balanced", "similarity"], default="balanced")
+    hf_donor_init.add_argument(
+        "--donor-layer-fold-mode",
+        choices=["representative", "average", "fold"],
+        default="representative",
+        help="How to fold parent/donor depth spans into each child/target layer.",
+    )
+    hf_donor_init.add_argument(
+        "--projection-scale",
+        choices=["none", "target-rms"],
+        default="none",
+        help="Optional RMS rescale for folded parent tensors before loading into the child shape.",
+    )
     hf_donor_init.add_argument("--activation-calibration-file")
     hf_donor_init.add_argument("--activation-max-calibration-texts", type=int)
     hf_donor_init.add_argument("--activation-max-length", type=int, default=128)
@@ -152,6 +164,23 @@ def build_parser() -> argparse.ArgumentParser:
     hf_merge_layers.add_argument("--dtype", default="float16")
     hf_merge_layers.add_argument("--trust-remote-code", action="store_true")
     hf_merge_layers.set_defaults(func=cmd_hf_merge_layers)
+
+    hf_rank_folds = sub.add_parser(
+        "hf-rank-layer-folds",
+        help="Rank adjacent residual layer fold candidates by activation CKA/cosine redundancy.",
+    )
+    hf_rank_folds.add_argument("model")
+    hf_rank_folds.add_argument("output")
+    hf_rank_folds.add_argument("--window", type=int, default=2)
+    hf_rank_folds.add_argument("--top-k", type=int, default=10)
+    hf_rank_folds.add_argument("--max-length", type=int, default=128)
+    hf_rank_folds.add_argument("--max-tokens-per-layer", type=int, default=512)
+    hf_rank_folds.add_argument("--dtype", default="float16")
+    hf_rank_folds.add_argument("--device", default="cuda:0")
+    hf_rank_folds.add_argument("--trust-remote-code", action="store_true")
+    hf_rank_folds.add_argument("--calibration-file")
+    hf_rank_folds.add_argument("--max-calibration-texts", type=int)
+    hf_rank_folds.set_defaults(func=cmd_hf_rank_layer_folds)
 
     hf_drop_layers = sub.add_parser("hf-drop-layers", help="Drop selected residual decoder layers from an HF causal LM.")
     hf_drop_layers.add_argument("model")
@@ -453,6 +482,20 @@ def build_parser() -> argparse.ArgumentParser:
     reconstruct.add_argument("--layer-merge-report")
     reconstruct.add_argument("--ridge", type=float, default=1e-3)
     reconstruct.add_argument("--reconstruction-alpha", type=float, default=1.0)
+    reconstruct.add_argument(
+        "--reconstruction-target",
+        choices=["consumer-input", "survivor-mlp", "both"],
+        default="consumer-input",
+    )
+    reconstruct.add_argument(
+        "--reconstruction-objective",
+        choices=["ridge", "cosine"],
+        default="ridge",
+        help="Fit folded activations with ridge L2 or ridge-initialized cosine refinement.",
+    )
+    reconstruct.add_argument("--cosine-steps", type=int, default=80)
+    reconstruct.add_argument("--cosine-lr", type=float, default=1e-2)
+    reconstruct.add_argument("--cosine-l2", type=float, default=1e-4)
     reconstruct.add_argument("--max-length", type=int, default=128)
     reconstruct.add_argument("--max-tokens-per-layer", type=int, default=512)
     reconstruct.add_argument("--dtype", default="float16")
@@ -656,6 +699,23 @@ def cmd_hf_merge_layers(args: argparse.Namespace) -> dict[str, object]:
     )
 
 
+def cmd_hf_rank_layer_folds(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_tools import rank_layer_fold_candidates
+
+    return rank_layer_fold_candidates(
+        model_id_or_path=args.model,
+        output_file=args.output,
+        window=args.window,
+        top_k=args.top_k,
+        max_length=args.max_length,
+        max_tokens_per_layer=args.max_tokens_per_layer,
+        torch_dtype=args.dtype,
+        device=args.device,
+        trust_remote_code=args.trust_remote_code,
+        calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+    )
+
+
 def cmd_hf_drop_layers(args: argparse.Namespace) -> dict[str, object]:
     from neural_forge.hf_tools import drop_decoder_layers
 
@@ -798,6 +858,8 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         max_anchors=args.max_anchors,
         fold_mode=args.fold_mode,
         activation_fold_assignment=args.activation_fold_assignment,
+        donor_layer_fold_mode=args.donor_layer_fold_mode,
+        projection_scale=args.projection_scale,
         activation_calibration_texts=activation_calibration_texts,
         activation_max_length=args.activation_max_length,
         activation_device=args.activation_device,
@@ -1025,6 +1087,11 @@ def cmd_hf_reconstruct_folded(args: argparse.Namespace) -> dict[str, object]:
         layer_merge_report=args.layer_merge_report,
         ridge=args.ridge,
         reconstruction_alpha=args.reconstruction_alpha,
+        reconstruction_target=args.reconstruction_target,
+        reconstruction_objective=args.reconstruction_objective,
+        cosine_steps=args.cosine_steps,
+        cosine_lr=args.cosine_lr,
+        cosine_l2=args.cosine_l2,
         max_length=args.max_length,
         max_tokens_per_layer=args.max_tokens_per_layer,
         torch_dtype=args.dtype,

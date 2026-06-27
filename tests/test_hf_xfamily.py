@@ -8,13 +8,16 @@ from neural_forge.hf_recovery import RECOVERY_TEXTS
 from neural_forge.hf_recovery import _assert_same_vocab
 from neural_forge.hf_recovery import _absorb_input_map_into_linears
 from neural_forge.hf_recovery import _candidate_index_after_depth_fold
+from neural_forge.hf_recovery import _fit_activation_map
 from neural_forge.hf_recovery import _fold_groups_from_report
+from neural_forge.hf_recovery import _mlp_projection_spec
 from neural_forge.hf_recovery import _recovery_loss
 from neural_forge.hf_recovery import _set_train_scope
 from neural_forge.hf_recovery import load_calibration_texts
 from neural_forge.hf_tools import TEXT_EVALS
 from neural_forge.hf_tools import _layer_groups_for_report
 from neural_forge.hf_tools import _layer_groups_tag
+from neural_forge.hf_tools import _linear_cka
 from neural_forge.hf_tools import _normalize_layer_groups
 from neural_forge.hf_xfamily import _canonical_token
 from neural_forge.hf_xfamily import _canonical_token_map
@@ -22,10 +25,12 @@ from neural_forge.hf_xfamily import _assign_donor_to_host
 from neural_forge.hf_xfamily import _activation_similarity_assignment
 from neural_forge.hf_xfamily import _balanced_activation_assignment
 from neural_forge.hf_xfamily import _channel_assignment_features
+from neural_forge.hf_xfamily import _donor_layer_group_for_target
 from neural_forge.hf_xfamily import _effective_layer_alpha
 from neural_forge.hf_xfamily import _mlp_spec
 from neural_forge.hf_xfamily import _proportional_index
 from neural_forge.hf_xfamily import _resize_tensor_to_shape
+from neural_forge.hf_xfamily import _scale_projection_to_target
 from neural_forge.hf_xfamily import _select_compression_candidates
 from neural_forge.hf_xfamily import _usable_pipeline_candidates
 from neural_forge.hf_xfamily import _validate_channel_assignment
@@ -226,6 +231,10 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "mean",
             "--activation-fold-assignment",
             "similarity",
+            "--donor-layer-fold-mode",
+            "fold",
+            "--projection-scale",
+            "target-rms",
             "--activation-calibration-file",
             "activation.jsonl",
             "--activation-max-calibration-texts",
@@ -239,6 +248,29 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
         ]
     )
     merge_layer_args = parser.parse_args(["hf-merge-layers", "in", "out", "--groups", "3+4,7+8"])
+    rank_fold_args = parser.parse_args(
+        [
+            "hf-rank-layer-folds",
+            "model",
+            "fold_rank.json",
+            "--window",
+            "3",
+            "--top-k",
+            "5",
+            "--max-length",
+            "96",
+            "--max-tokens-per-layer",
+            "77",
+            "--dtype",
+            "float32",
+            "--device",
+            "cpu",
+            "--calibration-file",
+            "calibration.jsonl",
+            "--max-calibration-texts",
+            "8",
+        ]
+    )
     drop_args = parser.parse_args(["hf-drop-layers", "in", "out", "--layers", "3,7"])
     search_args = parser.parse_args(
         [
@@ -357,10 +389,22 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.max_anchors == 1000
     assert donor_init_args.fold_mode == "mean"
     assert donor_init_args.activation_fold_assignment == "similarity"
+    assert donor_init_args.donor_layer_fold_mode == "fold"
+    assert donor_init_args.projection_scale == "target-rms"
     assert donor_init_args.activation_calibration_file == "activation.jsonl"
     assert donor_init_args.activation_max_calibration_texts == 5
     assert donor_init_args.activation_max_length == 80
     assert donor_init_args.activation_device == "cpu"
+    assert rank_fold_args.model == "model"
+    assert rank_fold_args.output == "fold_rank.json"
+    assert rank_fold_args.window == 3
+    assert rank_fold_args.top_k == 5
+    assert rank_fold_args.max_length == 96
+    assert rank_fold_args.max_tokens_per_layer == 77
+    assert rank_fold_args.dtype == "float32"
+    assert rank_fold_args.device == "cpu"
+    assert rank_fold_args.calibration_file == "calibration.jsonl"
+    assert rank_fold_args.max_calibration_texts == 8
     assert donor_init_args.dtype == "float32"
     assert merge_layer_args.groups == "3+4,7+8"
     assert drop_args.layers == "3,7"
@@ -446,6 +490,16 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.02",
             "--reconstruction-alpha",
             "0.5",
+            "--reconstruction-target",
+            "survivor-mlp",
+            "--reconstruction-objective",
+            "cosine",
+            "--cosine-steps",
+            "9",
+            "--cosine-lr",
+            "0.03",
+            "--cosine-l2",
+            "0.001",
             "--max-length",
             "80",
             "--max-tokens-per-layer",
@@ -466,6 +520,11 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert reconstruct_args.layer_merge_report == "merge.json"
     assert reconstruct_args.ridge == 0.02
     assert reconstruct_args.reconstruction_alpha == 0.5
+    assert reconstruct_args.reconstruction_target == "survivor-mlp"
+    assert reconstruct_args.reconstruction_objective == "cosine"
+    assert reconstruct_args.cosine_steps == 9
+    assert reconstruct_args.cosine_lr == 0.03
+    assert reconstruct_args.cosine_l2 == 0.001
     assert reconstruct_args.max_length == 80
     assert reconstruct_args.max_tokens_per_layer == 33
     assert reconstruct_args.dtype == "float32"
@@ -520,6 +579,23 @@ def test_proportional_layer_index_maps_depths() -> None:
     assert [_proportional_index(idx, 3, 5) for idx in range(3)] == [0, 2, 4]
 
 
+def test_donor_layer_groups_partition_parent_depth() -> None:
+    groups = [_donor_layer_group_for_target(idx, target_layer_count=3, donor_layer_count=8) for idx in range(3)]
+
+    assert groups == [[0, 1], [2, 3, 4], [5, 6, 7]]
+    assert [item for group in groups for item in group] == list(range(8))
+
+
+def test_linear_cka_detects_similar_activation_spaces() -> None:
+    torch = pytest.importorskip("torch")
+    first = torch.tensor([[-1.0, 0.0], [1.0, 0.0], [-1.0, 0.0], [1.0, 0.0]])
+    second = first * 2.0
+    unrelated = torch.tensor([[0.0, -1.0], [0.0, -1.0], [0.0, 1.0], [0.0, 1.0]])
+
+    assert _linear_cka(torch, first, second) == pytest.approx(1.0)
+    assert _linear_cka(torch, first, unrelated) == pytest.approx(0.0)
+
+
 def test_resize_tensor_to_shape_mean_folds_axes() -> None:
     torch = pytest.importorskip("torch")
     source = torch.arange(24, dtype=torch.float32).reshape(6, 4)
@@ -546,6 +622,17 @@ def test_resize_tensor_to_shape_rms_fold_preserves_more_variance() -> None:
 
     assert mean_folded.tolist() == [[1.0, 1.0], [1.0, 1.0]]
     assert rms_folded.flatten().tolist() == pytest.approx([2**0.5, 2**0.5, 2**0.5, 2**0.5])
+
+
+def test_scale_projection_to_target_matches_target_rms() -> None:
+    torch = pytest.importorskip("torch")
+    projected = torch.ones((4, 4), dtype=torch.float32) * 10.0
+    target = torch.ones((4, 4), dtype=torch.float32) * 0.5
+
+    scaled = _scale_projection_to_target(torch, projected, target, "target-rms")
+
+    assert float(scaled.pow(2).mean().sqrt()) == pytest.approx(float(target.pow(2).mean().sqrt()))
+    assert torch.all(scaled > 0)
 
 
 def test_activation_weighted_fold_uses_importance_bins() -> None:
@@ -575,6 +662,36 @@ def test_activation_similarity_assignment_groups_activation_signatures() -> None
     assert assignment[0].item() == assignment[1].item()
     assert assignment[2].item() == assignment[3].item()
     assert assignment[0].item() != assignment[2].item()
+
+
+def test_fit_activation_map_cosine_objective_reports_directional_fit() -> None:
+    torch = pytest.importorskip("torch")
+    features = torch.eye(3, dtype=torch.float32)
+    targets = torch.tensor(
+        [
+            [0.0, 1.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    report = _fit_activation_map(
+        torch,
+        features,
+        targets,
+        ridge=0.01,
+        reconstruction_alpha=1.0,
+        reconstruction_objective="cosine",
+        cosine_steps=3,
+        cosine_lr=0.01,
+        cosine_l2=0.0,
+    )
+
+    assert tuple(report["map"].shape) == (3, 3)
+    assert report["solver"]["objective"] == "cosine"
+    assert report["solver"]["cosine_refined"] is True
+    assert report["mean_cosine_after"] > report["mean_cosine_before"]
 
 
 def test_recovery_loss_allows_lm_only_without_teacher() -> None:
@@ -626,6 +743,14 @@ def test_mlp_spec_detects_lfm_feed_forward_names() -> None:
     assert spec["kind"] == "gated"
     assert spec["input_names"] == ["w1", "w3"]
     assert spec["output_name"] == "w2"
+
+
+def test_recovery_mlp_projection_spec_detects_lfm_feed_forward_names() -> None:
+    layer = _Obj(feed_forward=_Obj(w1=object(), w3=object(), w2=object()))
+    spec = _mlp_projection_spec(layer)
+    assert spec is not None
+    assert spec["kind"] == "gated"
+    assert spec["output_name"] == "feed_forward.w2"
 
 
 def test_recovery_train_scope_supports_feed_forward_layers() -> None:
@@ -749,6 +874,10 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "mean",
             "--activation-fold-assignment",
             "similarity",
+            "--donor-layer-fold-mode",
+            "average",
+            "--projection-scale",
+            "target-rms",
             "--activation-calibration-file",
             "activation.jsonl",
             "--activation-max-calibration-texts",
@@ -774,6 +903,8 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "max_anchors": 1234,
         "fold_mode": "mean",
         "activation_fold_assignment": "similarity",
+        "donor_layer_fold_mode": "average",
+        "projection_scale": "target-rms",
         "activation_calibration_texts": ["activation text"],
         "activation_max_length": 64,
         "activation_device": "cpu",
@@ -868,6 +999,16 @@ def test_hf_reconstruct_folded_handler_passes_flags(monkeypatch) -> None:
             "0.02",
             "--reconstruction-alpha",
             "0.4",
+            "--reconstruction-target",
+            "both",
+            "--reconstruction-objective",
+            "cosine",
+            "--cosine-steps",
+            "7",
+            "--cosine-lr",
+            "0.02",
+            "--cosine-l2",
+            "0.003",
             "--max-length",
             "72",
             "--max-tokens-per-layer",
@@ -893,6 +1034,11 @@ def test_hf_reconstruct_folded_handler_passes_flags(monkeypatch) -> None:
         "layer_merge_report": "merge.json",
         "ridge": 0.02,
         "reconstruction_alpha": 0.4,
+        "reconstruction_target": "both",
+        "reconstruction_objective": "cosine",
+        "cosine_steps": 7,
+        "cosine_lr": 0.02,
+        "cosine_l2": 0.003,
         "max_length": 72,
         "max_tokens_per_layer": 128,
         "torch_dtype": "float32",

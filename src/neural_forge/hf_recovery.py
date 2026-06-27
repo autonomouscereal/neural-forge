@@ -178,6 +178,11 @@ def reconstruct_folded_causal_lm(
     layer_merge_report: str | Path | dict[str, Any] | None = None,
     ridge: float = 1e-3,
     reconstruction_alpha: float = 1.0,
+    reconstruction_target: str = "consumer-input",
+    reconstruction_objective: str = "ridge",
+    cosine_steps: int = 80,
+    cosine_lr: float = 1e-2,
+    cosine_l2: float = 1e-4,
     max_length: int = 128,
     max_tokens_per_layer: int = 512,
     torch_dtype: str = "float16",
@@ -198,6 +203,16 @@ def reconstruct_folded_causal_lm(
         raise ValueError("ridge must be non-negative.")
     if not 0.0 <= float(reconstruction_alpha) <= 1.0:
         raise ValueError("reconstruction_alpha must be in [0, 1].")
+    if reconstruction_target not in {"consumer-input", "survivor-mlp", "both"}:
+        raise ValueError("reconstruction_target must be consumer-input, survivor-mlp, or both.")
+    if reconstruction_objective not in {"ridge", "cosine"}:
+        raise ValueError("reconstruction_objective must be ridge or cosine.")
+    if cosine_steps < 0:
+        raise ValueError("cosine_steps must be non-negative.")
+    if cosine_lr <= 0:
+        raise ValueError("cosine_lr must be positive.")
+    if cosine_l2 < 0:
+        raise ValueError("cosine_l2 must be non-negative.")
     if max_length <= 1:
         raise ValueError("max_length must be greater than 1.")
     if max_tokens_per_layer <= 0:
@@ -261,6 +276,11 @@ def reconstruct_folded_causal_lm(
                 batches,
                 ridge=ridge,
                 reconstruction_alpha=float(reconstruction_alpha),
+                reconstruction_target=reconstruction_target,
+                reconstruction_objective=reconstruction_objective,
+                cosine_steps=cosine_steps,
+                cosine_lr=cosine_lr,
+                cosine_l2=cosine_l2,
                 max_tokens_per_layer=max_tokens_per_layer,
             )
             repairs.append(repair)
@@ -279,6 +299,11 @@ def reconstruct_folded_causal_lm(
         "layer_merge_report": report,
         "ridge": ridge,
         "reconstruction_alpha": float(reconstruction_alpha),
+        "reconstruction_target": reconstruction_target,
+        "reconstruction_objective": reconstruction_objective,
+        "cosine_steps": int(cosine_steps),
+        "cosine_lr": float(cosine_lr),
+        "cosine_l2": float(cosine_l2),
         "max_length": max_length,
         "max_tokens_per_layer": max_tokens_per_layer,
         "torch_dtype": torch_dtype,
@@ -495,6 +520,11 @@ def _reconstruct_fold_group(
     batches: Sequence[dict[str, Any]],
     ridge: float,
     reconstruction_alpha: float,
+    reconstruction_target: str,
+    reconstruction_objective: str,
+    cosine_steps: int,
+    cosine_lr: float,
+    cosine_l2: float,
     max_tokens_per_layer: int,
 ) -> dict[str, Any]:
     source_consumer_idx = max(group["group"]) + 1
@@ -513,13 +543,51 @@ def _reconstruct_fold_group(
     candidate_layer = candidate_layers[candidate_consumer_idx]
     repair_report: dict[str, Any] = {**base_report, "skipped": False}
 
+    if reconstruction_target in {"survivor-mlp", "both"}:
+        source_survivor_idx = max(group["group"])
+        candidate_survivor_idx = _candidate_index_after_depth_fold(group["survivor"], group["all_folded_indices"])
+        if source_survivor_idx < len(source_layers) and candidate_survivor_idx < len(candidate_layers):
+            repair_report["survivor_mlp_reconstruction"] = _reconstruct_survivor_mlp_output(
+                torch,
+                source,
+                candidate,
+                source_layers[source_survivor_idx],
+                candidate_layers[candidate_survivor_idx],
+                batches,
+                ridge=ridge,
+                reconstruction_alpha=reconstruction_alpha,
+                reconstruction_objective=reconstruction_objective,
+                cosine_steps=cosine_steps,
+                cosine_lr=cosine_lr,
+                cosine_l2=cosine_l2,
+                max_tokens_per_layer=max_tokens_per_layer,
+            )
+        else:
+            repair_report["survivor_mlp_reconstruction"] = {
+                "skipped": True,
+                "reason": "survivor_layer_out_of_range",
+            }
+
+    if reconstruction_target == "survivor-mlp":
+        return repair_report
+
     source_attn_norm = _get_layer_module(source_layer, ("input_layernorm", "ln_1"))
     candidate_attn_norm = _get_layer_module(candidate_layer, ("input_layernorm", "ln_1"))
     attn_linears = _attention_input_linears(candidate_layer)
     if source_attn_norm is not None and candidate_attn_norm is not None and attn_linears:
         source_features = _collect_module_activations(torch, source, source_attn_norm, batches, max_tokens_per_layer)
         candidate_features = _collect_module_activations(torch, candidate, candidate_attn_norm, batches, max_tokens_per_layer)
-        fitted = _fit_activation_map(torch, candidate_features, source_features, ridge, reconstruction_alpha)
+        fitted = _fit_activation_map(
+            torch,
+            candidate_features,
+            source_features,
+            ridge,
+            reconstruction_alpha,
+            reconstruction_objective,
+            cosine_steps,
+            cosine_lr,
+            cosine_l2,
+        )
         _absorb_input_map_into_linears(torch, attn_linears, fitted["map"])
         repair_report["attention_reconstruction"] = {
             key: value for key, value in fitted.items() if key != "map"
@@ -536,7 +604,17 @@ def _reconstruct_fold_group(
     if source_mlp_norm is not None and candidate_mlp_norm is not None and mlp_linears:
         source_features = _collect_module_activations(torch, source, source_mlp_norm, batches, max_tokens_per_layer)
         candidate_features = _collect_module_activations(torch, candidate, candidate_mlp_norm, batches, max_tokens_per_layer)
-        fitted = _fit_activation_map(torch, candidate_features, source_features, ridge, reconstruction_alpha)
+        fitted = _fit_activation_map(
+            torch,
+            candidate_features,
+            source_features,
+            ridge,
+            reconstruction_alpha,
+            reconstruction_objective,
+            cosine_steps,
+            cosine_lr,
+            cosine_l2,
+        )
         _absorb_input_map_into_linears(torch, mlp_linears, fitted["map"])
         repair_report["mlp_reconstruction"] = {
             key: value for key, value in fitted.items() if key != "map"
@@ -580,6 +658,238 @@ def _mlp_input_linears(layer) -> list[tuple[str, Any]]:
         if _is_linear_like(module):
             linears.append((f"mlp.{name}", module))
     return linears
+
+
+def _reconstruct_survivor_mlp_output(
+    torch,
+    source,
+    candidate,
+    source_last_layer,
+    candidate_survivor_layer,
+    batches: Sequence[dict[str, Any]],
+    ridge: float,
+    reconstruction_alpha: float,
+    reconstruction_objective: str,
+    cosine_steps: int,
+    cosine_lr: float,
+    cosine_l2: float,
+    max_tokens_per_layer: int,
+) -> dict[str, Any]:
+    spec = _mlp_projection_spec(candidate_survivor_layer)
+    if spec is None:
+        return {"skipped": True, "reason": "unsupported_mlp_shape"}
+
+    source_output = _collect_layer_output_activations(torch, source, source_last_layer, batches, max_tokens_per_layer)
+    hidden, residual, candidate_output = _collect_survivor_mlp_calibration(
+        torch,
+        candidate,
+        candidate_survivor_layer,
+        batches,
+        max_tokens_per_layer,
+    )
+    rows = min(int(source_output.shape[0]), int(hidden.shape[0]), int(residual.shape[0]))
+    source_rows = source_output[:rows].to(torch.float32)
+    hidden_rows = hidden[:rows].to(torch.float32)
+    residual_rows = residual[:rows].to(torch.float32)
+    candidate_rows = candidate_output[:rows].to(torch.float32)
+    target_mlp_output = source_rows - residual_rows
+    solved_report = _solve_linear_reconstruction(
+        torch,
+        hidden_rows,
+        target_mlp_output,
+        ridge,
+        reconstruction_objective,
+        cosine_steps,
+        cosine_lr,
+        cosine_l2,
+    )
+    solved = solved_report["map"]
+    old_weight = spec["output"].weight.data.detach().cpu().to(torch.float32)
+    solved_weight = solved.T.contiguous()
+    if tuple(old_weight.shape) != tuple(solved_weight.shape):
+        return {
+            "skipped": True,
+            "reason": "solved_weight_shape_mismatch",
+            "old_weight_shape": list(old_weight.shape),
+            "solved_weight_shape": list(solved_weight.shape),
+        }
+    blended_weight = (1.0 - float(reconstruction_alpha)) * old_weight + float(reconstruction_alpha) * solved_weight
+    before = _relative_reconstruction_error(torch, candidate_rows, source_rows)
+    solved_output = residual_rows + hidden_rows.matmul(solved)
+    solved_error = _relative_reconstruction_error(torch, solved_output, source_rows)
+    blended_output = residual_rows + hidden_rows.matmul(blended_weight.T)
+    after = _relative_reconstruction_error(torch, blended_output, source_rows)
+    before_cosine = _mean_row_cosine(torch, candidate_rows, source_rows)
+    solved_cosine = _mean_row_cosine(torch, solved_output, source_rows)
+    after_cosine = _mean_row_cosine(torch, blended_output, source_rows)
+    spec["output"].weight.data.copy_(blended_weight.to(device=spec["output"].weight.device, dtype=spec["output"].weight.dtype))
+    return {
+        "skipped": False,
+        "tokens": rows,
+        "feature_size": int(hidden_rows.shape[1]),
+        "hidden_size": int(source_rows.shape[1]),
+        "output_projection": spec["output_name"],
+        "reconstruction_alpha": float(reconstruction_alpha),
+        "reconstruction_objective": reconstruction_objective,
+        "cosine_steps": int(cosine_steps),
+        "cosine_lr": float(cosine_lr),
+        "cosine_l2": float(cosine_l2),
+        "relative_error_before": before,
+        "relative_error_solved": solved_error,
+        "relative_error_after": after,
+        "mean_cosine_before": before_cosine,
+        "mean_cosine_solved": solved_cosine,
+        "mean_cosine_after": after_cosine,
+        "solver": {key: value for key, value in solved_report.items() if key != "map"},
+    }
+
+
+def _mlp_projection_spec(layer) -> dict[str, Any] | None:
+    mlp = getattr(layer, "mlp", None)
+    feed_forward = getattr(layer, "feed_forward", None)
+    if feed_forward is not None and all(hasattr(feed_forward, name) for name in ("w1", "w3", "w2")):
+        return {
+            "kind": "gated",
+            "mlp": feed_forward,
+            "gate": feed_forward.w1,
+            "up": feed_forward.w3,
+            "output": feed_forward.w2,
+            "output_name": "feed_forward.w2",
+        }
+    if mlp is None:
+        return None
+    if all(hasattr(mlp, name) for name in ("gate_proj", "up_proj", "down_proj")):
+        return {
+            "kind": "gated",
+            "mlp": mlp,
+            "gate": mlp.gate_proj,
+            "up": mlp.up_proj,
+            "output": mlp.down_proj,
+            "output_name": "mlp.down_proj",
+        }
+    if all(hasattr(mlp, name) for name in ("dense_h_to_4h", "dense_4h_to_h")):
+        return {
+            "kind": "dense",
+            "mlp": mlp,
+            "input": mlp.dense_h_to_4h,
+            "output": mlp.dense_4h_to_h,
+            "output_name": "mlp.dense_4h_to_h",
+        }
+    if all(hasattr(mlp, name) for name in ("fc1", "fc2")):
+        return {
+            "kind": "dense",
+            "mlp": mlp,
+            "input": mlp.fc1,
+            "output": mlp.fc2,
+            "output_name": "mlp.fc2",
+        }
+    return None
+
+
+def _mlp_hidden_features(torch, spec: dict[str, Any], inputs):
+    module_inputs = inputs.to(device=spec["output"].weight.device, dtype=spec["output"].weight.dtype)
+    if spec["kind"] == "gated":
+        activation = getattr(spec["mlp"], "act_fn", None) or torch.nn.functional.silu
+        return activation(spec["gate"](module_inputs)) * spec["up"](module_inputs)
+    activation = getattr(spec["mlp"], "act_fn", None) or getattr(spec["mlp"], "act", None) or torch.nn.functional.gelu
+    return activation(spec["input"](module_inputs))
+
+
+def _collect_layer_output_activations(torch, model, layer, batches: Sequence[dict[str, Any]], max_tokens: int):
+    pieces = []
+    token_count = 0
+    current_mask = None
+
+    def hook(_module, _inputs, output):
+        nonlocal token_count
+        tensor = output[0] if isinstance(output, tuple) else output
+        rows = _select_token_rows(torch, tensor.detach().to(torch.float32), current_mask)
+        remaining = max_tokens - token_count
+        if remaining > 0:
+            pieces.append(rows[:remaining].detach().cpu())
+            token_count += int(min(rows.shape[0], remaining))
+
+    handle = layer.register_forward_hook(hook)
+    was_training = model.training
+    try:
+        model.eval()
+        for batch in batches:
+            if token_count >= max_tokens:
+                break
+            current_mask = batch.get("attention_mask")
+            model(**batch, use_cache=False)
+    finally:
+        handle.remove()
+        if was_training:
+            model.train()
+    if not pieces:
+        raise RuntimeError("No layer output activations were captured.")
+    return torch.cat(pieces, dim=0)
+
+
+def _collect_survivor_mlp_calibration(
+    torch,
+    model,
+    layer,
+    batches: Sequence[dict[str, Any]],
+    max_tokens: int,
+):
+    spec = _mlp_projection_spec(layer)
+    if spec is None:
+        raise ValueError("Unsupported MLP shape.")
+    hidden_pieces = []
+    mlp_output_pieces = []
+    layer_output_pieces = []
+    token_count = 0
+    current_mask = None
+
+    def mlp_hook(_module, inputs, output):
+        if token_count >= max_tokens:
+            return
+        hidden_rows = _select_token_rows(
+            torch,
+            _mlp_hidden_features(torch, spec, inputs[0]).detach().to(torch.float32),
+            current_mask,
+        )
+        output_rows = _select_token_rows(torch, output.detach().to(torch.float32), current_mask)
+        hidden_pieces.append(hidden_rows.detach().cpu())
+        mlp_output_pieces.append(output_rows.detach().cpu())
+
+    def layer_hook(_module, _inputs, output):
+        nonlocal token_count
+        tensor = output[0] if isinstance(output, tuple) else output
+        rows = _select_token_rows(torch, tensor.detach().to(torch.float32), current_mask)
+        remaining = max_tokens - token_count
+        if remaining > 0:
+            layer_output_pieces.append(rows[:remaining].detach().cpu())
+            token_count += int(min(rows.shape[0], remaining))
+
+    mlp_handle = spec["mlp"].register_forward_hook(mlp_hook)
+    layer_handle = layer.register_forward_hook(layer_hook)
+    was_training = model.training
+    try:
+        model.eval()
+        for batch in batches:
+            if token_count >= max_tokens:
+                break
+            current_mask = batch.get("attention_mask")
+            model(**batch, use_cache=False)
+    finally:
+        mlp_handle.remove()
+        layer_handle.remove()
+        if was_training:
+            model.train()
+    if not hidden_pieces or not mlp_output_pieces or not layer_output_pieces:
+        raise RuntimeError("No survivor MLP calibration activations were captured.")
+    hidden = torch.cat(hidden_pieces, dim=0)[:max_tokens]
+    mlp_output = torch.cat(mlp_output_pieces, dim=0)[:max_tokens]
+    layer_output = torch.cat(layer_output_pieces, dim=0)[:max_tokens]
+    rows = min(int(hidden.shape[0]), int(mlp_output.shape[0]), int(layer_output.shape[0]))
+    hidden = hidden[:rows]
+    mlp_output = mlp_output[:rows]
+    layer_output = layer_output[:rows]
+    residual = layer_output - mlp_output
+    return hidden, residual, layer_output
 
 
 def _is_linear_like(module) -> bool:
@@ -634,7 +944,17 @@ def _select_token_rows(torch, tensor, attention_mask):
     return values.cpu()
 
 
-def _fit_activation_map(torch, candidate_features, source_features, ridge: float, reconstruction_alpha: float = 1.0) -> dict[str, Any]:
+def _fit_activation_map(
+    torch,
+    candidate_features,
+    source_features,
+    ridge: float,
+    reconstruction_alpha: float = 1.0,
+    reconstruction_objective: str = "ridge",
+    cosine_steps: int = 80,
+    cosine_lr: float = 1e-2,
+    cosine_l2: float = 1e-4,
+) -> dict[str, Any]:
     rows = min(int(candidate_features.shape[0]), int(source_features.shape[0]))
     if rows <= 0:
         raise RuntimeError("Need at least one activation row to fit reconstruction.")
@@ -645,23 +965,121 @@ def _fit_activation_map(torch, candidate_features, source_features, ridge: float
             f"Activation hidden-size mismatch: {candidate_rows.shape[1]} != {source_rows.shape[1]}"
         )
     before = _relative_reconstruction_error(torch, candidate_rows, source_rows)
-    solved = _ridge_solve_features(torch, candidate_rows, source_rows, ridge)
+    before_cosine = _mean_row_cosine(torch, candidate_rows, source_rows)
+    solved_report = _solve_linear_reconstruction(
+        torch,
+        candidate_rows,
+        source_rows,
+        ridge,
+        reconstruction_objective,
+        cosine_steps,
+        cosine_lr,
+        cosine_l2,
+    )
+    solved = solved_report["map"]
+    solved_error = _relative_reconstruction_error(torch, candidate_rows.matmul(solved), source_rows)
+    solved_cosine = _mean_row_cosine(torch, candidate_rows.matmul(solved), source_rows)
     if reconstruction_alpha < 1.0:
         identity = torch.eye(solved.shape[0], dtype=solved.dtype, device=solved.device)
         solved = (1.0 - float(reconstruction_alpha)) * identity + float(reconstruction_alpha) * solved
     after = _relative_reconstruction_error(torch, candidate_rows.matmul(solved), source_rows)
+    after_cosine = _mean_row_cosine(torch, candidate_rows.matmul(solved), source_rows)
     return {
         "map": solved,
         "tokens": rows,
         "hidden_size": int(candidate_rows.shape[1]),
         "reconstruction_alpha": float(reconstruction_alpha),
+        "reconstruction_objective": reconstruction_objective,
         "relative_error_before": before,
+        "relative_error_solved": solved_error,
         "relative_error_after": after,
+        "mean_cosine_before": before_cosine,
+        "mean_cosine_solved": solved_cosine,
+        "mean_cosine_after": after_cosine,
+        "solver": {key: value for key, value in solved_report.items() if key != "map"},
+    }
+
+
+def _solve_linear_reconstruction(
+    torch,
+    features,
+    targets,
+    ridge: float,
+    reconstruction_objective: str,
+    cosine_steps: int,
+    cosine_lr: float,
+    cosine_l2: float,
+) -> dict[str, Any]:
+    ridge_map = _ridge_solve_features(torch, features, targets, ridge)
+    if reconstruction_objective == "ridge" or cosine_steps == 0:
+        return {
+            "map": ridge_map,
+            "objective": "ridge",
+            "ridge": float(ridge),
+            "cosine_refined": False,
+        }
+    if reconstruction_objective != "cosine":
+        raise ValueError("reconstruction_objective must be ridge or cosine.")
+    refined, refine_report = _refine_linear_map_by_cosine(
+        torch,
+        features,
+        targets,
+        ridge_map,
+        steps=cosine_steps,
+        lr=cosine_lr,
+        l2=cosine_l2,
+    )
+    return {
+        "map": refined,
+        "objective": "cosine",
+        "ridge": float(ridge),
+        "cosine_refined": True,
+        **refine_report,
+    }
+
+
+def _refine_linear_map_by_cosine(torch, features, targets, initial_map, steps: int, lr: float, l2: float):
+    features = torch.nan_to_num(features.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    targets = torch.nan_to_num(targets.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    matrix = torch.nn.Parameter(initial_map.detach().clone().to(torch.float32))
+    anchor = initial_map.detach().clone().to(torch.float32)
+    optimizer = torch.optim.AdamW([matrix], lr=float(lr), weight_decay=0.0)
+    start_cosine = _mean_row_cosine(torch, features.matmul(matrix.detach()), targets)
+    start_error = _relative_reconstruction_error(torch, features.matmul(matrix.detach()), targets)
+    final_loss = None
+    with torch.enable_grad():
+        for _step in range(int(steps)):
+            optimizer.zero_grad(set_to_none=True)
+            predicted = features.matmul(matrix)
+            cosine_loss = 1.0 - torch.nn.functional.cosine_similarity(predicted, targets, dim=1, eps=1e-8).mean()
+            if l2 > 0:
+                cosine_loss = cosine_loss + float(l2) * torch.mean((matrix - anchor) ** 2)
+            if not torch.isfinite(cosine_loss):
+                break
+            cosine_loss.backward()
+            optimizer.step()
+            final_loss = float(cosine_loss.detach().cpu())
+    refined = matrix.detach()
+    return refined, {
+        "cosine_steps": int(steps),
+        "cosine_lr": float(lr),
+        "cosine_l2": float(l2),
+        "cosine_loss_final": final_loss,
+        "mean_cosine_initial": start_cosine,
+        "mean_cosine_final": _mean_row_cosine(torch, features.matmul(refined), targets),
+        "relative_error_initial": start_error,
+        "relative_error_final": _relative_reconstruction_error(torch, features.matmul(refined), targets),
     }
 
 
 def _relative_reconstruction_error(torch, predicted, target) -> float:
     return float((predicted - target).norm().detach().cpu() / target.norm().detach().cpu().clamp_min(1e-12))
+
+
+def _mean_row_cosine(torch, predicted, target) -> float:
+    predicted = torch.nan_to_num(predicted.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    target = torch.nan_to_num(target.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    return float(torch.nn.functional.cosine_similarity(predicted, target, dim=1, eps=1e-8).mean().detach().cpu())
 
 
 def _absorb_input_map_into_linears(torch, linears: Sequence[tuple[str, Any]], mapping) -> None:

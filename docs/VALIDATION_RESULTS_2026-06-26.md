@@ -1267,3 +1267,53 @@ Interpretation:
   residual/block-output reconstruction or a low-rank adapter-free update to the
   folded survivor block itself, then gate by held-out generations and external
   tasks rather than local activation error.
+
+## Parent-To-Child Donor Projection Correction
+
+The blank-target compression path was corrected after inspection: the previous
+`hf-donor-project-init` implementation width-folded donor tensors but selected a
+single proportional donor layer for each child layer. That is not true parent
+depth folding. The tool now supports `--donor-layer-fold-mode average|fold` so
+each child layer can receive a folded range of parent layers before width
+folding into the child shape.
+
+Run:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_parent_depth_fold_20260627_040218
+```
+
+Setup:
+
+- parent/donor: `Qwen/Qwen3-4B-Base`;
+- child/target shape/tokenizer: `HuggingFaceTB/SmolLM2-135M`;
+- output params: `134,515,008`;
+- calibration: 32 curated Omnicoder JSONL texts, max length `96`;
+- width fold: `--fold-mode mean`, `--activation-fold-assignment similarity`;
+- depth fold variants: `representative`, `fold`, and `average`.
+
+Results:
+
+| Variant | Parent Depth Handling | Scale | Mean PPL | Choice Acc | Manual output |
+|---|---|---|---:|---:|---|
+| earlier representative activation-similarity | single proportional donor layer | none | 59,140.629 | 0.00 | repeated `conve` / `Ceres` style collapse |
+| parent depth `fold` | folded donor layer ranges; residual outputs summed | none | 68,920.270 | 0.00 | repeated `connotation` |
+| parent depth `average` | averaged donor layer ranges | none | 75,372.174 | 0.00 | repeated `connotation` |
+| representative + target RMS scale | single donor layer | `target-rms` | 121,488,385.481 | 0.50* | blank/repetitive output; one probe had NaN scores |
+
+`*` The `0.50` choice score is not trusted because one multiple-choice probe
+returned NaN scores and generations were unusable.
+
+Interpretation:
+
+- The parent-to-child direction is now implemented correctly: parent layer
+  ranges can be folded into the child depth before width folding.
+- This did not recover behavior by itself. The best PPL remains the earlier
+  representative activation-similarity projection, and all manual generations
+  are failed.
+- Naive target-RMS rescaling is not a safe recovery method. It changed token
+  collapse shape but worsened PPL and introduced NaN probe scores.
+- Next useful work should target activation/logit reconstruction after
+  parent-to-child projection: fit child block outputs or logits against the
+  donor on calibration samples, with promotion gated by manual generations and
+  external tasks.

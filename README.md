@@ -114,6 +114,23 @@ neural-forge hf-random-init runs/smollm2-135m-random `
   --dtype float16
 ```
 
+Fold a larger parent/donor directly into a blank child/target architecture:
+
+```powershell
+neural-forge hf-donor-project-init runs/qwen4b-into-smollm2 `
+  --target-config-model HuggingFaceTB/SmolLM2-135M `
+  --target-tokenizer-model HuggingFaceTB/SmolLM2-135M `
+  --donor-model Qwen/Qwen3-4B-Base `
+  --fold-mode mean `
+  --activation-fold-assignment similarity `
+  --donor-layer-fold-mode fold
+```
+
+`--donor-layer-fold-mode representative` preserves the old proportional-layer
+sampling behavior. `average` and `fold` fold parent layer ranges into each child
+layer before width folding; `fold` sums residual output projections and averages
+other parameters.
+
 Task arithmetic defaults to `--dtype auto` and saves the base tokenizer after
 verifying that the tuned tokenizer has the same vocabulary. Special-token map
 differences are recorded in the merge report. Use an explicit dtype such as

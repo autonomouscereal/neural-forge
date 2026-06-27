@@ -549,6 +549,115 @@ def drop_decoder_layers(
     return report
 
 
+def rank_layer_fold_candidates(
+    model_id_or_path: str,
+    output_file: str | Path,
+    window: int = 2,
+    top_k: int = 10,
+    max_length: int = 128,
+    max_tokens_per_layer: int = 512,
+    torch_dtype: str = "float16",
+    device: str = "cuda:0",
+    trust_remote_code: bool = False,
+    calibration_texts: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    """Rank adjacent decoder layer groups by activation redundancy.
+
+    The score favors high linear CKA and row-wise cosine between the first and
+    last layer outputs in a candidate group, while penalizing large residual
+    stream deltas. This is a fold-first selection heuristic, not a pruning
+    criterion.
+    """
+
+    if window < 2:
+        raise ValueError("window must be at least 2.")
+    if top_k <= 0:
+        raise ValueError("top_k must be positive.")
+    if max_length <= 1:
+        raise ValueError("max_length must be greater than 1.")
+    if max_tokens_per_layer <= 0:
+        raise ValueError("max_tokens_per_layer must be positive.")
+
+    torch, transformers = _torch_and_transformers()
+    dtype = _dtype_from_name(torch, torch_dtype)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_id_or_path, trust_remote_code=trust_remote_code)
+    if tokenizer.pad_token_id is None and tokenizer.eos_token_id is not None:
+        tokenizer.pad_token = tokenizer.eos_token
+    model = transformers.AutoModelForCausalLM.from_pretrained(
+        model_id_or_path,
+        torch_dtype=dtype,
+        device_map=None,
+        trust_remote_code=trust_remote_code,
+    )
+    model.to(device)
+    model.eval()
+    if hasattr(model.config, "use_cache"):
+        model.config.use_cache = False
+    layers = _decoder_layers(model)
+    if not layers:
+        raise ValueError("Model needs decoder layers.")
+    if window > len(layers):
+        raise ValueError(f"window {window} exceeds layer count {len(layers)}.")
+
+    texts = list(calibration_texts or TEXT_EVALS)
+    if not texts:
+        raise ValueError("Need at least one calibration text.")
+    with torch.no_grad():
+        layer_rows = _collect_all_layer_output_rows(
+            torch,
+            model,
+            tokenizer,
+            layers,
+            texts,
+            max_length=max_length,
+            max_tokens_per_layer=max_tokens_per_layer,
+            device=device,
+        )
+
+    candidates = []
+    for start in range(0, len(layers) - window + 1):
+        end = start + window - 1
+        first = layer_rows[start]
+        last = layer_rows[end]
+        rows = min(int(first.shape[0]), int(last.shape[0]))
+        first = first[:rows].to(torch.float32)
+        last = last[:rows].to(torch.float32)
+        cka = _linear_cka(torch, first, last)
+        cosine = _mean_row_cosine(torch, first, last)
+        delta = _relative_delta(torch, first, last)
+        variance_ratio = _variance_ratio(torch, first, last)
+        score = float(cka + cosine - delta)
+        candidates.append(
+            {
+                "group": list(range(start, start + window)),
+                "survivor": start,
+                "folded": list(range(start + 1, start + window)),
+                "score": score,
+                "linear_cka": cka,
+                "mean_cosine": cosine,
+                "relative_delta": delta,
+                "variance_ratio": variance_ratio,
+                "tokens": rows,
+            }
+        )
+    candidates.sort(key=lambda item: item["score"], reverse=True)
+    report = {
+        "operation": "rank_layer_fold_candidates",
+        "source": model_id_or_path,
+        "window": int(window),
+        "top_k": int(top_k),
+        "old_layer_count": len(layers),
+        "max_length": int(max_length),
+        "max_tokens_per_layer": int(max_tokens_per_layer),
+        "torch_dtype": torch_dtype,
+        "device": device,
+        "calibration_text_count": len(texts),
+        "candidates": candidates[:top_k],
+    }
+    _write_json(output_file, report)
+    return report
+
+
 def evaluate_text_model(
     model_id_or_path: str,
     output_file: str | Path,
@@ -1458,6 +1567,104 @@ def _relative_mlp_error(torch, mlp, inputs, targets) -> float:
     error = torch.linalg.norm(outputs - targets)
     scale = torch.linalg.norm(targets).clamp_min(1e-12)
     return float((error / scale).detach().cpu())
+
+
+def _collect_all_layer_output_rows(
+    torch,
+    model,
+    tokenizer,
+    layers: Sequence[Any],
+    texts: Sequence[str],
+    max_length: int,
+    max_tokens_per_layer: int,
+    device: str,
+) -> list[Any]:
+    pieces = [[] for _layer in layers]
+    token_counts = [0 for _layer in layers]
+    current_mask = None
+
+    def make_hook(index: int):
+        def hook(_module, _inputs, output):
+            nonlocal token_counts
+            if token_counts[index] >= max_tokens_per_layer:
+                return
+            tensor = output[0] if isinstance(output, tuple) else output
+            rows = _select_token_rows(torch, tensor.detach().to(torch.float32), current_mask)
+            remaining = max_tokens_per_layer - token_counts[index]
+            if remaining > 0:
+                pieces[index].append(rows[:remaining].detach().cpu())
+                token_counts[index] += int(min(rows.shape[0], remaining))
+
+        return hook
+
+    handles = [layer.register_forward_hook(make_hook(idx)) for idx, layer in enumerate(layers)]
+    try:
+        for text in texts:
+            if all(count >= max_tokens_per_layer for count in token_counts):
+                break
+            batch = tokenizer(
+                text,
+                return_tensors="pt",
+                truncation=True,
+                max_length=max_length,
+                padding=False,
+            )
+            batch = {key: value.to(device) for key, value in batch.items()}
+            current_mask = batch.get("attention_mask")
+            model(**batch, use_cache=False)
+    finally:
+        for handle in handles:
+            handle.remove()
+    if any(not item for item in pieces):
+        missing = [idx for idx, item in enumerate(pieces) if not item]
+        raise RuntimeError(f"No activation rows captured for layers: {missing}")
+    return [torch.cat(item, dim=0) for item in pieces]
+
+
+def _select_token_rows(torch, tensor, attention_mask):
+    values = tensor
+    if values.dim() == 3:
+        values = values.reshape(-1, values.shape[-1])
+        if attention_mask is not None:
+            mask = attention_mask.reshape(-1).detach().to(torch.bool).cpu()
+            return values.cpu()[mask]
+    elif values.dim() == 1:
+        values = values.unsqueeze(0)
+    elif values.dim() != 2:
+        values = values.reshape(-1, values.shape[-1])
+    return values.cpu()
+
+
+def _linear_cka(torch, first, second) -> float:
+    first = torch.nan_to_num(first.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    second = torch.nan_to_num(second.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    first = first - first.mean(dim=0, keepdim=True)
+    second = second - second.mean(dim=0, keepdim=True)
+    cross = torch.linalg.norm(first.T.matmul(second)) ** 2
+    first_norm = torch.linalg.norm(first.T.matmul(first))
+    second_norm = torch.linalg.norm(second.T.matmul(second))
+    return float((cross / (first_norm * second_norm).clamp_min(1e-12)).detach().cpu())
+
+
+def _mean_row_cosine(torch, first, second) -> float:
+    first = torch.nan_to_num(first.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    second = torch.nan_to_num(second.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    return float(torch.nn.functional.cosine_similarity(first, second, dim=1, eps=1e-8).mean().detach().cpu())
+
+
+def _relative_delta(torch, first, second) -> float:
+    first = torch.nan_to_num(first.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    second = torch.nan_to_num(second.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    return float(((second - first).norm() / first.norm().clamp_min(1e-12)).detach().cpu())
+
+
+def _variance_ratio(torch, first, second) -> float:
+    first_var = torch.var(first.to(torch.float32), dim=0, unbiased=False).mean().clamp_min(1e-12)
+    second_var = torch.var(second.to(torch.float32), dim=0, unbiased=False).mean()
+    ratio = second_var / first_var
+    if ratio < 1:
+        ratio = 1 / ratio.clamp_min(1e-12)
+    return float(ratio.detach().cpu())
 
 
 def _decoder_layers(model) -> list[Any]:
