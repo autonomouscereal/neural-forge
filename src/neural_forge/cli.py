@@ -480,6 +480,9 @@ def build_parser() -> argparse.ArgumentParser:
     recover.add_argument("--lr", type=float, default=5e-5)
     recover.add_argument("--kd-weight", type=float, default=0.5)
     recover.add_argument("--lm-weight", type=float, default=0.5)
+    recover.add_argument("--unlikelihood-weight", type=float, default=0.0)
+    recover.add_argument("--unlikelihood-window", type=int, default=16)
+    recover.add_argument("--entropy-weight", type=float, default=0.0)
     recover.add_argument("--temperature", type=float, default=2.0)
     recover.add_argument("--train-scope", default="all")
     recover.add_argument("--dtype", default="float32")
@@ -507,6 +510,9 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--span-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--reference-model")
     xfamily_recover.add_argument("--reference-kd-weight", type=float, default=0.0)
+    xfamily_recover.add_argument("--unlikelihood-weight", type=float, default=0.0)
+    xfamily_recover.add_argument("--unlikelihood-window", type=int, default=16)
+    xfamily_recover.add_argument("--entropy-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--span-max-pairs", type=int, default=512)
     xfamily_recover.add_argument("--hidden-ridge", type=float, default=1e-3)
     xfamily_recover.add_argument("--hidden-layer", choices=["last", "middle"], default="last")
@@ -563,6 +569,9 @@ def build_parser() -> argparse.ArgumentParser:
     lm_recover.add_argument("--batch-size", type=int, default=1)
     lm_recover.add_argument("--max-length", type=int, default=96)
     lm_recover.add_argument("--lr", type=float, default=5e-5)
+    lm_recover.add_argument("--unlikelihood-weight", type=float, default=0.0)
+    lm_recover.add_argument("--unlikelihood-window", type=int, default=16)
+    lm_recover.add_argument("--entropy-weight", type=float, default=0.0)
     lm_recover.add_argument("--train-scope", default="all")
     lm_recover.add_argument("--dtype", default="float32")
     lm_recover.add_argument("--device", default="cuda:0")
@@ -1121,6 +1130,9 @@ def cmd_hf_recover(args: argparse.Namespace) -> dict[str, object]:
         lr=args.lr,
         kd_weight=args.kd_weight,
         lm_weight=args.lm_weight,
+        unlikelihood_weight=args.unlikelihood_weight,
+        unlikelihood_window=args.unlikelihood_window,
+        entropy_weight=args.entropy_weight,
         temperature=args.temperature,
         train_scope=args.train_scope,
         torch_dtype=args.dtype,
@@ -1148,6 +1160,9 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         span_kd_weight=args.span_kd_weight,
         reference_model=args.reference_model,
         reference_kd_weight=args.reference_kd_weight,
+        unlikelihood_weight=args.unlikelihood_weight,
+        unlikelihood_window=args.unlikelihood_window,
+        entropy_weight=args.entropy_weight,
         span_max_pairs=args.span_max_pairs,
         hidden_ridge=args.hidden_ridge,
         hidden_layer=args.hidden_layer,
@@ -1201,6 +1216,9 @@ def cmd_hf_lm_recover(args: argparse.Namespace) -> dict[str, object]:
         lr=args.lr,
         kd_weight=0.0,
         lm_weight=1.0,
+        unlikelihood_weight=args.unlikelihood_weight,
+        unlikelihood_window=args.unlikelihood_window,
+        entropy_weight=args.entropy_weight,
         temperature=1.0,
         train_scope=args.train_scope,
         torch_dtype=args.dtype,

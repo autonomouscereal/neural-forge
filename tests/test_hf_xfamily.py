@@ -15,6 +15,7 @@ from neural_forge.hf_recovery import _fit_shared_embedding_hidden_projection
 from neural_forge.hf_recovery import _fold_groups_from_report
 from neural_forge.hf_recovery import _mlp_projection_spec
 from neural_forge.hf_recovery import _recovery_loss
+from neural_forge.hf_recovery import _recent_token_unlikelihood_loss
 from neural_forge.hf_recovery import _set_train_scope
 from neural_forge.hf_recovery import _same_tokenizer_reference_loss
 from neural_forge.hf_recovery import load_calibration_texts
@@ -440,6 +441,12 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "host-reference",
             "--reference-kd-weight",
             "0.35",
+            "--unlikelihood-weight",
+            "0.08",
+            "--unlikelihood-window",
+            "24",
+            "--entropy-weight",
+            "0.006",
             "--span-max-pairs",
             "66",
             "--hidden-ridge",
@@ -505,6 +512,9 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.dtype == "float32"
     assert xfamily_recover_args.reference_model == "host-reference"
     assert xfamily_recover_args.reference_kd_weight == 0.35
+    assert xfamily_recover_args.unlikelihood_weight == 0.08
+    assert xfamily_recover_args.unlikelihood_window == 24
+    assert xfamily_recover_args.entropy_weight == 0.006
     assert merge_layer_args.groups == "3+4,7+8"
     assert drop_args.layers == "3,7"
     assert search_args.width_ratios == "0.9975,0.995"
@@ -578,6 +588,12 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "out",
             "--steps",
             "5",
+            "--unlikelihood-weight",
+            "0.07",
+            "--unlikelihood-window",
+            "20",
+            "--entropy-weight",
+            "0.004",
             "--train-scope",
             "last1",
             "--calibration-file",
@@ -589,6 +605,9 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert lm_recover_args.candidate_model == "candidate"
     assert lm_recover_args.output == "out"
     assert lm_recover_args.steps == 5
+    assert lm_recover_args.unlikelihood_weight == 0.07
+    assert lm_recover_args.unlikelihood_window == 20
+    assert lm_recover_args.entropy_weight == 0.004
     assert lm_recover_args.train_scope == "last1"
     assert lm_recover_args.calibration_file == "calibration.jsonl"
     assert lm_recover_args.max_calibration_texts == 9
@@ -928,6 +947,9 @@ def test_recovery_loss_allows_lm_only_without_teacher() -> None:
         attention_mask=attention_mask,
         kd_weight=0.0,
         lm_weight=1.0,
+        unlikelihood_weight=0.0,
+        unlikelihood_window=2,
+        entropy_weight=0.0,
         temperature=1.0,
     )
 
@@ -941,6 +963,9 @@ def test_recovery_loss_allows_lm_only_without_teacher() -> None:
             attention_mask=attention_mask,
             kd_weight=1.0,
             lm_weight=0.0,
+            unlikelihood_weight=0.0,
+            unlikelihood_window=2,
+            entropy_weight=0.0,
             temperature=1.0,
         )
 
@@ -960,10 +985,26 @@ def test_recovery_loss_handles_padded_teacher_vocab() -> None:
         attention_mask=attention_mask,
         kd_weight=1.0,
         lm_weight=0.0,
+        unlikelihood_weight=0.0,
+        unlikelihood_window=2,
+        entropy_weight=0.0,
         temperature=1.0,
     )
 
     assert torch.isfinite(loss)
+
+
+def test_recent_token_unlikelihood_penalizes_context_repeats() -> None:
+    torch = pytest.importorskip("torch")
+    logits = torch.zeros((1, 3, 5), dtype=torch.float32)
+    logits[:, :, 2] = 8.0
+    input_ids = torch.tensor([[2, 3, 4, 1]])
+    labels = input_ids[:, 1:]
+    mask = torch.ones_like(labels, dtype=torch.bool)
+
+    loss = _recent_token_unlikelihood_loss(torch, logits, input_ids, labels, mask, window=2)
+
+    assert float(loss) > 1.0
 
 
 def test_cross_tokenizer_recovery_loss_uses_anchor_subspace() -> None:
@@ -988,6 +1029,9 @@ def test_cross_tokenizer_recovery_loss_uses_anchor_subspace() -> None:
         hidden_kd_weight=0.0,
         span_kd_weight=0.0,
         reference_kd_weight=0.0,
+        unlikelihood_weight=0.0,
+        unlikelihood_window=2,
+        entropy_weight=0.0,
         hidden_projection=None,
         hidden_layer="last",
         span_pairs=None,
@@ -1027,6 +1071,9 @@ def test_cross_tokenizer_recovery_loss_uses_projected_hidden_states() -> None:
         hidden_kd_weight=0.7,
         span_kd_weight=0.0,
         reference_kd_weight=0.0,
+        unlikelihood_weight=0.0,
+        unlikelihood_window=2,
+        entropy_weight=0.0,
         hidden_projection=projection,
         hidden_layer="last",
         span_pairs=None,
@@ -1086,6 +1133,9 @@ def test_cross_tokenizer_recovery_loss_uses_span_pairs() -> None:
         hidden_kd_weight=0.0,
         span_kd_weight=0.8,
         reference_kd_weight=0.0,
+        unlikelihood_weight=0.0,
+        unlikelihood_window=2,
+        entropy_weight=0.0,
         hidden_projection=None,
         hidden_layer="last",
         span_pairs=torch.tensor([[0, 0, 0], [0, 1, 1]]),
@@ -1359,6 +1409,12 @@ def test_hf_lm_recover_handler_passes_teacherless_flags(monkeypatch) -> None:
             "48",
             "--lr",
             "0.0002",
+            "--unlikelihood-weight",
+            "0.09",
+            "--unlikelihood-window",
+            "18",
+            "--entropy-weight",
+            "0.003",
             "--train-scope",
             "last2",
             "--dtype",
@@ -1386,6 +1442,9 @@ def test_hf_lm_recover_handler_passes_teacherless_flags(monkeypatch) -> None:
         "lr": 0.0002,
         "kd_weight": 0.0,
         "lm_weight": 1.0,
+        "unlikelihood_weight": 0.09,
+        "unlikelihood_window": 18,
+        "entropy_weight": 0.003,
         "temperature": 1.0,
         "train_scope": "last2",
         "torch_dtype": "float32",
@@ -1434,6 +1493,12 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "host-reference",
             "--reference-kd-weight",
             "0.2",
+            "--unlikelihood-weight",
+            "0.11",
+            "--unlikelihood-window",
+            "22",
+            "--entropy-weight",
+            "0.005",
             "--span-max-pairs",
             "88",
             "--hidden-ridge",
@@ -1479,6 +1544,9 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "span_kd_weight": 0.15,
         "reference_model": "host-reference",
         "reference_kd_weight": 0.2,
+        "unlikelihood_weight": 0.11,
+        "unlikelihood_window": 22,
+        "entropy_weight": 0.005,
         "span_max_pairs": 88,
         "hidden_ridge": 0.03,
         "hidden_layer": "middle",

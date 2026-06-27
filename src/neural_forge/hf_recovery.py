@@ -37,6 +37,9 @@ def recover_causal_lm(
     lr: float = 5e-5,
     kd_weight: float = 0.5,
     lm_weight: float = 0.5,
+    unlikelihood_weight: float = 0.0,
+    unlikelihood_window: int = 16,
+    entropy_weight: float = 0.0,
     temperature: float = 2.0,
     train_scope: str = "all",
     torch_dtype: str = "float32",
@@ -61,10 +64,12 @@ def recover_causal_lm(
         raise ValueError("max_length must be greater than 1.")
     if lr <= 0:
         raise ValueError("lr must be positive.")
-    if kd_weight < 0 or lm_weight < 0:
+    if kd_weight < 0 or lm_weight < 0 or unlikelihood_weight < 0 or entropy_weight < 0:
         raise ValueError("loss weights must be non-negative.")
-    if kd_weight == 0 and lm_weight == 0:
+    if kd_weight == 0 and lm_weight == 0 and unlikelihood_weight == 0 and entropy_weight == 0:
         raise ValueError("At least one loss weight must be positive.")
+    if unlikelihood_window <= 0:
+        raise ValueError("unlikelihood_window must be positive.")
     if temperature <= 0:
         raise ValueError("temperature must be positive.")
     if grad_clip < 0:
@@ -132,6 +137,9 @@ def recover_causal_lm(
             batch.get("attention_mask"),
             kd_weight,
             lm_weight,
+            unlikelihood_weight,
+            unlikelihood_window,
+            entropy_weight,
             temperature,
         )
         if not bool(torch.isfinite(loss).detach().cpu()):
@@ -158,6 +166,9 @@ def recover_causal_lm(
         "lr": lr,
         "kd_weight": kd_weight,
         "lm_weight": lm_weight,
+        "unlikelihood_weight": unlikelihood_weight,
+        "unlikelihood_window": unlikelihood_window,
+        "entropy_weight": entropy_weight,
         "temperature": temperature,
         "teacher_used": source_model is not None and kd_weight > 0,
         "train_scope": train_scope,
@@ -185,6 +196,9 @@ def recover_cross_tokenizer_causal_lm(
     span_kd_weight: float = 0.0,
     reference_model: str | None = None,
     reference_kd_weight: float = 0.0,
+    unlikelihood_weight: float = 0.0,
+    unlikelihood_window: int = 16,
+    entropy_weight: float = 0.0,
     span_max_pairs: int = 512,
     hidden_ridge: float = 1e-3,
     hidden_layer: str = "last",
@@ -216,10 +230,28 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("max_length must be greater than 1.")
     if lr <= 0:
         raise ValueError("lr must be positive.")
-    if anchor_kd_weight < 0 or lm_weight < 0 or hidden_kd_weight < 0 or span_kd_weight < 0 or reference_kd_weight < 0:
+    if (
+        anchor_kd_weight < 0
+        or lm_weight < 0
+        or hidden_kd_weight < 0
+        or span_kd_weight < 0
+        or reference_kd_weight < 0
+        or unlikelihood_weight < 0
+        or entropy_weight < 0
+    ):
         raise ValueError("loss weights must be non-negative.")
-    if anchor_kd_weight == 0 and lm_weight == 0 and hidden_kd_weight == 0 and span_kd_weight == 0 and reference_kd_weight == 0:
+    if (
+        anchor_kd_weight == 0
+        and lm_weight == 0
+        and hidden_kd_weight == 0
+        and span_kd_weight == 0
+        and reference_kd_weight == 0
+        and unlikelihood_weight == 0
+        and entropy_weight == 0
+    ):
         raise ValueError("At least one loss weight must be positive.")
+    if unlikelihood_window <= 0:
+        raise ValueError("unlikelihood_window must be positive.")
     if reference_kd_weight > 0 and not reference_model:
         raise ValueError("reference_model is required when reference_kd_weight is positive.")
     if span_max_pairs <= 0:
@@ -373,6 +405,9 @@ def recover_cross_tokenizer_causal_lm(
             hidden_kd_weight,
             span_kd_weight,
             reference_kd_weight,
+            unlikelihood_weight,
+            unlikelihood_window,
+            entropy_weight,
             hidden_projection,
             hidden_layer,
             span_pairs,
@@ -407,6 +442,9 @@ def recover_cross_tokenizer_causal_lm(
         "span_kd_weight": span_kd_weight,
         "reference_model": reference_model,
         "reference_kd_weight": reference_kd_weight,
+        "unlikelihood_weight": unlikelihood_weight,
+        "unlikelihood_window": unlikelihood_window,
+        "entropy_weight": entropy_weight,
         "span_max_pairs": span_max_pairs,
         "span_pair_count_observed": span_pair_counts,
         "hidden_ridge": hidden_ridge,
@@ -1512,7 +1550,19 @@ def _absorb_input_map_into_linears(torch, linears: Sequence[tuple[str, Any]], ma
         linear.weight.data.copy_(updated.to(device=linear.weight.device, dtype=linear.weight.dtype))
 
 
-def _recovery_loss(torch, student, teacher, input_ids, attention_mask, kd_weight: float, lm_weight: float, temperature: float):
+def _recovery_loss(
+    torch,
+    student,
+    teacher,
+    input_ids,
+    attention_mask,
+    kd_weight: float,
+    lm_weight: float,
+    unlikelihood_weight: float,
+    unlikelihood_window: int,
+    entropy_weight: float,
+    temperature: float,
+):
     shift_student = torch.nan_to_num(
         student.logits[:, :-1, :].contiguous().to(torch.float32),
         nan=0.0,
@@ -1549,6 +1599,19 @@ def _recovery_loss(torch, student, teacher, input_ids, attention_mask, kd_weight
             ignore_index=-100,
         )
         total = total + float(lm_weight) * lm
+    if unlikelihood_weight > 0:
+        unlikelihood = _recent_token_unlikelihood_loss(
+            torch,
+            shift_student,
+            input_ids,
+            shift_labels,
+            mask,
+            window=unlikelihood_window,
+        )
+        total = total + float(unlikelihood_weight) * unlikelihood
+    if entropy_weight > 0:
+        entropy_penalty = _masked_entropy_penalty(torch, shift_student, mask)
+        total = total + float(entropy_weight) * entropy_penalty
     return total
 
 
@@ -1566,6 +1629,9 @@ def _cross_tokenizer_recovery_loss(
     hidden_kd_weight: float,
     span_kd_weight: float,
     reference_kd_weight: float,
+    unlikelihood_weight: float,
+    unlikelihood_window: int,
+    entropy_weight: float,
     hidden_projection,
     hidden_layer: str,
     span_pairs,
@@ -1646,6 +1712,19 @@ def _cross_tokenizer_recovery_loss(
             ignore_index=-100,
         )
         total = total + float(lm_weight) * lm
+    if unlikelihood_weight > 0:
+        unlikelihood = _recent_token_unlikelihood_loss(
+            torch,
+            shift_student,
+            candidate_input_ids,
+            shift_labels,
+            candidate_mask,
+            window=unlikelihood_window,
+        )
+        total = total + float(unlikelihood_weight) * unlikelihood
+    if entropy_weight > 0:
+        entropy_penalty = _masked_entropy_penalty(torch, shift_student, candidate_mask)
+        total = total + float(entropy_weight) * entropy_penalty
     return total
 
 
@@ -1667,6 +1746,49 @@ def _same_tokenizer_reference_loss(
     reference_p = reference_logp.exp()
     token_kl = (reference_p * (reference_logp - student_logp)).sum(dim=-1) * (temperature**2)
     return _masked_mean_values(torch, token_kl, candidate_mask)
+
+
+def _recent_token_unlikelihood_loss(
+    torch,
+    shift_logits,
+    input_ids,
+    shift_labels,
+    mask,
+    window: int = 16,
+):
+    if window <= 0:
+        raise ValueError("window must be positive.")
+    probs = torch.nn.functional.softmax(shift_logits, dim=-1)
+    vocab_size = int(shift_logits.shape[-1])
+    steps = int(shift_logits.shape[1])
+    losses = []
+    valid_masks = []
+    for offset in range(int(window)):
+        if offset >= steps:
+            break
+        neg_ids = torch.zeros_like(shift_labels)
+        neg_ids[:, offset:] = input_ids[:, : steps - offset]
+        valid = mask.clone()
+        if offset > 0:
+            valid[:, :offset] = False
+        valid = valid & (shift_labels >= 0) & (neg_ids != shift_labels) & (neg_ids >= 0) & (neg_ids < vocab_size)
+        if not bool(valid.any().detach().cpu()):
+            continue
+        neg_probs = probs.gather(dim=-1, index=neg_ids.clamp(0, vocab_size - 1).unsqueeze(-1)).squeeze(-1)
+        losses.append(-torch.log1p(-neg_probs.clamp(max=1.0 - 1e-6)))
+        valid_masks.append(valid)
+    if not losses:
+        return torch.zeros((), dtype=shift_logits.dtype, device=shift_logits.device)
+    stacked_loss = torch.stack(losses, dim=0)
+    stacked_mask = torch.stack(valid_masks, dim=0)
+    return _masked_mean_values(torch, stacked_loss, stacked_mask)
+
+
+def _masked_entropy_penalty(torch, shift_logits, mask):
+    logp = torch.nn.functional.log_softmax(shift_logits, dim=-1)
+    probs = logp.exp()
+    entropy = -(probs * logp).sum(dim=-1)
+    return -_masked_mean_values(torch, entropy, mask)
 
 
 def _cross_tokenizer_span_loss(
