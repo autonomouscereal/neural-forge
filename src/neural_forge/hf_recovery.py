@@ -47,6 +47,7 @@ def recover_causal_lm(
     device: str = "cuda:0",
     trust_remote_code: bool = False,
     calibration_texts: Sequence[str] | None = None,
+    response_loss_mode: str = "none",
     grad_clip: float = 1.0,
     report_interval: int | None = None,
     save_best_loss: bool = False,
@@ -75,6 +76,8 @@ def recover_causal_lm(
         raise ValueError("unlikelihood_window must be positive.")
     if temperature <= 0:
         raise ValueError("temperature must be positive.")
+    if response_loss_mode not in {"none", "auto", "assistant", "answer"}:
+        raise ValueError("response_loss_mode must be none, auto, assistant, or answer.")
     if grad_clip < 0:
         raise ValueError("grad_clip must be non-negative.")
     if report_interval is not None and report_interval <= 0:
@@ -123,7 +126,14 @@ def recover_causal_lm(
     if not texts:
         raise ValueError("Need at least one recovery text.")
     eval_overlap_count = len(set(texts) & set(TEXT_EVALS))
-    batches = _make_batches(tokenizer, texts, batch_size=batch_size, max_length=max_length, device=device)
+    batches = _make_batches(
+        tokenizer,
+        texts,
+        batch_size=batch_size,
+        max_length=max_length,
+        device=device,
+        response_loss_mode=response_loss_mode,
+    )
 
     losses = []
     interval = int(report_interval or max(1, steps // 10))
@@ -136,14 +146,15 @@ def recover_causal_lm(
         teacher = None
         if source is not None:
             with torch.no_grad():
-                teacher = source(**batch, use_cache=False)
-        student = candidate(**batch, use_cache=False)
+                teacher = source(**_model_forward_inputs(batch), use_cache=False)
+        student = candidate(**_model_forward_inputs(batch), use_cache=False)
         loss = _recovery_loss(
             torch,
             student,
             teacher,
             batch["input_ids"],
             batch.get("attention_mask"),
+            batch.get("loss_mask"),
             kd_weight,
             lm_weight,
             unlikelihood_weight,
@@ -193,6 +204,7 @@ def recover_causal_lm(
         "best_loss": best_loss,
         "best_step": best_step,
         "teacher_used": source_model is not None and kd_weight > 0,
+        "response_loss_mode": response_loss_mode,
         "train_scope": train_scope,
         "trainable_param_count": trainable_params,
         "calibration_text_count": len(texts),
@@ -1063,7 +1075,10 @@ def _make_batches(
     max_length: int,
     device: str,
     include_offsets: bool = False,
+    response_loss_mode: str = "none",
 ) -> list[dict[str, Any]]:
+    if response_loss_mode not in {"none", "auto", "assistant", "answer"}:
+        raise ValueError("response_loss_mode must be none, auto, assistant, or answer.")
     batches = []
     for start in range(0, len(texts), batch_size):
         chunk = list(texts[start : start + batch_size])
@@ -1079,7 +1094,18 @@ def _make_batches(
             encoded = tokenizer(chunk, **kwargs)
         except NotImplementedError as exc:
             raise ValueError("Span KD requires fast tokenizers that support offset mappings.") from exc
-        batches.append({key: value.to(device) for key, value in encoded.items()})
+        batch = {key: value.to(device) for key, value in encoded.items()}
+        if response_loss_mode != "none":
+            batch["loss_mask"] = _response_loss_mask(
+                tokenizer,
+                chunk,
+                batch["input_ids"],
+                batch.get("attention_mask"),
+                max_length,
+                response_loss_mode,
+                device,
+            )
+        batches.append(batch)
     return batches
 
 
@@ -1100,7 +1126,71 @@ def _make_paired_batches(
 
 
 def _model_forward_inputs(batch: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in batch.items() if key != "offset_mapping"}
+    return {key: value for key, value in batch.items() if key not in {"offset_mapping", "loss_mask"}}
+
+
+def _response_loss_mask(
+    tokenizer,
+    texts: Sequence[str],
+    input_ids,
+    attention_mask,
+    max_length: int,
+    response_loss_mode: str,
+    device: str,
+):
+    torch, _transformers = _torch_and_transformers()
+    mask = torch.zeros_like(input_ids, dtype=torch.bool, device=device)
+    if attention_mask is None:
+        attention = torch.ones_like(input_ids, dtype=torch.bool, device=device)
+    else:
+        attention = attention_mask.bool()
+    for row, text in enumerate(texts):
+        response_start = _infer_response_char_start(text, response_loss_mode)
+        if response_start is None:
+            mask[row] = attention[row]
+            continue
+        prefix = text[: int(response_start)]
+        prefix_len = _tokenized_length(tokenizer, prefix, max_length)
+        seq_len = int(attention[row].sum().detach().cpu().item())
+        if seq_len <= 1 or prefix_len >= seq_len:
+            mask[row] = attention[row]
+            continue
+        start_idx = max(0, int(prefix_len))
+        mask[row, start_idx:seq_len] = True
+    return mask & attention
+
+
+def _tokenized_length(tokenizer, text: str, max_length: int) -> int:
+    if not text:
+        return 0
+    encoded = tokenizer(
+        text,
+        return_tensors="pt",
+        truncation=True,
+        max_length=max_length,
+        add_special_tokens=True,
+    )
+    return int(encoded["input_ids"].shape[-1])
+
+
+def _infer_response_char_start(text: str, response_loss_mode: str) -> int | None:
+    if response_loss_mode == "none":
+        return None
+    lower = text.lower()
+    if response_loss_mode in {"auto", "assistant"}:
+        idx = lower.rfind("assistant:")
+        if idx >= 0:
+            return idx + len("assistant:")
+    if response_loss_mode in {"auto", "answer"}:
+        idx = lower.rfind("answer:")
+        if idx >= 0:
+            return idx + len("answer:")
+    if response_loss_mode == "auto":
+        for marker in ("\n```python", "\n```"):
+            idx = lower.rfind(marker)
+            if idx >= 0:
+                return idx + 1
+    return None
 
 
 def _cross_tokenizer_span_pairs(
@@ -1969,6 +2059,7 @@ def _recovery_loss(
     teacher,
     input_ids,
     attention_mask,
+    loss_mask,
     kd_weight: float,
     lm_weight: float,
     unlikelihood_weight: float,
@@ -1987,6 +2078,13 @@ def _recovery_loss(
         mask = torch.ones_like(shift_labels, dtype=torch.bool)
     else:
         mask = attention_mask[:, 1:].contiguous().bool()
+    if loss_mask is not None:
+        mask = mask & loss_mask[:, 1:].contiguous().bool()
+        if int(mask.sum().detach().cpu().item()) <= 0:
+            if attention_mask is None:
+                mask = torch.ones_like(shift_labels, dtype=torch.bool)
+            else:
+                mask = attention_mask[:, 1:].contiguous().bool()
     shift_labels = shift_labels.masked_fill(~mask, -100)
     total = torch.zeros((), dtype=shift_student.dtype, device=shift_student.device)
     if kd_weight > 0:

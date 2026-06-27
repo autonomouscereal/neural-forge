@@ -16,6 +16,7 @@ from neural_forge.hf_recovery import _fit_lm_head_from_hidden_logits
 from neural_forge.hf_recovery import _fit_shared_embedding_hidden_projection
 from neural_forge.hf_recovery import _fold_groups_from_report
 from neural_forge.hf_recovery import _hidden_representation_loss
+from neural_forge.hf_recovery import _infer_response_char_start
 from neural_forge.hf_recovery import _linear_cka_tensor
 from neural_forge.hf_recovery import _mlp_projection_spec
 from neural_forge.hf_recovery import _project_candidate_probs_to_source_vocab
@@ -690,6 +691,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "20",
             "--entropy-weight",
             "0.004",
+            "--response-loss-mode",
+            "answer",
             "--train-scope",
             "last1",
             "--calibration-file",
@@ -704,6 +707,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert lm_recover_args.unlikelihood_weight == 0.07
     assert lm_recover_args.unlikelihood_window == 20
     assert lm_recover_args.entropy_weight == 0.004
+    assert lm_recover_args.response_loss_mode == "answer"
     assert lm_recover_args.train_scope == "last1"
     assert lm_recover_args.calibration_file == "calibration.jsonl"
     assert lm_recover_args.max_calibration_texts == 9
@@ -1160,6 +1164,7 @@ def test_recovery_loss_allows_lm_only_without_teacher() -> None:
         teacher=None,
         input_ids=input_ids,
         attention_mask=attention_mask,
+        loss_mask=None,
         kd_weight=0.0,
         lm_weight=1.0,
         unlikelihood_weight=0.0,
@@ -1176,6 +1181,7 @@ def test_recovery_loss_allows_lm_only_without_teacher() -> None:
             teacher=None,
             input_ids=input_ids,
             attention_mask=attention_mask,
+            loss_mask=None,
             kd_weight=1.0,
             lm_weight=0.0,
             unlikelihood_weight=0.0,
@@ -1198,6 +1204,7 @@ def test_recovery_loss_handles_padded_teacher_vocab() -> None:
         teacher=teacher,
         input_ids=input_ids,
         attention_mask=attention_mask,
+        loss_mask=None,
         kd_weight=1.0,
         lm_weight=0.0,
         unlikelihood_weight=0.0,
@@ -1207,6 +1214,57 @@ def test_recovery_loss_handles_padded_teacher_vocab() -> None:
     )
 
     assert torch.isfinite(loss)
+
+
+def test_recovery_loss_response_mask_ignores_prompt_tokens() -> None:
+    torch = pytest.importorskip("torch")
+    logits = torch.full((1, 4, 5), -8.0)
+    input_ids = torch.tensor([[0, 1, 2, 3]])
+    attention_mask = torch.ones_like(input_ids)
+    loss_mask = torch.tensor([[False, False, False, True]])
+    logits[0, 0, 1] = -20.0
+    logits[0, 1, 2] = -20.0
+    logits[0, 2, 3] = 20.0
+    student = _Obj(logits=logits)
+
+    masked = _recovery_loss(
+        torch,
+        student,
+        teacher=None,
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        loss_mask=loss_mask,
+        kd_weight=0.0,
+        lm_weight=1.0,
+        unlikelihood_weight=0.0,
+        unlikelihood_window=2,
+        entropy_weight=0.0,
+        temperature=1.0,
+    )
+    full = _recovery_loss(
+        torch,
+        student,
+        teacher=None,
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        loss_mask=None,
+        kd_weight=0.0,
+        lm_weight=1.0,
+        unlikelihood_weight=0.0,
+        unlikelihood_window=2,
+        entropy_weight=0.0,
+        temperature=1.0,
+    )
+
+    assert masked.item() < 1e-3
+    assert full.item() > masked.item() + 5.0
+
+
+def test_infer_response_char_start_finds_answer_markers() -> None:
+    assert _infer_response_char_start("user: Q\nassistant: A", "auto") == len("user: Q\nassistant:")
+    assert _infer_response_char_start("Question\nAnswer: 42", "answer") == len("Question\nAnswer:")
+    assert _infer_response_char_start("Prompt\n```python\npass\n```", "auto") == len("Prompt\n")
+    assert _infer_response_char_start("Question\nAnswer: 42", "assistant") is None
 
 
 def test_recent_token_unlikelihood_penalizes_context_repeats() -> None:
@@ -1805,6 +1863,8 @@ def test_hf_lm_recover_handler_passes_teacherless_flags(monkeypatch) -> None:
             "18",
             "--entropy-weight",
             "0.003",
+            "--response-loss-mode",
+            "auto",
             "--train-scope",
             "last2",
             "--dtype",
@@ -1835,6 +1895,7 @@ def test_hf_lm_recover_handler_passes_teacherless_flags(monkeypatch) -> None:
         "unlikelihood_weight": 0.09,
         "unlikelihood_window": 18,
         "entropy_weight": 0.003,
+        "response_loss_mode": "auto",
         "temperature": 1.0,
         "train_scope": "last2",
         "torch_dtype": "float32",

@@ -30,6 +30,7 @@ Pipeline:
 | P-KL + high-signal | 1677.10 | 1/4 | 1/3 | 0.40 | 0.50 | lower PPL but manual text degraded |
 | CKA + high-signal | 3212.60 | 1/4 | 3/3 | 0.45 | 0.55 | readable, better than old high-signal |
 | CKA + mixed8192 | 3104.34 | 4/4 | 3/3 | 0.50 | 0.65 | best automated score; still weak manual generalization |
+| CKA + response-auto targeted | 2702.51 | 4/4 | 3/3 | 0.45 | 0.65 | best PPL; manual failures remain, ARC regresses |
 | Donor Qwen3-4B slice | about 270 PPL in lightweight eval | 4/4 | useful | 0.80 | 0.80 | prior reference run |
 
 All lm-eval values above use `--limit 20`; they are regression signals, not final benchmark claims.
@@ -48,6 +49,8 @@ It still fails or degrades on:
 - `What is 12 + 19? Answer only the number.`
 - `A driver sees heavy rain. What should they do?`
 - free-form tokenizer mismatch answers become verbose/repetitive after mixed recovery.
+
+The response-only recovery option (`--response-loss-mode auto`) improved PPL from `3104.34` to `2702.51` and kept built-in choice/generation probes green, but it did not fix the manual failures above. Because ARC-Easy limit-20 dropped from `0.50` to `0.45`, the response-auto checkpoint is not the current best overall.
 
 ## Current Conclusion
 
