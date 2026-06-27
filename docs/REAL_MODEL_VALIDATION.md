@@ -36,7 +36,13 @@ Minimum useful evidence:
 - parent models load and generate;
 - merged model loads and generates;
 - FFN-width-folded and/or depth-folded model loads and generates;
-- perplexity and choice probes do not collapse to nonsense;
+- external benchmark-suite task scores are recorded for host, donor, and edited
+  models on at least ARC-Easy and HellaSwag, and preferably PIQA/Winogrande for
+  small-model runs;
+- generation/coherence samples are inspected for obvious repetition or prompt
+  drift;
+- perplexity and choice probes do not collapse to nonsense, but are treated as
+  supporting damage signals rather than proof of intelligence transfer;
 - `hf-gate` passes for any candidate being called safe;
 - VLM probe produces grounded text for synthetic images.
 
@@ -61,6 +67,8 @@ Supported real-checkpoint surgery:
   layers, Qwen/Llama-style gated MLPs, and GPT-NeoX/Pythia dense MLPs;
 - optional activation-calibrated cross-family channel assignment with
   `weight-cosine`, `activation-correlation`, and `hybrid` modes;
+- optional similarity-scaled per-layer donor alpha, so low-confidence layer
+  matches can receive less donor signal than high-confidence matches;
 - integrated cross-family MLP recovery sweeps that save recovered checkpoints
   and re-run behavior gates, including optional calibration JSONL/text files;
 - integrated `hf-xfamily-compress` runs that merge donor MLP channels first,

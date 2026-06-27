@@ -16,11 +16,13 @@ from neural_forge.hf_xfamily import _canonical_token
 from neural_forge.hf_xfamily import _canonical_token_map
 from neural_forge.hf_xfamily import _assign_donor_to_host
 from neural_forge.hf_xfamily import _channel_assignment_features
+from neural_forge.hf_xfamily import _effective_layer_alpha
 from neural_forge.hf_xfamily import _mlp_spec
 from neural_forge.hf_xfamily import _proportional_index
 from neural_forge.hf_xfamily import _select_compression_candidates
 from neural_forge.hf_xfamily import _usable_pipeline_candidates
 from neural_forge.hf_xfamily import _validate_channel_assignment
+from neural_forge.hf_xfamily import _validate_layer_alpha_settings
 from neural_forge.hf_xfamily import sweep_cross_family_vocab_merge
 from neural_forge.hf_xfamily import sweep_cross_family_mlp_merge
 
@@ -114,6 +116,44 @@ def test_channel_assignment_rejects_unknown_mode() -> None:
         _validate_channel_assignment("blind-average")
 
 
+def test_similarity_layer_alpha_scales_with_assignment_quality() -> None:
+    alpha, scale = _effective_layer_alpha(
+        0.01,
+        0.5,
+        layer_alpha_mode="similarity",
+        min_scale=0.25,
+        max_scale=1.25,
+        similarity_floor=0.25,
+    )
+    assert scale == pytest.approx(0.25 + 1.0 * (0.25 / 0.75))
+    assert alpha == pytest.approx(0.01 * scale)
+    assert _effective_layer_alpha(
+        0.01,
+        0.1,
+        layer_alpha_mode="similarity",
+        min_scale=0.25,
+        max_scale=1.25,
+        similarity_floor=0.25,
+    ) == pytest.approx((0.0025, 0.25))
+    assert _effective_layer_alpha(
+        0.01,
+        0.5,
+        layer_alpha_mode="constant",
+        min_scale=0.0,
+        max_scale=2.0,
+        similarity_floor=0.0,
+    ) == pytest.approx((0.01, 1.0))
+
+
+def test_layer_alpha_settings_reject_invalid_ranges() -> None:
+    with pytest.raises(ValueError, match="layer_alpha_mode"):
+        _validate_layer_alpha_settings("random", 0.0, 1.0, 0.0)
+    with pytest.raises(ValueError, match="min_scale"):
+        _validate_layer_alpha_settings("similarity", 2.0, 1.0, 0.0)
+    with pytest.raises(ValueError, match="similarity_floor"):
+        _validate_layer_alpha_settings("similarity", 0.0, 1.0, 1.0)
+
+
 def test_activation_channel_assignment_uses_activation_features() -> None:
     torch = pytest.importorskip("torch")
     host_weight = torch.eye(2)
@@ -184,6 +224,14 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "6",
             "--activation-max-length",
             "64",
+            "--layer-alpha-mode",
+            "similarity",
+            "--layer-alpha-min-scale",
+            "0.25",
+            "--layer-alpha-max-scale",
+            "1.5",
+            "--layer-alpha-similarity-floor",
+            "0.4",
             "--recover",
             "--recover-steps",
             "3",
@@ -217,6 +265,14 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "7",
             "--activation-max-length",
             "80",
+            "--layer-alpha-mode",
+            "similarity",
+            "--layer-alpha-min-scale",
+            "0.2",
+            "--layer-alpha-max-scale",
+            "1.4",
+            "--layer-alpha-similarity-floor",
+            "0.35",
             "--width-ratios",
             "0.995",
             "--layer-groups",
@@ -248,6 +304,10 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_mlp_args.activation_calibration_file == "activation.jsonl"
     assert xfamily_mlp_args.activation_max_calibration_texts == 6
     assert xfamily_mlp_args.activation_max_length == 64
+    assert xfamily_mlp_args.layer_alpha_mode == "similarity"
+    assert xfamily_mlp_args.layer_alpha_min_scale == 0.25
+    assert xfamily_mlp_args.layer_alpha_max_scale == 1.5
+    assert xfamily_mlp_args.layer_alpha_similarity_floor == 0.4
     assert xfamily_mlp_args.recover is True
     assert xfamily_mlp_args.recover_steps == 3
     assert xfamily_mlp_args.recover_train_scope == "ffn"
@@ -258,6 +318,10 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_compress_args.activation_calibration_file == "activation.jsonl"
     assert xfamily_compress_args.activation_max_calibration_texts == 7
     assert xfamily_compress_args.activation_max_length == 80
+    assert xfamily_compress_args.layer_alpha_mode == "similarity"
+    assert xfamily_compress_args.layer_alpha_min_scale == 0.2
+    assert xfamily_compress_args.layer_alpha_max_scale == 1.4
+    assert xfamily_compress_args.layer_alpha_similarity_floor == 0.35
     assert xfamily_compress_args.width_ratios == "0.995"
     assert xfamily_compress_args.layer_groups == ["13+14"]
     assert xfamily_compress_args.recover_top_k == 2
@@ -393,6 +457,14 @@ def test_xfamily_mlp_merge_handler_passes_activation_flags(monkeypatch) -> None:
             "72",
             "--activation-device",
             "cpu",
+            "--layer-alpha-mode",
+            "similarity",
+            "--layer-alpha-min-scale",
+            "0.25",
+            "--layer-alpha-max-scale",
+            "1.25",
+            "--layer-alpha-similarity-floor",
+            "0.3",
         ]
     )
     result = args.func(args)
@@ -401,6 +473,10 @@ def test_xfamily_mlp_merge_handler_passes_activation_flags(monkeypatch) -> None:
     assert captured["activation_calibration_texts"] == ["activation text"]
     assert captured["activation_max_length"] == 72
     assert captured["activation_device"] == "cpu"
+    assert captured["layer_alpha_mode"] == "similarity"
+    assert captured["layer_alpha_min_scale"] == 0.25
+    assert captured["layer_alpha_max_scale"] == 1.25
+    assert captured["layer_alpha_similarity_floor"] == 0.3
 
 
 def test_xfamily_mlp_handler_passes_recovery_flags(monkeypatch) -> None:
@@ -441,6 +517,14 @@ def test_xfamily_mlp_handler_passes_recovery_flags(monkeypatch) -> None:
             "88",
             "--activation-device",
             "cpu",
+            "--layer-alpha-mode",
+            "similarity",
+            "--layer-alpha-min-scale",
+            "0.25",
+            "--layer-alpha-max-scale",
+            "1.25",
+            "--layer-alpha-similarity-floor",
+            "0.3",
             "--recover-calibration-file",
             "calibration.jsonl",
             "--recover-max-calibration-texts",
@@ -458,6 +542,10 @@ def test_xfamily_mlp_handler_passes_recovery_flags(monkeypatch) -> None:
     assert captured["activation_calibration_texts"] == ["calibration text"]
     assert captured["activation_max_length"] == 88
     assert captured["activation_device"] == "cpu"
+    assert captured["layer_alpha_mode"] == "similarity"
+    assert captured["layer_alpha_min_scale"] == 0.25
+    assert captured["layer_alpha_max_scale"] == 1.25
+    assert captured["layer_alpha_similarity_floor"] == 0.3
 
 
 def test_xfamily_compress_handler_passes_pipeline_flags(monkeypatch) -> None:
@@ -506,6 +594,14 @@ def test_xfamily_compress_handler_passes_pipeline_flags(monkeypatch) -> None:
             "88",
             "--activation-device",
             "cpu",
+            "--layer-alpha-mode",
+            "similarity",
+            "--layer-alpha-min-scale",
+            "0.25",
+            "--layer-alpha-max-scale",
+            "1.25",
+            "--layer-alpha-similarity-floor",
+            "0.3",
             "--recover-calibration-file",
             "calibration.jsonl",
             "--recover-max-calibration-texts",
@@ -529,6 +625,10 @@ def test_xfamily_compress_handler_passes_pipeline_flags(monkeypatch) -> None:
     assert captured["activation_calibration_texts"] == ["calibration text"]
     assert captured["activation_max_length"] == 88
     assert captured["activation_device"] == "cpu"
+    assert captured["layer_alpha_mode"] == "similarity"
+    assert captured["layer_alpha_min_scale"] == 0.25
+    assert captured["layer_alpha_max_scale"] == 1.25
+    assert captured["layer_alpha_similarity_floor"] == 0.3
 
 
 def test_select_compression_candidates_prefers_target_passed() -> None:

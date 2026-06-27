@@ -269,6 +269,10 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_mlp.add_argument("--activation-max-calibration-texts", type=int)
     xfamily_mlp.add_argument("--activation-max-length", type=int, default=128)
     xfamily_mlp.add_argument("--activation-device", default="cuda:0")
+    xfamily_mlp.add_argument("--layer-alpha-mode", choices=["constant", "similarity"], default="constant")
+    xfamily_mlp.add_argument("--layer-alpha-min-scale", type=float, default=0.0)
+    xfamily_mlp.add_argument("--layer-alpha-max-scale", type=float, default=2.0)
+    xfamily_mlp.add_argument("--layer-alpha-similarity-floor", type=float, default=0.0)
     xfamily_mlp.add_argument("--dtype", default="float16")
     xfamily_mlp.add_argument("--trust-remote-code", action="store_true")
     xfamily_mlp.set_defaults(func=cmd_hf_xfamily_mlp_merge)
@@ -296,6 +300,10 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_mlp_sweep.add_argument("--activation-max-calibration-texts", type=int)
     xfamily_mlp_sweep.add_argument("--activation-max-length", type=int, default=128)
     xfamily_mlp_sweep.add_argument("--activation-device", default="cuda:0")
+    xfamily_mlp_sweep.add_argument("--layer-alpha-mode", choices=["constant", "similarity"], default="constant")
+    xfamily_mlp_sweep.add_argument("--layer-alpha-min-scale", type=float, default=0.0)
+    xfamily_mlp_sweep.add_argument("--layer-alpha-max-scale", type=float, default=2.0)
+    xfamily_mlp_sweep.add_argument("--layer-alpha-similarity-floor", type=float, default=0.0)
     xfamily_mlp_sweep.add_argument("--dtype", default="float16")
     xfamily_mlp_sweep.add_argument("--device", default="cuda:0")
     xfamily_mlp_sweep.add_argument("--trust-remote-code", action="store_true")
@@ -341,6 +349,10 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_compress.add_argument("--activation-max-calibration-texts", type=int)
     xfamily_compress.add_argument("--activation-max-length", type=int, default=128)
     xfamily_compress.add_argument("--activation-device", default="cuda:0")
+    xfamily_compress.add_argument("--layer-alpha-mode", choices=["constant", "similarity"], default="constant")
+    xfamily_compress.add_argument("--layer-alpha-min-scale", type=float, default=0.0)
+    xfamily_compress.add_argument("--layer-alpha-max-scale", type=float, default=2.0)
+    xfamily_compress.add_argument("--layer-alpha-similarity-floor", type=float, default=0.0)
     xfamily_compress.add_argument("--width-ratios", help="Comma-separated ratios, e.g. 0.9975,0.995.")
     xfamily_compress.add_argument(
         "--layer-groups",
@@ -751,6 +763,10 @@ def cmd_hf_xfamily_mlp_merge(args: argparse.Namespace) -> dict[str, object]:
         activation_calibration_texts=activation_calibration_texts,
         activation_max_length=args.activation_max_length,
         activation_device=args.activation_device,
+        layer_alpha_mode=args.layer_alpha_mode,
+        layer_alpha_min_scale=args.layer_alpha_min_scale,
+        layer_alpha_max_scale=args.layer_alpha_max_scale,
+        layer_alpha_similarity_floor=args.layer_alpha_similarity_floor,
     )
 
 
@@ -781,6 +797,10 @@ def cmd_hf_xfamily_mlp_sweep(args: argparse.Namespace) -> dict[str, object]:
         activation_calibration_texts=activation_calibration_texts,
         activation_max_length=args.activation_max_length,
         activation_device=args.activation_device,
+        layer_alpha_mode=args.layer_alpha_mode,
+        layer_alpha_min_scale=args.layer_alpha_min_scale,
+        layer_alpha_max_scale=args.layer_alpha_max_scale,
+        layer_alpha_similarity_floor=args.layer_alpha_similarity_floor,
         torch_dtype=args.dtype,
         device=args.device,
         trust_remote_code=args.trust_remote_code,
@@ -834,6 +854,10 @@ def cmd_hf_xfamily_compress(args: argparse.Namespace) -> dict[str, object]:
         activation_calibration_texts=activation_calibration_texts,
         activation_max_length=args.activation_max_length,
         activation_device=args.activation_device,
+        layer_alpha_mode=args.layer_alpha_mode,
+        layer_alpha_min_scale=args.layer_alpha_min_scale,
+        layer_alpha_max_scale=args.layer_alpha_max_scale,
+        layer_alpha_similarity_floor=args.layer_alpha_similarity_floor,
         width_ratios=width_ratios,
         layer_group_specs=layer_group_specs,
         depth_methods=depth_methods,

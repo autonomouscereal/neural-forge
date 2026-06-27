@@ -171,8 +171,26 @@ neural-forge hf-sweep-xfamily-mlp runs/qwen4b-smollm-activation `
   --activation-calibration-file runs/calibration.jsonl `
   --activation-max-calibration-texts 64 `
   --activation-max-length 96 `
+  --layer-alpha-mode similarity `
+  --layer-alpha-min-scale 0.25 `
+  --layer-alpha-max-scale 1.25 `
+  --layer-alpha-similarity-floor 0.30 `
   --max-host-channels 512 `
   --max-donor-channels 1024
+```
+
+For real-model claims, run benchmark-suite task scores as well as `hf-eval`.
+PPL alone is only a damage signal, not proof of intelligence retention or
+transfer:
+
+```powershell
+python experiments/run_lm_eval_comparison.py `
+  --output-dir runs/qwen4b-smollm-bench `
+  --tasks arc_easy,hellaswag,piqa,winogrande `
+  --limit 50 `
+  --model host=HuggingFaceTB/SmolLM2-135M `
+  --model donor=Qwen/Qwen3-4B-Base `
+  --model folded=runs/qwen4b-smollm-activation/models/xfamily_mlp_alpha_0p0010
 ```
 
 Add lightweight recovery after each cross-family MLP candidate:

@@ -254,6 +254,10 @@ def cross_family_mlp_merge(
     activation_calibration_texts: list[str] | None = None,
     activation_max_length: int = 128,
     activation_device: str = "cuda:0",
+    layer_alpha_mode: str = "constant",
+    layer_alpha_min_scale: float = 0.0,
+    layer_alpha_max_scale: float = 2.0,
+    layer_alpha_similarity_floor: float = 0.0,
 ) -> dict[str, Any]:
     """Merge donor MLP channel signal into a host architecture.
 
@@ -273,6 +277,12 @@ def cross_family_mlp_merge(
     if max_host_channels <= 0 or max_donor_channels <= 0:
         raise ValueError("max channel limits must be positive.")
     _validate_channel_assignment(channel_assignment)
+    _validate_layer_alpha_settings(
+        layer_alpha_mode,
+        layer_alpha_min_scale,
+        layer_alpha_max_scale,
+        layer_alpha_similarity_floor,
+    )
     if activation_max_length <= 1:
         raise ValueError("activation_max_length must be greater than 1.")
 
@@ -352,6 +362,10 @@ def cross_family_mlp_merge(
             channel_assignment=channel_assignment,
             host_activation_features=None if host_activation_features is None else host_activation_features[host_idx],
             donor_activation_features=None if donor_activation_features is None else donor_activation_features[donor_idx],
+            layer_alpha_mode=layer_alpha_mode,
+            layer_alpha_min_scale=layer_alpha_min_scale,
+            layer_alpha_max_scale=layer_alpha_max_scale,
+            layer_alpha_similarity_floor=layer_alpha_similarity_floor,
         )
         report["host_layer"] = host_idx
         report["donor_layer"] = donor_idx
@@ -386,6 +400,10 @@ def cross_family_mlp_merge(
         "activation_calibration_text_count": len(activation_calibration_texts or []),
         "activation_max_length": activation_max_length,
         "activation_device": activation_device if _needs_activation_assignment(channel_assignment) else None,
+        "layer_alpha_mode": layer_alpha_mode,
+        "layer_alpha_min_scale": layer_alpha_min_scale,
+        "layer_alpha_max_scale": layer_alpha_max_scale,
+        "layer_alpha_similarity_floor": layer_alpha_similarity_floor,
         "layers": layer_reports,
         "param_count": sum(param.numel() for param in host.parameters()),
     }
@@ -408,6 +426,10 @@ def sweep_cross_family_mlp_merge(
     activation_calibration_texts: list[str] | None = None,
     activation_max_length: int = 128,
     activation_device: str = "cuda:0",
+    layer_alpha_mode: str = "constant",
+    layer_alpha_min_scale: float = 0.0,
+    layer_alpha_max_scale: float = 2.0,
+    layer_alpha_similarity_floor: float = 0.0,
     torch_dtype: str = "float16",
     device: str = "cuda:0",
     trust_remote_code: bool = False,
@@ -434,6 +456,12 @@ def sweep_cross_family_mlp_merge(
     if not alphas:
         raise ValueError("At least one alpha is required.")
     _validate_channel_assignment(channel_assignment)
+    _validate_layer_alpha_settings(
+        layer_alpha_mode,
+        layer_alpha_min_scale,
+        layer_alpha_max_scale,
+        layer_alpha_similarity_floor,
+    )
     alpha_values = [_finite_float(alpha, "alpha") for alpha in alphas]
     for alpha_value in alpha_values:
         _bounded_alpha(alpha_value, "alpha")
@@ -484,6 +512,10 @@ def sweep_cross_family_mlp_merge(
             activation_calibration_texts=activation_calibration_texts,
             activation_max_length=activation_max_length,
             activation_device=activation_device,
+            layer_alpha_mode=layer_alpha_mode,
+            layer_alpha_min_scale=layer_alpha_min_scale,
+            layer_alpha_max_scale=layer_alpha_max_scale,
+            layer_alpha_similarity_floor=layer_alpha_similarity_floor,
         )
         candidate_report = evaluate_text_model(
             str(candidate_dir),
@@ -559,6 +591,10 @@ def sweep_cross_family_mlp_merge(
         "activation_calibration_text_count": len(activation_calibration_texts or []),
         "activation_max_length": activation_max_length,
         "activation_device": activation_device if _needs_activation_assignment(channel_assignment) else None,
+        "layer_alpha_mode": layer_alpha_mode,
+        "layer_alpha_min_scale": layer_alpha_min_scale,
+        "layer_alpha_max_scale": layer_alpha_max_scale,
+        "layer_alpha_similarity_floor": layer_alpha_similarity_floor,
         "recovery": {
             "enabled": recover_candidates,
             "recover_only_failed": recover_only_failed,
@@ -603,6 +639,10 @@ def cross_family_merge_compress_pipeline(
     activation_calibration_texts: list[str] | None = None,
     activation_max_length: int = 128,
     activation_device: str = "cuda:0",
+    layer_alpha_mode: str = "constant",
+    layer_alpha_min_scale: float = 0.0,
+    layer_alpha_max_scale: float = 2.0,
+    layer_alpha_similarity_floor: float = 0.0,
     width_ratios: list[float] | None = None,
     layer_group_specs: list[list[list[int]]] | None = None,
     depth_methods: list[str] | None = None,
@@ -637,6 +677,12 @@ def cross_family_merge_compress_pipeline(
     if recover_top_k <= 0:
         raise ValueError("recover_top_k must be positive.")
     _validate_channel_assignment(channel_assignment)
+    _validate_layer_alpha_settings(
+        layer_alpha_mode,
+        layer_alpha_min_scale,
+        layer_alpha_max_scale,
+        layer_alpha_similarity_floor,
+    )
 
     root = Path(output_dir)
     model_root = root / "models"
@@ -679,6 +725,10 @@ def cross_family_merge_compress_pipeline(
         activation_calibration_texts=activation_calibration_texts,
         activation_max_length=activation_max_length,
         activation_device=activation_device,
+        layer_alpha_mode=layer_alpha_mode,
+        layer_alpha_min_scale=layer_alpha_min_scale,
+        layer_alpha_max_scale=layer_alpha_max_scale,
+        layer_alpha_similarity_floor=layer_alpha_similarity_floor,
     )
     xfamily_report_path = report_root / "xfamily_merged.json"
     xfamily_gate_path = report_root / "xfamily_merged_host_gate.json"
@@ -809,6 +859,10 @@ def cross_family_merge_compress_pipeline(
         "activation_calibration_text_count": len(activation_calibration_texts or []),
         "activation_max_length": activation_max_length,
         "activation_device": activation_device if _needs_activation_assignment(channel_assignment) else None,
+        "layer_alpha_mode": layer_alpha_mode,
+        "layer_alpha_min_scale": layer_alpha_min_scale,
+        "layer_alpha_max_scale": layer_alpha_max_scale,
+        "layer_alpha_similarity_floor": layer_alpha_similarity_floor,
         "cross_family_merge": {
             "model_dir": str(xfamily_dir),
             "merge_report": xfamily_merge_report,
@@ -1086,6 +1140,22 @@ def _needs_activation_assignment(channel_assignment: str) -> bool:
     return channel_assignment in {"activation-correlation", "hybrid"}
 
 
+def _validate_layer_alpha_settings(
+    layer_alpha_mode: str,
+    min_scale: float,
+    max_scale: float,
+    similarity_floor: float,
+) -> None:
+    if layer_alpha_mode not in {"constant", "similarity"}:
+        raise ValueError("layer_alpha_mode must be constant or similarity.")
+    if min_scale < 0 or max_scale < 0:
+        raise ValueError("layer alpha scales must be non-negative.")
+    if min_scale > max_scale:
+        raise ValueError("layer_alpha_min_scale must be <= layer_alpha_max_scale.")
+    if not 0.0 <= similarity_floor < 1.0:
+        raise ValueError("layer_alpha_similarity_floor must be in [0, 1).")
+
+
 def _collect_mlp_activation_features(
     torch,
     model,
@@ -1179,6 +1249,10 @@ def _merge_mlp_layer_channels(
     channel_assignment: str = "weight-cosine",
     host_activation_features=None,
     donor_activation_features=None,
+    layer_alpha_mode: str = "constant",
+    layer_alpha_min_scale: float = 0.0,
+    layer_alpha_max_scale: float = 2.0,
+    layer_alpha_similarity_floor: float = 0.0,
 ) -> dict[str, Any]:
     host_spec = _mlp_spec(host_layer)
     donor_spec = _mlp_spec(donor_layer)
@@ -1200,6 +1274,14 @@ def _merge_mlp_layer_channels(
     )
     assignment = _assign_donor_to_host(torch, donor_features, host_features)
     similarity = (donor_features * host_features[assignment]).sum(dim=1)
+    layer_alpha, layer_alpha_scale = _effective_layer_alpha(
+        alpha,
+        float(similarity.mean().cpu()),
+        layer_alpha_mode=layer_alpha_mode,
+        min_scale=layer_alpha_min_scale,
+        max_scale=layer_alpha_max_scale,
+        similarity_floor=layer_alpha_similarity_floor,
+    )
 
     donor_input_branches = [_project_rows(torch, linear.weight.data.detach().cpu().to(torch.float32)[donor_idx], hidden_map) for linear in donor_spec["inputs"]]
     donor_input_summary = _average_rows(torch, donor_input_branches)
@@ -1228,15 +1310,15 @@ def _merge_mlp_layer_channels(
         donor_output = output_sums[host_pos] / count
         for host_input in host_spec["inputs"]:
             weight = host_input.weight.data.detach().cpu().to(torch.float32)
-            weight[int(host_channel)] = (1.0 - alpha) * weight[int(host_channel)] + alpha * donor_input
+            weight[int(host_channel)] = (1.0 - layer_alpha) * weight[int(host_channel)] + layer_alpha * donor_input
             host_input.weight.data.copy_(weight.to(host_input.weight.dtype))
         output_weight = host_spec["output"].weight.data.detach().cpu().to(torch.float32)
-        output_weight[:, int(host_channel)] = (1.0 - alpha) * output_weight[:, int(host_channel)] + alpha * donor_output
+        output_weight[:, int(host_channel)] = (1.0 - layer_alpha) * output_weight[:, int(host_channel)] + layer_alpha * donor_output
         host_spec["output"].weight.data.copy_(output_weight.to(host_spec["output"].weight.dtype))
         updated += 1
 
-    _merge_input_biases(torch, host_spec, donor_spec, host_idx, donor_idx, assignment, alpha)
-    _merge_output_bias(torch, host_spec, donor_spec, hidden_map, alpha)
+    _merge_input_biases(torch, host_spec, donor_spec, host_idx, donor_idx, assignment, layer_alpha)
+    _merge_output_bias(torch, host_spec, donor_spec, hidden_map, layer_alpha)
     return {
         "host_mlp_kind": host_spec["kind"],
         "donor_mlp_kind": donor_spec["kind"],
@@ -1250,7 +1332,28 @@ def _merge_mlp_layer_channels(
         "assignment_similarity_mean": float(similarity.mean().cpu()),
         "assignment_similarity_min": float(similarity.min().cpu()),
         "assignment_similarity_max": float(similarity.max().cpu()),
+        "base_alpha": float(alpha),
+        "effective_alpha": float(layer_alpha),
+        "layer_alpha_scale": float(layer_alpha_scale),
+        "layer_alpha_mode": layer_alpha_mode,
     }
+
+
+def _effective_layer_alpha(
+    alpha: float,
+    similarity_mean: float,
+    layer_alpha_mode: str,
+    min_scale: float,
+    max_scale: float,
+    similarity_floor: float,
+) -> tuple[float, float]:
+    _validate_layer_alpha_settings(layer_alpha_mode, min_scale, max_scale, similarity_floor)
+    if layer_alpha_mode == "constant":
+        return float(alpha), 1.0
+    normalized = (float(similarity_mean) - similarity_floor) / max(1e-12, 1.0 - similarity_floor)
+    normalized = min(1.0, max(0.0, normalized))
+    scale = min_scale + (max_scale - min_scale) * normalized
+    return min(1.0, max(0.0, float(alpha) * scale)), float(scale)
 
 
 def _important_channels(torch, spec: dict[str, Any], limit: int, hidden_map) -> Any:
