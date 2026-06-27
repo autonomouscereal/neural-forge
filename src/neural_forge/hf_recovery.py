@@ -766,7 +766,11 @@ def _calibration_text_from_obj(item: Any) -> str | None:
             pieces.append(target)
         target_json = item.get("target_json")
         if isinstance(target_json, dict):
-            pieces.append(json.dumps(target_json, sort_keys=True))
+            content = target_json.get("content")
+            if isinstance(content, str) and content.strip():
+                pieces.append(content)
+            else:
+                pieces.append(json.dumps(target_json, sort_keys=True))
         return "\n".join(piece for piece in pieces if piece)
     prompt = item.get("prompt")
     target = item.get("target")

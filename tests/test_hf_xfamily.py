@@ -130,17 +130,18 @@ def test_load_calibration_texts_handles_jsonl_message_rows(tmp_path) -> None:
                 '{"messages":[{"role":"user","content":"Explain folding."},{"role":"assistant","content":"Fold redundant channels before pruning."}]}',
                 '{"prompt":"Solve 2+2.","target":"The answer is 4."}',
                 '{"prompt":"Name a merge risk.","response":"Tokenizer mismatch can break behavior."}',
-                '{"input_json":{"messages":[{"role":"user","content":"Return compact JSON."}]},"target_json":{"answer":"ok"}}',
+                '{"input_json":{"messages":[{"role":"user","content":"Return compact JSON."}]},"target_json":{"content":"Use concise JSON.","media_refs":["ignore-me"]}}',
             ]
         ),
         encoding="utf-8",
     )
-    texts = load_calibration_texts(calibration, max_texts=3, min_chars=8)
-    assert len(texts) == 3
+    texts = load_calibration_texts(calibration, max_texts=4, min_chars=8)
+    assert len(texts) == 4
     assert "user: Explain folding." in texts[0]
     assert "assistant: Fold redundant channels" in texts[0]
     assert texts[1] == "Solve 2+2. The answer is 4."
     assert texts[2] == "Name a merge risk. Tokenizer mismatch can break behavior."
+    assert texts[3] == "user: Return compact JSON. Use concise JSON."
 
 
 def test_cross_family_sweep_rejects_duplicate_alpha_tags(tmp_path) -> None:
