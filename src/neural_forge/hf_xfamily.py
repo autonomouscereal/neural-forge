@@ -251,6 +251,7 @@ def donor_projected_init(
     fold_mode: str = "mean",
     activation_fold_assignment: str = "balanced",
     donor_layer_fold_mode: str = "representative",
+    attention_fold_mode: str = "independent",
     projection_scale: str = "none",
     activation_calibration_texts: list[str] | None = None,
     activation_max_length: int = 128,
@@ -277,6 +278,8 @@ def donor_projected_init(
         raise ValueError("activation_fold_assignment must be balanced or similarity.")
     if donor_layer_fold_mode not in {"representative", "average", "fold"}:
         raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
+    if attention_fold_mode not in {"independent", "coupled"}:
+        raise ValueError("attention_fold_mode must be independent or coupled.")
     if projection_scale not in {"none", "target-rms"}:
         raise ValueError("projection_scale must be none or target-rms.")
     if activation_max_length <= 1:
@@ -326,6 +329,12 @@ def donor_projected_init(
     layer_reports = []
     changed_keys = []
     skipped_layer_keys = []
+    hidden_axis_weights = None
+    if activation_profile is not None:
+        hidden_axis_weights = {
+            "weights": activation_profile["hidden_scores"],
+            "features": activation_profile.get("hidden_features"),
+        }
     for target_key, target_tensor in list(target_state.items()):
         parsed = _parse_layer_tensor_key(target_key)
         if parsed is None:
@@ -373,14 +382,28 @@ def donor_projected_init(
             donor_layer_group,
             activation_profile,
         )
-        projected = _resize_tensor_to_shape(
-            torch,
-            donor_tensor.detach().cpu().to(torch.float32),
-            tuple(target_tensor.shape),
-            fold_mode=tensor_fold_mode,
-            axis_weights=axis_weights,
-            activation_fold_assignment=activation_fold_assignment,
-        )
+        projected = None
+        if attention_fold_mode == "coupled":
+            projected = _resize_attention_tensor_to_shape(
+                torch,
+                donor_tensor.detach().cpu().to(torch.float32),
+                tuple(target_tensor.shape),
+                suffix,
+                donor.config,
+                target.config,
+                fold_mode=tensor_fold_mode,
+                axis_weights=axis_weights,
+                activation_fold_assignment=activation_fold_assignment,
+            )
+        if projected is None:
+            projected = _resize_tensor_to_shape(
+                torch,
+                donor_tensor.detach().cpu().to(torch.float32),
+                tuple(target_tensor.shape),
+                fold_mode=tensor_fold_mode,
+                axis_weights=axis_weights,
+                activation_fold_assignment=activation_fold_assignment,
+            )
         projected = _scale_projection_to_target(torch, projected, target_tensor, projection_scale)
         target_state[target_key] = projected.to(dtype=target_tensor.dtype)
         changed_keys.append(target_key)
@@ -392,11 +415,23 @@ def donor_projected_init(
                 "donor_layer": donor_layer_idx,
                 "donor_layer_group": donor_layer_group,
                 "donor_layer_fold_mode": donor_layer_fold_mode,
+                "attention_fold_mode": attention_fold_mode,
                 "target_shape": list(target_tensor.shape),
                 "donor_shape": list(donor_tensor.shape),
             }
         )
 
+    non_layer_report = _initialize_non_layer_tensors_from_donor(
+        torch,
+        target_state,
+        donor_state,
+        changed_keys=set(changed_keys),
+        fold_mode=fold_mode,
+        hidden_axis_weights=hidden_axis_weights,
+        activation_fold_assignment=activation_fold_assignment,
+        projection_scale=projection_scale,
+    )
+    changed_keys.extend(item["target_key"] for item in non_layer_report["initialized"])
     load_result = target.load_state_dict(target_state, strict=False)
     token_report = _initialize_token_weights_from_donor(
         torch,
@@ -406,12 +441,7 @@ def donor_projected_init(
         donor_tokenizer,
         max_anchors=max_anchors,
         fold_mode=fold_mode,
-        hidden_axis_weights=None
-        if activation_profile is None
-        else {
-            "weights": activation_profile["hidden_scores"],
-            "features": activation_profile.get("hidden_features"),
-        },
+        hidden_axis_weights=hidden_axis_weights,
         activation_fold_assignment=activation_fold_assignment,
         projection_scale=projection_scale,
     )
@@ -434,6 +464,7 @@ def donor_projected_init(
         "fold_mode": fold_mode,
         "activation_fold_assignment": activation_fold_assignment,
         "donor_layer_fold_mode": donor_layer_fold_mode,
+        "attention_fold_mode": attention_fold_mode,
         "projection_scale": projection_scale,
         "activation_calibration_text_count": len(activation_calibration_texts or []),
         "activation_max_length": activation_max_length,
@@ -443,6 +474,9 @@ def donor_projected_init(
         "donor_layers": len(donor_layers),
         "layer_tensors_initialized": len(layer_reports),
         "layer_tensors_skipped": skipped_layer_keys[:200],
+        "non_layer_tensors_initialized": len(non_layer_report["initialized"]),
+        "non_layer_tensors_skipped": non_layer_report["skipped"][:200],
+        "non_layer_report": non_layer_report,
         "layer_reports": layer_reports,
         "changed_keys": changed_keys,
         "missing_keys": list(load_result.missing_keys),
@@ -1281,6 +1315,160 @@ def _projectable_tensor(torch, target_tensor, donor_tensor) -> bool:
     )
 
 
+def _initialize_non_layer_tensors_from_donor(
+    torch,
+    target_state: dict[str, Any],
+    donor_state: dict[str, Any],
+    changed_keys: set[str] | None = None,
+    fold_mode: str = "mean",
+    hidden_axis_weights=None,
+    activation_fold_assignment: str = "balanced",
+    projection_scale: str = "none",
+) -> dict[str, Any]:
+    donor_index = _non_layer_tensor_index(donor_state)
+    already_changed = set(changed_keys or set())
+    initialized = []
+    skipped = []
+    for target_key, target_tensor in list(target_state.items()):
+        if target_key in already_changed or _is_excluded_non_layer_tensor_key(target_key):
+            continue
+        candidates = _non_layer_donor_candidates(target_key, donor_index)
+        if not candidates:
+            skipped.append({"target_key": target_key, "reason": "no_matching_donor_non_layer_tensor"})
+            continue
+        donor_key = _select_non_layer_donor_candidate(torch, target_tensor, donor_state, candidates)
+        if donor_key is None:
+            skipped.append(
+                {
+                    "target_key": target_key,
+                    "candidate_donor_keys": candidates[:8],
+                    "reason": "ambiguous_or_incompatible_donor_non_layer_tensor",
+                }
+            )
+            continue
+        donor_tensor = donor_state[donor_key]
+        if not _projectable_tensor(torch, target_tensor, donor_tensor):
+            skipped.append({"target_key": target_key, "donor_key": donor_key, "reason": "not_floating_tensor"})
+            continue
+        tensor_fold_mode = fold_mode if donor_tensor.dim() >= 2 else "mean"
+        axis_weights = _hidden_axis_weights_for_non_layer_tensor(donor_tensor, hidden_axis_weights)
+        projected = _resize_tensor_to_shape(
+            torch,
+            donor_tensor.detach().cpu().to(torch.float32),
+            tuple(target_tensor.shape),
+            fold_mode=tensor_fold_mode,
+            axis_weights=axis_weights,
+            activation_fold_assignment=activation_fold_assignment,
+        )
+        projected = _scale_projection_to_target(torch, projected, target_tensor, projection_scale)
+        target_state[target_key] = projected.to(dtype=target_tensor.dtype)
+        initialized.append(
+            {
+                "target_key": target_key,
+                "donor_key": donor_key,
+                "target_shape": list(target_tensor.shape),
+                "donor_shape": list(donor_tensor.shape),
+            }
+        )
+    return {
+        "initialized": initialized,
+        "skipped": skipped,
+        "donor_index_keys": len(donor_index),
+    }
+
+
+def _non_layer_tensor_index(state_dict: dict[str, Any]) -> dict[str, list[str]]:
+    index: dict[str, list[str]] = {}
+    for key in state_dict:
+        if _is_excluded_non_layer_tensor_key(key):
+            continue
+        for alias in _non_layer_tensor_aliases(key):
+            index.setdefault(alias, []).append(key)
+    return index
+
+
+def _non_layer_donor_candidates(target_key: str, donor_index: dict[str, list[str]]) -> list[str]:
+    candidates = []
+    seen = set()
+    for alias in _non_layer_tensor_aliases(target_key):
+        for donor_key in donor_index.get(alias, []):
+            if donor_key not in seen:
+                candidates.append(donor_key)
+                seen.add(donor_key)
+    return candidates
+
+
+def _select_non_layer_donor_candidate(torch, target_tensor, donor_state: dict[str, Any], candidates: Sequence[str]) -> str | None:
+    compatible = [key for key in candidates if _projectable_tensor(torch, target_tensor, donor_state[key])]
+    if len(compatible) == 1:
+        return compatible[0]
+    exact_shape = [key for key in compatible if tuple(donor_state[key].shape) == tuple(target_tensor.shape)]
+    if len(exact_shape) == 1:
+        return exact_shape[0]
+    return None
+
+
+def _is_excluded_non_layer_tensor_key(key: str) -> bool:
+    if _parse_layer_tensor_key(key) is not None:
+        return True
+    lowered = key.lower()
+    excluded_markers = (
+        "embed_tokens",
+        "embed_in",
+        "embed_out",
+        "word_embeddings",
+        "wte",
+        "lm_head",
+        "output_projection",
+        "rotary_emb",
+        "rope",
+        "inv_freq",
+    )
+    return any(marker in lowered for marker in excluded_markers)
+
+
+def _non_layer_tensor_aliases(key: str) -> list[str]:
+    aliases = [key]
+    canonical = _canonical_non_layer_tensor_key(key)
+    if canonical is not None and canonical not in aliases:
+        aliases.append(canonical)
+    return aliases
+
+
+def _canonical_non_layer_tensor_key(key: str) -> str | None:
+    parts = key.split(".")
+    if not parts:
+        return None
+    leaf = parts[-1]
+    if leaf not in {"weight", "bias"}:
+        return ".".join(parts[-2:]) if len(parts) >= 2 else key
+    lowered = key.lower()
+    final_norm_markers = (
+        ".norm.",
+        ".ln_f.",
+        ".norm_f.",
+        ".final_norm.",
+        ".final_layer_norm.",
+    )
+    padded = f".{lowered}"
+    if any(marker in padded for marker in final_norm_markers):
+        return f"final_norm.{leaf}"
+    return ".".join(parts[-2:]) if len(parts) >= 2 else key
+
+
+def _hidden_axis_weights_for_non_layer_tensor(donor_tensor, hidden_axis_weights):
+    if hidden_axis_weights is None:
+        return None
+    weights = hidden_axis_weights.get("weights") if isinstance(hidden_axis_weights, dict) else None
+    if weights is None:
+        return None
+    axis_weights = {}
+    for axis, source_dim in enumerate(donor_tensor.shape):
+        if int(source_dim) == int(weights.numel()):
+            axis_weights[axis] = hidden_axis_weights
+    return axis_weights or None
+
+
 def _scale_projection_to_target(torch, projected, target_tensor, projection_scale: str):
     if projection_scale == "none":
         return projected
@@ -1358,6 +1546,123 @@ def _resize_tensor_to_shape(
                 assignment_mode=activation_fold_assignment,
             )
     return resized.contiguous()
+
+
+def _resize_attention_tensor_to_shape(
+    torch,
+    source,
+    target_shape: tuple[int, ...],
+    suffix: str,
+    donor_config,
+    target_config,
+    fold_mode: str = "mean",
+    axis_weights: dict[int, Any] | None = None,
+    activation_fold_assignment: str = "balanced",
+):
+    specs = _attention_partition_specs(suffix, donor_config, target_config)
+    if not specs or source.dim() != len(target_shape):
+        return None
+    resized = source.to(torch.float32)
+    handled_axes = set()
+    used_coupled_axis = False
+    for axis, source_heads, target_heads in specs:
+        if axis >= resized.dim() or int(resized.shape[axis]) == int(target_shape[axis]):
+            continue
+        coupled = _resize_head_partitioned_axis(
+            torch,
+            resized,
+            axis,
+            int(target_shape[axis]),
+            source_heads,
+            target_heads,
+            fold_mode=fold_mode,
+        )
+        if coupled is None:
+            continue
+        resized = coupled
+        handled_axes.add(axis)
+        used_coupled_axis = True
+    if not used_coupled_axis:
+        return None
+    for axis, target_dim in enumerate(target_shape):
+        if resized.shape[axis] != int(target_dim):
+            profile = None if axis_weights is None or axis in handled_axes else axis_weights.get(axis)
+            weights, features = _axis_fold_profile(profile)
+            resized = _resize_tensor_axis_mean_fold(
+                torch,
+                resized,
+                axis,
+                int(target_dim),
+                fold_mode=fold_mode,
+                weights=weights,
+                features=features,
+                assignment_mode=activation_fold_assignment,
+            )
+    return resized.contiguous()
+
+
+def _attention_partition_specs(suffix: str, donor_config, target_config) -> list[tuple[int, int, int]]:
+    q_heads_source = _config_int(donor_config, "num_attention_heads", "n_head", "num_heads")
+    q_heads_target = _config_int(target_config, "num_attention_heads", "n_head", "num_heads")
+    kv_heads_source = _config_int(donor_config, "num_key_value_heads", default=q_heads_source)
+    kv_heads_target = _config_int(target_config, "num_key_value_heads", default=q_heads_target)
+    if q_heads_source is None or q_heads_target is None:
+        return []
+    marker = f".{suffix}"
+    if marker.endswith(".q_proj.weight") or marker.endswith(".q_proj.bias"):
+        return [(0, q_heads_source, q_heads_target)]
+    if marker.endswith(".k_proj.weight") or marker.endswith(".k_proj.bias"):
+        return [] if kv_heads_source is None or kv_heads_target is None else [(0, kv_heads_source, kv_heads_target)]
+    if marker.endswith(".v_proj.weight") or marker.endswith(".v_proj.bias"):
+        return [] if kv_heads_source is None or kv_heads_target is None else [(0, kv_heads_source, kv_heads_target)]
+    if marker.endswith(".o_proj.weight"):
+        return [(1, q_heads_source, q_heads_target)]
+    return []
+
+
+def _config_int(config, *names: str, default=None):
+    for name in names:
+        value = getattr(config, name, None)
+        if value is not None:
+            return int(value)
+    return None if default is None else int(default)
+
+
+def _resize_head_partitioned_axis(
+    torch,
+    tensor,
+    axis: int,
+    target_dim: int,
+    source_heads: int,
+    target_heads: int,
+    fold_mode: str,
+):
+    source_dim = int(tensor.shape[axis])
+    if source_heads <= 0 or target_heads <= 0:
+        return None
+    if source_dim % int(source_heads) != 0 or target_dim % int(target_heads) != 0:
+        return None
+    source_head_dim = source_dim // int(source_heads)
+    target_head_dim = target_dim // int(target_heads)
+    moved = tensor.movedim(axis, 0).contiguous()
+    rest_shape = tuple(moved.shape[1:])
+    partitioned = moved.reshape(int(source_heads), source_head_dim, *rest_shape)
+    partitioned = _resize_tensor_axis_mean_fold(
+        torch,
+        partitioned,
+        axis=0,
+        target_dim=int(target_heads),
+        fold_mode=fold_mode,
+    )
+    partitioned = _resize_tensor_axis_mean_fold(
+        torch,
+        partitioned,
+        axis=1,
+        target_dim=target_head_dim,
+        fold_mode=fold_mode,
+    )
+    resized = partitioned.reshape(target_dim, *rest_shape)
+    return resized.movedim(0, axis).contiguous()
 
 
 def _axis_fold_profile(profile):

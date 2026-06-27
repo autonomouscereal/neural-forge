@@ -31,8 +31,10 @@ from neural_forge.hf_xfamily import _balanced_activation_assignment
 from neural_forge.hf_xfamily import _channel_assignment_features
 from neural_forge.hf_xfamily import _donor_layer_group_for_target
 from neural_forge.hf_xfamily import _effective_layer_alpha
+from neural_forge.hf_xfamily import _initialize_non_layer_tensors_from_donor
 from neural_forge.hf_xfamily import _mlp_spec
 from neural_forge.hf_xfamily import _proportional_index
+from neural_forge.hf_xfamily import _resize_attention_tensor_to_shape
 from neural_forge.hf_xfamily import _resize_tensor_to_shape
 from neural_forge.hf_xfamily import _scale_projection_to_target
 from neural_forge.hf_xfamily import _select_compression_candidates
@@ -237,6 +239,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "similarity",
             "--donor-layer-fold-mode",
             "fold",
+            "--attention-fold-mode",
+            "coupled",
             "--projection-scale",
             "target-rms",
             "--activation-calibration-file",
@@ -444,6 +448,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.fold_mode == "mean"
     assert donor_init_args.activation_fold_assignment == "similarity"
     assert donor_init_args.donor_layer_fold_mode == "fold"
+    assert donor_init_args.attention_fold_mode == "coupled"
     assert donor_init_args.projection_scale == "target-rms"
     assert donor_init_args.activation_calibration_file == "activation.jsonl"
     assert donor_init_args.activation_max_calibration_texts == 5
@@ -692,6 +697,71 @@ def test_resize_tensor_to_shape_rms_fold_preserves_more_variance() -> None:
 
     assert mean_folded.tolist() == [[1.0, 1.0], [1.0, 1.0]]
     assert rms_folded.flatten().tolist() == pytest.approx([2**0.5, 2**0.5, 2**0.5, 2**0.5])
+
+
+def test_attention_tensor_resize_folds_q_heads_before_head_dim() -> None:
+    torch = pytest.importorskip("torch")
+    source = torch.arange(8, dtype=torch.float32).reshape(8, 1)
+    donor_config = _Obj(num_attention_heads=4, num_key_value_heads=2)
+    target_config = _Obj(num_attention_heads=2, num_key_value_heads=1)
+
+    resized = _resize_attention_tensor_to_shape(
+        torch,
+        source,
+        (2, 1),
+        "self_attn.q_proj.weight",
+        donor_config,
+        target_config,
+    )
+
+    assert resized is not None
+    assert resized.flatten().tolist() == pytest.approx([1.5, 5.5])
+
+
+def test_attention_tensor_resize_folds_o_input_heads() -> None:
+    torch = pytest.importorskip("torch")
+    source = torch.arange(8, dtype=torch.float32).reshape(1, 8)
+    donor_config = _Obj(num_attention_heads=4, num_key_value_heads=2)
+    target_config = _Obj(num_attention_heads=2, num_key_value_heads=1)
+
+    resized = _resize_attention_tensor_to_shape(
+        torch,
+        source,
+        (1, 2),
+        "self_attn.o_proj.weight",
+        donor_config,
+        target_config,
+    )
+
+    assert resized is not None
+    assert resized.flatten().tolist() == pytest.approx([1.5, 5.5])
+
+
+def test_non_layer_initializer_folds_final_norm_and_skips_special_tensors() -> None:
+    torch = pytest.importorskip("torch")
+    target_state = {
+        "model.norm.weight": torch.zeros(2),
+        "model.embed_tokens.weight": torch.ones((3, 2)),
+        "model.layers.0.input_layernorm.weight": torch.ones(2),
+    }
+    donor_state = {
+        "transformer.ln_f.weight": torch.tensor([1.0, 3.0, 5.0, 7.0]),
+        "model.embed_tokens.weight": torch.zeros((4, 4)),
+        "model.layers.0.input_layernorm.weight": torch.zeros(4),
+    }
+
+    report = _initialize_non_layer_tensors_from_donor(
+        torch,
+        target_state,
+        donor_state,
+        fold_mode="mean",
+    )
+
+    assert target_state["model.norm.weight"].tolist() == pytest.approx([2.0, 6.0])
+    assert target_state["model.embed_tokens.weight"].tolist() == [[1.0, 1.0]] * 3
+    assert len(report["initialized"]) == 1
+    assert report["initialized"][0]["target_key"] == "model.norm.weight"
+    assert report["initialized"][0]["donor_key"] == "transformer.ln_f.weight"
 
 
 def test_scale_projection_to_target_matches_target_rms() -> None:
@@ -1128,6 +1198,8 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "similarity",
             "--donor-layer-fold-mode",
             "average",
+            "--attention-fold-mode",
+            "coupled",
             "--projection-scale",
             "target-rms",
             "--activation-calibration-file",
@@ -1156,6 +1228,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "fold_mode": "mean",
         "activation_fold_assignment": "similarity",
         "donor_layer_fold_mode": "average",
+        "attention_fold_mode": "coupled",
         "projection_scale": "target-rms",
         "activation_calibration_texts": ["activation text"],
         "activation_max_length": 64,

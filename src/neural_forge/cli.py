@@ -117,6 +117,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="How to fold parent/donor depth spans into each child/target layer.",
     )
     hf_donor_init.add_argument(
+        "--attention-fold-mode",
+        choices=["independent", "coupled"],
+        default="independent",
+        help="Fold attention Q/K/V/O projection head partitions together instead of as flat axes.",
+    )
+    hf_donor_init.add_argument(
         "--projection-scale",
         choices=["none", "target-rms"],
         default="none",
@@ -890,6 +896,7 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         fold_mode=args.fold_mode,
         activation_fold_assignment=args.activation_fold_assignment,
         donor_layer_fold_mode=args.donor_layer_fold_mode,
+        attention_fold_mode=args.attention_fold_mode,
         projection_scale=args.projection_scale,
         activation_calibration_texts=activation_calibration_texts,
         activation_max_length=args.activation_max_length,
