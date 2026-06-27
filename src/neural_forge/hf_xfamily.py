@@ -256,6 +256,7 @@ def donor_projected_init(
     token_init_mode: str = "shared",
     projection_scale: str = "none",
     projection_blend_alpha: float = 1.0,
+    consumer_hidden_reduction: str = "mean",
     untie_output_head: bool = False,
     activation_calibration_texts: list[str] | None = None,
     activation_max_length: int = 128,
@@ -290,6 +291,8 @@ def donor_projected_init(
         raise ValueError("token_init_mode must be shared or donor-tokenized.")
     if projection_scale not in {"none", "target-rms"}:
         raise ValueError("projection_scale must be none or target-rms.")
+    if consumer_hidden_reduction not in {"mean", "sum", "sqrt-sum"}:
+        raise ValueError("consumer_hidden_reduction must be mean, sum, or sqrt-sum.")
     projection_blend_alpha = _bounded_alpha(projection_blend_alpha, "projection_blend_alpha")
     if activation_max_length <= 1:
         raise ValueError("activation_max_length must be greater than 1.")
@@ -406,6 +409,7 @@ def donor_projected_init(
             activation_profile,
         )
         axis_reductions = _axis_reductions_for_layer_tensor(suffix)
+        axis_reductions = _with_consumer_hidden_reduction(axis_reductions, consumer_hidden_reduction)
         projected = None
         if attention_fold_mode == "coupled":
             projected = _resize_attention_tensor_to_shape(
@@ -461,6 +465,7 @@ def donor_projected_init(
         activation_fold_assignment=activation_fold_assignment,
         projection_scale=projection_scale,
         projection_blend_alpha=projection_blend_alpha,
+        consumer_hidden_reduction=consumer_hidden_reduction,
         assignment_cache=axis_assignment_cache,
     )
     changed_keys.extend(item["target_key"] for item in non_layer_report["initialized"])
@@ -478,6 +483,7 @@ def donor_projected_init(
         activation_fold_assignment=activation_fold_assignment,
         projection_scale=projection_scale,
         projection_blend_alpha=projection_blend_alpha,
+        consumer_hidden_reduction=consumer_hidden_reduction,
         assignment_cache=axis_assignment_cache,
     )
     if getattr(target.config, "tie_word_embeddings", False) and not untie_output_head:
@@ -504,6 +510,7 @@ def donor_projected_init(
         "token_init_mode": token_init_mode,
         "projection_scale": projection_scale,
         "projection_blend_alpha": projection_blend_alpha,
+        "consumer_hidden_reduction": consumer_hidden_reduction,
         "untie_output_head": bool(untie_output_head),
         "activation_calibration_text_count": len(activation_calibration_texts or []),
         "activation_max_length": activation_max_length,
@@ -1365,9 +1372,12 @@ def _initialize_non_layer_tensors_from_donor(
     activation_fold_assignment: str = "balanced",
     projection_scale: str = "none",
     projection_blend_alpha: float = 1.0,
+    consumer_hidden_reduction: str = "mean",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     projection_blend_alpha = _bounded_alpha(projection_blend_alpha, "projection_blend_alpha")
+    if consumer_hidden_reduction not in {"mean", "sum", "sqrt-sum"}:
+        raise ValueError("consumer_hidden_reduction must be mean, sum, or sqrt-sum.")
     donor_index = _non_layer_tensor_index(donor_state)
     already_changed = set(changed_keys or set())
     initialized = []
@@ -1401,6 +1411,10 @@ def _initialize_non_layer_tensors_from_donor(
             tuple(target_tensor.shape),
             fold_mode=tensor_fold_mode,
             axis_weights=axis_weights,
+            axis_reductions=_with_consumer_hidden_reduction(
+                _axis_reductions_for_non_layer_tensor_key(target_key),
+                consumer_hidden_reduction,
+            ),
             activation_fold_assignment=activation_fold_assignment,
             assignment_cache=assignment_cache,
         )
@@ -1692,11 +1706,44 @@ def _attention_partition_specs(suffix: str, donor_config, target_config) -> list
 
 def _axis_reductions_for_layer_tensor(suffix: str) -> dict[int, str]:
     lowered = f".{suffix.lower()}"
+    if (
+        lowered.endswith(".q_proj.weight")
+        or lowered.endswith(".k_proj.weight")
+        or lowered.endswith(".v_proj.weight")
+        or lowered.endswith(".query_key_value.weight")
+        or lowered.endswith(".c_attn.weight")
+        or lowered.endswith(".gate_proj.weight")
+        or lowered.endswith(".up_proj.weight")
+        or lowered.endswith(".w1.weight")
+        or lowered.endswith(".w3.weight")
+        or lowered.endswith(".dense_h_to_4h.weight")
+        or lowered.endswith(".fc1.weight")
+    ):
+        return {1: "sum"}
     if lowered.endswith(".down_proj.weight") or lowered.endswith(".fc2.weight") or lowered.endswith(".c_proj.weight"):
         return {1: "sum"}
     if lowered.endswith(".o_proj.weight") or lowered.endswith(".out_proj.weight") or lowered.endswith(".attn.c_proj.weight"):
         return {1: "sum"}
     return {}
+
+
+def _axis_reductions_for_non_layer_tensor_key(key: str) -> dict[int, str]:
+    lowered = key.lower()
+    if lowered.endswith("lm_head.weight") or lowered.endswith("embed_out.weight"):
+        return {1: "sum"}
+    return {}
+
+
+def _with_consumer_hidden_reduction(axis_reductions: dict[int, str], consumer_hidden_reduction: str) -> dict[int, str]:
+    if consumer_hidden_reduction not in {"mean", "sum", "sqrt-sum"}:
+        raise ValueError("consumer_hidden_reduction must be mean, sum, or sqrt-sum.")
+    if consumer_hidden_reduction == "sum":
+        return dict(axis_reductions)
+    converted = dict(axis_reductions)
+    for axis, reduction in list(converted.items()):
+        if reduction == "sum":
+            converted[axis] = consumer_hidden_reduction
+    return converted
 
 
 def _config_int(config, *names: str, default=None):
@@ -1875,7 +1922,7 @@ def _apply_sparse_axis_transport(
         raise ValueError("Sparse transport has the wrong source dimension.")
     folded = torch.zeros((target_dim, flat.shape[1]), dtype=flat.dtype)
     counts = torch.zeros(target_dim, dtype=flat.dtype)
-    if reduction == "sum":
+    if reduction in {"sum", "sqrt-sum"}:
         coeffs = values
         count_coeffs = values
     else:
@@ -1889,6 +1936,8 @@ def _apply_sparse_axis_transport(
     if reduction == "mean":
         divisor = counts.sqrt() if fold_mode == "rms" else counts
         folded = folded / divisor.clamp_min(1e-12).unsqueeze(1)
+    elif reduction == "sqrt-sum":
+        folded = folded / counts.clamp_min(1e-12).sqrt().unsqueeze(1)
     return folded
 
 
@@ -1909,8 +1958,8 @@ def _resize_tensor_axis_mean_fold(
         raise ValueError("target_dim must be positive.")
     if fold_mode not in {"mean", "rms", "transport"}:
         raise ValueError("fold_mode must be mean, rms, or transport.")
-    if reduction not in {"mean", "sum"}:
-        raise ValueError("reduction must be mean or sum.")
+    if reduction not in {"mean", "sum", "sqrt-sum"}:
+        raise ValueError("reduction must be mean, sum, or sqrt-sum.")
     if assignment_mode not in {"balanced", "similarity"}:
         raise ValueError("assignment_mode must be balanced or similarity.")
     source_dim = int(tensor.shape[axis])
@@ -1975,13 +2024,15 @@ def _resize_tensor_axis_mean_fold(
             raise ValueError("Cached axis assignment has out-of-range target bins.")
         folded = torch.zeros((target_dim, flat.shape[1]), dtype=flat.dtype)
         counts = torch.zeros(target_dim, dtype=flat.dtype)
-        value_weights = torch.ones_like(fold_weights) if reduction == "sum" else fold_weights
+        value_weights = torch.ones_like(fold_weights) if reduction in {"sum", "sqrt-sum"} else fold_weights
         weighted_flat = flat * value_weights.to(flat.dtype).unsqueeze(1)
         folded.index_add_(0, assignment, weighted_flat)
         counts.index_add_(0, assignment, fold_weights.to(flat.dtype))
         if reduction == "mean":
             divisor = counts.sqrt() if fold_mode == "rms" and not explicit_weights else counts
             folded = folded / divisor.clamp_min(1.0).unsqueeze(1)
+        elif reduction == "sqrt-sum":
+            folded = folded / counts.clamp_min(1.0).sqrt().unsqueeze(1)
     else:
         source_idx = torch.floor(torch.arange(target_dim, dtype=torch.float32) * source_dim / target_dim)
         source_idx = source_idx.to(torch.long).clamp_max(source_dim - 1)
@@ -2259,10 +2310,13 @@ def _initialize_token_weights_from_donor(
     activation_fold_assignment: str = "balanced",
     projection_scale: str = "none",
     projection_blend_alpha: float = 1.0,
+    consumer_hidden_reduction: str = "mean",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if token_init_mode not in {"shared", "donor-tokenized"}:
         raise ValueError("token_init_mode must be shared or donor-tokenized.")
+    if consumer_hidden_reduction not in {"mean", "sum", "sqrt-sum"}:
+        raise ValueError("consumer_hidden_reduction must be mean, sum, or sqrt-sum.")
     anchors, target_map, donor_map = _shared_anchor_tokens(target_tokenizer, donor_tokenizer, max_anchors)
     if token_init_mode == "shared":
         target_ids = [target_map[token] for token in anchors]
@@ -2292,6 +2346,7 @@ def _initialize_token_weights_from_donor(
         projection_scale=projection_scale,
         projection_blend_alpha=projection_blend_alpha,
         assignment_cache=assignment_cache,
+        hidden_axis_reduction="mean",
         chunk_size=2048,
     )
     target_embeddings.weight.data.copy_(target_emb_weight.to(target_embeddings.weight.dtype))
@@ -2300,25 +2355,34 @@ def _initialize_token_weights_from_donor(
     donor_lm = donor.get_output_embeddings()
     lm_head_updated = False
     lm_head_rows_initialized = 0
+    tied_target_head = (
+        target_lm is not None
+        and target_embeddings is not None
+        and target_lm.weight.data_ptr() == target_embeddings.weight.data_ptr()
+    )
     if target_lm is not None and donor_lm is not None:
-        target_head = target_lm.weight.data.detach().cpu().to(torch.float32)
-        donor_head = donor_lm.weight.data.detach().cpu().to(torch.float32)
-        lm_head_rows_initialized = _project_token_weight_rows(
-            torch,
-            target_head,
-            donor_head,
-            target_ids,
-            donor_id_groups,
-            fold_mode=fold_mode,
-            hidden_axis_weights=hidden_axis_weights,
-            activation_fold_assignment=activation_fold_assignment,
-            projection_scale=projection_scale,
-            projection_blend_alpha=projection_blend_alpha,
-            assignment_cache=assignment_cache,
-            chunk_size=2048,
-        )
-        target_lm.weight.data.copy_(target_head.to(target_lm.weight.dtype))
-        lm_head_updated = True
+        if tied_target_head:
+            lm_head_updated = False
+        else:
+            target_head = target_lm.weight.data.detach().cpu().to(torch.float32)
+            donor_head = donor_lm.weight.data.detach().cpu().to(torch.float32)
+            lm_head_rows_initialized = _project_token_weight_rows(
+                torch,
+                target_head,
+                donor_head,
+                target_ids,
+                donor_id_groups,
+                fold_mode=fold_mode,
+                hidden_axis_weights=hidden_axis_weights,
+                activation_fold_assignment=activation_fold_assignment,
+                projection_scale=projection_scale,
+                projection_blend_alpha=projection_blend_alpha,
+                assignment_cache=assignment_cache,
+                hidden_axis_reduction=consumer_hidden_reduction,
+                chunk_size=2048,
+            )
+            target_lm.weight.data.copy_(target_head.to(target_lm.weight.dtype))
+            lm_head_updated = True
 
     return {
         "mode": token_init_mode,
@@ -2328,6 +2392,8 @@ def _initialize_token_weights_from_donor(
         "embedding_rows_initialized": int(embedding_rows_initialized),
         "lm_head_rows_initialized": int(lm_head_rows_initialized) if lm_head_updated else 0,
         "lm_head_updated": lm_head_updated,
+        "lm_head_tied_to_embeddings": bool(tied_target_head),
+        "consumer_hidden_reduction": consumer_hidden_reduction,
     }
 
 
@@ -2343,9 +2409,12 @@ def _project_token_weight_rows(
     projection_scale: str = "none",
     projection_blend_alpha: float = 1.0,
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
+    hidden_axis_reduction: str = "mean",
     chunk_size: int = 2048,
 ) -> int:
     projection_blend_alpha = _bounded_alpha(projection_blend_alpha, "projection_blend_alpha")
+    if hidden_axis_reduction not in {"mean", "sum", "sqrt-sum"}:
+        raise ValueError("hidden_axis_reduction must be mean, sum, or sqrt-sum.")
     if len(target_ids) != len(donor_id_groups):
         raise ValueError("target_ids and donor_id_groups must have the same length.")
     if not target_ids:
@@ -2364,6 +2433,7 @@ def _project_token_weight_rows(
             (len(chunk_target_ids), target_dim),
             fold_mode=fold_mode,
             axis_weights={} if hidden_axis_weights is None else {1: hidden_axis_weights},
+            axis_reductions={1: hidden_axis_reduction},
             activation_fold_assignment=activation_fold_assignment,
             assignment_cache=assignment_cache,
         )

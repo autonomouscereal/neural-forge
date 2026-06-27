@@ -34,6 +34,9 @@ Pipeline:
 | X-tokenizer response+behavior recovery | 2189.62 | 3/4 | 3/3 | 0.45 | 0.60 | better PPL, but behavior only 1/6 and manual text still collapses |
 | Cross-tokenizer head calibration | 22103.76 | 2/4 | 2/3 | not run | not run | projected-logit fit improved, but generation degraded badly |
 | Omnicoder curated recovery | 1754.09 | 4/4 | 3/3 | 0.40 | 0.60 | best PPL/choice after 25,874-row curated recovery; behavior still 1/6 |
+| Cross-tokenizer reconstruction, MLP-only alpha 0.05 | 1648.84 | 4/4 | 3/3 | not run | not run | lower PPL, but behavior still 1/6 and manual output remains repetitive |
+| Cross-tokenizer reconstruction, both alpha 0.02 | 1685.81 | 4/4 | 3/3 | not run | not run | safe but no behavior gain |
+| Cross-tokenizer MLP-output alpha 0.02 | 1876.39 | 4/4 | 1/3 | not run | not run | output projection reconstruction degraded generation |
 | Curated + targeted behavior | 2808.69 | 3/4 | 3/3 | 0.40 | 0.50 | behavior improved to 3/6; arithmetic/code exactness still fail |
 | Curated + targeted + EOS | 2865.05 | 2/4 | 2/3 | 0.45 | 0.50 | EOS stops runaway outputs; wrong numeric answers remain |
 | Task alpha 0.60, curated->targeted EOS | 2170.67 | 3/4 | 3/3 | 0.40 | 0.45 | blends behavior to 3/6 with less PPL hit, but benchmark regresses |
@@ -70,13 +73,60 @@ Later recovery ablations showed the same split:
   - Held-out-clean answer-only arithmetic-format recovery: PPL `2374.74`, choice `4/4`, generation probes `3/3`, behavior `0/6`; held-out `12 * 13 -> 400`, `19 + 26 -> 70`.
   - Task-vector sweep from curated recovery toward the answer-format branch did not expose a useful direction: alpha `0.05` through `0.30` kept choice `4/4` but stayed at behavior `1/6`; alpha `0.45+` dropped behavior to `0/6`.
 - Donor candidate scoring showed that `Qwen/Qwen3-4B-Base` ranks the held-out answer strings correctly for the behavior prompts (`156` best for `12 * 13`, `45` best for `19 + 26`). The folded child can rank a whole candidate string correctly while still greedily decoding the wrong first digit, so average sequence-level candidate losses are not sufficient. The next recovery objective needs stepwise/on-policy correction or blockwise activation reconstruction rather than more whole-string ranking.
+- Cross-tokenizer block reconstruction added group-aware donor layer selection and unshifted activation span pairing. It made local reconstruction metrics and PPL better in safe settings, but it did not improve behavior:
+  - all-layer MLP-only alpha `0.05`, donor layer mode `fold`: PPL `1648.84`, choice `4/4`, generation `3/3`, behavior `1/6`.
+  - all-layer MLP-only alpha `0.10`, donor layer mode `fold`: PPL `1580.63`, choice `3/4`, generation `2/3`, behavior `1/6`.
+  - all-layer attention+MLP alpha `0.02`, donor layer mode `fold`: PPL `1685.81`, choice `4/4`, generation `3/3`, behavior `1/6`.
+  - MLP-output/down-projection reconstruction was not safe at these settings: alpha `0.02` produced PPL `1876.39`, choice `4/4`, generation `1/3`, behavior `1/6`; alpha `0.05` produced PPL `2967.94`, behavior `0/6`.
 
-The strongest current evidence is that 25x blank-target folding transfers partial linguistic and domain behavior, but numeric/token formatting remains the hard failure. This points to needing numeric/token-aware cross-tokenizer alignment or blockwise activation reconstruction, not just more response-only SFT.
+## Same-Tokenizer Blank Qwen Target Stress Test
+
+To isolate cross-tokenizer effects, a local blank Qwen3-compatible target config was created with the Qwen3 tokenizer retained.
+
+Run root: `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_qwen_tiny_blank_20260627`
+
+Tied-head target:
+
+- Config: hidden size `512`, FFN/intermediate `1536`, `16` layers, `8` attention heads, `2` KV heads, `head_dim=64`, tied embeddings/head.
+- Parameter count after tokenizer resize: `125,907,968`, about `31.94x` smaller than the 4B donor.
+- Best pre-recovery init among tested variants was still dead. Examples:
+  - transport + activation similarity + target RMS scale: PPL `15,574,931`, choice `0/4`, behavior `0/6`.
+  - mean fold, no scale: PPL `224,591.59`, choice `0/4`, behavior `0/6`.
+  - RMS fold, no scale: PPL `342,369.29`, choice `1/4`, behavior `0/6`.
+
+Untied-head target:
+
+- Config: hidden size `384`, FFN/intermediate `1024`, `16` layers, `6` attention heads, `2` KV heads, `head_dim=64`, untied output head.
+- Parameter count after tokenizer resize: `141,662,336`, about `28.39x` smaller than the 4B donor.
+- Pre-recovery variants were also dead:
+  - mean fold, no scale: PPL `226,830.66`, choice `1/4`, behavior `0/6`.
+  - RMS fold, no scale: PPL `179,744.23`, choice `1/4`, behavior `0/6`.
+  - mean fold + target RMS scale: PPL `164,514.45`, choice `1/4`, behavior `0/6`.
+- Same-tokenizer KD recovery moved the model but did not make it useful:
+  - 600 steps on 1,200 calibration rows: PPL `3150.39`, choice `1/4`, behavior `0/6`; manual outputs were short wrong tokens such as `42`, `4.`, `22`.
+  - an additional 2,400 full-sequence KD steps on 3,000 rows: PPL `2199.87`, choice `1/4`, behavior `0/6`; manual output remained short/repetitive.
+  - cross-tokenizer/same-tokenizer head calibration after that worsened PPL to `4106.65`, choice `2/4`, behavior `0/6`.
+
+Head-dim-preserving untied Qwen target:
+
+- Config: hidden size `384`, FFN/intermediate `1024`, `16` layers, `3` attention heads, `1` KV head, `head_dim=128`, untied output head.
+- Parameter count after tokenizer resize: `141,664,384`, about `28.39x` smaller than the 4B donor.
+- This isolates head-dimension/RoPE folding by preserving Qwen3's donor head dimension while still compressing head count, width, and depth.
+- Tested init variants:
+  - representative donor layer, consumer hidden reduction `mean`, no projection scale: PPL `151,838.32`, choice `1/4`, behavior `0/6`.
+  - folded donor layer group, consumer hidden reduction `mean`, no projection scale: PPL `122,525.84`, choice `1/4`, behavior `0/6`.
+  - representative donor layer, consumer hidden reduction `sqrt-sum`, no projection scale: PPL `386,070.11`, choice `2/4`, behavior `0/6`.
+  - representative donor layer, consumer hidden reduction `mean`, target RMS scale: PPL `144,624.83`, choice `0/4`, behavior `0/6`.
+- Four-layer `hf-xfamily-reconstruct` on the best head-dim-preserving init (`fold_mean_none`) with `mlp-all`, alpha `0.2`, 1,024 tokens/layer worsened PPL to `178,375.10` and kept behavior at `0/6`.
+
+This same-tokenizer stress test is important: removing tokenizer mismatch did not make arbitrary 25x blank-target folding work. The current blank Qwen target initializer is not preserving enough residual/backbone geometry for light recovery to restore behavior.
+
+The strongest current evidence is narrower: the SmolLM2-135M blank-target path can transfer partial linguistic/domain behavior and beat a random blank target, but same-tokenizer blank Qwen stress tests show that the general "fold any parent into any blank target at 25x" claim is not yet proven.
 
 ## Current Conclusion
 
-The 25x blank-target fold is no longer just fitting tensor shapes. It transfers enough behavior to beat the random blank by a wide margin, generate some useful short text, pass the lightweight choice probe after mixed recovery, and improve ARC/PIQA slices versus earlier children.
+The 25x SmolLM blank-target fold is no longer just fitting tensor shapes. It transfers enough behavior to beat the random blank by a wide margin, generate some useful short text, pass the lightweight choice probe after mixed recovery, and improve ARC/PIQA slices versus earlier children.
 
-It is not yet a successful replacement for donor capability. The remaining failure mode is narrow recovery and weak generalization: benchmark slices can improve while manual arithmetic, simple code variation, and common-sense instruction following remain unstable.
+It is not yet a successful replacement for donor capability, and the same-tokenizer Qwen blank-target results show that the utility cannot yet claim arbitrary blank-target 25x compression. The remaining failure mode is structural recovery, not just benchmark tuning: benchmark slices can improve while manual arithmetic, simple code variation, and common-sense instruction following remain unstable or absent.
 
-Next useful work should prioritize numeric/token-aware cross-tokenizer objectives, blockwise activation reconstruction, and representation-preserving fold repair over more one-off choice tuning.
+Next useful work should prioritize representation-preserving fold repair over more one-off choice tuning: activation/DOT-style width folding with a shared residual projection, blockwise attention and MLP reconstruction against donor activations, and only then numeric/token-aware cross-tokenizer objectives.

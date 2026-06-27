@@ -736,6 +736,7 @@ def calibrate_cross_tokenizer_lm_head(
         raise ValueError("projected_vocab_max_source_tokens must be positive.")
 
     from neural_forge.hf_xfamily import _canonical_token
+    from neural_forge.hf_xfamily import _canonical_token_map
 
     torch, transformers = _torch_and_transformers()
     source_dtype = _dtype_from_name(torch, torch_dtype)
@@ -1028,6 +1029,211 @@ def reconstruct_folded_causal_lm(
         "param_count": sum(param.numel() for param in candidate.parameters()),
     }
     _write_json(target / "neural_forge_fold_reconstruction_report.json", reconstruction_report)
+    return reconstruction_report
+
+
+def reconstruct_cross_tokenizer_causal_lm(
+    source_model: str,
+    candidate_model: str,
+    output_dir: str | Path,
+    ridge: float = 1e-3,
+    reconstruction_alpha: float = 1.0,
+    reconstruction_target: str = "both",
+    donor_layer_fold_mode: str = "representative",
+    reconstruction_objective: str = "ridge",
+    cosine_steps: int = 80,
+    cosine_lr: float = 1e-2,
+    cosine_l2: float = 1e-4,
+    max_length: int = 128,
+    max_tokens_per_layer: int = 512,
+    max_anchors: int = 2048,
+    layer_limit: int | None = None,
+    torch_dtype: str = "float16",
+    candidate_torch_dtype: str = "float32",
+    device: str = "cuda:0",
+    trust_remote_code: bool = False,
+    calibration_texts: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    """Run cross-tokenizer block reconstruction on a folded child.
+
+    Source hidden rows are projected into child hidden size using shared token
+    embeddings. Paired activation rows are then selected from matching decoded
+    token spans and used to fit child-space input correction maps for each
+    target block's attention and MLP input projections.
+    """
+
+    if ridge < 0:
+        raise ValueError("ridge must be non-negative.")
+    if not 0.0 <= float(reconstruction_alpha) <= 1.0:
+        raise ValueError("reconstruction_alpha must be in [0, 1].")
+    xfamily_targets = {"attention", "mlp", "mlp-output", "mlp-all", "both", "all"}
+    if reconstruction_target not in xfamily_targets:
+        raise ValueError("reconstruction_target must be attention, mlp, mlp-output, mlp-all, both, or all.")
+    if donor_layer_fold_mode not in {"representative", "average", "fold"}:
+        raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
+    if reconstruction_objective not in {"ridge", "cosine"}:
+        raise ValueError("reconstruction_objective must be ridge or cosine.")
+    if cosine_steps < 0:
+        raise ValueError("cosine_steps must be non-negative.")
+    if cosine_lr <= 0:
+        raise ValueError("cosine_lr must be positive.")
+    if cosine_l2 < 0:
+        raise ValueError("cosine_l2 must be non-negative.")
+    if max_length <= 1:
+        raise ValueError("max_length must be greater than 1.")
+    if max_tokens_per_layer <= 0:
+        raise ValueError("max_tokens_per_layer must be positive.")
+    if max_anchors <= 0:
+        raise ValueError("max_anchors must be positive.")
+    if layer_limit is not None and layer_limit <= 0:
+        raise ValueError("layer_limit must be positive when provided.")
+
+    from neural_forge.hf_xfamily import _canonical_token
+    from neural_forge.hf_xfamily import _canonical_token_map
+    from neural_forge.hf_xfamily import _donor_layer_group_for_target
+
+    torch, transformers = _torch_and_transformers()
+    dtype = _dtype_from_name(torch, torch_dtype)
+    candidate_dtype = _dtype_from_name(torch, candidate_torch_dtype)
+    source_tokenizer = transformers.AutoTokenizer.from_pretrained(source_model, trust_remote_code=trust_remote_code)
+    candidate_tokenizer = transformers.AutoTokenizer.from_pretrained(candidate_model, trust_remote_code=trust_remote_code)
+    if source_tokenizer.pad_token_id is None and source_tokenizer.eos_token_id is not None:
+        source_tokenizer.pad_token = source_tokenizer.eos_token
+    if candidate_tokenizer.pad_token_id is None and candidate_tokenizer.eos_token_id is not None:
+        candidate_tokenizer.pad_token = candidate_tokenizer.eos_token
+
+    source = transformers.AutoModelForCausalLM.from_pretrained(
+        source_model,
+        torch_dtype=dtype,
+        device_map=None,
+        trust_remote_code=trust_remote_code,
+    )
+    candidate = transformers.AutoModelForCausalLM.from_pretrained(
+        candidate_model,
+        torch_dtype=candidate_dtype,
+        device_map=None,
+        trust_remote_code=trust_remote_code,
+    )
+    source.to(device)
+    candidate.to(device)
+    source.eval()
+    candidate.eval()
+    if hasattr(source.config, "use_cache"):
+        source.config.use_cache = False
+    if hasattr(candidate.config, "use_cache"):
+        candidate.config.use_cache = False
+
+    source_layers = _recovery_decoder_layers(source)
+    candidate_layers = _recovery_decoder_layers(candidate)
+    if not source_layers or not candidate_layers:
+        raise ValueError("Both source and candidate need decoder layers.")
+
+    anchors = _shared_recovery_anchors(
+        source_tokenizer,
+        candidate_tokenizer,
+        max_anchors,
+        _canonical_token_map,
+        selection="stratified",
+        min_chars=1,
+    )
+    if not anchors:
+        raise ValueError("No shared decoded-token anchors found for cross-tokenizer reconstruction.")
+    source_anchor_idx = torch.tensor([item[1] for item in anchors], dtype=torch.long, device=device)
+    candidate_anchor_idx = torch.tensor([item[2] for item in anchors], dtype=torch.long, device=device)
+    hidden_projection_report = _fit_shared_embedding_hidden_projection(
+        torch,
+        source,
+        candidate,
+        source_anchor_idx,
+        candidate_anchor_idx,
+        ridge=ridge,
+        max_anchors=max_anchors,
+    )
+    hidden_projection = hidden_projection_report["map"].to(device=device, dtype=torch.float32)
+
+    texts = list(calibration_texts or RECOVERY_TEXTS)
+    if not texts:
+        raise ValueError("Need at least one reconstruction text.")
+    eval_overlap_count = len(set(texts) & set(TEXT_EVALS))
+    paired_batches = _make_paired_batches(
+        source_tokenizer,
+        candidate_tokenizer,
+        texts,
+        batch_size=1,
+        max_length=max_length,
+        device=device,
+        include_offsets=True,
+    )
+
+    repairs = []
+    layer_count = len(candidate_layers) if layer_limit is None else min(int(layer_limit), len(candidate_layers))
+    with torch.no_grad():
+        for candidate_idx in range(layer_count):
+            source_idx = _proportional_layer_index(candidate_idx, len(candidate_layers), len(source_layers))
+            source_group = (
+                [source_idx]
+                if donor_layer_fold_mode == "representative"
+                else _donor_layer_group_for_target(candidate_idx, len(candidate_layers), len(source_layers))
+            )
+            repair = _reconstruct_cross_tokenizer_layer(
+                torch,
+                source,
+                candidate,
+                source_layers[source_idx],
+                candidate_layers[candidate_idx],
+                source_layers,
+                source_group,
+                source_tokenizer,
+                candidate_tokenizer,
+                paired_batches,
+                hidden_projection,
+                _canonical_token,
+                ridge=ridge,
+                reconstruction_alpha=float(reconstruction_alpha),
+                reconstruction_target=reconstruction_target,
+                reconstruction_objective=reconstruction_objective,
+                cosine_steps=cosine_steps,
+                cosine_lr=cosine_lr,
+                cosine_l2=cosine_l2,
+                max_tokens_per_layer=max_tokens_per_layer,
+            )
+            repair["source_layer"] = int(source_idx)
+            repair["source_layer_group"] = [int(item) for item in source_group]
+            repair["candidate_layer"] = int(candidate_idx)
+            repairs.append(repair)
+            if device.startswith("cuda") and hasattr(torch, "cuda"):
+                torch.cuda.empty_cache()
+
+    target = Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    candidate.save_pretrained(target, safe_serialization=True)
+    candidate_tokenizer.save_pretrained(target)
+    reconstruction_report = {
+        "operation": "reconstruct_cross_tokenizer_causal_lm",
+        "source_model": source_model,
+        "candidate_model": candidate_model,
+        "output_dir": str(target),
+        "ridge": ridge,
+        "reconstruction_alpha": float(reconstruction_alpha),
+        "reconstruction_target": reconstruction_target,
+        "donor_layer_fold_mode": donor_layer_fold_mode,
+        "reconstruction_objective": reconstruction_objective,
+        "cosine_steps": int(cosine_steps),
+        "cosine_lr": float(cosine_lr),
+        "cosine_l2": float(cosine_l2),
+        "max_length": max_length,
+        "max_tokens_per_layer": max_tokens_per_layer,
+        "max_anchors": max_anchors,
+        "layer_limit": layer_limit,
+        "torch_dtype": torch_dtype,
+        "candidate_torch_dtype": candidate_torch_dtype,
+        "calibration_text_count": len(texts),
+        "eval_overlap_count": eval_overlap_count,
+        "hidden_projection": {key: value for key, value in hidden_projection_report.items() if key != "map"},
+        "repairs": repairs,
+        "param_count": sum(param.numel() for param in candidate.parameters()),
+    }
+    _write_json(target / "neural_forge_xfamily_reconstruction_report.json", reconstruction_report)
     return reconstruction_report
 
 
@@ -1421,6 +1627,7 @@ def _cross_tokenizer_span_pairs(
     candidate_batch: dict[str, Any],
     canonical_fn,
     max_pairs: int,
+    shift_positions: bool = True,
 ):
     if "offset_mapping" not in source_batch or "offset_mapping" not in candidate_batch:
         raise ValueError("Span KD batches require offset_mapping.")
@@ -1452,7 +1659,7 @@ def _cross_tokenizer_span_pairs(
             token = _decoded_token(source_tokenizer, int(source_ids[batch_idx, source_pos].item()), canonical_fn)
             if not token:
                 continue
-            source_lookup.setdefault((start, end, token), source_pos - 1)
+            source_lookup.setdefault((start, end, token), source_pos - 1 if shift_positions else source_pos)
         for candidate_pos in range(1, int(candidate_ids.shape[1])):
             if candidate_mask is not None and not bool(candidate_mask[batch_idx, candidate_pos]):
                 continue
@@ -1466,7 +1673,8 @@ def _cross_tokenizer_span_pairs(
             source_shift_pos = source_lookup.get((start, end, token))
             if source_shift_pos is None:
                 continue
-            pairs.append((batch_idx, candidate_pos - 1, source_shift_pos))
+            candidate_pair_pos = candidate_pos - 1 if shift_positions else candidate_pos
+            pairs.append((batch_idx, candidate_pair_pos, source_shift_pos))
             if len(pairs) >= max_pairs:
                 return torch.tensor(pairs, dtype=torch.long, device=candidate_batch["input_ids"].device)
     if not pairs:
@@ -2357,6 +2565,517 @@ def _reconstruct_survivor_mlp_output(
         "mean_cosine_after": after_cosine,
         "solver": {key: value for key, value in solved_report.items() if key != "map"},
     }
+
+
+def _proportional_layer_index(index: int, target_count: int, source_count: int) -> int:
+    if target_count <= 0 or source_count <= 0:
+        raise ValueError("layer counts must be positive.")
+    return max(0, min(int(math.floor((int(index) + 0.5) * source_count / target_count)), source_count - 1))
+
+
+def _reconstruct_cross_tokenizer_layer(
+    torch,
+    source,
+    candidate,
+    source_layer,
+    candidate_layer,
+    source_layers: Sequence[Any] | None,
+    source_layer_group: Sequence[int] | None,
+    source_tokenizer,
+    candidate_tokenizer,
+    paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]],
+    hidden_projection,
+    canonical_fn,
+    ridge: float,
+    reconstruction_alpha: float,
+    reconstruction_target: str,
+    reconstruction_objective: str,
+    cosine_steps: int,
+    cosine_lr: float,
+    cosine_l2: float,
+    max_tokens_per_layer: int,
+) -> dict[str, Any]:
+    repair_report: dict[str, Any] = {}
+    source_group = [int(item) for item in (source_layer_group or [])]
+    source_attn_layer = source_layer
+    source_mlp_layer = source_layer
+    if source_layers is not None and source_group:
+        source_attn_layer = source_layers[max(0, min(source_group[0], len(source_layers) - 1))]
+        source_mlp_layer = source_layers[max(0, min(source_group[-1], len(source_layers) - 1))]
+
+    if reconstruction_target in {"attention", "both", "all"}:
+        source_attn_norm = _get_layer_module(source_attn_layer, ("input_layernorm", "ln_1"))
+        candidate_attn_norm = _get_layer_module(candidate_layer, ("input_layernorm", "ln_1"))
+        attn_linears = _attention_input_linears(candidate_layer)
+        repair_report["attention_reconstruction"] = _reconstruct_cross_tokenizer_module_pair(
+            torch,
+            source,
+            candidate,
+            source_attn_norm,
+            candidate_attn_norm,
+            attn_linears,
+            source_tokenizer,
+            candidate_tokenizer,
+            paired_batches,
+            hidden_projection,
+            canonical_fn,
+            ridge,
+            reconstruction_alpha,
+            reconstruction_objective,
+            cosine_steps,
+            cosine_lr,
+            cosine_l2,
+            max_tokens_per_layer,
+        )
+    else:
+        repair_report["attention_reconstruction"] = {
+            "skipped": True,
+            "reason": "reconstruction_target_excludes_attention",
+        }
+
+    if reconstruction_target in {"mlp", "mlp-all", "both", "all"}:
+        source_mlp_norm = _get_layer_module(source_mlp_layer, ("post_attention_layernorm", "ln_2"))
+        candidate_mlp_norm = _get_layer_module(candidate_layer, ("post_attention_layernorm", "ln_2"))
+        mlp_linears = _mlp_input_linears(candidate_layer)
+        repair_report["mlp_reconstruction"] = _reconstruct_cross_tokenizer_module_pair(
+            torch,
+            source,
+            candidate,
+            source_mlp_norm,
+            candidate_mlp_norm,
+            mlp_linears,
+            source_tokenizer,
+            candidate_tokenizer,
+            paired_batches,
+            hidden_projection,
+            canonical_fn,
+            ridge,
+            reconstruction_alpha,
+            reconstruction_objective,
+            cosine_steps,
+            cosine_lr,
+            cosine_l2,
+            max_tokens_per_layer,
+        )
+    else:
+        repair_report["mlp_reconstruction"] = {
+            "skipped": True,
+            "reason": "reconstruction_target_excludes_mlp",
+        }
+    if reconstruction_target in {"mlp-output", "mlp-all", "all"}:
+        repair_report["mlp_output_reconstruction"] = _reconstruct_cross_tokenizer_mlp_output(
+            torch,
+            source,
+            candidate,
+            source_mlp_layer,
+            candidate_layer,
+            source_tokenizer,
+            candidate_tokenizer,
+            paired_batches,
+            hidden_projection,
+            canonical_fn,
+            ridge,
+            reconstruction_alpha,
+            reconstruction_objective,
+            cosine_steps,
+            cosine_lr,
+            cosine_l2,
+            max_tokens_per_layer,
+        )
+    else:
+        repair_report["mlp_output_reconstruction"] = {
+            "skipped": True,
+            "reason": "reconstruction_target_excludes_mlp_output",
+        }
+    return repair_report
+
+
+def _reconstruct_cross_tokenizer_module_pair(
+    torch,
+    source,
+    candidate,
+    source_module,
+    candidate_module,
+    candidate_linears,
+    source_tokenizer,
+    candidate_tokenizer,
+    paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]],
+    hidden_projection,
+    canonical_fn,
+    ridge: float,
+    reconstruction_alpha: float,
+    reconstruction_objective: str,
+    cosine_steps: int,
+    cosine_lr: float,
+    cosine_l2: float,
+    max_tokens_per_layer: int,
+) -> dict[str, Any]:
+    if source_module is None or candidate_module is None or not candidate_linears:
+        return {
+            "skipped": True,
+            "reason": "missing_module_or_candidate_input_linears",
+        }
+    source_rows, candidate_rows, matched = _collect_cross_tokenizer_module_activations(
+        torch,
+        source,
+        candidate,
+        source_module,
+        candidate_module,
+        source_tokenizer,
+        candidate_tokenizer,
+        paired_batches,
+        canonical_fn,
+        max_tokens_per_layer,
+    )
+    if int(matched) <= 0:
+        return {
+            "skipped": True,
+            "reason": "no_cross_tokenizer_activation_pairs",
+        }
+    source_projected = source_rows.to(device=hidden_projection.device, dtype=torch.float32).matmul(
+        hidden_projection.to(dtype=torch.float32)
+    ).detach().cpu()
+    fitted = _fit_activation_map(
+        torch,
+        candidate_rows,
+        source_projected,
+        ridge,
+        reconstruction_alpha,
+        reconstruction_objective,
+        cosine_steps,
+        cosine_lr,
+        cosine_l2,
+    )
+    _absorb_input_map_into_linears(torch, candidate_linears, fitted["map"])
+    return {key: value for key, value in fitted.items() if key != "map"} | {
+        "matched_pairs": int(matched),
+        "linears_updated": [name for name, _module in candidate_linears],
+    }
+
+
+def _reconstruct_cross_tokenizer_mlp_output(
+    torch,
+    source,
+    candidate,
+    source_layer,
+    candidate_layer,
+    source_tokenizer,
+    candidate_tokenizer,
+    paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]],
+    hidden_projection,
+    canonical_fn,
+    ridge: float,
+    reconstruction_alpha: float,
+    reconstruction_objective: str,
+    cosine_steps: int,
+    cosine_lr: float,
+    cosine_l2: float,
+    max_tokens_per_layer: int,
+) -> dict[str, Any]:
+    spec = _mlp_projection_spec(candidate_layer)
+    if spec is None:
+        return {"skipped": True, "reason": "unsupported_mlp_shape"}
+
+    source_output, hidden, residual, candidate_output, matched = _collect_cross_tokenizer_mlp_output_calibration(
+        torch,
+        source,
+        candidate,
+        source_layer,
+        candidate_layer,
+        spec,
+        source_tokenizer,
+        candidate_tokenizer,
+        paired_batches,
+        canonical_fn,
+        max_tokens_per_layer,
+    )
+    if int(matched) <= 0:
+        return {"skipped": True, "reason": "no_cross_tokenizer_mlp_output_pairs"}
+    source_projected = source_output.to(device=hidden_projection.device, dtype=torch.float32).matmul(
+        hidden_projection.to(dtype=torch.float32)
+    ).detach().cpu()
+    rows = min(
+        int(source_projected.shape[0]),
+        int(hidden.shape[0]),
+        int(residual.shape[0]),
+        int(candidate_output.shape[0]),
+    )
+    source_rows = source_projected[:rows].to(torch.float32)
+    hidden_rows = hidden[:rows].to(torch.float32)
+    residual_rows = residual[:rows].to(torch.float32)
+    candidate_rows = candidate_output[:rows].to(torch.float32)
+    target_mlp_output = source_rows - residual_rows
+    solved_report = _solve_linear_reconstruction(
+        torch,
+        hidden_rows,
+        target_mlp_output,
+        ridge,
+        reconstruction_objective,
+        cosine_steps,
+        cosine_lr,
+        cosine_l2,
+    )
+    solved = solved_report["map"]
+    old_weight = spec["output"].weight.data.detach().cpu().to(torch.float32)
+    solved_weight = solved.T.contiguous()
+    if tuple(old_weight.shape) != tuple(solved_weight.shape):
+        return {
+            "skipped": True,
+            "reason": "solved_weight_shape_mismatch",
+            "old_weight_shape": list(old_weight.shape),
+            "solved_weight_shape": list(solved_weight.shape),
+        }
+    blended_weight = (1.0 - float(reconstruction_alpha)) * old_weight + float(reconstruction_alpha) * solved_weight
+    before = _relative_reconstruction_error(torch, candidate_rows, source_rows)
+    solved_output = residual_rows + hidden_rows.matmul(solved)
+    solved_error = _relative_reconstruction_error(torch, solved_output, source_rows)
+    blended_output = residual_rows + hidden_rows.matmul(blended_weight.T)
+    after = _relative_reconstruction_error(torch, blended_output, source_rows)
+    before_cosine = _mean_row_cosine(torch, candidate_rows, source_rows)
+    solved_cosine = _mean_row_cosine(torch, solved_output, source_rows)
+    after_cosine = _mean_row_cosine(torch, blended_output, source_rows)
+    spec["output"].weight.data.copy_(blended_weight.to(device=spec["output"].weight.device, dtype=spec["output"].weight.dtype))
+    return {
+        "skipped": False,
+        "matched_pairs": int(matched),
+        "tokens": rows,
+        "feature_size": int(hidden_rows.shape[1]),
+        "hidden_size": int(source_rows.shape[1]),
+        "output_projection": spec["output_name"],
+        "reconstruction_alpha": float(reconstruction_alpha),
+        "reconstruction_objective": reconstruction_objective,
+        "relative_error_before": before,
+        "relative_error_solved": solved_error,
+        "relative_error_after": after,
+        "mean_cosine_before": before_cosine,
+        "mean_cosine_solved": solved_cosine,
+        "mean_cosine_after": after_cosine,
+        "solver": {key: value for key, value in solved_report.items() if key != "map"},
+    }
+
+
+def _collect_cross_tokenizer_module_activations(
+    torch,
+    source,
+    candidate,
+    source_module,
+    candidate_module,
+    source_tokenizer,
+    candidate_tokenizer,
+    paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]],
+    canonical_fn,
+    max_tokens: int,
+):
+    source_pieces = []
+    candidate_pieces = []
+    captured: dict[str, Any] = {}
+
+    def source_hook(_module, _inputs, output):
+        tensor = output[0] if isinstance(output, tuple) else output
+        captured["source"] = tensor.detach().to(torch.float32)
+
+    def candidate_hook(_module, _inputs, output):
+        tensor = output[0] if isinstance(output, tuple) else output
+        captured["candidate"] = tensor.detach().to(torch.float32)
+
+    source_handle = source_module.register_forward_hook(source_hook)
+    candidate_handle = candidate_module.register_forward_hook(candidate_hook)
+    token_count = 0
+    try:
+        source.eval()
+        candidate.eval()
+        for source_batch, candidate_batch in paired_batches:
+            if token_count >= max_tokens:
+                break
+            captured.clear()
+            source(**_model_forward_inputs(source_batch), use_cache=False)
+            candidate(**_model_forward_inputs(candidate_batch), use_cache=False)
+            if "source" not in captured or "candidate" not in captured:
+                continue
+            pairs = _cross_tokenizer_span_pairs(
+                torch,
+                source_tokenizer,
+                candidate_tokenizer,
+                source_batch,
+                candidate_batch,
+                canonical_fn,
+                max_pairs=max_tokens - token_count,
+                shift_positions=False,
+            )
+            if int(pairs.numel()) <= 0:
+                continue
+            source_values = captured["source"]
+            candidate_values = captured["candidate"]
+            if source_values.dim() != 3 or candidate_values.dim() != 3:
+                continue
+            batch_idx = pairs[:, 0].to(dtype=torch.long, device=source_values.device)
+            candidate_pos = pairs[:, 1].to(dtype=torch.long, device=candidate_values.device)
+            source_pos = pairs[:, 2].to(dtype=torch.long, device=source_values.device)
+            valid = (
+                (batch_idx >= 0)
+                & (batch_idx < source_values.shape[0])
+                & (batch_idx.to(candidate_values.device) < candidate_values.shape[0])
+                & (source_pos >= 0)
+                & (source_pos < source_values.shape[1])
+                & (candidate_pos >= 0)
+                & (candidate_pos < candidate_values.shape[1])
+            )
+            if not bool(valid.any().detach().cpu()):
+                continue
+            batch_source = batch_idx[valid]
+            source_selected = source_values[batch_source, source_pos[valid]].detach().cpu()
+            batch_candidate = batch_idx.to(candidate_values.device)[valid.to(candidate_values.device)]
+            candidate_selected = candidate_values[batch_candidate, candidate_pos[valid.to(candidate_values.device)]].detach().cpu()
+            remaining = int(max_tokens) - token_count
+            source_pieces.append(source_selected[:remaining])
+            candidate_pieces.append(candidate_selected[:remaining])
+            token_count += int(min(source_selected.shape[0], remaining))
+    finally:
+        source_handle.remove()
+        candidate_handle.remove()
+    if not source_pieces or not candidate_pieces:
+        return (
+            torch.empty((0, 0), dtype=torch.float32),
+            torch.empty((0, 0), dtype=torch.float32),
+            0,
+        )
+    source_rows = torch.cat(source_pieces, dim=0)[:max_tokens]
+    candidate_rows = torch.cat(candidate_pieces, dim=0)[:max_tokens]
+    rows = min(int(source_rows.shape[0]), int(candidate_rows.shape[0]))
+    return source_rows[:rows], candidate_rows[:rows], rows
+
+
+def _collect_cross_tokenizer_mlp_output_calibration(
+    torch,
+    source,
+    candidate,
+    source_layer,
+    candidate_layer,
+    candidate_mlp_spec: dict[str, Any],
+    source_tokenizer,
+    candidate_tokenizer,
+    paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]],
+    canonical_fn,
+    max_tokens: int,
+):
+    source_pieces = []
+    hidden_pieces = []
+    residual_pieces = []
+    candidate_output_pieces = []
+    captured: dict[str, Any] = {}
+
+    def source_layer_hook(_module, _inputs, output):
+        tensor = output[0] if isinstance(output, tuple) else output
+        captured["source_output"] = tensor.detach().to(torch.float32)
+
+    def candidate_mlp_hook(_module, inputs, output):
+        captured["candidate_hidden"] = _mlp_hidden_features(
+            torch,
+            candidate_mlp_spec,
+            inputs[0],
+        ).detach().to(torch.float32)
+        captured["candidate_mlp_output"] = output.detach().to(torch.float32)
+
+    def candidate_layer_hook(_module, _inputs, output):
+        tensor = output[0] if isinstance(output, tuple) else output
+        captured["candidate_layer_output"] = tensor.detach().to(torch.float32)
+
+    source_handle = source_layer.register_forward_hook(source_layer_hook)
+    mlp_handle = candidate_mlp_spec["mlp"].register_forward_hook(candidate_mlp_hook)
+    candidate_handle = candidate_layer.register_forward_hook(candidate_layer_hook)
+    token_count = 0
+    try:
+        source.eval()
+        candidate.eval()
+        for source_batch, candidate_batch in paired_batches:
+            if token_count >= max_tokens:
+                break
+            captured.clear()
+            source(**_model_forward_inputs(source_batch), use_cache=False)
+            candidate(**_model_forward_inputs(candidate_batch), use_cache=False)
+            required = {
+                "source_output",
+                "candidate_hidden",
+                "candidate_mlp_output",
+                "candidate_layer_output",
+            }
+            if any(key not in captured for key in required):
+                continue
+            pairs = _cross_tokenizer_span_pairs(
+                torch,
+                source_tokenizer,
+                candidate_tokenizer,
+                source_batch,
+                candidate_batch,
+                canonical_fn,
+                max_pairs=max_tokens - token_count,
+                shift_positions=False,
+            )
+            if int(pairs.numel()) <= 0:
+                continue
+            source_values = captured["source_output"]
+            hidden_values = captured["candidate_hidden"]
+            mlp_values = captured["candidate_mlp_output"]
+            layer_values = captured["candidate_layer_output"]
+            if (
+                source_values.dim() != 3
+                or hidden_values.dim() != 3
+                or mlp_values.dim() != 3
+                or layer_values.dim() != 3
+            ):
+                continue
+            batch_idx = pairs[:, 0].to(dtype=torch.long, device=source_values.device)
+            candidate_pos = pairs[:, 1].to(dtype=torch.long, device=hidden_values.device)
+            source_pos = pairs[:, 2].to(dtype=torch.long, device=source_values.device)
+            valid = (
+                (batch_idx >= 0)
+                & (batch_idx < source_values.shape[0])
+                & (batch_idx.to(hidden_values.device) < hidden_values.shape[0])
+                & (source_pos >= 0)
+                & (source_pos < source_values.shape[1])
+                & (candidate_pos >= 0)
+                & (candidate_pos < hidden_values.shape[1])
+                & (candidate_pos < mlp_values.shape[1])
+                & (candidate_pos < layer_values.shape[1])
+            )
+            if int(valid.detach().cpu().sum().item()) <= 0:
+                continue
+            batch_source = batch_idx[valid]
+            source_selected = source_values[batch_source, source_pos[valid]].detach().cpu()
+            valid_candidate = valid.to(hidden_values.device)
+            batch_candidate = batch_idx.to(hidden_values.device)[valid_candidate]
+            candidate_selected_pos = candidate_pos[valid_candidate]
+            hidden_selected = hidden_values[batch_candidate, candidate_selected_pos].detach().cpu()
+            mlp_selected = mlp_values[batch_candidate, candidate_selected_pos].detach().cpu()
+            layer_selected = layer_values[batch_candidate, candidate_selected_pos].detach().cpu()
+            residual_selected = layer_selected - mlp_selected
+            remaining = int(max_tokens) - token_count
+            take = min(int(source_selected.shape[0]), remaining)
+            if take <= 0:
+                break
+            source_pieces.append(source_selected[:take])
+            hidden_pieces.append(hidden_selected[:take])
+            residual_pieces.append(residual_selected[:take])
+            candidate_output_pieces.append(layer_selected[:take])
+            token_count += take
+    finally:
+        source_handle.remove()
+        mlp_handle.remove()
+        candidate_handle.remove()
+    if not source_pieces or not hidden_pieces or not residual_pieces or not candidate_output_pieces:
+        empty = torch.empty((0, 0), dtype=torch.float32)
+        return empty, empty, empty, empty, 0
+    source_rows = torch.cat(source_pieces, dim=0)[:max_tokens]
+    hidden_rows = torch.cat(hidden_pieces, dim=0)[:max_tokens]
+    residual_rows = torch.cat(residual_pieces, dim=0)[:max_tokens]
+    candidate_rows = torch.cat(candidate_output_pieces, dim=0)[:max_tokens]
+    rows = min(
+        int(source_rows.shape[0]),
+        int(hidden_rows.shape[0]),
+        int(residual_rows.shape[0]),
+        int(candidate_rows.shape[0]),
+    )
+    return source_rows[:rows], hidden_rows[:rows], residual_rows[:rows], candidate_rows[:rows], rows
 
 
 def _mlp_projection_spec(layer) -> dict[str, Any] | None:

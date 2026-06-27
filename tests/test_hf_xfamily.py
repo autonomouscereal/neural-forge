@@ -26,6 +26,7 @@ from neural_forge.hf_recovery import _infer_response_char_start
 from neural_forge.hf_recovery import _join_prompt_response
 from neural_forge.hf_recovery import _linear_cka_tensor
 from neural_forge.hf_recovery import _mlp_projection_spec
+from neural_forge.hf_recovery import _proportional_layer_index
 from neural_forge.hf_recovery import _project_candidate_probs_to_source_vocab
 from neural_forge.hf_recovery import _project_source_logits_to_candidate_vocab
 from neural_forge.hf_recovery import _recovery_loss
@@ -44,14 +45,18 @@ from neural_forge.hf_xfamily import _canonical_token_map
 from neural_forge.hf_xfamily import _assign_donor_to_host
 from neural_forge.hf_xfamily import _activation_similarity_assignment
 from neural_forge.hf_xfamily import _activation_axis_weights_for_tensor
+from neural_forge.hf_xfamily import _axis_reductions_for_layer_tensor
+from neural_forge.hf_xfamily import _axis_reductions_for_non_layer_tensor_key
 from neural_forge.hf_xfamily import _balanced_activation_assignment
 from neural_forge.hf_xfamily import _blend_projection_with_target
 from neural_forge.hf_xfamily import _channel_assignment_features
 from neural_forge.hf_xfamily import _donor_layer_group_for_target
 from neural_forge.hf_xfamily import _effective_layer_alpha
+from neural_forge.hf_xfamily import _initialize_token_weights_from_donor
 from neural_forge.hf_xfamily import _initialize_non_layer_tensors_from_donor
 from neural_forge.hf_xfamily import _mlp_spec
 from neural_forge.hf_xfamily import _proportional_index
+from neural_forge.hf_xfamily import _project_token_weight_rows
 from neural_forge.hf_xfamily import _resize_attention_tensor_to_shape
 from neural_forge.hf_xfamily import _resize_tensor_axis_mean_fold
 from neural_forge.hf_xfamily import _resize_tensor_to_shape
@@ -62,6 +67,7 @@ from neural_forge.hf_xfamily import _untie_output_head
 from neural_forge.hf_xfamily import _usable_pipeline_candidates
 from neural_forge.hf_xfamily import _validate_channel_assignment
 from neural_forge.hf_xfamily import _validate_layer_alpha_settings
+from neural_forge.hf_xfamily import _with_consumer_hidden_reduction
 from neural_forge.hf_xfamily import sweep_cross_family_vocab_merge
 from neural_forge.hf_xfamily import sweep_cross_family_mlp_merge
 
@@ -313,6 +319,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "target-rms",
             "--projection-blend-alpha",
             "0.35",
+            "--consumer-hidden-reduction",
+            "sqrt-sum",
             "--untie-output-head",
             "--activation-calibration-file",
             "activation.jsonl",
@@ -604,6 +612,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.token_init_mode == "donor-tokenized"
     assert donor_init_args.projection_scale == "target-rms"
     assert donor_init_args.projection_blend_alpha == 0.35
+    assert donor_init_args.consumer_hidden_reduction == "sqrt-sum"
     assert donor_init_args.untie_output_head is True
     assert donor_init_args.activation_calibration_file == "activation.jsonl"
     assert donor_init_args.activation_max_calibration_texts == 5
@@ -819,6 +828,63 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert reconstruct_args.calibration_file == "calibration.jsonl"
     assert reconstruct_args.max_calibration_texts == 6
 
+    xfamily_reconstruct_args = parser.parse_args(
+        [
+            "hf-xfamily-reconstruct",
+            "donor",
+            "candidate",
+            "out",
+            "--ridge",
+            "0.04",
+            "--reconstruction-alpha",
+            "0.7",
+            "--reconstruction-objective",
+            "cosine",
+            "--cosine-steps",
+            "8",
+            "--cosine-lr",
+            "0.025",
+            "--cosine-l2",
+            "0.002",
+            "--max-length",
+            "88",
+            "--max-tokens-per-layer",
+            "55",
+            "--max-anchors",
+            "444",
+            "--layer-limit",
+            "3",
+            "--dtype",
+            "float16",
+            "--candidate-dtype",
+            "float32",
+            "--device",
+            "cpu",
+            "--calibration-file",
+            "calibration.jsonl",
+            "--max-calibration-texts",
+            "7",
+        ]
+    )
+    assert xfamily_reconstruct_args.source_model == "donor"
+    assert xfamily_reconstruct_args.candidate_model == "candidate"
+    assert xfamily_reconstruct_args.output == "out"
+    assert xfamily_reconstruct_args.ridge == 0.04
+    assert xfamily_reconstruct_args.reconstruction_alpha == 0.7
+    assert xfamily_reconstruct_args.reconstruction_objective == "cosine"
+    assert xfamily_reconstruct_args.cosine_steps == 8
+    assert xfamily_reconstruct_args.cosine_lr == 0.025
+    assert xfamily_reconstruct_args.cosine_l2 == 0.002
+    assert xfamily_reconstruct_args.max_length == 88
+    assert xfamily_reconstruct_args.max_tokens_per_layer == 55
+    assert xfamily_reconstruct_args.max_anchors == 444
+    assert xfamily_reconstruct_args.layer_limit == 3
+    assert xfamily_reconstruct_args.dtype == "float16"
+    assert xfamily_reconstruct_args.candidate_dtype == "float32"
+    assert xfamily_reconstruct_args.device == "cpu"
+    assert xfamily_reconstruct_args.calibration_file == "calibration.jsonl"
+    assert xfamily_reconstruct_args.max_calibration_texts == 7
+
 
 def test_parse_layer_groups() -> None:
     assert _parse_layer_groups("3+4, 7+8+9") == [[3, 4], [7, 8, 9]]
@@ -859,6 +925,12 @@ def test_fold_groups_from_report_keeps_only_fold_method_groups() -> None:
 def test_candidate_index_after_depth_fold_accounts_for_removed_layers() -> None:
     assert _candidate_index_after_depth_fold(5, [2, 4]) == 3
     assert _candidate_index_after_depth_fold(2, [2, 4]) == 2
+
+
+def test_cross_reconstruction_proportional_layer_index_uses_bin_centers() -> None:
+    assert _proportional_layer_index(0, 12, 36) == 1
+    assert _proportional_layer_index(11, 12, 36) == 34
+    assert _proportional_layer_index(0, 1, 36) == 18
 
 
 def test_proportional_layer_index_maps_depths() -> None:
@@ -943,6 +1015,97 @@ def test_outgoing_sum_fold_preserves_merged_linear_path() -> None:
     folded = folded_down.matmul(folded_up.matmul(x))
 
     assert folded.tolist() == pytest.approx(original.tolist())
+
+
+def test_consumer_hidden_axes_sum_when_neurons_are_merged() -> None:
+    assert _axis_reductions_for_layer_tensor("self_attn.q_proj.weight") == {1: "sum"}
+    assert _axis_reductions_for_layer_tensor("self_attn.k_proj.weight") == {1: "sum"}
+    assert _axis_reductions_for_layer_tensor("mlp.gate_proj.weight") == {1: "sum"}
+    assert _axis_reductions_for_layer_tensor("mlp.up_proj.weight") == {1: "sum"}
+    assert _axis_reductions_for_layer_tensor("mlp.down_proj.weight") == {1: "sum"}
+    assert _axis_reductions_for_non_layer_tensor_key("lm_head.weight") == {1: "sum"}
+    assert _axis_reductions_for_non_layer_tensor_key("model.embed_tokens.weight") == {}
+
+
+def test_token_projection_uses_sum_for_lm_head_and_mean_for_embeddings() -> None:
+    torch = pytest.importorskip("torch")
+    donor = torch.ones((2, 4), dtype=torch.float32)
+    embedding_target = torch.zeros((2, 2), dtype=torch.float32)
+    head_target = torch.zeros((2, 2), dtype=torch.float32)
+
+    _project_token_weight_rows(
+        torch,
+        embedding_target,
+        donor,
+        target_ids=[0, 1],
+        donor_id_groups=[[0], [1]],
+        fold_mode="mean",
+        hidden_axis_reduction="mean",
+    )
+    _project_token_weight_rows(
+        torch,
+        head_target,
+        donor,
+        target_ids=[0, 1],
+        donor_id_groups=[[0], [1]],
+        fold_mode="mean",
+        hidden_axis_reduction="sum",
+    )
+
+    assert embedding_target.tolist() == [[1.0, 1.0], [1.0, 1.0]]
+    assert head_target.tolist() == [[2.0, 2.0], [2.0, 2.0]]
+
+
+def test_token_initialization_skips_tied_lm_head_second_pass() -> None:
+    torch = pytest.importorskip("torch")
+
+    class _TinyModel:
+        def __init__(self, weight):
+            self.embed = torch.nn.Embedding.from_pretrained(weight.clone(), freeze=False)
+            self.head = self.embed
+
+        def get_input_embeddings(self):
+            return self.embed
+
+        def get_output_embeddings(self):
+            return self.head
+
+    target = _TinyModel(torch.zeros((2, 2), dtype=torch.float32))
+    donor = _TinyModel(torch.ones((2, 4), dtype=torch.float32))
+    tokenizer = _Tokenizer(["a", "b"])
+
+    report = _initialize_token_weights_from_donor(
+        torch,
+        target,
+        donor,
+        tokenizer,
+        tokenizer,
+        max_anchors=2,
+        token_init_mode="shared",
+        fold_mode="mean",
+        consumer_hidden_reduction="sum",
+    )
+
+    assert target.get_input_embeddings().weight.tolist() == [[0.0, 0.0], [1.0, 1.0]]
+    assert report["lm_head_tied_to_embeddings"] is True
+    assert report["lm_head_updated"] is False
+    assert report["lm_head_rows_initialized"] == 0
+
+
+def test_sqrt_sum_reduction_is_between_mean_and_sum() -> None:
+    torch = pytest.importorskip("torch")
+    source = torch.ones((4, 2), dtype=torch.float32)
+
+    mean_folded = _resize_tensor_to_shape(torch, source, (2, 2), axis_reductions={0: "mean"})
+    sqrt_folded = _resize_tensor_to_shape(torch, source, (2, 2), axis_reductions={0: "sqrt-sum"})
+    sum_folded = _resize_tensor_to_shape(torch, source, (2, 2), axis_reductions={0: "sum"})
+
+    assert mean_folded.flatten().tolist() == pytest.approx([1.0, 1.0, 1.0, 1.0])
+    assert sqrt_folded.flatten().tolist() == pytest.approx([2**0.5, 2**0.5, 2**0.5, 2**0.5])
+    assert sum_folded.flatten().tolist() == pytest.approx([2.0, 2.0, 2.0, 2.0])
+    assert _with_consumer_hidden_reduction({1: "sum"}, "mean") == {1: "mean"}
+    assert _with_consumer_hidden_reduction({1: "sum"}, "sqrt-sum") == {1: "sqrt-sum"}
+    assert _with_consumer_hidden_reduction({1: "sum"}, "sum") == {1: "sum"}
 
 
 def test_attention_tensor_resize_folds_q_heads_before_head_dim() -> None:
@@ -1590,6 +1753,19 @@ def test_cross_tokenizer_span_pairs_match_exact_offsets_and_tokens() -> None:
 
     assert pairs.tolist() == [[0, 0, 0], [0, 1, 1]]
 
+    activation_pairs = _cross_tokenizer_span_pairs(
+        torch,
+        tokenizer,
+        tokenizer,
+        source_batch,
+        candidate_batch,
+        _canonical_token,
+        max_pairs=8,
+        shift_positions=False,
+    )
+
+    assert activation_pairs.tolist() == [[0, 1, 1], [0, 2, 2]]
+
 
 def test_focus_char_spans_select_numeric_response() -> None:
     text = "Question: What is 12 times 13?\nAnswer: 156"
@@ -2111,6 +2287,8 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "target-rms",
             "--projection-blend-alpha",
             "0.25",
+            "--consumer-hidden-reduction",
+            "sqrt-sum",
             "--untie-output-head",
             "--activation-calibration-file",
             "activation.jsonl",
@@ -2143,6 +2321,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "token_init_mode": "donor-tokenized",
         "projection_scale": "target-rms",
         "projection_blend_alpha": 0.25,
+        "consumer_hidden_reduction": "sqrt-sum",
         "untie_output_head": True,
         "activation_calibration_texts": ["activation text"],
         "activation_max_length": 64,
@@ -2532,6 +2711,88 @@ def test_hf_reconstruct_folded_handler_passes_flags(monkeypatch) -> None:
         "max_length": 72,
         "max_tokens_per_layer": 128,
         "torch_dtype": "float32",
+        "device": "cpu",
+        "trust_remote_code": True,
+        "calibration_texts": ["calibration text"],
+    }
+
+
+def test_hf_xfamily_reconstruct_handler_passes_flags(monkeypatch) -> None:
+    import neural_forge.cli as cli
+    import neural_forge.hf_recovery as hf_recovery
+
+    captured = {}
+
+    def fake_reconstruct(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(hf_recovery, "reconstruct_cross_tokenizer_causal_lm", fake_reconstruct)
+    monkeypatch.setattr(cli, "_load_recovery_calibration_texts", lambda path, max_texts: ["calibration text"])
+    args = build_parser().parse_args(
+        [
+            "hf-xfamily-reconstruct",
+            "donor",
+            "candidate",
+            "out",
+            "--ridge",
+            "0.03",
+            "--reconstruction-alpha",
+            "0.6",
+            "--reconstruction-target",
+            "mlp-all",
+            "--donor-layer-fold-mode",
+            "fold",
+            "--reconstruction-objective",
+            "cosine",
+            "--cosine-steps",
+            "11",
+            "--cosine-lr",
+            "0.04",
+            "--cosine-l2",
+            "0.002",
+            "--max-length",
+            "96",
+            "--max-tokens-per-layer",
+            "144",
+            "--max-anchors",
+            "333",
+            "--layer-limit",
+            "4",
+            "--dtype",
+            "float16",
+            "--candidate-dtype",
+            "float32",
+            "--device",
+            "cpu",
+            "--trust-remote-code",
+            "--calibration-file",
+            "calibration.jsonl",
+            "--max-calibration-texts",
+            "5",
+        ]
+    )
+    result = args.func(args)
+
+    assert result == {"ok": True}
+    assert captured == {
+        "source_model": "donor",
+        "candidate_model": "candidate",
+        "output_dir": "out",
+        "ridge": 0.03,
+        "reconstruction_alpha": 0.6,
+        "reconstruction_target": "mlp-all",
+        "donor_layer_fold_mode": "fold",
+        "reconstruction_objective": "cosine",
+        "cosine_steps": 11,
+        "cosine_lr": 0.04,
+        "cosine_l2": 0.002,
+        "max_length": 96,
+        "max_tokens_per_layer": 144,
+        "max_anchors": 333,
+        "layer_limit": 4,
+        "torch_dtype": "float16",
+        "candidate_torch_dtype": "float32",
         "device": "cpu",
         "trust_remote_code": True,
         "calibration_texts": ["calibration text"],

@@ -142,6 +142,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Blend folded parent tensors with the target child tensors after projection; 1.0 fully replaces target.",
     )
     hf_donor_init.add_argument(
+        "--consumer-hidden-reduction",
+        choices=["mean", "sum", "sqrt-sum"],
+        default="mean",
+        help="How to fold consumer weights over merged hidden axes; mean is safest for arbitrary blank targets.",
+    )
+    hf_donor_init.add_argument(
         "--untie-output-head",
         action="store_true",
         help="Keep a separate donor-projected lm_head instead of tying it back to input embeddings.",
@@ -600,6 +606,45 @@ def build_parser() -> argparse.ArgumentParser:
     reconstruct.add_argument("--max-calibration-texts", type=int)
     reconstruct.set_defaults(func=cmd_hf_reconstruct_folded)
 
+    xfamily_reconstruct = sub.add_parser(
+        "hf-xfamily-reconstruct",
+        help="Run cross-tokenizer blockwise activation reconstruction on a folded HF causal LM.",
+    )
+    xfamily_reconstruct.add_argument("source_model")
+    xfamily_reconstruct.add_argument("candidate_model")
+    xfamily_reconstruct.add_argument("output")
+    xfamily_reconstruct.add_argument("--ridge", type=float, default=1e-3)
+    xfamily_reconstruct.add_argument("--reconstruction-alpha", type=float, default=1.0)
+    xfamily_reconstruct.add_argument(
+        "--reconstruction-target",
+        choices=["attention", "mlp", "mlp-output", "mlp-all", "both", "all"],
+        default="both",
+    )
+    xfamily_reconstruct.add_argument(
+        "--donor-layer-fold-mode",
+        choices=["representative", "average", "fold"],
+        default="representative",
+    )
+    xfamily_reconstruct.add_argument(
+        "--reconstruction-objective",
+        choices=["ridge", "cosine"],
+        default="ridge",
+    )
+    xfamily_reconstruct.add_argument("--cosine-steps", type=int, default=80)
+    xfamily_reconstruct.add_argument("--cosine-lr", type=float, default=1e-2)
+    xfamily_reconstruct.add_argument("--cosine-l2", type=float, default=1e-4)
+    xfamily_reconstruct.add_argument("--max-length", type=int, default=128)
+    xfamily_reconstruct.add_argument("--max-tokens-per-layer", type=int, default=512)
+    xfamily_reconstruct.add_argument("--max-anchors", type=int, default=2048)
+    xfamily_reconstruct.add_argument("--layer-limit", type=int)
+    xfamily_reconstruct.add_argument("--dtype", default="float16")
+    xfamily_reconstruct.add_argument("--candidate-dtype", default="float32")
+    xfamily_reconstruct.add_argument("--device", default="cuda:0")
+    xfamily_reconstruct.add_argument("--trust-remote-code", action="store_true")
+    xfamily_reconstruct.add_argument("--calibration-file")
+    xfamily_reconstruct.add_argument("--max-calibration-texts", type=int)
+    xfamily_reconstruct.set_defaults(func=cmd_hf_xfamily_reconstruct)
+
     lm_recover = sub.add_parser("hf-lm-recover", help="Run teacherless LM recovery on a folded HF causal LM.")
     lm_recover.add_argument("candidate_model")
     lm_recover.add_argument("output")
@@ -987,6 +1032,7 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         token_init_mode=args.token_init_mode,
         projection_scale=args.projection_scale,
         projection_blend_alpha=args.projection_blend_alpha,
+        consumer_hidden_reduction=args.consumer_hidden_reduction,
         untie_output_head=args.untie_output_head,
         activation_calibration_texts=activation_calibration_texts,
         activation_max_length=args.activation_max_length,
@@ -1289,6 +1335,33 @@ def cmd_hf_reconstruct_folded(args: argparse.Namespace) -> dict[str, object]:
         max_length=args.max_length,
         max_tokens_per_layer=args.max_tokens_per_layer,
         torch_dtype=args.dtype,
+        device=args.device,
+        trust_remote_code=args.trust_remote_code,
+        calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+    )
+
+
+def cmd_hf_xfamily_reconstruct(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_recovery import reconstruct_cross_tokenizer_causal_lm
+
+    return reconstruct_cross_tokenizer_causal_lm(
+        source_model=args.source_model,
+        candidate_model=args.candidate_model,
+        output_dir=args.output,
+        ridge=args.ridge,
+        reconstruction_alpha=args.reconstruction_alpha,
+        reconstruction_target=args.reconstruction_target,
+        donor_layer_fold_mode=args.donor_layer_fold_mode,
+        reconstruction_objective=args.reconstruction_objective,
+        cosine_steps=args.cosine_steps,
+        cosine_lr=args.cosine_lr,
+        cosine_l2=args.cosine_l2,
+        max_length=args.max_length,
+        max_tokens_per_layer=args.max_tokens_per_layer,
+        max_anchors=args.max_anchors,
+        layer_limit=args.layer_limit,
+        torch_dtype=args.dtype,
+        candidate_torch_dtype=args.candidate_dtype,
         device=args.device,
         trust_remote_code=args.trust_remote_code,
         calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
