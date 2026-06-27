@@ -250,6 +250,10 @@ def cross_family_mlp_merge(
     max_donor_channels: int = 512,
     torch_dtype: str = "float16",
     trust_remote_code: bool = False,
+    channel_assignment: str = "weight-cosine",
+    activation_calibration_texts: list[str] | None = None,
+    activation_max_length: int = 128,
+    activation_device: str = "cuda:0",
 ) -> dict[str, Any]:
     """Merge donor MLP channel signal into a host architecture.
 
@@ -268,6 +272,9 @@ def cross_family_mlp_merge(
         raise ValueError("max_anchors must be positive.")
     if max_host_channels <= 0 or max_donor_channels <= 0:
         raise ValueError("max channel limits must be positive.")
+    _validate_channel_assignment(channel_assignment)
+    if activation_max_length <= 1:
+        raise ValueError("activation_max_length must be greater than 1.")
 
     torch, transformers = _torch_and_transformers()
     dtype = _dtype_from_name(torch, torch_dtype)
@@ -306,6 +313,30 @@ def cross_family_mlp_merge(
     if not donor_layers:
         raise ValueError("Donor model has no supported MLP layers.")
 
+    host_activation_features = None
+    donor_activation_features = None
+    if _needs_activation_assignment(channel_assignment):
+        if not activation_calibration_texts:
+            raise ValueError("Activation channel assignment requires calibration texts.")
+        host_activation_features = _collect_mlp_activation_features(
+            torch,
+            host,
+            host_tokenizer,
+            host_layers,
+            activation_calibration_texts,
+            max_length=activation_max_length,
+            device=activation_device,
+        )
+        donor_activation_features = _collect_mlp_activation_features(
+            torch,
+            donor,
+            donor_tokenizer,
+            donor_layers,
+            activation_calibration_texts,
+            max_length=activation_max_length,
+            device=activation_device,
+        )
+
     layer_reports = []
     for host_idx, host_layer in enumerate(host_layers):
         donor_idx = _proportional_index(host_idx, len(host_layers), len(donor_layers))
@@ -318,6 +349,9 @@ def cross_family_mlp_merge(
             alpha_value,
             max_host_channels=max_host_channels,
             max_donor_channels=max_donor_channels,
+            channel_assignment=channel_assignment,
+            host_activation_features=None if host_activation_features is None else host_activation_features[host_idx],
+            donor_activation_features=None if donor_activation_features is None else donor_activation_features[donor_idx],
         )
         report["host_layer"] = host_idx
         report["donor_layer"] = donor_idx
@@ -348,6 +382,10 @@ def cross_family_mlp_merge(
         "donor_layers": len(donor_layers),
         "max_host_channels": max_host_channels,
         "max_donor_channels": max_donor_channels,
+        "channel_assignment": channel_assignment,
+        "activation_calibration_text_count": len(activation_calibration_texts or []),
+        "activation_max_length": activation_max_length,
+        "activation_device": activation_device if _needs_activation_assignment(channel_assignment) else None,
         "layers": layer_reports,
         "param_count": sum(param.numel() for param in host.parameters()),
     }
@@ -366,6 +404,10 @@ def sweep_cross_family_mlp_merge(
     max_anchors: int = 50_000,
     max_host_channels: int = 512,
     max_donor_channels: int = 512,
+    channel_assignment: str = "weight-cosine",
+    activation_calibration_texts: list[str] | None = None,
+    activation_max_length: int = 128,
+    activation_device: str = "cuda:0",
     torch_dtype: str = "float16",
     device: str = "cuda:0",
     trust_remote_code: bool = False,
@@ -391,6 +433,7 @@ def sweep_cross_family_mlp_merge(
 
     if not alphas:
         raise ValueError("At least one alpha is required.")
+    _validate_channel_assignment(channel_assignment)
     alpha_values = [_finite_float(alpha, "alpha") for alpha in alphas]
     for alpha_value in alpha_values:
         _bounded_alpha(alpha_value, "alpha")
@@ -437,6 +480,10 @@ def sweep_cross_family_mlp_merge(
             max_donor_channels=max_donor_channels,
             torch_dtype=torch_dtype,
             trust_remote_code=trust_remote_code,
+            channel_assignment=channel_assignment,
+            activation_calibration_texts=activation_calibration_texts,
+            activation_max_length=activation_max_length,
+            activation_device=activation_device,
         )
         candidate_report = evaluate_text_model(
             str(candidate_dir),
@@ -508,6 +555,10 @@ def sweep_cross_family_mlp_merge(
         "max_anchors": max_anchors,
         "max_host_channels": max_host_channels,
         "max_donor_channels": max_donor_channels,
+        "channel_assignment": channel_assignment,
+        "activation_calibration_text_count": len(activation_calibration_texts or []),
+        "activation_max_length": activation_max_length,
+        "activation_device": activation_device if _needs_activation_assignment(channel_assignment) else None,
         "recovery": {
             "enabled": recover_candidates,
             "recover_only_failed": recover_only_failed,
@@ -548,6 +599,10 @@ def cross_family_merge_compress_pipeline(
     max_anchors: int = 50_000,
     max_host_channels: int = 512,
     max_donor_channels: int = 512,
+    channel_assignment: str = "weight-cosine",
+    activation_calibration_texts: list[str] | None = None,
+    activation_max_length: int = 128,
+    activation_device: str = "cuda:0",
     width_ratios: list[float] | None = None,
     layer_group_specs: list[list[list[int]]] | None = None,
     depth_methods: list[str] | None = None,
@@ -581,6 +636,7 @@ def cross_family_merge_compress_pipeline(
 
     if recover_top_k <= 0:
         raise ValueError("recover_top_k must be positive.")
+    _validate_channel_assignment(channel_assignment)
 
     root = Path(output_dir)
     model_root = root / "models"
@@ -619,6 +675,10 @@ def cross_family_merge_compress_pipeline(
         max_donor_channels=max_donor_channels,
         torch_dtype=torch_dtype,
         trust_remote_code=trust_remote_code,
+        channel_assignment=channel_assignment,
+        activation_calibration_texts=activation_calibration_texts,
+        activation_max_length=activation_max_length,
+        activation_device=activation_device,
     )
     xfamily_report_path = report_root / "xfamily_merged.json"
     xfamily_gate_path = report_root / "xfamily_merged_host_gate.json"
@@ -745,6 +805,10 @@ def cross_family_merge_compress_pipeline(
             "perplexity_mean": float(host_baseline["perplexity"]["mean"]),
             "choice_accuracy": float(host_baseline["choice_accuracy"]["accuracy"]),
         },
+        "channel_assignment": channel_assignment,
+        "activation_calibration_text_count": len(activation_calibration_texts or []),
+        "activation_max_length": activation_max_length,
+        "activation_device": activation_device if _needs_activation_assignment(channel_assignment) else None,
         "cross_family_merge": {
             "model_dir": str(xfamily_dir),
             "merge_report": xfamily_merge_report,
@@ -1013,6 +1077,97 @@ def _mlp_spec(layer) -> dict[str, Any] | None:
     return None
 
 
+def _validate_channel_assignment(channel_assignment: str) -> None:
+    if channel_assignment not in {"weight-cosine", "activation-correlation", "hybrid"}:
+        raise ValueError("channel_assignment must be weight-cosine, activation-correlation, or hybrid.")
+
+
+def _needs_activation_assignment(channel_assignment: str) -> bool:
+    return channel_assignment in {"activation-correlation", "hybrid"}
+
+
+def _collect_mlp_activation_features(
+    torch,
+    model,
+    tokenizer,
+    layers: list[Any],
+    texts: list[str],
+    max_length: int,
+    device: str,
+) -> list[Any]:
+    if not texts:
+        raise ValueError("Need at least one activation calibration text.")
+    specs = [_mlp_spec(layer) for layer in layers]
+    if any(spec is None for spec in specs):
+        raise ValueError("All layers must have supported MLP modules.")
+    branch_stats: list[list[list[Any]]] = [
+        [[] for _ in spec["inputs"]]  # type: ignore[index]
+        for spec in specs
+    ]
+    handles = []
+
+    def make_hook(layer_idx: int, branch_idx: int):
+        def hook(_module, _inputs, output):
+            tensor = output[0] if isinstance(output, tuple) else output
+            tensor = tensor.detach().to(torch.float32)
+            if tensor.dim() == 3:
+                tensor = tensor.reshape(-1, tensor.shape[-1])
+            elif tensor.dim() == 1:
+                tensor = tensor.unsqueeze(0)
+            elif tensor.dim() != 2:
+                tensor = tensor.reshape(-1, tensor.shape[-1])
+            branch_stats[layer_idx][branch_idx].append(_activation_channel_summary(torch, tensor).cpu())
+
+        return hook
+
+    for layer_idx, spec in enumerate(specs):
+        for branch_idx, linear in enumerate(spec["inputs"]):  # type: ignore[index]
+            handles.append(linear.register_forward_hook(make_hook(layer_idx, branch_idx)))
+
+    was_training = model.training
+    try:
+        model.eval()
+        model.to(device)
+        with torch.no_grad():
+            for text in texts:
+                encoded = tokenizer(str(text), return_tensors="pt", truncation=True, max_length=max_length)
+                encoded = {key: value.to(device) for key, value in encoded.items()}
+                model(**encoded, use_cache=False)
+    finally:
+        for handle in handles:
+            handle.remove()
+        model.to("cpu")
+        if device.startswith("cuda") and hasattr(torch, "cuda"):
+            torch.cuda.empty_cache()
+        if was_training:
+            model.train()
+
+    features = []
+    expected_count = len(texts)
+    for layer_idx, spec in enumerate(specs):
+        per_text = []
+        for text_idx in range(expected_count):
+            branch_items = []
+            for branch_idx in range(len(spec["inputs"])):  # type: ignore[index]
+                stats_for_branch = branch_stats[layer_idx][branch_idx]
+                if len(stats_for_branch) != expected_count:
+                    raise RuntimeError("Activation hook did not capture the expected number of batches.")
+                branch_items.append(stats_for_branch[text_idx])
+            per_text.append(_average_rows(torch, branch_items))
+        features.append(_row_normalize(torch.cat(per_text, dim=1)))
+    return features
+
+
+def _activation_channel_summary(torch, values):
+    values = values.to(torch.float32)
+    mean = values.mean(dim=0)
+    centered = values - mean.unsqueeze(0)
+    std = centered.pow(2).mean(dim=0).sqrt()
+    abs_mean = values.abs().mean(dim=0)
+    positive_fraction = (values > 0).to(torch.float32).mean(dim=0)
+    return torch.stack([mean, std, abs_mean, positive_fraction], dim=1)
+
+
 def _merge_mlp_layer_channels(
     torch,
     host_layer,
@@ -1021,6 +1176,9 @@ def _merge_mlp_layer_channels(
     alpha: float,
     max_host_channels: int,
     max_donor_channels: int,
+    channel_assignment: str = "weight-cosine",
+    host_activation_features=None,
+    donor_activation_features=None,
 ) -> dict[str, Any]:
     host_spec = _mlp_spec(host_layer)
     donor_spec = _mlp_spec(donor_layer)
@@ -1030,9 +1188,18 @@ def _merge_mlp_layer_channels(
     donor_channels = int(donor_spec["inputs"][0].weight.shape[0])
     host_idx = _important_channels(torch, host_spec, min(max_host_channels, host_channels), None)
     donor_idx = _important_channels(torch, donor_spec, min(max_donor_channels, donor_channels), hidden_map)
-    host_features = _mlp_channel_features(torch, host_spec, host_idx, None)
-    donor_features = _mlp_channel_features(torch, donor_spec, donor_idx, hidden_map)
+    host_weight_features = _mlp_channel_features(torch, host_spec, host_idx, None)
+    donor_weight_features = _mlp_channel_features(torch, donor_spec, donor_idx, hidden_map)
+    host_features, donor_features, activation_used = _channel_assignment_features(
+        torch,
+        channel_assignment,
+        host_weight_features,
+        donor_weight_features,
+        None if host_activation_features is None else host_activation_features[host_idx],
+        None if donor_activation_features is None else donor_activation_features[donor_idx],
+    )
     assignment = _assign_donor_to_host(torch, donor_features, host_features)
+    similarity = (donor_features * host_features[assignment]).sum(dim=1)
 
     donor_input_branches = [_project_rows(torch, linear.weight.data.detach().cpu().to(torch.float32)[donor_idx], hidden_map) for linear in donor_spec["inputs"]]
     donor_input_summary = _average_rows(torch, donor_input_branches)
@@ -1078,6 +1245,11 @@ def _merge_mlp_layer_channels(
         "host_channels_considered": int(host_idx.numel()),
         "donor_channels_considered": int(donor_idx.numel()),
         "host_channels_updated": updated,
+        "channel_assignment": channel_assignment,
+        "activation_features_used": activation_used,
+        "assignment_similarity_mean": float(similarity.mean().cpu()),
+        "assignment_similarity_min": float(similarity.min().cpu()),
+        "assignment_similarity_max": float(similarity.max().cpu()),
     }
 
 
@@ -1097,6 +1269,32 @@ def _mlp_channel_features(torch, spec: dict[str, Any], indices, hidden_map) -> A
         hidden_map,
     )
     return _row_normalize(torch.cat([_row_normalize(input_summary), _row_normalize(output_cols)], dim=1))
+
+
+def _channel_assignment_features(
+    torch,
+    channel_assignment: str,
+    host_weight_features,
+    donor_weight_features,
+    host_activation_features,
+    donor_activation_features,
+):
+    _validate_channel_assignment(channel_assignment)
+    if channel_assignment == "weight-cosine":
+        return host_weight_features, donor_weight_features, False
+    if host_activation_features is None or donor_activation_features is None:
+        raise ValueError("Activation channel assignment requires activation features.")
+    if host_activation_features.shape[1] != donor_activation_features.shape[1]:
+        raise ValueError("Host and donor activation feature dimensions must match.")
+    host_activation_features = _row_normalize(host_activation_features.to(torch.float32))
+    donor_activation_features = _row_normalize(donor_activation_features.to(torch.float32))
+    if channel_assignment == "activation-correlation":
+        return host_activation_features, donor_activation_features, True
+    return (
+        _row_normalize(torch.cat([host_weight_features, host_activation_features], dim=1)),
+        _row_normalize(torch.cat([donor_weight_features, donor_activation_features], dim=1)),
+        True,
+    )
 
 
 def _project_rows(torch, rows, hidden_map):

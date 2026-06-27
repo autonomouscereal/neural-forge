@@ -32,7 +32,8 @@ native early-fusion multimodal training sandbox for real-model validation.
 - `hf-xfamily-vocab-merge` / `hf-sweep-xfamily`: constrained cross-family
   embedding/lm-head transplant through shared decoded-token anchors.
 - `hf-xfamily-mlp-merge` / `hf-sweep-xfamily-mlp`: constrained cross-family
-  MLP-channel transplant through shared-token hidden projections.
+  MLP-channel transplant through shared-token hidden projections, with optional
+  activation-calibrated channel assignment.
 - `hf-xfamily-compress`: cross-family MLP merge followed by merge-first
   width/depth compression, optional recovery, and host-baseline gates.
 - `hf-recover`: lightweight same-tokenizer KD/LM recovery after surgery.
@@ -155,6 +156,23 @@ neural-forge hf-sweep-xfamily-mlp runs/qwen-lfm25-mlp `
   --vocab-alpha 0 `
   --max-host-channels 128 `
   --max-donor-channels 128
+```
+
+Activation-calibrated channel assignment uses the same calibration prompts on
+the host and donor, then matches MLP channels by observed response summaries
+instead of weight cosine alone:
+
+```powershell
+neural-forge hf-sweep-xfamily-mlp runs/qwen4b-smollm-activation `
+  --host-model HuggingFaceTB/SmolLM2-135M `
+  --donor-model Qwen/Qwen3-4B-Base `
+  --alphas 0.001,0.005 `
+  --channel-assignment hybrid `
+  --activation-calibration-file runs/calibration.jsonl `
+  --activation-max-calibration-texts 64 `
+  --activation-max-length 96 `
+  --max-host-channels 512 `
+  --max-donor-channels 1024
 ```
 
 Add lightweight recovery after each cross-family MLP candidate:

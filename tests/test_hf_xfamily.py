@@ -14,10 +14,13 @@ from neural_forge.hf_tools import _layer_groups_tag
 from neural_forge.hf_tools import _normalize_layer_groups
 from neural_forge.hf_xfamily import _canonical_token
 from neural_forge.hf_xfamily import _canonical_token_map
+from neural_forge.hf_xfamily import _assign_donor_to_host
+from neural_forge.hf_xfamily import _channel_assignment_features
 from neural_forge.hf_xfamily import _mlp_spec
 from neural_forge.hf_xfamily import _proportional_index
 from neural_forge.hf_xfamily import _select_compression_candidates
 from neural_forge.hf_xfamily import _usable_pipeline_candidates
+from neural_forge.hf_xfamily import _validate_channel_assignment
 from neural_forge.hf_xfamily import sweep_cross_family_vocab_merge
 from neural_forge.hf_xfamily import sweep_cross_family_mlp_merge
 
@@ -106,6 +109,29 @@ def test_cross_family_mlp_sweep_rejects_duplicate_alpha_tags(tmp_path) -> None:
         )
 
 
+def test_channel_assignment_rejects_unknown_mode() -> None:
+    with pytest.raises(ValueError, match="channel_assignment"):
+        _validate_channel_assignment("blind-average")
+
+
+def test_activation_channel_assignment_uses_activation_features() -> None:
+    torch = pytest.importorskip("torch")
+    host_weight = torch.eye(2)
+    donor_weight = torch.eye(2)
+    host_activation = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
+    donor_activation = torch.tensor([[0.0, 1.0], [1.0, 0.0]])
+    host_features, donor_features, used = _channel_assignment_features(
+        torch,
+        "activation-correlation",
+        host_weight,
+        donor_weight,
+        host_activation,
+        donor_activation,
+    )
+    assert used is True
+    assert _assign_donor_to_host(torch, donor_features, host_features).tolist() == [1, 0]
+
+
 def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     parser = build_parser()
     sweep_args = parser.parse_args(
@@ -150,6 +176,14 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "128",
             "--max-donor-channels",
             "256",
+            "--channel-assignment",
+            "hybrid",
+            "--activation-calibration-file",
+            "activation.jsonl",
+            "--activation-max-calibration-texts",
+            "6",
+            "--activation-max-length",
+            "64",
             "--recover",
             "--recover-steps",
             "3",
@@ -175,6 +209,14 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "128",
             "--max-donor-channels",
             "256",
+            "--channel-assignment",
+            "activation-correlation",
+            "--activation-calibration-file",
+            "activation.jsonl",
+            "--activation-max-calibration-texts",
+            "7",
+            "--activation-max-length",
+            "80",
             "--width-ratios",
             "0.995",
             "--layer-groups",
@@ -202,12 +244,20 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert search_args.target_shrink == 0.02
     assert xfamily_mlp_args.max_host_channels == 128
     assert xfamily_mlp_args.max_donor_channels == 256
+    assert xfamily_mlp_args.channel_assignment == "hybrid"
+    assert xfamily_mlp_args.activation_calibration_file == "activation.jsonl"
+    assert xfamily_mlp_args.activation_max_calibration_texts == 6
+    assert xfamily_mlp_args.activation_max_length == 64
     assert xfamily_mlp_args.recover is True
     assert xfamily_mlp_args.recover_steps == 3
     assert xfamily_mlp_args.recover_train_scope == "ffn"
     assert xfamily_mlp_args.recover_calibration_file == "calibration.jsonl"
     assert xfamily_mlp_args.recover_max_calibration_texts == 12
     assert xfamily_compress_args.donor_model == "LiquidAI/LFM2.5-230M"
+    assert xfamily_compress_args.channel_assignment == "activation-correlation"
+    assert xfamily_compress_args.activation_calibration_file == "activation.jsonl"
+    assert xfamily_compress_args.activation_max_calibration_texts == 7
+    assert xfamily_compress_args.activation_max_length == 80
     assert xfamily_compress_args.width_ratios == "0.995"
     assert xfamily_compress_args.layer_groups == ["13+14"]
     assert xfamily_compress_args.recover_top_k == 2
@@ -308,6 +358,51 @@ def test_recovery_train_scope_supports_feed_forward_layers() -> None:
     assert all(layer.feed_forward.param.requires_grad for layer in model.model.layers)
 
 
+def test_xfamily_mlp_merge_handler_passes_activation_flags(monkeypatch) -> None:
+    import neural_forge.cli as cli
+    import neural_forge.hf_xfamily as hf_xfamily
+
+    captured = {}
+
+    def fake_merge(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    def fake_load(path, max_texts):
+        assert path == "activation.jsonl"
+        assert max_texts == 4
+        return ["activation text"]
+
+    monkeypatch.setattr(hf_xfamily, "cross_family_mlp_merge", fake_merge)
+    monkeypatch.setattr(cli, "_load_recovery_calibration_texts", fake_load)
+    args = build_parser().parse_args(
+        [
+            "hf-xfamily-mlp-merge",
+            "out",
+            "--host-model",
+            "host",
+            "--donor-model",
+            "donor",
+            "--channel-assignment",
+            "activation-correlation",
+            "--activation-calibration-file",
+            "activation.jsonl",
+            "--activation-max-calibration-texts",
+            "4",
+            "--activation-max-length",
+            "72",
+            "--activation-device",
+            "cpu",
+        ]
+    )
+    result = args.func(args)
+    assert result == {"ok": True}
+    assert captured["channel_assignment"] == "activation-correlation"
+    assert captured["activation_calibration_texts"] == ["activation text"]
+    assert captured["activation_max_length"] == 72
+    assert captured["activation_device"] == "cpu"
+
+
 def test_xfamily_mlp_handler_passes_recovery_flags(monkeypatch) -> None:
     import neural_forge.cli as cli
     import neural_forge.hf_xfamily as hf_xfamily
@@ -319,7 +414,7 @@ def test_xfamily_mlp_handler_passes_recovery_flags(monkeypatch) -> None:
         return {"ok": True}
 
     monkeypatch.setattr(hf_xfamily, "sweep_cross_family_mlp_merge", fake_sweep)
-    monkeypatch.setattr(cli, "_load_recovery_calibration_texts", lambda path, max_texts: ["calibration text"])
+    monkeypatch.setattr(cli, "_load_recovery_calibration_texts", lambda path, max_texts: None if path is None else ["calibration text"])
     args = build_parser().parse_args(
         [
             "hf-sweep-xfamily-mlp",
@@ -336,6 +431,16 @@ def test_xfamily_mlp_handler_passes_recovery_flags(monkeypatch) -> None:
             "7",
             "--recover-train-scope",
             "last2",
+            "--channel-assignment",
+            "hybrid",
+            "--activation-calibration-file",
+            "activation.jsonl",
+            "--activation-max-calibration-texts",
+            "5",
+            "--activation-max-length",
+            "88",
+            "--activation-device",
+            "cpu",
             "--recover-calibration-file",
             "calibration.jsonl",
             "--recover-max-calibration-texts",
@@ -349,6 +454,10 @@ def test_xfamily_mlp_handler_passes_recovery_flags(monkeypatch) -> None:
     assert captured["recovery_steps"] == 7
     assert captured["recovery_train_scope"] == "last2"
     assert captured["recovery_calibration_texts"] == ["calibration text"]
+    assert captured["channel_assignment"] == "hybrid"
+    assert captured["activation_calibration_texts"] == ["calibration text"]
+    assert captured["activation_max_length"] == 88
+    assert captured["activation_device"] == "cpu"
 
 
 def test_xfamily_compress_handler_passes_pipeline_flags(monkeypatch) -> None:
@@ -362,7 +471,7 @@ def test_xfamily_compress_handler_passes_pipeline_flags(monkeypatch) -> None:
         return {"ok": True}
 
     monkeypatch.setattr(hf_xfamily, "cross_family_merge_compress_pipeline", fake_pipeline)
-    monkeypatch.setattr(cli, "_load_recovery_calibration_texts", lambda path, max_texts: ["calibration text"])
+    monkeypatch.setattr(cli, "_load_recovery_calibration_texts", lambda path, max_texts: None if path is None else ["calibration text"])
     args = build_parser().parse_args(
         [
             "hf-xfamily-compress",
@@ -387,6 +496,16 @@ def test_xfamily_compress_handler_passes_pipeline_flags(monkeypatch) -> None:
             "2",
             "--recover-steps",
             "7",
+            "--channel-assignment",
+            "activation-correlation",
+            "--activation-calibration-file",
+            "activation.jsonl",
+            "--activation-max-calibration-texts",
+            "5",
+            "--activation-max-length",
+            "88",
+            "--activation-device",
+            "cpu",
             "--recover-calibration-file",
             "calibration.jsonl",
             "--recover-max-calibration-texts",
@@ -406,6 +525,10 @@ def test_xfamily_compress_handler_passes_pipeline_flags(monkeypatch) -> None:
     assert captured["recover_top_k"] == 2
     assert captured["recovery_steps"] == 7
     assert captured["recovery_calibration_texts"] == ["calibration text"]
+    assert captured["channel_assignment"] == "activation-correlation"
+    assert captured["activation_calibration_texts"] == ["calibration text"]
+    assert captured["activation_max_length"] == 88
+    assert captured["activation_device"] == "cpu"
 
 
 def test_select_compression_candidates_prefers_target_passed() -> None:

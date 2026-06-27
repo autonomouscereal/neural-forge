@@ -260,6 +260,15 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_mlp.add_argument("--max-anchors", type=int, default=50_000)
     xfamily_mlp.add_argument("--max-host-channels", type=int, default=512)
     xfamily_mlp.add_argument("--max-donor-channels", type=int, default=512)
+    xfamily_mlp.add_argument(
+        "--channel-assignment",
+        choices=["weight-cosine", "activation-correlation", "hybrid"],
+        default="weight-cosine",
+    )
+    xfamily_mlp.add_argument("--activation-calibration-file")
+    xfamily_mlp.add_argument("--activation-max-calibration-texts", type=int)
+    xfamily_mlp.add_argument("--activation-max-length", type=int, default=128)
+    xfamily_mlp.add_argument("--activation-device", default="cuda:0")
     xfamily_mlp.add_argument("--dtype", default="float16")
     xfamily_mlp.add_argument("--trust-remote-code", action="store_true")
     xfamily_mlp.set_defaults(func=cmd_hf_xfamily_mlp_merge)
@@ -278,6 +287,15 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_mlp_sweep.add_argument("--max-anchors", type=int, default=50_000)
     xfamily_mlp_sweep.add_argument("--max-host-channels", type=int, default=512)
     xfamily_mlp_sweep.add_argument("--max-donor-channels", type=int, default=512)
+    xfamily_mlp_sweep.add_argument(
+        "--channel-assignment",
+        choices=["weight-cosine", "activation-correlation", "hybrid"],
+        default="weight-cosine",
+    )
+    xfamily_mlp_sweep.add_argument("--activation-calibration-file")
+    xfamily_mlp_sweep.add_argument("--activation-max-calibration-texts", type=int)
+    xfamily_mlp_sweep.add_argument("--activation-max-length", type=int, default=128)
+    xfamily_mlp_sweep.add_argument("--activation-device", default="cuda:0")
     xfamily_mlp_sweep.add_argument("--dtype", default="float16")
     xfamily_mlp_sweep.add_argument("--device", default="cuda:0")
     xfamily_mlp_sweep.add_argument("--trust-remote-code", action="store_true")
@@ -314,6 +332,15 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_compress.add_argument("--max-anchors", type=int, default=50_000)
     xfamily_compress.add_argument("--max-host-channels", type=int, default=512)
     xfamily_compress.add_argument("--max-donor-channels", type=int, default=512)
+    xfamily_compress.add_argument(
+        "--channel-assignment",
+        choices=["weight-cosine", "activation-correlation", "hybrid"],
+        default="weight-cosine",
+    )
+    xfamily_compress.add_argument("--activation-calibration-file")
+    xfamily_compress.add_argument("--activation-max-calibration-texts", type=int)
+    xfamily_compress.add_argument("--activation-max-length", type=int, default=128)
+    xfamily_compress.add_argument("--activation-device", default="cuda:0")
     xfamily_compress.add_argument("--width-ratios", help="Comma-separated ratios, e.g. 0.9975,0.995.")
     xfamily_compress.add_argument(
         "--layer-groups",
@@ -704,6 +731,10 @@ def cmd_hf_xfamily_sweep(args: argparse.Namespace) -> dict[str, object]:
 def cmd_hf_xfamily_mlp_merge(args: argparse.Namespace) -> dict[str, object]:
     from neural_forge.hf_xfamily import cross_family_mlp_merge
 
+    activation_calibration_texts = _load_recovery_calibration_texts(
+        args.activation_calibration_file,
+        args.activation_max_calibration_texts,
+    )
     return cross_family_mlp_merge(
         host_model=args.host_model,
         donor_model=args.donor_model,
@@ -716,6 +747,10 @@ def cmd_hf_xfamily_mlp_merge(args: argparse.Namespace) -> dict[str, object]:
         max_donor_channels=args.max_donor_channels,
         torch_dtype=args.dtype,
         trust_remote_code=args.trust_remote_code,
+        channel_assignment=args.channel_assignment,
+        activation_calibration_texts=activation_calibration_texts,
+        activation_max_length=args.activation_max_length,
+        activation_device=args.activation_device,
     )
 
 
@@ -726,6 +761,10 @@ def cmd_hf_xfamily_mlp_sweep(args: argparse.Namespace) -> dict[str, object]:
     recovery_calibration_texts = _load_recovery_calibration_texts(
         args.recover_calibration_file,
         args.recover_max_calibration_texts,
+    )
+    activation_calibration_texts = _load_recovery_calibration_texts(
+        args.activation_calibration_file,
+        args.activation_max_calibration_texts,
     )
     return sweep_cross_family_mlp_merge(
         host_model=args.host_model,
@@ -738,6 +777,10 @@ def cmd_hf_xfamily_mlp_sweep(args: argparse.Namespace) -> dict[str, object]:
         max_anchors=args.max_anchors,
         max_host_channels=args.max_host_channels,
         max_donor_channels=args.max_donor_channels,
+        channel_assignment=args.channel_assignment,
+        activation_calibration_texts=activation_calibration_texts,
+        activation_max_length=args.activation_max_length,
+        activation_device=args.activation_device,
         torch_dtype=args.dtype,
         device=args.device,
         trust_remote_code=args.trust_remote_code,
@@ -773,6 +816,10 @@ def cmd_hf_xfamily_compress(args: argparse.Namespace) -> dict[str, object]:
         args.recover_calibration_file,
         args.recover_max_calibration_texts,
     )
+    activation_calibration_texts = _load_recovery_calibration_texts(
+        args.activation_calibration_file,
+        args.activation_max_calibration_texts,
+    )
     return cross_family_merge_compress_pipeline(
         host_model=args.host_model,
         donor_model=args.donor_model,
@@ -783,6 +830,10 @@ def cmd_hf_xfamily_compress(args: argparse.Namespace) -> dict[str, object]:
         max_anchors=args.max_anchors,
         max_host_channels=args.max_host_channels,
         max_donor_channels=args.max_donor_channels,
+        channel_assignment=args.channel_assignment,
+        activation_calibration_texts=activation_calibration_texts,
+        activation_max_length=args.activation_max_length,
+        activation_device=args.activation_device,
         width_ratios=width_ratios,
         layer_group_specs=layer_group_specs,
         depth_methods=depth_methods,
