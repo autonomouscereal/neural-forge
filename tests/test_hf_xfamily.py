@@ -77,6 +77,7 @@ from neural_forge.hf_xfamily import _resize_tensor_axis_mean_fold
 from neural_forge.hf_xfamily import _resize_tensor_to_shape
 from neural_forge.hf_xfamily import _scale_projection_to_target
 from neural_forge.hf_xfamily import _select_compression_candidates
+from neural_forge.hf_xfamily import _target_to_donor_token_group_specs
 from neural_forge.hf_xfamily import _target_to_donor_token_groups
 from neural_forge.hf_xfamily import _untie_output_head
 from neural_forge.hf_xfamily import _usable_pipeline_candidates
@@ -146,6 +147,27 @@ def test_target_to_donor_token_groups_uses_tokenized_fallback() -> None:
     assert target_ids == [1, 2]
     assert donor_groups == [[1], [1, 2]]
     assert tokenized_rows == 1
+
+
+def test_target_to_donor_token_group_specs_can_weight_tokenized_pieces() -> None:
+    target_tokenizer = _Tokenizer(["<eos>", "a", "a longer"])
+    donor_tokenizer = _Tokenizer(["<eos>", "a", "longer"])
+    target_map = _canonical_token_map(target_tokenizer)
+    donor_map = _canonical_token_map(donor_tokenizer)
+
+    target_ids, donor_groups, donor_weights, tokenized_rows, weighted_rows = _target_to_donor_token_group_specs(
+        target_tokenizer,
+        donor_tokenizer,
+        target_map,
+        donor_map,
+        weighted=True,
+    )
+
+    assert target_ids == [1, 2]
+    assert donor_groups == [[1], [1, 2]]
+    assert donor_weights == [[1.0], [1.0, 6.0]]
+    assert tokenized_rows == 1
+    assert weighted_rows == 1
 
 
 def test_recovery_same_vocab_guard_rejects_mismatch() -> None:
@@ -1288,6 +1310,24 @@ def test_token_projection_uses_sum_for_lm_head_and_mean_for_embeddings() -> None
 
     assert embedding_target.tolist() == [[1.0, 1.0], [1.0, 1.0]]
     assert head_target.tolist() == [[2.0, 2.0], [2.0, 2.0]]
+
+
+def test_token_projection_can_weight_donor_piece_rows() -> None:
+    torch = pytest.importorskip("torch")
+    donor = torch.tensor([[0.0, 0.0], [10.0, 0.0]], dtype=torch.float32)
+    target = torch.zeros((1, 2), dtype=torch.float32)
+
+    _project_token_weight_rows(
+        torch,
+        target,
+        donor,
+        target_ids=[0],
+        donor_id_groups=[[0, 1]],
+        donor_id_group_weights=[[1.0, 3.0]],
+        fold_mode="mean",
+    )
+
+    assert target[0].tolist() == pytest.approx([7.5, 0.0])
 
 
 def test_token_initialization_skips_tied_lm_head_second_pass() -> None:

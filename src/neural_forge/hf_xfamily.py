@@ -307,8 +307,8 @@ def donor_projected_init(
         raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
     if attention_fold_mode not in {"independent", "coupled", "activation-coupled"}:
         raise ValueError("attention_fold_mode must be independent, coupled, or activation-coupled.")
-    if token_init_mode not in {"shared", "donor-tokenized"}:
-        raise ValueError("token_init_mode must be shared or donor-tokenized.")
+    if token_init_mode not in {"shared", "donor-tokenized", "donor-tokenized-weighted"}:
+        raise ValueError("token_init_mode must be shared, donor-tokenized, or donor-tokenized-weighted.")
     if projection_scale not in {"none", "target-rms"}:
         raise ValueError("projection_scale must be none or target-rms.")
     if consumer_hidden_reduction not in {"mean", "sum", "sqrt-sum"}:
@@ -3303,21 +3303,24 @@ def _initialize_token_weights_from_donor(
     consumer_hidden_reduction: str = "mean",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    if token_init_mode not in {"shared", "donor-tokenized"}:
-        raise ValueError("token_init_mode must be shared or donor-tokenized.")
+    if token_init_mode not in {"shared", "donor-tokenized", "donor-tokenized-weighted"}:
+        raise ValueError("token_init_mode must be shared, donor-tokenized, or donor-tokenized-weighted.")
     if consumer_hidden_reduction not in {"mean", "sum", "sqrt-sum"}:
         raise ValueError("consumer_hidden_reduction must be mean, sum, or sqrt-sum.")
     anchors, target_map, donor_map = _shared_anchor_tokens(target_tokenizer, donor_tokenizer, max_anchors)
     if token_init_mode == "shared":
         target_ids = [target_map[token] for token in anchors]
         donor_id_groups = [[donor_map[token]] for token in anchors]
+        donor_group_weights = [[1.0] for _token in anchors]
         tokenized_rows = 0
+        weighted_rows = 0
     else:
-        target_ids, donor_id_groups, tokenized_rows = _target_to_donor_token_groups(
+        target_ids, donor_id_groups, donor_group_weights, tokenized_rows, weighted_rows = _target_to_donor_token_group_specs(
             target_tokenizer,
             donor_tokenizer,
             target_map,
             donor_map,
+            weighted=token_init_mode == "donor-tokenized-weighted",
         )
 
     target_embeddings = target.get_input_embeddings()
@@ -3330,6 +3333,7 @@ def _initialize_token_weights_from_donor(
         donor_emb_weight,
         target_ids,
         donor_id_groups,
+        donor_id_group_weights=donor_group_weights,
         fold_mode=fold_mode,
         hidden_basis=hidden_basis,
         hidden_axis_weights=hidden_axis_weights,
@@ -3364,6 +3368,7 @@ def _initialize_token_weights_from_donor(
                 donor_head,
                 target_ids,
                 donor_id_groups,
+                donor_id_group_weights=donor_group_weights,
                 fold_mode=fold_mode,
                 hidden_basis=hidden_basis if lm_head_hidden_basis is None else lm_head_hidden_basis,
                 hidden_axis_weights=hidden_axis_weights,
@@ -3383,6 +3388,7 @@ def _initialize_token_weights_from_donor(
         "shared_decoded_tokens": len(set(_canonical_token_map(target_tokenizer)) & set(_canonical_token_map(donor_tokenizer))),
         "anchors_used": len(anchors),
         "tokenized_rows_initialized": int(tokenized_rows),
+        "weighted_tokenized_rows_initialized": int(weighted_rows),
         "embedding_rows_initialized": int(embedding_rows_initialized),
         "lm_head_rows_initialized": int(lm_head_rows_initialized) if lm_head_updated else 0,
         "lm_head_updated": lm_head_updated,
@@ -3398,6 +3404,7 @@ def _project_token_weight_rows(
     target_ids: Sequence[int],
     donor_id_groups: Sequence[Sequence[int]],
     fold_mode: str,
+    donor_id_group_weights: Sequence[Sequence[float]] | None = None,
     hidden_basis=None,
     hidden_axis_weights=None,
     activation_fold_assignment: str = "balanced",
@@ -3413,6 +3420,8 @@ def _project_token_weight_rows(
         raise ValueError("hidden_axis_reduction must be mean, sum, or sqrt-sum.")
     if len(target_ids) != len(donor_id_groups):
         raise ValueError("target_ids and donor_id_groups must have the same length.")
+    if donor_id_group_weights is not None and len(target_ids) != len(donor_id_group_weights):
+        raise ValueError("target_ids and donor_id_group_weights must have the same length.")
     if not target_ids:
         return 0
     target_dim = int(target_weight.shape[1])
@@ -3420,7 +3429,15 @@ def _project_token_weight_rows(
         end = min(start + int(chunk_size), len(target_ids))
         chunk_target_ids = list(target_ids[start:end])
         donor_rows = torch.stack(
-            [donor_weight[list(group)].mean(dim=0) for group in donor_id_groups[start:end]],
+            [
+                _weighted_donor_token_row(
+                    torch,
+                    donor_weight,
+                    group,
+                    None if donor_id_group_weights is None else donor_id_group_weights[row_idx],
+                )
+                for row_idx, group in enumerate(donor_id_groups[start:end], start=start)
+            ],
             dim=0,
         )
         projected = _resize_tensor_to_shape(
@@ -3451,18 +3468,54 @@ def _project_token_weight_rows(
     return int(len(target_ids))
 
 
+def _weighted_donor_token_row(torch, donor_weight, donor_group: Sequence[int], donor_weights: Sequence[float] | None):
+    group = [int(item) for item in donor_group]
+    if not group:
+        raise ValueError("donor token group cannot be empty.")
+    rows = donor_weight[group]
+    if donor_weights is None:
+        return rows.mean(dim=0)
+    weights = torch.tensor([float(item) for item in donor_weights], dtype=torch.float32)
+    if int(weights.numel()) != len(group):
+        raise ValueError("donor token weights must match donor token group length.")
+    weights = weights.clamp_min(0.0)
+    if float(weights.sum().item()) <= 0:
+        weights = torch.ones_like(weights)
+    weights = weights / weights.sum().clamp_min(1e-12)
+    return (rows * weights.to(rows.dtype).unsqueeze(1)).sum(dim=0)
+
+
 def _target_to_donor_token_groups(
     target_tokenizer,
     donor_tokenizer,
     target_map: dict[str, int],
     donor_map: dict[str, int],
 ) -> tuple[list[int], list[list[int]], int]:
+    target_ids, donor_id_groups, _weights, tokenized_rows, _weighted_rows = _target_to_donor_token_group_specs(
+        target_tokenizer,
+        donor_tokenizer,
+        target_map,
+        donor_map,
+        weighted=False,
+    )
+    return target_ids, donor_id_groups, tokenized_rows
+
+
+def _target_to_donor_token_group_specs(
+    target_tokenizer,
+    donor_tokenizer,
+    target_map: dict[str, int],
+    donor_map: dict[str, int],
+    weighted: bool = False,
+) -> tuple[list[int], list[list[int]], list[list[float]], int, int]:
     target_special_ids = set(getattr(target_tokenizer, "all_special_ids", []) or [])
     donor_special_ids = set(getattr(donor_tokenizer, "all_special_ids", []) or [])
     donor_vocab_size = len(donor_tokenizer)
     target_ids = []
     donor_id_groups = []
+    donor_group_weights = []
     tokenized_rows = 0
+    weighted_rows = 0
     seen_target_ids = set()
     for token, target_idx in sorted(target_map.items(), key=lambda item: item[1]):
         donor_idx = donor_map.get(token)
@@ -3470,6 +3523,7 @@ def _target_to_donor_token_groups(
             continue
         target_ids.append(int(target_idx))
         donor_id_groups.append([int(donor_idx)])
+        donor_group_weights.append([1.0])
         seen_target_ids.add(int(target_idx))
     for target_idx in range(len(target_tokenizer)):
         if int(target_idx) in seen_target_ids or int(target_idx) in target_special_ids:
@@ -3487,9 +3541,23 @@ def _target_to_donor_token_groups(
             continue
         target_ids.append(int(target_idx))
         donor_id_groups.append(donor_ids)
+        weights = _donor_tokenized_group_weights(donor_tokenizer, donor_ids) if weighted else [1.0] * len(donor_ids)
+        donor_group_weights.append(weights)
         seen_target_ids.add(int(target_idx))
         tokenized_rows += 1
-    return target_ids, donor_id_groups, tokenized_rows
+        if weighted and len(donor_ids) > 1:
+            weighted_rows += 1
+    return target_ids, donor_id_groups, donor_group_weights, tokenized_rows, weighted_rows
+
+
+def _donor_tokenized_group_weights(donor_tokenizer, donor_ids: Sequence[int]) -> list[float]:
+    weights = []
+    for donor_id in donor_ids:
+        decoded = _decode_single_token(donor_tokenizer, int(donor_id))
+        cleaned = "".join(ch for ch in decoded if ord(ch) >= 32)
+        canonical = _canonical_token(cleaned)
+        weights.append(float(max(len(cleaned), len(canonical), 1)))
+    return weights
 
 
 def _decode_single_token(tokenizer, token_id: int) -> str:

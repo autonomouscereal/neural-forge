@@ -155,9 +155,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hf_donor_init.add_argument(
         "--token-init-mode",
-        choices=["shared", "donor-tokenized"],
+        choices=["shared", "donor-tokenized", "donor-tokenized-weighted"],
         default="shared",
-        help="Initialize only shared decoded-token rows or fill target vocab rows by donor tokenizing each target token.",
+        help=(
+            "Initialize only shared decoded-token rows, fill target vocab rows by donor tokenizing each target token, "
+            "or weight donor-tokenized pieces by decoded span length."
+        ),
     )
     hf_donor_init.add_argument(
         "--projection-scale",
