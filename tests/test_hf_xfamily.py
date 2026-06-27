@@ -9,6 +9,7 @@ from neural_forge.hf_recovery import _assert_same_vocab
 from neural_forge.hf_recovery import _absorb_input_map_into_linears
 from neural_forge.hf_recovery import _candidate_index_after_depth_fold
 from neural_forge.hf_recovery import _cross_tokenizer_recovery_loss
+from neural_forge.hf_recovery import _cross_tokenizer_span_pairs
 from neural_forge.hf_recovery import _fit_activation_map
 from neural_forge.hf_recovery import _fit_shared_embedding_hidden_projection
 from neural_forge.hf_recovery import _fold_groups_from_report
@@ -397,6 +398,10 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.3",
             "--hidden-kd-weight",
             "0.2",
+            "--span-kd-weight",
+            "0.15",
+            "--span-max-pairs",
+            "66",
             "--hidden-ridge",
             "0.02",
             "--hidden-layer",
@@ -496,6 +501,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_recover_args.anchor_kd_weight == 0.7
     assert xfamily_recover_args.lm_weight == 0.3
     assert xfamily_recover_args.hidden_kd_weight == 0.2
+    assert xfamily_recover_args.span_kd_weight == 0.15
+    assert xfamily_recover_args.span_max_pairs == 66
     assert xfamily_recover_args.hidden_ridge == 0.02
     assert xfamily_recover_args.hidden_layer == "middle"
     assert xfamily_recover_args.hidden_max_anchors == 77
@@ -838,8 +845,10 @@ def test_cross_tokenizer_recovery_loss_uses_anchor_subspace() -> None:
         anchor_kd_weight=0.7,
         lm_weight=0.3,
         hidden_kd_weight=0.0,
+        span_kd_weight=0.0,
         hidden_projection=None,
         hidden_layer="last",
+        span_pairs=None,
         temperature=1.5,
     )
 
@@ -873,8 +882,67 @@ def test_cross_tokenizer_recovery_loss_uses_projected_hidden_states() -> None:
         anchor_kd_weight=0.1,
         lm_weight=0.2,
         hidden_kd_weight=0.7,
+        span_kd_weight=0.0,
         hidden_projection=projection,
         hidden_layer="last",
+        span_pairs=None,
+        temperature=1.5,
+    )
+
+    assert torch.isfinite(loss)
+
+
+def test_cross_tokenizer_span_pairs_match_exact_offsets_and_tokens() -> None:
+    torch = pytest.importorskip("torch")
+    tokenizer = _Tokenizer(["<eos>", "foo", "bar"])
+    source_batch = {
+        "input_ids": torch.tensor([[0, 1, 2, 0]]),
+        "attention_mask": torch.tensor([[1, 1, 1, 0]]),
+        "offset_mapping": torch.tensor([[[0, 0], [0, 3], [4, 7], [0, 0]]]),
+    }
+    candidate_batch = {
+        "input_ids": torch.tensor([[0, 1, 2, 0]]),
+        "attention_mask": torch.tensor([[1, 1, 1, 0]]),
+        "offset_mapping": torch.tensor([[[0, 0], [0, 3], [4, 7], [0, 0]]]),
+    }
+
+    pairs = _cross_tokenizer_span_pairs(
+        torch,
+        tokenizer,
+        tokenizer,
+        source_batch,
+        candidate_batch,
+        _canonical_token,
+        max_pairs=8,
+    )
+
+    assert pairs.tolist() == [[0, 0, 0], [0, 1, 1]]
+
+
+def test_cross_tokenizer_recovery_loss_uses_span_pairs() -> None:
+    torch = pytest.importorskip("torch")
+    student = _Obj(logits=torch.randn(1, 4, 7))
+    teacher = _Obj(logits=torch.randn(1, 4, 9))
+    candidate_ids = torch.tensor([[1, 2, 3, 4]])
+    candidate_mask = torch.ones_like(candidate_ids)
+    source_mask = torch.ones((1, 4), dtype=torch.long)
+
+    loss = _cross_tokenizer_recovery_loss(
+        torch,
+        student,
+        teacher,
+        candidate_ids,
+        candidate_mask,
+        source_mask,
+        candidate_anchor_idx=torch.tensor([1, 3, 5]),
+        source_anchor_idx=torch.tensor([2, 4, 6]),
+        anchor_kd_weight=0.0,
+        lm_weight=0.2,
+        hidden_kd_weight=0.0,
+        span_kd_weight=0.8,
+        hidden_projection=None,
+        hidden_layer="last",
+        span_pairs=torch.tensor([[0, 0, 0], [0, 1, 1]]),
         temperature=1.5,
     )
 
@@ -1191,6 +1259,10 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "0.4",
             "--hidden-kd-weight",
             "0.25",
+            "--span-kd-weight",
+            "0.15",
+            "--span-max-pairs",
+            "88",
             "--hidden-ridge",
             "0.03",
             "--hidden-layer",
@@ -1231,6 +1303,8 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "anchor_kd_weight": 0.6,
         "lm_weight": 0.4,
         "hidden_kd_weight": 0.25,
+        "span_kd_weight": 0.15,
+        "span_max_pairs": 88,
         "hidden_ridge": 0.03,
         "hidden_layer": "middle",
         "hidden_max_anchors": 99,

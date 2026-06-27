@@ -137,6 +137,8 @@ saved adapter or bridge:
 ```powershell
 neural-forge hf-xfamily-recover Qwen/Qwen3-4B-Base runs/qwen4b-into-smollm2 runs/qwen4b-into-smollm2-recovered `
   --anchor-kd-weight 0.3 `
+  --span-kd-weight 0.2 `
+  --span-max-pairs 256 `
   --lm-weight 0.5 `
   --hidden-kd-weight 0.2 `
   --hidden-layer last `
@@ -147,6 +149,9 @@ neural-forge hf-xfamily-recover Qwen/Qwen3-4B-Base runs/qwen4b-into-smollm2 runs
 Hidden KD uses a temporary donor-hidden to child-hidden projection fitted from
 shared decoded-token embedding rows. The exported checkpoint remains the child
 architecture only.
+Span KD uses tokenizer offset mappings to align source and child prediction
+positions for exact decoded-token spans, then applies KL over the shared anchor
+vocabulary at those positions. It also leaves no runtime adapter.
 
 Task arithmetic defaults to `--dtype auto` and saves the base tokenizer after
 verifying that the tuned tokenizer has the same vocabulary. Special-token map

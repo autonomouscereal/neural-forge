@@ -1342,6 +1342,9 @@ Probe setup:
   hidden recovery;
 - hidden recovery: last 4 child layers trainable, `40` steps, LR `5e-6`,
   anchor KD `0.3`, LM `0.5`, hidden KD `0.2`, hidden projection cap `512`.
+- span recovery probe: exact decoded-token span pairs from tokenizer offset
+  mappings, up to `256` pairs/batch, anchor KD `0.2`, span KD `0.25`, LM
+  `0.35`, hidden KD `0.2`.
 
 Runs:
 
@@ -1357,6 +1360,7 @@ Results:
 | parent depth `fold` baseline | 68,920.270 | 0.00 | repeated `connotation` |
 | baseline + anchor/LM recovery, 20 steps | 63,132.667 | 0.00 | repeated `Major gardeners` |
 | baseline + anchor/LM/hidden recovery, 40 steps | 60,532.186 | 0.00 | repeated `Major gardeners` / `MajorLeaf` |
+| baseline + anchor/span/LM/hidden recovery, 40 steps | 60,374.324 | 0.00 | repeated `Major gardeners` / `MajorLeaf` |
 | group-aggregated activation fold | 73,532.159 | 0.25 | repeated `henes skyrock` |
 | group-aggregated fold + hidden recovery | 63,297.918 | 0.25 | repeated `henesptomatic` / `tonsarck` |
 
@@ -1365,6 +1369,10 @@ Interpretation:
 - Cross-tokenizer recovery is now numerically stable when the child is trained
   in FP32, and hidden KD gives modest PPL improvements over the same starting
   point.
+- Span-aligned KD is also mechanically working: the Qwen4B -> SmolLM2 probe
+  observed `72` to `92` exact decoded-token span pairs per calibration item. It
+  produced the best PPL among the recovery variants so far, but only by a small
+  margin and without behavior recovery.
 - The recovered models remain behaviorally failed. Manual generations are still
   repetitive token loops, so these checkpoints are not acceptable compression
   wins.

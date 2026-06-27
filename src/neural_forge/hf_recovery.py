@@ -182,6 +182,8 @@ def recover_cross_tokenizer_causal_lm(
     anchor_kd_weight: float = 0.5,
     lm_weight: float = 0.5,
     hidden_kd_weight: float = 0.0,
+    span_kd_weight: float = 0.0,
+    span_max_pairs: int = 512,
     hidden_ridge: float = 1e-3,
     hidden_layer: str = "last",
     hidden_max_anchors: int = 2048,
@@ -212,10 +214,12 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("max_length must be greater than 1.")
     if lr <= 0:
         raise ValueError("lr must be positive.")
-    if anchor_kd_weight < 0 or lm_weight < 0 or hidden_kd_weight < 0:
+    if anchor_kd_weight < 0 or lm_weight < 0 or hidden_kd_weight < 0 or span_kd_weight < 0:
         raise ValueError("loss weights must be non-negative.")
-    if anchor_kd_weight == 0 and lm_weight == 0 and hidden_kd_weight == 0:
+    if anchor_kd_weight == 0 and lm_weight == 0 and hidden_kd_weight == 0 and span_kd_weight == 0:
         raise ValueError("At least one loss weight must be positive.")
+    if span_max_pairs <= 0:
+        raise ValueError("span_max_pairs must be positive.")
     if hidden_ridge < 0:
         raise ValueError("hidden_ridge must be non-negative.")
     if hidden_layer not in {"last", "middle"}:
@@ -229,6 +233,7 @@ def recover_cross_tokenizer_causal_lm(
     if grad_clip < 0:
         raise ValueError("grad_clip must be non-negative.")
 
+    from neural_forge.hf_xfamily import _canonical_token
     from neural_forge.hf_xfamily import _canonical_token_map
 
     torch, transformers = _torch_and_transformers()
@@ -295,15 +300,37 @@ def recover_cross_tokenizer_causal_lm(
         batch_size=batch_size,
         max_length=max_length,
         device=device,
+        include_offsets=span_kd_weight > 0,
     )
 
     losses = []
+    span_pair_counts = []
     for step in range(1, steps + 1):
         source_batch, candidate_batch = batches[(step - 1) % len(batches)]
         optimizer.zero_grad(set_to_none=True)
         with torch.no_grad():
-            teacher = source(**source_batch, use_cache=False, output_hidden_states=hidden_kd_weight > 0)
-        student = candidate(**candidate_batch, use_cache=False, output_hidden_states=hidden_kd_weight > 0)
+            teacher = source(
+                **_model_forward_inputs(source_batch),
+                use_cache=False,
+                output_hidden_states=hidden_kd_weight > 0,
+            )
+        student = candidate(
+            **_model_forward_inputs(candidate_batch),
+            use_cache=False,
+            output_hidden_states=hidden_kd_weight > 0,
+        )
+        span_pairs = None
+        if span_kd_weight > 0:
+            span_pairs = _cross_tokenizer_span_pairs(
+                torch,
+                source_tokenizer,
+                candidate_tokenizer,
+                source_batch,
+                candidate_batch,
+                _canonical_token,
+                max_pairs=span_max_pairs,
+            )
+            span_pair_counts.append(int(span_pairs.shape[0]))
         loss = _cross_tokenizer_recovery_loss(
             torch,
             student,
@@ -316,8 +343,10 @@ def recover_cross_tokenizer_causal_lm(
             anchor_kd_weight,
             lm_weight,
             hidden_kd_weight,
+            span_kd_weight,
             hidden_projection,
             hidden_layer,
+            span_pairs,
             temperature,
         )
         if not bool(torch.isfinite(loss).detach().cpu()):
@@ -345,6 +374,9 @@ def recover_cross_tokenizer_causal_lm(
         "anchor_kd_weight": anchor_kd_weight,
         "lm_weight": lm_weight,
         "hidden_kd_weight": hidden_kd_weight,
+        "span_kd_weight": span_kd_weight,
+        "span_max_pairs": span_max_pairs,
+        "span_pair_count_observed": span_pair_counts,
         "hidden_ridge": hidden_ridge,
         "hidden_layer": hidden_layer,
         "hidden_max_anchors": hidden_max_anchors,
@@ -650,17 +682,29 @@ def _recovery_decoder_layers(model) -> list[Any]:
         return []
 
 
-def _make_batches(tokenizer, texts: Sequence[str], batch_size: int, max_length: int, device: str) -> list[dict[str, Any]]:
+def _make_batches(
+    tokenizer,
+    texts: Sequence[str],
+    batch_size: int,
+    max_length: int,
+    device: str,
+    include_offsets: bool = False,
+) -> list[dict[str, Any]]:
     batches = []
     for start in range(0, len(texts), batch_size):
         chunk = list(texts[start : start + batch_size])
-        encoded = tokenizer(
-            chunk,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=max_length,
-        )
+        kwargs = {
+            "return_tensors": "pt",
+            "padding": True,
+            "truncation": True,
+            "max_length": max_length,
+        }
+        if include_offsets:
+            kwargs["return_offsets_mapping"] = True
+        try:
+            encoded = tokenizer(chunk, **kwargs)
+        except NotImplementedError as exc:
+            raise ValueError("Span KD requires fast tokenizers that support offset mappings.") from exc
         batches.append({key: value.to(device) for key, value in encoded.items()})
     return batches
 
@@ -672,12 +716,89 @@ def _make_paired_batches(
     batch_size: int,
     max_length: int,
     device: str,
+    include_offsets: bool = False,
 ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-    source_batches = _make_batches(source_tokenizer, texts, batch_size, max_length, device)
-    candidate_batches = _make_batches(candidate_tokenizer, texts, batch_size, max_length, device)
+    source_batches = _make_batches(source_tokenizer, texts, batch_size, max_length, device, include_offsets)
+    candidate_batches = _make_batches(candidate_tokenizer, texts, batch_size, max_length, device, include_offsets)
     if len(source_batches) != len(candidate_batches):
         raise RuntimeError("Paired source/candidate batch counts diverged.")
     return list(zip(source_batches, candidate_batches))
+
+
+def _model_forward_inputs(batch: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in batch.items() if key != "offset_mapping"}
+
+
+def _cross_tokenizer_span_pairs(
+    torch,
+    source_tokenizer,
+    candidate_tokenizer,
+    source_batch: dict[str, Any],
+    candidate_batch: dict[str, Any],
+    canonical_fn,
+    max_pairs: int,
+):
+    if "offset_mapping" not in source_batch or "offset_mapping" not in candidate_batch:
+        raise ValueError("Span KD batches require offset_mapping.")
+    if max_pairs <= 0:
+        raise ValueError("max_pairs must be positive.")
+
+    source_ids = source_batch["input_ids"].detach().cpu()
+    candidate_ids = candidate_batch["input_ids"].detach().cpu()
+    source_offsets = source_batch["offset_mapping"].detach().cpu()
+    candidate_offsets = candidate_batch["offset_mapping"].detach().cpu()
+    source_mask = source_batch.get("attention_mask")
+    candidate_mask = candidate_batch.get("attention_mask")
+    if source_mask is not None:
+        source_mask = source_mask.detach().cpu().bool()
+    if candidate_mask is not None:
+        candidate_mask = candidate_mask.detach().cpu().bool()
+
+    pairs = []
+    batch_count = min(int(source_ids.shape[0]), int(candidate_ids.shape[0]))
+    for batch_idx in range(batch_count):
+        source_lookup = {}
+        for source_pos in range(1, int(source_ids.shape[1])):
+            if source_mask is not None and not bool(source_mask[batch_idx, source_pos]):
+                continue
+            start = int(source_offsets[batch_idx, source_pos, 0])
+            end = int(source_offsets[batch_idx, source_pos, 1])
+            if end <= start:
+                continue
+            token = _decoded_token(source_tokenizer, int(source_ids[batch_idx, source_pos].item()), canonical_fn)
+            if not token:
+                continue
+            source_lookup.setdefault((start, end, token), source_pos - 1)
+        for candidate_pos in range(1, int(candidate_ids.shape[1])):
+            if candidate_mask is not None and not bool(candidate_mask[batch_idx, candidate_pos]):
+                continue
+            start = int(candidate_offsets[batch_idx, candidate_pos, 0])
+            end = int(candidate_offsets[batch_idx, candidate_pos, 1])
+            if end <= start:
+                continue
+            token = _decoded_token(candidate_tokenizer, int(candidate_ids[batch_idx, candidate_pos].item()), canonical_fn)
+            if not token:
+                continue
+            source_shift_pos = source_lookup.get((start, end, token))
+            if source_shift_pos is None:
+                continue
+            pairs.append((batch_idx, candidate_pos - 1, source_shift_pos))
+            if len(pairs) >= max_pairs:
+                return torch.tensor(pairs, dtype=torch.long, device=candidate_batch["input_ids"].device)
+    if not pairs:
+        return torch.empty((0, 3), dtype=torch.long, device=candidate_batch["input_ids"].device)
+    return torch.tensor(pairs, dtype=torch.long, device=candidate_batch["input_ids"].device)
+
+
+def _decoded_token(tokenizer, token_id: int, canonical_fn) -> str:
+    special_ids = set(getattr(tokenizer, "all_special_ids", []) or [])
+    if int(token_id) in special_ids:
+        return ""
+    try:
+        decoded = tokenizer.decode([int(token_id)], clean_up_tokenization_spaces=False)
+    except Exception:
+        decoded = ""
+    return canonical_fn(decoded)
 
 
 def _shared_recovery_anchors(source_tokenizer, candidate_tokenizer, max_anchors: int, map_fn) -> list[tuple[str, int, int]]:
@@ -1410,8 +1531,10 @@ def _cross_tokenizer_recovery_loss(
     anchor_kd_weight: float,
     lm_weight: float,
     hidden_kd_weight: float,
+    span_kd_weight: float,
     hidden_projection,
     hidden_layer: str,
+    span_pairs,
     temperature: float,
 ):
     shift_student = torch.nan_to_num(
@@ -1459,6 +1582,17 @@ def _cross_tokenizer_recovery_loss(
             hidden_layer,
         )
         total = total + float(hidden_kd_weight) * hidden
+    if span_kd_weight > 0 and span_pairs is not None and int(span_pairs.numel()) > 0:
+        span = _cross_tokenizer_span_loss(
+            torch,
+            shift_student,
+            teacher,
+            span_pairs,
+            candidate_anchor_idx,
+            source_anchor_idx,
+            temperature,
+        )
+        total = total + float(span_kd_weight) * span
     if lm_weight > 0:
         lm = torch.nn.functional.cross_entropy(
             shift_student.view(-1, shift_student.shape[-1]),
@@ -1467,6 +1601,32 @@ def _cross_tokenizer_recovery_loss(
         )
         total = total + float(lm_weight) * lm
     return total
+
+
+def _cross_tokenizer_span_loss(
+    torch,
+    shift_student,
+    teacher,
+    span_pairs,
+    candidate_anchor_idx,
+    source_anchor_idx,
+    temperature: float,
+):
+    shift_teacher = torch.nan_to_num(
+        teacher.logits[:, :-1, :].contiguous().to(torch.float32),
+        nan=0.0,
+        posinf=1e4,
+        neginf=-1e4,
+    )
+    pair_idx = span_pairs.to(device=shift_student.device, dtype=torch.long)
+    batch_idx = pair_idx[:, 0]
+    candidate_pos = pair_idx[:, 1]
+    source_pos = pair_idx[:, 2]
+    student_logits = shift_student[batch_idx, candidate_pos].index_select(dim=-1, index=candidate_anchor_idx)
+    teacher_logits = shift_teacher[batch_idx, source_pos].index_select(dim=-1, index=source_anchor_idx)
+    student_logp = torch.nn.functional.log_softmax(student_logits / temperature, dim=-1)
+    teacher_p = torch.nn.functional.softmax(teacher_logits / temperature, dim=-1)
+    return torch.nn.functional.kl_div(student_logp, teacher_p, reduction="batchmean") * (temperature**2)
 
 
 def _cross_tokenizer_hidden_loss(
