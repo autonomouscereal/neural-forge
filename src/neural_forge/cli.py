@@ -109,6 +109,10 @@ def build_parser() -> argparse.ArgumentParser:
     hf_donor_init.add_argument("--ridge", type=float, default=1e-3)
     hf_donor_init.add_argument("--max-anchors", type=int, default=50_000)
     hf_donor_init.add_argument("--fold-mode", choices=["mean", "rms"], default="mean")
+    hf_donor_init.add_argument("--activation-calibration-file")
+    hf_donor_init.add_argument("--activation-max-calibration-texts", type=int)
+    hf_donor_init.add_argument("--activation-max-length", type=int, default=128)
+    hf_donor_init.add_argument("--activation-device", default="cuda:0")
     hf_donor_init.add_argument("--dtype", default="float16")
     hf_donor_init.add_argument("--trust-remote-code", action="store_true")
     hf_donor_init.set_defaults(func=cmd_hf_donor_project_init)
@@ -744,6 +748,10 @@ def cmd_hf_random_init(args: argparse.Namespace) -> dict[str, object]:
 def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
     from neural_forge.hf_xfamily import donor_projected_init
 
+    activation_calibration_texts = _load_recovery_calibration_texts(
+        args.activation_calibration_file,
+        args.activation_max_calibration_texts,
+    )
     return donor_projected_init(
         target_config_model=args.target_config_model,
         target_tokenizer_model=args.target_tokenizer_model,
@@ -753,6 +761,9 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         ridge=args.ridge,
         max_anchors=args.max_anchors,
         fold_mode=args.fold_mode,
+        activation_calibration_texts=activation_calibration_texts,
+        activation_max_length=args.activation_max_length,
+        activation_device=args.activation_device,
         torch_dtype=args.dtype,
         trust_remote_code=args.trust_remote_code,
     )

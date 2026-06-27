@@ -1046,6 +1046,12 @@ RMS-fold run:
 /home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_projected_rms_smollm135m_20260627_023639
 ```
 
+Activation-weighted mean-fold run:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_projected_activation_smollm135m_20260627_024603
+```
+
 Shared setup:
 
 - target config/tokenizer: `HuggingFaceTB/SmolLM2-135M`;
@@ -1058,6 +1064,8 @@ Shared setup:
 - token rows initialized: `30,000` embedding rows and `30,000` LM-head rows;
 - benchmark tasks: `arc_easy`, `hellaswag`, `piqa`, `winogrande`;
 - benchmark limit: `50` examples/task.
+- activation-weighted run calibration: 8 curated Omnicoder JSONL texts, max
+  length `96`, donor activations collected on `cuda:0`.
 
 Neural Forge probes:
 
@@ -1066,6 +1074,7 @@ Neural Forge probes:
 | random SmolLM2 target | 88,650.193 | 0.00 | baseline | nonsensical |
 | projected mean-fold | 63,726.945 | 0.25 | failed | repeated `fibromyalgia`, `apple`, `infringe` |
 | projected RMS-fold | 68,513.184 | 0.00 | failed | repeated `height`, `fleas/dilemmas`, `Flu/contour` |
+| projected activation-weighted mean-fold | 80,711.923 | 0.25 | failed | repeated `entropy`, `remission`, `polymerase` |
 
 Benchmark slice:
 
@@ -1074,6 +1083,7 @@ Benchmark slice:
 | random SmolLM2 target | 0.20 / 0.22 | 0.22 / 0.30 | 0.56 / 0.58 | 0.46 |
 | projected mean-fold | 0.24 / 0.30 | 0.24 / 0.32 | 0.54 / 0.58 | 0.64 |
 | projected RMS-fold | 0.14 / 0.28 | 0.26 / 0.32 | 0.40 / 0.58 | 0.46 |
+| projected activation-weighted mean-fold | 0.24 / 0.28 | 0.24 / 0.26 | 0.60 / 0.62 | 0.52 |
 
 Interpretation:
 
@@ -1086,6 +1096,14 @@ Interpretation:
 - RMS variance preservation did not improve this run. It is available as an
   option, but mean-fold remains the default because it had the stronger probe
   and benchmark result.
+- Activation-weighted folding changed the benchmark profile and improved PIQA
+  over random (`0.56 / 0.58 -> 0.60 / 0.62`), but worsened PPL relative to plain
+  mean-fold and still collapsed generation. Activation ranking alone is
+  insufficient.
 - The result is a partial signal: direct donor tensor folding can implant some
   task-statistical structure into a blank target, but still needs activation or
   logit recovery before it is a usable compression path.
+- The next research-backed step is not another global ranking heuristic. It
+  should fit post-fold reconstruction maps from calibration activations,
+  preferably layer-by-layer after recomputing downstream activations, and/or
+  use optimal-transport matching instead of hard round-robin activation bins.

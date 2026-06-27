@@ -278,8 +278,17 @@ neural-forge hf-donor-project-init runs/qwen4b-projected-smollm2 `
   --target-tokenizer-model HuggingFaceTB/SmolLM2-135M `
   --donor-model Qwen/Qwen3-4B-Base `
   --max-anchors 30000 `
-  --fold-mode mean
+  --fold-mode mean `
+  --activation-calibration-file runs/calibration.jsonl `
+  --activation-max-calibration-texts 8 `
+  --activation-max-length 96
 ```
+
+When activation calibration is provided, donor residual dimensions and MLP
+intermediate channels are folded with activation-weighted bins instead of only
+contiguous index groups. This is still an initializer; it must be followed by
+`hf-eval`, `hf-gate`, manual generation inspection, and benchmark slices before
+claiming capability transfer.
 
 `hf-gate` checks PPL ratio, choice-probe accuracy, generation length,
 generation diversity, and prompt-specific generation relevance for the built-in

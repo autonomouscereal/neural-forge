@@ -15,6 +15,7 @@ from neural_forge.hf_tools import _normalize_layer_groups
 from neural_forge.hf_xfamily import _canonical_token
 from neural_forge.hf_xfamily import _canonical_token_map
 from neural_forge.hf_xfamily import _assign_donor_to_host
+from neural_forge.hf_xfamily import _balanced_activation_assignment
 from neural_forge.hf_xfamily import _channel_assignment_features
 from neural_forge.hf_xfamily import _effective_layer_alpha
 from neural_forge.hf_xfamily import _mlp_spec
@@ -218,6 +219,14 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "1000",
             "--fold-mode",
             "mean",
+            "--activation-calibration-file",
+            "activation.jsonl",
+            "--activation-max-calibration-texts",
+            "5",
+            "--activation-max-length",
+            "80",
+            "--activation-device",
+            "cpu",
             "--dtype",
             "float32",
         ]
@@ -340,6 +349,10 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.seed == 456
     assert donor_init_args.max_anchors == 1000
     assert donor_init_args.fold_mode == "mean"
+    assert donor_init_args.activation_calibration_file == "activation.jsonl"
+    assert donor_init_args.activation_max_calibration_texts == 5
+    assert donor_init_args.activation_max_length == 80
+    assert donor_init_args.activation_device == "cpu"
     assert donor_init_args.dtype == "float32"
     assert merge_layer_args.groups == "3+4,7+8"
     assert drop_args.layers == "3,7"
@@ -442,6 +455,18 @@ def test_resize_tensor_to_shape_rms_fold_preserves_more_variance() -> None:
     assert rms_folded.flatten().tolist() == pytest.approx([2**0.5, 2**0.5, 2**0.5, 2**0.5])
 
 
+def test_activation_weighted_fold_uses_importance_bins() -> None:
+    torch = pytest.importorskip("torch")
+    weights = torch.tensor([10.0, 1.0, 9.0, 1.0])
+    assignment = _balanced_activation_assignment(torch, weights, 2)
+    assert assignment.tolist() == [0, 0, 1, 1]
+
+    source = torch.tensor([[0.0], [10.0], [100.0], [200.0]])
+    folded = _resize_tensor_to_shape(torch, source, (2, 1), axis_weights={0: weights})
+
+    assert folded.flatten().tolist() == pytest.approx([10.0 / 11.0, 1100.0 / 10.0])
+
+
 def test_mlp_spec_detects_lfm_feed_forward_names() -> None:
     layer = _Obj(feed_forward=_Obj(w1=object(), w3=object(), w2=object()))
     spec = _mlp_spec(layer)
@@ -536,6 +561,7 @@ def test_hf_random_init_handler_passes_flags(monkeypatch) -> None:
 
 
 def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
+    import neural_forge.cli as cli
     import neural_forge.hf_xfamily as hf_xfamily
 
     captured = {}
@@ -544,7 +570,13 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         captured.update(kwargs)
         return {"ok": True}
 
+    def fake_load(path, max_texts):
+        assert path == "activation.jsonl"
+        assert max_texts == 7
+        return ["activation text"]
+
     monkeypatch.setattr(hf_xfamily, "donor_projected_init", fake_project_init)
+    monkeypatch.setattr(cli, "_load_recovery_calibration_texts", fake_load)
     args = build_parser().parse_args(
         [
             "hf-donor-project-init",
@@ -563,6 +595,14 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "1234",
             "--fold-mode",
             "mean",
+            "--activation-calibration-file",
+            "activation.jsonl",
+            "--activation-max-calibration-texts",
+            "7",
+            "--activation-max-length",
+            "64",
+            "--activation-device",
+            "cpu",
             "--dtype",
             "float32",
             "--trust-remote-code",
@@ -579,6 +619,9 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "ridge": 0.02,
         "max_anchors": 1234,
         "fold_mode": "mean",
+        "activation_calibration_texts": ["activation text"],
+        "activation_max_length": 64,
+        "activation_device": "cpu",
         "torch_dtype": "float32",
         "trust_remote_code": True,
     }
