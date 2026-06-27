@@ -128,6 +128,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=2048,
         help="Maximum donor hidden activation rows to retain when fitting the activation PCA basis.",
     )
+    hf_donor_init.add_argument(
+        "--hidden-basis-preprocess",
+        choices=["centered-rowrms", "uncentered-rowrms", "uncentered"],
+        default="centered-rowrms",
+        help="Preprocessing for activation PCA hidden bases.",
+    )
     hf_donor_init.add_argument("--activation-fold-assignment", choices=["balanced", "similarity"], default="balanced")
     hf_donor_init.add_argument(
         "--transport-backend",
@@ -1066,6 +1072,7 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         hidden_basis_mode=args.hidden_basis_mode,
         hidden_basis_scope=args.hidden_basis_scope,
         hidden_basis_max_rows=args.hidden_basis_max_rows,
+        hidden_basis_preprocess=args.hidden_basis_preprocess,
         activation_fold_assignment=args.activation_fold_assignment,
         transport_backend=args.transport_backend,
         donor_layer_fold_mode=args.donor_layer_fold_mode,

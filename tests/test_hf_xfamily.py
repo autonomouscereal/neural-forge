@@ -318,6 +318,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "layer",
             "--hidden-basis-max-rows",
             "777",
+            "--hidden-basis-preprocess",
+            "uncentered-rowrms",
             "--activation-fold-assignment",
             "similarity",
             "--transport-backend",
@@ -660,6 +662,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.hidden_basis_mode == "activation-pca"
     assert donor_init_args.hidden_basis_scope == "layer"
     assert donor_init_args.hidden_basis_max_rows == 777
+    assert donor_init_args.hidden_basis_preprocess == "uncentered-rowrms"
     assert donor_init_args.activation_fold_assignment == "similarity"
     assert donor_init_args.transport_backend == "sinkhorn"
     assert donor_init_args.donor_layer_fold_mode == "fold"
@@ -1094,6 +1097,39 @@ def test_activation_hidden_basis_is_orthonormal() -> None:
     assert basis.t().matmul(basis).flatten().tolist() == pytest.approx(torch.eye(2).flatten().tolist(), abs=1e-5)
     assert report["mode"] == "activation-pca"
     assert report["retained_energy"] > 0.99
+
+
+def test_activation_hidden_basis_uncentered_keeps_common_direction() -> None:
+    torch = pytest.importorskip("torch")
+    rows = torch.tensor(
+        [
+            [10.0, 0.0, 0.0],
+            [10.0, 1.0, 0.0],
+            [10.0, -1.0, 0.0],
+            [10.0, 0.0, 1.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    centered, centered_report = _build_activation_hidden_basis(
+        torch,
+        rows,
+        source_dim=3,
+        target_dim=1,
+        preprocess="centered-rowrms",
+    )
+    uncentered, uncentered_report = _build_activation_hidden_basis(
+        torch,
+        rows,
+        source_dim=3,
+        target_dim=1,
+        preprocess="uncentered-rowrms",
+    )
+
+    assert centered_report["preprocess"] == "centered-rowrms"
+    assert uncentered_report["preprocess"] == "uncentered-rowrms"
+    assert abs(float(uncentered[0, 0])) > 0.95
+    assert abs(float(centered[0, 0])) < 0.5
 
 
 def test_hidden_basis_resize_projects_hidden_axes() -> None:
@@ -2633,6 +2669,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "hidden_basis_mode": "activation-pca",
         "hidden_basis_scope": "layer",
         "hidden_basis_max_rows": 99,
+        "hidden_basis_preprocess": "centered-rowrms",
         "activation_fold_assignment": "similarity",
         "transport_backend": "sparse",
         "donor_layer_fold_mode": "average",

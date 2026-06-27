@@ -225,6 +225,31 @@ Sinkhorn transport is therefore useful infrastructure, but it is not the next
 promoted 25x initializer. It needs either better cost features or module-level
 LS/SVD reconstruction before recovery.
 
+### Uncentered Activation-Basis Follow-Up
+
+New implementation:
+
+- added `--hidden-basis-preprocess centered-rowrms|uncentered-rowrms|uncentered`
+  for `hf-donor-project-init`;
+- kept the previous centered row-RMS PCA as default;
+- added unit coverage showing uncentered row-RMS PCA preserves a shared/common
+  activation direction that centered PCA removes.
+
+Validation on the same Qwen3-4B -> blank 141M Qwen-compatible target:
+
+- Raw uncentered row-RMS per-layer PCA init:
+  PPL `111,054.17`, choice `1/4`, behavior `0/6`. This is much better than
+  centered per-layer PCA raw PPL (`474,375.40`) and slightly better than the
+  old mean-fold raw PPL (`122,525.84`), but manual generation still collapsed
+  into punctuation and repeated fragments.
+- Same HLD recovery as prior best:
+  PPL `3,289.83`, choice `2/4`, behavior `0/6`. Manual output was not useful:
+  one prompt produced `A. A`, and the code/merge prompts emitted empty
+  continuations.
+
+Uncentered residual bases improve raw numeric fit, but they do not convert into
+coherent behavior under the current HLD recipe.
+
 This same-tokenizer stress test is important: removing tokenizer mismatch did not make arbitrary 25x blank-target folding work. The current blank Qwen target initializer is not preserving enough residual/backbone geometry for light recovery to restore behavior.
 
 The strongest current evidence is narrower: the SmolLM2-135M blank-target path can transfer partial linguistic/domain behavior and beat a random blank target, but same-tokenizer blank Qwen stress tests show that the general "fold any parent into any blank target at 25x" claim is not yet proven.

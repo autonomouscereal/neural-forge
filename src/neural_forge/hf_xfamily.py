@@ -253,6 +253,7 @@ def donor_projected_init(
     hidden_basis_mode: str = "none",
     hidden_basis_scope: str = "global",
     hidden_basis_max_rows: int = 2048,
+    hidden_basis_preprocess: str = "centered-rowrms",
     activation_fold_assignment: str = "balanced",
     transport_backend: str = "sparse",
     donor_layer_fold_mode: str = "representative",
@@ -291,6 +292,8 @@ def donor_projected_init(
         raise ValueError("hidden_basis_scope must be global or layer.")
     if hidden_basis_max_rows <= 0:
         raise ValueError("hidden_basis_max_rows must be positive.")
+    if hidden_basis_preprocess not in {"centered-rowrms", "uncentered-rowrms", "uncentered"}:
+        raise ValueError("hidden_basis_preprocess must be centered-rowrms, uncentered-rowrms, or uncentered.")
     if activation_fold_assignment not in {"balanced", "similarity"}:
         raise ValueError("activation_fold_assignment must be balanced or similarity.")
     if transport_backend not in {"sparse", "sinkhorn"}:
@@ -372,6 +375,7 @@ def donor_projected_init(
             activation_profile["hidden_basis_rows"],
             source_dim=donor_hidden_size,
             target_dim=target_hidden_size,
+            preprocess=hidden_basis_preprocess,
         )
         if hidden_basis_scope == "layer":
             layer_hidden_bases, layer_hidden_basis_report = _build_layer_activation_hidden_bases(
@@ -381,6 +385,7 @@ def donor_projected_init(
                 donor_layer_count=len(donor_layers),
                 source_dim=donor_hidden_size,
                 target_dim=target_hidden_size,
+                preprocess=hidden_basis_preprocess,
             )
 
     target_state = target.state_dict()
@@ -577,6 +582,7 @@ def donor_projected_init(
         "hidden_basis_mode": hidden_basis_mode,
         "hidden_basis_scope": hidden_basis_scope,
         "hidden_basis_max_rows": int(hidden_basis_max_rows),
+        "hidden_basis_preprocess": hidden_basis_preprocess,
         "hidden_basis": hidden_basis_report,
         "layer_hidden_basis": layer_hidden_basis_report,
         "activation_fold_assignment": activation_fold_assignment,
@@ -1943,9 +1949,17 @@ def _resize_tensor_axis_hidden_basis(torch, tensor, axis: int, basis):
     return projected.reshape((target_dim, *rest_shape)).movedim(0, axis).contiguous()
 
 
-def _build_activation_hidden_basis(torch, activation_rows, source_dim: int, target_dim: int):
+def _build_activation_hidden_basis(
+    torch,
+    activation_rows,
+    source_dim: int,
+    target_dim: int,
+    preprocess: str = "centered-rowrms",
+):
     if source_dim <= 0 or target_dim <= 0:
         raise ValueError("source_dim and target_dim must be positive.")
+    if preprocess not in {"centered-rowrms", "uncentered-rowrms", "uncentered"}:
+        raise ValueError("preprocess must be centered-rowrms, uncentered-rowrms, or uncentered.")
     rows = torch.nan_to_num(activation_rows.detach().cpu().to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
     if rows.dim() != 2:
         raise ValueError("activation rows must be rank-2.")
@@ -1957,14 +1971,17 @@ def _build_activation_hidden_basis(torch, activation_rows, source_dim: int, targ
             "mode": "identity",
             "source_dim": int(source_dim),
             "target_dim": int(target_dim),
+            "preprocess": preprocess,
             "rows": int(rows.shape[0]),
             "retained_energy": 1.0,
         }
     if int(rows.shape[0]) < int(target_dim):
         raise ValueError("Need at least target_dim activation rows to fit activation-pca basis.")
-    rows = rows - rows.mean(dim=0, keepdim=True)
-    row_rms = rows.pow(2).mean(dim=1, keepdim=True).sqrt().clamp_min(1e-6)
-    rows = rows / row_rms
+    if preprocess == "centered-rowrms":
+        rows = rows - rows.mean(dim=0, keepdim=True)
+    if preprocess in {"centered-rowrms", "uncentered-rowrms"}:
+        row_rms = rows.pow(2).mean(dim=1, keepdim=True).sqrt().clamp_min(1e-6)
+        rows = rows / row_rms
     _u, singular_values, vh = torch.linalg.svd(rows, full_matrices=False)
     keep = min(int(target_dim), int(vh.shape[0]))
     if keep < int(target_dim):
@@ -1976,6 +1993,7 @@ def _build_activation_hidden_basis(torch, activation_rows, source_dim: int, targ
         "mode": "activation-pca",
         "source_dim": int(source_dim),
         "target_dim": int(target_dim),
+        "preprocess": preprocess,
         "rows": int(rows.shape[0]),
         "retained_energy": float(retained_energy.detach().cpu()),
         "top_singular_value": float(singular_values[0].detach().cpu()) if int(singular_values.numel()) else 0.0,
@@ -1990,6 +2008,7 @@ def _build_layer_activation_hidden_bases(
     donor_layer_count: int,
     source_dim: int,
     target_dim: int,
+    preprocess: str = "centered-rowrms",
 ):
     input_rows_by_layer = activation_profile.get("hidden_basis_input_rows") or {}
     output_rows_by_layer = activation_profile.get("hidden_basis_output_rows") or {}
@@ -2010,6 +2029,7 @@ def _build_layer_activation_hidden_bases(
                 input_rows,
                 source_dim=source_dim,
                 target_dim=target_dim,
+                preprocess=preprocess,
             )
             item["input"] = input_basis
             report["input"] = input_report
@@ -2021,6 +2041,7 @@ def _build_layer_activation_hidden_bases(
                 output_rows,
                 source_dim=source_dim,
                 target_dim=target_dim,
+                preprocess=preprocess,
             )
             item["output"] = output_basis
             report["output"] = output_report
@@ -2035,6 +2056,7 @@ def _build_layer_activation_hidden_bases(
         "donor_layer_count": int(donor_layer_count),
         "source_dim": int(source_dim),
         "target_dim": int(target_dim),
+        "preprocess": preprocess,
         "layers": reports,
     }
 
