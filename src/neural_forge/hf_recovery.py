@@ -1210,6 +1210,14 @@ def reconstruct_cross_tokenizer_causal_lm(
     max_tokens_per_layer: int = 512,
     max_anchors: int = 2048,
     layer_limit: int | None = None,
+    fit_gate: str = "none",
+    fit_gate_validation_fraction: float = 0.25,
+    fit_gate_min_validation_rows: int = 32,
+    fit_gate_min_relative_improvement: float = 0.0,
+    fit_gate_max_cosine_drop: float = 0.01,
+    layer_gate_metric: str = "none",
+    layer_gate_max_ppl_ratio: float = 1.02,
+    layer_gate_max_texts: int = 4,
     torch_dtype: str = "float16",
     candidate_torch_dtype: str = "float32",
     device: str = "cuda:0",
@@ -1252,6 +1260,22 @@ def reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("max_anchors must be positive.")
     if layer_limit is not None and layer_limit <= 0:
         raise ValueError("layer_limit must be positive when provided.")
+    if fit_gate not in {"none", "validation"}:
+        raise ValueError("fit_gate must be none or validation.")
+    if not 0.0 <= float(fit_gate_validation_fraction) < 1.0:
+        raise ValueError("fit_gate_validation_fraction must be in [0, 1).")
+    if fit_gate_min_validation_rows <= 0:
+        raise ValueError("fit_gate_min_validation_rows must be positive.")
+    if fit_gate_min_relative_improvement < 0:
+        raise ValueError("fit_gate_min_relative_improvement must be non-negative.")
+    if fit_gate_max_cosine_drop < 0:
+        raise ValueError("fit_gate_max_cosine_drop must be non-negative.")
+    if layer_gate_metric not in {"none", "ppl"}:
+        raise ValueError("layer_gate_metric must be none or ppl.")
+    if layer_gate_max_ppl_ratio <= 0:
+        raise ValueError("layer_gate_max_ppl_ratio must be positive.")
+    if layer_gate_max_texts <= 0:
+        raise ValueError("layer_gate_max_texts must be positive.")
 
     from neural_forge.hf_xfamily import _canonical_token
     from neural_forge.hf_xfamily import _canonical_token_map
@@ -1332,7 +1356,25 @@ def reconstruct_cross_tokenizer_causal_lm(
 
     repairs = []
     layer_count = len(candidate_layers) if layer_limit is None else min(int(layer_limit), len(candidate_layers))
+    layer_gate: dict[str, Any] = {
+        "metric": layer_gate_metric,
+        "max_ppl_ratio": float(layer_gate_max_ppl_ratio),
+        "max_texts": int(layer_gate_max_texts),
+    }
+    gate_texts = list(TEXT_EVALS[: int(layer_gate_max_texts)])
+    previous_gate_ppl: float | None = None
     with torch.no_grad():
+        if layer_gate_metric == "ppl":
+            previous_gate_ppl = _heldout_ppl_mean(
+                torch,
+                candidate,
+                candidate_tokenizer,
+                gate_texts,
+                device,
+                max_length,
+            )
+            layer_gate["initial_ppl"] = previous_gate_ppl
+            layer_gate["texts"] = gate_texts
         for candidate_idx in range(layer_count):
             source_idx = _proportional_layer_index(candidate_idx, len(candidate_layers), len(source_layers))
             source_group = (
@@ -1340,6 +1382,7 @@ def reconstruct_cross_tokenizer_causal_lm(
                 if donor_layer_fold_mode == "representative"
                 else _donor_layer_group_for_target(candidate_idx, len(candidate_layers), len(source_layers))
             )
+            layer_state = _snapshot_module_state(candidate_layers[candidate_idx]) if layer_gate_metric == "ppl" else None
             repair = _reconstruct_cross_tokenizer_layer(
                 torch,
                 source,
@@ -1360,11 +1403,46 @@ def reconstruct_cross_tokenizer_causal_lm(
                 cosine_steps=cosine_steps,
                 cosine_lr=cosine_lr,
                 cosine_l2=cosine_l2,
+                fit_gate=fit_gate,
+                fit_gate_validation_fraction=fit_gate_validation_fraction,
+                fit_gate_min_validation_rows=fit_gate_min_validation_rows,
+                fit_gate_min_relative_improvement=fit_gate_min_relative_improvement,
+                fit_gate_max_cosine_drop=fit_gate_max_cosine_drop,
                 max_tokens_per_layer=max_tokens_per_layer,
             )
             repair["source_layer"] = int(source_idx)
             repair["source_layer_group"] = [int(item) for item in source_group]
             repair["candidate_layer"] = int(candidate_idx)
+            if layer_gate_metric == "ppl":
+                candidate_ppl = _heldout_ppl_mean(
+                    torch,
+                    candidate,
+                    candidate_tokenizer,
+                    gate_texts,
+                    device,
+                    max_length,
+                )
+                gate_decision = _layer_gate_decision(
+                    previous_gate_ppl if previous_gate_ppl is not None else candidate_ppl,
+                    candidate_ppl,
+                    layer_gate_max_ppl_ratio,
+                )
+                if gate_decision["accepted"]:
+                    previous_gate_ppl = candidate_ppl
+                elif layer_state is not None:
+                    _restore_module_state(candidate_layers[candidate_idx], layer_state)
+                    reverted_ppl = _heldout_ppl_mean(
+                        torch,
+                        candidate,
+                        candidate_tokenizer,
+                        gate_texts,
+                        device,
+                        max_length,
+                    )
+                    gate_decision["reverted"] = True
+                    gate_decision["reverted_ppl"] = reverted_ppl
+                    previous_gate_ppl = reverted_ppl
+                repair["layer_gate"] = gate_decision
             repairs.append(repair)
             if device.startswith("cuda") and hasattr(torch, "cuda"):
                 torch.cuda.empty_cache()
@@ -1390,6 +1468,14 @@ def reconstruct_cross_tokenizer_causal_lm(
         "max_tokens_per_layer": max_tokens_per_layer,
         "max_anchors": max_anchors,
         "layer_limit": layer_limit,
+        "fit_gate": {
+            "mode": fit_gate,
+            "validation_fraction": float(fit_gate_validation_fraction),
+            "min_validation_rows": int(fit_gate_min_validation_rows),
+            "min_relative_improvement": float(fit_gate_min_relative_improvement),
+            "max_cosine_drop": float(fit_gate_max_cosine_drop),
+        },
+        "layer_gate": layer_gate,
         "torch_dtype": torch_dtype,
         "candidate_torch_dtype": candidate_torch_dtype,
         "calibration_text_count": len(texts),
@@ -2513,6 +2599,11 @@ def _reconstruct_fold_group(
     cosine_steps: int,
     cosine_lr: float,
     cosine_l2: float,
+    fit_gate: str,
+    fit_gate_validation_fraction: float,
+    fit_gate_min_validation_rows: int,
+    fit_gate_min_relative_improvement: float,
+    fit_gate_max_cosine_drop: float,
     max_tokens_per_layer: int,
 ) -> dict[str, Any]:
     source_consumer_idx = max(group["group"]) + 1
@@ -2661,6 +2752,11 @@ def _reconstruct_survivor_mlp_output(
     cosine_steps: int,
     cosine_lr: float,
     cosine_l2: float,
+    fit_gate: str,
+    fit_gate_validation_fraction: float,
+    fit_gate_min_validation_rows: int,
+    fit_gate_min_relative_improvement: float,
+    fit_gate_max_cosine_drop: float,
     max_tokens_per_layer: int,
 ) -> dict[str, Any]:
     spec = _mlp_projection_spec(candidate_survivor_layer)
@@ -2680,10 +2776,40 @@ def _reconstruct_survivor_mlp_output(
     hidden_rows = hidden[:rows].to(torch.float32)
     residual_rows = residual[:rows].to(torch.float32)
     candidate_rows = candidate_output[:rows].to(torch.float32)
-    target_mlp_output = source_rows - residual_rows
+    fit_source_rows = source_rows
+    fit_hidden_rows = hidden_rows
+    fit_residual_rows = residual_rows
+    validation_source_rows = None
+    validation_hidden_rows = None
+    validation_residual_rows = None
+    validation_candidate_rows = None
+    fit_report: dict[str, Any] = {}
+    if fit_gate == "validation":
+        split = _split_reconstruction_rows(
+            [source_rows, hidden_rows, residual_rows, candidate_rows],
+            fit_gate_validation_fraction,
+            fit_gate_min_validation_rows,
+        )
+        if split is None:
+            fit_report["fit_gate"] = {"mode": "validation", "accepted": True, "reason": "insufficient_rows"}
+        else:
+            fit_source_rows, fit_hidden_rows, fit_residual_rows, _fit_candidate_rows = split["train"]
+            (
+                validation_source_rows,
+                validation_hidden_rows,
+                validation_residual_rows,
+                validation_candidate_rows,
+            ) = split["validation"]
+            fit_report["fit_gate"] = {
+                "mode": "validation",
+                "rows": int(split["rows"]),
+                "train_rows": int(split["train_rows"]),
+                "validation_rows": int(split["validation_rows"]),
+            }
+    target_mlp_output = fit_source_rows - fit_residual_rows
     solved_report = _solve_linear_reconstruction(
         torch,
-        hidden_rows,
+        fit_hidden_rows,
         target_mlp_output,
         ridge,
         reconstruction_objective,
@@ -2710,6 +2836,41 @@ def _reconstruct_survivor_mlp_output(
     before_cosine = _mean_row_cosine(torch, candidate_rows, source_rows)
     solved_cosine = _mean_row_cosine(torch, solved_output, source_rows)
     after_cosine = _mean_row_cosine(torch, blended_output, source_rows)
+    if (
+        validation_source_rows is not None
+        and validation_hidden_rows is not None
+        and validation_residual_rows is not None
+        and validation_candidate_rows is not None
+    ):
+        gate = _validation_reconstruction_gate(
+            torch,
+            validation_candidate_rows,
+            validation_residual_rows + validation_hidden_rows.matmul(blended_weight.T),
+            validation_source_rows,
+            fit_gate_min_relative_improvement,
+            fit_gate_max_cosine_drop,
+        )
+        fit_report["fit_gate"] = {**fit_report["fit_gate"], **gate}
+        if not gate["accepted"]:
+            return {
+                "skipped": False,
+                "matched_pairs": int(matched),
+                "tokens": rows,
+                "feature_size": int(hidden_rows.shape[1]),
+                "hidden_size": int(source_rows.shape[1]),
+                "output_projection": spec["output_name"],
+                "reconstruction_alpha": float(reconstruction_alpha),
+                "reconstruction_objective": reconstruction_objective,
+                "relative_error_before": before,
+                "relative_error_solved": solved_error,
+                "relative_error_after": after,
+                "mean_cosine_before": before_cosine,
+                "mean_cosine_solved": solved_cosine,
+                "mean_cosine_after": after_cosine,
+                "solver": {key: value for key, value in solved_report.items() if key != "map"},
+                "mutation_skipped": True,
+                **fit_report,
+            }
     spec["output"].weight.data.copy_(blended_weight.to(device=spec["output"].weight.device, dtype=spec["output"].weight.dtype))
     return {
         "skipped": False,
@@ -2729,6 +2890,7 @@ def _reconstruct_survivor_mlp_output(
         "mean_cosine_solved": solved_cosine,
         "mean_cosine_after": after_cosine,
         "solver": {key: value for key, value in solved_report.items() if key != "map"},
+        **fit_report,
     }
 
 
@@ -2736,6 +2898,115 @@ def _proportional_layer_index(index: int, target_count: int, source_count: int) 
     if target_count <= 0 or source_count <= 0:
         raise ValueError("layer counts must be positive.")
     return max(0, min(int(math.floor((int(index) + 0.5) * source_count / target_count)), source_count - 1))
+
+
+def _layer_gate_decision(previous_ppl: float, candidate_ppl: float, max_ppl_ratio: float) -> dict[str, Any]:
+    if previous_ppl <= 0:
+        raise ValueError("previous_ppl must be positive.")
+    if max_ppl_ratio <= 0:
+        raise ValueError("max_ppl_ratio must be positive.")
+    ratio = float(candidate_ppl) / max(float(previous_ppl), 1e-12)
+    return {
+        "previous_ppl": float(previous_ppl),
+        "candidate_ppl": float(candidate_ppl),
+        "ppl_ratio": ratio,
+        "max_ppl_ratio": float(max_ppl_ratio),
+        "accepted": ratio <= float(max_ppl_ratio),
+    }
+
+
+def _snapshot_module_state(module) -> dict[str, Any]:
+    return {key: value.detach().cpu().clone() for key, value in module.state_dict().items()}
+
+
+def _restore_module_state(module, state: dict[str, Any]) -> None:
+    module.load_state_dict(state, strict=True)
+
+
+def _heldout_ppl_mean(torch, model, tokenizer, texts: Sequence[str], device: str, max_length: int) -> float:
+    if not texts:
+        raise ValueError("Need at least one held-out text for the layer gate.")
+    losses = []
+    for text in texts:
+        encoded = tokenizer(
+            text,
+            return_tensors="pt",
+            truncation=True,
+            max_length=max_length,
+        )
+        input_ids = encoded["input_ids"].to(device)
+        attention_mask = encoded.get("attention_mask")
+        outputs = model(
+            input_ids=input_ids,
+            attention_mask=None if attention_mask is None else attention_mask.to(device),
+            labels=input_ids,
+            use_cache=False,
+        )
+        losses.append(float(outputs.loss.detach().cpu()))
+    mean_loss = sum(losses) / max(1, len(losses))
+    return float(math.exp(min(20.0, mean_loss)))
+
+
+def _split_reconstruction_rows(
+    tensors: Sequence[Any],
+    validation_fraction: float,
+    min_validation_rows: int,
+):
+    rows = min(int(tensor.shape[0]) for tensor in tensors)
+    if rows <= 1:
+        return None
+    validation_rows = max(int(min_validation_rows), int(round(rows * float(validation_fraction))))
+    validation_rows = min(validation_rows, rows - 1)
+    if validation_rows <= 0:
+        return None
+    train_rows = rows - validation_rows
+    if train_rows <= 0:
+        return None
+    train = [tensor[:train_rows] for tensor in tensors]
+    validation = [tensor[train_rows:rows] for tensor in tensors]
+    return {
+        "rows": rows,
+        "train_rows": train_rows,
+        "validation_rows": validation_rows,
+        "train": train,
+        "validation": validation,
+    }
+
+
+def _validation_reconstruction_gate(
+    torch,
+    before,
+    after,
+    target,
+    min_relative_improvement: float,
+    max_cosine_drop: float,
+) -> dict[str, Any]:
+    before_error = _relative_reconstruction_error(torch, before, target)
+    after_error = _relative_reconstruction_error(torch, after, target)
+    before_cosine = _mean_row_cosine(torch, before, target)
+    after_cosine = _mean_row_cosine(torch, after, target)
+    relative_improvement = (before_error - after_error) / max(before_error, 1e-12)
+    accepted = relative_improvement >= float(min_relative_improvement) and after_cosine >= (
+        before_cosine - float(max_cosine_drop)
+    )
+    reason = "accepted"
+    if relative_improvement < float(min_relative_improvement):
+        reason = "insufficient_relative_error_improvement"
+    elif after_cosine < before_cosine - float(max_cosine_drop):
+        reason = "cosine_regression"
+    return {
+        "accepted": bool(accepted),
+        "reason": reason,
+        "relative_error_before": before_error,
+        "relative_error_after": after_error,
+        "relative_error_improvement": before_error - after_error,
+        "relative_error_improvement_ratio": relative_improvement,
+        "min_relative_improvement": float(min_relative_improvement),
+        "mean_cosine_before": before_cosine,
+        "mean_cosine_after": after_cosine,
+        "cosine_drop": before_cosine - after_cosine,
+        "max_cosine_drop": float(max_cosine_drop),
+    }
 
 
 def _reconstruct_cross_tokenizer_layer(
@@ -2758,6 +3029,11 @@ def _reconstruct_cross_tokenizer_layer(
     cosine_steps: int,
     cosine_lr: float,
     cosine_l2: float,
+    fit_gate: str,
+    fit_gate_validation_fraction: float,
+    fit_gate_min_validation_rows: int,
+    fit_gate_min_relative_improvement: float,
+    fit_gate_max_cosine_drop: float,
     max_tokens_per_layer: int,
 ) -> dict[str, Any]:
     repair_report: dict[str, Any] = {}
@@ -2790,6 +3066,11 @@ def _reconstruct_cross_tokenizer_layer(
             cosine_steps,
             cosine_lr,
             cosine_l2,
+            fit_gate,
+            fit_gate_validation_fraction,
+            fit_gate_min_validation_rows,
+            fit_gate_min_relative_improvement,
+            fit_gate_max_cosine_drop,
             max_tokens_per_layer,
         )
     else:
@@ -2815,6 +3096,11 @@ def _reconstruct_cross_tokenizer_layer(
             cosine_steps,
             cosine_lr,
             cosine_l2,
+            fit_gate,
+            fit_gate_validation_fraction,
+            fit_gate_min_validation_rows,
+            fit_gate_min_relative_improvement,
+            fit_gate_max_cosine_drop,
             max_tokens_per_layer,
         )
     else:
@@ -2845,6 +3131,11 @@ def _reconstruct_cross_tokenizer_layer(
             cosine_steps,
             cosine_lr,
             cosine_l2,
+            fit_gate,
+            fit_gate_validation_fraction,
+            fit_gate_min_validation_rows,
+            fit_gate_min_relative_improvement,
+            fit_gate_max_cosine_drop,
             max_tokens_per_layer,
         )
     else:
@@ -2870,6 +3161,11 @@ def _reconstruct_cross_tokenizer_layer(
             cosine_steps,
             cosine_lr,
             cosine_l2,
+            fit_gate,
+            fit_gate_validation_fraction,
+            fit_gate_min_validation_rows,
+            fit_gate_min_relative_improvement,
+            fit_gate_max_cosine_drop,
             max_tokens_per_layer,
         )
     else:
@@ -2898,6 +3194,11 @@ def _reconstruct_cross_tokenizer_module_pair(
     cosine_steps: int,
     cosine_lr: float,
     cosine_l2: float,
+    fit_gate: str,
+    fit_gate_validation_fraction: float,
+    fit_gate_min_validation_rows: int,
+    fit_gate_min_relative_improvement: float,
+    fit_gate_max_cosine_drop: float,
     max_tokens_per_layer: int,
 ) -> dict[str, Any]:
     if source_module is None or candidate_module is None or not candidate_linears:
@@ -2925,10 +3226,32 @@ def _reconstruct_cross_tokenizer_module_pair(
     source_projected = source_rows.to(device=hidden_projection.device, dtype=torch.float32).matmul(
         hidden_projection.to(dtype=torch.float32)
     ).detach().cpu()
+    fit_report: dict[str, Any] = {}
+    fit_candidate_rows = candidate_rows
+    fit_source_rows = source_projected
+    validation_candidate_rows = None
+    validation_source_rows = None
+    if fit_gate == "validation":
+        split = _split_reconstruction_rows(
+            [candidate_rows.to(torch.float32), source_projected.to(torch.float32)],
+            fit_gate_validation_fraction,
+            fit_gate_min_validation_rows,
+        )
+        if split is None:
+            fit_report["fit_gate"] = {"mode": "validation", "accepted": True, "reason": "insufficient_rows"}
+        else:
+            fit_candidate_rows, fit_source_rows = split["train"]
+            validation_candidate_rows, validation_source_rows = split["validation"]
+            fit_report["fit_gate"] = {
+                "mode": "validation",
+                "rows": int(split["rows"]),
+                "train_rows": int(split["train_rows"]),
+                "validation_rows": int(split["validation_rows"]),
+            }
     fitted = _fit_activation_map(
         torch,
-        candidate_rows,
-        source_projected,
+        fit_candidate_rows,
+        fit_source_rows,
         ridge,
         reconstruction_alpha,
         reconstruction_objective,
@@ -2936,8 +3259,24 @@ def _reconstruct_cross_tokenizer_module_pair(
         cosine_lr,
         cosine_l2,
     )
+    if validation_candidate_rows is not None and validation_source_rows is not None:
+        gate = _validation_reconstruction_gate(
+            torch,
+            validation_candidate_rows,
+            validation_candidate_rows.matmul(fitted["map"]),
+            validation_source_rows,
+            fit_gate_min_relative_improvement,
+            fit_gate_max_cosine_drop,
+        )
+        fit_report["fit_gate"] = {**fit_report["fit_gate"], **gate}
+        if not gate["accepted"]:
+            return {key: value for key, value in fitted.items() if key != "map"} | fit_report | {
+                "matched_pairs": int(matched),
+                "linears_updated": [],
+                "mutation_skipped": True,
+            }
     _absorb_input_map_into_linears(torch, candidate_linears, fitted["map"])
-    return {key: value for key, value in fitted.items() if key != "map"} | {
+    return {key: value for key, value in fitted.items() if key != "map"} | fit_report | {
         "matched_pairs": int(matched),
         "linears_updated": [name for name, _module in candidate_linears],
     }
@@ -2960,6 +3299,11 @@ def _reconstruct_cross_tokenizer_attention_output(
     cosine_steps: int,
     cosine_lr: float,
     cosine_l2: float,
+    fit_gate: str,
+    fit_gate_validation_fraction: float,
+    fit_gate_min_validation_rows: int,
+    fit_gate_min_relative_improvement: float,
+    fit_gate_max_cosine_drop: float,
     max_tokens_per_layer: int,
 ) -> dict[str, Any]:
     spec = _attention_projection_spec(candidate_layer)
@@ -2988,10 +3332,33 @@ def _reconstruct_cross_tokenizer_attention_output(
     source_rows = source_projected[:rows].to(torch.float32)
     hidden_rows = hidden[:rows].to(torch.float32)
     candidate_rows = candidate_output[:rows].to(torch.float32)
+    fit_source_rows = source_rows
+    fit_hidden_rows = hidden_rows
+    validation_source_rows = None
+    validation_hidden_rows = None
+    validation_candidate_rows = None
+    fit_report: dict[str, Any] = {}
+    if fit_gate == "validation":
+        split = _split_reconstruction_rows(
+            [source_rows, hidden_rows, candidate_rows],
+            fit_gate_validation_fraction,
+            fit_gate_min_validation_rows,
+        )
+        if split is None:
+            fit_report["fit_gate"] = {"mode": "validation", "accepted": True, "reason": "insufficient_rows"}
+        else:
+            fit_source_rows, fit_hidden_rows, _fit_candidate_rows = split["train"]
+            validation_source_rows, validation_hidden_rows, validation_candidate_rows = split["validation"]
+            fit_report["fit_gate"] = {
+                "mode": "validation",
+                "rows": int(split["rows"]),
+                "train_rows": int(split["train_rows"]),
+                "validation_rows": int(split["validation_rows"]),
+            }
     solved_report = _solve_linear_reconstruction(
         torch,
-        hidden_rows,
-        source_rows,
+        fit_hidden_rows,
+        fit_source_rows,
         ridge,
         reconstruction_objective,
         cosine_steps,
@@ -3017,6 +3384,36 @@ def _reconstruct_cross_tokenizer_attention_output(
     before_cosine = _mean_row_cosine(torch, candidate_rows, source_rows)
     solved_cosine = _mean_row_cosine(torch, solved_output, source_rows)
     after_cosine = _mean_row_cosine(torch, blended_output, source_rows)
+    if validation_source_rows is not None and validation_hidden_rows is not None and validation_candidate_rows is not None:
+        gate = _validation_reconstruction_gate(
+            torch,
+            validation_candidate_rows,
+            validation_hidden_rows.matmul(blended_weight.T),
+            validation_source_rows,
+            fit_gate_min_relative_improvement,
+            fit_gate_max_cosine_drop,
+        )
+        fit_report["fit_gate"] = {**fit_report["fit_gate"], **gate}
+        if not gate["accepted"]:
+            return {
+                "skipped": False,
+                "matched_pairs": int(matched),
+                "tokens": rows,
+                "feature_size": int(hidden_rows.shape[1]),
+                "hidden_size": int(source_rows.shape[1]),
+                "output_projection": spec["output_name"],
+                "reconstruction_alpha": float(reconstruction_alpha),
+                "reconstruction_objective": reconstruction_objective,
+                "relative_error_before": before,
+                "relative_error_solved": solved_error,
+                "relative_error_after": after,
+                "mean_cosine_before": before_cosine,
+                "mean_cosine_solved": solved_cosine,
+                "mean_cosine_after": after_cosine,
+                "solver": {key: value for key, value in solved_report.items() if key != "map"},
+                "mutation_skipped": True,
+                **fit_report,
+            }
     spec["output"].weight.data.copy_(blended_weight.to(device=spec["output"].weight.device, dtype=spec["output"].weight.dtype))
     return {
         "skipped": False,
@@ -3034,6 +3431,7 @@ def _reconstruct_cross_tokenizer_attention_output(
         "mean_cosine_solved": solved_cosine,
         "mean_cosine_after": after_cosine,
         "solver": {key: value for key, value in solved_report.items() if key != "map"},
+        **fit_report,
     }
 
 
@@ -3054,6 +3452,11 @@ def _reconstruct_cross_tokenizer_mlp_output(
     cosine_steps: int,
     cosine_lr: float,
     cosine_l2: float,
+    fit_gate: str,
+    fit_gate_validation_fraction: float,
+    fit_gate_min_validation_rows: int,
+    fit_gate_min_relative_improvement: float,
+    fit_gate_max_cosine_drop: float,
     max_tokens_per_layer: int,
 ) -> dict[str, Any]:
     spec = _mlp_projection_spec(candidate_layer)
@@ -3088,10 +3491,40 @@ def _reconstruct_cross_tokenizer_mlp_output(
     hidden_rows = hidden[:rows].to(torch.float32)
     residual_rows = residual[:rows].to(torch.float32)
     candidate_rows = candidate_output[:rows].to(torch.float32)
-    target_mlp_output = source_rows - residual_rows
+    fit_source_rows = source_rows
+    fit_hidden_rows = hidden_rows
+    fit_residual_rows = residual_rows
+    validation_source_rows = None
+    validation_hidden_rows = None
+    validation_residual_rows = None
+    validation_candidate_rows = None
+    fit_report: dict[str, Any] = {}
+    if fit_gate == "validation":
+        split = _split_reconstruction_rows(
+            [source_rows, hidden_rows, residual_rows, candidate_rows],
+            fit_gate_validation_fraction,
+            fit_gate_min_validation_rows,
+        )
+        if split is None:
+            fit_report["fit_gate"] = {"mode": "validation", "accepted": True, "reason": "insufficient_rows"}
+        else:
+            fit_source_rows, fit_hidden_rows, fit_residual_rows, _fit_candidate_rows = split["train"]
+            (
+                validation_source_rows,
+                validation_hidden_rows,
+                validation_residual_rows,
+                validation_candidate_rows,
+            ) = split["validation"]
+            fit_report["fit_gate"] = {
+                "mode": "validation",
+                "rows": int(split["rows"]),
+                "train_rows": int(split["train_rows"]),
+                "validation_rows": int(split["validation_rows"]),
+            }
+    target_mlp_output = fit_source_rows - fit_residual_rows
     solved_report = _solve_linear_reconstruction(
         torch,
-        hidden_rows,
+        fit_hidden_rows,
         target_mlp_output,
         ridge,
         reconstruction_objective,
@@ -3118,6 +3551,41 @@ def _reconstruct_cross_tokenizer_mlp_output(
     before_cosine = _mean_row_cosine(torch, candidate_rows, source_rows)
     solved_cosine = _mean_row_cosine(torch, solved_output, source_rows)
     after_cosine = _mean_row_cosine(torch, blended_output, source_rows)
+    if (
+        validation_source_rows is not None
+        and validation_hidden_rows is not None
+        and validation_residual_rows is not None
+        and validation_candidate_rows is not None
+    ):
+        gate = _validation_reconstruction_gate(
+            torch,
+            validation_candidate_rows,
+            validation_residual_rows + validation_hidden_rows.matmul(blended_weight.T),
+            validation_source_rows,
+            fit_gate_min_relative_improvement,
+            fit_gate_max_cosine_drop,
+        )
+        fit_report["fit_gate"] = {**fit_report["fit_gate"], **gate}
+        if not gate["accepted"]:
+            return {
+                "skipped": False,
+                "matched_pairs": int(matched),
+                "tokens": rows,
+                "feature_size": int(hidden_rows.shape[1]),
+                "hidden_size": int(source_rows.shape[1]),
+                "output_projection": spec["output_name"],
+                "reconstruction_alpha": float(reconstruction_alpha),
+                "reconstruction_objective": reconstruction_objective,
+                "relative_error_before": before,
+                "relative_error_solved": solved_error,
+                "relative_error_after": after,
+                "mean_cosine_before": before_cosine,
+                "mean_cosine_solved": solved_cosine,
+                "mean_cosine_after": after_cosine,
+                "solver": {key: value for key, value in solved_report.items() if key != "map"},
+                "mutation_skipped": True,
+                **fit_report,
+            }
     spec["output"].weight.data.copy_(blended_weight.to(device=spec["output"].weight.device, dtype=spec["output"].weight.dtype))
     return {
         "skipped": False,
@@ -3135,6 +3603,7 @@ def _reconstruct_cross_tokenizer_mlp_output(
         "mean_cosine_solved": solved_cosine,
         "mean_cosine_after": after_cosine,
         "solver": {key: value for key, value in solved_report.items() if key != "map"},
+        **fit_report,
     }
 
 

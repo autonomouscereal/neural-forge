@@ -772,6 +772,52 @@ def evaluate_text_model(
     return report
 
 
+def tie_output_head_checkpoint(
+    model_id_or_path: str,
+    output_dir: str | Path,
+    torch_dtype: str = "float32",
+    device: str = "cpu",
+    trust_remote_code: bool = False,
+) -> dict[str, Any]:
+    """Tie a causal LM output head to its input embeddings and save the smaller checkpoint."""
+
+    torch, transformers = _torch_and_transformers()
+    dtype = _dtype_from_name(torch, torch_dtype)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_id_or_path, trust_remote_code=trust_remote_code)
+    model = transformers.AutoModelForCausalLM.from_pretrained(
+        model_id_or_path,
+        torch_dtype=dtype,
+        device_map=None,
+        trust_remote_code=trust_remote_code,
+    )
+    model.to(device)
+    if model.get_input_embeddings() is None or model.get_output_embeddings() is None:
+        raise ValueError("Model needs input and output embeddings to tie the output head.")
+    before_param_count = sum(p.numel() for p in model.parameters())
+    model.config.tie_word_embeddings = True
+    model.tie_weights()
+    after_param_count = sum(p.numel() for p in model.parameters())
+    target = Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    model.save_pretrained(target, safe_serialization=True)
+    tokenizer.save_pretrained(target)
+    report = {
+        "operation": "tie_output_head_checkpoint",
+        "source_model": model_id_or_path,
+        "output_dir": str(target),
+        "torch_dtype": torch_dtype,
+        "device": device,
+        "before_param_count": before_param_count,
+        "after_param_count": after_param_count,
+        "removed_param_count": before_param_count - after_param_count,
+        "tied": bool(model.get_input_embeddings().weight is model.get_output_embeddings().weight),
+        "input_embedding_shape": list(model.get_input_embeddings().weight.shape),
+        "output_embedding_shape": list(model.get_output_embeddings().weight.shape),
+    }
+    _write_json(target / "neural_forge_tie_head_report.json", report)
+    return report
+
+
 def gate_text_report(
     baseline_report: str | Path | dict[str, Any],
     candidate_report: str | Path | dict[str, Any],

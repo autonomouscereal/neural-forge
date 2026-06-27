@@ -259,6 +259,17 @@ def build_parser() -> argparse.ArgumentParser:
     hf_eval.add_argument("--max-new-tokens", type=int, default=96)
     hf_eval.set_defaults(func=cmd_hf_eval)
 
+    hf_tie_head = sub.add_parser(
+        "hf-tie-head",
+        help="Tie an HF causal LM output head to input embeddings and save a smaller checkpoint.",
+    )
+    hf_tie_head.add_argument("model")
+    hf_tie_head.add_argument("output")
+    hf_tie_head.add_argument("--dtype", default="float32")
+    hf_tie_head.add_argument("--device", default="cpu")
+    hf_tie_head.add_argument("--trust-remote-code", action="store_true")
+    hf_tie_head.set_defaults(func=cmd_hf_tie_head)
+
     hf_gate = sub.add_parser("hf-gate", help="Compare an HF eval report to a baseline and return a pass/fail verdict.")
     hf_gate.add_argument("baseline_report")
     hf_gate.add_argument("candidate_report")
@@ -679,6 +690,34 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_reconstruct.add_argument("--max-tokens-per-layer", type=int, default=512)
     xfamily_reconstruct.add_argument("--max-anchors", type=int, default=2048)
     xfamily_reconstruct.add_argument("--layer-limit", type=int)
+    xfamily_reconstruct.add_argument(
+        "--fit-gate",
+        choices=["none", "validation"],
+        default="none",
+        help="Gate each fitted activation map on held-out activation rows before mutating weights.",
+    )
+    xfamily_reconstruct.add_argument("--fit-gate-validation-fraction", type=float, default=0.25)
+    xfamily_reconstruct.add_argument("--fit-gate-min-validation-rows", type=int, default=32)
+    xfamily_reconstruct.add_argument("--fit-gate-min-relative-improvement", type=float, default=0.0)
+    xfamily_reconstruct.add_argument("--fit-gate-max-cosine-drop", type=float, default=0.01)
+    xfamily_reconstruct.add_argument(
+        "--layer-gate-metric",
+        choices=["none", "ppl"],
+        default="none",
+        help="Optionally evaluate after each repaired layer and revert repairs that fail the gate.",
+    )
+    xfamily_reconstruct.add_argument(
+        "--layer-gate-max-ppl-ratio",
+        type=float,
+        default=1.02,
+        help="Maximum candidate/previous PPL ratio accepted by --layer-gate-metric ppl.",
+    )
+    xfamily_reconstruct.add_argument(
+        "--layer-gate-max-texts",
+        type=int,
+        default=4,
+        help="Number of held-out text probes used by --layer-gate-metric ppl.",
+    )
     xfamily_reconstruct.add_argument("--dtype", default="float16")
     xfamily_reconstruct.add_argument("--candidate-dtype", default="float32")
     xfamily_reconstruct.add_argument("--device", default="cuda:0")
@@ -949,6 +988,18 @@ def cmd_hf_eval(args: argparse.Namespace) -> dict[str, object]:
         device=args.device,
         trust_remote_code=args.trust_remote_code,
         max_new_tokens=args.max_new_tokens,
+    )
+
+
+def cmd_hf_tie_head(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_tools import tie_output_head_checkpoint
+
+    return tie_output_head_checkpoint(
+        model_id_or_path=args.model,
+        output_dir=args.output,
+        torch_dtype=args.dtype,
+        device=args.device,
+        trust_remote_code=args.trust_remote_code,
     )
 
 
@@ -1420,6 +1471,14 @@ def cmd_hf_xfamily_reconstruct(args: argparse.Namespace) -> dict[str, object]:
         max_tokens_per_layer=args.max_tokens_per_layer,
         max_anchors=args.max_anchors,
         layer_limit=args.layer_limit,
+        fit_gate=args.fit_gate,
+        fit_gate_validation_fraction=args.fit_gate_validation_fraction,
+        fit_gate_min_validation_rows=args.fit_gate_min_validation_rows,
+        fit_gate_min_relative_improvement=args.fit_gate_min_relative_improvement,
+        fit_gate_max_cosine_drop=args.fit_gate_max_cosine_drop,
+        layer_gate_metric=args.layer_gate_metric,
+        layer_gate_max_ppl_ratio=args.layer_gate_max_ppl_ratio,
+        layer_gate_max_texts=args.layer_gate_max_texts,
         torch_dtype=args.dtype,
         candidate_torch_dtype=args.candidate_dtype,
         device=args.device,

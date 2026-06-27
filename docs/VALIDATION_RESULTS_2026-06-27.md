@@ -254,9 +254,79 @@ This same-tokenizer stress test is important: removing tokenizer mismatch did no
 
 The strongest current evidence is narrower: the SmolLM2-135M blank-target path can transfer partial linguistic/domain behavior and beat a random blank target, but same-tokenizer blank Qwen stress tests show that the general "fold any parent into any blank target at 25x" claim is not yet proven.
 
+### Layerwise Gated Reconstruction Follow-Up
+
+New implementation:
+
+- `hf-xfamily-reconstruct` now supports `--fit-gate validation`, which fits
+  activation maps on train rows and mutates weights only when held-out
+  activation rows improve without cosine regression.
+- It also supports `--layer-gate-metric ppl`, which snapshots each candidate
+  layer and reverts that layer if a small held-out PPL probe regresses.
+- `hf-tie-head` ties a causal LM output head back to input embeddings and saves
+  the smaller checkpoint. This makes post-recovery head compaction reproducible.
+
+Qwen3-4B -> blank 141M Qwen-compatible target:
+
+- Gated `all` reconstruction, alpha `0.02`: only 1 of 16 layer repairs survived
+  the PPL gate. PPL improved to `3,063.38`, choice `3/4`, behavior `1/6`, but
+  manual output still looped or emitted empty/numeric continuations.
+- Gated `attention-output`, alpha `0.005`: 9 of 16 repairs survived. PPL improved
+  to `2,396.22`, choice `4/4`, behavior `1/6`, and ARC-Easy limit-20 improved
+  to `0.30`, but manual output still failed. PIQA normalized fell to `0.40`.
+- A 400-step hidden-KD recovery from that gated checkpoint reduced PPL to
+  `2,261.67` but regressed choice to `2/4` and behavior to `0/6`.
+
+Conclusion: layerwise gates prevent catastrophic reconstruction accumulation and
+find a better numeric checkpoint, but they still do not create a coherent 28x
+blank Qwen child. Local activation fit and PPL gates are necessary but not
+sufficient.
+
+### 29.9x SmolLM Blank-Target Evidence
+
+Exact counts:
+
+- Donor `Qwen/Qwen3-4B-Base`: `4,022,468,096` parameters.
+- Random blank SmolLM target: `134,515,008` parameters, `29.90x` smaller.
+- Best recovered untied SmolLM child:
+  `qwen4b_mean_cached_cka_curated_xfamily_token_auto_800s_best`,
+  `162,826,560` parameters, `24.70x` smaller.
+- Tied-head compaction of that child:
+  `qwen4b_mean_cached_cka_curated_xfamily_token_auto_800s_tiedhead`,
+  `134,515,008` parameters, `29.90x` smaller.
+
+Random blank target rerun:
+
+- PPL `85,894.18`, choice `0/4`, behavior `0/6`.
+- Manual outputs were diverse token salad, not useful text.
+
+Useful untied child (`24.70x`, below the strict 25x gate):
+
+- PPL `2,525.91`, choice `3/4`, behavior `4/6`.
+- Manual examples include a valid small add function and a plausible merge-risk
+  answer, but arithmetic remains broken and text still repeats.
+
+Tied-head child (`29.90x`, strict gate met):
+
+- PPL `3,845.90`, choice `3/4`, behavior `3/6`.
+- Manual output is partially useful: tokenizer mismatch, rain safety, and neuron
+  merging prompts produce recognizable answers. The code prompt is malformed,
+  and arithmetic remains broken.
+- lm-eval limit-20 comparison:
+  - random blank: ARC-Easy `0.35`, ARC-Easy norm `0.20`, PIQA `0.60`, PIQA norm `0.50`;
+  - tied 29.9x child: ARC-Easy `0.45`, ARC-Easy norm `0.25`, PIQA `0.55`, PIQA norm `0.40`;
+  - donor Qwen3-4B: ARC-Easy `0.80`, ARC-Easy norm `0.65`, PIQA `0.80`, PIQA norm `0.80`.
+
+This is the first strict 25x+ blank-target result that is not merely tensor
+compatibility. It transfers some useful behavior and beats the random target on
+ARC-Easy and behavior probes, but it is still not donor-like and does not meet
+the broader arbitrary-target claim.
+
 ## Current Conclusion
 
-The 25x SmolLM blank-target fold is no longer just fitting tensor shapes. It transfers enough behavior to beat the random blank by a wide margin, generate some useful short text, pass the lightweight choice probe after mixed recovery, and improve ARC/PIQA slices versus earlier children.
+The 29.9x SmolLM blank-target fold is no longer just fitting tensor shapes. It
+transfers enough behavior to beat the random blank by a wide margin, generate
+some useful short text, and pass parts of the lightweight behavior suite.
 
 It is not yet a successful replacement for donor capability, and the same-tokenizer Qwen blank-target results show that the utility cannot yet claim arbitrary blank-target 25x compression. The remaining failure mode is structural recovery, not just benchmark tuning: benchmark slices can improve while manual arithmetic, simple code variation, and common-sense instruction following remain unstable or absent.
 

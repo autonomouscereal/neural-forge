@@ -26,6 +26,7 @@ from neural_forge.hf_recovery import _fold_groups_from_report
 from neural_forge.hf_recovery import _hidden_representation_loss
 from neural_forge.hf_recovery import _infer_response_char_start
 from neural_forge.hf_recovery import _join_prompt_response
+from neural_forge.hf_recovery import _layer_gate_decision
 from neural_forge.hf_recovery import _linear_cka_tensor
 from neural_forge.hf_recovery import _mlp_projection_spec
 from neural_forge.hf_recovery import _proportional_layer_index
@@ -38,6 +39,7 @@ from neural_forge.hf_recovery import _set_train_scope
 from neural_forge.hf_recovery import _same_tokenizer_reference_loss
 from neural_forge.hf_recovery import _same_tokenizer_hidden_loss
 from neural_forge.hf_recovery import _same_tokenizer_top_k_kl
+from neural_forge.hf_recovery import _validation_reconstruction_gate
 from neural_forge.hf_recovery import load_calibration_texts
 from neural_forge.hf_tools import TEXT_EVALS
 from neural_forge.hf_tools import _layer_groups_for_report
@@ -931,6 +933,22 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "444",
             "--layer-limit",
             "3",
+            "--fit-gate",
+            "validation",
+            "--fit-gate-validation-fraction",
+            "0.2",
+            "--fit-gate-min-validation-rows",
+            "5",
+            "--fit-gate-min-relative-improvement",
+            "0.01",
+            "--fit-gate-max-cosine-drop",
+            "0.03",
+            "--layer-gate-metric",
+            "ppl",
+            "--layer-gate-max-ppl-ratio",
+            "1.01",
+            "--layer-gate-max-texts",
+            "2",
             "--dtype",
             "float16",
             "--candidate-dtype",
@@ -956,6 +974,14 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_reconstruct_args.max_tokens_per_layer == 55
     assert xfamily_reconstruct_args.max_anchors == 444
     assert xfamily_reconstruct_args.layer_limit == 3
+    assert xfamily_reconstruct_args.fit_gate == "validation"
+    assert xfamily_reconstruct_args.fit_gate_validation_fraction == pytest.approx(0.2)
+    assert xfamily_reconstruct_args.fit_gate_min_validation_rows == 5
+    assert xfamily_reconstruct_args.fit_gate_min_relative_improvement == pytest.approx(0.01)
+    assert xfamily_reconstruct_args.fit_gate_max_cosine_drop == pytest.approx(0.03)
+    assert xfamily_reconstruct_args.layer_gate_metric == "ppl"
+    assert xfamily_reconstruct_args.layer_gate_max_ppl_ratio == pytest.approx(1.01)
+    assert xfamily_reconstruct_args.layer_gate_max_texts == 2
     assert xfamily_reconstruct_args.dtype == "float16"
     assert xfamily_reconstruct_args.candidate_dtype == "float32"
     assert xfamily_reconstruct_args.device == "cpu"
@@ -2456,6 +2482,45 @@ def test_recovery_attention_projection_spec_detects_output_projection() -> None:
     assert spec["output_name"] == "self_attn.o_proj"
 
 
+def test_layer_gate_decision_accepts_non_regression() -> None:
+    accepted = _layer_gate_decision(previous_ppl=100.0, candidate_ppl=99.0, max_ppl_ratio=1.0)
+    rejected = _layer_gate_decision(previous_ppl=100.0, candidate_ppl=103.0, max_ppl_ratio=1.02)
+
+    assert accepted["accepted"] is True
+    assert accepted["ppl_ratio"] == pytest.approx(0.99)
+    assert rejected["accepted"] is False
+    assert rejected["ppl_ratio"] == pytest.approx(1.03)
+
+
+def test_validation_reconstruction_gate_rejects_bad_map() -> None:
+    torch = pytest.importorskip("torch")
+    target = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
+    before = torch.tensor([[0.9, 0.1], [0.1, 0.9]])
+    better = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
+    worse = torch.tensor([[0.0, 1.0], [1.0, 0.0]])
+
+    accepted = _validation_reconstruction_gate(
+        torch,
+        before,
+        better,
+        target,
+        min_relative_improvement=0.0,
+        max_cosine_drop=0.0,
+    )
+    rejected = _validation_reconstruction_gate(
+        torch,
+        before,
+        worse,
+        target,
+        min_relative_improvement=0.0,
+        max_cosine_drop=0.0,
+    )
+
+    assert accepted["accepted"] is True
+    assert rejected["accepted"] is False
+    assert rejected["reason"] == "insufficient_relative_error_improvement"
+
+
 def test_recovery_train_scope_supports_feed_forward_layers() -> None:
     class _Param:
         def __init__(self) -> None:
@@ -2593,6 +2658,40 @@ def test_hf_random_init_handler_passes_flags(monkeypatch) -> None:
         "output_dir": "out",
         "seed": 9,
         "torch_dtype": "float32",
+        "trust_remote_code": True,
+    }
+
+
+def test_hf_tie_head_handler_passes_flags(monkeypatch) -> None:
+    import neural_forge.hf_tools as hf_tools
+
+    captured = {}
+
+    def fake_tie_head(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(hf_tools, "tie_output_head_checkpoint", fake_tie_head)
+    args = build_parser().parse_args(
+        [
+            "hf-tie-head",
+            "source",
+            "out",
+            "--dtype",
+            "float16",
+            "--device",
+            "cpu",
+            "--trust-remote-code",
+        ]
+    )
+    result = args.func(args)
+
+    assert result == {"ok": True}
+    assert captured == {
+        "model_id_or_path": "source",
+        "output_dir": "out",
+        "torch_dtype": "float16",
+        "device": "cpu",
         "trust_remote_code": True,
     }
 
@@ -3132,6 +3231,22 @@ def test_hf_xfamily_reconstruct_handler_passes_flags(monkeypatch) -> None:
             "333",
             "--layer-limit",
             "4",
+            "--fit-gate",
+            "validation",
+            "--fit-gate-validation-fraction",
+            "0.2",
+            "--fit-gate-min-validation-rows",
+            "5",
+            "--fit-gate-min-relative-improvement",
+            "0.01",
+            "--fit-gate-max-cosine-drop",
+            "0.03",
+            "--layer-gate-metric",
+            "ppl",
+            "--layer-gate-max-ppl-ratio",
+            "1.01",
+            "--layer-gate-max-texts",
+            "2",
             "--dtype",
             "float16",
             "--candidate-dtype",
@@ -3164,6 +3279,14 @@ def test_hf_xfamily_reconstruct_handler_passes_flags(monkeypatch) -> None:
         "max_tokens_per_layer": 144,
         "max_anchors": 333,
         "layer_limit": 4,
+        "fit_gate": "validation",
+        "fit_gate_validation_fraction": 0.2,
+        "fit_gate_min_validation_rows": 5,
+        "fit_gate_min_relative_improvement": 0.01,
+        "fit_gate_max_cosine_drop": 0.03,
+        "layer_gate_metric": "ppl",
+        "layer_gate_max_ppl_ratio": 1.01,
+        "layer_gate_max_texts": 2,
         "torch_dtype": "float16",
         "candidate_torch_dtype": "float32",
         "device": "cpu",
