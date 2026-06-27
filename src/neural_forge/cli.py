@@ -659,7 +659,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_reconstruct.add_argument("--reconstruction-alpha", type=float, default=1.0)
     xfamily_reconstruct.add_argument(
         "--reconstruction-target",
-        choices=["attention", "mlp", "mlp-output", "mlp-all", "both", "all"],
+        choices=["attention", "attention-output", "attention-all", "mlp", "mlp-output", "mlp-all", "both", "all"],
         default="both",
     )
     xfamily_reconstruct.add_argument(

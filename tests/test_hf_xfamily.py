@@ -7,6 +7,7 @@ from neural_forge.cli import _parse_layer_groups
 from neural_forge.hf_recovery import RECOVERY_TEXTS
 from neural_forge.hf_recovery import _answer_contrastive_candidates
 from neural_forge.hf_recovery import _append_eos_text
+from neural_forge.hf_recovery import _attention_projection_spec
 from neural_forge.hf_recovery import _assert_same_vocab
 from neural_forge.hf_recovery import _absorb_input_map_into_linears
 from neural_forge.hf_recovery import _candidate_rank_kl_loss
@@ -2442,6 +2443,19 @@ def test_recovery_mlp_projection_spec_detects_lfm_feed_forward_names() -> None:
     assert spec["output_name"] == "feed_forward.w2"
 
 
+def test_recovery_attention_projection_spec_detects_output_projection() -> None:
+    torch = pytest.importorskip("torch")
+    output = torch.nn.Linear(3, 2, bias=False)
+    layer = _Obj(self_attn=_Obj(o_proj=output))
+
+    spec = _attention_projection_spec(layer)
+
+    assert spec is not None
+    assert spec["attention"] is layer.self_attn
+    assert spec["output"] is output
+    assert spec["output_name"] == "self_attn.o_proj"
+
+
 def test_recovery_train_scope_supports_feed_forward_layers() -> None:
     class _Param:
         def __init__(self) -> None:
@@ -3099,7 +3113,7 @@ def test_hf_xfamily_reconstruct_handler_passes_flags(monkeypatch) -> None:
             "--reconstruction-alpha",
             "0.6",
             "--reconstruction-target",
-            "mlp-all",
+            "attention-all",
             "--donor-layer-fold-mode",
             "fold",
             "--reconstruction-objective",
@@ -3140,7 +3154,7 @@ def test_hf_xfamily_reconstruct_handler_passes_flags(monkeypatch) -> None:
         "output_dir": "out",
         "ridge": 0.03,
         "reconstruction_alpha": 0.6,
-        "reconstruction_target": "mlp-all",
+        "reconstruction_target": "attention-all",
         "donor_layer_fold_mode": "fold",
         "reconstruction_objective": "cosine",
         "cosine_steps": 11,

@@ -1220,17 +1220,20 @@ def reconstruct_cross_tokenizer_causal_lm(
 
     Source hidden rows are projected into child hidden size using shared token
     embeddings. Paired activation rows are then selected from matching decoded
-    token spans and used to fit child-space input correction maps for each
-    target block's attention and MLP input projections.
+    token spans and used to fit child-space input correction maps and optional
+    output projection weights for target block attention/MLP modules.
     """
 
     if ridge < 0:
         raise ValueError("ridge must be non-negative.")
     if not 0.0 <= float(reconstruction_alpha) <= 1.0:
         raise ValueError("reconstruction_alpha must be in [0, 1].")
-    xfamily_targets = {"attention", "mlp", "mlp-output", "mlp-all", "both", "all"}
+    xfamily_targets = {"attention", "attention-output", "attention-all", "mlp", "mlp-output", "mlp-all", "both", "all"}
     if reconstruction_target not in xfamily_targets:
-        raise ValueError("reconstruction_target must be attention, mlp, mlp-output, mlp-all, both, or all.")
+        raise ValueError(
+            "reconstruction_target must be attention, attention-output, attention-all, "
+            "mlp, mlp-output, mlp-all, both, or all."
+        )
     if donor_layer_fold_mode not in {"representative", "average", "fold"}:
         raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
     if reconstruction_objective not in {"ridge", "cosine"}:
@@ -2622,7 +2625,7 @@ def _get_layer_module(layer, names: Sequence[str]):
 
 
 def _attention_input_linears(layer) -> list[tuple[str, Any]]:
-    attention = getattr(layer, "self_attn", None) or getattr(layer, "attention", None) or getattr(layer, "attn", None)
+    attention = _attention_module(layer)
     if attention is None:
         return []
     linears = []
@@ -2765,7 +2768,7 @@ def _reconstruct_cross_tokenizer_layer(
         source_attn_layer = source_layers[max(0, min(source_group[0], len(source_layers) - 1))]
         source_mlp_layer = source_layers[max(0, min(source_group[-1], len(source_layers) - 1))]
 
-    if reconstruction_target in {"attention", "both", "all"}:
+    if reconstruction_target in {"attention", "attention-all", "both", "all"}:
         source_attn_norm = _get_layer_module(source_attn_layer, ("input_layernorm", "ln_1"))
         candidate_attn_norm = _get_layer_module(candidate_layer, ("input_layernorm", "ln_1"))
         attn_linears = _attention_input_linears(candidate_layer)
@@ -2793,6 +2796,31 @@ def _reconstruct_cross_tokenizer_layer(
         repair_report["attention_reconstruction"] = {
             "skipped": True,
             "reason": "reconstruction_target_excludes_attention",
+        }
+    if reconstruction_target in {"attention-output", "attention-all", "all"}:
+        repair_report["attention_output_reconstruction"] = _reconstruct_cross_tokenizer_attention_output(
+            torch,
+            source,
+            candidate,
+            source_attn_layer,
+            candidate_layer,
+            source_tokenizer,
+            candidate_tokenizer,
+            paired_batches,
+            hidden_projection,
+            canonical_fn,
+            ridge,
+            reconstruction_alpha,
+            reconstruction_objective,
+            cosine_steps,
+            cosine_lr,
+            cosine_l2,
+            max_tokens_per_layer,
+        )
+    else:
+        repair_report["attention_output_reconstruction"] = {
+            "skipped": True,
+            "reason": "reconstruction_target_excludes_attention_output",
         }
 
     if reconstruction_target in {"mlp", "mlp-all", "both", "all"}:
@@ -2912,6 +2940,100 @@ def _reconstruct_cross_tokenizer_module_pair(
     return {key: value for key, value in fitted.items() if key != "map"} | {
         "matched_pairs": int(matched),
         "linears_updated": [name for name, _module in candidate_linears],
+    }
+
+
+def _reconstruct_cross_tokenizer_attention_output(
+    torch,
+    source,
+    candidate,
+    source_layer,
+    candidate_layer,
+    source_tokenizer,
+    candidate_tokenizer,
+    paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]],
+    hidden_projection,
+    canonical_fn,
+    ridge: float,
+    reconstruction_alpha: float,
+    reconstruction_objective: str,
+    cosine_steps: int,
+    cosine_lr: float,
+    cosine_l2: float,
+    max_tokens_per_layer: int,
+) -> dict[str, Any]:
+    spec = _attention_projection_spec(candidate_layer)
+    source_attention = _attention_module(source_layer)
+    if spec is None or source_attention is None:
+        return {"skipped": True, "reason": "unsupported_attention_output_shape"}
+
+    source_output, hidden, candidate_output, matched = _collect_cross_tokenizer_attention_output_calibration(
+        torch,
+        source,
+        candidate,
+        source_attention,
+        spec,
+        source_tokenizer,
+        candidate_tokenizer,
+        paired_batches,
+        canonical_fn,
+        max_tokens_per_layer,
+    )
+    if int(matched) <= 0:
+        return {"skipped": True, "reason": "no_cross_tokenizer_attention_output_pairs"}
+    source_projected = source_output.to(device=hidden_projection.device, dtype=torch.float32).matmul(
+        hidden_projection.to(dtype=torch.float32)
+    ).detach().cpu()
+    rows = min(int(source_projected.shape[0]), int(hidden.shape[0]), int(candidate_output.shape[0]))
+    source_rows = source_projected[:rows].to(torch.float32)
+    hidden_rows = hidden[:rows].to(torch.float32)
+    candidate_rows = candidate_output[:rows].to(torch.float32)
+    solved_report = _solve_linear_reconstruction(
+        torch,
+        hidden_rows,
+        source_rows,
+        ridge,
+        reconstruction_objective,
+        cosine_steps,
+        cosine_lr,
+        cosine_l2,
+    )
+    solved = solved_report["map"]
+    old_weight = spec["output"].weight.data.detach().cpu().to(torch.float32)
+    solved_weight = solved.T.contiguous()
+    if tuple(old_weight.shape) != tuple(solved_weight.shape):
+        return {
+            "skipped": True,
+            "reason": "solved_weight_shape_mismatch",
+            "old_weight_shape": list(old_weight.shape),
+            "solved_weight_shape": list(solved_weight.shape),
+        }
+    blended_weight = (1.0 - float(reconstruction_alpha)) * old_weight + float(reconstruction_alpha) * solved_weight
+    before = _relative_reconstruction_error(torch, candidate_rows, source_rows)
+    solved_output = hidden_rows.matmul(solved)
+    solved_error = _relative_reconstruction_error(torch, solved_output, source_rows)
+    blended_output = hidden_rows.matmul(blended_weight.T)
+    after = _relative_reconstruction_error(torch, blended_output, source_rows)
+    before_cosine = _mean_row_cosine(torch, candidate_rows, source_rows)
+    solved_cosine = _mean_row_cosine(torch, solved_output, source_rows)
+    after_cosine = _mean_row_cosine(torch, blended_output, source_rows)
+    spec["output"].weight.data.copy_(blended_weight.to(device=spec["output"].weight.device, dtype=spec["output"].weight.dtype))
+    return {
+        "skipped": False,
+        "matched_pairs": int(matched),
+        "tokens": rows,
+        "feature_size": int(hidden_rows.shape[1]),
+        "hidden_size": int(source_rows.shape[1]),
+        "output_projection": spec["output_name"],
+        "reconstruction_alpha": float(reconstruction_alpha),
+        "reconstruction_objective": reconstruction_objective,
+        "relative_error_before": before,
+        "relative_error_solved": solved_error,
+        "relative_error_after": after,
+        "mean_cosine_before": before_cosine,
+        "mean_cosine_solved": solved_cosine,
+        "mean_cosine_after": after_cosine,
+        "solver": {key: value for key, value in solved_report.items() if key != "map"},
     }
 
 
@@ -3107,6 +3229,115 @@ def _collect_cross_tokenizer_module_activations(
     return source_rows[:rows], candidate_rows[:rows], rows
 
 
+def _collect_cross_tokenizer_attention_output_calibration(
+    torch,
+    source,
+    candidate,
+    source_attention,
+    candidate_attention_spec: dict[str, Any],
+    source_tokenizer,
+    candidate_tokenizer,
+    paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]],
+    canonical_fn,
+    max_tokens: int,
+):
+    source_pieces = []
+    hidden_pieces = []
+    candidate_output_pieces = []
+    captured: dict[str, Any] = {}
+
+    def source_attention_hook(_module, _inputs, output):
+        tensor = output[0] if isinstance(output, tuple) else output
+        captured["source_attention_output"] = tensor.detach().to(torch.float32)
+
+    def candidate_output_pre_hook(_module, inputs):
+        captured["candidate_output_hidden"] = inputs[0].detach().to(torch.float32)
+
+    def candidate_attention_hook(_module, _inputs, output):
+        tensor = output[0] if isinstance(output, tuple) else output
+        captured["candidate_attention_output"] = tensor.detach().to(torch.float32)
+
+    source_handle = source_attention.register_forward_hook(source_attention_hook)
+    hidden_handle = candidate_attention_spec["output"].register_forward_pre_hook(candidate_output_pre_hook)
+    candidate_handle = candidate_attention_spec["attention"].register_forward_hook(candidate_attention_hook)
+    token_count = 0
+    try:
+        source.eval()
+        candidate.eval()
+        for source_batch, candidate_batch in paired_batches:
+            if token_count >= max_tokens:
+                break
+            captured.clear()
+            source(**_model_forward_inputs(source_batch), use_cache=False)
+            candidate(**_model_forward_inputs(candidate_batch), use_cache=False)
+            required = {
+                "source_attention_output",
+                "candidate_output_hidden",
+                "candidate_attention_output",
+            }
+            if any(key not in captured for key in required):
+                continue
+            pairs = _cross_tokenizer_span_pairs(
+                torch,
+                source_tokenizer,
+                candidate_tokenizer,
+                source_batch,
+                candidate_batch,
+                canonical_fn,
+                max_pairs=max_tokens - token_count,
+                shift_positions=False,
+            )
+            if int(pairs.numel()) <= 0:
+                continue
+            source_values = captured["source_attention_output"]
+            hidden_values = captured["candidate_output_hidden"]
+            output_values = captured["candidate_attention_output"]
+            if source_values.dim() != 3 or hidden_values.dim() != 3 or output_values.dim() != 3:
+                continue
+            batch_idx = pairs[:, 0].to(dtype=torch.long, device=source_values.device)
+            candidate_pos = pairs[:, 1].to(dtype=torch.long, device=hidden_values.device)
+            source_pos = pairs[:, 2].to(dtype=torch.long, device=source_values.device)
+            valid = (
+                (batch_idx >= 0)
+                & (batch_idx < source_values.shape[0])
+                & (batch_idx.to(hidden_values.device) < hidden_values.shape[0])
+                & (source_pos >= 0)
+                & (source_pos < source_values.shape[1])
+                & (candidate_pos >= 0)
+                & (candidate_pos < hidden_values.shape[1])
+                & (candidate_pos < output_values.shape[1])
+            )
+            if int(valid.detach().cpu().sum().item()) <= 0:
+                continue
+            batch_source = batch_idx[valid]
+            source_selected = source_values[batch_source, source_pos[valid]].detach().cpu()
+            valid_candidate = valid.to(hidden_values.device)
+            batch_candidate = batch_idx.to(hidden_values.device)[valid_candidate]
+            candidate_selected_pos = candidate_pos[valid_candidate]
+            hidden_selected = hidden_values[batch_candidate, candidate_selected_pos].detach().cpu()
+            output_selected = output_values[batch_candidate, candidate_selected_pos].detach().cpu()
+            remaining = int(max_tokens) - token_count
+            take = min(int(source_selected.shape[0]), remaining)
+            if take <= 0:
+                break
+            source_pieces.append(source_selected[:take])
+            hidden_pieces.append(hidden_selected[:take])
+            candidate_output_pieces.append(output_selected[:take])
+            token_count += take
+    finally:
+        source_handle.remove()
+        hidden_handle.remove()
+        candidate_handle.remove()
+    if not source_pieces or not hidden_pieces or not candidate_output_pieces:
+        empty = torch.empty((0, 0), dtype=torch.float32)
+        return empty, empty, empty, 0
+    source_rows = torch.cat(source_pieces, dim=0)[:max_tokens]
+    hidden_rows = torch.cat(hidden_pieces, dim=0)[:max_tokens]
+    candidate_rows = torch.cat(candidate_output_pieces, dim=0)[:max_tokens]
+    rows = min(int(source_rows.shape[0]), int(hidden_rows.shape[0]), int(candidate_rows.shape[0]))
+    return source_rows[:rows], hidden_rows[:rows], candidate_rows[:rows], rows
+
+
 def _collect_cross_tokenizer_mlp_output_calibration(
     torch,
     source,
@@ -3238,6 +3469,25 @@ def _collect_cross_tokenizer_mlp_output_calibration(
         int(candidate_rows.shape[0]),
     )
     return source_rows[:rows], hidden_rows[:rows], residual_rows[:rows], candidate_rows[:rows], rows
+
+
+def _attention_module(layer):
+    return getattr(layer, "self_attn", None) or getattr(layer, "attention", None) or getattr(layer, "attn", None)
+
+
+def _attention_projection_spec(layer) -> dict[str, Any] | None:
+    attention = _attention_module(layer)
+    if attention is None:
+        return None
+    for name in ("o_proj", "out_proj", "dense", "c_proj"):
+        output = getattr(attention, name, None)
+        if _is_linear_like(output):
+            return {
+                "attention": attention,
+                "output": output,
+                "output_name": f"self_attn.{name}",
+            }
+    return None
 
 
 def _mlp_projection_spec(layer) -> dict[str, Any] | None:
