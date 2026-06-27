@@ -187,6 +187,20 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
         ]
     )
     resize_args = parser.parse_args(["hf-resize-ffn", "in", "out", "--ratio", "0.95", "--assignment", "topk"])
+    random_args = parser.parse_args(
+        [
+            "hf-random-init",
+            "random-out",
+            "--config-model",
+            "HuggingFaceTB/SmolLM2-135M",
+            "--tokenizer-model",
+            "Qwen/Qwen3-4B-Base",
+            "--seed",
+            "123",
+            "--dtype",
+            "float32",
+        ]
+    )
     merge_layer_args = parser.parse_args(["hf-merge-layers", "in", "out", "--groups", "3+4,7+8"])
     drop_args = parser.parse_args(["hf-drop-layers", "in", "out", "--layers", "3,7"])
     search_args = parser.parse_args(
@@ -293,6 +307,11 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     )
     assert sweep_args.output_dir == "out"
     assert resize_args.assignment == "topk"
+    assert random_args.output == "random-out"
+    assert random_args.config_model == "HuggingFaceTB/SmolLM2-135M"
+    assert random_args.tokenizer_model == "Qwen/Qwen3-4B-Base"
+    assert random_args.seed == 123
+    assert random_args.dtype == "float32"
     assert merge_layer_args.groups == "3+4,7+8"
     assert drop_args.layers == "3,7"
     assert search_args.width_ratios == "0.9975,0.995"
@@ -420,6 +439,43 @@ def test_recovery_train_scope_supports_feed_forward_layers() -> None:
     trainable = _set_train_scope(model, "ffn")
     assert trainable == 2
     assert all(layer.feed_forward.param.requires_grad for layer in model.model.layers)
+
+
+def test_hf_random_init_handler_passes_flags(monkeypatch) -> None:
+    import neural_forge.hf_tools as hf_tools
+
+    captured = {}
+
+    def fake_random_init(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(hf_tools, "random_init_causal_lm", fake_random_init)
+    args = build_parser().parse_args(
+        [
+            "hf-random-init",
+            "out",
+            "--config-model",
+            "config",
+            "--tokenizer-model",
+            "tokenizer",
+            "--seed",
+            "9",
+            "--dtype",
+            "float32",
+            "--trust-remote-code",
+        ]
+    )
+    result = args.func(args)
+    assert result == {"ok": True}
+    assert captured == {
+        "config_model": "config",
+        "tokenizer_model": "tokenizer",
+        "output_dir": "out",
+        "seed": 9,
+        "torch_dtype": "float32",
+        "trust_remote_code": True,
+    }
 
 
 def test_xfamily_mlp_merge_handler_passes_activation_flags(monkeypatch) -> None:

@@ -88,6 +88,15 @@ def build_parser() -> argparse.ArgumentParser:
     hf_task_merge.add_argument("--trust-remote-code", action="store_true")
     hf_task_merge.set_defaults(func=cmd_hf_task_merge)
 
+    hf_random = sub.add_parser("hf-random-init", help="Create an untrained HF causal LM from an existing config/tokenizer.")
+    hf_random.add_argument("output")
+    hf_random.add_argument("--config-model", required=True)
+    hf_random.add_argument("--tokenizer-model")
+    hf_random.add_argument("--seed", type=int, default=0)
+    hf_random.add_argument("--dtype", default="float16")
+    hf_random.add_argument("--trust-remote-code", action="store_true")
+    hf_random.set_defaults(func=cmd_hf_random_init)
+
     hf_resize = sub.add_parser("hf-resize-ffn", help="Shrink or expand gated FFN intermediate size in HF decoder models.")
     hf_resize.add_argument("model")
     hf_resize.add_argument("output")
@@ -700,6 +709,19 @@ def cmd_hf_task_sweep(args: argparse.Namespace) -> dict[str, object]:
         max_ppl_ratio=args.max_ppl_ratio,
         max_accuracy_drop=args.max_accuracy_drop,
         min_choice_accuracy=args.min_choice_accuracy,
+    )
+
+
+def cmd_hf_random_init(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_tools import random_init_causal_lm
+
+    return random_init_causal_lm(
+        config_model=args.config_model,
+        tokenizer_model=args.tokenizer_model,
+        output_dir=args.output,
+        seed=args.seed,
+        torch_dtype=args.dtype,
+        trust_remote_code=args.trust_remote_code,
     )
 
 

@@ -39,6 +39,9 @@ Minimum useful evidence:
 - external benchmark-suite task scores are recorded for host, donor, and edited
   models on at least ARC-Easy and HellaSwag, and preferably PIQA/Winogrande for
   small-model runs;
+- when claiming target-shape transplant ability, the same benchmark/coherence
+  comparison must include a blank random-init target of the requested
+  architecture, not only an already trained host checkpoint;
 - generation/coherence samples are inspected for obvious repetition or prompt
   drift;
 - perplexity and choice probes do not collapse to nonsense, but are treated as
@@ -56,6 +59,8 @@ Supported real-checkpoint surgery:
 
 - same-shape Hugging Face causal LM checkpoint averaging;
 - task-arithmetic Hugging Face merges with alpha sweeps;
+- random-init Hugging Face causal LM target creation with `hf-random-init`, for
+  blank target-shape validation;
 - Qwen/Gemma/Llama-style gated FFN intermediate width folding with combined
   SwiGLU channel similarity;
 - residual decoder layer group folding with `hf-merge-layers`;

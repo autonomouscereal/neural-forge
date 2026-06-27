@@ -104,6 +104,16 @@ neural-forge hf-sweep-task runs/qwen-task-sweep `
   --alphas 0.25,0.5,0.75,1.0
 ```
 
+Create a blank/untrained target architecture for transplant tests:
+
+```powershell
+neural-forge hf-random-init runs/smollm2-135m-random `
+  --config-model HuggingFaceTB/SmolLM2-135M `
+  --tokenizer-model HuggingFaceTB/SmolLM2-135M `
+  --seed 123 `
+  --dtype float16
+```
+
 Task arithmetic defaults to `--dtype auto` and saves the base tokenizer after
 verifying that the tuned tokenizer has the same vocabulary. Special-token map
 differences are recorded in the merge report. Use an explicit dtype such as

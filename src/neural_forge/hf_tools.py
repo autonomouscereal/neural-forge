@@ -54,6 +54,47 @@ GENERATION_PROMPTS = [
 ]
 
 
+def random_init_causal_lm(
+    config_model: str,
+    output_dir: str | Path,
+    tokenizer_model: str | None = None,
+    seed: int = 0,
+    torch_dtype: str = "float16",
+    trust_remote_code: bool = False,
+) -> dict[str, Any]:
+    """Create an untrained HF causal LM from an existing config/tokenizer."""
+
+    torch, transformers = _torch_and_transformers()
+    dtype = _dtype_from_name(torch, torch_dtype)
+    torch.manual_seed(int(seed))
+    config = transformers.AutoConfig.from_pretrained(config_model, trust_remote_code=trust_remote_code)
+    model = transformers.AutoModelForCausalLM.from_config(config, trust_remote_code=trust_remote_code)
+    tokenizer_source = tokenizer_model or config_model
+    tokenizer = transformers.AutoTokenizer.from_pretrained(tokenizer_source, trust_remote_code=trust_remote_code)
+    input_embeddings = model.get_input_embeddings()
+    if input_embeddings is not None and int(input_embeddings.num_embeddings) != len(tokenizer):
+        model.resize_token_embeddings(len(tokenizer))
+    if dtype is not None:
+        model.to(dtype=dtype)
+
+    target = Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    model.save_pretrained(target, safe_serialization=True)
+    tokenizer.save_pretrained(target)
+    report = {
+        "operation": "random_init_causal_lm",
+        "config_model": config_model,
+        "tokenizer_model": tokenizer_source,
+        "output_dir": str(target),
+        "seed": int(seed),
+        "torch_dtype": torch_dtype,
+        "vocab_size": len(tokenizer),
+        "param_count": sum(param.numel() for param in model.parameters()),
+    }
+    _write_json(target / "neural_forge_random_init_report.json", report)
+    return report
+
+
 def same_shape_merge(
     model_ids: Sequence[str],
     output_dir: str | Path,
