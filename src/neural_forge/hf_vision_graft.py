@@ -386,6 +386,7 @@ def _masked_next_token_loss(torch, logits, token_labels, prefix_len: int) -> flo
 def _greedy_generate_answer(torch, model, graft, tokenizer, example: dict[str, Any], device: str, max_new_tokens: int) -> str:
     prompt_ids = tokenizer(graft_prompt(example["question"]), add_special_tokens=False)["input_ids"]
     generated: list[int] = []
+    options = graft_answer_options(example["answer_key"])
     for _ in range(max_new_tokens):
         input_ids = torch.tensor([prompt_ids + generated], dtype=torch.long, device=device)
         batch = {
@@ -399,7 +400,25 @@ def _greedy_generate_answer(torch, model, graft, tokenizer, example: dict[str, A
         if tokenizer.eos_token_id is not None and next_id == int(tokenizer.eos_token_id):
             break
         generated.append(next_id)
+        decoded = tokenizer.decode(generated, skip_special_tokens=True).strip()
+        answer = _extract_answer_prefix(decoded, options)
+        if answer is not None:
+            return answer
     return tokenizer.decode(generated, skip_special_tokens=True).strip()
+
+
+def _extract_answer_prefix(text: str, options: Sequence[str]) -> str | None:
+    normalized = text.strip().lower()
+    for option in sorted(options, key=len, reverse=True):
+        value = option.lower()
+        if not normalized.startswith(value):
+            continue
+        if len(normalized) == len(value):
+            return option
+        next_char = normalized[len(value)]
+        if not next_char.isalnum() and next_char != "_":
+            return option
+    return None
 
 
 def _write_json(path: str | Path, data: dict[str, Any]) -> None:

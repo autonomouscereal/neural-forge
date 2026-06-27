@@ -216,6 +216,17 @@ neural-forge hf-vision-graft runs/qwen-task-alpha-025 runs/qwen-native-graft `
   --task-keys square_color,circle_color,digit
 ```
 
+The graft command also accepts a compressed cross-family checkpoint as the
+parent, for example the best output from `hf-xfamily-compress`:
+
+```powershell
+neural-forge hf-vision-graft runs/qwen-lfm25-compressed/compression/models/depth_fold_13-14_15-16 `
+  runs/qwen-lfm25-compressed-native-graft `
+  --steps 900 `
+  --batch-size 16 `
+  --eval-batches 8
+```
+
 This trains a tiny single-transformer model over raw image patches plus text
 tokens on synthetic shape/color VQA. `hf-vision-graft` takes the next step: it
 feeds raw image patch embeddings into an existing merged text checkpoint and

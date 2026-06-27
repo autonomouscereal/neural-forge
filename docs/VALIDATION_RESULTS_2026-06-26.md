@@ -633,3 +633,71 @@ Interpretation:
   encoder.
 - The task is still synthetic and small. It proves the mechanics and validation
   harness, not general open-world visual reasoning.
+
+## Cross-Family Compressed Parent Vision Graft
+
+The raw-patch graft was then run on the actual cross-family compressed parent:
+
+```text
+parent:
+/home/cereal/model-surgery-lab/neural-forge-src/runs/xfamily_compress_qwen3_lfm25_5pct_safe_20260626_182857/compression/models/depth_fold_13-14_15-16
+
+graft run:
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen_lfm25_5pct_native_graft_clean_20260626_184018
+```
+
+Parent provenance:
+
+- host: `Qwen/Qwen3-0.6B-Base`;
+- donor: `LiquidAI/LFM2.5-230M`;
+- cross-family operation: MLP-channel transplant, `alpha=0.005`;
+- compression: depth-folded layer groups `13+14` and `15+16`;
+- parent params after compression: `564,588,032`;
+- shrink vs Qwen3 host baseline: `5.28%`;
+- text gate before graft: passed, with mean PPL `294.424` and choice accuracy
+  `0.75`.
+
+Vision graft run:
+
+```text
+graft params: 66,560
+trainable parent params: 0
+steps: 900
+batch_size: 16
+eval_batches: 8
+device: cuda:0
+dtype: float16
+tasks: square_color, circle_color, digit
+```
+
+Result:
+
+| Metric | Before Graft Training | After Graft Training |
+|---|---:|---:|
+| Eval samples | 64 | 64 |
+| Exact answer accuracy | 0.219 | 1.000 |
+| Mean gold loss | 7.4789 | 0.0004 |
+| Logged training loss | 6.9178 | 0.0004 |
+
+Sample generated answers after graft training:
+
+- square-color question: expected `yellow`, predicted `yellow`, generated
+  `yellow`;
+- circle-color question: expected `green`, predicted `green`, generated
+  `green`;
+- square-color question: expected `green`, predicted `green`, generated
+  `green`;
+- circle-color question: expected `blue`, predicted `blue`, generated `blue`.
+
+Interpretation:
+
+- This is the strongest current end-to-end proof in the repo: a Qwen host was
+  cross-family-merged with LFM2.5, compressed by merge-first layer folding, kept
+  passing text behavior gates, then learned a small raw-patch vision task with
+  the parent frozen.
+- Because `trainable parent params` was `0`, the text parent weights did not
+  drift during vision graft training. The added capability came from the small
+  patch projection inserted into the same causal embedding stream.
+- This still does not prove arbitrary open-world multimodal ability or arbitrary
+  target-size compression. It proves the toolchain can stitch a real
+  cross-family compressed parent and add a validated native pixel input path.

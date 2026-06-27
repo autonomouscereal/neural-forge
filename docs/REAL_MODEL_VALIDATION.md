@@ -76,6 +76,9 @@ Supported real-checkpoint surgery:
   patches plus text tokens in one transformer.
 - merged-parent raw-patch vision graft training via `hf-vision-graft`, using an
   existing HF causal LM parent and no external vision encoder.
+- cross-family compressed-parent raw-patch vision graft validation: Qwen3 host
+  plus LFM2.5 donor, 5.28% merge-first compression, parent frozen, 100% exact
+  synthetic VQA accuracy after graft training.
 
 Not yet supported:
 

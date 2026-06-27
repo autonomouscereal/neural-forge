@@ -4,6 +4,7 @@ import random
 
 from neural_forge.hf_vision_graft import GRAFT_QUESTIONS
 from neural_forge.hf_vision_graft import _encode_prompt_answer
+from neural_forge.hf_vision_graft import _extract_answer_prefix
 from neural_forge.hf_vision_graft import _make_hf_vision_example
 from neural_forge.hf_vision_graft import _normalize_task_keys
 from neural_forge.hf_vision_graft import graft_answer_options
@@ -60,6 +61,12 @@ def test_task_key_filter_limits_generated_examples() -> None:
         example = _make_hf_vision_example(random.Random(seed), seed, task_keys=["square_color"])
         assert example["answer_key"] == "square_color"
     assert _normalize_task_keys(["square_color", "digit"]) == ["square_color", "digit"]
+
+
+def test_extract_answer_prefix_stops_after_valid_task_answer() -> None:
+    assert _extract_answer_prefix("yellow. Write a story", ["red", "yellow"]) == "yellow"
+    assert _extract_answer_prefix("green", ["green", "blue"]) == "green"
+    assert _extract_answer_prefix("greenish", ["green", "blue"]) is None
 
 
 def test_trainable_layer_fp16_is_rejected_before_model_load(tmp_path) -> None:
