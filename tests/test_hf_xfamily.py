@@ -774,6 +774,20 @@ def test_resize_tensor_to_shape_rms_fold_preserves_more_variance() -> None:
     assert rms_folded.flatten().tolist() == pytest.approx([2**0.5, 2**0.5, 2**0.5, 2**0.5])
 
 
+def test_outgoing_sum_fold_preserves_merged_linear_path() -> None:
+    torch = pytest.importorskip("torch")
+    x = torch.tensor([5.0, 7.0])
+    up = torch.tensor([[1.0, 2.0], [1.0, 2.0]])
+    down = torch.tensor([[3.0, 3.0], [4.0, 4.0]])
+
+    original = down.matmul(up.matmul(x))
+    folded_up = _resize_tensor_to_shape(torch, up, (1, 2))
+    folded_down = _resize_tensor_to_shape(torch, down, (2, 1), axis_reductions={1: "sum"})
+    folded = folded_down.matmul(folded_up.matmul(x))
+
+    assert folded.tolist() == pytest.approx(original.tolist())
+
+
 def test_attention_tensor_resize_folds_q_heads_before_head_dim() -> None:
     torch = pytest.importorskip("torch")
     source = torch.arange(8, dtype=torch.float32).reshape(8, 1)
@@ -809,7 +823,7 @@ def test_attention_tensor_resize_folds_o_input_heads() -> None:
     )
 
     assert resized is not None
-    assert resized.flatten().tolist() == pytest.approx([1.5, 5.5])
+    assert resized.flatten().tolist() == pytest.approx([6.0, 22.0])
 
 
 def test_non_layer_initializer_folds_final_norm_and_skips_special_tensors() -> None:

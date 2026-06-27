@@ -403,6 +403,7 @@ def donor_projected_init(
             donor_layer_group,
             activation_profile,
         )
+        axis_reductions = _axis_reductions_for_layer_tensor(suffix)
         projected = None
         if attention_fold_mode == "coupled":
             projected = _resize_attention_tensor_to_shape(
@@ -414,6 +415,7 @@ def donor_projected_init(
                 target.config,
                 fold_mode=tensor_fold_mode,
                 axis_weights=axis_weights,
+                axis_reductions=axis_reductions,
                 activation_fold_assignment=activation_fold_assignment,
             )
         if projected is None:
@@ -423,6 +425,7 @@ def donor_projected_init(
                 tuple(target_tensor.shape),
                 fold_mode=tensor_fold_mode,
                 axis_weights=axis_weights,
+                axis_reductions=axis_reductions,
                 activation_fold_assignment=activation_fold_assignment,
             )
         projected = _scale_projection_to_target(torch, projected, target_tensor, projection_scale)
@@ -1560,6 +1563,7 @@ def _resize_tensor_to_shape(
     target_shape: tuple[int, ...],
     fold_mode: str = "mean",
     axis_weights: dict[int, Any] | None = None,
+    axis_reductions: dict[int, str] | None = None,
     activation_fold_assignment: str = "balanced",
 ):
     if fold_mode not in {"mean", "rms"}:
@@ -1583,6 +1587,7 @@ def _resize_tensor_to_shape(
                 fold_mode=fold_mode,
                 weights=weights,
                 features=features,
+                reduction="mean" if axis_reductions is None else axis_reductions.get(axis, "mean"),
                 assignment_mode=activation_fold_assignment,
             )
     return resized.contiguous()
@@ -1597,11 +1602,14 @@ def _resize_attention_tensor_to_shape(
     target_config,
     fold_mode: str = "mean",
     axis_weights: dict[int, Any] | None = None,
+    axis_reductions: dict[int, str] | None = None,
     activation_fold_assignment: str = "balanced",
 ):
     specs = _attention_partition_specs(suffix, donor_config, target_config)
     if not specs or source.dim() != len(target_shape):
         return None
+    if axis_reductions is None:
+        axis_reductions = _axis_reductions_for_layer_tensor(suffix)
     resized = source.to(torch.float32)
     handled_axes = set()
     used_coupled_axis = False
@@ -1616,6 +1624,7 @@ def _resize_attention_tensor_to_shape(
             source_heads,
             target_heads,
             fold_mode=fold_mode,
+            reduction="mean" if axis_reductions is None else axis_reductions.get(axis, "mean"),
         )
         if coupled is None:
             continue
@@ -1636,6 +1645,7 @@ def _resize_attention_tensor_to_shape(
                 fold_mode=fold_mode,
                 weights=weights,
                 features=features,
+                reduction="mean" if axis_reductions is None else axis_reductions.get(axis, "mean"),
                 assignment_mode=activation_fold_assignment,
             )
     return resized.contiguous()
@@ -1660,6 +1670,15 @@ def _attention_partition_specs(suffix: str, donor_config, target_config) -> list
     return []
 
 
+def _axis_reductions_for_layer_tensor(suffix: str) -> dict[int, str]:
+    lowered = f".{suffix.lower()}"
+    if lowered.endswith(".down_proj.weight") or lowered.endswith(".fc2.weight") or lowered.endswith(".c_proj.weight"):
+        return {1: "sum"}
+    if lowered.endswith(".o_proj.weight") or lowered.endswith(".out_proj.weight") or lowered.endswith(".attn.c_proj.weight"):
+        return {1: "sum"}
+    return {}
+
+
 def _config_int(config, *names: str, default=None):
     for name in names:
         value = getattr(config, name, None)
@@ -1676,6 +1695,7 @@ def _resize_head_partitioned_axis(
     source_heads: int,
     target_heads: int,
     fold_mode: str,
+    reduction: str = "mean",
 ):
     source_dim = int(tensor.shape[axis])
     if source_heads <= 0 or target_heads <= 0:
@@ -1693,6 +1713,7 @@ def _resize_head_partitioned_axis(
         axis=0,
         target_dim=int(target_heads),
         fold_mode=fold_mode,
+        reduction=reduction,
     )
     partitioned = _resize_tensor_axis_mean_fold(
         torch,
@@ -1700,6 +1721,7 @@ def _resize_head_partitioned_axis(
         axis=1,
         target_dim=target_head_dim,
         fold_mode=fold_mode,
+        reduction=reduction,
     )
     resized = partitioned.reshape(target_dim, *rest_shape)
     return resized.movedim(0, axis).contiguous()
@@ -1719,12 +1741,15 @@ def _resize_tensor_axis_mean_fold(
     fold_mode: str = "mean",
     weights=None,
     features=None,
+    reduction: str = "mean",
     assignment_mode: str = "balanced",
 ):
     if target_dim <= 0:
         raise ValueError("target_dim must be positive.")
     if fold_mode not in {"mean", "rms"}:
         raise ValueError("fold_mode must be mean or rms.")
+    if reduction not in {"mean", "sum"}:
+        raise ValueError("reduction must be mean or sum.")
     if assignment_mode not in {"balanced", "similarity"}:
         raise ValueError("assignment_mode must be balanced or similarity.")
     source_dim = int(tensor.shape[axis])
@@ -1757,8 +1782,9 @@ def _resize_tensor_axis_mean_fold(
         weighted_flat = flat * fold_weights.to(flat.dtype).unsqueeze(1)
         folded.index_add_(0, assignment, weighted_flat)
         counts.index_add_(0, assignment, fold_weights.to(flat.dtype))
-        divisor = counts.sqrt() if fold_mode == "rms" and not explicit_weights else counts
-        folded = folded / divisor.clamp_min(1.0).unsqueeze(1)
+        if reduction == "mean":
+            divisor = counts.sqrt() if fold_mode == "rms" and not explicit_weights else counts
+            folded = folded / divisor.clamp_min(1.0).unsqueeze(1)
     else:
         source_idx = torch.floor(torch.arange(target_dim, dtype=torch.float32) * source_dim / target_dim)
         source_idx = source_idx.to(torch.long).clamp_max(source_dim - 1)
