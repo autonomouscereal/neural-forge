@@ -533,6 +533,16 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--unlikelihood-window", type=int, default=16)
     xfamily_recover.add_argument("--entropy-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--response-loss-mode", choices=["none", "auto", "assistant", "answer"], default="none")
+    xfamily_recover.add_argument("--token-kd-weight", type=float, default=0.0)
+    xfamily_recover.add_argument("--token-focus", choices=["auto", "response", "numbers", "code", "all"], default="auto")
+    xfamily_recover.add_argument("--token-max-pairs", type=int, default=512)
+    xfamily_recover.add_argument("--token-teacher-confidence-floor", type=float, default=0.0)
+    xfamily_recover.add_argument("--answer-contrastive-weight", type=float, default=0.0)
+    xfamily_recover.add_argument("--answer-contrastive-max-negatives", type=int, default=4)
+    xfamily_recover.add_argument("--teacher-rank-weight", type=float, default=0.0)
+    xfamily_recover.add_argument("--teacher-rank-temperature", type=float, default=1.0)
+    xfamily_recover.add_argument("--teacher-rank-max-negatives", type=int, default=4)
+    xfamily_recover.add_argument("--append-eos", action="store_true")
     xfamily_recover.add_argument("--entropy-aware-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--entropy-aware-kd-threshold", type=float, default=0.55)
     xfamily_recover.add_argument("--entropy-aware-kd-sharpness", type=float, default=8.0)
@@ -1227,6 +1237,16 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         unlikelihood_window=args.unlikelihood_window,
         entropy_weight=args.entropy_weight,
         response_loss_mode=args.response_loss_mode,
+        token_kd_weight=args.token_kd_weight,
+        token_focus=args.token_focus,
+        token_max_pairs=args.token_max_pairs,
+        token_teacher_confidence_floor=args.token_teacher_confidence_floor,
+        answer_contrastive_weight=args.answer_contrastive_weight,
+        answer_contrastive_max_negatives=args.answer_contrastive_max_negatives,
+        teacher_rank_weight=args.teacher_rank_weight,
+        teacher_rank_temperature=args.teacher_rank_temperature,
+        teacher_rank_max_negatives=args.teacher_rank_max_negatives,
+        append_eos=args.append_eos,
         entropy_aware_kd_weight=args.entropy_aware_kd_weight,
         entropy_aware_kd_threshold=args.entropy_aware_kd_threshold,
         entropy_aware_kd_sharpness=args.entropy_aware_kd_sharpness,

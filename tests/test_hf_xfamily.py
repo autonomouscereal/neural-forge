@@ -5,16 +5,21 @@ import pytest
 from neural_forge.cli import build_parser
 from neural_forge.cli import _parse_layer_groups
 from neural_forge.hf_recovery import RECOVERY_TEXTS
+from neural_forge.hf_recovery import _answer_contrastive_candidates
 from neural_forge.hf_recovery import _append_eos_text
 from neural_forge.hf_recovery import _assert_same_vocab
 from neural_forge.hf_recovery import _absorb_input_map_into_linears
+from neural_forge.hf_recovery import _candidate_rank_kl_loss
 from neural_forge.hf_recovery import _candidate_index_after_depth_fold
 from neural_forge.hf_recovery import _cross_tokenizer_recovery_loss
+from neural_forge.hf_recovery import _cross_tokenizer_focus_span_pairs
+from neural_forge.hf_recovery import _cross_tokenizer_sequence_nll_loss
 from neural_forge.hf_recovery import _cross_tokenizer_span_pairs
 from neural_forge.hf_recovery import _entropy_aware_kl_loss
 from neural_forge.hf_recovery import _fit_activation_map
 from neural_forge.hf_recovery import _fit_lm_head_from_hidden_logits
 from neural_forge.hf_recovery import _fit_shared_embedding_hidden_projection
+from neural_forge.hf_recovery import _focus_char_spans
 from neural_forge.hf_recovery import _fold_groups_from_report
 from neural_forge.hf_recovery import _hidden_representation_loss
 from neural_forge.hf_recovery import _infer_response_char_start
@@ -488,6 +493,25 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "24",
             "--entropy-weight",
             "0.006",
+            "--token-kd-weight",
+            "0.13",
+            "--token-focus",
+            "numbers",
+            "--token-max-pairs",
+            "44",
+            "--token-teacher-confidence-floor",
+            "0.2",
+            "--answer-contrastive-weight",
+            "0.09",
+            "--answer-contrastive-max-negatives",
+            "3",
+            "--teacher-rank-weight",
+            "0.11",
+            "--teacher-rank-temperature",
+            "0.7",
+            "--teacher-rank-max-negatives",
+            "5",
+            "--append-eos",
             "--entropy-aware-kd-weight",
             "0.45",
             "--entropy-aware-kd-threshold",
@@ -601,6 +625,16 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_recover_args.unlikelihood_weight == 0.08
     assert xfamily_recover_args.unlikelihood_window == 24
     assert xfamily_recover_args.entropy_weight == 0.006
+    assert xfamily_recover_args.token_kd_weight == 0.13
+    assert xfamily_recover_args.token_focus == "numbers"
+    assert xfamily_recover_args.token_max_pairs == 44
+    assert xfamily_recover_args.token_teacher_confidence_floor == 0.2
+    assert xfamily_recover_args.answer_contrastive_weight == 0.09
+    assert xfamily_recover_args.answer_contrastive_max_negatives == 3
+    assert xfamily_recover_args.teacher_rank_weight == 0.11
+    assert xfamily_recover_args.teacher_rank_temperature == 0.7
+    assert xfamily_recover_args.teacher_rank_max_negatives == 5
+    assert xfamily_recover_args.append_eos is True
     assert merge_layer_args.groups == "3+4,7+8"
     assert drop_args.layers == "3,7"
     assert search_args.width_ratios == "0.9975,0.995"
@@ -1283,6 +1317,8 @@ def test_infer_response_char_start_finds_answer_markers() -> None:
     assert _infer_response_char_start("user: Q\nassistant: A", "auto") == len("user: Q\nassistant:")
     assert _infer_response_char_start("Question\nAnswer: 42", "answer") == len("Question\nAnswer:")
     assert _infer_response_char_start("Prompt\n```python\npass\n```", "auto") == len("Prompt\n")
+    assert _infer_response_char_start("Solve: 75 plus 63 = ?\n138", "auto") == len("Solve: 75 plus 63 = ?\n")
+    assert _infer_response_char_start("Question: choose one\nB", "auto") == len("Question: choose one\n")
     assert _infer_response_char_start("Question\nAnswer: 42", "assistant") is None
 
 
@@ -1553,6 +1589,125 @@ def test_cross_tokenizer_span_pairs_match_exact_offsets_and_tokens() -> None:
     )
 
     assert pairs.tolist() == [[0, 0, 0], [0, 1, 1]]
+
+
+def test_focus_char_spans_select_numeric_response() -> None:
+    text = "Question: What is 12 times 13?\nAnswer: 156"
+    start = text.index("156")
+
+    assert _focus_char_spans(text, "answer", "numbers") == [(start, start + 3)]
+    assert _focus_char_spans(text, "answer", "response") == [(text.index("156"), len(text))]
+    newline_text = "Solve: 75 plus 63 = ?\n138"
+    newline_start = newline_text.index("138")
+    assert _focus_char_spans(newline_text, "auto", "numbers") == [(newline_start, newline_start + 3)]
+
+
+def test_answer_contrastive_candidates_build_numeric_and_choice_sets() -> None:
+    numeric = _answer_contrastive_candidates("Solve: 75 plus 63 = ?\n138", "auto", max_negatives=3)
+    assert numeric[0] == "Solve: 75 plus 63 = ?\n138"
+    assert numeric[1:] == [
+        "Solve: 75 plus 63 = ?\n4725",
+        "Solve: 75 plus 63 = ?\n63",
+        "Solve: 75 plus 63 = ?\n213",
+    ]
+
+    choices = _answer_contrastive_candidates("Question: pick\nAnswer: B", "auto", max_negatives=2)
+    assert choices == ["Question: pick\nAnswer: B", "Question: pick\nAnswer: A", "Question: pick\nAnswer: C"]
+
+
+def test_candidate_rank_kl_rewards_matching_teacher_preference() -> None:
+    torch = pytest.importorskip("torch")
+    teacher_nll = torch.tensor([0.1, 4.0, 5.0])
+    matching_student_nll = torch.tensor([0.2, 4.5, 5.5])
+    wrong_student_nll = torch.tensor([6.0, 0.1, 5.0])
+
+    matching = _candidate_rank_kl_loss(torch, teacher_nll, matching_student_nll, temperature=1.0)
+    wrong = _candidate_rank_kl_loss(torch, teacher_nll, wrong_student_nll, temperature=1.0)
+
+    assert matching.item() < wrong.item()
+
+
+def test_cross_tokenizer_focus_span_pairs_allow_different_token_boundaries() -> None:
+    torch = pytest.importorskip("torch")
+    text = "Question: What is 12 times 13?\nAnswer: 156"
+    answer_start = text.index("156")
+    source_batch = {
+        "input_ids": torch.tensor([[0, 4, 0, 0]]),
+        "attention_mask": torch.tensor([[1, 1, 0, 0]]),
+        "offset_mapping": torch.tensor([[[0, 0], [answer_start, answer_start + 3], [0, 0], [0, 0]]]),
+        "texts": [text],
+    }
+    candidate_batch = {
+        "input_ids": torch.tensor([[0, 1, 2, 3, 0]]),
+        "attention_mask": torch.tensor([[1, 1, 1, 1, 0]]),
+        "offset_mapping": torch.tensor(
+            [
+                [
+                    [0, 0],
+                    [answer_start, answer_start + 1],
+                    [answer_start + 1, answer_start + 2],
+                    [answer_start + 2, answer_start + 3],
+                    [0, 0],
+                ]
+            ]
+        ),
+        "texts": [text],
+    }
+
+    pairs = _cross_tokenizer_focus_span_pairs(
+        torch,
+        source_batch,
+        candidate_batch,
+        response_loss_mode="answer",
+        token_focus="numbers",
+        max_pairs=8,
+    )
+
+    assert len(pairs) == 1
+    assert pairs[0]["batch_idx"] == 0
+    assert pairs[0]["source_positions"].tolist() == [0]
+    assert pairs[0]["candidate_positions"].tolist() == [0, 1, 2]
+
+
+def test_cross_tokenizer_sequence_nll_loss_rewards_candidate_span_tokens() -> None:
+    torch = pytest.importorskip("torch")
+    candidate_ids = torch.tensor([[0, 1, 2, 3]])
+    source_ids = torch.tensor([[0, 4]])
+    teacher = _Obj(logits=torch.zeros((1, 2, 6)))
+    teacher.logits[0, 0, 4] = 8.0
+    focus = [
+        {
+            "batch_idx": 0,
+            "source_positions": torch.tensor([0]),
+            "candidate_positions": torch.tensor([0, 1, 2]),
+        }
+    ]
+    good_logits = torch.zeros((1, 3, 5))
+    bad_logits = torch.zeros((1, 3, 5))
+    for pos, label in enumerate([1, 2, 3]):
+        good_logits[0, pos, label] = 6.0
+        bad_logits[0, pos, label] = -6.0
+
+    good = _cross_tokenizer_sequence_nll_loss(
+        torch,
+        good_logits,
+        teacher,
+        candidate_ids,
+        source_ids,
+        focus,
+        teacher_confidence_floor=0.0,
+    )
+    bad = _cross_tokenizer_sequence_nll_loss(
+        torch,
+        bad_logits,
+        teacher,
+        candidate_ids,
+        source_ids,
+        focus,
+        teacher_confidence_floor=0.0,
+    )
+
+    assert good.item() < bad.item()
 
 
 def test_cross_tokenizer_recovery_loss_uses_span_pairs() -> None:
@@ -2129,6 +2284,25 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "0.005",
             "--response-loss-mode",
             "auto",
+            "--token-kd-weight",
+            "0.18",
+            "--token-focus",
+            "code",
+            "--token-max-pairs",
+            "55",
+            "--token-teacher-confidence-floor",
+            "0.15",
+            "--answer-contrastive-weight",
+            "0.21",
+            "--answer-contrastive-max-negatives",
+            "5",
+            "--teacher-rank-weight",
+            "0.31",
+            "--teacher-rank-temperature",
+            "0.8",
+            "--teacher-rank-max-negatives",
+            "6",
+            "--append-eos",
             "--entropy-aware-kd-weight",
             "0.35",
             "--entropy-aware-kd-threshold",
@@ -2197,6 +2371,16 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "unlikelihood_window": 22,
         "entropy_weight": 0.005,
         "response_loss_mode": "auto",
+        "token_kd_weight": 0.18,
+        "token_focus": "code",
+        "token_max_pairs": 55,
+        "token_teacher_confidence_floor": 0.15,
+        "answer_contrastive_weight": 0.21,
+        "answer_contrastive_max_negatives": 5,
+        "teacher_rank_weight": 0.31,
+        "teacher_rank_temperature": 0.8,
+        "teacher_rank_max_negatives": 6,
+        "append_eos": True,
         "entropy_aware_kd_weight": 0.35,
         "entropy_aware_kd_threshold": 0.62,
         "entropy_aware_kd_sharpness": 7.5,

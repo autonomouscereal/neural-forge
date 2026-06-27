@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -259,6 +260,16 @@ def recover_cross_tokenizer_causal_lm(
     trust_remote_code: bool = False,
     calibration_texts: Sequence[str] | None = None,
     response_loss_mode: str = "none",
+    token_kd_weight: float = 0.0,
+    token_focus: str = "auto",
+    token_max_pairs: int = 512,
+    token_teacher_confidence_floor: float = 0.0,
+    answer_contrastive_weight: float = 0.0,
+    answer_contrastive_max_negatives: int = 4,
+    teacher_rank_weight: float = 0.0,
+    teacher_rank_temperature: float = 1.0,
+    teacher_rank_max_negatives: int = 4,
+    append_eos: bool = False,
     grad_clip: float = 1.0,
     report_interval: int | None = None,
     save_best_loss: bool = False,
@@ -290,8 +301,23 @@ def recover_cross_tokenizer_causal_lm(
         or reference_kd_weight < 0
         or unlikelihood_weight < 0
         or entropy_weight < 0
+        or token_kd_weight < 0
+        or answer_contrastive_weight < 0
+        or teacher_rank_weight < 0
     ):
         raise ValueError("loss weights must be non-negative.")
+    if token_focus not in {"auto", "response", "numbers", "code", "all"}:
+        raise ValueError("token_focus must be auto, response, numbers, code, or all.")
+    if token_max_pairs <= 0:
+        raise ValueError("token_max_pairs must be positive.")
+    if not 0.0 <= float(token_teacher_confidence_floor) <= 1.0:
+        raise ValueError("token_teacher_confidence_floor must be in [0, 1].")
+    if answer_contrastive_max_negatives <= 0:
+        raise ValueError("answer_contrastive_max_negatives must be positive.")
+    if teacher_rank_max_negatives <= 0:
+        raise ValueError("teacher_rank_max_negatives must be positive.")
+    if teacher_rank_temperature <= 0:
+        raise ValueError("teacher_rank_temperature must be positive.")
     if not 0.0 <= float(entropy_aware_kd_weight) <= 1.0:
         raise ValueError("entropy_aware_kd_weight must be in [0, 1].")
     if not 0.0 <= float(entropy_aware_kd_threshold) <= 1.0:
@@ -308,6 +334,9 @@ def recover_cross_tokenizer_causal_lm(
         and reference_kd_weight == 0
         and unlikelihood_weight == 0
         and entropy_weight == 0
+        and token_kd_weight == 0
+        and answer_contrastive_weight == 0
+        and teacher_rank_weight == 0
     ):
         raise ValueError("At least one loss weight must be positive.")
     if unlikelihood_window <= 0:
@@ -449,12 +478,21 @@ def recover_cross_tokenizer_causal_lm(
         batch_size=batch_size,
         max_length=max_length,
         device=device,
-        include_offsets=span_kd_weight > 0 or span_hidden_kd_weight > 0 or projected_vocab_kd_weight > 0,
+        include_offsets=(
+            span_kd_weight > 0
+            or span_hidden_kd_weight > 0
+            or projected_vocab_kd_weight > 0
+            or token_kd_weight > 0
+        ),
         response_loss_mode=response_loss_mode,
+        append_eos=append_eos,
     )
 
     losses = []
     span_pair_counts = []
+    token_focus_counts = []
+    answer_contrastive_counts = []
+    teacher_rank_counts = []
     interval = int(report_interval or max(1, steps // 10))
     best_loss = None
     best_step = None
@@ -491,6 +529,19 @@ def recover_cross_tokenizer_causal_lm(
                 max_pairs=span_max_pairs,
             )
             span_pair_counts.append(int(span_pairs.shape[0]))
+        token_focus_spans = None
+        if token_kd_weight > 0:
+            token_focus_spans = _cross_tokenizer_focus_span_pairs(
+                torch,
+                source_batch,
+                candidate_batch,
+                response_loss_mode=response_loss_mode,
+                token_focus=token_focus,
+                max_pairs=token_max_pairs,
+            )
+            token_focus_counts.append(
+                sum(int(item["candidate_positions"].numel()) for item in token_focus_spans)
+            )
         loss = _cross_tokenizer_recovery_loss(
             torch,
             student,
@@ -524,7 +575,40 @@ def recover_cross_tokenizer_causal_lm(
             projected_vocab_valid,
             reference_teacher,
             temperature,
+            source_input_ids=source_batch["input_ids"],
+            token_kd_weight=token_kd_weight,
+            token_focus_spans=token_focus_spans,
+            token_teacher_confidence_floor=token_teacher_confidence_floor,
         )
+        if answer_contrastive_weight > 0:
+            contrastive, contrastive_count = _answer_contrastive_loss(
+                torch,
+                candidate,
+                candidate_tokenizer,
+                candidate_batch.get("raw_texts", candidate_batch.get("texts", [])),
+                response_loss_mode,
+                answer_contrastive_max_negatives,
+                max_length,
+                device,
+            )
+            answer_contrastive_counts.append(int(contrastive_count))
+            loss = loss + float(answer_contrastive_weight) * contrastive
+        if teacher_rank_weight > 0:
+            teacher_rank, teacher_rank_count = _teacher_ranked_candidate_loss(
+                torch,
+                source,
+                candidate,
+                source_tokenizer,
+                candidate_tokenizer,
+                candidate_batch.get("raw_texts", candidate_batch.get("texts", [])),
+                response_loss_mode,
+                teacher_rank_max_negatives,
+                teacher_rank_temperature,
+                max_length,
+                device,
+            )
+            teacher_rank_counts.append(int(teacher_rank_count))
+            loss = loss + float(teacher_rank_weight) * teacher_rank
         if not bool(torch.isfinite(loss).detach().cpu()):
             raise RuntimeError(f"Non-finite cross-tokenizer recovery loss at step {step}; aborting before save.")
         loss.backward()
@@ -536,7 +620,10 @@ def recover_cross_tokenizer_causal_lm(
             losses.append({"step": step, "loss": loss_value})
             print(
                 f"xfamily_recover step={step} loss={loss_value:.6f} "
-                f"span_pairs={span_pair_counts[-1] if span_pair_counts else 0}",
+                f"span_pairs={span_pair_counts[-1] if span_pair_counts else 0} "
+                f"token_focus={token_focus_counts[-1] if token_focus_counts else 0} "
+                f"answer_contrastive={answer_contrastive_counts[-1] if answer_contrastive_counts else 0} "
+                f"teacher_rank={teacher_rank_counts[-1] if teacher_rank_counts else 0}",
                 flush=True,
             )
             if save_best_loss and (best_loss is None or loss_value < best_loss):
@@ -574,6 +661,19 @@ def recover_cross_tokenizer_causal_lm(
         "unlikelihood_window": unlikelihood_window,
         "entropy_weight": entropy_weight,
         "response_loss_mode": response_loss_mode,
+        "token_kd_weight": token_kd_weight,
+        "token_focus": token_focus,
+        "token_max_pairs": token_max_pairs,
+        "token_teacher_confidence_floor": token_teacher_confidence_floor,
+        "answer_contrastive_weight": answer_contrastive_weight,
+        "answer_contrastive_max_negatives": answer_contrastive_max_negatives,
+        "answer_contrastive_count_observed": answer_contrastive_counts,
+        "teacher_rank_weight": teacher_rank_weight,
+        "teacher_rank_temperature": teacher_rank_temperature,
+        "teacher_rank_max_negatives": teacher_rank_max_negatives,
+        "teacher_rank_count_observed": teacher_rank_counts,
+        "append_eos": bool(append_eos),
+        "token_focus_count_observed": token_focus_counts,
         "entropy_aware_kd_weight": entropy_aware_kd_weight,
         "entropy_aware_kd_threshold": entropy_aware_kd_threshold,
         "entropy_aware_kd_sharpness": entropy_aware_kd_sharpness,
@@ -1157,6 +1257,8 @@ def _make_batches(
         except NotImplementedError as exc:
             raise ValueError("Span KD requires fast tokenizers that support offset mappings.") from exc
         batch = {key: value.to(device) for key, value in encoded.items()}
+        batch["texts"] = chunk
+        batch["raw_texts"] = list(texts[start : start + batch_size])
         if response_loss_mode != "none":
             batch["loss_mask"] = _response_loss_mask(
                 tokenizer,
@@ -1187,8 +1289,17 @@ def _make_paired_batches(
     device: str,
     include_offsets: bool = False,
     response_loss_mode: str = "none",
+    append_eos: bool = False,
 ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-    source_batches = _make_batches(source_tokenizer, texts, batch_size, max_length, device, include_offsets)
+    source_batches = _make_batches(
+        source_tokenizer,
+        texts,
+        batch_size,
+        max_length,
+        device,
+        include_offsets,
+        append_eos=append_eos,
+    )
     candidate_batches = _make_batches(
         candidate_tokenizer,
         texts,
@@ -1197,6 +1308,7 @@ def _make_paired_batches(
         device,
         include_offsets,
         response_loss_mode=response_loss_mode,
+        append_eos=append_eos,
     )
     if len(source_batches) != len(candidate_batches):
         raise RuntimeError("Paired source/candidate batch counts diverged.")
@@ -1204,7 +1316,11 @@ def _make_paired_batches(
 
 
 def _model_forward_inputs(batch: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in batch.items() if key not in {"offset_mapping", "loss_mask"}}
+    return {
+        key: value
+        for key, value in batch.items()
+        if key not in {"offset_mapping", "loss_mask", "texts", "raw_texts"}
+    }
 
 
 def _response_loss_mask(
@@ -1268,6 +1384,32 @@ def _infer_response_char_start(text: str, response_loss_mode: str) -> int | None
             idx = lower.rfind(marker)
             if idx >= 0:
                 return idx + 1
+        newline_response_start = _infer_last_line_response_start(text)
+        if newline_response_start is not None:
+            return newline_response_start
+    return None
+
+
+def _infer_last_line_response_start(text: str) -> int | None:
+    stripped = text.rstrip()
+    idx = stripped.rfind("\n")
+    if idx < 0:
+        return None
+    tail_start = idx + 1
+    tail = stripped[tail_start:].strip()
+    if not tail:
+        return None
+    if len(tail) > 240:
+        return None
+    if re.fullmatch(r"-?\d+(?:\.\d+)?", tail):
+        return tail_start + len(stripped[tail_start:]) - len(stripped[tail_start:].lstrip())
+    if re.fullmatch(r"[A-D](?:[.)])?", tail, flags=re.IGNORECASE):
+        return tail_start + len(stripped[tail_start:]) - len(stripped[tail_start:].lstrip())
+    if re.search(r"\b(def|return|class|lambda)\b|[{}();=+\-*/]", tail):
+        return tail_start + len(stripped[tail_start:]) - len(stripped[tail_start:].lstrip())
+    promptish = text[:idx].lower()
+    if any(marker in promptish for marker in ("question:", "solve:", "prompt:", "user:")) and len(tail.split()) <= 24:
+        return tail_start + len(stripped[tail_start:]) - len(stripped[tail_start:].lstrip())
     return None
 
 
@@ -1330,6 +1472,442 @@ def _cross_tokenizer_span_pairs(
     if not pairs:
         return torch.empty((0, 3), dtype=torch.long, device=candidate_batch["input_ids"].device)
     return torch.tensor(pairs, dtype=torch.long, device=candidate_batch["input_ids"].device)
+
+
+def _focus_char_spans(text: str, response_loss_mode: str, token_focus: str) -> list[tuple[int, int]]:
+    if token_focus not in {"auto", "response", "numbers", "code", "all"}:
+        raise ValueError("token_focus must be auto, response, numbers, code, or all.")
+    if not text:
+        return []
+
+    scope_start = _infer_response_char_start(text, response_loss_mode)
+    if scope_start is None:
+        scope_start = 0
+    scope_start = max(0, min(int(scope_start), len(text)))
+    while scope_start < len(text) and text[scope_start].isspace():
+        scope_start += 1
+    scope = text[scope_start:]
+    if token_focus == "all":
+        return [(0, len(text))]
+    if token_focus == "response":
+        return [(scope_start, len(text))] if scope.strip() else []
+
+    spans: list[tuple[int, int]] = []
+    if token_focus in {"auto", "numbers"}:
+        for match in re.finditer(r"(?<![\w.])-?\d+(?:\.\d+)?(?![\w.])", scope):
+            spans.append((scope_start + match.start(), scope_start + match.end()))
+    if token_focus in {"auto", "code"}:
+        code_scope = _code_focus_scope(scope)
+        if code_scope is not None:
+            spans.append((scope_start + code_scope[0], scope_start + code_scope[1]))
+        elif token_focus == "code":
+            for match in re.finditer(r"[A-Za-z_][A-Za-z0-9_]*|==|!=|<=|>=|[-+*/%=(),.:]", scope):
+                spans.append((scope_start + match.start(), scope_start + match.end()))
+    if token_focus == "auto" and not spans and scope.strip():
+        spans.append((scope_start, len(text)))
+    return _merge_char_spans(spans)
+
+
+def _code_focus_scope(text: str) -> tuple[int, int] | None:
+    fence = re.search(r"```(?:python)?\s*(.*?)```", text, flags=re.IGNORECASE | re.DOTALL)
+    if fence is not None:
+        return (int(fence.start(1)), int(fence.end(1)))
+    code_like = re.search(
+        r"(?m)(def\s+\w+\s*\(|return\s+|class\s+\w+|for\s+\w+\s+in\s+|if\s+.+:|[A-Za-z_][A-Za-z0-9_]*\s*=\s*)",
+        text,
+    )
+    if code_like is None:
+        return None
+    start = int(code_like.start())
+    tail = text[start:]
+    paragraph_end = tail.find("\n\n")
+    end = len(text) if paragraph_end < 0 else start + paragraph_end
+    return (start, end)
+
+
+def _merge_char_spans(spans: Sequence[tuple[int, int]]) -> list[tuple[int, int]]:
+    cleaned = sorted((max(0, int(start)), max(0, int(end))) for start, end in spans if int(end) > int(start))
+    merged: list[tuple[int, int]] = []
+    for start, end in cleaned:
+        if not merged or start > merged[-1][1]:
+            merged.append((start, end))
+        else:
+            old_start, old_end = merged[-1]
+            merged[-1] = (old_start, max(old_end, end))
+    return merged
+
+
+def _cross_tokenizer_focus_span_pairs(
+    torch,
+    source_batch: dict[str, Any],
+    candidate_batch: dict[str, Any],
+    response_loss_mode: str,
+    token_focus: str,
+    max_pairs: int,
+):
+    if "offset_mapping" not in source_batch or "offset_mapping" not in candidate_batch:
+        raise ValueError("Focused token KD batches require offset_mapping.")
+    if "texts" not in candidate_batch:
+        raise ValueError("Focused token KD batches require source texts.")
+    if max_pairs <= 0:
+        raise ValueError("max_pairs must be positive.")
+
+    source_offsets = source_batch["offset_mapping"].detach().cpu()
+    candidate_offsets = candidate_batch["offset_mapping"].detach().cpu()
+    source_mask = source_batch.get("attention_mask")
+    candidate_mask = candidate_batch.get("attention_mask")
+    if source_mask is not None:
+        source_mask = source_mask.detach().cpu().bool()
+    if candidate_mask is not None:
+        candidate_mask = candidate_mask.detach().cpu().bool()
+
+    focus_items = []
+    used_pairs = 0
+    texts = candidate_batch["texts"]
+    batch_count = min(len(texts), int(source_offsets.shape[0]), int(candidate_offsets.shape[0]))
+    device = candidate_batch["input_ids"].device
+    for batch_idx in range(batch_count):
+        spans = _focus_char_spans(str(texts[batch_idx]), response_loss_mode, token_focus)
+        if not spans:
+            continue
+        source_positions = _shift_positions_for_char_spans(
+            torch,
+            source_offsets[batch_idx],
+            None if source_mask is None else source_mask[batch_idx],
+            spans,
+            device,
+        )
+        candidate_positions = _shift_positions_for_char_spans(
+            torch,
+            candidate_offsets[batch_idx],
+            None if candidate_mask is None else candidate_mask[batch_idx],
+            spans,
+            device,
+        )
+        if int(source_positions.numel()) <= 0 or int(candidate_positions.numel()) <= 0:
+            continue
+        remaining = int(max_pairs) - used_pairs
+        if remaining <= 0:
+            break
+        if int(candidate_positions.numel()) > remaining:
+            candidate_positions = candidate_positions[:remaining]
+        focus_items.append(
+            {
+                "batch_idx": int(batch_idx),
+                "source_positions": source_positions,
+                "candidate_positions": candidate_positions,
+            }
+        )
+        used_pairs += int(candidate_positions.numel())
+        if used_pairs >= int(max_pairs):
+            break
+    return focus_items
+
+
+def _answer_contrastive_loss(
+    torch,
+    model,
+    tokenizer,
+    texts: Sequence[str],
+    response_loss_mode: str,
+    max_negatives: int,
+    max_length: int,
+    device: str,
+):
+    groups = [
+        candidates
+        for text in texts
+        if (candidates := _answer_contrastive_candidates(str(text), response_loss_mode, max_negatives))
+    ]
+    if not groups:
+        param = next(model.parameters())
+        return torch.zeros((), dtype=param.dtype, device=param.device), 0
+
+    flat = [candidate for group in groups for candidate in group]
+    encoded = tokenizer(
+        flat,
+        return_tensors="pt",
+        padding=True,
+        truncation=True,
+        max_length=max_length,
+    )
+    batch = {key: value.to(device) for key, value in encoded.items()}
+    batch["loss_mask"] = _response_loss_mask(
+        tokenizer,
+        flat,
+        batch["input_ids"],
+        batch.get("attention_mask"),
+        max_length,
+        response_loss_mode,
+        device,
+    )
+    output = model(**_model_forward_inputs(batch), use_cache=False)
+    logits = torch.nan_to_num(
+        output.logits[:, :-1, :].contiguous().to(torch.float32),
+        nan=0.0,
+        posinf=1e4,
+        neginf=-1e4,
+    )
+    labels = batch["input_ids"][:, 1:].contiguous()
+    mask = batch["loss_mask"][:, 1:].contiguous().bool()
+    logp = torch.nn.functional.log_softmax(logits, dim=-1)
+    token_nll = -logp.gather(dim=-1, index=labels.unsqueeze(-1)).squeeze(-1)
+    row_nll = (token_nll * mask.to(token_nll.dtype)).sum(dim=-1) / mask.to(token_nll.dtype).sum(dim=-1).clamp_min(1.0)
+
+    losses = []
+    offset = 0
+    for group in groups:
+        count = len(group)
+        scores = -row_nll[offset : offset + count]
+        target = torch.zeros(1, dtype=torch.long, device=scores.device)
+        losses.append(torch.nn.functional.cross_entropy(scores.unsqueeze(0), target))
+        offset += count
+    return torch.stack(losses).mean(), len(groups)
+
+
+def _teacher_ranked_candidate_loss(
+    torch,
+    source_model,
+    candidate_model,
+    source_tokenizer,
+    candidate_tokenizer,
+    texts: Sequence[str],
+    response_loss_mode: str,
+    max_negatives: int,
+    temperature: float,
+    max_length: int,
+    device: str,
+):
+    groups = [
+        candidates
+        for text in texts
+        if (candidates := _answer_contrastive_candidates(str(text), response_loss_mode, max_negatives))
+    ]
+    if not groups:
+        param = next(candidate_model.parameters())
+        return torch.zeros((), dtype=param.dtype, device=param.device), 0
+
+    flat = [candidate for group in groups for candidate in group]
+    with torch.no_grad():
+        teacher_nll = _sequence_response_nlls(
+            torch,
+            source_model,
+            source_tokenizer,
+            flat,
+            response_loss_mode,
+            max_length,
+            device,
+        )
+    student_nll = _sequence_response_nlls(
+        torch,
+        candidate_model,
+        candidate_tokenizer,
+        flat,
+        response_loss_mode,
+        max_length,
+        device,
+    )
+
+    losses = []
+    offset = 0
+    for group in groups:
+        count = len(group)
+        teacher_scores = teacher_nll[offset : offset + count]
+        student_scores = student_nll[offset : offset + count]
+        if count >= 2:
+            losses.append(_candidate_rank_kl_loss(torch, teacher_scores, student_scores, temperature))
+        offset += count
+    if not losses:
+        param = next(candidate_model.parameters())
+        return torch.zeros((), dtype=param.dtype, device=param.device), 0
+    return torch.stack(losses).mean(), len(losses)
+
+
+def _sequence_response_nlls(
+    torch,
+    model,
+    tokenizer,
+    texts: Sequence[str],
+    response_loss_mode: str,
+    max_length: int,
+    device: str,
+):
+    encoded = tokenizer(
+        list(texts),
+        return_tensors="pt",
+        padding=True,
+        truncation=True,
+        max_length=max_length,
+    )
+    batch = {key: value.to(device) for key, value in encoded.items()}
+    batch["loss_mask"] = _response_loss_mask(
+        tokenizer,
+        list(texts),
+        batch["input_ids"],
+        batch.get("attention_mask"),
+        max_length,
+        response_loss_mode,
+        device,
+    )
+    output = model(**_model_forward_inputs(batch), use_cache=False)
+    logits = torch.nan_to_num(
+        output.logits[:, :-1, :].contiguous().to(torch.float32),
+        nan=0.0,
+        posinf=1e4,
+        neginf=-1e4,
+    )
+    labels = batch["input_ids"][:, 1:].contiguous()
+    mask = batch["loss_mask"][:, 1:].contiguous().bool()
+    logp = torch.nn.functional.log_softmax(logits, dim=-1)
+    token_nll = -logp.gather(dim=-1, index=labels.unsqueeze(-1)).squeeze(-1)
+    denom = mask.to(token_nll.dtype).sum(dim=-1).clamp_min(1.0)
+    return (token_nll * mask.to(token_nll.dtype)).sum(dim=-1) / denom
+
+
+def _candidate_rank_kl_loss(torch, teacher_nlls, student_nlls, temperature: float):
+    if temperature <= 0:
+        raise ValueError("temperature must be positive.")
+    if int(teacher_nlls.numel()) != int(student_nlls.numel()):
+        raise ValueError("teacher and student candidate groups must have matching lengths.")
+    if int(teacher_nlls.numel()) < 2:
+        return torch.zeros((), dtype=student_nlls.dtype, device=student_nlls.device)
+    target = torch.nn.functional.softmax((-teacher_nlls.detach().to(torch.float32)) / float(temperature), dim=0)
+    student_logp = torch.nn.functional.log_softmax((-student_nlls.to(torch.float32)) / float(temperature), dim=0)
+    return -(target * student_logp).sum()
+
+
+def _answer_contrastive_candidates(text: str, response_loss_mode: str, max_negatives: int) -> list[str]:
+    if max_negatives <= 0:
+        raise ValueError("max_negatives must be positive.")
+    start = _infer_response_char_start(text, response_loss_mode)
+    if start is None:
+        return []
+    answer_start = int(start)
+    while answer_start < len(text) and text[answer_start].isspace():
+        answer_start += 1
+    prefix = text[:answer_start]
+    response = text[answer_start:].strip()
+    if not response:
+        return []
+
+    number = re.match(r"-?\d+(?:\.\d+)?", response)
+    if number is not None:
+        gold = number.group(0)
+        negatives = _numeric_answer_negatives(gold, max_negatives, prompt=prefix)
+        return [f"{prefix}{item}" for item in [gold, *negatives]]
+
+    choice = re.match(r"([A-D])(?:[.)])?", response, flags=re.IGNORECASE)
+    if choice is not None:
+        gold = choice.group(1).upper()
+        negatives = [letter for letter in ("A", "B", "C", "D") if letter != gold][:max_negatives]
+        return [f"{prefix}{item}" for item in [gold, *negatives]]
+    return []
+
+
+def _numeric_answer_negatives(gold: str, max_negatives: int, prompt: str = "") -> list[str]:
+    if max_negatives <= 0:
+        raise ValueError("max_negatives must be positive.")
+    negatives: list[str] = []
+    if re.fullmatch(r"-?\d+", gold):
+        value = int(gold)
+        proposals = _arithmetic_prompt_negative_values(prompt, value)
+        proposals.extend(
+            [
+                value - 1,
+                value + 1,
+                value - 2,
+                value + 2,
+                value - 3,
+                value + 3,
+                value - 5,
+                value + 5,
+                value - 10,
+                value + 10,
+                value * 2,
+                max(0, value // 2),
+            ]
+        )
+        for proposal in proposals:
+            item = str(proposal)
+            if item != gold and item not in negatives:
+                negatives.append(item)
+            if len(negatives) >= max_negatives:
+                break
+        return negatives
+    try:
+        value = float(gold)
+    except ValueError:
+        return []
+    for delta in (-1.0, 1.0, -0.5, 0.5, 2.0, -2.0):
+        item = f"{value + delta:g}"
+        if item != gold and item not in negatives:
+            negatives.append(item)
+        if len(negatives) >= max_negatives:
+            break
+    return negatives
+
+
+def _arithmetic_prompt_negative_values(prompt: str, gold_value: int) -> list[int]:
+    numbers = [int(match) for match in re.findall(r"(?<![\w.])-?\d+(?![\w.])", prompt)]
+    if len(numbers) < 2:
+        return []
+    left, right = numbers[-2], numbers[-1]
+    lower = prompt.lower()
+    is_multiply = bool(re.search(r"\*|\bx\b|\btimes\b|\bmultipl", lower))
+    is_add = bool(re.search(r"\+|\bplus\b|\bsum\b|\badd", lower))
+    add_value = left + right
+    mul_value = left * right
+    diff_value = abs(left - right)
+    concat_value = int(f"{abs(left)}{abs(right)}") if left >= 0 and right >= 0 else None
+    proposals: list[int | None]
+    if is_multiply and not is_add:
+        proposals = [
+            add_value,
+            mul_value - left,
+            mul_value + left,
+            mul_value - right,
+            mul_value + right,
+            diff_value,
+            concat_value,
+        ]
+    elif is_add and not is_multiply:
+        proposals = [
+            mul_value,
+            add_value - left,
+            add_value + left,
+            add_value - right,
+            add_value + right,
+            diff_value,
+            concat_value,
+        ]
+    else:
+        proposals = [
+            add_value,
+            mul_value,
+            diff_value,
+            concat_value,
+        ]
+    clean: list[int] = []
+    for proposal in proposals:
+        if proposal is None or proposal == gold_value:
+            continue
+        if proposal not in clean:
+            clean.append(int(proposal))
+    return clean
+
+
+def _shift_positions_for_char_spans(torch, offsets, attention_mask, spans: Sequence[tuple[int, int]], device):
+    positions = []
+    for token_pos in range(1, int(offsets.shape[0])):
+        if attention_mask is not None and not bool(attention_mask[token_pos]):
+            continue
+        start = int(offsets[token_pos, 0])
+        end = int(offsets[token_pos, 1])
+        if end <= start:
+            continue
+        if any(start < span_end and end > span_start for span_start, span_end in spans):
+            positions.append(token_pos - 1)
+    return torch.tensor(positions, dtype=torch.long, device=device)
 
 
 def _decoded_token(tokenizer, token_id: int, canonical_fn) -> str:
@@ -2237,6 +2815,10 @@ def _cross_tokenizer_recovery_loss(
     projected_vocab_valid,
     reference_teacher,
     temperature: float,
+    source_input_ids=None,
+    token_kd_weight: float = 0.0,
+    token_focus_spans=None,
+    token_teacher_confidence_floor: float = 0.0,
 ):
     shift_student = torch.nan_to_num(
         student.logits[:, :-1, :].contiguous().to(torch.float32),
@@ -2340,6 +2922,19 @@ def _cross_tokenizer_recovery_loss(
             entropy_aware_kd_sharpness,
         )
         total = total + float(projected_vocab_kd_weight) * projected
+    if token_kd_weight > 0 and token_focus_spans:
+        if source_input_ids is None:
+            raise ValueError("source_input_ids are required when token_kd_weight is positive.")
+        token_kd = _cross_tokenizer_sequence_nll_loss(
+            torch,
+            shift_student,
+            teacher,
+            candidate_input_ids,
+            source_input_ids,
+            token_focus_spans,
+            token_teacher_confidence_floor,
+        )
+        total = total + float(token_kd_weight) * token_kd
     if reference_kd_weight > 0:
         if reference_teacher is None:
             raise ValueError("reference_teacher is required when reference_kd_weight is positive.")
@@ -2372,6 +2967,57 @@ def _cross_tokenizer_recovery_loss(
         entropy_penalty = _masked_entropy_penalty(torch, shift_student, candidate_lm_mask)
         total = total + float(entropy_weight) * entropy_penalty
     return total
+
+
+def _cross_tokenizer_sequence_nll_loss(
+    torch,
+    shift_student,
+    teacher,
+    candidate_input_ids,
+    source_input_ids,
+    focus_spans,
+    teacher_confidence_floor: float = 0.0,
+):
+    if not 0.0 <= float(teacher_confidence_floor) <= 1.0:
+        raise ValueError("teacher_confidence_floor must be in [0, 1].")
+    shift_teacher = torch.nan_to_num(
+        teacher.logits[:, :-1, :].contiguous().to(torch.float32),
+        nan=0.0,
+        posinf=1e4,
+        neginf=-1e4,
+    )
+    student_logp = torch.nn.functional.log_softmax(shift_student, dim=-1)
+    teacher_logp = torch.nn.functional.log_softmax(shift_teacher, dim=-1)
+    losses = []
+    weights = []
+    for item in focus_spans or []:
+        batch_idx = int(item["batch_idx"])
+        candidate_positions = item["candidate_positions"].to(device=shift_student.device, dtype=torch.long)
+        source_positions = item["source_positions"].to(device=shift_teacher.device, dtype=torch.long)
+        if int(candidate_positions.numel()) <= 0 or int(source_positions.numel()) <= 0:
+            continue
+        candidate_labels = candidate_input_ids[batch_idx, candidate_positions + 1].to(
+            device=shift_student.device,
+            dtype=torch.long,
+        )
+        source_labels = source_input_ids[batch_idx, source_positions + 1].to(device=shift_teacher.device, dtype=torch.long)
+        student_nll = -student_logp[batch_idx, candidate_positions].gather(
+            dim=-1,
+            index=candidate_labels.unsqueeze(-1),
+        ).squeeze(-1)
+        teacher_nll = -teacher_logp[batch_idx, source_positions].gather(
+            dim=-1,
+            index=source_labels.unsqueeze(-1),
+        ).squeeze(-1)
+        confidence = torch.exp(-teacher_nll.detach().mean()).clamp(
+            min=float(teacher_confidence_floor),
+            max=1.0,
+        )
+        losses.append(student_nll.mean() * confidence.to(device=shift_student.device, dtype=student_nll.dtype))
+        weights.append(confidence.to(device=shift_student.device, dtype=student_nll.dtype))
+    if not losses:
+        return torch.zeros((), dtype=shift_student.dtype, device=shift_student.device)
+    return torch.stack(losses).sum() / torch.stack(weights).sum().clamp_min(1e-6)
 
 
 def _same_tokenizer_reference_loss(
