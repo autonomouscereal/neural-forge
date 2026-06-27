@@ -59,6 +59,8 @@ Supported real-checkpoint surgery:
 - constrained cross-family MLP-channel transplant with `hf-xfamily-mlp-merge`
   and `hf-sweep-xfamily-mlp`, including LFM2.5 `feed_forward.w1/w3/w2`
   layers, Qwen/Llama-style gated MLPs, and GPT-NeoX/Pythia dense MLPs;
+- integrated cross-family MLP recovery sweeps that save recovered checkpoints
+  and re-run behavior gates;
 - calibration-aware gated FFN repair using ridge least squares on parent FFN
   inputs/outputs;
 - lightweight same-tokenizer recovery training with held-out eval prompts;

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Sequence
 
-from neural_forge.hf_tools import TEXT_EVALS, _decoder_layers, _dtype_from_name, _torch_and_transformers
+from neural_forge.hf_tools import TEXT_EVALS, _decoder_layer_container, _dtype_from_name, _torch_and_transformers
 
 
 RECOVERY_TEXTS = [
@@ -165,8 +165,8 @@ def _set_train_scope(model, train_scope: str) -> int:
         for param in model.parameters():
             param.requires_grad_(True)
     elif scope == "ffn":
-        for layer in _decoder_layers(model):
-            for module_name in ("mlp",):
+        for layer in _recovery_decoder_layers(model):
+            for module_name in ("mlp", "feed_forward"):
                 module = getattr(layer, module_name, None)
                 if module is not None:
                     for param in module.parameters():
@@ -174,7 +174,7 @@ def _set_train_scope(model, train_scope: str) -> int:
     elif scope.startswith("last"):
         count_text = scope.replace("last", "").strip("-_") or "1"
         count = int(count_text)
-        layers = _decoder_layers(model)
+        layers = _recovery_decoder_layers(model)
         if count <= 0 or not layers:
             raise ValueError("last-N train scope requires N > 0 and decoder layers.")
         for layer in layers[-count:]:
@@ -187,6 +187,13 @@ def _set_train_scope(model, train_scope: str) -> int:
     else:
         raise ValueError("train_scope must be all, ffn, or lastN, e.g. last1.")
     return sum(param.numel() for param in model.parameters() if param.requires_grad)
+
+
+def _recovery_decoder_layers(model) -> list[Any]:
+    try:
+        return list(_decoder_layer_container(model)[2])
+    except ValueError:
+        return []
 
 
 def _make_batches(tokenizer, texts: Sequence[str], batch_size: int, max_length: int, device: str) -> list[dict[str, Any]]:

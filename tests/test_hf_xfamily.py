@@ -6,6 +6,7 @@ from neural_forge.cli import build_parser
 from neural_forge.cli import _parse_layer_groups
 from neural_forge.hf_recovery import RECOVERY_TEXTS
 from neural_forge.hf_recovery import _assert_same_vocab
+from neural_forge.hf_recovery import _set_train_scope
 from neural_forge.hf_tools import TEXT_EVALS
 from neural_forge.hf_tools import _layer_groups_for_report
 from neural_forge.hf_tools import _layer_groups_tag
@@ -127,6 +128,11 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "128",
             "--max-donor-channels",
             "256",
+            "--recover",
+            "--recover-steps",
+            "3",
+            "--recover-train-scope",
+            "ffn",
         ]
     )
     assert sweep_args.output_dir == "out"
@@ -138,6 +144,23 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert search_args.target_shrink == 0.02
     assert xfamily_mlp_args.max_host_channels == 128
     assert xfamily_mlp_args.max_donor_channels == 256
+    assert xfamily_mlp_args.recover is True
+    assert xfamily_mlp_args.recover_steps == 3
+    assert xfamily_mlp_args.recover_train_scope == "ffn"
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "hf-sweep-task",
+                "out",
+                "--base-model",
+                "base",
+                "--tuned-model",
+                "tuned",
+                "--alphas",
+                "0.1",
+                "--recover",
+            ]
+        )
 
 
 def test_parse_layer_groups() -> None:
@@ -169,3 +192,86 @@ def test_mlp_spec_detects_lfm_feed_forward_names() -> None:
     assert spec["kind"] == "gated"
     assert spec["input_names"] == ["w1", "w3"]
     assert spec["output_name"] == "w2"
+
+
+def test_recovery_train_scope_supports_feed_forward_layers() -> None:
+    class _Param:
+        def __init__(self) -> None:
+            self.requires_grad = False
+
+        def requires_grad_(self, value: bool):
+            self.requires_grad = value
+            return self
+
+        def numel(self) -> int:
+            return 1
+
+    class _Module:
+        def __init__(self) -> None:
+            self.param = _Param()
+
+        def parameters(self):
+            return [self.param]
+
+    class _Layer:
+        def __init__(self) -> None:
+            self.feed_forward = _Module()
+
+        def parameters(self):
+            return self.feed_forward.parameters()
+
+    class _Model:
+        def __init__(self) -> None:
+            self.model = _Obj(layers=[_Layer(), _Layer()])
+            self.output = _Module()
+
+        def parameters(self):
+            params = []
+            for layer in self.model.layers:
+                params.extend(layer.parameters())
+            params.extend(self.output.parameters())
+            return params
+
+        def get_output_embeddings(self):
+            return self.output
+
+    model = _Model()
+    trainable = _set_train_scope(model, "ffn")
+    assert trainable == 2
+    assert all(layer.feed_forward.param.requires_grad for layer in model.model.layers)
+
+
+def test_xfamily_mlp_handler_passes_recovery_flags(monkeypatch) -> None:
+    import neural_forge.hf_xfamily as hf_xfamily
+
+    captured = {}
+
+    def fake_sweep(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(hf_xfamily, "sweep_cross_family_mlp_merge", fake_sweep)
+    args = build_parser().parse_args(
+        [
+            "hf-sweep-xfamily-mlp",
+            "out",
+            "--host-model",
+            "host",
+            "--donor-model",
+            "donor",
+            "--alphas",
+            "0.005",
+            "--recover",
+            "--recover-only-failed",
+            "--recover-steps",
+            "7",
+            "--recover-train-scope",
+            "last2",
+        ]
+    )
+    result = args.func(args)
+    assert result == {"ok": True}
+    assert captured["recover_candidates"] is True
+    assert captured["recover_only_failed"] is True
+    assert captured["recovery_steps"] == 7
+    assert captured["recovery_train_scope"] == "last2"

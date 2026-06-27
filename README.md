@@ -155,6 +155,18 @@ neural-forge hf-sweep-xfamily-mlp runs/qwen-lfm25-mlp `
   --max-donor-channels 128
 ```
 
+Add lightweight recovery after each cross-family MLP candidate:
+
+```powershell
+neural-forge hf-sweep-xfamily-mlp runs/qwen-lfm25-mlp-recovered `
+  --host-model Qwen/Qwen3-0.6B-Base `
+  --donor-model LiquidAI/LFM2.5-230M `
+  --alphas 0.005 `
+  --recover `
+  --recover-steps 8 `
+  --recover-train-scope last1
+```
+
 Behavior probes:
 
 ```powershell

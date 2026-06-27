@@ -271,6 +271,51 @@ Interpretation:
   layer. They are safe cross-family signal transplants, not proof that large
   donor capability transfer works without recovery training.
 
+Cross-family MLP transplant with integrated recovery:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/xfamily_mlp_qwen3_lfm25_recover3_20260626
+```
+
+Run settings:
+
+```text
+host: Qwen/Qwen3-0.6B-Base
+donor: LiquidAI/LFM2.5-230M
+alpha: 0.005
+shared-token anchors: 30,000
+host channels considered per layer: 256
+donor channels considered per layer: 256
+recovery: enabled
+recovery steps: 8
+recovery train scope: last1
+recovery dtype: float32
+```
+
+| Stage | Params | Mean PPL | Choice Acc | Gate |
+|---|---:|---:|---:|---|
+| Qwen3 host baseline | 596,049,920 | 280.375 | 1.00 | Baseline |
+| Qwen3 <- LFM2.5 MLP alpha 0.005 | 596,049,920 | 284.984 | 1.00 | Passed |
+| recovered alpha 0.005 | 596,049,920 | 227.893 | 1.00 | Passed |
+
+Recovery details:
+
+- `hf-sweep-xfamily-mlp --recover` saved the recovered checkpoint under
+  `recovered_models/xfamily_mlp_alpha_0p0050_recovered`;
+- recovery used 8 calibration texts that do not overlap the eval prompts;
+- train scope `last1` updated 171,313,408 trainable parameters;
+- logged recovery loss moved from `3.743` at step 1 to `2.959` at step 8,
+  with a transient spike at step 5.
+
+Sample behavior:
+
+- baseline and merged model both explained neural pruning as removing
+  unnecessary or redundant neurons/connections;
+- recovered model kept the pruning explanation readable and concise;
+- baseline, merged, and recovered models all produced a usable answer about
+  merge risk; the recovered answer warned that merged models may generalize
+  poorly when parent learning patterns differ.
+
 ## Merge-First Width And Depth Folding
 
 After the pruning-first baseline failed, the Qwen3 run was repeated with

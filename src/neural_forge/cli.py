@@ -285,6 +285,18 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_mlp_sweep.add_argument("--max-ppl-ratio", type=float, default=1.5)
     xfamily_mlp_sweep.add_argument("--max-accuracy-drop", type=float, default=0.25)
     xfamily_mlp_sweep.add_argument("--min-choice-accuracy", type=float, default=0.5)
+    xfamily_mlp_sweep.add_argument("--recover", action="store_true", help="Run lightweight recovery on each selected candidate and re-gate it.")
+    xfamily_mlp_sweep.add_argument("--recover-only-failed", action="store_true")
+    xfamily_mlp_sweep.add_argument("--recover-steps", type=int, default=40)
+    xfamily_mlp_sweep.add_argument("--recover-batch-size", type=int, default=1)
+    xfamily_mlp_sweep.add_argument("--recover-max-length", type=int, default=96)
+    xfamily_mlp_sweep.add_argument("--recover-lr", type=float, default=5e-5)
+    xfamily_mlp_sweep.add_argument("--recover-kd-weight", type=float, default=0.5)
+    xfamily_mlp_sweep.add_argument("--recover-lm-weight", type=float, default=0.5)
+    xfamily_mlp_sweep.add_argument("--recover-temperature", type=float, default=2.0)
+    xfamily_mlp_sweep.add_argument("--recover-train-scope", default="last1")
+    xfamily_mlp_sweep.add_argument("--recover-dtype", default="float32")
+    xfamily_mlp_sweep.add_argument("--recover-grad-clip", type=float, default=1.0)
     xfamily_mlp_sweep.set_defaults(func=cmd_hf_xfamily_mlp_sweep)
 
     recover = sub.add_parser("hf-recover", help="Run lightweight same-tokenizer recovery training after HF surgery.")
@@ -672,6 +684,18 @@ def cmd_hf_xfamily_mlp_sweep(args: argparse.Namespace) -> dict[str, object]:
         max_ppl_ratio=args.max_ppl_ratio,
         max_accuracy_drop=args.max_accuracy_drop,
         min_choice_accuracy=args.min_choice_accuracy,
+        recover_candidates=args.recover,
+        recover_only_failed=args.recover_only_failed,
+        recovery_steps=args.recover_steps,
+        recovery_batch_size=args.recover_batch_size,
+        recovery_max_length=args.recover_max_length,
+        recovery_lr=args.recover_lr,
+        recovery_kd_weight=args.recover_kd_weight,
+        recovery_lm_weight=args.recover_lm_weight,
+        recovery_temperature=args.recover_temperature,
+        recovery_train_scope=args.recover_train_scope,
+        recovery_dtype=args.recover_dtype,
+        recovery_grad_clip=args.recover_grad_clip,
     )
 
 

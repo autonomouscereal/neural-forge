@@ -372,6 +372,18 @@ def sweep_cross_family_mlp_merge(
     max_ppl_ratio: float = 1.5,
     max_accuracy_drop: float = 0.25,
     min_choice_accuracy: float = 0.5,
+    recover_candidates: bool = False,
+    recover_only_failed: bool = False,
+    recovery_steps: int = 40,
+    recovery_batch_size: int = 1,
+    recovery_max_length: int = 96,
+    recovery_lr: float = 5e-5,
+    recovery_kd_weight: float = 0.5,
+    recovery_lm_weight: float = 0.5,
+    recovery_temperature: float = 2.0,
+    recovery_train_scope: str = "last1",
+    recovery_dtype: str = "float32",
+    recovery_grad_clip: float = 1.0,
 ) -> dict[str, Any]:
     """Sweep cross-family MLP-channel transplants and gate each result."""
 
@@ -384,8 +396,11 @@ def sweep_cross_family_mlp_merge(
 
     root = Path(output_dir)
     model_root = root / "models"
+    recovered_root = root / "recovered_models"
     report_root = root / "reports"
     model_root.mkdir(parents=True, exist_ok=True)
+    if recover_candidates:
+        recovered_root.mkdir(parents=True, exist_ok=True)
     report_root.mkdir(parents=True, exist_ok=True)
 
     if baseline_report is None:
@@ -437,18 +452,44 @@ def sweep_cross_family_mlp_merge(
             max_accuracy_drop=max_accuracy_drop,
             min_choice_accuracy=min_choice_accuracy,
         )
-        candidates.append(
-            {
-                "alpha": alpha_value,
-                "tag": tag,
-                "model_dir": str(candidate_dir),
-                "report": str(candidate_report_path),
-                "gate_report": str(gate_path),
-                "passed": gate["passed"],
-                "merge": merge_report,
-                "metrics": gate["candidate"],
-            }
-        )
+        item = {
+            "alpha": alpha_value,
+            "tag": tag,
+            "model_dir": str(candidate_dir),
+            "report": str(candidate_report_path),
+            "gate_report": str(gate_path),
+            "passed": gate["passed"],
+            "merge": merge_report,
+            "metrics": gate["candidate"],
+        }
+        if recover_candidates and (not recover_only_failed or not gate["passed"]):
+            recovery = _recover_and_gate_candidate(
+                host_model=host_model,
+                candidate_dir=candidate_dir,
+                recovered_dir=recovered_root / f"xfamily_mlp_alpha_{tag}_recovered",
+                recovered_report_path=report_root / f"xfamily_mlp_alpha_{tag}_recovered.json",
+                recovered_gate_path=report_root / f"xfamily_mlp_alpha_{tag}_recovered_gate.json",
+                baseline=baseline,
+                torch_dtype=torch_dtype,
+                device=device,
+                trust_remote_code=trust_remote_code,
+                max_new_tokens=max_new_tokens,
+                max_ppl_ratio=max_ppl_ratio,
+                max_accuracy_drop=max_accuracy_drop,
+                min_choice_accuracy=min_choice_accuracy,
+                recovery_steps=recovery_steps,
+                recovery_batch_size=recovery_batch_size,
+                recovery_max_length=recovery_max_length,
+                recovery_lr=recovery_lr,
+                recovery_kd_weight=recovery_kd_weight,
+                recovery_lm_weight=recovery_lm_weight,
+                recovery_temperature=recovery_temperature,
+                recovery_train_scope=recovery_train_scope,
+                recovery_dtype=recovery_dtype,
+                recovery_grad_clip=recovery_grad_clip,
+            )
+            item["recovery"] = recovery
+        candidates.append(item)
 
     summary = {
         "operation": "sweep_cross_family_mlp_merge",
@@ -464,6 +505,20 @@ def sweep_cross_family_mlp_merge(
         "max_anchors": max_anchors,
         "max_host_channels": max_host_channels,
         "max_donor_channels": max_donor_channels,
+        "recovery": {
+            "enabled": recover_candidates,
+            "recover_only_failed": recover_only_failed,
+            "steps": recovery_steps,
+            "batch_size": recovery_batch_size,
+            "max_length": recovery_max_length,
+            "lr": recovery_lr,
+            "kd_weight": recovery_kd_weight,
+            "lm_weight": recovery_lm_weight,
+            "temperature": recovery_temperature,
+            "train_scope": recovery_train_scope,
+            "dtype": recovery_dtype,
+            "grad_clip": recovery_grad_clip,
+        },
         "gate_thresholds": {
             "max_ppl_ratio": max_ppl_ratio,
             "max_accuracy_drop": max_accuracy_drop,
@@ -471,9 +526,82 @@ def sweep_cross_family_mlp_merge(
         },
         "candidates": candidates,
         "passed_candidates": [item for item in candidates if item["passed"]],
+        "recovered_passed_candidates": [
+            item for item in candidates if item.get("recovery", {}).get("passed")
+        ],
     }
     _write_json(report_root / "xfamily_mlp_sweep_summary.json", summary)
     return summary
+
+
+def _recover_and_gate_candidate(
+    host_model: str,
+    candidate_dir: Path,
+    recovered_dir: Path,
+    recovered_report_path: Path,
+    recovered_gate_path: Path,
+    baseline: dict[str, Any],
+    torch_dtype: str,
+    device: str,
+    trust_remote_code: bool,
+    max_new_tokens: int,
+    max_ppl_ratio: float,
+    max_accuracy_drop: float,
+    min_choice_accuracy: float,
+    recovery_steps: int,
+    recovery_batch_size: int,
+    recovery_max_length: int,
+    recovery_lr: float,
+    recovery_kd_weight: float,
+    recovery_lm_weight: float,
+    recovery_temperature: float,
+    recovery_train_scope: str,
+    recovery_dtype: str,
+    recovery_grad_clip: float,
+) -> dict[str, Any]:
+    from neural_forge.hf_recovery import recover_causal_lm
+
+    recovery_report = recover_causal_lm(
+        source_model=host_model,
+        candidate_model=str(candidate_dir),
+        output_dir=recovered_dir,
+        steps=recovery_steps,
+        batch_size=recovery_batch_size,
+        max_length=recovery_max_length,
+        lr=recovery_lr,
+        kd_weight=recovery_kd_weight,
+        lm_weight=recovery_lm_weight,
+        temperature=recovery_temperature,
+        train_scope=recovery_train_scope,
+        torch_dtype=recovery_dtype,
+        device=device,
+        trust_remote_code=trust_remote_code,
+        grad_clip=recovery_grad_clip,
+    )
+    recovered_eval = evaluate_text_model(
+        str(recovered_dir),
+        recovered_report_path,
+        torch_dtype=torch_dtype,
+        device=device,
+        trust_remote_code=trust_remote_code,
+        max_new_tokens=max_new_tokens,
+    )
+    recovered_gate = gate_text_report(
+        baseline,
+        recovered_eval,
+        output_file=recovered_gate_path,
+        max_ppl_ratio=max_ppl_ratio,
+        max_accuracy_drop=max_accuracy_drop,
+        min_choice_accuracy=min_choice_accuracy,
+    )
+    return {
+        "model_dir": str(recovered_dir),
+        "recovery_report": recovery_report,
+        "report": str(recovered_report_path),
+        "gate_report": str(recovered_gate_path),
+        "passed": recovered_gate["passed"],
+        "metrics": recovered_gate["candidate"],
+    }
 
 
 def _canonical_token_map(tokenizer) -> dict[str, int]:
