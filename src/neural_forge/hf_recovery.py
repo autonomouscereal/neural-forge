@@ -1004,10 +1004,10 @@ def _calibration_text_from_obj(item: Any) -> str | None:
     prompt = item.get("prompt")
     target = item.get("target")
     if isinstance(prompt, str) and isinstance(target, str):
-        return f"{prompt}\n{target}"
+        return _join_prompt_response(prompt, target)
     response = item.get("response")
     if isinstance(prompt, str) and isinstance(response, str):
-        return f"{prompt}\n{response}"
+        return _join_prompt_response(prompt, response)
     for key in ("text", "content", "completion", "response"):
         value = item.get(key)
         if isinstance(value, str) and value.strip():
@@ -1029,6 +1029,14 @@ def _messages_to_text(messages: Sequence[Any]) -> str:
         else:
             parts.append(content.strip())
     return "\n".join(parts)
+
+
+def _join_prompt_response(prompt: str, response: str) -> str:
+    if prompt.endswith((" ", "\n", "\t")):
+        return f"{prompt}{response}"
+    if prompt.rstrip().endswith(":"):
+        return f"{prompt} {response}"
+    return f"{prompt}\n{response}"
 
 
 def _assert_same_vocab(left, right) -> None:

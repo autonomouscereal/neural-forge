@@ -18,6 +18,7 @@ from neural_forge.hf_recovery import _fit_shared_embedding_hidden_projection
 from neural_forge.hf_recovery import _fold_groups_from_report
 from neural_forge.hf_recovery import _hidden_representation_loss
 from neural_forge.hf_recovery import _infer_response_char_start
+from neural_forge.hf_recovery import _join_prompt_response
 from neural_forge.hf_recovery import _linear_cka_tensor
 from neural_forge.hf_recovery import _mlp_projection_spec
 from neural_forge.hf_recovery import _project_candidate_probs_to_source_vocab
@@ -130,6 +131,12 @@ def test_append_eos_text_adds_missing_token_once() -> None:
     assert _append_eos_text(_Obj(eos_token="<eos>"), "answer") == "answer<eos>"
     assert _append_eos_text(_Obj(eos_token="<eos>"), "answer<eos>") == "answer<eos>"
     assert _append_eos_text(_Obj(eos_token=None), "answer") == "answer"
+
+
+def test_join_prompt_response_preserves_answer_and_code_surfaces() -> None:
+    assert _join_prompt_response("Answer:", "156") == "Answer: 156"
+    assert _join_prompt_response("```python\n", "def add(a, b):") == "```python\ndef add(a, b):"
+    assert _join_prompt_response("Prompt", "Response") == "Prompt\nResponse"
 
 
 def test_recovery_defaults_do_not_reuse_evaluation_prompts() -> None:
