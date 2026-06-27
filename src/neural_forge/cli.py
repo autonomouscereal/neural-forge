@@ -443,6 +443,25 @@ def build_parser() -> argparse.ArgumentParser:
     recover.add_argument("--max-calibration-texts", type=int)
     recover.set_defaults(func=cmd_hf_recover)
 
+    reconstruct = sub.add_parser(
+        "hf-reconstruct-folded",
+        help="Run training-free ridge reconstruction after residual layer folding.",
+    )
+    reconstruct.add_argument("source_model")
+    reconstruct.add_argument("candidate_model")
+    reconstruct.add_argument("output")
+    reconstruct.add_argument("--layer-merge-report")
+    reconstruct.add_argument("--ridge", type=float, default=1e-3)
+    reconstruct.add_argument("--reconstruction-alpha", type=float, default=1.0)
+    reconstruct.add_argument("--max-length", type=int, default=128)
+    reconstruct.add_argument("--max-tokens-per-layer", type=int, default=512)
+    reconstruct.add_argument("--dtype", default="float16")
+    reconstruct.add_argument("--device", default="cuda:0")
+    reconstruct.add_argument("--trust-remote-code", action="store_true")
+    reconstruct.add_argument("--calibration-file")
+    reconstruct.add_argument("--max-calibration-texts", type=int)
+    reconstruct.set_defaults(func=cmd_hf_reconstruct_folded)
+
     lm_recover = sub.add_parser("hf-lm-recover", help="Run teacherless LM recovery on a folded HF causal LM.")
     lm_recover.add_argument("candidate_model")
     lm_recover.add_argument("output")
@@ -993,6 +1012,25 @@ def cmd_hf_recover(args: argparse.Namespace) -> dict[str, object]:
         trust_remote_code=args.trust_remote_code,
         calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
         grad_clip=args.grad_clip,
+    )
+
+
+def cmd_hf_reconstruct_folded(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_recovery import reconstruct_folded_causal_lm
+
+    return reconstruct_folded_causal_lm(
+        source_model=args.source_model,
+        candidate_model=args.candidate_model,
+        output_dir=args.output,
+        layer_merge_report=args.layer_merge_report,
+        ridge=args.ridge,
+        reconstruction_alpha=args.reconstruction_alpha,
+        max_length=args.max_length,
+        max_tokens_per_layer=args.max_tokens_per_layer,
+        torch_dtype=args.dtype,
+        device=args.device,
+        trust_remote_code=args.trust_remote_code,
+        calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
     )
 
 

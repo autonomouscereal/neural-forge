@@ -1182,3 +1182,88 @@ Interpretation:
   ridge/Gram map that reconstructs pre-fold block outputs from post-fold block
   outputs, and apply it sequentially layer by layer with activations recomputed
   after each repaired layer.
+
+## Fold Reconstruction Probe
+
+`hf-reconstruct-folded` was added as the first GRAIL-style compensation path for
+same-tokenizer residual depth folds. It loads a folded checkpoint plus its
+`neural_forge_layer_merge_report.json`, collects calibration activations at the
+downstream consumer layer, solves ridge maps from folded-candidate layernorm
+activations to source activations, and absorbs those maps into downstream
+attention and MLP input projections. It is training-free and runs sequentially,
+so later folded groups see activations after earlier repairs.
+
+Implementation details:
+
+- attention reconstruction collects `input_layernorm` activations and updates
+  downstream `q_proj`, `k_proj`, and `v_proj`;
+- MLP reconstruction collects `post_attention_layernorm` activations and updates
+  downstream `gate_proj` / `up_proj` or equivalent input projections;
+- `--reconstruction-alpha` blends the fitted map with identity before
+  absorption so over-strong local fits can be damped;
+- this path currently targets same-tokenizer folded checkpoints, not the
+  cross-tokenizer blank-target Qwen -> SmolLM projection.
+
+Run:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/smollm135m_depth_fold_reconstruct_20260627_212259
+```
+
+Setup:
+
+- source: `HuggingFaceTB/SmolLM2-135M`;
+- surgery: fold residual layers `13+14` with `hf-merge-layers --method fold`;
+- params: `134,515,008 -> 130,974,912`;
+- shrink: about `2.63%`;
+- calibration: 64 curated Omnicoder JSONL texts, max length `96`;
+- reconstruction tokens/layer: `512`.
+
+Local reconstruction fit:
+
+| Reconstruction | Attention Error Before -> After | MLP Error Before -> After |
+|---|---:|---:|
+| ridge `0.001`, alpha `1.0` | 0.335 -> 0.024 | 0.466 -> 0.020 |
+| ridge `0.01`, alpha `1.0` | 0.335 -> 0.068 | 0.468 -> 0.068 |
+| ridge `0.01`, alpha `0.25` | 0.335 -> 0.258 | 0.515 -> 0.392 |
+| ridge `0.01`, alpha `0.5` | 0.335 -> 0.182 | 0.496 -> 0.260 |
+| ridge `0.1`, alpha `1.0` | 0.335 -> 0.158 | 0.476 -> 0.175 |
+| ridge `1.0`, alpha `1.0` | 0.335 -> 0.317 | 0.501 -> 0.385 |
+
+Neural Forge probes:
+
+| Model | Mean PPL | Choice Acc | Gate | Manual output |
+|---|---:|---:|---|---|
+| source SmolLM2-135M | 347.405 | 0.50 | baseline | weak but usable Python answer |
+| folded `13+14` | 399.337 | 0.25 | failed | repeated sentence/code patterns |
+| reconstruct ridge `0.001`, alpha `1.0` | 428.222 | 0.25 | failed | worse PPL, repeated patterns |
+| reconstruct ridge `0.01`, alpha `1.0` | 397.054 | 0.25 | failed | slight PPL recovery, worse Python loop |
+| reconstruct ridge `0.01`, alpha `0.25` | 400.400 | 0.25 | failed | Python shape preserved but still repetitive |
+| reconstruct ridge `0.01`, alpha `0.5` | 400.632 | 0.25 | failed | Python shape preserved but still repetitive |
+| reconstruct ridge `0.1`, alpha `1.0` | 417.419 | 0.25 | failed | repeated patterns |
+| reconstruct ridge `1.0`, alpha `1.0` | 428.756 | 0.25 | failed | repeated patterns |
+
+External benchmark slice (`arc_easy`, `hellaswag`, `piqa`, `winogrande`, limit
+50):
+
+| Model | ARC-Easy Acc / Norm | HellaSwag Acc / Norm | PIQA Acc / Norm | Winogrande Acc |
+|---|---:|---:|---:|---:|
+| folded `13+14` | 0.50 / 0.50 | 0.38 / 0.50 | 0.68 / 0.66 | 0.62 |
+| reconstruct ridge `0.01`, alpha `0.25` | 0.50 / 0.50 | 0.38 / 0.48 | 0.68 / 0.66 | 0.66 |
+
+Interpretation:
+
+- The reconstruction machinery works mechanically: it captures activations,
+  solves ridge maps, absorbs them into downstream projections, and saves a
+  loadable checkpoint.
+- Local activation reconstruction error is not a reliable proxy for behavior.
+  The strongest local fit (`ridge=0.001`) worsened PPL and generations.
+- Partial map absorption prevents the worst over-correction but still does not
+  pass behavior gates. It slightly improved one external slice number
+  (Winogrande `0.62 -> 0.66`) while slightly reducing HellaSwag normalized
+  accuracy (`0.50 -> 0.48`).
+- Next step: change the compensation target. Instead of only mapping
+  downstream layernorm activations into consumer input projections, fit a
+  residual/block-output reconstruction or a low-rank adapter-free update to the
+  folded survivor block itself, then gate by held-out generations and external
+  tasks rather than local activation error.

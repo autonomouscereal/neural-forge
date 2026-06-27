@@ -6,6 +6,9 @@ from neural_forge.cli import build_parser
 from neural_forge.cli import _parse_layer_groups
 from neural_forge.hf_recovery import RECOVERY_TEXTS
 from neural_forge.hf_recovery import _assert_same_vocab
+from neural_forge.hf_recovery import _absorb_input_map_into_linears
+from neural_forge.hf_recovery import _candidate_index_after_depth_fold
+from neural_forge.hf_recovery import _fold_groups_from_report
 from neural_forge.hf_recovery import _recovery_loss
 from neural_forge.hf_recovery import _set_train_scope
 from neural_forge.hf_recovery import load_calibration_texts
@@ -431,6 +434,45 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert lm_recover_args.calibration_file == "calibration.jsonl"
     assert lm_recover_args.max_calibration_texts == 9
 
+    reconstruct_args = parser.parse_args(
+        [
+            "hf-reconstruct-folded",
+            "source",
+            "folded",
+            "out",
+            "--layer-merge-report",
+            "merge.json",
+            "--ridge",
+            "0.02",
+            "--reconstruction-alpha",
+            "0.5",
+            "--max-length",
+            "80",
+            "--max-tokens-per-layer",
+            "33",
+            "--dtype",
+            "float32",
+            "--device",
+            "cpu",
+            "--calibration-file",
+            "calibration.jsonl",
+            "--max-calibration-texts",
+            "6",
+        ]
+    )
+    assert reconstruct_args.source_model == "source"
+    assert reconstruct_args.candidate_model == "folded"
+    assert reconstruct_args.output == "out"
+    assert reconstruct_args.layer_merge_report == "merge.json"
+    assert reconstruct_args.ridge == 0.02
+    assert reconstruct_args.reconstruction_alpha == 0.5
+    assert reconstruct_args.max_length == 80
+    assert reconstruct_args.max_tokens_per_layer == 33
+    assert reconstruct_args.dtype == "float32"
+    assert reconstruct_args.device == "cpu"
+    assert reconstruct_args.calibration_file == "calibration.jsonl"
+    assert reconstruct_args.max_calibration_texts == 6
+
 
 def test_parse_layer_groups() -> None:
     assert _parse_layer_groups("3+4, 7+8+9") == [[3, 4], [7, 8, 9]]
@@ -447,6 +489,30 @@ def test_layer_group_tags_are_stable() -> None:
     groups = _normalize_layer_groups([[14, 13], [20, 19]])
     assert _layer_groups_tag(groups) == "13-14_19-20"
     assert _layer_groups_for_report(groups) == [[13, 14], [19, 20]]
+
+
+def test_fold_groups_from_report_keeps_only_fold_method_groups() -> None:
+    report = {
+        "operation": "merge_decoder_layers",
+        "method": "fold",
+        "groups": [
+            {"group": [3, 4], "survivor": 3, "folded": [4]},
+            {"group": [7, 8, 9], "survivor": 7, "folded": [8, 9]},
+        ],
+    }
+    groups = _fold_groups_from_report(report)
+    assert groups == [
+        {"group": [3, 4], "survivor": 3, "folded": [4], "all_folded_indices": [4, 8, 9]},
+        {"group": [7, 8, 9], "survivor": 7, "folded": [8, 9], "all_folded_indices": [4, 8, 9]},
+    ]
+    assert _fold_groups_from_report({"operation": "merge_decoder_layers", "method": "average", "groups": []}) == []
+    with pytest.raises(ValueError, match="merge_decoder_layers"):
+        _fold_groups_from_report({"operation": "drop_decoder_layers"})
+
+
+def test_candidate_index_after_depth_fold_accounts_for_removed_layers() -> None:
+    assert _candidate_index_after_depth_fold(5, [2, 4]) == 3
+    assert _candidate_index_after_depth_fold(2, [2, 4]) == 2
 
 
 def test_proportional_layer_index_maps_depths() -> None:
@@ -540,6 +606,17 @@ def test_recovery_loss_allows_lm_only_without_teacher() -> None:
             lm_weight=0.0,
             temperature=1.0,
         )
+
+
+def test_absorb_input_map_into_linears_updates_weight_orientation() -> None:
+    torch = pytest.importorskip("torch")
+    linear = torch.nn.Linear(2, 2, bias=False)
+    linear.weight.data.copy_(torch.eye(2))
+    mapping = torch.tensor([[2.0, 0.0], [0.0, 3.0]])
+
+    _absorb_input_map_into_linears(torch, [("linear", linear)], mapping)
+
+    assert linear.weight.detach().flatten().tolist() == pytest.approx([2.0, 0.0, 0.0, 3.0])
 
 
 def test_mlp_spec_detects_lfm_feed_forward_names() -> None:
@@ -764,6 +841,64 @@ def test_hf_lm_recover_handler_passes_teacherless_flags(monkeypatch) -> None:
         "trust_remote_code": False,
         "calibration_texts": ["calibration text"],
         "grad_clip": 0.5,
+    }
+
+
+def test_hf_reconstruct_folded_handler_passes_flags(monkeypatch) -> None:
+    import neural_forge.cli as cli
+    import neural_forge.hf_recovery as hf_recovery
+
+    captured = {}
+
+    def fake_reconstruct(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(hf_recovery, "reconstruct_folded_causal_lm", fake_reconstruct)
+    monkeypatch.setattr(cli, "_load_recovery_calibration_texts", lambda path, max_texts: ["calibration text"])
+    args = build_parser().parse_args(
+        [
+            "hf-reconstruct-folded",
+            "source",
+            "folded",
+            "out",
+            "--layer-merge-report",
+            "merge.json",
+            "--ridge",
+            "0.02",
+            "--reconstruction-alpha",
+            "0.4",
+            "--max-length",
+            "72",
+            "--max-tokens-per-layer",
+            "128",
+            "--dtype",
+            "float32",
+            "--device",
+            "cpu",
+            "--trust-remote-code",
+            "--calibration-file",
+            "calibration.jsonl",
+            "--max-calibration-texts",
+            "4",
+        ]
+    )
+    result = args.func(args)
+
+    assert result == {"ok": True}
+    assert captured == {
+        "source_model": "source",
+        "candidate_model": "folded",
+        "output_dir": "out",
+        "layer_merge_report": "merge.json",
+        "ridge": 0.02,
+        "reconstruction_alpha": 0.4,
+        "max_length": 72,
+        "max_tokens_per_layer": 128,
+        "torch_dtype": "float32",
+        "device": "cpu",
+        "trust_remote_code": True,
+        "calibration_texts": ["calibration text"],
     }
 
 

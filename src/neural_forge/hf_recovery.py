@@ -6,7 +6,13 @@ import json
 from pathlib import Path
 from typing import Any, Sequence
 
-from neural_forge.hf_tools import TEXT_EVALS, _decoder_layer_container, _dtype_from_name, _torch_and_transformers
+from neural_forge.hf_tools import (
+    TEXT_EVALS,
+    _decoder_layer_container,
+    _dtype_from_name,
+    _ridge_solve_features,
+    _torch_and_transformers,
+)
 
 
 RECOVERY_TEXTS = [
@@ -165,6 +171,126 @@ def recover_causal_lm(
     return report
 
 
+def reconstruct_folded_causal_lm(
+    source_model: str,
+    candidate_model: str,
+    output_dir: str | Path,
+    layer_merge_report: str | Path | dict[str, Any] | None = None,
+    ridge: float = 1e-3,
+    reconstruction_alpha: float = 1.0,
+    max_length: int = 128,
+    max_tokens_per_layer: int = 512,
+    torch_dtype: str = "float16",
+    device: str = "cuda:0",
+    trust_remote_code: bool = False,
+    calibration_texts: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    """Apply GRAIL-style linear reconstruction after residual layer folding.
+
+    This is a no-backprop compensation pass for same-tokenizer depth folds. For
+    each folded layer group, it fits calibration maps from the folded candidate's
+    downstream layernorm activations to the source model's corresponding
+    activations, then absorbs those maps into the downstream attention and MLP
+    input projections.
+    """
+
+    if ridge < 0:
+        raise ValueError("ridge must be non-negative.")
+    if not 0.0 <= float(reconstruction_alpha) <= 1.0:
+        raise ValueError("reconstruction_alpha must be in [0, 1].")
+    if max_length <= 1:
+        raise ValueError("max_length must be greater than 1.")
+    if max_tokens_per_layer <= 0:
+        raise ValueError("max_tokens_per_layer must be positive.")
+
+    report = _load_layer_merge_report(candidate_model, layer_merge_report)
+    fold_groups = _fold_groups_from_report(report)
+    if not fold_groups:
+        raise ValueError("Fold reconstruction requires at least one fold-method layer group.")
+
+    torch, transformers = _torch_and_transformers()
+    dtype = _dtype_from_name(torch, torch_dtype)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(source_model, trust_remote_code=trust_remote_code)
+    candidate_tokenizer = transformers.AutoTokenizer.from_pretrained(candidate_model, trust_remote_code=trust_remote_code)
+    _assert_same_vocab(tokenizer, candidate_tokenizer)
+    if tokenizer.pad_token_id is None and tokenizer.eos_token_id is not None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    source = transformers.AutoModelForCausalLM.from_pretrained(
+        source_model,
+        torch_dtype=dtype,
+        device_map=None,
+        trust_remote_code=trust_remote_code,
+    )
+    candidate = transformers.AutoModelForCausalLM.from_pretrained(
+        candidate_model,
+        torch_dtype=dtype,
+        device_map=None,
+        trust_remote_code=trust_remote_code,
+    )
+    source.to(device)
+    candidate.to(device)
+    source.eval()
+    candidate.eval()
+    if hasattr(source.config, "use_cache"):
+        source.config.use_cache = False
+    if hasattr(candidate.config, "use_cache"):
+        candidate.config.use_cache = False
+
+    source_layers = _recovery_decoder_layers(source)
+    candidate_layers = _recovery_decoder_layers(candidate)
+    if not source_layers or not candidate_layers:
+        raise ValueError("Both source and candidate need decoder layers.")
+
+    texts = list(calibration_texts or RECOVERY_TEXTS)
+    if not texts:
+        raise ValueError("Need at least one reconstruction text.")
+    eval_overlap_count = len(set(texts) & set(TEXT_EVALS))
+    batches = _make_batches(tokenizer, texts, batch_size=1, max_length=max_length, device=device)
+
+    repairs = []
+    with torch.no_grad():
+        for group in fold_groups:
+            repair = _reconstruct_fold_group(
+                torch,
+                source,
+                candidate,
+                source_layers,
+                candidate_layers,
+                group,
+                batches,
+                ridge=ridge,
+                reconstruction_alpha=float(reconstruction_alpha),
+                max_tokens_per_layer=max_tokens_per_layer,
+            )
+            repairs.append(repair)
+            if device.startswith("cuda") and hasattr(torch, "cuda"):
+                torch.cuda.empty_cache()
+
+    target = Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    candidate.save_pretrained(target, safe_serialization=True)
+    tokenizer.save_pretrained(target)
+    reconstruction_report = {
+        "operation": "reconstruct_folded_causal_lm",
+        "source_model": source_model,
+        "candidate_model": candidate_model,
+        "output_dir": str(target),
+        "layer_merge_report": report,
+        "ridge": ridge,
+        "reconstruction_alpha": float(reconstruction_alpha),
+        "max_length": max_length,
+        "max_tokens_per_layer": max_tokens_per_layer,
+        "torch_dtype": torch_dtype,
+        "calibration_text_count": len(texts),
+        "eval_overlap_count": eval_overlap_count,
+        "repairs": repairs,
+        "param_count": sum(param.numel() for param in candidate.parameters()),
+    }
+    _write_json(target / "neural_forge_fold_reconstruction_report.json", reconstruction_report)
+    return reconstruction_report
+
+
 def load_calibration_texts(
     calibration_file: str | Path,
     max_texts: int | None = None,
@@ -317,6 +443,237 @@ def _make_batches(tokenizer, texts: Sequence[str], batch_size: int, max_length: 
         )
         batches.append({key: value.to(device) for key, value in encoded.items()})
     return batches
+
+
+def _load_layer_merge_report(candidate_model: str, layer_merge_report: str | Path | dict[str, Any] | None) -> dict[str, Any]:
+    if isinstance(layer_merge_report, dict):
+        return layer_merge_report
+    if layer_merge_report is None:
+        path = Path(candidate_model) / "neural_forge_layer_merge_report.json"
+    else:
+        path = Path(layer_merge_report)
+    if not path.exists():
+        raise FileNotFoundError(path)
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _fold_groups_from_report(report: dict[str, Any]) -> list[dict[str, Any]]:
+    if report.get("operation") != "merge_decoder_layers":
+        raise ValueError("Layer merge report must come from merge_decoder_layers.")
+    if report.get("method") != "fold":
+        return []
+    groups = []
+    folded_indices = sorted({int(idx) for item in report.get("groups", []) for idx in item.get("folded", [])})
+    for item in report.get("groups", []):
+        group = [int(idx) for idx in item.get("group", [])]
+        folded = [int(idx) for idx in item.get("folded", [])]
+        survivor = int(item.get("survivor", group[0] if group else -1))
+        if len(group) < 2 or not folded:
+            continue
+        groups.append(
+            {
+                "group": group,
+                "survivor": survivor,
+                "folded": folded,
+                "all_folded_indices": folded_indices,
+            }
+        )
+    return groups
+
+
+def _candidate_index_after_depth_fold(original_index: int, folded_indices: Sequence[int]) -> int:
+    return int(original_index) - sum(1 for idx in folded_indices if int(idx) < int(original_index))
+
+
+def _reconstruct_fold_group(
+    torch,
+    source,
+    candidate,
+    source_layers: Sequence[Any],
+    candidate_layers: Sequence[Any],
+    group: dict[str, Any],
+    batches: Sequence[dict[str, Any]],
+    ridge: float,
+    reconstruction_alpha: float,
+    max_tokens_per_layer: int,
+) -> dict[str, Any]:
+    source_consumer_idx = max(group["group"]) + 1
+    candidate_consumer_idx = _candidate_index_after_depth_fold(source_consumer_idx, group["all_folded_indices"])
+    base_report = {
+        "group": group["group"],
+        "survivor": group["survivor"],
+        "folded": group["folded"],
+        "source_consumer_layer": source_consumer_idx,
+        "candidate_consumer_layer": candidate_consumer_idx,
+    }
+    if source_consumer_idx >= len(source_layers) or candidate_consumer_idx >= len(candidate_layers):
+        return {**base_report, "skipped": True, "reason": "no_downstream_consumer_layer"}
+
+    source_layer = source_layers[source_consumer_idx]
+    candidate_layer = candidate_layers[candidate_consumer_idx]
+    repair_report: dict[str, Any] = {**base_report, "skipped": False}
+
+    source_attn_norm = _get_layer_module(source_layer, ("input_layernorm", "ln_1"))
+    candidate_attn_norm = _get_layer_module(candidate_layer, ("input_layernorm", "ln_1"))
+    attn_linears = _attention_input_linears(candidate_layer)
+    if source_attn_norm is not None and candidate_attn_norm is not None and attn_linears:
+        source_features = _collect_module_activations(torch, source, source_attn_norm, batches, max_tokens_per_layer)
+        candidate_features = _collect_module_activations(torch, candidate, candidate_attn_norm, batches, max_tokens_per_layer)
+        fitted = _fit_activation_map(torch, candidate_features, source_features, ridge, reconstruction_alpha)
+        _absorb_input_map_into_linears(torch, attn_linears, fitted["map"])
+        repair_report["attention_reconstruction"] = {
+            key: value for key, value in fitted.items() if key != "map"
+        } | {"linears_updated": [name for name, _module in attn_linears]}
+    else:
+        repair_report["attention_reconstruction"] = {
+            "skipped": True,
+            "reason": "missing_layernorm_or_attention_input_linears",
+        }
+
+    source_mlp_norm = _get_layer_module(source_layer, ("post_attention_layernorm", "ln_2"))
+    candidate_mlp_norm = _get_layer_module(candidate_layer, ("post_attention_layernorm", "ln_2"))
+    mlp_linears = _mlp_input_linears(candidate_layer)
+    if source_mlp_norm is not None and candidate_mlp_norm is not None and mlp_linears:
+        source_features = _collect_module_activations(torch, source, source_mlp_norm, batches, max_tokens_per_layer)
+        candidate_features = _collect_module_activations(torch, candidate, candidate_mlp_norm, batches, max_tokens_per_layer)
+        fitted = _fit_activation_map(torch, candidate_features, source_features, ridge, reconstruction_alpha)
+        _absorb_input_map_into_linears(torch, mlp_linears, fitted["map"])
+        repair_report["mlp_reconstruction"] = {
+            key: value for key, value in fitted.items() if key != "map"
+        } | {"linears_updated": [name for name, _module in mlp_linears]}
+    else:
+        repair_report["mlp_reconstruction"] = {
+            "skipped": True,
+            "reason": "missing_layernorm_or_mlp_input_linears",
+        }
+
+    return repair_report
+
+
+def _get_layer_module(layer, names: Sequence[str]):
+    for name in names:
+        module = getattr(layer, name, None)
+        if module is not None:
+            return module
+    return None
+
+
+def _attention_input_linears(layer) -> list[tuple[str, Any]]:
+    attention = getattr(layer, "self_attn", None) or getattr(layer, "attention", None) or getattr(layer, "attn", None)
+    if attention is None:
+        return []
+    linears = []
+    for name in ("q_proj", "k_proj", "v_proj", "query_key_value", "c_attn"):
+        module = getattr(attention, name, None)
+        if _is_linear_like(module):
+            linears.append((f"self_attn.{name}", module))
+    return linears
+
+
+def _mlp_input_linears(layer) -> list[tuple[str, Any]]:
+    mlp = getattr(layer, "mlp", None) or getattr(layer, "feed_forward", None)
+    if mlp is None:
+        return []
+    linears = []
+    for name in ("gate_proj", "up_proj", "w1", "w3", "dense_h_to_4h", "fc1"):
+        module = getattr(mlp, name, None)
+        if _is_linear_like(module):
+            linears.append((f"mlp.{name}", module))
+    return linears
+
+
+def _is_linear_like(module) -> bool:
+    weight = getattr(module, "weight", None)
+    return weight is not None and getattr(weight, "dim", lambda: 0)() == 2
+
+
+def _collect_module_activations(torch, model, module, batches: Sequence[dict[str, Any]], max_tokens: int):
+    pieces = []
+    token_count = 0
+    current_mask = None
+
+    def hook(_module, _inputs, output):
+        nonlocal token_count
+        tensor = output[0] if isinstance(output, tuple) else output
+        rows = _select_token_rows(torch, tensor.detach().to(torch.float32), current_mask)
+        remaining = max_tokens - token_count
+        if remaining > 0:
+            pieces.append(rows[:remaining].detach().cpu())
+            token_count += int(min(rows.shape[0], remaining))
+
+    handle = module.register_forward_hook(hook)
+    was_training = model.training
+    try:
+        model.eval()
+        for batch in batches:
+            if token_count >= max_tokens:
+                break
+            current_mask = batch.get("attention_mask")
+            model(**batch, use_cache=False)
+    finally:
+        handle.remove()
+        if was_training:
+            model.train()
+    if not pieces:
+        raise RuntimeError("No calibration activations were captured.")
+    return torch.cat(pieces, dim=0)
+
+
+def _select_token_rows(torch, tensor, attention_mask):
+    values = tensor
+    if values.dim() == 3:
+        values = values.reshape(-1, values.shape[-1])
+        if attention_mask is not None:
+            mask = attention_mask.reshape(-1).detach().to(torch.bool).cpu()
+            values = values.cpu()[mask]
+            return values
+    elif values.dim() == 1:
+        values = values.unsqueeze(0)
+    elif values.dim() != 2:
+        values = values.reshape(-1, values.shape[-1])
+    return values.cpu()
+
+
+def _fit_activation_map(torch, candidate_features, source_features, ridge: float, reconstruction_alpha: float = 1.0) -> dict[str, Any]:
+    rows = min(int(candidate_features.shape[0]), int(source_features.shape[0]))
+    if rows <= 0:
+        raise RuntimeError("Need at least one activation row to fit reconstruction.")
+    candidate_rows = candidate_features[:rows].to(torch.float32)
+    source_rows = source_features[:rows].to(torch.float32)
+    if candidate_rows.shape[1] != source_rows.shape[1]:
+        raise ValueError(
+            f"Activation hidden-size mismatch: {candidate_rows.shape[1]} != {source_rows.shape[1]}"
+        )
+    before = _relative_reconstruction_error(torch, candidate_rows, source_rows)
+    solved = _ridge_solve_features(torch, candidate_rows, source_rows, ridge)
+    if reconstruction_alpha < 1.0:
+        identity = torch.eye(solved.shape[0], dtype=solved.dtype, device=solved.device)
+        solved = (1.0 - float(reconstruction_alpha)) * identity + float(reconstruction_alpha) * solved
+    after = _relative_reconstruction_error(torch, candidate_rows.matmul(solved), source_rows)
+    return {
+        "map": solved,
+        "tokens": rows,
+        "hidden_size": int(candidate_rows.shape[1]),
+        "reconstruction_alpha": float(reconstruction_alpha),
+        "relative_error_before": before,
+        "relative_error_after": after,
+    }
+
+
+def _relative_reconstruction_error(torch, predicted, target) -> float:
+    return float((predicted - target).norm().detach().cpu() / target.norm().detach().cpu().clamp_min(1e-12))
+
+
+def _absorb_input_map_into_linears(torch, linears: Sequence[tuple[str, Any]], mapping) -> None:
+    map_cpu = mapping.detach().cpu().to(torch.float32)
+    for _name, linear in linears:
+        weight = linear.weight.data.detach().cpu().to(torch.float32)
+        if int(weight.shape[1]) != int(map_cpu.shape[0]):
+            raise ValueError(
+                f"Cannot absorb reconstruction map with input {map_cpu.shape[0]} into weight {tuple(weight.shape)}."
+            )
+        updated = weight.matmul(map_cpu.T)
+        linear.weight.data.copy_(updated.to(device=linear.weight.device, dtype=linear.weight.dtype))
 
 
 def _recovery_loss(torch, student, teacher, input_ids, attention_mask, kd_weight: float, lm_weight: float, temperature: float):
