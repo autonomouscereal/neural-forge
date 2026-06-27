@@ -839,3 +839,47 @@ Interpretation:
   longer blind recovery; it is better alignment before/while folding:
   activation-calibrated channel assignment, per-layer alpha search, and
   cross-tokenizer teacher targets that do not collapse to host-only SFT.
+
+## Activation-Hybrid 4B Donor Smoke
+
+After adding activation-calibrated channel assignment, a constrained smoke run
+retested `Qwen/Qwen3-4B-Base` into `HuggingFaceTB/SmolLM2-135M` with matched
+channel limits.
+
+Runs:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_into_smollm135m_activation_hybrid_smoke_20260627_014148
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_into_smollm135m_weight_matched_smoke_20260627_014257
+```
+
+Settings:
+
+- host baseline report:
+  `runs/qwen4b_into_smollm135m_20260626_190625/reports/host_smollm2_135m.json`;
+- donor: `Qwen/Qwen3-4B-Base`;
+- host: `HuggingFaceTB/SmolLM2-135M`;
+- alpha: `0.001`;
+- vocab alpha: `0.001`;
+- max host channels: `128`;
+- max donor channels: `256`;
+- activation calibration: 8 curated Omnicoder texts, max length `64`;
+- max new tokens during smoke eval: `24`.
+
+| Model / assignment | Params | Mean PPL | Choice Acc | Gate | First-layer assignment similarity |
+|---|---:|---:|---:|---|---:|
+| SmolLM2-135M host baseline | 134,515,008 | 347.405 | 0.50 | baseline | n/a |
+| weight-cosine matched smoke | 134,515,008 | 348.631 | 0.50 | passed | 0.077 |
+| activation-hybrid smoke | 134,515,008 | 347.377 | 0.50 | passed | 0.512 |
+
+Interpretation:
+
+- The new activation-hybrid path successfully ran end-to-end with a 4B donor,
+  generated a host-shaped checkpoint, and recorded activation-backed layer
+  reports (`activation_features_used=true`).
+- Under the same channel budget, activation-hybrid was less damaging than
+  weight-cosine and slightly better than the host baseline on the lightweight
+  PPL probe.
+- This is still only a smoke result. It does not prove donor intelligence
+  transfer on ARC/HellaSwag or broad behavior; it just validates the next
+  alignment mechanism needed before larger recovery/benchmark runs.
