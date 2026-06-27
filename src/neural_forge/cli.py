@@ -518,12 +518,20 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--span-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--span-hidden-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--projected-vocab-kd-weight", type=float, default=0.0)
+    xfamily_recover.add_argument(
+        "--projected-vocab-kd-mode",
+        choices=["teacher-to-student", "student-to-teacher", "both"],
+        default="teacher-to-student",
+    )
     xfamily_recover.add_argument("--projected-vocab-max-source-tokens", type=int, default=8)
     xfamily_recover.add_argument("--reference-model")
     xfamily_recover.add_argument("--reference-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--unlikelihood-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--unlikelihood-window", type=int, default=16)
     xfamily_recover.add_argument("--entropy-weight", type=float, default=0.0)
+    xfamily_recover.add_argument("--entropy-aware-kd-weight", type=float, default=0.0)
+    xfamily_recover.add_argument("--entropy-aware-kd-threshold", type=float, default=0.55)
+    xfamily_recover.add_argument("--entropy-aware-kd-sharpness", type=float, default=8.0)
     xfamily_recover.add_argument("--span-max-pairs", type=int, default=512)
     xfamily_recover.add_argument("--hidden-ridge", type=float, default=1e-3)
     xfamily_recover.add_argument("--hidden-layer", choices=["last", "middle"], default="last")
@@ -1201,12 +1209,16 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         span_kd_weight=args.span_kd_weight,
         span_hidden_kd_weight=args.span_hidden_kd_weight,
         projected_vocab_kd_weight=args.projected_vocab_kd_weight,
+        projected_vocab_kd_mode=args.projected_vocab_kd_mode,
         projected_vocab_max_source_tokens=args.projected_vocab_max_source_tokens,
         reference_model=args.reference_model,
         reference_kd_weight=args.reference_kd_weight,
         unlikelihood_weight=args.unlikelihood_weight,
         unlikelihood_window=args.unlikelihood_window,
         entropy_weight=args.entropy_weight,
+        entropy_aware_kd_weight=args.entropy_aware_kd_weight,
+        entropy_aware_kd_threshold=args.entropy_aware_kd_threshold,
+        entropy_aware_kd_sharpness=args.entropy_aware_kd_sharpness,
         span_max_pairs=args.span_max_pairs,
         hidden_ridge=args.hidden_ridge,
         hidden_layer=args.hidden_layer,

@@ -10,11 +10,13 @@ from neural_forge.hf_recovery import _absorb_input_map_into_linears
 from neural_forge.hf_recovery import _candidate_index_after_depth_fold
 from neural_forge.hf_recovery import _cross_tokenizer_recovery_loss
 from neural_forge.hf_recovery import _cross_tokenizer_span_pairs
+from neural_forge.hf_recovery import _entropy_aware_kl_loss
 from neural_forge.hf_recovery import _fit_activation_map
 from neural_forge.hf_recovery import _fit_lm_head_from_hidden_logits
 from neural_forge.hf_recovery import _fit_shared_embedding_hidden_projection
 from neural_forge.hf_recovery import _fold_groups_from_report
 from neural_forge.hf_recovery import _mlp_projection_spec
+from neural_forge.hf_recovery import _project_candidate_probs_to_source_vocab
 from neural_forge.hf_recovery import _project_source_logits_to_candidate_vocab
 from neural_forge.hf_recovery import _recovery_loss
 from neural_forge.hf_recovery import _recent_token_unlikelihood_loss
@@ -452,6 +454,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.12",
             "--projected-vocab-kd-weight",
             "0.22",
+            "--projected-vocab-kd-mode",
+            "student-to-teacher",
             "--projected-vocab-max-source-tokens",
             "6",
             "--reference-model",
@@ -464,6 +468,12 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "24",
             "--entropy-weight",
             "0.006",
+            "--entropy-aware-kd-weight",
+            "0.45",
+            "--entropy-aware-kd-threshold",
+            "0.61",
+            "--entropy-aware-kd-sharpness",
+            "9.5",
             "--span-max-pairs",
             "66",
             "--hidden-ridge",
@@ -613,7 +623,14 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_recover_args.span_kd_weight == 0.15
     assert xfamily_recover_args.span_hidden_kd_weight == 0.12
     assert xfamily_recover_args.projected_vocab_kd_weight == 0.22
+    assert xfamily_recover_args.projected_vocab_kd_mode == "student-to-teacher"
     assert xfamily_recover_args.projected_vocab_max_source_tokens == 6
+    assert xfamily_recover_args.unlikelihood_weight == 0.08
+    assert xfamily_recover_args.unlikelihood_window == 24
+    assert xfamily_recover_args.entropy_weight == 0.006
+    assert xfamily_recover_args.entropy_aware_kd_weight == 0.45
+    assert xfamily_recover_args.entropy_aware_kd_threshold == 0.61
+    assert xfamily_recover_args.entropy_aware_kd_sharpness == 9.5
     assert xfamily_recover_args.span_max_pairs == 66
     assert xfamily_recover_args.hidden_ridge == 0.02
     assert xfamily_recover_args.hidden_layer == "middle"
@@ -1247,10 +1264,14 @@ def test_cross_tokenizer_recovery_loss_uses_anchor_subspace() -> None:
         span_kd_weight=0.0,
         span_hidden_kd_weight=0.0,
         projected_vocab_kd_weight=0.0,
+        projected_vocab_kd_mode="teacher-to-student",
         reference_kd_weight=0.0,
         unlikelihood_weight=0.0,
         unlikelihood_window=2,
         entropy_weight=0.0,
+        entropy_aware_kd_weight=0.0,
+        entropy_aware_kd_threshold=0.55,
+        entropy_aware_kd_sharpness=8.0,
         hidden_projection=None,
         hidden_layer="last",
         span_pairs=None,
@@ -1294,10 +1315,14 @@ def test_cross_tokenizer_recovery_loss_uses_projected_hidden_states() -> None:
         span_kd_weight=0.0,
         span_hidden_kd_weight=0.0,
         projected_vocab_kd_weight=0.0,
+        projected_vocab_kd_mode="teacher-to-student",
         reference_kd_weight=0.0,
         unlikelihood_weight=0.0,
         unlikelihood_window=2,
         entropy_weight=0.0,
+        entropy_aware_kd_weight=0.0,
+        entropy_aware_kd_threshold=0.55,
+        entropy_aware_kd_sharpness=8.0,
         hidden_projection=projection,
         hidden_layer="last",
         span_pairs=None,
@@ -1361,10 +1386,14 @@ def test_cross_tokenizer_recovery_loss_uses_span_pairs() -> None:
         span_kd_weight=0.8,
         span_hidden_kd_weight=0.0,
         projected_vocab_kd_weight=0.0,
+        projected_vocab_kd_mode="teacher-to-student",
         reference_kd_weight=0.0,
         unlikelihood_weight=0.0,
         unlikelihood_window=2,
         entropy_weight=0.0,
+        entropy_aware_kd_weight=0.0,
+        entropy_aware_kd_threshold=0.55,
+        entropy_aware_kd_sharpness=8.0,
         hidden_projection=None,
         hidden_layer="last",
         span_pairs=torch.tensor([[0, 0, 0], [0, 1, 1]]),
@@ -1391,6 +1420,66 @@ def test_project_source_logits_to_candidate_vocab_averages_source_token_groups()
     assert projected[0, 0].item() == pytest.approx(3.0)
     assert projected[0, 1].item() == pytest.approx(6.0)
     assert projected[0, 2].item() == pytest.approx(-10000.0)
+
+
+def test_entropy_aware_kl_weight_zero_matches_forward_kl() -> None:
+    torch = pytest.importorskip("torch")
+    student = torch.tensor([[0.2, 1.4, -0.7], [2.0, 0.1, -1.2]])
+    teacher = torch.tensor([[1.0, 0.2, -0.5], [-0.4, 1.5, 0.1]])
+    temperature = 1.7
+
+    actual = _entropy_aware_kl_loss(
+        torch,
+        student,
+        teacher,
+        temperature=temperature,
+        entropy_aware_kd_weight=0.0,
+        entropy_aware_kd_threshold=0.5,
+        entropy_aware_kd_sharpness=8.0,
+    )
+    student_logp = torch.nn.functional.log_softmax(student / temperature, dim=-1)
+    teacher_logp = torch.nn.functional.log_softmax(teacher / temperature, dim=-1)
+    teacher_p = teacher_logp.exp()
+    expected = (teacher_p * (teacher_logp - student_logp)).sum(dim=-1).mean() * (temperature**2)
+
+    assert actual.item() == pytest.approx(expected.item())
+
+
+def test_entropy_aware_kl_masks_invalid_vocab_rows() -> None:
+    torch = pytest.importorskip("torch")
+    teacher = torch.tensor([[2.0, -1.0, 0.0, 50.0]])
+    good_student = torch.tensor([[2.0, -1.0, 0.0, -50.0]])
+    bad_invalid_student = torch.tensor([[2.0, -1.0, 0.0, 50.0]])
+    valid = torch.tensor([True, True, True, False])
+
+    good = _entropy_aware_kl_loss(torch, good_student, teacher, temperature=1.0, vocab_valid=valid)
+    invalid_mass = _entropy_aware_kl_loss(torch, bad_invalid_student, teacher, temperature=1.0, vocab_valid=valid)
+
+    assert torch.isfinite(good)
+    assert invalid_mass.item() == pytest.approx(good.item())
+
+
+def test_project_candidate_probs_to_source_vocab_scatters_valid_groups() -> None:
+    torch = pytest.importorskip("torch")
+    candidate_probs = torch.tensor([[0.6, 0.3, 0.1]])
+    groups = torch.tensor([[1, 2], [3, 0], [4, 0]])
+    mask = torch.tensor([[1.0, 1.0], [1.0, 0.0], [0.0, 0.0]])
+    valid = torch.tensor([True, True, False])
+
+    projected, source_valid = _project_candidate_probs_to_source_vocab(
+        torch,
+        candidate_probs,
+        groups,
+        mask,
+        valid,
+        source_vocab_size=5,
+    )
+
+    assert source_valid.tolist() == [False, True, True, True, False]
+    assert projected[0, 1].item() == pytest.approx(0.3)
+    assert projected[0, 2].item() == pytest.approx(0.3)
+    assert projected[0, 3].item() == pytest.approx(0.3)
+    assert projected[0, 4].item() == pytest.approx(0.0)
 
 
 def test_fit_lm_head_from_hidden_logits_reduces_reconstruction_error() -> None:
@@ -1768,6 +1857,8 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "0.12",
             "--projected-vocab-kd-weight",
             "0.22",
+            "--projected-vocab-kd-mode",
+            "both",
             "--projected-vocab-max-source-tokens",
             "6",
             "--reference-model",
@@ -1780,6 +1871,12 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "22",
             "--entropy-weight",
             "0.005",
+            "--entropy-aware-kd-weight",
+            "0.35",
+            "--entropy-aware-kd-threshold",
+            "0.62",
+            "--entropy-aware-kd-sharpness",
+            "7.5",
             "--span-max-pairs",
             "88",
             "--hidden-ridge",
@@ -1832,12 +1929,16 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "span_kd_weight": 0.15,
         "span_hidden_kd_weight": 0.12,
         "projected_vocab_kd_weight": 0.22,
+        "projected_vocab_kd_mode": "both",
         "projected_vocab_max_source_tokens": 6,
         "reference_model": "host-reference",
         "reference_kd_weight": 0.2,
         "unlikelihood_weight": 0.11,
         "unlikelihood_window": 22,
         "entropy_weight": 0.005,
+        "entropy_aware_kd_weight": 0.35,
+        "entropy_aware_kd_threshold": 0.62,
+        "entropy_aware_kd_sharpness": 7.5,
         "span_max_pairs": 88,
         "hidden_ridge": 0.03,
         "hidden_layer": "middle",

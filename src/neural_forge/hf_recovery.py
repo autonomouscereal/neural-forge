@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -217,12 +218,16 @@ def recover_cross_tokenizer_causal_lm(
     span_kd_weight: float = 0.0,
     span_hidden_kd_weight: float = 0.0,
     projected_vocab_kd_weight: float = 0.0,
+    projected_vocab_kd_mode: str = "teacher-to-student",
     projected_vocab_max_source_tokens: int = 8,
     reference_model: str | None = None,
     reference_kd_weight: float = 0.0,
     unlikelihood_weight: float = 0.0,
     unlikelihood_window: int = 16,
     entropy_weight: float = 0.0,
+    entropy_aware_kd_weight: float = 0.0,
+    entropy_aware_kd_threshold: float = 0.55,
+    entropy_aware_kd_sharpness: float = 8.0,
     span_max_pairs: int = 512,
     hidden_ridge: float = 1e-3,
     hidden_layer: str = "last",
@@ -270,6 +275,12 @@ def recover_cross_tokenizer_causal_lm(
         or entropy_weight < 0
     ):
         raise ValueError("loss weights must be non-negative.")
+    if not 0.0 <= float(entropy_aware_kd_weight) <= 1.0:
+        raise ValueError("entropy_aware_kd_weight must be in [0, 1].")
+    if not 0.0 <= float(entropy_aware_kd_threshold) <= 1.0:
+        raise ValueError("entropy_aware_kd_threshold must be in [0, 1].")
+    if entropy_aware_kd_sharpness <= 0:
+        raise ValueError("entropy_aware_kd_sharpness must be positive.")
     if (
         anchor_kd_weight == 0
         and lm_weight == 0
@@ -290,6 +301,8 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("span_max_pairs must be positive.")
     if projected_vocab_max_source_tokens <= 0:
         raise ValueError("projected_vocab_max_source_tokens must be positive.")
+    if projected_vocab_kd_mode not in {"teacher-to-student", "student-to-teacher", "both"}:
+        raise ValueError("projected_vocab_kd_mode must be teacher-to-student, student-to-teacher, or both.")
     if hidden_ridge < 0:
         raise ValueError("hidden_ridge must be non-negative.")
     if hidden_layer not in {"last", "middle"}:
@@ -468,10 +481,14 @@ def recover_cross_tokenizer_causal_lm(
             span_kd_weight,
             span_hidden_kd_weight,
             projected_vocab_kd_weight,
+            projected_vocab_kd_mode,
             reference_kd_weight,
             unlikelihood_weight,
             unlikelihood_window,
             entropy_weight,
+            entropy_aware_kd_weight,
+            entropy_aware_kd_threshold,
+            entropy_aware_kd_sharpness,
             hidden_projection,
             hidden_layer,
             span_pairs,
@@ -522,12 +539,16 @@ def recover_cross_tokenizer_causal_lm(
         "span_kd_weight": span_kd_weight,
         "span_hidden_kd_weight": span_hidden_kd_weight,
         "projected_vocab_kd_weight": projected_vocab_kd_weight,
+        "projected_vocab_kd_mode": projected_vocab_kd_mode,
         "projected_vocab_max_source_tokens": projected_vocab_max_source_tokens,
         "reference_model": reference_model,
         "reference_kd_weight": reference_kd_weight,
         "unlikelihood_weight": unlikelihood_weight,
         "unlikelihood_window": unlikelihood_window,
         "entropy_weight": entropy_weight,
+        "entropy_aware_kd_weight": entropy_aware_kd_weight,
+        "entropy_aware_kd_threshold": entropy_aware_kd_threshold,
+        "entropy_aware_kd_sharpness": entropy_aware_kd_sharpness,
         "report_interval": interval,
         "save_best_loss": save_best_loss,
         "best_loss": best_loss,
@@ -2014,10 +2035,14 @@ def _cross_tokenizer_recovery_loss(
     span_kd_weight: float,
     span_hidden_kd_weight: float,
     projected_vocab_kd_weight: float,
+    projected_vocab_kd_mode: str,
     reference_kd_weight: float,
     unlikelihood_weight: float,
     unlikelihood_window: int,
     entropy_weight: float,
+    entropy_aware_kd_weight: float,
+    entropy_aware_kd_threshold: float,
+    entropy_aware_kd_sharpness: float,
     hidden_projection,
     hidden_layer: str,
     span_pairs,
@@ -2055,9 +2080,15 @@ def _cross_tokenizer_recovery_loss(
         teacher_anchor_logits = shift_teacher.index_select(dim=-1, index=source_anchor_idx)
         student_summary = _masked_mean_logits(torch, student_anchor_logits, candidate_mask)
         teacher_summary = _masked_mean_logits(torch, teacher_anchor_logits, source_mask)
-        student_logp = torch.nn.functional.log_softmax(student_summary / temperature, dim=-1)
-        teacher_p = torch.nn.functional.softmax(teacher_summary / temperature, dim=-1)
-        kd = torch.nn.functional.kl_div(student_logp, teacher_p, reduction="batchmean") * (temperature**2)
+        kd = _entropy_aware_kl_loss(
+            torch,
+            student_summary,
+            teacher_summary,
+            temperature,
+            entropy_aware_kd_weight,
+            entropy_aware_kd_threshold,
+            entropy_aware_kd_sharpness,
+        )
         total = total + float(anchor_kd_weight) * kd
     if hidden_kd_weight > 0:
         if hidden_projection is None:
@@ -2081,6 +2112,9 @@ def _cross_tokenizer_recovery_loss(
             candidate_anchor_idx,
             source_anchor_idx,
             temperature,
+            entropy_aware_kd_weight,
+            entropy_aware_kd_threshold,
+            entropy_aware_kd_sharpness,
         )
         total = total + float(span_kd_weight) * span
     if span_hidden_kd_weight > 0 and span_pairs is not None and int(span_pairs.numel()) > 0:
@@ -2107,6 +2141,10 @@ def _cross_tokenizer_recovery_loss(
             projected_vocab_mask,
             projected_vocab_valid,
             temperature,
+            projected_vocab_kd_mode,
+            entropy_aware_kd_weight,
+            entropy_aware_kd_threshold,
+            entropy_aware_kd_sharpness,
         )
         total = total + float(projected_vocab_kd_weight) * projected
     if reference_kd_weight > 0:
@@ -2206,6 +2244,75 @@ def _masked_entropy_penalty(torch, shift_logits, mask):
     return -_masked_mean_values(torch, entropy, mask)
 
 
+def _entropy_aware_kl_loss(
+    torch,
+    student_logits,
+    teacher_logits,
+    temperature: float,
+    entropy_aware_kd_weight: float = 0.0,
+    entropy_aware_kd_threshold: float = 0.55,
+    entropy_aware_kd_sharpness: float = 8.0,
+    vocab_valid=None,
+):
+    if int(student_logits.shape[-1]) != int(teacher_logits.shape[-1]):
+        raise ValueError("student and teacher logits must share the final vocab dimension.")
+    student = torch.nan_to_num(student_logits.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    teacher = torch.nan_to_num(teacher_logits.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    valid_count = int(student.shape[-1])
+    if vocab_valid is not None:
+        valid = vocab_valid.to(device=student.device, dtype=torch.bool)
+        if int(valid.shape[-1]) != int(student.shape[-1]):
+            raise ValueError("vocab_valid length must match the logits vocab dimension.")
+        valid_count = int(valid.sum().detach().cpu().item())
+        if valid_count <= 0:
+            raise ValueError("At least one valid vocab row is required for KD.")
+        view_shape = [1] * (student.dim() - 1) + [int(valid.shape[-1])]
+        invalid = ~valid.view(*view_shape)
+        student = student.masked_fill(invalid, -1e4)
+        teacher = teacher.masked_fill(invalid, -1e4)
+    student_logp = torch.nn.functional.log_softmax(student / temperature, dim=-1)
+    teacher_logp = torch.nn.functional.log_softmax(teacher / temperature, dim=-1)
+    teacher_p = teacher_logp.exp()
+    forward = (teacher_p * (teacher_logp - student_logp)).sum(dim=-1)
+    if float(entropy_aware_kd_weight) == 0.0:
+        return forward.mean() * (temperature**2)
+    student_p = student_logp.exp()
+    reverse = (student_p * (student_logp - teacher_logp)).sum(dim=-1)
+    entropy = -(teacher_p * teacher_logp).sum(dim=-1)
+    entropy_norm = entropy / math.log(max(2, valid_count))
+    gate = torch.sigmoid((entropy_norm - float(entropy_aware_kd_threshold)) * float(entropy_aware_kd_sharpness))
+    adaptive = gate * forward + (1.0 - gate) * reverse
+    mixed = (1.0 - float(entropy_aware_kd_weight)) * forward + float(entropy_aware_kd_weight) * adaptive
+    return mixed.mean() * (temperature**2)
+
+
+def _entropy_aware_kl_from_log_probs(
+    torch,
+    student_logp,
+    teacher_logp,
+    temperature: float,
+    entropy_aware_kd_weight: float = 0.0,
+    entropy_aware_kd_threshold: float = 0.55,
+    entropy_aware_kd_sharpness: float = 8.0,
+):
+    student_lp = torch.nan_to_num(student_logp.to(torch.float32), nan=-1e4, posinf=0.0, neginf=-1e4)
+    teacher_lp = torch.nan_to_num(teacher_logp.to(torch.float32), nan=-1e4, posinf=0.0, neginf=-1e4)
+    if int(student_lp.shape[-1]) != int(teacher_lp.shape[-1]):
+        raise ValueError("student and teacher log-probabilities must share the final vocab dimension.")
+    teacher_p = teacher_lp.exp()
+    forward = (teacher_p * (teacher_lp - student_lp)).sum(dim=-1)
+    if float(entropy_aware_kd_weight) == 0.0:
+        return forward.mean() * (temperature**2)
+    student_p = student_lp.exp()
+    reverse = (student_p * (student_lp - teacher_lp)).sum(dim=-1)
+    entropy = -(teacher_p * teacher_lp).sum(dim=-1)
+    entropy_norm = entropy / math.log(max(2, int(student_lp.shape[-1])))
+    gate = torch.sigmoid((entropy_norm - float(entropy_aware_kd_threshold)) * float(entropy_aware_kd_sharpness))
+    adaptive = gate * forward + (1.0 - gate) * reverse
+    mixed = (1.0 - float(entropy_aware_kd_weight)) * forward + float(entropy_aware_kd_weight) * adaptive
+    return mixed.mean() * (temperature**2)
+
+
 def _cross_tokenizer_span_loss(
     torch,
     shift_student,
@@ -2214,6 +2321,9 @@ def _cross_tokenizer_span_loss(
     candidate_anchor_idx,
     source_anchor_idx,
     temperature: float,
+    entropy_aware_kd_weight: float = 0.0,
+    entropy_aware_kd_threshold: float = 0.55,
+    entropy_aware_kd_sharpness: float = 8.0,
 ):
     shift_teacher = torch.nan_to_num(
         teacher.logits[:, :-1, :].contiguous().to(torch.float32),
@@ -2227,9 +2337,15 @@ def _cross_tokenizer_span_loss(
     source_pos = pair_idx[:, 2]
     student_logits = shift_student[batch_idx, candidate_pos].index_select(dim=-1, index=candidate_anchor_idx)
     teacher_logits = shift_teacher[batch_idx, source_pos].index_select(dim=-1, index=source_anchor_idx)
-    student_logp = torch.nn.functional.log_softmax(student_logits / temperature, dim=-1)
-    teacher_p = torch.nn.functional.softmax(teacher_logits / temperature, dim=-1)
-    return torch.nn.functional.kl_div(student_logp, teacher_p, reduction="batchmean") * (temperature**2)
+    return _entropy_aware_kl_loss(
+        torch,
+        student_logits,
+        teacher_logits,
+        temperature,
+        entropy_aware_kd_weight,
+        entropy_aware_kd_threshold,
+        entropy_aware_kd_sharpness,
+    )
 
 
 def _cross_tokenizer_hidden_loss(
@@ -2288,7 +2404,13 @@ def _cross_tokenizer_projected_vocab_loss(
     projected_vocab_mask,
     projected_vocab_valid,
     temperature: float,
+    projected_vocab_kd_mode: str = "teacher-to-student",
+    entropy_aware_kd_weight: float = 0.0,
+    entropy_aware_kd_threshold: float = 0.55,
+    entropy_aware_kd_sharpness: float = 8.0,
 ):
+    if projected_vocab_kd_mode not in {"teacher-to-student", "student-to-teacher", "both"}:
+        raise ValueError("projected_vocab_kd_mode must be teacher-to-student, student-to-teacher, or both.")
     shift_teacher = torch.nan_to_num(
         teacher.logits[:, :-1, :].contiguous().to(torch.float32),
         nan=0.0,
@@ -2301,17 +2423,95 @@ def _cross_tokenizer_projected_vocab_loss(
     source_pos = pair_idx[:, 2]
     student_logits = shift_student[batch_idx, candidate_pos]
     teacher_logits = shift_teacher[batch_idx, source_pos]
-    projected_teacher = _project_source_logits_to_candidate_vocab(
-        torch,
-        teacher_logits,
-        projected_vocab_groups,
-        projected_vocab_mask,
-        projected_vocab_valid,
+    losses = []
+    if projected_vocab_kd_mode in {"teacher-to-student", "both"}:
+        projected_teacher = _project_source_logits_to_candidate_vocab(
+            torch,
+            teacher_logits,
+            projected_vocab_groups,
+            projected_vocab_mask,
+            projected_vocab_valid,
+        )
+        losses.append(
+            _entropy_aware_kl_loss(
+                torch,
+                student_logits,
+                projected_teacher,
+                temperature,
+                entropy_aware_kd_weight,
+                entropy_aware_kd_threshold,
+                entropy_aware_kd_sharpness,
+                vocab_valid=projected_vocab_valid,
+            )
+        )
+    if projected_vocab_kd_mode in {"student-to-teacher", "both"}:
+        student_logp = torch.nn.functional.log_softmax(
+            student_logits.masked_fill(~projected_vocab_valid.to(device=student_logits.device).view(1, -1), -1e4)
+            / temperature,
+            dim=-1,
+        )
+        student_probs = student_logp.exp()
+        projected_student, source_valid = _project_candidate_probs_to_source_vocab(
+            torch,
+            student_probs,
+            projected_vocab_groups,
+            projected_vocab_mask,
+            projected_vocab_valid,
+            source_vocab_size=int(teacher_logits.shape[-1]),
+        )
+        teacher_valid_logits = teacher_logits.masked_fill(~source_valid.view(1, -1), -1e4)
+        teacher_logp = torch.nn.functional.log_softmax(teacher_valid_logits / temperature, dim=-1)
+        projected_student = projected_student.masked_fill(~source_valid.view(1, -1), 0.0)
+        projected_student = projected_student / projected_student.sum(dim=-1, keepdim=True).clamp_min(1e-12)
+        projected_student_logp = projected_student.clamp_min(1e-12).log()
+        source_idx = source_valid.nonzero(as_tuple=False).flatten()
+        losses.append(
+            _entropy_aware_kl_from_log_probs(
+                torch,
+                projected_student_logp.index_select(dim=-1, index=source_idx),
+                teacher_logp.index_select(dim=-1, index=source_idx),
+                temperature,
+                entropy_aware_kd_weight,
+                entropy_aware_kd_threshold,
+                entropy_aware_kd_sharpness,
+            )
+        )
+    return torch.stack(losses).mean()
+
+
+def _project_candidate_probs_to_source_vocab(
+    torch,
+    candidate_probs,
+    projected_vocab_groups,
+    projected_vocab_mask,
+    projected_vocab_valid,
+    source_vocab_size: int,
+):
+    if source_vocab_size <= 0:
+        raise ValueError("source_vocab_size must be positive.")
+    groups = projected_vocab_groups.to(device=candidate_probs.device, dtype=torch.long)
+    group_mask = projected_vocab_mask.to(device=candidate_probs.device, dtype=candidate_probs.dtype)
+    candidate_valid = projected_vocab_valid.to(device=candidate_probs.device, dtype=torch.bool)
+    if int(groups.shape[0]) != int(candidate_probs.shape[-1]):
+        raise ValueError("projected vocab group rows must match candidate vocab size.")
+    valid_group_mask = group_mask * candidate_valid.to(dtype=candidate_probs.dtype).unsqueeze(-1)
+    source_valid = torch.zeros(int(source_vocab_size), dtype=torch.bool, device=candidate_probs.device)
+    valid_group_count = int(valid_group_mask.sum().detach().cpu().item())
+    if valid_group_count <= 0:
+        raise ValueError("At least one valid projected source token is required.")
+    source_valid[groups.masked_select(valid_group_mask.bool()).clamp(0, int(source_vocab_size) - 1)] = True
+    counts = valid_group_mask.sum(dim=-1, keepdim=True).clamp_min(1.0)
+    weights = valid_group_mask / counts
+    contributions = candidate_probs.masked_fill(~candidate_valid.view(1, -1), 0.0).unsqueeze(-1) * weights.unsqueeze(0)
+    projected = torch.zeros(
+        int(candidate_probs.shape[0]),
+        int(source_vocab_size),
+        dtype=candidate_probs.dtype,
+        device=candidate_probs.device,
     )
-    student_logp = torch.nn.functional.log_softmax(student_logits / temperature, dim=-1)
-    teacher_p = torch.nn.functional.softmax(projected_teacher / temperature, dim=-1)
-    token_kl = torch.nn.functional.kl_div(student_logp, teacher_p, reduction="none").sum(dim=-1)
-    return token_kl.mean() * (temperature**2)
+    scatter_idx = groups.clamp(0, int(source_vocab_size) - 1).reshape(1, -1).expand(int(candidate_probs.shape[0]), -1)
+    projected.scatter_add_(dim=1, index=scatter_idx, src=contributions.reshape(int(candidate_probs.shape[0]), -1))
+    return projected, source_valid
 
 
 def _project_source_logits_to_candidate_vocab(
