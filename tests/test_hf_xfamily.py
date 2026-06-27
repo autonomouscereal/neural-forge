@@ -6,6 +6,7 @@ from neural_forge.cli import build_parser
 from neural_forge.cli import _parse_layer_groups
 from neural_forge.hf_recovery import RECOVERY_TEXTS
 from neural_forge.hf_recovery import _answer_contrastive_candidates
+from neural_forge.hf_recovery import _alm_text_chunks
 from neural_forge.hf_recovery import _append_eos_text
 from neural_forge.hf_recovery import _attention_projection_spec
 from neural_forge.hf_recovery import _assert_same_vocab
@@ -13,6 +14,8 @@ from neural_forge.hf_recovery import _absorb_input_map_into_linears
 from neural_forge.hf_recovery import _candidate_rank_kl_loss
 from neural_forge.hf_recovery import _candidate_index_after_depth_fold
 from neural_forge.hf_recovery import _cross_tokenizer_recovery_loss
+from neural_forge.hf_recovery import _cross_tokenizer_dual_space_kd_loss
+from neural_forge.hf_recovery import _cross_tokenizer_alm_chunk_loss
 from neural_forge.hf_recovery import _cross_tokenizer_focus_span_pairs
 from neural_forge.hf_recovery import _cross_tokenizer_sequence_nll_loss
 from neural_forge.hf_recovery import _cross_tokenizer_span_pairs
@@ -51,6 +54,9 @@ from neural_forge.hf_xfamily import _canonical_token_map
 from neural_forge.hf_xfamily import _assign_donor_to_host
 from neural_forge.hf_xfamily import _activation_similarity_assignment
 from neural_forge.hf_xfamily import _activation_axis_weights_for_tensor
+from neural_forge.hf_xfamily import _activation_fit_suffix_enabled
+from neural_forge.hf_xfamily import _attention_axis_weights_for_tensor
+from neural_forge.hf_xfamily import _attention_head_activation_profile
 from neural_forge.hf_xfamily import _axis_reductions_for_layer_tensor
 from neural_forge.hf_xfamily import _axis_reductions_for_non_layer_tensor_key
 from neural_forge.hf_xfamily import _balanced_activation_assignment
@@ -59,6 +65,7 @@ from neural_forge.hf_xfamily import _build_activation_hidden_basis
 from neural_forge.hf_xfamily import _channel_assignment_features
 from neural_forge.hf_xfamily import _donor_layer_group_for_target
 from neural_forge.hf_xfamily import _effective_layer_alpha
+from neural_forge.hf_xfamily import _fit_linear_weight_from_activation_rows
 from neural_forge.hf_xfamily import _hidden_basis_axes_for_layer_tensor
 from neural_forge.hf_xfamily import _initialize_token_weights_from_donor
 from neural_forge.hf_xfamily import _initialize_non_layer_tensors_from_donor
@@ -339,6 +346,15 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.35",
             "--consumer-hidden-reduction",
             "sqrt-sum",
+            "--activation-fit-linears",
+            "--activation-fit-target",
+            "attention-output",
+            "--activation-fit-max-rows",
+            "88",
+            "--activation-fit-alpha",
+            "0.6",
+            "--activation-fit-ridge",
+            "0.2",
             "--untie-output-head",
             "--activation-calibration-file",
             "activation.jsonl",
@@ -503,6 +519,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.15",
             "--span-hidden-kd-weight",
             "0.12",
+            "--dual-space-kd-weight",
+            "0.25",
             "--projected-vocab-kd-weight",
             "0.22",
             "--projected-vocab-kd-mode",
@@ -527,6 +545,12 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "44",
             "--token-teacher-confidence-floor",
             "0.2",
+            "--alm-kd-weight",
+            "0.17",
+            "--alm-max-chunks",
+            "33",
+            "--alm-min-chars",
+            "4",
             "--answer-contrastive-weight",
             "0.09",
             "--answer-contrastive-max-negatives",
@@ -674,6 +698,11 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.projection_scale == "target-rms"
     assert donor_init_args.projection_blend_alpha == 0.35
     assert donor_init_args.consumer_hidden_reduction == "sqrt-sum"
+    assert donor_init_args.activation_fit_linears is True
+    assert donor_init_args.activation_fit_target == "attention-output"
+    assert donor_init_args.activation_fit_max_rows == 88
+    assert donor_init_args.activation_fit_alpha == pytest.approx(0.6)
+    assert donor_init_args.activation_fit_ridge == pytest.approx(0.2)
     assert donor_init_args.untie_output_head is True
     assert donor_init_args.activation_calibration_file == "activation.jsonl"
     assert donor_init_args.activation_max_calibration_texts == 5
@@ -699,6 +728,9 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_recover_args.token_focus == "numbers"
     assert xfamily_recover_args.token_max_pairs == 44
     assert xfamily_recover_args.token_teacher_confidence_floor == 0.2
+    assert xfamily_recover_args.alm_kd_weight == pytest.approx(0.17)
+    assert xfamily_recover_args.alm_max_chunks == 33
+    assert xfamily_recover_args.alm_min_chars == 4
     assert xfamily_recover_args.answer_contrastive_weight == 0.09
     assert xfamily_recover_args.answer_contrastive_max_negatives == 3
     assert xfamily_recover_args.teacher_rank_weight == 0.11
@@ -748,6 +780,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_recover_args.hidden_kd_weight == 0.2
     assert xfamily_recover_args.span_kd_weight == 0.15
     assert xfamily_recover_args.span_hidden_kd_weight == 0.12
+    assert xfamily_recover_args.dual_space_kd_weight == pytest.approx(0.25)
     assert xfamily_recover_args.projected_vocab_kd_weight == 0.22
     assert xfamily_recover_args.projected_vocab_kd_mode == "student-to-teacher"
     assert xfamily_recover_args.projected_vocab_max_source_tokens == 6
@@ -917,6 +950,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.04",
             "--reconstruction-alpha",
             "0.7",
+            "--reconstruction-target",
+            "consumer-input",
             "--reconstruction-objective",
             "cosine",
             "--cosine-steps",
@@ -966,6 +1001,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_reconstruct_args.output == "out"
     assert xfamily_reconstruct_args.ridge == 0.04
     assert xfamily_reconstruct_args.reconstruction_alpha == 0.7
+    assert xfamily_reconstruct_args.reconstruction_target == "consumer-input"
     assert xfamily_reconstruct_args.reconstruction_objective == "cosine"
     assert xfamily_reconstruct_args.cosine_steps == 8
     assert xfamily_reconstruct_args.cosine_lr == 0.025
@@ -1342,6 +1378,117 @@ def test_attention_tensor_resize_folds_o_input_heads() -> None:
 
     assert resized is not None
     assert resized.flatten().tolist() == pytest.approx([6.0, 22.0])
+
+
+def test_attention_head_activation_profile_extracts_per_head_features() -> None:
+    torch = pytest.importorskip("torch")
+    activations = torch.tensor(
+        [
+            [1.0, -1.0, 2.0, -2.0],
+            [3.0, -3.0, 4.0, -4.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    profile = _attention_head_activation_profile(torch, activations, heads=2)
+
+    assert profile is not None
+    assert profile["scores"].tolist() == pytest.approx([2.0, 3.0])
+    assert tuple(profile["features"].shape) == (2, 6)
+
+
+def test_attention_axis_weights_share_q_and_o_head_profiles() -> None:
+    torch = pytest.importorskip("torch")
+    q_scores = torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=torch.float32)
+    q_features = torch.eye(4, dtype=torch.float32)
+    profile = {"attention_head_profiles": {0: {"q": {"scores": q_scores, "features": q_features}}}}
+
+    q_weights = _attention_axis_weights_for_tensor(
+        torch,
+        torch.zeros((8, 1), dtype=torch.float32),
+        "self_attn.q_proj.weight",
+        donor_layer_idx=0,
+        donor_layer_group=[0],
+        activation_profile=profile,
+    )
+    o_weights = _attention_axis_weights_for_tensor(
+        torch,
+        torch.zeros((1, 8), dtype=torch.float32),
+        "self_attn.o_proj.weight",
+        donor_layer_idx=0,
+        donor_layer_group=[0],
+        activation_profile=profile,
+    )
+
+    assert q_weights is not None
+    assert o_weights is not None
+    assert torch.equal(q_weights[0]["weights"], q_scores)
+    assert torch.equal(o_weights[1]["features"], q_features)
+    assert q_weights[0]["assignment_key"] == o_weights[1]["assignment_key"]
+
+
+def test_attention_tensor_activation_coupled_head_assignment_can_cross_position() -> None:
+    torch = pytest.importorskip("torch")
+    source = torch.arange(8, dtype=torch.float32).reshape(8, 1)
+    donor_config = _Obj(num_attention_heads=4, num_key_value_heads=2)
+    target_config = _Obj(num_attention_heads=2, num_key_value_heads=1)
+    attention_axis_weights = {
+        0: {
+            "weights": torch.ones(4, dtype=torch.float32),
+            "features": torch.tensor(
+                [
+                    [1.0, 0.0],
+                    [0.0, 1.0],
+                    [1.0, 0.0],
+                    [0.0, 1.0],
+                ],
+                dtype=torch.float32,
+            ),
+        }
+    }
+
+    resized = _resize_attention_tensor_to_shape(
+        torch,
+        source,
+        (2, 1),
+        "self_attn.q_proj.weight",
+        donor_config,
+        target_config,
+        attention_axis_weights=attention_axis_weights,
+        activation_fold_assignment="similarity",
+    )
+
+    assert resized is not None
+    assert resized.flatten().tolist() == pytest.approx([2.5, 4.5])
+
+
+def test_fit_linear_weight_from_activation_rows_recovers_mapping() -> None:
+    torch = pytest.importorskip("torch")
+    inputs = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 1.0],
+            [2.0, 1.0],
+        ],
+        dtype=torch.float32,
+    )
+    expected_weight = torch.tensor([[2.0, -1.0], [0.5, 3.0]], dtype=torch.float32)
+    outputs = inputs.matmul(expected_weight.t())
+
+    fitted = _fit_linear_weight_from_activation_rows(torch, inputs, outputs, ridge=0.0)
+
+    assert fitted.flatten().tolist() == pytest.approx(expected_weight.flatten().tolist())
+
+
+def test_activation_fit_suffix_selector_limits_module_families() -> None:
+    assert _activation_fit_suffix_enabled("self_attn.o_proj.weight", "attention-output") is True
+    assert _activation_fit_suffix_enabled("self_attn.q_proj.weight", "attention-output") is False
+    assert _activation_fit_suffix_enabled("mlp.down_proj.weight", "mlp-output") is True
+    assert _activation_fit_suffix_enabled("mlp.gate_proj.weight", "mlp-output") is False
+    assert _activation_fit_suffix_enabled("self_attn.k_proj.weight", "input-projections") is True
+    assert _activation_fit_suffix_enabled("mlp.up_proj.weight", "input-projections") is True
+    assert _activation_fit_suffix_enabled("mlp.down_proj.weight", "input-projections") is False
 
 
 def test_non_layer_initializer_folds_final_norm_and_skips_special_tensors() -> None:
@@ -2304,6 +2451,76 @@ def test_cross_tokenizer_recovery_loss_uses_span_pairs() -> None:
     assert torch.isfinite(loss)
 
 
+def test_cross_tokenizer_dual_space_kd_loss_is_finite() -> None:
+    torch = pytest.importorskip("torch")
+    student_hidden = torch.randn(1, 4, 3, dtype=torch.float32)
+    teacher_hidden = torch.randn(1, 4, 4, dtype=torch.float32)
+    student = _Obj(
+        logits=torch.randn(1, 4, 5, dtype=torch.float32),
+        hidden_states=[student_hidden, student_hidden],
+    )
+    teacher = _Obj(
+        logits=torch.randn(1, 4, 7, dtype=torch.float32),
+        hidden_states=[teacher_hidden, teacher_hidden],
+    )
+
+    loss = _cross_tokenizer_dual_space_kd_loss(
+        torch,
+        student,
+        teacher,
+        torch.tensor([[0, 0, 0], [0, 1, 1], [0, 2, 2]], dtype=torch.long),
+        torch.randn(4, 3, dtype=torch.float32),
+        torch.randn(3, 4, dtype=torch.float32),
+        torch.randn(7, 4, dtype=torch.float32),
+        torch.randn(5, 3, dtype=torch.float32),
+        torch.tensor([0, 2, 4, 6], dtype=torch.long),
+        torch.tensor([0, 1, 3, 4], dtype=torch.long),
+        "last",
+        2.0,
+    )
+
+    assert torch.isfinite(loss)
+    assert float(loss.detach().cpu()) >= 0.0
+
+
+def test_cross_tokenizer_alm_chunk_loss_uses_offset_chunks() -> None:
+    torch = pytest.importorskip("torch")
+    text = "A cat sat"
+    candidate_ids = torch.tensor([[0, 1, 2, 3]], dtype=torch.long)
+    source_ids = torch.tensor([[0, 4, 5, 6]], dtype=torch.long)
+    candidate_offsets = torch.tensor([[[0, 0], [0, 1], [2, 5], [6, 9]]], dtype=torch.long)
+    source_offsets = torch.tensor([[[0, 0], [0, 1], [2, 5], [6, 9]]], dtype=torch.long)
+    shift_student = torch.randn(1, 3, 8, dtype=torch.float32)
+    teacher = _Obj(logits=torch.randn(1, 4, 8, dtype=torch.float32))
+
+    loss, chunks = _cross_tokenizer_alm_chunk_loss(
+        torch,
+        shift_student,
+        teacher,
+        candidate_ids,
+        source_ids,
+        {"input_ids": source_ids, "attention_mask": torch.ones_like(source_ids), "offset_mapping": source_offsets},
+        {
+            "input_ids": candidate_ids,
+            "attention_mask": torch.ones_like(candidate_ids),
+            "offset_mapping": candidate_offsets,
+            "raw_texts": [text],
+        },
+        response_loss_mode="none",
+        max_chunks=8,
+        min_chars=1,
+    )
+
+    assert chunks == 3
+    assert torch.isfinite(loss)
+
+
+def test_alm_text_chunks_can_scope_to_answer() -> None:
+    chunks = _alm_text_chunks("Question: x\nAnswer: final value", "answer", max_chunks=8, min_chars=2)
+
+    assert chunks == [(20, 25), (26, 31)]
+
+
 def test_project_source_logits_to_candidate_vocab_averages_source_token_groups() -> None:
     torch = pytest.importorskip("torch")
     source_logits = torch.tensor([[1.0, 3.0, 5.0, 7.0]])
@@ -2744,7 +2961,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "--donor-layer-fold-mode",
             "average",
             "--attention-fold-mode",
-            "coupled",
+            "activation-coupled",
             "--token-init-mode",
             "donor-tokenized",
             "--projection-scale",
@@ -2753,6 +2970,15 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "0.25",
             "--consumer-hidden-reduction",
             "sqrt-sum",
+            "--activation-fit-linears",
+            "--activation-fit-target",
+            "mlp-output",
+            "--activation-fit-max-rows",
+            "44",
+            "--activation-fit-alpha",
+            "0.5",
+            "--activation-fit-ridge",
+            "0.3",
             "--untie-output-head",
             "--activation-calibration-file",
             "activation.jsonl",
@@ -2786,11 +3012,16 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "activation_fold_assignment": "similarity",
         "transport_backend": "sparse",
         "donor_layer_fold_mode": "average",
-        "attention_fold_mode": "coupled",
+        "attention_fold_mode": "activation-coupled",
         "token_init_mode": "donor-tokenized",
         "projection_scale": "target-rms",
         "projection_blend_alpha": 0.25,
         "consumer_hidden_reduction": "sqrt-sum",
+        "activation_fit_linears": True,
+        "activation_fit_target": "mlp-output",
+        "activation_fit_max_rows": 44,
+        "activation_fit_alpha": 0.5,
+        "activation_fit_ridge": 0.3,
         "untie_output_head": True,
         "activation_calibration_texts": ["activation text"],
         "activation_max_length": 64,
@@ -2917,6 +3148,8 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "0.15",
             "--span-hidden-kd-weight",
             "0.12",
+            "--dual-space-kd-weight",
+            "0.19",
             "--projected-vocab-kd-weight",
             "0.22",
             "--projected-vocab-kd-mode",
@@ -2943,6 +3176,12 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "55",
             "--token-teacher-confidence-floor",
             "0.15",
+            "--alm-kd-weight",
+            "0.14",
+            "--alm-max-chunks",
+            "22",
+            "--alm-min-chars",
+            "3",
             "--answer-contrastive-weight",
             "0.21",
             "--answer-contrastive-max-negatives",
@@ -3013,6 +3252,7 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "hidden_kd_weight": 0.25,
         "span_kd_weight": 0.15,
         "span_hidden_kd_weight": 0.12,
+        "dual_space_kd_weight": 0.19,
         "projected_vocab_kd_weight": 0.22,
         "projected_vocab_kd_mode": "both",
         "projected_vocab_max_source_tokens": 6,
@@ -3026,6 +3266,9 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "token_focus": "code",
         "token_max_pairs": 55,
         "token_teacher_confidence_floor": 0.15,
+        "alm_kd_weight": 0.14,
+        "alm_max_chunks": 22,
+        "alm_min_chars": 3,
         "answer_contrastive_weight": 0.21,
         "answer_contrastive_max_negatives": 5,
         "teacher_rank_weight": 0.31,

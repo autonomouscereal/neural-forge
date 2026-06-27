@@ -395,6 +395,7 @@ def recover_cross_tokenizer_causal_lm(
     hidden_kd_weight: float = 0.0,
     span_kd_weight: float = 0.0,
     span_hidden_kd_weight: float = 0.0,
+    dual_space_kd_weight: float = 0.0,
     projected_vocab_kd_weight: float = 0.0,
     projected_vocab_kd_mode: str = "teacher-to-student",
     projected_vocab_max_source_tokens: int = 8,
@@ -426,6 +427,9 @@ def recover_cross_tokenizer_causal_lm(
     token_focus: str = "auto",
     token_max_pairs: int = 512,
     token_teacher_confidence_floor: float = 0.0,
+    alm_kd_weight: float = 0.0,
+    alm_max_chunks: int = 64,
+    alm_min_chars: int = 2,
     answer_contrastive_weight: float = 0.0,
     answer_contrastive_max_negatives: int = 4,
     teacher_rank_weight: float = 0.0,
@@ -459,11 +463,13 @@ def recover_cross_tokenizer_causal_lm(
         or hidden_kd_weight < 0
         or span_kd_weight < 0
         or span_hidden_kd_weight < 0
+        or dual_space_kd_weight < 0
         or projected_vocab_kd_weight < 0
         or reference_kd_weight < 0
         or unlikelihood_weight < 0
         or entropy_weight < 0
         or token_kd_weight < 0
+        or alm_kd_weight < 0
         or answer_contrastive_weight < 0
         or teacher_rank_weight < 0
     ):
@@ -474,6 +480,10 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("token_max_pairs must be positive.")
     if not 0.0 <= float(token_teacher_confidence_floor) <= 1.0:
         raise ValueError("token_teacher_confidence_floor must be in [0, 1].")
+    if alm_max_chunks <= 0:
+        raise ValueError("alm_max_chunks must be positive.")
+    if alm_min_chars <= 0:
+        raise ValueError("alm_min_chars must be positive.")
     if answer_contrastive_max_negatives <= 0:
         raise ValueError("answer_contrastive_max_negatives must be positive.")
     if teacher_rank_max_negatives <= 0:
@@ -492,11 +502,13 @@ def recover_cross_tokenizer_causal_lm(
         and hidden_kd_weight == 0
         and span_kd_weight == 0
         and span_hidden_kd_weight == 0
+        and dual_space_kd_weight == 0
         and projected_vocab_kd_weight == 0
         and reference_kd_weight == 0
         and unlikelihood_weight == 0
         and entropy_weight == 0
         and token_kd_weight == 0
+        and alm_kd_weight == 0
         and answer_contrastive_weight == 0
         and teacher_rank_weight == 0
     ):
@@ -612,9 +624,11 @@ def recover_cross_tokenizer_causal_lm(
 
     hidden_projection_report = None
     hidden_projection = None
-    needs_projected_hidden = hidden_kd_metric in {"projected", "both"} and (
+    reverse_hidden_projection_report = None
+    reverse_hidden_projection = None
+    needs_projected_hidden = (hidden_kd_metric in {"projected", "both"} and (
         hidden_kd_weight > 0 or span_hidden_kd_weight > 0
-    )
+    )) or dual_space_kd_weight > 0
     if needs_projected_hidden:
         hidden_projection_report = _fit_shared_embedding_hidden_projection(
             torch,
@@ -626,6 +640,17 @@ def recover_cross_tokenizer_causal_lm(
             max_anchors=hidden_max_anchors,
         )
         hidden_projection = hidden_projection_report["map"].to(device=device, dtype=torch.float32)
+    if dual_space_kd_weight > 0:
+        reverse_hidden_projection_report = _fit_shared_embedding_hidden_projection(
+            torch,
+            candidate,
+            source,
+            candidate_anchor_idx,
+            source_anchor_idx,
+            ridge=hidden_ridge,
+            max_anchors=hidden_max_anchors,
+        )
+        reverse_hidden_projection = reverse_hidden_projection_report["map"].to(device=device, dtype=torch.float32)
 
     trainable_params = _set_train_scope(candidate, train_scope)
     optimizer = torch.optim.AdamW([p for p in candidate.parameters() if p.requires_grad], lr=lr)
@@ -643,8 +668,10 @@ def recover_cross_tokenizer_causal_lm(
         include_offsets=(
             span_kd_weight > 0
             or span_hidden_kd_weight > 0
+            or dual_space_kd_weight > 0
             or projected_vocab_kd_weight > 0
             or token_kd_weight > 0
+            or alm_kd_weight > 0
         ),
         response_loss_mode=response_loss_mode,
         append_eos=append_eos,
@@ -653,6 +680,7 @@ def recover_cross_tokenizer_causal_lm(
     losses = []
     span_pair_counts = []
     token_focus_counts = []
+    alm_chunk_counts = []
     answer_contrastive_counts = []
     teacher_rank_counts = []
     interval = int(report_interval or max(1, steps // 10))
@@ -666,7 +694,7 @@ def recover_cross_tokenizer_causal_lm(
             teacher = source(
                 **_model_forward_inputs(source_batch),
                 use_cache=False,
-                output_hidden_states=hidden_kd_weight > 0 or span_hidden_kd_weight > 0,
+                output_hidden_states=hidden_kd_weight > 0 or span_hidden_kd_weight > 0 or dual_space_kd_weight > 0,
             )
             reference_teacher = None
             if reference is not None:
@@ -677,10 +705,10 @@ def recover_cross_tokenizer_causal_lm(
         student = candidate(
             **_model_forward_inputs(candidate_batch),
             use_cache=False,
-            output_hidden_states=hidden_kd_weight > 0 or span_hidden_kd_weight > 0,
+            output_hidden_states=hidden_kd_weight > 0 or span_hidden_kd_weight > 0 or dual_space_kd_weight > 0,
         )
         span_pairs = None
-        if span_kd_weight > 0 or span_hidden_kd_weight > 0 or projected_vocab_kd_weight > 0:
+        if span_kd_weight > 0 or span_hidden_kd_weight > 0 or dual_space_kd_weight > 0 or projected_vocab_kd_weight > 0:
             span_pairs = _cross_tokenizer_span_pairs(
                 torch,
                 source_tokenizer,
@@ -704,6 +732,7 @@ def recover_cross_tokenizer_causal_lm(
             token_focus_counts.append(
                 sum(int(item["candidate_positions"].numel()) for item in token_focus_spans)
             )
+        alm_count = 0
         loss = _cross_tokenizer_recovery_loss(
             torch,
             student,
@@ -742,6 +771,37 @@ def recover_cross_tokenizer_causal_lm(
             token_focus_spans=token_focus_spans,
             token_teacher_confidence_floor=token_teacher_confidence_floor,
         )
+        if alm_kd_weight > 0:
+            alm_loss, alm_count = _cross_tokenizer_alm_chunk_loss(
+                torch,
+                shift_student=torch.nan_to_num(student.logits[:, :-1, :].contiguous().to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4),
+                teacher=teacher,
+                candidate_input_ids=candidate_batch["input_ids"],
+                source_input_ids=source_batch["input_ids"],
+                source_batch=source_batch,
+                candidate_batch=candidate_batch,
+                response_loss_mode=response_loss_mode,
+                max_chunks=alm_max_chunks,
+                min_chars=alm_min_chars,
+            )
+            alm_chunk_counts.append(int(alm_count))
+            loss = loss + float(alm_kd_weight) * alm_loss
+        if dual_space_kd_weight > 0 and span_pairs is not None and int(span_pairs.numel()) > 0:
+            dual_space = _cross_tokenizer_dual_space_kd_loss(
+                torch,
+                student,
+                teacher,
+                span_pairs,
+                hidden_projection,
+                reverse_hidden_projection,
+                source.get_output_embeddings().weight,
+                candidate.get_output_embeddings().weight,
+                source_anchor_idx,
+                candidate_anchor_idx,
+                hidden_layer,
+                temperature,
+            )
+            loss = loss + float(dual_space_kd_weight) * dual_space
         if answer_contrastive_weight > 0:
             contrastive, contrastive_count = _answer_contrastive_loss(
                 torch,
@@ -784,6 +844,7 @@ def recover_cross_tokenizer_causal_lm(
                 f"xfamily_recover step={step} loss={loss_value:.6f} "
                 f"span_pairs={span_pair_counts[-1] if span_pair_counts else 0} "
                 f"token_focus={token_focus_counts[-1] if token_focus_counts else 0} "
+                f"alm_chunks={alm_chunk_counts[-1] if alm_chunk_counts else 0} "
                 f"answer_contrastive={answer_contrastive_counts[-1] if answer_contrastive_counts else 0} "
                 f"teacher_rank={teacher_rank_counts[-1] if teacher_rank_counts else 0}",
                 flush=True,
@@ -814,6 +875,7 @@ def recover_cross_tokenizer_causal_lm(
         "hidden_kd_weight": hidden_kd_weight,
         "span_kd_weight": span_kd_weight,
         "span_hidden_kd_weight": span_hidden_kd_weight,
+        "dual_space_kd_weight": dual_space_kd_weight,
         "projected_vocab_kd_weight": projected_vocab_kd_weight,
         "projected_vocab_kd_mode": projected_vocab_kd_mode,
         "projected_vocab_max_source_tokens": projected_vocab_max_source_tokens,
@@ -827,6 +889,10 @@ def recover_cross_tokenizer_causal_lm(
         "token_focus": token_focus,
         "token_max_pairs": token_max_pairs,
         "token_teacher_confidence_floor": token_teacher_confidence_floor,
+        "alm_kd_weight": alm_kd_weight,
+        "alm_max_chunks": alm_max_chunks,
+        "alm_min_chars": alm_min_chars,
+        "alm_chunk_count_observed": alm_chunk_counts,
         "answer_contrastive_weight": answer_contrastive_weight,
         "answer_contrastive_max_negatives": answer_contrastive_max_negatives,
         "answer_contrastive_count_observed": answer_contrastive_counts,
@@ -851,6 +917,8 @@ def recover_cross_tokenizer_causal_lm(
         "hidden_max_anchors": hidden_max_anchors,
         "hidden_projection": hidden_projection_report
         and {key: value for key, value in hidden_projection_report.items() if key != "map"},
+        "reverse_hidden_projection": reverse_hidden_projection_report
+        and {key: value for key, value in reverse_hidden_projection_report.items() if key != "map"},
         "temperature": temperature,
         "max_anchors": max_anchors,
         "anchor_selection": anchor_selection,
@@ -1159,6 +1227,11 @@ def reconstruct_folded_causal_lm(
                 cosine_steps=cosine_steps,
                 cosine_lr=cosine_lr,
                 cosine_l2=cosine_l2,
+                fit_gate="none",
+                fit_gate_validation_fraction=0.25,
+                fit_gate_min_validation_rows=32,
+                fit_gate_min_relative_improvement=0.0,
+                fit_gate_max_cosine_drop=0.01,
                 max_tokens_per_layer=max_tokens_per_layer,
             )
             repairs.append(repair)
@@ -1236,10 +1309,20 @@ def reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("ridge must be non-negative.")
     if not 0.0 <= float(reconstruction_alpha) <= 1.0:
         raise ValueError("reconstruction_alpha must be in [0, 1].")
-    xfamily_targets = {"attention", "attention-output", "attention-all", "mlp", "mlp-output", "mlp-all", "both", "all"}
+    xfamily_targets = {
+        "consumer-input",
+        "attention",
+        "attention-output",
+        "attention-all",
+        "mlp",
+        "mlp-output",
+        "mlp-all",
+        "both",
+        "all",
+    }
     if reconstruction_target not in xfamily_targets:
         raise ValueError(
-            "reconstruction_target must be attention, attention-output, attention-all, "
+            "reconstruction_target must be consumer-input, attention, attention-output, attention-all, "
             "mlp, mlp-output, mlp-all, both, or all."
         )
     if donor_layer_fold_mode not in {"representative", "average", "fold"}:
@@ -1390,6 +1473,8 @@ def reconstruct_cross_tokenizer_causal_lm(
                 source_layers[source_idx],
                 candidate_layers[candidate_idx],
                 source_layers,
+                candidate_layers,
+                candidate_idx,
                 source_group,
                 source_tokenizer,
                 candidate_tokenizer,
@@ -2854,7 +2939,7 @@ def _reconstruct_survivor_mlp_output(
         if not gate["accepted"]:
             return {
                 "skipped": False,
-                "matched_pairs": int(matched),
+                "matched_pairs": int(rows),
                 "tokens": rows,
                 "feature_size": int(hidden_rows.shape[1]),
                 "hidden_size": int(source_rows.shape[1]),
@@ -3016,6 +3101,8 @@ def _reconstruct_cross_tokenizer_layer(
     source_layer,
     candidate_layer,
     source_layers: Sequence[Any] | None,
+    candidate_layers: Sequence[Any] | None,
+    candidate_layer_idx: int,
     source_layer_group: Sequence[int] | None,
     source_tokenizer,
     candidate_tokenizer,
@@ -3173,7 +3260,137 @@ def _reconstruct_cross_tokenizer_layer(
             "skipped": True,
             "reason": "reconstruction_target_excludes_mlp_output",
         }
+    if reconstruction_target in {"consumer-input", "all"}:
+        repair_report["consumer_input_reconstruction"] = _reconstruct_cross_tokenizer_consumer_input(
+            torch,
+            source,
+            candidate,
+            source_layers,
+            candidate_layers,
+            source_group,
+            int(candidate_layer_idx),
+            source_tokenizer,
+            candidate_tokenizer,
+            paired_batches,
+            hidden_projection,
+            canonical_fn,
+            ridge,
+            reconstruction_alpha,
+            reconstruction_objective,
+            cosine_steps,
+            cosine_lr,
+            cosine_l2,
+            fit_gate,
+            fit_gate_validation_fraction,
+            fit_gate_min_validation_rows,
+            fit_gate_min_relative_improvement,
+            fit_gate_max_cosine_drop,
+            max_tokens_per_layer,
+        )
+    else:
+        repair_report["consumer_input_reconstruction"] = {
+            "skipped": True,
+            "reason": "reconstruction_target_excludes_consumer_input",
+        }
     return repair_report
+
+
+def _reconstruct_cross_tokenizer_consumer_input(
+    torch,
+    source,
+    candidate,
+    source_layers: Sequence[Any] | None,
+    candidate_layers: Sequence[Any] | None,
+    source_layer_group: Sequence[int],
+    candidate_layer_idx: int,
+    source_tokenizer,
+    candidate_tokenizer,
+    paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]],
+    hidden_projection,
+    canonical_fn,
+    ridge: float,
+    reconstruction_alpha: float,
+    reconstruction_objective: str,
+    cosine_steps: int,
+    cosine_lr: float,
+    cosine_l2: float,
+    fit_gate: str,
+    fit_gate_validation_fraction: float,
+    fit_gate_min_validation_rows: int,
+    fit_gate_min_relative_improvement: float,
+    fit_gate_max_cosine_drop: float,
+    max_tokens_per_layer: int,
+) -> dict[str, Any]:
+    if not source_layers or not candidate_layers or not source_layer_group:
+        return {"skipped": True, "reason": "missing_source_or_candidate_layers"}
+    source_consumer_idx = max(int(item) for item in source_layer_group) + 1
+    candidate_consumer_idx = int(candidate_layer_idx) + 1
+    report: dict[str, Any] = {
+        "source_consumer_layer": int(source_consumer_idx),
+        "candidate_consumer_layer": int(candidate_consumer_idx),
+    }
+    if source_consumer_idx >= len(source_layers) or candidate_consumer_idx >= len(candidate_layers):
+        return {**report, "skipped": True, "reason": "no_downstream_consumer_layer"}
+    source_layer = source_layers[source_consumer_idx]
+    candidate_layer = candidate_layers[candidate_consumer_idx]
+    source_attn_norm = _get_layer_module(source_layer, ("input_layernorm", "ln_1"))
+    candidate_attn_norm = _get_layer_module(candidate_layer, ("input_layernorm", "ln_1"))
+    attn_linears = _attention_input_linears(candidate_layer)
+    report["attention_consumer_reconstruction"] = _reconstruct_cross_tokenizer_module_pair(
+        torch,
+        source,
+        candidate,
+        source_attn_norm,
+        candidate_attn_norm,
+        attn_linears,
+        source_tokenizer,
+        candidate_tokenizer,
+        paired_batches,
+        hidden_projection,
+        canonical_fn,
+        ridge,
+        reconstruction_alpha,
+        reconstruction_objective,
+        cosine_steps,
+        cosine_lr,
+        cosine_l2,
+        fit_gate,
+        fit_gate_validation_fraction,
+        fit_gate_min_validation_rows,
+        fit_gate_min_relative_improvement,
+        fit_gate_max_cosine_drop,
+        max_tokens_per_layer,
+    )
+    source_mlp_norm = _get_layer_module(source_layer, ("post_attention_layernorm", "ln_2"))
+    candidate_mlp_norm = _get_layer_module(candidate_layer, ("post_attention_layernorm", "ln_2"))
+    mlp_linears = _mlp_input_linears(candidate_layer)
+    report["mlp_consumer_reconstruction"] = _reconstruct_cross_tokenizer_module_pair(
+        torch,
+        source,
+        candidate,
+        source_mlp_norm,
+        candidate_mlp_norm,
+        mlp_linears,
+        source_tokenizer,
+        candidate_tokenizer,
+        paired_batches,
+        hidden_projection,
+        canonical_fn,
+        ridge,
+        reconstruction_alpha,
+        reconstruction_objective,
+        cosine_steps,
+        cosine_lr,
+        cosine_l2,
+        fit_gate,
+        fit_gate_validation_fraction,
+        fit_gate_min_validation_rows,
+        fit_gate_min_relative_improvement,
+        fit_gate_max_cosine_drop,
+        max_tokens_per_layer,
+    )
+    report["skipped"] = False
+    return report
 
 
 def _reconstruct_cross_tokenizer_module_pair(
@@ -4695,6 +4912,141 @@ def _cross_tokenizer_sequence_nll_loss(
     return torch.stack(losses).sum() / torch.stack(weights).sum().clamp_min(1e-6)
 
 
+def _cross_tokenizer_alm_chunk_loss(
+    torch,
+    shift_student,
+    teacher,
+    candidate_input_ids,
+    source_input_ids,
+    source_batch: dict[str, Any],
+    candidate_batch: dict[str, Any],
+    response_loss_mode: str,
+    max_chunks: int,
+    min_chars: int,
+):
+    if "offset_mapping" not in source_batch or "offset_mapping" not in candidate_batch:
+        raise ValueError("ALM chunk loss requires offset_mapping batches.")
+    if max_chunks <= 0:
+        raise ValueError("max_chunks must be positive.")
+    if min_chars <= 0:
+        raise ValueError("min_chars must be positive.")
+    shift_teacher = torch.nan_to_num(
+        teacher.logits[:, :-1, :].contiguous().to(torch.float32),
+        nan=0.0,
+        posinf=1e4,
+        neginf=-1e4,
+    )
+    student_logp = torch.nn.functional.log_softmax(shift_student, dim=-1)
+    teacher_logp = torch.nn.functional.log_softmax(shift_teacher, dim=-1)
+    source_offsets = source_batch["offset_mapping"].detach().cpu()
+    candidate_offsets = candidate_batch["offset_mapping"].detach().cpu()
+    source_mask = source_batch.get("attention_mask")
+    candidate_mask = candidate_batch.get("attention_mask")
+    source_mask_cpu = None if source_mask is None else source_mask.detach().cpu().bool()
+    candidate_mask_cpu = None if candidate_mask is None else candidate_mask.detach().cpu().bool()
+    texts = candidate_batch.get("raw_texts") or candidate_batch.get("texts") or []
+    losses = []
+    chunk_count = 0
+    batch_count = min(int(candidate_input_ids.shape[0]), int(source_input_ids.shape[0]), len(texts))
+    for batch_idx in range(batch_count):
+        for start, end in _alm_text_chunks(str(texts[batch_idx]), response_loss_mode, max_chunks, min_chars):
+            candidate_positions = _token_positions_for_char_span(
+                torch,
+                candidate_offsets,
+                candidate_mask_cpu,
+                batch_idx,
+                start,
+                end,
+                max_label_position=int(candidate_input_ids.shape[1]) - 1,
+            )
+            source_positions = _token_positions_for_char_span(
+                torch,
+                source_offsets,
+                source_mask_cpu,
+                batch_idx,
+                start,
+                end,
+                max_label_position=int(source_input_ids.shape[1]) - 1,
+            )
+            if int(candidate_positions.numel()) <= 0 or int(source_positions.numel()) <= 0:
+                continue
+            candidate_pos = candidate_positions.to(device=shift_student.device, dtype=torch.long)
+            source_pos = source_positions.to(device=shift_teacher.device, dtype=torch.long)
+            candidate_labels = candidate_input_ids[batch_idx, candidate_pos].to(device=shift_student.device, dtype=torch.long)
+            source_labels = source_input_ids[batch_idx, source_pos].to(device=shift_teacher.device, dtype=torch.long)
+            student_nll = -student_logp[batch_idx, candidate_pos - 1].gather(
+                dim=-1,
+                index=candidate_labels.unsqueeze(-1),
+            ).squeeze(-1)
+            teacher_nll = -teacher_logp[batch_idx, source_pos - 1].gather(
+                dim=-1,
+                index=source_labels.unsqueeze(-1),
+            ).squeeze(-1)
+            target = teacher_nll.detach().mean().to(device=student_nll.device, dtype=student_nll.dtype)
+            losses.append(torch.nn.functional.smooth_l1_loss(student_nll.mean(), target))
+            chunk_count += 1
+            if chunk_count >= int(max_chunks):
+                break
+        if chunk_count >= int(max_chunks):
+            break
+    if not losses:
+        return torch.zeros((), dtype=shift_student.dtype, device=shift_student.device), 0
+    return torch.stack(losses).mean(), int(chunk_count)
+
+
+def _alm_text_chunks(text: str, response_loss_mode: str, max_chunks: int, min_chars: int) -> list[tuple[int, int]]:
+    if response_loss_mode not in {"none", "auto", "assistant", "answer"}:
+        raise ValueError("response_loss_mode must be none, auto, assistant, or answer.")
+    if max_chunks <= 0:
+        raise ValueError("max_chunks must be positive.")
+    if min_chars <= 0:
+        raise ValueError("min_chars must be positive.")
+    scope_start = 0
+    if response_loss_mode != "none":
+        inferred = _infer_response_char_start(text, response_loss_mode)
+        if inferred is not None:
+            scope_start = max(0, min(int(inferred), len(text)))
+            while scope_start < len(text) and text[scope_start].isspace():
+                scope_start += 1
+    spans = []
+    for match in re.finditer(r"\S+", text[scope_start:]):
+        start = scope_start + int(match.start())
+        end = scope_start + int(match.end())
+        if end - start >= int(min_chars):
+            spans.append((start, end))
+            if len(spans) >= int(max_chunks):
+                break
+    return spans
+
+
+def _token_positions_for_char_span(
+    torch,
+    offsets,
+    attention_mask,
+    batch_idx: int,
+    start: int,
+    end: int,
+    max_label_position: int,
+):
+    positions = []
+    if end <= start:
+        return torch.empty((0,), dtype=torch.long)
+    seq_len = int(offsets.shape[1])
+    limit = min(seq_len - 1, int(max_label_position))
+    for pos in range(1, limit + 1):
+        if attention_mask is not None and not bool(attention_mask[int(batch_idx), pos]):
+            continue
+        token_start = int(offsets[int(batch_idx), pos, 0])
+        token_end = int(offsets[int(batch_idx), pos, 1])
+        if token_end <= token_start:
+            continue
+        if token_start < end and token_end > start:
+            positions.append(pos)
+    if not positions:
+        return torch.empty((0,), dtype=torch.long)
+    return torch.tensor(positions, dtype=torch.long)
+
+
 def _same_tokenizer_reference_loss(
     torch,
     shift_student,
@@ -5016,6 +5368,93 @@ def _cross_tokenizer_span_hidden_loss(
     student_rows = student_hidden[batch_idx, candidate_pos].to(torch.float32)
     teacher_rows = teacher_hidden[batch_idx, source_pos].to(torch.float32)
     return _hidden_representation_loss(torch, student_rows, teacher_rows, hidden_projection, hidden_kd_metric)
+
+
+def _cross_tokenizer_dual_space_kd_loss(
+    torch,
+    student,
+    teacher,
+    span_pairs,
+    source_to_candidate_projection,
+    candidate_to_source_projection,
+    source_head_weight,
+    candidate_head_weight,
+    source_anchor_idx,
+    candidate_anchor_idx,
+    hidden_layer: str,
+    temperature: float,
+):
+    if source_to_candidate_projection is None or candidate_to_source_projection is None:
+        raise ValueError("dual-space KD requires source->candidate and candidate->source projections.")
+    if int(span_pairs.numel()) <= 0:
+        return torch.zeros((), dtype=student.logits.dtype, device=student.logits.device)
+    student_hidden = _select_hidden_state(student.hidden_states, hidden_layer)
+    teacher_hidden = _select_hidden_state(teacher.hidden_states, hidden_layer)
+    pair_idx = span_pairs.to(device=student_hidden.device, dtype=torch.long)
+    batch_idx = pair_idx[:, 0]
+    candidate_pos = pair_idx[:, 1]
+    source_pos = pair_idx[:, 2].to(device=teacher_hidden.device)
+    valid = (
+        (batch_idx >= 0)
+        & (batch_idx < student_hidden.shape[0])
+        & (batch_idx.to(teacher_hidden.device) < teacher_hidden.shape[0])
+        & (candidate_pos >= 0)
+        & (candidate_pos < student_hidden.shape[1])
+        & (source_pos >= 0)
+        & (source_pos < teacher_hidden.shape[1])
+        & (candidate_pos < student.logits.shape[1] - 1)
+        & (source_pos < teacher.logits.shape[1] - 1)
+    )
+    if int(valid.detach().cpu().sum().item()) <= 0:
+        return torch.zeros((), dtype=student.logits.dtype, device=student.logits.device)
+    student_batch = batch_idx[valid]
+    student_pos = candidate_pos[valid]
+    teacher_valid = valid.to(device=teacher_hidden.device)
+    teacher_batch = batch_idx.to(teacher_hidden.device)[teacher_valid]
+    teacher_pos = source_pos[teacher_valid]
+    student_rows = student_hidden[student_batch, student_pos].to(torch.float32)
+    teacher_rows = teacher_hidden[teacher_batch, teacher_pos].to(torch.float32)
+
+    source_anchor = source_anchor_idx.to(device=source_head_weight.device, dtype=torch.long)
+    candidate_anchor = candidate_anchor_idx.to(device=candidate_head_weight.device, dtype=torch.long)
+    source_head = source_head_weight.index_select(0, source_anchor).to(device=student_rows.device, dtype=torch.float32)
+    candidate_head = candidate_head_weight.index_select(0, candidate_anchor).to(device=student_rows.device, dtype=torch.float32)
+    s_to_t = candidate_to_source_projection.to(device=student_rows.device, dtype=torch.float32)
+    t_to_s = source_to_candidate_projection.to(device=student_rows.device, dtype=torch.float32)
+
+    student_as_teacher = student_rows.matmul(s_to_t).matmul(source_head.t())
+    teacher_anchor_logits = (
+        teacher.logits[:, :-1, :]
+        .to(torch.float32)[teacher_batch, teacher_pos]
+        .index_select(dim=-1, index=source_anchor.to(device=teacher.logits.device))
+        .to(device=student_rows.device)
+    )
+    teacher_space_loss = _entropy_aware_kl_loss(
+        torch,
+        student_as_teacher,
+        teacher_anchor_logits,
+        temperature,
+        0.0,
+        0.55,
+        8.0,
+    )
+
+    teacher_as_student = teacher_rows.to(device=student_rows.device).matmul(t_to_s).matmul(candidate_head.t())
+    student_anchor_logits = (
+        student.logits[:, :-1, :]
+        .to(torch.float32)[student_batch, student_pos]
+        .index_select(dim=-1, index=candidate_anchor.to(device=student.logits.device))
+    )
+    student_space_loss = _entropy_aware_kl_loss(
+        torch,
+        student_anchor_logits,
+        teacher_as_student,
+        temperature,
+        0.0,
+        0.55,
+        8.0,
+    )
+    return 0.5 * (teacher_space_loss + student_space_loss)
 
 
 def _cross_tokenizer_projected_vocab_loss(

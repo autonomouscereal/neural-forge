@@ -322,6 +322,52 @@ compatibility. It transfers some useful behavior and beats the random target on
 ARC-Easy and behavior probes, but it is still not donor-like and does not meet
 the broader arbitrary-target claim.
 
+### Consumer-Input, Dual-Space, and ALM Follow-Up
+
+New implementation:
+
+- `hf-xfamily-reconstruct --reconstruction-target consumer-input`, which fits a
+  cross-tokenizer donor/child hidden map at each layer boundary and absorbs the
+  map into the next child layer's attention and MLP input projections.
+- `hf-donor-project-init --activation-fit-target`, so activation-fitted linear
+  replacements can be restricted to safer module families such as
+  `attention-output`, `mlp-output`, or `input-projections`.
+- `hf-xfamily-recover --dual-space-kd-weight`, a DSKD-style fixed-projector loss
+  that compares student hidden states through the donor head and donor hidden
+  states through the child head on aligned span positions.
+- `hf-xfamily-recover --alm-kd-weight`, an ALM-style cross-tokenizer chunk
+  likelihood loss that matches donor and child negative log likelihood over the
+  same character chunks instead of requiring matching token boundaries.
+
+Validation used the strict 29.9x tied SmolLM child as the starting checkpoint.
+
+| Checkpoint | Params | PPL mean | Choice | Behavior | ARC-Easy limit-20 | PIQA limit-20 | Manual notes |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Baseline tied 29.9x | 134,515,008 | 3845.90 | 3/4 | 3/6 | 0.45 / norm 0.25 | 0.55 / norm 0.40 | partially useful, code/math broken |
+| Consumer-input alpha 0.02, gated | 134,515,008 | 3871.39 | 3/4 | 3/6 | not run | not run | stable but slightly worse PPL; loops remain |
+| Consumer-input alpha 0.005, strict PPL gate | 134,515,008 | 3845.68 | 3/4 | 3/6 | not run | not run | 13 layer repairs accepted, 17 reverted; neutral |
+| Dual-space KD 240 steps | 134,515,008 | 2754.10 | 3/4 | 3/6 | not run | not run | better PPL; manual output still token/numeric loops |
+| Dual-space + ALM 240 steps | 134,515,008 | 2721.31 | 3/4 | 4/6 | 0.40 / norm 0.25 | 0.55 / norm 0.40 | behavior regex improves, but manual code/math still fail |
+
+Manual inspection of the ALM+dual checkpoint:
+
+- `tokenizer_mismatch`, `rain_common_sense`, and `neuron_merge_definition`
+  remain recognizable but repetitive.
+- The `python_add_function` behavior probe passes the regex gate, but the code
+  is not syntactically valid.
+- Arithmetic remains failed (`12 * 13` and `19 + 26` both devolve into numeric
+  loops).
+- External lm-eval does not improve over the tied baseline: ARC-Easy raw
+  regresses from `0.45` to `0.40`, ARC-Easy normalized is unchanged at `0.25`,
+  and PIQA is unchanged at `0.55` / normalized `0.40`.
+
+Conclusion: DSKD-style dual-space recovery and ALM-style chunk likelihood are
+useful additions because they improve PPL and one built-in behavior item at
+strict 29.9x without increasing parameter count. They still do not meet the
+manual quality bar. The next recovery target should be on-policy/stepwise
+decoding correction and stronger blockwise reconstruction, not more regex-tuned
+short-answer recovery.
+
 ## Current Conclusion
 
 The 29.9x SmolLM blank-target fold is no longer just fitting tensor shapes. It

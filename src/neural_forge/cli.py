@@ -149,9 +149,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hf_donor_init.add_argument(
         "--attention-fold-mode",
-        choices=["independent", "coupled"],
+        choices=["independent", "coupled", "activation-coupled"],
         default="independent",
-        help="Fold attention Q/K/V/O projection head partitions together instead of as flat axes.",
+        help="Fold attention Q/K/V/O projection head partitions together; activation-coupled also routes donor heads by calibration features.",
     )
     hf_donor_init.add_argument(
         "--token-init-mode",
@@ -177,6 +177,20 @@ def build_parser() -> argparse.ArgumentParser:
         default="mean",
         help="How to fold consumer weights over merged hidden axes; mean is safest for arbitrary blank targets.",
     )
+    hf_donor_init.add_argument(
+        "--activation-fit-linears",
+        action="store_true",
+        help="Fit target-shaped linear weights from folded donor input/output activations after tensor folding.",
+    )
+    hf_donor_init.add_argument(
+        "--activation-fit-target",
+        choices=["all", "attention", "attention-output", "mlp", "mlp-output", "input-projections"],
+        default="all",
+        help="Limit activation-fitted linear replacements to safer module families.",
+    )
+    hf_donor_init.add_argument("--activation-fit-max-rows", type=int, default=0)
+    hf_donor_init.add_argument("--activation-fit-alpha", type=float, default=1.0)
+    hf_donor_init.add_argument("--activation-fit-ridge", type=float, default=1e-1)
     hf_donor_init.add_argument(
         "--untie-output-head",
         action="store_true",
@@ -579,6 +593,12 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--hidden-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--span-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--span-hidden-kd-weight", type=float, default=0.0)
+    xfamily_recover.add_argument(
+        "--dual-space-kd-weight",
+        type=float,
+        default=0.0,
+        help="Cross-tokenizer DSKD-style loss using student hidden through teacher head and teacher hidden through student head.",
+    )
     xfamily_recover.add_argument("--projected-vocab-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument(
         "--projected-vocab-kd-mode",
@@ -596,6 +616,14 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--token-focus", choices=["auto", "response", "numbers", "code", "all"], default="auto")
     xfamily_recover.add_argument("--token-max-pairs", type=int, default=512)
     xfamily_recover.add_argument("--token-teacher-confidence-floor", type=float, default=0.0)
+    xfamily_recover.add_argument(
+        "--alm-kd-weight",
+        type=float,
+        default=0.0,
+        help="Align teacher/student likelihoods over same-character chunks for cross-tokenizer recovery.",
+    )
+    xfamily_recover.add_argument("--alm-max-chunks", type=int, default=64)
+    xfamily_recover.add_argument("--alm-min-chars", type=int, default=2)
     xfamily_recover.add_argument("--answer-contrastive-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--answer-contrastive-max-negatives", type=int, default=4)
     xfamily_recover.add_argument("--teacher-rank-weight", type=float, default=0.0)
@@ -670,7 +698,17 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_reconstruct.add_argument("--reconstruction-alpha", type=float, default=1.0)
     xfamily_reconstruct.add_argument(
         "--reconstruction-target",
-        choices=["attention", "attention-output", "attention-all", "mlp", "mlp-output", "mlp-all", "both", "all"],
+        choices=[
+            "consumer-input",
+            "attention",
+            "attention-output",
+            "attention-all",
+            "mlp",
+            "mlp-output",
+            "mlp-all",
+            "both",
+            "all",
+        ],
         default="both",
     )
     xfamily_reconstruct.add_argument(
@@ -1132,6 +1170,11 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         projection_scale=args.projection_scale,
         projection_blend_alpha=args.projection_blend_alpha,
         consumer_hidden_reduction=args.consumer_hidden_reduction,
+        activation_fit_linears=args.activation_fit_linears,
+        activation_fit_target=args.activation_fit_target,
+        activation_fit_max_rows=args.activation_fit_max_rows,
+        activation_fit_alpha=args.activation_fit_alpha,
+        activation_fit_ridge=args.activation_fit_ridge,
         untie_output_head=args.untie_output_head,
         activation_calibration_texts=activation_calibration_texts,
         activation_max_length=args.activation_max_length,
@@ -1385,6 +1428,7 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         hidden_kd_weight=args.hidden_kd_weight,
         span_kd_weight=args.span_kd_weight,
         span_hidden_kd_weight=args.span_hidden_kd_weight,
+        dual_space_kd_weight=args.dual_space_kd_weight,
         projected_vocab_kd_weight=args.projected_vocab_kd_weight,
         projected_vocab_kd_mode=args.projected_vocab_kd_mode,
         projected_vocab_max_source_tokens=args.projected_vocab_max_source_tokens,
@@ -1398,6 +1442,9 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         token_focus=args.token_focus,
         token_max_pairs=args.token_max_pairs,
         token_teacher_confidence_floor=args.token_teacher_confidence_floor,
+        alm_kd_weight=args.alm_kd_weight,
+        alm_max_chunks=args.alm_max_chunks,
+        alm_min_chars=args.alm_min_chars,
         answer_contrastive_weight=args.answer_contrastive_weight,
         answer_contrastive_max_negatives=args.answer_contrastive_max_negatives,
         teacher_rank_weight=args.teacher_rank_weight,

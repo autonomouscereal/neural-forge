@@ -262,6 +262,11 @@ def donor_projected_init(
     projection_scale: str = "none",
     projection_blend_alpha: float = 1.0,
     consumer_hidden_reduction: str = "mean",
+    activation_fit_linears: bool = False,
+    activation_fit_target: str = "all",
+    activation_fit_max_rows: int = 0,
+    activation_fit_alpha: float = 1.0,
+    activation_fit_ridge: float = 1e-1,
     untie_output_head: bool = False,
     activation_calibration_texts: list[str] | None = None,
     activation_max_length: int = 128,
@@ -300,15 +305,24 @@ def donor_projected_init(
         raise ValueError("transport_backend must be sparse or sinkhorn.")
     if donor_layer_fold_mode not in {"representative", "average", "fold"}:
         raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
-    if attention_fold_mode not in {"independent", "coupled"}:
-        raise ValueError("attention_fold_mode must be independent or coupled.")
+    if attention_fold_mode not in {"independent", "coupled", "activation-coupled"}:
+        raise ValueError("attention_fold_mode must be independent, coupled, or activation-coupled.")
     if token_init_mode not in {"shared", "donor-tokenized"}:
         raise ValueError("token_init_mode must be shared or donor-tokenized.")
     if projection_scale not in {"none", "target-rms"}:
         raise ValueError("projection_scale must be none or target-rms.")
     if consumer_hidden_reduction not in {"mean", "sum", "sqrt-sum"}:
         raise ValueError("consumer_hidden_reduction must be mean, sum, or sqrt-sum.")
+    if activation_fit_target not in {"all", "attention", "attention-output", "mlp", "mlp-output", "input-projections"}:
+        raise ValueError(
+            "activation_fit_target must be all, attention, attention-output, mlp, mlp-output, or input-projections."
+        )
+    if activation_fit_max_rows < 0:
+        raise ValueError("activation_fit_max_rows must be non-negative.")
+    if activation_fit_ridge < 0:
+        raise ValueError("activation_fit_ridge must be non-negative.")
     projection_blend_alpha = _bounded_alpha(projection_blend_alpha, "projection_blend_alpha")
+    activation_fit_alpha = _bounded_alpha(activation_fit_alpha, "activation_fit_alpha")
     if activation_max_length <= 1:
         raise ValueError("activation_max_length must be greater than 1.")
 
@@ -360,7 +374,12 @@ def donor_projected_init(
             max_length=activation_max_length,
             device=activation_device,
             hidden_basis_max_rows=hidden_basis_max_rows if hidden_basis_mode == "activation-pca" else 0,
+            linear_fit_max_rows=activation_fit_max_rows if activation_fit_linears else 0,
         )
+    if attention_fold_mode == "activation-coupled" and activation_profile is None:
+        raise ValueError("activation-coupled attention folding requires activation calibration texts.")
+    if activation_fit_linears and activation_profile is None:
+        raise ValueError("activation linear fitting requires activation calibration texts.")
     hidden_basis = None
     hidden_basis_report = None
     layer_hidden_bases = None
@@ -396,6 +415,7 @@ def donor_projected_init(
     layer_reports = []
     changed_keys = []
     skipped_layer_keys = []
+    activation_fit_reports = []
     hidden_axis_weights = None
     if activation_profile is not None:
         hidden_axis_weights = {
@@ -453,13 +473,23 @@ def donor_projected_init(
         axis_reductions = _axis_reductions_for_layer_tensor(suffix)
         axis_reductions = _with_consumer_hidden_reduction(axis_reductions, consumer_hidden_reduction)
         projected = None
-        if attention_fold_mode == "coupled":
+        if attention_fold_mode in {"coupled", "activation-coupled"}:
             layer_axis_bases = _hidden_basis_axes_for_layer_tensor(
                 torch,
                 donor_tensor,
                 suffix,
                 None if layer_hidden_bases is None else layer_hidden_bases.get(int(target_layer_idx)),
             )
+            attention_axis_weights = None
+            if attention_fold_mode == "activation-coupled":
+                attention_axis_weights = _attention_axis_weights_for_tensor(
+                    torch,
+                    donor_tensor,
+                    suffix,
+                    donor_layer_idx,
+                    donor_layer_group,
+                    activation_profile,
+                )
             projected = _resize_attention_tensor_to_shape(
                 torch,
                 donor_tensor.detach().cpu().to(torch.float32),
@@ -470,6 +500,8 @@ def donor_projected_init(
                 fold_mode=tensor_fold_mode,
                 axis_bases=layer_axis_bases,
                 hidden_basis=hidden_basis if donor_tensor.dim() >= 2 else None,
+                attention_axis_weights=attention_axis_weights,
+                attention_head_fold_mode="transport" if attention_fold_mode == "activation-coupled" else None,
                 axis_weights=axis_weights,
                 axis_reductions=axis_reductions,
                 activation_fold_assignment=activation_fold_assignment,
@@ -499,6 +531,41 @@ def donor_projected_init(
             )
         projected = _scale_projection_to_target(torch, projected, target_tensor, projection_scale)
         projected = _blend_projection_with_target(torch, projected, target_tensor, projection_blend_alpha)
+        activation_fit_report = None
+        if (
+            activation_fit_linears
+            and target_tensor.dim() == 2
+            and suffix.endswith(".weight")
+            and _activation_fit_suffix_enabled(suffix, activation_fit_target)
+        ):
+            fitted = _fit_projected_linear_from_donor_activations(
+                torch,
+                activation_profile,
+                suffix,
+                tuple(target_tensor.shape),
+                donor.config,
+                target.config,
+                donor_layer_idx,
+                donor_layer_group,
+                ridge=activation_fit_ridge,
+                fold_mode=tensor_fold_mode,
+                hidden_basis=hidden_basis if donor_tensor.dim() >= 2 else None,
+                axis_weights=axis_weights,
+                activation_fold_assignment=activation_fold_assignment,
+                transport_backend=transport_backend,
+                assignment_cache=axis_assignment_cache,
+                reference_weight=projected,
+            )
+            if fitted is not None:
+                projected = (1.0 - activation_fit_alpha) * projected + activation_fit_alpha * fitted
+                activation_fit_report = {
+                    "target_key": target_key,
+                    "suffix": suffix,
+                    "target_shape": list(target_tensor.shape),
+                    "alpha": float(activation_fit_alpha),
+                    "ridge": float(activation_fit_ridge),
+                }
+                activation_fit_reports.append(activation_fit_report)
         target_state[target_key] = projected.to(dtype=target_tensor.dtype)
         changed_keys.append(target_key)
         layer_reports.append(
@@ -512,6 +579,7 @@ def donor_projected_init(
                 "attention_fold_mode": attention_fold_mode,
                 "target_shape": list(target_tensor.shape),
                 "donor_shape": list(donor_tensor.shape),
+                "activation_fit": activation_fit_report,
             }
         )
 
@@ -593,6 +661,12 @@ def donor_projected_init(
         "projection_scale": projection_scale,
         "projection_blend_alpha": projection_blend_alpha,
         "consumer_hidden_reduction": consumer_hidden_reduction,
+        "activation_fit_linears": bool(activation_fit_linears),
+        "activation_fit_target": activation_fit_target,
+        "activation_fit_max_rows": int(activation_fit_max_rows),
+        "activation_fit_alpha": float(activation_fit_alpha),
+        "activation_fit_ridge": float(activation_fit_ridge),
+        "activation_fit_reports": activation_fit_reports,
         "untie_output_head": bool(untie_output_head),
         "activation_calibration_text_count": len(activation_calibration_texts or []),
         "activation_max_length": activation_max_length,
@@ -1729,6 +1803,8 @@ def _resize_attention_tensor_to_shape(
     fold_mode: str = "mean",
     axis_bases: dict[int, Any] | None = None,
     hidden_basis=None,
+    attention_axis_weights: dict[int, Any] | None = None,
+    attention_head_fold_mode: str | None = None,
     axis_weights: dict[int, Any] | None = None,
     axis_reductions: dict[int, str] | None = None,
     activation_fold_assignment: str = "balanced",
@@ -1747,6 +1823,8 @@ def _resize_attention_tensor_to_shape(
     for axis, source_heads, target_heads in specs:
         if axis >= resized.dim() or int(resized.shape[axis]) == int(target_shape[axis]):
             continue
+        head_profile = None if attention_axis_weights is None else attention_axis_weights.get(axis)
+        head_weights, head_features, head_semantic_key = _axis_fold_profile(head_profile)
         coupled = _resize_head_partitioned_axis(
             torch,
             resized,
@@ -1757,8 +1835,12 @@ def _resize_attention_tensor_to_shape(
             fold_mode=fold_mode,
             reduction="mean" if axis_reductions is None else axis_reductions.get(axis, "mean"),
             transport_backend=transport_backend,
+            head_weights=head_weights,
+            head_features=head_features,
+            head_fold_mode=attention_head_fold_mode,
+            head_assignment_mode=activation_fold_assignment,
             assignment_cache=assignment_cache,
-            head_assignment_key=_attention_axis_assignment_key(suffix, semantic_prefix, "heads"),
+            head_assignment_key=head_semantic_key or _attention_axis_assignment_key(suffix, semantic_prefix, "heads"),
             head_dim_assignment_key=_attention_axis_assignment_key(suffix, semantic_prefix, "head_dim"),
         )
         if coupled is None:
@@ -1810,7 +1892,7 @@ def _attention_partition_specs(suffix: str, donor_config, target_config) -> list
         return [] if kv_heads_source is None or kv_heads_target is None else [(0, kv_heads_source, kv_heads_target)]
     if marker.endswith(".v_proj.weight") or marker.endswith(".v_proj.bias"):
         return [] if kv_heads_source is None or kv_heads_target is None else [(0, kv_heads_source, kv_heads_target)]
-    if marker.endswith(".o_proj.weight"):
+    if marker.endswith(".o_proj.weight") or marker.endswith(".out_proj.weight") or marker.endswith(".attn.c_proj.weight"):
         return [(1, q_heads_source, q_heads_target)]
     return []
 
@@ -1875,6 +1957,10 @@ def _resize_head_partitioned_axis(
     fold_mode: str,
     reduction: str = "mean",
     transport_backend: str = "sparse",
+    head_weights=None,
+    head_features=None,
+    head_fold_mode: str | None = None,
+    head_assignment_mode: str = "balanced",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
     head_assignment_key=None,
     head_dim_assignment_key=None,
@@ -1894,8 +1980,11 @@ def _resize_head_partitioned_axis(
         partitioned,
         axis=0,
         target_dim=int(target_heads),
-        fold_mode=fold_mode,
+        fold_mode=head_fold_mode or fold_mode,
+        weights=head_weights,
+        features=head_features,
         reduction=reduction,
+        assignment_mode=head_assignment_mode,
         transport_backend=transport_backend,
         assignment_cache=assignment_cache,
         assignment_cache_key=head_assignment_key,
@@ -2482,6 +2571,7 @@ def _collect_donor_axis_activation_scores(
     max_length: int,
     device: str,
     hidden_basis_max_rows: int = 0,
+    linear_fit_max_rows: int = 0,
 ) -> dict[str, Any]:
     if not texts:
         raise ValueError("Need at least one activation calibration text.")
@@ -2495,7 +2585,18 @@ def _collect_donor_axis_activation_scores(
     hidden_basis_output_rows: dict[int, int] = {idx: 0 for idx in range(len(donor_layers))}
     mlp_scores: dict[int, list[Any]] = {idx: [] for idx in range(len(donor_layers))}
     mlp_features: dict[int, list[Any]] = {idx: [] for idx in range(len(donor_layers))}
+    attention_head_profiles: dict[int, dict[str, dict[str, list[Any]]]] = {
+        idx: {
+            "q": {"scores": [], "features": []},
+            "kv": {"scores": [], "features": []},
+        }
+        for idx in range(len(donor_layers))
+    }
+    linear_fit_rows: dict[int, dict[str, dict[str, list[Any]]]] = {idx: {} for idx in range(len(donor_layers))}
+    linear_fit_counts: dict[tuple[int, str], int] = {}
     handles = []
+    q_heads = _config_int(donor.config, "num_attention_heads", "n_head", "num_heads")
+    kv_heads = _config_int(donor.config, "num_key_value_heads", default=q_heads)
 
     def append_basis_rows(store, counts, layer_idx: int, tensor) -> None:
         if int(hidden_basis_max_rows) <= 0 or counts[int(layer_idx)] >= int(hidden_basis_max_rows):
@@ -2540,14 +2641,72 @@ def _collect_donor_axis_activation_scores(
 
         return hook
 
+    def append_attention_profile(layer_idx: int, stream: str, tensor, heads: int | None) -> None:
+        if heads is None:
+            return
+        profile = _attention_head_activation_profile(torch, tensor.detach().to(torch.float32), int(heads))
+        if profile is None:
+            return
+        attention_head_profiles[int(layer_idx)][stream]["scores"].append(profile["scores"].cpu())
+        attention_head_profiles[int(layer_idx)][stream]["features"].append(profile["features"].cpu())
+
+    def attention_output_hook(layer_idx: int, stream: str, heads: int | None):
+        def hook(_module, _inputs, output):
+            tensor = output[0] if isinstance(output, tuple) else output
+            append_attention_profile(layer_idx, stream, tensor, heads)
+
+        return hook
+
+    def append_linear_fit_rows(layer_idx: int, suffix: str, inputs, output) -> None:
+        if int(linear_fit_max_rows) <= 0:
+            return
+        key = (int(layer_idx), str(suffix))
+        used = int(linear_fit_counts.get(key, 0))
+        if used >= int(linear_fit_max_rows):
+            return
+        if not inputs:
+            return
+        input_rows = _activation_2d(torch, inputs[0].detach().to(torch.float32)).detach().cpu()
+        output_tensor = output[0] if isinstance(output, tuple) else output
+        output_rows = _activation_2d(torch, output_tensor.detach().to(torch.float32)).detach().cpu()
+        row_count = min(int(input_rows.shape[0]), int(output_rows.shape[0]), int(linear_fit_max_rows) - used)
+        if row_count <= 0:
+            return
+        slot = linear_fit_rows[int(layer_idx)].setdefault(str(suffix), {"input": [], "output": []})
+        slot["input"].append(input_rows[:row_count])
+        slot["output"].append(output_rows[:row_count])
+        linear_fit_counts[key] = used + row_count
+
+    def linear_fit_hook(layer_idx: int, suffix: str):
+        def hook(_module, inputs, output):
+            append_linear_fit_rows(layer_idx, suffix, inputs, output)
+
+        return hook
+
     for layer_idx, layer in enumerate(donor_layers):
         handles.append(layer.register_forward_pre_hook(hidden_hook(layer_idx)))
         handles.append(layer.register_forward_hook(hidden_output_hook(layer_idx)))
+        attention_modules = _attention_projection_modules(layer)
+        if attention_modules.get("q") is not None:
+            handles.append(attention_modules["q"].register_forward_hook(attention_output_hook(layer_idx, "q", q_heads)))
+            handles.append(attention_modules["q"].register_forward_hook(linear_fit_hook(layer_idx, "self_attn.q_proj.weight")))
+        if attention_modules.get("k") is not None:
+            handles.append(attention_modules["k"].register_forward_hook(attention_output_hook(layer_idx, "kv", kv_heads)))
+            handles.append(attention_modules["k"].register_forward_hook(linear_fit_hook(layer_idx, "self_attn.k_proj.weight")))
+        if attention_modules.get("v") is not None:
+            handles.append(attention_modules["v"].register_forward_hook(attention_output_hook(layer_idx, "kv", kv_heads)))
+            handles.append(attention_modules["v"].register_forward_hook(linear_fit_hook(layer_idx, "self_attn.v_proj.weight")))
+        if attention_modules.get("o") is not None:
+            handles.append(attention_modules["o"].register_forward_hook(linear_fit_hook(layer_idx, "self_attn.o_proj.weight")))
         spec = _mlp_spec(layer)
         if spec is None:
             continue
-        for linear in spec["inputs"]:
+        for name, linear in zip(spec["input_names"], spec["inputs"]):
             handles.append(linear.register_forward_hook(mlp_hook(layer_idx)))
+            handles.append(linear.register_forward_hook(linear_fit_hook(layer_idx, f"{_mlp_prefix(layer, spec)}.{name}.weight")))
+        handles.append(
+            spec["output"].register_forward_hook(linear_fit_hook(layer_idx, f"{_mlp_prefix(layer, spec)}.{spec['output_name']}.weight"))
+        )
 
     was_training = donor.training
     try:
@@ -2577,6 +2736,28 @@ def _collect_donor_axis_activation_scores(
     for layer_idx, features in mlp_features.items():
         if features:
             folded_mlp_features[layer_idx] = torch.stack(features, dim=0).mean(dim=0)
+    folded_attention_profiles = {}
+    for layer_idx, by_stream in attention_head_profiles.items():
+        stream_profiles = {}
+        for stream, values in by_stream.items():
+            if values["scores"] and values["features"]:
+                stream_profiles[stream] = {
+                    "scores": torch.stack(values["scores"], dim=0).mean(dim=0).clamp_min(1e-12),
+                    "features": torch.stack(values["features"], dim=0).mean(dim=0),
+                }
+        if stream_profiles:
+            folded_attention_profiles[int(layer_idx)] = stream_profiles
+    folded_linear_fit_rows = {}
+    for layer_idx, by_suffix in linear_fit_rows.items():
+        suffix_rows = {}
+        for suffix, values in by_suffix.items():
+            if values["input"] and values["output"]:
+                suffix_rows[str(suffix)] = {
+                    "input": torch.cat(values["input"], dim=0),
+                    "output": torch.cat(values["output"], dim=0),
+                }
+        if suffix_rows:
+            folded_linear_fit_rows[int(layer_idx)] = suffix_rows
     return {
         "hidden_scores": torch.stack(hidden_scores, dim=0).mean(dim=0).clamp_min(1e-12),
         "hidden_features": torch.stack(hidden_features, dim=0).mean(dim=0),
@@ -2589,6 +2770,8 @@ def _collect_donor_axis_activation_scores(
         },
         "mlp_scores": folded_mlp_scores,
         "mlp_features": folded_mlp_features,
+        "attention_head_profiles": folded_attention_profiles,
+        "linear_fit_rows": folded_linear_fit_rows,
     }
 
 
@@ -2636,6 +2819,52 @@ def _activation_2d(torch, tensor):
     return values
 
 
+def _attention_projection_modules(layer) -> dict[str, Any]:
+    attention = None
+    for name in ("self_attn", "attn", "attention"):
+        candidate = getattr(layer, name, None)
+        if candidate is not None:
+            attention = candidate
+            break
+    if attention is None:
+        return {}
+    return {
+        "q": _first_existing_attr(attention, ("q_proj", "query", "q")),
+        "k": _first_existing_attr(attention, ("k_proj", "key", "k")),
+        "v": _first_existing_attr(attention, ("v_proj", "value", "v")),
+        "o": _first_existing_attr(attention, ("o_proj", "out_proj", "c_proj", "dense")),
+    }
+
+
+def _first_existing_attr(obj, names: Sequence[str]):
+    for name in names:
+        value = getattr(obj, name, None)
+        if value is not None:
+            return value
+    return None
+
+
+def _attention_head_activation_profile(torch, tensor, heads: int) -> dict[str, Any] | None:
+    if heads <= 0:
+        return None
+    values = _activation_2d(torch, tensor)
+    if values.dim() != 2:
+        return None
+    source_dim = int(values.shape[1])
+    if source_dim <= 0 or source_dim % int(heads) != 0:
+        return None
+    head_dim = source_dim // int(heads)
+    if head_dim <= 0:
+        return None
+    partitioned = values.reshape(-1, int(heads), head_dim).to(torch.float32)
+    signed_mean = partitioned.mean(dim=0)
+    abs_mean = partitioned.abs().mean(dim=0)
+    rms = partitioned.pow(2).mean(dim=0).sqrt()
+    features = torch.cat([signed_mean, abs_mean, rms], dim=1).contiguous()
+    scores = abs_mean.mean(dim=1).clamp_min(1e-12)
+    return {"scores": scores, "features": features}
+
+
 def _activation_axis_weights_for_tensor(
     torch,
     donor_tensor,
@@ -2679,6 +2908,369 @@ def _activation_axis_weights_for_tensor(
                     "assignment_key": ("mlp", layer_group_key),
                 }
     return axis_weights or None
+
+
+def _attention_axis_weights_for_tensor(
+    torch,
+    donor_tensor,
+    suffix: str,
+    donor_layer_idx: int,
+    donor_layer_group: Sequence[int] | None,
+    activation_profile,
+):
+    if activation_profile is None:
+        return None
+    stream_and_axis = _attention_stream_and_partition_axis(suffix)
+    if stream_and_axis is None:
+        return None
+    stream, axis = stream_and_axis
+    head_profiles = activation_profile.get("attention_head_profiles") or {}
+    layer_group = list(donor_layer_group or [donor_layer_idx])
+    layer_group_key = tuple(int(item) for item in layer_group)
+    scores = _aggregate_layer_attention_profile(torch, head_profiles, layer_group, stream, "scores", clamp_min=1e-12)
+    features = _aggregate_layer_attention_profile(torch, head_profiles, layer_group, stream, "features")
+    if scores is None:
+        return None
+    if axis >= len(donor_tensor.shape):
+        return None
+    source_dim = int(donor_tensor.shape[axis])
+    if int(scores.numel()) <= 0 or source_dim % int(scores.numel()) != 0:
+        return None
+    return {
+        axis: {
+            "weights": scores,
+            "features": features,
+            "assignment_key": ("attention-heads", stream, layer_group_key),
+        }
+    }
+
+
+def _attention_stream_and_partition_axis(suffix: str) -> tuple[str, int] | None:
+    marker = f".{suffix.lower()}"
+    if marker.endswith(".q_proj.weight") or marker.endswith(".q_proj.bias"):
+        return "q", 0
+    if marker.endswith(".o_proj.weight") or marker.endswith(".out_proj.weight") or marker.endswith(".attn.c_proj.weight"):
+        return "q", 1
+    if marker.endswith(".k_proj.weight") or marker.endswith(".k_proj.bias"):
+        return "kv", 0
+    if marker.endswith(".v_proj.weight") or marker.endswith(".v_proj.bias"):
+        return "kv", 0
+    return None
+
+
+def _aggregate_layer_attention_profile(
+    torch,
+    profiles: dict[int, Any],
+    layer_group: Sequence[int],
+    stream: str,
+    field: str,
+    clamp_min=None,
+):
+    rows = []
+    for layer_idx in layer_group:
+        layer_profile = profiles.get(int(layer_idx), {})
+        stream_profile = layer_profile.get(stream, {})
+        value = stream_profile.get(field)
+        if value is not None:
+            rows.append(value.detach().cpu().to(torch.float32))
+    if not rows:
+        return None
+    stacked = torch.stack(rows, dim=0)
+    merged = stacked.mean(dim=0)
+    if clamp_min is not None:
+        merged = merged.clamp_min(float(clamp_min))
+    return merged
+
+
+def _fit_projected_linear_from_donor_activations(
+    torch,
+    activation_profile,
+    suffix: str,
+    target_shape: tuple[int, int],
+    donor_config,
+    target_config,
+    donor_layer_idx: int,
+    donor_layer_group: Sequence[int] | None,
+    ridge: float,
+    fold_mode: str,
+    hidden_basis=None,
+    axis_weights: dict[int, Any] | None = None,
+    activation_fold_assignment: str = "balanced",
+    transport_backend: str = "sparse",
+    assignment_cache: dict[Any, dict[str, Any]] | None = None,
+    reference_weight=None,
+):
+    rows = _linear_fit_rows_for_suffix(torch, activation_profile, donor_layer_group or [donor_layer_idx], suffix)
+    if rows is None:
+        return None
+    source_input = rows["input"]
+    source_output = rows["output"]
+    if source_input.dim() != 2 or source_output.dim() != 2:
+        return None
+    if int(source_input.shape[0]) < 2 or int(source_output.shape[0]) < 2:
+        return None
+    target_out, target_in = int(target_shape[0]), int(target_shape[1])
+    folded_input = _resize_linear_activation_rows(
+        torch,
+        source_input,
+        target_in,
+        suffix,
+        side="input",
+        donor_config=donor_config,
+        target_config=target_config,
+        donor_layer_idx=donor_layer_idx,
+        donor_layer_group=donor_layer_group,
+        activation_profile=activation_profile,
+        fold_mode=fold_mode,
+        hidden_basis=hidden_basis,
+        axis_weights=axis_weights,
+        activation_fold_assignment=activation_fold_assignment,
+        transport_backend=transport_backend,
+        assignment_cache=assignment_cache,
+    )
+    folded_output = _resize_linear_activation_rows(
+        torch,
+        source_output,
+        target_out,
+        suffix,
+        side="output",
+        donor_config=donor_config,
+        target_config=target_config,
+        donor_layer_idx=donor_layer_idx,
+        donor_layer_group=donor_layer_group,
+        activation_profile=activation_profile,
+        fold_mode=fold_mode,
+        hidden_basis=hidden_basis,
+        axis_weights=axis_weights,
+        activation_fold_assignment=activation_fold_assignment,
+        transport_backend=transport_backend,
+        assignment_cache=assignment_cache,
+    )
+    if folded_input is None or folded_output is None:
+        return None
+    row_count = min(int(folded_input.shape[0]), int(folded_output.shape[0]))
+    if row_count < 2:
+        return None
+    folded_input = folded_input[:row_count]
+    folded_output = folded_output[:row_count]
+    validation_rows = int(max(0, min(row_count // 5, row_count - 2)))
+    if validation_rows >= 8 and reference_weight is not None:
+        train_input = folded_input[:-validation_rows]
+        train_output = folded_output[:-validation_rows]
+        val_input = folded_input[-validation_rows:]
+        val_output = folded_output[-validation_rows:]
+    else:
+        train_input = folded_input
+        train_output = folded_output
+        val_input = None
+        val_output = None
+    fitted = _fit_linear_weight_from_activation_rows(torch, train_input, train_output, ridge)
+    fitted = torch.nan_to_num(fitted, nan=0.0, posinf=0.0, neginf=0.0)
+    if reference_weight is not None:
+        reference = reference_weight.detach().cpu().to(torch.float32)
+        fitted = _scale_projection_to_target(torch, fitted, reference, "target-rms")
+    if val_input is not None and val_output is not None and reference_weight is not None:
+        reference = reference_weight.detach().cpu().to(torch.float32)
+        fit_error = val_input.matmul(fitted.t()).sub(val_output).pow(2).mean()
+        reference_error = val_input.matmul(reference.t()).sub(val_output).pow(2).mean()
+        if not bool(torch.isfinite(fit_error)) or float(fit_error) >= float(reference_error):
+            return None
+    return fitted
+
+
+def _linear_fit_rows_for_suffix(torch, activation_profile, layer_group: Sequence[int], suffix: str):
+    if activation_profile is None:
+        return None
+    rows_by_layer = activation_profile.get("linear_fit_rows") or {}
+    input_rows = []
+    output_rows = []
+    for layer_idx in layer_group:
+        layer_rows = rows_by_layer.get(int(layer_idx), {})
+        values = layer_rows.get(str(suffix))
+        if values is None:
+            continue
+        input_rows.append(values["input"].detach().cpu().to(torch.float32))
+        output_rows.append(values["output"].detach().cpu().to(torch.float32))
+    if not input_rows or not output_rows:
+        return None
+    return {"input": torch.cat(input_rows, dim=0), "output": torch.cat(output_rows, dim=0)}
+
+
+def _resize_linear_activation_rows(
+    torch,
+    rows,
+    target_dim: int,
+    suffix: str,
+    side: str,
+    donor_config,
+    target_config,
+    donor_layer_idx: int,
+    donor_layer_group: Sequence[int] | None,
+    activation_profile,
+    fold_mode: str,
+    hidden_basis=None,
+    axis_weights: dict[int, Any] | None = None,
+    activation_fold_assignment: str = "balanced",
+    transport_backend: str = "sparse",
+    assignment_cache: dict[Any, dict[str, Any]] | None = None,
+):
+    if side not in {"input", "output"}:
+        raise ValueError("side must be input or output.")
+    values = rows.detach().cpu().to(torch.float32)
+    if values.dim() != 2:
+        return None
+    if int(values.shape[1]) == int(target_dim):
+        return values.contiguous()
+    attention = _linear_activation_attention_partition(suffix, side, donor_config, target_config)
+    if attention is not None:
+        source_heads, target_heads, stream = attention
+        profile = _attention_head_profile_for_stream(
+            torch,
+            activation_profile,
+            donor_layer_group or [donor_layer_idx],
+            stream,
+        )
+        head_weights, head_features, head_key = _axis_fold_profile(profile)
+        return _resize_head_partitioned_axis(
+            torch,
+            values,
+            axis=1,
+            target_dim=int(target_dim),
+            source_heads=int(source_heads),
+            target_heads=int(target_heads),
+            fold_mode="transport" if head_features is not None else fold_mode,
+            reduction="mean",
+            transport_backend=transport_backend,
+            head_weights=head_weights,
+            head_features=head_features,
+            head_assignment_mode=activation_fold_assignment,
+            assignment_cache=assignment_cache,
+            head_assignment_key=head_key,
+            head_dim_assignment_key=("linear-fit", "attention", stream, "head_dim", tuple(int(i) for i in donor_layer_group or [donor_layer_idx])),
+        )
+    dummy = torch.zeros((1, int(values.shape[1])), dtype=torch.float32)
+    row_axis_weights = _activation_axis_weights_for_tensor(
+        torch,
+        dummy,
+        suffix,
+        donor_layer_idx,
+        donor_layer_group,
+        activation_profile,
+    )
+    return _resize_tensor_to_shape(
+        torch,
+        values,
+        (int(values.shape[0]), int(target_dim)),
+        fold_mode=fold_mode,
+        hidden_basis=hidden_basis,
+        axis_weights=row_axis_weights,
+        axis_reductions={1: "mean"},
+        activation_fold_assignment=activation_fold_assignment,
+        transport_backend=transport_backend,
+        assignment_cache=assignment_cache,
+    )
+
+
+def _linear_activation_attention_partition(suffix: str, side: str, donor_config, target_config):
+    marker = f".{suffix.lower()}"
+    q_heads_source = _config_int(donor_config, "num_attention_heads", "n_head", "num_heads")
+    q_heads_target = _config_int(target_config, "num_attention_heads", "n_head", "num_heads")
+    kv_heads_source = _config_int(donor_config, "num_key_value_heads", default=q_heads_source)
+    kv_heads_target = _config_int(target_config, "num_key_value_heads", default=q_heads_target)
+    if q_heads_source is None or q_heads_target is None:
+        return None
+    if side == "output" and (marker.endswith(".q_proj.weight") or marker.endswith(".q_proj.bias")):
+        return q_heads_source, q_heads_target, "q"
+    if side == "output" and (marker.endswith(".k_proj.weight") or marker.endswith(".k_proj.bias")):
+        return None if kv_heads_source is None or kv_heads_target is None else (kv_heads_source, kv_heads_target, "kv")
+    if side == "output" and (marker.endswith(".v_proj.weight") or marker.endswith(".v_proj.bias")):
+        return None if kv_heads_source is None or kv_heads_target is None else (kv_heads_source, kv_heads_target, "kv")
+    if side == "input" and (
+        marker.endswith(".o_proj.weight") or marker.endswith(".out_proj.weight") or marker.endswith(".attn.c_proj.weight")
+    ):
+        return q_heads_source, q_heads_target, "q"
+    return None
+
+
+def _attention_head_profile_for_stream(torch, activation_profile, layer_group: Sequence[int], stream: str):
+    head_profiles = (activation_profile or {}).get("attention_head_profiles") or {}
+    scores = _aggregate_layer_attention_profile(torch, head_profiles, layer_group, stream, "scores", clamp_min=1e-12)
+    features = _aggregate_layer_attention_profile(torch, head_profiles, layer_group, stream, "features")
+    if scores is None:
+        return None
+    return {
+        "weights": scores,
+        "features": features,
+        "assignment_key": ("linear-fit-attention-heads", stream, tuple(int(item) for item in layer_group)),
+    }
+
+
+def _activation_fit_suffix_enabled(suffix: str, activation_fit_target: str) -> bool:
+    if activation_fit_target not in {"all", "attention", "attention-output", "mlp", "mlp-output", "input-projections"}:
+        raise ValueError(
+            "activation_fit_target must be all, attention, attention-output, mlp, mlp-output, or input-projections."
+        )
+    marker = f".{suffix.lower()}"
+    attention_input = (
+        marker.endswith(".self_attn.q_proj.weight")
+        or marker.endswith(".self_attn.k_proj.weight")
+        or marker.endswith(".self_attn.v_proj.weight")
+        or marker.endswith(".attention.q_proj.weight")
+        or marker.endswith(".attention.k_proj.weight")
+        or marker.endswith(".attention.v_proj.weight")
+        or marker.endswith(".attn.q_proj.weight")
+        or marker.endswith(".attn.k_proj.weight")
+        or marker.endswith(".attn.v_proj.weight")
+        or marker.endswith(".query_key_value.weight")
+        or marker.endswith(".c_attn.weight")
+    )
+    attention_output = (
+        marker.endswith(".self_attn.o_proj.weight")
+        or marker.endswith(".self_attn.out_proj.weight")
+        or marker.endswith(".self_attn.dense.weight")
+        or marker.endswith(".attention.o_proj.weight")
+        or marker.endswith(".attention.out_proj.weight")
+        or marker.endswith(".attention.dense.weight")
+        or marker.endswith(".attn.o_proj.weight")
+        or marker.endswith(".attn.out_proj.weight")
+        or marker.endswith(".attn.c_proj.weight")
+    )
+    mlp_input = (
+        marker.endswith(".mlp.gate_proj.weight")
+        or marker.endswith(".mlp.up_proj.weight")
+        or marker.endswith(".feed_forward.w1.weight")
+        or marker.endswith(".feed_forward.w3.weight")
+        or marker.endswith(".mlp.dense_h_to_4h.weight")
+        or marker.endswith(".mlp.fc1.weight")
+    )
+    mlp_output = (
+        marker.endswith(".mlp.down_proj.weight")
+        or marker.endswith(".feed_forward.w2.weight")
+        or marker.endswith(".mlp.dense_4h_to_h.weight")
+        or marker.endswith(".mlp.fc2.weight")
+    )
+    if activation_fit_target == "all":
+        return attention_input or attention_output or mlp_input or mlp_output
+    if activation_fit_target == "attention":
+        return attention_input or attention_output
+    if activation_fit_target == "attention-output":
+        return attention_output
+    if activation_fit_target == "mlp":
+        return mlp_input or mlp_output
+    if activation_fit_target == "mlp-output":
+        return mlp_output
+    return attention_input or mlp_input
+
+
+def _fit_linear_weight_from_activation_rows(torch, input_rows, output_rows, ridge: float):
+    source = input_rows.detach().cpu().to(torch.float32)
+    target = output_rows.detach().cpu().to(torch.float32)
+    if source.dim() != 2 or target.dim() != 2:
+        raise ValueError("input_rows and output_rows must be rank-2.")
+    if int(source.shape[0]) != int(target.shape[0]):
+        raise ValueError("input_rows and output_rows must have the same row count.")
+    mapping = _ridge_map(torch, source, target, ridge)
+    return mapping.t().contiguous()
 
 
 def _aggregate_layer_activation_profile(torch, profiles: dict[int, Any], layer_group: Sequence[int], clamp_min=None):
@@ -3013,6 +3605,12 @@ def _mlp_spec(layer) -> dict[str, Any] | None:
             "output_name": "fc2",
         }
     return None
+
+
+def _mlp_prefix(layer, spec: dict[str, Any]) -> str:
+    if getattr(layer, "feed_forward", None) is spec.get("mlp"):
+        return "feed_forward"
+    return "mlp"
 
 
 def _validate_channel_assignment(channel_assignment: str) -> None:
