@@ -269,6 +269,18 @@ neural-forge hf-sweep-xfamily-mlp runs/qwen4b-into-random-smollm2 `
   --max-donor-channels 256
 ```
 
+Donor-projected blank target initialization folds donor layer tensors directly
+into a target config shape instead of leaving the target mostly random:
+
+```powershell
+neural-forge hf-donor-project-init runs/qwen4b-projected-smollm2 `
+  --target-config-model HuggingFaceTB/SmolLM2-135M `
+  --target-tokenizer-model HuggingFaceTB/SmolLM2-135M `
+  --donor-model Qwen/Qwen3-4B-Base `
+  --max-anchors 30000 `
+  --fold-mode mean
+```
+
 `hf-gate` checks PPL ratio, choice-probe accuracy, generation length,
 generation diversity, and prompt-specific generation relevance for the built-in
 generation probes. A random or broken model can produce long diverse text, so

@@ -97,6 +97,22 @@ def build_parser() -> argparse.ArgumentParser:
     hf_random.add_argument("--trust-remote-code", action="store_true")
     hf_random.set_defaults(func=cmd_hf_random_init)
 
+    hf_donor_init = sub.add_parser(
+        "hf-donor-project-init",
+        help="Initialize a target HF causal LM by folding donor tensors into the target shape.",
+    )
+    hf_donor_init.add_argument("output")
+    hf_donor_init.add_argument("--target-config-model", required=True)
+    hf_donor_init.add_argument("--target-tokenizer-model")
+    hf_donor_init.add_argument("--donor-model", required=True)
+    hf_donor_init.add_argument("--seed", type=int, default=0)
+    hf_donor_init.add_argument("--ridge", type=float, default=1e-3)
+    hf_donor_init.add_argument("--max-anchors", type=int, default=50_000)
+    hf_donor_init.add_argument("--fold-mode", choices=["mean", "rms"], default="mean")
+    hf_donor_init.add_argument("--dtype", default="float16")
+    hf_donor_init.add_argument("--trust-remote-code", action="store_true")
+    hf_donor_init.set_defaults(func=cmd_hf_donor_project_init)
+
     hf_resize = sub.add_parser("hf-resize-ffn", help="Shrink or expand gated FFN intermediate size in HF decoder models.")
     hf_resize.add_argument("model")
     hf_resize.add_argument("output")
@@ -720,6 +736,23 @@ def cmd_hf_random_init(args: argparse.Namespace) -> dict[str, object]:
         tokenizer_model=args.tokenizer_model,
         output_dir=args.output,
         seed=args.seed,
+        torch_dtype=args.dtype,
+        trust_remote_code=args.trust_remote_code,
+    )
+
+
+def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_xfamily import donor_projected_init
+
+    return donor_projected_init(
+        target_config_model=args.target_config_model,
+        target_tokenizer_model=args.target_tokenizer_model,
+        donor_model=args.donor_model,
+        output_dir=args.output,
+        seed=args.seed,
+        ridge=args.ridge,
+        max_anchors=args.max_anchors,
+        fold_mode=args.fold_mode,
         torch_dtype=args.dtype,
         trust_remote_code=args.trust_remote_code,
     )

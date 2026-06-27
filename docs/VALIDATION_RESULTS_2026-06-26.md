@@ -1024,3 +1024,68 @@ Interpretation:
   solution. Blank-target compression needs a stronger stage: function-preserving
   initialization, cross-depth/width activation alignment, and recovery that is
   benchmark-gated rather than PPL-gated.
+
+## Donor-Projected Blank Target Initialization
+
+After the tiny-alpha random-target fold failed, `hf-donor-project-init` was
+added to initialize the blank target directly from donor tensors. It creates the
+target architecture from config, maps target layers to donor layers
+proportionally, and folds donor tensor axes to the target tensor shape. This is
+still merge/fold-first: donor dimensions are averaged into target dimensions,
+not discarded one-by-one.
+
+Mean-fold run:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_projected_smollm135m_20260627_023125
+```
+
+RMS-fold run:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_projected_rms_smollm135m_20260627_023639
+```
+
+Shared setup:
+
+- target config/tokenizer: `HuggingFaceTB/SmolLM2-135M`;
+- donor: `Qwen/Qwen3-4B-Base`;
+- target params: `134,515,008`;
+- donor-to-target ratio: roughly `29.90x`;
+- target layers / donor layers: `30` / `36`;
+- initialized layer tensors: `270`;
+- shared decoded token anchors available: `31,977`;
+- token rows initialized: `30,000` embedding rows and `30,000` LM-head rows;
+- benchmark tasks: `arc_easy`, `hellaswag`, `piqa`, `winogrande`;
+- benchmark limit: `50` examples/task.
+
+Neural Forge probes:
+
+| Model | Mean PPL | Choice Acc | Strict Generation Gate | Manual output |
+|---|---:|---:|---|---|
+| random SmolLM2 target | 88,650.193 | 0.00 | baseline | nonsensical |
+| projected mean-fold | 63,726.945 | 0.25 | failed | repeated `fibromyalgia`, `apple`, `infringe` |
+| projected RMS-fold | 68,513.184 | 0.00 | failed | repeated `height`, `fleas/dilemmas`, `Flu/contour` |
+
+Benchmark slice:
+
+| Model | ARC-Easy Acc / Norm | HellaSwag Acc / Norm | PIQA Acc / Norm | Winogrande Acc |
+|---|---:|---:|---:|---:|
+| random SmolLM2 target | 0.20 / 0.22 | 0.22 / 0.30 | 0.56 / 0.58 | 0.46 |
+| projected mean-fold | 0.24 / 0.30 | 0.24 / 0.32 | 0.54 / 0.58 | 0.64 |
+| projected RMS-fold | 0.14 / 0.28 | 0.26 / 0.32 | 0.40 / 0.58 | 0.46 |
+
+Interpretation:
+
+- Mean-fold projection is the first blank-target method here that moved some
+  benchmark numbers above the random baseline, especially Winogrande
+  `0.46 -> 0.64`.
+- The movement is not enough to call the model useful or coherent. Manual
+  generations collapsed into repeated tokens, and the strict generation gate
+  correctly failed.
+- RMS variance preservation did not improve this run. It is available as an
+  option, but mean-fold remains the default because it had the stronger probe
+  and benchmark result.
+- The result is a partial signal: direct donor tensor folding can implant some
+  task-statistical structure into a blank target, but still needs activation or
+  logit recovery before it is a usable compression path.

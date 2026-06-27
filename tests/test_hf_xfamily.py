@@ -19,6 +19,7 @@ from neural_forge.hf_xfamily import _channel_assignment_features
 from neural_forge.hf_xfamily import _effective_layer_alpha
 from neural_forge.hf_xfamily import _mlp_spec
 from neural_forge.hf_xfamily import _proportional_index
+from neural_forge.hf_xfamily import _resize_tensor_to_shape
 from neural_forge.hf_xfamily import _select_compression_candidates
 from neural_forge.hf_xfamily import _usable_pipeline_candidates
 from neural_forge.hf_xfamily import _validate_channel_assignment
@@ -201,6 +202,26 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "float32",
         ]
     )
+    donor_init_args = parser.parse_args(
+        [
+            "hf-donor-project-init",
+            "projected-out",
+            "--target-config-model",
+            "HuggingFaceTB/SmolLM2-135M",
+            "--target-tokenizer-model",
+            "HuggingFaceTB/SmolLM2-135M",
+            "--donor-model",
+            "Qwen/Qwen3-4B-Base",
+            "--seed",
+            "456",
+            "--max-anchors",
+            "1000",
+            "--fold-mode",
+            "mean",
+            "--dtype",
+            "float32",
+        ]
+    )
     merge_layer_args = parser.parse_args(["hf-merge-layers", "in", "out", "--groups", "3+4,7+8"])
     drop_args = parser.parse_args(["hf-drop-layers", "in", "out", "--layers", "3,7"])
     search_args = parser.parse_args(
@@ -312,6 +333,14 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert random_args.tokenizer_model == "Qwen/Qwen3-4B-Base"
     assert random_args.seed == 123
     assert random_args.dtype == "float32"
+    assert donor_init_args.output == "projected-out"
+    assert donor_init_args.target_config_model == "HuggingFaceTB/SmolLM2-135M"
+    assert donor_init_args.target_tokenizer_model == "HuggingFaceTB/SmolLM2-135M"
+    assert donor_init_args.donor_model == "Qwen/Qwen3-4B-Base"
+    assert donor_init_args.seed == 456
+    assert donor_init_args.max_anchors == 1000
+    assert donor_init_args.fold_mode == "mean"
+    assert donor_init_args.dtype == "float32"
     assert merge_layer_args.groups == "3+4,7+8"
     assert drop_args.layers == "3,7"
     assert search_args.width_ratios == "0.9975,0.995"
@@ -383,6 +412,34 @@ def test_layer_group_tags_are_stable() -> None:
 def test_proportional_layer_index_maps_depths() -> None:
     assert [_proportional_index(idx, 4, 2) for idx in range(4)] == [0, 0, 1, 1]
     assert [_proportional_index(idx, 3, 5) for idx in range(3)] == [0, 2, 4]
+
+
+def test_resize_tensor_to_shape_mean_folds_axes() -> None:
+    torch = pytest.importorskip("torch")
+    source = torch.arange(24, dtype=torch.float32).reshape(6, 4)
+    resized = _resize_tensor_to_shape(torch, source, (3, 2))
+
+    assert resized.shape == (3, 2)
+    assert resized.flatten().tolist() == pytest.approx(
+        [
+            2.5,
+            4.5,
+            10.5,
+            12.5,
+            18.5,
+            20.5,
+        ]
+    )
+
+
+def test_resize_tensor_to_shape_rms_fold_preserves_more_variance() -> None:
+    torch = pytest.importorskip("torch")
+    source = torch.ones((4, 2), dtype=torch.float32)
+    mean_folded = _resize_tensor_to_shape(torch, source, (2, 2), fold_mode="mean")
+    rms_folded = _resize_tensor_to_shape(torch, source, (2, 2), fold_mode="rms")
+
+    assert mean_folded.tolist() == [[1.0, 1.0], [1.0, 1.0]]
+    assert rms_folded.flatten().tolist() == pytest.approx([2**0.5, 2**0.5, 2**0.5, 2**0.5])
 
 
 def test_mlp_spec_detects_lfm_feed_forward_names() -> None:
@@ -473,6 +530,55 @@ def test_hf_random_init_handler_passes_flags(monkeypatch) -> None:
         "tokenizer_model": "tokenizer",
         "output_dir": "out",
         "seed": 9,
+        "torch_dtype": "float32",
+        "trust_remote_code": True,
+    }
+
+
+def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
+    import neural_forge.hf_xfamily as hf_xfamily
+
+    captured = {}
+
+    def fake_project_init(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(hf_xfamily, "donor_projected_init", fake_project_init)
+    args = build_parser().parse_args(
+        [
+            "hf-donor-project-init",
+            "out",
+            "--target-config-model",
+            "target-config",
+            "--target-tokenizer-model",
+            "target-tokenizer",
+            "--donor-model",
+            "donor",
+            "--seed",
+            "11",
+            "--ridge",
+            "0.02",
+            "--max-anchors",
+            "1234",
+            "--fold-mode",
+            "mean",
+            "--dtype",
+            "float32",
+            "--trust-remote-code",
+        ]
+    )
+    result = args.func(args)
+    assert result == {"ok": True}
+    assert captured == {
+        "target_config_model": "target-config",
+        "target_tokenizer_model": "target-tokenizer",
+        "donor_model": "donor",
+        "output_dir": "out",
+        "seed": 11,
+        "ridge": 0.02,
+        "max_anchors": 1234,
+        "fold_mode": "mean",
         "torch_dtype": "float32",
         "trust_remote_code": True,
     }

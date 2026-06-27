@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from pathlib import Path
 from typing import Any
 
@@ -236,6 +237,143 @@ def sweep_cross_family_vocab_merge(
     }
     _write_json(report_root / "xfamily_sweep_summary.json", summary)
     return summary
+
+
+def donor_projected_init(
+    target_config_model: str,
+    donor_model: str,
+    output_dir: str | Path,
+    target_tokenizer_model: str | None = None,
+    seed: int = 0,
+    ridge: float = 1e-3,
+    max_anchors: int = 50_000,
+    fold_mode: str = "mean",
+    torch_dtype: str = "float16",
+    trust_remote_code: bool = False,
+) -> dict[str, Any]:
+    """Initialize a target architecture by folding donor tensors into its shape.
+
+    This is the blank-target counterpart to cross-family MLP merging. The target
+    runtime comes from `target_config_model`, but layer tensors are initialized
+    directly from proportionally matched donor layers. Each mismatched tensor
+    axis is mean-folded or copied to the target size, which is a deterministic
+    neuron/channel merge rather than prune-first deletion.
+    """
+
+    if ridge < 0:
+        raise ValueError("ridge must be non-negative.")
+    if max_anchors <= 0:
+        raise ValueError("max_anchors must be positive.")
+    if fold_mode not in {"mean", "rms"}:
+        raise ValueError("fold_mode must be mean or rms.")
+
+    torch, transformers = _torch_and_transformers()
+    dtype = _dtype_from_name(torch, torch_dtype)
+    torch.manual_seed(int(seed))
+    config = transformers.AutoConfig.from_pretrained(target_config_model, trust_remote_code=trust_remote_code)
+    target = transformers.AutoModelForCausalLM.from_config(config, trust_remote_code=trust_remote_code)
+    donor = transformers.AutoModelForCausalLM.from_pretrained(
+        donor_model,
+        torch_dtype=dtype,
+        device_map="cpu",
+        trust_remote_code=trust_remote_code,
+    )
+    tokenizer_source = target_tokenizer_model or target_config_model
+    target_tokenizer = transformers.AutoTokenizer.from_pretrained(tokenizer_source, trust_remote_code=trust_remote_code)
+    donor_tokenizer = transformers.AutoTokenizer.from_pretrained(donor_model, trust_remote_code=trust_remote_code)
+    if target.get_input_embeddings() is not None and target.get_input_embeddings().num_embeddings != len(target_tokenizer):
+        target.resize_token_embeddings(len(target_tokenizer))
+    if dtype is not None:
+        target.to(dtype=dtype)
+
+    target_layers = list(_decoder_layer_container(target)[2])
+    donor_layers = list(_decoder_layer_container(donor)[2])
+    if not target_layers:
+        raise ValueError("Target model has no decoder layers.")
+    if not donor_layers:
+        raise ValueError("Donor model has no decoder layers.")
+
+    target_state = target.state_dict()
+    donor_state = donor.state_dict()
+    donor_layer_keys = _layer_tensor_index(donor_state)
+    layer_reports = []
+    changed_keys = []
+    skipped_layer_keys = []
+    for target_key, target_tensor in list(target_state.items()):
+        parsed = _parse_layer_tensor_key(target_key)
+        if parsed is None:
+            continue
+        target_layer_idx, suffix = parsed
+        donor_layer_idx = _proportional_index(target_layer_idx, len(target_layers), len(donor_layers))
+        donor_key = donor_layer_keys.get((donor_layer_idx, suffix))
+        if donor_key is None:
+            skipped_layer_keys.append({"target_key": target_key, "reason": "no_matching_donor_suffix"})
+            continue
+        donor_tensor = donor_state[donor_key]
+        if not _projectable_tensor(torch, target_tensor, donor_tensor):
+            skipped_layer_keys.append({"target_key": target_key, "donor_key": donor_key, "reason": "not_floating_tensor"})
+            continue
+        tensor_fold_mode = fold_mode if donor_tensor.dim() >= 2 else "mean"
+        projected = _resize_tensor_to_shape(
+            torch,
+            donor_tensor.detach().cpu().to(torch.float32),
+            tuple(target_tensor.shape),
+            fold_mode=tensor_fold_mode,
+        )
+        target_state[target_key] = projected.to(dtype=target_tensor.dtype)
+        changed_keys.append(target_key)
+        layer_reports.append(
+            {
+                "target_key": target_key,
+                "donor_key": donor_key,
+                "target_layer": target_layer_idx,
+                "donor_layer": donor_layer_idx,
+                "target_shape": list(target_tensor.shape),
+                "donor_shape": list(donor_tensor.shape),
+            }
+        )
+
+    load_result = target.load_state_dict(target_state, strict=False)
+    token_report = _initialize_token_weights_from_donor(
+        torch,
+        target,
+        donor,
+        target_tokenizer,
+        donor_tokenizer,
+        max_anchors=max_anchors,
+        fold_mode=fold_mode,
+    )
+    if getattr(target.config, "tie_word_embeddings", False):
+        target.tie_weights()
+
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    target.save_pretrained(output, safe_serialization=True)
+    target_tokenizer.save_pretrained(output)
+    report = {
+        "operation": "donor_projected_init",
+        "target_config_model": target_config_model,
+        "target_tokenizer_model": tokenizer_source,
+        "donor_model": donor_model,
+        "output_dir": str(output),
+        "seed": int(seed),
+        "ridge": float(ridge),
+        "max_anchors": int(max_anchors),
+        "fold_mode": fold_mode,
+        "torch_dtype": torch_dtype,
+        "target_layers": len(target_layers),
+        "donor_layers": len(donor_layers),
+        "layer_tensors_initialized": len(layer_reports),
+        "layer_tensors_skipped": skipped_layer_keys[:200],
+        "layer_reports": layer_reports,
+        "changed_keys": changed_keys,
+        "missing_keys": list(load_result.missing_keys),
+        "unexpected_keys": list(load_result.unexpected_keys),
+        "token_report": token_report,
+        "param_count": sum(param.numel() for param in target.parameters()),
+    }
+    _write_json(output / "neural_forge_donor_projected_init_report.json", report)
+    return report
 
 
 def cross_family_mlp_merge(
@@ -1037,6 +1175,125 @@ def _canonical_token_map(tokenizer) -> dict[str, int]:
         if key and key not in mapping:
             mapping[key] = idx
     return mapping
+
+
+def _layer_tensor_index(state_dict: dict[str, Any]) -> dict[tuple[int, str], str]:
+    indexed = {}
+    for key in state_dict:
+        parsed = _parse_layer_tensor_key(key)
+        if parsed is not None:
+            indexed[parsed] = key
+    return indexed
+
+
+def _parse_layer_tensor_key(key: str) -> tuple[int, str] | None:
+    match = re.match(r"^.+(?:layers|h)\.(\d+)\.(.+)$", key)
+    if match is None:
+        return None
+    return int(match.group(1)), match.group(2)
+
+
+def _projectable_tensor(torch, target_tensor, donor_tensor) -> bool:
+    return (
+        hasattr(target_tensor, "is_floating_point")
+        and hasattr(donor_tensor, "is_floating_point")
+        and target_tensor.is_floating_point()
+        and donor_tensor.is_floating_point()
+        and target_tensor.dim() == donor_tensor.dim()
+    )
+
+
+def _resize_tensor_to_shape(torch, source, target_shape: tuple[int, ...], fold_mode: str = "mean"):
+    if fold_mode not in {"mean", "rms"}:
+        raise ValueError("fold_mode must be mean or rms.")
+    if tuple(source.shape) == tuple(target_shape):
+        return source.clone()
+    if source.dim() != len(target_shape):
+        raise ValueError(f"Cannot resize rank-{source.dim()} tensor to shape {target_shape}.")
+    resized = source.to(torch.float32)
+    for axis, target_dim in enumerate(target_shape):
+        if resized.shape[axis] != int(target_dim):
+            resized = _resize_tensor_axis_mean_fold(torch, resized, axis, int(target_dim), fold_mode=fold_mode)
+    return resized.contiguous()
+
+
+def _resize_tensor_axis_mean_fold(torch, tensor, axis: int, target_dim: int, fold_mode: str = "mean"):
+    if target_dim <= 0:
+        raise ValueError("target_dim must be positive.")
+    if fold_mode not in {"mean", "rms"}:
+        raise ValueError("fold_mode must be mean or rms.")
+    source_dim = int(tensor.shape[axis])
+    if source_dim == target_dim:
+        return tensor
+
+    moved = tensor.movedim(axis, 0).contiguous()
+    rest_shape = tuple(moved.shape[1:])
+    flat = moved.reshape(source_dim, -1)
+    if source_dim > target_dim:
+        assignment = torch.floor(torch.arange(source_dim, dtype=torch.float32) * target_dim / source_dim)
+        assignment = assignment.to(torch.long).clamp_max(target_dim - 1)
+        folded = torch.zeros((target_dim, flat.shape[1]), dtype=flat.dtype)
+        counts = torch.zeros(target_dim, dtype=flat.dtype)
+        folded.index_add_(0, assignment, flat)
+        counts.index_add_(0, assignment, torch.ones(source_dim, dtype=flat.dtype))
+        divisor = counts.sqrt() if fold_mode == "rms" else counts
+        folded = folded / divisor.clamp_min(1.0).unsqueeze(1)
+    else:
+        source_idx = torch.floor(torch.arange(target_dim, dtype=torch.float32) * source_dim / target_dim)
+        source_idx = source_idx.to(torch.long).clamp_max(source_dim - 1)
+        folded = flat[source_idx]
+    return folded.reshape((target_dim, *rest_shape)).movedim(0, axis).contiguous()
+
+
+def _initialize_token_weights_from_donor(
+    torch,
+    target,
+    donor,
+    target_tokenizer,
+    donor_tokenizer,
+    max_anchors: int,
+    fold_mode: str = "mean",
+) -> dict[str, Any]:
+    anchors, target_map, donor_map = _shared_anchor_tokens(target_tokenizer, donor_tokenizer, max_anchors)
+    target_idx = torch.tensor([target_map[token] for token in anchors], dtype=torch.long)
+    donor_idx = torch.tensor([donor_map[token] for token in anchors], dtype=torch.long)
+
+    target_embeddings = target.get_input_embeddings()
+    donor_embeddings = donor.get_input_embeddings()
+    target_emb_weight = target_embeddings.weight.data.detach().cpu().to(torch.float32)
+    donor_emb_weight = donor_embeddings.weight.data.detach().cpu().to(torch.float32)
+    projected_embeddings = _resize_tensor_to_shape(
+        torch,
+        donor_emb_weight[donor_idx],
+        (len(anchors), target_emb_weight.shape[1]),
+        fold_mode=fold_mode,
+    )
+    target_emb_weight[target_idx] = projected_embeddings
+    target_embeddings.weight.data.copy_(target_emb_weight.to(target_embeddings.weight.dtype))
+
+    target_lm = target.get_output_embeddings()
+    donor_lm = donor.get_output_embeddings()
+    lm_head_updated = False
+    if target_lm is not None and donor_lm is not None:
+        target_head = target_lm.weight.data.detach().cpu().to(torch.float32)
+        donor_head = donor_lm.weight.data.detach().cpu().to(torch.float32)
+        projected_head = _resize_tensor_to_shape(
+            torch,
+            donor_head[donor_idx],
+            (len(anchors), target_head.shape[1]),
+            fold_mode=fold_mode,
+        )
+        target_head[target_idx] = projected_head
+        target_lm.weight.data.copy_(target_head.to(target_lm.weight.dtype))
+        lm_head_updated = True
+
+    return {
+        "shared_decoded_tokens": len(set(_canonical_token_map(target_tokenizer)) & set(_canonical_token_map(donor_tokenizer))),
+        "anchors_used": len(anchors),
+        "embedding_rows_initialized": int(target_idx.numel()),
+        "lm_head_rows_initialized": int(target_idx.numel()) if lm_head_updated else 0,
+        "lm_head_updated": lm_head_updated,
+    }
 
 
 def _canonical_token(text: str) -> str:
