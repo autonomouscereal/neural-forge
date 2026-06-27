@@ -61,6 +61,9 @@ Supported real-checkpoint surgery:
   layers, Qwen/Llama-style gated MLPs, and GPT-NeoX/Pythia dense MLPs;
 - integrated cross-family MLP recovery sweeps that save recovered checkpoints
   and re-run behavior gates;
+- integrated `hf-xfamily-compress` runs that merge donor MLP channels first,
+  then search width/depth folds, optionally recover failed candidates, and only
+  promote outputs that pass host-baseline behavior gates;
 - calibration-aware gated FFN repair using ridge least squares on parent FFN
   inputs/outputs;
 - lightweight same-tokenizer recovery training with held-out eval prompts;

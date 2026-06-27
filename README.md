@@ -33,6 +33,8 @@ native early-fusion multimodal training sandbox for real-model validation.
   embedding/lm-head transplant through shared decoded-token anchors.
 - `hf-xfamily-mlp-merge` / `hf-sweep-xfamily-mlp`: constrained cross-family
   MLP-channel transplant through shared-token hidden projections.
+- `hf-xfamily-compress`: cross-family MLP merge followed by merge-first
+  width/depth compression, optional recovery, and host-baseline gates.
 - `hf-recover`: lightweight same-tokenizer KD/LM recovery after surgery.
 - `hf-eval`, `hf-gate`, and sweep commands: behavior checks so shape-valid
   checkpoints are not promoted blindly.
@@ -165,6 +167,24 @@ neural-forge hf-sweep-xfamily-mlp runs/qwen-lfm25-mlp-recovered `
   --recover `
   --recover-steps 8 `
   --recover-train-scope last1
+```
+
+Cross-family merge plus merge-first compression in one pipeline:
+
+```powershell
+neural-forge hf-xfamily-compress runs/qwen-lfm25-compressed `
+  --host-model Qwen/Qwen3-0.6B-Base `
+  --donor-model LiquidAI/LFM2.5-230M `
+  --alpha 0.005 `
+  --vocab-alpha 0 `
+  --max-host-channels 256 `
+  --max-donor-channels 256 `
+  --max-anchors 30000 `
+  --width-ratios 0.995 `
+  --layer-groups 13+14,15+16 `
+  --target-shrink 0.05 `
+  --recover `
+  --recover-only-failed
 ```
 
 Behavior probes:

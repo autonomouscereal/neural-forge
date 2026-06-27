@@ -299,6 +299,57 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_mlp_sweep.add_argument("--recover-grad-clip", type=float, default=1.0)
     xfamily_mlp_sweep.set_defaults(func=cmd_hf_xfamily_mlp_sweep)
 
+    xfamily_compress = sub.add_parser(
+        "hf-xfamily-compress",
+        help="Run cross-family MLP merge, merge-first compression, and optional recovery.",
+    )
+    xfamily_compress.add_argument("output_dir")
+    xfamily_compress.add_argument("--host-model", required=True)
+    xfamily_compress.add_argument("--donor-model", required=True)
+    xfamily_compress.add_argument("--alpha", type=float, default=0.01)
+    xfamily_compress.add_argument("--vocab-alpha", type=float)
+    xfamily_compress.add_argument("--ridge", type=float, default=1e-3)
+    xfamily_compress.add_argument("--max-anchors", type=int, default=50_000)
+    xfamily_compress.add_argument("--max-host-channels", type=int, default=512)
+    xfamily_compress.add_argument("--max-donor-channels", type=int, default=512)
+    xfamily_compress.add_argument("--width-ratios", help="Comma-separated ratios, e.g. 0.9975,0.995.")
+    xfamily_compress.add_argument(
+        "--layer-groups",
+        action="append",
+        default=[],
+        help="Repeatable layer group spec, e.g. --layer-groups 13+14 --layer-groups 8+9,19+20.",
+    )
+    xfamily_compress.add_argument("--depth-methods", default="average,fold")
+    xfamily_compress.add_argument("--target-shrink", type=float)
+    xfamily_compress.add_argument(
+        "--assignment",
+        choices=["combined-cosine", "down-cosine", "round-robin", "topk"],
+        default="combined-cosine",
+    )
+    xfamily_compress.add_argument("--no-combinations", action="store_true")
+    xfamily_compress.add_argument("--baseline-report")
+    xfamily_compress.add_argument("--dtype", default="float16")
+    xfamily_compress.add_argument("--device", default="cuda:0")
+    xfamily_compress.add_argument("--trust-remote-code", action="store_true")
+    xfamily_compress.add_argument("--max-new-tokens", type=int, default=80)
+    xfamily_compress.add_argument("--max-ppl-ratio", type=float, default=1.5)
+    xfamily_compress.add_argument("--max-accuracy-drop", type=float, default=0.25)
+    xfamily_compress.add_argument("--min-choice-accuracy", type=float, default=0.75)
+    xfamily_compress.add_argument("--recover", action="store_true", help="Run lightweight recovery on selected compressed candidates.")
+    xfamily_compress.add_argument("--recover-only-failed", action="store_true")
+    xfamily_compress.add_argument("--recover-top-k", type=int, default=1)
+    xfamily_compress.add_argument("--recover-steps", type=int, default=40)
+    xfamily_compress.add_argument("--recover-batch-size", type=int, default=1)
+    xfamily_compress.add_argument("--recover-max-length", type=int, default=96)
+    xfamily_compress.add_argument("--recover-lr", type=float, default=5e-5)
+    xfamily_compress.add_argument("--recover-kd-weight", type=float, default=0.5)
+    xfamily_compress.add_argument("--recover-lm-weight", type=float, default=0.5)
+    xfamily_compress.add_argument("--recover-temperature", type=float, default=2.0)
+    xfamily_compress.add_argument("--recover-train-scope", default="last1")
+    xfamily_compress.add_argument("--recover-dtype", default="float32")
+    xfamily_compress.add_argument("--recover-grad-clip", type=float, default=1.0)
+    xfamily_compress.set_defaults(func=cmd_hf_xfamily_compress)
+
     recover = sub.add_parser("hf-recover", help="Run lightweight same-tokenizer recovery training after HF surgery.")
     recover.add_argument("source_model")
     recover.add_argument("candidate_model")
@@ -686,6 +737,54 @@ def cmd_hf_xfamily_mlp_sweep(args: argparse.Namespace) -> dict[str, object]:
         min_choice_accuracy=args.min_choice_accuracy,
         recover_candidates=args.recover,
         recover_only_failed=args.recover_only_failed,
+        recovery_steps=args.recover_steps,
+        recovery_batch_size=args.recover_batch_size,
+        recovery_max_length=args.recover_max_length,
+        recovery_lr=args.recover_lr,
+        recovery_kd_weight=args.recover_kd_weight,
+        recovery_lm_weight=args.recover_lm_weight,
+        recovery_temperature=args.recover_temperature,
+        recovery_train_scope=args.recover_train_scope,
+        recovery_dtype=args.recover_dtype,
+        recovery_grad_clip=args.recover_grad_clip,
+    )
+
+
+def cmd_hf_xfamily_compress(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_xfamily import cross_family_merge_compress_pipeline
+
+    width_ratios = None
+    if args.width_ratios:
+        width_ratios = [float(part.strip()) for part in args.width_ratios.split(",") if part.strip()]
+    layer_group_specs = [_parse_layer_groups(spec) for spec in args.layer_groups]
+    depth_methods = [part.strip() for part in args.depth_methods.split(",") if part.strip()]
+    return cross_family_merge_compress_pipeline(
+        host_model=args.host_model,
+        donor_model=args.donor_model,
+        output_dir=args.output_dir,
+        alpha=args.alpha,
+        vocab_alpha=args.vocab_alpha,
+        ridge=args.ridge,
+        max_anchors=args.max_anchors,
+        max_host_channels=args.max_host_channels,
+        max_donor_channels=args.max_donor_channels,
+        width_ratios=width_ratios,
+        layer_group_specs=layer_group_specs,
+        depth_methods=depth_methods,
+        target_shrink=args.target_shrink,
+        assignment=args.assignment,
+        include_combinations=not args.no_combinations,
+        baseline_report=args.baseline_report,
+        torch_dtype=args.dtype,
+        device=args.device,
+        trust_remote_code=args.trust_remote_code,
+        max_new_tokens=args.max_new_tokens,
+        max_ppl_ratio=args.max_ppl_ratio,
+        max_accuracy_drop=args.max_accuracy_drop,
+        min_choice_accuracy=args.min_choice_accuracy,
+        recover_candidates=args.recover,
+        recover_only_failed=args.recover_only_failed,
+        recover_top_k=args.recover_top_k,
         recovery_steps=args.recover_steps,
         recovery_batch_size=args.recover_batch_size,
         recovery_max_length=args.recover_max_length,

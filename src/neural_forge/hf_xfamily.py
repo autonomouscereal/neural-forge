@@ -22,6 +22,7 @@ from neural_forge.hf_tools import (
     _torch_and_transformers,
     evaluate_text_model,
     gate_text_report,
+    search_merge_first_compression,
 )
 
 
@@ -534,6 +535,249 @@ def sweep_cross_family_mlp_merge(
     return summary
 
 
+def cross_family_merge_compress_pipeline(
+    host_model: str,
+    donor_model: str,
+    output_dir: str | Path,
+    alpha: float = 0.01,
+    vocab_alpha: float | None = None,
+    ridge: float = 1e-3,
+    max_anchors: int = 50_000,
+    max_host_channels: int = 512,
+    max_donor_channels: int = 512,
+    width_ratios: list[float] | None = None,
+    layer_group_specs: list[list[list[int]]] | None = None,
+    depth_methods: list[str] | None = None,
+    target_shrink: float | None = None,
+    assignment: str = "combined-cosine",
+    include_combinations: bool = True,
+    baseline_report: str | Path | None = None,
+    torch_dtype: str = "float16",
+    device: str = "cuda:0",
+    trust_remote_code: bool = False,
+    max_new_tokens: int = 80,
+    max_ppl_ratio: float = 1.5,
+    max_accuracy_drop: float = 0.25,
+    min_choice_accuracy: float = 0.75,
+    recover_candidates: bool = False,
+    recover_only_failed: bool = False,
+    recover_top_k: int = 1,
+    recovery_steps: int = 40,
+    recovery_batch_size: int = 1,
+    recovery_max_length: int = 96,
+    recovery_lr: float = 5e-5,
+    recovery_kd_weight: float = 0.5,
+    recovery_lm_weight: float = 0.5,
+    recovery_temperature: float = 2.0,
+    recovery_train_scope: str = "last1",
+    recovery_dtype: str = "float32",
+    recovery_grad_clip: float = 1.0,
+) -> dict[str, Any]:
+    """Run cross-family MLP merge, merge-first compression, and optional recovery."""
+
+    if recover_top_k <= 0:
+        raise ValueError("recover_top_k must be positive.")
+
+    root = Path(output_dir)
+    model_root = root / "models"
+    report_root = root / "reports"
+    recovered_root = root / "recovered_models"
+    compression_root = root / "compression"
+    model_root.mkdir(parents=True, exist_ok=True)
+    report_root.mkdir(parents=True, exist_ok=True)
+    if recover_candidates:
+        recovered_root.mkdir(parents=True, exist_ok=True)
+
+    if baseline_report is None:
+        host_baseline_path = report_root / "host_baseline.json"
+        host_baseline = evaluate_text_model(
+            host_model,
+            host_baseline_path,
+            torch_dtype=torch_dtype,
+            device=device,
+            trust_remote_code=trust_remote_code,
+            max_new_tokens=max_new_tokens,
+        )
+    else:
+        host_baseline_path = Path(baseline_report)
+        host_baseline = _load_report(host_baseline_path)
+
+    xfamily_dir = model_root / "xfamily_merged"
+    xfamily_merge_report = cross_family_mlp_merge(
+        host_model=host_model,
+        donor_model=donor_model,
+        output_dir=xfamily_dir,
+        alpha=alpha,
+        vocab_alpha=vocab_alpha,
+        ridge=ridge,
+        max_anchors=max_anchors,
+        max_host_channels=max_host_channels,
+        max_donor_channels=max_donor_channels,
+        torch_dtype=torch_dtype,
+        trust_remote_code=trust_remote_code,
+    )
+    xfamily_report_path = report_root / "xfamily_merged.json"
+    xfamily_gate_path = report_root / "xfamily_merged_host_gate.json"
+    xfamily_eval = evaluate_text_model(
+        str(xfamily_dir),
+        xfamily_report_path,
+        torch_dtype=torch_dtype,
+        device=device,
+        trust_remote_code=trust_remote_code,
+        max_new_tokens=max_new_tokens,
+    )
+    xfamily_host_gate = gate_text_report(
+        host_baseline,
+        xfamily_eval,
+        output_file=xfamily_gate_path,
+        max_ppl_ratio=max_ppl_ratio,
+        max_accuracy_drop=max_accuracy_drop,
+        min_choice_accuracy=min_choice_accuracy,
+    )
+
+    compression_summary = search_merge_first_compression(
+        source_model=str(xfamily_dir),
+        output_dir=compression_root,
+        width_ratios=width_ratios,
+        layer_group_specs=layer_group_specs,
+        depth_methods=depth_methods or ["average", "fold"],
+        baseline_report=xfamily_report_path,
+        torch_dtype=torch_dtype,
+        device=device,
+        trust_remote_code=trust_remote_code,
+        max_new_tokens=max_new_tokens,
+        max_ppl_ratio=max_ppl_ratio,
+        max_accuracy_drop=max_accuracy_drop,
+        min_choice_accuracy=min_choice_accuracy,
+        assignment=assignment,
+        include_combinations=include_combinations,
+        target_shrink=target_shrink,
+    )
+
+    selected = _select_compression_candidates(compression_summary, target_shrink)
+    final_candidates = []
+    for candidate in selected:
+        host_gate_path = report_root / f"{candidate['tag']}_host_gate.json"
+        candidate_eval = _load_report(candidate["report"])
+        host_gate = gate_text_report(
+            host_baseline,
+            candidate_eval,
+            output_file=host_gate_path,
+            max_ppl_ratio=max_ppl_ratio,
+            max_accuracy_drop=max_accuracy_drop,
+            min_choice_accuracy=min_choice_accuracy,
+        )
+        final_candidates.append(
+            {
+                **candidate,
+                "host_gate_report": str(host_gate_path),
+                "host_passed": host_gate["passed"],
+                "host_metrics": host_gate["candidate"],
+            }
+        )
+
+    recovered_candidates = []
+    if recover_candidates:
+        for candidate in final_candidates[:recover_top_k]:
+            if recover_only_failed and candidate["host_passed"]:
+                continue
+            tag = str(candidate["tag"])
+            recovery = _recover_and_gate_candidate(
+                host_model=host_model,
+                candidate_dir=Path(candidate["model_dir"]),
+                recovered_dir=recovered_root / f"{tag}_recovered",
+                recovered_report_path=report_root / f"{tag}_recovered.json",
+                recovered_gate_path=report_root / f"{tag}_recovered_host_gate.json",
+                baseline=host_baseline,
+                torch_dtype=torch_dtype,
+                device=device,
+                trust_remote_code=trust_remote_code,
+                max_new_tokens=max_new_tokens,
+                max_ppl_ratio=max_ppl_ratio,
+                max_accuracy_drop=max_accuracy_drop,
+                min_choice_accuracy=min_choice_accuracy,
+                recovery_steps=recovery_steps,
+                recovery_batch_size=recovery_batch_size,
+                recovery_max_length=recovery_max_length,
+                recovery_lr=recovery_lr,
+                recovery_kd_weight=recovery_kd_weight,
+                recovery_lm_weight=recovery_lm_weight,
+                recovery_temperature=recovery_temperature,
+                recovery_train_scope=recovery_train_scope,
+                recovery_dtype=recovery_dtype,
+                recovery_grad_clip=recovery_grad_clip,
+            )
+            recovered_xfamily_gate_path = report_root / f"{tag}_recovered_xfamily_gate.json"
+            recovered_xfamily_gate = gate_text_report(
+                xfamily_eval,
+                _load_report(recovery["report"]),
+                output_file=recovered_xfamily_gate_path,
+                max_ppl_ratio=max_ppl_ratio,
+                max_accuracy_drop=max_accuracy_drop,
+                min_choice_accuracy=min_choice_accuracy,
+            )
+            recovery["xfamily_gate_report"] = str(recovered_xfamily_gate_path)
+            recovery["xfamily_passed"] = recovered_xfamily_gate["passed"]
+            recovery["xfamily_metrics"] = recovered_xfamily_gate["candidate"]
+            recovered_candidates.append(
+                {
+                    "source_candidate_tag": tag,
+                    "source_candidate": candidate,
+                    **recovery,
+                }
+            )
+
+    usable_candidates = _usable_pipeline_candidates(final_candidates, recovered_candidates)
+
+    summary = {
+        "operation": "cross_family_merge_compress_pipeline",
+        "host_model": host_model,
+        "donor_model": donor_model,
+        "output_dir": str(root),
+        "host_baseline_report": str(host_baseline_path),
+        "host_baseline_metrics": {
+            "param_count": host_baseline.get("param_count"),
+            "perplexity_mean": float(host_baseline["perplexity"]["mean"]),
+            "choice_accuracy": float(host_baseline["choice_accuracy"]["accuracy"]),
+        },
+        "cross_family_merge": {
+            "model_dir": str(xfamily_dir),
+            "merge_report": xfamily_merge_report,
+            "report": str(xfamily_report_path),
+            "gate_report": str(xfamily_gate_path),
+            "host_passed": xfamily_host_gate["passed"],
+            "metrics": xfamily_host_gate["candidate"],
+        },
+        "compression": compression_summary,
+        "selected_candidates": final_candidates,
+        "recovered_candidates": recovered_candidates,
+        "usable_candidates": usable_candidates,
+        "best_usable_candidate": usable_candidates[0] if usable_candidates else None,
+        "recovery": {
+            "enabled": recover_candidates,
+            "recover_only_failed": recover_only_failed,
+            "top_k": recover_top_k,
+            "steps": recovery_steps,
+            "batch_size": recovery_batch_size,
+            "max_length": recovery_max_length,
+            "lr": recovery_lr,
+            "kd_weight": recovery_kd_weight,
+            "lm_weight": recovery_lm_weight,
+            "temperature": recovery_temperature,
+            "train_scope": recovery_train_scope,
+            "dtype": recovery_dtype,
+            "grad_clip": recovery_grad_clip,
+        },
+        "gate_thresholds": {
+            "max_ppl_ratio": max_ppl_ratio,
+            "max_accuracy_drop": max_accuracy_drop,
+            "min_choice_accuracy": min_choice_accuracy,
+        },
+    }
+    _write_json(report_root / "xfamily_compress_summary.json", summary)
+    return summary
+
+
 def _recover_and_gate_candidate(
     host_model: str,
     candidate_dir: Path,
@@ -602,6 +846,55 @@ def _recover_and_gate_candidate(
         "passed": recovered_gate["passed"],
         "metrics": recovered_gate["candidate"],
     }
+
+
+def _select_compression_candidates(summary: dict[str, Any], target_shrink: float | None) -> list[dict[str, Any]]:
+    if target_shrink is not None and summary.get("target_passed_candidates"):
+        return list(summary["target_passed_candidates"])
+    if target_shrink is not None and summary.get("best_passed_below_target"):
+        return [summary["best_passed_below_target"]]
+    if summary.get("best_passed_candidate"):
+        return [summary["best_passed_candidate"]]
+    return []
+
+
+def _usable_pipeline_candidates(
+    compressed_candidates: list[dict[str, Any]],
+    recovered_candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    usable = []
+    for candidate in compressed_candidates:
+        if candidate.get("host_passed"):
+            usable.append(
+                {
+                    "source": "compressed",
+                    "tag": candidate["tag"],
+                    "model_dir": candidate["model_dir"],
+                    "report": candidate["report"],
+                    "gate_report": candidate["host_gate_report"],
+                    "shrink": candidate["shrink"],
+                    "metrics": candidate["host_metrics"],
+                }
+            )
+    for candidate in recovered_candidates:
+        if candidate.get("passed"):
+            source_candidate = candidate["source_candidate"]
+            usable.append(
+                {
+                    "source": "recovered",
+                    "tag": f"{source_candidate['tag']}_recovered",
+                    "model_dir": candidate["model_dir"],
+                    "report": candidate["report"],
+                    "gate_report": candidate["gate_report"],
+                    "shrink": source_candidate["shrink"],
+                    "metrics": candidate["metrics"],
+                }
+            )
+    return sorted(
+        usable,
+        key=lambda item: (float(item["shrink"]), -float(item["metrics"]["perplexity_mean"])),
+        reverse=True,
+    )
 
 
 def _canonical_token_map(tokenizer) -> dict[str, int]:

@@ -316,6 +316,64 @@ Sample behavior:
   merge risk; the recovered answer warned that merged models may generalize
   poorly when parent learning patterns differ.
 
+## Cross-Family Merge-Compress Pipeline
+
+The repo now includes `hf-xfamily-compress`, which chains:
+
+1. cross-family MLP-channel merge into a host-shaped checkpoint;
+2. merge-first width/depth compression search;
+3. optional lightweight recovery;
+4. gates against both the cross-family intermediate and the original host
+   baseline.
+
+The donor in both runs below was `LiquidAI/LFM2.5-230M`.
+
+Successful recovered compression run:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/xfamily_compress_qwen3_lfm25_20260626_182026
+```
+
+| Stage | Params | Shrink | Mean PPL | Choice Acc | Gate |
+|---|---:|---:|---:|---:|---|
+| Qwen3 host baseline | 596,049,920 | - | 280.375 | 1.00 | Baseline |
+| Qwen3 <- LFM2.5 MLP alpha 0.005 | 596,049,920 | 0.00% | 284.984 | 1.00 | Passed |
+| width 0.995 + depth average 13+14 | 579,074,816 | 2.85% | 310.255 | 0.75 | Passed |
+| recovered compressed candidate | 579,074,816 | 2.85% | 266.520 | 0.75 | Passed |
+
+Recovery loss moved from `4.2172` at step 1 to `3.2870` at step 8.
+
+Safer 5%+ merge-compress run:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/xfamily_compress_qwen3_lfm25_5pct_safe_20260626_182857
+```
+
+| Stage | Params | Shrink | Mean PPL | Choice Acc | Gate |
+|---|---:|---:|---:|---:|---|
+| Qwen3 host baseline | 596,049,920 | - | 280.375 | 1.00 | Baseline |
+| Qwen3 <- LFM2.5 MLP alpha 0.005 | 596,049,920 | 0.00% | 284.984 | 1.00 | Passed |
+| depth fold 13+14 and 15+16 | 564,588,032 | 5.28% | 294.424 | 0.75 | Passed |
+
+The same 5.28% candidate was also tested with a short recovery pass in:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/xfamily_compress_qwen3_lfm25_5pct_20260626_182346
+```
+
+That recovery improved mean PPL to `243.582` but dropped choice accuracy to
+`0.50`, so the pipeline was updated to record `usable_candidates` and
+`best_usable_candidate`, and to support `--recover-only-failed`. The safe run
+above used that option and did not promote the harmful recovered checkpoint.
+
+Sample generated behavior from the 5.28% best candidate:
+
+- pruning prompt: "Neural pruning is a process where the brain eliminates
+  unnecessary connections..." It remained on-topic but more repetitive than the
+  host.
+- Python-add prompt: described a two-argument sum function and remained
+  coherent, again with more repetition than the host.
+
 ## Merge-First Width And Depth Folding
 
 After the pruning-first baseline failed, the Qwen3 run was repeated with

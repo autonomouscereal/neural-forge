@@ -15,6 +15,8 @@ from neural_forge.hf_xfamily import _canonical_token
 from neural_forge.hf_xfamily import _canonical_token_map
 from neural_forge.hf_xfamily import _mlp_spec
 from neural_forge.hf_xfamily import _proportional_index
+from neural_forge.hf_xfamily import _select_compression_candidates
+from neural_forge.hf_xfamily import _usable_pipeline_candidates
 from neural_forge.hf_xfamily import sweep_cross_family_vocab_merge
 from neural_forge.hf_xfamily import sweep_cross_family_mlp_merge
 
@@ -135,6 +137,34 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "ffn",
         ]
     )
+    xfamily_compress_args = parser.parse_args(
+        [
+            "hf-xfamily-compress",
+            "out",
+            "--host-model",
+            "host",
+            "--donor-model",
+            "LiquidAI/LFM2.5-230M",
+            "--alpha",
+            "0.005",
+            "--max-host-channels",
+            "128",
+            "--max-donor-channels",
+            "256",
+            "--width-ratios",
+            "0.995",
+            "--layer-groups",
+            "13+14",
+            "--target-shrink",
+            "0.02",
+            "--recover",
+            "--recover-only-failed",
+            "--recover-top-k",
+            "2",
+            "--recover-steps",
+            "4",
+        ]
+    )
     assert sweep_args.output_dir == "out"
     assert resize_args.assignment == "topk"
     assert merge_layer_args.groups == "3+4,7+8"
@@ -147,6 +177,11 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_mlp_args.recover is True
     assert xfamily_mlp_args.recover_steps == 3
     assert xfamily_mlp_args.recover_train_scope == "ffn"
+    assert xfamily_compress_args.donor_model == "LiquidAI/LFM2.5-230M"
+    assert xfamily_compress_args.width_ratios == "0.995"
+    assert xfamily_compress_args.layer_groups == ["13+14"]
+    assert xfamily_compress_args.recover_top_k == 2
+    assert xfamily_compress_args.recover_only_failed is True
     with pytest.raises(SystemExit):
         parser.parse_args(
             [
@@ -275,3 +310,119 @@ def test_xfamily_mlp_handler_passes_recovery_flags(monkeypatch) -> None:
     assert captured["recover_only_failed"] is True
     assert captured["recovery_steps"] == 7
     assert captured["recovery_train_scope"] == "last2"
+
+
+def test_xfamily_compress_handler_passes_pipeline_flags(monkeypatch) -> None:
+    import neural_forge.hf_xfamily as hf_xfamily
+
+    captured = {}
+
+    def fake_pipeline(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(hf_xfamily, "cross_family_merge_compress_pipeline", fake_pipeline)
+    args = build_parser().parse_args(
+        [
+            "hf-xfamily-compress",
+            "out",
+            "--host-model",
+            "host",
+            "--donor-model",
+            "LiquidAI/LFM2.5-230M",
+            "--alpha",
+            "0.005",
+            "--width-ratios",
+            "0.995",
+            "--layer-groups",
+            "13+14",
+            "--depth-methods",
+            "average",
+            "--target-shrink",
+            "0.02",
+            "--recover",
+            "--recover-only-failed",
+            "--recover-top-k",
+            "2",
+            "--recover-steps",
+            "7",
+        ]
+    )
+    result = args.func(args)
+    assert result == {"ok": True}
+    assert captured["donor_model"] == "LiquidAI/LFM2.5-230M"
+    assert captured["alpha"] == 0.005
+    assert captured["width_ratios"] == [0.995]
+    assert captured["layer_group_specs"] == [[[13, 14]]]
+    assert captured["depth_methods"] == ["average"]
+    assert captured["target_shrink"] == 0.02
+    assert captured["recover_candidates"] is True
+    assert captured["recover_only_failed"] is True
+    assert captured["recover_top_k"] == 2
+    assert captured["recovery_steps"] == 7
+
+
+def test_select_compression_candidates_prefers_target_passed() -> None:
+    target = {"tag": "target", "shrink": 0.03}
+    below = {"tag": "below", "shrink": 0.01}
+    best = {"tag": "best", "shrink": 0.02}
+    summary = {
+        "target_passed_candidates": [target],
+        "best_passed_below_target": below,
+        "best_passed_candidate": best,
+    }
+    assert _select_compression_candidates(summary, 0.02) == [target]
+
+
+def test_select_compression_candidates_falls_back_below_target() -> None:
+    below = {"tag": "below", "shrink": 0.01}
+    best = {"tag": "best", "shrink": 0.02}
+    summary = {
+        "target_passed_candidates": [],
+        "best_passed_below_target": below,
+        "best_passed_candidate": best,
+    }
+    assert _select_compression_candidates(summary, 0.03) == [below]
+
+
+def test_usable_pipeline_candidates_keeps_only_gate_passing_outputs() -> None:
+    compressed = [
+        {
+            "tag": "raw_pass",
+            "model_dir": "raw",
+            "report": "raw.json",
+            "host_gate_report": "raw_gate.json",
+            "host_passed": True,
+            "shrink": 0.05,
+            "host_metrics": {"perplexity_mean": 300.0},
+        },
+        {
+            "tag": "raw_fail",
+            "model_dir": "fail",
+            "report": "fail.json",
+            "host_gate_report": "fail_gate.json",
+            "host_passed": False,
+            "shrink": 0.06,
+            "host_metrics": {"perplexity_mean": 250.0},
+        },
+    ]
+    recovered = [
+        {
+            "passed": True,
+            "source_candidate": compressed[1],
+            "model_dir": "rec",
+            "report": "rec.json",
+            "gate_report": "rec_gate.json",
+            "metrics": {"perplexity_mean": 240.0},
+        },
+        {
+            "passed": False,
+            "source_candidate": compressed[0],
+            "model_dir": "bad_rec",
+            "report": "bad_rec.json",
+            "gate_report": "bad_rec_gate.json",
+            "metrics": {"perplexity_mean": 200.0},
+        },
+    ]
+    usable = _usable_pipeline_candidates(compressed, recovered)
+    assert [item["tag"] for item in usable] == ["raw_fail_recovered", "raw_pass"]
