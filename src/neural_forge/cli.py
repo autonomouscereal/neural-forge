@@ -109,7 +109,7 @@ def build_parser() -> argparse.ArgumentParser:
     hf_donor_init.add_argument("--seed", type=int, default=0)
     hf_donor_init.add_argument("--ridge", type=float, default=1e-3)
     hf_donor_init.add_argument("--max-anchors", type=int, default=50_000)
-    hf_donor_init.add_argument("--fold-mode", choices=["mean", "rms"], default="mean")
+    hf_donor_init.add_argument("--fold-mode", choices=["mean", "rms", "transport"], default="mean")
     hf_donor_init.add_argument("--activation-fold-assignment", choices=["balanced", "similarity"], default="balanced")
     hf_donor_init.add_argument(
         "--donor-layer-fold-mode",

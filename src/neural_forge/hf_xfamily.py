@@ -278,8 +278,8 @@ def donor_projected_init(
         raise ValueError("ridge must be non-negative.")
     if max_anchors <= 0:
         raise ValueError("max_anchors must be positive.")
-    if fold_mode not in {"mean", "rms"}:
-        raise ValueError("fold_mode must be mean or rms.")
+    if fold_mode not in {"mean", "rms", "transport"}:
+        raise ValueError("fold_mode must be mean, rms, or transport.")
     if activation_fold_assignment not in {"balanced", "similarity"}:
         raise ValueError("activation_fold_assignment must be balanced or similarity.")
     if donor_layer_fold_mode not in {"representative", "average", "fold"}:
@@ -347,6 +347,7 @@ def donor_projected_init(
     donor_state = donor.state_dict()
     donor_layer_keys = _layer_tensor_index(donor_state)
     folded_donor_layer_cache: dict[int, dict[str, Any]] = {}
+    axis_assignment_cache: dict[Any, dict[str, Any]] = {}
     layer_reports = []
     changed_keys = []
     skipped_layer_keys = []
@@ -355,6 +356,7 @@ def donor_projected_init(
         hidden_axis_weights = {
             "weights": activation_profile["hidden_scores"],
             "features": activation_profile.get("hidden_features"),
+            "assignment_key": ("hidden", "residual"),
         }
     for target_key, target_tensor in list(target_state.items()):
         parsed = _parse_layer_tensor_key(target_key)
@@ -417,6 +419,8 @@ def donor_projected_init(
                 axis_weights=axis_weights,
                 axis_reductions=axis_reductions,
                 activation_fold_assignment=activation_fold_assignment,
+                assignment_cache=axis_assignment_cache,
+                semantic_prefix=("layer", int(target_layer_idx)),
             )
         if projected is None:
             projected = _resize_tensor_to_shape(
@@ -427,6 +431,7 @@ def donor_projected_init(
                 axis_weights=axis_weights,
                 axis_reductions=axis_reductions,
                 activation_fold_assignment=activation_fold_assignment,
+                assignment_cache=axis_assignment_cache,
             )
         projected = _scale_projection_to_target(torch, projected, target_tensor, projection_scale)
         projected = _blend_projection_with_target(torch, projected, target_tensor, projection_blend_alpha)
@@ -456,6 +461,7 @@ def donor_projected_init(
         activation_fold_assignment=activation_fold_assignment,
         projection_scale=projection_scale,
         projection_blend_alpha=projection_blend_alpha,
+        assignment_cache=axis_assignment_cache,
     )
     changed_keys.extend(item["target_key"] for item in non_layer_report["initialized"])
     load_result = target.load_state_dict(target_state, strict=False)
@@ -472,6 +478,7 @@ def donor_projected_init(
         activation_fold_assignment=activation_fold_assignment,
         projection_scale=projection_scale,
         projection_blend_alpha=projection_blend_alpha,
+        assignment_cache=axis_assignment_cache,
     )
     if getattr(target.config, "tie_word_embeddings", False) and not untie_output_head:
         target.tie_weights()
@@ -515,6 +522,7 @@ def donor_projected_init(
         "unexpected_keys": list(load_result.unexpected_keys),
         "token_report": token_report,
         "param_count": sum(param.numel() for param in target.parameters()),
+        "axis_assignment_cache_entries": _axis_assignment_cache_report(axis_assignment_cache),
     }
     _write_json(output / "neural_forge_donor_projected_init_report.json", report)
     return report
@@ -1357,6 +1365,7 @@ def _initialize_non_layer_tensors_from_donor(
     activation_fold_assignment: str = "balanced",
     projection_scale: str = "none",
     projection_blend_alpha: float = 1.0,
+    assignment_cache: dict[Any, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     projection_blend_alpha = _bounded_alpha(projection_blend_alpha, "projection_blend_alpha")
     donor_index = _non_layer_tensor_index(donor_state)
@@ -1393,6 +1402,7 @@ def _initialize_non_layer_tensors_from_donor(
             fold_mode=tensor_fold_mode,
             axis_weights=axis_weights,
             activation_fold_assignment=activation_fold_assignment,
+            assignment_cache=assignment_cache,
         )
         projected = _scale_projection_to_target(torch, projected, target_tensor, projection_scale)
         projected = _blend_projection_with_target(torch, projected, target_tensor, projection_blend_alpha)
@@ -1565,9 +1575,10 @@ def _resize_tensor_to_shape(
     axis_weights: dict[int, Any] | None = None,
     axis_reductions: dict[int, str] | None = None,
     activation_fold_assignment: str = "balanced",
+    assignment_cache: dict[Any, dict[str, Any]] | None = None,
 ):
-    if fold_mode not in {"mean", "rms"}:
-        raise ValueError("fold_mode must be mean or rms.")
+    if fold_mode not in {"mean", "rms", "transport"}:
+        raise ValueError("fold_mode must be mean, rms, or transport.")
     if activation_fold_assignment not in {"balanced", "similarity"}:
         raise ValueError("activation_fold_assignment must be balanced or similarity.")
     if tuple(source.shape) == tuple(target_shape):
@@ -1578,7 +1589,7 @@ def _resize_tensor_to_shape(
     for axis, target_dim in enumerate(target_shape):
         if resized.shape[axis] != int(target_dim):
             profile = None if axis_weights is None else axis_weights.get(axis)
-            weights, features = _axis_fold_profile(profile)
+            weights, features, semantic_key = _axis_fold_profile(profile)
             resized = _resize_tensor_axis_mean_fold(
                 torch,
                 resized,
@@ -1589,6 +1600,8 @@ def _resize_tensor_to_shape(
                 features=features,
                 reduction="mean" if axis_reductions is None else axis_reductions.get(axis, "mean"),
                 assignment_mode=activation_fold_assignment,
+                assignment_cache=assignment_cache,
+                assignment_cache_key=semantic_key,
             )
     return resized.contiguous()
 
@@ -1604,6 +1617,8 @@ def _resize_attention_tensor_to_shape(
     axis_weights: dict[int, Any] | None = None,
     axis_reductions: dict[int, str] | None = None,
     activation_fold_assignment: str = "balanced",
+    assignment_cache: dict[Any, dict[str, Any]] | None = None,
+    semantic_prefix=None,
 ):
     specs = _attention_partition_specs(suffix, donor_config, target_config)
     if not specs or source.dim() != len(target_shape):
@@ -1625,6 +1640,9 @@ def _resize_attention_tensor_to_shape(
             target_heads,
             fold_mode=fold_mode,
             reduction="mean" if axis_reductions is None else axis_reductions.get(axis, "mean"),
+            assignment_cache=assignment_cache,
+            head_assignment_key=_attention_axis_assignment_key(suffix, semantic_prefix, "heads"),
+            head_dim_assignment_key=_attention_axis_assignment_key(suffix, semantic_prefix, "head_dim"),
         )
         if coupled is None:
             continue
@@ -1636,7 +1654,7 @@ def _resize_attention_tensor_to_shape(
     for axis, target_dim in enumerate(target_shape):
         if resized.shape[axis] != int(target_dim):
             profile = None if axis_weights is None or axis in handled_axes else axis_weights.get(axis)
-            weights, features = _axis_fold_profile(profile)
+            weights, features, semantic_key = _axis_fold_profile(profile)
             resized = _resize_tensor_axis_mean_fold(
                 torch,
                 resized,
@@ -1647,6 +1665,8 @@ def _resize_attention_tensor_to_shape(
                 features=features,
                 reduction="mean" if axis_reductions is None else axis_reductions.get(axis, "mean"),
                 assignment_mode=activation_fold_assignment,
+                assignment_cache=assignment_cache,
+                assignment_cache_key=semantic_key,
             )
     return resized.contiguous()
 
@@ -1696,6 +1716,9 @@ def _resize_head_partitioned_axis(
     target_heads: int,
     fold_mode: str,
     reduction: str = "mean",
+    assignment_cache: dict[Any, dict[str, Any]] | None = None,
+    head_assignment_key=None,
+    head_dim_assignment_key=None,
 ):
     source_dim = int(tensor.shape[axis])
     if source_heads <= 0 or target_heads <= 0:
@@ -1714,6 +1737,8 @@ def _resize_head_partitioned_axis(
         target_dim=int(target_heads),
         fold_mode=fold_mode,
         reduction=reduction,
+        assignment_cache=assignment_cache,
+        assignment_cache_key=head_assignment_key,
     )
     partitioned = _resize_tensor_axis_mean_fold(
         torch,
@@ -1722,6 +1747,8 @@ def _resize_head_partitioned_axis(
         target_dim=target_head_dim,
         fold_mode=fold_mode,
         reduction=reduction,
+        assignment_cache=assignment_cache,
+        assignment_cache_key=head_dim_assignment_key,
     )
     resized = partitioned.reshape(target_dim, *rest_shape)
     return resized.movedim(0, axis).contiguous()
@@ -1729,8 +1756,140 @@ def _resize_head_partitioned_axis(
 
 def _axis_fold_profile(profile):
     if isinstance(profile, dict):
-        return profile.get("weights"), profile.get("features")
-    return profile, None
+        return profile.get("weights"), profile.get("features"), profile.get("assignment_key")
+    return profile, None, None
+
+
+def _axis_assignment_cache_key(base_key, source_dim: int, target_dim: int, assignment_mode: str, fold_mode: str = "mean"):
+    if base_key is None:
+        return None
+    return (_freeze_assignment_key(base_key), int(source_dim), int(target_dim), str(assignment_mode), str(fold_mode))
+
+
+def _freeze_assignment_key(value):
+    if isinstance(value, dict):
+        return tuple(sorted((str(key), _freeze_assignment_key(item)) for key, item in value.items()))
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_assignment_key(item) for item in value)
+    if isinstance(value, set):
+        return tuple(sorted(_freeze_assignment_key(item) for item in value))
+    return value
+
+
+def _attention_axis_assignment_key(suffix: str, semantic_prefix, axis_kind: str):
+    marker = f".{suffix.lower()}"
+    if axis_kind == "head_dim":
+        return (semantic_prefix, "attention", "shared", "head_dim")
+    if marker.endswith(".q_proj.weight") or marker.endswith(".q_proj.bias") or marker.endswith(".o_proj.weight"):
+        stream = "q"
+    elif marker.endswith(".k_proj.weight") or marker.endswith(".k_proj.bias"):
+        stream = "kv"
+    elif marker.endswith(".v_proj.weight") or marker.endswith(".v_proj.bias"):
+        stream = "kv"
+    else:
+        return None
+    return (semantic_prefix, "attention", stream, axis_kind)
+
+
+def _axis_assignment_cache_report(assignment_cache: dict[Any, dict[str, Any]]) -> list[dict[str, Any]]:
+    report = []
+    for key, item in assignment_cache.items():
+        map_type = "transport" if "transport_indices" in item else "assignment"
+        report.append(
+            {
+                "key": repr(key),
+                "map_type": map_type,
+                "source_dim": int(item.get("source_dim", 0)),
+                "target_dim": int(item.get("target_dim", 0)),
+                "assignment_mode": str(item.get("assignment_mode", "")),
+            }
+        )
+    return report
+
+
+def _build_sparse_activation_transport(
+    torch,
+    features,
+    target_dim: int,
+    weights=None,
+    top_k: int = 4,
+    balance_iterations: int = 4,
+    temperature: float = 0.08,
+):
+    feature_rows = features.detach().cpu().to(torch.float32)
+    if feature_rows.dim() != 2:
+        raise ValueError("Activation features must be a rank-2 tensor.")
+    source_dim = int(feature_rows.shape[0])
+    if source_dim <= target_dim:
+        raise ValueError("Sparse transport is only used for source_dim > target_dim.")
+    if weights is None:
+        fold_weights = torch.ones(source_dim, dtype=torch.float32)
+    else:
+        fold_weights = weights.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12)
+        if int(fold_weights.numel()) != source_dim:
+            raise ValueError("Activation transport weights must match feature rows.")
+    feature_rows = _row_normalize(feature_rows)
+    seed_assignment = _activation_similarity_assignment(torch, feature_rows, target_dim, fold_weights, iterations=4)
+    centroids = []
+    for target_idx in range(target_dim):
+        mask = seed_assignment == target_idx
+        if bool(mask.any()):
+            cluster_weights = fold_weights[mask].unsqueeze(1)
+            centroid = (feature_rows[mask] * cluster_weights).sum(dim=0) / cluster_weights.sum().clamp_min(1e-12)
+        else:
+            centroid = feature_rows[int(torch.argmax(fold_weights).item())]
+        centroids.append(centroid)
+    centroid_rows = _row_normalize(torch.stack(centroids, dim=0))
+    top_k = max(1, min(int(top_k), target_dim))
+    scores = feature_rows.matmul(centroid_rows.t())
+    top_scores, top_indices = torch.topk(scores, k=top_k, dim=1)
+    values = torch.softmax(top_scores / max(float(temperature), 1e-6), dim=1)
+    for _ in range(max(0, int(balance_iterations))):
+        loads = torch.zeros(target_dim, dtype=torch.float32)
+        loads.index_add_(0, top_indices.reshape(-1), (values * fold_weights.unsqueeze(1)).reshape(-1))
+        balance = (loads.mean().clamp_min(1e-12) / loads.clamp_min(1e-12)).clamp(0.25, 4.0)
+        values = values * balance[top_indices]
+        values = values / values.sum(dim=1, keepdim=True).clamp_min(1e-12)
+    return {
+        "transport_indices": top_indices.detach().cpu().to(torch.long),
+        "transport_values": values.detach().cpu().to(torch.float32),
+        "source_dim": int(source_dim),
+        "target_dim": int(target_dim),
+        "assignment_mode": "transport",
+    }
+
+
+def _apply_sparse_axis_transport(
+    torch,
+    flat,
+    transport: dict[str, Any],
+    fold_weights,
+    reduction: str,
+    fold_mode: str,
+):
+    indices = transport["transport_indices"].to(torch.long)
+    values = transport["transport_values"].to(flat.dtype)
+    source_dim = int(flat.shape[0])
+    target_dim = int(transport["target_dim"])
+    if int(indices.shape[0]) != source_dim or int(values.shape[0]) != source_dim:
+        raise ValueError("Sparse transport has the wrong source dimension.")
+    folded = torch.zeros((target_dim, flat.shape[1]), dtype=flat.dtype)
+    counts = torch.zeros(target_dim, dtype=flat.dtype)
+    if reduction == "sum":
+        coeffs = values
+        count_coeffs = values
+    else:
+        coeffs = values * fold_weights.to(flat.dtype).unsqueeze(1)
+        count_coeffs = coeffs
+    for slot in range(int(indices.shape[1])):
+        target_idx = indices[:, slot].contiguous()
+        coeff = coeffs[:, slot].contiguous()
+        folded.index_add_(0, target_idx, flat * coeff.unsqueeze(1))
+        counts.index_add_(0, target_idx, count_coeffs[:, slot].to(flat.dtype))
+    if reduction == "mean":
+        divisor = counts.sqrt() if fold_mode == "rms" else counts
+        folded = folded / divisor.clamp_min(1e-12).unsqueeze(1)
+    return folded
 
 
 def _resize_tensor_axis_mean_fold(
@@ -1743,11 +1902,13 @@ def _resize_tensor_axis_mean_fold(
     features=None,
     reduction: str = "mean",
     assignment_mode: str = "balanced",
+    assignment_cache: dict[Any, dict[str, Any]] | None = None,
+    assignment_cache_key=None,
 ):
     if target_dim <= 0:
         raise ValueError("target_dim must be positive.")
-    if fold_mode not in {"mean", "rms"}:
-        raise ValueError("fold_mode must be mean or rms.")
+    if fold_mode not in {"mean", "rms", "transport"}:
+        raise ValueError("fold_mode must be mean, rms, or transport.")
     if reduction not in {"mean", "sum"}:
         raise ValueError("reduction must be mean or sum.")
     if assignment_mode not in {"balanced", "similarity"}:
@@ -1761,9 +1922,14 @@ def _resize_tensor_axis_mean_fold(
     flat = moved.reshape(source_dim, -1)
     if source_dim > target_dim:
         explicit_weights = weights is not None
+        cache_key = _axis_assignment_cache_key(
+            assignment_cache_key,
+            source_dim=source_dim,
+            target_dim=target_dim,
+            assignment_mode=assignment_mode,
+            fold_mode=fold_mode,
+        )
         if weights is None and features is None:
-            assignment = torch.floor(torch.arange(source_dim, dtype=torch.float32) * target_dim / source_dim)
-            assignment = assignment.to(torch.long).clamp_max(target_dim - 1)
             fold_weights = torch.ones(source_dim, dtype=flat.dtype)
         else:
             if weights is None:
@@ -1773,13 +1939,44 @@ def _resize_tensor_axis_mean_fold(
             if int(fold_weights.numel()) != source_dim:
                 raise ValueError("Axis weights must match the source dimension.")
             fold_weights = fold_weights.clamp_min(1e-12)
-            if assignment_mode == "similarity" and features is not None:
+        cached = None if cache_key is None or assignment_cache is None else assignment_cache.get(cache_key)
+        if cached is not None and "transport_indices" in cached:
+            folded = _apply_sparse_axis_transport(torch, flat, cached, fold_weights, reduction, fold_mode)
+            return folded.reshape((target_dim, *rest_shape)).movedim(0, axis).contiguous()
+        if fold_mode == "transport" and features is not None:
+            if cached is None:
+                cached = _build_sparse_activation_transport(torch, features, target_dim, weights=fold_weights)
+                if cache_key is not None and assignment_cache is not None:
+                    assignment_cache[cache_key] = cached
+            folded = _apply_sparse_axis_transport(torch, flat, cached, fold_weights, reduction, fold_mode)
+            return folded.reshape((target_dim, *rest_shape)).movedim(0, axis).contiguous()
+        assignment = None
+        if cached is not None and "assignment" in cached:
+            assignment = cached["assignment"].to(torch.long)
+        if assignment is None:
+            if weights is None and features is None:
+                assignment = torch.floor(torch.arange(source_dim, dtype=torch.float32) * target_dim / source_dim)
+                assignment = assignment.to(torch.long).clamp_max(target_dim - 1)
+            elif assignment_mode == "similarity" and features is not None:
                 assignment = _activation_similarity_assignment(torch, features, target_dim, fold_weights)
             else:
                 assignment = _balanced_activation_assignment(torch, fold_weights, target_dim)
+            if cache_key is not None and assignment_cache is not None:
+                assignment_cache[cache_key] = {
+                    "assignment": assignment.detach().cpu().to(torch.long),
+                    "source_dim": int(source_dim),
+                    "target_dim": int(target_dim),
+                    "assignment_mode": str(assignment_mode),
+                }
+        assignment = assignment.to(torch.long).cpu()
+        if int(assignment.numel()) != source_dim:
+            raise ValueError("Cached axis assignment has the wrong source dimension.")
+        if int(assignment.min().item()) < 0 or int(assignment.max().item()) >= target_dim:
+            raise ValueError("Cached axis assignment has out-of-range target bins.")
         folded = torch.zeros((target_dim, flat.shape[1]), dtype=flat.dtype)
         counts = torch.zeros(target_dim, dtype=flat.dtype)
-        weighted_flat = flat * fold_weights.to(flat.dtype).unsqueeze(1)
+        value_weights = torch.ones_like(fold_weights) if reduction == "sum" else fold_weights
+        weighted_flat = flat * value_weights.to(flat.dtype).unsqueeze(1)
         folded.index_add_(0, assignment, weighted_flat)
         counts.index_add_(0, assignment, fold_weights.to(flat.dtype))
         if reduction == "mean":
@@ -2007,6 +2204,7 @@ def _activation_axis_weights_for_tensor(
     hidden_scores = activation_profile["hidden_scores"]
     hidden_features = activation_profile.get("hidden_features")
     layer_group = list(donor_layer_group or [donor_layer_idx])
+    layer_group_key = tuple(int(item) for item in layer_group)
     mlp_scores = _aggregate_layer_activation_profile(
         torch,
         activation_profile.get("mlp_scores", {}),
@@ -2020,12 +2218,20 @@ def _activation_axis_weights_for_tensor(
     )
     for axis, source_dim in enumerate(donor_tensor.shape):
         if int(source_dim) == int(hidden_scores.numel()):
-            axis_weights[axis] = {"weights": hidden_scores, "features": hidden_features}
+            axis_weights[axis] = {
+                "weights": hidden_scores,
+                "features": hidden_features,
+                "assignment_key": ("hidden", "residual"),
+            }
     suffix_marker = f".{suffix}."
     if mlp_scores is not None and (".mlp." in suffix_marker or ".feed_forward." in suffix_marker):
         for axis, source_dim in enumerate(donor_tensor.shape):
             if int(source_dim) == int(mlp_scores.numel()):
-                axis_weights[axis] = {"weights": mlp_scores, "features": mlp_features}
+                axis_weights[axis] = {
+                    "weights": mlp_scores,
+                    "features": mlp_features,
+                    "assignment_key": ("mlp", layer_group_key),
+                }
     return axis_weights or None
 
 
@@ -2053,6 +2259,7 @@ def _initialize_token_weights_from_donor(
     activation_fold_assignment: str = "balanced",
     projection_scale: str = "none",
     projection_blend_alpha: float = 1.0,
+    assignment_cache: dict[Any, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if token_init_mode not in {"shared", "donor-tokenized"}:
         raise ValueError("token_init_mode must be shared or donor-tokenized.")
@@ -2084,6 +2291,7 @@ def _initialize_token_weights_from_donor(
         activation_fold_assignment=activation_fold_assignment,
         projection_scale=projection_scale,
         projection_blend_alpha=projection_blend_alpha,
+        assignment_cache=assignment_cache,
         chunk_size=2048,
     )
     target_embeddings.weight.data.copy_(target_emb_weight.to(target_embeddings.weight.dtype))
@@ -2106,6 +2314,7 @@ def _initialize_token_weights_from_donor(
             activation_fold_assignment=activation_fold_assignment,
             projection_scale=projection_scale,
             projection_blend_alpha=projection_blend_alpha,
+            assignment_cache=assignment_cache,
             chunk_size=2048,
         )
         target_lm.weight.data.copy_(target_head.to(target_lm.weight.dtype))
@@ -2133,6 +2342,7 @@ def _project_token_weight_rows(
     activation_fold_assignment: str = "balanced",
     projection_scale: str = "none",
     projection_blend_alpha: float = 1.0,
+    assignment_cache: dict[Any, dict[str, Any]] | None = None,
     chunk_size: int = 2048,
 ) -> int:
     projection_blend_alpha = _bounded_alpha(projection_blend_alpha, "projection_blend_alpha")
@@ -2155,6 +2365,7 @@ def _project_token_weight_rows(
             fold_mode=fold_mode,
             axis_weights={} if hidden_axis_weights is None else {1: hidden_axis_weights},
             activation_fold_assignment=activation_fold_assignment,
+            assignment_cache=assignment_cache,
         )
         projected = _scale_projection_to_target(
             torch,

@@ -41,6 +41,7 @@ from neural_forge.hf_xfamily import _initialize_non_layer_tensors_from_donor
 from neural_forge.hf_xfamily import _mlp_spec
 from neural_forge.hf_xfamily import _proportional_index
 from neural_forge.hf_xfamily import _resize_attention_tensor_to_shape
+from neural_forge.hf_xfamily import _resize_tensor_axis_mean_fold
 from neural_forge.hf_xfamily import _resize_tensor_to_shape
 from neural_forge.hf_xfamily import _scale_projection_to_target
 from neural_forge.hf_xfamily import _select_compression_candidates
@@ -941,6 +942,91 @@ def test_activation_weighted_fold_uses_importance_bins() -> None:
     folded = _resize_tensor_to_shape(torch, source, (2, 1), axis_weights={0: weights})
 
     assert folded.flatten().tolist() == pytest.approx([10.0 / 11.0, 1100.0 / 10.0])
+
+
+def test_cached_mlp_fold_reuses_assignment_and_sums_outgoing_paths() -> None:
+    torch = pytest.importorskip("torch")
+    cache = {}
+    key = ("mlp", (0, 1))
+    incoming = torch.tensor(
+        [
+            [1.0, 0.0],
+            [10.0, 0.0],
+            [100.0, 0.0],
+            [1000.0, 0.0],
+        ]
+    )
+    incoming_weights = torch.tensor([10.0, 1.0, 9.0, 1.0])
+    folded_incoming = _resize_tensor_axis_mean_fold(
+        torch,
+        incoming,
+        axis=0,
+        target_dim=2,
+        weights=incoming_weights,
+        reduction="mean",
+        assignment_cache=cache,
+        assignment_cache_key=key,
+    )
+
+    outgoing = torch.tensor([[3.0, 4.0, 5.0, 6.0]])
+    different_weights = torch.tensor([1.0, 9.0, 1.0, 10.0])
+    folded_outgoing = _resize_tensor_axis_mean_fold(
+        torch,
+        outgoing,
+        axis=1,
+        target_dim=2,
+        weights=different_weights,
+        reduction="sum",
+        assignment_cache=cache,
+        assignment_cache_key=key,
+    )
+
+    assert folded_incoming[:, 0].tolist() == pytest.approx([20.0 / 11.0, 1900.0 / 10.0])
+    assert folded_outgoing.flatten().tolist() == pytest.approx([7.0, 11.0])
+    assert len(cache) == 1
+
+
+def test_transport_fold_uses_sparse_feature_map() -> None:
+    torch = pytest.importorskip("torch")
+    cache = {}
+    features = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.95, 0.05],
+            [0.0, 1.0],
+            [0.05, 0.95],
+        ]
+    )
+    source = torch.tensor([[1.0], [3.0], [100.0], [300.0]])
+
+    folded = _resize_tensor_axis_mean_fold(
+        torch,
+        source,
+        axis=0,
+        target_dim=2,
+        fold_mode="transport",
+        features=features,
+        assignment_cache=cache,
+        assignment_cache_key=("hidden", "transport-test"),
+    )
+    outgoing = torch.ones((1, 4), dtype=torch.float32)
+    folded_outgoing = _resize_tensor_axis_mean_fold(
+        torch,
+        outgoing,
+        axis=1,
+        target_dim=2,
+        fold_mode="transport",
+        features=features,
+        reduction="sum",
+        assignment_cache=cache,
+        assignment_cache_key=("hidden", "transport-test"),
+    )
+
+    assert folded.shape == (2, 1)
+    assert sorted(round(float(item), 1) for item in folded.flatten()) == pytest.approx([2.0, 200.0], abs=2.0)
+    assert float(folded_outgoing.sum()) == pytest.approx(4.0)
+    assert len(cache) == 1
+    assert next(iter(cache.values()))["transport_indices"].shape == (4, 2)
 
 
 def test_activation_axis_weights_aggregate_folded_donor_group() -> None:
