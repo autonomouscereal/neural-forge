@@ -936,6 +936,7 @@ def load_calibration_texts(
     max_texts: int | None = None,
     min_chars: int = 32,
     max_chars: int = 4096,
+    preserve_whitespace: bool = True,
 ) -> list[str]:
     """Load recovery calibration texts from plain text or JSONL rows."""
 
@@ -955,7 +956,7 @@ def load_calibration_texts(
             text = _calibration_text_from_line(line)
             if text is None:
                 continue
-            text = " ".join(text.split())
+            text = _clean_calibration_text(text, preserve_whitespace=preserve_whitespace)
             if len(text) < min_chars:
                 continue
             texts.append(text[:max_chars])
@@ -964,6 +965,12 @@ def load_calibration_texts(
     if not texts:
         raise ValueError(f"No usable calibration texts found in {path}.")
     return texts
+
+
+def _clean_calibration_text(text: str, preserve_whitespace: bool = True) -> str:
+    if preserve_whitespace:
+        return text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    return " ".join(text.split())
 
 
 def _calibration_text_from_line(line: str) -> str | None:
