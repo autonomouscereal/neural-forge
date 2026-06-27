@@ -89,6 +89,60 @@ GENERATION_RELEVANCE_RULES = {
     ],
 }
 
+BEHAVIOR_PROBES = [
+    {
+        "id": "answer_only_multiply",
+        "prompt": "Question: What is 12 * 13? Answer with only the number.\nAnswer:",
+        "kind": "first_number",
+        "answer": "156",
+    },
+    {
+        "id": "answer_only_addition",
+        "prompt": "Question: What is 19 + 26? Answer with only the number.\nAnswer:",
+        "kind": "first_number",
+        "answer": "45",
+    },
+    {
+        "id": "tokenizer_mismatch",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nAnswer:",
+        "kind": "pattern_groups",
+        "pattern_groups": [
+            [r"\btokeni[sz]er\w*", r"\bvocab\w*", r"\btokens?\b"],
+            [r"\bmismatch\w*", r"\bdiffer\w*", r"\balign\w*", r"\bincompat\w*"],
+            [r"\bembedding\w*", r"\blogits?\b", r"\btoken ids?\b", r"\brows?\b"],
+        ],
+    },
+    {
+        "id": "rain_common_sense",
+        "prompt": "A driver sees heavy rain on the road. What should they do?\nAnswer:",
+        "kind": "pattern_groups",
+        "pattern_groups": [
+            [r"\bslow\w*", r"\bcaution\w*", r"\bsafe\w*", r"\breduce\w*"],
+            [r"\bdistance\b", r"\bfollow\w*", r"\bheadlights?\b", r"\bwipers?\b", r"\bpull over\b"],
+        ],
+    },
+    {
+        "id": "python_add_function",
+        "prompt": "Write a tiny Python function named add that returns the sum of two inputs.\n```python\n",
+        "kind": "pattern_groups",
+        "pattern_groups": [
+            [r"\bdef\s+add\b", r"\blambda\b"],
+            [r"\breturn\b"],
+            [r"\+", r"\bsum\s*\("],
+        ],
+    },
+    {
+        "id": "neuron_merge_definition",
+        "prompt": "Briefly define neuron merging for model compression.\nAnswer:",
+        "kind": "pattern_groups",
+        "pattern_groups": [
+            [r"\bmerg\w*", r"\bfold\w*", r"\bcombin\w*"],
+            [r"\bneurons?\b", r"\bchannels?\b", r"\bfilters?\b"],
+            [r"\bsimilar\w*", r"\bredundan\w*", r"\baverage\w*", r"\bsum\w*"],
+        ],
+    },
+]
+
 
 def random_init_causal_lm(
     config_model: str,
@@ -684,6 +738,13 @@ def evaluate_text_model(
         ppls = [_perplexity(torch, model, tokenizer, text, device) for text in TEXT_EVALS]
         probes = [_score_choice_probe(torch, model, tokenizer, probe, device) for probe in CHOICE_PROBES]
         generations = [_generate_text(torch, model, tokenizer, prompt, device, max_new_tokens) for prompt in GENERATION_PROMPTS]
+        behavior_items = [
+            _score_behavior_probe(
+                probe,
+                _generate_text(torch, model, tokenizer, probe["prompt"], device, max_new_tokens),
+            )
+            for probe in BEHAVIOR_PROBES
+        ]
 
     report = {
         "model": model_id_or_path,
@@ -700,6 +761,12 @@ def evaluate_text_model(
         },
         "generations": generations,
         "generation_diagnostics": [_generation_health(item, 0, 0.0) for item in generations],
+        "behavior_suite": {
+            "correct": sum(1 for item in behavior_items if item["passed"]),
+            "total": len(behavior_items),
+            "pass_rate": sum(1 for item in behavior_items if item["passed"]) / max(1, len(behavior_items)),
+            "items": behavior_items,
+        },
     }
     _write_json(output_file, report)
     return report
@@ -712,6 +779,7 @@ def gate_text_report(
     max_ppl_ratio: float = 1.25,
     max_accuracy_drop: float = 0.0,
     min_choice_accuracy: float = 0.75,
+    min_behavior_pass_rate: float = 0.0,
     min_continuation_chars: int = 24,
     min_unique_token_ratio: float = 0.20,
 ) -> dict[str, Any]:
@@ -721,6 +789,8 @@ def gate_text_report(
         raise ValueError("max_ppl_ratio must be positive.")
     if max_accuracy_drop < 0:
         raise ValueError("max_accuracy_drop must be non-negative.")
+    if not 0 <= min_behavior_pass_rate <= 1:
+        raise ValueError("min_behavior_pass_rate must be between 0 and 1.")
     baseline = _load_report(baseline_report)
     candidate = _load_report(candidate_report)
 
@@ -763,6 +833,17 @@ def gate_text_report(
             },
         },
     ]
+    behavior_suite = candidate.get("behavior_suite")
+    if behavior_suite is not None or min_behavior_pass_rate > 0:
+        behavior_pass_rate = float((behavior_suite or {}).get("pass_rate", 0.0))
+        checks.append(
+            {
+                "name": "behavior_suite",
+                "passed": behavior_pass_rate >= min_behavior_pass_rate,
+                "value": behavior_pass_rate,
+                "threshold": min_behavior_pass_rate,
+            }
+        )
     verdict = {
         "operation": "gate_text_report",
         "passed": all(check["passed"] for check in checks),
@@ -777,6 +858,9 @@ def gate_text_report(
             "param_count": candidate.get("param_count"),
             "perplexity_mean": cand_ppl,
             "choice_accuracy": cand_acc,
+            "behavior_pass_rate": None
+            if candidate.get("behavior_suite") is None
+            else float(candidate["behavior_suite"].get("pass_rate", 0.0)),
         },
         "checks": checks,
     }
@@ -1995,6 +2079,52 @@ def _generate_text(torch, model, tokenizer, prompt: str, device: str, max_new_to
         "prompt": prompt,
         "output": decoded,
         "diagnostics": _generation_diagnostics(continuation, generated_ids),
+    }
+
+
+def _score_behavior_probe(probe: dict[str, Any], generation: dict[str, Any]) -> dict[str, Any]:
+    prompt = str(probe["prompt"])
+    output = str(generation.get("output", ""))
+    continuation = output[len(prompt) :] if output.startswith(prompt) else output
+    continuation = continuation.strip()
+    kind = str(probe["kind"])
+    if kind == "first_number":
+        numbers = re.findall(r"-?\d+", continuation)
+        prediction = numbers[0] if numbers else ""
+        passed = prediction == str(probe["answer"])
+        details = {"prediction": prediction, "answer": str(probe["answer"]), "numbers": numbers[:5]}
+    elif kind == "pattern_groups":
+        details = _score_pattern_groups(continuation, probe.get("pattern_groups", []))
+        passed = bool(details["passed"])
+    else:
+        raise ValueError(f"Unknown behavior probe kind: {kind}")
+    return {
+        "id": str(probe["id"]),
+        "prompt": prompt,
+        "kind": kind,
+        "passed": bool(passed),
+        "output": output,
+        "continuation": continuation,
+        "diagnostics": generation.get("diagnostics", _generation_diagnostics(continuation)),
+        "details": details,
+    }
+
+
+def _score_pattern_groups(text: str, pattern_groups: Sequence[Sequence[str]]) -> dict[str, Any]:
+    lowered = text.lower()
+    matched_groups = []
+    missing_groups = []
+    for group_index, patterns in enumerate(pattern_groups):
+        matched = [pattern for pattern in patterns if re.search(pattern, lowered)]
+        group = {"group": group_index, "matched_patterns": matched, "patterns": list(patterns)}
+        if matched:
+            matched_groups.append(group)
+        else:
+            missing_groups.append(group)
+    return {
+        "passed": not missing_groups,
+        "matched_groups": matched_groups,
+        "missing_groups": missing_groups,
     }
 
 

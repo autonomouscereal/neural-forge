@@ -9,6 +9,7 @@ from neural_forge.hf_tools import _ensure_unique_ratio_tags
 from neural_forge.hf_tools import _finite_float
 from neural_forge.hf_tools import _generation_diagnostics
 from neural_forge.hf_tools import _ratio_tag
+from neural_forge.hf_tools import _score_behavior_probe
 
 
 def _report(ppl: float, acc: float, continuation: str = " This is a healthy continuation with enough varied words.") -> dict:
@@ -55,6 +56,49 @@ def test_gate_text_report_rejects_irrelevant_diverse_generation() -> None:
     generation_check = next(check for check in verdict["checks"] if check["name"] == "generation_health")
     assert generation_check["passed"] is False
     assert generation_check["value"][0]["relevant_enough"] is False
+
+
+def test_gate_text_report_rejects_behavior_suite_regression() -> None:
+    candidate = _report(100, 1.0)
+    candidate["behavior_suite"] = {"pass_rate": 0.25, "correct": 1, "total": 4, "items": []}
+
+    verdict = gate_text_report(_report(100, 1.0), candidate, min_behavior_pass_rate=0.75)
+
+    assert verdict["passed"] is False
+    behavior_check = next(check for check in verdict["checks"] if check["name"] == "behavior_suite")
+    assert behavior_check["passed"] is False
+    assert verdict["candidate"]["behavior_pass_rate"] == pytest.approx(0.25)
+
+
+def test_behavior_probe_scores_first_number_exact_answer() -> None:
+    probe = {
+        "id": "multiply",
+        "prompt": "Question: What is 12 * 13?\nAnswer:",
+        "kind": "first_number",
+        "answer": "156",
+    }
+    passed = _score_behavior_probe(probe, {"output": probe["prompt"] + " 156"})
+    failed = _score_behavior_probe(probe, {"output": probe["prompt"] + " 155"})
+
+    assert passed["passed"] is True
+    assert failed["passed"] is False
+    assert failed["details"]["prediction"] == "155"
+
+
+def test_behavior_probe_scores_pattern_groups() -> None:
+    probe = {
+        "id": "tokenizer",
+        "prompt": "Prompt:",
+        "kind": "pattern_groups",
+        "pattern_groups": [[r"\btokeni[sz]er\w*"], [r"\bmismatch\w*"], [r"\bembedding\w*"]],
+    }
+    result = _score_behavior_probe(
+        probe,
+        {"output": "Prompt: tokenizer mismatch can put embeddings and logits on the wrong rows."},
+    )
+
+    assert result["passed"] is True
+    assert len(result["details"]["matched_groups"]) == 3
 
 
 def test_generation_diagnostics_detects_repetition() -> None:

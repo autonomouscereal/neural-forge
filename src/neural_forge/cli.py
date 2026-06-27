@@ -230,6 +230,7 @@ def build_parser() -> argparse.ArgumentParser:
     hf_gate.add_argument("--max-ppl-ratio", type=float, default=1.25)
     hf_gate.add_argument("--max-accuracy-drop", type=float, default=0.0)
     hf_gate.add_argument("--min-choice-accuracy", type=float, default=0.75)
+    hf_gate.add_argument("--min-behavior-pass-rate", type=float, default=0.60)
     hf_gate.add_argument("--min-continuation-chars", type=int, default=24)
     hf_gate.add_argument("--min-unique-token-ratio", type=float, default=0.20)
     hf_gate.set_defaults(func=cmd_hf_gate)
@@ -860,6 +861,7 @@ def cmd_hf_gate(args: argparse.Namespace) -> dict[str, object]:
         max_ppl_ratio=args.max_ppl_ratio,
         max_accuracy_drop=args.max_accuracy_drop,
         min_choice_accuracy=args.min_choice_accuracy,
+        min_behavior_pass_rate=args.min_behavior_pass_rate,
         min_continuation_chars=args.min_continuation_chars,
         min_unique_token_ratio=args.min_unique_token_ratio,
     )
