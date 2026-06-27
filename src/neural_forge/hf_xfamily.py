@@ -258,6 +258,7 @@ def donor_projected_init(
     transport_backend: str = "sparse",
     donor_layer_fold_mode: str = "representative",
     attention_fold_mode: str = "independent",
+    attention_head_dim_transport: str = "none",
     token_init_mode: str = "shared",
     projection_scale: str = "none",
     projection_blend_alpha: float = 1.0,
@@ -307,6 +308,8 @@ def donor_projected_init(
         raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
     if attention_fold_mode not in {"independent", "coupled", "activation-coupled"}:
         raise ValueError("attention_fold_mode must be independent, coupled, or activation-coupled.")
+    if attention_head_dim_transport not in {"none", "qk-vo"}:
+        raise ValueError("attention_head_dim_transport must be none or qk-vo.")
     if token_init_mode not in {"shared", "donor-tokenized", "donor-tokenized-weighted"}:
         raise ValueError("token_init_mode must be shared, donor-tokenized, or donor-tokenized-weighted.")
     if projection_scale not in {"none", "target-rms"}:
@@ -378,6 +381,8 @@ def donor_projected_init(
         )
     if attention_fold_mode == "activation-coupled" and activation_profile is None:
         raise ValueError("activation-coupled attention folding requires activation calibration texts.")
+    if attention_head_dim_transport != "none" and activation_profile is None:
+        raise ValueError("attention head-dimension transport requires activation calibration texts.")
     if activation_fit_linears and activation_profile is None:
         raise ValueError("activation linear fitting requires activation calibration texts.")
     hidden_basis = None
@@ -502,6 +507,7 @@ def donor_projected_init(
                 hidden_basis=hidden_basis if donor_tensor.dim() >= 2 else None,
                 attention_axis_weights=attention_axis_weights,
                 attention_head_fold_mode="transport" if attention_fold_mode == "activation-coupled" else None,
+                attention_head_dim_transport=attention_head_dim_transport,
                 axis_weights=axis_weights,
                 axis_reductions=axis_reductions,
                 activation_fold_assignment=activation_fold_assignment,
@@ -657,6 +663,7 @@ def donor_projected_init(
         "transport_backend": transport_backend,
         "donor_layer_fold_mode": donor_layer_fold_mode,
         "attention_fold_mode": attention_fold_mode,
+        "attention_head_dim_transport": attention_head_dim_transport,
         "token_init_mode": token_init_mode,
         "projection_scale": projection_scale,
         "projection_blend_alpha": projection_blend_alpha,
@@ -1805,6 +1812,7 @@ def _resize_attention_tensor_to_shape(
     hidden_basis=None,
     attention_axis_weights: dict[int, Any] | None = None,
     attention_head_fold_mode: str | None = None,
+    attention_head_dim_transport: str = "none",
     axis_weights: dict[int, Any] | None = None,
     axis_reductions: dict[int, str] | None = None,
     activation_fold_assignment: str = "balanced",
@@ -1812,6 +1820,8 @@ def _resize_attention_tensor_to_shape(
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
     semantic_prefix=None,
 ):
+    if attention_head_dim_transport not in {"none", "qk-vo"}:
+        raise ValueError("attention_head_dim_transport must be none or qk-vo.")
     specs = _attention_partition_specs(suffix, donor_config, target_config)
     if not specs or source.dim() != len(target_shape):
         return None
@@ -1825,6 +1835,10 @@ def _resize_attention_tensor_to_shape(
             continue
         head_profile = None if attention_axis_weights is None else attention_axis_weights.get(axis)
         head_weights, head_features, head_semantic_key = _axis_fold_profile(head_profile)
+        head_dim_weights, head_dim_features, head_dim_semantic_key = (None, None, None)
+        if attention_head_dim_transport == "qk-vo":
+            head_dim_weights, head_dim_features, head_dim_semantic_key = _axis_head_dim_fold_profile(head_profile)
+        head_dim_has_profile = head_dim_weights is not None or head_dim_features is not None
         coupled = _resize_head_partitioned_axis(
             torch,
             resized,
@@ -1839,9 +1853,14 @@ def _resize_attention_tensor_to_shape(
             head_features=head_features,
             head_fold_mode=attention_head_fold_mode,
             head_assignment_mode=activation_fold_assignment,
+            head_dim_weights=head_dim_weights,
+            head_dim_features=head_dim_features,
+            head_dim_fold_mode="transport" if attention_head_dim_transport == "qk-vo" and head_dim_has_profile else None,
+            head_dim_assignment_mode=activation_fold_assignment,
             assignment_cache=assignment_cache,
             head_assignment_key=head_semantic_key or _attention_axis_assignment_key(suffix, semantic_prefix, "heads"),
-            head_dim_assignment_key=_attention_axis_assignment_key(suffix, semantic_prefix, "head_dim"),
+            head_dim_assignment_key=head_dim_semantic_key
+            or _attention_axis_assignment_key(suffix, semantic_prefix, "head_dim"),
         )
         if coupled is None:
             continue
@@ -1961,6 +1980,10 @@ def _resize_head_partitioned_axis(
     head_features=None,
     head_fold_mode: str | None = None,
     head_assignment_mode: str = "balanced",
+    head_dim_weights=None,
+    head_dim_features=None,
+    head_dim_fold_mode: str | None = None,
+    head_dim_assignment_mode: str = "balanced",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
     head_assignment_key=None,
     head_dim_assignment_key=None,
@@ -1994,8 +2017,11 @@ def _resize_head_partitioned_axis(
         partitioned,
         axis=1,
         target_dim=target_head_dim,
-        fold_mode=fold_mode,
+        fold_mode=head_dim_fold_mode or fold_mode,
+        weights=head_dim_weights,
+        features=head_dim_features,
         reduction=reduction,
+        assignment_mode=head_dim_assignment_mode,
         transport_backend=transport_backend,
         assignment_cache=assignment_cache,
         assignment_cache_key=head_dim_assignment_key,
@@ -2008,6 +2034,16 @@ def _axis_fold_profile(profile):
     if isinstance(profile, dict):
         return profile.get("weights"), profile.get("features"), profile.get("assignment_key")
     return profile, None, None
+
+
+def _axis_head_dim_fold_profile(profile):
+    if isinstance(profile, dict):
+        return (
+            profile.get("head_dim_weights"),
+            profile.get("head_dim_features"),
+            profile.get("head_dim_assignment_key"),
+        )
+    return None, None, None
 
 
 def _hidden_basis_for_axis(torch, hidden_basis, source_dim: int, target_dim: int):
@@ -2592,6 +2628,13 @@ def _collect_donor_axis_activation_scores(
         }
         for idx in range(len(donor_layers))
     }
+    attention_head_dim_profiles: dict[int, dict[str, dict[str, list[Any]]]] = {
+        idx: {
+            "qk": {"scores": [], "features": []},
+            "vo": {"scores": [], "features": []},
+        }
+        for idx in range(len(donor_layers))
+    }
     linear_fit_rows: dict[int, dict[str, dict[str, list[Any]]]] = {idx: {} for idx in range(len(donor_layers))}
     linear_fit_counts: dict[tuple[int, str], int] = {}
     handles = []
@@ -2641,19 +2684,35 @@ def _collect_donor_axis_activation_scores(
 
         return hook
 
-    def append_attention_profile(layer_idx: int, stream: str, tensor, heads: int | None) -> None:
+    def append_attention_profile(layer_idx: int, stream: str | None, dim_stream: str | None, tensor, heads: int | None) -> None:
         if heads is None:
             return
         profile = _attention_head_activation_profile(torch, tensor.detach().to(torch.float32), int(heads))
         if profile is None:
             return
-        attention_head_profiles[int(layer_idx)][stream]["scores"].append(profile["scores"].cpu())
-        attention_head_profiles[int(layer_idx)][stream]["features"].append(profile["features"].cpu())
+        if stream is not None:
+            attention_head_profiles[int(layer_idx)][stream]["scores"].append(profile["scores"].cpu())
+            attention_head_profiles[int(layer_idx)][stream]["features"].append(profile["features"].cpu())
+        if dim_stream is not None:
+            attention_head_dim_profiles[int(layer_idx)][dim_stream]["scores"].append(
+                profile["head_dim_scores"].cpu()
+            )
+            attention_head_dim_profiles[int(layer_idx)][dim_stream]["features"].append(
+                profile["head_dim_features"].cpu()
+            )
 
-    def attention_output_hook(layer_idx: int, stream: str, heads: int | None):
+    def attention_output_hook(layer_idx: int, stream: str, dim_stream: str | None, heads: int | None):
         def hook(_module, _inputs, output):
             tensor = output[0] if isinstance(output, tuple) else output
-            append_attention_profile(layer_idx, stream, tensor, heads)
+            append_attention_profile(layer_idx, stream, dim_stream, tensor, heads)
+
+        return hook
+
+    def attention_input_hook(layer_idx: int, dim_stream: str, heads: int | None):
+        def hook(_module, inputs):
+            if not inputs:
+                return
+            append_attention_profile(layer_idx, None, dim_stream, inputs[0], heads)
 
         return hook
 
@@ -2688,15 +2747,16 @@ def _collect_donor_axis_activation_scores(
         handles.append(layer.register_forward_hook(hidden_output_hook(layer_idx)))
         attention_modules = _attention_projection_modules(layer)
         if attention_modules.get("q") is not None:
-            handles.append(attention_modules["q"].register_forward_hook(attention_output_hook(layer_idx, "q", q_heads)))
+            handles.append(attention_modules["q"].register_forward_hook(attention_output_hook(layer_idx, "q", "qk", q_heads)))
             handles.append(attention_modules["q"].register_forward_hook(linear_fit_hook(layer_idx, "self_attn.q_proj.weight")))
         if attention_modules.get("k") is not None:
-            handles.append(attention_modules["k"].register_forward_hook(attention_output_hook(layer_idx, "kv", kv_heads)))
+            handles.append(attention_modules["k"].register_forward_hook(attention_output_hook(layer_idx, "kv", "qk", kv_heads)))
             handles.append(attention_modules["k"].register_forward_hook(linear_fit_hook(layer_idx, "self_attn.k_proj.weight")))
         if attention_modules.get("v") is not None:
-            handles.append(attention_modules["v"].register_forward_hook(attention_output_hook(layer_idx, "kv", kv_heads)))
+            handles.append(attention_modules["v"].register_forward_hook(attention_output_hook(layer_idx, "kv", "vo", kv_heads)))
             handles.append(attention_modules["v"].register_forward_hook(linear_fit_hook(layer_idx, "self_attn.v_proj.weight")))
         if attention_modules.get("o") is not None:
+            handles.append(attention_modules["o"].register_forward_pre_hook(attention_input_hook(layer_idx, "vo", q_heads)))
             handles.append(attention_modules["o"].register_forward_hook(linear_fit_hook(layer_idx, "self_attn.o_proj.weight")))
         spec = _mlp_spec(layer)
         if spec is None:
@@ -2747,6 +2807,17 @@ def _collect_donor_axis_activation_scores(
                 }
         if stream_profiles:
             folded_attention_profiles[int(layer_idx)] = stream_profiles
+    folded_attention_head_dim_profiles = {}
+    for layer_idx, by_stream in attention_head_dim_profiles.items():
+        stream_profiles = {}
+        for stream, values in by_stream.items():
+            if values["scores"] and values["features"]:
+                stream_profiles[stream] = {
+                    "scores": torch.stack(values["scores"], dim=0).mean(dim=0).clamp_min(1e-12),
+                    "features": torch.stack(values["features"], dim=0).mean(dim=0),
+                }
+        if stream_profiles:
+            folded_attention_head_dim_profiles[int(layer_idx)] = stream_profiles
     folded_linear_fit_rows = {}
     for layer_idx, by_suffix in linear_fit_rows.items():
         suffix_rows = {}
@@ -2771,6 +2842,7 @@ def _collect_donor_axis_activation_scores(
         "mlp_scores": folded_mlp_scores,
         "mlp_features": folded_mlp_features,
         "attention_head_profiles": folded_attention_profiles,
+        "attention_head_dim_profiles": folded_attention_head_dim_profiles,
         "linear_fit_rows": folded_linear_fit_rows,
     }
 
@@ -2862,7 +2934,21 @@ def _attention_head_activation_profile(torch, tensor, heads: int) -> dict[str, A
     rms = partitioned.pow(2).mean(dim=0).sqrt()
     features = torch.cat([signed_mean, abs_mean, rms], dim=1).contiguous()
     scores = abs_mean.mean(dim=1).clamp_min(1e-12)
-    return {"scores": scores, "features": features}
+    head_dim_features = torch.stack(
+        [
+            signed_mean.mean(dim=0),
+            abs_mean.mean(dim=0),
+            rms.mean(dim=0),
+        ],
+        dim=1,
+    ).contiguous()
+    head_dim_scores = abs_mean.mean(dim=0).clamp_min(1e-12)
+    return {
+        "scores": scores,
+        "features": features,
+        "head_dim_scores": head_dim_scores,
+        "head_dim_features": head_dim_features,
+    }
 
 
 def _activation_axis_weights_for_tensor(
@@ -2920,15 +3006,31 @@ def _attention_axis_weights_for_tensor(
 ):
     if activation_profile is None:
         return None
-    stream_and_axis = _attention_stream_and_partition_axis(suffix)
-    if stream_and_axis is None:
+    stream_info = _attention_streams_and_partition_axis(suffix)
+    if stream_info is None:
         return None
-    stream, axis = stream_and_axis
+    stream, dim_stream, axis = stream_info
     head_profiles = activation_profile.get("attention_head_profiles") or {}
+    head_dim_profiles = activation_profile.get("attention_head_dim_profiles") or {}
     layer_group = list(donor_layer_group or [donor_layer_idx])
     layer_group_key = tuple(int(item) for item in layer_group)
     scores = _aggregate_layer_attention_profile(torch, head_profiles, layer_group, stream, "scores", clamp_min=1e-12)
     features = _aggregate_layer_attention_profile(torch, head_profiles, layer_group, stream, "features")
+    head_dim_scores = _aggregate_layer_attention_profile(
+        torch,
+        head_dim_profiles,
+        layer_group,
+        dim_stream,
+        "scores",
+        clamp_min=1e-12,
+    )
+    head_dim_features = _aggregate_layer_attention_profile(
+        torch,
+        head_dim_profiles,
+        layer_group,
+        dim_stream,
+        "features",
+    )
     if scores is None:
         return None
     if axis >= len(donor_tensor.shape):
@@ -2936,25 +3038,40 @@ def _attention_axis_weights_for_tensor(
     source_dim = int(donor_tensor.shape[axis])
     if int(scores.numel()) <= 0 or source_dim % int(scores.numel()) != 0:
         return None
+    source_head_dim = source_dim // int(scores.numel())
+    if head_dim_scores is not None and int(head_dim_scores.numel()) != source_head_dim:
+        head_dim_scores = None
+        head_dim_features = None
     return {
         axis: {
             "weights": scores,
             "features": features,
             "assignment_key": ("attention-heads", stream, layer_group_key),
+            "head_dim_weights": head_dim_scores,
+            "head_dim_features": head_dim_features,
+            "head_dim_assignment_key": ("attention-head-dim", dim_stream, layer_group_key),
         }
     }
 
 
 def _attention_stream_and_partition_axis(suffix: str) -> tuple[str, int] | None:
+    stream_info = _attention_streams_and_partition_axis(suffix)
+    if stream_info is None:
+        return None
+    stream, _dim_stream, axis = stream_info
+    return stream, axis
+
+
+def _attention_streams_and_partition_axis(suffix: str) -> tuple[str, str, int] | None:
     marker = f".{suffix.lower()}"
     if marker.endswith(".q_proj.weight") or marker.endswith(".q_proj.bias"):
-        return "q", 0
+        return "q", "qk", 0
     if marker.endswith(".o_proj.weight") or marker.endswith(".out_proj.weight") or marker.endswith(".attn.c_proj.weight"):
-        return "q", 1
+        return "q", "vo", 1
     if marker.endswith(".k_proj.weight") or marker.endswith(".k_proj.bias"):
-        return "kv", 0
+        return "kv", "qk", 0
     if marker.endswith(".v_proj.weight") or marker.endswith(".v_proj.bias"):
-        return "kv", 0
+        return "kv", "vo", 0
     return None
 
 

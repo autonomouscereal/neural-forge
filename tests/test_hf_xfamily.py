@@ -360,8 +360,10 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "fold",
             "--attention-fold-mode",
             "coupled",
+            "--attention-head-dim-transport",
+            "qk-vo",
             "--token-init-mode",
-            "donor-tokenized",
+            "donor-tokenized-weighted",
             "--projection-scale",
             "target-rms",
             "--projection-blend-alpha",
@@ -716,7 +718,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.transport_backend == "sinkhorn"
     assert donor_init_args.donor_layer_fold_mode == "fold"
     assert donor_init_args.attention_fold_mode == "coupled"
-    assert donor_init_args.token_init_mode == "donor-tokenized"
+    assert donor_init_args.attention_head_dim_transport == "qk-vo"
+    assert donor_init_args.token_init_mode == "donor-tokenized-weighted"
     assert donor_init_args.projection_scale == "target-rms"
     assert donor_init_args.projection_blend_alpha == 0.35
     assert donor_init_args.consumer_hidden_reduction == "sqrt-sum"
@@ -1435,13 +1438,23 @@ def test_attention_head_activation_profile_extracts_per_head_features() -> None:
     assert profile is not None
     assert profile["scores"].tolist() == pytest.approx([2.0, 3.0])
     assert tuple(profile["features"].shape) == (2, 6)
+    assert profile["head_dim_scores"].tolist() == pytest.approx([2.5, 2.5])
+    assert tuple(profile["head_dim_features"].shape) == (2, 3)
 
 
 def test_attention_axis_weights_share_q_and_o_head_profiles() -> None:
     torch = pytest.importorskip("torch")
     q_scores = torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=torch.float32)
     q_features = torch.eye(4, dtype=torch.float32)
+    dim_scores = torch.tensor([2.0, 4.0], dtype=torch.float32)
+    dim_features = torch.eye(2, dtype=torch.float32)
     profile = {"attention_head_profiles": {0: {"q": {"scores": q_scores, "features": q_features}}}}
+    profile["attention_head_dim_profiles"] = {
+        0: {
+            "qk": {"scores": dim_scores, "features": dim_features},
+            "vo": {"scores": dim_scores + 1.0, "features": dim_features.flip(0)},
+        }
+    }
 
     q_weights = _attention_axis_weights_for_tensor(
         torch,
@@ -1465,6 +1478,59 @@ def test_attention_axis_weights_share_q_and_o_head_profiles() -> None:
     assert torch.equal(q_weights[0]["weights"], q_scores)
     assert torch.equal(o_weights[1]["features"], q_features)
     assert q_weights[0]["assignment_key"] == o_weights[1]["assignment_key"]
+    assert torch.equal(q_weights[0]["head_dim_weights"], dim_scores)
+    assert torch.equal(o_weights[1]["head_dim_weights"], dim_scores + 1.0)
+    assert q_weights[0]["head_dim_assignment_key"] != o_weights[1]["head_dim_assignment_key"]
+
+
+def test_attention_qk_and_vo_head_dim_maps_are_cached_separately() -> None:
+    torch = pytest.importorskip("torch")
+    head_scores = torch.tensor([1.0, 2.0], dtype=torch.float32)
+    head_features = torch.eye(2, dtype=torch.float32)
+    dim_scores = torch.tensor([1.0, 1.0], dtype=torch.float32)
+    dim_features = torch.eye(2, dtype=torch.float32)
+    profile = {
+        "attention_head_profiles": {
+            0: {
+                "q": {"scores": head_scores, "features": head_features},
+                "kv": {"scores": head_scores, "features": head_features},
+            }
+        },
+        "attention_head_dim_profiles": {
+            0: {
+                "qk": {"scores": dim_scores, "features": dim_features},
+                "vo": {"scores": dim_scores, "features": dim_features.flip(0)},
+            }
+        },
+    }
+
+    q_weights = _attention_axis_weights_for_tensor(
+        torch,
+        torch.zeros((4, 1), dtype=torch.float32),
+        "self_attn.q_proj.weight",
+        donor_layer_idx=0,
+        donor_layer_group=[0],
+        activation_profile=profile,
+    )
+    k_weights = _attention_axis_weights_for_tensor(
+        torch,
+        torch.zeros((4, 1), dtype=torch.float32),
+        "self_attn.k_proj.weight",
+        donor_layer_idx=0,
+        donor_layer_group=[0],
+        activation_profile=profile,
+    )
+    v_weights = _attention_axis_weights_for_tensor(
+        torch,
+        torch.zeros((4, 1), dtype=torch.float32),
+        "self_attn.v_proj.weight",
+        donor_layer_idx=0,
+        donor_layer_group=[0],
+        activation_profile=profile,
+    )
+
+    assert q_weights[0]["head_dim_assignment_key"] == k_weights[0]["head_dim_assignment_key"]
+    assert q_weights[0]["head_dim_assignment_key"] != v_weights[0]["head_dim_assignment_key"]
 
 
 def test_attention_tensor_activation_coupled_head_assignment_can_cross_position() -> None:
@@ -1500,6 +1566,44 @@ def test_attention_tensor_activation_coupled_head_assignment_can_cross_position(
 
     assert resized is not None
     assert resized.flatten().tolist() == pytest.approx([2.5, 4.5])
+
+
+def test_attention_head_dim_transport_uses_activation_features() -> None:
+    torch = pytest.importorskip("torch")
+    source = torch.arange(4, dtype=torch.float32).reshape(4, 1)
+    donor_config = _Obj(num_attention_heads=1, num_key_value_heads=1)
+    target_config = _Obj(num_attention_heads=1, num_key_value_heads=1)
+    attention_axis_weights = {
+        0: {
+            "weights": torch.ones(1, dtype=torch.float32),
+            "features": torch.ones((1, 1), dtype=torch.float32),
+            "head_dim_weights": torch.ones(4, dtype=torch.float32),
+            "head_dim_features": torch.tensor(
+                [
+                    [1.0, 0.0],
+                    [0.0, 1.0],
+                    [1.0, 0.0],
+                    [0.0, 1.0],
+                ],
+                dtype=torch.float32,
+            ),
+        }
+    }
+
+    resized = _resize_attention_tensor_to_shape(
+        torch,
+        source,
+        (2, 1),
+        "self_attn.q_proj.weight",
+        donor_config,
+        target_config,
+        attention_axis_weights=attention_axis_weights,
+        attention_head_dim_transport="qk-vo",
+        activation_fold_assignment="similarity",
+    )
+
+    assert resized is not None
+    assert resized.flatten().tolist() == pytest.approx([1.0, 2.0], abs=1e-5)
 
 
 def test_fit_linear_weight_from_activation_rows_recovers_mapping() -> None:
@@ -3002,8 +3106,10 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "average",
             "--attention-fold-mode",
             "activation-coupled",
+            "--attention-head-dim-transport",
+            "qk-vo",
             "--token-init-mode",
-            "donor-tokenized",
+            "donor-tokenized-weighted",
             "--projection-scale",
             "target-rms",
             "--projection-blend-alpha",
@@ -3053,7 +3159,8 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "transport_backend": "sparse",
         "donor_layer_fold_mode": "average",
         "attention_fold_mode": "activation-coupled",
-        "token_init_mode": "donor-tokenized",
+        "attention_head_dim_transport": "qk-vo",
+        "token_init_mode": "donor-tokenized-weighted",
         "projection_scale": "target-rms",
         "projection_blend_alpha": 0.25,
         "consumer_hidden_reduction": "sqrt-sum",

@@ -154,6 +154,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fold attention Q/K/V/O projection head partitions together; activation-coupled also routes donor heads by calibration features.",
     )
     hf_donor_init.add_argument(
+        "--attention-head-dim-transport",
+        choices=["none", "qk-vo"],
+        default="none",
+        help="Use activation transport for per-head dimensions, sharing one map for Q/K and one for V/O.",
+    )
+    hf_donor_init.add_argument(
         "--token-init-mode",
         choices=["shared", "donor-tokenized", "donor-tokenized-weighted"],
         default="shared",
@@ -1169,6 +1175,7 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         transport_backend=args.transport_backend,
         donor_layer_fold_mode=args.donor_layer_fold_mode,
         attention_fold_mode=args.attention_fold_mode,
+        attention_head_dim_transport=args.attention_head_dim_transport,
         token_init_mode=args.token_init_mode,
         projection_scale=args.projection_scale,
         projection_blend_alpha=args.projection_blend_alpha,
