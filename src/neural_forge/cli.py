@@ -141,6 +141,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=1.0,
         help="Blend folded parent tensors with the target child tensors after projection; 1.0 fully replaces target.",
     )
+    hf_donor_init.add_argument(
+        "--untie-output-head",
+        action="store_true",
+        help="Keep a separate donor-projected lm_head instead of tying it back to input embeddings.",
+    )
     hf_donor_init.add_argument("--activation-calibration-file")
     hf_donor_init.add_argument("--activation-max-calibration-texts", type=int)
     hf_donor_init.add_argument("--activation-max-length", type=int, default=128)
@@ -928,6 +933,7 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         token_init_mode=args.token_init_mode,
         projection_scale=args.projection_scale,
         projection_blend_alpha=args.projection_blend_alpha,
+        untie_output_head=args.untie_output_head,
         activation_calibration_texts=activation_calibration_texts,
         activation_max_length=args.activation_max_length,
         activation_device=args.activation_device,

@@ -43,6 +43,7 @@ from neural_forge.hf_xfamily import _resize_tensor_to_shape
 from neural_forge.hf_xfamily import _scale_projection_to_target
 from neural_forge.hf_xfamily import _select_compression_candidates
 from neural_forge.hf_xfamily import _target_to_donor_token_groups
+from neural_forge.hf_xfamily import _untie_output_head
 from neural_forge.hf_xfamily import _usable_pipeline_candidates
 from neural_forge.hf_xfamily import _validate_channel_assignment
 from neural_forge.hf_xfamily import _validate_layer_alpha_settings
@@ -279,6 +280,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "target-rms",
             "--projection-blend-alpha",
             "0.35",
+            "--untie-output-head",
             "--activation-calibration-file",
             "activation.jsonl",
             "--activation-max-calibration-texts",
@@ -505,6 +507,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.token_init_mode == "donor-tokenized"
     assert donor_init_args.projection_scale == "target-rms"
     assert donor_init_args.projection_blend_alpha == 0.35
+    assert donor_init_args.untie_output_head is True
     assert donor_init_args.activation_calibration_file == "activation.jsonl"
     assert donor_init_args.activation_max_calibration_texts == 5
     assert donor_init_args.activation_max_length == 80
@@ -1030,6 +1033,40 @@ def test_stratified_anchor_selection_prefers_wordlike_spread() -> None:
     assert "," not in selected
 
 
+def test_untie_output_head_clones_shared_embedding_weight() -> None:
+    torch = pytest.importorskip("torch")
+
+    class _Config:
+        tie_word_embeddings = True
+
+    class _Model:
+        def __init__(self) -> None:
+            self.config = _Config()
+            self.embed = torch.nn.Embedding(3, 4)
+            self.head = torch.nn.Linear(4, 3, bias=False)
+            self.head.weight = self.embed.weight
+
+        def get_input_embeddings(self):
+            return self.embed
+
+        def get_output_embeddings(self):
+            return self.head
+
+        def set_output_embeddings(self, value):
+            self.head = value
+
+    model = _Model()
+    old_ptr = model.get_output_embeddings().weight.data_ptr()
+
+    changed = _untie_output_head(torch, model)
+
+    assert changed is True
+    assert model.config.tie_word_embeddings is False
+    assert model.get_input_embeddings().weight.data_ptr() == old_ptr
+    assert model.get_output_embeddings().weight.data_ptr() != old_ptr
+    assert torch.allclose(model.get_output_embeddings().weight.detach(), model.get_input_embeddings().weight.detach())
+
+
 def test_cross_tokenizer_recovery_loss_uses_anchor_subspace() -> None:
     torch = pytest.importorskip("torch")
     student = _Obj(logits=torch.randn(1, 4, 7))
@@ -1374,6 +1411,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "target-rms",
             "--projection-blend-alpha",
             "0.25",
+            "--untie-output-head",
             "--activation-calibration-file",
             "activation.jsonl",
             "--activation-max-calibration-texts",
@@ -1405,6 +1443,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "token_init_mode": "donor-tokenized",
         "projection_scale": "target-rms",
         "projection_blend_alpha": 0.25,
+        "untie_output_head": True,
         "activation_calibration_texts": ["activation text"],
         "activation_max_length": 64,
         "activation_device": "cpu",

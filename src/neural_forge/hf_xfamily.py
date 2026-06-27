@@ -256,6 +256,7 @@ def donor_projected_init(
     token_init_mode: str = "shared",
     projection_scale: str = "none",
     projection_blend_alpha: float = 1.0,
+    untie_output_head: bool = False,
     activation_calibration_texts: list[str] | None = None,
     activation_max_length: int = 128,
     activation_device: str = "cuda:0",
@@ -297,6 +298,8 @@ def donor_projected_init(
     dtype = _dtype_from_name(torch, torch_dtype)
     torch.manual_seed(int(seed))
     config = transformers.AutoConfig.from_pretrained(target_config_model, trust_remote_code=trust_remote_code)
+    if untie_output_head and hasattr(config, "tie_word_embeddings"):
+        config.tie_word_embeddings = False
     if target_base_model:
         target = transformers.AutoModelForCausalLM.from_pretrained(
             target_base_model,
@@ -317,6 +320,8 @@ def donor_projected_init(
     donor_tokenizer = transformers.AutoTokenizer.from_pretrained(donor_model, trust_remote_code=trust_remote_code)
     if target.get_input_embeddings() is not None and target.get_input_embeddings().num_embeddings != len(target_tokenizer):
         target.resize_token_embeddings(len(target_tokenizer))
+    if untie_output_head:
+        _untie_output_head(torch, target)
     if dtype is not None:
         target.to(dtype=dtype)
 
@@ -465,7 +470,7 @@ def donor_projected_init(
         projection_scale=projection_scale,
         projection_blend_alpha=projection_blend_alpha,
     )
-    if getattr(target.config, "tie_word_embeddings", False):
+    if getattr(target.config, "tie_word_embeddings", False) and not untie_output_head:
         target.tie_weights()
 
     output = Path(output_dir)
@@ -489,6 +494,7 @@ def donor_projected_init(
         "token_init_mode": token_init_mode,
         "projection_scale": projection_scale,
         "projection_blend_alpha": projection_blend_alpha,
+        "untie_output_head": bool(untie_output_head),
         "activation_calibration_text_count": len(activation_calibration_texts or []),
         "activation_max_length": activation_max_length,
         "activation_device": activation_device if activation_calibration_texts else None,
@@ -1920,6 +1926,34 @@ def _collect_donor_axis_activation_scores(
 def _activation_abs_score(torch, tensor):
     values = _activation_2d(torch, tensor)
     return values.abs().mean(dim=0)
+
+
+def _untie_output_head(torch, model) -> bool:
+    input_embeddings = model.get_input_embeddings()
+    output_embeddings = model.get_output_embeddings()
+    if input_embeddings is None or output_embeddings is None:
+        return False
+    if getattr(output_embeddings, "weight", None) is None:
+        return False
+    if output_embeddings.weight.data_ptr() != input_embeddings.weight.data_ptr():
+        if hasattr(model.config, "tie_word_embeddings"):
+            model.config.tie_word_embeddings = False
+        return False
+    bias = getattr(output_embeddings, "bias", None)
+    new_head = torch.nn.Linear(
+        int(output_embeddings.weight.shape[1]),
+        int(output_embeddings.weight.shape[0]),
+        bias=bias is not None,
+        device=output_embeddings.weight.device,
+        dtype=output_embeddings.weight.dtype,
+    )
+    new_head.weight.data.copy_(output_embeddings.weight.data.detach().clone())
+    if bias is not None:
+        new_head.bias.data.copy_(bias.data.detach().clone())
+    model.set_output_embeddings(new_head)
+    if hasattr(model.config, "tie_word_embeddings"):
+        model.config.tie_word_embeddings = False
+    return True
 
 
 def _activation_2d(torch, tensor):
