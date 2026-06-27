@@ -1107,3 +1107,78 @@ Interpretation:
   should fit post-fold reconstruction maps from calibration activations,
   preferably layer-by-layer after recomputing downstream activations, and/or
   use optimal-transport matching instead of hard round-robin activation bins.
+
+### Activation-Similarity Folding Follow-up
+
+After the scalar activation-weighted fold still collapsed, `hf-donor-project-init`
+was extended with `--activation-fold-assignment similarity`. This collects
+per-channel activation signatures and clusters similar source dimensions
+together before folding, instead of spreading high-activation channels across
+bins by scalar rank alone.
+
+Run:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_projected_activation_similarity_smollm135m_20260627_210408
+```
+
+Setup:
+
+- target config/tokenizer: `HuggingFaceTB/SmolLM2-135M`;
+- donor: `Qwen/Qwen3-4B-Base`;
+- target params: `134,515,008`;
+- fold mode: `mean`;
+- activation fold assignment: `similarity`;
+- calibration: 8 curated Omnicoder JSONL texts, max length `96`, activations
+  collected on `cuda:0`;
+- token rows initialized: `30,000` embedding rows and `30,000` LM-head rows.
+
+Neural Forge probes:
+
+| Model | Mean PPL | Choice Acc | Strict Generation Gate | Manual output |
+|---|---:|---:|---|---|
+| random SmolLM2 target | 88,650.193 | 0.00 | baseline | nonsensical |
+| scalar activation-weighted fold | 80,711.923 | 0.25 | failed | repeated `entropy`, `remission`, `polymerase` |
+| activation-similarity fold | 59,140.629 | 0.00 | failed | repeated `conve` / `Ceres` |
+| activation-similarity + LM-only recovery | 32,577.546 | 0.25 | failed | repeated `Investigations.` |
+| random target + same LM-only recovery | 88,810.565 | 0.00 | failed | random token salad |
+
+Strict gate against the random target failed for the activation-similarity fold:
+
+```text
+perplexity_ratio: passed, 0.667
+choice_accuracy_floor: failed, 0.00 < 0.25
+generation_health: failed, unique token ratio about 0.04 and prompt relevance failed
+```
+
+LM-only recovery used 64 curated texts, `30` steps, `last1` train scope, and no
+teacher (`kd_weight=0`, `lm_weight=1`). It improved the folded model far more
+than the random control on PPL and the lightweight choice probe, but the manual
+generations still collapsed into a repeated token. This is evidence of donor
+initialization signal, not a coherent compressed model.
+
+Benchmark slice (`arc_easy`, `hellaswag`, `piqa`, `winogrande`, limit 50):
+
+| Model | ARC-Easy Acc / Norm | HellaSwag Acc / Norm | PIQA Acc / Norm | Winogrande Acc |
+|---|---:|---:|---:|---:|
+| random SmolLM2 target | 0.20 / 0.22 | 0.22 / 0.30 | 0.56 / 0.58 | 0.46 |
+| activation-similarity fold | 0.18 / 0.30 | 0.24 / 0.30 | 0.52 / 0.52 | 0.54 |
+| activation-similarity + LM-only recovery | 0.16 / 0.30 | 0.26 / 0.30 | 0.54 / 0.56 | 0.46 |
+| random target + same LM-only recovery | 0.20 / 0.22 | 0.22 / 0.28 | 0.60 / 0.58 | 0.46 |
+
+Interpretation:
+
+- Activation-similarity folding improved the internal PPL probe over scalar
+  activation weighting (`80,711.923 -> 59,140.629`) and over random
+  (`88,650.193 -> 59,140.629`), but it did not improve coherence.
+- LM-only recovery amplified the folded model's PPL advantage over the random
+  control (`32,577.546` vs `88,810.565`) and recovered one lightweight choice
+  item, but it did not repair decoding collapse.
+- The external benchmark slice is mixed and low-confidence at limit 50. It does
+  not justify calling the model useful. Manual generations remain the blocking
+  failure.
+- The next implementation should follow GRAIL-style post-fold linear
+  reconstruction: fold/merge first, collect calibration activations, solve a
+  ridge/Gram map that reconstructs pre-fold block outputs from post-fold block
+  outputs, and apply it sequentially layer by layer with activations recomputed
+  after each repaired layer.
