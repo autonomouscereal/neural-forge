@@ -508,6 +508,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--lm-weight", type=float, default=0.5)
     xfamily_recover.add_argument("--hidden-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--span-kd-weight", type=float, default=0.0)
+    xfamily_recover.add_argument("--span-hidden-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--reference-model")
     xfamily_recover.add_argument("--reference-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--unlikelihood-weight", type=float, default=0.0)
@@ -519,6 +520,8 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--hidden-max-anchors", type=int, default=2048)
     xfamily_recover.add_argument("--temperature", type=float, default=2.0)
     xfamily_recover.add_argument("--max-anchors", type=int, default=20_000)
+    xfamily_recover.add_argument("--anchor-selection", choices=["shortest", "longest", "stratified"], default="stratified")
+    xfamily_recover.add_argument("--anchor-min-chars", type=int, default=1)
     xfamily_recover.add_argument("--train-scope", default="last1")
     xfamily_recover.add_argument("--dtype", default="float32")
     xfamily_recover.add_argument("--candidate-dtype", default="float32")
@@ -1158,6 +1161,7 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         lm_weight=args.lm_weight,
         hidden_kd_weight=args.hidden_kd_weight,
         span_kd_weight=args.span_kd_weight,
+        span_hidden_kd_weight=args.span_hidden_kd_weight,
         reference_model=args.reference_model,
         reference_kd_weight=args.reference_kd_weight,
         unlikelihood_weight=args.unlikelihood_weight,
@@ -1169,6 +1173,8 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         hidden_max_anchors=args.hidden_max_anchors,
         temperature=args.temperature,
         max_anchors=args.max_anchors,
+        anchor_selection=args.anchor_selection,
+        anchor_min_chars=args.anchor_min_chars,
         train_scope=args.train_scope,
         torch_dtype=args.dtype,
         candidate_torch_dtype=args.candidate_dtype,

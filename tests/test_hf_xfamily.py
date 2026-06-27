@@ -16,6 +16,7 @@ from neural_forge.hf_recovery import _fold_groups_from_report
 from neural_forge.hf_recovery import _mlp_projection_spec
 from neural_forge.hf_recovery import _recovery_loss
 from neural_forge.hf_recovery import _recent_token_unlikelihood_loss
+from neural_forge.hf_recovery import _select_anchor_tokens
 from neural_forge.hf_recovery import _set_train_scope
 from neural_forge.hf_recovery import _same_tokenizer_reference_loss
 from neural_forge.hf_recovery import load_calibration_texts
@@ -437,6 +438,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.2",
             "--span-kd-weight",
             "0.15",
+            "--span-hidden-kd-weight",
+            "0.12",
             "--reference-model",
             "host-reference",
             "--reference-kd-weight",
@@ -459,6 +462,10 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "1.5",
             "--max-anchors",
             "123",
+            "--anchor-selection",
+            "longest",
+            "--anchor-min-chars",
+            "3",
             "--train-scope",
             "last2",
             "--dtype",
@@ -557,11 +564,14 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_recover_args.lm_weight == 0.3
     assert xfamily_recover_args.hidden_kd_weight == 0.2
     assert xfamily_recover_args.span_kd_weight == 0.15
+    assert xfamily_recover_args.span_hidden_kd_weight == 0.12
     assert xfamily_recover_args.span_max_pairs == 66
     assert xfamily_recover_args.hidden_ridge == 0.02
     assert xfamily_recover_args.hidden_layer == "middle"
     assert xfamily_recover_args.hidden_max_anchors == 77
     assert xfamily_recover_args.max_anchors == 123
+    assert xfamily_recover_args.anchor_selection == "longest"
+    assert xfamily_recover_args.anchor_min_chars == 3
     assert xfamily_recover_args.train_scope == "last2"
     assert xfamily_recover_args.dtype == "float16"
     assert xfamily_recover_args.candidate_dtype == "float32"
@@ -1007,6 +1017,16 @@ def test_recent_token_unlikelihood_penalizes_context_repeats() -> None:
     assert float(loss) > 1.0
 
 
+def test_stratified_anchor_selection_prefers_wordlike_spread() -> None:
+    tokens = ["!", ",", "a", "in", "cat", "merge", "neuron", "activation", "compression", "zz"]
+
+    selected = _select_anchor_tokens(tokens, max_anchors=5, selection="stratified")
+
+    assert selected[:3] == ["merge", "neuron", "activation"]
+    assert "!" not in selected
+    assert "," not in selected
+
+
 def test_cross_tokenizer_recovery_loss_uses_anchor_subspace() -> None:
     torch = pytest.importorskip("torch")
     student = _Obj(logits=torch.randn(1, 4, 7))
@@ -1028,6 +1048,7 @@ def test_cross_tokenizer_recovery_loss_uses_anchor_subspace() -> None:
         lm_weight=0.3,
         hidden_kd_weight=0.0,
         span_kd_weight=0.0,
+        span_hidden_kd_weight=0.0,
         reference_kd_weight=0.0,
         unlikelihood_weight=0.0,
         unlikelihood_window=2,
@@ -1070,6 +1091,7 @@ def test_cross_tokenizer_recovery_loss_uses_projected_hidden_states() -> None:
         lm_weight=0.2,
         hidden_kd_weight=0.7,
         span_kd_weight=0.0,
+        span_hidden_kd_weight=0.0,
         reference_kd_weight=0.0,
         unlikelihood_weight=0.0,
         unlikelihood_window=2,
@@ -1132,6 +1154,7 @@ def test_cross_tokenizer_recovery_loss_uses_span_pairs() -> None:
         lm_weight=0.2,
         hidden_kd_weight=0.0,
         span_kd_weight=0.8,
+        span_hidden_kd_weight=0.0,
         reference_kd_weight=0.0,
         unlikelihood_weight=0.0,
         unlikelihood_window=2,
@@ -1489,6 +1512,8 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "0.25",
             "--span-kd-weight",
             "0.15",
+            "--span-hidden-kd-weight",
+            "0.12",
             "--reference-model",
             "host-reference",
             "--reference-kd-weight",
@@ -1511,6 +1536,10 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "1.7",
             "--max-anchors",
             "321",
+            "--anchor-selection",
+            "stratified",
+            "--anchor-min-chars",
+            "2",
             "--train-scope",
             "last2",
             "--dtype",
@@ -1542,6 +1571,7 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "lm_weight": 0.4,
         "hidden_kd_weight": 0.25,
         "span_kd_weight": 0.15,
+        "span_hidden_kd_weight": 0.12,
         "reference_model": "host-reference",
         "reference_kd_weight": 0.2,
         "unlikelihood_weight": 0.11,
@@ -1553,6 +1583,8 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "hidden_max_anchors": 99,
         "temperature": 1.7,
         "max_anchors": 321,
+        "anchor_selection": "stratified",
+        "anchor_min_chars": 2,
         "train_scope": "last2",
         "torch_dtype": "float16",
         "candidate_torch_dtype": "float32",

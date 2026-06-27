@@ -194,6 +194,7 @@ def recover_cross_tokenizer_causal_lm(
     lm_weight: float = 0.5,
     hidden_kd_weight: float = 0.0,
     span_kd_weight: float = 0.0,
+    span_hidden_kd_weight: float = 0.0,
     reference_model: str | None = None,
     reference_kd_weight: float = 0.0,
     unlikelihood_weight: float = 0.0,
@@ -205,6 +206,8 @@ def recover_cross_tokenizer_causal_lm(
     hidden_max_anchors: int = 2048,
     temperature: float = 2.0,
     max_anchors: int = 20_000,
+    anchor_selection: str = "stratified",
+    anchor_min_chars: int = 1,
     train_scope: str = "last1",
     torch_dtype: str = "float32",
     candidate_torch_dtype: str = "float32",
@@ -235,6 +238,7 @@ def recover_cross_tokenizer_causal_lm(
         or lm_weight < 0
         or hidden_kd_weight < 0
         or span_kd_weight < 0
+        or span_hidden_kd_weight < 0
         or reference_kd_weight < 0
         or unlikelihood_weight < 0
         or entropy_weight < 0
@@ -245,6 +249,7 @@ def recover_cross_tokenizer_causal_lm(
         and lm_weight == 0
         and hidden_kd_weight == 0
         and span_kd_weight == 0
+        and span_hidden_kd_weight == 0
         and reference_kd_weight == 0
         and unlikelihood_weight == 0
         and entropy_weight == 0
@@ -266,6 +271,10 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("temperature must be positive.")
     if max_anchors <= 0:
         raise ValueError("max_anchors must be positive.")
+    if anchor_selection not in {"shortest", "longest", "stratified"}:
+        raise ValueError("anchor_selection must be shortest, longest, or stratified.")
+    if anchor_min_chars <= 0:
+        raise ValueError("anchor_min_chars must be positive.")
     if grad_clip < 0:
         raise ValueError("grad_clip must be non-negative.")
 
@@ -282,7 +291,14 @@ def recover_cross_tokenizer_causal_lm(
     if candidate_tokenizer.pad_token_id is None and candidate_tokenizer.eos_token_id is not None:
         candidate_tokenizer.pad_token = candidate_tokenizer.eos_token
 
-    anchors = _shared_recovery_anchors(source_tokenizer, candidate_tokenizer, max_anchors, _canonical_token_map)
+    anchors = _shared_recovery_anchors(
+        source_tokenizer,
+        candidate_tokenizer,
+        max_anchors,
+        _canonical_token_map,
+        selection=anchor_selection,
+        min_chars=anchor_min_chars,
+    )
     if not anchors:
         raise ValueError("No shared decoded-token anchors found for cross-tokenizer recovery.")
     source_anchor_idx = torch.tensor([item[1] for item in anchors], dtype=torch.long, device=device)
@@ -329,7 +345,7 @@ def recover_cross_tokenizer_causal_lm(
 
     hidden_projection_report = None
     hidden_projection = None
-    if hidden_kd_weight > 0:
+    if hidden_kd_weight > 0 or span_hidden_kd_weight > 0:
         hidden_projection_report = _fit_shared_embedding_hidden_projection(
             torch,
             source,
@@ -354,7 +370,7 @@ def recover_cross_tokenizer_causal_lm(
         batch_size=batch_size,
         max_length=max_length,
         device=device,
-        include_offsets=span_kd_weight > 0,
+        include_offsets=span_kd_weight > 0 or span_hidden_kd_weight > 0,
     )
 
     losses = []
@@ -366,7 +382,7 @@ def recover_cross_tokenizer_causal_lm(
             teacher = source(
                 **_model_forward_inputs(source_batch),
                 use_cache=False,
-                output_hidden_states=hidden_kd_weight > 0,
+                output_hidden_states=hidden_kd_weight > 0 or span_hidden_kd_weight > 0,
             )
             reference_teacher = None
             if reference is not None:
@@ -377,10 +393,10 @@ def recover_cross_tokenizer_causal_lm(
         student = candidate(
             **_model_forward_inputs(candidate_batch),
             use_cache=False,
-            output_hidden_states=hidden_kd_weight > 0,
+            output_hidden_states=hidden_kd_weight > 0 or span_hidden_kd_weight > 0,
         )
         span_pairs = None
-        if span_kd_weight > 0:
+        if span_kd_weight > 0 or span_hidden_kd_weight > 0:
             span_pairs = _cross_tokenizer_span_pairs(
                 torch,
                 source_tokenizer,
@@ -404,6 +420,7 @@ def recover_cross_tokenizer_causal_lm(
             lm_weight,
             hidden_kd_weight,
             span_kd_weight,
+            span_hidden_kd_weight,
             reference_kd_weight,
             unlikelihood_weight,
             unlikelihood_window,
@@ -440,6 +457,7 @@ def recover_cross_tokenizer_causal_lm(
         "lm_weight": lm_weight,
         "hidden_kd_weight": hidden_kd_weight,
         "span_kd_weight": span_kd_weight,
+        "span_hidden_kd_weight": span_hidden_kd_weight,
         "reference_model": reference_model,
         "reference_kd_weight": reference_kd_weight,
         "unlikelihood_weight": unlikelihood_weight,
@@ -454,6 +472,8 @@ def recover_cross_tokenizer_causal_lm(
         and {key: value for key, value in hidden_projection_report.items() if key != "map"},
         "temperature": temperature,
         "max_anchors": max_anchors,
+        "anchor_selection": anchor_selection,
+        "anchor_min_chars": anchor_min_chars,
         "anchors_used": len(anchors),
         "train_scope": train_scope,
         "torch_dtype": torch_dtype,
@@ -871,11 +891,76 @@ def _decoded_token(tokenizer, token_id: int, canonical_fn) -> str:
     return canonical_fn(decoded)
 
 
-def _shared_recovery_anchors(source_tokenizer, candidate_tokenizer, max_anchors: int, map_fn) -> list[tuple[str, int, int]]:
+def _shared_recovery_anchors(
+    source_tokenizer,
+    candidate_tokenizer,
+    max_anchors: int,
+    map_fn,
+    selection: str = "stratified",
+    min_chars: int = 1,
+) -> list[tuple[str, int, int]]:
     source_map = map_fn(source_tokenizer)
     candidate_map = map_fn(candidate_tokenizer)
-    shared = sorted(set(source_map) & set(candidate_map), key=lambda item: (len(item), item))
-    return [(token, source_map[token], candidate_map[token]) for token in shared[:max_anchors]]
+    shared_all = list(set(source_map) & set(candidate_map))
+    shared = [token for token in shared_all if len(token.strip()) >= int(min_chars)]
+    if not shared:
+        shared = shared_all
+    ordered = _select_anchor_tokens(shared, max_anchors=max_anchors, selection=selection)
+    return [(token, source_map[token], candidate_map[token]) for token in ordered]
+
+
+def _select_anchor_tokens(tokens: Sequence[str], max_anchors: int, selection: str = "stratified") -> list[str]:
+    if max_anchors <= 0:
+        raise ValueError("max_anchors must be positive.")
+    unique = sorted(set(tokens))
+    if selection == "shortest":
+        return sorted(unique, key=lambda item: (len(item), item))[:max_anchors]
+    if selection == "longest":
+        return sorted(unique, key=lambda item: (-len(item), item))[:max_anchors]
+    if selection != "stratified":
+        raise ValueError("selection must be shortest, longest, or stratified.")
+
+    buckets: dict[int, list[str]] = {idx: [] for idx in range(7)}
+    for token in unique:
+        length = len(token.strip())
+        if length <= 1:
+            bucket = 0
+        elif length == 2:
+            bucket = 1
+        elif length == 3:
+            bucket = 2
+        elif length <= 5:
+            bucket = 3
+        elif length <= 8:
+            bucket = 4
+        elif length <= 12:
+            bucket = 5
+        else:
+            bucket = 6
+        buckets[bucket].append(token)
+    for bucket_tokens in buckets.values():
+        bucket_tokens.sort(key=_anchor_token_priority)
+
+    selected: list[str] = []
+    bucket_order = [3, 4, 5, 2, 6, 1, 0]
+    while len(selected) < max_anchors:
+        changed = False
+        for bucket in bucket_order:
+            if buckets[bucket]:
+                selected.append(buckets[bucket].pop(0))
+                changed = True
+                if len(selected) >= max_anchors:
+                    break
+        if not changed:
+            break
+    return selected
+
+
+def _anchor_token_priority(token: str) -> tuple[int, int, str]:
+    stripped = token.strip()
+    has_alnum = any(ch.isalnum() for ch in stripped)
+    has_alpha = any(ch.isalpha() for ch in stripped)
+    return (0 if has_alpha else 1 if has_alnum else 2, abs(len(stripped) - 6), stripped)
 
 
 def _fit_shared_embedding_hidden_projection(
@@ -1628,6 +1713,7 @@ def _cross_tokenizer_recovery_loss(
     lm_weight: float,
     hidden_kd_weight: float,
     span_kd_weight: float,
+    span_hidden_kd_weight: float,
     reference_kd_weight: float,
     unlikelihood_weight: float,
     unlikelihood_window: int,
@@ -1694,6 +1780,18 @@ def _cross_tokenizer_recovery_loss(
             temperature,
         )
         total = total + float(span_kd_weight) * span
+    if span_hidden_kd_weight > 0 and span_pairs is not None and int(span_pairs.numel()) > 0:
+        if hidden_projection is None:
+            raise ValueError("hidden_projection is required when span_hidden_kd_weight is positive.")
+        span_hidden = _cross_tokenizer_span_hidden_loss(
+            torch,
+            student,
+            teacher,
+            span_pairs,
+            hidden_projection,
+            hidden_layer,
+        )
+        total = total + float(span_hidden_kd_weight) * span_hidden
     if reference_kd_weight > 0:
         if reference_teacher is None:
             raise ValueError("reference_teacher is required when reference_kd_weight is positive.")
@@ -1832,6 +1930,31 @@ def _cross_tokenizer_hidden_loss(
     teacher_pooled = _masked_mean_hidden(torch, teacher_hidden, source_attention_mask)
     teacher_projected = teacher_pooled.matmul(hidden_projection.to(device=teacher_pooled.device, dtype=torch.float32))
     student_norm = _normalize_hidden_rows(torch, student_pooled)
+    teacher_norm = _normalize_hidden_rows(torch, teacher_projected)
+    cosine = torch.nn.functional.cosine_similarity(student_norm, teacher_norm, dim=-1, eps=1e-8)
+    cosine_loss = 1.0 - cosine.mean()
+    mse_loss = torch.nn.functional.mse_loss(student_norm, teacher_norm)
+    return 0.5 * cosine_loss + 0.5 * mse_loss
+
+
+def _cross_tokenizer_span_hidden_loss(
+    torch,
+    student,
+    teacher,
+    span_pairs,
+    hidden_projection,
+    hidden_layer: str,
+):
+    student_hidden = _select_hidden_state(student.hidden_states, hidden_layer)
+    teacher_hidden = _select_hidden_state(teacher.hidden_states, hidden_layer)
+    pair_idx = span_pairs.to(device=student_hidden.device, dtype=torch.long)
+    batch_idx = pair_idx[:, 0]
+    candidate_pos = pair_idx[:, 1]
+    source_pos = pair_idx[:, 2]
+    student_rows = student_hidden[batch_idx, candidate_pos].to(torch.float32)
+    teacher_rows = teacher_hidden[batch_idx, source_pos].to(torch.float32)
+    teacher_projected = teacher_rows.matmul(hidden_projection.to(device=teacher_rows.device, dtype=torch.float32))
+    student_norm = _normalize_hidden_rows(torch, student_rows)
     teacher_norm = _normalize_hidden_rows(torch, teacher_projected)
     cosine = torch.nn.functional.cosine_similarity(student_norm, teacher_norm, dim=-1, eps=1e-8)
     cosine_loss = 1.0 - cosine.mean()
