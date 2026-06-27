@@ -47,6 +47,8 @@ def recover_causal_lm(
     trust_remote_code: bool = False,
     calibration_texts: Sequence[str] | None = None,
     grad_clip: float = 1.0,
+    report_interval: int | None = None,
+    save_best_loss: bool = False,
 ) -> dict[str, Any]:
     """Run a short recovery pass after surgery.
 
@@ -74,6 +76,8 @@ def recover_causal_lm(
         raise ValueError("temperature must be positive.")
     if grad_clip < 0:
         raise ValueError("grad_clip must be non-negative.")
+    if report_interval is not None and report_interval <= 0:
+        raise ValueError("report_interval must be positive when provided.")
 
     if kd_weight > 0 and not source_model:
         raise ValueError("source_model is required when kd_weight is positive.")
@@ -121,6 +125,10 @@ def recover_causal_lm(
     batches = _make_batches(tokenizer, texts, batch_size=batch_size, max_length=max_length, device=device)
 
     losses = []
+    interval = int(report_interval or max(1, steps // 10))
+    best_loss = None
+    best_step = None
+    best_state = None
     for step in range(1, steps + 1):
         batch = batches[(step - 1) % len(batches)]
         optimizer.zero_grad(set_to_none=True)
@@ -148,8 +156,17 @@ def recover_causal_lm(
         if grad_clip > 0:
             torch.nn.utils.clip_grad_norm_([p for p in candidate.parameters() if p.requires_grad], grad_clip)
         optimizer.step()
-        if step == 1 or step % max(1, steps // 10) == 0:
-            losses.append({"step": step, "loss": float(loss.detach().cpu())})
+        if step == 1 or step % interval == 0 or step == steps:
+            loss_value = float(loss.detach().cpu())
+            losses.append({"step": step, "loss": loss_value})
+            print(f"recover step={step} loss={loss_value:.6f}", flush=True)
+            if save_best_loss and (best_loss is None or loss_value < best_loss):
+                best_loss = loss_value
+                best_step = int(step)
+                best_state = {key: value.detach().cpu().clone() for key, value in candidate.state_dict().items()}
+
+    if save_best_loss and best_state is not None:
+        candidate.load_state_dict(best_state)
 
     target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)
@@ -170,6 +187,10 @@ def recover_causal_lm(
         "unlikelihood_window": unlikelihood_window,
         "entropy_weight": entropy_weight,
         "temperature": temperature,
+        "report_interval": interval,
+        "save_best_loss": save_best_loss,
+        "best_loss": best_loss,
+        "best_step": best_step,
         "teacher_used": source_model is not None and kd_weight > 0,
         "train_scope": train_scope,
         "trainable_param_count": trainable_params,
@@ -217,6 +238,8 @@ def recover_cross_tokenizer_causal_lm(
     trust_remote_code: bool = False,
     calibration_texts: Sequence[str] | None = None,
     grad_clip: float = 1.0,
+    report_interval: int | None = None,
+    save_best_loss: bool = False,
 ) -> dict[str, Any]:
     """Recover a cross-tokenizer folded child against donor anchor logits.
 
@@ -283,6 +306,8 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("anchor_min_chars must be positive.")
     if grad_clip < 0:
         raise ValueError("grad_clip must be non-negative.")
+    if report_interval is not None and report_interval <= 0:
+        raise ValueError("report_interval must be positive when provided.")
 
     from neural_forge.hf_xfamily import _canonical_token
     from neural_forge.hf_xfamily import _canonical_token_map
@@ -392,6 +417,10 @@ def recover_cross_tokenizer_causal_lm(
 
     losses = []
     span_pair_counts = []
+    interval = int(report_interval or max(1, steps // 10))
+    best_loss = None
+    best_step = None
+    best_state = None
     for step in range(1, steps + 1):
         source_batch, candidate_batch = batches[(step - 1) % len(batches)]
         optimizer.zero_grad(set_to_none=True)
@@ -458,8 +487,21 @@ def recover_cross_tokenizer_causal_lm(
         if grad_clip > 0:
             torch.nn.utils.clip_grad_norm_([p for p in candidate.parameters() if p.requires_grad], grad_clip)
         optimizer.step()
-        if step == 1 or step % max(1, steps // 10) == 0:
-            losses.append({"step": step, "loss": float(loss.detach().cpu())})
+        if step == 1 or step % interval == 0 or step == steps:
+            loss_value = float(loss.detach().cpu())
+            losses.append({"step": step, "loss": loss_value})
+            print(
+                f"xfamily_recover step={step} loss={loss_value:.6f} "
+                f"span_pairs={span_pair_counts[-1] if span_pair_counts else 0}",
+                flush=True,
+            )
+            if save_best_loss and (best_loss is None or loss_value < best_loss):
+                best_loss = loss_value
+                best_step = int(step)
+                best_state = {key: value.detach().cpu().clone() for key, value in candidate.state_dict().items()}
+
+    if save_best_loss and best_state is not None:
+        candidate.load_state_dict(best_state)
 
     target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)
@@ -486,6 +528,10 @@ def recover_cross_tokenizer_causal_lm(
         "unlikelihood_weight": unlikelihood_weight,
         "unlikelihood_window": unlikelihood_window,
         "entropy_weight": entropy_weight,
+        "report_interval": interval,
+        "save_best_loss": save_best_loss,
+        "best_loss": best_loss,
+        "best_step": best_step,
         "span_max_pairs": span_max_pairs,
         "span_pair_count_observed": span_pair_counts,
         "hidden_ridge": hidden_ridge,

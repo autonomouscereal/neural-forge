@@ -485,6 +485,9 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "cpu",
             "--grad-clip",
             "0.4",
+            "--report-interval",
+            "5",
+            "--save-best-loss",
             "--calibration-file",
             "calibration.jsonl",
             "--max-calibration-texts",
@@ -588,6 +591,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_recover_args.train_scope == "last2"
     assert xfamily_recover_args.dtype == "float16"
     assert xfamily_recover_args.candidate_dtype == "float32"
+    assert xfamily_recover_args.report_interval == 5
+    assert xfamily_recover_args.save_best_loss is True
     assert xfamily_recover_args.calibration_file == "calibration.jsonl"
     with pytest.raises(SystemExit):
         parser.parse_args(
@@ -1568,6 +1573,8 @@ def test_hf_lm_recover_handler_passes_teacherless_flags(monkeypatch) -> None:
         "trust_remote_code": False,
         "calibration_texts": ["calibration text"],
         "grad_clip": 0.5,
+        "report_interval": None,
+        "save_best_loss": False,
     }
 
 
@@ -1647,6 +1654,9 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "cpu",
             "--grad-clip",
             "0.5",
+            "--report-interval",
+            "2",
+            "--save-best-loss",
             "--calibration-file",
             "calibration.jsonl",
             "--max-calibration-texts",
@@ -1691,6 +1701,8 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "trust_remote_code": False,
         "calibration_texts": ["calibration text"],
         "grad_clip": 0.5,
+        "report_interval": 2,
+        "save_best_loss": True,
     }
 
 

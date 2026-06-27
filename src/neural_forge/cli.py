@@ -495,6 +495,8 @@ def build_parser() -> argparse.ArgumentParser:
     recover.add_argument("--device", default="cuda:0")
     recover.add_argument("--trust-remote-code", action="store_true")
     recover.add_argument("--grad-clip", type=float, default=1.0)
+    recover.add_argument("--report-interval", type=int)
+    recover.add_argument("--save-best-loss", action="store_true")
     recover.add_argument("--calibration-file")
     recover.add_argument("--max-calibration-texts", type=int)
     recover.set_defaults(func=cmd_hf_recover)
@@ -536,6 +538,8 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--device", default="cuda:0")
     xfamily_recover.add_argument("--trust-remote-code", action="store_true")
     xfamily_recover.add_argument("--grad-clip", type=float, default=1.0)
+    xfamily_recover.add_argument("--report-interval", type=int)
+    xfamily_recover.add_argument("--save-best-loss", action="store_true")
     xfamily_recover.add_argument("--calibration-file")
     xfamily_recover.add_argument("--max-calibration-texts", type=int)
     xfamily_recover.set_defaults(func=cmd_hf_xfamily_recover)
@@ -588,6 +592,8 @@ def build_parser() -> argparse.ArgumentParser:
     lm_recover.add_argument("--device", default="cuda:0")
     lm_recover.add_argument("--trust-remote-code", action="store_true")
     lm_recover.add_argument("--grad-clip", type=float, default=1.0)
+    lm_recover.add_argument("--report-interval", type=int)
+    lm_recover.add_argument("--save-best-loss", action="store_true")
     lm_recover.add_argument("--calibration-file")
     lm_recover.add_argument("--max-calibration-texts", type=int)
     lm_recover.set_defaults(func=cmd_hf_lm_recover)
@@ -1153,6 +1159,8 @@ def cmd_hf_recover(args: argparse.Namespace) -> dict[str, object]:
         trust_remote_code=args.trust_remote_code,
         calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
         grad_clip=args.grad_clip,
+        report_interval=args.report_interval,
+        save_best_loss=args.save_best_loss,
     )
 
 
@@ -1194,6 +1202,8 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         trust_remote_code=args.trust_remote_code,
         calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
         grad_clip=args.grad_clip,
+        report_interval=args.report_interval,
+        save_best_loss=args.save_best_loss,
     )
 
 
@@ -1244,6 +1254,8 @@ def cmd_hf_lm_recover(args: argparse.Namespace) -> dict[str, object]:
         trust_remote_code=args.trust_remote_code,
         calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
         grad_clip=args.grad_clip,
+        report_interval=args.report_interval,
+        save_best_loss=args.save_best_loss,
     )
 
 
