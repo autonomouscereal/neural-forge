@@ -134,6 +134,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="none",
         help="Optional RMS rescale for folded parent tensors before loading into the child shape.",
     )
+    hf_donor_init.add_argument(
+        "--projection-blend-alpha",
+        type=float,
+        default=1.0,
+        help="Blend folded parent tensors with the target child tensors after projection; 1.0 fully replaces target.",
+    )
     hf_donor_init.add_argument("--activation-calibration-file")
     hf_donor_init.add_argument("--activation-max-calibration-texts", type=int)
     hf_donor_init.add_argument("--activation-max-length", type=int, default=128)
@@ -905,6 +911,7 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         attention_fold_mode=args.attention_fold_mode,
         token_init_mode=args.token_init_mode,
         projection_scale=args.projection_scale,
+        projection_blend_alpha=args.projection_blend_alpha,
         activation_calibration_texts=activation_calibration_texts,
         activation_max_length=args.activation_max_length,
         activation_device=args.activation_device,

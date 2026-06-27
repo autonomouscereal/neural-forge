@@ -254,6 +254,7 @@ def donor_projected_init(
     attention_fold_mode: str = "independent",
     token_init_mode: str = "shared",
     projection_scale: str = "none",
+    projection_blend_alpha: float = 1.0,
     activation_calibration_texts: list[str] | None = None,
     activation_max_length: int = 128,
     activation_device: str = "cuda:0",
@@ -285,6 +286,7 @@ def donor_projected_init(
         raise ValueError("token_init_mode must be shared or donor-tokenized.")
     if projection_scale not in {"none", "target-rms"}:
         raise ValueError("projection_scale must be none or target-rms.")
+    projection_blend_alpha = _bounded_alpha(projection_blend_alpha, "projection_blend_alpha")
     if activation_max_length <= 1:
         raise ValueError("activation_max_length must be greater than 1.")
 
@@ -408,6 +410,7 @@ def donor_projected_init(
                 activation_fold_assignment=activation_fold_assignment,
             )
         projected = _scale_projection_to_target(torch, projected, target_tensor, projection_scale)
+        projected = _blend_projection_with_target(torch, projected, target_tensor, projection_blend_alpha)
         target_state[target_key] = projected.to(dtype=target_tensor.dtype)
         changed_keys.append(target_key)
         layer_reports.append(
@@ -433,6 +436,7 @@ def donor_projected_init(
         hidden_axis_weights=hidden_axis_weights,
         activation_fold_assignment=activation_fold_assignment,
         projection_scale=projection_scale,
+        projection_blend_alpha=projection_blend_alpha,
     )
     changed_keys.extend(item["target_key"] for item in non_layer_report["initialized"])
     load_result = target.load_state_dict(target_state, strict=False)
@@ -448,6 +452,7 @@ def donor_projected_init(
         hidden_axis_weights=hidden_axis_weights,
         activation_fold_assignment=activation_fold_assignment,
         projection_scale=projection_scale,
+        projection_blend_alpha=projection_blend_alpha,
     )
     if getattr(target.config, "tie_word_embeddings", False):
         target.tie_weights()
@@ -471,6 +476,7 @@ def donor_projected_init(
         "attention_fold_mode": attention_fold_mode,
         "token_init_mode": token_init_mode,
         "projection_scale": projection_scale,
+        "projection_blend_alpha": projection_blend_alpha,
         "activation_calibration_text_count": len(activation_calibration_texts or []),
         "activation_max_length": activation_max_length,
         "activation_device": activation_device if activation_calibration_texts else None,
@@ -1329,7 +1335,9 @@ def _initialize_non_layer_tensors_from_donor(
     hidden_axis_weights=None,
     activation_fold_assignment: str = "balanced",
     projection_scale: str = "none",
+    projection_blend_alpha: float = 1.0,
 ) -> dict[str, Any]:
+    projection_blend_alpha = _bounded_alpha(projection_blend_alpha, "projection_blend_alpha")
     donor_index = _non_layer_tensor_index(donor_state)
     already_changed = set(changed_keys or set())
     initialized = []
@@ -1366,6 +1374,7 @@ def _initialize_non_layer_tensors_from_donor(
             activation_fold_assignment=activation_fold_assignment,
         )
         projected = _scale_projection_to_target(torch, projected, target_tensor, projection_scale)
+        projected = _blend_projection_with_target(torch, projected, target_tensor, projection_blend_alpha)
         target_state[target_key] = projected.to(dtype=target_tensor.dtype)
         initialized.append(
             {
@@ -1484,6 +1493,14 @@ def _scale_projection_to_target(torch, projected, target_tensor, projection_scal
     target_rms = target_values.pow(2).mean().sqrt()
     projected_rms = projected_values.pow(2).mean().sqrt()
     return projected_values * (target_rms / projected_rms.clamp_min(1e-12))
+
+
+def _blend_projection_with_target(torch, projected, target_tensor, alpha: float):
+    alpha = _bounded_alpha(alpha, "projection_blend_alpha")
+    if alpha == 1.0:
+        return projected
+    target_values = target_tensor.detach().cpu().to(torch.float32)
+    return (float(alpha) * projected.to(torch.float32)) + ((1.0 - float(alpha)) * target_values)
 
 
 def _donor_layer_group_for_target(target_layer_idx: int, target_layer_count: int, donor_layer_count: int) -> list[int]:
@@ -1963,6 +1980,7 @@ def _initialize_token_weights_from_donor(
     hidden_axis_weights=None,
     activation_fold_assignment: str = "balanced",
     projection_scale: str = "none",
+    projection_blend_alpha: float = 1.0,
 ) -> dict[str, Any]:
     if token_init_mode not in {"shared", "donor-tokenized"}:
         raise ValueError("token_init_mode must be shared or donor-tokenized.")
@@ -1993,6 +2011,7 @@ def _initialize_token_weights_from_donor(
         hidden_axis_weights=hidden_axis_weights,
         activation_fold_assignment=activation_fold_assignment,
         projection_scale=projection_scale,
+        projection_blend_alpha=projection_blend_alpha,
         chunk_size=2048,
     )
     target_embeddings.weight.data.copy_(target_emb_weight.to(target_embeddings.weight.dtype))
@@ -2014,6 +2033,7 @@ def _initialize_token_weights_from_donor(
             hidden_axis_weights=hidden_axis_weights,
             activation_fold_assignment=activation_fold_assignment,
             projection_scale=projection_scale,
+            projection_blend_alpha=projection_blend_alpha,
             chunk_size=2048,
         )
         target_lm.weight.data.copy_(target_head.to(target_lm.weight.dtype))
@@ -2040,8 +2060,10 @@ def _project_token_weight_rows(
     hidden_axis_weights=None,
     activation_fold_assignment: str = "balanced",
     projection_scale: str = "none",
+    projection_blend_alpha: float = 1.0,
     chunk_size: int = 2048,
 ) -> int:
+    projection_blend_alpha = _bounded_alpha(projection_blend_alpha, "projection_blend_alpha")
     if len(target_ids) != len(donor_id_groups):
         raise ValueError("target_ids and donor_id_groups must have the same length.")
     if not target_ids:
@@ -2067,6 +2089,12 @@ def _project_token_weight_rows(
             projected,
             target_weight[torch.tensor(chunk_target_ids, dtype=torch.long)],
             projection_scale,
+        )
+        projected = _blend_projection_with_target(
+            torch,
+            projected,
+            target_weight[torch.tensor(chunk_target_ids, dtype=torch.long)],
+            projection_blend_alpha,
         )
         target_weight[torch.tensor(chunk_target_ids, dtype=torch.long)] = projected
     return int(len(target_ids))

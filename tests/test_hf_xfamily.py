@@ -28,6 +28,7 @@ from neural_forge.hf_xfamily import _assign_donor_to_host
 from neural_forge.hf_xfamily import _activation_similarity_assignment
 from neural_forge.hf_xfamily import _activation_axis_weights_for_tensor
 from neural_forge.hf_xfamily import _balanced_activation_assignment
+from neural_forge.hf_xfamily import _blend_projection_with_target
 from neural_forge.hf_xfamily import _channel_assignment_features
 from neural_forge.hf_xfamily import _donor_layer_group_for_target
 from neural_forge.hf_xfamily import _effective_layer_alpha
@@ -271,6 +272,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "donor-tokenized",
             "--projection-scale",
             "target-rms",
+            "--projection-blend-alpha",
+            "0.35",
             "--activation-calibration-file",
             "activation.jsonl",
             "--activation-max-calibration-texts",
@@ -479,6 +482,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.attention_fold_mode == "coupled"
     assert donor_init_args.token_init_mode == "donor-tokenized"
     assert donor_init_args.projection_scale == "target-rms"
+    assert donor_init_args.projection_blend_alpha == 0.35
     assert donor_init_args.activation_calibration_file == "activation.jsonl"
     assert donor_init_args.activation_max_calibration_texts == 5
     assert donor_init_args.activation_max_length == 80
@@ -802,6 +806,16 @@ def test_scale_projection_to_target_matches_target_rms() -> None:
 
     assert float(scaled.pow(2).mean().sqrt()) == pytest.approx(float(target.pow(2).mean().sqrt()))
     assert torch.all(scaled > 0)
+
+
+def test_blend_projection_with_target_interpolates_values() -> None:
+    torch = pytest.importorskip("torch")
+    projected = torch.ones((2, 2), dtype=torch.float32) * 10.0
+    target = torch.ones((2, 2), dtype=torch.float32) * 2.0
+
+    blended = _blend_projection_with_target(torch, projected, target, 0.25)
+
+    assert blended.tolist() == [[4.0, 4.0], [4.0, 4.0]]
 
 
 def test_activation_weighted_fold_uses_importance_bins() -> None:
@@ -1233,6 +1247,8 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "donor-tokenized",
             "--projection-scale",
             "target-rms",
+            "--projection-blend-alpha",
+            "0.25",
             "--activation-calibration-file",
             "activation.jsonl",
             "--activation-max-calibration-texts",
@@ -1262,6 +1278,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "attention_fold_mode": "coupled",
         "token_init_mode": "donor-tokenized",
         "projection_scale": "target-rms",
+        "projection_blend_alpha": 0.25,
         "activation_calibration_texts": ["activation text"],
         "activation_max_length": 64,
         "activation_device": "cpu",
