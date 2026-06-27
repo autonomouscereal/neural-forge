@@ -45,6 +45,9 @@ def recover_causal_lm(
     hidden_token_mode: str = "tokens",
     hidden_ridge: float = 1e-3,
     hidden_max_anchors: int = 2048,
+    top_k_kd_weight: float = 0.0,
+    top_k_kd_k: int = 32,
+    first_token_top_k_kd_weight: float = 0.0,
     first_token_kd_weight: float = 0.0,
     first_token_lm_weight: float = 0.0,
     unlikelihood_weight: float = 0.0,
@@ -83,6 +86,8 @@ def recover_causal_lm(
         kd_weight < 0
         or lm_weight < 0
         or hidden_kd_weight < 0
+        or top_k_kd_weight < 0
+        or first_token_top_k_kd_weight < 0
         or first_token_kd_weight < 0
         or first_token_lm_weight < 0
         or unlikelihood_weight < 0
@@ -93,6 +98,8 @@ def recover_causal_lm(
         kd_weight == 0
         and lm_weight == 0
         and hidden_kd_weight == 0
+        and top_k_kd_weight == 0
+        and first_token_top_k_kd_weight == 0
         and first_token_kd_weight == 0
         and first_token_lm_weight == 0
         and unlikelihood_weight == 0
@@ -115,14 +122,24 @@ def recover_causal_lm(
         raise ValueError("hidden_ridge must be non-negative.")
     if hidden_max_anchors <= 0:
         raise ValueError("hidden_max_anchors must be positive.")
-    if response_loss_mode == "none" and (first_token_kd_weight > 0 or first_token_lm_weight > 0):
+    if top_k_kd_k <= 0:
+        raise ValueError("top_k_kd_k must be positive.")
+    if response_loss_mode == "none" and (
+        first_token_kd_weight > 0 or first_token_lm_weight > 0 or first_token_top_k_kd_weight > 0
+    ):
         raise ValueError("first-token losses require response_loss_mode to be auto, assistant, or answer.")
     if grad_clip < 0:
         raise ValueError("grad_clip must be non-negative.")
     if report_interval is not None and report_interval <= 0:
         raise ValueError("report_interval must be positive when provided.")
 
-    if (kd_weight > 0 or hidden_kd_weight > 0 or first_token_kd_weight > 0) and not source_model:
+    if (
+        kd_weight > 0
+        or hidden_kd_weight > 0
+        or top_k_kd_weight > 0
+        or first_token_top_k_kd_weight > 0
+        or first_token_kd_weight > 0
+    ) and not source_model:
         raise ValueError("source_model is required when teacher losses are positive.")
 
     torch, transformers = _torch_and_transformers()
@@ -133,7 +150,13 @@ def recover_causal_lm(
     source = None
     if source_model:
         source_tokenizer = transformers.AutoTokenizer.from_pretrained(source_model, trust_remote_code=trust_remote_code)
-        if kd_weight > 0 or hidden_kd_weight > 0 or first_token_kd_weight > 0:
+        if (
+            kd_weight > 0
+            or hidden_kd_weight > 0
+            or top_k_kd_weight > 0
+            or first_token_top_k_kd_weight > 0
+            or first_token_kd_weight > 0
+        ):
             _assert_same_vocab(source_tokenizer, candidate_tokenizer)
         tokenizer = candidate_tokenizer
     if tokenizer.pad_token_id is None and tokenizer.eos_token_id is not None:
@@ -234,6 +257,9 @@ def recover_causal_lm(
             unlikelihood_window=unlikelihood_window,
             entropy_weight=entropy_weight,
             temperature=temperature,
+            top_k_kd_weight=top_k_kd_weight,
+            top_k_kd_k=top_k_kd_k,
+            first_token_top_k_kd_weight=first_token_top_k_kd_weight,
             first_token_kd_weight=first_token_kd_weight,
             first_token_lm_weight=first_token_lm_weight,
         )
@@ -295,6 +321,9 @@ def recover_causal_lm(
         "hidden_max_anchors": hidden_max_anchors,
         "hidden_projection": hidden_projection_report
         and {key: value for key, value in hidden_projection_report.items() if key != "map"},
+        "top_k_kd_weight": top_k_kd_weight,
+        "top_k_kd_k": top_k_kd_k,
+        "first_token_top_k_kd_weight": first_token_top_k_kd_weight,
         "first_token_kd_weight": first_token_kd_weight,
         "first_token_lm_weight": first_token_lm_weight,
         "unlikelihood_weight": unlikelihood_weight,
@@ -305,7 +334,14 @@ def recover_causal_lm(
         "save_best_loss": save_best_loss,
         "best_loss": best_loss,
         "best_step": best_step,
-        "teacher_used": source_model is not None and kd_weight > 0,
+        "teacher_used": source_model is not None
+        and (
+            kd_weight > 0
+            or hidden_kd_weight > 0
+            or top_k_kd_weight > 0
+            or first_token_top_k_kd_weight > 0
+            or first_token_kd_weight > 0
+        ),
         "response_loss_mode": response_loss_mode,
         "append_eos": bool(append_eos),
         "train_scope": train_scope,
@@ -3567,6 +3603,9 @@ def _recovery_loss(
     unlikelihood_window: int,
     entropy_weight: float,
     temperature: float,
+    top_k_kd_weight: float = 0.0,
+    top_k_kd_k: int = 32,
+    first_token_top_k_kd_weight: float = 0.0,
     first_token_kd_weight: float = 0.0,
     first_token_lm_weight: float = 0.0,
 ):
@@ -3594,9 +3633,12 @@ def _recovery_loss(
         first_mask = first_mask & mask
     total = torch.zeros((), dtype=shift_student.dtype, device=shift_student.device)
     token_kl = None
-    if kd_weight > 0:
+    top_token_kl = None
+    shift_teacher = None
+    kd_vocab = None
+    if kd_weight > 0 or first_token_kd_weight > 0 or top_k_kd_weight > 0 or first_token_top_k_kd_weight > 0:
         if teacher is None:
-            raise ValueError("teacher output is required when kd_weight is positive.")
+            raise ValueError("teacher output is required when teacher loss weights are positive.")
         shift_teacher = torch.nan_to_num(
             teacher.logits[:, :-1, :].contiguous().to(torch.float32),
             nan=0.0,
@@ -3604,23 +3646,28 @@ def _recovery_loss(
             neginf=-1e4,
         )
         kd_vocab = min(int(shift_student.shape[-1]), int(shift_teacher.shape[-1]))
+    if kd_weight > 0:
         student_logp = torch.nn.functional.log_softmax(shift_student[..., :kd_vocab] / temperature, dim=-1)
         teacher_p = torch.nn.functional.softmax(shift_teacher[..., :kd_vocab] / temperature, dim=-1)
         token_kl = torch.nn.functional.kl_div(student_logp, teacher_p, reduction="none").sum(dim=-1)
         kd = (token_kl * mask).sum() / mask.sum().clamp_min(1)
         kd = kd * (temperature**2)
         total = total + float(kd_weight) * kd
+    if top_k_kd_weight > 0 or first_token_top_k_kd_weight > 0:
+        top_token_kl = _same_tokenizer_top_k_kl(
+            torch,
+            shift_student,
+            shift_teacher,
+            kd_vocab,
+            temperature,
+            top_k_kd_k,
+        )
+    if top_k_kd_weight > 0:
+        top_k_kd = (top_token_kl * mask).sum() / mask.sum().clamp_min(1)
+        top_k_kd = top_k_kd * (temperature**2)
+        total = total + float(top_k_kd_weight) * top_k_kd
     if first_token_kd_weight > 0:
-        if teacher is None:
-            raise ValueError("teacher output is required when first_token_kd_weight is positive.")
         if token_kl is None:
-            shift_teacher = torch.nan_to_num(
-                teacher.logits[:, :-1, :].contiguous().to(torch.float32),
-                nan=0.0,
-                posinf=1e4,
-                neginf=-1e4,
-            )
-            kd_vocab = min(int(shift_student.shape[-1]), int(shift_teacher.shape[-1]))
             student_logp = torch.nn.functional.log_softmax(shift_student[..., :kd_vocab] / temperature, dim=-1)
             teacher_p = torch.nn.functional.softmax(shift_teacher[..., :kd_vocab] / temperature, dim=-1)
             token_kl = torch.nn.functional.kl_div(student_logp, teacher_p, reduction="none").sum(dim=-1)
@@ -3628,6 +3675,10 @@ def _recovery_loss(
             first_kd = (token_kl * first_mask).sum() / first_mask.sum().clamp_min(1)
             first_kd = first_kd * (temperature**2)
             total = total + float(first_token_kd_weight) * first_kd
+    if first_token_top_k_kd_weight > 0 and first_mask is not None and int(first_mask.sum().detach().cpu().item()) > 0:
+        first_top_k_kd = (top_token_kl * first_mask).sum() / first_mask.sum().clamp_min(1)
+        first_top_k_kd = first_top_k_kd * (temperature**2)
+        total = total + float(first_token_top_k_kd_weight) * first_top_k_kd
     token_ce = None
     if lm_weight > 0 or first_token_lm_weight > 0:
         token_ce = torch.nn.functional.cross_entropy(
@@ -3656,6 +3707,19 @@ def _recovery_loss(
         entropy_penalty = _masked_entropy_penalty(torch, shift_student, mask)
         total = total + float(entropy_weight) * entropy_penalty
     return total
+
+
+def _same_tokenizer_top_k_kl(torch, shift_student, shift_teacher, kd_vocab: int, temperature: float, top_k: int):
+    if top_k <= 0:
+        raise ValueError("top_k must be positive.")
+    k = min(int(top_k), int(kd_vocab))
+    teacher_vocab = shift_teacher[..., :kd_vocab]
+    student_vocab = shift_student[..., :kd_vocab]
+    teacher_top_values, teacher_top_indices = torch.topk(teacher_vocab, k=k, dim=-1)
+    student_top_values = student_vocab.gather(dim=-1, index=teacher_top_indices)
+    student_logp = torch.nn.functional.log_softmax(student_top_values / temperature, dim=-1)
+    teacher_p = torch.nn.functional.softmax(teacher_top_values / temperature, dim=-1)
+    return torch.nn.functional.kl_div(student_logp, teacher_p, reduction="none").sum(dim=-1)
 
 
 def _first_response_shift_mask(torch, loss_mask, attention_mask):

@@ -36,6 +36,7 @@ from neural_forge.hf_recovery import _select_anchor_tokens
 from neural_forge.hf_recovery import _set_train_scope
 from neural_forge.hf_recovery import _same_tokenizer_reference_loss
 from neural_forge.hf_recovery import _same_tokenizer_hidden_loss
+from neural_forge.hf_recovery import _same_tokenizer_top_k_kl
 from neural_forge.hf_recovery import load_calibration_texts
 from neural_forge.hf_tools import TEXT_EVALS
 from neural_forge.hf_tools import _layer_groups_for_report
@@ -617,6 +618,12 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "123",
             "--candidate-train-dtype",
             "float32",
+            "--top-k-kd-weight",
+            "0.6",
+            "--top-k-kd-k",
+            "7",
+            "--first-token-top-k-kd-weight",
+            "1.1",
             "--first-token-kd-weight",
             "1.5",
             "--first-token-lm-weight",
@@ -766,6 +773,9 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert recover_args.hidden_ridge == 0.02
     assert recover_args.hidden_max_anchors == 123
     assert recover_args.candidate_train_dtype == "float32"
+    assert recover_args.top_k_kd_weight == 0.6
+    assert recover_args.top_k_kd_k == 7
+    assert recover_args.first_token_top_k_kd_weight == 1.1
     assert recover_args.first_token_kd_weight == 1.5
     assert recover_args.first_token_lm_weight == 0.75
     assert recover_args.response_loss_mode == "auto"
@@ -1593,6 +1603,59 @@ def test_recovery_loss_first_response_lm_focuses_boundary_token() -> None:
 
     assert first_only.item() < 1e-3
     assert response_lm.item() > first_only.item() + 5.0
+
+
+def test_same_tokenizer_top_k_kl_uses_teacher_subset() -> None:
+    torch = pytest.importorskip("torch")
+    teacher = torch.full((1, 2, 6), -10.0)
+    student_same = torch.full((1, 2, 6), -10.0)
+    student_wrong = torch.full((1, 2, 6), -10.0)
+    teacher[..., 4] = 8.0
+    teacher[..., 2] = 7.0
+    student_same[..., 4] = 8.0
+    student_same[..., 2] = 7.0
+    student_wrong[..., 4] = 2.0
+    student_wrong[..., 2] = 9.0
+
+    same = _same_tokenizer_top_k_kl(torch, student_same, teacher, kd_vocab=6, temperature=1.0, top_k=2)
+    wrong = _same_tokenizer_top_k_kl(torch, student_wrong, teacher, kd_vocab=6, temperature=1.0, top_k=2)
+
+    assert same.mean().item() < 1e-6
+    assert wrong.mean().item() > same.mean().item() + 1.0
+
+
+def test_recovery_loss_top_k_kd_allows_sparse_teacher_supervision() -> None:
+    torch = pytest.importorskip("torch")
+    student_logits = torch.zeros((1, 4, 8), dtype=torch.float32)
+    teacher_logits = torch.zeros((1, 4, 8), dtype=torch.float32)
+    teacher_logits[:, :, 5] = 8.0
+    teacher_logits[:, :, 3] = 7.0
+    student_logits[:, :, 5] = 1.0
+    student_logits[:, :, 3] = 9.0
+    student = _Obj(logits=student_logits)
+    teacher = _Obj(logits=teacher_logits)
+    input_ids = torch.tensor([[0, 1, 2, 3]])
+    attention_mask = torch.ones_like(input_ids)
+
+    loss = _recovery_loss(
+        torch,
+        student,
+        teacher=teacher,
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        loss_mask=None,
+        kd_weight=0.0,
+        lm_weight=0.0,
+        unlikelihood_weight=0.0,
+        unlikelihood_window=2,
+        entropy_weight=0.0,
+        temperature=1.0,
+        top_k_kd_weight=1.0,
+        top_k_kd_k=2,
+    )
+
+    assert torch.isfinite(loss)
+    assert loss.item() > 1.0
 
 
 def test_same_tokenizer_hidden_loss_handles_width_mismatch_with_cka() -> None:

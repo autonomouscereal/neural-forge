@@ -499,6 +499,9 @@ def build_parser() -> argparse.ArgumentParser:
     recover.add_argument("--hidden-token-mode", choices=["tokens", "response", "pooled"], default="tokens")
     recover.add_argument("--hidden-ridge", type=float, default=1e-3)
     recover.add_argument("--hidden-max-anchors", type=int, default=2048)
+    recover.add_argument("--top-k-kd-weight", type=float, default=0.0)
+    recover.add_argument("--top-k-kd-k", type=int, default=32)
+    recover.add_argument("--first-token-top-k-kd-weight", type=float, default=0.0)
     recover.add_argument("--first-token-kd-weight", type=float, default=0.0)
     recover.add_argument("--first-token-lm-weight", type=float, default=0.0)
     recover.add_argument("--unlikelihood-weight", type=float, default=0.0)
@@ -1257,6 +1260,9 @@ def cmd_hf_recover(args: argparse.Namespace) -> dict[str, object]:
         hidden_token_mode=args.hidden_token_mode,
         hidden_ridge=args.hidden_ridge,
         hidden_max_anchors=args.hidden_max_anchors,
+        top_k_kd_weight=args.top_k_kd_weight,
+        top_k_kd_k=args.top_k_kd_k,
+        first_token_top_k_kd_weight=args.first_token_top_k_kd_weight,
         first_token_kd_weight=args.first_token_kd_weight,
         first_token_lm_weight=args.first_token_lm_weight,
         unlikelihood_weight=args.unlikelihood_weight,
