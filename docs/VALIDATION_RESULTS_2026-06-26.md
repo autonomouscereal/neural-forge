@@ -883,3 +883,70 @@ Interpretation:
 - This is still only a smoke result. It does not prove donor intelligence
   transfer on ARC/HellaSwag or broad behavior; it just validates the next
   alignment mechanism needed before larger recovery/benchmark runs.
+
+## 4B Donor Benchmark Slice After Activation/Layer-Alpha Changes
+
+After the PPL-only smoke, the same Qwen3-4B -> SmolLM2-135M family of artifacts
+was benchmarked with `lm-evaluation-harness`, because PPL alone is not enough
+evidence for intelligence or coherence.
+
+Run:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_into_smollm135m_layer_alpha_bench_20260627_015220
+```
+
+Benchmark settings:
+
+- tasks: `arc_easy`, `hellaswag`, `piqa`, `winogrande`;
+- limit: `50` examples/task, so this is a comparison slice, not a final score;
+- models: SmolLM2 host, Qwen3-4B donor, matched weight-cosine fold,
+  activation-hybrid constant-alpha fold, and activation-hybrid similarity-scaled
+  layer-alpha fold.
+
+Per-layer fold settings:
+
+- alpha: `0.001`;
+- channel assignment: `hybrid`;
+- activation calibration: 8 curated Omnicoder texts, max length `64`;
+- max host/donor channels: `128` / `256`;
+- layer alpha mode: `similarity`;
+- scale range: `0.25` to `1.25`;
+- similarity floor: `0.30`;
+- effective alpha range: `0.000512` to `0.000572`, mean `0.000556`.
+
+Neural Forge probe/generation gate:
+
+| Model | Mean PPL | Choice Acc | Generation Gate |
+|---|---:|---:|---|
+| host | 347.405 | 0.50 | baseline |
+| weight-cosine matched | 348.631 | 0.50 | passed |
+| activation-hybrid constant alpha | 347.377 | 0.50 | passed |
+| activation-hybrid layer alpha | 346.531 | 0.50 | failed |
+
+The layer-alpha artifact lowered PPL, but failed generation health: the
+`Explain neural pruning...` sample repeated enough to produce a unique-token
+ratio of `0.16` against the `0.20` floor. This is a concrete example where PPL
+looked better while coherence got worse.
+
+Benchmark slice:
+
+| Model | ARC-Easy Acc / Norm | HellaSwag Acc / Norm | PIQA Acc / Norm | Winogrande Acc |
+|---|---:|---:|---:|---:|
+| SmolLM2 host | 0.52 / 0.48 | 0.44 / 0.48 | 0.62 / 0.64 | 0.48 |
+| Qwen3-4B donor | 0.70 / 0.76 | 0.54 / 0.74 | 0.80 / 0.74 | 0.78 |
+| weight-cosine fold | 0.52 / 0.48 | 0.44 / 0.48 | 0.62 / 0.64 | 0.48 |
+| activation-hybrid constant alpha | 0.52 / 0.48 | 0.44 / 0.48 | 0.62 / 0.64 | 0.48 |
+| activation-hybrid layer alpha | 0.52 / 0.48 | 0.44 / 0.48 | 0.62 / 0.64 | 0.48 |
+
+Interpretation:
+
+- The donor is clearly stronger on the benchmark slice.
+- None of the SmolLM2-shaped folded artifacts inherited measurable donor
+  capability on these tasks. They are benchmark-identical to the host at this
+  slice size.
+- Activation-hybrid remains less damaging than weight-cosine by the small PPL
+  probe, but benchmark and coherence results show that this is not sufficient.
+- Similarity-scaled layer alpha made PPL slightly better but generation
+  coherence worse. It should not be promoted as a recovery solution without a
+  stronger benchmark/coherence gain.
