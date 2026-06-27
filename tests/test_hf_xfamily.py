@@ -255,6 +255,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "projected-out",
             "--target-config-model",
             "HuggingFaceTB/SmolLM2-135M",
+            "--target-base-model",
+            "HuggingFaceTB/SmolLM2-135M",
             "--target-tokenizer-model",
             "HuggingFaceTB/SmolLM2-135M",
             "--donor-model",
@@ -491,6 +493,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert random_args.dtype == "float32"
     assert donor_init_args.output == "projected-out"
     assert donor_init_args.target_config_model == "HuggingFaceTB/SmolLM2-135M"
+    assert donor_init_args.target_base_model == "HuggingFaceTB/SmolLM2-135M"
     assert donor_init_args.target_tokenizer_model == "HuggingFaceTB/SmolLM2-135M"
     assert donor_init_args.donor_model == "Qwen/Qwen3-4B-Base"
     assert donor_init_args.seed == 456
@@ -1345,6 +1348,8 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "out",
             "--target-config-model",
             "target-config",
+            "--target-base-model",
+            "target-base",
             "--target-tokenizer-model",
             "target-tokenizer",
             "--donor-model",
@@ -1386,6 +1391,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
     assert result == {"ok": True}
     assert captured == {
         "target_config_model": "target-config",
+        "target_base_model": "target-base",
         "target_tokenizer_model": "target-tokenizer",
         "donor_model": "donor",
         "output_dir": "out",

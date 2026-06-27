@@ -103,6 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hf_donor_init.add_argument("output")
     hf_donor_init.add_argument("--target-config-model", required=True)
+    hf_donor_init.add_argument("--target-base-model")
     hf_donor_init.add_argument("--target-tokenizer-model")
     hf_donor_init.add_argument("--donor-model", required=True)
     hf_donor_init.add_argument("--seed", type=int, default=0)
@@ -913,6 +914,7 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
     )
     return donor_projected_init(
         target_config_model=args.target_config_model,
+        target_base_model=args.target_base_model,
         target_tokenizer_model=args.target_tokenizer_model,
         donor_model=args.donor_model,
         output_dir=args.output,

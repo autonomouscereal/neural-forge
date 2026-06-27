@@ -244,6 +244,7 @@ def donor_projected_init(
     target_config_model: str,
     donor_model: str,
     output_dir: str | Path,
+    target_base_model: str | None = None,
     target_tokenizer_model: str | None = None,
     seed: int = 0,
     ridge: float = 1e-3,
@@ -264,7 +265,9 @@ def donor_projected_init(
     """Initialize a target architecture by folding donor tensors into its shape.
 
     This is the blank-target counterpart to cross-family MLP merging. The target
-    runtime comes from `target_config_model`, but layer tensors are initialized
+    runtime comes from `target_config_model`. If `target_base_model` is supplied,
+    that checkpoint provides the target weights to blend into; otherwise the
+    target starts from the config initializer. Layer tensors are initialized
     directly from proportionally matched donor layers. Each mismatched tensor
     axis is mean-folded or copied to the target size, which is a deterministic
     neuron/channel merge rather than prune-first deletion.
@@ -294,7 +297,15 @@ def donor_projected_init(
     dtype = _dtype_from_name(torch, torch_dtype)
     torch.manual_seed(int(seed))
     config = transformers.AutoConfig.from_pretrained(target_config_model, trust_remote_code=trust_remote_code)
-    target = transformers.AutoModelForCausalLM.from_config(config, trust_remote_code=trust_remote_code)
+    if target_base_model:
+        target = transformers.AutoModelForCausalLM.from_pretrained(
+            target_base_model,
+            torch_dtype=dtype,
+            device_map="cpu",
+            trust_remote_code=trust_remote_code,
+        )
+    else:
+        target = transformers.AutoModelForCausalLM.from_config(config, trust_remote_code=trust_remote_code)
     donor = transformers.AutoModelForCausalLM.from_pretrained(
         donor_model,
         torch_dtype=dtype,
@@ -464,6 +475,7 @@ def donor_projected_init(
     report = {
         "operation": "donor_projected_init",
         "target_config_model": target_config_model,
+        "target_base_model": target_base_model,
         "target_tokenizer_model": tokenizer_source,
         "donor_model": donor_model,
         "output_dir": str(output),
