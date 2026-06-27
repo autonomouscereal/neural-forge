@@ -52,9 +52,11 @@ from neural_forge.hf_xfamily import _axis_reductions_for_layer_tensor
 from neural_forge.hf_xfamily import _axis_reductions_for_non_layer_tensor_key
 from neural_forge.hf_xfamily import _balanced_activation_assignment
 from neural_forge.hf_xfamily import _blend_projection_with_target
+from neural_forge.hf_xfamily import _build_activation_hidden_basis
 from neural_forge.hf_xfamily import _channel_assignment_features
 from neural_forge.hf_xfamily import _donor_layer_group_for_target
 from neural_forge.hf_xfamily import _effective_layer_alpha
+from neural_forge.hf_xfamily import _hidden_basis_axes_for_layer_tensor
 from neural_forge.hf_xfamily import _initialize_token_weights_from_donor
 from neural_forge.hf_xfamily import _initialize_non_layer_tensors_from_donor
 from neural_forge.hf_xfamily import _mlp_spec
@@ -310,6 +312,12 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "1000",
             "--fold-mode",
             "mean",
+            "--hidden-basis-mode",
+            "activation-pca",
+            "--hidden-basis-scope",
+            "layer",
+            "--hidden-basis-max-rows",
+            "777",
             "--activation-fold-assignment",
             "similarity",
             "--donor-layer-fold-mode",
@@ -647,6 +655,9 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.seed == 456
     assert donor_init_args.max_anchors == 1000
     assert donor_init_args.fold_mode == "mean"
+    assert donor_init_args.hidden_basis_mode == "activation-pca"
+    assert donor_init_args.hidden_basis_scope == "layer"
+    assert donor_init_args.hidden_basis_max_rows == 777
     assert donor_init_args.activation_fold_assignment == "similarity"
     assert donor_init_args.donor_layer_fold_mode == "fold"
     assert donor_init_args.attention_fold_mode == "coupled"
@@ -1060,6 +1071,68 @@ def test_resize_tensor_to_shape_rms_fold_preserves_more_variance() -> None:
 
     assert mean_folded.tolist() == [[1.0, 1.0], [1.0, 1.0]]
     assert rms_folded.flatten().tolist() == pytest.approx([2**0.5, 2**0.5, 2**0.5, 2**0.5])
+
+
+def test_activation_hidden_basis_is_orthonormal() -> None:
+    torch = pytest.importorskip("torch")
+    rows = torch.tensor(
+        [
+            [4.0, 0.0, 0.0],
+            [3.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    basis, report = _build_activation_hidden_basis(torch, rows, source_dim=3, target_dim=2)
+
+    assert basis.shape == (3, 2)
+    assert basis.t().matmul(basis).flatten().tolist() == pytest.approx(torch.eye(2).flatten().tolist(), abs=1e-5)
+    assert report["mode"] == "activation-pca"
+    assert report["retained_energy"] > 0.99
+
+
+def test_hidden_basis_resize_projects_hidden_axes() -> None:
+    torch = pytest.importorskip("torch")
+    source = torch.arange(1, 10, dtype=torch.float32).reshape(3, 3)
+    basis = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [0.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    resized = _resize_tensor_to_shape(torch, source, (2, 2), hidden_basis=basis)
+
+    assert resized.flatten().tolist() == pytest.approx([1.0, 2.0, 4.0, 5.0])
+
+
+def test_layer_hidden_basis_axes_use_input_and_output_interfaces() -> None:
+    torch = pytest.importorskip("torch")
+    input_basis = torch.eye(3, dtype=torch.float32)[:, :2]
+    output_basis = torch.flip(torch.eye(3, dtype=torch.float32), dims=[0])[:, :2]
+    layer_basis = {"input": input_basis, "output": output_basis}
+
+    q_axes = _hidden_basis_axes_for_layer_tensor(
+        torch,
+        torch.zeros((4, 3), dtype=torch.float32),
+        "self_attn.q_proj.weight",
+        layer_basis,
+    )
+    o_axes = _hidden_basis_axes_for_layer_tensor(
+        torch,
+        torch.zeros((3, 4), dtype=torch.float32),
+        "self_attn.o_proj.weight",
+        layer_basis,
+    )
+
+    assert list(q_axes) == [1]
+    assert list(o_axes) == [0]
+    assert torch.equal(q_axes[1], input_basis)
+    assert torch.equal(o_axes[0], output_basis)
 
 
 def test_outgoing_sum_fold_preserves_merged_linear_path() -> None:
@@ -2501,6 +2574,12 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "1234",
             "--fold-mode",
             "mean",
+            "--hidden-basis-mode",
+            "activation-pca",
+            "--hidden-basis-scope",
+            "layer",
+            "--hidden-basis-max-rows",
+            "99",
             "--activation-fold-assignment",
             "similarity",
             "--donor-layer-fold-mode",
@@ -2541,6 +2620,9 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "ridge": 0.02,
         "max_anchors": 1234,
         "fold_mode": "mean",
+        "hidden_basis_mode": "activation-pca",
+        "hidden_basis_scope": "layer",
+        "hidden_basis_max_rows": 99,
         "activation_fold_assignment": "similarity",
         "donor_layer_fold_mode": "average",
         "attention_fold_mode": "coupled",

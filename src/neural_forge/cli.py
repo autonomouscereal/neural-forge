@@ -110,6 +110,24 @@ def build_parser() -> argparse.ArgumentParser:
     hf_donor_init.add_argument("--ridge", type=float, default=1e-3)
     hf_donor_init.add_argument("--max-anchors", type=int, default=50_000)
     hf_donor_init.add_argument("--fold-mode", choices=["mean", "rms", "transport"], default="mean")
+    hf_donor_init.add_argument(
+        "--hidden-basis-mode",
+        choices=["none", "activation-pca"],
+        default="none",
+        help="Optionally project donor hidden axes through an activation PCA basis before ordinary folding.",
+    )
+    hf_donor_init.add_argument(
+        "--hidden-basis-scope",
+        choices=["global", "layer"],
+        default="global",
+        help="Use one donor hidden basis globally or boundary-specific bases for each folded target layer.",
+    )
+    hf_donor_init.add_argument(
+        "--hidden-basis-max-rows",
+        type=int,
+        default=2048,
+        help="Maximum donor hidden activation rows to retain when fitting the activation PCA basis.",
+    )
     hf_donor_init.add_argument("--activation-fold-assignment", choices=["balanced", "similarity"], default="balanced")
     hf_donor_init.add_argument(
         "--donor-layer-fold-mode",
@@ -1039,6 +1057,9 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         ridge=args.ridge,
         max_anchors=args.max_anchors,
         fold_mode=args.fold_mode,
+        hidden_basis_mode=args.hidden_basis_mode,
+        hidden_basis_scope=args.hidden_basis_scope,
+        hidden_basis_max_rows=args.hidden_basis_max_rows,
         activation_fold_assignment=args.activation_fold_assignment,
         donor_layer_fold_mode=args.donor_layer_fold_mode,
         attention_fold_mode=args.attention_fold_mode,

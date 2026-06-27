@@ -250,6 +250,9 @@ def donor_projected_init(
     ridge: float = 1e-3,
     max_anchors: int = 50_000,
     fold_mode: str = "mean",
+    hidden_basis_mode: str = "none",
+    hidden_basis_scope: str = "global",
+    hidden_basis_max_rows: int = 2048,
     activation_fold_assignment: str = "balanced",
     donor_layer_fold_mode: str = "representative",
     attention_fold_mode: str = "independent",
@@ -281,6 +284,12 @@ def donor_projected_init(
         raise ValueError("max_anchors must be positive.")
     if fold_mode not in {"mean", "rms", "transport"}:
         raise ValueError("fold_mode must be mean, rms, or transport.")
+    if hidden_basis_mode not in {"none", "activation-pca"}:
+        raise ValueError("hidden_basis_mode must be none or activation-pca.")
+    if hidden_basis_scope not in {"global", "layer"}:
+        raise ValueError("hidden_basis_scope must be global or layer.")
+    if hidden_basis_max_rows <= 0:
+        raise ValueError("hidden_basis_max_rows must be positive.")
     if activation_fold_assignment not in {"balanced", "similarity"}:
         raise ValueError("activation_fold_assignment must be balanced or similarity.")
     if donor_layer_fold_mode not in {"representative", "average", "fold"}:
@@ -344,7 +353,32 @@ def donor_projected_init(
             activation_calibration_texts,
             max_length=activation_max_length,
             device=activation_device,
+            hidden_basis_max_rows=hidden_basis_max_rows if hidden_basis_mode == "activation-pca" else 0,
         )
+    hidden_basis = None
+    hidden_basis_report = None
+    layer_hidden_bases = None
+    layer_hidden_basis_report = None
+    if hidden_basis_mode == "activation-pca":
+        if activation_profile is None or activation_profile.get("hidden_basis_rows") is None:
+            raise ValueError("activation-pca hidden basis requires activation calibration texts.")
+        donor_hidden_size = int(donor.get_input_embeddings().weight.shape[1])
+        target_hidden_size = int(target.get_input_embeddings().weight.shape[1])
+        hidden_basis, hidden_basis_report = _build_activation_hidden_basis(
+            torch,
+            activation_profile["hidden_basis_rows"],
+            source_dim=donor_hidden_size,
+            target_dim=target_hidden_size,
+        )
+        if hidden_basis_scope == "layer":
+            layer_hidden_bases, layer_hidden_basis_report = _build_layer_activation_hidden_bases(
+                torch,
+                activation_profile,
+                target_layer_count=len(target_layers),
+                donor_layer_count=len(donor_layers),
+                source_dim=donor_hidden_size,
+                target_dim=target_hidden_size,
+            )
 
     target_state = target.state_dict()
     donor_state = donor.state_dict()
@@ -412,6 +446,12 @@ def donor_projected_init(
         axis_reductions = _with_consumer_hidden_reduction(axis_reductions, consumer_hidden_reduction)
         projected = None
         if attention_fold_mode == "coupled":
+            layer_axis_bases = _hidden_basis_axes_for_layer_tensor(
+                torch,
+                donor_tensor,
+                suffix,
+                None if layer_hidden_bases is None else layer_hidden_bases.get(int(target_layer_idx)),
+            )
             projected = _resize_attention_tensor_to_shape(
                 torch,
                 donor_tensor.detach().cpu().to(torch.float32),
@@ -420,6 +460,8 @@ def donor_projected_init(
                 donor.config,
                 target.config,
                 fold_mode=tensor_fold_mode,
+                axis_bases=layer_axis_bases,
+                hidden_basis=hidden_basis if donor_tensor.dim() >= 2 else None,
                 axis_weights=axis_weights,
                 axis_reductions=axis_reductions,
                 activation_fold_assignment=activation_fold_assignment,
@@ -427,11 +469,19 @@ def donor_projected_init(
                 semantic_prefix=("layer", int(target_layer_idx)),
             )
         if projected is None:
+            layer_axis_bases = _hidden_basis_axes_for_layer_tensor(
+                torch,
+                donor_tensor,
+                suffix,
+                None if layer_hidden_bases is None else layer_hidden_bases.get(int(target_layer_idx)),
+            )
             projected = _resize_tensor_to_shape(
                 torch,
                 donor_tensor.detach().cpu().to(torch.float32),
                 tuple(target_tensor.shape),
                 fold_mode=tensor_fold_mode,
+                axis_bases=layer_axis_bases,
+                hidden_basis=hidden_basis if donor_tensor.dim() >= 2 else None,
                 axis_weights=axis_weights,
                 axis_reductions=axis_reductions,
                 activation_fold_assignment=activation_fold_assignment,
@@ -461,6 +511,7 @@ def donor_projected_init(
         donor_state,
         changed_keys=set(changed_keys),
         fold_mode=fold_mode,
+        hidden_basis=hidden_basis,
         hidden_axis_weights=hidden_axis_weights,
         activation_fold_assignment=activation_fold_assignment,
         projection_scale=projection_scale,
@@ -470,6 +521,17 @@ def donor_projected_init(
     )
     changed_keys.extend(item["target_key"] for item in non_layer_report["initialized"])
     load_result = target.load_state_dict(target_state, strict=False)
+    embedding_hidden_basis = hidden_basis
+    lm_head_hidden_basis = hidden_basis
+    if layer_hidden_bases:
+        first_basis = layer_hidden_bases.get(0, {})
+        last_basis = layer_hidden_bases.get(len(target_layers) - 1, {})
+        embedding_hidden_basis = first_basis.get("input")
+        if embedding_hidden_basis is None:
+            embedding_hidden_basis = hidden_basis
+        lm_head_hidden_basis = last_basis.get("output")
+        if lm_head_hidden_basis is None:
+            lm_head_hidden_basis = hidden_basis
     token_report = _initialize_token_weights_from_donor(
         torch,
         target,
@@ -479,6 +541,8 @@ def donor_projected_init(
         max_anchors=max_anchors,
         token_init_mode=token_init_mode,
         fold_mode=fold_mode,
+        hidden_basis=embedding_hidden_basis,
+        lm_head_hidden_basis=lm_head_hidden_basis,
         hidden_axis_weights=hidden_axis_weights,
         activation_fold_assignment=activation_fold_assignment,
         projection_scale=projection_scale,
@@ -504,6 +568,11 @@ def donor_projected_init(
         "ridge": float(ridge),
         "max_anchors": int(max_anchors),
         "fold_mode": fold_mode,
+        "hidden_basis_mode": hidden_basis_mode,
+        "hidden_basis_scope": hidden_basis_scope,
+        "hidden_basis_max_rows": int(hidden_basis_max_rows),
+        "hidden_basis": hidden_basis_report,
+        "layer_hidden_basis": layer_hidden_basis_report,
         "activation_fold_assignment": activation_fold_assignment,
         "donor_layer_fold_mode": donor_layer_fold_mode,
         "attention_fold_mode": attention_fold_mode,
@@ -1368,6 +1437,7 @@ def _initialize_non_layer_tensors_from_donor(
     donor_state: dict[str, Any],
     changed_keys: set[str] | None = None,
     fold_mode: str = "mean",
+    hidden_basis=None,
     hidden_axis_weights=None,
     activation_fold_assignment: str = "balanced",
     projection_scale: str = "none",
@@ -1410,6 +1480,7 @@ def _initialize_non_layer_tensors_from_donor(
             donor_tensor.detach().cpu().to(torch.float32),
             tuple(target_tensor.shape),
             fold_mode=tensor_fold_mode,
+            hidden_basis=hidden_basis if donor_tensor.dim() >= 2 else None,
             axis_weights=axis_weights,
             axis_reductions=_with_consumer_hidden_reduction(
                 _axis_reductions_for_non_layer_tensor_key(target_key),
@@ -1586,6 +1657,8 @@ def _resize_tensor_to_shape(
     source,
     target_shape: tuple[int, ...],
     fold_mode: str = "mean",
+    axis_bases: dict[int, Any] | None = None,
+    hidden_basis=None,
     axis_weights: dict[int, Any] | None = None,
     axis_reductions: dict[int, str] | None = None,
     activation_fold_assignment: str = "balanced",
@@ -1602,6 +1675,13 @@ def _resize_tensor_to_shape(
     resized = source.to(torch.float32)
     for axis, target_dim in enumerate(target_shape):
         if resized.shape[axis] != int(target_dim):
+            basis = None if axis_bases is None else axis_bases.get(axis)
+            basis = _hidden_basis_for_axis(torch, basis, int(resized.shape[axis]), int(target_dim))
+            if basis is None:
+                basis = _hidden_basis_for_axis(torch, hidden_basis, int(resized.shape[axis]), int(target_dim))
+            if basis is not None:
+                resized = _resize_tensor_axis_hidden_basis(torch, resized, axis, basis)
+                continue
             profile = None if axis_weights is None else axis_weights.get(axis)
             weights, features, semantic_key = _axis_fold_profile(profile)
             resized = _resize_tensor_axis_mean_fold(
@@ -1628,6 +1708,8 @@ def _resize_attention_tensor_to_shape(
     donor_config,
     target_config,
     fold_mode: str = "mean",
+    axis_bases: dict[int, Any] | None = None,
+    hidden_basis=None,
     axis_weights: dict[int, Any] | None = None,
     axis_reductions: dict[int, str] | None = None,
     activation_fold_assignment: str = "balanced",
@@ -1667,6 +1749,13 @@ def _resize_attention_tensor_to_shape(
         return None
     for axis, target_dim in enumerate(target_shape):
         if resized.shape[axis] != int(target_dim):
+            basis = None if axis_bases is None else axis_bases.get(axis)
+            basis = _hidden_basis_for_axis(torch, basis, int(resized.shape[axis]), int(target_dim))
+            if basis is None:
+                basis = _hidden_basis_for_axis(torch, hidden_basis, int(resized.shape[axis]), int(target_dim))
+            if basis is not None:
+                resized = _resize_tensor_axis_hidden_basis(torch, resized, axis, basis)
+                continue
             profile = None if axis_weights is None or axis in handled_axes else axis_weights.get(axis)
             weights, features, semantic_key = _axis_fold_profile(profile)
             resized = _resize_tensor_axis_mean_fold(
@@ -1805,6 +1894,166 @@ def _axis_fold_profile(profile):
     if isinstance(profile, dict):
         return profile.get("weights"), profile.get("features"), profile.get("assignment_key")
     return profile, None, None
+
+
+def _hidden_basis_for_axis(torch, hidden_basis, source_dim: int, target_dim: int):
+    if hidden_basis is None:
+        return None
+    basis = hidden_basis
+    if isinstance(hidden_basis, dict):
+        basis = hidden_basis.get("basis")
+    if basis is None:
+        return None
+    basis = basis.detach().cpu().to(torch.float32)
+    if basis.dim() != 2:
+        raise ValueError("hidden basis must be rank-2.")
+    if int(basis.shape[0]) == int(source_dim) and int(basis.shape[1]) == int(target_dim):
+        return basis
+    return None
+
+
+def _resize_tensor_axis_hidden_basis(torch, tensor, axis: int, basis):
+    source_dim = int(tensor.shape[axis])
+    if int(basis.shape[0]) != source_dim:
+        raise ValueError("Hidden basis source dimension does not match tensor axis.")
+    target_dim = int(basis.shape[1])
+    moved = tensor.movedim(axis, 0).contiguous()
+    rest_shape = tuple(moved.shape[1:])
+    flat = moved.reshape(source_dim, -1).to(torch.float32)
+    projected = basis.to(flat.dtype).t().matmul(flat)
+    return projected.reshape((target_dim, *rest_shape)).movedim(0, axis).contiguous()
+
+
+def _build_activation_hidden_basis(torch, activation_rows, source_dim: int, target_dim: int):
+    if source_dim <= 0 or target_dim <= 0:
+        raise ValueError("source_dim and target_dim must be positive.")
+    rows = torch.nan_to_num(activation_rows.detach().cpu().to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    if rows.dim() != 2:
+        raise ValueError("activation rows must be rank-2.")
+    if int(rows.shape[1]) != int(source_dim):
+        raise ValueError(f"activation row width {rows.shape[1]} does not match source_dim {source_dim}.")
+    if int(target_dim) >= int(source_dim):
+        basis = torch.eye(int(source_dim), dtype=torch.float32)[:, : int(target_dim)]
+        return basis.contiguous(), {
+            "mode": "identity",
+            "source_dim": int(source_dim),
+            "target_dim": int(target_dim),
+            "rows": int(rows.shape[0]),
+            "retained_energy": 1.0,
+        }
+    if int(rows.shape[0]) < int(target_dim):
+        raise ValueError("Need at least target_dim activation rows to fit activation-pca basis.")
+    rows = rows - rows.mean(dim=0, keepdim=True)
+    row_rms = rows.pow(2).mean(dim=1, keepdim=True).sqrt().clamp_min(1e-6)
+    rows = rows / row_rms
+    _u, singular_values, vh = torch.linalg.svd(rows, full_matrices=False)
+    keep = min(int(target_dim), int(vh.shape[0]))
+    if keep < int(target_dim):
+        raise ValueError("SVD did not return enough basis vectors for requested target_dim.")
+    basis = vh[:keep].t().contiguous()
+    total_energy = singular_values.pow(2).sum().clamp_min(1e-12)
+    retained_energy = singular_values[:keep].pow(2).sum() / total_energy
+    return basis, {
+        "mode": "activation-pca",
+        "source_dim": int(source_dim),
+        "target_dim": int(target_dim),
+        "rows": int(rows.shape[0]),
+        "retained_energy": float(retained_energy.detach().cpu()),
+        "top_singular_value": float(singular_values[0].detach().cpu()) if int(singular_values.numel()) else 0.0,
+        "kept_singular_value": float(singular_values[keep - 1].detach().cpu()),
+    }
+
+
+def _build_layer_activation_hidden_bases(
+    torch,
+    activation_profile: dict[str, Any],
+    target_layer_count: int,
+    donor_layer_count: int,
+    source_dim: int,
+    target_dim: int,
+):
+    input_rows_by_layer = activation_profile.get("hidden_basis_input_rows") or {}
+    output_rows_by_layer = activation_profile.get("hidden_basis_output_rows") or {}
+    layer_bases: dict[int, dict[str, Any]] = {}
+    reports = []
+    for target_layer_idx in range(int(target_layer_count)):
+        group = _donor_layer_group_for_target(target_layer_idx, target_layer_count, donor_layer_count)
+        input_rows = input_rows_by_layer.get(int(group[0]))
+        output_rows = output_rows_by_layer.get(int(group[-1]))
+        item: dict[str, Any] = {}
+        report = {
+            "target_layer": int(target_layer_idx),
+            "donor_layer_group": [int(layer_idx) for layer_idx in group],
+        }
+        if input_rows is not None:
+            input_basis, input_report = _build_activation_hidden_basis(
+                torch,
+                input_rows,
+                source_dim=source_dim,
+                target_dim=target_dim,
+            )
+            item["input"] = input_basis
+            report["input"] = input_report
+        else:
+            report["input"] = {"skipped": True, "reason": "missing_input_boundary_rows"}
+        if output_rows is not None:
+            output_basis, output_report = _build_activation_hidden_basis(
+                torch,
+                output_rows,
+                source_dim=source_dim,
+                target_dim=target_dim,
+            )
+            item["output"] = output_basis
+            report["output"] = output_report
+        else:
+            report["output"] = {"skipped": True, "reason": "missing_output_boundary_rows"}
+        if item:
+            layer_bases[int(target_layer_idx)] = item
+        reports.append(report)
+    return layer_bases, {
+        "scope": "layer",
+        "target_layer_count": int(target_layer_count),
+        "donor_layer_count": int(donor_layer_count),
+        "source_dim": int(source_dim),
+        "target_dim": int(target_dim),
+        "layers": reports,
+    }
+
+
+def _hidden_basis_axes_for_layer_tensor(torch, donor_tensor, suffix: str, layer_basis):
+    if not layer_basis:
+        return None
+    input_basis = layer_basis.get("input")
+    output_basis = layer_basis.get("output")
+    lowered = f".{suffix.lower()}"
+    axis_bases = {}
+    for axis, source_dim in enumerate(donor_tensor.shape):
+        if input_basis is not None and _hidden_basis_for_axis(torch, input_basis, int(source_dim), int(input_basis.shape[1])) is not None:
+            if axis == 1 and (
+                lowered.endswith(".q_proj.weight")
+                or lowered.endswith(".k_proj.weight")
+                or lowered.endswith(".v_proj.weight")
+                or lowered.endswith(".gate_proj.weight")
+                or lowered.endswith(".up_proj.weight")
+                or lowered.endswith(".w1.weight")
+                or lowered.endswith(".w3.weight")
+                or lowered.endswith(".dense_h_to_4h.weight")
+                or lowered.endswith(".fc1.weight")
+            ):
+                axis_bases[axis] = input_basis
+        if output_basis is not None and _hidden_basis_for_axis(torch, output_basis, int(source_dim), int(output_basis.shape[1])) is not None:
+            if axis == 0 and (
+                lowered.endswith(".o_proj.weight")
+                or lowered.endswith(".out_proj.weight")
+                or lowered.endswith(".attn.c_proj.weight")
+                or lowered.endswith(".down_proj.weight")
+                or lowered.endswith(".w2.weight")
+                or lowered.endswith(".dense_4h_to_h.weight")
+                or lowered.endswith(".fc2.weight")
+                or lowered.endswith(".c_proj.weight")
+            ):
+                axis_bases[axis] = output_basis
+    return axis_bases or None
 
 
 def _axis_assignment_cache_key(base_key, source_dim: int, target_dim: int, assignment_mode: str, fold_mode: str = "mean"):
@@ -2130,19 +2379,55 @@ def _collect_donor_axis_activation_scores(
     texts: list[str],
     max_length: int,
     device: str,
+    hidden_basis_max_rows: int = 0,
 ) -> dict[str, Any]:
     if not texts:
         raise ValueError("Need at least one activation calibration text.")
     hidden_scores = []
     hidden_features = []
+    hidden_basis_pieces = []
+    hidden_basis_rows = 0
+    hidden_basis_input_pieces: dict[int, list[Any]] = {idx: [] for idx in range(len(donor_layers))}
+    hidden_basis_output_pieces: dict[int, list[Any]] = {idx: [] for idx in range(len(donor_layers))}
+    hidden_basis_input_rows: dict[int, int] = {idx: 0 for idx in range(len(donor_layers))}
+    hidden_basis_output_rows: dict[int, int] = {idx: 0 for idx in range(len(donor_layers))}
     mlp_scores: dict[int, list[Any]] = {idx: [] for idx in range(len(donor_layers))}
     mlp_features: dict[int, list[Any]] = {idx: [] for idx in range(len(donor_layers))}
     handles = []
 
-    def hidden_hook(_module, inputs):
-        hidden = inputs[0].detach().to(torch.float32)
-        hidden_scores.append(_activation_abs_score(torch, hidden).cpu())
-        hidden_features.append(_activation_channel_summary(torch, _activation_2d(torch, hidden)).cpu())
+    def append_basis_rows(store, counts, layer_idx: int, tensor) -> None:
+        if int(hidden_basis_max_rows) <= 0 or counts[int(layer_idx)] >= int(hidden_basis_max_rows):
+            return
+        rows = _activation_2d(torch, tensor).detach().cpu().to(torch.float32)
+        remaining = int(hidden_basis_max_rows) - counts[int(layer_idx)]
+        take = min(int(rows.shape[0]), remaining)
+        if take > 0:
+            store[int(layer_idx)].append(rows[:take])
+            counts[int(layer_idx)] += int(take)
+
+    def hidden_hook(layer_idx: int):
+        def hook(_module, inputs):
+            nonlocal hidden_basis_rows
+            hidden = inputs[0].detach().to(torch.float32)
+            hidden_scores.append(_activation_abs_score(torch, hidden).cpu())
+            hidden_features.append(_activation_channel_summary(torch, _activation_2d(torch, hidden)).cpu())
+            if int(hidden_basis_max_rows) > 0 and hidden_basis_rows < int(hidden_basis_max_rows):
+                rows = _activation_2d(torch, hidden).detach().cpu().to(torch.float32)
+                remaining = int(hidden_basis_max_rows) - hidden_basis_rows
+                take = min(int(rows.shape[0]), remaining)
+                if take > 0:
+                    hidden_basis_pieces.append(rows[:take])
+                    hidden_basis_rows += int(take)
+            append_basis_rows(hidden_basis_input_pieces, hidden_basis_input_rows, layer_idx, hidden)
+
+        return hook
+
+    def hidden_output_hook(layer_idx: int):
+        def hook(_module, _inputs, output):
+            tensor = output[0] if isinstance(output, tuple) else output
+            append_basis_rows(hidden_basis_output_pieces, hidden_basis_output_rows, layer_idx, tensor.detach().to(torch.float32))
+
+        return hook
 
     def mlp_hook(layer_idx: int):
         def hook(_module, _inputs, output):
@@ -2154,7 +2439,8 @@ def _collect_donor_axis_activation_scores(
         return hook
 
     for layer_idx, layer in enumerate(donor_layers):
-        handles.append(layer.register_forward_pre_hook(hidden_hook))
+        handles.append(layer.register_forward_pre_hook(hidden_hook(layer_idx)))
+        handles.append(layer.register_forward_hook(hidden_output_hook(layer_idx)))
         spec = _mlp_spec(layer)
         if spec is None:
             continue
@@ -2192,6 +2478,13 @@ def _collect_donor_axis_activation_scores(
     return {
         "hidden_scores": torch.stack(hidden_scores, dim=0).mean(dim=0).clamp_min(1e-12),
         "hidden_features": torch.stack(hidden_features, dim=0).mean(dim=0),
+        "hidden_basis_rows": torch.cat(hidden_basis_pieces, dim=0) if hidden_basis_pieces else None,
+        "hidden_basis_input_rows": {
+            int(layer_idx): torch.cat(pieces, dim=0) for layer_idx, pieces in hidden_basis_input_pieces.items() if pieces
+        },
+        "hidden_basis_output_rows": {
+            int(layer_idx): torch.cat(pieces, dim=0) for layer_idx, pieces in hidden_basis_output_pieces.items() if pieces
+        },
         "mlp_scores": folded_mlp_scores,
         "mlp_features": folded_mlp_features,
     }
@@ -2306,6 +2599,8 @@ def _initialize_token_weights_from_donor(
     max_anchors: int,
     token_init_mode: str = "shared",
     fold_mode: str = "mean",
+    hidden_basis=None,
+    lm_head_hidden_basis=None,
     hidden_axis_weights=None,
     activation_fold_assignment: str = "balanced",
     projection_scale: str = "none",
@@ -2341,6 +2636,7 @@ def _initialize_token_weights_from_donor(
         target_ids,
         donor_id_groups,
         fold_mode=fold_mode,
+        hidden_basis=hidden_basis,
         hidden_axis_weights=hidden_axis_weights,
         activation_fold_assignment=activation_fold_assignment,
         projection_scale=projection_scale,
@@ -2373,6 +2669,7 @@ def _initialize_token_weights_from_donor(
                 target_ids,
                 donor_id_groups,
                 fold_mode=fold_mode,
+                hidden_basis=hidden_basis if lm_head_hidden_basis is None else lm_head_hidden_basis,
                 hidden_axis_weights=hidden_axis_weights,
                 activation_fold_assignment=activation_fold_assignment,
                 projection_scale=projection_scale,
@@ -2404,6 +2701,7 @@ def _project_token_weight_rows(
     target_ids: Sequence[int],
     donor_id_groups: Sequence[Sequence[int]],
     fold_mode: str,
+    hidden_basis=None,
     hidden_axis_weights=None,
     activation_fold_assignment: str = "balanced",
     projection_scale: str = "none",
@@ -2432,6 +2730,7 @@ def _project_token_weight_rows(
             donor_rows,
             (len(chunk_target_ids), target_dim),
             fold_mode=fold_mode,
+            hidden_basis=hidden_basis,
             axis_weights={} if hidden_axis_weights is None else {1: hidden_axis_weights},
             axis_reductions={1: hidden_axis_reduction},
             activation_fold_assignment=activation_fold_assignment,
