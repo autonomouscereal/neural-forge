@@ -8,7 +8,9 @@ from neural_forge.hf_recovery import RECOVERY_TEXTS
 from neural_forge.hf_recovery import _assert_same_vocab
 from neural_forge.hf_recovery import _absorb_input_map_into_linears
 from neural_forge.hf_recovery import _candidate_index_after_depth_fold
+from neural_forge.hf_recovery import _cross_tokenizer_recovery_loss
 from neural_forge.hf_recovery import _fit_activation_map
+from neural_forge.hf_recovery import _fit_shared_embedding_hidden_projection
 from neural_forge.hf_recovery import _fold_groups_from_report
 from neural_forge.hf_recovery import _mlp_projection_spec
 from neural_forge.hf_recovery import _recovery_loss
@@ -23,6 +25,7 @@ from neural_forge.hf_xfamily import _canonical_token
 from neural_forge.hf_xfamily import _canonical_token_map
 from neural_forge.hf_xfamily import _assign_donor_to_host
 from neural_forge.hf_xfamily import _activation_similarity_assignment
+from neural_forge.hf_xfamily import _activation_axis_weights_for_tensor
 from neural_forge.hf_xfamily import _balanced_activation_assignment
 from neural_forge.hf_xfamily import _channel_assignment_features
 from neural_forge.hf_xfamily import _donor_layer_group_for_target
@@ -262,7 +265,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "--max-tokens-per-layer",
             "77",
             "--dtype",
-            "float32",
+            "float16",
             "--device",
             "cpu",
             "--calibration-file",
@@ -374,6 +377,52 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "8",
         ]
     )
+    xfamily_recover_args = parser.parse_args(
+        [
+            "hf-xfamily-recover",
+            "donor",
+            "candidate",
+            "recovered",
+            "--steps",
+            "12",
+            "--batch-size",
+            "2",
+            "--max-length",
+            "64",
+            "--lr",
+            "0.0003",
+            "--anchor-kd-weight",
+            "0.7",
+            "--lm-weight",
+            "0.3",
+            "--hidden-kd-weight",
+            "0.2",
+            "--hidden-ridge",
+            "0.02",
+            "--hidden-layer",
+            "middle",
+            "--hidden-max-anchors",
+            "77",
+            "--temperature",
+            "1.5",
+            "--max-anchors",
+            "123",
+            "--train-scope",
+            "last2",
+            "--dtype",
+            "float16",
+            "--candidate-dtype",
+            "float32",
+            "--device",
+            "cpu",
+            "--grad-clip",
+            "0.4",
+            "--calibration-file",
+            "calibration.jsonl",
+            "--max-calibration-texts",
+            "6",
+        ]
+    )
     assert sweep_args.output_dir == "out"
     assert resize_args.assignment == "topk"
     assert random_args.output == "random-out"
@@ -401,7 +450,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert rank_fold_args.top_k == 5
     assert rank_fold_args.max_length == 96
     assert rank_fold_args.max_tokens_per_layer == 77
-    assert rank_fold_args.dtype == "float32"
+    assert rank_fold_args.dtype == "float16"
     assert rank_fold_args.device == "cpu"
     assert rank_fold_args.calibration_file == "calibration.jsonl"
     assert rank_fold_args.max_calibration_texts == 8
@@ -441,6 +490,20 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_compress_args.recover_only_failed is True
     assert xfamily_compress_args.recover_calibration_file == "calibration.jsonl"
     assert xfamily_compress_args.recover_max_calibration_texts == 8
+    assert xfamily_recover_args.source_model == "donor"
+    assert xfamily_recover_args.candidate_model == "candidate"
+    assert xfamily_recover_args.output == "recovered"
+    assert xfamily_recover_args.anchor_kd_weight == 0.7
+    assert xfamily_recover_args.lm_weight == 0.3
+    assert xfamily_recover_args.hidden_kd_weight == 0.2
+    assert xfamily_recover_args.hidden_ridge == 0.02
+    assert xfamily_recover_args.hidden_layer == "middle"
+    assert xfamily_recover_args.hidden_max_anchors == 77
+    assert xfamily_recover_args.max_anchors == 123
+    assert xfamily_recover_args.train_scope == "last2"
+    assert xfamily_recover_args.dtype == "float16"
+    assert xfamily_recover_args.candidate_dtype == "float32"
+    assert xfamily_recover_args.calibration_file == "calibration.jsonl"
     with pytest.raises(SystemExit):
         parser.parse_args(
             [
@@ -647,6 +710,36 @@ def test_activation_weighted_fold_uses_importance_bins() -> None:
     assert folded.flatten().tolist() == pytest.approx([10.0 / 11.0, 1100.0 / 10.0])
 
 
+def test_activation_axis_weights_aggregate_folded_donor_group() -> None:
+    torch = pytest.importorskip("torch")
+    donor_tensor = torch.ones((4, 6), dtype=torch.float32)
+    profile = {
+        "hidden_scores": torch.ones(5),
+        "hidden_features": torch.ones((5, 2)),
+        "mlp_scores": {
+            2: torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+            3: torch.tensor([3.0, 4.0, 5.0, 6.0, 7.0, 8.0]),
+        },
+        "mlp_features": {
+            2: torch.ones((6, 2)),
+            3: torch.ones((6, 2)) * 3.0,
+        },
+    }
+
+    weights = _activation_axis_weights_for_tensor(
+        torch,
+        donor_tensor,
+        "mlp.gate_proj.weight",
+        donor_layer_idx=2,
+        donor_layer_group=[2, 3],
+        activation_profile=profile,
+    )
+
+    assert weights is not None
+    assert weights[1]["weights"].tolist() == pytest.approx([2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+    assert weights[1]["features"].flatten().tolist() == pytest.approx([2.0] * 12)
+
+
 def test_activation_similarity_assignment_groups_activation_signatures() -> None:
     torch = pytest.importorskip("torch")
     features = torch.tensor(
@@ -723,6 +816,97 @@ def test_recovery_loss_allows_lm_only_without_teacher() -> None:
             lm_weight=0.0,
             temperature=1.0,
         )
+
+
+def test_cross_tokenizer_recovery_loss_uses_anchor_subspace() -> None:
+    torch = pytest.importorskip("torch")
+    student = _Obj(logits=torch.randn(1, 4, 7))
+    teacher = _Obj(logits=torch.randn(1, 5, 9))
+    candidate_ids = torch.tensor([[1, 2, 3, 4]])
+    candidate_mask = torch.ones_like(candidate_ids)
+    source_mask = torch.ones((1, 5), dtype=torch.long)
+
+    loss = _cross_tokenizer_recovery_loss(
+        torch,
+        student,
+        teacher,
+        candidate_ids,
+        candidate_mask,
+        source_mask,
+        candidate_anchor_idx=torch.tensor([1, 3, 5]),
+        source_anchor_idx=torch.tensor([2, 4, 6]),
+        anchor_kd_weight=0.7,
+        lm_weight=0.3,
+        hidden_kd_weight=0.0,
+        hidden_projection=None,
+        hidden_layer="last",
+        temperature=1.5,
+    )
+
+    assert torch.isfinite(loss)
+
+
+def test_cross_tokenizer_recovery_loss_uses_projected_hidden_states() -> None:
+    torch = pytest.importorskip("torch")
+    student = _Obj(
+        logits=torch.randn(1, 4, 7),
+        hidden_states=(torch.randn(1, 4, 3), torch.randn(1, 4, 3)),
+    )
+    teacher = _Obj(
+        logits=torch.randn(1, 5, 9),
+        hidden_states=(torch.randn(1, 5, 5), torch.randn(1, 5, 5)),
+    )
+    candidate_ids = torch.tensor([[1, 2, 3, 4]])
+    candidate_mask = torch.ones_like(candidate_ids)
+    source_mask = torch.ones((1, 5), dtype=torch.long)
+    projection = torch.randn(5, 3)
+
+    loss = _cross_tokenizer_recovery_loss(
+        torch,
+        student,
+        teacher,
+        candidate_ids,
+        candidate_mask,
+        source_mask,
+        candidate_anchor_idx=torch.tensor([1, 3, 5]),
+        source_anchor_idx=torch.tensor([2, 4, 6]),
+        anchor_kd_weight=0.1,
+        lm_weight=0.2,
+        hidden_kd_weight=0.7,
+        hidden_projection=projection,
+        hidden_layer="last",
+        temperature=1.5,
+    )
+
+    assert torch.isfinite(loss)
+
+
+def test_shared_embedding_hidden_projection_caps_anchor_rows() -> None:
+    torch = pytest.importorskip("torch")
+
+    class _Model:
+        def __init__(self, weight) -> None:
+            self.embedding = torch.nn.Embedding.from_pretrained(weight, freeze=False)
+
+        def get_input_embeddings(self):
+            return self.embedding
+
+    source_weight = torch.eye(6, 4)
+    candidate_weight = torch.randn(6, 2)
+    report = _fit_shared_embedding_hidden_projection(
+        torch,
+        _Model(source_weight),
+        _Model(candidate_weight),
+        source_anchor_idx=torch.arange(6),
+        candidate_anchor_idx=torch.arange(6),
+        ridge=0.01,
+        max_anchors=3,
+    )
+
+    assert tuple(report["map"].shape) == (4, 2)
+    assert report["available_anchor_count"] == 6
+    assert report["anchor_count"] == 3
+    assert report["relative_error"] >= 0.0
 
 
 def test_absorb_input_map_into_linears_updates_weight_orientation() -> None:
@@ -968,6 +1152,93 @@ def test_hf_lm_recover_handler_passes_teacherless_flags(monkeypatch) -> None:
         "temperature": 1.0,
         "train_scope": "last2",
         "torch_dtype": "float32",
+        "device": "cpu",
+        "trust_remote_code": False,
+        "calibration_texts": ["calibration text"],
+        "grad_clip": 0.5,
+    }
+
+
+def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
+    import neural_forge.cli as cli
+    import neural_forge.hf_recovery as hf_recovery
+
+    captured = {}
+
+    def fake_recover(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(hf_recovery, "recover_cross_tokenizer_causal_lm", fake_recover)
+    monkeypatch.setattr(cli, "_load_recovery_calibration_texts", lambda path, max_texts: ["calibration text"])
+    args = build_parser().parse_args(
+        [
+            "hf-xfamily-recover",
+            "donor",
+            "candidate",
+            "out",
+            "--steps",
+            "5",
+            "--batch-size",
+            "2",
+            "--max-length",
+            "48",
+            "--lr",
+            "0.0002",
+            "--anchor-kd-weight",
+            "0.6",
+            "--lm-weight",
+            "0.4",
+            "--hidden-kd-weight",
+            "0.25",
+            "--hidden-ridge",
+            "0.03",
+            "--hidden-layer",
+            "middle",
+            "--hidden-max-anchors",
+            "99",
+            "--temperature",
+            "1.7",
+            "--max-anchors",
+            "321",
+            "--train-scope",
+            "last2",
+            "--dtype",
+            "float16",
+            "--candidate-dtype",
+            "float32",
+            "--device",
+            "cpu",
+            "--grad-clip",
+            "0.5",
+            "--calibration-file",
+            "calibration.jsonl",
+            "--max-calibration-texts",
+            "3",
+        ]
+    )
+    result = args.func(args)
+
+    assert result == {"ok": True}
+    assert captured == {
+        "source_model": "donor",
+        "candidate_model": "candidate",
+        "output_dir": "out",
+        "steps": 5,
+        "batch_size": 2,
+        "max_length": 48,
+        "lr": 0.0002,
+        "anchor_kd_weight": 0.6,
+        "lm_weight": 0.4,
+        "hidden_kd_weight": 0.25,
+        "hidden_ridge": 0.03,
+        "hidden_layer": "middle",
+        "hidden_max_anchors": 99,
+        "temperature": 1.7,
+        "max_anchors": 321,
+        "train_scope": "last2",
+        "torch_dtype": "float16",
+        "candidate_torch_dtype": "float32",
         "device": "cpu",
         "trust_remote_code": False,
         "calibration_texts": ["calibration text"],

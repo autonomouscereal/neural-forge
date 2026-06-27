@@ -171,6 +171,201 @@ def recover_causal_lm(
     return report
 
 
+def recover_cross_tokenizer_causal_lm(
+    source_model: str,
+    candidate_model: str,
+    output_dir: str | Path,
+    steps: int = 40,
+    batch_size: int = 1,
+    max_length: int = 96,
+    lr: float = 5e-5,
+    anchor_kd_weight: float = 0.5,
+    lm_weight: float = 0.5,
+    hidden_kd_weight: float = 0.0,
+    hidden_ridge: float = 1e-3,
+    hidden_layer: str = "last",
+    hidden_max_anchors: int = 2048,
+    temperature: float = 2.0,
+    max_anchors: int = 20_000,
+    train_scope: str = "last1",
+    torch_dtype: str = "float32",
+    candidate_torch_dtype: str = "float32",
+    device: str = "cuda:0",
+    trust_remote_code: bool = False,
+    calibration_texts: Sequence[str] | None = None,
+    grad_clip: float = 1.0,
+) -> dict[str, Any]:
+    """Recover a cross-tokenizer folded child against donor anchor logits.
+
+    Tokenizers are not assumed to align position-by-position. Instead, shared
+    decoded-token anchors define a common logit subspace. For each calibration
+    text, the teacher and child next-token logits are averaged over valid
+    positions in their own tokenization, then KL is computed over the shared
+    anchor vocabulary. Candidate-token LM loss remains available as a stabilizer.
+    """
+
+    if steps < 0:
+        raise ValueError("steps must be non-negative.")
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive.")
+    if max_length <= 1:
+        raise ValueError("max_length must be greater than 1.")
+    if lr <= 0:
+        raise ValueError("lr must be positive.")
+    if anchor_kd_weight < 0 or lm_weight < 0 or hidden_kd_weight < 0:
+        raise ValueError("loss weights must be non-negative.")
+    if anchor_kd_weight == 0 and lm_weight == 0 and hidden_kd_weight == 0:
+        raise ValueError("At least one loss weight must be positive.")
+    if hidden_ridge < 0:
+        raise ValueError("hidden_ridge must be non-negative.")
+    if hidden_layer not in {"last", "middle"}:
+        raise ValueError("hidden_layer must be last or middle.")
+    if hidden_max_anchors <= 0:
+        raise ValueError("hidden_max_anchors must be positive.")
+    if temperature <= 0:
+        raise ValueError("temperature must be positive.")
+    if max_anchors <= 0:
+        raise ValueError("max_anchors must be positive.")
+    if grad_clip < 0:
+        raise ValueError("grad_clip must be non-negative.")
+
+    from neural_forge.hf_xfamily import _canonical_token_map
+
+    torch, transformers = _torch_and_transformers()
+    dtype = _dtype_from_name(torch, torch_dtype)
+    candidate_dtype = _dtype_from_name(torch, candidate_torch_dtype)
+    source_tokenizer = transformers.AutoTokenizer.from_pretrained(source_model, trust_remote_code=trust_remote_code)
+    candidate_tokenizer = transformers.AutoTokenizer.from_pretrained(candidate_model, trust_remote_code=trust_remote_code)
+    if source_tokenizer.pad_token_id is None and source_tokenizer.eos_token_id is not None:
+        source_tokenizer.pad_token = source_tokenizer.eos_token
+    if candidate_tokenizer.pad_token_id is None and candidate_tokenizer.eos_token_id is not None:
+        candidate_tokenizer.pad_token = candidate_tokenizer.eos_token
+
+    anchors = _shared_recovery_anchors(source_tokenizer, candidate_tokenizer, max_anchors, _canonical_token_map)
+    if not anchors:
+        raise ValueError("No shared decoded-token anchors found for cross-tokenizer recovery.")
+    source_anchor_idx = torch.tensor([item[1] for item in anchors], dtype=torch.long, device=device)
+    candidate_anchor_idx = torch.tensor([item[2] for item in anchors], dtype=torch.long, device=device)
+
+    source = transformers.AutoModelForCausalLM.from_pretrained(
+        source_model,
+        torch_dtype=dtype,
+        device_map=None,
+        trust_remote_code=trust_remote_code,
+    )
+    candidate = transformers.AutoModelForCausalLM.from_pretrained(
+        candidate_model,
+        torch_dtype=candidate_dtype,
+        device_map=None,
+        trust_remote_code=trust_remote_code,
+    )
+    source.to(device)
+    candidate.to(device)
+    source.eval()
+    candidate.train()
+    if hasattr(source.config, "use_cache"):
+        source.config.use_cache = False
+    if hasattr(candidate.config, "use_cache"):
+        candidate.config.use_cache = False
+
+    hidden_projection_report = None
+    hidden_projection = None
+    if hidden_kd_weight > 0:
+        hidden_projection_report = _fit_shared_embedding_hidden_projection(
+            torch,
+            source,
+            candidate,
+            source_anchor_idx,
+            candidate_anchor_idx,
+            ridge=hidden_ridge,
+            max_anchors=hidden_max_anchors,
+        )
+        hidden_projection = hidden_projection_report["map"].to(device=device, dtype=torch.float32)
+
+    trainable_params = _set_train_scope(candidate, train_scope)
+    optimizer = torch.optim.AdamW([p for p in candidate.parameters() if p.requires_grad], lr=lr)
+    texts = list(calibration_texts or RECOVERY_TEXTS)
+    if not texts:
+        raise ValueError("Need at least one recovery text.")
+    eval_overlap_count = len(set(texts) & set(TEXT_EVALS))
+    batches = _make_paired_batches(
+        source_tokenizer,
+        candidate_tokenizer,
+        texts,
+        batch_size=batch_size,
+        max_length=max_length,
+        device=device,
+    )
+
+    losses = []
+    for step in range(1, steps + 1):
+        source_batch, candidate_batch = batches[(step - 1) % len(batches)]
+        optimizer.zero_grad(set_to_none=True)
+        with torch.no_grad():
+            teacher = source(**source_batch, use_cache=False, output_hidden_states=hidden_kd_weight > 0)
+        student = candidate(**candidate_batch, use_cache=False, output_hidden_states=hidden_kd_weight > 0)
+        loss = _cross_tokenizer_recovery_loss(
+            torch,
+            student,
+            teacher,
+            candidate_batch["input_ids"],
+            candidate_batch.get("attention_mask"),
+            source_batch.get("attention_mask"),
+            candidate_anchor_idx,
+            source_anchor_idx,
+            anchor_kd_weight,
+            lm_weight,
+            hidden_kd_weight,
+            hidden_projection,
+            hidden_layer,
+            temperature,
+        )
+        if not bool(torch.isfinite(loss).detach().cpu()):
+            raise RuntimeError(f"Non-finite cross-tokenizer recovery loss at step {step}; aborting before save.")
+        loss.backward()
+        if grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_([p for p in candidate.parameters() if p.requires_grad], grad_clip)
+        optimizer.step()
+        if step == 1 or step % max(1, steps // 10) == 0:
+            losses.append({"step": step, "loss": float(loss.detach().cpu())})
+
+    target = Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    candidate.save_pretrained(target, safe_serialization=True)
+    candidate_tokenizer.save_pretrained(target)
+    report = {
+        "operation": "recover_cross_tokenizer_causal_lm",
+        "source_model": source_model,
+        "candidate_model": candidate_model,
+        "output_dir": str(target),
+        "steps": steps,
+        "batch_size": batch_size,
+        "max_length": max_length,
+        "lr": lr,
+        "anchor_kd_weight": anchor_kd_weight,
+        "lm_weight": lm_weight,
+        "hidden_kd_weight": hidden_kd_weight,
+        "hidden_ridge": hidden_ridge,
+        "hidden_layer": hidden_layer,
+        "hidden_max_anchors": hidden_max_anchors,
+        "hidden_projection": hidden_projection_report
+        and {key: value for key, value in hidden_projection_report.items() if key != "map"},
+        "temperature": temperature,
+        "max_anchors": max_anchors,
+        "anchors_used": len(anchors),
+        "train_scope": train_scope,
+        "torch_dtype": torch_dtype,
+        "candidate_torch_dtype": candidate_torch_dtype,
+        "trainable_param_count": trainable_params,
+        "calibration_text_count": len(texts),
+        "eval_overlap_count": eval_overlap_count,
+        "losses": losses,
+        "param_count": sum(param.numel() for param in candidate.parameters()),
+    }
+    _write_json(target / "neural_forge_xfamily_recovery_report.json", report)
+    return report
+
+
 def reconstruct_folded_causal_lm(
     source_model: str,
     candidate_model: str,
@@ -468,6 +663,76 @@ def _make_batches(tokenizer, texts: Sequence[str], batch_size: int, max_length: 
         )
         batches.append({key: value.to(device) for key, value in encoded.items()})
     return batches
+
+
+def _make_paired_batches(
+    source_tokenizer,
+    candidate_tokenizer,
+    texts: Sequence[str],
+    batch_size: int,
+    max_length: int,
+    device: str,
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    source_batches = _make_batches(source_tokenizer, texts, batch_size, max_length, device)
+    candidate_batches = _make_batches(candidate_tokenizer, texts, batch_size, max_length, device)
+    if len(source_batches) != len(candidate_batches):
+        raise RuntimeError("Paired source/candidate batch counts diverged.")
+    return list(zip(source_batches, candidate_batches))
+
+
+def _shared_recovery_anchors(source_tokenizer, candidate_tokenizer, max_anchors: int, map_fn) -> list[tuple[str, int, int]]:
+    source_map = map_fn(source_tokenizer)
+    candidate_map = map_fn(candidate_tokenizer)
+    shared = sorted(set(source_map) & set(candidate_map), key=lambda item: (len(item), item))
+    return [(token, source_map[token], candidate_map[token]) for token in shared[:max_anchors]]
+
+
+def _fit_shared_embedding_hidden_projection(
+    torch,
+    source,
+    candidate,
+    source_anchor_idx,
+    candidate_anchor_idx,
+    ridge: float,
+    max_anchors: int,
+) -> dict[str, Any]:
+    """Fit a temporary donor-hidden -> child-hidden map from shared token embeddings."""
+
+    if max_anchors <= 0:
+        raise ValueError("max_anchors must be positive.")
+    available = int(source_anchor_idx.numel())
+    if available <= 0:
+        raise ValueError("Need at least one shared anchor for hidden KD projection.")
+    if available > max_anchors:
+        sample = torch.linspace(
+            0,
+            available - 1,
+            steps=int(max_anchors),
+            device=source_anchor_idx.device,
+            dtype=torch.float32,
+        ).round().to(torch.long)
+        source_anchor_idx = source_anchor_idx.index_select(0, sample)
+        candidate_anchor_idx = candidate_anchor_idx.index_select(0, sample)
+
+    source_embeddings = source.get_input_embeddings()
+    candidate_embeddings = candidate.get_input_embeddings()
+    if source_embeddings is None or candidate_embeddings is None:
+        raise ValueError("Both source and candidate need input embeddings for hidden KD projection.")
+    with torch.no_grad():
+        source_rows = source_embeddings.weight.index_select(0, source_anchor_idx).detach().to(torch.float32)
+        candidate_rows = candidate_embeddings.weight.index_select(0, candidate_anchor_idx).detach().to(torch.float32)
+    projection = _ridge_solve_features(torch, source_rows, candidate_rows, ridge)
+    predicted = source_rows.matmul(projection)
+    return {
+        "map": projection.detach(),
+        "anchor_count": int(source_rows.shape[0]),
+        "available_anchor_count": available,
+        "source_hidden_size": int(source_rows.shape[1]),
+        "candidate_hidden_size": int(candidate_rows.shape[1]),
+        "ridge": float(ridge),
+        "relative_error": _relative_reconstruction_error(torch, predicted, candidate_rows),
+        "mean_cosine": _mean_row_cosine(torch, predicted, candidate_rows),
+    }
 
 
 def _load_layer_merge_report(candidate_model: str, layer_merge_report: str | Path | dict[str, Any] | None) -> dict[str, Any]:
@@ -1095,7 +1360,12 @@ def _absorb_input_map_into_linears(torch, linears: Sequence[tuple[str, Any]], ma
 
 
 def _recovery_loss(torch, student, teacher, input_ids, attention_mask, kd_weight: float, lm_weight: float, temperature: float):
-    shift_student = student.logits[:, :-1, :].contiguous()
+    shift_student = torch.nan_to_num(
+        student.logits[:, :-1, :].contiguous().to(torch.float32),
+        nan=0.0,
+        posinf=1e4,
+        neginf=-1e4,
+    )
     shift_labels = input_ids[:, 1:].contiguous()
     if attention_mask is None:
         mask = torch.ones_like(shift_labels, dtype=torch.bool)
@@ -1106,7 +1376,12 @@ def _recovery_loss(torch, student, teacher, input_ids, attention_mask, kd_weight
     if kd_weight > 0:
         if teacher is None:
             raise ValueError("teacher output is required when kd_weight is positive.")
-        shift_teacher = teacher.logits[:, :-1, :].contiguous()
+        shift_teacher = torch.nan_to_num(
+            teacher.logits[:, :-1, :].contiguous().to(torch.float32),
+            nan=0.0,
+            posinf=1e4,
+            neginf=-1e4,
+        )
         student_logp = torch.nn.functional.log_softmax(shift_student / temperature, dim=-1)
         teacher_p = torch.nn.functional.softmax(shift_teacher / temperature, dim=-1)
         token_kl = torch.nn.functional.kl_div(student_logp, teacher_p, reduction="none").sum(dim=-1)
@@ -1121,6 +1396,133 @@ def _recovery_loss(torch, student, teacher, input_ids, attention_mask, kd_weight
         )
         total = total + float(lm_weight) * lm
     return total
+
+
+def _cross_tokenizer_recovery_loss(
+    torch,
+    student,
+    teacher,
+    candidate_input_ids,
+    candidate_attention_mask,
+    source_attention_mask,
+    candidate_anchor_idx,
+    source_anchor_idx,
+    anchor_kd_weight: float,
+    lm_weight: float,
+    hidden_kd_weight: float,
+    hidden_projection,
+    hidden_layer: str,
+    temperature: float,
+):
+    shift_student = torch.nan_to_num(
+        student.logits[:, :-1, :].contiguous().to(torch.float32),
+        nan=0.0,
+        posinf=1e4,
+        neginf=-1e4,
+    )
+    shift_labels = candidate_input_ids[:, 1:].contiguous()
+    if candidate_attention_mask is None:
+        candidate_mask = torch.ones_like(shift_labels, dtype=torch.bool)
+    else:
+        candidate_mask = candidate_attention_mask[:, 1:].contiguous().bool()
+    shift_labels = shift_labels.masked_fill(~candidate_mask, -100)
+    total = torch.zeros((), dtype=shift_student.dtype, device=shift_student.device)
+    if anchor_kd_weight > 0:
+        shift_teacher = torch.nan_to_num(
+            teacher.logits[:, :-1, :].contiguous().to(torch.float32),
+            nan=0.0,
+            posinf=1e4,
+            neginf=-1e4,
+        )
+        if source_attention_mask is None:
+            source_mask = torch.ones(shift_teacher.shape[:2], dtype=torch.bool, device=shift_teacher.device)
+        else:
+            source_mask = source_attention_mask[:, 1:].contiguous().bool()
+        student_anchor_logits = shift_student.index_select(dim=-1, index=candidate_anchor_idx)
+        teacher_anchor_logits = shift_teacher.index_select(dim=-1, index=source_anchor_idx)
+        student_summary = _masked_mean_logits(torch, student_anchor_logits, candidate_mask)
+        teacher_summary = _masked_mean_logits(torch, teacher_anchor_logits, source_mask)
+        student_logp = torch.nn.functional.log_softmax(student_summary / temperature, dim=-1)
+        teacher_p = torch.nn.functional.softmax(teacher_summary / temperature, dim=-1)
+        kd = torch.nn.functional.kl_div(student_logp, teacher_p, reduction="batchmean") * (temperature**2)
+        total = total + float(anchor_kd_weight) * kd
+    if hidden_kd_weight > 0:
+        if hidden_projection is None:
+            raise ValueError("hidden_projection is required when hidden_kd_weight is positive.")
+        hidden = _cross_tokenizer_hidden_loss(
+            torch,
+            student,
+            teacher,
+            candidate_attention_mask,
+            source_attention_mask,
+            hidden_projection,
+            hidden_layer,
+        )
+        total = total + float(hidden_kd_weight) * hidden
+    if lm_weight > 0:
+        lm = torch.nn.functional.cross_entropy(
+            shift_student.view(-1, shift_student.shape[-1]),
+            shift_labels.view(-1),
+            ignore_index=-100,
+        )
+        total = total + float(lm_weight) * lm
+    return total
+
+
+def _cross_tokenizer_hidden_loss(
+    torch,
+    student,
+    teacher,
+    candidate_attention_mask,
+    source_attention_mask,
+    hidden_projection,
+    hidden_layer: str,
+):
+    student_hidden = _select_hidden_state(student.hidden_states, hidden_layer)
+    teacher_hidden = _select_hidden_state(teacher.hidden_states, hidden_layer)
+    student_pooled = _masked_mean_hidden(torch, student_hidden, candidate_attention_mask)
+    teacher_pooled = _masked_mean_hidden(torch, teacher_hidden, source_attention_mask)
+    teacher_projected = teacher_pooled.matmul(hidden_projection.to(device=teacher_pooled.device, dtype=torch.float32))
+    student_norm = _normalize_hidden_rows(torch, student_pooled)
+    teacher_norm = _normalize_hidden_rows(torch, teacher_projected)
+    cosine = torch.nn.functional.cosine_similarity(student_norm, teacher_norm, dim=-1, eps=1e-8)
+    cosine_loss = 1.0 - cosine.mean()
+    mse_loss = torch.nn.functional.mse_loss(student_norm, teacher_norm)
+    return 0.5 * cosine_loss + 0.5 * mse_loss
+
+
+def _select_hidden_state(hidden_states, hidden_layer: str):
+    if not hidden_states:
+        raise ValueError("Model output does not include hidden states.")
+    if hidden_layer == "last":
+        return hidden_states[-1]
+    if hidden_layer == "middle":
+        return hidden_states[len(hidden_states) // 2]
+    raise ValueError("hidden_layer must be last or middle.")
+
+
+def _masked_mean_hidden(torch, hidden, mask):
+    hidden = torch.nan_to_num(hidden.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    if mask is None:
+        return hidden.mean(dim=1)
+    weights = mask.to(device=hidden.device, dtype=hidden.dtype).unsqueeze(-1)
+    summed = (hidden * weights).sum(dim=1)
+    counts = weights.sum(dim=1).clamp_min(1.0)
+    return summed / counts
+
+
+def _normalize_hidden_rows(torch, rows):
+    rows = torch.nan_to_num(rows.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    centered = rows - rows.mean(dim=-1, keepdim=True)
+    scale = centered.pow(2).mean(dim=-1, keepdim=True).sqrt().clamp_min(1e-6)
+    return centered / scale
+
+
+def _masked_mean_logits(torch, logits, mask):
+    weights = mask.to(logits.dtype).unsqueeze(-1)
+    summed = (logits * weights).sum(dim=1)
+    counts = weights.sum(dim=1).clamp_min(1.0)
+    return summed / counts
 
 
 def _write_json(path: str | Path, data: dict[str, Any]) -> None:

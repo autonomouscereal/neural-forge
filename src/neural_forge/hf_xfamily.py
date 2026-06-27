@@ -370,6 +370,7 @@ def donor_projected_init(
             donor_tensor,
             suffix,
             donor_layer_idx,
+            donor_layer_group,
             activation_profile,
         )
         projected = _resize_tensor_to_shape(
@@ -1593,14 +1594,31 @@ def _activation_2d(torch, tensor):
     return values
 
 
-def _activation_axis_weights_for_tensor(torch, donor_tensor, suffix: str, donor_layer_idx: int, activation_profile):
+def _activation_axis_weights_for_tensor(
+    torch,
+    donor_tensor,
+    suffix: str,
+    donor_layer_idx: int,
+    donor_layer_group: Sequence[int] | None,
+    activation_profile,
+):
     if activation_profile is None:
         return None
     axis_weights = {}
     hidden_scores = activation_profile["hidden_scores"]
     hidden_features = activation_profile.get("hidden_features")
-    mlp_scores = activation_profile.get("mlp_scores", {}).get(donor_layer_idx)
-    mlp_features = activation_profile.get("mlp_features", {}).get(donor_layer_idx)
+    layer_group = list(donor_layer_group or [donor_layer_idx])
+    mlp_scores = _aggregate_layer_activation_profile(
+        torch,
+        activation_profile.get("mlp_scores", {}),
+        layer_group,
+        clamp_min=1e-12,
+    )
+    mlp_features = _aggregate_layer_activation_profile(
+        torch,
+        activation_profile.get("mlp_features", {}),
+        layer_group,
+    )
     for axis, source_dim in enumerate(donor_tensor.shape):
         if int(source_dim) == int(hidden_scores.numel()):
             axis_weights[axis] = {"weights": hidden_scores, "features": hidden_features}
@@ -1610,6 +1628,17 @@ def _activation_axis_weights_for_tensor(torch, donor_tensor, suffix: str, donor_
             if int(source_dim) == int(mlp_scores.numel()):
                 axis_weights[axis] = {"weights": mlp_scores, "features": mlp_features}
     return axis_weights or None
+
+
+def _aggregate_layer_activation_profile(torch, profiles: dict[int, Any], layer_group: Sequence[int], clamp_min=None):
+    rows = [profiles[int(layer_idx)] for layer_idx in layer_group if int(layer_idx) in profiles]
+    if not rows:
+        return None
+    stacked = torch.stack([row.detach().cpu().to(torch.float32) for row in rows], dim=0)
+    merged = stacked.mean(dim=0)
+    if clamp_min is not None:
+        merged = merged.clamp_min(float(clamp_min))
+    return merged
 
 
 def _initialize_token_weights_from_donor(

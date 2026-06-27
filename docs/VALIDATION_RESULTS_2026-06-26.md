@@ -1317,3 +1317,60 @@ Interpretation:
   parent-to-child projection: fit child block outputs or logits against the
   donor on calibration samples, with promotion gated by manual generations and
   external tasks.
+
+## Cross-Tokenizer Hidden Recovery And Group Activation Aggregation
+
+Follow-up work added two parent-to-child recovery/folding improvements:
+
+- `hf-xfamily-recover`, which trains the already child-shaped candidate against
+  donor shared-token anchor logits, child-token LM loss, and optional hidden
+  activation matching;
+- folded donor layer groups now aggregate MLP activation scores/features across
+  all donor layers in the group instead of using only the proportional donor
+  layer's activation profile.
+
+The hidden activation projection is temporary training scaffolding. It is fitted
+from shared decoded-token embedding rows and is not saved as an adapter, bridge,
+or extra model component.
+
+Probe setup:
+
+- parent/donor: `Qwen/Qwen3-4B-Base`;
+- child/target shape/tokenizer: `HuggingFaceTB/SmolLM2-135M`;
+- output params: `134,515,008`;
+- calibration: 32 curated Omnicoder JSONL texts for group aggregation and
+  hidden recovery;
+- hidden recovery: last 4 child layers trainable, `40` steps, LR `5e-6`,
+  anchor KD `0.3`, LM `0.5`, hidden KD `0.2`, hidden projection cap `512`.
+
+Runs:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_parent_depth_fold_20260627_040218
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_group_activation_20260627_045422
+```
+
+Results:
+
+| Variant | Mean PPL | Choice Acc | Manual output |
+|---|---:|---:|---|
+| parent depth `fold` baseline | 68,920.270 | 0.00 | repeated `connotation` |
+| baseline + anchor/LM recovery, 20 steps | 63,132.667 | 0.00 | repeated `Major gardeners` |
+| baseline + anchor/LM/hidden recovery, 40 steps | 60,532.186 | 0.00 | repeated `Major gardeners` / `MajorLeaf` |
+| group-aggregated activation fold | 73,532.159 | 0.25 | repeated `henes skyrock` |
+| group-aggregated fold + hidden recovery | 63,297.918 | 0.25 | repeated `henesptomatic` / `tonsarck` |
+
+Interpretation:
+
+- Cross-tokenizer recovery is now numerically stable when the child is trained
+  in FP32, and hidden KD gives modest PPL improvements over the same starting
+  point.
+- The recovered models remain behaviorally failed. Manual generations are still
+  repetitive token loops, so these checkpoints are not acceptable compression
+  wins.
+- Group-level activation aggregation is directionally correct for folded donor
+  groups, but the simple mean aggregation did not improve this Qwen4B ->
+  SmolLM2 child transplant. This points to deeper alignment needs: monotone
+  donor layer assignment, MLP/head coupled matching, byte/span tokenizer
+  alignment, and recovery losses over selected internal subspaces rather than
+  broad pooled hidden states.

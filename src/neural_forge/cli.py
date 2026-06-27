@@ -472,6 +472,35 @@ def build_parser() -> argparse.ArgumentParser:
     recover.add_argument("--max-calibration-texts", type=int)
     recover.set_defaults(func=cmd_hf_recover)
 
+    xfamily_recover = sub.add_parser(
+        "hf-xfamily-recover",
+        help="Run cross-tokenizer recovery using donor shared-token anchor logits plus child LM loss.",
+    )
+    xfamily_recover.add_argument("source_model")
+    xfamily_recover.add_argument("candidate_model")
+    xfamily_recover.add_argument("output")
+    xfamily_recover.add_argument("--steps", type=int, default=40)
+    xfamily_recover.add_argument("--batch-size", type=int, default=1)
+    xfamily_recover.add_argument("--max-length", type=int, default=96)
+    xfamily_recover.add_argument("--lr", type=float, default=5e-5)
+    xfamily_recover.add_argument("--anchor-kd-weight", type=float, default=0.5)
+    xfamily_recover.add_argument("--lm-weight", type=float, default=0.5)
+    xfamily_recover.add_argument("--hidden-kd-weight", type=float, default=0.0)
+    xfamily_recover.add_argument("--hidden-ridge", type=float, default=1e-3)
+    xfamily_recover.add_argument("--hidden-layer", choices=["last", "middle"], default="last")
+    xfamily_recover.add_argument("--hidden-max-anchors", type=int, default=2048)
+    xfamily_recover.add_argument("--temperature", type=float, default=2.0)
+    xfamily_recover.add_argument("--max-anchors", type=int, default=20_000)
+    xfamily_recover.add_argument("--train-scope", default="last1")
+    xfamily_recover.add_argument("--dtype", default="float32")
+    xfamily_recover.add_argument("--candidate-dtype", default="float32")
+    xfamily_recover.add_argument("--device", default="cuda:0")
+    xfamily_recover.add_argument("--trust-remote-code", action="store_true")
+    xfamily_recover.add_argument("--grad-clip", type=float, default=1.0)
+    xfamily_recover.add_argument("--calibration-file")
+    xfamily_recover.add_argument("--max-calibration-texts", type=int)
+    xfamily_recover.set_defaults(func=cmd_hf_xfamily_recover)
+
     reconstruct = sub.add_parser(
         "hf-reconstruct-folded",
         help="Run training-free ridge reconstruction after residual layer folding.",
@@ -1070,6 +1099,35 @@ def cmd_hf_recover(args: argparse.Namespace) -> dict[str, object]:
         temperature=args.temperature,
         train_scope=args.train_scope,
         torch_dtype=args.dtype,
+        device=args.device,
+        trust_remote_code=args.trust_remote_code,
+        calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+        grad_clip=args.grad_clip,
+    )
+
+
+def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_recovery import recover_cross_tokenizer_causal_lm
+
+    return recover_cross_tokenizer_causal_lm(
+        source_model=args.source_model,
+        candidate_model=args.candidate_model,
+        output_dir=args.output,
+        steps=args.steps,
+        batch_size=args.batch_size,
+        max_length=args.max_length,
+        lr=args.lr,
+        anchor_kd_weight=args.anchor_kd_weight,
+        lm_weight=args.lm_weight,
+        hidden_kd_weight=args.hidden_kd_weight,
+        hidden_ridge=args.hidden_ridge,
+        hidden_layer=args.hidden_layer,
+        hidden_max_anchors=args.hidden_max_anchors,
+        temperature=args.temperature,
+        max_anchors=args.max_anchors,
+        train_scope=args.train_scope,
+        torch_dtype=args.dtype,
+        candidate_torch_dtype=args.candidate_dtype,
         device=args.device,
         trust_remote_code=args.trust_remote_code,
         calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
