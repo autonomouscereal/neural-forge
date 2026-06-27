@@ -166,7 +166,9 @@ neural-forge hf-sweep-xfamily-mlp runs/qwen-lfm25-mlp-recovered `
   --alphas 0.005 `
   --recover `
   --recover-steps 8 `
-  --recover-train-scope last1
+  --recover-train-scope last1 `
+  --recover-calibration-file runs/calibration.jsonl `
+  --recover-max-calibration-texts 512
 ```
 
 Cross-family merge plus merge-first compression in one pipeline:
@@ -184,7 +186,9 @@ neural-forge hf-xfamily-compress runs/qwen-lfm25-compressed `
   --layer-groups 13+14,15+16 `
   --target-shrink 0.05 `
   --recover `
-  --recover-only-failed
+  --recover-only-failed `
+  --recover-calibration-file runs/calibration.jsonl `
+  --recover-max-calibration-texts 512
 ```
 
 Behavior probes:

@@ -297,6 +297,8 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_mlp_sweep.add_argument("--recover-train-scope", default="last1")
     xfamily_mlp_sweep.add_argument("--recover-dtype", default="float32")
     xfamily_mlp_sweep.add_argument("--recover-grad-clip", type=float, default=1.0)
+    xfamily_mlp_sweep.add_argument("--recover-calibration-file")
+    xfamily_mlp_sweep.add_argument("--recover-max-calibration-texts", type=int)
     xfamily_mlp_sweep.set_defaults(func=cmd_hf_xfamily_mlp_sweep)
 
     xfamily_compress = sub.add_parser(
@@ -348,6 +350,8 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_compress.add_argument("--recover-train-scope", default="last1")
     xfamily_compress.add_argument("--recover-dtype", default="float32")
     xfamily_compress.add_argument("--recover-grad-clip", type=float, default=1.0)
+    xfamily_compress.add_argument("--recover-calibration-file")
+    xfamily_compress.add_argument("--recover-max-calibration-texts", type=int)
     xfamily_compress.set_defaults(func=cmd_hf_xfamily_compress)
 
     recover = sub.add_parser("hf-recover", help="Run lightweight same-tokenizer recovery training after HF surgery.")
@@ -366,6 +370,8 @@ def build_parser() -> argparse.ArgumentParser:
     recover.add_argument("--device", default="cuda:0")
     recover.add_argument("--trust-remote-code", action="store_true")
     recover.add_argument("--grad-clip", type=float, default=1.0)
+    recover.add_argument("--calibration-file")
+    recover.add_argument("--max-calibration-texts", type=int)
     recover.set_defaults(func=cmd_hf_recover)
 
     vision = sub.add_parser("vision-probe", help="Run simple image-description/OCR probes for an HF vision-language model.")
@@ -717,6 +723,10 @@ def cmd_hf_xfamily_mlp_sweep(args: argparse.Namespace) -> dict[str, object]:
     from neural_forge.hf_xfamily import sweep_cross_family_mlp_merge
 
     alphas = [float(part.strip()) for part in args.alphas.split(",") if part.strip()]
+    recovery_calibration_texts = _load_recovery_calibration_texts(
+        args.recover_calibration_file,
+        args.recover_max_calibration_texts,
+    )
     return sweep_cross_family_mlp_merge(
         host_model=args.host_model,
         donor_model=args.donor_model,
@@ -747,6 +757,7 @@ def cmd_hf_xfamily_mlp_sweep(args: argparse.Namespace) -> dict[str, object]:
         recovery_train_scope=args.recover_train_scope,
         recovery_dtype=args.recover_dtype,
         recovery_grad_clip=args.recover_grad_clip,
+        recovery_calibration_texts=recovery_calibration_texts,
     )
 
 
@@ -758,6 +769,10 @@ def cmd_hf_xfamily_compress(args: argparse.Namespace) -> dict[str, object]:
         width_ratios = [float(part.strip()) for part in args.width_ratios.split(",") if part.strip()]
     layer_group_specs = [_parse_layer_groups(spec) for spec in args.layer_groups]
     depth_methods = [part.strip() for part in args.depth_methods.split(",") if part.strip()]
+    recovery_calibration_texts = _load_recovery_calibration_texts(
+        args.recover_calibration_file,
+        args.recover_max_calibration_texts,
+    )
     return cross_family_merge_compress_pipeline(
         host_model=args.host_model,
         donor_model=args.donor_model,
@@ -795,6 +810,7 @@ def cmd_hf_xfamily_compress(args: argparse.Namespace) -> dict[str, object]:
         recovery_train_scope=args.recover_train_scope,
         recovery_dtype=args.recover_dtype,
         recovery_grad_clip=args.recover_grad_clip,
+        recovery_calibration_texts=recovery_calibration_texts,
     )
 
 
@@ -816,6 +832,7 @@ def cmd_hf_recover(args: argparse.Namespace) -> dict[str, object]:
         torch_dtype=args.dtype,
         device=args.device,
         trust_remote_code=args.trust_remote_code,
+        calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
         grad_clip=args.grad_clip,
     )
 
@@ -906,6 +923,14 @@ def _parse_layer_groups(text: str) -> list[list[int]]:
     if not groups:
         raise ValueError("Need at least one layer merge group.")
     return groups
+
+
+def _load_recovery_calibration_texts(path: str | None, max_texts: int | None) -> list[str] | None:
+    if path is None:
+        return None
+    from neural_forge.hf_recovery import load_calibration_texts
+
+    return load_calibration_texts(path, max_texts=max_texts)
 
 
 if __name__ == "__main__":

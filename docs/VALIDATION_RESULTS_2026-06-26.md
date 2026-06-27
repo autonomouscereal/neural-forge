@@ -701,3 +701,141 @@ Interpretation:
 - This still does not prove arbitrary open-world multimodal ability or arbitrary
   target-size compression. It proves the toolchain can stitch a real
   cross-family compressed parent and add a validated native pixel input path.
+
+## First 4B Donor Compression Tests
+
+The first 4B-class donor tests used `Qwen/Qwen3-4B-Base` as donor. The target
+models deliberately excluded Liquid LFM2.5.
+
+### 4B Qwen Into Pythia-160M
+
+Run:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_into_pythia160m_20260626_190053
+```
+
+Compression ratio:
+
+- donor params: `4,022,468,096`;
+- host/target params: `162,322,944`;
+- donor-to-target ratio: `24.78x`.
+
+Neural Forge behavior probes:
+
+| Model | Params | Mean PPL | Choice Acc | Notes |
+|---|---:|---:|---:|---|
+| Pythia-160M host | 162,322,944 | 361.452 | 0.25 | repetitive generations |
+| Qwen3-4B donor | 4,022,468,096 | 269.326 | 1.00 | clean code/pruning answers |
+| folded alpha 0.001 | 162,322,944 | 361.431 | 0.25 | essentially unchanged |
+| folded alpha 0.005 | 162,322,944 | 367.032 | 0.25 | worse |
+| folded alpha 0.010 | 162,322,944 | 358.861 | 0.25 | PPL slightly better, gate failed |
+
+Curated recovery:
+
+- calibration source:
+  `/mnt/ai_data/omnicoder_2026/datasets/shards/v9_base_20260605T142420Z/jsonl_shards/v9_base_validated_28025-000002.jsonl`;
+- 512 texts loaded through `--recover-calibration-file`;
+- 30 steps, `last2`, `kd_weight=0.2`, `lm_weight=0.8`.
+
+Result: recovery made held-out PPL worse (`~593-612`) while choice accuracy
+stayed `0.25`. This is a useful negative result: current cross-tokenizer MLP
+channel transplant does not transfer measurable Qwen4B capability into
+Pythia-160M.
+
+### 4B Qwen Into SmolLM2-135M
+
+Run:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_into_smollm135m_20260626_190625
+```
+
+Compression ratio:
+
+- donor params: `4,022,468,096`;
+- host/target params: `134,515,008`;
+- donor-to-target ratio: `29.90x`.
+
+Neural Forge behavior probes:
+
+| Model | Params | Mean PPL | Choice Acc |
+|---|---:|---:|---:|
+| SmolLM2-135M host | 134,515,008 | 347.405 | 0.50 |
+| folded alpha 0.001, vocab alpha 0.001 | 134,515,008 | 348.699 | 0.50 |
+| folded alpha 0.005, vocab alpha 0.001 | 134,515,008 | 352.821 | 0.50 |
+| folded alpha 0.010, vocab alpha 0.001 | 134,515,008 | 358.797 | 0.50 |
+| folded alpha 0.001 + LM-only recovery | 134,515,008 | 447.909 | 0.50 |
+| host + same LM-only recovery control | 134,515,008 | 448.448 | 0.50 |
+
+External benchmark-suite slice:
+
+- tool: `/home/cereal/ai-benchmark-lab/envs/lm-eval`;
+- tasks: `arc_easy`, `hellaswag`;
+- limit: `20` examples/task;
+- output root:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_into_smollm135m_20260626_190625/lm_eval_slice`.
+
+| Model | ARC-Easy Acc | ARC-Easy Acc Norm | HellaSwag Acc | HellaSwag Acc Norm |
+|---|---:|---:|---:|---:|
+| SmolLM2-135M host | 0.55 | 0.40 | 0.35 | 0.30 |
+| Qwen3-4B donor | 0.80 | 0.65 | 0.50 | 0.65 |
+| folded alpha 0.001 | 0.55 | 0.40 | 0.35 | 0.30 |
+| folded alpha 0.001 + LM-only recovery | 0.60 | 0.45 | 0.35 | 0.30 |
+| host + same LM-only recovery control | 0.60 | 0.45 | 0.35 | 0.30 |
+
+Interpretation:
+
+- The recovered folded model improved ARC-Easy on the slice, but the host-only
+  recovery control improved by the same amount. That means the measured gain
+  came from curated LM recovery, not from Qwen4B donor folding.
+- Current MLP/vocab transplant is shape-valid at nearly `30x` donor-to-target
+  compression, but it is not yet a successful cross-tokenizer capability
+  transfer method.
+
+### 4B Qwen Into Qwen3-0.6B Same-Tokenizer Control
+
+Run:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_into_qwen06b_20260626_191954
+```
+
+Compression ratio:
+
+- donor params: `4,022,468,096`;
+- host/target params: `596,049,920`;
+- donor-to-target ratio: `6.75x`.
+
+Neural Forge behavior probes:
+
+| Model | Params | Mean PPL | Choice Acc | Gate |
+|---|---:|---:|---:|---|
+| Qwen3-0.6B host | 596,049,920 | 280.375 | 1.00 | baseline |
+| folded alpha 0.001 | 596,049,920 | 280.118 | 1.00 | passed |
+| folded alpha 0.005 | 596,049,920 | 280.786 | 1.00 | passed |
+| folded alpha 0.010 | 596,049,920 | 281.637 | 1.00 | passed |
+| alpha 0.001 + Qwen4B-teacher recovery | 596,049,920 | 283.723 | 1.00 | worse PPL |
+
+The first fp16 Qwen4B-teacher recovery attempt failed with non-finite loss at
+step 2. Retrying in `bfloat16` with a lower LR was stable and reduced recovery
+loss from `2.0156` to `1.2344`, but worsened held-out PPL. The raw alpha
+`0.001` fold remains the best artifact from this run.
+
+External benchmark-suite slice:
+
+| Model | ARC-Easy Acc | ARC-Easy Acc Norm | HellaSwag Acc | HellaSwag Acc Norm |
+|---|---:|---:|---:|---:|
+| Qwen3-0.6B host | 0.60 | 0.45 | 0.35 | 0.35 |
+| Qwen3-4B donor | 0.80 | 0.65 | 0.50 | 0.65 |
+| folded alpha 0.001 | 0.60 | 0.45 | 0.35 | 0.35 |
+| alpha 0.001 + Qwen4B-teacher recovery | 0.60 | 0.45 | 0.35 | 0.35 |
+
+Interpretation:
+
+- Same-tokenizer Qwen folding produced a small PPL win at `6.75x` donor-to-target
+  compression, but did not move the external benchmark slice.
+- Donor-teacher recovery did not help yet. The next technical step is not
+  longer blind recovery; it is better alignment before/while folding:
+  activation-calibrated channel assignment, per-layer alpha search, and
+  cross-tokenizer teacher targets that do not collapse to host-only SFT.

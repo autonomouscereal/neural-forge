@@ -385,6 +385,7 @@ def sweep_cross_family_mlp_merge(
     recovery_train_scope: str = "last1",
     recovery_dtype: str = "float32",
     recovery_grad_clip: float = 1.0,
+    recovery_calibration_texts: list[str] | None = None,
 ) -> dict[str, Any]:
     """Sweep cross-family MLP-channel transplants and gate each result."""
 
@@ -488,6 +489,7 @@ def sweep_cross_family_mlp_merge(
                 recovery_train_scope=recovery_train_scope,
                 recovery_dtype=recovery_dtype,
                 recovery_grad_clip=recovery_grad_clip,
+                recovery_calibration_texts=recovery_calibration_texts,
             )
             item["recovery"] = recovery
         candidates.append(item)
@@ -519,6 +521,7 @@ def sweep_cross_family_mlp_merge(
             "train_scope": recovery_train_scope,
             "dtype": recovery_dtype,
             "grad_clip": recovery_grad_clip,
+            "calibration_text_count": len(recovery_calibration_texts or []),
         },
         "gate_thresholds": {
             "max_ppl_ratio": max_ppl_ratio,
@@ -572,6 +575,7 @@ def cross_family_merge_compress_pipeline(
     recovery_train_scope: str = "last1",
     recovery_dtype: str = "float32",
     recovery_grad_clip: float = 1.0,
+    recovery_calibration_texts: list[str] | None = None,
 ) -> dict[str, Any]:
     """Run cross-family MLP merge, merge-first compression, and optional recovery."""
 
@@ -706,6 +710,7 @@ def cross_family_merge_compress_pipeline(
                 recovery_train_scope=recovery_train_scope,
                 recovery_dtype=recovery_dtype,
                 recovery_grad_clip=recovery_grad_clip,
+                recovery_calibration_texts=recovery_calibration_texts,
             )
             recovered_xfamily_gate_path = report_root / f"{tag}_recovered_xfamily_gate.json"
             recovered_xfamily_gate = gate_text_report(
@@ -767,6 +772,7 @@ def cross_family_merge_compress_pipeline(
             "train_scope": recovery_train_scope,
             "dtype": recovery_dtype,
             "grad_clip": recovery_grad_clip,
+            "calibration_text_count": len(recovery_calibration_texts or []),
         },
         "gate_thresholds": {
             "max_ppl_ratio": max_ppl_ratio,
@@ -802,6 +808,7 @@ def _recover_and_gate_candidate(
     recovery_train_scope: str,
     recovery_dtype: str,
     recovery_grad_clip: float,
+    recovery_calibration_texts: list[str] | None = None,
 ) -> dict[str, Any]:
     from neural_forge.hf_recovery import recover_causal_lm
 
@@ -820,6 +827,7 @@ def _recover_and_gate_candidate(
         torch_dtype=recovery_dtype,
         device=device,
         trust_remote_code=trust_remote_code,
+        calibration_texts=recovery_calibration_texts,
         grad_clip=recovery_grad_clip,
     )
     recovered_eval = evaluate_text_model(

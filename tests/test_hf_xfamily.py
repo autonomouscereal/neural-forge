@@ -7,6 +7,7 @@ from neural_forge.cli import _parse_layer_groups
 from neural_forge.hf_recovery import RECOVERY_TEXTS
 from neural_forge.hf_recovery import _assert_same_vocab
 from neural_forge.hf_recovery import _set_train_scope
+from neural_forge.hf_recovery import load_calibration_texts
 from neural_forge.hf_tools import TEXT_EVALS
 from neural_forge.hf_tools import _layer_groups_for_report
 from neural_forge.hf_tools import _layer_groups_tag
@@ -64,6 +65,25 @@ def test_recovery_same_vocab_guard_rejects_mismatch() -> None:
 
 def test_recovery_defaults_do_not_reuse_evaluation_prompts() -> None:
     assert set(RECOVERY_TEXTS).isdisjoint(TEXT_EVALS)
+
+
+def test_load_calibration_texts_handles_jsonl_message_rows(tmp_path) -> None:
+    calibration = tmp_path / "calibration.jsonl"
+    calibration.write_text(
+        "\n".join(
+            [
+                '{"messages":[{"role":"user","content":"Explain folding."},{"role":"assistant","content":"Fold redundant channels before pruning."}]}',
+                '{"prompt":"Solve 2+2.","target":"The answer is 4."}',
+                '{"input_json":{"messages":[{"role":"user","content":"Return compact JSON."}]},"target_json":{"answer":"ok"}}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    texts = load_calibration_texts(calibration, max_texts=2, min_chars=8)
+    assert len(texts) == 2
+    assert "user: Explain folding." in texts[0]
+    assert "assistant: Fold redundant channels" in texts[0]
+    assert texts[1] == "Solve 2+2. The answer is 4."
 
 
 def test_cross_family_sweep_rejects_duplicate_alpha_tags(tmp_path) -> None:
@@ -135,6 +155,10 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "3",
             "--recover-train-scope",
             "ffn",
+            "--recover-calibration-file",
+            "calibration.jsonl",
+            "--recover-max-calibration-texts",
+            "12",
         ]
     )
     xfamily_compress_args = parser.parse_args(
@@ -163,6 +187,10 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "2",
             "--recover-steps",
             "4",
+            "--recover-calibration-file",
+            "calibration.jsonl",
+            "--recover-max-calibration-texts",
+            "8",
         ]
     )
     assert sweep_args.output_dir == "out"
@@ -177,11 +205,15 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_mlp_args.recover is True
     assert xfamily_mlp_args.recover_steps == 3
     assert xfamily_mlp_args.recover_train_scope == "ffn"
+    assert xfamily_mlp_args.recover_calibration_file == "calibration.jsonl"
+    assert xfamily_mlp_args.recover_max_calibration_texts == 12
     assert xfamily_compress_args.donor_model == "LiquidAI/LFM2.5-230M"
     assert xfamily_compress_args.width_ratios == "0.995"
     assert xfamily_compress_args.layer_groups == ["13+14"]
     assert xfamily_compress_args.recover_top_k == 2
     assert xfamily_compress_args.recover_only_failed is True
+    assert xfamily_compress_args.recover_calibration_file == "calibration.jsonl"
+    assert xfamily_compress_args.recover_max_calibration_texts == 8
     with pytest.raises(SystemExit):
         parser.parse_args(
             [
@@ -277,6 +309,7 @@ def test_recovery_train_scope_supports_feed_forward_layers() -> None:
 
 
 def test_xfamily_mlp_handler_passes_recovery_flags(monkeypatch) -> None:
+    import neural_forge.cli as cli
     import neural_forge.hf_xfamily as hf_xfamily
 
     captured = {}
@@ -286,6 +319,7 @@ def test_xfamily_mlp_handler_passes_recovery_flags(monkeypatch) -> None:
         return {"ok": True}
 
     monkeypatch.setattr(hf_xfamily, "sweep_cross_family_mlp_merge", fake_sweep)
+    monkeypatch.setattr(cli, "_load_recovery_calibration_texts", lambda path, max_texts: ["calibration text"])
     args = build_parser().parse_args(
         [
             "hf-sweep-xfamily-mlp",
@@ -302,6 +336,10 @@ def test_xfamily_mlp_handler_passes_recovery_flags(monkeypatch) -> None:
             "7",
             "--recover-train-scope",
             "last2",
+            "--recover-calibration-file",
+            "calibration.jsonl",
+            "--recover-max-calibration-texts",
+            "3",
         ]
     )
     result = args.func(args)
@@ -310,9 +348,11 @@ def test_xfamily_mlp_handler_passes_recovery_flags(monkeypatch) -> None:
     assert captured["recover_only_failed"] is True
     assert captured["recovery_steps"] == 7
     assert captured["recovery_train_scope"] == "last2"
+    assert captured["recovery_calibration_texts"] == ["calibration text"]
 
 
 def test_xfamily_compress_handler_passes_pipeline_flags(monkeypatch) -> None:
+    import neural_forge.cli as cli
     import neural_forge.hf_xfamily as hf_xfamily
 
     captured = {}
@@ -322,6 +362,7 @@ def test_xfamily_compress_handler_passes_pipeline_flags(monkeypatch) -> None:
         return {"ok": True}
 
     monkeypatch.setattr(hf_xfamily, "cross_family_merge_compress_pipeline", fake_pipeline)
+    monkeypatch.setattr(cli, "_load_recovery_calibration_texts", lambda path, max_texts: ["calibration text"])
     args = build_parser().parse_args(
         [
             "hf-xfamily-compress",
@@ -346,6 +387,10 @@ def test_xfamily_compress_handler_passes_pipeline_flags(monkeypatch) -> None:
             "2",
             "--recover-steps",
             "7",
+            "--recover-calibration-file",
+            "calibration.jsonl",
+            "--recover-max-calibration-texts",
+            "3",
         ]
     )
     result = args.func(args)
@@ -360,6 +405,7 @@ def test_xfamily_compress_handler_passes_pipeline_flags(monkeypatch) -> None:
     assert captured["recover_only_failed"] is True
     assert captured["recover_top_k"] == 2
     assert captured["recovery_steps"] == 7
+    assert captured["recovery_calibration_texts"] == ["calibration text"]
 
 
 def test_select_compression_candidates_prefers_target_passed() -> None:

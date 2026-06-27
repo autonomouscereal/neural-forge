@@ -150,6 +150,99 @@ def recover_causal_lm(
     return report
 
 
+def load_calibration_texts(
+    calibration_file: str | Path,
+    max_texts: int | None = None,
+    min_chars: int = 32,
+    max_chars: int = 4096,
+) -> list[str]:
+    """Load recovery calibration texts from plain text or JSONL rows."""
+
+    if max_texts is not None and max_texts <= 0:
+        raise ValueError("max_texts must be positive when provided.")
+    if min_chars < 0:
+        raise ValueError("min_chars must be non-negative.")
+    if max_chars <= 0:
+        raise ValueError("max_chars must be positive.")
+    path = Path(calibration_file)
+    if not path.exists():
+        raise FileNotFoundError(path)
+
+    texts = []
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            text = _calibration_text_from_line(line)
+            if text is None:
+                continue
+            text = " ".join(text.split())
+            if len(text) < min_chars:
+                continue
+            texts.append(text[:max_chars])
+            if max_texts is not None and len(texts) >= max_texts:
+                break
+    if not texts:
+        raise ValueError(f"No usable calibration texts found in {path}.")
+    return texts
+
+
+def _calibration_text_from_line(line: str) -> str | None:
+    raw = line.strip()
+    if not raw:
+        return None
+    if not raw.startswith("{"):
+        return raw
+    try:
+        item = json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+    return _calibration_text_from_obj(item)
+
+
+def _calibration_text_from_obj(item: Any) -> str | None:
+    if isinstance(item, str):
+        return item
+    if not isinstance(item, dict):
+        return None
+    messages = item.get("messages")
+    if isinstance(messages, list):
+        return _messages_to_text(messages)
+    input_json = item.get("input_json")
+    if isinstance(input_json, dict) and isinstance(input_json.get("messages"), list):
+        pieces = [_messages_to_text(input_json["messages"])]
+        target = item.get("target")
+        if isinstance(target, str) and target.strip():
+            pieces.append(target)
+        target_json = item.get("target_json")
+        if isinstance(target_json, dict):
+            pieces.append(json.dumps(target_json, sort_keys=True))
+        return "\n".join(piece for piece in pieces if piece)
+    prompt = item.get("prompt")
+    target = item.get("target")
+    if isinstance(prompt, str) and isinstance(target, str):
+        return f"{prompt}\n{target}"
+    for key in ("text", "content", "completion", "response"):
+        value = item.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
+def _messages_to_text(messages: Sequence[Any]) -> str:
+    parts = []
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if not isinstance(content, str) or not content.strip():
+            continue
+        role = message.get("role")
+        if isinstance(role, str) and role.strip():
+            parts.append(f"{role.strip()}: {content.strip()}")
+        else:
+            parts.append(content.strip())
+    return "\n".join(parts)
+
+
 def _assert_same_vocab(left, right) -> None:
     if len(left) != len(right):
         raise ValueError(f"Tokenizer length mismatch: {len(left)} != {len(right)}")

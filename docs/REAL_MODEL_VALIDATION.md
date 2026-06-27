@@ -60,7 +60,7 @@ Supported real-checkpoint surgery:
   and `hf-sweep-xfamily-mlp`, including LFM2.5 `feed_forward.w1/w3/w2`
   layers, Qwen/Llama-style gated MLPs, and GPT-NeoX/Pythia dense MLPs;
 - integrated cross-family MLP recovery sweeps that save recovered checkpoints
-  and re-run behavior gates;
+  and re-run behavior gates, including optional calibration JSONL/text files;
 - integrated `hf-xfamily-compress` runs that merge donor MLP channels first,
   then search width/depth folds, optionally recover failed candidates, and only
   promote outputs that pass host-baseline behavior gates;
@@ -83,6 +83,11 @@ Supported real-checkpoint surgery:
 Not yet supported:
 
 - direct cross-architecture merge of Qwen + Gemma + LFM into one valid decoder;
+- proven cross-tokenizer transfer of 4B-class donor intelligence into a
+  135M-160M host. Qwen3-4B -> Pythia-160M and Qwen3-4B -> SmolLM2-135M were
+  shape-valid at roughly 25x-30x donor-to-target compression, but benchmark
+  behavior stayed at host level after current MLP/vocab folding and short
+  recovery;
 - arbitrary large-ratio shrink to a requested parameter count with guaranteed
   behavior retention;
 - untrained native vision grafting that magically understands pixels;
@@ -91,5 +96,6 @@ Not yet supported:
 
 The safe next step is expanding the merge-first search space: score more
 layer-pair and channel-fold candidates, add activation-aware sequential repair
-after each fold, and broaden behavior gates for both text retention and grounded
-multimodal answers.
+after each fold, use per-layer donor alpha search instead of one global alpha,
+and broaden behavior gates for both text retention and grounded multimodal
+answers.
