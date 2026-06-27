@@ -557,6 +557,185 @@ def recover_cross_tokenizer_causal_lm(
     return report
 
 
+def calibrate_cross_tokenizer_lm_head(
+    source_model: str,
+    candidate_model: str,
+    output_dir: str | Path,
+    ridge: float = 1e-2,
+    head_blend_alpha: float = 1.0,
+    max_length: int = 128,
+    max_calibration_rows: int = 2048,
+    projected_vocab_max_source_tokens: int = 6,
+    torch_dtype: str = "float16",
+    candidate_torch_dtype: str = "float32",
+    device: str = "cuda:0",
+    trust_remote_code: bool = False,
+    calibration_texts: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    """Fit a blank/cross-tokenizer child's LM head to donor next-token logits."""
+
+    if ridge < 0:
+        raise ValueError("ridge must be non-negative.")
+    if not 0.0 <= float(head_blend_alpha) <= 1.0:
+        raise ValueError("head_blend_alpha must be in [0, 1].")
+    if max_length <= 1:
+        raise ValueError("max_length must be greater than 1.")
+    if max_calibration_rows <= 0:
+        raise ValueError("max_calibration_rows must be positive.")
+    if projected_vocab_max_source_tokens <= 0:
+        raise ValueError("projected_vocab_max_source_tokens must be positive.")
+
+    from neural_forge.hf_xfamily import _canonical_token
+
+    torch, transformers = _torch_and_transformers()
+    source_dtype = _dtype_from_name(torch, torch_dtype)
+    candidate_dtype = _dtype_from_name(torch, candidate_torch_dtype)
+    source_tokenizer = transformers.AutoTokenizer.from_pretrained(source_model, trust_remote_code=trust_remote_code)
+    candidate_tokenizer = transformers.AutoTokenizer.from_pretrained(candidate_model, trust_remote_code=trust_remote_code)
+    if source_tokenizer.pad_token_id is None and source_tokenizer.eos_token_id is not None:
+        source_tokenizer.pad_token = source_tokenizer.eos_token
+    if candidate_tokenizer.pad_token_id is None and candidate_tokenizer.eos_token_id is not None:
+        candidate_tokenizer.pad_token = candidate_tokenizer.eos_token
+
+    source = transformers.AutoModelForCausalLM.from_pretrained(
+        source_model,
+        torch_dtype=source_dtype,
+        device_map=None,
+        trust_remote_code=trust_remote_code,
+    )
+    candidate = transformers.AutoModelForCausalLM.from_pretrained(
+        candidate_model,
+        torch_dtype=candidate_dtype,
+        device_map=None,
+        trust_remote_code=trust_remote_code,
+    )
+    source.to(device)
+    candidate.to(device)
+    source.eval()
+    candidate.eval()
+    if hasattr(source.config, "use_cache"):
+        source.config.use_cache = False
+    if hasattr(candidate.config, "use_cache"):
+        candidate.config.use_cache = False
+
+    output_head = candidate.get_output_embeddings()
+    if output_head is None:
+        raise ValueError("Candidate model has no output embeddings to calibrate.")
+
+    projected_vocab_groups, projected_vocab_mask, projected_vocab_valid = _candidate_to_source_token_groups(
+        torch,
+        source_tokenizer,
+        candidate_tokenizer,
+        max_source_tokens=projected_vocab_max_source_tokens,
+        device=device,
+    )
+    valid_vocab = projected_vocab_valid.detach().cpu().bool()
+    valid_idx = torch.nonzero(valid_vocab, as_tuple=False).flatten()
+    if int(valid_idx.numel()) == 0:
+        raise ValueError("No candidate vocab rows can be projected from source tokenizer.")
+
+    texts = list(calibration_texts or RECOVERY_TEXTS)
+    if not texts:
+        raise ValueError("Need at least one head calibration text.")
+    batches = _make_paired_batches(
+        source_tokenizer,
+        candidate_tokenizer,
+        texts,
+        batch_size=1,
+        max_length=max_length,
+        device=device,
+        include_offsets=True,
+    )
+    hidden_chunks = []
+    logit_chunks = []
+    span_pair_counts = []
+    rows_collected = 0
+    with torch.no_grad():
+        for source_batch, candidate_batch in batches:
+            if rows_collected >= int(max_calibration_rows):
+                break
+            teacher = source(**_model_forward_inputs(source_batch), use_cache=False)
+            student = candidate(**_model_forward_inputs(candidate_batch), use_cache=False, output_hidden_states=True)
+            span_pairs = _cross_tokenizer_span_pairs(
+                torch,
+                source_tokenizer,
+                candidate_tokenizer,
+                source_batch,
+                candidate_batch,
+                _canonical_token,
+                max_pairs=max(1, int(max_calibration_rows) - rows_collected),
+            )
+            span_pair_counts.append(int(span_pairs.shape[0]))
+            if int(span_pairs.numel()) == 0:
+                continue
+            pair_idx = span_pairs.to(device=device, dtype=torch.long)
+            batch_idx = pair_idx[:, 0]
+            candidate_pos = pair_idx[:, 1]
+            source_pos = pair_idx[:, 2]
+            student_hidden = _select_hidden_state(student.hidden_states, "last")[:, :-1, :].contiguous().to(torch.float32)
+            teacher_logits = teacher.logits[:, :-1, :].contiguous().to(torch.float32)
+            rows = student_hidden[batch_idx, candidate_pos]
+            projected = _project_source_logits_to_candidate_vocab(
+                torch,
+                teacher_logits[batch_idx, source_pos],
+                projected_vocab_groups,
+                projected_vocab_mask,
+                projected_vocab_valid,
+            )
+            remain = int(max_calibration_rows) - rows_collected
+            if int(rows.shape[0]) > remain:
+                rows = rows[:remain]
+                projected = projected[:remain]
+            hidden_chunks.append(rows.detach().cpu())
+            logit_chunks.append(projected.detach().cpu().index_select(dim=1, index=valid_idx))
+            rows_collected += int(rows.shape[0])
+
+    if rows_collected == 0:
+        raise ValueError("No aligned token rows found for cross-tokenizer head calibration.")
+
+    hidden_rows = torch.cat(hidden_chunks, dim=0).to(torch.float32)
+    target_logits = torch.cat(logit_chunks, dim=0).to(torch.float32)
+    current_head = output_head.weight.data.detach().cpu().to(torch.float32).index_select(dim=0, index=valid_idx)
+    fitted_head, fit_report = _fit_lm_head_from_hidden_logits(
+        torch,
+        hidden_rows,
+        target_logits,
+        current_head,
+        ridge=float(ridge),
+        head_blend_alpha=float(head_blend_alpha),
+    )
+    updated = output_head.weight.data.detach().cpu().to(torch.float32)
+    updated[valid_idx] = fitted_head
+    output_head.weight.data.copy_(updated.to(device=output_head.weight.device, dtype=output_head.weight.dtype))
+
+    target = Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    candidate.save_pretrained(target, safe_serialization=True)
+    candidate_tokenizer.save_pretrained(target)
+    report = {
+        "operation": "calibrate_cross_tokenizer_lm_head",
+        "source_model": source_model,
+        "candidate_model": candidate_model,
+        "output_dir": str(target),
+        "ridge": float(ridge),
+        "head_blend_alpha": float(head_blend_alpha),
+        "max_length": int(max_length),
+        "max_calibration_rows": int(max_calibration_rows),
+        "rows_collected": int(rows_collected),
+        "projected_vocab_max_source_tokens": int(projected_vocab_max_source_tokens),
+        "valid_vocab_rows": int(valid_idx.numel()),
+        "candidate_vocab_size": len(candidate_tokenizer),
+        "span_pair_count_observed": span_pair_counts,
+        "torch_dtype": torch_dtype,
+        "candidate_torch_dtype": candidate_torch_dtype,
+        "calibration_text_count": len(texts),
+        "fit": fit_report,
+        "param_count": sum(param.numel() for param in candidate.parameters()),
+    }
+    _write_json(target / "neural_forge_xfamily_head_calibration_report.json", report)
+    return report
+
+
 def reconstruct_folded_causal_lm(
     source_model: str,
     candidate_model: str,
@@ -2152,6 +2331,52 @@ def _project_source_logits_to_candidate_vocab(
     counts = mask.sum(dim=-1).clamp_min(1.0)
     projected = summed / counts.unsqueeze(0)
     return projected.masked_fill(~valid.unsqueeze(0), -1e4)
+
+
+def _fit_lm_head_from_hidden_logits(
+    torch,
+    hidden_rows,
+    target_logits,
+    current_head,
+    ridge: float,
+    head_blend_alpha: float,
+):
+    if ridge < 0:
+        raise ValueError("ridge must be non-negative.")
+    if not 0.0 <= float(head_blend_alpha) <= 1.0:
+        raise ValueError("head_blend_alpha must be in [0, 1].")
+    hidden = torch.nan_to_num(hidden_rows.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    targets = torch.nan_to_num(target_logits.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    old_head = torch.nan_to_num(current_head.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    if hidden.dim() != 2 or targets.dim() != 2 or old_head.dim() != 2:
+        raise ValueError("hidden_rows, target_logits, and current_head must be rank-2 tensors.")
+    if int(hidden.shape[0]) != int(targets.shape[0]):
+        raise ValueError("hidden_rows and target_logits must have the same row count.")
+    if int(hidden.shape[1]) != int(old_head.shape[1]):
+        raise ValueError("current_head hidden dimension must match hidden_rows.")
+    if int(targets.shape[1]) != int(old_head.shape[0]):
+        raise ValueError("target_logits vocab dimension must match current_head rows.")
+
+    gram = hidden.t().matmul(hidden)
+    if ridge > 0:
+        gram = gram + float(ridge) * torch.eye(int(gram.shape[0]), dtype=gram.dtype, device=gram.device)
+    rhs = hidden.t().matmul(targets)
+    solved = torch.linalg.solve(gram, rhs).t().contiguous()
+    if head_blend_alpha < 1.0:
+        solved = (1.0 - float(head_blend_alpha)) * old_head + float(head_blend_alpha) * solved
+    before = hidden.matmul(old_head.t())
+    after = hidden.matmul(solved.t())
+    before_error = _relative_reconstruction_error(torch, before, targets)
+    after_error = _relative_reconstruction_error(torch, after, targets)
+    return solved, {
+        "rows": int(hidden.shape[0]),
+        "hidden_size": int(hidden.shape[1]),
+        "vocab_rows": int(targets.shape[1]),
+        "ridge": float(ridge),
+        "head_blend_alpha": float(head_blend_alpha),
+        "relative_error_before": before_error,
+        "relative_error_after": after_error,
+    }
 
 
 def _select_hidden_state(hidden_states, hidden_layer: str):

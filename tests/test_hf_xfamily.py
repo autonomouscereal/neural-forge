@@ -11,6 +11,7 @@ from neural_forge.hf_recovery import _candidate_index_after_depth_fold
 from neural_forge.hf_recovery import _cross_tokenizer_recovery_loss
 from neural_forge.hf_recovery import _cross_tokenizer_span_pairs
 from neural_forge.hf_recovery import _fit_activation_map
+from neural_forge.hf_recovery import _fit_lm_head_from_hidden_logits
 from neural_forge.hf_recovery import _fit_shared_embedding_hidden_projection
 from neural_forge.hf_recovery import _fold_groups_from_report
 from neural_forge.hf_recovery import _mlp_projection_spec
@@ -497,6 +498,34 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "6",
         ]
     )
+    xfamily_head_args = parser.parse_args(
+        [
+            "hf-xfamily-calibrate-head",
+            "donor",
+            "candidate",
+            "head-out",
+            "--ridge",
+            "0.04",
+            "--head-blend-alpha",
+            "0.7",
+            "--max-length",
+            "80",
+            "--max-calibration-rows",
+            "222",
+            "--projected-vocab-max-source-tokens",
+            "5",
+            "--dtype",
+            "float16",
+            "--candidate-dtype",
+            "float32",
+            "--device",
+            "cpu",
+            "--calibration-file",
+            "calibration.jsonl",
+            "--max-calibration-texts",
+            "9",
+        ]
+    )
     assert sweep_args.output_dir == "out"
     assert resize_args.assignment == "topk"
     assert random_args.output == "random-out"
@@ -597,6 +626,19 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_recover_args.report_interval == 5
     assert xfamily_recover_args.save_best_loss is True
     assert xfamily_recover_args.calibration_file == "calibration.jsonl"
+    assert xfamily_head_args.source_model == "donor"
+    assert xfamily_head_args.candidate_model == "candidate"
+    assert xfamily_head_args.output == "head-out"
+    assert xfamily_head_args.ridge == 0.04
+    assert xfamily_head_args.head_blend_alpha == 0.7
+    assert xfamily_head_args.max_length == 80
+    assert xfamily_head_args.max_calibration_rows == 222
+    assert xfamily_head_args.projected_vocab_max_source_tokens == 5
+    assert xfamily_head_args.dtype == "float16"
+    assert xfamily_head_args.candidate_dtype == "float32"
+    assert xfamily_head_args.device == "cpu"
+    assert xfamily_head_args.calibration_file == "calibration.jsonl"
+    assert xfamily_head_args.max_calibration_texts == 9
     with pytest.raises(SystemExit):
         parser.parse_args(
             [
@@ -1265,6 +1307,27 @@ def test_project_source_logits_to_candidate_vocab_averages_source_token_groups()
     assert projected[0, 2].item() == pytest.approx(-10000.0)
 
 
+def test_fit_lm_head_from_hidden_logits_reduces_reconstruction_error() -> None:
+    torch = pytest.importorskip("torch")
+    hidden = torch.tensor([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [2.0, 1.0]])
+    true_head = torch.tensor([[2.0, -1.0], [0.5, 1.0], [-1.0, 1.5]])
+    targets = hidden.matmul(true_head.t())
+    current = torch.zeros_like(true_head)
+
+    fitted, report = _fit_lm_head_from_hidden_logits(
+        torch,
+        hidden,
+        targets,
+        current,
+        ridge=1e-6,
+        head_blend_alpha=1.0,
+    )
+
+    assert fitted.shape == true_head.shape
+    assert report["relative_error_after"] < report["relative_error_before"]
+    assert torch.allclose(fitted, true_head, atol=1e-4)
+
+
 def test_same_tokenizer_reference_loss_prefers_matching_logits() -> None:
     torch = pytest.importorskip("torch")
     reference = _Obj(logits=torch.tensor([[[0.0, 2.0], [3.0, 0.0], [0.5, 1.0]]]))
@@ -1706,6 +1769,66 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "grad_clip": 0.5,
         "report_interval": 2,
         "save_best_loss": True,
+    }
+
+
+def test_hf_xfamily_calibrate_head_handler_passes_flags(monkeypatch) -> None:
+    import neural_forge.cli as cli
+    import neural_forge.hf_recovery as hf_recovery
+
+    captured = {}
+
+    def fake_calibrate(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(hf_recovery, "calibrate_cross_tokenizer_lm_head", fake_calibrate)
+    monkeypatch.setattr(cli, "_load_recovery_calibration_texts", lambda path, max_texts: ["calibration text"])
+    args = build_parser().parse_args(
+        [
+            "hf-xfamily-calibrate-head",
+            "donor",
+            "candidate",
+            "out",
+            "--ridge",
+            "0.04",
+            "--head-blend-alpha",
+            "0.7",
+            "--max-length",
+            "80",
+            "--max-calibration-rows",
+            "222",
+            "--projected-vocab-max-source-tokens",
+            "5",
+            "--dtype",
+            "float16",
+            "--candidate-dtype",
+            "float32",
+            "--device",
+            "cpu",
+            "--calibration-file",
+            "calibration.jsonl",
+            "--max-calibration-texts",
+            "3",
+        ]
+    )
+    result = args.func(args)
+
+    assert result == {"ok": True}
+    assert captured == {
+        "source_model": "donor",
+        "candidate_model": "candidate",
+        "output_dir": "out",
+        "ridge": 0.04,
+        "head_blend_alpha": 0.7,
+        "max_length": 80,
+        "max_calibration_rows": 222,
+        "projected_vocab_max_source_tokens": 5,
+        "torch_dtype": "float16",
+        "candidate_torch_dtype": "float32",
+        "device": "cpu",
+        "trust_remote_code": False,
+        "calibration_texts": ["calibration text"],
     }
 
 

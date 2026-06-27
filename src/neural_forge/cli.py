@@ -598,6 +598,26 @@ def build_parser() -> argparse.ArgumentParser:
     lm_recover.add_argument("--max-calibration-texts", type=int)
     lm_recover.set_defaults(func=cmd_hf_lm_recover)
 
+    xfamily_head = sub.add_parser(
+        "hf-xfamily-calibrate-head",
+        help="Fit a cross-tokenizer child LM head to donor projected next-token logits.",
+    )
+    xfamily_head.add_argument("source_model")
+    xfamily_head.add_argument("candidate_model")
+    xfamily_head.add_argument("output")
+    xfamily_head.add_argument("--ridge", type=float, default=1e-2)
+    xfamily_head.add_argument("--head-blend-alpha", type=float, default=1.0)
+    xfamily_head.add_argument("--max-length", type=int, default=128)
+    xfamily_head.add_argument("--max-calibration-rows", type=int, default=2048)
+    xfamily_head.add_argument("--projected-vocab-max-source-tokens", type=int, default=6)
+    xfamily_head.add_argument("--dtype", default="float16")
+    xfamily_head.add_argument("--candidate-dtype", default="float32")
+    xfamily_head.add_argument("--device", default="cuda:0")
+    xfamily_head.add_argument("--trust-remote-code", action="store_true")
+    xfamily_head.add_argument("--calibration-file")
+    xfamily_head.add_argument("--max-calibration-texts", type=int)
+    xfamily_head.set_defaults(func=cmd_hf_xfamily_calibrate_head)
+
     vision = sub.add_parser("vision-probe", help="Run simple image-description/OCR probes for an HF vision-language model.")
     vision.add_argument("model")
     vision.add_argument("output")
@@ -1256,6 +1276,26 @@ def cmd_hf_lm_recover(args: argparse.Namespace) -> dict[str, object]:
         grad_clip=args.grad_clip,
         report_interval=args.report_interval,
         save_best_loss=args.save_best_loss,
+    )
+
+
+def cmd_hf_xfamily_calibrate_head(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_recovery import calibrate_cross_tokenizer_lm_head
+
+    return calibrate_cross_tokenizer_lm_head(
+        source_model=args.source_model,
+        candidate_model=args.candidate_model,
+        output_dir=args.output,
+        ridge=args.ridge,
+        head_blend_alpha=args.head_blend_alpha,
+        max_length=args.max_length,
+        max_calibration_rows=args.max_calibration_rows,
+        projected_vocab_max_source_tokens=args.projected_vocab_max_source_tokens,
+        torch_dtype=args.dtype,
+        candidate_torch_dtype=args.candidate_dtype,
+        device=args.device,
+        trust_remote_code=args.trust_remote_code,
+        calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
     )
 
 
