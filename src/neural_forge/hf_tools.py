@@ -53,6 +53,42 @@ GENERATION_PROMPTS = [
     "Give one risk when merging two language models.",
 ]
 
+GENERATION_RELEVANCE_RULES = {
+    GENERATION_PROMPTS[0]: [
+        [r"\bprun\w*", r"\bremove\w*", r"\beliminat\w*", r"\bcompress\w*", r"\bfold\w*"],
+        [r"\bneuron\w*", r"\bweight\w*", r"\bchannel\w*", r"\bparameter\w*", r"\bconnection\w*"],
+    ],
+    GENERATION_PROMPTS[1]: [
+        [r"\bdef\b", r"\blambda\b"],
+        [r"\+", r"\badd\w*\b", r"\bsum\b"],
+        [r"\breturn\b", r":"],
+    ],
+    GENERATION_PROMPTS[2]: [
+        [r"\bmerge\w*", r"\bstitch\w*", r"\bcombin\w*", r"\bfus\w*"],
+        [
+            r"\brisk\w*",
+            r"\bforget\w*",
+            r"\bdegrad\w*",
+            r"\bcollapse\w*",
+            r"\bmisalign\w*",
+            r"\bmismatch\w*",
+            r"\bincompat\w*",
+            r"\binterfer\w*",
+            r"\bloss\b",
+            r"\bhurt\w*",
+            r"\bbias\w*",
+        ],
+        [
+            r"\bmodel\w*",
+            r"\btokenizer\w*",
+            r"\bcapabilit\w*",
+            r"\baccuracy\b",
+            r"\bbehavior\w*",
+            r"\bweights?\b",
+        ],
+    ],
+}
+
 
 def random_init_causal_lm(
     config_model: str,
@@ -1291,14 +1327,45 @@ def _generation_health(item: dict[str, Any], min_continuation_chars: int, min_un
     unique_ratio = (len(set(tokens)) / len(tokens)) if tokens else 0.0
     long_enough = len(continuation) >= min_continuation_chars
     diverse_enough = len(tokens) < 20 or unique_ratio >= min_unique_token_ratio
+    relevance = _generation_relevance(prompt, continuation)
     return {
         "prompt": prompt,
-        "passed": long_enough and diverse_enough,
+        "passed": long_enough and diverse_enough and relevance["passed"],
         "continuation_chars": len(continuation),
         "token_count": len(tokens),
         "unique_token_ratio": unique_ratio,
         "long_enough": long_enough,
         "diverse_enough": diverse_enough,
+        "relevant_enough": relevance["passed"],
+        "relevance": relevance,
+    }
+
+
+def _generation_relevance(prompt: str, continuation: str) -> dict[str, Any]:
+    pattern_groups = GENERATION_RELEVANCE_RULES.get(prompt)
+    if not pattern_groups:
+        return {"checked": False, "passed": True, "matched_groups": [], "missing_groups": []}
+
+    matched_groups = []
+    missing_groups = []
+    text = continuation.lower()
+    for group_index, patterns in enumerate(pattern_groups):
+        matched = [pattern for pattern in patterns if re.search(pattern, text)]
+        group_result = {
+            "group": group_index,
+            "matched_patterns": matched,
+            "patterns": patterns,
+        }
+        if matched:
+            matched_groups.append(group_result)
+        else:
+            missing_groups.append(group_result)
+
+    return {
+        "checked": True,
+        "passed": not missing_groups,
+        "matched_groups": matched_groups,
+        "missing_groups": missing_groups,
     }
 
 

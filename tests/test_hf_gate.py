@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from neural_forge.hf_tools import GENERATION_PROMPTS
 from neural_forge.hf_tools import gate_text_report
 from neural_forge.hf_tools import _assert_tokenizers_compatible
 from neural_forge.hf_tools import _ensure_unique_ratio_tags
@@ -34,6 +35,25 @@ def test_gate_text_report_rejects_blank_generation() -> None:
     verdict = gate_text_report(_report(100, 1.0), _report(100, 1.0, continuation="   "))
     assert verdict["passed"] is False
     assert any(check["name"] == "generation_health" and not check["passed"] for check in verdict["checks"])
+
+
+def test_gate_text_report_rejects_irrelevant_diverse_generation() -> None:
+    candidate = _report(
+        100,
+        1.0,
+        continuation=" mercury cathedral envelope horizon lantern quartz invoice maple velvet orbit syntax.",
+    )
+    candidate["generations"][0]["prompt"] = GENERATION_PROMPTS[0]
+    candidate["generations"][0]["output"] = (
+        GENERATION_PROMPTS[0] + candidate["generations"][0]["output"][len("Prompt") :]
+    )
+
+    verdict = gate_text_report(_report(100, 1.0), candidate)
+
+    assert verdict["passed"] is False
+    generation_check = next(check for check in verdict["checks"] if check["name"] == "generation_health")
+    assert generation_check["passed"] is False
+    assert generation_check["value"][0]["relevant_enough"] is False
 
 
 def test_ratio_tag_handles_alpha_values() -> None:

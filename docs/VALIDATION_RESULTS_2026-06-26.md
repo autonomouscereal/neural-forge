@@ -950,3 +950,77 @@ Interpretation:
 - Similarity-scaled layer alpha made PPL slightly better but generation
   coherence worse. It should not be promoted as a recovery solution without a
   stronger benchmark/coherence gain.
+
+## Blank Random Target Compression Test
+
+This run tested the user correction that the target architecture may be
+untrained/random, not an already trained host. The target was a random
+SmolLM2-135M-shaped checkpoint initialized from config and tokenizer only, then
+folded with Qwen3-4B donor signal.
+
+Run:
+
+```text
+/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_into_random_smollm135m_20260627_020620
+```
+
+Setup:
+
+- random target config/tokenizer: `HuggingFaceTB/SmolLM2-135M`;
+- random seed: `20260627`;
+- target params: `134,515,008`;
+- donor: `Qwen/Qwen3-4B-Base`;
+- donor-to-target ratio: roughly `29.90x`;
+- fold: cross-family MLP weight-cosine assignment;
+- alpha / vocab alpha: `0.001` / `0.001`;
+- max host/donor channels considered per layer: `128` / `256`;
+- benchmark tasks: `arc_easy`, `hellaswag`, `piqa`, `winogrande`;
+- benchmark limit: `50` examples/task.
+
+Neural Forge probes:
+
+| Model | Mean PPL | Choice Acc | Old Length/Diversity Gate | Strict Relevance Gate |
+|---|---:|---:|---|---|
+| random SmolLM2 target | 88,650.193 | 0.00 | baseline | n/a |
+| Qwen fold into random target | 88,539.163 | 0.00 | passed | failed |
+
+The old generation gate was too weak: it only checked continuation length and
+token diversity. The folded random model produced long, diverse continuations,
+but the content was unrelated to all three prompts. The gate now also requires
+prompt-specific relevance for the built-in generation probes:
+
+- pruning explanation must mention pruning/removal/compression and model
+  structure such as neurons, weights, channels, or parameters;
+- Python addition prompt must look like a function/lambda and include addition;
+- merge-risk prompt must mention merging/combining, a risk/failure mode, and
+  model/tokenizer/capability context.
+
+Strict gate result:
+
+```text
+runs/qwen4b_into_random_smollm135m_20260627_020620/fold/reports/xfamily_mlp_alpha_0p0010_strict_gate.json
+passed: false
+```
+
+Benchmark slice:
+
+| Model | ARC-Easy Acc / Norm | HellaSwag Acc / Norm | PIQA Acc / Norm | Winogrande Acc |
+|---|---:|---:|---:|---:|
+| trained SmolLM2 host | 0.52 / 0.48 | 0.44 / 0.48 | 0.62 / 0.64 | 0.48 |
+| random SmolLM2 target | 0.20 / 0.22 | 0.22 / 0.30 | 0.56 / 0.58 | 0.46 |
+| Qwen3-4B donor | 0.70 / 0.76 | 0.54 / 0.74 | 0.80 / 0.74 | 0.78 |
+| folded random target | 0.20 / 0.22 | 0.22 / 0.30 | 0.56 / 0.58 | 0.46 |
+
+Interpretation:
+
+- The fold produced a loadable checkpoint with the requested target shape, but
+  did not transfer measurable donor intelligence into a blank target.
+- The folded random target was benchmark-identical to the random target on all
+  four task slices.
+- PIQA and Winogrande are binary-choice tasks and the slice is only 50 examples,
+  so near-0.5 values there are not evidence of intelligence. The ARC/HellaSwag
+  results and nonsensical generations confirm the blank target is not useful.
+- This rules out tiny-alpha MLP/vocab transplant as a blank-model compression
+  solution. Blank-target compression needs a stronger stage: function-preserving
+  initialization, cross-depth/width activation alignment, and recovery that is
+  benchmark-gated rather than PPL-gated.

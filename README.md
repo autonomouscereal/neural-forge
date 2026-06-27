@@ -253,6 +253,27 @@ neural-forge vision-chain runs/vision-chain-report.json `
   --text-model runs/qwen-merged
 ```
 
+Blank target control:
+
+```powershell
+neural-forge hf-random-init runs/random-smollm2-135m `
+  --config-model HuggingFaceTB/SmolLM2-135M `
+  --tokenizer-model HuggingFaceTB/SmolLM2-135M `
+  --seed 20260627
+neural-forge hf-sweep-xfamily-mlp runs/qwen4b-into-random-smollm2 `
+  --host-model runs/random-smollm2-135m `
+  --donor-model Qwen/Qwen3-4B-Base `
+  --alphas 0.001 `
+  --vocab-alpha 0.001 `
+  --max-host-channels 128 `
+  --max-donor-channels 256
+```
+
+`hf-gate` checks PPL ratio, choice-probe accuracy, generation length,
+generation diversity, and prompt-specific generation relevance for the built-in
+generation probes. A random or broken model can produce long diverse text, so
+length and unique-token ratio alone are not treated as coherence evidence.
+
 Native early-fusion sandbox:
 
 ```powershell
