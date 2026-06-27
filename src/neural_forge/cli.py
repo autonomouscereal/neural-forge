@@ -109,6 +109,7 @@ def build_parser() -> argparse.ArgumentParser:
     hf_donor_init.add_argument("--ridge", type=float, default=1e-3)
     hf_donor_init.add_argument("--max-anchors", type=int, default=50_000)
     hf_donor_init.add_argument("--fold-mode", choices=["mean", "rms"], default="mean")
+    hf_donor_init.add_argument("--activation-fold-assignment", choices=["balanced", "similarity"], default="balanced")
     hf_donor_init.add_argument("--activation-calibration-file")
     hf_donor_init.add_argument("--activation-max-calibration-texts", type=int)
     hf_donor_init.add_argument("--activation-max-length", type=int, default=128)
@@ -442,6 +443,22 @@ def build_parser() -> argparse.ArgumentParser:
     recover.add_argument("--max-calibration-texts", type=int)
     recover.set_defaults(func=cmd_hf_recover)
 
+    lm_recover = sub.add_parser("hf-lm-recover", help="Run teacherless LM recovery on a folded HF causal LM.")
+    lm_recover.add_argument("candidate_model")
+    lm_recover.add_argument("output")
+    lm_recover.add_argument("--steps", type=int, default=80)
+    lm_recover.add_argument("--batch-size", type=int, default=1)
+    lm_recover.add_argument("--max-length", type=int, default=96)
+    lm_recover.add_argument("--lr", type=float, default=5e-5)
+    lm_recover.add_argument("--train-scope", default="all")
+    lm_recover.add_argument("--dtype", default="float32")
+    lm_recover.add_argument("--device", default="cuda:0")
+    lm_recover.add_argument("--trust-remote-code", action="store_true")
+    lm_recover.add_argument("--grad-clip", type=float, default=1.0)
+    lm_recover.add_argument("--calibration-file")
+    lm_recover.add_argument("--max-calibration-texts", type=int)
+    lm_recover.set_defaults(func=cmd_hf_lm_recover)
+
     vision = sub.add_parser("vision-probe", help="Run simple image-description/OCR probes for an HF vision-language model.")
     vision.add_argument("model")
     vision.add_argument("output")
@@ -761,6 +778,7 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         ridge=args.ridge,
         max_anchors=args.max_anchors,
         fold_mode=args.fold_mode,
+        activation_fold_assignment=args.activation_fold_assignment,
         activation_calibration_texts=activation_calibration_texts,
         activation_max_length=args.activation_max_length,
         activation_device=args.activation_device,
@@ -969,6 +987,29 @@ def cmd_hf_recover(args: argparse.Namespace) -> dict[str, object]:
         kd_weight=args.kd_weight,
         lm_weight=args.lm_weight,
         temperature=args.temperature,
+        train_scope=args.train_scope,
+        torch_dtype=args.dtype,
+        device=args.device,
+        trust_remote_code=args.trust_remote_code,
+        calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+        grad_clip=args.grad_clip,
+    )
+
+
+def cmd_hf_lm_recover(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_recovery import recover_causal_lm
+
+    return recover_causal_lm(
+        source_model=None,
+        candidate_model=args.candidate_model,
+        output_dir=args.output,
+        steps=args.steps,
+        batch_size=args.batch_size,
+        max_length=args.max_length,
+        lr=args.lr,
+        kd_weight=0.0,
+        lm_weight=1.0,
+        temperature=1.0,
         train_scope=args.train_scope,
         torch_dtype=args.dtype,
         device=args.device,

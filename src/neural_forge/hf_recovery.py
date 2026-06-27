@@ -22,7 +22,7 @@ RECOVERY_TEXTS = [
 
 
 def recover_causal_lm(
-    source_model: str,
+    source_model: str | None,
     candidate_model: str,
     output_dir: str | Path,
     steps: int = 80,
@@ -39,10 +39,12 @@ def recover_causal_lm(
     calibration_texts: Sequence[str] | None = None,
     grad_clip: float = 1.0,
 ) -> dict[str, Any]:
-    """Run a short same-tokenizer recovery pass after surgery.
+    """Run a short recovery pass after surgery.
 
-    `source_model` and `candidate_model` must use compatible tokenizers because
-    KL is computed over the same vocabulary.
+    When `kd_weight` is positive, `source_model` and `candidate_model` must use
+    compatible tokenizers because KL is computed over the same vocabulary. When
+    `kd_weight` is zero, recovery is teacherless LM repair on the candidate
+    tokenizer, which is useful after cross-family/tokenizer folding.
     """
 
     if steps < 0:
@@ -62,29 +64,39 @@ def recover_causal_lm(
     if grad_clip < 0:
         raise ValueError("grad_clip must be non-negative.")
 
+    if kd_weight > 0 and not source_model:
+        raise ValueError("source_model is required when kd_weight is positive.")
+
     torch, transformers = _torch_and_transformers()
     dtype = _dtype_from_name(torch, torch_dtype)
-    tokenizer = transformers.AutoTokenizer.from_pretrained(source_model, trust_remote_code=trust_remote_code)
     candidate_tokenizer = transformers.AutoTokenizer.from_pretrained(candidate_model, trust_remote_code=trust_remote_code)
-    _assert_same_vocab(tokenizer, candidate_tokenizer)
+    tokenizer = candidate_tokenizer
+    source = None
+    if source_model:
+        source_tokenizer = transformers.AutoTokenizer.from_pretrained(source_model, trust_remote_code=trust_remote_code)
+        if kd_weight > 0:
+            _assert_same_vocab(source_tokenizer, candidate_tokenizer)
+        tokenizer = candidate_tokenizer
     if tokenizer.pad_token_id is None and tokenizer.eos_token_id is not None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    source = transformers.AutoModelForCausalLM.from_pretrained(
-        source_model,
-        torch_dtype=dtype,
-        device_map=None,
-        trust_remote_code=trust_remote_code,
-    )
+    if source_model:
+        source = transformers.AutoModelForCausalLM.from_pretrained(
+            source_model,
+            torch_dtype=dtype,
+            device_map=None,
+            trust_remote_code=trust_remote_code,
+        )
     candidate = transformers.AutoModelForCausalLM.from_pretrained(
         candidate_model,
         torch_dtype=dtype,
         device_map=None,
         trust_remote_code=trust_remote_code,
     )
-    source.to(device)
+    if source is not None:
+        source.to(device)
+        source.eval()
     candidate.to(device)
-    source.eval()
     candidate.train()
     if hasattr(candidate.config, "use_cache"):
         candidate.config.use_cache = False
@@ -101,8 +113,10 @@ def recover_causal_lm(
     for step in range(1, steps + 1):
         batch = batches[(step - 1) % len(batches)]
         optimizer.zero_grad(set_to_none=True)
-        with torch.no_grad():
-            teacher = source(**batch, use_cache=False)
+        teacher = None
+        if source is not None:
+            with torch.no_grad():
+                teacher = source(**batch, use_cache=False)
         student = candidate(**batch, use_cache=False)
         loss = _recovery_loss(
             torch,
@@ -139,6 +153,7 @@ def recover_causal_lm(
         "kd_weight": kd_weight,
         "lm_weight": lm_weight,
         "temperature": temperature,
+        "teacher_used": source_model is not None and kd_weight > 0,
         "train_scope": train_scope,
         "trainable_param_count": trainable_params,
         "calibration_text_count": len(texts),
@@ -306,7 +321,6 @@ def _make_batches(tokenizer, texts: Sequence[str], batch_size: int, max_length: 
 
 def _recovery_loss(torch, student, teacher, input_ids, attention_mask, kd_weight: float, lm_weight: float, temperature: float):
     shift_student = student.logits[:, :-1, :].contiguous()
-    shift_teacher = teacher.logits[:, :-1, :].contiguous()
     shift_labels = input_ids[:, 1:].contiguous()
     if attention_mask is None:
         mask = torch.ones_like(shift_labels, dtype=torch.bool)
@@ -315,6 +329,9 @@ def _recovery_loss(torch, student, teacher, input_ids, attention_mask, kd_weight
     shift_labels = shift_labels.masked_fill(~mask, -100)
     total = torch.zeros((), dtype=shift_student.dtype, device=shift_student.device)
     if kd_weight > 0:
+        if teacher is None:
+            raise ValueError("teacher output is required when kd_weight is positive.")
+        shift_teacher = teacher.logits[:, :-1, :].contiguous()
         student_logp = torch.nn.functional.log_softmax(shift_student / temperature, dim=-1)
         teacher_p = torch.nn.functional.softmax(shift_teacher / temperature, dim=-1)
         token_kl = torch.nn.functional.kl_div(student_logp, teacher_p, reduction="none").sum(dim=-1)

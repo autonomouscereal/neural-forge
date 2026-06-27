@@ -6,6 +6,7 @@ from neural_forge.cli import build_parser
 from neural_forge.cli import _parse_layer_groups
 from neural_forge.hf_recovery import RECOVERY_TEXTS
 from neural_forge.hf_recovery import _assert_same_vocab
+from neural_forge.hf_recovery import _recovery_loss
 from neural_forge.hf_recovery import _set_train_scope
 from neural_forge.hf_recovery import load_calibration_texts
 from neural_forge.hf_tools import TEXT_EVALS
@@ -15,6 +16,7 @@ from neural_forge.hf_tools import _normalize_layer_groups
 from neural_forge.hf_xfamily import _canonical_token
 from neural_forge.hf_xfamily import _canonical_token_map
 from neural_forge.hf_xfamily import _assign_donor_to_host
+from neural_forge.hf_xfamily import _activation_similarity_assignment
 from neural_forge.hf_xfamily import _balanced_activation_assignment
 from neural_forge.hf_xfamily import _channel_assignment_features
 from neural_forge.hf_xfamily import _effective_layer_alpha
@@ -219,6 +221,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "1000",
             "--fold-mode",
             "mean",
+            "--activation-fold-assignment",
+            "similarity",
             "--activation-calibration-file",
             "activation.jsonl",
             "--activation-max-calibration-texts",
@@ -349,6 +353,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.seed == 456
     assert donor_init_args.max_anchors == 1000
     assert donor_init_args.fold_mode == "mean"
+    assert donor_init_args.activation_fold_assignment == "similarity"
     assert donor_init_args.activation_calibration_file == "activation.jsonl"
     assert donor_init_args.activation_max_calibration_texts == 5
     assert donor_init_args.activation_max_length == 80
@@ -403,6 +408,28 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
                 "--recover",
             ]
         )
+
+    lm_recover_args = parser.parse_args(
+        [
+            "hf-lm-recover",
+            "candidate",
+            "out",
+            "--steps",
+            "5",
+            "--train-scope",
+            "last1",
+            "--calibration-file",
+            "calibration.jsonl",
+            "--max-calibration-texts",
+            "9",
+        ]
+    )
+    assert lm_recover_args.candidate_model == "candidate"
+    assert lm_recover_args.output == "out"
+    assert lm_recover_args.steps == 5
+    assert lm_recover_args.train_scope == "last1"
+    assert lm_recover_args.calibration_file == "calibration.jsonl"
+    assert lm_recover_args.max_calibration_texts == 9
 
 
 def test_parse_layer_groups() -> None:
@@ -465,6 +492,54 @@ def test_activation_weighted_fold_uses_importance_bins() -> None:
     folded = _resize_tensor_to_shape(torch, source, (2, 1), axis_weights={0: weights})
 
     assert folded.flatten().tolist() == pytest.approx([10.0 / 11.0, 1100.0 / 10.0])
+
+
+def test_activation_similarity_assignment_groups_activation_signatures() -> None:
+    torch = pytest.importorskip("torch")
+    features = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.9, 0.1],
+            [0.0, 1.0],
+            [0.1, 0.9],
+        ]
+    )
+    assignment = _activation_similarity_assignment(torch, features, target_dim=2)
+
+    assert assignment[0].item() == assignment[1].item()
+    assert assignment[2].item() == assignment[3].item()
+    assert assignment[0].item() != assignment[2].item()
+
+
+def test_recovery_loss_allows_lm_only_without_teacher() -> None:
+    torch = pytest.importorskip("torch")
+    student = _Obj(logits=torch.randn(1, 4, 8))
+    input_ids = torch.tensor([[1, 2, 3, 4]])
+    attention_mask = torch.ones_like(input_ids)
+
+    loss = _recovery_loss(
+        torch,
+        student,
+        teacher=None,
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        kd_weight=0.0,
+        lm_weight=1.0,
+        temperature=1.0,
+    )
+
+    assert torch.isfinite(loss)
+    with pytest.raises(ValueError, match="teacher output"):
+        _recovery_loss(
+            torch,
+            student,
+            teacher=None,
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            kd_weight=1.0,
+            lm_weight=0.0,
+            temperature=1.0,
+        )
 
 
 def test_mlp_spec_detects_lfm_feed_forward_names() -> None:
@@ -595,6 +670,8 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "1234",
             "--fold-mode",
             "mean",
+            "--activation-fold-assignment",
+            "similarity",
             "--activation-calibration-file",
             "activation.jsonl",
             "--activation-max-calibration-texts",
@@ -619,11 +696,74 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "ridge": 0.02,
         "max_anchors": 1234,
         "fold_mode": "mean",
+        "activation_fold_assignment": "similarity",
         "activation_calibration_texts": ["activation text"],
         "activation_max_length": 64,
         "activation_device": "cpu",
         "torch_dtype": "float32",
         "trust_remote_code": True,
+    }
+
+
+def test_hf_lm_recover_handler_passes_teacherless_flags(monkeypatch) -> None:
+    import neural_forge.cli as cli
+    import neural_forge.hf_recovery as hf_recovery
+
+    captured = {}
+
+    def fake_recover(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(hf_recovery, "recover_causal_lm", fake_recover)
+    monkeypatch.setattr(cli, "_load_recovery_calibration_texts", lambda path, max_texts: ["calibration text"])
+    args = build_parser().parse_args(
+        [
+            "hf-lm-recover",
+            "candidate",
+            "out",
+            "--steps",
+            "6",
+            "--batch-size",
+            "2",
+            "--max-length",
+            "48",
+            "--lr",
+            "0.0002",
+            "--train-scope",
+            "last2",
+            "--dtype",
+            "float32",
+            "--device",
+            "cpu",
+            "--grad-clip",
+            "0.5",
+            "--calibration-file",
+            "calibration.jsonl",
+            "--max-calibration-texts",
+            "4",
+        ]
+    )
+    result = args.func(args)
+
+    assert result == {"ok": True}
+    assert captured == {
+        "source_model": None,
+        "candidate_model": "candidate",
+        "output_dir": "out",
+        "steps": 6,
+        "batch_size": 2,
+        "max_length": 48,
+        "lr": 0.0002,
+        "kd_weight": 0.0,
+        "lm_weight": 1.0,
+        "temperature": 1.0,
+        "train_scope": "last2",
+        "torch_dtype": "float32",
+        "device": "cpu",
+        "trust_remote_code": False,
+        "calibration_texts": ["calibration text"],
+        "grad_clip": 0.5,
     }
 
 

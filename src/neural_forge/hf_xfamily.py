@@ -248,6 +248,7 @@ def donor_projected_init(
     ridge: float = 1e-3,
     max_anchors: int = 50_000,
     fold_mode: str = "mean",
+    activation_fold_assignment: str = "balanced",
     activation_calibration_texts: list[str] | None = None,
     activation_max_length: int = 128,
     activation_device: str = "cuda:0",
@@ -269,6 +270,8 @@ def donor_projected_init(
         raise ValueError("max_anchors must be positive.")
     if fold_mode not in {"mean", "rms"}:
         raise ValueError("fold_mode must be mean or rms.")
+    if activation_fold_assignment not in {"balanced", "similarity"}:
+        raise ValueError("activation_fold_assignment must be balanced or similarity.")
     if activation_max_length <= 1:
         raise ValueError("activation_max_length must be greater than 1.")
 
@@ -343,6 +346,7 @@ def donor_projected_init(
             tuple(target_tensor.shape),
             fold_mode=tensor_fold_mode,
             axis_weights=axis_weights,
+            activation_fold_assignment=activation_fold_assignment,
         )
         target_state[target_key] = projected.to(dtype=target_tensor.dtype)
         changed_keys.append(target_key)
@@ -366,7 +370,13 @@ def donor_projected_init(
         donor_tokenizer,
         max_anchors=max_anchors,
         fold_mode=fold_mode,
-        hidden_axis_weights=None if activation_profile is None else activation_profile["hidden_scores"],
+        hidden_axis_weights=None
+        if activation_profile is None
+        else {
+            "weights": activation_profile["hidden_scores"],
+            "features": activation_profile.get("hidden_features"),
+        },
+        activation_fold_assignment=activation_fold_assignment,
     )
     if getattr(target.config, "tie_word_embeddings", False):
         target.tie_weights()
@@ -385,6 +395,7 @@ def donor_projected_init(
         "ridge": float(ridge),
         "max_anchors": int(max_anchors),
         "fold_mode": fold_mode,
+        "activation_fold_assignment": activation_fold_assignment,
         "activation_calibration_text_count": len(activation_calibration_texts or []),
         "activation_max_length": activation_max_length,
         "activation_device": activation_device if activation_calibration_texts else None,
@@ -1237,9 +1248,12 @@ def _resize_tensor_to_shape(
     target_shape: tuple[int, ...],
     fold_mode: str = "mean",
     axis_weights: dict[int, Any] | None = None,
+    activation_fold_assignment: str = "balanced",
 ):
     if fold_mode not in {"mean", "rms"}:
         raise ValueError("fold_mode must be mean or rms.")
+    if activation_fold_assignment not in {"balanced", "similarity"}:
+        raise ValueError("activation_fold_assignment must be balanced or similarity.")
     if tuple(source.shape) == tuple(target_shape):
         return source.clone()
     if source.dim() != len(target_shape):
@@ -1247,7 +1261,8 @@ def _resize_tensor_to_shape(
     resized = source.to(torch.float32)
     for axis, target_dim in enumerate(target_shape):
         if resized.shape[axis] != int(target_dim):
-            weights = None if axis_weights is None else axis_weights.get(axis)
+            profile = None if axis_weights is None else axis_weights.get(axis)
+            weights, features = _axis_fold_profile(profile)
             resized = _resize_tensor_axis_mean_fold(
                 torch,
                 resized,
@@ -1255,15 +1270,34 @@ def _resize_tensor_to_shape(
                 int(target_dim),
                 fold_mode=fold_mode,
                 weights=weights,
+                features=features,
+                assignment_mode=activation_fold_assignment,
             )
     return resized.contiguous()
 
 
-def _resize_tensor_axis_mean_fold(torch, tensor, axis: int, target_dim: int, fold_mode: str = "mean", weights=None):
+def _axis_fold_profile(profile):
+    if isinstance(profile, dict):
+        return profile.get("weights"), profile.get("features")
+    return profile, None
+
+
+def _resize_tensor_axis_mean_fold(
+    torch,
+    tensor,
+    axis: int,
+    target_dim: int,
+    fold_mode: str = "mean",
+    weights=None,
+    features=None,
+    assignment_mode: str = "balanced",
+):
     if target_dim <= 0:
         raise ValueError("target_dim must be positive.")
     if fold_mode not in {"mean", "rms"}:
         raise ValueError("fold_mode must be mean or rms.")
+    if assignment_mode not in {"balanced", "similarity"}:
+        raise ValueError("assignment_mode must be balanced or similarity.")
     source_dim = int(tensor.shape[axis])
     if source_dim == target_dim:
         return tensor
@@ -1272,22 +1306,29 @@ def _resize_tensor_axis_mean_fold(torch, tensor, axis: int, target_dim: int, fol
     rest_shape = tuple(moved.shape[1:])
     flat = moved.reshape(source_dim, -1)
     if source_dim > target_dim:
-        if weights is None:
+        explicit_weights = weights is not None
+        if weights is None and features is None:
             assignment = torch.floor(torch.arange(source_dim, dtype=torch.float32) * target_dim / source_dim)
             assignment = assignment.to(torch.long).clamp_max(target_dim - 1)
             fold_weights = torch.ones(source_dim, dtype=flat.dtype)
         else:
-            fold_weights = weights.detach().cpu().to(torch.float32).flatten()
+            if weights is None:
+                fold_weights = torch.ones(source_dim, dtype=torch.float32)
+            else:
+                fold_weights = weights.detach().cpu().to(torch.float32).flatten()
             if int(fold_weights.numel()) != source_dim:
                 raise ValueError("Axis weights must match the source dimension.")
             fold_weights = fold_weights.clamp_min(1e-12)
-            assignment = _balanced_activation_assignment(torch, fold_weights, target_dim)
+            if assignment_mode == "similarity" and features is not None:
+                assignment = _activation_similarity_assignment(torch, features, target_dim, fold_weights)
+            else:
+                assignment = _balanced_activation_assignment(torch, fold_weights, target_dim)
         folded = torch.zeros((target_dim, flat.shape[1]), dtype=flat.dtype)
         counts = torch.zeros(target_dim, dtype=flat.dtype)
         weighted_flat = flat * fold_weights.to(flat.dtype).unsqueeze(1)
         folded.index_add_(0, assignment, weighted_flat)
         counts.index_add_(0, assignment, fold_weights.to(flat.dtype))
-        divisor = counts.sqrt() if fold_mode == "rms" and weights is None else counts
+        divisor = counts.sqrt() if fold_mode == "rms" and not explicit_weights else counts
         folded = folded / divisor.clamp_min(1.0).unsqueeze(1)
     else:
         source_idx = torch.floor(torch.arange(target_dim, dtype=torch.float32) * source_dim / target_dim)
@@ -1304,6 +1345,80 @@ def _balanced_activation_assignment(torch, weights, target_dim: int):
     return assignment
 
 
+def _activation_similarity_assignment(torch, features, target_dim: int, weights=None, iterations: int = 8):
+    if target_dim <= 0:
+        raise ValueError("target_dim must be positive.")
+    feature_rows = features.detach().cpu().to(torch.float32)
+    if feature_rows.dim() != 2:
+        raise ValueError("Activation features must be a rank-2 tensor.")
+    source_dim = int(feature_rows.shape[0])
+    if source_dim == 0:
+        raise ValueError("Activation features cannot be empty.")
+    if source_dim < target_dim:
+        raise ValueError("target_dim cannot exceed activation feature rows.")
+    if weights is None:
+        fold_weights = torch.ones(source_dim, dtype=torch.float32)
+    else:
+        fold_weights = weights.detach().cpu().to(torch.float32).flatten()
+        if int(fold_weights.numel()) != source_dim:
+            raise ValueError("Activation assignment weights must match feature rows.")
+        fold_weights = fold_weights.clamp_min(1e-12)
+    if target_dim == 1:
+        return torch.zeros(source_dim, dtype=torch.long)
+
+    feature_rows = _row_normalize(feature_rows)
+    first = int(torch.argmax(fold_weights).item())
+    centroids = [feature_rows[first]]
+    min_dist = _squared_distance_to_centroid(torch, feature_rows, centroids[0])
+    while len(centroids) < target_dim:
+        weighted_dist = min_dist * fold_weights
+        next_idx = int(torch.argmax(weighted_dist).item())
+        centroids.append(feature_rows[next_idx])
+        min_dist = torch.minimum(min_dist, _squared_distance_to_centroid(torch, feature_rows, centroids[-1]))
+    centroid_tensor = torch.stack(centroids, dim=0)
+    assignment = torch.zeros(source_dim, dtype=torch.long)
+    for _ in range(max(1, iterations)):
+        scores = feature_rows.matmul(centroid_tensor.t())
+        assignment = torch.argmax(scores, dim=1)
+        assignment = _fill_empty_activation_clusters(torch, feature_rows, assignment, centroid_tensor, fold_weights)
+        updated = []
+        for cluster_idx in range(target_dim):
+            mask = assignment == cluster_idx
+            cluster_weights = fold_weights[mask].unsqueeze(1)
+            centroid = (feature_rows[mask] * cluster_weights).sum(dim=0) / cluster_weights.sum().clamp_min(1e-12)
+            updated.append(centroid)
+        centroid_tensor = _row_normalize(torch.stack(updated, dim=0))
+    return assignment.to(torch.long)
+
+
+def _squared_distance_to_centroid(torch, feature_rows, centroid):
+    diff = feature_rows - centroid.unsqueeze(0)
+    return diff.pow(2).sum(dim=1)
+
+
+def _fill_empty_activation_clusters(torch, feature_rows, assignment, centroids, weights):
+    target_dim = int(centroids.shape[0])
+    present = set(int(item) for item in assignment.unique().tolist())
+    missing = [idx for idx in range(target_dim) if idx not in present]
+    if not missing:
+        return assignment
+    scores = 1.0 - feature_rows.matmul(centroids.t()).max(dim=1).values
+    candidate_order = torch.argsort(scores * weights, descending=True).tolist()
+    assignment = assignment.clone()
+    used = set()
+    for cluster_idx in missing:
+        for source_idx in candidate_order:
+            if int(source_idx) in used:
+                continue
+            current_cluster = int(assignment[int(source_idx)].item())
+            if int((assignment == current_cluster).sum().item()) <= 1:
+                continue
+            assignment[int(source_idx)] = cluster_idx
+            used.add(int(source_idx))
+            break
+    return assignment
+
+
 def _collect_donor_axis_activation_scores(
     torch,
     donor,
@@ -1316,17 +1431,22 @@ def _collect_donor_axis_activation_scores(
     if not texts:
         raise ValueError("Need at least one activation calibration text.")
     hidden_scores = []
+    hidden_features = []
     mlp_scores: dict[int, list[Any]] = {idx: [] for idx in range(len(donor_layers))}
+    mlp_features: dict[int, list[Any]] = {idx: [] for idx in range(len(donor_layers))}
     handles = []
 
     def hidden_hook(_module, inputs):
         hidden = inputs[0].detach().to(torch.float32)
         hidden_scores.append(_activation_abs_score(torch, hidden).cpu())
+        hidden_features.append(_activation_channel_summary(torch, _activation_2d(torch, hidden)).cpu())
 
     def mlp_hook(layer_idx: int):
         def hook(_module, _inputs, output):
             tensor = output[0] if isinstance(output, tuple) else output
-            mlp_scores[layer_idx].append(_activation_abs_score(torch, tensor.detach().to(torch.float32)).cpu())
+            values = tensor.detach().to(torch.float32)
+            mlp_scores[layer_idx].append(_activation_abs_score(torch, values).cpu())
+            mlp_features[layer_idx].append(_activation_channel_summary(torch, _activation_2d(torch, values)).cpu())
 
         return hook
 
@@ -1359,16 +1479,27 @@ def _collect_donor_axis_activation_scores(
     if not hidden_scores:
         raise RuntimeError("Activation calibration did not capture hidden states.")
     folded_mlp_scores = {}
+    folded_mlp_features = {}
     for layer_idx, scores in mlp_scores.items():
         if scores:
             folded_mlp_scores[layer_idx] = torch.stack(scores, dim=0).mean(dim=0).clamp_min(1e-12)
+    for layer_idx, features in mlp_features.items():
+        if features:
+            folded_mlp_features[layer_idx] = torch.stack(features, dim=0).mean(dim=0)
     return {
         "hidden_scores": torch.stack(hidden_scores, dim=0).mean(dim=0).clamp_min(1e-12),
+        "hidden_features": torch.stack(hidden_features, dim=0).mean(dim=0),
         "mlp_scores": folded_mlp_scores,
+        "mlp_features": folded_mlp_features,
     }
 
 
 def _activation_abs_score(torch, tensor):
+    values = _activation_2d(torch, tensor)
+    return values.abs().mean(dim=0)
+
+
+def _activation_2d(torch, tensor):
     values = tensor
     if values.dim() == 3:
         values = values.reshape(-1, values.shape[-1])
@@ -1376,7 +1507,7 @@ def _activation_abs_score(torch, tensor):
         values = values.unsqueeze(0)
     elif values.dim() != 2:
         values = values.reshape(-1, values.shape[-1])
-    return values.abs().mean(dim=0)
+    return values
 
 
 def _activation_axis_weights_for_tensor(torch, donor_tensor, suffix: str, donor_layer_idx: int, activation_profile):
@@ -1384,14 +1515,17 @@ def _activation_axis_weights_for_tensor(torch, donor_tensor, suffix: str, donor_
         return None
     axis_weights = {}
     hidden_scores = activation_profile["hidden_scores"]
+    hidden_features = activation_profile.get("hidden_features")
     mlp_scores = activation_profile.get("mlp_scores", {}).get(donor_layer_idx)
+    mlp_features = activation_profile.get("mlp_features", {}).get(donor_layer_idx)
     for axis, source_dim in enumerate(donor_tensor.shape):
         if int(source_dim) == int(hidden_scores.numel()):
-            axis_weights[axis] = hidden_scores
-    if mlp_scores is not None and ".mlp." in f".{suffix}.":
+            axis_weights[axis] = {"weights": hidden_scores, "features": hidden_features}
+    suffix_marker = f".{suffix}."
+    if mlp_scores is not None and (".mlp." in suffix_marker or ".feed_forward." in suffix_marker):
         for axis, source_dim in enumerate(donor_tensor.shape):
             if int(source_dim) == int(mlp_scores.numel()):
-                axis_weights[axis] = mlp_scores
+                axis_weights[axis] = {"weights": mlp_scores, "features": mlp_features}
     return axis_weights or None
 
 
@@ -1404,6 +1538,7 @@ def _initialize_token_weights_from_donor(
     max_anchors: int,
     fold_mode: str = "mean",
     hidden_axis_weights=None,
+    activation_fold_assignment: str = "balanced",
 ) -> dict[str, Any]:
     anchors, target_map, donor_map = _shared_anchor_tokens(target_tokenizer, donor_tokenizer, max_anchors)
     target_idx = torch.tensor([target_map[token] for token in anchors], dtype=torch.long)
@@ -1419,6 +1554,7 @@ def _initialize_token_weights_from_donor(
         (len(anchors), target_emb_weight.shape[1]),
         fold_mode=fold_mode,
         axis_weights={} if hidden_axis_weights is None else {1: hidden_axis_weights},
+        activation_fold_assignment=activation_fold_assignment,
     )
     target_emb_weight[target_idx] = projected_embeddings
     target_embeddings.weight.data.copy_(target_emb_weight.to(target_embeddings.weight.dtype))
@@ -1435,6 +1571,7 @@ def _initialize_token_weights_from_donor(
             (len(anchors), target_head.shape[1]),
             fold_mode=fold_mode,
             axis_weights={} if hidden_axis_weights is None else {1: hidden_axis_weights},
+            activation_fold_assignment=activation_fold_assignment,
         )
         target_head[target_idx] = projected_head
         target_lm.weight.data.copy_(target_head.to(target_lm.weight.dtype))
