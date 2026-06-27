@@ -491,6 +491,7 @@ def build_parser() -> argparse.ArgumentParser:
     recover.add_argument("--unlikelihood-window", type=int, default=16)
     recover.add_argument("--entropy-weight", type=float, default=0.0)
     recover.add_argument("--response-loss-mode", choices=["none", "auto", "assistant", "answer"], default="none")
+    recover.add_argument("--append-eos", action="store_true")
     recover.add_argument("--temperature", type=float, default=2.0)
     recover.add_argument("--train-scope", default="all")
     recover.add_argument("--dtype", default="float32")
@@ -600,6 +601,7 @@ def build_parser() -> argparse.ArgumentParser:
     lm_recover.add_argument("--unlikelihood-window", type=int, default=16)
     lm_recover.add_argument("--entropy-weight", type=float, default=0.0)
     lm_recover.add_argument("--response-loss-mode", choices=["none", "auto", "assistant", "answer"], default="none")
+    lm_recover.add_argument("--append-eos", action="store_true")
     lm_recover.add_argument("--train-scope", default="all")
     lm_recover.add_argument("--dtype", default="float32")
     lm_recover.add_argument("--device", default="cuda:0")
@@ -1193,6 +1195,7 @@ def cmd_hf_recover(args: argparse.Namespace) -> dict[str, object]:
         trust_remote_code=args.trust_remote_code,
         calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
         response_loss_mode=args.response_loss_mode,
+        append_eos=args.append_eos,
         grad_clip=args.grad_clip,
         report_interval=args.report_interval,
         save_best_loss=args.save_best_loss,
@@ -1295,6 +1298,7 @@ def cmd_hf_lm_recover(args: argparse.Namespace) -> dict[str, object]:
         trust_remote_code=args.trust_remote_code,
         calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
         response_loss_mode=args.response_loss_mode,
+        append_eos=args.append_eos,
         grad_clip=args.grad_clip,
         report_interval=args.report_interval,
         save_best_loss=args.save_best_loss,

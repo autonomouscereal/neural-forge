@@ -5,6 +5,7 @@ import pytest
 from neural_forge.cli import build_parser
 from neural_forge.cli import _parse_layer_groups
 from neural_forge.hf_recovery import RECOVERY_TEXTS
+from neural_forge.hf_recovery import _append_eos_text
 from neural_forge.hf_recovery import _assert_same_vocab
 from neural_forge.hf_recovery import _absorb_input_map_into_linears
 from neural_forge.hf_recovery import _candidate_index_after_depth_fold
@@ -123,6 +124,12 @@ def test_target_to_donor_token_groups_uses_tokenized_fallback() -> None:
 def test_recovery_same_vocab_guard_rejects_mismatch() -> None:
     with pytest.raises(ValueError, match="matching tokenizers"):
         _assert_same_vocab(_Tokenizer(["a", "b"]), _Tokenizer(["a", "c"]))
+
+
+def test_append_eos_text_adds_missing_token_once() -> None:
+    assert _append_eos_text(_Obj(eos_token="<eos>"), "answer") == "answer<eos>"
+    assert _append_eos_text(_Obj(eos_token="<eos>"), "answer<eos>") == "answer<eos>"
+    assert _append_eos_text(_Obj(eos_token=None), "answer") == "answer"
 
 
 def test_recovery_defaults_do_not_reuse_evaluation_prompts() -> None:
@@ -693,6 +700,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.004",
             "--response-loss-mode",
             "answer",
+            "--append-eos",
             "--train-scope",
             "last1",
             "--calibration-file",
@@ -708,6 +716,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert lm_recover_args.unlikelihood_window == 20
     assert lm_recover_args.entropy_weight == 0.004
     assert lm_recover_args.response_loss_mode == "answer"
+    assert lm_recover_args.append_eos is True
     assert lm_recover_args.train_scope == "last1"
     assert lm_recover_args.calibration_file == "calibration.jsonl"
     assert lm_recover_args.max_calibration_texts == 9
@@ -2011,6 +2020,7 @@ def test_hf_lm_recover_handler_passes_teacherless_flags(monkeypatch) -> None:
             "0.003",
             "--response-loss-mode",
             "auto",
+            "--append-eos",
             "--train-scope",
             "last2",
             "--dtype",
@@ -2042,6 +2052,7 @@ def test_hf_lm_recover_handler_passes_teacherless_flags(monkeypatch) -> None:
         "unlikelihood_window": 18,
         "entropy_weight": 0.003,
         "response_loss_mode": "auto",
+        "append_eos": True,
         "temperature": 1.0,
         "train_scope": "last2",
         "torch_dtype": "float32",

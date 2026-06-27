@@ -48,6 +48,7 @@ def recover_causal_lm(
     trust_remote_code: bool = False,
     calibration_texts: Sequence[str] | None = None,
     response_loss_mode: str = "none",
+    append_eos: bool = False,
     grad_clip: float = 1.0,
     report_interval: int | None = None,
     save_best_loss: bool = False,
@@ -133,6 +134,7 @@ def recover_causal_lm(
         max_length=max_length,
         device=device,
         response_loss_mode=response_loss_mode,
+        append_eos=append_eos,
     )
 
     losses = []
@@ -205,6 +207,7 @@ def recover_causal_lm(
         "best_step": best_step,
         "teacher_used": source_model is not None and kd_weight > 0,
         "response_loss_mode": response_loss_mode,
+        "append_eos": bool(append_eos),
         "train_scope": train_scope,
         "trainable_param_count": trainable_params,
         "calibration_text_count": len(texts),
@@ -1117,12 +1120,15 @@ def _make_batches(
     device: str,
     include_offsets: bool = False,
     response_loss_mode: str = "none",
+    append_eos: bool = False,
 ) -> list[dict[str, Any]]:
     if response_loss_mode not in {"none", "auto", "assistant", "answer"}:
         raise ValueError("response_loss_mode must be none, auto, assistant, or answer.")
     batches = []
     for start in range(0, len(texts), batch_size):
         chunk = list(texts[start : start + batch_size])
+        if append_eos:
+            chunk = [_append_eos_text(tokenizer, text) for text in chunk]
         kwargs = {
             "return_tensors": "pt",
             "padding": True,
@@ -1148,6 +1154,13 @@ def _make_batches(
             )
         batches.append(batch)
     return batches
+
+
+def _append_eos_text(tokenizer, text: str) -> str:
+    eos = getattr(tokenizer, "eos_token", None)
+    if not isinstance(eos, str) or not eos:
+        return text
+    return text if text.endswith(eos) else f"{text}{eos}"
 
 
 def _make_paired_batches(
