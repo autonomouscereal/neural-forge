@@ -39,12 +39,21 @@ def recover_causal_lm(
     lr: float = 5e-5,
     kd_weight: float = 0.5,
     lm_weight: float = 0.5,
+    hidden_kd_weight: float = 0.0,
+    hidden_kd_metric: str = "cka",
+    hidden_layer: str = "last",
+    hidden_token_mode: str = "tokens",
+    hidden_ridge: float = 1e-3,
+    hidden_max_anchors: int = 2048,
+    first_token_kd_weight: float = 0.0,
+    first_token_lm_weight: float = 0.0,
     unlikelihood_weight: float = 0.0,
     unlikelihood_window: int = 16,
     entropy_weight: float = 0.0,
     temperature: float = 2.0,
     train_scope: str = "all",
     torch_dtype: str = "float32",
+    candidate_train_dtype: str | None = None,
     device: str = "cuda:0",
     trust_remote_code: bool = False,
     calibration_texts: Sequence[str] | None = None,
@@ -70,9 +79,25 @@ def recover_causal_lm(
         raise ValueError("max_length must be greater than 1.")
     if lr <= 0:
         raise ValueError("lr must be positive.")
-    if kd_weight < 0 or lm_weight < 0 or unlikelihood_weight < 0 or entropy_weight < 0:
+    if (
+        kd_weight < 0
+        or lm_weight < 0
+        or hidden_kd_weight < 0
+        or first_token_kd_weight < 0
+        or first_token_lm_weight < 0
+        or unlikelihood_weight < 0
+        or entropy_weight < 0
+    ):
         raise ValueError("loss weights must be non-negative.")
-    if kd_weight == 0 and lm_weight == 0 and unlikelihood_weight == 0 and entropy_weight == 0:
+    if (
+        kd_weight == 0
+        and lm_weight == 0
+        and hidden_kd_weight == 0
+        and first_token_kd_weight == 0
+        and first_token_lm_weight == 0
+        and unlikelihood_weight == 0
+        and entropy_weight == 0
+    ):
         raise ValueError("At least one loss weight must be positive.")
     if unlikelihood_window <= 0:
         raise ValueError("unlikelihood_window must be positive.")
@@ -80,22 +105,35 @@ def recover_causal_lm(
         raise ValueError("temperature must be positive.")
     if response_loss_mode not in {"none", "auto", "assistant", "answer"}:
         raise ValueError("response_loss_mode must be none, auto, assistant, or answer.")
+    if hidden_kd_metric not in {"projected", "cka", "both"}:
+        raise ValueError("hidden_kd_metric must be projected, cka, or both.")
+    if hidden_layer not in {"last", "middle", "all"}:
+        raise ValueError("hidden_layer must be last, middle, or all.")
+    if hidden_token_mode not in {"tokens", "response", "pooled"}:
+        raise ValueError("hidden_token_mode must be tokens, response, or pooled.")
+    if hidden_ridge < 0:
+        raise ValueError("hidden_ridge must be non-negative.")
+    if hidden_max_anchors <= 0:
+        raise ValueError("hidden_max_anchors must be positive.")
+    if response_loss_mode == "none" and (first_token_kd_weight > 0 or first_token_lm_weight > 0):
+        raise ValueError("first-token losses require response_loss_mode to be auto, assistant, or answer.")
     if grad_clip < 0:
         raise ValueError("grad_clip must be non-negative.")
     if report_interval is not None and report_interval <= 0:
         raise ValueError("report_interval must be positive when provided.")
 
-    if kd_weight > 0 and not source_model:
-        raise ValueError("source_model is required when kd_weight is positive.")
+    if (kd_weight > 0 or hidden_kd_weight > 0 or first_token_kd_weight > 0) and not source_model:
+        raise ValueError("source_model is required when teacher losses are positive.")
 
     torch, transformers = _torch_and_transformers()
     dtype = _dtype_from_name(torch, torch_dtype)
+    train_dtype = _dtype_from_name(torch, candidate_train_dtype) if candidate_train_dtype else None
     candidate_tokenizer = transformers.AutoTokenizer.from_pretrained(candidate_model, trust_remote_code=trust_remote_code)
     tokenizer = candidate_tokenizer
     source = None
     if source_model:
         source_tokenizer = transformers.AutoTokenizer.from_pretrained(source_model, trust_remote_code=trust_remote_code)
-        if kd_weight > 0:
+        if kd_weight > 0 or hidden_kd_weight > 0 or first_token_kd_weight > 0:
             _assert_same_vocab(source_tokenizer, candidate_tokenizer)
         tokenizer = candidate_tokenizer
     if tokenizer.pad_token_id is None and tokenizer.eos_token_id is not None:
@@ -118,11 +156,35 @@ def recover_causal_lm(
         source.to(device)
         source.eval()
     candidate.to(device)
+    if train_dtype is not None:
+        candidate.to(dtype=train_dtype)
     candidate.train()
     if hasattr(candidate.config, "use_cache"):
         candidate.config.use_cache = False
 
     trainable_params = _set_train_scope(candidate, train_scope)
+    hidden_projection = None
+    hidden_projection_report = None
+    if hidden_kd_weight > 0 and hidden_kd_metric in {"projected", "both"}:
+        if source is None:
+            raise ValueError("source_model is required for projected hidden KD.")
+        vocab_size = min(
+            int(source.get_input_embeddings().weight.shape[0]),
+            int(candidate.get_input_embeddings().weight.shape[0]),
+            len(tokenizer),
+        )
+        anchor_count = min(int(vocab_size), int(hidden_max_anchors))
+        anchor_idx = torch.linspace(0, vocab_size - 1, steps=anchor_count, device=device).round().to(torch.long)
+        hidden_projection_report = _fit_shared_embedding_hidden_projection(
+            torch,
+            source,
+            candidate,
+            anchor_idx,
+            anchor_idx,
+            hidden_ridge,
+            hidden_max_anchors,
+        )
+        hidden_projection = hidden_projection_report["map"].to(device=device, dtype=torch.float32)
     optimizer = torch.optim.AdamW([p for p in candidate.parameters() if p.requires_grad], lr=lr)
     texts = list(calibration_texts or RECOVERY_TEXTS)
     if not texts:
@@ -149,8 +211,16 @@ def recover_causal_lm(
         teacher = None
         if source is not None:
             with torch.no_grad():
-                teacher = source(**_model_forward_inputs(batch), use_cache=False)
-        student = candidate(**_model_forward_inputs(batch), use_cache=False)
+                teacher = source(
+                    **_model_forward_inputs(batch),
+                    use_cache=False,
+                    output_hidden_states=hidden_kd_weight > 0,
+                )
+        student = candidate(
+            **_model_forward_inputs(batch),
+            use_cache=False,
+            output_hidden_states=hidden_kd_weight > 0,
+        )
         loss = _recovery_loss(
             torch,
             student,
@@ -158,19 +228,38 @@ def recover_causal_lm(
             batch["input_ids"],
             batch.get("attention_mask"),
             batch.get("loss_mask"),
-            kd_weight,
-            lm_weight,
-            unlikelihood_weight,
-            unlikelihood_window,
-            entropy_weight,
-            temperature,
+            kd_weight=kd_weight,
+            lm_weight=lm_weight,
+            unlikelihood_weight=unlikelihood_weight,
+            unlikelihood_window=unlikelihood_window,
+            entropy_weight=entropy_weight,
+            temperature=temperature,
+            first_token_kd_weight=first_token_kd_weight,
+            first_token_lm_weight=first_token_lm_weight,
         )
+        if hidden_kd_weight > 0:
+            if teacher is None:
+                raise ValueError("teacher output is required when hidden_kd_weight is positive.")
+            hidden_loss = _same_tokenizer_hidden_loss(
+                torch,
+                student,
+                teacher,
+                batch.get("attention_mask"),
+                batch.get("loss_mask"),
+                hidden_projection,
+                hidden_layer,
+                hidden_kd_metric,
+                hidden_token_mode,
+            )
+            loss = loss + float(hidden_kd_weight) * hidden_loss
         if not bool(torch.isfinite(loss).detach().cpu()):
             raise RuntimeError(f"Non-finite recovery loss at step {step}; aborting before save.")
         loss.backward()
+        _raise_if_nonfinite_gradients(torch, candidate, step)
         if grad_clip > 0:
             torch.nn.utils.clip_grad_norm_([p for p in candidate.parameters() if p.requires_grad], grad_clip)
         optimizer.step()
+        _raise_if_nonfinite_parameters(torch, candidate, step)
         if step == 1 or step % interval == 0 or step == steps:
             loss_value = float(loss.detach().cpu())
             losses.append({"step": step, "loss": loss_value})
@@ -198,6 +287,16 @@ def recover_causal_lm(
         "lr": lr,
         "kd_weight": kd_weight,
         "lm_weight": lm_weight,
+        "hidden_kd_weight": hidden_kd_weight,
+        "hidden_kd_metric": hidden_kd_metric,
+        "hidden_layer": hidden_layer,
+        "hidden_token_mode": hidden_token_mode,
+        "hidden_ridge": hidden_ridge,
+        "hidden_max_anchors": hidden_max_anchors,
+        "hidden_projection": hidden_projection_report
+        and {key: value for key, value in hidden_projection_report.items() if key != "map"},
+        "first_token_kd_weight": first_token_kd_weight,
+        "first_token_lm_weight": first_token_lm_weight,
         "unlikelihood_weight": unlikelihood_weight,
         "unlikelihood_window": unlikelihood_window,
         "entropy_weight": entropy_weight,
@@ -210,6 +309,7 @@ def recover_causal_lm(
         "response_loss_mode": response_loss_mode,
         "append_eos": bool(append_eos),
         "train_scope": train_scope,
+        "candidate_train_dtype": candidate_train_dtype,
         "trainable_param_count": trainable_params,
         "calibration_text_count": len(texts),
         "eval_overlap_count": eval_overlap_count,
@@ -218,6 +318,32 @@ def recover_causal_lm(
     }
     _write_json(target / "neural_forge_recovery_report.json", report)
     return report
+
+
+def _raise_if_nonfinite_gradients(torch, model, step: int) -> None:
+    bad = []
+    for name, param in model.named_parameters():
+        if not param.requires_grad or param.grad is None:
+            continue
+        if not bool(torch.isfinite(param.grad).all().detach().cpu()):
+            bad.append(name)
+            if len(bad) >= 5:
+                break
+    if bad:
+        joined = ", ".join(bad)
+        raise RuntimeError(f"Non-finite recovery gradients at step {step}: {joined}")
+
+
+def _raise_if_nonfinite_parameters(torch, model, step: int) -> None:
+    bad = []
+    for name, param in model.named_parameters():
+        if not bool(torch.isfinite(param.data).all().detach().cpu()):
+            bad.append(name)
+            if len(bad) >= 5:
+                break
+    if bad:
+        joined = ", ".join(bad)
+        raise RuntimeError(f"Non-finite recovery parameters after step {step}: {joined}")
 
 
 def recover_cross_tokenizer_causal_lm(
@@ -3441,6 +3567,8 @@ def _recovery_loss(
     unlikelihood_window: int,
     entropy_weight: float,
     temperature: float,
+    first_token_kd_weight: float = 0.0,
+    first_token_lm_weight: float = 0.0,
 ):
     shift_student = torch.nan_to_num(
         student.logits[:, :-1, :].contiguous().to(torch.float32),
@@ -3461,7 +3589,11 @@ def _recovery_loss(
             else:
                 mask = attention_mask[:, 1:].contiguous().bool()
     shift_labels = shift_labels.masked_fill(~mask, -100)
+    first_mask = _first_response_shift_mask(torch, loss_mask, attention_mask)
+    if first_mask is not None:
+        first_mask = first_mask & mask
     total = torch.zeros((), dtype=shift_student.dtype, device=shift_student.device)
+    token_kl = None
     if kd_weight > 0:
         if teacher is None:
             raise ValueError("teacher output is required when kd_weight is positive.")
@@ -3478,13 +3610,38 @@ def _recovery_loss(
         kd = (token_kl * mask).sum() / mask.sum().clamp_min(1)
         kd = kd * (temperature**2)
         total = total + float(kd_weight) * kd
-    if lm_weight > 0:
-        lm = torch.nn.functional.cross_entropy(
+    if first_token_kd_weight > 0:
+        if teacher is None:
+            raise ValueError("teacher output is required when first_token_kd_weight is positive.")
+        if token_kl is None:
+            shift_teacher = torch.nan_to_num(
+                teacher.logits[:, :-1, :].contiguous().to(torch.float32),
+                nan=0.0,
+                posinf=1e4,
+                neginf=-1e4,
+            )
+            kd_vocab = min(int(shift_student.shape[-1]), int(shift_teacher.shape[-1]))
+            student_logp = torch.nn.functional.log_softmax(shift_student[..., :kd_vocab] / temperature, dim=-1)
+            teacher_p = torch.nn.functional.softmax(shift_teacher[..., :kd_vocab] / temperature, dim=-1)
+            token_kl = torch.nn.functional.kl_div(student_logp, teacher_p, reduction="none").sum(dim=-1)
+        if first_mask is not None and int(first_mask.sum().detach().cpu().item()) > 0:
+            first_kd = (token_kl * first_mask).sum() / first_mask.sum().clamp_min(1)
+            first_kd = first_kd * (temperature**2)
+            total = total + float(first_token_kd_weight) * first_kd
+    token_ce = None
+    if lm_weight > 0 or first_token_lm_weight > 0:
+        token_ce = torch.nn.functional.cross_entropy(
             shift_student.view(-1, shift_student.shape[-1]),
             shift_labels.view(-1),
             ignore_index=-100,
-        )
+            reduction="none",
+        ).view_as(shift_labels)
+    if lm_weight > 0:
+        lm = (token_ce * mask).sum() / mask.sum().clamp_min(1)
         total = total + float(lm_weight) * lm
+    if first_token_lm_weight > 0 and first_mask is not None and int(first_mask.sum().detach().cpu().item()) > 0:
+        first_lm = (token_ce * first_mask).sum() / first_mask.sum().clamp_min(1)
+        total = total + float(first_token_lm_weight) * first_lm
     if unlikelihood_weight > 0:
         unlikelihood = _recent_token_unlikelihood_loss(
             torch,
@@ -3499,6 +3656,22 @@ def _recovery_loss(
         entropy_penalty = _masked_entropy_penalty(torch, shift_student, mask)
         total = total + float(entropy_weight) * entropy_penalty
     return total
+
+
+def _first_response_shift_mask(torch, loss_mask, attention_mask):
+    if loss_mask is None or int(loss_mask.shape[-1]) <= 1:
+        return None
+    label_mask = loss_mask[:, 1:].contiguous().bool()
+    if attention_mask is not None:
+        label_mask = label_mask & attention_mask[:, 1:].contiguous().bool()
+    if int(label_mask.sum().detach().cpu().item()) <= 0:
+        return label_mask
+    first_mask = torch.zeros_like(label_mask, dtype=torch.bool)
+    has_response = label_mask.any(dim=1)
+    first_indices = label_mask.to(torch.int64).argmax(dim=1)
+    rows = torch.arange(label_mask.shape[0], device=label_mask.device)[has_response]
+    first_mask[rows, first_indices[has_response]] = True
+    return first_mask
 
 
 def _cross_tokenizer_recovery_loss(
@@ -3959,6 +4132,87 @@ def _cross_tokenizer_hidden_loss(
     student_pooled = _masked_mean_hidden(torch, student_hidden, candidate_attention_mask)
     teacher_pooled = _masked_mean_hidden(torch, teacher_hidden, source_attention_mask)
     return _hidden_representation_loss(torch, student_pooled, teacher_pooled, hidden_projection, hidden_kd_metric)
+
+
+def _same_tokenizer_hidden_loss(
+    torch,
+    student,
+    teacher,
+    attention_mask,
+    loss_mask,
+    hidden_projection,
+    hidden_layer: str,
+    hidden_kd_metric: str = "cka",
+    hidden_token_mode: str = "tokens",
+):
+    if hidden_layer == "all":
+        if not student.hidden_states or not teacher.hidden_states:
+            raise ValueError("hidden states are required for hidden KD.")
+        student_count = len(student.hidden_states)
+        teacher_count = len(teacher.hidden_states)
+        start = 1 if student_count > 1 and teacher_count > 1 else 0
+        losses = []
+        denom = max(1, student_count - 1)
+        for student_idx in range(start, student_count):
+            teacher_idx = round((student_idx / denom) * max(1, teacher_count - 1))
+            teacher_idx = max(0, min(teacher_count - 1, int(teacher_idx)))
+            losses.append(
+                _same_tokenizer_hidden_state_loss(
+                    torch,
+                    student.hidden_states[student_idx],
+                    teacher.hidden_states[teacher_idx],
+                    attention_mask,
+                    loss_mask,
+                    hidden_projection,
+                    hidden_kd_metric,
+                    hidden_token_mode,
+                )
+            )
+        return torch.stack(losses).mean()
+    student_hidden = _select_hidden_state(student.hidden_states, hidden_layer)
+    teacher_hidden = _select_hidden_state(teacher.hidden_states, hidden_layer)
+    return _same_tokenizer_hidden_state_loss(
+        torch,
+        student_hidden,
+        teacher_hidden,
+        attention_mask,
+        loss_mask,
+        hidden_projection,
+        hidden_kd_metric,
+        hidden_token_mode,
+    )
+
+
+def _same_tokenizer_hidden_state_loss(
+    torch,
+    student_hidden,
+    teacher_hidden,
+    attention_mask,
+    loss_mask,
+    hidden_projection,
+    hidden_kd_metric: str = "cka",
+    hidden_token_mode: str = "tokens",
+):
+    if hidden_token_mode == "pooled":
+        student_rows = _masked_mean_hidden(torch, student_hidden, attention_mask)
+        teacher_rows = _masked_mean_hidden(torch, teacher_hidden, attention_mask)
+        return _hidden_representation_loss(torch, student_rows, teacher_rows, hidden_projection, hidden_kd_metric)
+    if attention_mask is None:
+        mask = torch.ones(student_hidden.shape[:2], dtype=torch.bool, device=student_hidden.device)
+    else:
+        mask = attention_mask.to(device=student_hidden.device).bool()
+    if hidden_token_mode == "response" and loss_mask is not None:
+        response_mask = loss_mask.to(device=student_hidden.device).bool()
+        scoped = mask & response_mask
+        if int(scoped.sum().detach().cpu().item()) > 1:
+            mask = scoped
+    elif hidden_token_mode != "tokens":
+        raise ValueError("hidden_token_mode must be tokens, response, or pooled.")
+    if int(mask.sum().detach().cpu().item()) <= 1:
+        return torch.zeros((), dtype=student_hidden.dtype, device=student_hidden.device)
+    student_rows = student_hidden.to(torch.float32)[mask]
+    teacher_rows = teacher_hidden.to(torch.float32)[mask.to(device=teacher_hidden.device)]
+    return _hidden_representation_loss(torch, student_rows, teacher_rows, hidden_projection, hidden_kd_metric)
 
 
 def _cross_tokenizer_span_hidden_loss(

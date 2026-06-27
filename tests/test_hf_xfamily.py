@@ -19,6 +19,7 @@ from neural_forge.hf_recovery import _entropy_aware_kl_loss
 from neural_forge.hf_recovery import _fit_activation_map
 from neural_forge.hf_recovery import _fit_lm_head_from_hidden_logits
 from neural_forge.hf_recovery import _fit_shared_embedding_hidden_projection
+from neural_forge.hf_recovery import _first_response_shift_mask
 from neural_forge.hf_recovery import _focus_char_spans
 from neural_forge.hf_recovery import _fold_groups_from_report
 from neural_forge.hf_recovery import _hidden_representation_loss
@@ -34,6 +35,7 @@ from neural_forge.hf_recovery import _recent_token_unlikelihood_loss
 from neural_forge.hf_recovery import _select_anchor_tokens
 from neural_forge.hf_recovery import _set_train_scope
 from neural_forge.hf_recovery import _same_tokenizer_reference_loss
+from neural_forge.hf_recovery import _same_tokenizer_hidden_loss
 from neural_forge.hf_recovery import load_calibration_texts
 from neural_forge.hf_tools import TEXT_EVALS
 from neural_forge.hf_tools import _layer_groups_for_report
@@ -591,6 +593,38 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "9",
         ]
     )
+    recover_args = parser.parse_args(
+        [
+            "hf-recover",
+            "source",
+            "candidate",
+            "recover-out",
+            "--kd-weight",
+            "0.4",
+            "--lm-weight",
+            "0.2",
+            "--hidden-kd-weight",
+            "0.8",
+            "--hidden-kd-metric",
+            "both",
+            "--hidden-layer",
+            "all",
+            "--hidden-token-mode",
+            "response",
+            "--hidden-ridge",
+            "0.02",
+            "--hidden-max-anchors",
+            "123",
+            "--candidate-train-dtype",
+            "float32",
+            "--first-token-kd-weight",
+            "1.5",
+            "--first-token-lm-weight",
+            "0.75",
+            "--response-loss-mode",
+            "auto",
+        ]
+    )
     assert sweep_args.output_dir == "out"
     assert resize_args.assignment == "topk"
     assert random_args.output == "random-out"
@@ -723,6 +757,18 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_head_args.device == "cpu"
     assert xfamily_head_args.calibration_file == "calibration.jsonl"
     assert xfamily_head_args.max_calibration_texts == 9
+    assert recover_args.source_model == "source"
+    assert recover_args.candidate_model == "candidate"
+    assert recover_args.hidden_kd_weight == 0.8
+    assert recover_args.hidden_kd_metric == "both"
+    assert recover_args.hidden_layer == "all"
+    assert recover_args.hidden_token_mode == "response"
+    assert recover_args.hidden_ridge == 0.02
+    assert recover_args.hidden_max_anchors == 123
+    assert recover_args.candidate_train_dtype == "float32"
+    assert recover_args.first_token_kd_weight == 1.5
+    assert recover_args.first_token_lm_weight == 0.75
+    assert recover_args.response_loss_mode == "auto"
     with pytest.raises(SystemExit):
         parser.parse_args(
             [
@@ -747,6 +793,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "5",
             "--unlikelihood-weight",
             "0.07",
+            "--first-token-lm-weight",
+            "1.25",
             "--unlikelihood-window",
             "20",
             "--entropy-weight",
@@ -766,6 +814,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert lm_recover_args.output == "out"
     assert lm_recover_args.steps == 5
     assert lm_recover_args.unlikelihood_weight == 0.07
+    assert lm_recover_args.first_token_lm_weight == 1.25
     assert lm_recover_args.unlikelihood_window == 20
     assert lm_recover_args.entropy_weight == 0.004
     assert lm_recover_args.response_loss_mode == "answer"
@@ -1474,6 +1523,120 @@ def test_recovery_loss_response_mask_ignores_prompt_tokens() -> None:
 
     assert masked.item() < 1e-3
     assert full.item() > masked.item() + 5.0
+
+
+def test_first_response_shift_mask_selects_first_response_label() -> None:
+    torch = pytest.importorskip("torch")
+    loss_mask = torch.tensor(
+        [
+            [False, False, False, True, True],
+            [False, True, True, True, False],
+            [False, False, False, False, False],
+        ]
+    )
+    attention_mask = torch.tensor(
+        [
+            [True, True, True, True, True],
+            [True, True, True, True, False],
+            [True, True, True, True, False],
+        ]
+    )
+
+    first = _first_response_shift_mask(torch, loss_mask, attention_mask)
+
+    assert first.tolist() == [
+        [False, False, True, False],
+        [True, False, False, False],
+        [False, False, False, False],
+    ]
+
+
+def test_recovery_loss_first_response_lm_focuses_boundary_token() -> None:
+    torch = pytest.importorskip("torch")
+    logits = torch.full((1, 5, 6), -8.0)
+    input_ids = torch.tensor([[0, 1, 2, 3, 4]])
+    attention_mask = torch.ones_like(input_ids)
+    loss_mask = torch.tensor([[False, False, False, True, True]])
+    logits[0, 2, 3] = 20.0
+    logits[0, 3, 4] = -20.0
+    student = _Obj(logits=logits)
+
+    first_only = _recovery_loss(
+        torch,
+        student,
+        teacher=None,
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        loss_mask=loss_mask,
+        kd_weight=0.0,
+        lm_weight=0.0,
+        unlikelihood_weight=0.0,
+        unlikelihood_window=2,
+        entropy_weight=0.0,
+        temperature=1.0,
+        first_token_lm_weight=1.0,
+    )
+    response_lm = _recovery_loss(
+        torch,
+        student,
+        teacher=None,
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        loss_mask=loss_mask,
+        kd_weight=0.0,
+        lm_weight=1.0,
+        unlikelihood_weight=0.0,
+        unlikelihood_window=2,
+        entropy_weight=0.0,
+        temperature=1.0,
+    )
+
+    assert first_only.item() < 1e-3
+    assert response_lm.item() > first_only.item() + 5.0
+
+
+def test_same_tokenizer_hidden_loss_handles_width_mismatch_with_cka() -> None:
+    torch = pytest.importorskip("torch")
+    student = _Obj(hidden_states=[torch.randn(1, 5, 3)])
+    teacher = _Obj(hidden_states=[torch.randn(1, 5, 7)])
+    attention_mask = torch.tensor([[True, True, True, True, False]])
+    loss_mask = torch.tensor([[False, False, True, True, False]])
+
+    loss = _same_tokenizer_hidden_loss(
+        torch,
+        student,
+        teacher,
+        attention_mask,
+        loss_mask,
+        hidden_projection=None,
+        hidden_layer="last",
+        hidden_kd_metric="cka",
+        hidden_token_mode="response",
+    )
+
+    assert torch.isfinite(loss)
+
+
+def test_same_tokenizer_hidden_loss_all_layers_aligns_proportionally() -> None:
+    torch = pytest.importorskip("torch")
+    student = _Obj(hidden_states=[torch.randn(1, 5, 3) for _ in range(4)])
+    teacher = _Obj(hidden_states=[torch.randn(1, 5, 7) for _ in range(8)])
+    attention_mask = torch.tensor([[True, True, True, True, False]])
+    loss_mask = torch.tensor([[False, False, True, True, False]])
+
+    loss = _same_tokenizer_hidden_loss(
+        torch,
+        student,
+        teacher,
+        attention_mask,
+        loss_mask,
+        hidden_projection=None,
+        hidden_layer="all",
+        hidden_kd_metric="cka",
+        hidden_token_mode="tokens",
+    )
+
+    assert torch.isfinite(loss)
 
 
 def test_infer_response_char_start_finds_answer_markers() -> None:
@@ -2356,6 +2519,8 @@ def test_hf_lm_recover_handler_passes_teacherless_flags(monkeypatch) -> None:
             "48",
             "--lr",
             "0.0002",
+            "--first-token-lm-weight",
+            "1.7",
             "--unlikelihood-weight",
             "0.09",
             "--unlikelihood-window",
@@ -2392,6 +2557,7 @@ def test_hf_lm_recover_handler_passes_teacherless_flags(monkeypatch) -> None:
         "lr": 0.0002,
         "kd_weight": 0.0,
         "lm_weight": 1.0,
+        "first_token_lm_weight": 1.7,
         "unlikelihood_weight": 0.09,
         "unlikelihood_window": 18,
         "entropy_weight": 0.003,

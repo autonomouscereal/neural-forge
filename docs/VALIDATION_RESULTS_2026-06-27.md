@@ -119,6 +119,33 @@ Head-dim-preserving untied Qwen target:
   - representative donor layer, consumer hidden reduction `mean`, target RMS scale: PPL `144,624.83`, choice `0/4`, behavior `0/6`.
 - Four-layer `hf-xfamily-reconstruct` on the best head-dim-preserving init (`fold_mean_none`) with `mlp-all`, alpha `0.2`, 1,024 tokens/layer worsened PPL to `178,375.10` and kept behavior at `0/6`.
 
+### 2026 HLD-Inspired Recovery Follow-Up
+
+New implementation added after the first stress test:
+
+- same-tokenizer hidden KD in `hf-recover`, with `projected`, `cka`, and `both` metrics;
+- `--hidden-layer all` for proportional all-layer child-to-donor hidden matching;
+- `--candidate-train-dtype` so the 141M child can train in `float32` while the 4B teacher stays `float16`;
+- non-finite gradient/parameter guards before saving recovery checkpoints.
+
+The dtype guard found a real failure: training the child in `float16` made parameters non-finite after the first AdamW step (`embed_tokens`, attention projections, etc.), which explains earlier degenerate `!` checkpoints. Candidate-side `float32` training fixed that numerical corruption.
+
+Best new same-tokenizer blank-target result:
+
+- Checkpoint: `qwen4b_to_qwen3_tiny_head128_fold_mean_none_hld800_cka_childfp32_noeos`.
+- Method: 800 steps, child `float32`, donor `float16`, middle-layer CKA hidden KD plus light token KD/LM, no forced EOS.
+- PPL improved from `122,525.84` to `3,259.02`.
+- Built-in choice stayed weak at `2/4`; behavior stayed `0/6`.
+- Manual decoding still failed: answer-only prompts collapsed to `22`; open generations became empty or repeated periods.
+- lm-eval limit-20 slice: ARC-Easy `0.25`, PIQA `0.55`. The raw folded baseline on the same slice was ARC-Easy `0.30`, PIQA `0.50`, so HLD improved PPL but not external-task capability.
+
+Other HLD ablations:
+
+- first-token KD/LM in `float16` corrupted the checkpoint before the finite-parameter guard was added;
+- 600-step middle-layer CKA with forced EOS reached PPL `5,904.62`, choice `3/4`, behavior `0/6`, but decoded immediate EOS or fixed short numbers;
+- 500-step all-layer proportional CKA reached PPL `5,551.85`, choice `2/4`, behavior `0/6`;
+- head-only first-token fine-tuning from the HLD checkpoint regressed PPL to `7,576.06`, choice `1/4`, behavior `0/6`.
+
 This same-tokenizer stress test is important: removing tokenizer mismatch did not make arbitrary 25x blank-target folding work. The current blank Qwen target initializer is not preserving enough residual/backbone geometry for light recovery to restore behavior.
 
 The strongest current evidence is narrower: the SmolLM2-135M blank-target path can transfer partial linguistic/domain behavior and beat a random blank target, but same-tokenizer blank Qwen stress tests show that the general "fold any parent into any blank target at 25x" claim is not yet proven.

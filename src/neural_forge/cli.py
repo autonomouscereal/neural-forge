@@ -493,6 +493,14 @@ def build_parser() -> argparse.ArgumentParser:
     recover.add_argument("--lr", type=float, default=5e-5)
     recover.add_argument("--kd-weight", type=float, default=0.5)
     recover.add_argument("--lm-weight", type=float, default=0.5)
+    recover.add_argument("--hidden-kd-weight", type=float, default=0.0)
+    recover.add_argument("--hidden-kd-metric", choices=["projected", "cka", "both"], default="cka")
+    recover.add_argument("--hidden-layer", choices=["last", "middle", "all"], default="last")
+    recover.add_argument("--hidden-token-mode", choices=["tokens", "response", "pooled"], default="tokens")
+    recover.add_argument("--hidden-ridge", type=float, default=1e-3)
+    recover.add_argument("--hidden-max-anchors", type=int, default=2048)
+    recover.add_argument("--first-token-kd-weight", type=float, default=0.0)
+    recover.add_argument("--first-token-lm-weight", type=float, default=0.0)
     recover.add_argument("--unlikelihood-weight", type=float, default=0.0)
     recover.add_argument("--unlikelihood-window", type=int, default=16)
     recover.add_argument("--entropy-weight", type=float, default=0.0)
@@ -501,6 +509,7 @@ def build_parser() -> argparse.ArgumentParser:
     recover.add_argument("--temperature", type=float, default=2.0)
     recover.add_argument("--train-scope", default="all")
     recover.add_argument("--dtype", default="float32")
+    recover.add_argument("--candidate-train-dtype")
     recover.add_argument("--device", default="cuda:0")
     recover.add_argument("--trust-remote-code", action="store_true")
     recover.add_argument("--grad-clip", type=float, default=1.0)
@@ -652,6 +661,7 @@ def build_parser() -> argparse.ArgumentParser:
     lm_recover.add_argument("--batch-size", type=int, default=1)
     lm_recover.add_argument("--max-length", type=int, default=96)
     lm_recover.add_argument("--lr", type=float, default=5e-5)
+    lm_recover.add_argument("--first-token-lm-weight", type=float, default=0.0)
     lm_recover.add_argument("--unlikelihood-weight", type=float, default=0.0)
     lm_recover.add_argument("--unlikelihood-window", type=int, default=16)
     lm_recover.add_argument("--entropy-weight", type=float, default=0.0)
@@ -1241,12 +1251,21 @@ def cmd_hf_recover(args: argparse.Namespace) -> dict[str, object]:
         lr=args.lr,
         kd_weight=args.kd_weight,
         lm_weight=args.lm_weight,
+        hidden_kd_weight=args.hidden_kd_weight,
+        hidden_kd_metric=args.hidden_kd_metric,
+        hidden_layer=args.hidden_layer,
+        hidden_token_mode=args.hidden_token_mode,
+        hidden_ridge=args.hidden_ridge,
+        hidden_max_anchors=args.hidden_max_anchors,
+        first_token_kd_weight=args.first_token_kd_weight,
+        first_token_lm_weight=args.first_token_lm_weight,
         unlikelihood_weight=args.unlikelihood_weight,
         unlikelihood_window=args.unlikelihood_window,
         entropy_weight=args.entropy_weight,
         temperature=args.temperature,
         train_scope=args.train_scope,
         torch_dtype=args.dtype,
+        candidate_train_dtype=args.candidate_train_dtype,
         device=args.device,
         trust_remote_code=args.trust_remote_code,
         calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
@@ -1381,6 +1400,7 @@ def cmd_hf_lm_recover(args: argparse.Namespace) -> dict[str, object]:
         lr=args.lr,
         kd_weight=0.0,
         lm_weight=1.0,
+        first_token_lm_weight=args.first_token_lm_weight,
         unlikelihood_weight=args.unlikelihood_weight,
         unlikelihood_window=args.unlikelihood_window,
         entropy_weight=args.entropy_weight,
