@@ -180,6 +180,35 @@ Validation used the same Qwen3-4B donor and same blank 141,664,384-param head-di
 
 This is a useful structural signal but still not a 25x proof. Per-layer residual bases can improve local multiple-choice and one behavior item, but PCA basis projection alone is not enough to create stable generative behavior in a blank 28x child. The next initializer needs activation-aware least-squares/SVD reconstruction of each module output, not only hidden-axis basis projection.
 
+Cross-family/same-tokenizer reconstruction from the strongest per-layer PCA HLD
+checkpoint was tested as a post-hoc repair:
+
+- Checkpoint: `qwen4b_to_qwen3_tiny_head128_layerpca512_hld800_recon_all_a005`.
+- Method: all-layer ridge reconstruction, alpha `0.05`, 2,048 anchors, 512 tokens
+  per layer.
+- Result: 16 repairs ran, but PPL regressed to `182,857.94`, choice fell to
+  `2/4`, and behavior stayed `0/6`.
+- Manual output was not useful; all three generation probes looped on repeated
+  phrases such as `important secret`.
+
+This rejects the current post-hoc reconstruction recipe for the blank Qwen
+stress test. Local LS repair after a collapsed fold can make the model worse;
+the next change must improve the fold map itself before recovery.
+
+### Dense Transport Fold Follow-Up
+
+New implementation:
+
+- upgraded `fold_mode=transport` from sparse centroid routing to a balanced
+  Sinkhorn transport plan when the source-target channel product fits in memory;
+- preserved sparse top-k transport summaries for reports and fallback;
+- added unit coverage that checks row mass conservation and balanced target
+  load.
+
+This is closer to DOTResize-style neuron merging because donor channels can now
+redistribute mass across child channels under a global load constraint instead
+of being routed mostly by local clusters.
+
 This same-tokenizer stress test is important: removing tokenizer mismatch did not make arbitrary 25x blank-target folding work. The current blank Qwen target initializer is not preserving enough residual/backbone geometry for light recovery to restore behavior.
 
 The strongest current evidence is narrower: the SmolLM2-135M blank-target path can transfer partial linguistic/domain behavior and beat a random blank target, but same-tokenizer blank Qwen stress tests show that the general "fold any parent into any blank target at 25x" claim is not yet proven.

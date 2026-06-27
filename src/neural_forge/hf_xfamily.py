@@ -2090,11 +2090,14 @@ def _attention_axis_assignment_key(suffix: str, semantic_prefix, axis_kind: str)
 def _axis_assignment_cache_report(assignment_cache: dict[Any, dict[str, Any]]) -> list[dict[str, Any]]:
     report = []
     for key, item in assignment_cache.items():
-        map_type = "transport" if "transport_indices" in item else "assignment"
+        map_type = "transport" if "transport_indices" in item or "transport_matrix" in item else "assignment"
+        transport_matrix = item.get("transport_matrix")
         report.append(
             {
                 "key": repr(key),
                 "map_type": map_type,
+                "transport_backend": item.get("transport_backend"),
+                "transport_matrix_shape": list(transport_matrix.shape) if transport_matrix is not None else None,
                 "source_dim": int(item.get("source_dim", 0)),
                 "target_dim": int(item.get("target_dim", 0)),
                 "assignment_mode": str(item.get("assignment_mode", "")),
@@ -2109,8 +2112,9 @@ def _build_sparse_activation_transport(
     target_dim: int,
     weights=None,
     top_k: int = 4,
-    balance_iterations: int = 4,
+    balance_iterations: int = 32,
     temperature: float = 0.08,
+    dense_limit: int = 16_000_000,
 ):
     feature_rows = features.detach().cpu().to(torch.float32)
     if feature_rows.dim() != 2:
@@ -2138,6 +2142,30 @@ def _build_sparse_activation_transport(
     centroid_rows = _row_normalize(torch.stack(centroids, dim=0))
     top_k = max(1, min(int(top_k), target_dim))
     scores = feature_rows.matmul(centroid_rows.t())
+    if int(source_dim) * int(target_dim) <= int(dense_limit):
+        source_mass = fold_weights / fold_weights.sum().clamp_min(1e-12)
+        target_mass = torch.full((target_dim,), 1.0 / float(target_dim), dtype=torch.float32)
+        logits = scores / max(float(temperature), 1e-6)
+        logits = logits - logits.max(dim=1, keepdim=True).values
+        kernel = torch.exp(logits).clamp_min(1e-30)
+        row_scale = torch.ones_like(source_mass)
+        col_scale = torch.ones_like(target_mass)
+        for _ in range(max(1, int(balance_iterations))):
+            row_scale = source_mass / kernel.matmul(col_scale).clamp_min(1e-30)
+            col_scale = target_mass / kernel.t().matmul(row_scale).clamp_min(1e-30)
+        plan = row_scale.unsqueeze(1) * kernel * col_scale.unsqueeze(0)
+        values = plan / plan.sum(dim=1, keepdim=True).clamp_min(1e-30)
+        top_values, top_indices = torch.topk(values, k=top_k, dim=1)
+        return {
+            "transport_matrix": values.detach().cpu().to(torch.float32),
+            "transport_indices": top_indices.detach().cpu().to(torch.long),
+            "transport_values": top_values.detach().cpu().to(torch.float32),
+            "source_dim": int(source_dim),
+            "target_dim": int(target_dim),
+            "assignment_mode": "transport",
+            "transport_backend": "sinkhorn_dense",
+            "sinkhorn_iterations": int(balance_iterations),
+        }
     top_scores, top_indices = torch.topk(scores, k=top_k, dim=1)
     values = torch.softmax(top_scores / max(float(temperature), 1e-6), dim=1)
     for _ in range(max(0, int(balance_iterations))):
@@ -2163,6 +2191,27 @@ def _apply_sparse_axis_transport(
     reduction: str,
     fold_mode: str,
 ):
+    if "transport_matrix" in transport:
+        matrix = transport["transport_matrix"].to(flat.dtype)
+        source_dim = int(flat.shape[0])
+        target_dim = int(transport["target_dim"])
+        if int(matrix.shape[0]) != source_dim or int(matrix.shape[1]) != target_dim:
+            raise ValueError("Dense transport matrix has the wrong shape.")
+        if reduction in {"sum", "sqrt-sum"}:
+            coeffs = matrix
+            count_coeffs = matrix
+        else:
+            coeffs = matrix * fold_weights.to(flat.dtype).unsqueeze(1)
+            count_coeffs = coeffs
+        folded = coeffs.t().matmul(flat)
+        counts = count_coeffs.sum(dim=0)
+        if reduction == "mean":
+            divisor = counts.sqrt() if fold_mode == "rms" else counts
+            folded = folded / divisor.clamp_min(1e-12).unsqueeze(1)
+        elif reduction == "sqrt-sum":
+            folded = folded / counts.clamp_min(1e-12).sqrt().unsqueeze(1)
+        return folded
+
     indices = transport["transport_indices"].to(torch.long)
     values = transport["transport_values"].to(flat.dtype)
     source_dim = int(flat.shape[0])

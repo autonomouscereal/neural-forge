@@ -1380,7 +1380,7 @@ def test_cached_mlp_fold_reuses_assignment_and_sums_outgoing_paths() -> None:
     assert len(cache) == 1
 
 
-def test_transport_fold_uses_sparse_feature_map() -> None:
+def test_transport_fold_uses_balanced_sinkhorn_feature_map() -> None:
     torch = pytest.importorskip("torch")
     cache = {}
     features = torch.tensor(
@@ -1420,7 +1420,12 @@ def test_transport_fold_uses_sparse_feature_map() -> None:
     assert sorted(round(float(item), 1) for item in folded.flatten()) == pytest.approx([2.0, 200.0], abs=2.0)
     assert float(folded_outgoing.sum()) == pytest.approx(4.0)
     assert len(cache) == 1
-    assert next(iter(cache.values()))["transport_indices"].shape == (4, 2)
+    transport = next(iter(cache.values()))
+    assert transport["transport_backend"] == "sinkhorn_dense"
+    assert transport["transport_indices"].shape == (4, 2)
+    assert transport["transport_matrix"].shape == (4, 2)
+    assert transport["transport_matrix"].sum(dim=1).tolist() == pytest.approx([1.0, 1.0, 1.0, 1.0])
+    assert transport["transport_matrix"].sum(dim=0).tolist() == pytest.approx([2.0, 2.0], abs=0.05)
 
 
 def test_activation_axis_weights_aggregate_folded_donor_group() -> None:
