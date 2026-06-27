@@ -183,6 +183,8 @@ def recover_cross_tokenizer_causal_lm(
     lm_weight: float = 0.5,
     hidden_kd_weight: float = 0.0,
     span_kd_weight: float = 0.0,
+    reference_model: str | None = None,
+    reference_kd_weight: float = 0.0,
     span_max_pairs: int = 512,
     hidden_ridge: float = 1e-3,
     hidden_layer: str = "last",
@@ -214,10 +216,12 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("max_length must be greater than 1.")
     if lr <= 0:
         raise ValueError("lr must be positive.")
-    if anchor_kd_weight < 0 or lm_weight < 0 or hidden_kd_weight < 0 or span_kd_weight < 0:
+    if anchor_kd_weight < 0 or lm_weight < 0 or hidden_kd_weight < 0 or span_kd_weight < 0 or reference_kd_weight < 0:
         raise ValueError("loss weights must be non-negative.")
-    if anchor_kd_weight == 0 and lm_weight == 0 and hidden_kd_weight == 0 and span_kd_weight == 0:
+    if anchor_kd_weight == 0 and lm_weight == 0 and hidden_kd_weight == 0 and span_kd_weight == 0 and reference_kd_weight == 0:
         raise ValueError("At least one loss weight must be positive.")
+    if reference_kd_weight > 0 and not reference_model:
+        raise ValueError("reference_model is required when reference_kd_weight is positive.")
     if span_max_pairs <= 0:
         raise ValueError("span_max_pairs must be positive.")
     if hidden_ridge < 0:
@@ -264,12 +268,30 @@ def recover_cross_tokenizer_causal_lm(
         device_map=None,
         trust_remote_code=trust_remote_code,
     )
+    reference = None
+    if reference_kd_weight > 0:
+        reference_tokenizer = transformers.AutoTokenizer.from_pretrained(reference_model, trust_remote_code=trust_remote_code)
+        if hasattr(reference_tokenizer, "get_vocab") and hasattr(candidate_tokenizer, "get_vocab"):
+            if reference_tokenizer.get_vocab() != candidate_tokenizer.get_vocab():
+                raise ValueError("reference_model tokenizer must match candidate tokenizer for reference KD.")
+        reference = transformers.AutoModelForCausalLM.from_pretrained(
+            reference_model,
+            torch_dtype=dtype,
+            device_map=None,
+            trust_remote_code=trust_remote_code,
+        )
     source.to(device)
     candidate.to(device)
+    if reference is not None:
+        reference.to(device)
     source.eval()
+    if reference is not None:
+        reference.eval()
     candidate.train()
     if hasattr(source.config, "use_cache"):
         source.config.use_cache = False
+    if reference is not None and hasattr(reference.config, "use_cache"):
+        reference.config.use_cache = False
     if hasattr(candidate.config, "use_cache"):
         candidate.config.use_cache = False
 
@@ -314,6 +336,12 @@ def recover_cross_tokenizer_causal_lm(
                 use_cache=False,
                 output_hidden_states=hidden_kd_weight > 0,
             )
+            reference_teacher = None
+            if reference is not None:
+                reference_teacher = reference(
+                    **_model_forward_inputs(candidate_batch),
+                    use_cache=False,
+                )
         student = candidate(
             **_model_forward_inputs(candidate_batch),
             use_cache=False,
@@ -344,9 +372,11 @@ def recover_cross_tokenizer_causal_lm(
             lm_weight,
             hidden_kd_weight,
             span_kd_weight,
+            reference_kd_weight,
             hidden_projection,
             hidden_layer,
             span_pairs,
+            reference_teacher,
             temperature,
         )
         if not bool(torch.isfinite(loss).detach().cpu()):
@@ -375,6 +405,8 @@ def recover_cross_tokenizer_causal_lm(
         "lm_weight": lm_weight,
         "hidden_kd_weight": hidden_kd_weight,
         "span_kd_weight": span_kd_weight,
+        "reference_model": reference_model,
+        "reference_kd_weight": reference_kd_weight,
         "span_max_pairs": span_max_pairs,
         "span_pair_count_observed": span_pair_counts,
         "hidden_ridge": hidden_ridge,
@@ -1503,8 +1535,9 @@ def _recovery_loss(torch, student, teacher, input_ids, attention_mask, kd_weight
             posinf=1e4,
             neginf=-1e4,
         )
-        student_logp = torch.nn.functional.log_softmax(shift_student / temperature, dim=-1)
-        teacher_p = torch.nn.functional.softmax(shift_teacher / temperature, dim=-1)
+        kd_vocab = min(int(shift_student.shape[-1]), int(shift_teacher.shape[-1]))
+        student_logp = torch.nn.functional.log_softmax(shift_student[..., :kd_vocab] / temperature, dim=-1)
+        teacher_p = torch.nn.functional.softmax(shift_teacher[..., :kd_vocab] / temperature, dim=-1)
         token_kl = torch.nn.functional.kl_div(student_logp, teacher_p, reduction="none").sum(dim=-1)
         kd = (token_kl * mask).sum() / mask.sum().clamp_min(1)
         kd = kd * (temperature**2)
@@ -1532,9 +1565,11 @@ def _cross_tokenizer_recovery_loss(
     lm_weight: float,
     hidden_kd_weight: float,
     span_kd_weight: float,
+    reference_kd_weight: float,
     hidden_projection,
     hidden_layer: str,
     span_pairs,
+    reference_teacher,
     temperature: float,
 ):
     shift_student = torch.nan_to_num(
@@ -1593,6 +1628,17 @@ def _cross_tokenizer_recovery_loss(
             temperature,
         )
         total = total + float(span_kd_weight) * span
+    if reference_kd_weight > 0:
+        if reference_teacher is None:
+            raise ValueError("reference_teacher is required when reference_kd_weight is positive.")
+        reference_kd = _same_tokenizer_reference_loss(
+            torch,
+            shift_student,
+            reference_teacher,
+            candidate_mask,
+            temperature,
+        )
+        total = total + float(reference_kd_weight) * reference_kd
     if lm_weight > 0:
         lm = torch.nn.functional.cross_entropy(
             shift_student.view(-1, shift_student.shape[-1]),
@@ -1601,6 +1647,26 @@ def _cross_tokenizer_recovery_loss(
         )
         total = total + float(lm_weight) * lm
     return total
+
+
+def _same_tokenizer_reference_loss(
+    torch,
+    shift_student,
+    reference_teacher,
+    candidate_mask,
+    temperature: float,
+):
+    shift_reference = torch.nan_to_num(
+        reference_teacher.logits[:, :-1, :].contiguous().to(torch.float32),
+        nan=0.0,
+        posinf=1e4,
+        neginf=-1e4,
+    )
+    student_logp = torch.nn.functional.log_softmax(shift_student / temperature, dim=-1)
+    reference_logp = torch.nn.functional.log_softmax(shift_reference / temperature, dim=-1)
+    reference_p = reference_logp.exp()
+    token_kl = (reference_p * (reference_logp - student_logp)).sum(dim=-1) * (temperature**2)
+    return _masked_mean_values(torch, token_kl, candidate_mask)
 
 
 def _cross_tokenizer_span_loss(
@@ -1683,6 +1749,15 @@ def _masked_mean_logits(torch, logits, mask):
     summed = (logits * weights).sum(dim=1)
     counts = weights.sum(dim=1).clamp_min(1.0)
     return summed / counts
+
+
+def _masked_mean_values(torch, values, mask):
+    if mask is None:
+        return values.mean()
+    weights = mask.to(device=values.device, dtype=values.dtype)
+    summed = (values * weights).sum()
+    count = weights.sum().clamp_min(1.0)
+    return summed / count
 
 
 def _write_json(path: str | Path, data: dict[str, Any]) -> None:

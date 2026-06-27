@@ -699,6 +699,7 @@ def evaluate_text_model(
             "items": probes,
         },
         "generations": generations,
+        "generation_diagnostics": [_generation_health(item, 0, 0.0) for item in generations],
     }
     _write_json(output_file, report)
     return report
@@ -1432,10 +1433,18 @@ def _generation_health(item: dict[str, Any], min_continuation_chars: int, min_un
     output = str(item.get("output", ""))
     continuation = output[len(prompt) :] if prompt and output.startswith(prompt) else output
     continuation = continuation.strip()
+    diagnostics = item.get("diagnostics") or _generation_diagnostics(continuation)
     tokens = re.findall(r"[A-Za-z0-9_]+", continuation.lower())
-    unique_ratio = (len(set(tokens)) / len(tokens)) if tokens else 0.0
+    unique_ratio = float(diagnostics.get("distinct_1", 0.0))
     long_enough = len(continuation) >= min_continuation_chars
-    diverse_enough = len(tokens) < 20 or unique_ratio >= min_unique_token_ratio
+    diverse_enough = (
+        len(tokens) < 20
+        or (
+            unique_ratio >= min_unique_token_ratio
+            and float(diagnostics.get("top_token_share", 1.0)) <= 0.60
+            and int(diagnostics.get("max_token_run", 999)) <= 12
+        )
+    )
     relevance = _generation_relevance(prompt, continuation)
     return {
         "prompt": prompt,
@@ -1443,6 +1452,7 @@ def _generation_health(item: dict[str, Any], min_continuation_chars: int, min_un
         "continuation_chars": len(continuation),
         "token_count": len(tokens),
         "unique_token_ratio": unique_ratio,
+        "diagnostics": diagnostics,
         "long_enough": long_enough,
         "diverse_enough": diverse_enough,
         "relevant_enough": relevance["passed"],
@@ -1476,6 +1486,40 @@ def _generation_relevance(prompt: str, continuation: str) -> dict[str, Any]:
         "matched_groups": matched_groups,
         "missing_groups": missing_groups,
     }
+
+
+def _generation_diagnostics(continuation: str, generated_token_ids: Sequence[int] | None = None) -> dict[str, Any]:
+    tokens = re.findall(r"[A-Za-z0-9_]+", str(continuation).lower())
+    bigrams = list(zip(tokens, tokens[1:]))
+    repeated_bigrams = len(bigrams) - len(set(bigrams)) if bigrams else 0
+    token_counts = {token: tokens.count(token) for token in set(tokens)}
+    top_count = max(token_counts.values()) if token_counts else 0
+    token_ids = [int(item) for item in (generated_token_ids or [])]
+    return {
+        "word_token_count": len(tokens),
+        "distinct_1": (len(set(tokens)) / len(tokens)) if tokens else 0.0,
+        "distinct_2": (len(set(bigrams)) / len(bigrams)) if bigrams else 0.0,
+        "top_token_share": (top_count / len(tokens)) if tokens else 0.0,
+        "max_token_run": _max_run_length(tokens),
+        "repeated_bigram_share": (repeated_bigrams / len(bigrams)) if bigrams else 0.0,
+        "generated_token_count": len(token_ids),
+        "generated_distinct_token_ratio": (len(set(token_ids)) / len(token_ids)) if token_ids else 0.0,
+        "generated_max_token_id_run": _max_run_length(token_ids),
+    }
+
+
+def _max_run_length(items: Sequence[Any]) -> int:
+    max_run = 0
+    current_run = 0
+    previous = object()
+    for item in items:
+        if item == previous:
+            current_run += 1
+        else:
+            previous = item
+            current_run = 1
+        max_run = max(max_run, current_run)
+    return max_run
 
 
 def _ratio_tag(ratio: float) -> str:
@@ -1936,7 +1980,7 @@ def _score_choice_probe(torch, model, tokenizer, probe: dict[str, Any], device: 
     }
 
 
-def _generate_text(torch, model, tokenizer, prompt: str, device: str, max_new_tokens: int) -> dict[str, str]:
+def _generate_text(torch, model, tokenizer, prompt: str, device: str, max_new_tokens: int) -> dict[str, Any]:
     inputs = tokenizer(prompt, return_tensors="pt").to(device)
     output_ids = model.generate(
         **inputs,
@@ -1945,7 +1989,13 @@ def _generate_text(torch, model, tokenizer, prompt: str, device: str, max_new_to
         pad_token_id=tokenizer.eos_token_id,
     )
     decoded = tokenizer.decode(output_ids[0], skip_special_tokens=True)
-    return {"prompt": prompt, "output": decoded}
+    continuation = decoded[len(prompt) :] if decoded.startswith(prompt) else decoded
+    generated_ids = output_ids[0, inputs["input_ids"].shape[1] :].detach().cpu().tolist()
+    return {
+        "prompt": prompt,
+        "output": decoded,
+        "diagnostics": _generation_diagnostics(continuation, generated_ids),
+    }
 
 
 def _make_probe_images(Image, ImageDraw, image_root: Path) -> dict[str, Path]:

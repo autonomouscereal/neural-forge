@@ -16,6 +16,7 @@ from neural_forge.hf_recovery import _fold_groups_from_report
 from neural_forge.hf_recovery import _mlp_projection_spec
 from neural_forge.hf_recovery import _recovery_loss
 from neural_forge.hf_recovery import _set_train_scope
+from neural_forge.hf_recovery import _same_tokenizer_reference_loss
 from neural_forge.hf_recovery import load_calibration_texts
 from neural_forge.hf_tools import TEXT_EVALS
 from neural_forge.hf_tools import _layer_groups_for_report
@@ -435,6 +436,10 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.2",
             "--span-kd-weight",
             "0.15",
+            "--reference-model",
+            "host-reference",
+            "--reference-kd-weight",
+            "0.35",
             "--span-max-pairs",
             "66",
             "--hidden-ridge",
@@ -498,6 +503,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert rank_fold_args.calibration_file == "calibration.jsonl"
     assert rank_fold_args.max_calibration_texts == 8
     assert donor_init_args.dtype == "float32"
+    assert xfamily_recover_args.reference_model == "host-reference"
+    assert xfamily_recover_args.reference_kd_weight == 0.35
     assert merge_layer_args.groups == "3+4,7+8"
     assert drop_args.layers == "3,7"
     assert search_args.width_ratios == "0.9975,0.995"
@@ -938,6 +945,27 @@ def test_recovery_loss_allows_lm_only_without_teacher() -> None:
         )
 
 
+def test_recovery_loss_handles_padded_teacher_vocab() -> None:
+    torch = pytest.importorskip("torch")
+    student = _Obj(logits=torch.randn(1, 4, 5))
+    teacher = _Obj(logits=torch.randn(1, 4, 7))
+    input_ids = torch.tensor([[1, 2, 3, 4]])
+    attention_mask = torch.ones_like(input_ids)
+
+    loss = _recovery_loss(
+        torch,
+        student,
+        teacher=teacher,
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        kd_weight=1.0,
+        lm_weight=0.0,
+        temperature=1.0,
+    )
+
+    assert torch.isfinite(loss)
+
+
 def test_cross_tokenizer_recovery_loss_uses_anchor_subspace() -> None:
     torch = pytest.importorskip("torch")
     student = _Obj(logits=torch.randn(1, 4, 7))
@@ -959,9 +987,11 @@ def test_cross_tokenizer_recovery_loss_uses_anchor_subspace() -> None:
         lm_weight=0.3,
         hidden_kd_weight=0.0,
         span_kd_weight=0.0,
+        reference_kd_weight=0.0,
         hidden_projection=None,
         hidden_layer="last",
         span_pairs=None,
+        reference_teacher=None,
         temperature=1.5,
     )
 
@@ -996,9 +1026,11 @@ def test_cross_tokenizer_recovery_loss_uses_projected_hidden_states() -> None:
         lm_weight=0.2,
         hidden_kd_weight=0.7,
         span_kd_weight=0.0,
+        reference_kd_weight=0.0,
         hidden_projection=projection,
         hidden_layer="last",
         span_pairs=None,
+        reference_teacher=None,
         temperature=1.5,
     )
 
@@ -1053,13 +1085,28 @@ def test_cross_tokenizer_recovery_loss_uses_span_pairs() -> None:
         lm_weight=0.2,
         hidden_kd_weight=0.0,
         span_kd_weight=0.8,
+        reference_kd_weight=0.0,
         hidden_projection=None,
         hidden_layer="last",
         span_pairs=torch.tensor([[0, 0, 0], [0, 1, 1]]),
+        reference_teacher=None,
         temperature=1.5,
     )
 
     assert torch.isfinite(loss)
+
+
+def test_same_tokenizer_reference_loss_prefers_matching_logits() -> None:
+    torch = pytest.importorskip("torch")
+    reference = _Obj(logits=torch.tensor([[[0.0, 2.0], [3.0, 0.0], [0.5, 1.0]]]))
+    matching_student = reference.logits[:, :-1, :].clone()
+    mismatched_student = torch.flip(matching_student, dims=[-1])
+    mask = torch.ones((1, 2), dtype=torch.bool)
+
+    matching = _same_tokenizer_reference_loss(torch, matching_student, reference, mask, temperature=1.0)
+    mismatched = _same_tokenizer_reference_loss(torch, mismatched_student, reference, mask, temperature=1.0)
+
+    assert float(matching) < float(mismatched)
 
 
 def test_shared_embedding_hidden_projection_caps_anchor_rows() -> None:
@@ -1383,6 +1430,10 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "0.25",
             "--span-kd-weight",
             "0.15",
+            "--reference-model",
+            "host-reference",
+            "--reference-kd-weight",
+            "0.2",
             "--span-max-pairs",
             "88",
             "--hidden-ridge",
@@ -1426,6 +1477,8 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "lm_weight": 0.4,
         "hidden_kd_weight": 0.25,
         "span_kd_weight": 0.15,
+        "reference_model": "host-reference",
+        "reference_kd_weight": 0.2,
         "span_max_pairs": 88,
         "hidden_ridge": 0.03,
         "hidden_layer": "middle",

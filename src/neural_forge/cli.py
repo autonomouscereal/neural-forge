@@ -505,6 +505,8 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--lm-weight", type=float, default=0.5)
     xfamily_recover.add_argument("--hidden-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--span-kd-weight", type=float, default=0.0)
+    xfamily_recover.add_argument("--reference-model")
+    xfamily_recover.add_argument("--reference-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--span-max-pairs", type=int, default=512)
     xfamily_recover.add_argument("--hidden-ridge", type=float, default=1e-3)
     xfamily_recover.add_argument("--hidden-layer", choices=["last", "middle"], default="last")
@@ -1144,6 +1146,8 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         lm_weight=args.lm_weight,
         hidden_kd_weight=args.hidden_kd_weight,
         span_kd_weight=args.span_kd_weight,
+        reference_model=args.reference_model,
+        reference_kd_weight=args.reference_kd_weight,
         span_max_pairs=args.span_max_pairs,
         hidden_ridge=args.hidden_ridge,
         hidden_layer=args.hidden_layer,

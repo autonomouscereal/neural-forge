@@ -7,6 +7,7 @@ from neural_forge.hf_tools import gate_text_report
 from neural_forge.hf_tools import _assert_tokenizers_compatible
 from neural_forge.hf_tools import _ensure_unique_ratio_tags
 from neural_forge.hf_tools import _finite_float
+from neural_forge.hf_tools import _generation_diagnostics
 from neural_forge.hf_tools import _ratio_tag
 
 
@@ -54,6 +55,16 @@ def test_gate_text_report_rejects_irrelevant_diverse_generation() -> None:
     generation_check = next(check for check in verdict["checks"] if check["name"] == "generation_health")
     assert generation_check["passed"] is False
     assert generation_check["value"][0]["relevant_enough"] is False
+
+
+def test_generation_diagnostics_detects_repetition() -> None:
+    diagnostics = _generation_diagnostics("the the the pruning pruning", [4, 4, 4, 7, 7])
+
+    assert diagnostics["word_token_count"] == 5
+    assert diagnostics["distinct_1"] == pytest.approx(0.4)
+    assert diagnostics["top_token_share"] == pytest.approx(0.6)
+    assert diagnostics["max_token_run"] == 3
+    assert diagnostics["generated_max_token_id_run"] == 3
 
 
 def test_ratio_tag_handles_alpha_values() -> None:
