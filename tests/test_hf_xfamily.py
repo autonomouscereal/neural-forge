@@ -14,6 +14,7 @@ from neural_forge.hf_recovery import _fit_activation_map
 from neural_forge.hf_recovery import _fit_shared_embedding_hidden_projection
 from neural_forge.hf_recovery import _fold_groups_from_report
 from neural_forge.hf_recovery import _mlp_projection_spec
+from neural_forge.hf_recovery import _project_source_logits_to_candidate_vocab
 from neural_forge.hf_recovery import _recovery_loss
 from neural_forge.hf_recovery import _recent_token_unlikelihood_loss
 from neural_forge.hf_recovery import _select_anchor_tokens
@@ -444,6 +445,10 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.15",
             "--span-hidden-kd-weight",
             "0.12",
+            "--projected-vocab-kd-weight",
+            "0.22",
+            "--projected-vocab-max-source-tokens",
+            "6",
             "--reference-model",
             "host-reference",
             "--reference-kd-weight",
@@ -571,6 +576,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_recover_args.hidden_kd_weight == 0.2
     assert xfamily_recover_args.span_kd_weight == 0.15
     assert xfamily_recover_args.span_hidden_kd_weight == 0.12
+    assert xfamily_recover_args.projected_vocab_kd_weight == 0.22
+    assert xfamily_recover_args.projected_vocab_max_source_tokens == 6
     assert xfamily_recover_args.span_max_pairs == 66
     assert xfamily_recover_args.hidden_ridge == 0.02
     assert xfamily_recover_args.hidden_layer == "middle"
@@ -1103,6 +1110,7 @@ def test_cross_tokenizer_recovery_loss_uses_anchor_subspace() -> None:
         hidden_kd_weight=0.0,
         span_kd_weight=0.0,
         span_hidden_kd_weight=0.0,
+        projected_vocab_kd_weight=0.0,
         reference_kd_weight=0.0,
         unlikelihood_weight=0.0,
         unlikelihood_window=2,
@@ -1110,6 +1118,9 @@ def test_cross_tokenizer_recovery_loss_uses_anchor_subspace() -> None:
         hidden_projection=None,
         hidden_layer="last",
         span_pairs=None,
+        projected_vocab_groups=None,
+        projected_vocab_mask=None,
+        projected_vocab_valid=None,
         reference_teacher=None,
         temperature=1.5,
     )
@@ -1146,6 +1157,7 @@ def test_cross_tokenizer_recovery_loss_uses_projected_hidden_states() -> None:
         hidden_kd_weight=0.7,
         span_kd_weight=0.0,
         span_hidden_kd_weight=0.0,
+        projected_vocab_kd_weight=0.0,
         reference_kd_weight=0.0,
         unlikelihood_weight=0.0,
         unlikelihood_window=2,
@@ -1153,6 +1165,9 @@ def test_cross_tokenizer_recovery_loss_uses_projected_hidden_states() -> None:
         hidden_projection=projection,
         hidden_layer="last",
         span_pairs=None,
+        projected_vocab_groups=None,
+        projected_vocab_mask=None,
+        projected_vocab_valid=None,
         reference_teacher=None,
         temperature=1.5,
     )
@@ -1209,6 +1224,7 @@ def test_cross_tokenizer_recovery_loss_uses_span_pairs() -> None:
         hidden_kd_weight=0.0,
         span_kd_weight=0.8,
         span_hidden_kd_weight=0.0,
+        projected_vocab_kd_weight=0.0,
         reference_kd_weight=0.0,
         unlikelihood_weight=0.0,
         unlikelihood_window=2,
@@ -1216,11 +1232,29 @@ def test_cross_tokenizer_recovery_loss_uses_span_pairs() -> None:
         hidden_projection=None,
         hidden_layer="last",
         span_pairs=torch.tensor([[0, 0, 0], [0, 1, 1]]),
+        projected_vocab_groups=None,
+        projected_vocab_mask=None,
+        projected_vocab_valid=None,
         reference_teacher=None,
         temperature=1.5,
     )
 
     assert torch.isfinite(loss)
+
+
+def test_project_source_logits_to_candidate_vocab_averages_source_token_groups() -> None:
+    torch = pytest.importorskip("torch")
+    source_logits = torch.tensor([[1.0, 3.0, 5.0, 7.0]])
+    groups = torch.tensor([[1, 0], [2, 3], [0, 0]])
+    mask = torch.tensor([[1.0, 0.0], [1.0, 1.0], [0.0, 0.0]])
+    valid = torch.tensor([True, True, False])
+
+    projected = _project_source_logits_to_candidate_vocab(torch, source_logits, groups, mask, valid)
+
+    assert projected.shape == (1, 3)
+    assert projected[0, 0].item() == pytest.approx(3.0)
+    assert projected[0, 1].item() == pytest.approx(6.0)
+    assert projected[0, 2].item() == pytest.approx(-10000.0)
 
 
 def test_same_tokenizer_reference_loss_prefers_matching_logits() -> None:
@@ -1573,6 +1607,10 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "0.15",
             "--span-hidden-kd-weight",
             "0.12",
+            "--projected-vocab-kd-weight",
+            "0.22",
+            "--projected-vocab-max-source-tokens",
+            "6",
             "--reference-model",
             "host-reference",
             "--reference-kd-weight",
@@ -1631,6 +1669,8 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "hidden_kd_weight": 0.25,
         "span_kd_weight": 0.15,
         "span_hidden_kd_weight": 0.12,
+        "projected_vocab_kd_weight": 0.22,
+        "projected_vocab_max_source_tokens": 6,
         "reference_model": "host-reference",
         "reference_kd_weight": 0.2,
         "unlikelihood_weight": 0.11,

@@ -515,6 +515,8 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--hidden-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--span-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--span-hidden-kd-weight", type=float, default=0.0)
+    xfamily_recover.add_argument("--projected-vocab-kd-weight", type=float, default=0.0)
+    xfamily_recover.add_argument("--projected-vocab-max-source-tokens", type=int, default=8)
     xfamily_recover.add_argument("--reference-model")
     xfamily_recover.add_argument("--reference-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--unlikelihood-weight", type=float, default=0.0)
@@ -1170,6 +1172,8 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         hidden_kd_weight=args.hidden_kd_weight,
         span_kd_weight=args.span_kd_weight,
         span_hidden_kd_weight=args.span_hidden_kd_weight,
+        projected_vocab_kd_weight=args.projected_vocab_kd_weight,
+        projected_vocab_max_source_tokens=args.projected_vocab_max_source_tokens,
         reference_model=args.reference_model,
         reference_kd_weight=args.reference_kd_weight,
         unlikelihood_weight=args.unlikelihood_weight,

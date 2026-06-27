@@ -195,6 +195,8 @@ def recover_cross_tokenizer_causal_lm(
     hidden_kd_weight: float = 0.0,
     span_kd_weight: float = 0.0,
     span_hidden_kd_weight: float = 0.0,
+    projected_vocab_kd_weight: float = 0.0,
+    projected_vocab_max_source_tokens: int = 8,
     reference_model: str | None = None,
     reference_kd_weight: float = 0.0,
     unlikelihood_weight: float = 0.0,
@@ -239,6 +241,7 @@ def recover_cross_tokenizer_causal_lm(
         or hidden_kd_weight < 0
         or span_kd_weight < 0
         or span_hidden_kd_weight < 0
+        or projected_vocab_kd_weight < 0
         or reference_kd_weight < 0
         or unlikelihood_weight < 0
         or entropy_weight < 0
@@ -250,6 +253,7 @@ def recover_cross_tokenizer_causal_lm(
         and hidden_kd_weight == 0
         and span_kd_weight == 0
         and span_hidden_kd_weight == 0
+        and projected_vocab_kd_weight == 0
         and reference_kd_weight == 0
         and unlikelihood_weight == 0
         and entropy_weight == 0
@@ -261,6 +265,8 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("reference_model is required when reference_kd_weight is positive.")
     if span_max_pairs <= 0:
         raise ValueError("span_max_pairs must be positive.")
+    if projected_vocab_max_source_tokens <= 0:
+        raise ValueError("projected_vocab_max_source_tokens must be positive.")
     if hidden_ridge < 0:
         raise ValueError("hidden_ridge must be non-negative.")
     if hidden_layer not in {"last", "middle"}:
@@ -303,6 +309,17 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("No shared decoded-token anchors found for cross-tokenizer recovery.")
     source_anchor_idx = torch.tensor([item[1] for item in anchors], dtype=torch.long, device=device)
     candidate_anchor_idx = torch.tensor([item[2] for item in anchors], dtype=torch.long, device=device)
+    projected_vocab_groups = None
+    projected_vocab_mask = None
+    projected_vocab_valid = None
+    if projected_vocab_kd_weight > 0:
+        projected_vocab_groups, projected_vocab_mask, projected_vocab_valid = _candidate_to_source_token_groups(
+            torch,
+            source_tokenizer,
+            candidate_tokenizer,
+            max_source_tokens=projected_vocab_max_source_tokens,
+            device=device,
+        )
 
     source = transformers.AutoModelForCausalLM.from_pretrained(
         source_model,
@@ -370,7 +387,7 @@ def recover_cross_tokenizer_causal_lm(
         batch_size=batch_size,
         max_length=max_length,
         device=device,
-        include_offsets=span_kd_weight > 0 or span_hidden_kd_weight > 0,
+        include_offsets=span_kd_weight > 0 or span_hidden_kd_weight > 0 or projected_vocab_kd_weight > 0,
     )
 
     losses = []
@@ -396,7 +413,7 @@ def recover_cross_tokenizer_causal_lm(
             output_hidden_states=hidden_kd_weight > 0 or span_hidden_kd_weight > 0,
         )
         span_pairs = None
-        if span_kd_weight > 0 or span_hidden_kd_weight > 0:
+        if span_kd_weight > 0 or span_hidden_kd_weight > 0 or projected_vocab_kd_weight > 0:
             span_pairs = _cross_tokenizer_span_pairs(
                 torch,
                 source_tokenizer,
@@ -421,6 +438,7 @@ def recover_cross_tokenizer_causal_lm(
             hidden_kd_weight,
             span_kd_weight,
             span_hidden_kd_weight,
+            projected_vocab_kd_weight,
             reference_kd_weight,
             unlikelihood_weight,
             unlikelihood_window,
@@ -428,6 +446,9 @@ def recover_cross_tokenizer_causal_lm(
             hidden_projection,
             hidden_layer,
             span_pairs,
+            projected_vocab_groups,
+            projected_vocab_mask,
+            projected_vocab_valid,
             reference_teacher,
             temperature,
         )
@@ -458,6 +479,8 @@ def recover_cross_tokenizer_causal_lm(
         "hidden_kd_weight": hidden_kd_weight,
         "span_kd_weight": span_kd_weight,
         "span_hidden_kd_weight": span_hidden_kd_weight,
+        "projected_vocab_kd_weight": projected_vocab_kd_weight,
+        "projected_vocab_max_source_tokens": projected_vocab_max_source_tokens,
         "reference_model": reference_model,
         "reference_kd_weight": reference_kd_weight,
         "unlikelihood_weight": unlikelihood_weight,
@@ -889,6 +912,50 @@ def _decoded_token(tokenizer, token_id: int, canonical_fn) -> str:
     except Exception:
         decoded = ""
     return canonical_fn(decoded)
+
+
+def _candidate_to_source_token_groups(
+    torch,
+    source_tokenizer,
+    candidate_tokenizer,
+    max_source_tokens: int,
+    device: str,
+):
+    if max_source_tokens <= 0:
+        raise ValueError("max_source_tokens must be positive.")
+    candidate_special_ids = set(getattr(candidate_tokenizer, "all_special_ids", []) or [])
+    source_special_ids = set(getattr(source_tokenizer, "all_special_ids", []) or [])
+    source_vocab_size = len(source_tokenizer)
+    groups = []
+    masks = []
+    valids = []
+    for candidate_id in range(len(candidate_tokenizer)):
+        ids: list[int] = []
+        if candidate_id not in candidate_special_ids:
+            try:
+                decoded = candidate_tokenizer.decode([candidate_id], clean_up_tokenization_spaces=False)
+            except Exception:
+                decoded = ""
+            if decoded and not any(ord(ch) < 32 for ch in decoded):
+                try:
+                    encoded = source_tokenizer.encode(decoded, add_special_tokens=False)
+                except Exception:
+                    encoded = []
+                ids = [
+                    int(item)
+                    for item in encoded[: int(max_source_tokens)]
+                    if int(item) not in source_special_ids and 0 <= int(item) < source_vocab_size
+                ]
+        valid = bool(ids)
+        padded = ids + [0] * (int(max_source_tokens) - len(ids))
+        groups.append(padded[: int(max_source_tokens)])
+        masks.append([1.0 if idx < len(ids) else 0.0 for idx in range(int(max_source_tokens))])
+        valids.append(valid)
+    return (
+        torch.tensor(groups, dtype=torch.long, device=device),
+        torch.tensor(masks, dtype=torch.float32, device=device),
+        torch.tensor(valids, dtype=torch.bool, device=device),
+    )
 
 
 def _shared_recovery_anchors(
@@ -1714,6 +1781,7 @@ def _cross_tokenizer_recovery_loss(
     hidden_kd_weight: float,
     span_kd_weight: float,
     span_hidden_kd_weight: float,
+    projected_vocab_kd_weight: float,
     reference_kd_weight: float,
     unlikelihood_weight: float,
     unlikelihood_window: int,
@@ -1721,6 +1789,9 @@ def _cross_tokenizer_recovery_loss(
     hidden_projection,
     hidden_layer: str,
     span_pairs,
+    projected_vocab_groups,
+    projected_vocab_mask,
+    projected_vocab_valid,
     reference_teacher,
     temperature: float,
 ):
@@ -1792,6 +1863,20 @@ def _cross_tokenizer_recovery_loss(
             hidden_layer,
         )
         total = total + float(span_hidden_kd_weight) * span_hidden
+    if projected_vocab_kd_weight > 0 and span_pairs is not None and int(span_pairs.numel()) > 0:
+        if projected_vocab_groups is None or projected_vocab_mask is None or projected_vocab_valid is None:
+            raise ValueError("projected vocab maps are required when projected_vocab_kd_weight is positive.")
+        projected = _cross_tokenizer_projected_vocab_loss(
+            torch,
+            shift_student,
+            teacher,
+            span_pairs,
+            projected_vocab_groups,
+            projected_vocab_mask,
+            projected_vocab_valid,
+            temperature,
+        )
+        total = total + float(projected_vocab_kd_weight) * projected
     if reference_kd_weight > 0:
         if reference_teacher is None:
             raise ValueError("reference_teacher is required when reference_kd_weight is positive.")
@@ -1960,6 +2045,60 @@ def _cross_tokenizer_span_hidden_loss(
     cosine_loss = 1.0 - cosine.mean()
     mse_loss = torch.nn.functional.mse_loss(student_norm, teacher_norm)
     return 0.5 * cosine_loss + 0.5 * mse_loss
+
+
+def _cross_tokenizer_projected_vocab_loss(
+    torch,
+    shift_student,
+    teacher,
+    span_pairs,
+    projected_vocab_groups,
+    projected_vocab_mask,
+    projected_vocab_valid,
+    temperature: float,
+):
+    shift_teacher = torch.nan_to_num(
+        teacher.logits[:, :-1, :].contiguous().to(torch.float32),
+        nan=0.0,
+        posinf=1e4,
+        neginf=-1e4,
+    )
+    pair_idx = span_pairs.to(device=shift_student.device, dtype=torch.long)
+    batch_idx = pair_idx[:, 0]
+    candidate_pos = pair_idx[:, 1]
+    source_pos = pair_idx[:, 2]
+    student_logits = shift_student[batch_idx, candidate_pos]
+    teacher_logits = shift_teacher[batch_idx, source_pos]
+    projected_teacher = _project_source_logits_to_candidate_vocab(
+        torch,
+        teacher_logits,
+        projected_vocab_groups,
+        projected_vocab_mask,
+        projected_vocab_valid,
+    )
+    student_logp = torch.nn.functional.log_softmax(student_logits / temperature, dim=-1)
+    teacher_p = torch.nn.functional.softmax(projected_teacher / temperature, dim=-1)
+    token_kl = torch.nn.functional.kl_div(student_logp, teacher_p, reduction="none").sum(dim=-1)
+    return token_kl.mean() * (temperature**2)
+
+
+def _project_source_logits_to_candidate_vocab(
+    torch,
+    source_logits,
+    projected_vocab_groups,
+    projected_vocab_mask,
+    projected_vocab_valid,
+):
+    groups = projected_vocab_groups.to(device=source_logits.device, dtype=torch.long)
+    mask = projected_vocab_mask.to(device=source_logits.device, dtype=source_logits.dtype)
+    valid = projected_vocab_valid.to(device=source_logits.device, dtype=torch.bool)
+    gather_idx = groups.unsqueeze(0).expand(int(source_logits.shape[0]), -1, -1)
+    expanded = source_logits.unsqueeze(1).expand(-1, int(groups.shape[0]), -1)
+    gathered = expanded.gather(dim=-1, index=gather_idx)
+    summed = (gathered * mask.unsqueeze(0)).sum(dim=-1)
+    counts = mask.sum(dim=-1).clamp_min(1.0)
+    projected = summed / counts.unsqueeze(0)
+    return projected.masked_fill(~valid.unsqueeze(0), -1e4)
 
 
 def _select_hidden_state(hidden_states, hidden_layer: str):
