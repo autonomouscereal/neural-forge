@@ -130,6 +130,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hf_donor_init.add_argument("--activation-fold-assignment", choices=["balanced", "similarity"], default="balanced")
     hf_donor_init.add_argument(
+        "--transport-backend",
+        choices=["sparse", "sinkhorn"],
+        default="sparse",
+        help="Backend for fold-mode=transport: sparse centroid routing or dense Sinkhorn transport.",
+    )
+    hf_donor_init.add_argument(
         "--donor-layer-fold-mode",
         choices=["representative", "average", "fold"],
         default="representative",
@@ -1061,6 +1067,7 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         hidden_basis_scope=args.hidden_basis_scope,
         hidden_basis_max_rows=args.hidden_basis_max_rows,
         activation_fold_assignment=args.activation_fold_assignment,
+        transport_backend=args.transport_backend,
         donor_layer_fold_mode=args.donor_layer_fold_mode,
         attention_fold_mode=args.attention_fold_mode,
         token_init_mode=args.token_init_mode,

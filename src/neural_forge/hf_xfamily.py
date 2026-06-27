@@ -254,6 +254,7 @@ def donor_projected_init(
     hidden_basis_scope: str = "global",
     hidden_basis_max_rows: int = 2048,
     activation_fold_assignment: str = "balanced",
+    transport_backend: str = "sparse",
     donor_layer_fold_mode: str = "representative",
     attention_fold_mode: str = "independent",
     token_init_mode: str = "shared",
@@ -292,6 +293,8 @@ def donor_projected_init(
         raise ValueError("hidden_basis_max_rows must be positive.")
     if activation_fold_assignment not in {"balanced", "similarity"}:
         raise ValueError("activation_fold_assignment must be balanced or similarity.")
+    if transport_backend not in {"sparse", "sinkhorn"}:
+        raise ValueError("transport_backend must be sparse or sinkhorn.")
     if donor_layer_fold_mode not in {"representative", "average", "fold"}:
         raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
     if attention_fold_mode not in {"independent", "coupled"}:
@@ -465,6 +468,7 @@ def donor_projected_init(
                 axis_weights=axis_weights,
                 axis_reductions=axis_reductions,
                 activation_fold_assignment=activation_fold_assignment,
+                transport_backend=transport_backend,
                 assignment_cache=axis_assignment_cache,
                 semantic_prefix=("layer", int(target_layer_idx)),
             )
@@ -485,6 +489,7 @@ def donor_projected_init(
                 axis_weights=axis_weights,
                 axis_reductions=axis_reductions,
                 activation_fold_assignment=activation_fold_assignment,
+                transport_backend=transport_backend,
                 assignment_cache=axis_assignment_cache,
             )
         projected = _scale_projection_to_target(torch, projected, target_tensor, projection_scale)
@@ -514,6 +519,7 @@ def donor_projected_init(
         hidden_basis=hidden_basis,
         hidden_axis_weights=hidden_axis_weights,
         activation_fold_assignment=activation_fold_assignment,
+        transport_backend=transport_backend,
         projection_scale=projection_scale,
         projection_blend_alpha=projection_blend_alpha,
         consumer_hidden_reduction=consumer_hidden_reduction,
@@ -574,6 +580,7 @@ def donor_projected_init(
         "hidden_basis": hidden_basis_report,
         "layer_hidden_basis": layer_hidden_basis_report,
         "activation_fold_assignment": activation_fold_assignment,
+        "transport_backend": transport_backend,
         "donor_layer_fold_mode": donor_layer_fold_mode,
         "attention_fold_mode": attention_fold_mode,
         "token_init_mode": token_init_mode,
@@ -1440,6 +1447,7 @@ def _initialize_non_layer_tensors_from_donor(
     hidden_basis=None,
     hidden_axis_weights=None,
     activation_fold_assignment: str = "balanced",
+    transport_backend: str = "sparse",
     projection_scale: str = "none",
     projection_blend_alpha: float = 1.0,
     consumer_hidden_reduction: str = "mean",
@@ -1487,6 +1495,7 @@ def _initialize_non_layer_tensors_from_donor(
                 consumer_hidden_reduction,
             ),
             activation_fold_assignment=activation_fold_assignment,
+            transport_backend=transport_backend,
             assignment_cache=assignment_cache,
         )
         projected = _scale_projection_to_target(torch, projected, target_tensor, projection_scale)
@@ -1662,12 +1671,15 @@ def _resize_tensor_to_shape(
     axis_weights: dict[int, Any] | None = None,
     axis_reductions: dict[int, str] | None = None,
     activation_fold_assignment: str = "balanced",
+    transport_backend: str = "sparse",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
 ):
     if fold_mode not in {"mean", "rms", "transport"}:
         raise ValueError("fold_mode must be mean, rms, or transport.")
     if activation_fold_assignment not in {"balanced", "similarity"}:
         raise ValueError("activation_fold_assignment must be balanced or similarity.")
+    if transport_backend not in {"sparse", "sinkhorn"}:
+        raise ValueError("transport_backend must be sparse or sinkhorn.")
     if tuple(source.shape) == tuple(target_shape):
         return source.clone()
     if source.dim() != len(target_shape):
@@ -1694,6 +1706,7 @@ def _resize_tensor_to_shape(
                 features=features,
                 reduction="mean" if axis_reductions is None else axis_reductions.get(axis, "mean"),
                 assignment_mode=activation_fold_assignment,
+                transport_backend=transport_backend,
                 assignment_cache=assignment_cache,
                 assignment_cache_key=semantic_key,
             )
@@ -1713,6 +1726,7 @@ def _resize_attention_tensor_to_shape(
     axis_weights: dict[int, Any] | None = None,
     axis_reductions: dict[int, str] | None = None,
     activation_fold_assignment: str = "balanced",
+    transport_backend: str = "sparse",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
     semantic_prefix=None,
 ):
@@ -1736,6 +1750,7 @@ def _resize_attention_tensor_to_shape(
             target_heads,
             fold_mode=fold_mode,
             reduction="mean" if axis_reductions is None else axis_reductions.get(axis, "mean"),
+            transport_backend=transport_backend,
             assignment_cache=assignment_cache,
             head_assignment_key=_attention_axis_assignment_key(suffix, semantic_prefix, "heads"),
             head_dim_assignment_key=_attention_axis_assignment_key(suffix, semantic_prefix, "head_dim"),
@@ -1768,6 +1783,7 @@ def _resize_attention_tensor_to_shape(
                 features=features,
                 reduction="mean" if axis_reductions is None else axis_reductions.get(axis, "mean"),
                 assignment_mode=activation_fold_assignment,
+                transport_backend=transport_backend,
                 assignment_cache=assignment_cache,
                 assignment_cache_key=semantic_key,
             )
@@ -1852,6 +1868,7 @@ def _resize_head_partitioned_axis(
     target_heads: int,
     fold_mode: str,
     reduction: str = "mean",
+    transport_backend: str = "sparse",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
     head_assignment_key=None,
     head_dim_assignment_key=None,
@@ -1873,6 +1890,7 @@ def _resize_head_partitioned_axis(
         target_dim=int(target_heads),
         fold_mode=fold_mode,
         reduction=reduction,
+        transport_backend=transport_backend,
         assignment_cache=assignment_cache,
         assignment_cache_key=head_assignment_key,
     )
@@ -1883,6 +1901,7 @@ def _resize_head_partitioned_axis(
         target_dim=target_head_dim,
         fold_mode=fold_mode,
         reduction=reduction,
+        transport_backend=transport_backend,
         assignment_cache=assignment_cache,
         assignment_cache_key=head_dim_assignment_key,
     )
@@ -2115,7 +2134,10 @@ def _build_sparse_activation_transport(
     balance_iterations: int = 32,
     temperature: float = 0.08,
     dense_limit: int = 16_000_000,
+    transport_backend: str = "sparse",
 ):
+    if transport_backend not in {"sparse", "sinkhorn"}:
+        raise ValueError("transport_backend must be sparse or sinkhorn.")
     feature_rows = features.detach().cpu().to(torch.float32)
     if feature_rows.dim() != 2:
         raise ValueError("Activation features must be a rank-2 tensor.")
@@ -2142,7 +2164,7 @@ def _build_sparse_activation_transport(
     centroid_rows = _row_normalize(torch.stack(centroids, dim=0))
     top_k = max(1, min(int(top_k), target_dim))
     scores = feature_rows.matmul(centroid_rows.t())
-    if int(source_dim) * int(target_dim) <= int(dense_limit):
+    if transport_backend == "sinkhorn" and int(source_dim) * int(target_dim) <= int(dense_limit):
         source_mass = fold_weights / fold_weights.sum().clamp_min(1e-12)
         target_mass = torch.full((target_dim,), 1.0 / float(target_dim), dtype=torch.float32)
         logits = scores / max(float(temperature), 1e-6)
@@ -2249,6 +2271,7 @@ def _resize_tensor_axis_mean_fold(
     features=None,
     reduction: str = "mean",
     assignment_mode: str = "balanced",
+    transport_backend: str = "sparse",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
     assignment_cache_key=None,
 ):
@@ -2260,6 +2283,8 @@ def _resize_tensor_axis_mean_fold(
         raise ValueError("reduction must be mean, sum, or sqrt-sum.")
     if assignment_mode not in {"balanced", "similarity"}:
         raise ValueError("assignment_mode must be balanced or similarity.")
+    if transport_backend not in {"sparse", "sinkhorn"}:
+        raise ValueError("transport_backend must be sparse or sinkhorn.")
     source_dim = int(tensor.shape[axis])
     if source_dim == target_dim:
         return tensor
@@ -2292,7 +2317,13 @@ def _resize_tensor_axis_mean_fold(
             return folded.reshape((target_dim, *rest_shape)).movedim(0, axis).contiguous()
         if fold_mode == "transport" and features is not None:
             if cached is None:
-                cached = _build_sparse_activation_transport(torch, features, target_dim, weights=fold_weights)
+                cached = _build_sparse_activation_transport(
+                    torch,
+                    features,
+                    target_dim,
+                    weights=fold_weights,
+                    transport_backend=transport_backend,
+                )
                 if cache_key is not None and assignment_cache is not None:
                     assignment_cache[cache_key] = cached
             folded = _apply_sparse_axis_transport(torch, flat, cached, fold_weights, reduction, fold_mode)
@@ -2652,6 +2683,7 @@ def _initialize_token_weights_from_donor(
     lm_head_hidden_basis=None,
     hidden_axis_weights=None,
     activation_fold_assignment: str = "balanced",
+    transport_backend: str = "sparse",
     projection_scale: str = "none",
     projection_blend_alpha: float = 1.0,
     consumer_hidden_reduction: str = "mean",
@@ -2688,6 +2720,7 @@ def _initialize_token_weights_from_donor(
         hidden_basis=hidden_basis,
         hidden_axis_weights=hidden_axis_weights,
         activation_fold_assignment=activation_fold_assignment,
+        transport_backend=transport_backend,
         projection_scale=projection_scale,
         projection_blend_alpha=projection_blend_alpha,
         assignment_cache=assignment_cache,
@@ -2721,6 +2754,7 @@ def _initialize_token_weights_from_donor(
                 hidden_basis=hidden_basis if lm_head_hidden_basis is None else lm_head_hidden_basis,
                 hidden_axis_weights=hidden_axis_weights,
                 activation_fold_assignment=activation_fold_assignment,
+                transport_backend=transport_backend,
                 projection_scale=projection_scale,
                 projection_blend_alpha=projection_blend_alpha,
                 assignment_cache=assignment_cache,
@@ -2753,6 +2787,7 @@ def _project_token_weight_rows(
     hidden_basis=None,
     hidden_axis_weights=None,
     activation_fold_assignment: str = "balanced",
+    transport_backend: str = "sparse",
     projection_scale: str = "none",
     projection_blend_alpha: float = 1.0,
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
@@ -2783,6 +2818,7 @@ def _project_token_weight_rows(
             axis_weights={} if hidden_axis_weights is None else {1: hidden_axis_weights},
             axis_reductions={1: hidden_axis_reduction},
             activation_fold_assignment=activation_fold_assignment,
+            transport_backend=transport_backend,
             assignment_cache=assignment_cache,
         )
         projected = _scale_projection_to_target(

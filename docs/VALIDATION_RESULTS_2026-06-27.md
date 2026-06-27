@@ -199,8 +199,10 @@ the next change must improve the fold map itself before recovery.
 
 New implementation:
 
-- upgraded `fold_mode=transport` from sparse centroid routing to a balanced
-  Sinkhorn transport plan when the source-target channel product fits in memory;
+- added `--transport-backend sinkhorn` as an opt-in balanced Sinkhorn transport
+  plan for `fold_mode=transport` when the source-target channel product fits in
+  memory;
+- kept the existing sparse centroid routing as the default transport backend;
 - preserved sparse top-k transport summaries for reports and fallback;
 - added unit coverage that checks row mass conservation and balanced target
   load.
@@ -208,6 +210,20 @@ New implementation:
 This is closer to DOTResize-style neuron merging because donor channels can now
 redistribute mass across child channels under a global load constraint instead
 of being routed mostly by local clusters.
+
+Validation on Qwen3-4B -> blank 141M Qwen-compatible target did not improve:
+
+- Raw Sinkhorn transport + per-layer PCA init:
+  PPL `376,549.34`, choice `1/4`, behavior `0/6`, manual output incoherent.
+  The run used 16 dense Sinkhorn MLP transport plans.
+- Same HLD recovery as the prior best:
+  PPL `3,862.52`, choice `4/4`, behavior `1/6`. Manual output was worse than
+  the prior per-layer PCA HLD checkpoint: one prompt looped on `to/of`, and two
+  open prompts produced empty continuations.
+
+Sinkhorn transport is therefore useful infrastructure, but it is not the next
+promoted 25x initializer. It needs either better cost features or module-level
+LS/SVD reconstruction before recovery.
 
 This same-tokenizer stress test is important: removing tokenizer mismatch did not make arbitrary 25x blank-target folding work. The current blank Qwen target initializer is not preserving enough residual/backbone geometry for light recovery to restore behavior.
 

@@ -320,6 +320,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "777",
             "--activation-fold-assignment",
             "similarity",
+            "--transport-backend",
+            "sinkhorn",
             "--donor-layer-fold-mode",
             "fold",
             "--attention-fold-mode",
@@ -659,6 +661,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.hidden_basis_scope == "layer"
     assert donor_init_args.hidden_basis_max_rows == 777
     assert donor_init_args.activation_fold_assignment == "similarity"
+    assert donor_init_args.transport_backend == "sinkhorn"
     assert donor_init_args.donor_layer_fold_mode == "fold"
     assert donor_init_args.attention_fold_mode == "coupled"
     assert donor_init_args.token_init_mode == "donor-tokenized"
@@ -1402,6 +1405,7 @@ def test_transport_fold_uses_balanced_sinkhorn_feature_map() -> None:
         features=features,
         assignment_cache=cache,
         assignment_cache_key=("hidden", "transport-test"),
+        transport_backend="sinkhorn",
     )
     outgoing = torch.ones((1, 4), dtype=torch.float32)
     folded_outgoing = _resize_tensor_axis_mean_fold(
@@ -1414,6 +1418,7 @@ def test_transport_fold_uses_balanced_sinkhorn_feature_map() -> None:
         reduction="sum",
         assignment_cache=cache,
         assignment_cache_key=("hidden", "transport-test"),
+        transport_backend="sinkhorn",
     )
 
     assert folded.shape == (2, 1)
@@ -2629,6 +2634,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "hidden_basis_scope": "layer",
         "hidden_basis_max_rows": 99,
         "activation_fold_assignment": "similarity",
+        "transport_backend": "sparse",
         "donor_layer_fold_mode": "average",
         "attention_fold_mode": "coupled",
         "token_init_mode": "donor-tokenized",
