@@ -772,6 +772,9 @@ def _calibration_text_from_obj(item: Any) -> str | None:
     target = item.get("target")
     if isinstance(prompt, str) and isinstance(target, str):
         return f"{prompt}\n{target}"
+    response = item.get("response")
+    if isinstance(prompt, str) and isinstance(response, str):
+        return f"{prompt}\n{response}"
     for key in ("text", "content", "completion", "response"):
         value = item.get(key)
         if isinstance(value, str) and value.strip():
