@@ -252,6 +252,7 @@ def donor_projected_init(
     activation_fold_assignment: str = "balanced",
     donor_layer_fold_mode: str = "representative",
     attention_fold_mode: str = "independent",
+    token_init_mode: str = "shared",
     projection_scale: str = "none",
     activation_calibration_texts: list[str] | None = None,
     activation_max_length: int = 128,
@@ -280,6 +281,8 @@ def donor_projected_init(
         raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
     if attention_fold_mode not in {"independent", "coupled"}:
         raise ValueError("attention_fold_mode must be independent or coupled.")
+    if token_init_mode not in {"shared", "donor-tokenized"}:
+        raise ValueError("token_init_mode must be shared or donor-tokenized.")
     if projection_scale not in {"none", "target-rms"}:
         raise ValueError("projection_scale must be none or target-rms.")
     if activation_max_length <= 1:
@@ -440,6 +443,7 @@ def donor_projected_init(
         target_tokenizer,
         donor_tokenizer,
         max_anchors=max_anchors,
+        token_init_mode=token_init_mode,
         fold_mode=fold_mode,
         hidden_axis_weights=hidden_axis_weights,
         activation_fold_assignment=activation_fold_assignment,
@@ -465,6 +469,7 @@ def donor_projected_init(
         "activation_fold_assignment": activation_fold_assignment,
         "donor_layer_fold_mode": donor_layer_fold_mode,
         "attention_fold_mode": attention_fold_mode,
+        "token_init_mode": token_init_mode,
         "projection_scale": projection_scale,
         "activation_calibration_text_count": len(activation_calibration_texts or []),
         "activation_max_length": activation_max_length,
@@ -1953,67 +1958,182 @@ def _initialize_token_weights_from_donor(
     target_tokenizer,
     donor_tokenizer,
     max_anchors: int,
+    token_init_mode: str = "shared",
     fold_mode: str = "mean",
     hidden_axis_weights=None,
     activation_fold_assignment: str = "balanced",
     projection_scale: str = "none",
 ) -> dict[str, Any]:
+    if token_init_mode not in {"shared", "donor-tokenized"}:
+        raise ValueError("token_init_mode must be shared or donor-tokenized.")
     anchors, target_map, donor_map = _shared_anchor_tokens(target_tokenizer, donor_tokenizer, max_anchors)
-    target_idx = torch.tensor([target_map[token] for token in anchors], dtype=torch.long)
-    donor_idx = torch.tensor([donor_map[token] for token in anchors], dtype=torch.long)
+    if token_init_mode == "shared":
+        target_ids = [target_map[token] for token in anchors]
+        donor_id_groups = [[donor_map[token]] for token in anchors]
+        tokenized_rows = 0
+    else:
+        target_ids, donor_id_groups, tokenized_rows = _target_to_donor_token_groups(
+            target_tokenizer,
+            donor_tokenizer,
+            target_map,
+            donor_map,
+        )
 
     target_embeddings = target.get_input_embeddings()
     donor_embeddings = donor.get_input_embeddings()
     target_emb_weight = target_embeddings.weight.data.detach().cpu().to(torch.float32)
     donor_emb_weight = donor_embeddings.weight.data.detach().cpu().to(torch.float32)
-    projected_embeddings = _resize_tensor_to_shape(
+    embedding_rows_initialized = _project_token_weight_rows(
         torch,
-        donor_emb_weight[donor_idx],
-        (len(anchors), target_emb_weight.shape[1]),
+        target_emb_weight,
+        donor_emb_weight,
+        target_ids,
+        donor_id_groups,
         fold_mode=fold_mode,
-        axis_weights={} if hidden_axis_weights is None else {1: hidden_axis_weights},
+        hidden_axis_weights=hidden_axis_weights,
         activation_fold_assignment=activation_fold_assignment,
+        projection_scale=projection_scale,
+        chunk_size=2048,
     )
-    projected_embeddings = _scale_projection_to_target(
-        torch,
-        projected_embeddings,
-        target_emb_weight[target_idx],
-        projection_scale,
-    )
-    target_emb_weight[target_idx] = projected_embeddings
     target_embeddings.weight.data.copy_(target_emb_weight.to(target_embeddings.weight.dtype))
 
     target_lm = target.get_output_embeddings()
     donor_lm = donor.get_output_embeddings()
     lm_head_updated = False
+    lm_head_rows_initialized = 0
     if target_lm is not None and donor_lm is not None:
         target_head = target_lm.weight.data.detach().cpu().to(torch.float32)
         donor_head = donor_lm.weight.data.detach().cpu().to(torch.float32)
-        projected_head = _resize_tensor_to_shape(
+        lm_head_rows_initialized = _project_token_weight_rows(
             torch,
-            donor_head[donor_idx],
-            (len(anchors), target_head.shape[1]),
+            target_head,
+            donor_head,
+            target_ids,
+            donor_id_groups,
             fold_mode=fold_mode,
-            axis_weights={} if hidden_axis_weights is None else {1: hidden_axis_weights},
+            hidden_axis_weights=hidden_axis_weights,
             activation_fold_assignment=activation_fold_assignment,
+            projection_scale=projection_scale,
+            chunk_size=2048,
         )
-        projected_head = _scale_projection_to_target(
-            torch,
-            projected_head,
-            target_head[target_idx],
-            projection_scale,
-        )
-        target_head[target_idx] = projected_head
         target_lm.weight.data.copy_(target_head.to(target_lm.weight.dtype))
         lm_head_updated = True
 
     return {
+        "mode": token_init_mode,
         "shared_decoded_tokens": len(set(_canonical_token_map(target_tokenizer)) & set(_canonical_token_map(donor_tokenizer))),
         "anchors_used": len(anchors),
-        "embedding_rows_initialized": int(target_idx.numel()),
-        "lm_head_rows_initialized": int(target_idx.numel()) if lm_head_updated else 0,
+        "tokenized_rows_initialized": int(tokenized_rows),
+        "embedding_rows_initialized": int(embedding_rows_initialized),
+        "lm_head_rows_initialized": int(lm_head_rows_initialized) if lm_head_updated else 0,
         "lm_head_updated": lm_head_updated,
     }
+
+
+def _project_token_weight_rows(
+    torch,
+    target_weight,
+    donor_weight,
+    target_ids: Sequence[int],
+    donor_id_groups: Sequence[Sequence[int]],
+    fold_mode: str,
+    hidden_axis_weights=None,
+    activation_fold_assignment: str = "balanced",
+    projection_scale: str = "none",
+    chunk_size: int = 2048,
+) -> int:
+    if len(target_ids) != len(donor_id_groups):
+        raise ValueError("target_ids and donor_id_groups must have the same length.")
+    if not target_ids:
+        return 0
+    target_dim = int(target_weight.shape[1])
+    for start in range(0, len(target_ids), int(chunk_size)):
+        end = min(start + int(chunk_size), len(target_ids))
+        chunk_target_ids = list(target_ids[start:end])
+        donor_rows = torch.stack(
+            [donor_weight[list(group)].mean(dim=0) for group in donor_id_groups[start:end]],
+            dim=0,
+        )
+        projected = _resize_tensor_to_shape(
+            torch,
+            donor_rows,
+            (len(chunk_target_ids), target_dim),
+            fold_mode=fold_mode,
+            axis_weights={} if hidden_axis_weights is None else {1: hidden_axis_weights},
+            activation_fold_assignment=activation_fold_assignment,
+        )
+        projected = _scale_projection_to_target(
+            torch,
+            projected,
+            target_weight[torch.tensor(chunk_target_ids, dtype=torch.long)],
+            projection_scale,
+        )
+        target_weight[torch.tensor(chunk_target_ids, dtype=torch.long)] = projected
+    return int(len(target_ids))
+
+
+def _target_to_donor_token_groups(
+    target_tokenizer,
+    donor_tokenizer,
+    target_map: dict[str, int],
+    donor_map: dict[str, int],
+) -> tuple[list[int], list[list[int]], int]:
+    target_special_ids = set(getattr(target_tokenizer, "all_special_ids", []) or [])
+    donor_special_ids = set(getattr(donor_tokenizer, "all_special_ids", []) or [])
+    donor_vocab_size = len(donor_tokenizer)
+    target_ids = []
+    donor_id_groups = []
+    tokenized_rows = 0
+    seen_target_ids = set()
+    for token, target_idx in sorted(target_map.items(), key=lambda item: item[1]):
+        donor_idx = donor_map.get(token)
+        if donor_idx is None:
+            continue
+        target_ids.append(int(target_idx))
+        donor_id_groups.append([int(donor_idx)])
+        seen_target_ids.add(int(target_idx))
+    for target_idx in range(len(target_tokenizer)):
+        if int(target_idx) in seen_target_ids or int(target_idx) in target_special_ids:
+            continue
+        decoded = _decode_single_token(target_tokenizer, int(target_idx))
+        if not decoded or any(ord(ch) < 32 for ch in decoded):
+            continue
+        donor_ids = _encode_without_specials(donor_tokenizer, decoded)
+        donor_ids = [
+            int(item)
+            for item in donor_ids
+            if 0 <= int(item) < donor_vocab_size and int(item) not in donor_special_ids
+        ]
+        if not donor_ids:
+            continue
+        target_ids.append(int(target_idx))
+        donor_id_groups.append(donor_ids)
+        seen_target_ids.add(int(target_idx))
+        tokenized_rows += 1
+    return target_ids, donor_id_groups, tokenized_rows
+
+
+def _decode_single_token(tokenizer, token_id: int) -> str:
+    try:
+        return tokenizer.decode([int(token_id)], clean_up_tokenization_spaces=False)
+    except TypeError:
+        return tokenizer.decode([int(token_id)])
+    except Exception:
+        return ""
+
+
+def _encode_without_specials(tokenizer, text: str) -> list[int]:
+    try:
+        return list(tokenizer.encode(text, add_special_tokens=False))
+    except Exception:
+        try:
+            encoded = tokenizer(text, add_special_tokens=False)
+        except Exception:
+            return []
+        ids = encoded.get("input_ids", []) if isinstance(encoded, dict) else []
+        if ids and isinstance(ids[0], list):
+            ids = ids[0]
+        return list(ids)
 
 
 def _canonical_token(text: str) -> str:

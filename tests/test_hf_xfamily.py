@@ -38,6 +38,7 @@ from neural_forge.hf_xfamily import _resize_attention_tensor_to_shape
 from neural_forge.hf_xfamily import _resize_tensor_to_shape
 from neural_forge.hf_xfamily import _scale_projection_to_target
 from neural_forge.hf_xfamily import _select_compression_candidates
+from neural_forge.hf_xfamily import _target_to_donor_token_groups
 from neural_forge.hf_xfamily import _usable_pipeline_candidates
 from neural_forge.hf_xfamily import _validate_channel_assignment
 from neural_forge.hf_xfamily import _validate_layer_alpha_settings
@@ -61,6 +62,13 @@ class _Tokenizer:
     def get_vocab(self) -> dict[str, int]:
         return {text: idx for idx, text in enumerate(self._decoded)}
 
+    def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+        assert add_special_tokens is False
+        vocab = self.get_vocab()
+        if text in vocab:
+            return [vocab[text]]
+        return [vocab[part] for part in text.split() if part in vocab]
+
 
 class _Obj:
     def __init__(self, **kwargs) -> None:
@@ -79,6 +87,24 @@ def test_canonical_token_map_skips_special_and_empty_tokens() -> None:
     tokenizer = _Tokenizer(["<eos>", "Ġhello", "", "\u2581world", "hello"])
     mapping = _canonical_token_map(tokenizer)
     assert mapping == {"hello": 1, "world": 3}
+
+
+def test_target_to_donor_token_groups_uses_tokenized_fallback() -> None:
+    target_tokenizer = _Tokenizer(["<eos>", "hello", "hello world", "missing"])
+    donor_tokenizer = _Tokenizer(["<eos>", "hello", "world"])
+    target_map = _canonical_token_map(target_tokenizer)
+    donor_map = _canonical_token_map(donor_tokenizer)
+
+    target_ids, donor_groups, tokenized_rows = _target_to_donor_token_groups(
+        target_tokenizer,
+        donor_tokenizer,
+        target_map,
+        donor_map,
+    )
+
+    assert target_ids == [1, 2]
+    assert donor_groups == [[1], [1, 2]]
+    assert tokenized_rows == 1
 
 
 def test_recovery_same_vocab_guard_rejects_mismatch() -> None:
@@ -241,6 +267,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "fold",
             "--attention-fold-mode",
             "coupled",
+            "--token-init-mode",
+            "donor-tokenized",
             "--projection-scale",
             "target-rms",
             "--activation-calibration-file",
@@ -449,6 +477,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.activation_fold_assignment == "similarity"
     assert donor_init_args.donor_layer_fold_mode == "fold"
     assert donor_init_args.attention_fold_mode == "coupled"
+    assert donor_init_args.token_init_mode == "donor-tokenized"
     assert donor_init_args.projection_scale == "target-rms"
     assert donor_init_args.activation_calibration_file == "activation.jsonl"
     assert donor_init_args.activation_max_calibration_texts == 5
@@ -1200,6 +1229,8 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "average",
             "--attention-fold-mode",
             "coupled",
+            "--token-init-mode",
+            "donor-tokenized",
             "--projection-scale",
             "target-rms",
             "--activation-calibration-file",
@@ -1229,6 +1260,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "activation_fold_assignment": "similarity",
         "donor_layer_fold_mode": "average",
         "attention_fold_mode": "coupled",
+        "token_init_mode": "donor-tokenized",
         "projection_scale": "target-rms",
         "activation_calibration_texts": ["activation text"],
         "activation_max_length": 64,
