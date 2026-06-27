@@ -255,6 +255,7 @@ def recover_cross_tokenizer_causal_lm(
     device: str = "cuda:0",
     trust_remote_code: bool = False,
     calibration_texts: Sequence[str] | None = None,
+    response_loss_mode: str = "none",
     grad_clip: float = 1.0,
     report_interval: int | None = None,
     save_best_loss: bool = False,
@@ -326,6 +327,8 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("hidden_max_anchors must be positive.")
     if temperature <= 0:
         raise ValueError("temperature must be positive.")
+    if response_loss_mode not in {"none", "auto", "assistant", "answer"}:
+        raise ValueError("response_loss_mode must be none, auto, assistant, or answer.")
     if max_anchors <= 0:
         raise ValueError("max_anchors must be positive.")
     if anchor_selection not in {"shortest", "longest", "stratified"}:
@@ -444,6 +447,7 @@ def recover_cross_tokenizer_causal_lm(
         max_length=max_length,
         device=device,
         include_offsets=span_kd_weight > 0 or span_hidden_kd_weight > 0 or projected_vocab_kd_weight > 0,
+        response_loss_mode=response_loss_mode,
     )
 
     losses = []
@@ -490,6 +494,7 @@ def recover_cross_tokenizer_causal_lm(
             teacher,
             candidate_batch["input_ids"],
             candidate_batch.get("attention_mask"),
+            candidate_batch.get("loss_mask"),
             source_batch.get("attention_mask"),
             candidate_anchor_idx,
             source_anchor_idx,
@@ -565,6 +570,7 @@ def recover_cross_tokenizer_causal_lm(
         "unlikelihood_weight": unlikelihood_weight,
         "unlikelihood_window": unlikelihood_window,
         "entropy_weight": entropy_weight,
+        "response_loss_mode": response_loss_mode,
         "entropy_aware_kd_weight": entropy_aware_kd_weight,
         "entropy_aware_kd_threshold": entropy_aware_kd_threshold,
         "entropy_aware_kd_sharpness": entropy_aware_kd_sharpness,
@@ -1036,6 +1042,21 @@ def _set_train_scope(model, train_scope: str) -> int:
     if scope == "all":
         for param in model.parameters():
             param.requires_grad_(True)
+    elif scope in {"head", "lm_head", "output", "output_head"}:
+        output = model.get_output_embeddings()
+        if output is None:
+            raise ValueError("train_scope head requires an output embedding/lm_head module.")
+        for param in output.parameters():
+            param.requires_grad_(True)
+    elif scope in {"head_norm", "norm_head", "final_norm_head"}:
+        output = model.get_output_embeddings()
+        if output is None:
+            raise ValueError("train_scope head_norm requires an output embedding/lm_head module.")
+        for param in output.parameters():
+            param.requires_grad_(True)
+        for module in _final_norm_modules(model):
+            for param in module.parameters():
+                param.requires_grad_(True)
     elif scope == "ffn":
         for layer in _recovery_decoder_layers(model):
             for module_name in ("mlp", "feed_forward"):
@@ -1057,8 +1078,28 @@ def _set_train_scope(model, train_scope: str) -> int:
             for param in output.parameters():
                 param.requires_grad_(True)
     else:
-        raise ValueError("train_scope must be all, ffn, or lastN, e.g. last1.")
-    return sum(param.numel() for param in model.parameters() if param.requires_grad)
+        raise ValueError("train_scope must be all, head, head_norm, ffn, or lastN, e.g. last1.")
+    trainable = sum(param.numel() for param in model.parameters() if param.requires_grad)
+    if trainable == 0:
+        raise ValueError(f"train_scope {train_scope!r} selected no trainable parameters.")
+    return trainable
+
+
+def _final_norm_modules(model) -> list[Any]:
+    modules = []
+    for name in ("norm", "ln_f", "final_layer_norm", "final_norm", "norm_f"):
+        module = getattr(model, name, None)
+        if module is not None:
+            modules.append(module)
+    for root_name in ("model", "transformer", "gpt_neox", "base_model"):
+        root = getattr(model, root_name, None)
+        if root is None:
+            continue
+        for name in ("norm", "ln_f", "final_layer_norm", "final_norm", "norm_f"):
+            module = getattr(root, name, None)
+            if module is not None and module not in modules:
+                modules.append(module)
+    return modules
 
 
 def _recovery_decoder_layers(model) -> list[Any]:
@@ -1117,9 +1158,18 @@ def _make_paired_batches(
     max_length: int,
     device: str,
     include_offsets: bool = False,
+    response_loss_mode: str = "none",
 ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
     source_batches = _make_batches(source_tokenizer, texts, batch_size, max_length, device, include_offsets)
-    candidate_batches = _make_batches(candidate_tokenizer, texts, batch_size, max_length, device, include_offsets)
+    candidate_batches = _make_batches(
+        candidate_tokenizer,
+        texts,
+        batch_size,
+        max_length,
+        device,
+        include_offsets,
+        response_loss_mode=response_loss_mode,
+    )
     if len(source_batches) != len(candidate_batches):
         raise RuntimeError("Paired source/candidate batch counts diverged.")
     return list(zip(source_batches, candidate_batches))
@@ -2132,6 +2182,7 @@ def _cross_tokenizer_recovery_loss(
     teacher,
     candidate_input_ids,
     candidate_attention_mask,
+    candidate_loss_mask,
     source_attention_mask,
     candidate_anchor_idx,
     source_anchor_idx,
@@ -2170,7 +2221,12 @@ def _cross_tokenizer_recovery_loss(
         candidate_mask = torch.ones_like(shift_labels, dtype=torch.bool)
     else:
         candidate_mask = candidate_attention_mask[:, 1:].contiguous().bool()
-    shift_labels = shift_labels.masked_fill(~candidate_mask, -100)
+    candidate_lm_mask = candidate_mask
+    if candidate_loss_mask is not None:
+        candidate_lm_mask = candidate_mask & candidate_loss_mask[:, 1:].contiguous().bool()
+        if int(candidate_lm_mask.sum().detach().cpu().item()) <= 0:
+            candidate_lm_mask = candidate_mask
+    shift_labels = shift_labels.masked_fill(~candidate_lm_mask, -100)
     total = torch.zeros((), dtype=shift_student.dtype, device=shift_student.device)
     if anchor_kd_weight > 0:
         shift_teacher = torch.nan_to_num(
@@ -2263,7 +2319,7 @@ def _cross_tokenizer_recovery_loss(
             torch,
             shift_student,
             reference_teacher,
-            candidate_mask,
+            candidate_lm_mask,
             temperature,
         )
         total = total + float(reference_kd_weight) * reference_kd
@@ -2280,12 +2336,12 @@ def _cross_tokenizer_recovery_loss(
             shift_student,
             candidate_input_ids,
             shift_labels,
-            candidate_mask,
+            candidate_lm_mask,
             window=unlikelihood_window,
         )
         total = total + float(unlikelihood_weight) * unlikelihood
     if entropy_weight > 0:
-        entropy_penalty = _masked_entropy_penalty(torch, shift_student, candidate_mask)
+        entropy_penalty = _masked_entropy_penalty(torch, shift_student, candidate_lm_mask)
         total = total + float(entropy_weight) * entropy_penalty
     return total
 

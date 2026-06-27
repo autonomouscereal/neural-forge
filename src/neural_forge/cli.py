@@ -531,6 +531,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--unlikelihood-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--unlikelihood-window", type=int, default=16)
     xfamily_recover.add_argument("--entropy-weight", type=float, default=0.0)
+    xfamily_recover.add_argument("--response-loss-mode", choices=["none", "auto", "assistant", "answer"], default="none")
     xfamily_recover.add_argument("--entropy-aware-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--entropy-aware-kd-threshold", type=float, default=0.55)
     xfamily_recover.add_argument("--entropy-aware-kd-sharpness", type=float, default=8.0)
@@ -1222,6 +1223,7 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         unlikelihood_weight=args.unlikelihood_weight,
         unlikelihood_window=args.unlikelihood_window,
         entropy_weight=args.entropy_weight,
+        response_loss_mode=args.response_loss_mode,
         entropy_aware_kd_weight=args.entropy_aware_kd_weight,
         entropy_aware_kd_threshold=args.entropy_aware_kd_threshold,
         entropy_aware_kd_sharpness=args.entropy_aware_kd_sharpness,

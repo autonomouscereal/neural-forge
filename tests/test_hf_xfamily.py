@@ -1338,6 +1338,7 @@ def test_cross_tokenizer_recovery_loss_uses_anchor_subspace() -> None:
         teacher,
         candidate_ids,
         candidate_mask,
+        None,
         source_mask,
         candidate_anchor_idx=torch.tensor([1, 3, 5]),
         source_anchor_idx=torch.tensor([2, 4, 6]),
@@ -1369,6 +1370,92 @@ def test_cross_tokenizer_recovery_loss_uses_anchor_subspace() -> None:
     assert torch.isfinite(loss)
 
 
+def test_cross_tokenizer_recovery_loss_response_mask_ignores_prompt_tokens() -> None:
+    torch = pytest.importorskip("torch")
+    logits = torch.full((1, 4, 5), -8.0)
+    candidate_ids = torch.tensor([[0, 1, 2, 3]])
+    candidate_mask = torch.ones_like(candidate_ids)
+    candidate_loss_mask = torch.tensor([[False, False, False, True]])
+    source_mask = torch.ones((1, 4), dtype=torch.long)
+    logits[0, 0, 1] = -20.0
+    logits[0, 1, 2] = -20.0
+    logits[0, 2, 3] = 20.0
+    student = _Obj(logits=logits)
+    teacher = _Obj(logits=torch.zeros((1, 4, 5)))
+
+    masked = _cross_tokenizer_recovery_loss(
+        torch,
+        student,
+        teacher,
+        candidate_ids,
+        candidate_mask,
+        candidate_loss_mask,
+        source_mask,
+        candidate_anchor_idx=torch.tensor([1, 3]),
+        source_anchor_idx=torch.tensor([1, 3]),
+        anchor_kd_weight=0.0,
+        lm_weight=1.0,
+        hidden_kd_weight=0.0,
+        span_kd_weight=0.0,
+        span_hidden_kd_weight=0.0,
+        projected_vocab_kd_weight=0.0,
+        projected_vocab_kd_mode="teacher-to-student",
+        reference_kd_weight=0.0,
+        unlikelihood_weight=0.0,
+        unlikelihood_window=2,
+        entropy_weight=0.0,
+        entropy_aware_kd_weight=0.0,
+        entropy_aware_kd_threshold=0.55,
+        entropy_aware_kd_sharpness=8.0,
+        hidden_projection=None,
+        hidden_layer="last",
+        hidden_kd_metric="projected",
+        span_pairs=None,
+        projected_vocab_groups=None,
+        projected_vocab_mask=None,
+        projected_vocab_valid=None,
+        reference_teacher=None,
+        temperature=1.0,
+    )
+    full = _cross_tokenizer_recovery_loss(
+        torch,
+        student,
+        teacher,
+        candidate_ids,
+        candidate_mask,
+        None,
+        source_mask,
+        candidate_anchor_idx=torch.tensor([1, 3]),
+        source_anchor_idx=torch.tensor([1, 3]),
+        anchor_kd_weight=0.0,
+        lm_weight=1.0,
+        hidden_kd_weight=0.0,
+        span_kd_weight=0.0,
+        span_hidden_kd_weight=0.0,
+        projected_vocab_kd_weight=0.0,
+        projected_vocab_kd_mode="teacher-to-student",
+        reference_kd_weight=0.0,
+        unlikelihood_weight=0.0,
+        unlikelihood_window=2,
+        entropy_weight=0.0,
+        entropy_aware_kd_weight=0.0,
+        entropy_aware_kd_threshold=0.55,
+        entropy_aware_kd_sharpness=8.0,
+        hidden_projection=None,
+        hidden_layer="last",
+        hidden_kd_metric="projected",
+        span_pairs=None,
+        projected_vocab_groups=None,
+        projected_vocab_mask=None,
+        projected_vocab_valid=None,
+        reference_teacher=None,
+        temperature=1.0,
+    )
+
+    assert masked.item() < 1e-3
+    assert full.item() > masked.item() + 5.0
+
+
 def test_cross_tokenizer_recovery_loss_uses_projected_hidden_states() -> None:
     torch = pytest.importorskip("torch")
     student = _Obj(
@@ -1390,6 +1477,7 @@ def test_cross_tokenizer_recovery_loss_uses_projected_hidden_states() -> None:
         teacher,
         candidate_ids,
         candidate_mask,
+        None,
         source_mask,
         candidate_anchor_idx=torch.tensor([1, 3, 5]),
         source_anchor_idx=torch.tensor([2, 4, 6]),
@@ -1462,6 +1550,7 @@ def test_cross_tokenizer_recovery_loss_uses_span_pairs() -> None:
         teacher,
         candidate_ids,
         candidate_mask,
+        None,
         source_mask,
         candidate_anchor_idx=torch.tensor([1, 3, 5]),
         source_anchor_idx=torch.tensor([2, 4, 6]),
@@ -1703,6 +1792,63 @@ def test_recovery_train_scope_supports_feed_forward_layers() -> None:
     trainable = _set_train_scope(model, "ffn")
     assert trainable == 2
     assert all(layer.feed_forward.param.requires_grad for layer in model.model.layers)
+
+
+def test_recovery_train_scope_supports_head_only_and_final_norm() -> None:
+    class _Param:
+        def __init__(self) -> None:
+            self.requires_grad = False
+
+        def requires_grad_(self, value: bool):
+            self.requires_grad = value
+            return self
+
+        def numel(self) -> int:
+            return 1
+
+    class _Module:
+        def __init__(self) -> None:
+            self.param = _Param()
+
+        def parameters(self):
+            return [self.param]
+
+    class _Layer:
+        def __init__(self) -> None:
+            self.mlp = _Module()
+
+        def parameters(self):
+            return self.mlp.parameters()
+
+    class _Model:
+        def __init__(self) -> None:
+            self.model = _Obj(layers=[_Layer(), _Layer()], norm=_Module())
+            self.output = _Module()
+
+        def parameters(self):
+            params = []
+            for layer in self.model.layers:
+                params.extend(layer.parameters())
+            params.extend(self.model.norm.parameters())
+            params.extend(self.output.parameters())
+            return params
+
+        def get_output_embeddings(self):
+            return self.output
+
+    model = _Model()
+    trainable = _set_train_scope(model, "head")
+    assert trainable == 1
+    assert model.output.param.requires_grad is True
+    assert model.model.norm.param.requires_grad is False
+    assert all(not layer.mlp.param.requires_grad for layer in model.model.layers)
+
+    model = _Model()
+    trainable = _set_train_scope(model, "head_norm")
+    assert trainable == 2
+    assert model.output.param.requires_grad is True
+    assert model.model.norm.param.requires_grad is True
+    assert all(not layer.mlp.param.requires_grad for layer in model.model.layers)
 
 
 def test_hf_random_init_handler_passes_flags(monkeypatch) -> None:
@@ -1960,6 +2106,8 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "22",
             "--entropy-weight",
             "0.005",
+            "--response-loss-mode",
+            "auto",
             "--entropy-aware-kd-weight",
             "0.35",
             "--entropy-aware-kd-threshold",
@@ -2027,6 +2175,7 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "unlikelihood_weight": 0.11,
         "unlikelihood_window": 22,
         "entropy_weight": 0.005,
+        "response_loss_mode": "auto",
         "entropy_aware_kd_weight": 0.35,
         "entropy_aware_kd_threshold": 0.62,
         "entropy_aware_kd_sharpness": 7.5,
