@@ -996,6 +996,45 @@ Interpretation:
   behavior-gated runs are still required before calling it useful for the 25x
   blank-target compression goal.
 
+Behavior-gated run:
+
+- Start:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_rsd_behaviorbest_60s`
+- Output:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_onpolicy_hidden_behavior_80s`
+- Settings: `80` steps, `train_scope=last2`, `anchor_kd_weight=0.02`,
+  `lm_weight=0.05`, `on_policy_hidden_kd_weight=0.2`,
+  `on_policy_anchor_kd_weight=0.02`, `on_policy_unlikelihood_weight=0.02`,
+  behavior eval every `20` steps, strict behavior calibration.
+- Checkpoint history: step `0` behavior `3/6`, generation health `2/3`;
+  step `1` behavior `3/6`, generation health `2/3`, selected by lower loss;
+  later steps kept or lost behavior count and dropped generation health to
+  `0/3` or `1/3`.
+
+Eval comparison:
+
+| Checkpoint | PPL mean | Choice | Behavior | Generation health | Manual notes |
+|---|---:|---:|---:|---:|---|
+| RSD behavior-best 60s baseline | 3,825.12 | 3/4 | 3/6 | 2/3 | arithmetic and Python malformed |
+| On-policy hidden behavior 80s | 3,803.64 | 3/4 | 3/6 | 2/3 | preserves baseline; arithmetic/Python still malformed |
+
+Manual inspection:
+
+- Arithmetic still fails with long numeric runs (`12 * 13` begins with
+  `230000...`; `19 + 26` begins with `490003...`).
+- Python still fails syntax/execution: the generated `add` function includes
+  malformed numeric fragments and unmatched punctuation.
+- The useful text prompts remain partially relevant but repetitive.
+
+Interpretation:
+
+- On-policy hidden KD is a real recovery signal and can be behavior-preserving
+  when paired with behavior checkpoint selection, but this schedule did not
+  improve the strict 29.9x child.
+- Next step should use the same behavior-gated shell but change the objective
+  toward sequential/block output reconstruction on child rollouts, not simply
+  more last-layer hidden alignment.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best
