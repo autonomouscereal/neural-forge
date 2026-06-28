@@ -1616,6 +1616,352 @@ def reconstruct_cross_tokenizer_causal_lm(
     return reconstruction_report
 
 
+def blockwise_reconstruct_cross_tokenizer_causal_lm(
+    source_model: str,
+    candidate_model: str,
+    output_dir: str | Path,
+    steps_per_layer: int = 24,
+    batch_size: int = 1,
+    max_length: int = 128,
+    lr: float = 2e-5,
+    hidden_ridge: float = 1e-3,
+    hidden_metric: str = "projected",
+    max_anchors: int = 2048,
+    span_max_pairs: int = 512,
+    donor_layer_fold_mode: str = "fold",
+    layer_limit: int | None = None,
+    layer_gate_metric: str = "none",
+    layer_gate_max_ppl_ratio: float = 1.10,
+    layer_gate_max_texts: int = 4,
+    torch_dtype: str = "float16",
+    candidate_torch_dtype: str = "float32",
+    device: str = "cuda:0",
+    trust_remote_code: bool = False,
+    calibration_texts: Sequence[str] | None = None,
+    grad_clip: float = 1.0,
+    report_interval: int | None = None,
+    save_best_layer_loss: bool = False,
+) -> dict[str, Any]:
+    """Sequentially train each child block to match projected donor block outputs.
+
+    This is a nonlinear parent-to-child fold for cross-tokenizer models. Unlike
+    the ridge reconstruction path, it does not only mutate linear maps. It
+    freezes the candidate, unfreezes one decoder block at a time, and optimizes
+    that block so its span-aligned hidden states match the donor's projected
+    hidden states.
+    """
+
+    if steps_per_layer < 0:
+        raise ValueError("steps_per_layer must be non-negative.")
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive.")
+    if max_length <= 1:
+        raise ValueError("max_length must be greater than 1.")
+    if lr <= 0:
+        raise ValueError("lr must be positive.")
+    if hidden_ridge < 0:
+        raise ValueError("hidden_ridge must be non-negative.")
+    if hidden_metric not in {"projected", "cka", "both"}:
+        raise ValueError("hidden_metric must be projected, cka, or both.")
+    if max_anchors <= 0:
+        raise ValueError("max_anchors must be positive.")
+    if span_max_pairs <= 0:
+        raise ValueError("span_max_pairs must be positive.")
+    if donor_layer_fold_mode not in {"representative", "average", "fold"}:
+        raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
+    if layer_limit is not None and layer_limit <= 0:
+        raise ValueError("layer_limit must be positive when provided.")
+    if layer_gate_metric not in {"none", "ppl"}:
+        raise ValueError("layer_gate_metric must be none or ppl.")
+    if layer_gate_max_ppl_ratio <= 0:
+        raise ValueError("layer_gate_max_ppl_ratio must be positive.")
+    if layer_gate_max_texts <= 0:
+        raise ValueError("layer_gate_max_texts must be positive.")
+    if grad_clip < 0:
+        raise ValueError("grad_clip must be non-negative.")
+    if report_interval is not None and report_interval <= 0:
+        raise ValueError("report_interval must be positive when provided.")
+
+    from neural_forge.hf_xfamily import _canonical_token
+    from neural_forge.hf_xfamily import _canonical_token_map
+    from neural_forge.hf_xfamily import _donor_layer_group_for_target
+
+    torch, transformers = _torch_and_transformers()
+    dtype = _dtype_from_name(torch, torch_dtype)
+    candidate_dtype = _dtype_from_name(torch, candidate_torch_dtype)
+    source_tokenizer = transformers.AutoTokenizer.from_pretrained(source_model, trust_remote_code=trust_remote_code)
+    candidate_tokenizer = transformers.AutoTokenizer.from_pretrained(candidate_model, trust_remote_code=trust_remote_code)
+    if source_tokenizer.pad_token_id is None and source_tokenizer.eos_token_id is not None:
+        source_tokenizer.pad_token = source_tokenizer.eos_token
+    if candidate_tokenizer.pad_token_id is None and candidate_tokenizer.eos_token_id is not None:
+        candidate_tokenizer.pad_token = candidate_tokenizer.eos_token
+
+    source = transformers.AutoModelForCausalLM.from_pretrained(
+        source_model,
+        torch_dtype=dtype,
+        device_map=None,
+        trust_remote_code=trust_remote_code,
+    )
+    candidate = transformers.AutoModelForCausalLM.from_pretrained(
+        candidate_model,
+        torch_dtype=candidate_dtype,
+        device_map=None,
+        trust_remote_code=trust_remote_code,
+    )
+    source.to(device)
+    candidate.to(device)
+    source.eval()
+    candidate.train()
+    if hasattr(source.config, "use_cache"):
+        source.config.use_cache = False
+    if hasattr(candidate.config, "use_cache"):
+        candidate.config.use_cache = False
+
+    source_layers = _recovery_decoder_layers(source)
+    candidate_layers = _recovery_decoder_layers(candidate)
+    if not source_layers or not candidate_layers:
+        raise ValueError("Both source and candidate need decoder layers.")
+
+    anchors = _shared_recovery_anchors(
+        source_tokenizer,
+        candidate_tokenizer,
+        max_anchors,
+        _canonical_token_map,
+        selection="stratified",
+        min_chars=1,
+    )
+    if not anchors:
+        raise ValueError("No shared decoded-token anchors found for blockwise reconstruction.")
+    source_anchor_idx = torch.tensor([item[1] for item in anchors], dtype=torch.long, device=device)
+    candidate_anchor_idx = torch.tensor([item[2] for item in anchors], dtype=torch.long, device=device)
+    hidden_projection_report = _fit_shared_embedding_hidden_projection(
+        torch,
+        source,
+        candidate,
+        source_anchor_idx,
+        candidate_anchor_idx,
+        ridge=hidden_ridge,
+        max_anchors=max_anchors,
+    )
+    hidden_projection = hidden_projection_report["map"].to(device=device, dtype=torch.float32)
+
+    texts = list(calibration_texts or RECOVERY_TEXTS)
+    if not texts:
+        raise ValueError("Need at least one blockwise reconstruction text.")
+    eval_overlap_count = len(set(texts) & set(TEXT_EVALS))
+    paired_batches = _make_paired_batches(
+        source_tokenizer,
+        candidate_tokenizer,
+        texts,
+        batch_size=batch_size,
+        max_length=max_length,
+        device=device,
+        include_offsets=True,
+    )
+
+    layer_count = len(candidate_layers) if layer_limit is None else min(int(layer_limit), len(candidate_layers))
+    interval = int(report_interval or max(1, steps_per_layer // 4)) if steps_per_layer > 0 else 1
+    layer_reports = []
+    gate_texts = list(TEXT_EVALS[: int(layer_gate_max_texts)])
+    layer_gate: dict[str, Any] = {
+        "metric": layer_gate_metric,
+        "max_ppl_ratio": float(layer_gate_max_ppl_ratio),
+        "max_texts": int(layer_gate_max_texts),
+    }
+    previous_gate_ppl: float | None = None
+    with torch.no_grad():
+        if layer_gate_metric == "ppl":
+            candidate.eval()
+            previous_gate_ppl = _heldout_ppl_mean(torch, candidate, candidate_tokenizer, gate_texts, device, max_length)
+            candidate.train()
+            layer_gate["initial_ppl"] = previous_gate_ppl
+            layer_gate["texts"] = gate_texts
+
+    for candidate_idx in range(layer_count):
+        source_idx = _proportional_layer_index(candidate_idx, len(candidate_layers), len(source_layers))
+        source_group = (
+            [source_idx]
+            if donor_layer_fold_mode == "representative"
+            else _donor_layer_group_for_target(candidate_idx, len(candidate_layers), len(source_layers))
+        )
+        candidate_layer = candidate_layers[candidate_idx]
+        trainable_params = _set_only_module_trainable(candidate, candidate_layer)
+        optimizer = torch.optim.AdamW([param for param in candidate_layer.parameters() if param.requires_grad], lr=lr)
+        layer_state = _snapshot_module_state(candidate_layer) if layer_gate_metric == "ppl" or save_best_layer_loss else None
+        before_metrics = _cross_tokenizer_block_alignment_metrics(
+            torch,
+            source,
+            candidate,
+            source_tokenizer,
+            candidate_tokenizer,
+            paired_batches,
+            source_group,
+            candidate_idx,
+            hidden_projection,
+            _canonical_token,
+            donor_layer_fold_mode,
+            hidden_metric,
+            span_max_pairs,
+        )
+        losses = []
+        skipped_steps = 0
+        best_loss = None
+        best_step = None
+        best_state = None
+        for step in range(1, steps_per_layer + 1):
+            source_batch, candidate_batch = paired_batches[(step - 1) % len(paired_batches)]
+            optimizer.zero_grad(set_to_none=True)
+            with torch.no_grad():
+                teacher = source(
+                    **_model_forward_inputs(source_batch),
+                    use_cache=False,
+                    output_hidden_states=True,
+                )
+            student = candidate(
+                **_model_forward_inputs(candidate_batch),
+                use_cache=False,
+                output_hidden_states=True,
+            )
+            loss, pair_count = _cross_tokenizer_block_hidden_loss(
+                torch,
+                student,
+                teacher,
+                source_tokenizer,
+                candidate_tokenizer,
+                source_batch,
+                candidate_batch,
+                source_group,
+                candidate_idx,
+                hidden_projection,
+                _canonical_token,
+                donor_layer_fold_mode,
+                hidden_metric,
+                span_max_pairs,
+            )
+            if int(pair_count) <= 0:
+                skipped_steps += 1
+                continue
+            if not bool(torch.isfinite(loss).detach().cpu()):
+                raise RuntimeError(
+                    f"Non-finite blockwise reconstruction loss at layer {candidate_idx}, step {step}; aborting."
+                )
+            loss.backward()
+            if grad_clip > 0:
+                torch.nn.utils.clip_grad_norm_([p for p in candidate_layer.parameters() if p.requires_grad], grad_clip)
+            optimizer.step()
+            loss_value = float(loss.detach().cpu())
+            if save_best_layer_loss and (best_loss is None or loss_value < best_loss):
+                best_loss = loss_value
+                best_step = int(step)
+                best_state = _snapshot_module_state(candidate_layer)
+            if step == 1 or step % interval == 0 or step == steps_per_layer:
+                losses.append({"step": int(step), "loss": loss_value, "span_pairs": int(pair_count)})
+                print(
+                    f"xfamily_block_recover layer={candidate_idx} step={step} "
+                    f"loss={loss_value:.6f} span_pairs={int(pair_count)}",
+                    flush=True,
+                )
+        if save_best_layer_loss and best_state is not None:
+            _restore_module_state(candidate_layer, best_state)
+
+        after_metrics = _cross_tokenizer_block_alignment_metrics(
+            torch,
+            source,
+            candidate,
+            source_tokenizer,
+            candidate_tokenizer,
+            paired_batches,
+            source_group,
+            candidate_idx,
+            hidden_projection,
+            _canonical_token,
+            donor_layer_fold_mode,
+            hidden_metric,
+            span_max_pairs,
+        )
+        report: dict[str, Any] = {
+            "candidate_layer": int(candidate_idx),
+            "source_layer": int(source_idx),
+            "source_layer_group": [int(item) for item in source_group],
+            "trainable_params": int(trainable_params),
+            "steps": int(steps_per_layer),
+            "skipped_steps": int(skipped_steps),
+            "losses": losses,
+            "best_loss": best_loss,
+            "best_step": best_step,
+            "before": before_metrics,
+            "after": after_metrics,
+        }
+        if layer_gate_metric == "ppl":
+            with torch.no_grad():
+                candidate.eval()
+                candidate_ppl = _heldout_ppl_mean(torch, candidate, candidate_tokenizer, gate_texts, device, max_length)
+                candidate.train()
+            gate_decision = _layer_gate_decision(
+                previous_gate_ppl if previous_gate_ppl is not None else candidate_ppl,
+                candidate_ppl,
+                layer_gate_max_ppl_ratio,
+            )
+            if gate_decision["accepted"]:
+                previous_gate_ppl = candidate_ppl
+            elif layer_state is not None:
+                _restore_module_state(candidate_layer, layer_state)
+                with torch.no_grad():
+                    candidate.eval()
+                    reverted_ppl = _heldout_ppl_mean(
+                        torch,
+                        candidate,
+                        candidate_tokenizer,
+                        gate_texts,
+                        device,
+                        max_length,
+                    )
+                    candidate.train()
+                gate_decision["reverted"] = True
+                gate_decision["reverted_ppl"] = reverted_ppl
+                previous_gate_ppl = reverted_ppl
+            report["layer_gate"] = gate_decision
+        layer_reports.append(report)
+        if device.startswith("cuda") and hasattr(torch, "cuda"):
+            torch.cuda.empty_cache()
+
+    for param in candidate.parameters():
+        param.requires_grad_(False)
+    target = Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    candidate.save_pretrained(target, safe_serialization=True)
+    candidate_tokenizer.save_pretrained(target)
+    report = {
+        "operation": "blockwise_reconstruct_cross_tokenizer_causal_lm",
+        "source_model": source_model,
+        "candidate_model": candidate_model,
+        "output_dir": str(target),
+        "steps_per_layer": int(steps_per_layer),
+        "batch_size": int(batch_size),
+        "max_length": int(max_length),
+        "lr": float(lr),
+        "hidden_ridge": float(hidden_ridge),
+        "hidden_metric": hidden_metric,
+        "max_anchors": int(max_anchors),
+        "span_max_pairs": int(span_max_pairs),
+        "donor_layer_fold_mode": donor_layer_fold_mode,
+        "layer_limit": layer_limit,
+        "layer_gate": layer_gate,
+        "torch_dtype": torch_dtype,
+        "candidate_torch_dtype": candidate_torch_dtype,
+        "grad_clip": float(grad_clip),
+        "report_interval": int(interval),
+        "save_best_layer_loss": bool(save_best_layer_loss),
+        "calibration_text_count": len(texts),
+        "eval_overlap_count": eval_overlap_count,
+        "hidden_projection": {key: value for key, value in hidden_projection_report.items() if key != "map"},
+        "layers": layer_reports,
+        "param_count": sum(param.numel() for param in candidate.parameters()),
+    }
+    _write_json(target / "neural_forge_xfamily_block_recovery_report.json", report)
+    return report
+
+
 def load_calibration_texts(
     calibration_file: str | Path,
     max_texts: int | None = None,
@@ -3224,6 +3570,205 @@ def _heldout_ppl_mean(torch, model, tokenizer, texts: Sequence[str], device: str
         losses.append(float(outputs.loss.detach().cpu()))
     mean_loss = sum(losses) / max(1, len(losses))
     return float(math.exp(min(20.0, mean_loss)))
+
+
+def _set_only_module_trainable(model, module) -> int:
+    for param in model.parameters():
+        param.requires_grad_(False)
+    for param in module.parameters():
+        param.requires_grad_(True)
+    trainable = sum(param.numel() for param in module.parameters() if param.requires_grad)
+    if trainable <= 0:
+        raise ValueError("Selected decoder block has no trainable parameters.")
+    return int(trainable)
+
+
+def _hidden_state_after_decoder_layer(hidden_states, layer_idx: int):
+    if hidden_states is None:
+        raise ValueError("hidden states are required for blockwise reconstruction.")
+    state_idx = int(layer_idx) + 1
+    if state_idx <= 0 or state_idx >= len(hidden_states):
+        raise ValueError(f"Decoder layer index {layer_idx} is outside hidden state range.")
+    return hidden_states[state_idx]
+
+
+def _source_group_hidden_state(torch, hidden_states, source_layer_group: Sequence[int], donor_layer_fold_mode: str):
+    if not source_layer_group:
+        raise ValueError("Need at least one source layer for blockwise reconstruction.")
+    group = [int(item) for item in source_layer_group]
+    if donor_layer_fold_mode == "average" and len(group) > 1:
+        states = [_hidden_state_after_decoder_layer(hidden_states, idx).to(torch.float32) for idx in group]
+        return torch.stack(states, dim=0).mean(dim=0)
+    source_idx = group[0] if donor_layer_fold_mode == "representative" else max(group)
+    return _hidden_state_after_decoder_layer(hidden_states, source_idx)
+
+
+def _span_aligned_hidden_rows(torch, candidate_hidden, source_hidden, span_pairs):
+    if int(span_pairs.numel()) <= 0:
+        empty_candidate = torch.empty((0, int(candidate_hidden.shape[-1])), dtype=torch.float32, device=candidate_hidden.device)
+        empty_source = torch.empty((0, int(source_hidden.shape[-1])), dtype=torch.float32, device=candidate_hidden.device)
+        return empty_candidate, empty_source, 0
+    candidate_values = candidate_hidden.to(torch.float32)
+    source_values = source_hidden.to(device=candidate_values.device, dtype=torch.float32)
+    pair_idx = span_pairs.to(device=candidate_values.device, dtype=torch.long)
+    batch_idx = pair_idx[:, 0]
+    candidate_pos = pair_idx[:, 1]
+    source_pos = pair_idx[:, 2]
+    valid = (
+        (batch_idx >= 0)
+        & (batch_idx < candidate_values.shape[0])
+        & (batch_idx < source_values.shape[0])
+        & (candidate_pos >= 0)
+        & (candidate_pos < candidate_values.shape[1])
+        & (source_pos >= 0)
+        & (source_pos < source_values.shape[1])
+    )
+    if int(valid.detach().cpu().sum().item()) <= 0:
+        empty_candidate = torch.empty((0, int(candidate_values.shape[-1])), dtype=torch.float32, device=candidate_values.device)
+        empty_source = torch.empty((0, int(source_values.shape[-1])), dtype=torch.float32, device=candidate_values.device)
+        return empty_candidate, empty_source, 0
+    rows_candidate = candidate_values[batch_idx[valid], candidate_pos[valid]]
+    rows_source = source_values[batch_idx[valid], source_pos[valid]]
+    rows = min(int(rows_candidate.shape[0]), int(rows_source.shape[0]))
+    return rows_candidate[:rows], rows_source[:rows], rows
+
+
+def _cross_tokenizer_block_hidden_loss(
+    torch,
+    student,
+    teacher,
+    source_tokenizer,
+    candidate_tokenizer,
+    source_batch: dict[str, Any],
+    candidate_batch: dict[str, Any],
+    source_layer_group: Sequence[int],
+    candidate_layer_idx: int,
+    hidden_projection,
+    canonical_fn,
+    donor_layer_fold_mode: str,
+    hidden_metric: str,
+    span_max_pairs: int,
+):
+    pairs = _cross_tokenizer_span_pairs(
+        torch,
+        source_tokenizer,
+        candidate_tokenizer,
+        source_batch,
+        candidate_batch,
+        canonical_fn,
+        max_pairs=span_max_pairs,
+        shift_positions=False,
+    )
+    if int(pairs.numel()) <= 0:
+        device = student.logits.device
+        return torch.zeros((), dtype=student.logits.dtype, device=device), 0
+    candidate_hidden = _hidden_state_after_decoder_layer(student.hidden_states, candidate_layer_idx)
+    source_hidden = _source_group_hidden_state(torch, teacher.hidden_states, source_layer_group, donor_layer_fold_mode)
+    student_rows, teacher_rows, row_count = _span_aligned_hidden_rows(torch, candidate_hidden, source_hidden, pairs)
+    if int(row_count) <= 0:
+        return torch.zeros((), dtype=student.logits.dtype, device=student.logits.device), 0
+    loss = _hidden_representation_loss(
+        torch,
+        student_rows,
+        teacher_rows,
+        hidden_projection,
+        hidden_metric,
+    )
+    return loss.to(device=student.logits.device, dtype=torch.float32), int(row_count)
+
+
+def _cross_tokenizer_block_alignment_metrics(
+    torch,
+    source,
+    candidate,
+    source_tokenizer,
+    candidate_tokenizer,
+    paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]],
+    source_layer_group: Sequence[int],
+    candidate_layer_idx: int,
+    hidden_projection,
+    canonical_fn,
+    donor_layer_fold_mode: str,
+    hidden_metric: str,
+    span_max_pairs: int,
+) -> dict[str, Any]:
+    source_rows = []
+    candidate_rows = []
+    token_count = 0
+    was_training = candidate.training
+    source.eval()
+    candidate.eval()
+    with torch.no_grad():
+        for source_batch, candidate_batch in paired_batches:
+            if token_count >= int(span_max_pairs):
+                break
+            teacher = source(
+                **_model_forward_inputs(source_batch),
+                use_cache=False,
+                output_hidden_states=True,
+            )
+            student = candidate(
+                **_model_forward_inputs(candidate_batch),
+                use_cache=False,
+                output_hidden_states=True,
+            )
+            pairs = _cross_tokenizer_span_pairs(
+                torch,
+                source_tokenizer,
+                candidate_tokenizer,
+                source_batch,
+                candidate_batch,
+                canonical_fn,
+                max_pairs=int(span_max_pairs) - token_count,
+                shift_positions=False,
+            )
+            candidate_hidden = _hidden_state_after_decoder_layer(student.hidden_states, candidate_layer_idx)
+            source_hidden = _source_group_hidden_state(torch, teacher.hidden_states, source_layer_group, donor_layer_fold_mode)
+            batch_candidate, batch_source, rows = _span_aligned_hidden_rows(torch, candidate_hidden, source_hidden, pairs)
+            if int(rows) <= 0:
+                continue
+            remaining = int(span_max_pairs) - token_count
+            take = min(int(rows), remaining)
+            candidate_rows.append(batch_candidate[:take].detach().cpu())
+            source_rows.append(batch_source[:take].detach().cpu())
+            token_count += take
+    if was_training:
+        candidate.train()
+    if not candidate_rows or not source_rows:
+        return {
+            "skipped": True,
+            "reason": "no_cross_tokenizer_block_pairs",
+            "span_pairs": 0,
+        }
+    candidate_matrix = torch.cat(candidate_rows, dim=0).to(torch.float32)
+    source_matrix = torch.cat(source_rows, dim=0).to(torch.float32)
+    rows = min(int(candidate_matrix.shape[0]), int(source_matrix.shape[0]))
+    candidate_matrix = candidate_matrix[:rows]
+    source_matrix = source_matrix[:rows]
+    projected = source_matrix.to(device=hidden_projection.device, dtype=torch.float32).matmul(
+        hidden_projection.to(dtype=torch.float32)
+    ).detach().cpu()
+    metrics = {
+        "skipped": False,
+        "span_pairs": int(rows),
+        "candidate_hidden_size": int(candidate_matrix.shape[1]),
+        "source_hidden_size": int(source_matrix.shape[1]),
+        "projected_relative_error": _relative_reconstruction_error(torch, candidate_matrix, projected),
+        "projected_mean_cosine": _mean_row_cosine(torch, candidate_matrix, projected),
+        "cka": float(_linear_cka_tensor(torch, candidate_matrix, source_matrix).detach().cpu()),
+    }
+    metrics["loss"] = float(
+        _hidden_representation_loss(
+            torch,
+            candidate_matrix,
+            source_matrix,
+            hidden_projection.detach().cpu() if hidden_projection is not None else None,
+            hidden_metric,
+        )
+        .detach()
+        .cpu()
+    )
+    return metrics
 
 
 def _split_reconstruction_rows(

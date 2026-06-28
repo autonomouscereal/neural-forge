@@ -3716,6 +3716,99 @@ def test_hf_xfamily_reconstruct_handler_passes_flags(monkeypatch) -> None:
     }
 
 
+def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
+    import neural_forge.cli as cli
+    import neural_forge.hf_recovery as hf_recovery
+
+    captured = {}
+
+    def fake_block_recover(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(hf_recovery, "blockwise_reconstruct_cross_tokenizer_causal_lm", fake_block_recover)
+    monkeypatch.setattr(cli, "_load_recovery_calibration_texts", lambda path, max_texts: ["block text"])
+    args = build_parser().parse_args(
+        [
+            "hf-xfamily-block-recover",
+            "donor",
+            "candidate",
+            "out",
+            "--steps-per-layer",
+            "7",
+            "--batch-size",
+            "2",
+            "--max-length",
+            "80",
+            "--lr",
+            "0.0004",
+            "--hidden-ridge",
+            "0.02",
+            "--hidden-metric",
+            "both",
+            "--max-anchors",
+            "222",
+            "--span-max-pairs",
+            "77",
+            "--donor-layer-fold-mode",
+            "average",
+            "--layer-limit",
+            "3",
+            "--layer-gate-metric",
+            "ppl",
+            "--layer-gate-max-ppl-ratio",
+            "1.05",
+            "--layer-gate-max-texts",
+            "2",
+            "--dtype",
+            "float16",
+            "--candidate-dtype",
+            "float32",
+            "--device",
+            "cpu",
+            "--trust-remote-code",
+            "--calibration-file",
+            "calibration.jsonl",
+            "--max-calibration-texts",
+            "6",
+            "--grad-clip",
+            "0.7",
+            "--report-interval",
+            "2",
+            "--save-best-layer-loss",
+        ]
+    )
+    result = args.func(args)
+
+    assert result == {"ok": True}
+    assert captured == {
+        "source_model": "donor",
+        "candidate_model": "candidate",
+        "output_dir": "out",
+        "steps_per_layer": 7,
+        "batch_size": 2,
+        "max_length": 80,
+        "lr": 0.0004,
+        "hidden_ridge": 0.02,
+        "hidden_metric": "both",
+        "max_anchors": 222,
+        "span_max_pairs": 77,
+        "donor_layer_fold_mode": "average",
+        "layer_limit": 3,
+        "layer_gate_metric": "ppl",
+        "layer_gate_max_ppl_ratio": 1.05,
+        "layer_gate_max_texts": 2,
+        "torch_dtype": "float16",
+        "candidate_torch_dtype": "float32",
+        "device": "cpu",
+        "trust_remote_code": True,
+        "calibration_texts": ["block text"],
+        "grad_clip": 0.7,
+        "report_interval": 2,
+        "save_best_layer_loss": True,
+    }
+
+
 def test_xfamily_mlp_merge_handler_passes_activation_flags(monkeypatch) -> None:
     import neural_forge.cli as cli
     import neural_forge.hf_xfamily as hf_xfamily

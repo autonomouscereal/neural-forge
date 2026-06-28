@@ -777,6 +777,52 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_reconstruct.add_argument("--max-calibration-texts", type=int)
     xfamily_reconstruct.set_defaults(func=cmd_hf_xfamily_reconstruct)
 
+    xfamily_block_recover = sub.add_parser(
+        "hf-xfamily-block-recover",
+        help="Sequentially train each target block against projected cross-tokenizer donor block activations.",
+    )
+    xfamily_block_recover.add_argument("source_model")
+    xfamily_block_recover.add_argument("candidate_model")
+    xfamily_block_recover.add_argument("output")
+    xfamily_block_recover.add_argument("--steps-per-layer", type=int, default=24)
+    xfamily_block_recover.add_argument("--batch-size", type=int, default=1)
+    xfamily_block_recover.add_argument("--max-length", type=int, default=128)
+    xfamily_block_recover.add_argument("--lr", type=float, default=2e-5)
+    xfamily_block_recover.add_argument("--hidden-ridge", type=float, default=1e-3)
+    xfamily_block_recover.add_argument(
+        "--hidden-metric",
+        choices=["projected", "cka", "both"],
+        default="projected",
+        help="Block activation objective used for span-aligned donor/target hidden rows.",
+    )
+    xfamily_block_recover.add_argument("--max-anchors", type=int, default=2048)
+    xfamily_block_recover.add_argument("--span-max-pairs", type=int, default=512)
+    xfamily_block_recover.add_argument(
+        "--donor-layer-fold-mode",
+        choices=["representative", "average", "fold"],
+        default="fold",
+        help="How multiple donor layers mapped to one target layer define the donor block target.",
+    )
+    xfamily_block_recover.add_argument("--layer-limit", type=int)
+    xfamily_block_recover.add_argument(
+        "--layer-gate-metric",
+        choices=["none", "ppl"],
+        default="none",
+        help="Optionally evaluate after each trained block and revert blocks that fail the gate.",
+    )
+    xfamily_block_recover.add_argument("--layer-gate-max-ppl-ratio", type=float, default=1.10)
+    xfamily_block_recover.add_argument("--layer-gate-max-texts", type=int, default=4)
+    xfamily_block_recover.add_argument("--dtype", default="float16")
+    xfamily_block_recover.add_argument("--candidate-dtype", default="float32")
+    xfamily_block_recover.add_argument("--device", default="cuda:0")
+    xfamily_block_recover.add_argument("--trust-remote-code", action="store_true")
+    xfamily_block_recover.add_argument("--calibration-file")
+    xfamily_block_recover.add_argument("--max-calibration-texts", type=int)
+    xfamily_block_recover.add_argument("--grad-clip", type=float, default=1.0)
+    xfamily_block_recover.add_argument("--report-interval", type=int)
+    xfamily_block_recover.add_argument("--save-best-layer-loss", action="store_true")
+    xfamily_block_recover.set_defaults(func=cmd_hf_xfamily_block_recover)
+
     lm_recover = sub.add_parser("hf-lm-recover", help="Run teacherless LM recovery on a folded HF causal LM.")
     lm_recover.add_argument("candidate_model")
     lm_recover.add_argument("output")
@@ -1549,6 +1595,37 @@ def cmd_hf_xfamily_reconstruct(args: argparse.Namespace) -> dict[str, object]:
         device=args.device,
         trust_remote_code=args.trust_remote_code,
         calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+    )
+
+
+def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_recovery import blockwise_reconstruct_cross_tokenizer_causal_lm
+
+    return blockwise_reconstruct_cross_tokenizer_causal_lm(
+        source_model=args.source_model,
+        candidate_model=args.candidate_model,
+        output_dir=args.output,
+        steps_per_layer=args.steps_per_layer,
+        batch_size=args.batch_size,
+        max_length=args.max_length,
+        lr=args.lr,
+        hidden_ridge=args.hidden_ridge,
+        hidden_metric=args.hidden_metric,
+        max_anchors=args.max_anchors,
+        span_max_pairs=args.span_max_pairs,
+        donor_layer_fold_mode=args.donor_layer_fold_mode,
+        layer_limit=args.layer_limit,
+        layer_gate_metric=args.layer_gate_metric,
+        layer_gate_max_ppl_ratio=args.layer_gate_max_ppl_ratio,
+        layer_gate_max_texts=args.layer_gate_max_texts,
+        torch_dtype=args.dtype,
+        candidate_torch_dtype=args.candidate_dtype,
+        device=args.device,
+        trust_remote_code=args.trust_remote_code,
+        calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+        grad_clip=args.grad_clip,
+        report_interval=args.report_interval,
+        save_best_layer_loss=args.save_best_layer_loss,
     )
 
 
