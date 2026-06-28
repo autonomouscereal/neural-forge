@@ -9,10 +9,13 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from neural_forge.hf_tools import (
+    BEHAVIOR_PROBES,
     TEXT_EVALS,
     _decoder_layer_container,
     _dtype_from_name,
+    _generate_text,
     _ridge_solve_features,
+    _score_behavior_probe,
     _torch_and_transformers,
 )
 
@@ -1432,6 +1435,8 @@ def reconstruct_cross_tokenizer_causal_lm(
     layer_gate_metric: str = "none",
     layer_gate_max_ppl_ratio: float = 1.02,
     layer_gate_max_texts: int = 4,
+    layer_gate_max_behavior_drop: float = 0.0,
+    layer_gate_behavior_max_new_tokens: int = 96,
     torch_dtype: str = "float16",
     candidate_torch_dtype: str = "float32",
     device: str = "cuda:0",
@@ -1452,6 +1457,7 @@ def reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("reconstruction_alpha must be in [0, 1].")
     xfamily_targets = {
         "consumer-input",
+        "block-interface",
         "attention",
         "attention-output",
         "attention-all",
@@ -1463,7 +1469,7 @@ def reconstruct_cross_tokenizer_causal_lm(
     }
     if reconstruction_target not in xfamily_targets:
         raise ValueError(
-            "reconstruction_target must be consumer-input, attention, attention-output, attention-all, "
+            "reconstruction_target must be consumer-input, block-interface, attention, attention-output, attention-all, "
             "mlp, mlp-output, mlp-all, both, or all."
         )
     if donor_layer_fold_mode not in {"representative", "average", "fold"}:
@@ -1494,12 +1500,16 @@ def reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("fit_gate_min_relative_improvement must be non-negative.")
     if fit_gate_max_cosine_drop < 0:
         raise ValueError("fit_gate_max_cosine_drop must be non-negative.")
-    if layer_gate_metric not in {"none", "ppl"}:
-        raise ValueError("layer_gate_metric must be none or ppl.")
+    if layer_gate_metric not in {"none", "ppl", "behavior"}:
+        raise ValueError("layer_gate_metric must be none, ppl, or behavior.")
     if layer_gate_max_ppl_ratio <= 0:
         raise ValueError("layer_gate_max_ppl_ratio must be positive.")
     if layer_gate_max_texts <= 0:
         raise ValueError("layer_gate_max_texts must be positive.")
+    if not 0.0 <= float(layer_gate_max_behavior_drop) <= 1.0:
+        raise ValueError("layer_gate_max_behavior_drop must be in [0, 1].")
+    if layer_gate_behavior_max_new_tokens <= 0:
+        raise ValueError("layer_gate_behavior_max_new_tokens must be positive.")
 
     from neural_forge.hf_xfamily import _canonical_token
     from neural_forge.hf_xfamily import _canonical_token_map
@@ -1584,9 +1594,12 @@ def reconstruct_cross_tokenizer_causal_lm(
         "metric": layer_gate_metric,
         "max_ppl_ratio": float(layer_gate_max_ppl_ratio),
         "max_texts": int(layer_gate_max_texts),
+        "max_behavior_drop": float(layer_gate_max_behavior_drop),
+        "behavior_max_new_tokens": int(layer_gate_behavior_max_new_tokens),
     }
     gate_texts = list(TEXT_EVALS[: int(layer_gate_max_texts)])
     previous_gate_ppl: float | None = None
+    previous_gate_behavior: dict[str, Any] | None = None
     with torch.no_grad():
         if layer_gate_metric == "ppl":
             previous_gate_ppl = _heldout_ppl_mean(
@@ -1599,6 +1612,16 @@ def reconstruct_cross_tokenizer_causal_lm(
             )
             layer_gate["initial_ppl"] = previous_gate_ppl
             layer_gate["texts"] = gate_texts
+        elif layer_gate_metric == "behavior":
+            previous_gate_behavior = _heldout_behavior_summary(
+                torch,
+                candidate,
+                candidate_tokenizer,
+                device,
+                int(layer_gate_behavior_max_new_tokens),
+                int(layer_gate_max_texts),
+            )
+            layer_gate["initial_behavior"] = previous_gate_behavior
         for candidate_idx in range(layer_count):
             source_idx = _proportional_layer_index(candidate_idx, len(candidate_layers), len(source_layers))
             source_group = (
@@ -1608,7 +1631,7 @@ def reconstruct_cross_tokenizer_causal_lm(
             )
             layer_state = (
                 _snapshot_layer_gate_states(candidate_layers, candidate_idx, reconstruction_target)
-                if layer_gate_metric == "ppl"
+                if layer_gate_metric in {"ppl", "behavior"}
                 else None
             )
             repair = _reconstruct_cross_tokenizer_layer(
@@ -1673,6 +1696,40 @@ def reconstruct_cross_tokenizer_causal_lm(
                     gate_decision["reverted_ppl"] = reverted_ppl
                     gate_decision["restored_layers"] = [int(idx) for idx in sorted(layer_state)]
                     previous_gate_ppl = reverted_ppl
+                if layer_state is not None:
+                    gate_decision["snapshot_layers"] = [int(idx) for idx in sorted(layer_state)]
+                repair["layer_gate"] = gate_decision
+            elif layer_gate_metric == "behavior":
+                candidate_behavior = _heldout_behavior_summary(
+                    torch,
+                    candidate,
+                    candidate_tokenizer,
+                    device,
+                    int(layer_gate_behavior_max_new_tokens),
+                    int(layer_gate_max_texts),
+                )
+                gate_decision = _layer_gate_behavior_decision(
+                    previous_gate_behavior or candidate_behavior,
+                    candidate_behavior,
+                    layer_gate_max_behavior_drop,
+                )
+                gate_decision["candidate_behavior"] = candidate_behavior
+                if gate_decision["accepted"]:
+                    previous_gate_behavior = candidate_behavior
+                elif layer_state is not None:
+                    _restore_layer_gate_states(candidate_layers, layer_state)
+                    reverted_behavior = _heldout_behavior_summary(
+                        torch,
+                        candidate,
+                        candidate_tokenizer,
+                        device,
+                        int(layer_gate_behavior_max_new_tokens),
+                        int(layer_gate_max_texts),
+                    )
+                    gate_decision["reverted"] = True
+                    gate_decision["reverted_behavior"] = reverted_behavior
+                    gate_decision["restored_layers"] = [int(idx) for idx in sorted(layer_state)]
+                    previous_gate_behavior = reverted_behavior
                 if layer_state is not None:
                     gate_decision["snapshot_layers"] = [int(idx) for idx in sorted(layer_state)]
                 repair["layer_gate"] = gate_decision
@@ -4024,7 +4081,7 @@ def _layer_gate_snapshot_indices(candidate_layers: Sequence[Any], candidate_idx:
     if candidate_idx < 0 or candidate_idx >= len(candidate_layers):
         raise ValueError("candidate_idx is outside candidate layer range.")
     indices = {int(candidate_idx)}
-    if reconstruction_target in {"consumer-input", "all"} and int(candidate_idx) + 1 < len(candidate_layers):
+    if reconstruction_target in {"consumer-input", "block-interface", "all"} and int(candidate_idx) + 1 < len(candidate_layers):
         indices.add(int(candidate_idx) + 1)
     return sorted(indices)
 
@@ -4075,6 +4132,74 @@ def _heldout_ppl_mean(torch, model, tokenizer, texts: Sequence[str], device: str
         losses.append(float(outputs.loss.detach().cpu()))
     mean_loss = sum(losses) / max(1, len(losses))
     return float(math.exp(min(20.0, mean_loss)))
+
+
+def _heldout_behavior_summary(
+    torch,
+    model,
+    tokenizer,
+    device: str,
+    max_new_tokens: int,
+    max_probes: int,
+) -> dict[str, Any]:
+    probes = list(BEHAVIOR_PROBES[: int(max_probes)])
+    if not probes:
+        raise ValueError("Need at least one held-out behavior probe for the layer gate.")
+    items = [
+        _score_behavior_probe(
+            probe,
+            _generate_text(torch, model, tokenizer, str(probe["prompt"]), device, int(max_new_tokens)),
+        )
+        for probe in probes
+    ]
+    correct = sum(1 for item in items if item["passed"])
+    return {
+        "correct": int(correct),
+        "total": int(len(items)),
+        "pass_rate": float(correct / max(1, len(items))),
+        "items": [
+            {
+                "id": item["id"],
+                "passed": bool(item["passed"]),
+                "continuation": item.get("continuation", ""),
+            }
+            for item in items
+        ],
+    }
+
+
+def _layer_gate_behavior_decision(
+    previous_behavior: dict[str, Any],
+    candidate_behavior: dict[str, Any],
+    max_behavior_drop: float,
+) -> dict[str, Any]:
+    previous_rate = float(previous_behavior.get("pass_rate", 0.0))
+    candidate_rate = float(candidate_behavior.get("pass_rate", 0.0))
+    drop = previous_rate - candidate_rate
+    previous_passed_ids = {
+        str(item.get("id"))
+        for item in previous_behavior.get("items", [])
+        if bool(item.get("passed"))
+    }
+    candidate_passed_ids = {
+        str(item.get("id"))
+        for item in candidate_behavior.get("items", [])
+        if bool(item.get("passed"))
+    }
+    lost_passed_ids = sorted(previous_passed_ids - candidate_passed_ids)
+    accepted = drop <= float(max_behavior_drop) + 1e-12 and not lost_passed_ids
+    return {
+        "metric": "behavior",
+        "accepted": bool(accepted),
+        "previous_pass_rate": previous_rate,
+        "candidate_pass_rate": candidate_rate,
+        "behavior_drop": float(drop),
+        "max_behavior_drop": float(max_behavior_drop),
+        "previous_passed_ids": sorted(previous_passed_ids),
+        "candidate_passed_ids": sorted(candidate_passed_ids),
+        "lost_passed_ids": lost_passed_ids,
+        "reason": "accepted" if accepted else "behavior_regression",
+    }
 
 
 def _set_only_module_trainable(model, module) -> int:
@@ -4560,7 +4685,220 @@ def _reconstruct_cross_tokenizer_layer(
             "skipped": True,
             "reason": "reconstruction_target_excludes_consumer_input",
         }
+    if reconstruction_target in {"block-interface", "all"}:
+        repair_report["block_interface_reconstruction"] = _reconstruct_cross_tokenizer_block_interface(
+            torch,
+            source,
+            candidate,
+            source_layers,
+            candidate_layers,
+            source_group,
+            int(candidate_layer_idx),
+            source_tokenizer,
+            candidate_tokenizer,
+            paired_batches,
+            hidden_projection,
+            canonical_fn,
+            ridge,
+            reconstruction_alpha,
+            reconstruction_objective,
+            cosine_steps,
+            cosine_lr,
+            cosine_l2,
+            fit_gate,
+            fit_gate_validation_fraction,
+            fit_gate_min_validation_rows,
+            fit_gate_min_relative_improvement,
+            fit_gate_max_cosine_drop,
+            max_tokens_per_layer,
+        )
+    else:
+        repair_report["block_interface_reconstruction"] = {
+            "skipped": True,
+            "reason": "reconstruction_target_excludes_block_interface",
+        }
     return repair_report
+
+
+def _reconstruct_cross_tokenizer_block_interface(
+    torch,
+    source,
+    candidate,
+    source_layers: Sequence[Any] | None,
+    candidate_layers: Sequence[Any] | None,
+    source_layer_group: Sequence[int],
+    candidate_layer_idx: int,
+    source_tokenizer,
+    candidate_tokenizer,
+    paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]],
+    hidden_projection,
+    canonical_fn,
+    ridge: float,
+    reconstruction_alpha: float,
+    reconstruction_objective: str,
+    cosine_steps: int,
+    cosine_lr: float,
+    cosine_l2: float,
+    fit_gate: str,
+    fit_gate_validation_fraction: float,
+    fit_gate_min_validation_rows: int,
+    fit_gate_min_relative_improvement: float,
+    fit_gate_max_cosine_drop: float,
+    max_tokens_per_layer: int,
+) -> dict[str, Any]:
+    if not source_layers or not candidate_layers or not source_layer_group:
+        return {"skipped": True, "reason": "missing_source_or_candidate_layers"}
+    source_consumer_idx = max(int(item) for item in source_layer_group) + 1
+    candidate_consumer_idx = int(candidate_layer_idx) + 1
+    report: dict[str, Any] = {
+        "source_layer_group": [int(item) for item in source_layer_group],
+        "source_consumer_layer": int(source_consumer_idx),
+        "candidate_layer": int(candidate_layer_idx),
+        "candidate_consumer_layer": int(candidate_consumer_idx),
+    }
+    if source_consumer_idx >= len(source_layers) or candidate_consumer_idx >= len(candidate_layers):
+        return {**report, "skipped": True, "reason": "no_downstream_consumer_layer"}
+    source_layer = source_layers[source_consumer_idx]
+    consumer_layer = candidate_layers[candidate_consumer_idx]
+    consumers = [
+        (
+            "attention",
+            _get_layer_module(source_layer, ("input_layernorm", "ln_1")),
+            _get_layer_module(consumer_layer, ("input_layernorm", "ln_1")),
+            _attention_input_linears(consumer_layer),
+        ),
+        (
+            "mlp",
+            _get_layer_module(source_layer, ("post_attention_layernorm", "ln_2")),
+            _get_layer_module(consumer_layer, ("post_attention_layernorm", "ln_2")),
+            _mlp_input_linears(consumer_layer),
+        ),
+    ]
+    source_pieces = []
+    candidate_pieces = []
+    consumer_reports = []
+    consumer_linears: list[tuple[str, Any]] = []
+    for consumer_name, source_module, candidate_module, linears in consumers:
+        if source_module is None or candidate_module is None or not linears:
+            consumer_reports.append(
+                {
+                    "consumer": consumer_name,
+                    "skipped": True,
+                    "reason": "missing_module_or_candidate_input_linears",
+                }
+            )
+            continue
+        source_part, candidate_part, matched_part = _collect_cross_tokenizer_module_activations(
+            torch,
+            source,
+            candidate,
+            source_module,
+            candidate_module,
+            source_tokenizer,
+            candidate_tokenizer,
+            paired_batches,
+            canonical_fn,
+            max_tokens_per_layer,
+        )
+        if int(matched_part) <= 0:
+            consumer_reports.append(
+                {
+                    "consumer": consumer_name,
+                    "skipped": True,
+                    "reason": "no_cross_tokenizer_activation_pairs",
+                    "matched_pairs": 0,
+                }
+            )
+            continue
+        source_pieces.append(source_part.detach().cpu().to(torch.float32))
+        candidate_pieces.append(candidate_part.detach().cpu().to(torch.float32))
+        consumer_linears.extend(linears)
+        consumer_reports.append(
+            {
+                "consumer": consumer_name,
+                "skipped": False,
+                "matched_pairs": int(matched_part),
+                "linears": [name for name, _module in linears],
+            }
+        )
+    if not source_pieces or not candidate_pieces or not consumer_linears:
+        return {
+            **report,
+            "skipped": True,
+            "reason": "no_usable_downstream_consumer_pairs",
+            "consumers": consumer_reports,
+        }
+    source_rows = torch.cat(source_pieces, dim=0)[:max_tokens_per_layer]
+    candidate_rows = torch.cat(candidate_pieces, dim=0)[:max_tokens_per_layer]
+    matched = min(int(source_rows.shape[0]), int(candidate_rows.shape[0]))
+    if int(matched) <= 0:
+        return {
+            **report,
+            "skipped": True,
+            "reason": "no_cross_tokenizer_consumer_pairs",
+            "consumers": consumer_reports,
+        }
+    source_rows = source_rows[:matched]
+    candidate_rows = candidate_rows[:matched]
+    source_projected = source_rows.to(device=hidden_projection.device, dtype=torch.float32).matmul(
+        hidden_projection.to(dtype=torch.float32)
+    ).detach().cpu()
+    fit_report: dict[str, Any] = {}
+    fit_candidate_rows = candidate_rows
+    fit_source_rows = source_projected
+    validation_candidate_rows = None
+    validation_source_rows = None
+    if fit_gate == "validation":
+        split = _split_reconstruction_rows(
+            [candidate_rows.to(torch.float32), source_projected.to(torch.float32)],
+            fit_gate_validation_fraction,
+            fit_gate_min_validation_rows,
+        )
+        if split is None:
+            fit_report["fit_gate"] = {"mode": "validation", "accepted": True, "reason": "insufficient_rows"}
+        else:
+            fit_candidate_rows, fit_source_rows = split["train"]
+            validation_candidate_rows, validation_source_rows = split["validation"]
+            fit_report["fit_gate"] = {
+                "mode": "validation",
+                "rows": int(split["rows"]),
+                "train_rows": int(split["train_rows"]),
+                "validation_rows": int(split["validation_rows"]),
+            }
+    fitted = _fit_activation_map(
+        torch,
+        fit_candidate_rows,
+        fit_source_rows,
+        ridge,
+        reconstruction_alpha,
+        reconstruction_objective,
+        cosine_steps,
+        cosine_lr,
+        cosine_l2,
+    )
+    if validation_candidate_rows is not None and validation_source_rows is not None:
+        gate = _validation_reconstruction_gate(
+            torch,
+            validation_candidate_rows,
+            validation_candidate_rows.matmul(fitted["map"]),
+            validation_source_rows,
+            fit_gate_min_relative_improvement,
+            fit_gate_max_cosine_drop,
+        )
+        fit_report["fit_gate"] = {**fit_report["fit_gate"], **gate}
+        if not gate["accepted"]:
+            return {key: value for key, value in fitted.items() if key != "map"} | fit_report | report | {
+                "matched_pairs": int(matched),
+                "linears_updated": [],
+                "mutation_skipped": True,
+            }
+    _absorb_input_map_into_linears(torch, consumer_linears, fitted["map"])
+    return {key: value for key, value in fitted.items() if key != "map"} | fit_report | report | {
+        "skipped": False,
+        "matched_pairs": int(matched),
+        "consumers": consumer_reports,
+        "linears_updated": [name for name, _module in consumer_linears],
+    }
 
 
 def _reconstruct_cross_tokenizer_consumer_input(

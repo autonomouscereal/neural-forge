@@ -314,6 +314,7 @@ def build_parser() -> argparse.ArgumentParser:
     hf_gate.add_argument("--output")
     hf_gate.add_argument("--max-ppl-ratio", type=float, default=1.25)
     hf_gate.add_argument("--max-accuracy-drop", type=float, default=0.0)
+    hf_gate.add_argument("--max-behavior-drop", type=float, default=0.0)
     hf_gate.add_argument("--min-choice-accuracy", type=float, default=0.75)
     hf_gate.add_argument("--min-behavior-pass-rate", type=float, default=0.60)
     hf_gate.add_argument("--min-continuation-chars", type=int, default=24)
@@ -752,6 +753,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--reconstruction-target",
         choices=[
             "consumer-input",
+            "block-interface",
             "attention",
             "attention-output",
             "attention-all",
@@ -792,7 +794,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_reconstruct.add_argument("--fit-gate-max-cosine-drop", type=float, default=0.01)
     xfamily_reconstruct.add_argument(
         "--layer-gate-metric",
-        choices=["none", "ppl"],
+        choices=["none", "ppl", "behavior"],
         default="none",
         help="Optionally evaluate after each repaired layer and revert repairs that fail the gate.",
     )
@@ -806,7 +808,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--layer-gate-max-texts",
         type=int,
         default=4,
-        help="Number of held-out text probes used by --layer-gate-metric ppl.",
+        help="Number of held-out text or behavior probes used by --layer-gate-metric.",
+    )
+    xfamily_reconstruct.add_argument(
+        "--layer-gate-max-behavior-drop",
+        type=float,
+        default=0.0,
+        help="Maximum behavior pass-rate drop accepted by --layer-gate-metric behavior.",
+    )
+    xfamily_reconstruct.add_argument(
+        "--layer-gate-behavior-max-new-tokens",
+        type=int,
+        default=96,
+        help="Generation length for behavior probes used by --layer-gate-metric behavior.",
     )
     xfamily_reconstruct.add_argument("--dtype", default="float16")
     xfamily_reconstruct.add_argument("--candidate-dtype", default="float32")
@@ -1170,6 +1184,7 @@ def cmd_hf_gate(args: argparse.Namespace) -> dict[str, object]:
         output_file=args.output,
         max_ppl_ratio=args.max_ppl_ratio,
         max_accuracy_drop=args.max_accuracy_drop,
+        max_behavior_drop=args.max_behavior_drop,
         min_choice_accuracy=args.min_choice_accuracy,
         min_behavior_pass_rate=args.min_behavior_pass_rate,
         min_continuation_chars=args.min_continuation_chars,
@@ -1668,6 +1683,8 @@ def cmd_hf_xfamily_reconstruct(args: argparse.Namespace) -> dict[str, object]:
         layer_gate_metric=args.layer_gate_metric,
         layer_gate_max_ppl_ratio=args.layer_gate_max_ppl_ratio,
         layer_gate_max_texts=args.layer_gate_max_texts,
+        layer_gate_max_behavior_drop=args.layer_gate_max_behavior_drop,
+        layer_gate_behavior_max_new_tokens=args.layer_gate_behavior_max_new_tokens,
         torch_dtype=args.dtype,
         candidate_torch_dtype=args.candidate_dtype,
         device=args.device,

@@ -60,15 +60,34 @@ def test_gate_text_report_rejects_irrelevant_diverse_generation() -> None:
 
 
 def test_gate_text_report_rejects_behavior_suite_regression() -> None:
+    baseline = _report(100, 1.0)
+    baseline["behavior_suite"] = {"pass_rate": 0.75, "correct": 3, "total": 4, "items": []}
     candidate = _report(100, 1.0)
     candidate["behavior_suite"] = {"pass_rate": 0.25, "correct": 1, "total": 4, "items": []}
 
-    verdict = gate_text_report(_report(100, 1.0), candidate, min_behavior_pass_rate=0.75)
+    verdict = gate_text_report(baseline, candidate, min_behavior_pass_rate=0.75)
 
     assert verdict["passed"] is False
     behavior_check = next(check for check in verdict["checks"] if check["name"] == "behavior_suite")
+    behavior_drop_check = next(check for check in verdict["checks"] if check["name"] == "behavior_suite_drop")
     assert behavior_check["passed"] is False
+    assert behavior_drop_check["passed"] is False
     assert verdict["candidate"]["behavior_pass_rate"] == pytest.approx(0.25)
+
+
+def test_gate_text_report_rejects_lower_ppl_worse_behavior_by_default() -> None:
+    baseline = _report(100, 0.75)
+    baseline["behavior_suite"] = {"pass_rate": 0.5, "correct": 3, "total": 6, "items": []}
+    candidate = _report(80, 0.75)
+    candidate["behavior_suite"] = {"pass_rate": 0.0, "correct": 0, "total": 6, "items": []}
+
+    verdict = gate_text_report(baseline, candidate, max_ppl_ratio=1.25, min_choice_accuracy=0.75)
+
+    assert verdict["passed"] is False
+    ppl_check = next(check for check in verdict["checks"] if check["name"] == "perplexity_ratio")
+    behavior_drop_check = next(check for check in verdict["checks"] if check["name"] == "behavior_suite_drop")
+    assert ppl_check["passed"] is True
+    assert behavior_drop_check["passed"] is False
 
 
 def test_rank_evaluation_reports_prefers_behavior_over_ppl(tmp_path) -> None:

@@ -824,6 +824,7 @@ def gate_text_report(
     output_file: str | Path | None = None,
     max_ppl_ratio: float = 1.25,
     max_accuracy_drop: float = 0.0,
+    max_behavior_drop: float = 0.0,
     min_choice_accuracy: float = 0.75,
     min_behavior_pass_rate: float = 0.0,
     min_continuation_chars: int = 24,
@@ -835,6 +836,8 @@ def gate_text_report(
         raise ValueError("max_ppl_ratio must be positive.")
     if max_accuracy_drop < 0:
         raise ValueError("max_accuracy_drop must be non-negative.")
+    if max_behavior_drop < 0:
+        raise ValueError("max_behavior_drop must be non-negative.")
     if not 0 <= min_behavior_pass_rate <= 1:
         raise ValueError("min_behavior_pass_rate must be between 0 and 1.")
     baseline = _load_report(baseline_report)
@@ -880,7 +883,9 @@ def gate_text_report(
         },
     ]
     behavior_suite = candidate.get("behavior_suite")
-    if behavior_suite is not None or min_behavior_pass_rate > 0:
+    baseline_behavior_suite = baseline.get("behavior_suite")
+    if behavior_suite is not None or baseline_behavior_suite is not None or min_behavior_pass_rate > 0:
+        baseline_behavior_pass_rate = float((baseline_behavior_suite or {}).get("pass_rate", 0.0))
         behavior_pass_rate = float((behavior_suite or {}).get("pass_rate", 0.0))
         checks.append(
             {
@@ -888,6 +893,16 @@ def gate_text_report(
                 "passed": behavior_pass_rate >= min_behavior_pass_rate,
                 "value": behavior_pass_rate,
                 "threshold": min_behavior_pass_rate,
+            }
+        )
+        checks.append(
+            {
+                "name": "behavior_suite_drop",
+                "passed": behavior_pass_rate >= baseline_behavior_pass_rate - float(max_behavior_drop),
+                "value": baseline_behavior_pass_rate - behavior_pass_rate,
+                "threshold": float(max_behavior_drop),
+                "baseline_pass_rate": baseline_behavior_pass_rate,
+                "candidate_pass_rate": behavior_pass_rate,
             }
         )
     verdict = {

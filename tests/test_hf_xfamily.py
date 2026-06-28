@@ -29,6 +29,7 @@ from neural_forge.hf_recovery import _fold_groups_from_report
 from neural_forge.hf_recovery import _hidden_representation_loss
 from neural_forge.hf_recovery import _infer_response_char_start
 from neural_forge.hf_recovery import _join_prompt_response
+from neural_forge.hf_recovery import _layer_gate_behavior_decision
 from neural_forge.hf_recovery import _layer_gate_decision
 from neural_forge.hf_recovery import _layer_gate_snapshot_indices
 from neural_forge.hf_recovery import _linear_cka_tensor
@@ -1036,7 +1037,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "--reconstruction-alpha",
             "0.7",
             "--reconstruction-target",
-            "consumer-input",
+            "block-interface",
             "--reconstruction-objective",
             "cosine",
             "--cosine-steps",
@@ -1064,11 +1065,15 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "--fit-gate-max-cosine-drop",
             "0.03",
             "--layer-gate-metric",
-            "ppl",
+            "behavior",
             "--layer-gate-max-ppl-ratio",
             "1.01",
             "--layer-gate-max-texts",
             "2",
+            "--layer-gate-max-behavior-drop",
+            "0.17",
+            "--layer-gate-behavior-max-new-tokens",
+            "33",
             "--dtype",
             "float16",
             "--candidate-dtype",
@@ -1086,7 +1091,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_reconstruct_args.output == "out"
     assert xfamily_reconstruct_args.ridge == 0.04
     assert xfamily_reconstruct_args.reconstruction_alpha == 0.7
-    assert xfamily_reconstruct_args.reconstruction_target == "consumer-input"
+    assert xfamily_reconstruct_args.reconstruction_target == "block-interface"
     assert xfamily_reconstruct_args.reconstruction_objective == "cosine"
     assert xfamily_reconstruct_args.cosine_steps == 8
     assert xfamily_reconstruct_args.cosine_lr == 0.025
@@ -1100,9 +1105,11 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_reconstruct_args.fit_gate_min_validation_rows == 5
     assert xfamily_reconstruct_args.fit_gate_min_relative_improvement == pytest.approx(0.01)
     assert xfamily_reconstruct_args.fit_gate_max_cosine_drop == pytest.approx(0.03)
-    assert xfamily_reconstruct_args.layer_gate_metric == "ppl"
+    assert xfamily_reconstruct_args.layer_gate_metric == "behavior"
     assert xfamily_reconstruct_args.layer_gate_max_ppl_ratio == pytest.approx(1.01)
     assert xfamily_reconstruct_args.layer_gate_max_texts == 2
+    assert xfamily_reconstruct_args.layer_gate_max_behavior_drop == pytest.approx(0.17)
+    assert xfamily_reconstruct_args.layer_gate_behavior_max_new_tokens == 33
     assert xfamily_reconstruct_args.dtype == "float16"
     assert xfamily_reconstruct_args.candidate_dtype == "float32"
     assert xfamily_reconstruct_args.device == "cpu"
@@ -2984,12 +2991,46 @@ def test_layer_gate_decision_accepts_non_regression() -> None:
     assert rejected["ppl_ratio"] == pytest.approx(1.03)
 
 
+def test_layer_gate_behavior_decision_rejects_behavior_regression() -> None:
+    previous = {
+        "pass_rate": 0.5,
+        "items": [{"id": "kept", "passed": True}, {"id": "failed", "passed": False}],
+    }
+    same = {
+        "pass_rate": 0.5,
+        "items": [{"id": "kept", "passed": True}, {"id": "failed", "passed": False}],
+    }
+    lower = {
+        "pass_rate": 0.25,
+        "items": [{"id": "kept", "passed": False}, {"id": "failed", "passed": False}],
+    }
+    traded = {
+        "pass_rate": 0.5,
+        "items": [{"id": "kept", "passed": False}, {"id": "new", "passed": True}],
+    }
+
+    accepted = _layer_gate_behavior_decision(previous, same, max_behavior_drop=0.0)
+    tolerated = _layer_gate_behavior_decision(previous, lower, max_behavior_drop=0.25)
+    traded_rejected = _layer_gate_behavior_decision(previous, traded, max_behavior_drop=0.0)
+    rejected = _layer_gate_behavior_decision(previous, lower, max_behavior_drop=0.0)
+
+    assert accepted["accepted"] is True
+    assert tolerated["accepted"] is False
+    assert tolerated["lost_passed_ids"] == ["kept"]
+    assert traded_rejected["accepted"] is False
+    assert traded_rejected["lost_passed_ids"] == ["kept"]
+    assert rejected["accepted"] is False
+    assert rejected["reason"] == "behavior_regression"
+    assert rejected["behavior_drop"] == pytest.approx(0.25)
+
+
 def test_layer_gate_snapshot_indices_include_consumer_layer() -> None:
     layers = [_Obj(name=str(idx)) for idx in range(3)]
 
     assert _layer_gate_snapshot_indices(layers, 1, "mlp") == [1]
     assert _layer_gate_snapshot_indices(layers, 1, "attention-output") == [1]
     assert _layer_gate_snapshot_indices(layers, 1, "consumer-input") == [1, 2]
+    assert _layer_gate_snapshot_indices(layers, 1, "block-interface") == [1, 2]
     assert _layer_gate_snapshot_indices(layers, 1, "all") == [1, 2]
     assert _layer_gate_snapshot_indices(layers, 2, "all") == [2]
 
@@ -3806,7 +3847,7 @@ def test_hf_xfamily_reconstruct_handler_passes_flags(monkeypatch) -> None:
             "--reconstruction-alpha",
             "0.6",
             "--reconstruction-target",
-            "attention-all",
+            "block-interface",
             "--donor-layer-fold-mode",
             "fold",
             "--reconstruction-objective",
@@ -3836,11 +3877,15 @@ def test_hf_xfamily_reconstruct_handler_passes_flags(monkeypatch) -> None:
             "--fit-gate-max-cosine-drop",
             "0.03",
             "--layer-gate-metric",
-            "ppl",
+            "behavior",
             "--layer-gate-max-ppl-ratio",
             "1.01",
             "--layer-gate-max-texts",
             "2",
+            "--layer-gate-max-behavior-drop",
+            "0.17",
+            "--layer-gate-behavior-max-new-tokens",
+            "33",
             "--dtype",
             "float16",
             "--candidate-dtype",
@@ -3863,7 +3908,7 @@ def test_hf_xfamily_reconstruct_handler_passes_flags(monkeypatch) -> None:
         "output_dir": "out",
         "ridge": 0.03,
         "reconstruction_alpha": 0.6,
-        "reconstruction_target": "attention-all",
+        "reconstruction_target": "block-interface",
         "donor_layer_fold_mode": "fold",
         "reconstruction_objective": "cosine",
         "cosine_steps": 11,
@@ -3878,9 +3923,11 @@ def test_hf_xfamily_reconstruct_handler_passes_flags(monkeypatch) -> None:
         "fit_gate_min_validation_rows": 5,
         "fit_gate_min_relative_improvement": 0.01,
         "fit_gate_max_cosine_drop": 0.03,
-        "layer_gate_metric": "ppl",
+        "layer_gate_metric": "behavior",
         "layer_gate_max_ppl_ratio": 1.01,
         "layer_gate_max_texts": 2,
+        "layer_gate_max_behavior_drop": 0.17,
+        "layer_gate_behavior_max_new_tokens": 33,
         "torch_dtype": "float16",
         "candidate_torch_dtype": "float32",
         "device": "cpu",
