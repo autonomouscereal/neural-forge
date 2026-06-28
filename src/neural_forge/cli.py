@@ -151,6 +151,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="How to fold parent/donor depth spans into each child/target layer.",
     )
     hf_donor_init.add_argument(
+        "--donor-layer-group-strategy",
+        choices=["depth", "activation-energy"],
+        default="depth",
+        help=(
+            "How donor layers are grouped before depth folding. activation-energy partitions donor layers by "
+            "calibrated residual update energy instead of uniform depth bins."
+        ),
+    )
+    hf_donor_init.add_argument(
         "--attention-fold-mode",
         choices=["independent", "coupled", "activation-coupled"],
         default="independent",
@@ -894,6 +903,15 @@ def build_parser() -> argparse.ArgumentParser:
         default="fold",
         help="How multiple donor layers mapped to one target layer define the donor block target.",
     )
+    xfamily_block_recover.add_argument(
+        "--donor-layer-group-strategy",
+        choices=["depth", "activation-energy"],
+        default="depth",
+        help=(
+            "How donor layers are grouped before block recovery. activation-energy uses teacher residual "
+            "update norms on calibration batches instead of uniform depth bins."
+        ),
+    )
     xfamily_block_recover.add_argument("--layer-limit", type=int)
     xfamily_block_recover.add_argument(
         "--layer-gate-metric",
@@ -1364,6 +1382,7 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         activation_fold_assignment=args.activation_fold_assignment,
         transport_backend=args.transport_backend,
         donor_layer_fold_mode=args.donor_layer_fold_mode,
+        donor_layer_group_strategy=args.donor_layer_group_strategy,
         attention_fold_mode=args.attention_fold_mode,
         attention_head_dim_transport=args.attention_head_dim_transport,
         token_init_mode=args.token_init_mode,
@@ -1772,6 +1791,7 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         max_anchors=args.max_anchors,
         span_max_pairs=args.span_max_pairs,
         donor_layer_fold_mode=args.donor_layer_fold_mode,
+        donor_layer_group_strategy=args.donor_layer_group_strategy,
         layer_limit=args.layer_limit,
         layer_gate_metric=args.layer_gate_metric,
         layer_gate_max_ppl_ratio=args.layer_gate_max_ppl_ratio,

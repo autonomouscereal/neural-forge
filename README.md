@@ -318,6 +318,8 @@ neural-forge hf-donor-project-init runs/qwen4b-projected-smollm2 `
   --donor-model Qwen/Qwen3-4B-Base `
   --max-anchors 30000 `
   --fold-mode mean `
+  --donor-layer-fold-mode fold `
+  --donor-layer-group-strategy activation-energy `
   --activation-calibration-file runs/calibration.jsonl `
   --activation-max-calibration-texts 8 `
   --activation-max-length 96
@@ -325,9 +327,13 @@ neural-forge hf-donor-project-init runs/qwen4b-projected-smollm2 `
 
 When activation calibration is provided, donor residual dimensions and MLP
 intermediate channels are folded with activation-weighted bins instead of only
-contiguous index groups. This is still an initializer; it must be followed by
-`hf-eval`, `hf-gate`, manual generation inspection, and benchmark slices before
-claiming capability transfer.
+contiguous index groups. `--donor-layer-group-strategy activation-energy` also
+partitions donor depth by calibrated residual-update energy before layer
+folding, so a small child layer is not forced to represent a uniform parent
+depth slice when the donor's changes are concentrated elsewhere. This is an
+experimental initializer strategy, not a promoted default; it must be followed
+by `hf-eval`, `hf-gate`, manual generation inspection, and benchmark slices
+before claiming capability transfer.
 
 `hf-gate` checks PPL ratio, choice-probe accuracy, behavior probes, generation
 length, generation diversity, and prompt-specific generation relevance for the

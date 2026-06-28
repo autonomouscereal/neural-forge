@@ -916,6 +916,51 @@ Interpretation:
 - This is not a promoted model result. It is a safety/control improvement for
   future structural recovery work.
 
+### Activation-Energy Donor Depth Grouping
+
+Research trigger:
+
+- 2025-2026 work on OT/activation-aware merging points away from blind depth
+  bins and toward activation correspondences: DOTResize uses discrete optimal
+  transport for neuron merging, Transport and Merge aligns heterogeneous model
+  activations with OT, and OPRD/cross-tokenizer on-policy distillation argue for
+  recovery on child rollouts instead of static PPL-only calibration.
+
+Code changes:
+
+- `hf-donor-project-init` and `hf-xfamily-block-recover` now accept
+  `--donor-layer-group-strategy depth|activation-energy`.
+- `depth` preserves the old proportional donor depth bins.
+- `activation-energy` partitions donor layers by calibrated residual update
+  energy. It uses a dynamic-programming contiguous partition with a depth-ratio
+  group-size cap, so activation energy can move fold boundaries without creating
+  a large final catch-all group.
+- Blockwise recovery can compute the same donor residual-update scores from the
+  teacher hidden states on paired calibration batches.
+
+Remote validation:
+
+- Remote focused tests after the final DP partitioner: `147 passed`.
+- DP sanity check for the observed Qwen3-4B to SmolLM2-135M spike case:
+  `[[0, 1], [2, 3], [4, 5], [6], [7, 8], [9, 10], [11, 12], ...]`,
+  max group size `2`, full donor-depth partition preserved.
+
+Initializer smoke results:
+
+| Checkpoint | Params | Grouping | PPL mean | Choice | Behavior | Manual notes |
+|---|---:|---|---:|---:|---:|---|
+| Activation-energy uncapped smoke | 162,826,560 | early group `[0..5]`, then layer `6` spike | 485,165,195.41 | 2/4 | 0/6 | emitted empty continuations or prompt echo |
+| Activation-energy ratio-cap smoke | 162,826,560 | max group size `2`, layer `6` isolated | 485,165,195.41 | 1/4 | 0/6 | repeated `sett`, backticks, and malformed fragments |
+
+Interpretation:
+
+- This branch is not promoted. The activation-energy depth grouping is now safe
+  enough to experiment with, but the tested initializer is much worse than the
+  existing depth/transport baselines.
+- The useful next step is not more static depth grouping. The evidence points to
+  sequential block-output reconstruction or on-policy representation recovery
+  with behavior gates.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best

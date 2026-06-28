@@ -258,6 +258,7 @@ def donor_projected_init(
     activation_fold_assignment: str = "balanced",
     transport_backend: str = "sparse",
     donor_layer_fold_mode: str = "representative",
+    donor_layer_group_strategy: str = "depth",
     attention_fold_mode: str = "independent",
     attention_head_dim_transport: str = "none",
     token_init_mode: str = "shared",
@@ -309,6 +310,8 @@ def donor_projected_init(
         raise ValueError("transport_backend must be sparse or sinkhorn.")
     if donor_layer_fold_mode not in {"representative", "average", "fold"}:
         raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
+    if donor_layer_group_strategy not in {"depth", "activation-energy"}:
+        raise ValueError("donor_layer_group_strategy must be depth or activation-energy.")
     if attention_fold_mode not in {"independent", "coupled", "activation-coupled"}:
         raise ValueError("attention_fold_mode must be independent, coupled, or activation-coupled.")
     if attention_head_dim_transport not in {"none", "qk-vo"}:
@@ -375,6 +378,9 @@ def donor_projected_init(
         raise ValueError("Donor model has no decoder layers.")
     activation_profile = None
     if activation_calibration_texts:
+        needs_layer_activation_rows = (
+            hidden_basis_mode == "activation-pca" or donor_layer_group_strategy == "activation-energy"
+        )
         activation_profile = _collect_donor_axis_activation_scores(
             torch,
             donor,
@@ -383,7 +389,7 @@ def donor_projected_init(
             activation_calibration_texts,
             max_length=activation_max_length,
             device=activation_device,
-            hidden_basis_max_rows=hidden_basis_max_rows if hidden_basis_mode == "activation-pca" else 0,
+            hidden_basis_max_rows=hidden_basis_max_rows if needs_layer_activation_rows else 0,
             linear_fit_max_rows=activation_fit_max_rows if activation_fit_linears else 0,
             activation_feature_mode=activation_feature_mode,
             activation_subspace_rank=activation_subspace_rank,
@@ -394,6 +400,8 @@ def donor_projected_init(
         raise ValueError("attention head-dimension transport requires activation calibration texts.")
     if activation_fit_linears and activation_profile is None:
         raise ValueError("activation linear fitting requires activation calibration texts.")
+    if donor_layer_group_strategy == "activation-energy" and activation_profile is None:
+        raise ValueError("activation-energy donor layer grouping requires activation calibration texts.")
     hidden_basis = None
     hidden_basis_report = None
     layer_hidden_bases = None
@@ -434,6 +442,13 @@ def donor_projected_init(
     target_state = target.state_dict()
     donor_state = donor.state_dict()
     donor_layer_keys = _layer_tensor_index(donor_state)
+    donor_layer_groups, donor_layer_group_report = _donor_layer_groups_for_target_count(
+        torch,
+        target_layer_count=len(target_layers),
+        donor_layer_count=len(donor_layers),
+        strategy=donor_layer_group_strategy,
+        activation_profile=activation_profile,
+    )
     folded_donor_layer_cache: dict[int, dict[str, Any]] = {}
     axis_assignment_cache: dict[Any, dict[str, Any]] = {}
     layer_reports = []
@@ -452,11 +467,15 @@ def donor_projected_init(
         if parsed is None:
             continue
         target_layer_idx, suffix = parsed
-        donor_layer_idx = _proportional_index(target_layer_idx, len(target_layers), len(donor_layers))
+        donor_layer_group = donor_layer_groups[int(target_layer_idx)]
+        donor_layer_idx = _representative_donor_layer_for_group(
+            donor_layer_group,
+            donor_layer_group_report.get("delta_scores"),
+        )
         donor_layer_group = (
             [donor_layer_idx]
             if donor_layer_fold_mode == "representative"
-            else _donor_layer_group_for_target(target_layer_idx, len(target_layers), len(donor_layers))
+            else donor_layer_group
         )
         if donor_layer_fold_mode == "representative":
             donor_key = donor_layer_keys.get((donor_layer_idx, suffix))
@@ -469,6 +488,7 @@ def donor_projected_init(
                 target_layer_idx=target_layer_idx,
                 target_layer_count=len(target_layers),
                 donor_layer_fold_mode=donor_layer_fold_mode,
+                donor_layer_group=donor_layer_group,
                 cache=folded_donor_layer_cache,
             )
             donor_tensor = folded_state.get(suffix)
@@ -681,6 +701,8 @@ def donor_projected_init(
         "activation_fold_assignment": activation_fold_assignment,
         "transport_backend": transport_backend,
         "donor_layer_fold_mode": donor_layer_fold_mode,
+        "donor_layer_group_strategy": donor_layer_group_strategy,
+        "donor_layer_groups": donor_layer_group_report,
         "attention_fold_mode": attention_fold_mode,
         "attention_head_dim_transport": attention_head_dim_transport,
         "token_init_mode": token_init_mode,
@@ -1766,18 +1788,136 @@ def _donor_layer_group_for_target(target_layer_idx: int, target_layer_count: int
     return list(range(start, end))
 
 
+def _donor_layer_groups_for_target_count(
+    torch,
+    target_layer_count: int,
+    donor_layer_count: int,
+    strategy: str = "depth",
+    activation_profile: dict[str, Any] | None = None,
+) -> tuple[list[list[int]], dict[str, Any]]:
+    if target_layer_count <= 0 or donor_layer_count <= 0:
+        raise ValueError("Layer counts must be positive.")
+    if strategy not in {"depth", "activation-energy"}:
+        raise ValueError("donor layer group strategy must be depth or activation-energy.")
+    if strategy == "depth":
+        groups = [
+            _donor_layer_group_for_target(idx, int(target_layer_count), int(donor_layer_count))
+            for idx in range(int(target_layer_count))
+        ]
+        return groups, {"strategy": "depth", "groups": groups, "delta_scores": None}
+    if activation_profile is None:
+        raise ValueError("activation-energy donor layer grouping requires an activation profile.")
+    scores = _donor_layer_delta_scores(torch, activation_profile, int(donor_layer_count))
+    groups = _donor_layer_groups_by_energy(scores, int(target_layer_count))
+    return groups, {
+        "strategy": "activation-energy",
+        "groups": groups,
+        "delta_scores": [float(item) for item in scores],
+        "total_delta_score": float(sum(scores)),
+    }
+
+
+def _donor_layer_delta_scores(torch, activation_profile: dict[str, Any], donor_layer_count: int) -> list[float]:
+    input_rows_by_layer = activation_profile.get("hidden_basis_input_rows") or {}
+    output_rows_by_layer = activation_profile.get("hidden_basis_output_rows") or {}
+    scores: list[float] = []
+    for layer_idx in range(int(donor_layer_count)):
+        input_rows = input_rows_by_layer.get(int(layer_idx))
+        output_rows = output_rows_by_layer.get(int(layer_idx))
+        if input_rows is None or output_rows is None:
+            scores.append(1.0)
+            continue
+        rows = min(int(input_rows.shape[0]), int(output_rows.shape[0]))
+        dims = min(int(input_rows.shape[1]), int(output_rows.shape[1]))
+        if rows <= 0 or dims <= 0:
+            scores.append(1.0)
+            continue
+        delta = output_rows[:rows, :dims].to(torch.float32) - input_rows[:rows, :dims].to(torch.float32)
+        score = float(delta.pow(2).mean().sqrt().detach().cpu())
+        scores.append(max(score, 1e-12))
+    if not any(score > 1e-8 for score in scores):
+        return [1.0 for _ in scores]
+    return scores
+
+
+def _donor_layer_groups_by_energy(delta_scores: Sequence[float], target_layer_count: int) -> list[list[int]]:
+    scores = [max(float(score), 1e-12) for score in delta_scores]
+    donor_layer_count = len(scores)
+    if target_layer_count <= 0 or donor_layer_count <= 0:
+        raise ValueError("Layer counts must be positive.")
+    if target_layer_count >= donor_layer_count:
+        return [
+            _donor_layer_group_for_target(idx, int(target_layer_count), int(donor_layer_count))
+            for idx in range(int(target_layer_count))
+        ]
+    total = sum(scores)
+    target_energy = total / float(target_layer_count)
+    ratio = donor_layer_count / float(target_layer_count)
+    max_group_size = max(1, int(math.ceil(ratio)) + (0 if ratio < 2.0 else 1))
+    prefix = [0.0]
+    for score in scores:
+        prefix.append(prefix[-1] + float(score))
+    inf = float("inf")
+    dp = [[inf for _ in range(donor_layer_count + 1)] for _ in range(int(target_layer_count) + 1)]
+    back = [[0 for _ in range(donor_layer_count + 1)] for _ in range(int(target_layer_count) + 1)]
+    dp[0][0] = 0.0
+    for group_idx in range(1, int(target_layer_count) + 1):
+        min_layers = group_idx
+        max_layers = min(donor_layer_count, group_idx * max_group_size)
+        for end in range(min_layers, max_layers + 1):
+            best_cost = inf
+            best_size = 1
+            for size in range(1, min(max_group_size, end) + 1):
+                start = end - size
+                if dp[group_idx - 1][start] == inf:
+                    continue
+                group_energy = prefix[end] - prefix[start]
+                cost = dp[group_idx - 1][start] + abs(group_energy - target_energy)
+                if cost < best_cost:
+                    best_cost = cost
+                    best_size = size
+            dp[group_idx][end] = best_cost
+            back[group_idx][end] = best_size
+    if dp[int(target_layer_count)][donor_layer_count] == inf:
+        return [
+            _donor_layer_group_for_target(idx, int(target_layer_count), int(donor_layer_count))
+            for idx in range(int(target_layer_count))
+        ]
+    groups: list[list[int]] = []
+    end = donor_layer_count
+    for group_idx in range(int(target_layer_count), 0, -1):
+        size = int(back[group_idx][end])
+        start = end - size
+        groups.append(list(range(start, end)))
+        end = start
+    return list(reversed(groups))
+
+
+def _representative_donor_layer_for_group(group: Sequence[int], delta_scores: Sequence[float] | None = None) -> int:
+    if not group:
+        raise ValueError("Donor layer group cannot be empty.")
+    if delta_scores:
+        return max((int(item) for item in group), key=lambda idx: float(delta_scores[idx]))
+    return int(group[len(group) // 2])
+
+
 def _folded_donor_layer_state(
     torch,
     donor_layers: Sequence[Any],
     target_layer_idx: int,
     target_layer_count: int,
     donor_layer_fold_mode: str,
+    donor_layer_group: Sequence[int] | None,
     cache: dict[int, dict[str, Any]],
 ) -> dict[str, Any]:
     if donor_layer_fold_mode not in {"average", "fold"}:
         raise ValueError("donor_layer_fold_mode must be average or fold for folded donor states.")
     if target_layer_idx not in cache:
-        group = _donor_layer_group_for_target(target_layer_idx, target_layer_count, len(donor_layers))
+        group = (
+            [int(item) for item in donor_layer_group]
+            if donor_layer_group is not None
+            else _donor_layer_group_for_target(target_layer_idx, target_layer_count, len(donor_layers))
+        )
         method = "average" if donor_layer_fold_mode == "average" else "fold"
         cache[target_layer_idx] = _merge_layer_state_dicts(
             torch,

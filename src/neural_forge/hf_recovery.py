@@ -1965,6 +1965,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     max_anchors: int = 2048,
     span_max_pairs: int = 512,
     donor_layer_fold_mode: str = "fold",
+    donor_layer_group_strategy: str = "depth",
     layer_limit: int | None = None,
     layer_gate_metric: str = "none",
     layer_gate_max_ppl_ratio: float = 1.10,
@@ -2020,6 +2021,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("span_max_pairs must be positive.")
     if donor_layer_fold_mode not in {"representative", "average", "fold"}:
         raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
+    if donor_layer_group_strategy not in {"depth", "activation-energy"}:
+        raise ValueError("donor_layer_group_strategy must be depth or activation-energy.")
     if layer_limit is not None and layer_limit <= 0:
         raise ValueError("layer_limit must be positive when provided.")
     if layer_gate_metric not in {"none", "ppl", "behavior"}:
@@ -2060,6 +2063,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     from neural_forge.hf_xfamily import _canonical_token
     from neural_forge.hf_xfamily import _canonical_token_map
     from neural_forge.hf_xfamily import _donor_layer_group_for_target
+    from neural_forge.hf_xfamily import _donor_layer_groups_by_energy
+    from neural_forge.hf_xfamily import _representative_donor_layer_for_group
 
     torch, transformers = _torch_and_transformers()
     dtype = _dtype_from_name(torch, torch_dtype)
@@ -2145,6 +2150,30 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         include_offsets=True,
     )
 
+    full_source_layer_groups = [
+        _donor_layer_group_for_target(idx, len(candidate_layers), len(source_layers))
+        for idx in range(len(candidate_layers))
+    ]
+    donor_layer_group_report: dict[str, Any] = {
+        "strategy": "depth",
+        "groups": [[int(item) for item in group] for group in full_source_layer_groups],
+        "delta_scores": None,
+    }
+    if donor_layer_group_strategy == "activation-energy":
+        source_delta_scores = _source_layer_delta_scores_from_batches(
+            torch,
+            source,
+            paired_batches,
+            source_layer_count=len(source_layers),
+        )
+        full_source_layer_groups = _donor_layer_groups_by_energy(source_delta_scores, len(candidate_layers))
+        donor_layer_group_report = {
+            "strategy": "activation-energy",
+            "groups": [[int(item) for item in group] for group in full_source_layer_groups],
+            "delta_scores": [float(item) for item in source_delta_scores],
+            "total_delta_score": float(sum(source_delta_scores)),
+        }
+
     layer_count = len(candidate_layers) if layer_limit is None else min(int(layer_limit), len(candidate_layers))
     interval = int(report_interval or max(1, steps_per_layer // 4)) if steps_per_layer > 0 else 1
     layer_reports = []
@@ -2179,11 +2208,12 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             layer_gate["initial_behavior"] = previous_gate_behavior
 
     for candidate_idx in range(layer_count):
-        source_idx = _proportional_layer_index(candidate_idx, len(candidate_layers), len(source_layers))
+        source_group = [int(item) for item in full_source_layer_groups[int(candidate_idx)]]
+        source_idx = _representative_donor_layer_for_group(source_group, donor_layer_group_report.get("delta_scores"))
         source_group = (
             [source_idx]
             if donor_layer_fold_mode == "representative"
-            else _donor_layer_group_for_target(candidate_idx, len(candidate_layers), len(source_layers))
+            else source_group
         )
         candidate_layer = candidate_layers[candidate_idx]
         trainable_params = _set_only_module_trainable(candidate, candidate_layer)
@@ -2477,6 +2507,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "max_anchors": int(max_anchors),
         "span_max_pairs": int(span_max_pairs),
         "donor_layer_fold_mode": donor_layer_fold_mode,
+        "donor_layer_group_strategy": donor_layer_group_strategy,
+        "donor_layer_groups": donor_layer_group_report,
         "layer_limit": layer_limit,
         "layer_gate": layer_gate,
         "on_policy_anchor_kd_weight": float(on_policy_anchor_kd_weight),
@@ -4413,6 +4445,51 @@ def _proportional_layer_index(index: int, target_count: int, source_count: int) 
     if target_count <= 0 or source_count <= 0:
         raise ValueError("layer counts must be positive.")
     return max(0, min(int(math.floor((int(index) + 0.5) * source_count / target_count)), source_count - 1))
+
+
+def _source_layer_delta_scores_from_batches(
+    torch,
+    source_model,
+    paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]],
+    source_layer_count: int,
+) -> list[float]:
+    if source_layer_count <= 0:
+        raise ValueError("source_layer_count must be positive.")
+    if not paired_batches:
+        raise ValueError("Need at least one paired batch for source layer delta scoring.")
+    sums = [0.0 for _ in range(int(source_layer_count))]
+    counts = [0 for _ in range(int(source_layer_count))]
+    was_training = source_model.training
+    source_model.eval()
+    with torch.no_grad():
+        for source_batch, _candidate_batch in paired_batches:
+            outputs = source_model(
+                **_model_forward_inputs(source_batch),
+                use_cache=False,
+                output_hidden_states=True,
+            )
+            hidden_states = list(outputs.hidden_states or [])
+            usable = min(int(source_layer_count), max(0, len(hidden_states) - 1))
+            for layer_idx in range(usable):
+                before = hidden_states[layer_idx].detach().to(torch.float32)
+                after = hidden_states[layer_idx + 1].detach().to(torch.float32)
+                batch = min(int(before.shape[0]), int(after.shape[0]))
+                seq = min(int(before.shape[1]), int(after.shape[1])) if before.dim() > 1 and after.dim() > 1 else 0
+                dims = min(int(before.shape[-1]), int(after.shape[-1]))
+                if batch <= 0 or seq <= 0 or dims <= 0:
+                    continue
+                delta = after[:batch, :seq, :dims] - before[:batch, :seq, :dims]
+                sums[layer_idx] += float(delta.pow(2).mean().sqrt().detach().cpu())
+                counts[layer_idx] += 1
+    if was_training:
+        source_model.train()
+    scores = [
+        (sums[idx] / counts[idx]) if counts[idx] > 0 else 1.0
+        for idx in range(int(source_layer_count))
+    ]
+    if not any(score > 1e-8 for score in scores):
+        return [1.0 for _ in scores]
+    return [max(float(score), 1e-12) for score in scores]
 
 
 def _layer_gate_decision(previous_ppl: float, candidate_ppl: float, max_ppl_ratio: float) -> dict[str, Any]:

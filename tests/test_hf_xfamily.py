@@ -71,6 +71,9 @@ from neural_forge.hf_xfamily import _build_activation_hidden_basis
 from neural_forge.hf_xfamily import _build_shared_token_hidden_basis
 from neural_forge.hf_xfamily import _channel_assignment_features
 from neural_forge.hf_xfamily import _donor_layer_group_for_target
+from neural_forge.hf_xfamily import _donor_layer_groups_by_energy
+from neural_forge.hf_xfamily import _donor_layer_groups_for_target_count
+from neural_forge.hf_xfamily import _representative_donor_layer_for_group
 from neural_forge.hf_xfamily import _effective_layer_alpha
 from neural_forge.hf_xfamily import _fit_linear_weight_from_activation_rows
 from neural_forge.hf_xfamily import _hidden_basis_axes_for_layer_tensor
@@ -392,6 +395,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "sinkhorn",
             "--donor-layer-fold-mode",
             "fold",
+            "--donor-layer-group-strategy",
+            "activation-energy",
             "--attention-fold-mode",
             "coupled",
             "--attention-head-dim-transport",
@@ -778,6 +783,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.activation_fold_assignment == "similarity"
     assert donor_init_args.transport_backend == "sinkhorn"
     assert donor_init_args.donor_layer_fold_mode == "fold"
+    assert donor_init_args.donor_layer_group_strategy == "activation-energy"
     assert donor_init_args.attention_fold_mode == "coupled"
     assert donor_init_args.attention_head_dim_transport == "qk-vo"
     assert donor_init_args.token_init_mode == "donor-omp"
@@ -1191,6 +1197,53 @@ def test_donor_layer_groups_partition_parent_depth() -> None:
 
     assert groups == [[0, 1], [2, 3, 4], [5, 6, 7]]
     assert [item for group in groups for item in group] == list(range(8))
+
+
+def test_donor_layer_groups_can_partition_by_activation_energy() -> None:
+    groups = _donor_layer_groups_by_energy([1.0, 1.0, 8.0, 1.0, 1.0, 1.0], target_layer_count=3)
+
+    assert groups == [[0, 1], [2], [3, 4, 5]]
+    assert [item for group in groups for item in group] == list(range(6))
+    assert _representative_donor_layer_for_group([0, 1, 2], [0.1, 0.9, 0.2]) == 1
+
+
+def test_donor_layer_energy_groups_are_depth_ratio_capped() -> None:
+    scores = [0.2] * 36
+    scores[6] = 22.0
+
+    groups = _donor_layer_groups_by_energy(scores, target_layer_count=30)
+
+    assert [item for group in groups for item in group] == list(range(36))
+    assert max(len(group) for group in groups) <= 2
+    assert [6] in groups
+
+
+def test_donor_layer_groups_report_activation_energy_scores() -> None:
+    torch = pytest.importorskip("torch")
+    activation_profile = {
+        "hidden_basis_input_rows": {
+            0: torch.zeros(2, 3),
+            1: torch.zeros(2, 3),
+            2: torch.zeros(2, 3),
+        },
+        "hidden_basis_output_rows": {
+            0: torch.ones(2, 3),
+            1: torch.ones(2, 3) * 4,
+            2: torch.ones(2, 3),
+        },
+    }
+
+    groups, report = _donor_layer_groups_for_target_count(
+        torch,
+        target_layer_count=2,
+        donor_layer_count=3,
+        strategy="activation-energy",
+        activation_profile=activation_profile,
+    )
+
+    assert [item for group in groups for item in group] == [0, 1, 2]
+    assert report["strategy"] == "activation-energy"
+    assert report["delta_scores"][1] > report["delta_scores"][0]
 
 
 def test_linear_cka_detects_similar_activation_spaces() -> None:
@@ -3448,6 +3501,8 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "similarity",
             "--donor-layer-fold-mode",
             "average",
+            "--donor-layer-group-strategy",
+            "activation-energy",
             "--attention-fold-mode",
             "activation-coupled",
             "--attention-head-dim-transport",
@@ -3506,6 +3561,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "activation_fold_assignment": "similarity",
         "transport_backend": "sparse",
         "donor_layer_fold_mode": "average",
+        "donor_layer_group_strategy": "activation-energy",
         "attention_fold_mode": "activation-coupled",
         "attention_head_dim_transport": "qk-vo",
         "token_init_mode": "donor-omp",
@@ -4154,6 +4210,8 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "77",
             "--donor-layer-fold-mode",
             "average",
+            "--donor-layer-group-strategy",
+            "activation-energy",
             "--layer-limit",
             "3",
             "--layer-gate-metric",
@@ -4223,6 +4281,7 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "max_anchors": 222,
         "span_max_pairs": 77,
         "donor_layer_fold_mode": "average",
+        "donor_layer_group_strategy": "activation-energy",
         "layer_limit": 3,
         "layer_gate_metric": "behavior",
         "layer_gate_max_ppl_ratio": 1.05,
