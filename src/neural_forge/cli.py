@@ -320,6 +320,16 @@ def build_parser() -> argparse.ArgumentParser:
     hf_gate.add_argument("--min-unique-token-ratio", type=float, default=0.20)
     hf_gate.set_defaults(func=cmd_hf_gate)
 
+    hf_rank_evals = sub.add_parser(
+        "hf-rank-evals",
+        help="Rank HF eval reports by behavior, choice, generation health, size, then PPL.",
+    )
+    hf_rank_evals.add_argument("output")
+    hf_rank_evals.add_argument("reports", nargs="+")
+    hf_rank_evals.add_argument("--min-continuation-chars", type=int, default=24)
+    hf_rank_evals.add_argument("--min-unique-token-ratio", type=float, default=0.20)
+    hf_rank_evals.set_defaults(func=cmd_hf_rank_evals)
+
     hf_sweep = sub.add_parser("hf-sweep-ffn", help="Sweep gated FFN resize ratios, evaluate each candidate, and gate results.")
     hf_sweep.add_argument("source_model")
     hf_sweep.add_argument("output_dir")
@@ -1158,6 +1168,17 @@ def cmd_hf_gate(args: argparse.Namespace) -> dict[str, object]:
         max_accuracy_drop=args.max_accuracy_drop,
         min_choice_accuracy=args.min_choice_accuracy,
         min_behavior_pass_rate=args.min_behavior_pass_rate,
+        min_continuation_chars=args.min_continuation_chars,
+        min_unique_token_ratio=args.min_unique_token_ratio,
+    )
+
+
+def cmd_hf_rank_evals(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_tools import rank_evaluation_reports
+
+    return rank_evaluation_reports(
+        reports=args.reports,
+        output_file=args.output,
         min_continuation_chars=args.min_continuation_chars,
         min_unique_token_ratio=args.min_unique_token_ratio,
     )

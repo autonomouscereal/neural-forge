@@ -4,6 +4,7 @@ import pytest
 
 from neural_forge.hf_tools import GENERATION_PROMPTS
 from neural_forge.hf_tools import gate_text_report
+from neural_forge.hf_tools import rank_evaluation_reports
 from neural_forge.hf_tools import _assert_tokenizers_compatible
 from neural_forge.hf_tools import _ensure_unique_ratio_tags
 from neural_forge.hf_tools import _finite_float
@@ -68,6 +69,23 @@ def test_gate_text_report_rejects_behavior_suite_regression() -> None:
     behavior_check = next(check for check in verdict["checks"] if check["name"] == "behavior_suite")
     assert behavior_check["passed"] is False
     assert verdict["candidate"]["behavior_pass_rate"] == pytest.approx(0.25)
+
+
+def test_rank_evaluation_reports_prefers_behavior_over_ppl(tmp_path) -> None:
+    low_ppl_collapsed = _report(90, 1.0)
+    low_ppl_collapsed["model"] = "low-ppl-collapsed"
+    low_ppl_collapsed["behavior_suite"] = {"pass_rate": 0.0, "correct": 0, "total": 6, "items": []}
+    better_behavior = _report(150, 0.75)
+    better_behavior["model"] = "better-behavior"
+    better_behavior["behavior_suite"] = {"pass_rate": 0.5, "correct": 3, "total": 6, "items": []}
+    output = tmp_path / "rank.json"
+
+    report = rank_evaluation_reports([low_ppl_collapsed, better_behavior], output_file=output)
+
+    assert output.exists()
+    assert report["best"]["model"] == "better-behavior"
+    assert report["candidates"][0]["behavior_pass_rate"] == pytest.approx(0.5)
+    assert report["candidates"][1]["perplexity_mean"] == pytest.approx(90)
 
 
 def test_behavior_probe_scores_first_number_exact_answer() -> None:

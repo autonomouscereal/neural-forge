@@ -649,6 +649,48 @@ Interpretation:
 - No result in this sweep meets the user's 25x useful-behavior bar. The best
   strict checkpoint remains the prior FFN1496 + MLP reconstruction run.
 
+### Staged Decode-Recovery and Behavior-First Ranking
+
+Code change:
+
+- Added `hf-rank-evals`, which ranks existing `hf-eval` reports by
+  behavior-suite pass rate first, then choice accuracy, generation health,
+  smaller parameter count, and finally PPL. This is meant to prevent PPL-only
+  improvements from being promoted during high-ratio compression sweeps.
+
+Strict FFN1496 staged recovery from the prior best
+`alpha05_ffn1496_folded_xreconstruct_mlp_a05`:
+
+| Checkpoint | Params | Ratio | PPL mean | Choice | Behavior | Manual notes |
+|---|---:|---:|---:|---:|---:|---|
+| Prior best | 160,752,960 | 25.02x | 1,384.22 | 3/4 | 1/6 | topical but malformed; still current strict quality baseline |
+| Stage 1 head-norm donor-text warmup | 160,752,960 | 25.02x | 1,370.65 | 2/4 | 0/6 | best PPL, but behavior collapses; rejected |
+| Stage 2 low-LR all-layer donor-text recovery | 160,752,960 | 25.02x | 1,435.54 | 3/4 | 1/6 | does not beat prior best; code still malformed |
+| Stage 3 last-4 ALM/anchor polish | 160,752,960 | 25.02x | 1,427.29 | 2/4 | 1/6 | no useful manual improvement |
+
+Strict rank file:
+`runs/qwen4b_to_smollm135m_strict25_ffnfold_20260627_191250/rank_strict_staged_decode.json`.
+
+Behavior-first ranking placed `alpha05_ffn1496_teacher_lm_only_s40` first
+because it has `2/6` behavior, but manual inspection still rejects it: it has
+wrong code arguments and heavy repetition. This is a useful reminder that the
+ranker is a promotion filter, not a replacement for manual inspection.
+
+29.9x dual-space+ALM decode polish:
+
+| Checkpoint | Params | Ratio | PPL mean | Choice | Behavior | Manual notes |
+|---|---:|---:|---:|---:|---:|---|
+| `tied29x_dualalm240_last4` baseline | 134,515,008 | 29.90x | 2,721.31 | 3/4 | 4/6 | best strict behavior branch, but code/math malformed |
+| Head-norm donor-text polish | 134,515,008 | 29.90x | 2,713.93 | 2/4 | 4/6 | slightly lower PPL, worse choice; manual still malformed |
+| Last-4 donor-text/ALM polish | 134,515,008 | 29.90x | 2,729.68 | 2/4 | 4/6 | no improvement over baseline |
+
+29.9x rank file:
+`runs/qwen4b_to_smollm135m_dualspace_alm_20260627/rank_dualalm_decode_polish.json`.
+
+The ranker correctly kept the original dual+ALM checkpoint first because the
+polish variants preserved regex behavior but lost choice accuracy. Manual output
+also did not improve.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best

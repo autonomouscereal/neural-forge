@@ -915,6 +915,103 @@ def gate_text_report(
     return verdict
 
 
+def rank_evaluation_reports(
+    reports: Sequence[str | Path | dict[str, Any]],
+    output_file: str | Path | None = None,
+    min_continuation_chars: int = 24,
+    min_unique_token_ratio: float = 0.20,
+) -> dict[str, Any]:
+    """Rank eval reports with behavior and coherent generations ahead of PPL.
+
+    This is intentionally behavior-first. In high-ratio model surgery sweeps,
+    PPL often improves while greedy decoding collapses; ranking by PPL alone
+    promotes the wrong checkpoint.
+    """
+
+    if not reports:
+        raise ValueError("Need at least one evaluation report to rank.")
+    if min_continuation_chars < 0:
+        raise ValueError("min_continuation_chars must be non-negative.")
+    if not 0 <= float(min_unique_token_ratio) <= 1:
+        raise ValueError("min_unique_token_ratio must be in [0, 1].")
+
+    entries = []
+    for index, item in enumerate(reports):
+        report = _load_report(item)
+        ppl = float(report.get("perplexity", {}).get("mean", 1e300))
+        if not math.isfinite(ppl):
+            ppl = 1e300
+        choice = report.get("choice_accuracy", {})
+        choice_accuracy = float(choice.get("accuracy", 0.0))
+        behavior = report.get("behavior_suite") or {}
+        behavior_pass_rate = float(behavior.get("pass_rate", 0.0))
+        generation_checks = [
+            _generation_health(gen, min_continuation_chars, min_unique_token_ratio)
+            for gen in report.get("generations", [])
+        ]
+        generation_health_rate = (
+            sum(1 for check in generation_checks if check["passed"]) / len(generation_checks)
+            if generation_checks
+            else 0.0
+        )
+        param_count = int(report.get("param_count") or 0)
+        source = str(item) if not isinstance(item, dict) else f"<dict:{index}>"
+        entry = {
+            "rank": 0,
+            "source": source,
+            "model": report.get("model"),
+            "param_count": param_count,
+            "perplexity_mean": ppl,
+            "choice_accuracy": choice_accuracy,
+            "choice_correct": int(choice.get("correct", 0)),
+            "choice_total": int(choice.get("total", 0)),
+            "behavior_pass_rate": behavior_pass_rate,
+            "behavior_correct": int(behavior.get("correct", 0)),
+            "behavior_total": int(behavior.get("total", 0)),
+            "generation_health_rate": generation_health_rate,
+            "generation_checks": generation_checks,
+            "sort_key": [
+                behavior_pass_rate,
+                choice_accuracy,
+                generation_health_rate,
+                -param_count,
+                -ppl,
+            ],
+        }
+        entries.append(entry)
+
+    entries.sort(
+        key=lambda entry: (
+            -entry["behavior_pass_rate"],
+            -entry["choice_accuracy"],
+            -entry["generation_health_rate"],
+            entry["param_count"],
+            entry["perplexity_mean"],
+            entry["source"],
+        )
+    )
+    for rank, entry in enumerate(entries, start=1):
+        entry["rank"] = rank
+
+    report = {
+        "operation": "rank_evaluation_reports",
+        "ranking_policy": [
+            "behavior_pass_rate_desc",
+            "choice_accuracy_desc",
+            "generation_health_rate_desc",
+            "param_count_asc",
+            "perplexity_mean_asc",
+        ],
+        "min_continuation_chars": int(min_continuation_chars),
+        "min_unique_token_ratio": float(min_unique_token_ratio),
+        "best": entries[0],
+        "candidates": entries,
+    }
+    if output_file is not None:
+        _write_json(output_file, report)
+    return report
+
+
 def sweep_gated_ffn_resize(
     source_model: str,
     output_dir: str | Path,

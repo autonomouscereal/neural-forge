@@ -3677,6 +3677,39 @@ def test_hf_xfamily_calibrate_head_handler_passes_flags(monkeypatch) -> None:
     }
 
 
+def test_hf_rank_evals_handler_passes_flags(monkeypatch) -> None:
+    import neural_forge.hf_tools as hf_tools
+
+    captured = {}
+
+    def fake_rank(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(hf_tools, "rank_evaluation_reports", fake_rank)
+    args = build_parser().parse_args(
+        [
+            "hf-rank-evals",
+            "rank.json",
+            "first.json",
+            "second.json",
+            "--min-continuation-chars",
+            "12",
+            "--min-unique-token-ratio",
+            "0.35",
+        ]
+    )
+    result = args.func(args)
+
+    assert result == {"ok": True}
+    assert captured == {
+        "reports": ["first.json", "second.json"],
+        "output_file": "rank.json",
+        "min_continuation_chars": 12,
+        "min_unique_token_ratio": 0.35,
+    }
+
+
 def test_hf_reconstruct_folded_handler_passes_flags(monkeypatch) -> None:
     import neural_forge.cli as cli
     import neural_forge.hf_recovery as hf_recovery
