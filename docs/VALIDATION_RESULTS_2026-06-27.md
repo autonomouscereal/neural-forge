@@ -787,6 +787,42 @@ Interpretation:
   slightly improved PPL, but manual outputs did not improve and the gate still
   failed.
 
+### Executable Code Behavior Gate Follow-Up
+
+Code change:
+
+- Replaced the regex-only `python_add_function` behavior probe with a
+  constrained AST scorer.
+- The scorer requires a named `add` function or `add = lambda ...`, validates a
+  small expression whitelist, and evaluates fixed add-function tests without
+  executing arbitrary generated code.
+- This closes a false-positive path where malformed text containing `def`,
+  `return`, and `+` could pass the behavior suite.
+
+Strict 29.9x re-eval with the executable code scorer:
+
+| Checkpoint | Params | Ratio | PPL mean | Choice | Behavior | Code probe | Gate |
+|---|---:|---:|---:|---:|---:|---|---|
+| tied 29.9x baseline, strict-code eval | 134,515,008 | 29.90x | 3,844.96 | 3/4 | 3/6 | fail: syntax error | fail |
+| RSD behavior-best 60s, strict-code eval | 134,515,008 | 29.90x | 3,825.12 | 3/4 | 3/6 | fail: syntax error | fail |
+
+Artifacts:
+
+- `runs/qwen4b_to_smollm135m_transport_random_20260627/eval_best_token_auto_800_tiedhead_strictcode.json`
+- `runs/qwen4b_to_smollm135m_transport_random_20260627/eval_qwen4b_tied29_rsd_behaviorbest_60s_strictcode.json`
+- `runs/qwen4b_to_smollm135m_transport_random_20260627/gate_qwen4b_tied29_rsd_behaviorbest_60s_strictcode.json`
+- `runs/qwen4b_to_smollm135m_transport_random_20260627/rank_qwen4b_tied29_rsd_behaviorbest_60s_strictcode.json`
+
+Interpretation:
+
+- The stricter code probe agrees with manual inspection: both checkpoints emit
+  malformed Python-like text, not usable code.
+- The headline behavior count stayed at `3/6` for these two checkpoints because
+  their previous passing items were tokenizer mismatch, rain common-sense, and
+  neuron merging; the code item was already failing for them.
+- This change matters for future branches such as dual+ALM where regex-based
+  code checks could overstate behavior.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best

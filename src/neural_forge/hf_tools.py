@@ -6,6 +6,7 @@ usable without installing torch/transformers.
 
 from __future__ import annotations
 
+import ast
 import json
 import math
 import re
@@ -124,11 +125,12 @@ BEHAVIOR_PROBES = [
     {
         "id": "python_add_function",
         "prompt": "Write a tiny Python function named add that returns the sum of two inputs.\n```python\n",
-        "kind": "pattern_groups",
-        "pattern_groups": [
-            [r"\bdef\s+add\b", r"\blambda\b"],
-            [r"\breturn\b"],
-            [r"\+", r"\bsum\s*\("],
+        "kind": "python_function",
+        "function_name": "add",
+        "tests": [
+            {"args": [2, 3], "expected": 5},
+            {"args": [-1, 5], "expected": 4},
+            {"args": [0, 0], "expected": 0},
         ],
     },
     {
@@ -2254,6 +2256,13 @@ def _score_behavior_probe(probe: dict[str, Any], generation: dict[str, Any]) -> 
     elif kind == "pattern_groups":
         details = _score_pattern_groups(continuation, probe.get("pattern_groups", []))
         passed = bool(details["passed"])
+    elif kind == "python_function":
+        details = _score_python_function(
+            continuation,
+            function_name=str(probe.get("function_name", "")),
+            tests=probe.get("tests", []),
+        )
+        passed = bool(details["passed"])
     else:
         raise ValueError(f"Unknown behavior probe kind: {kind}")
     return {
@@ -2266,6 +2275,166 @@ def _score_behavior_probe(probe: dict[str, Any], generation: dict[str, Any]) -> 
         "diagnostics": generation.get("diagnostics", _generation_diagnostics(continuation)),
         "details": details,
     }
+
+
+def _score_python_function(text: str, function_name: str, tests: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    source = _extract_python_source(text, function_name)
+    details: dict[str, Any] = {
+        "function_name": function_name,
+        "source": source,
+        "passed": False,
+        "parse_error": None,
+        "function_found": False,
+        "test_results": [],
+    }
+    if not function_name:
+        details["reason"] = "missing_function_name"
+        return details
+    if not tests:
+        details["reason"] = "missing_tests"
+        return details
+    try:
+        tree = _parse_python_source_prefix(source)
+    except SyntaxError as exc:
+        details["parse_error"] = str(exc)
+        details["reason"] = "syntax_error"
+        return details
+    target = _find_python_function_expr(tree, function_name)
+    if target is None:
+        details["reason"] = "function_not_found"
+        return details
+    arg_names, expr = target
+    details["function_found"] = True
+    if len(arg_names) != 2:
+        details["reason"] = "wrong_arity"
+        details["arity"] = len(arg_names)
+        return details
+    passed = True
+    for item in tests:
+        args = list(item.get("args", []))
+        expected = item.get("expected")
+        result_item: dict[str, Any] = {"args": args, "expected": expected, "passed": False}
+        if len(args) != len(arg_names):
+            result_item["reason"] = "wrong_test_arity"
+            passed = False
+            details["test_results"].append(result_item)
+            continue
+        env = {name: value for name, value in zip(arg_names, args)}
+        try:
+            observed = _eval_safe_python_expr(expr, env)
+        except ValueError as exc:
+            result_item["reason"] = str(exc)
+            passed = False
+            details["test_results"].append(result_item)
+            continue
+        result_item["observed"] = observed
+        result_item["passed"] = observed == expected
+        if observed != expected:
+            passed = False
+        details["test_results"].append(result_item)
+    details["passed"] = bool(passed)
+    if not passed:
+        details["reason"] = "test_failed"
+    return details
+
+
+def _extract_python_source(text: str, function_name: str) -> str:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:python)?\s*", "", cleaned, count=1, flags=re.IGNORECASE)
+        cleaned = cleaned.split("```", 1)[0].strip()
+    else:
+        cleaned = re.sub(r"\n?```\s*$", "", cleaned).strip()
+    if cleaned.lower().startswith("python\n"):
+        cleaned = cleaned.split("\n", 1)[1].strip()
+    patterns = [
+        rf"(?m)^\s*def\s+{re.escape(function_name)}\b",
+        rf"(?m)^\s*{re.escape(function_name)}\s*=\s*lambda\b",
+    ]
+    starts = []
+    for pattern in patterns:
+        match = re.search(pattern, cleaned)
+        if match:
+            starts.append(match.start())
+    if starts:
+        cleaned = cleaned[min(starts):].strip()
+    return cleaned
+
+
+def _parse_python_source_prefix(source: str):
+    try:
+        return ast.parse(source)
+    except SyntaxError as original:
+        lines = source.splitlines()
+        for end in range(len(lines) - 1, 0, -1):
+            candidate = "\n".join(lines[:end]).strip()
+            if not candidate:
+                continue
+            try:
+                return ast.parse(candidate)
+            except SyntaxError:
+                continue
+        raise original
+
+
+def _find_python_function_expr(tree, function_name: str) -> tuple[list[str], ast.AST] | None:
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == function_name:
+            arg_names = [arg.arg for arg in node.args.args]
+            body = list(node.body)
+            if body and isinstance(body[0], ast.Expr) and isinstance(getattr(body[0], "value", None), ast.Constant):
+                if isinstance(body[0].value.value, str):
+                    body = body[1:]
+            for statement in body:
+                if isinstance(statement, ast.Return) and statement.value is not None:
+                    return arg_names, statement.value
+        if isinstance(node, ast.Assign):
+            if len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and node.targets[0].id == function_name:
+                if isinstance(node.value, ast.Lambda):
+                    arg_names = [arg.arg for arg in node.value.args.args]
+                    return arg_names, node.value.body
+    return None
+
+
+def _eval_safe_python_expr(node, env: dict[str, Any]):
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return node.value
+    if isinstance(node, ast.Name):
+        if node.id not in env:
+            raise ValueError(f"unknown_name:{node.id}")
+        value = env[node.id]
+        if not isinstance(value, (int, float)):
+            raise ValueError(f"non_numeric_name:{node.id}")
+        return value
+    if isinstance(node, ast.UnaryOp):
+        value = _eval_safe_python_expr(node.operand, env)
+        if isinstance(node.op, ast.USub):
+            return -value
+        if isinstance(node.op, ast.UAdd):
+            return value
+        raise ValueError("unsupported_unary_op")
+    if isinstance(node, ast.BinOp):
+        left = _eval_safe_python_expr(node.left, env)
+        right = _eval_safe_python_expr(node.right, env)
+        if isinstance(node.op, ast.Add):
+            return left + right
+        if isinstance(node.op, ast.Sub):
+            return left - right
+        if isinstance(node.op, ast.Mult):
+            return left * right
+        raise ValueError("unsupported_binary_op")
+    if isinstance(node, ast.Call):
+        if not isinstance(node.func, ast.Name) or node.func.id != "sum" or len(node.args) != 1 or node.keywords:
+            raise ValueError("unsupported_call")
+        values = _eval_safe_iterable_expr(node.args[0], env)
+        return sum(values)
+    raise ValueError(f"unsupported_expr:{type(node).__name__}")
+
+
+def _eval_safe_iterable_expr(node, env: dict[str, Any]) -> list[Any]:
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return [_eval_safe_python_expr(item, env) for item in node.elts]
+    raise ValueError("unsupported_iterable")
 
 
 def _score_pattern_groups(text: str, pattern_groups: Sequence[Sequence[str]]) -> dict[str, Any]:

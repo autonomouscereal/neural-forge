@@ -138,6 +138,63 @@ def test_behavior_probe_scores_pattern_groups() -> None:
     assert len(result["details"]["matched_groups"]) == 3
 
 
+def test_behavior_probe_scores_executable_python_add_function() -> None:
+    probe = {
+        "id": "python_add",
+        "prompt": "```python\n",
+        "kind": "python_function",
+        "function_name": "add",
+        "tests": [
+            {"args": [2, 3], "expected": 5},
+            {"args": [-1, 5], "expected": 4},
+        ],
+    }
+
+    result = _score_behavior_probe(
+        probe,
+        {"output": "```python\ndef add(a, b):\n    return a + b\n```"},
+    )
+
+    assert result["passed"] is True
+    assert all(item["passed"] for item in result["details"]["test_results"])
+
+
+def test_behavior_probe_rejects_malformed_python_like_text() -> None:
+    probe = {
+        "id": "python_add",
+        "prompt": "```python\n",
+        "kind": "python_function",
+        "function_name": "add",
+        "tests": [{"args": [2, 3], "expected": 5}],
+    }
+
+    result = _score_behavior_probe(
+        probe,
+        {"output": "```python\npythondef add(numbers(a, b): return a + b 3110 + 3200"},
+    )
+
+    assert result["passed"] is False
+    assert result["details"]["reason"] in {"syntax_error", "function_not_found"}
+
+
+def test_behavior_probe_rejects_untrusted_python_body() -> None:
+    probe = {
+        "id": "python_add",
+        "prompt": "```python\n",
+        "kind": "python_function",
+        "function_name": "add",
+        "tests": [{"args": [2, 3], "expected": 5}],
+    }
+
+    result = _score_behavior_probe(
+        probe,
+        {"output": "```python\ndef add(a, b):\n    return __import__('os').system('echo bad')\n```"},
+    )
+
+    assert result["passed"] is False
+    assert result["details"]["test_results"][0]["reason"] == "unsupported_call"
+
+
 def test_generation_diagnostics_detects_repetition() -> None:
     diagnostics = _generation_diagnostics("the the the pruning pruning", [4, 4, 4, 7, 7])
 
