@@ -30,6 +30,7 @@ from neural_forge.hf_recovery import _hidden_representation_loss
 from neural_forge.hf_recovery import _infer_response_char_start
 from neural_forge.hf_recovery import _join_prompt_response
 from neural_forge.hf_recovery import _layer_gate_decision
+from neural_forge.hf_recovery import _layer_gate_snapshot_indices
 from neural_forge.hf_recovery import _linear_cka_tensor
 from neural_forge.hf_recovery import _mlp_projection_spec
 from neural_forge.hf_recovery import _on_policy_prompt_text
@@ -2938,6 +2939,16 @@ def test_layer_gate_decision_accepts_non_regression() -> None:
     assert accepted["ppl_ratio"] == pytest.approx(0.99)
     assert rejected["accepted"] is False
     assert rejected["ppl_ratio"] == pytest.approx(1.03)
+
+
+def test_layer_gate_snapshot_indices_include_consumer_layer() -> None:
+    layers = [_Obj(name=str(idx)) for idx in range(3)]
+
+    assert _layer_gate_snapshot_indices(layers, 1, "mlp") == [1]
+    assert _layer_gate_snapshot_indices(layers, 1, "attention-output") == [1]
+    assert _layer_gate_snapshot_indices(layers, 1, "consumer-input") == [1, 2]
+    assert _layer_gate_snapshot_indices(layers, 1, "all") == [1, 2]
+    assert _layer_gate_snapshot_indices(layers, 2, "all") == [2]
 
 
 def test_validation_reconstruction_gate_rejects_bad_map() -> None:

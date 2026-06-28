@@ -1508,7 +1508,11 @@ def reconstruct_cross_tokenizer_causal_lm(
                 if donor_layer_fold_mode == "representative"
                 else _donor_layer_group_for_target(candidate_idx, len(candidate_layers), len(source_layers))
             )
-            layer_state = _snapshot_module_state(candidate_layers[candidate_idx]) if layer_gate_metric == "ppl" else None
+            layer_state = (
+                _snapshot_layer_gate_states(candidate_layers, candidate_idx, reconstruction_target)
+                if layer_gate_metric == "ppl"
+                else None
+            )
             repair = _reconstruct_cross_tokenizer_layer(
                 torch,
                 source,
@@ -1558,7 +1562,7 @@ def reconstruct_cross_tokenizer_causal_lm(
                 if gate_decision["accepted"]:
                     previous_gate_ppl = candidate_ppl
                 elif layer_state is not None:
-                    _restore_module_state(candidate_layers[candidate_idx], layer_state)
+                    _restore_layer_gate_states(candidate_layers, layer_state)
                     reverted_ppl = _heldout_ppl_mean(
                         torch,
                         candidate,
@@ -1569,7 +1573,10 @@ def reconstruct_cross_tokenizer_causal_lm(
                     )
                     gate_decision["reverted"] = True
                     gate_decision["reverted_ppl"] = reverted_ppl
+                    gate_decision["restored_layers"] = [int(idx) for idx in sorted(layer_state)]
                     previous_gate_ppl = reverted_ppl
+                if layer_state is not None:
+                    gate_decision["snapshot_layers"] = [int(idx) for idx in sorted(layer_state)]
                 repair["layer_gate"] = gate_decision
             repairs.append(repair)
             if device.startswith("cuda") and hasattr(torch, "cuda"):
@@ -3563,6 +3570,31 @@ def _layer_gate_decision(previous_ppl: float, candidate_ppl: float, max_ppl_rati
         "max_ppl_ratio": float(max_ppl_ratio),
         "accepted": ratio <= float(max_ppl_ratio),
     }
+
+
+def _layer_gate_snapshot_indices(candidate_layers: Sequence[Any], candidate_idx: int, reconstruction_target: str) -> list[int]:
+    if candidate_idx < 0 or candidate_idx >= len(candidate_layers):
+        raise ValueError("candidate_idx is outside candidate layer range.")
+    indices = {int(candidate_idx)}
+    if reconstruction_target in {"consumer-input", "all"} and int(candidate_idx) + 1 < len(candidate_layers):
+        indices.add(int(candidate_idx) + 1)
+    return sorted(indices)
+
+
+def _snapshot_layer_gate_states(
+    candidate_layers: Sequence[Any],
+    candidate_idx: int,
+    reconstruction_target: str,
+) -> dict[int, dict[str, Any]]:
+    return {
+        int(layer_idx): _snapshot_module_state(candidate_layers[int(layer_idx)])
+        for layer_idx in _layer_gate_snapshot_indices(candidate_layers, candidate_idx, reconstruction_target)
+    }
+
+
+def _restore_layer_gate_states(candidate_layers: Sequence[Any], states: dict[int, dict[str, Any]]) -> None:
+    for layer_idx, state in states.items():
+        _restore_module_state(candidate_layers[int(layer_idx)], state)
 
 
 def _snapshot_module_state(module) -> dict[str, Any]:

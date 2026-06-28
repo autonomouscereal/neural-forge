@@ -511,6 +511,39 @@ rate is only `1/6`. The next method should target head-wise/MLP activation
 subspace folding and validation-gated reconstruction, not shared-token random
 target coordinates.
 
+### Validation-Gated Reconstruction Follow-Up
+
+Code change:
+
+- Fixed `hf-xfamily-reconstruct --layer-gate-metric ppl` rollback for targets
+  that mutate downstream consumer layers. `consumer-input` and `all` now
+  snapshot and restore `candidate_layer + 1` as well as the current layer when a
+  PPL gate rejects a repair. This matters because consumer-input reconstruction
+  absorbs maps into the next layer's attention/MLP input projections.
+
+Validation used the same strict `160,752,960` parameter FFN1496 child
+(`25.02x` vs Qwen3-4B), starting from
+`alpha05_ffn1496_folded` unless noted.
+
+| Checkpoint | PPL mean | Choice | Behavior | Manual notes |
+|---|---:|---:|---:|---|
+| Gated `mlp-all`, alpha 0.05 | 1,306.59 | 2/4 | 0/6 | best PPL in this sweep, but output collapses into `model`/`knowledge` repetition |
+| Gated `attention-all`, alpha 0.02 | 1,398.30 | 3/4 | 1/6 | merge-risk text is more topical but still loops; not better than current best |
+| Gated `all`, alpha 0.02 | 1,471.70 | 3/4 | 0/6 | broad repair accepted all layer gates but worsened manual repetition |
+| Safer gated `mlp`, alpha 0.02 | 1,407.08 | 3/4 | 1/6 | one layer rejected; useful but weaker than prior alpha 0.05 MLP reconstruction |
+| Safer gated `attention`, alpha 0.005 | 1,455.80 | 3/4 | 0/6 | fit gate accepted only 1/30 maps; no meaningful improvement |
+| Layer-limited `consumer-input`, alpha 0.005 | 1,449.60 | 3/4 | 0/6 | unchanged; report confirms snapshot examples include `[0,1]`, `[1,2]`, ... |
+| Dual/ALM recovery 120 steps from best strict MLP recon | 1,424.08 | 3/4 | 0/6 | recovery shifted output toward `knowledge`/`model` loops |
+
+Negative result:
+
+- Validation and PPL gates prevent some bad repairs, but they do not guarantee
+  better greedy generation. `mlp-all` improved PPL to `1,306.59` while behavior
+  fell to `0/6`, which reinforces that PPL is only one signal.
+- The current best strict checkpoint remains `FFN1496 + cross-tokenizer MLP
+  reconstruction alpha 0.05`: PPL `1,384.22`, choice `3/4`, behavior `1/6`,
+  with recognizable but malformed pruning/code/merge-risk output.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best
