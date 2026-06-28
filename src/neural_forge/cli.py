@@ -649,6 +649,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--anchor-kd-weight", type=float, default=0.5)
     xfamily_recover.add_argument("--lm-weight", type=float, default=0.5)
     xfamily_recover.add_argument("--first-token-lm-weight", type=float, default=0.0)
+    xfamily_recover.add_argument("--focused-lm-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--hidden-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--span-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--span-hidden-kd-weight", type=float, default=0.0)
@@ -659,6 +660,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Cross-tokenizer DSKD-style loss using student hidden through teacher head and teacher hidden through student head.",
     )
     xfamily_recover.add_argument("--projected-vocab-kd-weight", type=float, default=0.0)
+    xfamily_recover.add_argument("--focused-projected-vocab-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument(
         "--projected-vocab-kd-mode",
         choices=["teacher-to-student", "student-to-teacher", "both"],
@@ -1690,11 +1692,13 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         anchor_kd_weight=args.anchor_kd_weight,
         lm_weight=args.lm_weight,
         first_token_lm_weight=args.first_token_lm_weight,
+        focused_lm_weight=args.focused_lm_weight,
         hidden_kd_weight=args.hidden_kd_weight,
         span_kd_weight=args.span_kd_weight,
         span_hidden_kd_weight=args.span_hidden_kd_weight,
         dual_space_kd_weight=args.dual_space_kd_weight,
         projected_vocab_kd_weight=args.projected_vocab_kd_weight,
+        focused_projected_vocab_kd_weight=args.focused_projected_vocab_kd_weight,
         projected_vocab_kd_mode=args.projected_vocab_kd_mode,
         projected_vocab_max_source_tokens=args.projected_vocab_max_source_tokens,
         reference_model=args.reference_model,

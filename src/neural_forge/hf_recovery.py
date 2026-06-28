@@ -474,11 +474,13 @@ def recover_cross_tokenizer_causal_lm(
     anchor_kd_weight: float = 0.5,
     lm_weight: float = 0.5,
     first_token_lm_weight: float = 0.0,
+    focused_lm_weight: float = 0.0,
     hidden_kd_weight: float = 0.0,
     span_kd_weight: float = 0.0,
     span_hidden_kd_weight: float = 0.0,
     dual_space_kd_weight: float = 0.0,
     projected_vocab_kd_weight: float = 0.0,
+    focused_projected_vocab_kd_weight: float = 0.0,
     projected_vocab_kd_mode: str = "teacher-to-student",
     projected_vocab_max_source_tokens: int = 8,
     reference_model: str | None = None,
@@ -556,11 +558,13 @@ def recover_cross_tokenizer_causal_lm(
         anchor_kd_weight < 0
         or lm_weight < 0
         or first_token_lm_weight < 0
+        or focused_lm_weight < 0
         or hidden_kd_weight < 0
         or span_kd_weight < 0
         or span_hidden_kd_weight < 0
         or dual_space_kd_weight < 0
         or projected_vocab_kd_weight < 0
+        or focused_projected_vocab_kd_weight < 0
         or reference_kd_weight < 0
         or unlikelihood_weight < 0
         or entropy_weight < 0
@@ -609,11 +613,13 @@ def recover_cross_tokenizer_causal_lm(
         anchor_kd_weight == 0
         and lm_weight == 0
         and first_token_lm_weight == 0
+        and focused_lm_weight == 0
         and hidden_kd_weight == 0
         and span_kd_weight == 0
         and span_hidden_kd_weight == 0
         and dual_space_kd_weight == 0
         and projected_vocab_kd_weight == 0
+        and focused_projected_vocab_kd_weight == 0
         and reference_kd_weight == 0
         and unlikelihood_weight == 0
         and entropy_weight == 0
@@ -697,7 +703,7 @@ def recover_cross_tokenizer_causal_lm(
     projected_vocab_groups = None
     projected_vocab_mask = None
     projected_vocab_valid = None
-    if projected_vocab_kd_weight > 0 or stepwise_donor_kd_weight > 0:
+    if projected_vocab_kd_weight > 0 or focused_projected_vocab_kd_weight > 0 or stepwise_donor_kd_weight > 0:
         projected_vocab_groups, projected_vocab_mask, projected_vocab_valid = _candidate_to_source_token_groups(
             torch,
             source_tokenizer,
@@ -793,6 +799,8 @@ def recover_cross_tokenizer_causal_lm(
             or span_hidden_kd_weight > 0
             or dual_space_kd_weight > 0
             or projected_vocab_kd_weight > 0
+            or focused_lm_weight > 0
+            or focused_projected_vocab_kd_weight > 0
             or token_kd_weight > 0
             or alm_kd_weight > 0
         ),
@@ -897,7 +905,7 @@ def recover_cross_tokenizer_causal_lm(
             )
             span_pair_counts.append(int(span_pairs.shape[0]))
         token_focus_spans = None
-        if token_kd_weight > 0:
+        if token_kd_weight > 0 or focused_lm_weight > 0 or focused_projected_vocab_kd_weight > 0:
             token_focus_spans = _cross_tokenizer_focus_span_pairs(
                 torch,
                 source_batch,
@@ -927,6 +935,7 @@ def recover_cross_tokenizer_causal_lm(
             span_kd_weight,
             span_hidden_kd_weight,
             projected_vocab_kd_weight,
+            focused_projected_vocab_kd_weight,
             projected_vocab_kd_mode,
             reference_kd_weight,
             unlikelihood_weight,
@@ -948,6 +957,7 @@ def recover_cross_tokenizer_causal_lm(
             token_kd_weight=token_kd_weight,
             token_focus_spans=token_focus_spans,
             token_teacher_confidence_floor=token_teacher_confidence_floor,
+            focused_lm_weight=focused_lm_weight,
         )
         if alm_kd_weight > 0:
             alm_loss, alm_count = _cross_tokenizer_alm_chunk_loss(
@@ -1185,11 +1195,13 @@ def recover_cross_tokenizer_causal_lm(
         "anchor_kd_weight": anchor_kd_weight,
         "lm_weight": lm_weight,
         "first_token_lm_weight": first_token_lm_weight,
+        "focused_lm_weight": focused_lm_weight,
         "hidden_kd_weight": hidden_kd_weight,
         "span_kd_weight": span_kd_weight,
         "span_hidden_kd_weight": span_hidden_kd_weight,
         "dual_space_kd_weight": dual_space_kd_weight,
         "projected_vocab_kd_weight": projected_vocab_kd_weight,
+        "focused_projected_vocab_kd_weight": focused_projected_vocab_kd_weight,
         "projected_vocab_kd_mode": projected_vocab_kd_mode,
         "projected_vocab_max_source_tokens": projected_vocab_max_source_tokens,
         "reference_model": reference_model,
@@ -3146,6 +3158,11 @@ def _focus_char_spans(text: str, response_loss_mode: str, token_focus: str) -> l
 
     spans: list[tuple[int, int]] = []
     if token_focus in {"auto", "numbers"}:
+        for match in re.finditer(
+            r"(?<![\w.])-?\d+(?:\.\d+)?(?:\s*[-+*/=]\s*-?\d+(?:\.\d+)?)+(?!(?:[\w.]))",
+            scope,
+        ):
+            spans.append((scope_start + match.start(), scope_start + match.end()))
         for match in re.finditer(r"(?<![\w.])-?\d+(?:\.\d+)?(?![\w.])", scope):
             spans.append((scope_start + match.start(), scope_start + match.end()))
     if token_focus in {"auto", "code"}:
@@ -3469,6 +3486,7 @@ def _cross_tokenizer_on_policy_rollout_loss(
             candidate_anchor_idx,
             source_anchor_idx,
             float(anchor_kd_weight),
+            0.0,
             0.0,
             0.0,
             0.0,
@@ -7512,6 +7530,7 @@ def _cross_tokenizer_recovery_loss(
     span_kd_weight: float,
     span_hidden_kd_weight: float,
     projected_vocab_kd_weight: float,
+    focused_projected_vocab_kd_weight: float,
     projected_vocab_kd_mode: str,
     reference_kd_weight: float,
     unlikelihood_weight: float,
@@ -7533,6 +7552,7 @@ def _cross_tokenizer_recovery_loss(
     token_kd_weight: float = 0.0,
     token_focus_spans=None,
     token_teacher_confidence_floor: float = 0.0,
+    focused_lm_weight: float = 0.0,
 ):
     shift_student = torch.nan_to_num(
         student.logits[:, :-1, :].contiguous().to(torch.float32),
@@ -7649,6 +7669,42 @@ def _cross_tokenizer_recovery_loss(
             token_teacher_confidence_floor,
         )
         total = total + float(token_kd_weight) * token_kd
+    if focused_projected_vocab_kd_weight > 0 and token_focus_spans:
+        if projected_vocab_groups is None or projected_vocab_mask is None or projected_vocab_valid is None:
+            raise ValueError("projected vocab maps are required when focused_projected_vocab_kd_weight is positive.")
+        focus_pairs = _focus_spans_to_span_pairs(torch, token_focus_spans, device=shift_student.device)
+        if int(focus_pairs.numel()) > 0:
+            focused_projected = _cross_tokenizer_projected_vocab_loss(
+                torch,
+                shift_student,
+                teacher,
+                focus_pairs,
+                projected_vocab_groups,
+                projected_vocab_mask,
+                projected_vocab_valid,
+                temperature,
+                projected_vocab_kd_mode,
+                entropy_aware_kd_weight,
+                entropy_aware_kd_threshold,
+                entropy_aware_kd_sharpness,
+            )
+            total = total + float(focused_projected_vocab_kd_weight) * focused_projected
+    if focused_lm_weight > 0 and token_focus_spans:
+        focus_mask = _focus_spans_to_shift_mask(
+            torch,
+            token_focus_spans,
+            shift_labels.shape,
+            device=shift_student.device,
+        )
+        focus_mask = focus_mask & candidate_lm_mask
+        if int(focus_mask.sum().detach().cpu().item()) > 0:
+            focused_labels = shift_labels.masked_fill(~focus_mask, -100)
+            focused_lm = torch.nn.functional.cross_entropy(
+                shift_student.view(-1, shift_student.shape[-1]),
+                focused_labels.view(-1),
+                ignore_index=-100,
+            )
+            total = total + float(focused_lm_weight) * focused_lm
     if reference_kd_weight > 0:
         if reference_teacher is None:
             raise ValueError("reference_teacher is required when reference_kd_weight is positive.")
@@ -7742,6 +7798,46 @@ def _cross_tokenizer_sequence_nll_loss(
     if not losses:
         return torch.zeros((), dtype=shift_student.dtype, device=shift_student.device)
     return torch.stack(losses).sum() / torch.stack(weights).sum().clamp_min(1e-6)
+
+
+def _focus_spans_to_span_pairs(torch, focus_spans, device):
+    pairs = []
+    for item in focus_spans or []:
+        batch_idx = int(item["batch_idx"])
+        candidate_positions = item["candidate_positions"].detach().cpu().to(torch.long)
+        source_positions = item["source_positions"].detach().cpu().to(torch.long)
+        candidate_count = int(candidate_positions.numel())
+        source_count = int(source_positions.numel())
+        if candidate_count <= 0 or source_count <= 0:
+            continue
+        if candidate_count != source_count:
+            continue
+        for idx in range(candidate_count):
+            pairs.append(
+                (
+                    batch_idx,
+                    int(candidate_positions[idx].item()),
+                    int(source_positions[idx].item()),
+                )
+            )
+    if not pairs:
+        return torch.empty((0, 3), dtype=torch.long, device=device)
+    return torch.tensor(pairs, dtype=torch.long, device=device)
+
+
+def _focus_spans_to_shift_mask(torch, focus_spans, shape, device):
+    rows, cols = int(shape[0]), int(shape[1])
+    mask = torch.zeros((rows, cols), dtype=torch.bool, device=device)
+    for item in focus_spans or []:
+        batch_idx = int(item["batch_idx"])
+        if batch_idx < 0 or batch_idx >= rows:
+            continue
+        candidate_positions = item["candidate_positions"].detach().cpu().to(torch.long)
+        for position in candidate_positions.tolist():
+            pos = int(position)
+            if 0 <= pos < cols:
+                mask[batch_idx, pos] = True
+    return mask
 
 
 def _cross_tokenizer_alm_chunk_loss(

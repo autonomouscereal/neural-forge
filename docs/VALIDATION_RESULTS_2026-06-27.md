@@ -1207,6 +1207,61 @@ Interpretation:
   SimCT/X-Token-style aligned-unit objective for digits, operators, newlines,
   indentation, and Python keywords.
 
+### Focused Span CE and Safer Focused Projection
+
+Code changes:
+
+- `hf-xfamily-recover` now accepts `--focused-lm-weight`, a hard-label CE loss
+  applied only to focused response spans selected by `--token-focus`.
+- Focused span detection now includes arithmetic expression spans for
+  `token_focus=auto|numbers`, not only isolated numeric literals.
+- `--focused-projected-vocab-kd-weight` now requests tokenizer offsets even when
+  no other offset-based loss is active.
+- Focused projected-vocab KD now skips spans where source and child token counts
+  differ, instead of proportionally pairing mismatched number/code pieces.
+
+Remote validation:
+
+| Checkpoint | PPL mean | Choice | Behavior | Generation health | Verdict |
+|---|---:|---:|---:|---:|---|
+| Focused projected-vocab answer-rank 120s | 3,830.52 | 3/4 | 3/6 | 2/3 | rejected |
+| Focused LM answer-rank 120s | 4,149.09 | 3/4 | 4/6 | 1/3 | partial, rejected |
+| Focused LM + EOS + anti-repetition 120s | not run through full eval | n/a | 3/6 gate | 0/3 gate at step 120 | rejected |
+| Focused LM all-weights + anti-repetition 80s | not run through full eval | n/a | 4/6 gate | 1/3 gate | partial, rejected |
+
+Artifacts:
+
+- Focused projected-vocab answer-rank:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_focused_vocab_answer_rank_120s_20260628_121723`
+- Focused LM answer-rank:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_focused_lm_answer_rank_120s_20260628_123426`
+- Focused LM + EOS + anti-repetition:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_focused_lm_eos_antirep_120s_20260628_124228`
+- Focused LM all-weights + anti-repetition:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_focused_lm_all_antirep_80s_20260628_124940`
+
+Manual inspection:
+
+- Focused projected-vocab did not improve the model: math and Python remained
+  broken, and behavior stayed `3/6`.
+- Focused LM restored the strict Python function probe:
+  `def add(a, b): return a + b` executed correctly in the behavior harness.
+  However, arithmetic prompts still generated long digit runs and broader prose
+  became repetitive; generation health dropped to `1/3`.
+- Adding EOS and on-policy anti-repetition did not preserve the behavior gain.
+- Training all weights lightly reproduced the same `4/6` behavior peak but did
+  not improve generation health.
+
+Interpretation:
+
+- Hard focused CE is a useful recovery primitive for code/newline/operator spans.
+  It can move behavior in a way PPL alone did not predict.
+- It is not enough for free-generation arithmetic. The child can rank `45` in a
+  multiple-choice math probe, but answer-only generation still collapses into
+  repeated digit strings. The next fix should target output-distribution
+  stabilization and behavior-gated structural reconstruction, not just stronger
+  span CE.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best

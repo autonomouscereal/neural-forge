@@ -141,6 +141,8 @@ neural-forge hf-xfamily-recover Qwen/Qwen3-4B-Base runs/qwen4b-into-smollm2 runs
   --span-max-pairs 256 `
   --lm-weight 0.5 `
   --first-token-lm-weight 0.0 `
+  --focused-lm-weight 0.0 `
+  --focused-projected-vocab-kd-weight 0.0 `
   --hidden-kd-weight 0.2 `
   --on-policy-hidden-kd-weight 0.1 `
   --hidden-layer last `
@@ -158,6 +160,11 @@ vocabulary at those positions. It also leaves no runtime adapter.
 cross-tokenizer recovery. It is useful as a narrow experiment, but validation has
 shown it does not by itself repair arithmetic/code behavior after an aggressive
 blank-target fold.
+`--focused-lm-weight` applies hard-label CE only to focused response spans
+selected by `--token-focus` (`numbers`, `code`, `auto`, etc.). It is meant for
+behavior recovery on answer/code spans after the donor has already been folded
+into the child shape. `--focused-projected-vocab-kd-weight` applies projected
+vocab KD to those same spans when source and child token counts align exactly.
 `--on-policy-hidden-kd-weight` generates short greedy child rollouts during
 recovery, runs both donor and child on those rollouts, and aligns hidden states
 on matched decoded-token spans when possible. It is meant for cases where static

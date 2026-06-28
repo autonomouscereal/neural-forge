@@ -26,6 +26,8 @@ from neural_forge.hf_recovery import _fit_activation_map
 from neural_forge.hf_recovery import _fit_lm_head_from_hidden_logits
 from neural_forge.hf_recovery import _fit_shared_embedding_hidden_projection
 from neural_forge.hf_recovery import _first_response_shift_mask
+from neural_forge.hf_recovery import _focus_spans_to_shift_mask
+from neural_forge.hf_recovery import _focus_spans_to_span_pairs
 from neural_forge.hf_recovery import _focus_char_spans
 from neural_forge.hf_recovery import _fold_groups_from_report
 from neural_forge.hf_recovery import _feature_decorrelation_loss
@@ -585,6 +587,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.3",
             "--first-token-lm-weight",
             "0.44",
+            "--focused-lm-weight",
+            "0.31",
             "--hidden-kd-weight",
             "0.2",
             "--span-kd-weight",
@@ -595,6 +599,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.25",
             "--projected-vocab-kd-weight",
             "0.22",
+            "--focused-projected-vocab-kd-weight",
+            "0.18",
             "--projected-vocab-kd-mode",
             "student-to-teacher",
             "--projected-vocab-max-source-tokens",
@@ -888,11 +894,13 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_recover_args.anchor_kd_weight == 0.7
     assert xfamily_recover_args.lm_weight == 0.3
     assert xfamily_recover_args.first_token_lm_weight == pytest.approx(0.44)
+    assert xfamily_recover_args.focused_lm_weight == pytest.approx(0.31)
     assert xfamily_recover_args.hidden_kd_weight == 0.2
     assert xfamily_recover_args.span_kd_weight == 0.15
     assert xfamily_recover_args.span_hidden_kd_weight == 0.12
     assert xfamily_recover_args.dual_space_kd_weight == pytest.approx(0.25)
     assert xfamily_recover_args.projected_vocab_kd_weight == 0.22
+    assert xfamily_recover_args.focused_projected_vocab_kd_weight == pytest.approx(0.18)
     assert xfamily_recover_args.projected_vocab_kd_mode == "student-to-teacher"
     assert xfamily_recover_args.projected_vocab_max_source_tokens == 6
     assert xfamily_recover_args.unlikelihood_weight == 0.08
@@ -2389,6 +2397,7 @@ def test_cross_tokenizer_recovery_loss_first_response_lm_focuses_boundary_token(
         span_kd_weight=0.0,
         span_hidden_kd_weight=0.0,
         projected_vocab_kd_weight=0.0,
+        focused_projected_vocab_kd_weight=0.0,
         projected_vocab_kd_mode="teacher-to-student",
         reference_kd_weight=0.0,
         unlikelihood_weight=0.0,
@@ -2599,6 +2608,7 @@ def test_cross_tokenizer_recovery_loss_uses_anchor_subspace() -> None:
         span_kd_weight=0.0,
         span_hidden_kd_weight=0.0,
         projected_vocab_kd_weight=0.0,
+        focused_projected_vocab_kd_weight=0.0,
         projected_vocab_kd_mode="teacher-to-student",
         reference_kd_weight=0.0,
         unlikelihood_weight=0.0,
@@ -2651,6 +2661,7 @@ def test_cross_tokenizer_recovery_loss_response_mask_ignores_prompt_tokens() -> 
         span_kd_weight=0.0,
         span_hidden_kd_weight=0.0,
         projected_vocab_kd_weight=0.0,
+        focused_projected_vocab_kd_weight=0.0,
         projected_vocab_kd_mode="teacher-to-student",
         reference_kd_weight=0.0,
         unlikelihood_weight=0.0,
@@ -2686,6 +2697,7 @@ def test_cross_tokenizer_recovery_loss_response_mask_ignores_prompt_tokens() -> 
         span_kd_weight=0.0,
         span_hidden_kd_weight=0.0,
         projected_vocab_kd_weight=0.0,
+        focused_projected_vocab_kd_weight=0.0,
         projected_vocab_kd_mode="teacher-to-student",
         reference_kd_weight=0.0,
         unlikelihood_weight=0.0,
@@ -2741,6 +2753,7 @@ def test_cross_tokenizer_recovery_loss_uses_projected_hidden_states() -> None:
         span_kd_weight=0.0,
         span_hidden_kd_weight=0.0,
         projected_vocab_kd_weight=0.0,
+        focused_projected_vocab_kd_weight=0.0,
         projected_vocab_kd_mode="teacher-to-student",
         reference_kd_weight=0.0,
         unlikelihood_weight=0.0,
@@ -2881,6 +2894,66 @@ def test_cross_tokenizer_focus_span_pairs_allow_different_token_boundaries() -> 
     assert pairs[0]["candidate_positions"].tolist() == [0, 1, 2]
 
 
+def test_focus_spans_to_span_pairs_skips_mismatched_token_counts() -> None:
+    torch = pytest.importorskip("torch")
+    pairs = _focus_spans_to_span_pairs(
+        torch,
+        [
+            {
+                "batch_idx": 2,
+                "candidate_positions": torch.tensor([10, 11, 12, 13]),
+                "source_positions": torch.tensor([20, 21]),
+            }
+        ],
+        device="cpu",
+    )
+
+    assert pairs.tolist() == []
+
+
+def test_focus_spans_to_span_pairs_keeps_exact_token_alignment() -> None:
+    torch = pytest.importorskip("torch")
+    pairs = _focus_spans_to_span_pairs(
+        torch,
+        [
+            {
+                "batch_idx": 2,
+                "candidate_positions": torch.tensor([10, 11]),
+                "source_positions": torch.tensor([20, 21]),
+            }
+        ],
+        device="cpu",
+    )
+
+    assert pairs.tolist() == [[2, 10, 20], [2, 11, 21]]
+
+
+def test_focus_spans_to_shift_mask_marks_candidate_rows() -> None:
+    torch = pytest.importorskip("torch")
+    mask = _focus_spans_to_shift_mask(
+        torch,
+        [
+            {
+                "batch_idx": 1,
+                "candidate_positions": torch.tensor([0, 2, 99]),
+                "source_positions": torch.tensor([4, 5, 6]),
+            }
+        ],
+        shape=(2, 4),
+        device="cpu",
+    )
+
+    assert mask.tolist() == [[False, False, False, False], [True, False, True, False]]
+
+
+def test_focus_char_spans_numbers_include_arithmetic_expression() -> None:
+    text = "Question: compute.\nAnswer: 12 * 13 = 156"
+
+    spans = _focus_char_spans(text, response_loss_mode="answer", token_focus="numbers")
+
+    assert [text[start:end] for start, end in spans] == ["12 * 13 = 156"]
+
+
 def test_cross_tokenizer_sequence_nll_loss_rewards_candidate_span_tokens() -> None:
     torch = pytest.importorskip("torch")
     candidate_ids = torch.tensor([[0, 1, 2, 3]])
@@ -2947,6 +3020,7 @@ def test_cross_tokenizer_recovery_loss_uses_span_pairs() -> None:
         span_kd_weight=0.8,
         span_hidden_kd_weight=0.0,
         projected_vocab_kd_weight=0.0,
+        focused_projected_vocab_kd_weight=0.0,
         projected_vocab_kd_mode="teacher-to-student",
         reference_kd_weight=0.0,
         unlikelihood_weight=0.0,
@@ -3824,6 +3898,8 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "0.4",
             "--first-token-lm-weight",
             "0.73",
+            "--focused-lm-weight",
+            "0.27",
             "--hidden-kd-weight",
             "0.25",
             "--span-kd-weight",
@@ -3834,6 +3910,8 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "0.19",
             "--projected-vocab-kd-weight",
             "0.22",
+            "--focused-projected-vocab-kd-weight",
+            "0.26",
             "--projected-vocab-kd-mode",
             "both",
             "--projected-vocab-max-source-tokens",
@@ -3957,11 +4035,13 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "anchor_kd_weight": 0.6,
         "lm_weight": 0.4,
         "first_token_lm_weight": 0.73,
+        "focused_lm_weight": 0.27,
         "hidden_kd_weight": 0.25,
         "span_kd_weight": 0.15,
         "span_hidden_kd_weight": 0.12,
         "dual_space_kd_weight": 0.19,
         "projected_vocab_kd_weight": 0.22,
+        "focused_projected_vocab_kd_weight": 0.26,
         "projected_vocab_kd_mode": "both",
         "projected_vocab_max_source_tokens": 6,
         "reference_model": "host-reference",
