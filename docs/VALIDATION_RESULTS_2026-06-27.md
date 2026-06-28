@@ -368,6 +368,48 @@ manual quality bar. The next recovery target should be on-policy/stepwise
 decoding correction and stronger blockwise reconstruction, not more regex-tuned
 short-answer recovery.
 
+### Head-Dim Transport, Weighted Token Init, and On-Policy Follow-Up
+
+New implementation:
+
+- `hf-donor-project-init --token-init-mode donor-tokenized-weighted`, which
+  fills target-token rows from donor-tokenized pieces with decoded-length
+  weighting instead of flat averaging.
+- `hf-donor-project-init --attention-head-dim-transport qk-vo`, which collects
+  donor activation signatures for per-head dimensions and shares one transport
+  map for Q/K and one for V/O during attention folding.
+- `hf-xfamily-recover --on-policy-anchor-kd-weight` and
+  `--on-policy-unlikelihood-weight`, which generate short student rollouts
+  during recovery and train on those rollouts with shared-anchor KD and
+  repeat-token unlikelihood.
+
+Validation again used strict `134,515,008` parameter SmolLM-shaped targets
+against the `4,022,468,096` parameter Qwen3-4B donor (`29.90x`).
+
+| Checkpoint | Start | PPL mean | Choice | Behavior | Manual notes |
+|---|---|---:|---:|---:|---|
+| Weighted token + QK/VO head-dim raw init | blank SmolLM | 72,497,907.23 | 1/4 | 0/6 | repeated `problem`; catastrophic |
+| Weighted token only raw init | blank SmolLM | 227,757.94 | 1/4 | 0/6 | repeated `and`; not recoverable enough |
+| QK/VO head-dim only raw init | blank SmolLM | 72,468,656.38 | 1/4 | 0/6 | repeated `problem`; head-dim transport is harmful as implemented |
+| On-policy recovery, moderate weights | tied 29.9x baseline | 3,561.50 | 3/4 | 0/6 | more diverse than baseline but numeric/code garbage |
+| On-policy recovery, low weights | dual+ALM checkpoint | 3,234.21 | 2/4 | 1/6 | one tokenizer item passes; worse than dual+ALM's 4/6 behavior |
+
+Manual inspection:
+
+- Head-dimension transport damaged the raw fold badly. It should stay
+  experimental/off by default; the current activation cost does not preserve
+  Q/K dot-product geometry well enough.
+- Weighted donor-tokenized vocab rows are less destructive than head-dim
+  transport, but still do not create a usable raw 29.9x child.
+- On-policy rollout unlikelihood reduces single-token loops and raises lexical
+  diversity, but it shifts failures into numeric/code-like noise. It does not
+  improve the manual bar.
+
+Conclusion update: the next useful path is not more initialization knobs or
+rollout unlikelihood tuning. The missing piece is true sequential blockwise
+nonlinear reconstruction: train one folded target block at a time against
+projected donor block outputs and gate on held-out generation/benchmark signals.
+
 ## Current Conclusion
 
 The 29.9x SmolLM blank-target fold is no longer just fitting tensor shapes. It
