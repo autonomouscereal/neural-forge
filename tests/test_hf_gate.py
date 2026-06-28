@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from neural_forge.hf_tools import GENERATION_PROMPTS
+from neural_forge.hf_tools import _behavior_first_candidate_sort_key
 from neural_forge.hf_tools import gate_text_report
 from neural_forge.hf_tools import rank_evaluation_reports
 from neural_forge.hf_tools import _assert_tokenizers_compatible
@@ -32,6 +33,27 @@ def test_gate_text_report_rejects_ppl_regression() -> None:
     verdict = gate_text_report(_report(100, 1.0), _report(200, 1.0), max_ppl_ratio=1.25)
     assert verdict["passed"] is False
     assert any(check["name"] == "perplexity_ratio" and not check["passed"] for check in verdict["checks"])
+
+
+def test_gate_text_report_allows_advisory_ppl_regression_when_behavior_is_healthy() -> None:
+    baseline = _report(100, 1.0)
+    baseline["behavior_suite"] = {"pass_rate": 0.75, "correct": 3, "total": 4, "items": []}
+    candidate = _report(300, 1.0)
+    candidate["behavior_suite"] = {"pass_rate": 0.75, "correct": 3, "total": 4, "items": []}
+
+    verdict = gate_text_report(
+        baseline,
+        candidate,
+        max_ppl_ratio=1.25,
+        ppl_gate_mode="advisory",
+        min_behavior_pass_rate=0.75,
+    )
+
+    ppl_check = next(check for check in verdict["checks"] if check["name"] == "perplexity_ratio")
+    assert verdict["passed"] is True
+    assert ppl_check["passed"] is False
+    assert ppl_check["hard"] is False
+    assert verdict["candidate"]["generation_health_rate"] == pytest.approx(1.0)
 
 
 def test_gate_text_report_rejects_blank_generation() -> None:
@@ -105,6 +127,33 @@ def test_rank_evaluation_reports_prefers_behavior_over_ppl(tmp_path) -> None:
     assert report["best"]["model"] == "better-behavior"
     assert report["candidates"][0]["behavior_pass_rate"] == pytest.approx(0.5)
     assert report["candidates"][1]["perplexity_mean"] == pytest.approx(90)
+
+
+def test_behavior_first_candidate_sort_key_uses_ppl_only_after_behavior_ties() -> None:
+    high_behavior_high_ppl = {
+        "tag": "high-behavior",
+        "shrink": 0.25,
+        "metrics": {
+            "perplexity_mean": 500.0,
+            "choice_accuracy": 0.75,
+            "behavior_pass_rate": 0.50,
+            "generation_health_rate": 1.0,
+        },
+    }
+    low_behavior_low_ppl = {
+        "tag": "low-behavior",
+        "shrink": 0.25,
+        "metrics": {
+            "perplexity_mean": 100.0,
+            "choice_accuracy": 0.75,
+            "behavior_pass_rate": 0.25,
+            "generation_health_rate": 1.0,
+        },
+    }
+
+    ranked = sorted([low_behavior_low_ppl, high_behavior_high_ppl], key=_behavior_first_candidate_sort_key)
+
+    assert ranked[0]["tag"] == "high-behavior"
 
 
 def test_behavior_probe_scores_first_number_exact_answer() -> None:

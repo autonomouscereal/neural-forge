@@ -313,6 +313,12 @@ def build_parser() -> argparse.ArgumentParser:
     hf_gate.add_argument("candidate_report")
     hf_gate.add_argument("--output")
     hf_gate.add_argument("--max-ppl-ratio", type=float, default=1.25)
+    hf_gate.add_argument(
+        "--ppl-gate-mode",
+        choices=["hard", "advisory"],
+        default="advisory",
+        help="Whether PPL ratio failure is a hard gate or behavior-ranking telemetry.",
+    )
     hf_gate.add_argument("--max-accuracy-drop", type=float, default=0.0)
     hf_gate.add_argument("--max-behavior-drop", type=float, default=0.0)
     hf_gate.add_argument("--min-choice-accuracy", type=float, default=0.75)
@@ -891,12 +897,24 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_block_recover.add_argument("--layer-limit", type=int)
     xfamily_block_recover.add_argument(
         "--layer-gate-metric",
-        choices=["none", "ppl"],
+        choices=["none", "ppl", "behavior"],
         default="none",
         help="Optionally evaluate after each trained block and revert blocks that fail the gate.",
     )
     xfamily_block_recover.add_argument("--layer-gate-max-ppl-ratio", type=float, default=1.10)
     xfamily_block_recover.add_argument("--layer-gate-max-texts", type=int, default=4)
+    xfamily_block_recover.add_argument(
+        "--layer-gate-max-behavior-drop",
+        type=float,
+        default=0.0,
+        help="Maximum held-out behavior pass-rate drop accepted by --layer-gate-metric behavior.",
+    )
+    xfamily_block_recover.add_argument(
+        "--layer-gate-behavior-max-new-tokens",
+        type=int,
+        default=96,
+        help="Maximum generated tokens per held-out behavior probe for behavior layer gating.",
+    )
     xfamily_block_recover.add_argument("--on-policy-anchor-kd-weight", type=float, default=0.0)
     xfamily_block_recover.add_argument("--on-policy-unlikelihood-weight", type=float, default=0.0)
     xfamily_block_recover.add_argument("--on-policy-max-new-tokens", type=int, default=24)
@@ -1217,6 +1235,7 @@ def cmd_hf_gate(args: argparse.Namespace) -> dict[str, object]:
         candidate_report=args.candidate_report,
         output_file=args.output,
         max_ppl_ratio=args.max_ppl_ratio,
+        ppl_gate_mode=args.ppl_gate_mode,
         max_accuracy_drop=args.max_accuracy_drop,
         max_behavior_drop=args.max_behavior_drop,
         min_choice_accuracy=args.min_choice_accuracy,
@@ -1757,6 +1776,8 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         layer_gate_metric=args.layer_gate_metric,
         layer_gate_max_ppl_ratio=args.layer_gate_max_ppl_ratio,
         layer_gate_max_texts=args.layer_gate_max_texts,
+        layer_gate_max_behavior_drop=args.layer_gate_max_behavior_drop,
+        layer_gate_behavior_max_new_tokens=args.layer_gate_behavior_max_new_tokens,
         on_policy_anchor_kd_weight=args.on_policy_anchor_kd_weight,
         on_policy_unlikelihood_weight=args.on_policy_unlikelihood_weight,
         on_policy_max_new_tokens=args.on_policy_max_new_tokens,

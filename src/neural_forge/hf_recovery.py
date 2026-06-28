@@ -1955,6 +1955,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     layer_gate_metric: str = "none",
     layer_gate_max_ppl_ratio: float = 1.10,
     layer_gate_max_texts: int = 4,
+    layer_gate_max_behavior_drop: float = 0.0,
+    layer_gate_behavior_max_new_tokens: int = 96,
     on_policy_anchor_kd_weight: float = 0.0,
     on_policy_unlikelihood_weight: float = 0.0,
     on_policy_max_new_tokens: int = 24,
@@ -2006,12 +2008,16 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
     if layer_limit is not None and layer_limit <= 0:
         raise ValueError("layer_limit must be positive when provided.")
-    if layer_gate_metric not in {"none", "ppl"}:
-        raise ValueError("layer_gate_metric must be none or ppl.")
+    if layer_gate_metric not in {"none", "ppl", "behavior"}:
+        raise ValueError("layer_gate_metric must be none, ppl, or behavior.")
     if layer_gate_max_ppl_ratio <= 0:
         raise ValueError("layer_gate_max_ppl_ratio must be positive.")
     if layer_gate_max_texts <= 0:
         raise ValueError("layer_gate_max_texts must be positive.")
+    if not 0.0 <= float(layer_gate_max_behavior_drop) <= 1.0:
+        raise ValueError("layer_gate_max_behavior_drop must be in [0, 1].")
+    if layer_gate_behavior_max_new_tokens <= 0:
+        raise ValueError("layer_gate_behavior_max_new_tokens must be positive.")
     if on_policy_anchor_kd_weight < 0 or on_policy_unlikelihood_weight < 0:
         raise ValueError("on-policy weights must be non-negative.")
     if stepwise_donor_kd_weight < 0:
@@ -2133,8 +2139,11 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "metric": layer_gate_metric,
         "max_ppl_ratio": float(layer_gate_max_ppl_ratio),
         "max_texts": int(layer_gate_max_texts),
+        "max_behavior_drop": float(layer_gate_max_behavior_drop),
+        "behavior_max_new_tokens": int(layer_gate_behavior_max_new_tokens),
     }
     previous_gate_ppl: float | None = None
+    previous_gate_behavior: dict[str, Any] | None = None
     with torch.no_grad():
         if layer_gate_metric == "ppl":
             candidate.eval()
@@ -2142,6 +2151,18 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             candidate.train()
             layer_gate["initial_ppl"] = previous_gate_ppl
             layer_gate["texts"] = gate_texts
+        elif layer_gate_metric == "behavior":
+            candidate.eval()
+            previous_gate_behavior = _heldout_behavior_summary(
+                torch,
+                candidate,
+                candidate_tokenizer,
+                device,
+                int(layer_gate_behavior_max_new_tokens),
+                int(layer_gate_max_texts),
+            )
+            candidate.train()
+            layer_gate["initial_behavior"] = previous_gate_behavior
 
     for candidate_idx in range(layer_count):
         source_idx = _proportional_layer_index(candidate_idx, len(candidate_layers), len(source_layers))
@@ -2153,7 +2174,11 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         candidate_layer = candidate_layers[candidate_idx]
         trainable_params = _set_only_module_trainable(candidate, candidate_layer)
         optimizer = torch.optim.AdamW([param for param in candidate_layer.parameters() if param.requires_grad], lr=lr)
-        layer_state = _snapshot_module_state(candidate_layer) if layer_gate_metric == "ppl" or save_best_layer_loss else None
+        layer_state = (
+            _snapshot_module_state(candidate_layer)
+            if layer_gate_metric in {"ppl", "behavior"} or save_best_layer_loss
+            else None
+        )
         before_metrics = _cross_tokenizer_block_alignment_metrics(
             torch,
             source,
@@ -2375,6 +2400,43 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 gate_decision["reverted"] = True
                 gate_decision["reverted_ppl"] = reverted_ppl
                 previous_gate_ppl = reverted_ppl
+            report["layer_gate"] = gate_decision
+        elif layer_gate_metric == "behavior":
+            with torch.no_grad():
+                candidate.eval()
+                candidate_behavior = _heldout_behavior_summary(
+                    torch,
+                    candidate,
+                    candidate_tokenizer,
+                    device,
+                    int(layer_gate_behavior_max_new_tokens),
+                    int(layer_gate_max_texts),
+                )
+                candidate.train()
+            gate_decision = _layer_gate_behavior_decision(
+                previous_gate_behavior or candidate_behavior,
+                candidate_behavior,
+                layer_gate_max_behavior_drop,
+            )
+            gate_decision["candidate_behavior"] = candidate_behavior
+            if gate_decision["accepted"]:
+                previous_gate_behavior = candidate_behavior
+            elif layer_state is not None:
+                _restore_module_state(candidate_layer, layer_state)
+                with torch.no_grad():
+                    candidate.eval()
+                    reverted_behavior = _heldout_behavior_summary(
+                        torch,
+                        candidate,
+                        candidate_tokenizer,
+                        device,
+                        int(layer_gate_behavior_max_new_tokens),
+                        int(layer_gate_max_texts),
+                    )
+                    candidate.train()
+                gate_decision["reverted"] = True
+                gate_decision["reverted_behavior"] = reverted_behavior
+                previous_gate_behavior = reverted_behavior
             report["layer_gate"] = gate_decision
         layer_reports.append(report)
         if device.startswith("cuda") and hasattr(torch, "cuda"):

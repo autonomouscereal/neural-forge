@@ -4071,11 +4071,15 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "--layer-limit",
             "3",
             "--layer-gate-metric",
-            "ppl",
+            "behavior",
             "--layer-gate-max-ppl-ratio",
             "1.05",
             "--layer-gate-max-texts",
             "2",
+            "--layer-gate-max-behavior-drop",
+            "0.12",
+            "--layer-gate-behavior-max-new-tokens",
+            "41",
             "--on-policy-anchor-kd-weight",
             "0.31",
             "--on-policy-unlikelihood-weight",
@@ -4134,9 +4138,11 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "span_max_pairs": 77,
         "donor_layer_fold_mode": "average",
         "layer_limit": 3,
-        "layer_gate_metric": "ppl",
+        "layer_gate_metric": "behavior",
         "layer_gate_max_ppl_ratio": 1.05,
         "layer_gate_max_texts": 2,
+        "layer_gate_max_behavior_drop": 0.12,
+        "layer_gate_behavior_max_new_tokens": 41,
         "on_policy_anchor_kd_weight": 0.31,
         "on_policy_unlikelihood_weight": 0.27,
         "on_policy_max_new_tokens": 13,
@@ -4400,7 +4406,26 @@ def test_usable_pipeline_candidates_keeps_only_gate_passing_outputs() -> None:
             "host_gate_report": "raw_gate.json",
             "host_passed": True,
             "shrink": 0.05,
-            "host_metrics": {"perplexity_mean": 300.0},
+            "host_metrics": {
+                "perplexity_mean": 300.0,
+                "choice_accuracy": 0.75,
+                "behavior_pass_rate": 0.50,
+                "generation_health_rate": 1.0,
+            },
+        },
+        {
+            "tag": "raw_low_behavior",
+            "model_dir": "raw_low_behavior",
+            "report": "raw_low_behavior.json",
+            "host_gate_report": "raw_low_behavior_gate.json",
+            "host_passed": True,
+            "shrink": 0.05,
+            "host_metrics": {
+                "perplexity_mean": 150.0,
+                "choice_accuracy": 0.75,
+                "behavior_pass_rate": 0.25,
+                "generation_health_rate": 1.0,
+            },
         },
         {
             "tag": "raw_fail",
@@ -4415,11 +4440,16 @@ def test_usable_pipeline_candidates_keeps_only_gate_passing_outputs() -> None:
     recovered = [
         {
             "passed": True,
-            "source_candidate": compressed[1],
+            "source_candidate": compressed[2],
             "model_dir": "rec",
             "report": "rec.json",
             "gate_report": "rec_gate.json",
-            "metrics": {"perplexity_mean": 240.0},
+            "metrics": {
+                "perplexity_mean": 240.0,
+                "choice_accuracy": 0.75,
+                "behavior_pass_rate": 0.50,
+                "generation_health_rate": 1.0,
+            },
         },
         {
             "passed": False,
@@ -4431,4 +4461,4 @@ def test_usable_pipeline_candidates_keeps_only_gate_passing_outputs() -> None:
         },
     ]
     usable = _usable_pipeline_candidates(compressed, recovered)
-    assert [item["tag"] for item in usable] == ["raw_fail_recovered", "raw_pass"]
+    assert [item["tag"] for item in usable] == ["raw_fail_recovered", "raw_pass", "raw_low_behavior"]

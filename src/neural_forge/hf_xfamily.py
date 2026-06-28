@@ -200,6 +200,7 @@ def sweep_cross_family_vocab_merge(
             candidate_report,
             output_file=gate_path,
             max_ppl_ratio=max_ppl_ratio,
+            ppl_gate_mode="advisory",
             max_accuracy_drop=max_accuracy_drop,
             min_choice_accuracy=min_choice_accuracy,
         )
@@ -1010,6 +1011,7 @@ def sweep_cross_family_mlp_merge(
             candidate_report,
             output_file=gate_path,
             max_ppl_ratio=max_ppl_ratio,
+            ppl_gate_mode="advisory",
             max_accuracy_drop=max_accuracy_drop,
             min_choice_accuracy=min_choice_accuracy,
         )
@@ -1225,6 +1227,7 @@ def cross_family_merge_compress_pipeline(
         xfamily_eval,
         output_file=xfamily_gate_path,
         max_ppl_ratio=max_ppl_ratio,
+        ppl_gate_mode="advisory",
         max_accuracy_drop=max_accuracy_drop,
         min_choice_accuracy=min_choice_accuracy,
     )
@@ -1258,6 +1261,7 @@ def cross_family_merge_compress_pipeline(
             candidate_eval,
             output_file=host_gate_path,
             max_ppl_ratio=max_ppl_ratio,
+            ppl_gate_mode="advisory",
             max_accuracy_drop=max_accuracy_drop,
             min_choice_accuracy=min_choice_accuracy,
         )
@@ -1308,6 +1312,7 @@ def cross_family_merge_compress_pipeline(
                 _load_report(recovery["report"]),
                 output_file=recovered_xfamily_gate_path,
                 max_ppl_ratio=max_ppl_ratio,
+                ppl_gate_mode="advisory",
                 max_accuracy_drop=max_accuracy_drop,
                 min_choice_accuracy=min_choice_accuracy,
             )
@@ -1441,6 +1446,7 @@ def _recover_and_gate_candidate(
         recovered_eval,
         output_file=recovered_gate_path,
         max_ppl_ratio=max_ppl_ratio,
+        ppl_gate_mode="advisory",
         max_accuracy_drop=max_accuracy_drop,
         min_choice_accuracy=min_choice_accuracy,
     )
@@ -1496,10 +1502,23 @@ def _usable_pipeline_candidates(
                     "metrics": candidate["metrics"],
                 }
             )
-    return sorted(
-        usable,
-        key=lambda item: (float(item["shrink"]), -float(item["metrics"]["perplexity_mean"])),
-        reverse=True,
+    return sorted(usable, key=_usable_candidate_sort_key)
+
+
+def _usable_candidate_sort_key(item: dict[str, Any]) -> tuple[float, float, float, float, float, str]:
+    metrics = item.get("metrics") or {}
+    behavior = metrics.get("behavior_pass_rate")
+    behavior_score = 0.0 if behavior is None else float(behavior)
+    ppl = float(metrics.get("perplexity_mean", math.inf))
+    if not math.isfinite(ppl):
+        ppl = math.inf
+    return (
+        -float(item.get("shrink", 0.0)),
+        -behavior_score,
+        -float(metrics.get("choice_accuracy", 0.0)),
+        -float(metrics.get("generation_health_rate", 0.0)),
+        ppl,
+        str(item.get("tag", "")),
     )
 
 

@@ -825,6 +825,7 @@ def gate_text_report(
     candidate_report: str | Path | dict[str, Any],
     output_file: str | Path | None = None,
     max_ppl_ratio: float = 1.25,
+    ppl_gate_mode: str = "hard",
     max_accuracy_drop: float = 0.0,
     max_behavior_drop: float = 0.0,
     min_choice_accuracy: float = 0.75,
@@ -836,6 +837,8 @@ def gate_text_report(
 
     if max_ppl_ratio <= 0:
         raise ValueError("max_ppl_ratio must be positive.")
+    if ppl_gate_mode not in {"hard", "advisory"}:
+        raise ValueError("ppl_gate_mode must be hard or advisory.")
     if max_accuracy_drop < 0:
         raise ValueError("max_accuracy_drop must be non-negative.")
     if max_behavior_drop < 0:
@@ -859,6 +862,7 @@ def gate_text_report(
         {
             "name": "perplexity_ratio",
             "passed": ppl_ratio <= max_ppl_ratio,
+            "hard": ppl_gate_mode == "hard",
             "value": ppl_ratio,
             "threshold": max_ppl_ratio,
         },
@@ -909,7 +913,8 @@ def gate_text_report(
         )
     verdict = {
         "operation": "gate_text_report",
-        "passed": all(check["passed"] for check in checks),
+        "passed": all(check["passed"] for check in checks if check.get("hard", True)),
+        "ppl_gate_mode": ppl_gate_mode,
         "baseline_model": baseline.get("model"),
         "candidate_model": candidate.get("model"),
         "baseline": {
@@ -920,7 +925,13 @@ def gate_text_report(
         "candidate": {
             "param_count": candidate.get("param_count"),
             "perplexity_mean": cand_ppl,
+            "perplexity_ratio": ppl_ratio,
             "choice_accuracy": cand_acc,
+            "generation_health_rate": (
+                sum(1 for check in generation_checks if check["passed"]) / len(generation_checks)
+                if generation_checks
+                else 0.0
+            ),
             "behavior_pass_rate": None
             if candidate.get("behavior_suite") is None
             else float(candidate["behavior_suite"].get("pass_rate", 0.0)),
@@ -930,6 +941,23 @@ def gate_text_report(
     if output_file is not None:
         _write_json(output_file, verdict)
     return verdict
+
+
+def _behavior_first_candidate_sort_key(item: dict[str, Any]) -> tuple[float, float, float, float, float, str]:
+    metrics = item.get("metrics") or {}
+    behavior = metrics.get("behavior_pass_rate")
+    behavior_score = 0.0 if behavior is None else float(behavior)
+    ppl = float(metrics.get("perplexity_mean", math.inf))
+    if not math.isfinite(ppl):
+        ppl = math.inf
+    return (
+        -float(item.get("shrink", 0.0)),
+        -behavior_score,
+        -float(metrics.get("choice_accuracy", 0.0)),
+        -float(metrics.get("generation_health_rate", 0.0)),
+        ppl,
+        str(item.get("tag", "")),
+    )
 
 
 def rank_evaluation_reports(
@@ -1113,6 +1141,7 @@ def sweep_gated_ffn_resize(
             candidate_report,
             output_file=gate_path,
             max_ppl_ratio=max_ppl_ratio,
+            ppl_gate_mode="advisory",
             max_accuracy_drop=max_accuracy_drop,
             min_choice_accuracy=min_choice_accuracy,
         )
@@ -1229,6 +1258,7 @@ def search_merge_first_compression(
             candidate_report,
             output_file=gate_path,
             max_ppl_ratio=max_ppl_ratio,
+            ppl_gate_mode="advisory",
             max_accuracy_drop=max_accuracy_drop,
             min_choice_accuracy=min_choice_accuracy,
         )
@@ -1300,11 +1330,7 @@ def search_merge_first_compression(
                     }
                     evaluate_candidate("width_depth", tag, candidate_dir, combo_report)
 
-    passed = sorted(
-        [item for item in candidates if item["passed"]],
-        key=lambda item: (item["shrink"], -float(item["metrics"]["perplexity_mean"])),
-        reverse=True,
-    )
+    passed = sorted([item for item in candidates if item["passed"]], key=_behavior_first_candidate_sort_key)
     if target_shrink is None:
         target_passed = []
         best_at_or_below_target = None
@@ -1410,6 +1436,7 @@ def sweep_task_arithmetic(
             candidate_report,
             output_file=gate_path,
             max_ppl_ratio=max_ppl_ratio,
+            ppl_gate_mode="advisory",
             max_accuracy_drop=max_accuracy_drop,
             min_choice_accuracy=min_choice_accuracy,
         )

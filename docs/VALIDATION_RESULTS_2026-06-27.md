@@ -823,6 +823,55 @@ Interpretation:
 - This change matters for future branches such as dual+ALM where regex-based
   code checks could overstate behavior.
 
+### Behavior-First Gate Audit And Strict Replay Attempts
+
+Code changes:
+
+- Added `ppl_gate_mode` to `gate_text_report`: `hard` preserves old behavior,
+  while `advisory` records PPL failure without letting PPL alone reject a
+  behavior-good candidate.
+- `hf-gate` exposes this as `--ppl-gate-mode hard|advisory`; CLI default is
+  `advisory`.
+- Automated compression candidate sorting now ranks passed candidates by shrink,
+  behavior pass rate, choice accuracy, generation health, and only then PPL.
+- Cross-family usable candidate sorting now uses the same behavior-first policy.
+- Blockwise cross-tokenizer recovery now supports `--layer-gate-metric behavior`
+  with held-out behavior snapshots and per-block revert. PPL-only block gates
+  remain available for telemetry/safety experiments.
+
+Strict 29.9x behavior replay validation:
+
+| Checkpoint | Start | Params | Ratio | PPL mean | Choice | Behavior | Generation health | Rank outcome | Manual notes |
+|---|---|---:|---:|---:|---:|---:|---:|---|---|
+| RSD behavior-best 60s | tied 29.9x | 134,515,008 | 29.90x | 3,825.12 | 3/4 | 3/6 | 2/3 | best retained | code/math malformed but best overall behavior/choice/generation mix |
+| Strict replay `last2` 120s | RSD behavior-best | 134,515,008 | 29.90x | 3,859.08 | 2/4 | 3/6 | 0/3 | rejected | output quality degraded; code still malformed |
+| Strict replay `head_norm` 160s | RSD behavior-best | 134,515,008 | 29.90x | 4,239.07 | 3/4 | 3/6 | 0/3 | rejected | math prefixes moved closer but collapsed into digit loops; code still malformed |
+| Strict replay anti-repetition `head_norm` 120s | RSD behavior-best | 134,515,008 | 29.90x | 4,111.44 | 3/4 | 3/6 | 1/3 | rejected | unlikelihood improved one generation-health item but math/code still failed |
+
+Artifacts:
+
+- Calibration:
+  `experiments/strict_behavior_recovery_20260628.jsonl`
+- Rejected evals:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/eval_qwen4b_tied29_strict_behavior_replay_last2_120s_strictcode.json`
+- `runs/qwen4b_to_smollm135m_transport_random_20260627/eval_qwen4b_tied29_strict_behavior_replay_headnorm_160s_strictcode.json`
+- `runs/qwen4b_to_smollm135m_transport_random_20260627/eval_qwen4b_tied29_strict_behavior_antirep_headnorm_120s_strictcode.json`
+- Rank file:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/rank_qwen4b_tied29_behavior_replay_all2_strictcode.json`
+
+Interpretation:
+
+- The earlier concern was valid: some paths could still select or reject by PPL
+  before behavior/manual quality. The tooling now makes PPL hardness explicit
+  and ranks by behavior first.
+- Short response replay did not fix the actual model. It reduced training loss
+  and sometimes moved arithmetic prefixes closer, but greedy decoding still
+  overgenerated digits and malformed Python.
+- These runs reinforce that the next useful work is not more response-only
+  replay. The target needs stronger parent-first structural repair: OT/PCA
+  residual maps, full-block reconstruction, numeric/tokenizer-specific output
+  control, and on-policy correction.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best
