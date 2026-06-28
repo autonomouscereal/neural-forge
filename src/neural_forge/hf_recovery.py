@@ -435,6 +435,10 @@ def recover_cross_tokenizer_causal_lm(
     teacher_rank_weight: float = 0.0,
     teacher_rank_temperature: float = 1.0,
     teacher_rank_max_negatives: int = 4,
+    on_policy_anchor_kd_weight: float = 0.0,
+    on_policy_unlikelihood_weight: float = 0.0,
+    on_policy_max_new_tokens: int = 24,
+    on_policy_interval: int = 10,
     append_eos: bool = False,
     grad_clip: float = 1.0,
     report_interval: int | None = None,
@@ -472,6 +476,8 @@ def recover_cross_tokenizer_causal_lm(
         or alm_kd_weight < 0
         or answer_contrastive_weight < 0
         or teacher_rank_weight < 0
+        or on_policy_anchor_kd_weight < 0
+        or on_policy_unlikelihood_weight < 0
     ):
         raise ValueError("loss weights must be non-negative.")
     if token_focus not in {"auto", "response", "numbers", "code", "all"}:
@@ -490,6 +496,10 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("teacher_rank_max_negatives must be positive.")
     if teacher_rank_temperature <= 0:
         raise ValueError("teacher_rank_temperature must be positive.")
+    if on_policy_max_new_tokens <= 0:
+        raise ValueError("on_policy_max_new_tokens must be positive.")
+    if on_policy_interval <= 0:
+        raise ValueError("on_policy_interval must be positive.")
     if not 0.0 <= float(entropy_aware_kd_weight) <= 1.0:
         raise ValueError("entropy_aware_kd_weight must be in [0, 1].")
     if not 0.0 <= float(entropy_aware_kd_threshold) <= 1.0:
@@ -511,6 +521,8 @@ def recover_cross_tokenizer_causal_lm(
         and alm_kd_weight == 0
         and answer_contrastive_weight == 0
         and teacher_rank_weight == 0
+        and on_policy_anchor_kd_weight == 0
+        and on_policy_unlikelihood_weight == 0
     ):
         raise ValueError("At least one loss weight must be positive.")
     if unlikelihood_window <= 0:
@@ -683,6 +695,7 @@ def recover_cross_tokenizer_causal_lm(
     alm_chunk_counts = []
     answer_contrastive_counts = []
     teacher_rank_counts = []
+    on_policy_counts = []
     interval = int(report_interval or max(1, steps // 10))
     best_loss = None
     best_step = None
@@ -831,6 +844,30 @@ def recover_cross_tokenizer_causal_lm(
             )
             teacher_rank_counts.append(int(teacher_rank_count))
             loss = loss + float(teacher_rank_weight) * teacher_rank
+        if (
+            (on_policy_anchor_kd_weight > 0 or on_policy_unlikelihood_weight > 0)
+            and (step == 1 or step % int(on_policy_interval) == 0)
+        ):
+            on_policy_loss, on_policy_count = _cross_tokenizer_on_policy_rollout_loss(
+                torch,
+                source,
+                candidate,
+                source_tokenizer,
+                candidate_tokenizer,
+                candidate_batch.get("raw_texts", candidate_batch.get("texts", [])),
+                response_loss_mode,
+                int(on_policy_max_new_tokens),
+                max_length,
+                device,
+                source_anchor_idx,
+                candidate_anchor_idx,
+                temperature,
+                on_policy_anchor_kd_weight,
+                on_policy_unlikelihood_weight,
+                unlikelihood_window,
+            )
+            on_policy_counts.append(int(on_policy_count))
+            loss = loss + on_policy_loss
         if not bool(torch.isfinite(loss).detach().cpu()):
             raise RuntimeError(f"Non-finite cross-tokenizer recovery loss at step {step}; aborting before save.")
         loss.backward()
@@ -846,7 +883,8 @@ def recover_cross_tokenizer_causal_lm(
                 f"token_focus={token_focus_counts[-1] if token_focus_counts else 0} "
                 f"alm_chunks={alm_chunk_counts[-1] if alm_chunk_counts else 0} "
                 f"answer_contrastive={answer_contrastive_counts[-1] if answer_contrastive_counts else 0} "
-                f"teacher_rank={teacher_rank_counts[-1] if teacher_rank_counts else 0}",
+                f"teacher_rank={teacher_rank_counts[-1] if teacher_rank_counts else 0} "
+                f"on_policy={on_policy_counts[-1] if on_policy_counts else 0}",
                 flush=True,
             )
             if save_best_loss and (best_loss is None or loss_value < best_loss):
@@ -900,6 +938,11 @@ def recover_cross_tokenizer_causal_lm(
         "teacher_rank_temperature": teacher_rank_temperature,
         "teacher_rank_max_negatives": teacher_rank_max_negatives,
         "teacher_rank_count_observed": teacher_rank_counts,
+        "on_policy_anchor_kd_weight": on_policy_anchor_kd_weight,
+        "on_policy_unlikelihood_weight": on_policy_unlikelihood_weight,
+        "on_policy_max_new_tokens": on_policy_max_new_tokens,
+        "on_policy_interval": on_policy_interval,
+        "on_policy_count_observed": on_policy_counts,
         "append_eos": bool(append_eos),
         "token_focus_count_observed": token_focus_counts,
         "entropy_aware_kd_weight": entropy_aware_kd_weight,
@@ -2265,6 +2308,157 @@ def _teacher_ranked_candidate_loss(
         param = next(candidate_model.parameters())
         return torch.zeros((), dtype=param.dtype, device=param.device), 0
     return torch.stack(losses).mean(), len(losses)
+
+
+def _cross_tokenizer_on_policy_rollout_loss(
+    torch,
+    source_model,
+    candidate_model,
+    source_tokenizer,
+    candidate_tokenizer,
+    texts: Sequence[str],
+    response_loss_mode: str,
+    max_new_tokens: int,
+    max_length: int,
+    device: str,
+    source_anchor_idx,
+    candidate_anchor_idx,
+    temperature: float,
+    anchor_kd_weight: float,
+    unlikelihood_weight: float,
+    unlikelihood_window: int,
+):
+    if anchor_kd_weight < 0 or unlikelihood_weight < 0:
+        raise ValueError("on-policy loss weights must be non-negative.")
+    if max_new_tokens <= 0:
+        raise ValueError("max_new_tokens must be positive.")
+    if anchor_kd_weight == 0 and unlikelihood_weight == 0:
+        param = next(candidate_model.parameters())
+        return torch.zeros((), dtype=param.dtype, device=param.device), 0
+    prompts = [_on_policy_prompt_text(str(text), response_loss_mode) for text in texts]
+    prompts = [prompt for prompt in prompts if prompt.strip()]
+    if not prompts:
+        param = next(candidate_model.parameters())
+        return torch.zeros((), dtype=param.dtype, device=param.device), 0
+
+    prompt_max_length = max(2, int(max_length) - int(max_new_tokens))
+    encoded = candidate_tokenizer(
+        prompts,
+        return_tensors="pt",
+        padding=True,
+        truncation=True,
+        max_length=prompt_max_length,
+    )
+    encoded = {key: value.to(device) for key, value in encoded.items()}
+    pad_id = candidate_tokenizer.pad_token_id
+    if pad_id is None:
+        pad_id = candidate_tokenizer.eos_token_id
+    was_training = candidate_model.training
+    try:
+        candidate_model.eval()
+        with torch.no_grad():
+            generated = candidate_model.generate(
+                **encoded,
+                max_new_tokens=int(max_new_tokens),
+                do_sample=False,
+                pad_token_id=pad_id,
+                eos_token_id=candidate_tokenizer.eos_token_id,
+            )
+    finally:
+        if was_training:
+            candidate_model.train()
+    rollout_texts = [
+        candidate_tokenizer.decode(row.tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=False)
+        for row in generated.detach().cpu()
+    ]
+    rollout_texts = [text for text in rollout_texts if text.strip()]
+    if not rollout_texts:
+        param = next(candidate_model.parameters())
+        return torch.zeros((), dtype=param.dtype, device=param.device), 0
+
+    paired = _make_paired_batches(
+        source_tokenizer,
+        candidate_tokenizer,
+        rollout_texts,
+        batch_size=len(rollout_texts),
+        max_length=max_length,
+        device=device,
+        include_offsets=False,
+        response_loss_mode="none",
+        append_eos=False,
+    )
+    source_batch, candidate_batch = paired[0]
+    with torch.no_grad():
+        teacher = source_model(**_model_forward_inputs(source_batch), use_cache=False)
+    student = candidate_model(**_model_forward_inputs(candidate_batch), use_cache=False)
+    total = torch.zeros((), dtype=student.logits.dtype, device=student.logits.device)
+    if anchor_kd_weight > 0:
+        total = total + _cross_tokenizer_recovery_loss(
+            torch,
+            student,
+            teacher,
+            candidate_batch["input_ids"],
+            candidate_batch.get("attention_mask"),
+            None,
+            source_batch.get("attention_mask"),
+            candidate_anchor_idx,
+            source_anchor_idx,
+            float(anchor_kd_weight),
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            "teacher-to-student",
+            0.0,
+            0.0,
+            unlikelihood_window,
+            0.0,
+            0.0,
+            0.55,
+            8.0,
+            None,
+            "last",
+            "projected",
+            None,
+            None,
+            None,
+            None,
+            None,
+            temperature,
+            source_input_ids=source_batch["input_ids"],
+        )
+    if unlikelihood_weight > 0:
+        shift_logits = torch.nan_to_num(
+            student.logits[:, :-1, :].contiguous().to(torch.float32),
+            nan=0.0,
+            posinf=1e4,
+            neginf=-1e4,
+        )
+        shift_labels = candidate_batch["input_ids"][:, 1:].contiguous()
+        mask = (
+            torch.ones_like(shift_labels, dtype=torch.bool)
+            if candidate_batch.get("attention_mask") is None
+            else candidate_batch["attention_mask"][:, 1:].contiguous().bool()
+        )
+        total = total + float(unlikelihood_weight) * _recent_token_unlikelihood_loss(
+            torch,
+            shift_logits,
+            candidate_batch["input_ids"],
+            shift_labels,
+            mask,
+            window=unlikelihood_window,
+        )
+    return total, len(rollout_texts)
+
+
+def _on_policy_prompt_text(text: str, response_loss_mode: str) -> str:
+    if response_loss_mode not in {"none", "auto", "assistant", "answer"}:
+        raise ValueError("response_loss_mode must be none, auto, assistant, or answer.")
+    start = _infer_response_char_start(text, response_loss_mode)
+    if start is None or int(start) <= 0:
+        return text
+    return text[: int(start)]
 
 
 def _sequence_response_nlls(

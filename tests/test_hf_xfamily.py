@@ -32,6 +32,7 @@ from neural_forge.hf_recovery import _join_prompt_response
 from neural_forge.hf_recovery import _layer_gate_decision
 from neural_forge.hf_recovery import _linear_cka_tensor
 from neural_forge.hf_recovery import _mlp_projection_spec
+from neural_forge.hf_recovery import _on_policy_prompt_text
 from neural_forge.hf_recovery import _proportional_layer_index
 from neural_forge.hf_recovery import _project_candidate_probs_to_source_vocab
 from neural_forge.hf_recovery import _project_source_logits_to_candidate_vocab
@@ -585,6 +586,14 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.7",
             "--teacher-rank-max-negatives",
             "5",
+            "--on-policy-anchor-kd-weight",
+            "0.23",
+            "--on-policy-unlikelihood-weight",
+            "0.37",
+            "--on-policy-max-new-tokens",
+            "19",
+            "--on-policy-interval",
+            "4",
             "--append-eos",
             "--entropy-aware-kd-weight",
             "0.45",
@@ -761,6 +770,10 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_recover_args.teacher_rank_weight == 0.11
     assert xfamily_recover_args.teacher_rank_temperature == 0.7
     assert xfamily_recover_args.teacher_rank_max_negatives == 5
+    assert xfamily_recover_args.on_policy_anchor_kd_weight == pytest.approx(0.23)
+    assert xfamily_recover_args.on_policy_unlikelihood_weight == pytest.approx(0.37)
+    assert xfamily_recover_args.on_policy_max_new_tokens == 19
+    assert xfamily_recover_args.on_policy_interval == 4
     assert xfamily_recover_args.append_eos is True
     assert merge_layer_args.groups == "3+4,7+8"
     assert drop_args.layers == "3,7"
@@ -2665,6 +2678,12 @@ def test_alm_text_chunks_can_scope_to_answer() -> None:
     assert chunks == [(20, 25), (26, 31)]
 
 
+def test_on_policy_prompt_text_keeps_prompt_side_of_response() -> None:
+    assert _on_policy_prompt_text("Question: x\nAnswer: final", "answer") == "Question: x\nAnswer:"
+    assert _on_policy_prompt_text("Write code\n```python\nreturn 1", "auto") == "Write code\n"
+    assert _on_policy_prompt_text("plain text", "none") == "plain text"
+
+
 def test_project_source_logits_to_candidate_vocab_averages_source_token_groups() -> None:
     torch = pytest.importorskip("torch")
     source_logits = torch.tensor([[1.0, 3.0, 5.0, 7.0]])
@@ -3339,6 +3358,14 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "0.8",
             "--teacher-rank-max-negatives",
             "6",
+            "--on-policy-anchor-kd-weight",
+            "0.41",
+            "--on-policy-unlikelihood-weight",
+            "0.52",
+            "--on-policy-max-new-tokens",
+            "17",
+            "--on-policy-interval",
+            "3",
             "--append-eos",
             "--entropy-aware-kd-weight",
             "0.35",
@@ -3421,6 +3448,10 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "teacher_rank_weight": 0.31,
         "teacher_rank_temperature": 0.8,
         "teacher_rank_max_negatives": 6,
+        "on_policy_anchor_kd_weight": 0.41,
+        "on_policy_unlikelihood_weight": 0.52,
+        "on_policy_max_new_tokens": 17,
+        "on_policy_interval": 3,
         "append_eos": True,
         "entropy_aware_kd_weight": 0.35,
         "entropy_aware_kd_threshold": 0.62,

@@ -638,6 +638,10 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--teacher-rank-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--teacher-rank-temperature", type=float, default=1.0)
     xfamily_recover.add_argument("--teacher-rank-max-negatives", type=int, default=4)
+    xfamily_recover.add_argument("--on-policy-anchor-kd-weight", type=float, default=0.0)
+    xfamily_recover.add_argument("--on-policy-unlikelihood-weight", type=float, default=0.0)
+    xfamily_recover.add_argument("--on-policy-max-new-tokens", type=int, default=24)
+    xfamily_recover.add_argument("--on-policy-interval", type=int, default=10)
     xfamily_recover.add_argument("--append-eos", action="store_true")
     xfamily_recover.add_argument("--entropy-aware-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--entropy-aware-kd-threshold", type=float, default=0.55)
@@ -1460,6 +1464,10 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         teacher_rank_weight=args.teacher_rank_weight,
         teacher_rank_temperature=args.teacher_rank_temperature,
         teacher_rank_max_negatives=args.teacher_rank_max_negatives,
+        on_policy_anchor_kd_weight=args.on_policy_anchor_kd_weight,
+        on_policy_unlikelihood_weight=args.on_policy_unlikelihood_weight,
+        on_policy_max_new_tokens=args.on_policy_max_new_tokens,
+        on_policy_interval=args.on_policy_interval,
         append_eos=args.append_eos,
         entropy_aware_kd_weight=args.entropy_aware_kd_weight,
         entropy_aware_kd_threshold=args.entropy_aware_kd_threshold,
