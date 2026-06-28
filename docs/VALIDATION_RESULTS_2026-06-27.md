@@ -544,6 +544,62 @@ Negative result:
   reconstruction alpha 0.05`: PPL `1,384.22`, choice `3/4`, behavior `1/6`,
   with recognizable but malformed pruning/code/merge-risk output.
 
+### Activation-Subspace 29x Blank-Target Follow-Up
+
+Code change:
+
+- Added `hf-donor-project-init --activation-feature-mode subspace` with
+  `--activation-subspace-rank`. The activation profile now appends a
+  canonicalized per-channel SVD/PCA signature to the prior scalar stats
+  (`mean`, `std`, `abs_mean`, positive fraction). This gives transport and
+  similarity assignment a richer activation-subspace cost while preserving the
+  existing stats mode.
+- Fixed the subspace signature tensor to stay on the activation device. The
+  first GPU run caught this because CUDA activations were being concatenated
+  with a CPU zero signature.
+
+Unit/remote validation:
+
+- Local: `82 passed, 65 skipped`.
+- Remote AI lab: `147 passed`.
+
+Method rationale from 2025-2026 research:
+
+- DOT-style resizing and model-folding work points toward activation/weight
+  transport before pruning (`arXiv:2507.04517`).
+- FLAT-LLM-style compression uses activation low-rank/subspace structure rather
+  than raw weight shape alone.
+- GRAIL/Free-Lunch-style repair suggests block/module reconstruction after
+  folding, not only matrix averaging.
+- OMP tokenizer transplantation (`arXiv:2506.06607`) motivates sparse
+  embedding/head alignment when tokenizers diverge.
+
+Blank-target experiments run on the AI server:
+
+| Checkpoint | Target | Params | Ratio | PPL mean | Choice | Behavior | Manual notes |
+|---|---|---:|---:|---:|---:|---:|---|
+| `runs/qwen4b_to_smollm135m_subspace_raw25_20260627_200317/model` | blank SmolLM2-135M config, tied | 134,515,008 | 29.90x | 485,165,195.41 | 2/4 | 0/6 | collapsed into repeated backticks/`scientifically`; not useful |
+| `runs/qwen4b_to_smollm135m_subspace_qkvo_pca_omp_raw25_20260627_200753/model` | blank SmolLM2-135M config, tied | 134,515,008 | 29.90x | 77,259.58 | 0/4 | 0/6 | much better PPL from qk/vo head-dim transport + activation PCA + OMP, but text is token salad |
+| `.../reconstruct_mlp_a05_anchor4096` | same as above + gated MLP reconstruction | 134,515,008 | 29.90x | 78,310.95 | 0/4 | 0/6 | accepted local fits but worsened PPL/manual output |
+| `.../block_recover_s24_lm005` | same as above + block recovery | 134,515,008 | 29.90x | 67,981.89 | 0/4 | 0/6 | block losses and PPL improved, but manual output remained junk |
+| `.../block_s24_xrecover120_last4` | same as above + mixed last4 recovery | 134,515,008 | 29.90x | 66,184.77 | 0/4 | 0/6 | recovery loss moved, PPL improved slightly, behavior stayed dead |
+| `runs/qwen4b_to_blank_qwen_tiny_subspace_raw25_20260627_202759/model` | blank Qwen3-compatible tied config | 143,777,280 | 27.98x | 198,678.67 | 2/4 | 0/6 | same tokenizer did not fix collapse; repeated tabs/punctuation |
+| `runs/qwen4b_to_blank_qwen_tiny_untied_subspace_raw25_20260627_203153/model` | blank Qwen3-compatible untied config | 137,136,768 | 29.33x | 155,361.38 | 1/4 | 0/6 | untied head reduced neither looping nor behavior failure |
+
+Interpretation:
+
+- Subspace activation signatures are useful infrastructure, and the qk/vo
+  attention head-dim transport + activation PCA + OMP variant was a real PPL
+  improvement over subspace-only (`4.85e8` to `7.73e4`), but it still did not
+  produce useful text.
+- Same-tokenizer blank Qwen targets also failed, so the current blocker is not
+  only tokenizer mismatch or tied heads. The folded internal dynamics are still
+  not preserving autoregressive behavior at ~28-30x.
+- Gated matrix reconstruction and 24-step-per-layer block recovery improved
+  local metrics but not greedy outputs. This confirms the next repair needs a
+  stronger behavior-coupled/on-policy objective or deeper blockwise fitting,
+  not another PPL-only reconstruction pass.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best

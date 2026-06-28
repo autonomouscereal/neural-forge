@@ -57,6 +57,7 @@ from neural_forge.hf_xfamily import _assign_donor_to_host
 from neural_forge.hf_xfamily import _activation_similarity_assignment
 from neural_forge.hf_xfamily import _activation_axis_weights_for_tensor
 from neural_forge.hf_xfamily import _activation_fit_suffix_enabled
+from neural_forge.hf_xfamily import _activation_channel_summary
 from neural_forge.hf_xfamily import _attention_axis_weights_for_tensor
 from neural_forge.hf_xfamily import _attention_head_activation_profile
 from neural_forge.hf_xfamily import _axis_reductions_for_layer_tensor
@@ -408,6 +409,10 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.6",
             "--activation-fit-ridge",
             "0.2",
+            "--activation-feature-mode",
+            "subspace",
+            "--activation-subspace-rank",
+            "6",
             "--untie-output-head",
             "--activation-calibration-file",
             "activation.jsonl",
@@ -765,6 +770,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.activation_fit_max_rows == 88
     assert donor_init_args.activation_fit_alpha == pytest.approx(0.6)
     assert donor_init_args.activation_fit_ridge == pytest.approx(0.2)
+    assert donor_init_args.activation_feature_mode == "subspace"
+    assert donor_init_args.activation_subspace_rank == 6
     assert donor_init_args.untie_output_head is True
     assert donor_init_args.activation_calibration_file == "activation.jsonl"
     assert donor_init_args.activation_max_calibration_texts == 5
@@ -1522,6 +1529,30 @@ def test_attention_head_activation_profile_extracts_per_head_features() -> None:
     assert tuple(profile["features"].shape) == (2, 6)
     assert profile["head_dim_scores"].tolist() == pytest.approx([2.5, 2.5])
     assert tuple(profile["head_dim_features"].shape) == (2, 3)
+
+
+def test_activation_channel_summary_can_append_subspace_signature() -> None:
+    torch = pytest.importorskip("torch")
+    values = torch.tensor(
+        [
+            [1.0, 0.0, -1.0],
+            [2.0, 1.0, 0.0],
+            [3.0, 0.0, 1.0],
+            [4.0, -1.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    stats = _activation_channel_summary(torch, values)
+    subspace = _activation_channel_summary(torch, values, mode="subspace", subspace_rank=3)
+    rank_zero = _activation_channel_summary(torch, values, mode="subspace", subspace_rank=0)
+
+    assert tuple(stats.shape) == (3, 4)
+    assert tuple(subspace.shape) == (3, 7)
+    assert tuple(rank_zero.shape) == (3, 4)
+    assert subspace.device == values.device
+    assert torch.allclose(subspace[:, :4], stats)
+    assert subspace[:, 4:].abs().sum().item() > 0.0
 
 
 def test_attention_axis_weights_share_q_and_o_head_profiles() -> None:
@@ -3223,6 +3254,10 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "0.5",
             "--activation-fit-ridge",
             "0.3",
+            "--activation-feature-mode",
+            "subspace",
+            "--activation-subspace-rank",
+            "5",
             "--untie-output-head",
             "--activation-calibration-file",
             "activation.jsonl",
@@ -3267,6 +3302,8 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "activation_fit_max_rows": 44,
         "activation_fit_alpha": 0.5,
         "activation_fit_ridge": 0.3,
+        "activation_feature_mode": "subspace",
+        "activation_subspace_rank": 5,
         "untie_output_head": True,
         "activation_calibration_texts": ["activation text"],
         "activation_max_length": 64,

@@ -204,6 +204,18 @@ def build_parser() -> argparse.ArgumentParser:
     hf_donor_init.add_argument("--activation-fit-alpha", type=float, default=1.0)
     hf_donor_init.add_argument("--activation-fit-ridge", type=float, default=1e-1)
     hf_donor_init.add_argument(
+        "--activation-feature-mode",
+        choices=["stats", "subspace"],
+        default="stats",
+        help="Activation feature summary used for transport/similarity assignment on folded axes.",
+    )
+    hf_donor_init.add_argument(
+        "--activation-subspace-rank",
+        type=int,
+        default=8,
+        help="Extra per-channel PCA/SVD signature dimensions when --activation-feature-mode subspace is used.",
+    )
+    hf_donor_init.add_argument(
         "--untie-output-head",
         action="store_true",
         help="Keep a separate donor-projected lm_head instead of tying it back to input embeddings.",
@@ -1244,6 +1256,8 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         activation_fit_max_rows=args.activation_fit_max_rows,
         activation_fit_alpha=args.activation_fit_alpha,
         activation_fit_ridge=args.activation_fit_ridge,
+        activation_feature_mode=args.activation_feature_mode,
+        activation_subspace_rank=args.activation_subspace_rank,
         untie_output_head=args.untie_output_head,
         activation_calibration_texts=activation_calibration_texts,
         activation_max_length=args.activation_max_length,

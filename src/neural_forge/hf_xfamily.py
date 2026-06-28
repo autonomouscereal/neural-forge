@@ -268,6 +268,8 @@ def donor_projected_init(
     activation_fit_max_rows: int = 0,
     activation_fit_alpha: float = 1.0,
     activation_fit_ridge: float = 1e-1,
+    activation_feature_mode: str = "stats",
+    activation_subspace_rank: int = 8,
     untie_output_head: bool = False,
     activation_calibration_texts: list[str] | None = None,
     activation_max_length: int = 128,
@@ -324,6 +326,10 @@ def donor_projected_init(
         raise ValueError("activation_fit_max_rows must be non-negative.")
     if activation_fit_ridge < 0:
         raise ValueError("activation_fit_ridge must be non-negative.")
+    if activation_feature_mode not in {"stats", "subspace"}:
+        raise ValueError("activation_feature_mode must be stats or subspace.")
+    if activation_subspace_rank < 0:
+        raise ValueError("activation_subspace_rank must be non-negative.")
     projection_blend_alpha = _bounded_alpha(projection_blend_alpha, "projection_blend_alpha")
     activation_fit_alpha = _bounded_alpha(activation_fit_alpha, "activation_fit_alpha")
     if activation_max_length <= 1:
@@ -378,6 +384,8 @@ def donor_projected_init(
             device=activation_device,
             hidden_basis_max_rows=hidden_basis_max_rows if hidden_basis_mode == "activation-pca" else 0,
             linear_fit_max_rows=activation_fit_max_rows if activation_fit_linears else 0,
+            activation_feature_mode=activation_feature_mode,
+            activation_subspace_rank=activation_subspace_rank,
         )
     if attention_fold_mode == "activation-coupled" and activation_profile is None:
         raise ValueError("activation-coupled attention folding requires activation calibration texts.")
@@ -683,6 +691,8 @@ def donor_projected_init(
         "activation_fit_max_rows": int(activation_fit_max_rows),
         "activation_fit_alpha": float(activation_fit_alpha),
         "activation_fit_ridge": float(activation_fit_ridge),
+        "activation_feature_mode": activation_feature_mode,
+        "activation_subspace_rank": int(activation_subspace_rank),
         "activation_fit_reports": activation_fit_reports,
         "untie_output_head": bool(untie_output_head),
         "activation_calibration_text_count": len(activation_calibration_texts or []),
@@ -2655,9 +2665,15 @@ def _collect_donor_axis_activation_scores(
     device: str,
     hidden_basis_max_rows: int = 0,
     linear_fit_max_rows: int = 0,
+    activation_feature_mode: str = "stats",
+    activation_subspace_rank: int = 8,
 ) -> dict[str, Any]:
     if not texts:
         raise ValueError("Need at least one activation calibration text.")
+    if activation_feature_mode not in {"stats", "subspace"}:
+        raise ValueError("activation_feature_mode must be stats or subspace.")
+    if activation_subspace_rank < 0:
+        raise ValueError("activation_subspace_rank must be non-negative.")
     hidden_scores = []
     hidden_features = []
     hidden_basis_pieces = []
@@ -2703,7 +2719,14 @@ def _collect_donor_axis_activation_scores(
             nonlocal hidden_basis_rows
             hidden = inputs[0].detach().to(torch.float32)
             hidden_scores.append(_activation_abs_score(torch, hidden).cpu())
-            hidden_features.append(_activation_channel_summary(torch, _activation_2d(torch, hidden)).cpu())
+            hidden_features.append(
+                _activation_channel_summary(
+                    torch,
+                    _activation_2d(torch, hidden),
+                    mode=activation_feature_mode,
+                    subspace_rank=activation_subspace_rank,
+                ).cpu()
+            )
             if int(hidden_basis_max_rows) > 0 and hidden_basis_rows < int(hidden_basis_max_rows):
                 rows = _activation_2d(torch, hidden).detach().cpu().to(torch.float32)
                 remaining = int(hidden_basis_max_rows) - hidden_basis_rows
@@ -2727,7 +2750,14 @@ def _collect_donor_axis_activation_scores(
             tensor = output[0] if isinstance(output, tuple) else output
             values = tensor.detach().to(torch.float32)
             mlp_scores[layer_idx].append(_activation_abs_score(torch, values).cpu())
-            mlp_features[layer_idx].append(_activation_channel_summary(torch, _activation_2d(torch, values)).cpu())
+            mlp_features[layer_idx].append(
+                _activation_channel_summary(
+                    torch,
+                    _activation_2d(torch, values),
+                    mode=activation_feature_mode,
+                    subspace_rank=activation_subspace_rank,
+                ).cpu()
+            )
 
         return hook
 
@@ -2891,6 +2921,8 @@ def _collect_donor_axis_activation_scores(
         "attention_head_profiles": folded_attention_profiles,
         "attention_head_dim_profiles": folded_attention_head_dim_profiles,
         "linear_fit_rows": folded_linear_fit_rows,
+        "activation_feature_mode": activation_feature_mode,
+        "activation_subspace_rank": int(activation_subspace_rank),
     }
 
 
@@ -4196,14 +4228,48 @@ def _collect_mlp_activation_features(
     return features
 
 
-def _activation_channel_summary(torch, values):
+def _activation_channel_summary(torch, values, mode: str = "stats", subspace_rank: int = 8):
+    if mode not in {"stats", "subspace"}:
+        raise ValueError("mode must be stats or subspace.")
+    if subspace_rank < 0:
+        raise ValueError("subspace_rank must be non-negative.")
     values = values.to(torch.float32)
     mean = values.mean(dim=0)
     centered = values - mean.unsqueeze(0)
     std = centered.pow(2).mean(dim=0).sqrt()
     abs_mean = values.abs().mean(dim=0)
     positive_fraction = (values > 0).to(torch.float32).mean(dim=0)
-    return torch.stack([mean, std, abs_mean, positive_fraction], dim=1)
+    stats = torch.stack([mean, std, abs_mean, positive_fraction], dim=1)
+    if mode == "stats" or int(subspace_rank) == 0:
+        return stats
+    return torch.cat([stats, _activation_channel_subspace_signature(torch, centered, int(subspace_rank))], dim=1)
+
+
+def _activation_channel_subspace_signature(torch, centered, rank: int):
+    channels = int(centered.shape[1])
+    signature = torch.zeros((channels, int(rank)), dtype=torch.float32, device=centered.device)
+    if rank <= 0 or channels <= 0 or int(centered.shape[0]) < 2:
+        return signature
+    row_rms = centered.pow(2).mean(dim=1, keepdim=True).sqrt().clamp_min(1e-6)
+    normalized = centered / row_rms
+    try:
+        _u, singular_values, vh = torch.linalg.svd(normalized, full_matrices=False)
+    except RuntimeError:
+        return signature
+    keep = min(int(rank), int(vh.shape[0]), channels)
+    if keep <= 0:
+        return signature
+    components = vh[:keep].t().contiguous()
+    # SVD signs are arbitrary. Canonicalize each component by its largest entry
+    # so repeated calibration batches aggregate consistently.
+    for idx in range(keep):
+        column = components[:, idx]
+        pivot = int(torch.argmax(column.abs()).item())
+        if float(column[pivot].item()) < 0.0:
+            components[:, idx] = -column
+    scale = singular_values[:keep] / singular_values[:keep].max().clamp_min(1e-12)
+    signature[:, :keep] = components * scale.unsqueeze(0)
+    return signature
 
 
 def _merge_mlp_layer_channels(
