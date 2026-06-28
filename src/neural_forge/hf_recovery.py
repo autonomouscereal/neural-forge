@@ -1624,6 +1624,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     batch_size: int = 1,
     max_length: int = 128,
     lr: float = 2e-5,
+    lm_weight: float = 0.0,
     hidden_ridge: float = 1e-3,
     hidden_metric: str = "projected",
     max_anchors: int = 2048,
@@ -1659,6 +1660,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("max_length must be greater than 1.")
     if lr <= 0:
         raise ValueError("lr must be positive.")
+    if lm_weight < 0:
+        raise ValueError("lm_weight must be non-negative.")
     if hidden_ridge < 0:
         raise ValueError("hidden_ridge must be non-negative.")
     if hidden_metric not in {"projected", "cka", "both"}:
@@ -1838,9 +1841,19 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 hidden_metric,
                 span_max_pairs,
             )
-            if int(pair_count) <= 0:
+            if int(pair_count) <= 0 and lm_weight == 0:
                 skipped_steps += 1
                 continue
+            block_loss_value = float(loss.detach().cpu())
+            lm_loss = None
+            if lm_weight > 0:
+                lm_loss = _candidate_lm_stabilizer_loss(
+                    torch,
+                    student,
+                    candidate_batch["input_ids"],
+                    candidate_batch.get("attention_mask"),
+                )
+                loss = loss + float(lm_weight) * lm_loss
             if not bool(torch.isfinite(loss).detach().cpu()):
                 raise RuntimeError(
                     f"Non-finite blockwise reconstruction loss at layer {candidate_idx}, step {step}; aborting."
@@ -1850,15 +1863,26 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 torch.nn.utils.clip_grad_norm_([p for p in candidate_layer.parameters() if p.requires_grad], grad_clip)
             optimizer.step()
             loss_value = float(loss.detach().cpu())
+            lm_loss_value = None if lm_loss is None else float(lm_loss.detach().cpu())
             if save_best_layer_loss and (best_loss is None or loss_value < best_loss):
                 best_loss = loss_value
                 best_step = int(step)
                 best_state = _snapshot_module_state(candidate_layer)
             if step == 1 or step % interval == 0 or step == steps_per_layer:
-                losses.append({"step": int(step), "loss": loss_value, "span_pairs": int(pair_count)})
+                losses.append(
+                    {
+                        "step": int(step),
+                        "loss": loss_value,
+                        "block_loss": block_loss_value,
+                        "lm_loss": lm_loss_value,
+                        "span_pairs": int(pair_count),
+                    }
+                )
                 print(
                     f"xfamily_block_recover layer={candidate_idx} step={step} "
-                    f"loss={loss_value:.6f} span_pairs={int(pair_count)}",
+                    f"loss={loss_value:.6f} block_loss={block_loss_value:.6f} "
+                    f"lm_loss={lm_loss_value if lm_loss_value is not None else 0.0:.6f} "
+                    f"span_pairs={int(pair_count)}",
                     flush=True,
                 )
         if save_best_layer_loss and best_state is not None:
@@ -1940,6 +1964,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "batch_size": int(batch_size),
         "max_length": int(max_length),
         "lr": float(lr),
+        "lm_weight": float(lm_weight),
         "hidden_ridge": float(hidden_ridge),
         "hidden_metric": hidden_metric,
         "max_anchors": int(max_anchors),
@@ -3675,6 +3700,30 @@ def _cross_tokenizer_block_hidden_loss(
         hidden_metric,
     )
     return loss.to(device=student.logits.device, dtype=torch.float32), int(row_count)
+
+
+def _candidate_lm_stabilizer_loss(torch, student, input_ids, attention_mask):
+    if int(input_ids.shape[-1]) <= 1:
+        return torch.zeros((), dtype=student.logits.dtype, device=student.logits.device)
+    shift_logits = torch.nan_to_num(
+        student.logits[:, :-1, :].contiguous().to(torch.float32),
+        nan=0.0,
+        posinf=1e4,
+        neginf=-1e4,
+    )
+    shift_labels = input_ids[:, 1:].contiguous()
+    if attention_mask is None:
+        mask = torch.ones_like(shift_labels, dtype=torch.bool, device=shift_logits.device)
+    else:
+        mask = attention_mask[:, 1:].contiguous().to(device=shift_logits.device).bool()
+    if int(mask.sum().detach().cpu().item()) <= 0:
+        return torch.zeros((), dtype=student.logits.dtype, device=student.logits.device)
+    token_ce = torch.nn.functional.cross_entropy(
+        shift_logits.view(-1, shift_logits.shape[-1]),
+        shift_labels.to(device=shift_logits.device).view(-1),
+        reduction="none",
+    ).view_as(shift_labels)
+    return (token_ce * mask).sum() / mask.sum().clamp_min(1)
 
 
 def _cross_tokenizer_block_alignment_metrics(

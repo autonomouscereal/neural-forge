@@ -788,6 +788,12 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_block_recover.add_argument("--batch-size", type=int, default=1)
     xfamily_block_recover.add_argument("--max-length", type=int, default=128)
     xfamily_block_recover.add_argument("--lr", type=float, default=2e-5)
+    xfamily_block_recover.add_argument(
+        "--lm-weight",
+        type=float,
+        default=0.0,
+        help="Candidate-token LM stabilizer weight applied while each block is trained.",
+    )
     xfamily_block_recover.add_argument("--hidden-ridge", type=float, default=1e-3)
     xfamily_block_recover.add_argument(
         "--hidden-metric",
@@ -1609,6 +1615,7 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         batch_size=args.batch_size,
         max_length=args.max_length,
         lr=args.lr,
+        lm_weight=args.lm_weight,
         hidden_ridge=args.hidden_ridge,
         hidden_metric=args.hidden_metric,
         max_anchors=args.max_anchors,
