@@ -434,6 +434,7 @@ child against the `4,022,468,096` parameter Qwen3-4B donor (`29.90x`).
 | Blockwise 2 layers, LM 0.15 | tied 29.9x baseline | 4,372.72 | 3/4 | 1/6 | code tokens appear but syntax and numbers remain broken |
 | OMP token init, raw tied 29.9x | blank SmolLM | 75,020.37 | 1/4 | 0/6 | initializes 48,951 rows but produces severe token garbage |
 | Blockwise all layers, LM 0.05, strict PPL gate 1.02 | tied 29.9x baseline | 3,973.17 | 2/4 | 3/6 | 27/30 block updates accepted, 3 reverted; topical but worse than baseline choice/PPL |
+| Blockwise all layers + dual/ALM recovery 120 steps | blockwise all-layer run | 3,356.29 | 2/4 | 2/6 | PPL improves, but behavior and manual code/math regress |
 
 Manual inspection of the best blockwise all-layer run:
 
