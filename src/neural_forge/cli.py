@@ -941,6 +941,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     xfamily_block_recover.add_argument("--on-policy-anchor-kd-weight", type=float, default=0.0)
     xfamily_block_recover.add_argument("--on-policy-unlikelihood-weight", type=float, default=0.0)
+    xfamily_block_recover.add_argument(
+        "--on-policy-hidden-kd-weight",
+        type=float,
+        default=0.0,
+        help="Add block hidden alignment on greedy child rollouts during blockwise recovery.",
+    )
     xfamily_block_recover.add_argument("--on-policy-max-new-tokens", type=int, default=24)
     xfamily_block_recover.add_argument("--on-policy-interval", type=int, default=10)
     xfamily_block_recover.add_argument(
@@ -1807,6 +1813,7 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         layer_gate_behavior_max_new_tokens=args.layer_gate_behavior_max_new_tokens,
         on_policy_anchor_kd_weight=args.on_policy_anchor_kd_weight,
         on_policy_unlikelihood_weight=args.on_policy_unlikelihood_weight,
+        on_policy_hidden_kd_weight=args.on_policy_hidden_kd_weight,
         on_policy_max_new_tokens=args.on_policy_max_new_tokens,
         on_policy_interval=args.on_policy_interval,
         on_policy_response_loss_mode=args.on_policy_response_loss_mode,

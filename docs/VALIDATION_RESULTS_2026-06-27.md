@@ -1035,6 +1035,54 @@ Interpretation:
   toward sequential/block output reconstruction on child rollouts, not simply
   more last-layer hidden alignment.
 
+### Block-Level On-Policy Hidden Recovery
+
+Code changes:
+
+- `hf-xfamily-block-recover` now accepts `--on-policy-hidden-kd-weight`.
+- During each block update it generates greedy child rollouts, builds paired
+  donor/child offset batches from those rollout texts, and applies the same
+  donor-group-to-child-block hidden alignment used by static block recovery.
+- The loss is local to the currently trainable child block, so it is closer to
+  sequential block/interface reconstruction than full-model hidden KD.
+
+Remote smoke:
+
+- Output:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_block_onpolicy_hidden_smoke`
+- Settings: first child layer only, `2` steps, `on_policy_hidden_kd_weight=0.2`,
+  `hidden_metric=cka`.
+- Result: on-policy hidden counts `21` and `23`; static block CKA improved from
+  `0.4061` to `0.4139`; block loss improved from `0.5939` to `0.5861`.
+
+Behavior-gated 4-layer run:
+
+- Output:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_block_onpolicy_hidden_l4s8`
+- Settings: first `4` child blocks, `8` steps/layer, `lm_weight=0.01`,
+  `on_policy_hidden_kd_weight=0.2`, `on_policy_anchor_kd_weight=0.01`,
+  `on_policy_unlikelihood_weight=0.01`, behavior layer gate over all `6`
+  behavior probes.
+- Layer gate: layer `0` was reverted because behavior count tied at `3/6` but
+  generation health fell from `2/3` to `0/3`; later accepted layers preserved
+  behavior and generation health.
+
+Eval comparison:
+
+| Checkpoint | PPL mean | Choice | Behavior | Generation health | Manual notes |
+|---|---:|---:|---:|---:|---|
+| RSD behavior-best 60s baseline | 3,825.12 | 3/4 | 3/6 | 2/3 | arithmetic and Python malformed |
+| Block on-policy hidden L4/S8 | 3,822.45 | 3/4 | 3/6 | 2/3 | preserves baseline; arithmetic/Python still malformed |
+
+Interpretation:
+
+- The block-local rollout objective is mechanically active and improves local
+  hidden alignment, but the behavior gate correctly blocks updates that damage
+  useful generation health.
+- This is still not a 25x useful-behavior improvement. The next useful change is
+  likely a stronger block target: teacher-forced donor output deltas or module
+  output reconstruction on rollout prefixes, not only hidden-state CKA.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best

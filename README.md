@@ -156,7 +156,9 @@ vocabulary at those positions. It also leaves no runtime adapter.
 `--on-policy-hidden-kd-weight` generates short greedy child rollouts during
 recovery, runs both donor and child on those rollouts, and aligns hidden states
 on matched decoded-token spans when possible. It is meant for cases where static
-calibration PPL improves while greedy behavior remains unstable.
+calibration PPL improves while greedy behavior remains unstable. The same flag
+is available on `hf-xfamily-block-recover`, where it applies the rollout hidden
+alignment to the currently trainable child block.
 
 Task arithmetic defaults to `--dtype auto` and saves the base tokenizer after
 verifying that the tuned tokenizer has the same vocabulary. Special-token map

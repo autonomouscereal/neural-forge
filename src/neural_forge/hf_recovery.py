@@ -2007,6 +2007,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     layer_gate_behavior_max_new_tokens: int = 96,
     on_policy_anchor_kd_weight: float = 0.0,
     on_policy_unlikelihood_weight: float = 0.0,
+    on_policy_hidden_kd_weight: float = 0.0,
     on_policy_max_new_tokens: int = 24,
     on_policy_interval: int = 10,
     on_policy_response_loss_mode: str = "auto",
@@ -2068,7 +2069,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("layer_gate_max_behavior_drop must be in [0, 1].")
     if layer_gate_behavior_max_new_tokens <= 0:
         raise ValueError("layer_gate_behavior_max_new_tokens must be positive.")
-    if on_policy_anchor_kd_weight < 0 or on_policy_unlikelihood_weight < 0:
+    if on_policy_anchor_kd_weight < 0 or on_policy_unlikelihood_weight < 0 or on_policy_hidden_kd_weight < 0:
         raise ValueError("on-policy weights must be non-negative.")
     if stepwise_donor_kd_weight < 0:
         raise ValueError("stepwise_donor_kd_weight must be non-negative.")
@@ -2311,6 +2312,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 and lm_weight == 0
                 and on_policy_anchor_kd_weight == 0
                 and on_policy_unlikelihood_weight == 0
+                and on_policy_hidden_kd_weight == 0
                 and stepwise_donor_kd_weight == 0
             ):
                 skipped_steps += 1
@@ -2351,6 +2353,30 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     int(on_policy_unlikelihood_window),
                 )
                 loss = loss + on_policy_loss
+            on_policy_hidden_loss = None
+            on_policy_hidden_count = 0
+            if on_policy_hidden_kd_weight > 0 and (step == 1 or step % int(on_policy_interval) == 0):
+                on_policy_texts = candidate_batch.get("raw_texts", candidate_batch.get("texts", []))
+                on_policy_hidden_loss, on_policy_hidden_count = _cross_tokenizer_block_on_policy_hidden_loss(
+                    torch,
+                    source,
+                    candidate,
+                    source_tokenizer,
+                    candidate_tokenizer,
+                    on_policy_texts,
+                    on_policy_response_loss_mode,
+                    int(on_policy_max_new_tokens),
+                    int(max_length),
+                    device,
+                    source_group,
+                    candidate_idx,
+                    hidden_projection,
+                    _canonical_token,
+                    donor_layer_fold_mode,
+                    hidden_metric,
+                    span_max_pairs,
+                )
+                loss = loss + float(on_policy_hidden_kd_weight) * on_policy_hidden_loss
             stepwise_donor_loss = None
             stepwise_donor_count = 0
             if stepwise_donor_kd_weight > 0 and (step == 1 or step % int(stepwise_donor_interval) == 0):
@@ -2386,6 +2412,9 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             loss_value = float(loss.detach().cpu())
             lm_loss_value = None if lm_loss is None else float(lm_loss.detach().cpu())
             on_policy_loss_value = None if on_policy_loss is None else float(on_policy_loss.detach().cpu())
+            on_policy_hidden_loss_value = (
+                None if on_policy_hidden_loss is None else float(on_policy_hidden_loss.detach().cpu())
+            )
             stepwise_donor_loss_value = (
                 None if stepwise_donor_loss is None else float(stepwise_donor_loss.detach().cpu())
             )
@@ -2402,6 +2431,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                         "lm_loss": lm_loss_value,
                         "on_policy_loss": on_policy_loss_value,
                         "on_policy_count": int(on_policy_count),
+                        "on_policy_hidden_loss": on_policy_hidden_loss_value,
+                        "on_policy_hidden_count": int(on_policy_hidden_count),
                         "stepwise_donor_kd_loss": stepwise_donor_loss_value,
                         "stepwise_donor_count": int(stepwise_donor_count),
                         "span_pairs": int(pair_count),
@@ -2413,6 +2444,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     f"lm_loss={lm_loss_value if lm_loss_value is not None else 0.0:.6f} "
                     f"on_policy={on_policy_loss_value if on_policy_loss_value is not None else 0.0:.6f} "
                     f"on_policy_count={int(on_policy_count)} "
+                    f"on_policy_hidden={on_policy_hidden_loss_value if on_policy_hidden_loss_value is not None else 0.0:.6f} "
+                    f"on_policy_hidden_count={int(on_policy_hidden_count)} "
                     f"stepwise_donor={stepwise_donor_loss_value if stepwise_donor_loss_value is not None else 0.0:.6f} "
                     f"stepwise_donor_count={int(stepwise_donor_count)} "
                     f"span_pairs={int(pair_count)}",
@@ -2546,6 +2579,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "layer_gate": layer_gate,
         "on_policy_anchor_kd_weight": float(on_policy_anchor_kd_weight),
         "on_policy_unlikelihood_weight": float(on_policy_unlikelihood_weight),
+        "on_policy_hidden_kd_weight": float(on_policy_hidden_kd_weight),
         "on_policy_max_new_tokens": int(on_policy_max_new_tokens),
         "on_policy_interval": int(on_policy_interval),
         "on_policy_response_loss_mode": on_policy_response_loss_mode,
@@ -5010,6 +5044,118 @@ def _cross_tokenizer_block_hidden_loss(
         hidden_metric,
     )
     return loss.to(device=student.logits.device, dtype=torch.float32), int(row_count)
+
+
+def _cross_tokenizer_block_on_policy_hidden_loss(
+    torch,
+    source_model,
+    candidate_model,
+    source_tokenizer,
+    candidate_tokenizer,
+    texts: Sequence[str],
+    response_loss_mode: str,
+    max_new_tokens: int,
+    max_length: int,
+    device: str,
+    source_layer_group: Sequence[int],
+    candidate_layer_idx: int,
+    hidden_projection,
+    canonical_fn,
+    donor_layer_fold_mode: str,
+    hidden_metric: str,
+    span_max_pairs: int,
+):
+    if max_new_tokens <= 0:
+        raise ValueError("max_new_tokens must be positive.")
+    if max_length <= 1:
+        raise ValueError("max_length must be greater than 1.")
+    if span_max_pairs <= 0:
+        raise ValueError("span_max_pairs must be positive.")
+    if hidden_metric not in HIDDEN_KD_METRICS:
+        raise ValueError("hidden_metric must be projected, cka, both, rsd, or projected-rsd.")
+    if hidden_projection is None and hidden_metric in PROJECTED_HIDDEN_KD_METRICS:
+        raise ValueError("hidden_projection is required when on_policy_hidden_kd_weight is positive.")
+    prompts = [_on_policy_prompt_text(str(text), response_loss_mode) for text in texts]
+    prompts = [prompt for prompt in prompts if prompt.strip()]
+    if not prompts:
+        param = next(candidate_model.parameters())
+        return torch.zeros((), dtype=param.dtype, device=param.device), 0
+
+    prompt_max_length = max(2, int(max_length) - int(max_new_tokens))
+    encoded = candidate_tokenizer(
+        prompts,
+        return_tensors="pt",
+        padding=True,
+        truncation=True,
+        max_length=prompt_max_length,
+    )
+    encoded = {key: value.to(device) for key, value in encoded.items()}
+    pad_id = candidate_tokenizer.pad_token_id
+    if pad_id is None:
+        pad_id = candidate_tokenizer.eos_token_id
+    was_training = candidate_model.training
+    try:
+        candidate_model.eval()
+        with torch.no_grad():
+            generated = candidate_model.generate(
+                **encoded,
+                max_new_tokens=int(max_new_tokens),
+                do_sample=False,
+                pad_token_id=pad_id,
+                eos_token_id=candidate_tokenizer.eos_token_id,
+            )
+    finally:
+        if was_training:
+            candidate_model.train()
+
+    rollout_texts = [
+        candidate_tokenizer.decode(row.tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=False)
+        for row in generated.detach().cpu()
+    ]
+    rollout_texts = [text for text in rollout_texts if text.strip()]
+    if not rollout_texts:
+        param = next(candidate_model.parameters())
+        return torch.zeros((), dtype=param.dtype, device=param.device), 0
+
+    paired = _make_paired_batches(
+        source_tokenizer,
+        candidate_tokenizer,
+        rollout_texts,
+        batch_size=len(rollout_texts),
+        max_length=max_length,
+        device=device,
+        include_offsets=True,
+        response_loss_mode="none",
+        append_eos=False,
+    )
+    source_batch, candidate_batch = paired[0]
+    with torch.no_grad():
+        teacher = source_model(
+            **_model_forward_inputs(source_batch),
+            use_cache=False,
+            output_hidden_states=True,
+        )
+    student = candidate_model(
+        **_model_forward_inputs(candidate_batch),
+        use_cache=False,
+        output_hidden_states=True,
+    )
+    return _cross_tokenizer_block_hidden_loss(
+        torch,
+        student,
+        teacher,
+        source_tokenizer,
+        candidate_tokenizer,
+        source_batch,
+        candidate_batch,
+        source_layer_group,
+        candidate_layer_idx,
+        hidden_projection,
+        canonical_fn,
+        donor_layer_fold_mode,
+        hidden_metric,
+        span_max_pairs,
+    )
 
 
 def _candidate_lm_stabilizer_loss(torch, student, input_ids, attention_mask):
