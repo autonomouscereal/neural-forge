@@ -649,6 +649,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--anchor-kd-weight", type=float, default=0.5)
     xfamily_recover.add_argument("--lm-weight", type=float, default=0.5)
     xfamily_recover.add_argument("--first-token-lm-weight", type=float, default=0.0)
+    xfamily_recover.add_argument("--response-end-lm-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--focused-lm-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--hidden-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--span-kd-weight", type=float, default=0.0)
@@ -1692,6 +1693,7 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         anchor_kd_weight=args.anchor_kd_weight,
         lm_weight=args.lm_weight,
         first_token_lm_weight=args.first_token_lm_weight,
+        response_end_lm_weight=args.response_end_lm_weight,
         focused_lm_weight=args.focused_lm_weight,
         hidden_kd_weight=args.hidden_kd_weight,
         span_kd_weight=args.span_kd_weight,

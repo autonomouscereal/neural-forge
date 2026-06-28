@@ -1213,6 +1213,9 @@ Code changes:
 
 - `hf-xfamily-recover` now accepts `--focused-lm-weight`, a hard-label CE loss
   applied only to focused response spans selected by `--token-focus`.
+- `hf-xfamily-recover` now accepts `--response-end-lm-weight`, a response-end CE
+  loss. With `--append-eos`, the selected final response token is the EOS/stop
+  token.
 - Focused span detection now includes arithmetic expression spans for
   `token_focus=auto|numbers`, not only isolated numeric literals.
 - `--focused-projected-vocab-kd-weight` now requests tokenizer offsets even when
@@ -1228,6 +1231,8 @@ Remote validation:
 | Focused LM answer-rank 120s | 4,149.09 | 3/4 | 4/6 | 1/3 | partial, rejected |
 | Focused LM + EOS + anti-repetition 120s | not run through full eval | n/a | 3/6 gate | 0/3 gate at step 120 | rejected |
 | Focused LM all-weights + anti-repetition 80s | not run through full eval | n/a | 4/6 gate | 1/3 gate | partial, rejected |
+| Response-end focused LM 120s | not run through full eval | n/a | 3/6 gate | 0/3 gate at step 120 | rejected |
+| Light response-end focused LM 100s | not run through full eval | n/a | 3/6 gate | 0/3 gate at step 100 | rejected |
 
 Artifacts:
 
@@ -1239,6 +1244,10 @@ Artifacts:
   `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_focused_lm_eos_antirep_120s_20260628_124228`
 - Focused LM all-weights + anti-repetition:
   `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_focused_lm_all_antirep_80s_20260628_124940`
+- Response-end focused LM:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_response_end_focused_lm_120s_20260628_131339`
+- Light response-end focused LM:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_response_end_light_focused_lm_100s_20260628_131816`
 
 Manual inspection:
 
@@ -1251,6 +1260,9 @@ Manual inspection:
 - Adding EOS and on-policy anti-repetition did not preserve the behavior gain.
 - Training all weights lightly reproduced the same `4/6` behavior peak but did
   not improve generation health.
+- Strong and light response-end CE did not solve the runaway generation problem.
+  Strong response-end briefly swapped in the addition probe at step 80, but lost
+  tokenizer/code behavior and still had `0/3` generation health at later steps.
 
 Interpretation:
 
@@ -1261,6 +1273,9 @@ Interpretation:
   repeated digit strings. The next fix should target output-distribution
   stabilization and behavior-gated structural reconstruction, not just stronger
   span CE.
+- EOS/response-end pressure is not the missing piece by itself. It should remain
+  a default-off tool, useful for targeted schedules, but current evidence says
+  it can suppress useful generation before it fixes numeric correctness.
 
 ## Current Conclusion
 

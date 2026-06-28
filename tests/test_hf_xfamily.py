@@ -31,6 +31,7 @@ from neural_forge.hf_recovery import _focus_spans_to_span_pairs
 from neural_forge.hf_recovery import _focus_char_spans
 from neural_forge.hf_recovery import _fold_groups_from_report
 from neural_forge.hf_recovery import _feature_decorrelation_loss
+from neural_forge.hf_recovery import _last_response_shift_mask
 from neural_forge.hf_recovery import _hidden_representation_loss
 from neural_forge.hf_recovery import _infer_response_char_start
 from neural_forge.hf_recovery import _join_prompt_response
@@ -587,6 +588,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.3",
             "--first-token-lm-weight",
             "0.44",
+            "--response-end-lm-weight",
+            "0.52",
             "--focused-lm-weight",
             "0.31",
             "--hidden-kd-weight",
@@ -894,6 +897,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_recover_args.anchor_kd_weight == 0.7
     assert xfamily_recover_args.lm_weight == 0.3
     assert xfamily_recover_args.first_token_lm_weight == pytest.approx(0.44)
+    assert xfamily_recover_args.response_end_lm_weight == pytest.approx(0.52)
     assert xfamily_recover_args.focused_lm_weight == pytest.approx(0.31)
     assert xfamily_recover_args.hidden_kd_weight == 0.2
     assert xfamily_recover_args.span_kd_weight == 0.15
@@ -2393,6 +2397,7 @@ def test_cross_tokenizer_recovery_loss_first_response_lm_focuses_boundary_token(
         anchor_kd_weight=0.0,
         lm_weight=0.0,
         first_token_lm_weight=1.0,
+        response_end_lm_weight=0.0,
         hidden_kd_weight=0.0,
         span_kd_weight=0.0,
         span_hidden_kd_weight=0.0,
@@ -2418,6 +2423,77 @@ def test_cross_tokenizer_recovery_loss_first_response_lm_focuses_boundary_token(
     )
 
     assert first_only.item() < 1e-3
+
+
+def test_last_response_shift_mask_selects_final_response_label() -> None:
+    torch = pytest.importorskip("torch")
+    loss_mask = torch.tensor(
+        [
+            [False, False, True, True, True],
+            [False, True, False, False, False],
+        ]
+    )
+    attention_mask = torch.tensor(
+        [
+            [True, True, True, True, True],
+            [True, True, True, False, False],
+        ]
+    )
+
+    mask = _last_response_shift_mask(torch, loss_mask, attention_mask)
+
+    assert mask.tolist() == [[False, False, False, True], [True, False, False, False]]
+
+
+def test_cross_tokenizer_recovery_loss_response_end_lm_focuses_last_response_token() -> None:
+    torch = pytest.importorskip("torch")
+    logits = torch.full((1, 5, 6), -8.0)
+    input_ids = torch.tensor([[0, 1, 2, 3, 4]])
+    attention_mask = torch.ones_like(input_ids)
+    loss_mask = torch.tensor([[False, False, False, True, True]])
+    logits[0, 2, 3] = -20.0
+    logits[0, 3, 4] = 20.0
+    student = _Obj(logits=logits)
+
+    end_only = _cross_tokenizer_recovery_loss(
+        torch,
+        student=student,
+        teacher=None,
+        candidate_input_ids=input_ids,
+        candidate_attention_mask=attention_mask,
+        candidate_loss_mask=loss_mask,
+        source_attention_mask=None,
+        candidate_anchor_idx=torch.tensor([0]),
+        source_anchor_idx=torch.tensor([0]),
+        anchor_kd_weight=0.0,
+        lm_weight=0.0,
+        first_token_lm_weight=0.0,
+        response_end_lm_weight=1.0,
+        hidden_kd_weight=0.0,
+        span_kd_weight=0.0,
+        span_hidden_kd_weight=0.0,
+        projected_vocab_kd_weight=0.0,
+        focused_projected_vocab_kd_weight=0.0,
+        projected_vocab_kd_mode="teacher-to-student",
+        reference_kd_weight=0.0,
+        unlikelihood_weight=0.0,
+        unlikelihood_window=2,
+        entropy_weight=0.0,
+        entropy_aware_kd_weight=0.0,
+        entropy_aware_kd_threshold=0.55,
+        entropy_aware_kd_sharpness=8.0,
+        hidden_projection=None,
+        hidden_layer="last",
+        hidden_kd_metric="projected",
+        span_pairs=None,
+        projected_vocab_groups=None,
+        projected_vocab_mask=None,
+        projected_vocab_valid=None,
+        reference_teacher=None,
+        temperature=1.0,
+    )
+
+    assert end_only.item() < 1e-3
 
 
 def test_same_tokenizer_top_k_kl_uses_teacher_subset() -> None:
@@ -2604,6 +2680,7 @@ def test_cross_tokenizer_recovery_loss_uses_anchor_subspace() -> None:
         anchor_kd_weight=0.7,
         lm_weight=0.3,
         first_token_lm_weight=0.0,
+        response_end_lm_weight=0.0,
         hidden_kd_weight=0.0,
         span_kd_weight=0.0,
         span_hidden_kd_weight=0.0,
@@ -2657,6 +2734,7 @@ def test_cross_tokenizer_recovery_loss_response_mask_ignores_prompt_tokens() -> 
         anchor_kd_weight=0.0,
         lm_weight=1.0,
         first_token_lm_weight=0.0,
+        response_end_lm_weight=0.0,
         hidden_kd_weight=0.0,
         span_kd_weight=0.0,
         span_hidden_kd_weight=0.0,
@@ -2693,6 +2771,7 @@ def test_cross_tokenizer_recovery_loss_response_mask_ignores_prompt_tokens() -> 
         anchor_kd_weight=0.0,
         lm_weight=1.0,
         first_token_lm_weight=0.0,
+        response_end_lm_weight=0.0,
         hidden_kd_weight=0.0,
         span_kd_weight=0.0,
         span_hidden_kd_weight=0.0,
@@ -2749,6 +2828,7 @@ def test_cross_tokenizer_recovery_loss_uses_projected_hidden_states() -> None:
         anchor_kd_weight=0.1,
         lm_weight=0.2,
         first_token_lm_weight=0.0,
+        response_end_lm_weight=0.0,
         hidden_kd_weight=0.7,
         span_kd_weight=0.0,
         span_hidden_kd_weight=0.0,
@@ -3016,6 +3096,7 @@ def test_cross_tokenizer_recovery_loss_uses_span_pairs() -> None:
         anchor_kd_weight=0.0,
         lm_weight=0.2,
         first_token_lm_weight=0.0,
+        response_end_lm_weight=0.0,
         hidden_kd_weight=0.0,
         span_kd_weight=0.8,
         span_hidden_kd_weight=0.0,
@@ -3898,6 +3979,8 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "0.4",
             "--first-token-lm-weight",
             "0.73",
+            "--response-end-lm-weight",
+            "0.37",
             "--focused-lm-weight",
             "0.27",
             "--hidden-kd-weight",
@@ -4035,6 +4118,7 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "anchor_kd_weight": 0.6,
         "lm_weight": 0.4,
         "first_token_lm_weight": 0.73,
+        "response_end_lm_weight": 0.37,
         "focused_lm_weight": 0.27,
         "hidden_kd_weight": 0.25,
         "span_kd_weight": 0.15,

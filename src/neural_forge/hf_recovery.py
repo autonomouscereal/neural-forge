@@ -474,6 +474,7 @@ def recover_cross_tokenizer_causal_lm(
     anchor_kd_weight: float = 0.5,
     lm_weight: float = 0.5,
     first_token_lm_weight: float = 0.0,
+    response_end_lm_weight: float = 0.0,
     focused_lm_weight: float = 0.0,
     hidden_kd_weight: float = 0.0,
     span_kd_weight: float = 0.0,
@@ -558,6 +559,7 @@ def recover_cross_tokenizer_causal_lm(
         anchor_kd_weight < 0
         or lm_weight < 0
         or first_token_lm_weight < 0
+        or response_end_lm_weight < 0
         or focused_lm_weight < 0
         or hidden_kd_weight < 0
         or span_kd_weight < 0
@@ -613,6 +615,7 @@ def recover_cross_tokenizer_causal_lm(
         anchor_kd_weight == 0
         and lm_weight == 0
         and first_token_lm_weight == 0
+        and response_end_lm_weight == 0
         and focused_lm_weight == 0
         and hidden_kd_weight == 0
         and span_kd_weight == 0
@@ -656,8 +659,8 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("temperature must be positive.")
     if response_loss_mode not in {"none", "auto", "assistant", "answer"}:
         raise ValueError("response_loss_mode must be none, auto, assistant, or answer.")
-    if response_loss_mode == "none" and first_token_lm_weight > 0:
-        raise ValueError("first_token_lm_weight requires response_loss_mode to be auto, assistant, or answer.")
+    if response_loss_mode == "none" and (first_token_lm_weight > 0 or response_end_lm_weight > 0):
+        raise ValueError("response-boundary LM losses require response_loss_mode to be auto, assistant, or answer.")
     if max_anchors <= 0:
         raise ValueError("max_anchors must be positive.")
     if anchor_selection not in {"shortest", "longest", "stratified"}:
@@ -931,6 +934,7 @@ def recover_cross_tokenizer_causal_lm(
             anchor_kd_weight,
             lm_weight,
             first_token_lm_weight,
+            response_end_lm_weight,
             hidden_kd_weight,
             span_kd_weight,
             span_hidden_kd_weight,
@@ -1195,6 +1199,7 @@ def recover_cross_tokenizer_causal_lm(
         "anchor_kd_weight": anchor_kd_weight,
         "lm_weight": lm_weight,
         "first_token_lm_weight": first_token_lm_weight,
+        "response_end_lm_weight": response_end_lm_weight,
         "focused_lm_weight": focused_lm_weight,
         "hidden_kd_weight": hidden_kd_weight,
         "span_kd_weight": span_kd_weight,
@@ -3486,6 +3491,7 @@ def _cross_tokenizer_on_policy_rollout_loss(
             candidate_anchor_idx,
             source_anchor_idx,
             float(anchor_kd_weight),
+            0.0,
             0.0,
             0.0,
             0.0,
@@ -7513,6 +7519,23 @@ def _first_response_shift_mask(torch, loss_mask, attention_mask):
     return first_mask
 
 
+def _last_response_shift_mask(torch, loss_mask, attention_mask):
+    if loss_mask is None or int(loss_mask.shape[-1]) <= 1:
+        return None
+    label_mask = loss_mask[:, 1:].contiguous().bool()
+    if attention_mask is not None:
+        label_mask = label_mask & attention_mask[:, 1:].contiguous().bool()
+    if int(label_mask.sum().detach().cpu().item()) <= 0:
+        return label_mask
+    last_mask = torch.zeros_like(label_mask, dtype=torch.bool)
+    has_response = label_mask.any(dim=1)
+    reversed_indices = label_mask.flip(dims=[1]).to(torch.int64).argmax(dim=1)
+    last_indices = int(label_mask.shape[1]) - 1 - reversed_indices
+    rows = torch.arange(label_mask.shape[0], device=label_mask.device)[has_response]
+    last_mask[rows, last_indices[has_response]] = True
+    return last_mask
+
+
 def _cross_tokenizer_recovery_loss(
     torch,
     student,
@@ -7526,6 +7549,7 @@ def _cross_tokenizer_recovery_loss(
     anchor_kd_weight: float,
     lm_weight: float,
     first_token_lm_weight: float,
+    response_end_lm_weight: float,
     hidden_kd_weight: float,
     span_kd_weight: float,
     span_hidden_kd_weight: float,
@@ -7733,6 +7757,16 @@ def _cross_tokenizer_recovery_loss(
                 ignore_index=-100,
             )
             total = total + float(first_token_lm_weight) * first_lm
+    if response_end_lm_weight > 0:
+        end_mask = _last_response_shift_mask(torch, candidate_loss_mask, candidate_attention_mask)
+        if end_mask is not None and int(end_mask.sum().detach().cpu().item()) > 0:
+            end_labels = candidate_input_ids[:, 1:].contiguous().masked_fill(~end_mask, -100)
+            end_lm = torch.nn.functional.cross_entropy(
+                shift_student.view(-1, shift_student.shape[-1]),
+                end_labels.view(-1),
+                ignore_index=-100,
+            )
+            total = total + float(response_end_lm_weight) * end_lm
     if unlikelihood_weight > 0:
         unlikelihood = _recent_token_unlikelihood_loss(
             torch,

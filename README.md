@@ -141,6 +141,7 @@ neural-forge hf-xfamily-recover Qwen/Qwen3-4B-Base runs/qwen4b-into-smollm2 runs
   --span-max-pairs 256 `
   --lm-weight 0.5 `
   --first-token-lm-weight 0.0 `
+  --response-end-lm-weight 0.0 `
   --focused-lm-weight 0.0 `
   --focused-projected-vocab-kd-weight 0.0 `
   --hidden-kd-weight 0.2 `
@@ -160,6 +161,9 @@ vocabulary at those positions. It also leaves no runtime adapter.
 cross-tokenizer recovery. It is useful as a narrow experiment, but validation has
 shown it does not by itself repair arithmetic/code behavior after an aggressive
 blank-target fold.
+`--response-end-lm-weight` applies response-only CE to the final response token;
+with `--append-eos`, that final token is the stop token. It is default-off
+because validation showed strong EOS pressure can damage generation health.
 `--focused-lm-weight` applies hard-label CE only to focused response spans
 selected by `--token-focus` (`numbers`, `code`, `auto`, etc.). It is meant for
 behavior recovery on answer/code spans after the donor has already been folded
