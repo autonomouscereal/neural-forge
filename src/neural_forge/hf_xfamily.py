@@ -310,8 +310,8 @@ def donor_projected_init(
         raise ValueError("attention_fold_mode must be independent, coupled, or activation-coupled.")
     if attention_head_dim_transport not in {"none", "qk-vo"}:
         raise ValueError("attention_head_dim_transport must be none or qk-vo.")
-    if token_init_mode not in {"shared", "donor-tokenized", "donor-tokenized-weighted"}:
-        raise ValueError("token_init_mode must be shared, donor-tokenized, or donor-tokenized-weighted.")
+    if token_init_mode not in {"shared", "donor-tokenized", "donor-tokenized-weighted", "donor-omp"}:
+        raise ValueError("token_init_mode must be shared, donor-tokenized, donor-tokenized-weighted, or donor-omp.")
     if projection_scale not in {"none", "target-rms"}:
         raise ValueError("projection_scale must be none or target-rms.")
     if consumer_hidden_reduction not in {"mean", "sum", "sqrt-sum"}:
@@ -3420,8 +3420,8 @@ def _initialize_token_weights_from_donor(
     consumer_hidden_reduction: str = "mean",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    if token_init_mode not in {"shared", "donor-tokenized", "donor-tokenized-weighted"}:
-        raise ValueError("token_init_mode must be shared, donor-tokenized, or donor-tokenized-weighted.")
+    if token_init_mode not in {"shared", "donor-tokenized", "donor-tokenized-weighted", "donor-omp"}:
+        raise ValueError("token_init_mode must be shared, donor-tokenized, donor-tokenized-weighted, or donor-omp.")
     if consumer_hidden_reduction not in {"mean", "sum", "sqrt-sum"}:
         raise ValueError("consumer_hidden_reduction must be mean, sum, or sqrt-sum.")
     anchors, target_map, donor_map = _shared_anchor_tokens(target_tokenizer, donor_tokenizer, max_anchors)
@@ -3431,6 +3431,14 @@ def _initialize_token_weights_from_donor(
         donor_group_weights = [[1.0] for _token in anchors]
         tokenized_rows = 0
         weighted_rows = 0
+    elif token_init_mode == "donor-omp":
+        target_ids, donor_id_groups, donor_group_weights, tokenized_rows, weighted_rows = _target_to_donor_omp_group_specs(
+            torch,
+            target_tokenizer,
+            donor_tokenizer,
+            target_map,
+            donor_map,
+        )
     else:
         target_ids, donor_id_groups, donor_group_weights, tokenized_rows, weighted_rows = _target_to_donor_token_group_specs(
             target_tokenizer,
@@ -3665,6 +3673,252 @@ def _target_to_donor_token_group_specs(
         if weighted and len(donor_ids) > 1:
             weighted_rows += 1
     return target_ids, donor_id_groups, donor_group_weights, tokenized_rows, weighted_rows
+
+
+def _target_to_donor_omp_group_specs(
+    torch,
+    target_tokenizer,
+    donor_tokenizer,
+    target_map: dict[str, int],
+    donor_map: dict[str, int],
+    max_candidates: int = 32,
+    max_selected: int = 4,
+) -> tuple[list[int], list[list[int]], list[list[float]], int, int]:
+    target_special_ids = set(getattr(target_tokenizer, "all_special_ids", []) or [])
+    donor_special_ids = set(getattr(donor_tokenizer, "all_special_ids", []) or [])
+    donor_vocab_size = len(donor_tokenizer)
+    target_ids = []
+    donor_id_groups = []
+    donor_group_weights = []
+    omp_rows = 0
+    weighted_rows = 0
+    seen_target_ids = set()
+    for token, target_idx in sorted(target_map.items(), key=lambda item: item[1]):
+        donor_idx = donor_map.get(token)
+        if donor_idx is None:
+            continue
+        target_ids.append(int(target_idx))
+        donor_id_groups.append([int(donor_idx)])
+        donor_group_weights.append([1.0])
+        seen_target_ids.add(int(target_idx))
+    for target_idx in range(len(target_tokenizer)):
+        if int(target_idx) in seen_target_ids or int(target_idx) in target_special_ids:
+            continue
+        decoded = _decode_single_token(target_tokenizer, int(target_idx))
+        if not decoded or any(ord(ch) < 32 for ch in decoded):
+            continue
+        candidate_ids = _donor_omp_candidate_ids(
+            donor_tokenizer,
+            donor_map,
+            decoded,
+            donor_vocab_size,
+            donor_special_ids,
+            max_candidates=max_candidates,
+        )
+        if not candidate_ids:
+            continue
+        selected_ids, selected_weights = _omp_token_piece_weights(
+            torch,
+            decoded,
+            donor_tokenizer,
+            candidate_ids,
+            max_selected=max_selected,
+        )
+        if not selected_ids:
+            continue
+        target_ids.append(int(target_idx))
+        donor_id_groups.append(selected_ids)
+        donor_group_weights.append(selected_weights)
+        seen_target_ids.add(int(target_idx))
+        omp_rows += 1
+        if len(selected_ids) > 1:
+            weighted_rows += 1
+    return target_ids, donor_id_groups, donor_group_weights, omp_rows, weighted_rows
+
+
+def _donor_omp_candidate_ids(
+    donor_tokenizer,
+    donor_map: dict[str, int],
+    decoded: str,
+    donor_vocab_size: int,
+    donor_special_ids: set[int],
+    max_candidates: int,
+) -> list[int]:
+    candidates = []
+
+    def add_id(token_id: int | None) -> None:
+        if token_id is None:
+            return
+        token_id = int(token_id)
+        if token_id < 0 or token_id >= int(donor_vocab_size) or token_id in donor_special_ids:
+            return
+        if token_id not in candidates:
+            candidates.append(token_id)
+
+    for text in _omp_text_variants(decoded):
+        for donor_id in _encode_without_specials(donor_tokenizer, text):
+            add_id(int(donor_id))
+        canonical = _canonical_token(text)
+        add_id(donor_map.get(canonical))
+        for piece in _omp_surface_pieces(canonical):
+            add_id(donor_map.get(piece))
+            for donor_id in _encode_without_specials(donor_tokenizer, piece):
+                add_id(int(donor_id))
+        if len(candidates) >= int(max_candidates):
+            break
+    return candidates[: int(max_candidates)]
+
+
+def _omp_text_variants(decoded: str) -> list[str]:
+    variants = []
+    for item in (decoded, decoded.strip(), _canonical_token(decoded), _canonical_token(decoded).lower()):
+        if item and item not in variants:
+            variants.append(item)
+    return variants
+
+
+def _omp_surface_pieces(text: str) -> list[str]:
+    pieces = []
+    if not text:
+        return pieces
+    for match in re.finditer(r"[A-Za-z]+|\d+|[^\w\s]", text):
+        value = match.group(0)
+        if value and value not in pieces:
+            pieces.append(value)
+    for ch in text:
+        if ch and not ch.isspace() and ch not in pieces:
+            pieces.append(ch)
+    return pieces
+
+
+def _omp_token_piece_weights(
+    torch,
+    target_decoded: str,
+    donor_tokenizer,
+    candidate_ids: Sequence[int],
+    max_selected: int = 4,
+) -> tuple[list[int], list[float]]:
+    target_features = _token_surface_features(target_decoded)
+    if not target_features:
+        return [], []
+    feature_by_id = {}
+    for donor_id in candidate_ids:
+        decoded = _decode_single_token(donor_tokenizer, int(donor_id))
+        features = _token_surface_features(decoded)
+        if features:
+            feature_by_id[int(donor_id)] = features
+    if not feature_by_id:
+        return [], []
+    selected: list[int] = []
+    residual = dict(target_features)
+    for _ in range(max(1, int(max_selected))):
+        best_id = None
+        best_score = 0.0
+        for donor_id, features in feature_by_id.items():
+            if donor_id in selected:
+                continue
+            score = _sparse_cosine(residual, features)
+            if score > best_score:
+                best_id = donor_id
+                best_score = score
+        if best_id is None or best_score <= 0.0:
+            break
+        selected.append(best_id)
+        weights = _solve_omp_surface_weights(torch, target_features, [feature_by_id[item] for item in selected])
+        residual = _sparse_residual(target_features, [feature_by_id[item] for item in selected], weights)
+        if _sparse_norm(residual) <= 1e-6:
+            break
+    if not selected:
+        best_id = max(feature_by_id, key=lambda item: _sparse_cosine(target_features, feature_by_id[item]))
+        selected = [best_id]
+    weights = _solve_omp_surface_weights(torch, target_features, [feature_by_id[item] for item in selected])
+    if not weights or sum(weights) <= 0:
+        weights = [1.0 / len(selected)] * len(selected)
+    return selected, weights
+
+
+def _token_surface_features(decoded: str) -> dict[str, float]:
+    text = _canonical_token(decoded).lower()
+    text = "".join(ch for ch in text if ord(ch) >= 32)
+    if not text:
+        return {}
+    features: dict[str, float] = {}
+
+    def add(key: str, value: float = 1.0) -> None:
+        features[key] = features.get(key, 0.0) + float(value)
+
+    add(f"whole:{text}", 2.0)
+    if text.isdigit():
+        add("class:digit", 1.5)
+    elif text.isalpha():
+        add("class:alpha", 1.0)
+    elif any(ch.isdigit() for ch in text):
+        add("class:mixed_digit", 1.0)
+    for ch in text:
+        if not ch.isspace():
+            add(f"char:{ch}", 1.0)
+    for idx in range(max(0, len(text) - 1)):
+        add(f"bigram:{text[idx:idx + 2]}", 1.25)
+    for piece in _omp_surface_pieces(text):
+        add(f"piece:{piece}", 1.5)
+    norm = math.sqrt(sum(value * value for value in features.values()))
+    if norm <= 0:
+        return {}
+    return {key: value / norm for key, value in features.items()}
+
+
+def _solve_omp_surface_weights(torch, target_features: dict[str, float], selected_features: Sequence[dict[str, float]]) -> list[float]:
+    if not selected_features:
+        return []
+    keys = sorted(set(target_features) | {key for features in selected_features for key in features})
+    target = torch.tensor([target_features.get(key, 0.0) for key in keys], dtype=torch.float32)
+    columns = [
+        torch.tensor([features.get(key, 0.0) for key in keys], dtype=torch.float32)
+        for features in selected_features
+    ]
+    matrix = torch.stack(columns, dim=1)
+    try:
+        solution = torch.linalg.lstsq(matrix, target).solution
+    except RuntimeError:
+        solution = torch.linalg.pinv(matrix).matmul(target)
+    solution = torch.nan_to_num(solution.to(torch.float32), nan=0.0, posinf=0.0, neginf=0.0).clamp_min(0.0)
+    if float(solution.sum().item()) <= 0:
+        scores = torch.tensor(
+            [_sparse_cosine(target_features, features) for features in selected_features],
+            dtype=torch.float32,
+        ).clamp_min(0.0)
+        solution = scores if float(scores.sum().item()) > 0 else torch.ones(len(selected_features), dtype=torch.float32)
+    solution = solution / solution.sum().clamp_min(1e-12)
+    return [float(item) for item in solution.tolist()]
+
+
+def _sparse_residual(
+    target_features: dict[str, float],
+    selected_features: Sequence[dict[str, float]],
+    weights: Sequence[float],
+) -> dict[str, float]:
+    residual = dict(target_features)
+    for weight, features in zip(weights, selected_features):
+        for key, value in features.items():
+            residual[key] = residual.get(key, 0.0) - float(weight) * float(value)
+    return residual
+
+
+def _sparse_dot(first: dict[str, float], second: dict[str, float]) -> float:
+    if len(first) > len(second):
+        first, second = second, first
+    return float(sum(value * second.get(key, 0.0) for key, value in first.items()))
+
+
+def _sparse_norm(features: dict[str, float]) -> float:
+    return math.sqrt(sum(value * value for value in features.values()))
+
+
+def _sparse_cosine(first: dict[str, float], second: dict[str, float]) -> float:
+    denom = _sparse_norm(first) * _sparse_norm(second)
+    if denom <= 0:
+        return 0.0
+    return _sparse_dot(first, second) / denom
 
 
 def _donor_tokenized_group_weights(donor_tokenizer, donor_ids: Sequence[int]) -> list[float]:

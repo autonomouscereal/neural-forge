@@ -80,6 +80,7 @@ from neural_forge.hf_xfamily import _scale_projection_to_target
 from neural_forge.hf_xfamily import _select_compression_candidates
 from neural_forge.hf_xfamily import _target_to_donor_token_group_specs
 from neural_forge.hf_xfamily import _target_to_donor_token_groups
+from neural_forge.hf_xfamily import _target_to_donor_omp_group_specs
 from neural_forge.hf_xfamily import _untie_output_head
 from neural_forge.hf_xfamily import _usable_pipeline_candidates
 from neural_forge.hf_xfamily import _validate_channel_assignment
@@ -169,6 +170,31 @@ def test_target_to_donor_token_group_specs_can_weight_tokenized_pieces() -> None
     assert donor_weights == [[1.0], [1.0, 6.0]]
     assert tokenized_rows == 1
     assert weighted_rows == 1
+
+
+def test_target_to_donor_omp_group_specs_uses_sparse_character_pieces() -> None:
+    torch = pytest.importorskip("torch")
+    target_tokenizer = _Tokenizer(["<eos>", "ab", "42"])
+    donor_tokenizer = _Tokenizer(["<eos>", "a", "b", "4", "2"])
+    target_map = _canonical_token_map(target_tokenizer)
+    donor_map = _canonical_token_map(donor_tokenizer)
+
+    target_ids, donor_groups, donor_weights, omp_rows, weighted_rows = _target_to_donor_omp_group_specs(
+        torch,
+        target_tokenizer,
+        donor_tokenizer,
+        target_map,
+        donor_map,
+        max_selected=3,
+    )
+
+    assert target_ids == [1, 2]
+    assert donor_groups[0] == [1, 2]
+    assert donor_groups[1] == [3, 4]
+    assert donor_weights[0] == pytest.approx([0.5, 0.5])
+    assert donor_weights[1] == pytest.approx([0.5, 0.5])
+    assert omp_rows == 2
+    assert weighted_rows == 2
 
 
 def test_recovery_same_vocab_guard_rejects_mismatch() -> None:
@@ -364,7 +390,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "--attention-head-dim-transport",
             "qk-vo",
             "--token-init-mode",
-            "donor-tokenized-weighted",
+            "donor-omp",
             "--projection-scale",
             "target-rms",
             "--projection-blend-alpha",
@@ -728,7 +754,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.donor_layer_fold_mode == "fold"
     assert donor_init_args.attention_fold_mode == "coupled"
     assert donor_init_args.attention_head_dim_transport == "qk-vo"
-    assert donor_init_args.token_init_mode == "donor-tokenized-weighted"
+    assert donor_init_args.token_init_mode == "donor-omp"
     assert donor_init_args.projection_scale == "target-rms"
     assert donor_init_args.projection_blend_alpha == 0.35
     assert donor_init_args.consumer_hidden_reduction == "sqrt-sum"
@@ -3128,7 +3154,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "--attention-head-dim-transport",
             "qk-vo",
             "--token-init-mode",
-            "donor-tokenized-weighted",
+            "donor-omp",
             "--projection-scale",
             "target-rms",
             "--projection-blend-alpha",
@@ -3179,7 +3205,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "donor_layer_fold_mode": "average",
         "attention_fold_mode": "activation-coupled",
         "attention_head_dim_transport": "qk-vo",
-        "token_init_mode": "donor-tokenized-weighted",
+        "token_init_mode": "donor-omp",
         "projection_scale": "target-rms",
         "projection_blend_alpha": 0.25,
         "consumer_hidden_reduction": "sqrt-sum",

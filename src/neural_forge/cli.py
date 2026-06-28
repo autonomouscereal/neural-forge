@@ -161,11 +161,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hf_donor_init.add_argument(
         "--token-init-mode",
-        choices=["shared", "donor-tokenized", "donor-tokenized-weighted"],
+        choices=["shared", "donor-tokenized", "donor-tokenized-weighted", "donor-omp"],
         default="shared",
         help=(
             "Initialize only shared decoded-token rows, fill target vocab rows by donor tokenizing each target token, "
-            "or weight donor-tokenized pieces by decoded span length."
+            "weight donor-tokenized pieces by decoded span length, or use sparse OMP token reconstruction."
         ),
     )
     hf_donor_init.add_argument(
