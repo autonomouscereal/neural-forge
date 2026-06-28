@@ -961,6 +961,41 @@ Interpretation:
   sequential block-output reconstruction or on-policy representation recovery
   with behavior gates.
 
+### On-Policy Hidden Representation Recovery
+
+Code changes:
+
+- `hf-xfamily-recover` now accepts `--on-policy-hidden-kd-weight`.
+- When enabled, recovery generates short greedy child rollouts, feeds those
+  rollout texts through donor and child, and aligns hidden states on
+  cross-tokenizer decoded-token spans when offsets match.
+- If exact span matches are sparse, it falls back to pooled hidden-state
+  alignment on the same child-generated text.
+- This targets the observed failure where static calibration losses improve
+  while greedy behavior still collapses.
+
+Remote smoke:
+
+- Start:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_rsd_behaviorbest_60s`
+- Output:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_onpolicy_hidden_smoke`
+- Settings: Qwen3-4B donor, SmolLM2-135M-family child, `2` steps,
+  `train_scope=last1`, `on_policy_hidden_kd_weight=0.2`,
+  `hidden_kd_metric=cka`, `on_policy_interval=1`, `on_policy_max_new_tokens=8`.
+- Result: finite real-checkpoint losses with rollout hidden alignments observed:
+  step `1` count `21`, hidden loss `0.2566`; step `2` count `23`, hidden loss
+  `0.3495`.
+- Remote focused tests after implementation: `127 passed`.
+
+Interpretation:
+
+- This is a tool-path validation, not a promoted model result.
+- It confirms the new objective runs on the real Qwen4B-to-SmolLM folded child
+  and produces an actual child-rollout representation signal. Longer
+  behavior-gated runs are still required before calling it useful for the 25x
+  blank-target compression goal.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best

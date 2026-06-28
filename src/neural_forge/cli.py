@@ -703,6 +703,12 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--stepwise-donor-max-new-tokens", type=int, default=16)
     xfamily_recover.add_argument("--on-policy-anchor-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--on-policy-unlikelihood-weight", type=float, default=0.0)
+    xfamily_recover.add_argument(
+        "--on-policy-hidden-kd-weight",
+        type=float,
+        default=0.0,
+        help="Align hidden states on child-generated rollouts, using cross-tokenizer span matches when available.",
+    )
     xfamily_recover.add_argument("--on-policy-max-new-tokens", type=int, default=24)
     xfamily_recover.add_argument("--on-policy-interval", type=int, default=10)
     xfamily_recover.add_argument("--append-eos", action="store_true")
@@ -1681,6 +1687,7 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         stepwise_donor_max_new_tokens=args.stepwise_donor_max_new_tokens,
         on_policy_anchor_kd_weight=args.on_policy_anchor_kd_weight,
         on_policy_unlikelihood_weight=args.on_policy_unlikelihood_weight,
+        on_policy_hidden_kd_weight=args.on_policy_hidden_kd_weight,
         on_policy_max_new_tokens=args.on_policy_max_new_tokens,
         on_policy_interval=args.on_policy_interval,
         append_eos=args.append_eos,

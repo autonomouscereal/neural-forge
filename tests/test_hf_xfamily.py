@@ -640,6 +640,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.23",
             "--on-policy-unlikelihood-weight",
             "0.37",
+            "--on-policy-hidden-kd-weight",
+            "0.29",
             "--on-policy-max-new-tokens",
             "19",
             "--on-policy-interval",
@@ -836,6 +838,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_recover_args.stepwise_donor_max_new_tokens == 11
     assert xfamily_recover_args.on_policy_anchor_kd_weight == pytest.approx(0.23)
     assert xfamily_recover_args.on_policy_unlikelihood_weight == pytest.approx(0.37)
+    assert xfamily_recover_args.on_policy_hidden_kd_weight == pytest.approx(0.29)
     assert xfamily_recover_args.on_policy_max_new_tokens == 19
     assert xfamily_recover_args.on_policy_interval == 4
     assert xfamily_recover_args.append_eos is True
@@ -3761,6 +3764,8 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "0.41",
             "--on-policy-unlikelihood-weight",
             "0.52",
+            "--on-policy-hidden-kd-weight",
+            "0.46",
             "--on-policy-max-new-tokens",
             "17",
             "--on-policy-interval",
@@ -3860,6 +3865,7 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "stepwise_donor_max_new_tokens": 13,
         "on_policy_anchor_kd_weight": 0.41,
         "on_policy_unlikelihood_weight": 0.52,
+        "on_policy_hidden_kd_weight": 0.46,
         "on_policy_max_new_tokens": 17,
         "on_policy_interval": 3,
         "append_eos": True,

@@ -141,6 +141,7 @@ neural-forge hf-xfamily-recover Qwen/Qwen3-4B-Base runs/qwen4b-into-smollm2 runs
   --span-max-pairs 256 `
   --lm-weight 0.5 `
   --hidden-kd-weight 0.2 `
+  --on-policy-hidden-kd-weight 0.1 `
   --hidden-layer last `
   --hidden-max-anchors 512 `
   --candidate-dtype float32
@@ -152,6 +153,10 @@ architecture only.
 Span KD uses tokenizer offset mappings to align source and child prediction
 positions for exact decoded-token spans, then applies KL over the shared anchor
 vocabulary at those positions. It also leaves no runtime adapter.
+`--on-policy-hidden-kd-weight` generates short greedy child rollouts during
+recovery, runs both donor and child on those rollouts, and aligns hidden states
+on matched decoded-token spans when possible. It is meant for cases where static
+calibration PPL improves while greedy behavior remains unstable.
 
 Task arithmetic defaults to `--dtype auto` and saves the base tokenizer after
 verifying that the tuned tokenizer has the same vocabulary. Special-token map
