@@ -1000,6 +1000,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Project donor and child next-token logits to first-byte buckets for tokenizer-neutral KD.",
     )
     xfamily_block_recover.add_argument(
+        "--byte-hidden-kd-weight",
+        type=float,
+        default=0.0,
+        help="Use a fixed byte probe from child output embeddings to align active block hidden states with donor byte targets.",
+    )
+    xfamily_block_recover.add_argument(
         "--train-output-head-with-kd",
         action="store_true",
         help="Train the output head together with each block when output-space donor KD is enabled.",
@@ -1904,6 +1910,7 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         projected_vocab_kd_weight=args.projected_vocab_kd_weight,
         projected_vocab_kd_mode=args.projected_vocab_kd_mode,
         byte_kd_weight=args.byte_kd_weight,
+        byte_hidden_kd_weight=args.byte_hidden_kd_weight,
         train_output_head_with_kd=args.train_output_head_with_kd,
         module_output_kd_weight=args.module_output_kd_weight,
         module_output_targets=args.module_output_targets,

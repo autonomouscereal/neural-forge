@@ -2062,6 +2062,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     projected_vocab_kd_weight: float = 0.0,
     projected_vocab_kd_mode: str = "teacher-to-student",
     byte_kd_weight: float = 0.0,
+    byte_hidden_kd_weight: float = 0.0,
     train_output_head_with_kd: bool = False,
     module_output_kd_weight: float = 0.0,
     module_output_targets: str = "both",
@@ -2140,6 +2141,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("projected_vocab_kd_mode must be teacher-to-student, student-to-teacher, or both.")
     if byte_kd_weight < 0:
         raise ValueError("byte_kd_weight must be non-negative.")
+    if byte_hidden_kd_weight < 0:
+        raise ValueError("byte_hidden_kd_weight must be non-negative.")
     if (
         train_output_head_with_kd
         and projected_vocab_kd_weight == 0
@@ -2222,8 +2225,11 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     candidate_layers = _recovery_decoder_layers(candidate)
     if not source_layers or not candidate_layers:
         raise ValueError("Both source and candidate need decoder layers.")
-    output_head = candidate.get_output_embeddings() if train_output_head_with_kd else None
-    if train_output_head_with_kd and output_head is None:
+    candidate_output_embeddings = candidate.get_output_embeddings()
+    if byte_hidden_kd_weight > 0 and candidate_output_embeddings is None:
+        raise ValueError("byte_hidden_kd_weight requires candidate output embeddings for the fixed byte probe.")
+    output_head = candidate_output_embeddings if train_output_head_with_kd else None
+    if train_output_head_with_kd and candidate_output_embeddings is None:
         raise ValueError("train_output_head_with_kd requires an output embedding/lm_head module.")
     input_embeddings = candidate.get_input_embeddings() if train_output_head_with_kd else None
     output_head_weight = getattr(output_head, "weight", None)
@@ -2278,9 +2284,16 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         )
     source_byte_buckets = None
     candidate_byte_buckets = None
-    if byte_kd_weight > 0:
+    byte_hidden_probe_weight = None
+    if byte_kd_weight > 0 or byte_hidden_kd_weight > 0:
         source_byte_buckets = _tokenizer_first_byte_buckets(torch, source_tokenizer, device=device)
         candidate_byte_buckets = _tokenizer_first_byte_buckets(torch, candidate_tokenizer, device=device)
+    if byte_hidden_kd_weight > 0:
+        byte_hidden_probe_weight = _first_byte_head_from_output_embeddings(
+            torch,
+            candidate_output_embeddings.weight,
+            candidate_byte_buckets,
+        ).to(device=device, dtype=torch.float32)
 
     texts = list(calibration_texts or RECOVERY_TEXTS)
     if not texts:
@@ -2494,7 +2507,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             block_loss_value = float(loss.detach().cpu())
             output_span_pairs = None
             output_span_pair_count = 0
-            if projected_vocab_kd_weight > 0 or byte_kd_weight > 0:
+            if projected_vocab_kd_weight > 0 or byte_kd_weight > 0 or byte_hidden_kd_weight > 0:
                 output_span_pairs = _cross_tokenizer_span_pairs(
                     torch,
                     source_tokenizer,
@@ -2552,6 +2565,23 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                         float(temperature),
                     )
                     loss = loss + float(byte_kd_weight) * byte_kd_loss
+            byte_hidden_loss = None
+            byte_hidden_pair_count = int(output_span_pair_count) if byte_hidden_kd_weight > 0 else 0
+            if byte_hidden_kd_weight > 0:
+                if source_byte_buckets is None or byte_hidden_probe_weight is None:
+                    raise ValueError("source byte buckets and a fixed byte hidden probe are required for byte_hidden_kd_weight.")
+                if byte_hidden_pair_count > 0:
+                    byte_hidden_loss = _cross_tokenizer_hidden_first_byte_loss(
+                        torch,
+                        student,
+                        teacher,
+                        output_span_pairs,
+                        int(candidate_idx),
+                        byte_hidden_probe_weight,
+                        source_byte_buckets,
+                        float(temperature),
+                    )
+                    loss = loss + float(byte_hidden_kd_weight) * byte_hidden_loss
             module_output_loss = None
             module_output_counts: dict[str, Any] = {
                 "attention_pairs": 0,
@@ -2592,6 +2622,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 and on_policy_hidden_kd_weight == 0
                 and int(projected_vocab_pair_count) <= 0
                 and int(byte_kd_pair_count) <= 0
+                and int(byte_hidden_pair_count) <= 0
                 and stepwise_donor_kd_weight == 0
                 and teacher_generate_lm_weight == 0
                 and teacher_generate_hidden_kd_weight == 0
@@ -2750,6 +2781,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 None if projected_vocab_loss is None else float(projected_vocab_loss.detach().cpu())
             )
             byte_kd_loss_value = None if byte_kd_loss is None else float(byte_kd_loss.detach().cpu())
+            byte_hidden_loss_value = None if byte_hidden_loss is None else float(byte_hidden_loss.detach().cpu())
             on_policy_loss_value = None if on_policy_loss is None else float(on_policy_loss.detach().cpu())
             on_policy_hidden_loss_value = (
                 None if on_policy_hidden_loss is None else float(on_policy_hidden_loss.detach().cpu())
@@ -2800,6 +2832,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                         "projected_vocab_pairs": int(projected_vocab_pair_count),
                         "byte_kd_loss": byte_kd_loss_value,
                         "byte_pairs": int(byte_kd_pair_count),
+                        "byte_hidden_kd_loss": byte_hidden_loss_value,
+                        "byte_hidden_pairs": int(byte_hidden_pair_count),
                         "module_output_loss": module_output_loss_value,
                         "module_output": module_output_counts,
                         "on_policy_loss": on_policy_loss_value,
@@ -2822,6 +2856,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     f"projected_vocab_pairs={int(projected_vocab_pair_count)} "
                     f"byte_kd={byte_kd_loss_value if byte_kd_loss_value is not None else 0.0:.6f} "
                     f"byte_pairs={int(byte_kd_pair_count)} "
+                    f"byte_hidden={byte_hidden_loss_value if byte_hidden_loss_value is not None else 0.0:.6f} "
+                    f"byte_hidden_pairs={int(byte_hidden_pair_count)} "
                     f"module_output={module_output_loss_value if module_output_loss_value is not None else 0.0:.6f} "
                     f"module_attention_pairs={int(module_output_counts.get('attention_pairs', 0))} "
                     f"module_mlp_pairs={int(module_output_counts.get('mlp_pairs', 0))} "
@@ -2988,6 +3024,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "projected_vocab_kd_weight": float(projected_vocab_kd_weight),
         "projected_vocab_kd_mode": projected_vocab_kd_mode,
         "byte_kd_weight": float(byte_kd_weight),
+        "byte_hidden_kd_weight": float(byte_hidden_kd_weight),
         "train_output_head_with_kd": bool(train_output_head_with_kd),
         "output_head_tied_to_input": bool(output_head_tied_to_input),
         "output_head_training_warning": output_head_training_warning,
@@ -8928,6 +8965,83 @@ def _first_byte_probs_from_logits(torch, logits, byte_buckets, temperature: floa
     byte_probs = torch.zeros((int(values.shape[0]), 257), dtype=probs.dtype, device=values.device)
     byte_probs.scatter_add_(1, buckets.view(1, -1).expand(int(values.shape[0]), -1), probs)
     return byte_probs / byte_probs.sum(dim=-1, keepdim=True).clamp_min(1e-12)
+
+
+def _first_byte_head_from_output_embeddings(torch, output_weight, byte_buckets):
+    """Build a fixed hidden-state byte probe by averaging output rows per byte bucket."""
+
+    if output_weight.dim() != 2:
+        raise ValueError("output embedding weight must be 2D.")
+    vocab = min(int(output_weight.shape[0]), int(byte_buckets.numel()))
+    if vocab <= 0:
+        raise ValueError("Need at least one token bucket for byte hidden KD.")
+    values = torch.nan_to_num(
+        output_weight[:vocab].detach().to(torch.float32),
+        nan=0.0,
+        posinf=1e4,
+        neginf=-1e4,
+    )
+    buckets = byte_buckets[:vocab].to(device=values.device, dtype=torch.long)
+    head = torch.zeros((257, int(values.shape[1])), dtype=torch.float32, device=values.device)
+    counts = torch.zeros((257, 1), dtype=torch.float32, device=values.device)
+    head.scatter_add_(0, buckets.view(-1, 1).expand(-1, int(values.shape[1])), values)
+    counts.scatter_add_(0, buckets.view(-1, 1), torch.ones((vocab, 1), dtype=torch.float32, device=values.device))
+    head = head / counts.clamp_min(1.0)
+    return torch.nn.functional.normalize(head, dim=-1, eps=1e-8)
+
+
+def _cross_tokenizer_hidden_first_byte_loss(
+    torch,
+    student,
+    teacher,
+    span_pairs,
+    candidate_layer_idx: int,
+    byte_probe_weight,
+    source_byte_buckets,
+    temperature: float,
+):
+    if temperature <= 0:
+        raise ValueError("temperature must be positive.")
+    if int(span_pairs.numel()) <= 0:
+        return torch.zeros((), dtype=student.logits.dtype, device=student.logits.device)
+    if byte_probe_weight.dim() != 2 or int(byte_probe_weight.shape[0]) != 257:
+        raise ValueError("byte_probe_weight must have shape [257, hidden].")
+    hidden = _hidden_state_after_decoder_layer(student.hidden_states, int(candidate_layer_idx)).to(torch.float32)
+    if int(hidden.shape[-1]) != int(byte_probe_weight.shape[-1]):
+        raise ValueError("byte probe hidden size must match candidate hidden size.")
+    shift_teacher = torch.nan_to_num(
+        teacher.logits[:, :-1, :].contiguous().to(torch.float32),
+        nan=0.0,
+        posinf=1e4,
+        neginf=-1e4,
+    )
+    pair_idx = span_pairs.to(device=hidden.device, dtype=torch.long)
+    batch_idx = pair_idx[:, 0]
+    candidate_pos = pair_idx[:, 1]
+    source_pos = pair_idx[:, 2]
+    valid = (
+        (batch_idx >= 0)
+        & (batch_idx < hidden.shape[0])
+        & (batch_idx < shift_teacher.shape[0])
+        & (candidate_pos >= 0)
+        & (candidate_pos < hidden.shape[1])
+        & (source_pos >= 0)
+        & (source_pos < shift_teacher.shape[1])
+    )
+    if int(valid.detach().cpu().sum().item()) <= 0:
+        return torch.zeros((), dtype=student.logits.dtype, device=student.logits.device)
+    batch_idx = batch_idx[valid]
+    candidate_pos = candidate_pos[valid]
+    source_pos = source_pos[valid]
+    student_rows = torch.nn.functional.normalize(hidden[batch_idx, candidate_pos], dim=-1, eps=1e-8)
+    student_byte_logits = student_rows.matmul(byte_probe_weight.to(device=hidden.device, dtype=torch.float32).t())
+    teacher_logits = shift_teacher.to(device=hidden.device)[batch_idx, source_pos]
+    with torch.no_grad():
+        teacher_byte_probs = _first_byte_probs_from_logits(torch, teacher_logits, source_byte_buckets, temperature)
+    student_logp = torch.nn.functional.log_softmax(student_byte_logits / float(temperature), dim=-1)
+    teacher_logp = teacher_byte_probs.clamp_min(1e-12).log()
+    token_kl = (teacher_byte_probs * (teacher_logp - student_logp)).sum(dim=-1)
+    return token_kl.mean().to(dtype=torch.float32) * (float(temperature) ** 2)
 
 
 def _cross_tokenizer_first_byte_loss(

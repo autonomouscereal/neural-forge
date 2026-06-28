@@ -32,7 +32,9 @@ from neural_forge.hf_recovery import _focus_spans_to_span_pairs
 from neural_forge.hf_recovery import _focus_char_spans
 from neural_forge.hf_recovery import _fold_groups_from_report
 from neural_forge.hf_recovery import _feature_decorrelation_loss
+from neural_forge.hf_recovery import _first_byte_head_from_output_embeddings
 from neural_forge.hf_recovery import _first_byte_probs_from_logits
+from neural_forge.hf_recovery import _cross_tokenizer_hidden_first_byte_loss
 from neural_forge.hf_recovery import _last_response_shift_mask
 from neural_forge.hf_recovery import _hidden_representation_loss
 from neural_forge.hf_recovery import _infer_response_char_start
@@ -3252,6 +3254,70 @@ def test_first_byte_projection_keeps_control_bytes_and_other_bucket() -> None:
     assert projected.sum(dim=-1).tolist() == pytest.approx([1.0, 1.0])
 
 
+def test_first_byte_head_from_output_embeddings_averages_and_normalizes_buckets() -> None:
+    torch = pytest.importorskip("torch")
+
+    output_weight = torch.tensor(
+        [
+            [10.0, 0.0],
+            [2.0, 0.0],
+            [0.0, 3.0],
+            [0.0, 1.0],
+        ]
+    )
+    buckets = torch.tensor([ord("A"), ord("A"), ord("B"), 256])
+
+    head = _first_byte_head_from_output_embeddings(torch, output_weight, buckets)
+
+    assert head.shape == (257, 2)
+    assert head[ord("A")].tolist() == pytest.approx([1.0, 0.0])
+    assert head[ord("B")].tolist() == pytest.approx([0.0, 1.0])
+    assert head[256].tolist() == pytest.approx([0.0, 1.0])
+
+
+def test_hidden_first_byte_loss_prefers_hidden_state_matching_teacher_byte() -> None:
+    torch = pytest.importorskip("torch")
+
+    class FakeOutput:
+        def __init__(self, hidden):
+            self.hidden_states = [torch.zeros_like(hidden), hidden]
+            self.logits = torch.zeros((1, 2, 3), dtype=torch.float32)
+
+    teacher = FakeOutput(torch.zeros((1, 2, 2), dtype=torch.float32))
+    teacher.logits = torch.tensor([[[0.0, 9.0, -2.0], [0.0, 0.0, 0.0]]], dtype=torch.float32)
+    source_buckets = torch.tensor([256, ord("A"), ord("B")])
+    byte_probe = torch.zeros((257, 2), dtype=torch.float32)
+    byte_probe[ord("A"), 0] = 1.0
+    byte_probe[ord("B"), 1] = 1.0
+    pairs = torch.tensor([[0, 0, 0]], dtype=torch.long)
+
+    good_student = FakeOutput(torch.tensor([[[4.0, 0.0], [0.0, 0.0]]], dtype=torch.float32))
+    bad_student = FakeOutput(torch.tensor([[[0.0, 4.0], [0.0, 0.0]]], dtype=torch.float32))
+
+    good_loss = _cross_tokenizer_hidden_first_byte_loss(
+        torch,
+        good_student,
+        teacher,
+        pairs,
+        candidate_layer_idx=0,
+        byte_probe_weight=byte_probe,
+        source_byte_buckets=source_buckets,
+        temperature=1.0,
+    )
+    bad_loss = _cross_tokenizer_hidden_first_byte_loss(
+        torch,
+        bad_student,
+        teacher,
+        pairs,
+        candidate_layer_idx=0,
+        byte_probe_weight=byte_probe,
+        source_byte_buckets=source_buckets,
+        temperature=1.0,
+    )
+
+    assert good_loss.item() < bad_loss.item()
+
+
 def test_entropy_aware_kl_weight_zero_matches_forward_kl() -> None:
     torch = pytest.importorskip("torch")
     student = torch.tensor([[0.2, 1.4, -0.7], [2.0, 0.1, -1.2]])
@@ -4612,6 +4678,8 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "both",
             "--byte-kd-weight",
             "0.11",
+            "--byte-hidden-kd-weight",
+            "0.07",
             "--train-output-head-with-kd",
             "--module-output-kd-weight",
             "0.44",
@@ -4689,6 +4757,7 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "projected_vocab_kd_weight": 0.19,
         "projected_vocab_kd_mode": "both",
         "byte_kd_weight": 0.11,
+        "byte_hidden_kd_weight": 0.07,
         "train_output_head_with_kd": True,
         "module_output_kd_weight": 0.44,
         "module_output_targets": "mlp",

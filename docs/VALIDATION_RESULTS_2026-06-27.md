@@ -1419,6 +1419,7 @@ Remote validation on the same strict 29.90x blank-target path:
 | RSD behavior-best 60s baseline | 3,825.12 | 3/4 | 3/6 | 2/3 | baseline |
 | Donor-generated LM+hidden, frozen head L2/S8 | 3,839.22 | 3/4 | 3/6 | 2/3 | safe but worse PPL; no math/code recovery |
 | Donor-generated LM, tied head L2/S8 | 3,832.19 | 3/4 | 3/6 | 2/3 | safe by behavior gate, still no math/code recovery; tied-head mutation confirmed |
+| Byte-hidden bridge + donor-generated hidden L2/S8 | 3,835.03 | 3/4 | 3/6 | 1/3 post-save eval | mechanically active but ranked below baseline; no math/code recovery |
 
 Artifacts:
 
@@ -1460,6 +1461,76 @@ Interpretation:
   moving the core objective toward a stronger representation bridge: CKA/OPRD
   hidden-state matching on donor and child rollouts, byte decoder heads from
   hidden states, and transport/Gram compensation over module outputs.
+
+### Byte-Hidden Bridge Follow-Up
+
+Code changes:
+
+- `hf-xfamily-block-recover` now accepts `--byte-hidden-kd-weight`.
+- The new objective builds a fixed first-byte classifier from the child output
+  embedding rows and applies first-byte KL to the active block hidden states.
+  This gives cross-tokenizer digit, punctuation, space, newline, and byte-level
+  pressure without training the output head or requiring shared vocab rows.
+- The block log/report now records `byte_hidden_kd_loss` and
+  `byte_hidden_pairs`, alongside byte-logit KD, donor-generated hidden KD,
+  on-policy hidden KD, and module-output KD.
+
+Remote validation on the same strict 29.90x blank-target path:
+
+| Checkpoint | PPL mean | Choice | Behavior | Generation health | Verdict |
+|---|---:|---:|---:|---:|---|
+| RSD behavior-best 60s baseline | 3,825.12 | 3/4 | 3/6 | 2/3 | baseline |
+| Byte-hidden bridge + donor-generated hidden L2/S8 | 3,835.03 | 3/4 | 3/6 | 1/3 | rejected; worse PPL and weaker post-save generation health |
+
+Artifacts:
+
+- Run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_block_bytehidden_l2s8_20260628_153438`
+- Eval:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/eval_qwen4b_tied29_block_bytehidden_l2s8_20260628_153438_strictcode.json`
+- Rank:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/rank_qwen4b_tied29_block_bytehidden_l2s8_20260628_153438.json`
+
+Layer-gate notes:
+
+- Settings: `byte_hidden_kd_weight=0.04`,
+  `teacher_generate_hidden_kd_weight=0.04`, `on_policy_hidden_kd_weight=0.04`,
+  `module_output_kd_weight=0.02`, first `2` child blocks, `8` steps/layer.
+- Donor-generated hidden samples remained correct:
+  `12 * 13 -> 156`, `19 + 26 -> 45`, `7 * 8 -> 56`.
+- The new loss was mechanically active, with `byte_hidden_pairs` around
+  `18-19` per step and byte-hidden losses around `13.8-13.9`.
+- Behavior-best selected step `2` for both trained blocks. Later lower-loss
+  steps reduced generation health, so the in-loop selector did its job.
+- The in-loop behavior gate saw `3/6` behavior and `2/3` generation health, but
+  the full post-save `hf-eval` ranked generation health at `1/3`. This
+  reinforces that final model ranking must still use the full eval report, not
+  only in-loop layer telemetry.
+
+Manual inspection:
+
+- Arithmetic still failed with digit runs:
+  multiplication began `230000433333...`, addition began
+  `490003333333...`.
+- The Python probe was malformed:
+  `def add(a, b): 20 + b ++ +12010 ...`.
+- The pruning explanation passed weak relevance but was repetitive.
+- The model-stitching risk generation lost the merge/stitch concept group in
+  the post-save generation-health check, which is why formal generation health
+  dropped to `1/3`.
+
+Interpretation:
+
+- The byte-hidden bridge is useful infrastructure because it adds a
+  tokenizer-neutral hidden-state output-interface signal without mutating tied
+  embeddings.
+- It did not move the strict blank-target compression result forward. The child
+  still has the same numeric/code attractors, and the new signal can lower local
+  losses without improving behavior.
+- The next objective should not be another scalar auxiliary loss on the same
+  two-layer loop. It should change the structural recovery stage: donor-only
+  virtual compaction with sequential Gram/activation compensation, then
+  behavior-gated module reconstruction and rollout-level representation KD.
 
 ## Current Conclusion
 

@@ -188,7 +188,11 @@ transported, or mixed.
 projected into the child vocabulary during block recovery. `--byte-kd-weight`
 adds a tokenizer-neutral first-byte/other-bucket KD signal for the same aligned
 prediction positions, which keeps digits, punctuation, spaces, and newlines in
-the loss even when tokenizers disagree. `--train-output-head-with-kd` optionally
+the loss even when tokenizers disagree. `--byte-hidden-kd-weight` applies the
+same donor byte targets directly to the active block hidden states through a
+fixed byte probe built from the child output embeddings, so byte supervision can
+reach the folded block without training or relying on the LM head.
+`--train-output-head-with-kd` optionally
 trains the output head with each block under the same layer behavior gate; this
 is default-off because tied input/output heads also mutate token embeddings.
 When a tied head is detected, the recovery report records
