@@ -970,6 +970,19 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_block_recover.add_argument("--stepwise-donor-max-new-tokens", type=int, default=8)
     xfamily_block_recover.add_argument("--stepwise-donor-interval", type=int, default=4)
     xfamily_block_recover.add_argument(
+        "--teacher-generate-lm-weight",
+        type=float,
+        default=0.0,
+        help="Train each active block/output head on donor-generated completions retokenized by the child.",
+    )
+    xfamily_block_recover.add_argument(
+        "--teacher-generate-hidden-kd-weight",
+        type=float,
+        default=0.0,
+        help="Add block hidden alignment on donor-generated completions during block recovery.",
+    )
+    xfamily_block_recover.add_argument("--teacher-generate-max-new-tokens", type=int, default=64)
+    xfamily_block_recover.add_argument(
         "--projected-vocab-kd-weight",
         type=float,
         default=0.0,
@@ -1885,6 +1898,9 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         stepwise_donor_kd_weight=args.stepwise_donor_kd_weight,
         stepwise_donor_max_new_tokens=args.stepwise_donor_max_new_tokens,
         stepwise_donor_interval=args.stepwise_donor_interval,
+        teacher_generate_lm_weight=args.teacher_generate_lm_weight,
+        teacher_generate_hidden_kd_weight=args.teacher_generate_hidden_kd_weight,
+        teacher_generate_max_new_tokens=args.teacher_generate_max_new_tokens,
         projected_vocab_kd_weight=args.projected_vocab_kd_weight,
         projected_vocab_kd_mode=args.projected_vocab_kd_mode,
         byte_kd_weight=args.byte_kd_weight,

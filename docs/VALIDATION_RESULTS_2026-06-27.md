@@ -1394,6 +1394,73 @@ Interpretation:
   decoder heads trained from hidden states, and GRAIL/DOT-style sequential
   activation compensation before block recovery.
 
+### Donor-Generated Block Recovery
+
+Code changes:
+
+- `hf-xfamily-block-recover` now accepts `--teacher-generate-lm-weight`,
+  `--teacher-generate-hidden-kd-weight`, and
+  `--teacher-generate-max-new-tokens`.
+- Donor-generated completions are produced once from the calibration prompts,
+  then retokenized by the child. LM-only use now goes through child-token
+  batches, so it does not require paired offset mappings or an extra donor
+  forward inside the block loop.
+- `--teacher-generate-hidden-kd-weight` separately feeds the generated texts
+  through both donor and child, aligns decoded-token spans, and applies the
+  current block hidden/delta objective on those donor completions.
+- Output-head training now detects tied input/output embeddings by data pointer
+  and records `output_head_training_warning` when training the head also mutates
+  token embeddings.
+
+Remote validation on the same strict 29.90x blank-target path:
+
+| Checkpoint | PPL mean | Choice | Behavior | Generation health | Verdict |
+|---|---:|---:|---:|---:|---|
+| RSD behavior-best 60s baseline | 3,825.12 | 3/4 | 3/6 | 2/3 | baseline |
+| Donor-generated LM+hidden, frozen head L2/S8 | 3,839.22 | 3/4 | 3/6 | 2/3 | safe but worse PPL; no math/code recovery |
+| Donor-generated LM, tied head L2/S8 | 3,832.19 | 3/4 | 3/6 | 2/3 | safe by behavior gate, still no math/code recovery; tied-head mutation confirmed |
+
+Artifacts:
+
+- Frozen-head donor-generated run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_block_teachergen_l2s8_20260628_144126`
+- Frozen-head eval summary:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/summary_qwen4b_tied29_block_teachergen_l2s8_20260628_144126_eval.json`
+- Tied-head donor-generated run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_block_teachergen_head_l2s8_20260628_145432`
+- Tied-head eval summary:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/summary_qwen4b_tied29_block_teachergen_head_l2s8_20260628_145432_eval.json`
+
+Manual inspection:
+
+- Donor-generated samples were correct and behavior-relevant:
+  `12 * 13 -> 156`, `19 + 26 -> 45`, `7 * 8 -> 56`.
+- The new losses were mechanically active. Frozen-head run logged
+  `teacher_generate_lm_loss` around `2.25-2.99` and
+  `teacher_generate_hidden_count` around `18-19` for static generated texts;
+  on-policy hidden counts reached `33` when scheduled.
+- Frozen-head manual outputs still failed arithmetic and code:
+  multiplication began `2300003333...`, addition began `4900033333...`, and
+  Python remained malformed (`def add(a, b): 30 + b ++ ...`).
+- Tied-head training also failed arithmetic/code and confirmed the report
+  warning path: `output_head_tied_to_input=true`, meaning the schedule edited
+  token embeddings as well as the LM head. Behavior gates kept it at `3/6`,
+  but the result ranked below baseline because PPL was worse.
+
+Interpretation:
+
+- Donor-generated completions are now available as a block-coupled recovery
+  primitive and are useful telemetry: they prove the donor can provide the
+  right answer strings, and the child can be trained against those strings
+  without adding a runtime adapter.
+- This still did not solve the strict blank-target failure. The generated-text
+  LM signal alone is not enough to redirect the current collapsed numeric/code
+  attractors in two low-step layers.
+- Next work should keep this primitive as an auxiliary behavior stream while
+  moving the core objective toward a stronger representation bridge: CKA/OPRD
+  hidden-state matching on donor and child rollouts, byte decoder heads from
+  hidden states, and transport/Gram compensation over module outputs.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best

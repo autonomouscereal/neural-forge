@@ -191,6 +191,16 @@ prediction positions, which keeps digits, punctuation, spaces, and newlines in
 the loss even when tokenizers disagree. `--train-output-head-with-kd` optionally
 trains the output head with each block under the same layer behavior gate; this
 is default-off because tied input/output heads also mutate token embeddings.
+When a tied head is detected, the recovery report records
+`output_head_training_warning`.
+`--teacher-generate-lm-weight` lets the donor generate short completions from
+the calibration prompts, re-tokenizes those completions with the child
+tokenizer, and applies child-token LM loss while the current block and optional
+output head are trainable. `--teacher-generate-hidden-kd-weight` applies the
+same generated texts to span-aligned block hidden recovery. These are
+default-off because donor-generated text can overfit small calibration prompts;
+use behavior-gated runs to check whether they improve coherence rather than
+only local loss.
 `--save-best-layer-behavior` evaluates held-out behavior during each block and
 keeps the best behavior checkpoint instead of the lowest local reconstruction
 loss. This is slower, but it prevents PPL/local-loss selection from silently

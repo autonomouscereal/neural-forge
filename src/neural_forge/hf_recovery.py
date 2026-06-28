@@ -2056,6 +2056,9 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     stepwise_donor_kd_weight: float = 0.0,
     stepwise_donor_max_new_tokens: int = 8,
     stepwise_donor_interval: int = 4,
+    teacher_generate_lm_weight: float = 0.0,
+    teacher_generate_hidden_kd_weight: float = 0.0,
+    teacher_generate_max_new_tokens: int = 64,
     projected_vocab_kd_weight: float = 0.0,
     projected_vocab_kd_mode: str = "teacher-to-student",
     byte_kd_weight: float = 0.0,
@@ -2127,6 +2130,10 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("on-policy weights must be non-negative.")
     if stepwise_donor_kd_weight < 0:
         raise ValueError("stepwise_donor_kd_weight must be non-negative.")
+    if teacher_generate_lm_weight < 0 or teacher_generate_hidden_kd_weight < 0:
+        raise ValueError("teacher-generated recovery weights must be non-negative.")
+    if teacher_generate_max_new_tokens <= 0:
+        raise ValueError("teacher_generate_max_new_tokens must be positive.")
     if projected_vocab_kd_weight < 0:
         raise ValueError("projected_vocab_kd_weight must be non-negative.")
     if projected_vocab_kd_mode not in {"teacher-to-student", "student-to-teacher", "both"}:
@@ -2137,9 +2144,10 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         train_output_head_with_kd
         and projected_vocab_kd_weight == 0
         and stepwise_donor_kd_weight == 0
+        and teacher_generate_lm_weight == 0
         and byte_kd_weight == 0
     ):
-        raise ValueError("train_output_head_with_kd requires projected, byte, or stepwise donor KD.")
+        raise ValueError("train_output_head_with_kd requires projected, byte, stepwise, or teacher-generated donor KD.")
     if module_output_kd_weight < 0:
         raise ValueError("module_output_kd_weight must be non-negative.")
     if module_output_targets not in MODULE_OUTPUT_TARGETS:
@@ -2218,11 +2226,22 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     if train_output_head_with_kd and output_head is None:
         raise ValueError("train_output_head_with_kd requires an output embedding/lm_head module.")
     input_embeddings = candidate.get_input_embeddings() if train_output_head_with_kd else None
+    output_head_weight = getattr(output_head, "weight", None)
+    input_embedding_weight = getattr(input_embeddings, "weight", None)
     output_head_tied_to_input = bool(
-        output_head is not None
-        and input_embeddings is not None
-        and getattr(output_head, "weight", None) is getattr(input_embeddings, "weight", None)
+        output_head_weight is not None
+        and input_embedding_weight is not None
+        and (
+            output_head_weight is input_embedding_weight
+            or output_head_weight.data_ptr() == input_embedding_weight.data_ptr()
+        )
     )
+    output_head_training_warning = None
+    if train_output_head_with_kd and output_head_tied_to_input:
+        output_head_training_warning = (
+            "output_head_is_tied_to_input_embeddings; training the head also mutates token embeddings"
+        )
+        print(f"warning: {output_head_training_warning}", flush=True)
 
     anchors = _shared_recovery_anchors(
         source_tokenizer,
@@ -2276,6 +2295,47 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         device=device,
         include_offsets=True,
     )
+    teacher_generated_texts: list[str] = []
+    teacher_generated_candidate_batches: list[dict[str, Any]] = []
+    teacher_generated_paired_batches: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    if teacher_generate_lm_weight > 0 or teacher_generate_hidden_kd_weight > 0:
+        teacher_generated_texts = _teacher_generated_lm_texts(
+            torch,
+            source,
+            source_tokenizer,
+            texts,
+            on_policy_response_loss_mode,
+            max_new_tokens=teacher_generate_max_new_tokens,
+            max_length=max_length,
+            batch_size=batch_size,
+            device=device,
+        )
+        if not teacher_generated_texts:
+            raise ValueError(
+                "teacher-generated block recovery requested but donor generation produced no training texts."
+            )
+        if teacher_generate_lm_weight > 0:
+            teacher_generated_candidate_batches = _make_batches(
+                candidate_tokenizer,
+                teacher_generated_texts,
+                batch_size=batch_size,
+                max_length=max_length,
+                device=device,
+                response_loss_mode="none",
+                append_eos=False,
+            )
+        if teacher_generate_hidden_kd_weight > 0:
+            teacher_generated_paired_batches = _make_paired_batches(
+                source_tokenizer,
+                candidate_tokenizer,
+                teacher_generated_texts,
+                batch_size=batch_size,
+                max_length=max_length,
+                device=device,
+                include_offsets=True,
+                response_loss_mode="none",
+                append_eos=False,
+            )
 
     full_source_layer_groups = [
         _donor_layer_group_for_target(idx, len(candidate_layers), len(source_layers))
@@ -2533,6 +2593,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 and int(projected_vocab_pair_count) <= 0
                 and int(byte_kd_pair_count) <= 0
                 and stepwise_donor_kd_weight == 0
+                and teacher_generate_lm_weight == 0
+                and teacher_generate_hidden_kd_weight == 0
             ):
                 skipped_steps += 1
                 continue
@@ -2596,6 +2658,57 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     span_max_pairs,
                 )
                 loss = loss + float(on_policy_hidden_kd_weight) * on_policy_hidden_loss
+            teacher_generate_lm_loss = None
+            teacher_generate_hidden_loss = None
+            teacher_generate_hidden_count = 0
+            if teacher_generated_candidate_batches:
+                teacher_candidate_batch = teacher_generated_candidate_batches[
+                    (step - 1) % len(teacher_generated_candidate_batches)
+                ]
+                teacher_generated_student_lm = candidate(
+                    **_model_forward_inputs(teacher_candidate_batch),
+                    use_cache=False,
+                )
+                teacher_generate_lm_loss = _candidate_lm_stabilizer_loss(
+                    torch,
+                    teacher_generated_student_lm,
+                    teacher_candidate_batch["input_ids"],
+                    teacher_candidate_batch.get("attention_mask"),
+                )
+                loss = loss + float(teacher_generate_lm_weight) * teacher_generate_lm_loss
+            if teacher_generated_paired_batches:
+                teacher_source_batch, teacher_candidate_batch = teacher_generated_paired_batches[
+                    (step - 1) % len(teacher_generated_paired_batches)
+                ]
+                with torch.no_grad():
+                    teacher_generated_teacher = source(
+                        **_model_forward_inputs(teacher_source_batch),
+                        use_cache=False,
+                        output_hidden_states=teacher_generate_hidden_kd_weight > 0,
+                    )
+                teacher_generated_student = candidate(
+                    **_model_forward_inputs(teacher_candidate_batch),
+                    use_cache=False,
+                    output_hidden_states=teacher_generate_hidden_kd_weight > 0,
+                )
+                teacher_generate_hidden_loss, teacher_generate_hidden_count = _cross_tokenizer_block_hidden_loss(
+                    torch,
+                    teacher_generated_student,
+                    teacher_generated_teacher,
+                    source_tokenizer,
+                    candidate_tokenizer,
+                    teacher_source_batch,
+                    teacher_candidate_batch,
+                    source_group,
+                    candidate_idx,
+                    hidden_projection,
+                    _canonical_token,
+                    donor_layer_fold_mode,
+                    hidden_metric,
+                    block_target,
+                    span_max_pairs,
+                )
+                loss = loss + float(teacher_generate_hidden_kd_weight) * teacher_generate_hidden_loss
             stepwise_donor_loss = None
             stepwise_donor_count = 0
             if stepwise_donor_kd_weight > 0 and (step == 1 or step % int(stepwise_donor_interval) == 0):
@@ -2640,6 +2753,12 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             on_policy_loss_value = None if on_policy_loss is None else float(on_policy_loss.detach().cpu())
             on_policy_hidden_loss_value = (
                 None if on_policy_hidden_loss is None else float(on_policy_hidden_loss.detach().cpu())
+            )
+            teacher_generate_lm_loss_value = (
+                None if teacher_generate_lm_loss is None else float(teacher_generate_lm_loss.detach().cpu())
+            )
+            teacher_generate_hidden_loss_value = (
+                None if teacher_generate_hidden_loss is None else float(teacher_generate_hidden_loss.detach().cpu())
             )
             stepwise_donor_loss_value = (
                 None if stepwise_donor_loss is None else float(stepwise_donor_loss.detach().cpu())
@@ -2687,6 +2806,9 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                         "on_policy_count": int(on_policy_count),
                         "on_policy_hidden_loss": on_policy_hidden_loss_value,
                         "on_policy_hidden_count": int(on_policy_hidden_count),
+                        "teacher_generate_lm_loss": teacher_generate_lm_loss_value,
+                        "teacher_generate_hidden_loss": teacher_generate_hidden_loss_value,
+                        "teacher_generate_hidden_count": int(teacher_generate_hidden_count),
                         "stepwise_donor_kd_loss": stepwise_donor_loss_value,
                         "stepwise_donor_count": int(stepwise_donor_count),
                         "span_pairs": int(pair_count),
@@ -2707,6 +2829,9 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     f"on_policy_count={int(on_policy_count)} "
                     f"on_policy_hidden={on_policy_hidden_loss_value if on_policy_hidden_loss_value is not None else 0.0:.6f} "
                     f"on_policy_hidden_count={int(on_policy_hidden_count)} "
+                    f"teacher_generate_lm={teacher_generate_lm_loss_value if teacher_generate_lm_loss_value is not None else 0.0:.6f} "
+                    f"teacher_generate_hidden={teacher_generate_hidden_loss_value if teacher_generate_hidden_loss_value is not None else 0.0:.6f} "
+                    f"teacher_generate_hidden_count={int(teacher_generate_hidden_count)} "
                     f"stepwise_donor={stepwise_donor_loss_value if stepwise_donor_loss_value is not None else 0.0:.6f} "
                     f"stepwise_donor_count={int(stepwise_donor_count)} "
                     f"span_pairs={int(pair_count)}",
@@ -2855,11 +2980,17 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "stepwise_donor_kd_weight": float(stepwise_donor_kd_weight),
         "stepwise_donor_max_new_tokens": int(stepwise_donor_max_new_tokens),
         "stepwise_donor_interval": int(stepwise_donor_interval),
+        "teacher_generate_lm_weight": float(teacher_generate_lm_weight),
+        "teacher_generate_hidden_kd_weight": float(teacher_generate_hidden_kd_weight),
+        "teacher_generate_max_new_tokens": int(teacher_generate_max_new_tokens),
+        "teacher_generated_text_count": len(teacher_generated_texts),
+        "teacher_generated_text_samples": teacher_generated_texts[:3],
         "projected_vocab_kd_weight": float(projected_vocab_kd_weight),
         "projected_vocab_kd_mode": projected_vocab_kd_mode,
         "byte_kd_weight": float(byte_kd_weight),
         "train_output_head_with_kd": bool(train_output_head_with_kd),
         "output_head_tied_to_input": bool(output_head_tied_to_input),
+        "output_head_training_warning": output_head_training_warning,
         "module_output_kd_weight": float(module_output_kd_weight),
         "module_output_targets": module_output_targets,
         "module_output_transport": module_output_transport,

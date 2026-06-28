@@ -8,7 +8,8 @@ blank-target, cross-family compression goal. It deliberately focuses on
 
 | Path | Current Source Trail | Neural Forge Hook |
 |---|---|---|
-| On-policy representation distillation | OPRD, arXiv `2606.06021` | Extend `hf-xfamily-block-recover` so child rollouts are decoded, fed to the donor, and matched through donor/child hidden projections at selected layers. Existing `--on-policy-hidden-kd-weight` is the seed; the next version should use stronger rollout scheduling and layer/interface projectors. |
+| On-policy representation distillation | OPRD, arXiv `2606.06021`; Improving Language Model Distillation through Hidden State Matching, ICLR 2025 | Extend `hf-xfamily-block-recover` so child rollouts and donor-generated completions are decoded, fed through both models, and matched through donor/child hidden projections at selected layers. Existing `--on-policy-hidden-kd-weight` and `--teacher-generate-hidden-kd-weight` are the seeds; the next version should use stronger rollout scheduling and layer/interface projectors. |
+| Cross-tokenizer behavior transfer | Breaking the Tokenizer Barrier, arXiv `2606.09456`; X-Token, arXiv `2605.21699` | Use chunk/span alignment and sparse tokenizer projections for behavior-level recovery. `--teacher-generate-lm-weight` is the current lightweight primitive: donor completions become child-token training text while the folded block is active. |
 | Byte-level cross-tokenizer interface | Cross-Tokenizer LLM Distillation through a Byte-Level Interface, arXiv `2604.07466`; Cross-Tokenizer Likelihood Scoring, arXiv `2512.14954` | The first-byte KD added here is a cheap probe. The stronger version should attach a temporary byte decoder head to hidden states, train it during recovery, and backprop byte-level donor targets into the child block without relying on the tied LM head. |
 | Activation-space optimal transport folding | DOTResize, arXiv `2507.04517`; Transport and Merge, arXiv `2602.05495` | Replace simple rank/depth grouping with entropic transport over activation signatures for MLP channels, attention heads, and residual dimensions before any pruning. |
 | Sequential activation compensation | GRAIL, arXiv `2602.23795`; Chain of Merges, arXiv `2508.21421`; RegMean++, arXiv `2508.03121` | After folding each donor layer group into the target block, solve a local ridge/Gram compensation map, absorb it into downstream projections, then recompute activations before moving to the next block. Gate promotion by behavior, not just local reconstruction error. |
@@ -24,6 +25,9 @@ the strict Qwen3-4B to blank SmolLM2-135M `29.90x` case:
   behavior-gated;
 - behavior-best per-layer selection prevents lower-loss states from replacing
   better-generation states;
+- donor-generated completions are now active as block-coupled LM/hidden
+  recovery streams, but the first strict 29.90x runs preserved baseline behavior
+  rather than recovering arithmetic/code;
 - arithmetic and Python outputs still collapse, so the next useful work is
   structural activation compensation and stronger on-policy representation
   recovery.
