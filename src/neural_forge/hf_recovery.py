@@ -1293,6 +1293,7 @@ def calibrate_cross_tokenizer_lm_head(
     output_dir: str | Path,
     ridge: float = 1e-2,
     head_blend_alpha: float = 1.0,
+    head_calibration_mode: str = "full",
     max_length: int = 128,
     max_calibration_rows: int = 2048,
     projected_vocab_max_source_tokens: int = 6,
@@ -1308,6 +1309,8 @@ def calibrate_cross_tokenizer_lm_head(
         raise ValueError("ridge must be non-negative.")
     if not 0.0 <= float(head_blend_alpha) <= 1.0:
         raise ValueError("head_blend_alpha must be in [0, 1].")
+    if head_calibration_mode not in {"full", "mean-shift"}:
+        raise ValueError("head_calibration_mode must be full or mean-shift.")
     if max_length <= 1:
         raise ValueError("max_length must be greater than 1.")
     if max_calibration_rows <= 0:
@@ -1427,14 +1430,24 @@ def calibrate_cross_tokenizer_lm_head(
     hidden_rows = torch.cat(hidden_chunks, dim=0).to(torch.float32)
     target_logits = torch.cat(logit_chunks, dim=0).to(torch.float32)
     current_head = output_head.weight.data.detach().cpu().to(torch.float32).index_select(dim=0, index=valid_idx)
-    fitted_head, fit_report = _fit_lm_head_from_hidden_logits(
-        torch,
-        hidden_rows,
-        target_logits,
-        current_head,
-        ridge=float(ridge),
-        head_blend_alpha=float(head_blend_alpha),
-    )
+    if head_calibration_mode == "full":
+        fitted_head, fit_report = _fit_lm_head_from_hidden_logits(
+            torch,
+            hidden_rows,
+            target_logits,
+            current_head,
+            ridge=float(ridge),
+            head_blend_alpha=float(head_blend_alpha),
+        )
+    else:
+        fitted_head, fit_report = _fit_lm_head_mean_shift(
+            torch,
+            hidden_rows,
+            target_logits,
+            current_head,
+            ridge=float(ridge),
+            head_blend_alpha=float(head_blend_alpha),
+        )
     updated = output_head.weight.data.detach().cpu().to(torch.float32)
     updated[valid_idx] = fitted_head
     output_head.weight.data.copy_(updated.to(device=output_head.weight.device, dtype=output_head.weight.dtype))
@@ -1450,6 +1463,7 @@ def calibrate_cross_tokenizer_lm_head(
         "output_dir": str(target),
         "ridge": float(ridge),
         "head_blend_alpha": float(head_blend_alpha),
+        "head_calibration_mode": head_calibration_mode,
         "max_length": int(max_length),
         "max_calibration_rows": int(max_calibration_rows),
         "rows_collected": int(rows_collected),
@@ -8624,6 +8638,57 @@ def _fit_lm_head_from_hidden_logits(
         "relative_error_before": before_error,
         "relative_error_after": after_error,
     }
+
+
+def _fit_lm_head_mean_shift(
+    torch,
+    hidden_rows,
+    target_logits,
+    current_head,
+    ridge: float,
+    head_blend_alpha: float,
+):
+    if ridge < 0:
+        raise ValueError("ridge must be non-negative.")
+    if not 0.0 <= float(head_blend_alpha) <= 1.0:
+        raise ValueError("head_blend_alpha must be in [0, 1].")
+    hidden = torch.nan_to_num(hidden_rows.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    targets = torch.nan_to_num(target_logits.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    old_head = torch.nan_to_num(current_head.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    if hidden.dim() != 2 or targets.dim() != 2 or old_head.dim() != 2:
+        raise ValueError("hidden_rows, target_logits, and current_head must be rank-2 tensors.")
+    if int(hidden.shape[0]) != int(targets.shape[0]):
+        raise ValueError("hidden_rows and target_logits must have the same row count.")
+    if int(hidden.shape[1]) != int(old_head.shape[1]):
+        raise ValueError("current_head hidden dimension must match hidden_rows.")
+    if int(targets.shape[1]) != int(old_head.shape[0]):
+        raise ValueError("target_logits vocab dimension must match current_head rows.")
+
+    before = hidden.matmul(old_head.t())
+    hidden_mean = hidden.mean(dim=0)
+    denom = hidden_mean.dot(hidden_mean).clamp_min(1e-12) + float(ridge)
+    mean_error = targets.mean(dim=0) - before.mean(dim=0)
+    shifted = old_head + mean_error.unsqueeze(1) * hidden_mean.unsqueeze(0) / denom
+    if head_blend_alpha < 1.0:
+        shifted = (1.0 - float(head_blend_alpha)) * old_head + float(head_blend_alpha) * shifted
+    after = hidden.matmul(shifted.t())
+    before_mean_error = (targets.mean(dim=0) - before.mean(dim=0)).abs().mean()
+    after_mean_error = (targets.mean(dim=0) - after.mean(dim=0)).abs().mean()
+    report = {
+        "mode": "mean-shift",
+        "rows": int(hidden.shape[0]),
+        "hidden_size": int(hidden.shape[1]),
+        "vocab_rows": int(targets.shape[1]),
+        "ridge": float(ridge),
+        "head_blend_alpha": float(head_blend_alpha),
+        "relative_error_before": _relative_reconstruction_error(torch, before, targets),
+        "relative_error_after": _relative_reconstruction_error(torch, after, targets),
+        "mean_abs_logit_error_before": float(before_mean_error.detach().cpu().item()),
+        "mean_abs_logit_error_after": float(after_mean_error.detach().cpu().item()),
+        "hidden_mean_norm": float(hidden_mean.norm().detach().cpu().item()),
+        "delta_norm": float((shifted - old_head).norm().detach().cpu().item()),
+    }
+    return shifted.contiguous(), report
 
 
 def _select_hidden_state(hidden_states, hidden_layer: str):

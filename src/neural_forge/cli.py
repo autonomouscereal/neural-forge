@@ -1043,6 +1043,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_head.add_argument("output")
     xfamily_head.add_argument("--ridge", type=float, default=1e-2)
     xfamily_head.add_argument("--head-blend-alpha", type=float, default=1.0)
+    xfamily_head.add_argument("--head-calibration-mode", choices=["full", "mean-shift"], default="full")
     xfamily_head.add_argument("--max-length", type=int, default=128)
     xfamily_head.add_argument("--max-calibration-rows", type=int, default=2048)
     xfamily_head.add_argument("--projected-vocab-max-source-tokens", type=int, default=6)
@@ -1918,6 +1919,7 @@ def cmd_hf_xfamily_calibrate_head(args: argparse.Namespace) -> dict[str, object]
         output_dir=args.output,
         ridge=args.ridge,
         head_blend_alpha=args.head_blend_alpha,
+        head_calibration_mode=args.head_calibration_mode,
         max_length=args.max_length,
         max_calibration_rows=args.max_calibration_rows,
         projected_vocab_max_source_tokens=args.projected_vocab_max_source_tokens,

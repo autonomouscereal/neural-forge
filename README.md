@@ -185,6 +185,12 @@ Use `--module-output-targets attention|mlp|both` and
 residuals are matched and whether row matching is strict span-paired, soft
 transported, or mixed.
 
+`hf-xfamily-calibrate-head --head-calibration-mode mean-shift` is a safer
+alternative to full head refitting: it shifts output rows along the observed
+child hidden mean to reduce average projected-logit error. It is default-off;
+validation showed that even small mean shifts can preserve PPL while damaging
+generation health, so use it as an experiment rather than a default repair.
+
 Task arithmetic defaults to `--dtype auto` and saves the base tokenizer after
 verifying that the tuned tokenizer has the same vocabulary. Special-token map
 differences are recorded in the merge report. Use an explicit dtype such as

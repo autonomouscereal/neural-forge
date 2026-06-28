@@ -1277,6 +1277,48 @@ Interpretation:
   a default-off tool, useful for targeted schedules, but current evidence says
   it can suppress useful generation before it fixes numeric correctness.
 
+### Mean-Shift Head Calibration
+
+Code changes:
+
+- `hf-xfamily-calibrate-head` now accepts `--head-calibration-mode full|mean-shift`.
+- `mean-shift` keeps the existing output-head geometry mostly intact and only
+  moves projected candidate vocab rows along the child hidden-state mean
+  direction, reducing average projected donor logit error without a full ridge
+  replacement.
+
+Remote validation:
+
+| Checkpoint | PPL mean | Choice | Behavior | Generation health | Verdict |
+|---|---:|---:|---:|---:|---|
+| Head mean-shift alpha 0.25 | 5,015.48 | 1/4 | 0/6 | 0/3 | rejected |
+| Head mean-shift alpha 0.02 | 4,019.77 | 3/4 | 3/6 | 0/3 | rejected |
+
+Artifacts:
+
+- Alpha `0.25`:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_head_meanshift_20260628_132954`
+- Alpha `0.02`:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_head_meanshift_a002_20260628_133126`
+
+Manual inspection:
+
+- Alpha `0.25` improved the local calibration objective
+  (`mean_abs_logit_error_before=11.64`, `after=8.73`) but destroyed behavior:
+  outputs collapsed into repeated generic words such as `forming`, `number`, and
+  `walls`.
+- Alpha `0.02` was less destructive and kept behavior at `3/6`, but generation
+  health fell to `0/3`; math remained long digit runs and code stayed malformed.
+
+Interpretation:
+
+- Marginal logit calibration is not a safe substitute for structural recovery on
+  this blank target. It can improve projected-logit fit while making greedy
+  behavior worse.
+- This reinforces the current direction: output-space fixes need behavior gates
+  and probably have to be coupled to block/interface reconstruction rather than
+  applied as a standalone head operation.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best

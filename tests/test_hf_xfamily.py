@@ -24,6 +24,7 @@ from neural_forge.hf_recovery import _cross_tokenizer_span_pairs
 from neural_forge.hf_recovery import _entropy_aware_kl_loss
 from neural_forge.hf_recovery import _fit_activation_map
 from neural_forge.hf_recovery import _fit_lm_head_from_hidden_logits
+from neural_forge.hf_recovery import _fit_lm_head_mean_shift
 from neural_forge.hf_recovery import _fit_shared_embedding_hidden_projection
 from neural_forge.hf_recovery import _first_response_shift_mask
 from neural_forge.hf_recovery import _focus_spans_to_shift_mask
@@ -721,6 +722,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.04",
             "--head-blend-alpha",
             "0.7",
+            "--head-calibration-mode",
+            "mean-shift",
             "--max-length",
             "80",
             "--max-calibration-rows",
@@ -3296,6 +3299,27 @@ def test_fit_lm_head_from_hidden_logits_reduces_reconstruction_error() -> None:
     assert torch.allclose(fitted, true_head, atol=1e-4)
 
 
+def test_fit_lm_head_mean_shift_reduces_average_logit_error() -> None:
+    torch = pytest.importorskip("torch")
+    hidden = torch.tensor([[1.0, 0.0], [2.0, 0.0], [1.5, 0.0]])
+    current = torch.zeros((2, 2), dtype=torch.float32)
+    targets = torch.tensor([[3.0, -1.0], [3.0, -1.0], [3.0, -1.0]], dtype=torch.float32)
+
+    shifted, report = _fit_lm_head_mean_shift(
+        torch,
+        hidden,
+        targets,
+        current,
+        ridge=0.0,
+        head_blend_alpha=1.0,
+    )
+    after = hidden.matmul(shifted.t())
+
+    assert report["mode"] == "mean-shift"
+    assert report["mean_abs_logit_error_after"] < report["mean_abs_logit_error_before"]
+    assert torch.allclose(after.mean(dim=0), targets.mean(dim=0), atol=1e-5)
+
+
 def test_same_tokenizer_reference_loss_prefers_matching_logits() -> None:
     torch = pytest.importorskip("torch")
     reference = _Obj(logits=torch.tensor([[[0.0, 2.0], [3.0, 0.0], [0.5, 1.0]]]))
@@ -4206,6 +4230,8 @@ def test_hf_xfamily_calibrate_head_handler_passes_flags(monkeypatch) -> None:
             "0.04",
             "--head-blend-alpha",
             "0.7",
+            "--head-calibration-mode",
+            "mean-shift",
             "--max-length",
             "80",
             "--max-calibration-rows",
@@ -4233,6 +4259,7 @@ def test_hf_xfamily_calibrate_head_handler_passes_flags(monkeypatch) -> None:
         "output_dir": "out",
         "ridge": 0.04,
         "head_blend_alpha": 0.7,
+        "head_calibration_mode": "mean-shift",
         "max_length": 80,
         "max_calibration_rows": 222,
         "projected_vocab_max_source_tokens": 5,
