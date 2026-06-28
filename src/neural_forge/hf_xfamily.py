@@ -292,8 +292,8 @@ def donor_projected_init(
         raise ValueError("max_anchors must be positive.")
     if fold_mode not in {"mean", "rms", "transport"}:
         raise ValueError("fold_mode must be mean, rms, or transport.")
-    if hidden_basis_mode not in {"none", "activation-pca"}:
-        raise ValueError("hidden_basis_mode must be none or activation-pca.")
+    if hidden_basis_mode not in {"none", "activation-pca", "shared-token-ridge"}:
+        raise ValueError("hidden_basis_mode must be none, activation-pca, or shared-token-ridge.")
     if hidden_basis_scope not in {"global", "layer"}:
         raise ValueError("hidden_basis_scope must be global or layer.")
     if hidden_basis_max_rows <= 0:
@@ -411,6 +411,16 @@ def donor_projected_init(
                 target_dim=target_hidden_size,
                 preprocess=hidden_basis_preprocess,
             )
+    elif hidden_basis_mode == "shared-token-ridge":
+        hidden_basis, hidden_basis_report = _build_shared_token_hidden_basis(
+            torch,
+            target,
+            donor,
+            target_tokenizer,
+            donor_tokenizer,
+            max_anchors=max_anchors,
+            ridge=ridge,
+        )
 
     target_state = target.state_dict()
     donor_state = donor.state_dict()
@@ -2123,6 +2133,43 @@ def _build_activation_hidden_basis(
         "retained_energy": float(retained_energy.detach().cpu()),
         "top_singular_value": float(singular_values[0].detach().cpu()) if int(singular_values.numel()) else 0.0,
         "kept_singular_value": float(singular_values[keep - 1].detach().cpu()),
+    }
+
+
+def _build_shared_token_hidden_basis(
+    torch,
+    target,
+    donor,
+    target_tokenizer,
+    donor_tokenizer,
+    max_anchors: int,
+    ridge: float,
+):
+    if max_anchors <= 0:
+        raise ValueError("max_anchors must be positive.")
+    if ridge < 0:
+        raise ValueError("ridge must be non-negative.")
+    anchors, target_map, donor_map = _shared_anchor_tokens(target_tokenizer, donor_tokenizer, max_anchors)
+    target_embeddings = target.get_input_embeddings()
+    donor_embeddings = donor.get_input_embeddings()
+    if target_embeddings is None or donor_embeddings is None:
+        raise ValueError("Both target and donor need input embeddings for shared-token hidden basis.")
+    target_idx = torch.tensor([target_map[token] for token in anchors], dtype=torch.long)
+    donor_idx = torch.tensor([donor_map[token] for token in anchors], dtype=torch.long)
+    with torch.no_grad():
+        target_rows = target_embeddings.weight.index_select(0, target_idx).detach().cpu().to(torch.float32)
+        donor_rows = donor_embeddings.weight.index_select(0, donor_idx).detach().cpu().to(torch.float32)
+    basis = _ridge_map(torch, donor_rows, target_rows, ridge).detach().cpu().to(torch.float32)
+    predicted = donor_rows.matmul(basis)
+    return basis.contiguous(), {
+        "mode": "shared-token-ridge",
+        "source_dim": int(donor_rows.shape[1]),
+        "target_dim": int(target_rows.shape[1]),
+        "anchors": int(len(anchors)),
+        "available_shared_tokens": int(len(set(target_map) & set(donor_map))),
+        "ridge": float(ridge),
+        "relative_error": _relative_reconstruction_error(torch, predicted, target_rows),
+        "mean_cosine": _mean_row_cosine(torch, predicted, target_rows),
     }
 
 
@@ -4394,6 +4441,20 @@ def _ridge_map(torch, source, target, ridge: float):
         xtx = xtx + torch.eye(xtx.shape[0], dtype=xtx.dtype) * float(ridge)
     xty = source.T.matmul(target)
     return torch.linalg.solve(xtx, xty)
+
+
+def _relative_reconstruction_error(torch, predicted, target) -> float:
+    error = predicted.detach().to(torch.float32).sub(target.detach().to(torch.float32)).pow(2).mean().sqrt()
+    scale = target.detach().to(torch.float32).pow(2).mean().sqrt().clamp_min(1e-12)
+    return float((error / scale).detach().cpu())
+
+
+def _mean_row_cosine(torch, predicted, target) -> float:
+    predicted = predicted.detach().to(torch.float32)
+    target = target.detach().to(torch.float32)
+    numerator = (predicted * target).sum(dim=1)
+    denominator = predicted.pow(2).sum(dim=1).sqrt().mul(target.pow(2).sum(dim=1).sqrt()).clamp_min(1e-12)
+    return float((numerator / denominator).mean().detach().cpu())
 
 
 def _write_json(path: str | Path, data: dict[str, Any]) -> None:

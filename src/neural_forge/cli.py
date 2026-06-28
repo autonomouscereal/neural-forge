@@ -112,9 +112,12 @@ def build_parser() -> argparse.ArgumentParser:
     hf_donor_init.add_argument("--fold-mode", choices=["mean", "rms", "transport"], default="mean")
     hf_donor_init.add_argument(
         "--hidden-basis-mode",
-        choices=["none", "activation-pca"],
+        choices=["none", "activation-pca", "shared-token-ridge"],
         default="none",
-        help="Optionally project donor hidden axes through an activation PCA basis before ordinary folding.",
+        help=(
+            "Optionally project donor hidden axes through an activation PCA basis or a shared-token ridge "
+            "map before ordinary folding."
+        ),
     )
     hf_donor_init.add_argument(
         "--hidden-basis-scope",

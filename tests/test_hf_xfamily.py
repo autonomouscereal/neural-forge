@@ -63,6 +63,7 @@ from neural_forge.hf_xfamily import _axis_reductions_for_non_layer_tensor_key
 from neural_forge.hf_xfamily import _balanced_activation_assignment
 from neural_forge.hf_xfamily import _blend_projection_with_target
 from neural_forge.hf_xfamily import _build_activation_hidden_basis
+from neural_forge.hf_xfamily import _build_shared_token_hidden_basis
 from neural_forge.hf_xfamily import _channel_assignment_features
 from neural_forge.hf_xfamily import _donor_layer_group_for_target
 from neural_forge.hf_xfamily import _effective_layer_alpha
@@ -372,7 +373,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "--fold-mode",
             "mean",
             "--hidden-basis-mode",
-            "activation-pca",
+            "shared-token-ridge",
             "--hidden-basis-scope",
             "layer",
             "--hidden-basis-max-rows",
@@ -745,7 +746,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.seed == 456
     assert donor_init_args.max_anchors == 1000
     assert donor_init_args.fold_mode == "mean"
-    assert donor_init_args.hidden_basis_mode == "activation-pca"
+    assert donor_init_args.hidden_basis_mode == "shared-token-ridge"
     assert donor_init_args.hidden_basis_scope == "layer"
     assert donor_init_args.hidden_basis_max_rows == 777
     assert donor_init_args.hidden_basis_preprocess == "uncentered-rowrms"
@@ -1257,6 +1258,47 @@ def test_activation_hidden_basis_uncentered_keeps_common_direction() -> None:
     assert uncentered_report["preprocess"] == "uncentered-rowrms"
     assert abs(float(uncentered[0, 0])) > 0.95
     assert abs(float(centered[0, 0])) < 0.5
+
+
+def test_shared_token_hidden_basis_recovers_anchor_projection() -> None:
+    torch = pytest.importorskip("torch")
+    donor_rows = torch.eye(3, dtype=torch.float32)
+    expected = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.0, 2.0],
+            [1.0, 1.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    class _Model:
+        def __init__(self, rows):
+            self._embedding = torch.nn.Embedding.from_pretrained(rows, freeze=False)
+
+        def get_input_embeddings(self):
+            return self._embedding
+
+    target = _Model(torch.cat([torch.zeros((1, 2)), expected], dim=0))
+    donor = _Model(torch.cat([torch.zeros((1, 3)), donor_rows], dim=0))
+    tokenizer = _Tokenizer(["<s>", "alpha", "beta", "gamma"])
+
+    basis, report = _build_shared_token_hidden_basis(
+        torch,
+        target,
+        donor,
+        tokenizer,
+        tokenizer,
+        max_anchors=8,
+        ridge=0.0,
+    )
+
+    assert basis.shape == (3, 2)
+    assert basis.flatten().tolist() == pytest.approx(expected.flatten().tolist(), abs=1e-6)
+    assert report["mode"] == "shared-token-ridge"
+    assert report["anchors"] == 3
+    assert report["relative_error"] == pytest.approx(0.0, abs=1e-6)
+    assert report["mean_cosine"] == pytest.approx(1.0, abs=1e-6)
 
 
 def test_hidden_basis_resize_projects_hidden_axes() -> None:

@@ -451,11 +451,72 @@ initializer is harmful as implemented and should remain experimental. The next
 method needs stronger activation transport/basis initialization before
 blockwise training, not broader use of this OMP variant.
 
+### Strict 25x Untied-Head FFN Fold Follow-Up
+
+New implementation:
+
+- `hf-donor-project-init --hidden-basis-mode shared-token-ridge`, an
+  experimental donor-hidden to child-hidden map fit from shared decoded-token
+  embedding rows.
+- The mode is intentionally reported with anchor fit quality so weak target
+  coordinate maps are visible in the init report.
+
+Validation findings:
+
+- Shared-token ridge is not useful for a blank SmolLM target as implemented.
+  Qwen3-4B to blank SmolLM2-135M with tied head produced anchor fit
+  `mean_cosine=0.2814`, relative error `0.9591`, PPL `73,517.64` to
+  `82,810.18`, choice `1/4` to `2/4`, and manual output collapsed into control
+  or blank-like characters. Keep this mode experimental.
+- The best useful path is still the recovered untied-head child at
+  `162,826,560` params, which is only `24.70x` against the
+  `4,022,468,096` parameter Qwen3-4B donor.
+- Folding the recovered untied child FFN intermediate size from `1536` to
+  `1496` with combined-cosine neuron assignment yields `160,752,960` params,
+  or `25.02x`, while preserving some donor behavior.
+
+Strict 25x local eval:
+
+| Checkpoint | Params | Ratio | PPL mean | Choice | Behavior suite | Manual notes |
+|---|---:|---:|---:|---:|---:|---|
+| Source recovered untied child | 162,826,560 | 24.70x | 1,648.84 | 4/4 | n/a | useful but repetitive pruning/risk text, malformed code skeleton |
+| FFN1496 folded strict child | 160,752,960 | 25.02x | 1,449.60 | 3/4 | 0/6 | topical pruning/risk text and recognizable `def add_numbers` skeleton, still repetitive |
+| FFN1496 ridge-repaired child | 160,752,960 | 25.02x | 1,643.74 | 4/4 | 1/6 | choice improves, manual text becomes more repetitive |
+| FFN1496 + cross-tokenizer MLP reconstruction alpha 0.05 | 160,752,960 | 25.02x | 1,384.22 | 3/4 | 1/6 | best strict PPL; pruning/risk/code are recognizable but not clean |
+
+External lm-eval slice (`arc_easy`, `piqa`, limit 20):
+
+| Checkpoint | ARC-Easy acc / norm | PIQA acc / norm |
+|---|---:|---:|
+| Source recovered untied child, 24.70x | 0.35 / 0.20 | 0.65 / 0.50 |
+| FFN1496 folded strict child, 25.02x | 0.45 / 0.25 | 0.60 / 0.50 |
+| FFN1496 ridge-repaired strict child, 25.02x | 0.30 / 0.25 | 0.60 / 0.60 |
+| FFN1496 + MLP reconstruction strict child, 25.02x | 0.45 / 0.25 | 0.55 / 0.50 |
+| Qwen3-4B donor | 0.80 / 0.65 | 0.80 / 0.80 |
+
+Manual inspection of the best strict child:
+
+- Pruning prompt is on-topic but repetitive: it discusses channels, weights,
+  folding, and training.
+- Code prompt emits a recognizable Python fenced block and
+  `def add_numbers(a,a): return a + b`, but the rest is malformed repetition.
+- Merge-risk prompt mentions risk, merge, redundant rows/channels, and model
+  text, but still loops.
+
+Conclusion update: this is the first verified `>=25x` blank-target compression
+candidate with nonzero useful behavior after parent folding plus light
+reconstruction. It does not meet the final goal. The donor remains far stronger,
+arithmetic and clean code generation are not stable, and behavior-suite pass
+rate is only `1/6`. The next method should target head-wise/MLP activation
+subspace folding and validation-gated reconstruction, not shared-token random
+target coordinates.
+
 ## Current Conclusion
 
-The 29.9x SmolLM blank-target fold is no longer just fitting tensor shapes. It
-transfers enough behavior to beat the random blank by a wide margin, generate
-some useful short text, and pass parts of the lightweight behavior suite.
+The SmolLM blank-target fold is no longer just fitting tensor shapes. The best
+strict child now reaches `25.02x` Qwen3-4B-to-SmolLM compression and transfers
+enough behavior to generate some useful short text and beat several prior random
+or tied baselines.
 
 It is not yet a successful replacement for donor capability, and the same-tokenizer Qwen blank-target results show that the utility cannot yet claim arbitrary blank-target 25x compression. The remaining failure mode is structural recovery, not just benchmark tuning: benchmark slices can improve while manual arithmetic, simple code variation, and common-sense instruction following remain unstable or absent.
 
