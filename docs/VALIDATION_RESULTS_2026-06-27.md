@@ -732,6 +732,61 @@ Interpretation:
   block/interface initialization before recovery, not another small loss
   coefficient on the current weak folded manifold.
 
+### RSD Hidden Recovery and Behavior-First Checkpointing
+
+Code change:
+
+- Added opt-in RSD-style hidden recovery metrics:
+  `--hidden-kd-metric rsd` and `--hidden-kd-metric projected-rsd`.
+- `rsd` combines dimension-free CKA invariance with a student hidden-feature
+  decorrelation penalty, so it can run across different hidden widths without a
+  temporary projection.
+- `projected-rsd` uses the existing donor-hidden to child-hidden projection for
+  invariance and adds the same decorrelation penalty.
+- Added behavior-first checkpoint selection for `hf-recover`,
+  `hf-lm-recover`, and `hf-xfamily-recover`:
+  `--save-best-behavior`, `--behavior-eval-interval`,
+  `--behavior-max-new-tokens`, and `--behavior-max-probes`.
+  This selects checkpoints by held-out behavior probes first, using loss only as
+  a tie-breaker.
+
+Strict 29.9x validation:
+
+- Starting checkpoint:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_mean_cached_cka_curated_xfamily_token_auto_800s_tiedhead`.
+- Parameters: `134,515,008`, ratio `29.90x` against
+  `Qwen/Qwen3-4B-Base`.
+- RSD behavior-best run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_rsd_behaviorbest_60s`.
+- Settings: `60` steps, `train_scope=last4`, `hidden_kd_metric=rsd`,
+  `hidden_kd_weight=0.25`, `span_hidden_kd_weight=0.15`,
+  `anchor_kd_weight=0.08`, `lm_weight=0.55`, behavior eval every `20`
+  steps over all `6` behavior probes.
+- Behavior checkpoint history: steps `1`, `20`, `40`, and `60` all scored
+  `3/6`; the selector chose step `1` because behavior tied and loss was lowest.
+- Eval comparison:
+
+| Checkpoint | Params | Ratio | PPL mean | Choice | Behavior | Gate | Manual notes |
+|---|---:|---:|---:|---:|---:|---|---|
+| tied 29.9x baseline | 134,515,008 | 29.90x | 3,845.90 | 3/4 | 3/6 | fail | partially useful but code/math malformed |
+| RSD behavior-best 60s | 134,515,008 | 29.90x | 3,825.12 | 3/4 | 3/6 | fail | slightly lower PPL, no manual generation improvement |
+
+Gate failure reason:
+
+- `perplexity_ratio`, `choice_accuracy_floor`, `choice_accuracy_drop`,
+  `behavior_suite`, and `behavior_suite_drop` passed.
+- `generation_health` failed because the code-generation probe still lacks a
+  valid function definition and continuations remain malformed/repetitive.
+
+Interpretation:
+
+- The RSD path is mechanically valid and does not require shared hidden width.
+- Behavior-first checkpointing works and prevents loss-only selection from
+  silently choosing a lower-loss but worse-behavior checkpoint.
+- This RSD setting is not a promoted model result: it preserved behavior and
+  slightly improved PPL, but manual outputs did not improve and the gate still
+  failed.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best

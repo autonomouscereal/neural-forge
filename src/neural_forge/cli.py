@@ -584,7 +584,7 @@ def build_parser() -> argparse.ArgumentParser:
     recover.add_argument("--kd-weight", type=float, default=0.5)
     recover.add_argument("--lm-weight", type=float, default=0.5)
     recover.add_argument("--hidden-kd-weight", type=float, default=0.0)
-    recover.add_argument("--hidden-kd-metric", choices=["projected", "cka", "both"], default="cka")
+    recover.add_argument("--hidden-kd-metric", choices=["projected", "cka", "both", "rsd", "projected-rsd"], default="cka")
     recover.add_argument("--hidden-layer", choices=["last", "middle", "all"], default="last")
     recover.add_argument("--hidden-token-mode", choices=["tokens", "response", "pooled"], default="tokens")
     recover.add_argument("--hidden-ridge", type=float, default=1e-3)
@@ -608,6 +608,14 @@ def build_parser() -> argparse.ArgumentParser:
     recover.add_argument("--grad-clip", type=float, default=1.0)
     recover.add_argument("--report-interval", type=int)
     recover.add_argument("--save-best-loss", action="store_true")
+    recover.add_argument(
+        "--save-best-behavior",
+        action="store_true",
+        help="Select the saved recovery checkpoint by behavior probes instead of loss.",
+    )
+    recover.add_argument("--behavior-eval-interval", type=int)
+    recover.add_argument("--behavior-max-new-tokens", type=int, default=96)
+    recover.add_argument("--behavior-max-probes", type=int, default=6)
     recover.add_argument("--calibration-file")
     recover.add_argument("--max-calibration-texts", type=int)
     recover.set_defaults(func=cmd_hf_recover)
@@ -689,7 +697,11 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--span-max-pairs", type=int, default=512)
     xfamily_recover.add_argument("--hidden-ridge", type=float, default=1e-3)
     xfamily_recover.add_argument("--hidden-layer", choices=["last", "middle"], default="last")
-    xfamily_recover.add_argument("--hidden-kd-metric", choices=["projected", "cka", "both"], default="projected")
+    xfamily_recover.add_argument(
+        "--hidden-kd-metric",
+        choices=["projected", "cka", "both", "rsd", "projected-rsd"],
+        default="projected",
+    )
     xfamily_recover.add_argument("--hidden-max-anchors", type=int, default=2048)
     xfamily_recover.add_argument("--temperature", type=float, default=2.0)
     xfamily_recover.add_argument("--max-anchors", type=int, default=20_000)
@@ -703,6 +715,14 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--grad-clip", type=float, default=1.0)
     xfamily_recover.add_argument("--report-interval", type=int)
     xfamily_recover.add_argument("--save-best-loss", action="store_true")
+    xfamily_recover.add_argument(
+        "--save-best-behavior",
+        action="store_true",
+        help="Select the saved recovery checkpoint by behavior probes instead of loss.",
+    )
+    xfamily_recover.add_argument("--behavior-eval-interval", type=int)
+    xfamily_recover.add_argument("--behavior-max-new-tokens", type=int, default=96)
+    xfamily_recover.add_argument("--behavior-max-probes", type=int, default=6)
     xfamily_recover.add_argument("--calibration-file")
     xfamily_recover.add_argument("--max-calibration-texts", type=int)
     xfamily_recover.set_defaults(func=cmd_hf_xfamily_recover)
@@ -856,7 +876,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_block_recover.add_argument("--hidden-ridge", type=float, default=1e-3)
     xfamily_block_recover.add_argument(
         "--hidden-metric",
-        choices=["projected", "cka", "both"],
+        choices=["projected", "cka", "both", "rsd", "projected-rsd"],
         default="projected",
         help="Block activation objective used for span-aligned donor/target hidden rows.",
     )
@@ -924,6 +944,14 @@ def build_parser() -> argparse.ArgumentParser:
     lm_recover.add_argument("--grad-clip", type=float, default=1.0)
     lm_recover.add_argument("--report-interval", type=int)
     lm_recover.add_argument("--save-best-loss", action="store_true")
+    lm_recover.add_argument(
+        "--save-best-behavior",
+        action="store_true",
+        help="Select the saved recovery checkpoint by behavior probes instead of loss.",
+    )
+    lm_recover.add_argument("--behavior-eval-interval", type=int)
+    lm_recover.add_argument("--behavior-max-new-tokens", type=int, default=96)
+    lm_recover.add_argument("--behavior-max-probes", type=int, default=6)
     lm_recover.add_argument("--calibration-file")
     lm_recover.add_argument("--max-calibration-texts", type=int)
     lm_recover.set_defaults(func=cmd_hf_lm_recover)
@@ -1564,6 +1592,10 @@ def cmd_hf_recover(args: argparse.Namespace) -> dict[str, object]:
         grad_clip=args.grad_clip,
         report_interval=args.report_interval,
         save_best_loss=args.save_best_loss,
+        save_best_behavior=args.save_best_behavior,
+        behavior_eval_interval=args.behavior_eval_interval,
+        behavior_max_new_tokens=args.behavior_max_new_tokens,
+        behavior_max_probes=args.behavior_max_probes,
     )
 
 
@@ -1635,6 +1667,10 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         grad_clip=args.grad_clip,
         report_interval=args.report_interval,
         save_best_loss=args.save_best_loss,
+        save_best_behavior=args.save_best_behavior,
+        behavior_eval_interval=args.behavior_eval_interval,
+        behavior_max_new_tokens=args.behavior_max_new_tokens,
+        behavior_max_probes=args.behavior_max_probes,
     )
 
 
@@ -1771,6 +1807,10 @@ def cmd_hf_lm_recover(args: argparse.Namespace) -> dict[str, object]:
         grad_clip=args.grad_clip,
         report_interval=args.report_interval,
         save_best_loss=args.save_best_loss,
+        save_best_behavior=args.save_best_behavior,
+        behavior_eval_interval=args.behavior_eval_interval,
+        behavior_max_new_tokens=args.behavior_max_new_tokens,
+        behavior_max_probes=args.behavior_max_probes,
     )
 
 

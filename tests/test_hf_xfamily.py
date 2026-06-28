@@ -11,6 +11,7 @@ from neural_forge.hf_recovery import _append_eos_text
 from neural_forge.hf_recovery import _attention_projection_spec
 from neural_forge.hf_recovery import _assert_same_vocab
 from neural_forge.hf_recovery import _absorb_input_map_into_linears
+from neural_forge.hf_recovery import _behavior_checkpoint_is_better
 from neural_forge.hf_recovery import _candidate_rank_kl_loss
 from neural_forge.hf_recovery import _candidate_index_after_depth_fold
 from neural_forge.hf_recovery import _cross_tokenizer_recovery_loss
@@ -26,6 +27,7 @@ from neural_forge.hf_recovery import _fit_shared_embedding_hidden_projection
 from neural_forge.hf_recovery import _first_response_shift_mask
 from neural_forge.hf_recovery import _focus_char_spans
 from neural_forge.hf_recovery import _fold_groups_from_report
+from neural_forge.hf_recovery import _feature_decorrelation_loss
 from neural_forge.hf_recovery import _hidden_representation_loss
 from neural_forge.hf_recovery import _infer_response_char_start
 from neural_forge.hf_recovery import _join_prompt_response
@@ -674,6 +676,13 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "--report-interval",
             "5",
             "--save-best-loss",
+            "--save-best-behavior",
+            "--behavior-eval-interval",
+            "4",
+            "--behavior-max-new-tokens",
+            "22",
+            "--behavior-max-probes",
+            "5",
             "--calibration-file",
             "calibration.jsonl",
             "--max-calibration-texts",
@@ -889,6 +898,10 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_recover_args.candidate_dtype == "float32"
     assert xfamily_recover_args.report_interval == 5
     assert xfamily_recover_args.save_best_loss is True
+    assert xfamily_recover_args.save_best_behavior is True
+    assert xfamily_recover_args.behavior_eval_interval == 4
+    assert xfamily_recover_args.behavior_max_new_tokens == 22
+    assert xfamily_recover_args.behavior_max_probes == 5
     assert xfamily_recover_args.calibration_file == "calibration.jsonl"
     assert xfamily_head_args.source_model == "donor"
     assert xfamily_head_args.candidate_model == "candidate"
@@ -1207,6 +1220,55 @@ def test_hidden_representation_loss_supports_direct_cka_dimension_mismatch() -> 
     assert cka.item() == pytest.approx(1.0)
     assert loss.item() == pytest.approx(0.0)
     assert student.grad is not None
+
+
+def test_feature_decorrelation_loss_penalizes_duplicate_axes() -> None:
+    torch = pytest.importorskip("torch")
+    duplicate = torch.tensor(
+        [[-1.0, -1.0, 0.0], [1.0, 1.0, 0.0], [-1.0, -1.0, 1.0], [1.0, 1.0, -1.0]],
+        requires_grad=True,
+    )
+    independent = torch.eye(4, dtype=torch.float32)
+
+    duplicate_loss = _feature_decorrelation_loss(torch, duplicate)
+    independent_loss = _feature_decorrelation_loss(torch, independent)
+    duplicate_loss.backward()
+
+    assert duplicate_loss.item() > independent_loss.item()
+    assert duplicate.grad is not None
+
+
+def test_hidden_representation_loss_rsd_is_dimension_free_and_decorrelates() -> None:
+    torch = pytest.importorskip("torch")
+    student = torch.tensor(
+        [[-1.0, -1.0], [1.0, 1.0], [-1.0, -1.0], [1.0, 1.0]],
+        requires_grad=True,
+    )
+    teacher = torch.tensor(
+        [[-2.0, 0.0, 0.0], [2.0, 0.0, 0.0], [-2.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+        requires_grad=False,
+    )
+
+    loss = _hidden_representation_loss(torch, student, teacher, hidden_projection=None, hidden_kd_metric="rsd")
+    loss.backward()
+
+    assert torch.isfinite(loss)
+    assert loss.item() > 0.0
+    assert student.grad is not None
+
+
+def test_hidden_representation_loss_projected_rsd_requires_projection() -> None:
+    torch = pytest.importorskip("torch")
+    student = torch.randn(4, 2)
+    teacher = torch.randn(4, 3)
+
+    with pytest.raises(ValueError, match="hidden_projection"):
+        _hidden_representation_loss(torch, student, teacher, hidden_projection=None, hidden_kd_metric="projected-rsd")
+
+    projection = torch.randn(3, 2)
+    loss = _hidden_representation_loss(torch, student, teacher, projection, hidden_kd_metric="projected-rsd")
+
+    assert torch.isfinite(loss)
 
 
 def test_resize_tensor_to_shape_mean_folds_axes() -> None:
@@ -3027,6 +3089,17 @@ def test_layer_gate_behavior_decision_rejects_behavior_regression() -> None:
     assert rejected["behavior_drop"] == pytest.approx(0.25)
 
 
+def test_behavior_checkpoint_selection_prioritizes_behavior_over_loss() -> None:
+    incumbent = {"correct": 1, "total": 6, "pass_rate": 1 / 6, "loss": 1.0}
+    behavior_win = {"correct": 2, "total": 6, "pass_rate": 2 / 6, "loss": 9.0}
+    loss_only_win = {"correct": 1, "total": 6, "pass_rate": 1 / 6, "loss": 0.5}
+    worse = {"correct": 0, "total": 6, "pass_rate": 0.0, "loss": 0.1}
+
+    assert _behavior_checkpoint_is_better(behavior_win, incumbent, incumbent_loss=1.0) is True
+    assert _behavior_checkpoint_is_better(loss_only_win, incumbent, incumbent_loss=1.0) is True
+    assert _behavior_checkpoint_is_better(worse, incumbent, incumbent_loss=1.0) is False
+
+
 def test_layer_gate_snapshot_indices_include_consumer_layer() -> None:
     layers = [_Obj(name=str(idx)) for idx in range(3)]
 
@@ -3447,6 +3520,10 @@ def test_hf_lm_recover_handler_passes_teacherless_flags(monkeypatch) -> None:
         "grad_clip": 0.5,
         "report_interval": None,
         "save_best_loss": False,
+        "save_best_behavior": False,
+        "behavior_eval_interval": None,
+        "behavior_max_new_tokens": 96,
+        "behavior_max_probes": 6,
     }
 
 
@@ -3584,6 +3661,13 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "--report-interval",
             "2",
             "--save-best-loss",
+            "--save-best-behavior",
+            "--behavior-eval-interval",
+            "4",
+            "--behavior-max-new-tokens",
+            "21",
+            "--behavior-max-probes",
+            "5",
             "--calibration-file",
             "calibration.jsonl",
             "--max-calibration-texts",
@@ -3658,6 +3742,10 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "grad_clip": 0.5,
         "report_interval": 2,
         "save_best_loss": True,
+        "save_best_behavior": True,
+        "behavior_eval_interval": 4,
+        "behavior_max_new_tokens": 21,
+        "behavior_max_probes": 5,
     }
 
 

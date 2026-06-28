@@ -31,6 +31,9 @@ RECOVERY_TEXTS = [
     "Short recovery training can reduce surgery shock, but it must be validated on unseen prompts.",
 ]
 
+HIDDEN_KD_METRICS = {"projected", "cka", "both", "rsd", "projected-rsd"}
+PROJECTED_HIDDEN_KD_METRICS = {"projected", "both", "projected-rsd"}
+
 
 def recover_causal_lm(
     source_model: str | None,
@@ -68,6 +71,10 @@ def recover_causal_lm(
     grad_clip: float = 1.0,
     report_interval: int | None = None,
     save_best_loss: bool = False,
+    save_best_behavior: bool = False,
+    behavior_eval_interval: int | None = None,
+    behavior_max_new_tokens: int = 96,
+    behavior_max_probes: int = 6,
 ) -> dict[str, Any]:
     """Run a short recovery pass after surgery.
 
@@ -115,8 +122,8 @@ def recover_causal_lm(
         raise ValueError("temperature must be positive.")
     if response_loss_mode not in {"none", "auto", "assistant", "answer"}:
         raise ValueError("response_loss_mode must be none, auto, assistant, or answer.")
-    if hidden_kd_metric not in {"projected", "cka", "both"}:
-        raise ValueError("hidden_kd_metric must be projected, cka, or both.")
+    if hidden_kd_metric not in HIDDEN_KD_METRICS:
+        raise ValueError("hidden_kd_metric must be projected, cka, both, rsd, or projected-rsd.")
     if hidden_layer not in {"last", "middle", "all"}:
         raise ValueError("hidden_layer must be last, middle, or all.")
     if hidden_token_mode not in {"tokens", "response", "pooled"}:
@@ -135,6 +142,12 @@ def recover_causal_lm(
         raise ValueError("grad_clip must be non-negative.")
     if report_interval is not None and report_interval <= 0:
         raise ValueError("report_interval must be positive when provided.")
+    if behavior_eval_interval is not None and behavior_eval_interval <= 0:
+        raise ValueError("behavior_eval_interval must be positive when provided.")
+    if behavior_max_new_tokens <= 0:
+        raise ValueError("behavior_max_new_tokens must be positive.")
+    if behavior_max_probes <= 0:
+        raise ValueError("behavior_max_probes must be positive.")
 
     if (
         kd_weight > 0
@@ -191,7 +204,7 @@ def recover_causal_lm(
     trainable_params = _set_train_scope(candidate, train_scope)
     hidden_projection = None
     hidden_projection_report = None
-    if hidden_kd_weight > 0 and hidden_kd_metric in {"projected", "both"}:
+    if hidden_kd_weight > 0 and hidden_kd_metric in PROJECTED_HIDDEN_KD_METRICS:
         if source is None:
             raise ValueError("source_model is required for projected hidden KD.")
         vocab_size = min(
@@ -231,6 +244,12 @@ def recover_causal_lm(
     best_loss = None
     best_step = None
     best_state = None
+    behavior_interval = int(behavior_eval_interval or interval)
+    behavior_history: list[dict[str, Any]] = []
+    best_behavior_summary = None
+    best_behavior_loss = None
+    best_behavior_step = None
+    best_behavior_state = None
     for step in range(1, steps + 1):
         batch = batches[(step - 1) % len(batches)]
         optimizer.zero_grad(set_to_none=True)
@@ -297,8 +316,50 @@ def recover_causal_lm(
                 best_loss = loss_value
                 best_step = int(step)
                 best_state = {key: value.detach().cpu().clone() for key, value in candidate.state_dict().items()}
+        if save_best_behavior and (step == 1 or step % behavior_interval == 0 or step == steps):
+            loss_value = float(loss.detach().cpu())
+            was_training = candidate.training
+            candidate.eval()
+            with torch.no_grad():
+                behavior_summary = _heldout_behavior_summary(
+                    torch,
+                    candidate,
+                    candidate_tokenizer,
+                    device,
+                    int(behavior_max_new_tokens),
+                    int(behavior_max_probes),
+                )
+            if was_training:
+                candidate.train()
+            behavior_entry = {
+                "step": int(step),
+                "loss": loss_value,
+                "correct": int(behavior_summary["correct"]),
+                "total": int(behavior_summary["total"]),
+                "pass_rate": float(behavior_summary["pass_rate"]),
+                "passed_ids": [
+                    str(item["id"]) for item in behavior_summary.get("items", []) if bool(item.get("passed"))
+                ],
+            }
+            behavior_history.append(behavior_entry)
+            print(
+                f"xfamily_recover_behavior step={step} "
+                f"correct={behavior_entry['correct']}/{behavior_entry['total']} "
+                f"pass_rate={behavior_entry['pass_rate']:.4f} "
+                f"loss={loss_value:.6f}",
+                flush=True,
+            )
+            if _behavior_checkpoint_is_better(behavior_entry, best_behavior_summary, best_behavior_loss):
+                best_behavior_summary = dict(behavior_entry)
+                best_behavior_loss = loss_value
+                best_behavior_step = int(step)
+                best_behavior_state = {
+                    key: value.detach().cpu().clone() for key, value in candidate.state_dict().items()
+                }
 
-    if save_best_loss and best_state is not None:
+    if save_best_behavior and best_behavior_state is not None:
+        candidate.load_state_dict(best_behavior_state)
+    elif save_best_loss and best_state is not None:
         candidate.load_state_dict(best_state)
 
     target = Path(output_dir)
@@ -337,6 +398,13 @@ def recover_causal_lm(
         "save_best_loss": save_best_loss,
         "best_loss": best_loss,
         "best_step": best_step,
+        "save_best_behavior": bool(save_best_behavior),
+        "behavior_eval_interval": behavior_interval,
+        "behavior_max_new_tokens": int(behavior_max_new_tokens),
+        "behavior_max_probes": int(behavior_max_probes),
+        "behavior_history": behavior_history,
+        "best_behavior_step": best_behavior_step,
+        "best_behavior": best_behavior_summary,
         "teacher_used": source_model is not None
         and (
             kd_weight > 0
@@ -450,6 +518,10 @@ def recover_cross_tokenizer_causal_lm(
     grad_clip: float = 1.0,
     report_interval: int | None = None,
     save_best_loss: bool = False,
+    save_best_behavior: bool = False,
+    behavior_eval_interval: int | None = None,
+    behavior_max_new_tokens: int = 96,
+    behavior_max_probes: int = 6,
 ) -> dict[str, Any]:
     """Recover a cross-tokenizer folded child against donor anchor logits.
 
@@ -554,8 +626,8 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("hidden_ridge must be non-negative.")
     if hidden_layer not in {"last", "middle"}:
         raise ValueError("hidden_layer must be last or middle.")
-    if hidden_kd_metric not in {"projected", "cka", "both"}:
-        raise ValueError("hidden_kd_metric must be projected, cka, or both.")
+    if hidden_kd_metric not in HIDDEN_KD_METRICS:
+        raise ValueError("hidden_kd_metric must be projected, cka, both, rsd, or projected-rsd.")
     if hidden_max_anchors <= 0:
         raise ValueError("hidden_max_anchors must be positive.")
     if temperature <= 0:
@@ -572,6 +644,12 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("grad_clip must be non-negative.")
     if report_interval is not None and report_interval <= 0:
         raise ValueError("report_interval must be positive when provided.")
+    if behavior_eval_interval is not None and behavior_eval_interval <= 0:
+        raise ValueError("behavior_eval_interval must be positive when provided.")
+    if behavior_max_new_tokens <= 0:
+        raise ValueError("behavior_max_new_tokens must be positive.")
+    if behavior_max_probes <= 0:
+        raise ValueError("behavior_max_probes must be positive.")
 
     from neural_forge.hf_xfamily import _canonical_token
     from neural_forge.hf_xfamily import _canonical_token_map
@@ -653,7 +731,7 @@ def recover_cross_tokenizer_causal_lm(
     hidden_projection = None
     reverse_hidden_projection_report = None
     reverse_hidden_projection = None
-    needs_projected_hidden = (hidden_kd_metric in {"projected", "both"} and (
+    needs_projected_hidden = (hidden_kd_metric in PROJECTED_HIDDEN_KD_METRICS and (
         hidden_kd_weight > 0 or span_hidden_kd_weight > 0
     )) or dual_space_kd_weight > 0
     if needs_projected_hidden:
@@ -740,6 +818,12 @@ def recover_cross_tokenizer_causal_lm(
     best_loss = None
     best_step = None
     best_state = None
+    behavior_interval = int(behavior_eval_interval or interval)
+    behavior_history: list[dict[str, Any]] = []
+    best_behavior_summary = None
+    best_behavior_loss = None
+    best_behavior_step = None
+    best_behavior_state = None
     for step in range(1, steps + 1):
         source_batch, candidate_batch = batches[(step - 1) % len(batches)]
         optimizer.zero_grad(set_to_none=True)
@@ -986,8 +1070,50 @@ def recover_cross_tokenizer_causal_lm(
                 best_loss = loss_value
                 best_step = int(step)
                 best_state = {key: value.detach().cpu().clone() for key, value in candidate.state_dict().items()}
+        if save_best_behavior and (step == 1 or step % behavior_interval == 0 or step == steps):
+            loss_value = float(loss.detach().cpu())
+            was_training = candidate.training
+            candidate.eval()
+            with torch.no_grad():
+                behavior_summary = _heldout_behavior_summary(
+                    torch,
+                    candidate,
+                    candidate_tokenizer,
+                    device,
+                    int(behavior_max_new_tokens),
+                    int(behavior_max_probes),
+                )
+            if was_training:
+                candidate.train()
+            behavior_entry = {
+                "step": int(step),
+                "loss": loss_value,
+                "correct": int(behavior_summary["correct"]),
+                "total": int(behavior_summary["total"]),
+                "pass_rate": float(behavior_summary["pass_rate"]),
+                "passed_ids": [
+                    str(item["id"]) for item in behavior_summary.get("items", []) if bool(item.get("passed"))
+                ],
+            }
+            behavior_history.append(behavior_entry)
+            print(
+                f"xfamily_recover_behavior step={step} "
+                f"correct={behavior_entry['correct']}/{behavior_entry['total']} "
+                f"pass_rate={behavior_entry['pass_rate']:.4f} "
+                f"loss={loss_value:.6f}",
+                flush=True,
+            )
+            if _behavior_checkpoint_is_better(behavior_entry, best_behavior_summary, best_behavior_loss):
+                best_behavior_summary = dict(behavior_entry)
+                best_behavior_loss = loss_value
+                best_behavior_step = int(step)
+                best_behavior_state = {
+                    key: value.detach().cpu().clone() for key, value in candidate.state_dict().items()
+                }
 
-    if save_best_loss and best_state is not None:
+    if save_best_behavior and best_behavior_state is not None:
+        candidate.load_state_dict(best_behavior_state)
+    elif save_best_loss and best_state is not None:
         candidate.load_state_dict(best_state)
 
     target = Path(output_dir)
@@ -1053,6 +1179,13 @@ def recover_cross_tokenizer_causal_lm(
         "save_best_loss": save_best_loss,
         "best_loss": best_loss,
         "best_step": best_step,
+        "save_best_behavior": bool(save_best_behavior),
+        "behavior_eval_interval": behavior_interval,
+        "behavior_max_new_tokens": int(behavior_max_new_tokens),
+        "behavior_max_probes": int(behavior_max_probes),
+        "behavior_history": behavior_history,
+        "best_behavior_step": best_behavior_step,
+        "best_behavior": best_behavior_summary,
         "span_max_pairs": span_max_pairs,
         "span_pair_count_observed": span_pair_counts,
         "hidden_ridge": hidden_ridge,
@@ -1863,8 +1996,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("lm_weight must be non-negative.")
     if hidden_ridge < 0:
         raise ValueError("hidden_ridge must be non-negative.")
-    if hidden_metric not in {"projected", "cka", "both"}:
-        raise ValueError("hidden_metric must be projected, cka, or both.")
+    if hidden_metric not in HIDDEN_KD_METRICS:
+        raise ValueError("hidden_metric must be projected, cka, both, rsd, or projected-rsd.")
     if max_anchors <= 0:
         raise ValueError("max_anchors must be positive.")
     if span_max_pairs <= 0:
@@ -4312,6 +4445,27 @@ def _heldout_behavior_summary(
     }
 
 
+def _behavior_checkpoint_is_better(
+    candidate: dict[str, Any],
+    incumbent: dict[str, Any] | None,
+    incumbent_loss: float | None,
+) -> bool:
+    if incumbent is None:
+        return True
+    candidate_correct = int(candidate.get("correct", 0))
+    incumbent_correct = int(incumbent.get("correct", 0))
+    if candidate_correct != incumbent_correct:
+        return candidate_correct > incumbent_correct
+    candidate_rate = float(candidate.get("pass_rate", 0.0))
+    incumbent_rate = float(incumbent.get("pass_rate", 0.0))
+    if abs(candidate_rate - incumbent_rate) > 1e-12:
+        return candidate_rate > incumbent_rate
+    candidate_loss = float(candidate.get("loss", math.inf))
+    if incumbent_loss is None:
+        return True
+    return candidate_loss < float(incumbent_loss)
+
+
 def _layer_gate_behavior_decision(
     previous_behavior: dict[str, Any],
     candidate_behavior: dict[str, Any],
@@ -6506,7 +6660,7 @@ def _cross_tokenizer_recovery_loss(
         )
         total = total + float(anchor_kd_weight) * kd
     if hidden_kd_weight > 0:
-        if hidden_projection is None and hidden_kd_metric in {"projected", "both"}:
+        if hidden_projection is None and hidden_kd_metric in PROJECTED_HIDDEN_KD_METRICS:
             raise ValueError("hidden_projection is required when hidden_kd_weight is positive.")
         hidden = _cross_tokenizer_hidden_loss(
             torch,
@@ -6534,7 +6688,7 @@ def _cross_tokenizer_recovery_loss(
         )
         total = total + float(span_kd_weight) * span
     if span_hidden_kd_weight > 0 and span_pairs is not None and int(span_pairs.numel()) > 0:
-        if hidden_projection is None and hidden_kd_metric in {"projected", "both"}:
+        if hidden_projection is None and hidden_kd_metric in PROJECTED_HIDDEN_KD_METRICS:
             raise ValueError("hidden_projection is required when span_hidden_kd_weight is positive.")
         span_hidden = _cross_tokenizer_span_hidden_loss(
             torch,
@@ -6947,12 +7101,12 @@ def _linear_cka_tensor(torch, first, second):
 
 
 def _hidden_representation_loss(torch, student_rows, teacher_rows, hidden_projection, hidden_kd_metric: str):
-    if hidden_kd_metric not in {"projected", "cka", "both"}:
-        raise ValueError("hidden_kd_metric must be projected, cka, or both.")
+    if hidden_kd_metric not in HIDDEN_KD_METRICS:
+        raise ValueError("hidden_kd_metric must be projected, cka, both, rsd, or projected-rsd.")
     student = torch.nan_to_num(student_rows.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
     teacher = torch.nan_to_num(teacher_rows.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
     losses = []
-    if hidden_kd_metric in {"projected", "both"}:
+    if hidden_kd_metric in PROJECTED_HIDDEN_KD_METRICS:
         if hidden_projection is None:
             raise ValueError("hidden_projection is required for projected hidden KD.")
         teacher_projected = teacher.matmul(hidden_projection.to(device=teacher.device, dtype=torch.float32))
@@ -6962,9 +7116,32 @@ def _hidden_representation_loss(torch, student_rows, teacher_rows, hidden_projec
         cosine_loss = 1.0 - cosine.mean()
         mse_loss = torch.nn.functional.mse_loss(student_norm, teacher_norm)
         losses.append(0.5 * cosine_loss + 0.5 * mse_loss)
-    if hidden_kd_metric in {"cka", "both"}:
+    if hidden_kd_metric in {"cka", "both", "rsd"}:
         losses.append(1.0 - _linear_cka_tensor(torch, student, teacher))
+    if hidden_kd_metric in {"rsd", "projected-rsd"}:
+        losses.append(_feature_decorrelation_loss(torch, student))
     return torch.stack(losses).mean()
+
+
+def _feature_decorrelation_loss(torch, rows, max_features: int = 1024):
+    values = torch.nan_to_num(rows.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    if values.dim() != 2:
+        values = values.reshape(-1, values.shape[-1])
+    row_count = int(values.shape[0])
+    feature_count = int(values.shape[1])
+    if row_count <= 1 or feature_count <= 1:
+        return torch.zeros((), dtype=values.dtype, device=values.device)
+    if feature_count > int(max_features):
+        idx = torch.linspace(0, feature_count - 1, steps=int(max_features), device=values.device).round().to(torch.long)
+        values = values.index_select(dim=1, index=idx)
+        feature_count = int(values.shape[1])
+    centered = values - values.mean(dim=0, keepdim=True)
+    scale = centered.pow(2).mean(dim=0, keepdim=True).sqrt().clamp_min(1e-6)
+    normalized = centered / scale
+    corr = normalized.t().matmul(normalized) / float(row_count)
+    eye = torch.eye(feature_count, dtype=torch.bool, device=corr.device)
+    off_diag = corr.masked_fill(eye, 0.0)
+    return off_diag.pow(2).sum() / max(1, feature_count * (feature_count - 1))
 
 
 def _cross_tokenizer_span_loss(
