@@ -781,6 +781,12 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_reconstruct.add_argument("--max-length", type=int, default=128)
     xfamily_reconstruct.add_argument("--max-tokens-per-layer", type=int, default=512)
     xfamily_reconstruct.add_argument("--max-anchors", type=int, default=2048)
+    xfamily_reconstruct.add_argument(
+        "--hidden-projection-scope",
+        choices=["global", "layer-input"],
+        default="global",
+        help="Use the global shared-token hidden map or refit donor->child maps from each layer input.",
+    )
     xfamily_reconstruct.add_argument("--layer-limit", type=int)
     xfamily_reconstruct.add_argument(
         "--fit-gate",
@@ -1674,6 +1680,7 @@ def cmd_hf_xfamily_reconstruct(args: argparse.Namespace) -> dict[str, object]:
         max_length=args.max_length,
         max_tokens_per_layer=args.max_tokens_per_layer,
         max_anchors=args.max_anchors,
+        hidden_projection_scope=args.hidden_projection_scope,
         layer_limit=args.layer_limit,
         fit_gate=args.fit_gate,
         fit_gate_validation_fraction=args.fit_gate_validation_fraction,

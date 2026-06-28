@@ -1052,6 +1052,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "55",
             "--max-anchors",
             "444",
+            "--hidden-projection-scope",
+            "layer-input",
             "--layer-limit",
             "3",
             "--fit-gate",
@@ -1099,6 +1101,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_reconstruct_args.max_length == 88
     assert xfamily_reconstruct_args.max_tokens_per_layer == 55
     assert xfamily_reconstruct_args.max_anchors == 444
+    assert xfamily_reconstruct_args.hidden_projection_scope == "layer-input"
     assert xfamily_reconstruct_args.layer_limit == 3
     assert xfamily_reconstruct_args.fit_gate == "validation"
     assert xfamily_reconstruct_args.fit_gate_validation_fraction == pytest.approx(0.2)
@@ -3864,6 +3867,8 @@ def test_hf_xfamily_reconstruct_handler_passes_flags(monkeypatch) -> None:
             "144",
             "--max-anchors",
             "333",
+            "--hidden-projection-scope",
+            "layer-input",
             "--layer-limit",
             "4",
             "--fit-gate",
@@ -3917,6 +3922,7 @@ def test_hf_xfamily_reconstruct_handler_passes_flags(monkeypatch) -> None:
         "max_length": 96,
         "max_tokens_per_layer": 144,
         "max_anchors": 333,
+        "hidden_projection_scope": "layer-input",
         "layer_limit": 4,
         "fit_gate": "validation",
         "fit_gate_validation_fraction": 0.2,

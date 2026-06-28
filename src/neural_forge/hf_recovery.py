@@ -1426,6 +1426,7 @@ def reconstruct_cross_tokenizer_causal_lm(
     max_length: int = 128,
     max_tokens_per_layer: int = 512,
     max_anchors: int = 2048,
+    hidden_projection_scope: str = "global",
     layer_limit: int | None = None,
     fit_gate: str = "none",
     fit_gate_validation_fraction: float = 0.25,
@@ -1488,6 +1489,8 @@ def reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("max_tokens_per_layer must be positive.")
     if max_anchors <= 0:
         raise ValueError("max_anchors must be positive.")
+    if hidden_projection_scope not in {"global", "layer-input"}:
+        raise ValueError("hidden_projection_scope must be global or layer-input.")
     if layer_limit is not None and layer_limit <= 0:
         raise ValueError("layer_limit must be positive when provided.")
     if fit_gate not in {"none", "validation"}:
@@ -1634,6 +1637,24 @@ def reconstruct_cross_tokenizer_causal_lm(
                 if layer_gate_metric in {"ppl", "behavior"}
                 else None
             )
+            layer_hidden_projection = hidden_projection
+            layer_hidden_projection_report: dict[str, Any] | None = None
+            if hidden_projection_scope == "layer-input":
+                layer_hidden_projection_report = _fit_cross_tokenizer_layer_input_hidden_projection(
+                    torch,
+                    source,
+                    candidate,
+                    source_tokenizer,
+                    candidate_tokenizer,
+                    paired_batches,
+                    source_group,
+                    candidate_idx,
+                    _canonical_token,
+                    ridge,
+                    max_tokens_per_layer,
+                )
+                if not layer_hidden_projection_report.get("skipped"):
+                    layer_hidden_projection = layer_hidden_projection_report["map"].to(device=device, dtype=torch.float32)
             repair = _reconstruct_cross_tokenizer_layer(
                 torch,
                 source,
@@ -1647,7 +1668,7 @@ def reconstruct_cross_tokenizer_causal_lm(
                 source_tokenizer,
                 candidate_tokenizer,
                 paired_batches,
-                hidden_projection,
+                layer_hidden_projection,
                 _canonical_token,
                 ridge=ridge,
                 reconstruction_alpha=float(reconstruction_alpha),
@@ -1666,6 +1687,10 @@ def reconstruct_cross_tokenizer_causal_lm(
             repair["source_layer"] = int(source_idx)
             repair["source_layer_group"] = [int(item) for item in source_group]
             repair["candidate_layer"] = int(candidate_idx)
+            if layer_hidden_projection_report is not None:
+                repair["hidden_projection"] = {
+                    key: value for key, value in layer_hidden_projection_report.items() if key != "map"
+                }
             if layer_gate_metric == "ppl":
                 candidate_ppl = _heldout_ppl_mean(
                     torch,
@@ -1757,6 +1782,7 @@ def reconstruct_cross_tokenizer_causal_lm(
         "max_length": max_length,
         "max_tokens_per_layer": max_tokens_per_layer,
         "max_anchors": max_anchors,
+        "hidden_projection_scope": hidden_projection_scope,
         "layer_limit": layer_limit,
         "fit_gate": {
             "mode": fit_gate,
@@ -3703,6 +3729,124 @@ def _fit_shared_embedding_hidden_projection(
         "ridge": float(ridge),
         "relative_error": _relative_reconstruction_error(torch, predicted, candidate_rows),
         "mean_cosine": _mean_row_cosine(torch, predicted, candidate_rows),
+    }
+
+
+def _fit_cross_tokenizer_layer_input_hidden_projection(
+    torch,
+    source,
+    candidate,
+    source_tokenizer,
+    candidate_tokenizer,
+    paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]],
+    source_layer_group: Sequence[int],
+    candidate_layer_idx: int,
+    canonical_fn,
+    ridge: float,
+    max_tokens: int,
+) -> dict[str, Any]:
+    if not source_layer_group:
+        return {"skipped": True, "reason": "missing_source_layer_group"}
+    if max_tokens <= 0:
+        raise ValueError("max_tokens must be positive.")
+    source_input_idx = max(0, int(min(source_layer_group)))
+    candidate_input_idx = max(0, int(candidate_layer_idx))
+    source_rows = []
+    candidate_rows = []
+    token_count = 0
+    was_source_training = source.training
+    was_candidate_training = candidate.training
+    source.eval()
+    candidate.eval()
+    with torch.no_grad():
+        try:
+            for source_batch, candidate_batch in paired_batches:
+                if token_count >= int(max_tokens):
+                    break
+                teacher = source(
+                    **_model_forward_inputs(source_batch),
+                    use_cache=False,
+                    output_hidden_states=True,
+                )
+                student = candidate(
+                    **_model_forward_inputs(candidate_batch),
+                    use_cache=False,
+                    output_hidden_states=True,
+                )
+                if teacher.hidden_states is None or student.hidden_states is None:
+                    continue
+                if source_input_idx >= len(teacher.hidden_states) or candidate_input_idx >= len(student.hidden_states):
+                    return {
+                        "skipped": True,
+                        "reason": "layer_input_hidden_state_out_of_range",
+                        "source_input_layer": int(source_input_idx),
+                        "candidate_input_layer": int(candidate_input_idx),
+                    }
+                pairs = _cross_tokenizer_span_pairs(
+                    torch,
+                    source_tokenizer,
+                    candidate_tokenizer,
+                    source_batch,
+                    candidate_batch,
+                    canonical_fn,
+                    max_pairs=int(max_tokens) - token_count,
+                    shift_positions=False,
+                )
+                candidate_hidden = student.hidden_states[candidate_input_idx]
+                source_hidden = teacher.hidden_states[source_input_idx]
+                batch_candidate, batch_source, rows = _span_aligned_hidden_rows(
+                    torch,
+                    candidate_hidden,
+                    source_hidden,
+                    pairs,
+                )
+                if int(rows) <= 0:
+                    continue
+                remaining = int(max_tokens) - token_count
+                take = min(int(rows), remaining)
+                candidate_rows.append(batch_candidate[:take].detach().cpu())
+                source_rows.append(batch_source[:take].detach().cpu())
+                token_count += take
+        finally:
+            if was_source_training:
+                source.train()
+            if was_candidate_training:
+                candidate.train()
+    if not source_rows or not candidate_rows:
+        return {
+            "skipped": True,
+            "reason": "no_cross_tokenizer_layer_input_pairs",
+            "source_input_layer": int(source_input_idx),
+            "candidate_input_layer": int(candidate_input_idx),
+        }
+    source_matrix = torch.cat(source_rows, dim=0).to(torch.float32)[: int(max_tokens)]
+    candidate_matrix = torch.cat(candidate_rows, dim=0).to(torch.float32)[: int(max_tokens)]
+    rows = min(int(source_matrix.shape[0]), int(candidate_matrix.shape[0]))
+    if rows <= 1:
+        return {
+            "skipped": True,
+            "reason": "insufficient_cross_tokenizer_layer_input_pairs",
+            "pairs": int(rows),
+            "source_input_layer": int(source_input_idx),
+            "candidate_input_layer": int(candidate_input_idx),
+        }
+    source_matrix = source_matrix[:rows]
+    candidate_matrix = candidate_matrix[:rows]
+    projection = _ridge_solve_features(torch, source_matrix, candidate_matrix, ridge)
+    predicted = source_matrix.matmul(projection)
+    return {
+        "map": projection.detach(),
+        "skipped": False,
+        "scope": "layer-input",
+        "source_input_layer": int(source_input_idx),
+        "candidate_input_layer": int(candidate_input_idx),
+        "source_layer_group": [int(item) for item in source_layer_group],
+        "pairs": int(rows),
+        "source_hidden_size": int(source_matrix.shape[1]),
+        "candidate_hidden_size": int(candidate_matrix.shape[1]),
+        "ridge": float(ridge),
+        "relative_error": _relative_reconstruction_error(torch, predicted, candidate_matrix),
+        "mean_cosine": _mean_row_cosine(torch, predicted, candidate_matrix),
     }
 
 
