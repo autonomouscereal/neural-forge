@@ -140,6 +140,7 @@ neural-forge hf-xfamily-recover Qwen/Qwen3-4B-Base runs/qwen4b-into-smollm2 runs
   --span-kd-weight 0.2 `
   --span-max-pairs 256 `
   --lm-weight 0.5 `
+  --first-token-lm-weight 0.0 `
   --hidden-kd-weight 0.2 `
   --on-policy-hidden-kd-weight 0.1 `
   --hidden-layer last `
@@ -153,6 +154,10 @@ architecture only.
 Span KD uses tokenizer offset mappings to align source and child prediction
 positions for exact decoded-token spans, then applies KL over the shared anchor
 vocabulary at those positions. It also leaves no runtime adapter.
+`--first-token-lm-weight` applies response-only CE to the first answer token for
+cross-tokenizer recovery. It is useful as a narrow experiment, but validation has
+shown it does not by itself repair arithmetic/code behavior after an aggressive
+blank-target fold.
 `--on-policy-hidden-kd-weight` generates short greedy child rollouts during
 recovery, runs both donor and child on those rollouts, and aligns hidden states
 on matched decoded-token spans when possible. It is meant for cases where static
@@ -162,6 +167,12 @@ alignment to the currently trainable child block.
 For block recovery, `--block-target delta` trains the residual update produced
 by the child block against the folded donor-layer update instead of matching
 absolute hidden states.
+`hf-xfamily-block-recover --module-output-kd-weight` adds differentiable
+attention/MLP output reconstruction for the currently trainable child block.
+Use `--module-output-targets attention|mlp|both` and
+`--module-output-transport paired|sinkhorn|both` to choose which submodule
+residuals are matched and whether row matching is strict span-paired, soft
+transported, or mixed.
 
 Task arithmetic defaults to `--dtype auto` and saves the base tokenizer after
 verifying that the tuned tokenizer has the same vocabulary. Special-token map

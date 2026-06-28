@@ -648,6 +648,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--lr", type=float, default=5e-5)
     xfamily_recover.add_argument("--anchor-kd-weight", type=float, default=0.5)
     xfamily_recover.add_argument("--lm-weight", type=float, default=0.5)
+    xfamily_recover.add_argument("--first-token-lm-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--hidden-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--span-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--span-hidden-kd-weight", type=float, default=0.0)
@@ -965,6 +966,26 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_block_recover.add_argument("--stepwise-donor-kd-weight", type=float, default=0.0)
     xfamily_block_recover.add_argument("--stepwise-donor-max-new-tokens", type=int, default=8)
     xfamily_block_recover.add_argument("--stepwise-donor-interval", type=int, default=4)
+    xfamily_block_recover.add_argument(
+        "--module-output-kd-weight",
+        type=float,
+        default=0.0,
+        help="Weight for differentiable attention/MLP module-output reconstruction during block recovery.",
+    )
+    xfamily_block_recover.add_argument(
+        "--module-output-targets",
+        choices=["attention", "mlp", "both"],
+        default="both",
+        help="Which submodule outputs to align for --module-output-kd-weight.",
+    )
+    xfamily_block_recover.add_argument(
+        "--module-output-transport",
+        choices=["paired", "sinkhorn", "both"],
+        default="paired",
+        help="Row matching mode for module-output KD.",
+    )
+    xfamily_block_recover.add_argument("--module-output-temperature", type=float, default=1.0)
+    xfamily_block_recover.add_argument("--module-output-sinkhorn-iterations", type=int, default=12)
     xfamily_block_recover.add_argument("--projected-vocab-max-source-tokens", type=int, default=8)
     xfamily_block_recover.add_argument("--temperature", type=float, default=2.0)
     xfamily_block_recover.add_argument("--dtype", default="float16")
@@ -1668,6 +1689,7 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         lr=args.lr,
         anchor_kd_weight=args.anchor_kd_weight,
         lm_weight=args.lm_weight,
+        first_token_lm_weight=args.first_token_lm_weight,
         hidden_kd_weight=args.hidden_kd_weight,
         span_kd_weight=args.span_kd_weight,
         span_hidden_kd_weight=args.span_hidden_kd_weight,
@@ -1828,6 +1850,11 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         stepwise_donor_kd_weight=args.stepwise_donor_kd_weight,
         stepwise_donor_max_new_tokens=args.stepwise_donor_max_new_tokens,
         stepwise_donor_interval=args.stepwise_donor_interval,
+        module_output_kd_weight=args.module_output_kd_weight,
+        module_output_targets=args.module_output_targets,
+        module_output_transport=args.module_output_transport,
+        module_output_temperature=args.module_output_temperature,
+        module_output_sinkhorn_iterations=args.module_output_sinkhorn_iterations,
         projected_vocab_max_source_tokens=args.projected_vocab_max_source_tokens,
         temperature=args.temperature,
         torch_dtype=args.dtype,

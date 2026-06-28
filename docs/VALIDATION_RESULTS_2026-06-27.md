@@ -1142,6 +1142,71 @@ Interpretation:
   target should explicitly reconstruct next-token behavior on rollout prefixes
   or fit module outputs with a behavior-aware acceptance gate.
 
+### First-Token, Answer-Rank, and Module-Output Recovery
+
+Code changes:
+
+- `hf-xfamily-recover` now accepts `--first-token-lm-weight`, a cross-tokenizer
+  response-boundary CE objective that only scores the first response token.
+- `hf-xfamily-block-recover` now accepts `--module-output-kd-weight`,
+  `--module-output-targets attention|mlp|both`, and
+  `--module-output-transport paired|sinkhorn|both`.
+- Module-output KD captures live child attention/MLP residual outputs for the
+  currently trainable block and detached folded donor attention/MLP outputs,
+  projects donor rows into child hidden space, and compares span-aligned rows
+  with paired and/or Sinkhorn transport.
+
+Remote validation:
+
+| Checkpoint | PPL mean | Choice | Behavior | Generation health | Verdict |
+|---|---:|---:|---:|---:|---|
+| RSD behavior-best 60s baseline | 3,825.12 | 3/4 | 3/6 | 2/3 | baseline |
+| First-token LM 120s | 3,834.55 | 3/4 | 3/6 | 2/3 | rejected |
+| Answer-rank 120s | 4,147.27 | 3/4 | 4/6 | 1/3 | partial, rejected |
+| Module-output block L4/S8 | 3,833.85 | 3/4 | 3/6 | 1/3 | rejected |
+| Answer-rank + anti-repetition 120s | 3,830.50 | 3/4 | 3/6 | 2/3 | rejected |
+
+Artifacts:
+
+- First-token run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_firsttoken_behavior_120s_20260628_112809`
+- Answer-rank run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_answer_rank_behavior_120s_20260628_113840`
+- Module-output smoke:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_module_output_smoke_20260628_115345`
+- Module-output L4/S8:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_module_output_l4s8_20260628_115440`
+- Answer-rank anti-repetition run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_answer_rank_antirep_120s_20260628_120204`
+
+Manual inspection:
+
+- First-token LM preserved headline behavior but did not fix arithmetic or code;
+  later steps degraded generation health even as the loss fell.
+- Answer-rank produced one real new behavior win: the strict behavior probe found
+  a valid `def add(a, b): return a + b` fragment. The broader generated Python
+  prompt still contained malformed trailing text, math remained digit-looped,
+  and prose generation health dropped, so it is not an accepted checkpoint.
+- Module-output KD is mechanically active: the smoke run captured attention and
+  MLP pairs and improved layer-0 residual-delta CKA from `0.4216` to `0.5029`.
+  The 4-layer behavior-gated run rejected damaging layers and preserved some
+  middle-layer updates, but standard eval still regressed generation health and
+  did not repair arithmetic or Python.
+- Adding projection KD and anti-repetition to the answer-rank schedule removed
+  the `4/6` behavior gain; best behavior reverted to the step-1 baseline-like
+  checkpoint.
+
+Interpretation:
+
+- Behavior-ranked losses can move a specific capability, but they also overfit
+  or destabilize the small folded child without stronger structural recovery.
+- Module-output reconstruction is the right primitive to keep, but the current
+  online optimizer does not yet make the blank child useful at 25x+ compression.
+  The next structural step should be a donor-only virtual compaction/GRAIL-style
+  compensation stage followed by module-output recovery, plus a stronger
+  SimCT/X-Token-style aligned-unit objective for digits, operators, newlines,
+  indentation, and Python keywords.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best

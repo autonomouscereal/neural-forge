@@ -35,6 +35,8 @@ RECOVERY_TEXTS = [
 
 HIDDEN_KD_METRICS = {"projected", "cka", "both", "rsd", "projected-rsd"}
 PROJECTED_HIDDEN_KD_METRICS = {"projected", "both", "projected-rsd"}
+MODULE_OUTPUT_TARGETS = {"attention", "mlp", "both"}
+MODULE_OUTPUT_TRANSPORTS = {"paired", "sinkhorn", "both"}
 
 
 def recover_causal_lm(
@@ -471,6 +473,7 @@ def recover_cross_tokenizer_causal_lm(
     lr: float = 5e-5,
     anchor_kd_weight: float = 0.5,
     lm_weight: float = 0.5,
+    first_token_lm_weight: float = 0.0,
     hidden_kd_weight: float = 0.0,
     span_kd_weight: float = 0.0,
     span_hidden_kd_weight: float = 0.0,
@@ -552,6 +555,7 @@ def recover_cross_tokenizer_causal_lm(
     if (
         anchor_kd_weight < 0
         or lm_weight < 0
+        or first_token_lm_weight < 0
         or hidden_kd_weight < 0
         or span_kd_weight < 0
         or span_hidden_kd_weight < 0
@@ -604,6 +608,7 @@ def recover_cross_tokenizer_causal_lm(
     if (
         anchor_kd_weight == 0
         and lm_weight == 0
+        and first_token_lm_weight == 0
         and hidden_kd_weight == 0
         and span_kd_weight == 0
         and span_hidden_kd_weight == 0
@@ -645,6 +650,8 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("temperature must be positive.")
     if response_loss_mode not in {"none", "auto", "assistant", "answer"}:
         raise ValueError("response_loss_mode must be none, auto, assistant, or answer.")
+    if response_loss_mode == "none" and first_token_lm_weight > 0:
+        raise ValueError("first_token_lm_weight requires response_loss_mode to be auto, assistant, or answer.")
     if max_anchors <= 0:
         raise ValueError("max_anchors must be positive.")
     if anchor_selection not in {"shortest", "longest", "stratified"}:
@@ -915,6 +922,7 @@ def recover_cross_tokenizer_causal_lm(
             source_anchor_idx,
             anchor_kd_weight,
             lm_weight,
+            first_token_lm_weight,
             hidden_kd_weight,
             span_kd_weight,
             span_hidden_kd_weight,
@@ -1176,6 +1184,7 @@ def recover_cross_tokenizer_causal_lm(
         "lr": lr,
         "anchor_kd_weight": anchor_kd_weight,
         "lm_weight": lm_weight,
+        "first_token_lm_weight": first_token_lm_weight,
         "hidden_kd_weight": hidden_kd_weight,
         "span_kd_weight": span_kd_weight,
         "span_hidden_kd_weight": span_hidden_kd_weight,
@@ -2016,6 +2025,11 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     stepwise_donor_kd_weight: float = 0.0,
     stepwise_donor_max_new_tokens: int = 8,
     stepwise_donor_interval: int = 4,
+    module_output_kd_weight: float = 0.0,
+    module_output_targets: str = "both",
+    module_output_transport: str = "paired",
+    module_output_temperature: float = 1.0,
+    module_output_sinkhorn_iterations: int = 12,
     projected_vocab_max_source_tokens: int = 8,
     temperature: float = 2.0,
     torch_dtype: str = "float16",
@@ -2076,6 +2090,16 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("on-policy weights must be non-negative.")
     if stepwise_donor_kd_weight < 0:
         raise ValueError("stepwise_donor_kd_weight must be non-negative.")
+    if module_output_kd_weight < 0:
+        raise ValueError("module_output_kd_weight must be non-negative.")
+    if module_output_targets not in MODULE_OUTPUT_TARGETS:
+        raise ValueError("module_output_targets must be attention, mlp, or both.")
+    if module_output_transport not in MODULE_OUTPUT_TRANSPORTS:
+        raise ValueError("module_output_transport must be paired, sinkhorn, or both.")
+    if module_output_temperature <= 0:
+        raise ValueError("module_output_temperature must be positive.")
+    if module_output_sinkhorn_iterations <= 0:
+        raise ValueError("module_output_sinkhorn_iterations must be positive.")
     if on_policy_max_new_tokens <= 0:
         raise ValueError("on_policy_max_new_tokens must be positive.")
     if on_policy_interval <= 0:
@@ -2312,8 +2336,41 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 block_target,
                 span_max_pairs,
             )
+            block_loss_value = float(loss.detach().cpu())
+            module_output_loss = None
+            module_output_counts: dict[str, Any] = {
+                "attention_pairs": 0,
+                "mlp_pairs": 0,
+                "targets": module_output_targets,
+                "transport": module_output_transport,
+            }
+            if module_output_kd_weight > 0:
+                module_output_loss, module_output_counts = _cross_tokenizer_block_module_output_loss(
+                    torch,
+                    source,
+                    candidate,
+                    source_layers,
+                    candidate_layers,
+                    source_tokenizer,
+                    candidate_tokenizer,
+                    source_batch,
+                    candidate_batch,
+                    source_group,
+                    candidate_idx,
+                    hidden_projection,
+                    _canonical_token,
+                    donor_layer_fold_mode,
+                    module_output_targets,
+                    module_output_transport,
+                    float(module_output_temperature),
+                    int(module_output_sinkhorn_iterations),
+                    span_max_pairs,
+                )
+                loss = loss + float(module_output_kd_weight) * module_output_loss
             if (
                 int(pair_count) <= 0
+                and int(module_output_counts.get("attention_pairs", 0)) <= 0
+                and int(module_output_counts.get("mlp_pairs", 0)) <= 0
                 and lm_weight == 0
                 and on_policy_anchor_kd_weight == 0
                 and on_policy_unlikelihood_weight == 0
@@ -2322,7 +2379,6 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             ):
                 skipped_steps += 1
                 continue
-            block_loss_value = float(loss.detach().cpu())
             lm_loss = None
             if lm_weight > 0:
                 lm_loss = _candidate_lm_stabilizer_loss(
@@ -2417,6 +2473,9 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             _raise_if_nonfinite_parameters(torch, candidate, step)
             loss_value = float(loss.detach().cpu())
             lm_loss_value = None if lm_loss is None else float(lm_loss.detach().cpu())
+            module_output_loss_value = (
+                None if module_output_loss is None else float(module_output_loss.detach().cpu())
+            )
             on_policy_loss_value = None if on_policy_loss is None else float(on_policy_loss.detach().cpu())
             on_policy_hidden_loss_value = (
                 None if on_policy_hidden_loss is None else float(on_policy_hidden_loss.detach().cpu())
@@ -2435,6 +2494,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                         "loss": loss_value,
                         "block_loss": block_loss_value,
                         "lm_loss": lm_loss_value,
+                        "module_output_loss": module_output_loss_value,
+                        "module_output": module_output_counts,
                         "on_policy_loss": on_policy_loss_value,
                         "on_policy_count": int(on_policy_count),
                         "on_policy_hidden_loss": on_policy_hidden_loss_value,
@@ -2448,6 +2509,9 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     f"xfamily_block_recover layer={candidate_idx} step={step} "
                     f"loss={loss_value:.6f} block_loss={block_loss_value:.6f} "
                     f"lm_loss={lm_loss_value if lm_loss_value is not None else 0.0:.6f} "
+                    f"module_output={module_output_loss_value if module_output_loss_value is not None else 0.0:.6f} "
+                    f"module_attention_pairs={int(module_output_counts.get('attention_pairs', 0))} "
+                    f"module_mlp_pairs={int(module_output_counts.get('mlp_pairs', 0))} "
                     f"on_policy={on_policy_loss_value if on_policy_loss_value is not None else 0.0:.6f} "
                     f"on_policy_count={int(on_policy_count)} "
                     f"on_policy_hidden={on_policy_hidden_loss_value if on_policy_hidden_loss_value is not None else 0.0:.6f} "
@@ -2595,6 +2659,11 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "stepwise_donor_kd_weight": float(stepwise_donor_kd_weight),
         "stepwise_donor_max_new_tokens": int(stepwise_donor_max_new_tokens),
         "stepwise_donor_interval": int(stepwise_donor_interval),
+        "module_output_kd_weight": float(module_output_kd_weight),
+        "module_output_targets": module_output_targets,
+        "module_output_transport": module_output_transport,
+        "module_output_temperature": float(module_output_temperature),
+        "module_output_sinkhorn_iterations": int(module_output_sinkhorn_iterations),
         "projected_vocab_max_source_tokens": int(projected_vocab_max_source_tokens),
         "temperature": float(temperature),
         "torch_dtype": torch_dtype,
@@ -3400,6 +3469,7 @@ def _cross_tokenizer_on_policy_rollout_loss(
             candidate_anchor_idx,
             source_anchor_idx,
             float(anchor_kd_weight),
+            0.0,
             0.0,
             0.0,
             0.0,
@@ -5081,6 +5151,243 @@ def _cross_tokenizer_block_hidden_loss(
         hidden_metric,
     )
     return loss.to(device=student.logits.device, dtype=torch.float32), int(row_count)
+
+
+def _source_group_module_output_state(
+    torch,
+    module_outputs: dict[int, Any],
+    source_layer_group: Sequence[int],
+    donor_layer_fold_mode: str,
+):
+    if not source_layer_group:
+        raise ValueError("Need at least one source layer for module-output folding.")
+    group = [int(item) for item in source_layer_group]
+    missing = [idx for idx in group if idx not in module_outputs]
+    if missing:
+        raise ValueError(f"Missing module outputs for source layers: {missing}")
+    if donor_layer_fold_mode == "average" and len(group) > 1:
+        values = [module_outputs[idx].to(torch.float32) for idx in group]
+        return torch.stack(values, dim=0).mean(dim=0)
+    if donor_layer_fold_mode == "fold" and len(group) > 1:
+        values = [module_outputs[idx].to(torch.float32) for idx in group]
+        return torch.stack(values, dim=0).sum(dim=0)
+    idx = group[0] if donor_layer_fold_mode == "representative" else max(group)
+    return module_outputs[idx].to(torch.float32)
+
+
+def _activation_row_transport_loss(
+    torch,
+    student_rows,
+    teacher_rows,
+    mode: str,
+    temperature: float,
+    iterations: int,
+):
+    if mode not in MODULE_OUTPUT_TRANSPORTS:
+        raise ValueError("mode must be paired, sinkhorn, or both.")
+    if temperature <= 0:
+        raise ValueError("temperature must be positive.")
+    if iterations <= 0:
+        raise ValueError("iterations must be positive.")
+    rows = min(int(student_rows.shape[0]), int(teacher_rows.shape[0]))
+    if rows <= 0:
+        return torch.zeros((), dtype=student_rows.dtype, device=student_rows.device)
+    student = torch.nan_to_num(student_rows[:rows].to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    teacher = torch.nan_to_num(teacher_rows[:rows].to(device=student.device, dtype=torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    student_norm = _normalize_hidden_rows(torch, student)
+    teacher_norm = _normalize_hidden_rows(torch, teacher)
+    losses = []
+    if mode in {"paired", "both"}:
+        cosine = torch.nn.functional.cosine_similarity(student_norm, teacher_norm, dim=-1, eps=1e-8)
+        cosine_loss = 1.0 - cosine.mean()
+        mse_loss = torch.nn.functional.mse_loss(student_norm, teacher_norm)
+        losses.append(0.5 * cosine_loss + 0.5 * mse_loss)
+    if mode in {"sinkhorn", "both"}:
+        cost = (1.0 - student_norm.matmul(teacher_norm.t())).clamp_min(0.0)
+        log_plan = -cost / float(temperature)
+        for _ in range(int(iterations)):
+            log_plan = log_plan - torch.logsumexp(log_plan, dim=1, keepdim=True)
+            log_plan = log_plan - torch.logsumexp(log_plan, dim=0, keepdim=True)
+        plan = torch.exp(log_plan)
+        plan = plan / plan.sum().clamp_min(1e-12)
+        losses.append((plan * cost).sum())
+    return torch.stack(losses).mean()
+
+
+def _projected_module_rows_for_pairs(
+    torch,
+    candidate_output,
+    source_output,
+    span_pairs,
+    hidden_projection,
+):
+    student_rows, source_rows, row_count = _span_aligned_hidden_rows(
+        torch,
+        candidate_output,
+        source_output,
+        span_pairs,
+    )
+    if int(row_count) <= 0:
+        return student_rows, source_rows, 0
+    projected = source_rows.to(torch.float32).matmul(
+        hidden_projection.to(device=source_rows.device, dtype=torch.float32)
+    )
+    return student_rows.to(torch.float32), projected.to(device=student_rows.device, dtype=torch.float32), int(row_count)
+
+
+def _module_output_tensor(output):
+    return output[0] if isinstance(output, tuple) else output
+
+
+def _cross_tokenizer_block_module_output_loss(
+    torch,
+    source_model,
+    candidate_model,
+    source_layers: Sequence[Any],
+    candidate_layers: Sequence[Any],
+    source_tokenizer,
+    candidate_tokenizer,
+    source_batch: dict[str, Any],
+    candidate_batch: dict[str, Any],
+    source_layer_group: Sequence[int],
+    candidate_layer_idx: int,
+    hidden_projection,
+    canonical_fn,
+    donor_layer_fold_mode: str,
+    module_output_targets: str,
+    module_output_transport: str,
+    module_output_temperature: float,
+    module_output_sinkhorn_iterations: int,
+    span_max_pairs: int,
+):
+    if module_output_targets not in MODULE_OUTPUT_TARGETS:
+        raise ValueError("module_output_targets must be attention, mlp, or both.")
+    if module_output_transport not in MODULE_OUTPUT_TRANSPORTS:
+        raise ValueError("module_output_transport must be paired, sinkhorn, or both.")
+    if hidden_projection is None:
+        raise ValueError("hidden_projection is required for module-output KD.")
+    if int(candidate_layer_idx) < 0 or int(candidate_layer_idx) >= len(candidate_layers):
+        raise ValueError("candidate_layer_idx is outside the candidate layer range.")
+    group = [int(item) for item in source_layer_group]
+    if not group:
+        raise ValueError("Need at least one source layer for module-output KD.")
+    target_names = ["attention", "mlp"] if module_output_targets == "both" else [module_output_targets]
+    candidate_layer = candidate_layers[int(candidate_layer_idx)]
+    source_captured: dict[str, dict[int, Any]] = {"attention": {}, "mlp": {}}
+    candidate_captured: dict[str, Any] = {}
+    handles = []
+
+    def make_source_hook(target: str, layer_idx: int):
+        def hook(_module, _inputs, output):
+            source_captured[target][int(layer_idx)] = _module_output_tensor(output).detach().to(torch.float32)
+
+        return hook
+
+    def make_candidate_hook(target: str):
+        def hook(_module, _inputs, output):
+            candidate_captured[target] = _module_output_tensor(output).to(torch.float32)
+
+        return hook
+
+    try:
+        if "attention" in target_names:
+            candidate_attention = _attention_module(candidate_layer)
+            if candidate_attention is not None:
+                handles.append(candidate_attention.register_forward_hook(make_candidate_hook("attention")))
+                for idx in group:
+                    if idx < 0 or idx >= len(source_layers):
+                        continue
+                    source_attention = _attention_module(source_layers[idx])
+                    if source_attention is not None:
+                        handles.append(source_attention.register_forward_hook(make_source_hook("attention", idx)))
+        if "mlp" in target_names:
+            candidate_mlp_spec = _mlp_projection_spec(candidate_layer)
+            if candidate_mlp_spec is not None:
+                handles.append(candidate_mlp_spec["mlp"].register_forward_hook(make_candidate_hook("mlp")))
+                for idx in group:
+                    if idx < 0 or idx >= len(source_layers):
+                        continue
+                    source_mlp_spec = _mlp_projection_spec(source_layers[idx])
+                    if source_mlp_spec is not None:
+                        handles.append(source_mlp_spec["mlp"].register_forward_hook(make_source_hook("mlp", idx)))
+        if not handles:
+            param = next(candidate_model.parameters())
+            return (
+                torch.zeros((), dtype=param.dtype, device=param.device),
+                {
+                    "attention_pairs": 0,
+                    "mlp_pairs": 0,
+                    "targets": module_output_targets,
+                    "transport": module_output_transport,
+                    "skipped_reason": "no_supported_modules",
+                },
+            )
+        with torch.no_grad():
+            source_model(**_model_forward_inputs(source_batch), use_cache=False)
+        candidate_model(**_model_forward_inputs(candidate_batch), use_cache=False)
+    finally:
+        for handle in handles:
+            handle.remove()
+
+    pairs = _cross_tokenizer_span_pairs(
+        torch,
+        source_tokenizer,
+        candidate_tokenizer,
+        source_batch,
+        candidate_batch,
+        canonical_fn,
+        max_pairs=span_max_pairs,
+        shift_positions=False,
+    )
+    losses = []
+    counts: dict[str, Any] = {
+        "attention_pairs": 0,
+        "mlp_pairs": 0,
+        "targets": module_output_targets,
+        "transport": module_output_transport,
+    }
+    if int(pairs.numel()) <= 0:
+        param = next(candidate_model.parameters())
+        return torch.zeros((), dtype=param.dtype, device=param.device), counts
+
+    for target in target_names:
+        if target not in candidate_captured:
+            counts[f"{target}_skipped"] = "candidate_module_missing"
+            continue
+        available = source_captured.get(target, {})
+        if any(idx not in available for idx in group):
+            counts[f"{target}_skipped"] = "source_module_missing"
+            continue
+        source_output = _source_group_module_output_state(
+            torch,
+            available,
+            group,
+            donor_layer_fold_mode,
+        )
+        student_rows, teacher_rows, row_count = _projected_module_rows_for_pairs(
+            torch,
+            candidate_captured[target],
+            source_output,
+            pairs,
+            hidden_projection,
+        )
+        counts[f"{target}_pairs"] = int(row_count)
+        if int(row_count) <= 0:
+            continue
+        losses.append(
+            _activation_row_transport_loss(
+                torch,
+                student_rows,
+                teacher_rows,
+                module_output_transport,
+                module_output_temperature,
+                module_output_sinkhorn_iterations,
+            )
+        )
+    if not losses:
+        param = next(candidate_model.parameters())
+        return torch.zeros((), dtype=param.dtype, device=param.device), counts
+    return torch.stack(losses).mean().to(torch.float32), counts
 
 
 def _cross_tokenizer_block_on_policy_hidden_loss(
@@ -7200,6 +7507,7 @@ def _cross_tokenizer_recovery_loss(
     source_anchor_idx,
     anchor_kd_weight: float,
     lm_weight: float,
+    first_token_lm_weight: float,
     hidden_kd_weight: float,
     span_kd_weight: float,
     span_hidden_kd_weight: float,
@@ -7359,6 +7667,16 @@ def _cross_tokenizer_recovery_loss(
             ignore_index=-100,
         )
         total = total + float(lm_weight) * lm
+    if first_token_lm_weight > 0:
+        first_mask = _first_response_shift_mask(torch, candidate_loss_mask, candidate_attention_mask)
+        if first_mask is not None and int(first_mask.sum().detach().cpu().item()) > 0:
+            first_labels = candidate_input_ids[:, 1:].contiguous().masked_fill(~first_mask, -100)
+            first_lm = torch.nn.functional.cross_entropy(
+                shift_student.view(-1, shift_student.shape[-1]),
+                first_labels.view(-1),
+                ignore_index=-100,
+            )
+            total = total + float(first_token_lm_weight) * first_lm
     if unlikelihood_weight > 0:
         unlikelihood = _recent_token_unlikelihood_loss(
             torch,

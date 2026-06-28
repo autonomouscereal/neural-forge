@@ -8,6 +8,7 @@ from neural_forge.hf_recovery import RECOVERY_TEXTS
 from neural_forge.hf_recovery import _answer_contrastive_candidates
 from neural_forge.hf_recovery import _alm_text_chunks
 from neural_forge.hf_recovery import _append_eos_text
+from neural_forge.hf_recovery import _activation_row_transport_loss
 from neural_forge.hf_recovery import _attention_projection_spec
 from neural_forge.hf_recovery import _assert_same_vocab
 from neural_forge.hf_recovery import _absorb_input_map_into_linears
@@ -48,6 +49,7 @@ from neural_forge.hf_recovery import _same_tokenizer_reference_loss
 from neural_forge.hf_recovery import _same_tokenizer_hidden_loss
 from neural_forge.hf_recovery import _same_tokenizer_top_k_kl
 from neural_forge.hf_recovery import _source_group_delta_state
+from neural_forge.hf_recovery import _source_group_module_output_state
 from neural_forge.hf_recovery import _validation_reconstruction_gate
 from neural_forge.hf_recovery import load_calibration_texts
 from neural_forge.hf_tools import TEXT_EVALS
@@ -581,6 +583,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.7",
             "--lm-weight",
             "0.3",
+            "--first-token-lm-weight",
+            "0.44",
             "--hidden-kd-weight",
             "0.2",
             "--span-kd-weight",
@@ -883,6 +887,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_recover_args.output == "recovered"
     assert xfamily_recover_args.anchor_kd_weight == 0.7
     assert xfamily_recover_args.lm_weight == 0.3
+    assert xfamily_recover_args.first_token_lm_weight == pytest.approx(0.44)
     assert xfamily_recover_args.hidden_kd_weight == 0.2
     assert xfamily_recover_args.span_kd_weight == 0.15
     assert xfamily_recover_args.span_hidden_kd_weight == 0.12
@@ -1345,6 +1350,48 @@ def test_source_group_delta_state_matches_fold_and_average_modes() -> None:
     assert folded.squeeze().tolist() == [5.0, 5.0]
     assert averaged.squeeze().tolist() == [2.5, 2.5]
     assert representative.squeeze().tolist() == [2.0, 2.0]
+
+
+def test_source_group_module_output_state_matches_fold_and_average_modes() -> None:
+    torch = pytest.importorskip("torch")
+    outputs = {
+        1: torch.full((1, 2, 1), 2.0),
+        2: torch.full((1, 2, 1), 5.0),
+    }
+
+    folded = _source_group_module_output_state(torch, outputs, [1, 2], "fold")
+    averaged = _source_group_module_output_state(torch, outputs, [1, 2], "average")
+    representative = _source_group_module_output_state(torch, outputs, [1, 2], "representative")
+
+    assert folded.squeeze().tolist() == [7.0, 7.0]
+    assert averaged.squeeze().tolist() == [3.5, 3.5]
+    assert representative.squeeze().tolist() == [2.0, 2.0]
+
+
+def test_activation_row_transport_loss_handles_permuted_rows() -> None:
+    torch = pytest.importorskip("torch")
+    teacher = torch.eye(4, dtype=torch.float32)
+    student_permuted = teacher[[2, 0, 3, 1]]
+
+    paired = _activation_row_transport_loss(
+        torch,
+        student_permuted,
+        teacher,
+        mode="paired",
+        temperature=0.05,
+        iterations=16,
+    )
+    transported = _activation_row_transport_loss(
+        torch,
+        student_permuted,
+        teacher,
+        mode="sinkhorn",
+        temperature=0.05,
+        iterations=16,
+    )
+
+    assert transported.item() < paired.item()
+    assert transported.item() < 0.2
 
 
 def test_resize_tensor_to_shape_mean_folds_axes() -> None:
@@ -2315,6 +2362,55 @@ def test_recovery_loss_first_response_lm_focuses_boundary_token() -> None:
     assert response_lm.item() > first_only.item() + 5.0
 
 
+def test_cross_tokenizer_recovery_loss_first_response_lm_focuses_boundary_token() -> None:
+    torch = pytest.importorskip("torch")
+    logits = torch.full((1, 5, 6), -8.0)
+    input_ids = torch.tensor([[0, 1, 2, 3, 4]])
+    attention_mask = torch.ones_like(input_ids)
+    loss_mask = torch.tensor([[False, False, False, True, True]])
+    logits[0, 2, 3] = 20.0
+    logits[0, 3, 4] = -20.0
+    student = _Obj(logits=logits)
+
+    first_only = _cross_tokenizer_recovery_loss(
+        torch,
+        student=student,
+        teacher=None,
+        candidate_input_ids=input_ids,
+        candidate_attention_mask=attention_mask,
+        candidate_loss_mask=loss_mask,
+        source_attention_mask=None,
+        candidate_anchor_idx=torch.tensor([0]),
+        source_anchor_idx=torch.tensor([0]),
+        anchor_kd_weight=0.0,
+        lm_weight=0.0,
+        first_token_lm_weight=1.0,
+        hidden_kd_weight=0.0,
+        span_kd_weight=0.0,
+        span_hidden_kd_weight=0.0,
+        projected_vocab_kd_weight=0.0,
+        projected_vocab_kd_mode="teacher-to-student",
+        reference_kd_weight=0.0,
+        unlikelihood_weight=0.0,
+        unlikelihood_window=2,
+        entropy_weight=0.0,
+        entropy_aware_kd_weight=0.0,
+        entropy_aware_kd_threshold=0.55,
+        entropy_aware_kd_sharpness=8.0,
+        hidden_projection=None,
+        hidden_layer="last",
+        hidden_kd_metric="projected",
+        span_pairs=None,
+        projected_vocab_groups=None,
+        projected_vocab_mask=None,
+        projected_vocab_valid=None,
+        reference_teacher=None,
+        temperature=1.0,
+    )
+
+    assert first_only.item() < 1e-3
+
+
 def test_same_tokenizer_top_k_kl_uses_teacher_subset() -> None:
     torch = pytest.importorskip("torch")
     teacher = torch.full((1, 2, 6), -10.0)
@@ -2498,6 +2594,7 @@ def test_cross_tokenizer_recovery_loss_uses_anchor_subspace() -> None:
         source_anchor_idx=torch.tensor([2, 4, 6]),
         anchor_kd_weight=0.7,
         lm_weight=0.3,
+        first_token_lm_weight=0.0,
         hidden_kd_weight=0.0,
         span_kd_weight=0.0,
         span_hidden_kd_weight=0.0,
@@ -2549,6 +2646,7 @@ def test_cross_tokenizer_recovery_loss_response_mask_ignores_prompt_tokens() -> 
         source_anchor_idx=torch.tensor([1, 3]),
         anchor_kd_weight=0.0,
         lm_weight=1.0,
+        first_token_lm_weight=0.0,
         hidden_kd_weight=0.0,
         span_kd_weight=0.0,
         span_hidden_kd_weight=0.0,
@@ -2583,6 +2681,7 @@ def test_cross_tokenizer_recovery_loss_response_mask_ignores_prompt_tokens() -> 
         source_anchor_idx=torch.tensor([1, 3]),
         anchor_kd_weight=0.0,
         lm_weight=1.0,
+        first_token_lm_weight=0.0,
         hidden_kd_weight=0.0,
         span_kd_weight=0.0,
         span_hidden_kd_weight=0.0,
@@ -2637,6 +2736,7 @@ def test_cross_tokenizer_recovery_loss_uses_projected_hidden_states() -> None:
         source_anchor_idx=torch.tensor([2, 4, 6]),
         anchor_kd_weight=0.1,
         lm_weight=0.2,
+        first_token_lm_weight=0.0,
         hidden_kd_weight=0.7,
         span_kd_weight=0.0,
         span_hidden_kd_weight=0.0,
@@ -2842,6 +2942,7 @@ def test_cross_tokenizer_recovery_loss_uses_span_pairs() -> None:
         source_anchor_idx=torch.tensor([2, 4, 6]),
         anchor_kd_weight=0.0,
         lm_weight=0.2,
+        first_token_lm_weight=0.0,
         hidden_kd_weight=0.0,
         span_kd_weight=0.8,
         span_hidden_kd_weight=0.0,
@@ -3721,6 +3822,8 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "0.6",
             "--lm-weight",
             "0.4",
+            "--first-token-lm-weight",
+            "0.73",
             "--hidden-kd-weight",
             "0.25",
             "--span-kd-weight",
@@ -3853,6 +3956,7 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "lr": 0.0002,
         "anchor_kd_weight": 0.6,
         "lm_weight": 0.4,
+        "first_token_lm_weight": 0.73,
         "hidden_kd_weight": 0.25,
         "span_kd_weight": 0.15,
         "span_hidden_kd_weight": 0.12,
@@ -4271,6 +4375,16 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "5",
             "--stepwise-donor-interval",
             "3",
+            "--module-output-kd-weight",
+            "0.44",
+            "--module-output-targets",
+            "mlp",
+            "--module-output-transport",
+            "both",
+            "--module-output-temperature",
+            "0.6",
+            "--module-output-sinkhorn-iterations",
+            "9",
             "--projected-vocab-max-source-tokens",
             "6",
             "--temperature",
@@ -4328,6 +4442,11 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "stepwise_donor_kd_weight": 0.22,
         "stepwise_donor_max_new_tokens": 5,
         "stepwise_donor_interval": 3,
+        "module_output_kd_weight": 0.44,
+        "module_output_targets": "mlp",
+        "module_output_transport": "both",
+        "module_output_temperature": 0.6,
+        "module_output_sinkhorn_iterations": 9,
         "projected_vocab_max_source_tokens": 6,
         "temperature": 1.6,
         "torch_dtype": "float16",
