@@ -88,6 +88,7 @@ from neural_forge.hf_xfamily import _target_to_donor_token_group_specs
 from neural_forge.hf_xfamily import _target_to_donor_token_groups
 from neural_forge.hf_xfamily import _target_to_donor_omp_group_specs
 from neural_forge.hf_xfamily import _untie_output_head
+from neural_forge.hf_xfamily import _usable_candidate_sort_key
 from neural_forge.hf_xfamily import _usable_pipeline_candidates
 from neural_forge.hf_xfamily import _validate_channel_assignment
 from neural_forge.hf_xfamily import _validate_layer_alpha_settings
@@ -3073,11 +3074,22 @@ def test_layer_gate_behavior_decision_rejects_behavior_regression() -> None:
         "pass_rate": 0.5,
         "items": [{"id": "kept", "passed": False}, {"id": "new", "passed": True}],
     }
+    generation_drop = {
+        "pass_rate": 0.5,
+        "items": [{"id": "kept", "passed": True}, {"id": "miss", "passed": False}],
+        "generation_health_rate": 0.0,
+        "generation_items": [{"prompt": "gen", "passed": False}],
+    }
+    previous["generation_health_rate"] = 1.0
+    previous["generation_items"] = [{"prompt": "gen", "passed": True}]
+    same["generation_health_rate"] = 1.0
+    same["generation_items"] = [{"prompt": "gen", "passed": True}]
 
     accepted = _layer_gate_behavior_decision(previous, same, max_behavior_drop=0.0)
     tolerated = _layer_gate_behavior_decision(previous, lower, max_behavior_drop=0.25)
     traded_rejected = _layer_gate_behavior_decision(previous, traded, max_behavior_drop=0.0)
     rejected = _layer_gate_behavior_decision(previous, lower, max_behavior_drop=0.0)
+    generation_rejected = _layer_gate_behavior_decision(previous, generation_drop, max_behavior_drop=0.0)
 
     assert accepted["accepted"] is True
     assert tolerated["accepted"] is False
@@ -3087,17 +3099,91 @@ def test_layer_gate_behavior_decision_rejects_behavior_regression() -> None:
     assert rejected["accepted"] is False
     assert rejected["reason"] == "behavior_regression"
     assert rejected["behavior_drop"] == pytest.approx(0.25)
+    assert generation_rejected["accepted"] is False
+    assert generation_rejected["lost_generation_passed_prompts"] == ["gen"]
+    assert generation_rejected["generation_health_drop"] == pytest.approx(1.0)
 
 
 def test_behavior_checkpoint_selection_prioritizes_behavior_over_loss() -> None:
-    incumbent = {"correct": 1, "total": 6, "pass_rate": 1 / 6, "loss": 1.0}
+    incumbent = {
+        "correct": 1,
+        "total": 6,
+        "pass_rate": 1 / 6,
+        "generation_health_correct": 1,
+        "generation_health_rate": 1 / 3,
+        "loss": 1.0,
+    }
     behavior_win = {"correct": 2, "total": 6, "pass_rate": 2 / 6, "loss": 9.0}
-    loss_only_win = {"correct": 1, "total": 6, "pass_rate": 1 / 6, "loss": 0.5}
+    generation_win = {
+        "correct": 1,
+        "total": 6,
+        "pass_rate": 1 / 6,
+        "generation_health_correct": 2,
+        "generation_health_rate": 2 / 3,
+        "loss": 9.0,
+    }
+    loss_only_win = {
+        "correct": 1,
+        "total": 6,
+        "pass_rate": 1 / 6,
+        "generation_health_correct": 1,
+        "generation_health_rate": 1 / 3,
+        "loss": 0.5,
+    }
+    lower_loss_worse_generation = {
+        "correct": 1,
+        "total": 6,
+        "pass_rate": 1 / 6,
+        "generation_health_correct": 0,
+        "generation_health_rate": 0.0,
+        "loss": 0.1,
+    }
     worse = {"correct": 0, "total": 6, "pass_rate": 0.0, "loss": 0.1}
 
     assert _behavior_checkpoint_is_better(behavior_win, incumbent, incumbent_loss=1.0) is True
+    assert _behavior_checkpoint_is_better(generation_win, incumbent, incumbent_loss=1.0) is True
     assert _behavior_checkpoint_is_better(loss_only_win, incumbent, incumbent_loss=1.0) is True
+    assert _behavior_checkpoint_is_better(lower_loss_worse_generation, incumbent, incumbent_loss=1.0) is False
     assert _behavior_checkpoint_is_better(worse, incumbent, incumbent_loss=1.0) is False
+
+
+def test_usable_candidate_sort_key_prioritizes_output_before_shrink_and_ppl() -> None:
+    better_output = {
+        "tag": "better-output",
+        "shrink": 0.10,
+        "metrics": {
+            "behavior_pass_rate": 0.50,
+            "choice_accuracy": 0.75,
+            "generation_health_rate": 1.0,
+            "perplexity_mean": 900.0,
+        },
+    }
+    worse_output_high_shrink_low_ppl = {
+        "tag": "worse-output",
+        "shrink": 0.90,
+        "metrics": {
+            "behavior_pass_rate": 0.25,
+            "choice_accuracy": 0.75,
+            "generation_health_rate": 1.0,
+            "perplexity_mean": 100.0,
+        },
+    }
+    same_output_higher_shrink = {
+        "tag": "higher-shrink",
+        "shrink": 0.80,
+        "metrics": {
+            "behavior_pass_rate": 0.50,
+            "choice_accuracy": 0.75,
+            "generation_health_rate": 1.0,
+            "perplexity_mean": 1200.0,
+        },
+    }
+
+    ranked = sorted([worse_output_high_shrink_low_ppl, better_output], key=_usable_candidate_sort_key)
+    tied = sorted([better_output, same_output_higher_shrink], key=_usable_candidate_sort_key)
+
+    assert ranked[0]["tag"] == "better-output"
+    assert tied[0]["tag"] == "higher-shrink"
 
 
 def test_layer_gate_snapshot_indices_include_consumer_layer() -> None:

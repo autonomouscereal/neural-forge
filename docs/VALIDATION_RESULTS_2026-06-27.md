@@ -832,8 +832,9 @@ Code changes:
   behavior-good candidate.
 - `hf-gate` exposes this as `--ppl-gate-mode hard|advisory`; CLI default is
   `advisory`.
-- Automated compression candidate sorting now ranks passed candidates by shrink,
-  behavior pass rate, choice accuracy, generation health, and only then PPL.
+- Automated compression candidate sorting now ranks passed candidates by
+  behavior pass rate, choice accuracy, generation health, shrink, and only then
+  PPL.
 - Cross-family usable candidate sorting now uses the same behavior-first policy.
 - Blockwise cross-tokenizer recovery now supports `--layer-gate-metric behavior`
   with held-out behavior snapshots and per-block revert. PPL-only block gates
@@ -871,6 +872,49 @@ Interpretation:
   replay. The target needs stronger parent-first structural repair: OT/PCA
   residual maps, full-block reconstruction, numeric/tokenizer-specific output
   control, and on-policy correction.
+
+### Generation-Health-Aware Behavior Checkpoints
+
+Code changes:
+
+- `--save-best-behavior` now evaluates and snapshots the untouched input
+  checkpoint as step `0` before any recovery update.
+- Held-out behavior summaries now include the normal generation prompts used by
+  `hf-eval`, reported as `generation_health_correct/total`.
+- Behavior checkpoint selection now sorts by behavior correctness, behavior
+  pass rate, generation-health correctness, generation-health rate, then loss.
+- Behavior layer gates also reject a block update if it loses previously passing
+  generation prompts, not only if it loses behavior-suite probe IDs.
+
+Remote validation run:
+
+- Start:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_rsd_behaviorbest_60s`
+- Output:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_genhealth_guard_last2_40s`
+- Settings: `40` recovery steps, `train_scope=last2`, behavior eval every `10`
+  steps, same strict behavior replay calibration.
+- Checkpoint history:
+  - step `0`: behavior `3/6`, generation health `2/3`
+  - step `1`: behavior `3/6`, generation health `2/3`, selected by loss tie
+  - step `10`: behavior `3/6`, generation health `1/3`, rejected
+  - step `20`: behavior `3/6`, generation health `1/3`, rejected
+  - step `30`: behavior `3/6`, generation health `0/3`, rejected
+  - step `40`: behavior `3/6`, generation health `0/3`, rejected
+
+Eval comparison:
+
+| Checkpoint | PPL mean | Choice | Behavior | Generation health | Gate | Manual notes |
+|---|---:|---:|---:|---:|---|---|
+| RSD behavior-best 60s | 3,825.12 | 3/4 | 3/6 | 2/3 | fail | code/math malformed |
+| Generation-health guard last2 40s | 3,820.76 | 3/4 | 3/6 | 2/3 | fail | preserved generation health; code/math still malformed |
+
+Interpretation:
+
+- The new selector correctly prevented later low-signal recovery checkpoints
+  with identical behavior count but worse generation health from being saved.
+- This is not a promoted model result. It is a safety/control improvement for
+  future structural recovery work.
 
 ## Current Conclusion
 

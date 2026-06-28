@@ -10,10 +10,12 @@ from typing import Any, Sequence
 
 from neural_forge.hf_tools import (
     BEHAVIOR_PROBES,
+    GENERATION_PROMPTS,
     TEXT_EVALS,
     _decoder_layer_container,
     _dtype_from_name,
     _generate_text,
+    _generation_health,
     _ridge_solve_features,
     _score_behavior_probe,
     _torch_and_transformers,
@@ -250,6 +252,27 @@ def recover_causal_lm(
     best_behavior_loss = None
     best_behavior_step = None
     best_behavior_state = None
+    if save_best_behavior:
+        was_training = candidate.training
+        candidate.eval()
+        with torch.no_grad():
+            behavior_summary = _heldout_behavior_summary(
+                torch,
+                candidate,
+                candidate_tokenizer,
+                device,
+                int(behavior_max_new_tokens),
+                int(behavior_max_probes),
+            )
+        if was_training:
+            candidate.train()
+        behavior_entry = _behavior_history_entry(0, None, behavior_summary)
+        behavior_history.append(behavior_entry)
+        _print_behavior_checkpoint("recover_behavior", behavior_entry)
+        best_behavior_summary = dict(behavior_entry)
+        best_behavior_loss = math.inf
+        best_behavior_step = 0
+        best_behavior_state = {key: value.detach().cpu().clone() for key, value in candidate.state_dict().items()}
     for step in range(1, steps + 1):
         batch = batches[(step - 1) % len(batches)]
         optimizer.zero_grad(set_to_none=True)
@@ -331,24 +354,9 @@ def recover_causal_lm(
                 )
             if was_training:
                 candidate.train()
-            behavior_entry = {
-                "step": int(step),
-                "loss": loss_value,
-                "correct": int(behavior_summary["correct"]),
-                "total": int(behavior_summary["total"]),
-                "pass_rate": float(behavior_summary["pass_rate"]),
-                "passed_ids": [
-                    str(item["id"]) for item in behavior_summary.get("items", []) if bool(item.get("passed"))
-                ],
-            }
+            behavior_entry = _behavior_history_entry(step, loss_value, behavior_summary)
             behavior_history.append(behavior_entry)
-            print(
-                f"xfamily_recover_behavior step={step} "
-                f"correct={behavior_entry['correct']}/{behavior_entry['total']} "
-                f"pass_rate={behavior_entry['pass_rate']:.4f} "
-                f"loss={loss_value:.6f}",
-                flush=True,
-            )
+            _print_behavior_checkpoint("recover_behavior", behavior_entry)
             if _behavior_checkpoint_is_better(behavior_entry, best_behavior_summary, best_behavior_loss):
                 best_behavior_summary = dict(behavior_entry)
                 best_behavior_loss = loss_value
@@ -824,6 +832,27 @@ def recover_cross_tokenizer_causal_lm(
     best_behavior_loss = None
     best_behavior_step = None
     best_behavior_state = None
+    if save_best_behavior:
+        was_training = candidate.training
+        candidate.eval()
+        with torch.no_grad():
+            behavior_summary = _heldout_behavior_summary(
+                torch,
+                candidate,
+                candidate_tokenizer,
+                device,
+                int(behavior_max_new_tokens),
+                int(behavior_max_probes),
+            )
+        if was_training:
+            candidate.train()
+        behavior_entry = _behavior_history_entry(0, None, behavior_summary)
+        behavior_history.append(behavior_entry)
+        _print_behavior_checkpoint("xfamily_recover_behavior", behavior_entry)
+        best_behavior_summary = dict(behavior_entry)
+        best_behavior_loss = math.inf
+        best_behavior_step = 0
+        best_behavior_state = {key: value.detach().cpu().clone() for key, value in candidate.state_dict().items()}
     for step in range(1, steps + 1):
         source_batch, candidate_batch = batches[(step - 1) % len(batches)]
         optimizer.zero_grad(set_to_none=True)
@@ -1085,24 +1114,9 @@ def recover_cross_tokenizer_causal_lm(
                 )
             if was_training:
                 candidate.train()
-            behavior_entry = {
-                "step": int(step),
-                "loss": loss_value,
-                "correct": int(behavior_summary["correct"]),
-                "total": int(behavior_summary["total"]),
-                "pass_rate": float(behavior_summary["pass_rate"]),
-                "passed_ids": [
-                    str(item["id"]) for item in behavior_summary.get("items", []) if bool(item.get("passed"))
-                ],
-            }
+            behavior_entry = _behavior_history_entry(step, loss_value, behavior_summary)
             behavior_history.append(behavior_entry)
-            print(
-                f"xfamily_recover_behavior step={step} "
-                f"correct={behavior_entry['correct']}/{behavior_entry['total']} "
-                f"pass_rate={behavior_entry['pass_rate']:.4f} "
-                f"loss={loss_value:.6f}",
-                flush=True,
-            )
+            _print_behavior_checkpoint("xfamily_recover_behavior", behavior_entry)
             if _behavior_checkpoint_is_better(behavior_entry, best_behavior_summary, best_behavior_loss):
                 best_behavior_summary = dict(behavior_entry)
                 best_behavior_loss = loss_value
@@ -4491,11 +4505,23 @@ def _heldout_behavior_summary(
         )
         for probe in probes
     ]
+    generation_items = [
+        _generation_health(
+            _generate_text(torch, model, tokenizer, str(prompt), device, int(max_new_tokens)),
+            min_continuation_chars=24,
+            min_unique_token_ratio=0.20,
+        )
+        for prompt in GENERATION_PROMPTS
+    ]
     correct = sum(1 for item in items if item["passed"])
+    generation_correct = sum(1 for item in generation_items if item["passed"])
     return {
         "correct": int(correct),
         "total": int(len(items)),
         "pass_rate": float(correct / max(1, len(items))),
+        "generation_health_correct": int(generation_correct),
+        "generation_health_total": int(len(generation_items)),
+        "generation_health_rate": float(generation_correct / max(1, len(generation_items))),
         "items": [
             {
                 "id": item["id"],
@@ -4504,7 +4530,49 @@ def _heldout_behavior_summary(
             }
             for item in items
         ],
+        "generation_items": [
+            {
+                "prompt": item["prompt"],
+                "passed": bool(item["passed"]),
+                "continuation_chars": int(item.get("continuation_chars", 0)),
+                "unique_token_ratio": float(item.get("unique_token_ratio", 0.0)),
+                "relevant_enough": bool(item.get("relevant_enough", False)),
+            }
+            for item in generation_items
+        ],
     }
+
+
+def _behavior_history_entry(step: int, loss_value: float | None, behavior_summary: dict[str, Any]) -> dict[str, Any]:
+    entry = {
+        "step": int(step),
+        "loss": None if loss_value is None else float(loss_value),
+        "correct": int(behavior_summary["correct"]),
+        "total": int(behavior_summary["total"]),
+        "pass_rate": float(behavior_summary["pass_rate"]),
+        "generation_health_correct": int(behavior_summary.get("generation_health_correct", 0)),
+        "generation_health_total": int(behavior_summary.get("generation_health_total", 0)),
+        "generation_health_rate": float(behavior_summary.get("generation_health_rate", 0.0)),
+        "passed_ids": [str(item["id"]) for item in behavior_summary.get("items", []) if bool(item.get("passed"))],
+        "generation_passed_prompts": [
+            str(item["prompt"]) for item in behavior_summary.get("generation_items", []) if bool(item.get("passed"))
+        ],
+    }
+    return entry
+
+
+def _print_behavior_checkpoint(prefix: str, behavior_entry: dict[str, Any]) -> None:
+    loss = behavior_entry.get("loss")
+    loss_text = "nan" if loss is None else f"{float(loss):.6f}"
+    print(
+        f"{prefix} step={behavior_entry['step']} "
+        f"correct={behavior_entry['correct']}/{behavior_entry['total']} "
+        f"generation_health={behavior_entry['generation_health_correct']}/"
+        f"{behavior_entry['generation_health_total']} "
+        f"pass_rate={behavior_entry['pass_rate']:.4f} "
+        f"loss={loss_text}",
+        flush=True,
+    )
 
 
 def _behavior_checkpoint_is_better(
@@ -4522,6 +4590,14 @@ def _behavior_checkpoint_is_better(
     incumbent_rate = float(incumbent.get("pass_rate", 0.0))
     if abs(candidate_rate - incumbent_rate) > 1e-12:
         return candidate_rate > incumbent_rate
+    candidate_generation_correct = int(candidate.get("generation_health_correct", 0))
+    incumbent_generation_correct = int(incumbent.get("generation_health_correct", 0))
+    if candidate_generation_correct != incumbent_generation_correct:
+        return candidate_generation_correct > incumbent_generation_correct
+    candidate_generation_rate = float(candidate.get("generation_health_rate", 0.0))
+    incumbent_generation_rate = float(incumbent.get("generation_health_rate", 0.0))
+    if abs(candidate_generation_rate - incumbent_generation_rate) > 1e-12:
+        return candidate_generation_rate > incumbent_generation_rate
     candidate_loss = float(candidate.get("loss", math.inf))
     if incumbent_loss is None:
         return True
@@ -4547,17 +4623,42 @@ def _layer_gate_behavior_decision(
         if bool(item.get("passed"))
     }
     lost_passed_ids = sorted(previous_passed_ids - candidate_passed_ids)
-    accepted = drop <= float(max_behavior_drop) + 1e-12 and not lost_passed_ids
+    previous_generation_rate = float(previous_behavior.get("generation_health_rate", 0.0))
+    candidate_generation_rate = float(candidate_behavior.get("generation_health_rate", 0.0))
+    generation_drop = previous_generation_rate - candidate_generation_rate
+    previous_generation_prompts = {
+        str(item.get("prompt"))
+        for item in previous_behavior.get("generation_items", [])
+        if bool(item.get("passed"))
+    }
+    candidate_generation_prompts = {
+        str(item.get("prompt"))
+        for item in candidate_behavior.get("generation_items", [])
+        if bool(item.get("passed"))
+    }
+    lost_generation_prompts = sorted(previous_generation_prompts - candidate_generation_prompts)
+    accepted = (
+        drop <= float(max_behavior_drop) + 1e-12
+        and not lost_passed_ids
+        and generation_drop <= float(max_behavior_drop) + 1e-12
+        and not lost_generation_prompts
+    )
     return {
         "metric": "behavior",
         "accepted": bool(accepted),
         "previous_pass_rate": previous_rate,
         "candidate_pass_rate": candidate_rate,
         "behavior_drop": float(drop),
+        "previous_generation_health_rate": previous_generation_rate,
+        "candidate_generation_health_rate": candidate_generation_rate,
+        "generation_health_drop": float(generation_drop),
         "max_behavior_drop": float(max_behavior_drop),
         "previous_passed_ids": sorted(previous_passed_ids),
         "candidate_passed_ids": sorted(candidate_passed_ids),
         "lost_passed_ids": lost_passed_ids,
+        "previous_generation_passed_prompts": sorted(previous_generation_prompts),
+        "candidate_generation_passed_prompts": sorted(candidate_generation_prompts),
+        "lost_generation_passed_prompts": lost_generation_prompts,
         "reason": "accepted" if accepted else "behavior_regression",
     }
 

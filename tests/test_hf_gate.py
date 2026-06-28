@@ -129,10 +129,10 @@ def test_rank_evaluation_reports_prefers_behavior_over_ppl(tmp_path) -> None:
     assert report["candidates"][1]["perplexity_mean"] == pytest.approx(90)
 
 
-def test_behavior_first_candidate_sort_key_uses_ppl_only_after_behavior_ties() -> None:
+def test_behavior_first_candidate_sort_key_uses_shrink_and_ppl_only_after_output_ties() -> None:
     high_behavior_high_ppl = {
         "tag": "high-behavior",
-        "shrink": 0.25,
+        "shrink": 0.10,
         "metrics": {
             "perplexity_mean": 500.0,
             "choice_accuracy": 0.75,
@@ -142,7 +142,7 @@ def test_behavior_first_candidate_sort_key_uses_ppl_only_after_behavior_ties() -
     }
     low_behavior_low_ppl = {
         "tag": "low-behavior",
-        "shrink": 0.25,
+        "shrink": 0.90,
         "metrics": {
             "perplexity_mean": 100.0,
             "choice_accuracy": 0.75,
@@ -150,10 +150,22 @@ def test_behavior_first_candidate_sort_key_uses_ppl_only_after_behavior_ties() -
             "generation_health_rate": 1.0,
         },
     }
+    high_shrink_high_ppl_tie = {
+        "tag": "high-shrink-tie",
+        "shrink": 0.80,
+        "metrics": {
+            "perplexity_mean": 900.0,
+            "choice_accuracy": 0.75,
+            "behavior_pass_rate": 0.50,
+            "generation_health_rate": 1.0,
+        },
+    }
 
     ranked = sorted([low_behavior_low_ppl, high_behavior_high_ppl], key=_behavior_first_candidate_sort_key)
+    tied = sorted([high_behavior_high_ppl, high_shrink_high_ppl_tie], key=_behavior_first_candidate_sort_key)
 
     assert ranked[0]["tag"] == "high-behavior"
+    assert tied[0]["tag"] == "high-shrink-tie"
 
 
 def test_behavior_probe_scores_first_number_exact_answer() -> None:

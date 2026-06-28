@@ -333,9 +333,15 @@ claiming capability transfer.
 length, generation diversity, and prompt-specific generation relevance for the
 built-in generation probes. PPL can be a hard gate or advisory telemetry via
 `--ppl-gate-mode hard|advisory`; automated surgery selection uses behavior,
-choice, and generation health before PPL. A random or broken model can produce
-long diverse text, so length and unique-token ratio alone are not treated as
+choice, and generation health before compression ratio, and uses PPL only after
+those output-facing metrics tie. A random or broken model can produce long
+diverse text, so length and unique-token ratio alone are not treated as
 coherence evidence.
+
+Recovery commands with `--save-best-behavior` snapshot the untouched input as
+step `0`, then rank checkpoints by behavior probes, generation health, and only
+then loss. This prevents a lower-loss recovery step from replacing a checkpoint
+that still generates healthier text.
 
 Native early-fusion sandbox:
 

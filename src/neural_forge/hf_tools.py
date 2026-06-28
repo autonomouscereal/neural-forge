@@ -951,10 +951,10 @@ def _behavior_first_candidate_sort_key(item: dict[str, Any]) -> tuple[float, flo
     if not math.isfinite(ppl):
         ppl = math.inf
     return (
-        -float(item.get("shrink", 0.0)),
         -behavior_score,
         -float(metrics.get("choice_accuracy", 0.0)),
         -float(metrics.get("generation_health_rate", 0.0)),
+        -float(item.get("shrink", 0.0)),
         ppl,
         str(item.get("tag", "")),
     )
