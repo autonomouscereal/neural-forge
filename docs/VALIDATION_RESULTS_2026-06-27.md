@@ -1083,6 +1083,54 @@ Interpretation:
   likely a stronger block target: teacher-forced donor output deltas or module
   output reconstruction on rollout prefixes, not only hidden-state CKA.
 
+### Block Residual-Delta Target
+
+Code changes:
+
+- `hf-xfamily-block-recover` now accepts `--block-target hidden|delta`.
+- `hidden` preserves the previous absolute hidden-state alignment.
+- `delta` aligns the residual update from the child block with the folded donor
+  layer-group update. For folded donor groups this compares
+  `source_hidden[max_group + 1] - source_hidden[min_group]` against the child
+  block update; for averaged groups it averages per-layer donor deltas.
+
+Remote smoke:
+
+- Output:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_block_delta_smoke`
+- Settings: first child layer only, `2` steps, `block_target=delta`,
+  `on_policy_hidden_kd_weight=0.2`, `hidden_metric=cka`.
+- Result: residual-delta CKA improved from `0.4100` to `0.4179`, loss improved
+  from `0.5900` to `0.5821`, and rollout hidden counts were `21` and `23`.
+
+Behavior-gated 4-layer run:
+
+- Output:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_block_delta_l4s8`
+- Settings: first `4` child blocks, `8` steps/layer, `block_target=delta`,
+  same behavior gate and on-policy hidden/logit weights as the hidden-target
+  block run.
+- Layer gate: layer `0` was reverted after losing generation health; layers `1`
+  and `2` preserved behavior/generation health; layer `3` was reverted after
+  dropping generation health from `2/3` to `1/3`.
+
+Eval comparison:
+
+| Checkpoint | PPL mean | Choice | Behavior | Generation health | Manual notes |
+|---|---:|---:|---:|---:|---|
+| RSD behavior-best 60s baseline | 3,825.12 | 3/4 | 3/6 | 2/3 | arithmetic and Python malformed |
+| Block hidden target L4/S8 | 3,822.45 | 3/4 | 3/6 | 2/3 | preserves baseline; arithmetic/Python still malformed |
+| Block delta target L4/S8 | 3,817.17 | 3/4 | 3/6 | 2/3 | slightly better PPL; arithmetic/Python still malformed |
+
+Interpretation:
+
+- Residual-delta targeting is a better structural objective than absolute hidden
+  alignment for local metrics and PPL in this small run.
+- It still does not repair the real failure modes. The child continues numeric
+  runs on arithmetic prompts and malformed Python on code prompts. The next
+  target should explicitly reconstruct next-token behavior on rollout prefixes
+  or fit module outputs with a behavior-aware acceptance gate.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best

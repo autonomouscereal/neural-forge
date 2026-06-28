@@ -901,6 +901,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="projected",
         help="Block activation objective used for span-aligned donor/target hidden rows.",
     )
+    xfamily_block_recover.add_argument(
+        "--block-target",
+        choices=["hidden", "delta"],
+        default="hidden",
+        help="Train block recovery on absolute hidden states or residual update deltas.",
+    )
     xfamily_block_recover.add_argument("--max-anchors", type=int, default=2048)
     xfamily_block_recover.add_argument("--span-max-pairs", type=int, default=512)
     xfamily_block_recover.add_argument(
@@ -1801,6 +1807,7 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         lm_weight=args.lm_weight,
         hidden_ridge=args.hidden_ridge,
         hidden_metric=args.hidden_metric,
+        block_target=args.block_target,
         max_anchors=args.max_anchors,
         span_max_pairs=args.span_max_pairs,
         donor_layer_fold_mode=args.donor_layer_fold_mode,

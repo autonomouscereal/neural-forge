@@ -159,6 +159,9 @@ on matched decoded-token spans when possible. It is meant for cases where static
 calibration PPL improves while greedy behavior remains unstable. The same flag
 is available on `hf-xfamily-block-recover`, where it applies the rollout hidden
 alignment to the currently trainable child block.
+For block recovery, `--block-target delta` trains the residual update produced
+by the child block against the folded donor-layer update instead of matching
+absolute hidden states.
 
 Task arithmetic defaults to `--dtype auto` and saves the base tokenizer after
 verifying that the tuned tokenizer has the same vocabulary. Special-token map

@@ -1995,6 +1995,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     lm_weight: float = 0.0,
     hidden_ridge: float = 1e-3,
     hidden_metric: str = "projected",
+    block_target: str = "hidden",
     max_anchors: int = 2048,
     span_max_pairs: int = 512,
     donor_layer_fold_mode: str = "fold",
@@ -2049,6 +2050,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("hidden_ridge must be non-negative.")
     if hidden_metric not in HIDDEN_KD_METRICS:
         raise ValueError("hidden_metric must be projected, cka, both, rsd, or projected-rsd.")
+    if block_target not in {"hidden", "delta"}:
+        raise ValueError("block_target must be hidden or delta.")
     if max_anchors <= 0:
         raise ValueError("max_anchors must be positive.")
     if span_max_pairs <= 0:
@@ -2270,6 +2273,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             _canonical_token,
             donor_layer_fold_mode,
             hidden_metric,
+            block_target,
             span_max_pairs,
         )
         losses = []
@@ -2305,6 +2309,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 _canonical_token,
                 donor_layer_fold_mode,
                 hidden_metric,
+                block_target,
                 span_max_pairs,
             )
             if (
@@ -2374,6 +2379,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     _canonical_token,
                     donor_layer_fold_mode,
                     hidden_metric,
+                    block_target,
                     span_max_pairs,
                 )
                 loss = loss + float(on_policy_hidden_kd_weight) * on_policy_hidden_loss
@@ -2467,6 +2473,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             _canonical_token,
             donor_layer_fold_mode,
             hidden_metric,
+            block_target,
             span_max_pairs,
         )
         report: dict[str, Any] = {
@@ -2570,6 +2577,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "lm_weight": float(lm_weight),
         "hidden_ridge": float(hidden_ridge),
         "hidden_metric": hidden_metric,
+        "block_target": block_target,
         "max_anchors": int(max_anchors),
         "span_max_pairs": int(span_max_pairs),
         "donor_layer_fold_mode": donor_layer_fold_mode,
@@ -4972,6 +4980,28 @@ def _source_group_hidden_state(torch, hidden_states, source_layer_group: Sequenc
     return _hidden_state_after_decoder_layer(hidden_states, source_idx)
 
 
+def _source_group_delta_state(torch, hidden_states, source_layer_group: Sequence[int], donor_layer_fold_mode: str):
+    if not source_layer_group:
+        raise ValueError("Need at least one source layer for blockwise reconstruction.")
+    group = [int(item) for item in source_layer_group]
+    if donor_layer_fold_mode == "average" and len(group) > 1:
+        deltas = [
+            (
+                _hidden_state_after_decoder_layer(hidden_states, idx)
+                - hidden_states[int(idx)]
+            ).to(torch.float32)
+            for idx in group
+        ]
+        return torch.stack(deltas, dim=0).mean(dim=0)
+    source_idx = group[0] if donor_layer_fold_mode == "representative" else max(group)
+    start_idx = source_idx if donor_layer_fold_mode == "representative" else min(group)
+    return _hidden_state_after_decoder_layer(hidden_states, source_idx) - hidden_states[int(start_idx)]
+
+
+def _candidate_layer_delta_state(hidden_states, candidate_layer_idx: int):
+    return _hidden_state_after_decoder_layer(hidden_states, candidate_layer_idx) - hidden_states[int(candidate_layer_idx)]
+
+
 def _span_aligned_hidden_rows(torch, candidate_hidden, source_hidden, span_pairs):
     if int(span_pairs.numel()) <= 0:
         empty_candidate = torch.empty((0, int(candidate_hidden.shape[-1])), dtype=torch.float32, device=candidate_hidden.device)
@@ -5016,8 +5046,11 @@ def _cross_tokenizer_block_hidden_loss(
     canonical_fn,
     donor_layer_fold_mode: str,
     hidden_metric: str,
+    block_target: str,
     span_max_pairs: int,
 ):
+    if block_target not in {"hidden", "delta"}:
+        raise ValueError("block_target must be hidden or delta.")
     pairs = _cross_tokenizer_span_pairs(
         torch,
         source_tokenizer,
@@ -5031,8 +5064,12 @@ def _cross_tokenizer_block_hidden_loss(
     if int(pairs.numel()) <= 0:
         device = student.logits.device
         return torch.zeros((), dtype=student.logits.dtype, device=device), 0
-    candidate_hidden = _hidden_state_after_decoder_layer(student.hidden_states, candidate_layer_idx)
-    source_hidden = _source_group_hidden_state(torch, teacher.hidden_states, source_layer_group, donor_layer_fold_mode)
+    if block_target == "delta":
+        candidate_hidden = _candidate_layer_delta_state(student.hidden_states, candidate_layer_idx)
+        source_hidden = _source_group_delta_state(torch, teacher.hidden_states, source_layer_group, donor_layer_fold_mode)
+    else:
+        candidate_hidden = _hidden_state_after_decoder_layer(student.hidden_states, candidate_layer_idx)
+        source_hidden = _source_group_hidden_state(torch, teacher.hidden_states, source_layer_group, donor_layer_fold_mode)
     student_rows, teacher_rows, row_count = _span_aligned_hidden_rows(torch, candidate_hidden, source_hidden, pairs)
     if int(row_count) <= 0:
         return torch.zeros((), dtype=student.logits.dtype, device=student.logits.device), 0
@@ -5063,6 +5100,7 @@ def _cross_tokenizer_block_on_policy_hidden_loss(
     canonical_fn,
     donor_layer_fold_mode: str,
     hidden_metric: str,
+    block_target: str,
     span_max_pairs: int,
 ):
     if max_new_tokens <= 0:
@@ -5154,6 +5192,7 @@ def _cross_tokenizer_block_on_policy_hidden_loss(
         canonical_fn,
         donor_layer_fold_mode,
         hidden_metric,
+        block_target,
         span_max_pairs,
     )
 
@@ -5195,8 +5234,11 @@ def _cross_tokenizer_block_alignment_metrics(
     canonical_fn,
     donor_layer_fold_mode: str,
     hidden_metric: str,
+    block_target: str,
     span_max_pairs: int,
 ) -> dict[str, Any]:
+    if block_target not in {"hidden", "delta"}:
+        raise ValueError("block_target must be hidden or delta.")
     source_rows = []
     candidate_rows = []
     token_count = 0
@@ -5227,8 +5269,22 @@ def _cross_tokenizer_block_alignment_metrics(
                 max_pairs=int(span_max_pairs) - token_count,
                 shift_positions=False,
             )
-            candidate_hidden = _hidden_state_after_decoder_layer(student.hidden_states, candidate_layer_idx)
-            source_hidden = _source_group_hidden_state(torch, teacher.hidden_states, source_layer_group, donor_layer_fold_mode)
+            if block_target == "delta":
+                candidate_hidden = _candidate_layer_delta_state(student.hidden_states, candidate_layer_idx)
+                source_hidden = _source_group_delta_state(
+                    torch,
+                    teacher.hidden_states,
+                    source_layer_group,
+                    donor_layer_fold_mode,
+                )
+            else:
+                candidate_hidden = _hidden_state_after_decoder_layer(student.hidden_states, candidate_layer_idx)
+                source_hidden = _source_group_hidden_state(
+                    torch,
+                    teacher.hidden_states,
+                    source_layer_group,
+                    donor_layer_fold_mode,
+                )
             batch_candidate, batch_source, rows = _span_aligned_hidden_rows(torch, candidate_hidden, source_hidden, pairs)
             if int(rows) <= 0:
                 continue
@@ -5255,6 +5311,7 @@ def _cross_tokenizer_block_alignment_metrics(
     ).detach().cpu()
     metrics = {
         "skipped": False,
+        "block_target": block_target,
         "span_pairs": int(rows),
         "candidate_hidden_size": int(candidate_matrix.shape[1]),
         "source_hidden_size": int(source_matrix.shape[1]),

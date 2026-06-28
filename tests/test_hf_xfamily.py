@@ -47,6 +47,7 @@ from neural_forge.hf_recovery import _set_train_scope
 from neural_forge.hf_recovery import _same_tokenizer_reference_loss
 from neural_forge.hf_recovery import _same_tokenizer_hidden_loss
 from neural_forge.hf_recovery import _same_tokenizer_top_k_kl
+from neural_forge.hf_recovery import _source_group_delta_state
 from neural_forge.hf_recovery import _validation_reconstruction_gate
 from neural_forge.hf_recovery import load_calibration_texts
 from neural_forge.hf_tools import TEXT_EVALS
@@ -1326,6 +1327,24 @@ def test_hidden_representation_loss_projected_rsd_requires_projection() -> None:
     loss = _hidden_representation_loss(torch, student, teacher, projection, hidden_kd_metric="projected-rsd")
 
     assert torch.isfinite(loss)
+
+
+def test_source_group_delta_state_matches_fold_and_average_modes() -> None:
+    torch = pytest.importorskip("torch")
+    hidden_states = [
+        torch.full((1, 2, 1), 0.0),
+        torch.full((1, 2, 1), 1.0),
+        torch.full((1, 2, 1), 3.0),
+        torch.full((1, 2, 1), 6.0),
+    ]
+
+    folded = _source_group_delta_state(torch, hidden_states, [1, 2], "fold")
+    averaged = _source_group_delta_state(torch, hidden_states, [1, 2], "average")
+    representative = _source_group_delta_state(torch, hidden_states, [1, 2], "representative")
+
+    assert folded.squeeze().tolist() == [5.0, 5.0]
+    assert averaged.squeeze().tolist() == [2.5, 2.5]
+    assert representative.squeeze().tolist() == [2.0, 2.0]
 
 
 def test_resize_tensor_to_shape_mean_folds_axes() -> None:
@@ -4210,6 +4229,8 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "0.02",
             "--hidden-metric",
             "both",
+            "--block-target",
+            "delta",
             "--max-anchors",
             "222",
             "--span-max-pairs",
@@ -4286,6 +4307,7 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "lm_weight": 0.15,
         "hidden_ridge": 0.02,
         "hidden_metric": "both",
+        "block_target": "delta",
         "max_anchors": 222,
         "span_max_pairs": 77,
         "donor_layer_fold_mode": "average",
