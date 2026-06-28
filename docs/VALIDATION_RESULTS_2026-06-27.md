@@ -1122,6 +1122,17 @@ Eval comparison:
 | Block hidden target L4/S8 | 3,822.45 | 3/4 | 3/6 | 2/3 | preserves baseline; arithmetic/Python still malformed |
 | Block delta target L4/S8 | 3,817.17 | 3/4 | 3/6 | 2/3 | slightly better PPL; arithmetic/Python still malformed |
 
+Rejected schedule:
+
+- Output:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_block_delta_stepwise_l4s8`
+- Change: added `stepwise_donor_kd_weight=0.05` and
+  `stepwise_donor_max_new_tokens=6` to the delta-target 4-layer run.
+- Result: PPL `3,830.28`, choice `3/4`, behavior `3/6`, generation health
+  `2/3`.
+- Manual output did not improve. Arithmetic drifted to different wrong numeric
+  runs beginning with `300000...` and `390000...`; Python remained malformed.
+
 Interpretation:
 
 - Residual-delta targeting is a better structural objective than absolute hidden
