@@ -410,6 +410,46 @@ rollout unlikelihood tuning. The missing piece is true sequential blockwise
 nonlinear reconstruction: train one folded target block at a time against
 projected donor block outputs and gate on held-out generation/benchmark signals.
 
+### Blockwise Nonlinear Recovery and OMP Token Init Follow-Up
+
+New implementation:
+
+- `hf-xfamily-block-recover`, which freezes the child, unfreezes one decoder
+  block at a time, and trains that block against projected donor block hidden
+  states on cross-tokenizer span-aligned positions.
+- Optional `--lm-weight` inside blockwise recovery, which adds a child-token LM
+  stabilizer during each per-block update.
+- Optional per-layer PPL gating and revert for blockwise recovery.
+- `hf-donor-project-init --token-init-mode donor-omp`, an experimental sparse
+  decoded-token OMP initializer that reconstructs target-token rows from small
+  donor surface-feature candidate sets.
+
+Validation again used the strict `134,515,008` parameter tied SmolLM-shaped
+child against the `4,022,468,096` parameter Qwen3-4B donor (`29.90x`).
+
+| Checkpoint | Start | PPL mean | Choice | Behavior | Manual notes |
+|---|---|---:|---:|---:|---|
+| Blockwise 2 layers, no LM stabilizer | tied 29.9x baseline | 4,817.50 | 2/4 | 1/6 | local hidden loss improved, but global text regressed into numeric/code noise |
+| Blockwise 2 layers, LM 0.05 | tied 29.9x baseline | 4,546.22 | 3/4 | 2/6 | more topical; code/math still corrupted |
+| Blockwise 2 layers, LM 0.15 | tied 29.9x baseline | 4,372.72 | 3/4 | 1/6 | code tokens appear but syntax and numbers remain broken |
+| OMP token init, raw tied 29.9x | blank SmolLM | 75,020.37 | 1/4 | 0/6 | initializes 48,951 rows but produces severe token garbage |
+| Blockwise all layers, LM 0.05, strict PPL gate 1.02 | tied 29.9x baseline | 3,973.17 | 2/4 | 3/6 | 27/30 block updates accepted, 3 reverted; topical but worse than baseline choice/PPL |
+
+Manual inspection of the best blockwise all-layer run:
+
+- `python_add_function` output contains `pythondef add_numbers(a, b): return a + b`,
+  but it appends numeric garbage and is not clean executable code.
+- Merge-risk and pruning prompts are topical but repetitive and often miss the
+  exact requested concept.
+- Arithmetic remains failed and still devolves into numeric loops.
+
+Conclusion update: sequential blockwise recovery is useful instrumentation and
+does reduce projected donor/child hidden losses layer by layer, but it does not
+yet improve the strict tied baseline behavior. The OMP surface-feature token
+initializer is harmful as implemented and should remain experimental. The next
+method needs stronger activation transport/basis initialization before
+blockwise training, not broader use of this OMP variant.
+
 ## Current Conclusion
 
 The 29.9x SmolLM blank-target fold is no longer just fitting tensor shapes. It
