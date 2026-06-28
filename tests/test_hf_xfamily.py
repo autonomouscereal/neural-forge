@@ -32,6 +32,7 @@ from neural_forge.hf_recovery import _focus_spans_to_span_pairs
 from neural_forge.hf_recovery import _focus_char_spans
 from neural_forge.hf_recovery import _fold_groups_from_report
 from neural_forge.hf_recovery import _feature_decorrelation_loss
+from neural_forge.hf_recovery import _first_byte_probs_from_logits
 from neural_forge.hf_recovery import _last_response_shift_mask
 from neural_forge.hf_recovery import _hidden_representation_loss
 from neural_forge.hf_recovery import _infer_response_char_start
@@ -54,6 +55,7 @@ from neural_forge.hf_recovery import _same_tokenizer_hidden_loss
 from neural_forge.hf_recovery import _same_tokenizer_top_k_kl
 from neural_forge.hf_recovery import _source_group_delta_state
 from neural_forge.hf_recovery import _source_group_module_output_state
+from neural_forge.hf_recovery import _tokenizer_first_byte_buckets
 from neural_forge.hf_recovery import _validation_reconstruction_gate
 from neural_forge.hf_recovery import load_calibration_texts
 from neural_forge.hf_tools import TEXT_EVALS
@@ -3218,6 +3220,38 @@ def test_project_source_logits_to_candidate_vocab_averages_source_token_groups()
     assert projected[0, 2].item() == pytest.approx(-10000.0)
 
 
+def test_first_byte_projection_keeps_control_bytes_and_other_bucket() -> None:
+    torch = pytest.importorskip("torch")
+
+    class FakeTokenizer:
+        all_special_ids = [0]
+
+        def __len__(self):
+            return 5
+
+        def decode(self, ids, clean_up_tokenization_spaces=False):
+            table = {
+                0: "<special>",
+                1: "A",
+                2: "\n",
+                3: "é",
+                4: "",
+            }
+            return table[int(ids[0])]
+
+    buckets = _tokenizer_first_byte_buckets(torch, FakeTokenizer(), device="cpu")
+
+    assert buckets.tolist() == [256, ord("A"), ord("\n"), "é".encode("utf-8")[0], 256]
+
+    logits = torch.tensor([[0.0, 8.0, 0.0, 0.0, 0.0], [0.0, 0.0, 8.0, 0.0, 0.0]])
+    projected = _first_byte_probs_from_logits(torch, logits, buckets, temperature=0.5)
+
+    assert projected.shape == (2, 257)
+    assert int(projected[0].argmax().item()) == ord("A")
+    assert int(projected[1].argmax().item()) == ord("\n")
+    assert projected.sum(dim=-1).tolist() == pytest.approx([1.0, 1.0])
+
+
 def test_entropy_aware_kl_weight_zero_matches_forward_kl() -> None:
     torch = pytest.importorskip("torch")
     student = torch.tensor([[0.2, 1.4, -0.7], [2.0, 0.1, -1.2]])
@@ -4566,6 +4600,13 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "5",
             "--stepwise-donor-interval",
             "3",
+            "--projected-vocab-kd-weight",
+            "0.19",
+            "--projected-vocab-kd-mode",
+            "both",
+            "--byte-kd-weight",
+            "0.11",
+            "--train-output-head-with-kd",
             "--module-output-kd-weight",
             "0.44",
             "--module-output-targets",
@@ -4596,6 +4637,9 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "--report-interval",
             "2",
             "--save-best-layer-loss",
+            "--save-best-layer-behavior",
+            "--layer-behavior-eval-interval",
+            "2",
         ]
     )
     result = args.func(args)
@@ -4633,6 +4677,10 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "stepwise_donor_kd_weight": 0.22,
         "stepwise_donor_max_new_tokens": 5,
         "stepwise_donor_interval": 3,
+        "projected_vocab_kd_weight": 0.19,
+        "projected_vocab_kd_mode": "both",
+        "byte_kd_weight": 0.11,
+        "train_output_head_with_kd": True,
         "module_output_kd_weight": 0.44,
         "module_output_targets": "mlp",
         "module_output_transport": "both",
@@ -4648,6 +4696,8 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "grad_clip": 0.7,
         "report_interval": 2,
         "save_best_layer_loss": True,
+        "save_best_layer_behavior": True,
+        "layer_behavior_eval_interval": 2,
     }
 
 

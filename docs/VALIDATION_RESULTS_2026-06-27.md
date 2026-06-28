@@ -1319,6 +1319,81 @@ Interpretation:
   and probably have to be coupled to block/interface reconstruction rather than
   applied as a standalone head operation.
 
+### Block-Coupled Output KD, Byte KD, and Behavior-Best Layer Selection
+
+Code changes:
+
+- `hf-xfamily-block-recover` now accepts `--projected-vocab-kd-weight` and
+  `--projected-vocab-kd-mode`, applying static span-aligned donor next-token KD
+  during each block update.
+- `--train-output-head-with-kd` optionally trains the output head together with
+  each active block when output-space donor KD is enabled. The behavior/PPL
+  layer gate snapshots and restores the head with the block, so rejected layers
+  do not leave head residue.
+- `--byte-kd-weight` adds a tokenizer-neutral first-byte/other-bucket KD loss
+  over aligned next-token positions. This keeps digits, punctuation, spaces,
+  and newlines visible even when token vocabularies do not match.
+- `--save-best-layer-behavior` and `--layer-behavior-eval-interval` select the
+  saved state inside each block by held-out behavior/generation health rather
+  than local reconstruction loss.
+
+Remote validation on the same strict 29.90x blank-target path:
+
+| Checkpoint | PPL mean | Choice | Behavior | Generation health | Verdict |
+|---|---:|---:|---:|---:|---|
+| RSD behavior-best 60s baseline | 3,825.12 | 3/4 | 3/6 | 2/3 | baseline |
+| Block projected-vocab KD L4/S8 | 3,800.61 | 3/4 | 3/6 | effectively 2/3 | PPL improved, behavior unchanged; code/math still broken |
+| Block + head projected-vocab KD L2/S6 | 3,821.39 | 3/4 | 3/6 | 2/3 | safe but no new capability |
+| Block + head byte KD 0.05 L2/S6 | 3,822.58 | 3/4 | 3/6 | 2/3 after rollback | layer 0 rejected; byte KD too aggressive |
+| Block + head byte KD 0.005 L2/S8 | 3,822.89 | 3/4 | 3/6 | 2/3 | safe but no math/code improvement |
+| Block + head byte KD 0.005, behavior-best L2/S8 | 3,822.54 | 3/4 | 3/6 | 2/3 | behavior-best selected safer steps, still no new pass |
+
+Artifacts:
+
+- Projected-vocab block run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_block_projvocab_l4s8_20260628_134228`
+- Head + projected-vocab run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_block_head_projvocab_l2s6_20260628_135138`
+- Byte KD high-weight run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_block_byte_head_l2s6_20260628_140029`
+- Byte KD low-weight run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_block_byte_head_low_l2s8_20260628_140512`
+- Byte KD behavior-best run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_block_byte_behaviorbest_l2s8_20260628_141222`
+- Final eval:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/eval_qwen4b_tied29_block_byte_behaviorbest_l2s8_20260628_141222_strictcode.json`
+
+Manual inspection:
+
+- Projected-vocab KD and byte KD were mechanically active. Logged aligned
+  output pairs were typically `14-16` per step, with byte losses around
+  `1.4-2.5`.
+- Training the output head with the block was behavior-safe at low LR, but the
+  head is tied to input embeddings in this target, so it also mutates token
+  embeddings. The behavior gate prevented destructive updates but did not
+  create a new arithmetic/code pass.
+- The final behavior-best byte run selected layer behavior steps `[2, 1]`.
+  This proves the new selector can avoid later lower-loss steps that degrade
+  generation health; layer 0 later dropped from generation health `2/3` to
+  `0/3`, and behavior-best avoided that state.
+- Manual outputs still fail the core target behaviors. Arithmetic remains digit
+  runs (`230000...`, `490003...`), and Python remains malformed
+  (`def add(a, b): 20 + b ++ ...`). The risk-generation prompt improved in
+  readability in some runs but stayed repetitive and did not indicate donor-like
+  capability recovery.
+
+Interpretation:
+
+- Output-interface KD is now coupled to block recovery and guarded by behavior
+  gates, but it is not sufficient to solve 29.90x blank-target compression.
+- The per-layer behavior-best selector is a real tooling improvement: it
+  prevents loss/PPL from winning over generation health. However, no hidden
+  behavior-improving step existed for math/code in this schedule.
+- The next implementation path should move beyond output-head/interface nudges:
+  OPRD-style on-policy representation distillation, byte-level auxiliary
+  decoder heads trained from hidden states, and GRAIL/DOT-style sequential
+  activation compensation before block recovery.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best

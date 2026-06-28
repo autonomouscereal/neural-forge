@@ -970,6 +970,28 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_block_recover.add_argument("--stepwise-donor-max-new-tokens", type=int, default=8)
     xfamily_block_recover.add_argument("--stepwise-donor-interval", type=int, default=4)
     xfamily_block_recover.add_argument(
+        "--projected-vocab-kd-weight",
+        type=float,
+        default=0.0,
+        help="Static span-aligned donor next-token KD projected into the child vocab during each block step.",
+    )
+    xfamily_block_recover.add_argument(
+        "--projected-vocab-kd-mode",
+        choices=["teacher-to-student", "student-to-teacher", "both"],
+        default="teacher-to-student",
+    )
+    xfamily_block_recover.add_argument(
+        "--byte-kd-weight",
+        type=float,
+        default=0.0,
+        help="Project donor and child next-token logits to first-byte buckets for tokenizer-neutral KD.",
+    )
+    xfamily_block_recover.add_argument(
+        "--train-output-head-with-kd",
+        action="store_true",
+        help="Train the output head together with each block when output-space donor KD is enabled.",
+    )
+    xfamily_block_recover.add_argument(
         "--module-output-kd-weight",
         type=float,
         default=0.0,
@@ -1000,6 +1022,12 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_block_recover.add_argument("--grad-clip", type=float, default=1.0)
     xfamily_block_recover.add_argument("--report-interval", type=int)
     xfamily_block_recover.add_argument("--save-best-layer-loss", action="store_true")
+    xfamily_block_recover.add_argument(
+        "--save-best-layer-behavior",
+        action="store_true",
+        help="Within each trained block, keep the checkpoint selected by held-out behavior probes.",
+    )
+    xfamily_block_recover.add_argument("--layer-behavior-eval-interval", type=int)
     xfamily_block_recover.set_defaults(func=cmd_hf_xfamily_block_recover)
 
     lm_recover = sub.add_parser("hf-lm-recover", help="Run teacherless LM recovery on a folded HF causal LM.")
@@ -1857,6 +1885,10 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         stepwise_donor_kd_weight=args.stepwise_donor_kd_weight,
         stepwise_donor_max_new_tokens=args.stepwise_donor_max_new_tokens,
         stepwise_donor_interval=args.stepwise_donor_interval,
+        projected_vocab_kd_weight=args.projected_vocab_kd_weight,
+        projected_vocab_kd_mode=args.projected_vocab_kd_mode,
+        byte_kd_weight=args.byte_kd_weight,
+        train_output_head_with_kd=args.train_output_head_with_kd,
         module_output_kd_weight=args.module_output_kd_weight,
         module_output_targets=args.module_output_targets,
         module_output_transport=args.module_output_transport,
@@ -1872,6 +1904,8 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         grad_clip=args.grad_clip,
         report_interval=args.report_interval,
         save_best_layer_loss=args.save_best_layer_loss,
+        save_best_layer_behavior=args.save_best_layer_behavior,
+        layer_behavior_eval_interval=args.layer_behavior_eval_interval,
     )
 
 

@@ -184,6 +184,17 @@ Use `--module-output-targets attention|mlp|both` and
 `--module-output-transport paired|sinkhorn|both` to choose which submodule
 residuals are matched and whether row matching is strict span-paired, soft
 transported, or mixed.
+`--projected-vocab-kd-weight` adds static span-aligned donor next-token KD
+projected into the child vocabulary during block recovery. `--byte-kd-weight`
+adds a tokenizer-neutral first-byte/other-bucket KD signal for the same aligned
+prediction positions, which keeps digits, punctuation, spaces, and newlines in
+the loss even when tokenizers disagree. `--train-output-head-with-kd` optionally
+trains the output head with each block under the same layer behavior gate; this
+is default-off because tied input/output heads also mutate token embeddings.
+`--save-best-layer-behavior` evaluates held-out behavior during each block and
+keeps the best behavior checkpoint instead of the lowest local reconstruction
+loss. This is slower, but it prevents PPL/local-loss selection from silently
+discarding better intermediate generations.
 
 `hf-xfamily-calibrate-head --head-calibration-mode mean-shift` is a safer
 alternative to full head refitting: it shifts output rows along the observed

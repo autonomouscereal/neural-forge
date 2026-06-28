@@ -2056,6 +2056,10 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     stepwise_donor_kd_weight: float = 0.0,
     stepwise_donor_max_new_tokens: int = 8,
     stepwise_donor_interval: int = 4,
+    projected_vocab_kd_weight: float = 0.0,
+    projected_vocab_kd_mode: str = "teacher-to-student",
+    byte_kd_weight: float = 0.0,
+    train_output_head_with_kd: bool = False,
     module_output_kd_weight: float = 0.0,
     module_output_targets: str = "both",
     module_output_transport: str = "paired",
@@ -2071,6 +2075,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     grad_clip: float = 1.0,
     report_interval: int | None = None,
     save_best_layer_loss: bool = False,
+    save_best_layer_behavior: bool = False,
+    layer_behavior_eval_interval: int | None = None,
 ) -> dict[str, Any]:
     """Sequentially train each child block to match projected donor block outputs.
 
@@ -2121,6 +2127,19 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("on-policy weights must be non-negative.")
     if stepwise_donor_kd_weight < 0:
         raise ValueError("stepwise_donor_kd_weight must be non-negative.")
+    if projected_vocab_kd_weight < 0:
+        raise ValueError("projected_vocab_kd_weight must be non-negative.")
+    if projected_vocab_kd_mode not in {"teacher-to-student", "student-to-teacher", "both"}:
+        raise ValueError("projected_vocab_kd_mode must be teacher-to-student, student-to-teacher, or both.")
+    if byte_kd_weight < 0:
+        raise ValueError("byte_kd_weight must be non-negative.")
+    if (
+        train_output_head_with_kd
+        and projected_vocab_kd_weight == 0
+        and stepwise_donor_kd_weight == 0
+        and byte_kd_weight == 0
+    ):
+        raise ValueError("train_output_head_with_kd requires projected, byte, or stepwise donor KD.")
     if module_output_kd_weight < 0:
         raise ValueError("module_output_kd_weight must be non-negative.")
     if module_output_targets not in MODULE_OUTPUT_TARGETS:
@@ -2151,6 +2170,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("grad_clip must be non-negative.")
     if report_interval is not None and report_interval <= 0:
         raise ValueError("report_interval must be positive when provided.")
+    if layer_behavior_eval_interval is not None and layer_behavior_eval_interval <= 0:
+        raise ValueError("layer_behavior_eval_interval must be positive when provided.")
 
     from neural_forge.hf_xfamily import _canonical_token
     from neural_forge.hf_xfamily import _canonical_token_map
@@ -2193,6 +2214,15 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     candidate_layers = _recovery_decoder_layers(candidate)
     if not source_layers or not candidate_layers:
         raise ValueError("Both source and candidate need decoder layers.")
+    output_head = candidate.get_output_embeddings() if train_output_head_with_kd else None
+    if train_output_head_with_kd and output_head is None:
+        raise ValueError("train_output_head_with_kd requires an output embedding/lm_head module.")
+    input_embeddings = candidate.get_input_embeddings() if train_output_head_with_kd else None
+    output_head_tied_to_input = bool(
+        output_head is not None
+        and input_embeddings is not None
+        and getattr(output_head, "weight", None) is getattr(input_embeddings, "weight", None)
+    )
 
     anchors = _shared_recovery_anchors(
         source_tokenizer,
@@ -2219,7 +2249,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     projected_vocab_groups = None
     projected_vocab_mask = None
     projected_vocab_valid = None
-    if stepwise_donor_kd_weight > 0:
+    if stepwise_donor_kd_weight > 0 or projected_vocab_kd_weight > 0:
         projected_vocab_groups, projected_vocab_mask, projected_vocab_valid = _candidate_to_source_token_groups(
             torch,
             source_tokenizer,
@@ -2227,6 +2257,11 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             max_source_tokens=projected_vocab_max_source_tokens,
             device=device,
         )
+    source_byte_buckets = None
+    candidate_byte_buckets = None
+    if byte_kd_weight > 0:
+        source_byte_buckets = _tokenizer_first_byte_buckets(torch, source_tokenizer, device=device)
+        candidate_byte_buckets = _tokenizer_first_byte_buckets(torch, candidate_tokenizer, device=device)
 
     texts = list(calibration_texts or RECOVERY_TEXTS)
     if not texts:
@@ -2268,6 +2303,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
 
     layer_count = len(candidate_layers) if layer_limit is None else min(int(layer_limit), len(candidate_layers))
     interval = int(report_interval or max(1, steps_per_layer // 4)) if steps_per_layer > 0 else 1
+    behavior_interval = int(layer_behavior_eval_interval or interval)
     layer_reports = []
     gate_texts = list(TEXT_EVALS[: int(layer_gate_max_texts)])
     layer_gate: dict[str, Any] = {
@@ -2308,11 +2344,15 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             else source_group
         )
         candidate_layer = candidate_layers[candidate_idx]
-        trainable_params = _set_only_module_trainable(candidate, candidate_layer)
-        optimizer = torch.optim.AdamW([param for param in candidate_layer.parameters() if param.requires_grad], lr=lr)
+        trainable_modules = [candidate_layer]
+        if train_output_head_with_kd and output_head is not None:
+            trainable_modules.append(output_head)
+        trainable_params = _set_only_modules_trainable(candidate, trainable_modules)
+        optimizer_params = _unique_trainable_parameters(trainable_modules)
+        optimizer = torch.optim.AdamW(optimizer_params, lr=lr)
         layer_state = (
-            _snapshot_module_state(candidate_layer)
-            if layer_gate_metric in {"ppl", "behavior"} or save_best_layer_loss
+            _snapshot_named_module_states({"block": candidate_layer, "output_head": output_head})
+            if layer_gate_metric in {"ppl", "behavior"} or save_best_layer_loss or save_best_layer_behavior
             else None
         )
         before_metrics = _cross_tokenizer_block_alignment_metrics(
@@ -2336,6 +2376,30 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         best_loss = None
         best_step = None
         best_state = None
+        best_behavior_summary = None
+        best_behavior_step = None
+        best_behavior_loss = None
+        best_behavior_state = None
+        behavior_history: list[dict[str, Any]] = []
+        if save_best_layer_behavior:
+            with torch.no_grad():
+                candidate.eval()
+                behavior_summary = _heldout_behavior_summary(
+                    torch,
+                    candidate,
+                    candidate_tokenizer,
+                    device,
+                    int(layer_gate_behavior_max_new_tokens),
+                    int(layer_gate_max_texts),
+                )
+                candidate.train()
+            behavior_entry = _behavior_history_entry(0, None, behavior_summary)
+            behavior_history.append(behavior_entry)
+            _print_behavior_checkpoint(f"xfamily_block_behavior layer={candidate_idx}", behavior_entry)
+            best_behavior_summary = dict(behavior_entry)
+            best_behavior_step = 0
+            best_behavior_loss = math.inf
+            best_behavior_state = _snapshot_named_module_states({"block": candidate_layer, "output_head": output_head})
         for step in range(1, steps_per_layer + 1):
             source_batch, candidate_batch = paired_batches[(step - 1) % len(paired_batches)]
             optimizer.zero_grad(set_to_none=True)
@@ -2368,6 +2432,66 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 span_max_pairs,
             )
             block_loss_value = float(loss.detach().cpu())
+            output_span_pairs = None
+            output_span_pair_count = 0
+            if projected_vocab_kd_weight > 0 or byte_kd_weight > 0:
+                output_span_pairs = _cross_tokenizer_span_pairs(
+                    torch,
+                    source_tokenizer,
+                    candidate_tokenizer,
+                    source_batch,
+                    candidate_batch,
+                    _canonical_token,
+                    max_pairs=span_max_pairs,
+                    shift_positions=True,
+                )
+                output_span_pair_count = int(output_span_pairs.shape[0])
+            projected_vocab_loss = None
+            projected_vocab_pair_count = int(output_span_pair_count) if projected_vocab_kd_weight > 0 else 0
+            if projected_vocab_kd_weight > 0:
+                if projected_vocab_groups is None or projected_vocab_mask is None or projected_vocab_valid is None:
+                    raise ValueError("projected vocab maps are required when projected_vocab_kd_weight is positive.")
+                if projected_vocab_pair_count > 0:
+                    shift_student = torch.nan_to_num(
+                        student.logits[:, :-1, :].contiguous().to(torch.float32),
+                        nan=0.0,
+                        posinf=1e4,
+                        neginf=-1e4,
+                    )
+                    projected_vocab_loss = _cross_tokenizer_projected_vocab_loss(
+                        torch,
+                        shift_student,
+                        teacher,
+                        output_span_pairs,
+                        projected_vocab_groups,
+                        projected_vocab_mask,
+                        projected_vocab_valid,
+                        float(temperature),
+                        projected_vocab_kd_mode,
+                    )
+                    loss = loss + float(projected_vocab_kd_weight) * projected_vocab_loss
+            byte_kd_loss = None
+            byte_kd_pair_count = int(output_span_pair_count) if byte_kd_weight > 0 else 0
+            if byte_kd_weight > 0:
+                if source_byte_buckets is None or candidate_byte_buckets is None:
+                    raise ValueError("byte buckets are required when byte_kd_weight is positive.")
+                if byte_kd_pair_count > 0:
+                    shift_student = torch.nan_to_num(
+                        student.logits[:, :-1, :].contiguous().to(torch.float32),
+                        nan=0.0,
+                        posinf=1e4,
+                        neginf=-1e4,
+                    )
+                    byte_kd_loss = _cross_tokenizer_first_byte_loss(
+                        torch,
+                        shift_student,
+                        teacher,
+                        output_span_pairs,
+                        candidate_byte_buckets,
+                        source_byte_buckets,
+                        float(temperature),
+                    )
+                    loss = loss + float(byte_kd_weight) * byte_kd_loss
             module_output_loss = None
             module_output_counts: dict[str, Any] = {
                 "attention_pairs": 0,
@@ -2406,6 +2530,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 and on_policy_anchor_kd_weight == 0
                 and on_policy_unlikelihood_weight == 0
                 and on_policy_hidden_kd_weight == 0
+                and int(projected_vocab_pair_count) <= 0
+                and int(byte_kd_pair_count) <= 0
                 and stepwise_donor_kd_weight == 0
             ):
                 skipped_steps += 1
@@ -2499,7 +2625,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             loss.backward()
             _raise_if_nonfinite_gradients(torch, candidate, step)
             if grad_clip > 0:
-                torch.nn.utils.clip_grad_norm_([p for p in candidate_layer.parameters() if p.requires_grad], grad_clip)
+                torch.nn.utils.clip_grad_norm_(optimizer_params, grad_clip)
             optimizer.step()
             _raise_if_nonfinite_parameters(torch, candidate, step)
             loss_value = float(loss.detach().cpu())
@@ -2507,6 +2633,10 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             module_output_loss_value = (
                 None if module_output_loss is None else float(module_output_loss.detach().cpu())
             )
+            projected_vocab_loss_value = (
+                None if projected_vocab_loss is None else float(projected_vocab_loss.detach().cpu())
+            )
+            byte_kd_loss_value = None if byte_kd_loss is None else float(byte_kd_loss.detach().cpu())
             on_policy_loss_value = None if on_policy_loss is None else float(on_policy_loss.detach().cpu())
             on_policy_hidden_loss_value = (
                 None if on_policy_hidden_loss is None else float(on_policy_hidden_loss.detach().cpu())
@@ -2517,7 +2647,29 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             if save_best_layer_loss and (best_loss is None or loss_value < best_loss):
                 best_loss = loss_value
                 best_step = int(step)
-                best_state = _snapshot_module_state(candidate_layer)
+                best_state = _snapshot_named_module_states({"block": candidate_layer, "output_head": output_head})
+            if save_best_layer_behavior and (step == 1 or step % behavior_interval == 0 or step == steps_per_layer):
+                with torch.no_grad():
+                    candidate.eval()
+                    behavior_summary = _heldout_behavior_summary(
+                        torch,
+                        candidate,
+                        candidate_tokenizer,
+                        device,
+                        int(layer_gate_behavior_max_new_tokens),
+                        int(layer_gate_max_texts),
+                    )
+                    candidate.train()
+                behavior_entry = _behavior_history_entry(step, loss_value, behavior_summary)
+                behavior_history.append(behavior_entry)
+                _print_behavior_checkpoint(f"xfamily_block_behavior layer={candidate_idx}", behavior_entry)
+                if _behavior_checkpoint_is_better(behavior_entry, best_behavior_summary, best_behavior_loss):
+                    best_behavior_summary = dict(behavior_entry)
+                    best_behavior_step = int(step)
+                    best_behavior_loss = loss_value
+                    best_behavior_state = _snapshot_named_module_states(
+                        {"block": candidate_layer, "output_head": output_head}
+                    )
             if step == 1 or step % interval == 0 or step == steps_per_layer:
                 losses.append(
                     {
@@ -2525,6 +2677,10 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                         "loss": loss_value,
                         "block_loss": block_loss_value,
                         "lm_loss": lm_loss_value,
+                        "projected_vocab_kd_loss": projected_vocab_loss_value,
+                        "projected_vocab_pairs": int(projected_vocab_pair_count),
+                        "byte_kd_loss": byte_kd_loss_value,
+                        "byte_pairs": int(byte_kd_pair_count),
                         "module_output_loss": module_output_loss_value,
                         "module_output": module_output_counts,
                         "on_policy_loss": on_policy_loss_value,
@@ -2540,6 +2696,10 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     f"xfamily_block_recover layer={candidate_idx} step={step} "
                     f"loss={loss_value:.6f} block_loss={block_loss_value:.6f} "
                     f"lm_loss={lm_loss_value if lm_loss_value is not None else 0.0:.6f} "
+                    f"projected_vocab={projected_vocab_loss_value if projected_vocab_loss_value is not None else 0.0:.6f} "
+                    f"projected_vocab_pairs={int(projected_vocab_pair_count)} "
+                    f"byte_kd={byte_kd_loss_value if byte_kd_loss_value is not None else 0.0:.6f} "
+                    f"byte_pairs={int(byte_kd_pair_count)} "
                     f"module_output={module_output_loss_value if module_output_loss_value is not None else 0.0:.6f} "
                     f"module_attention_pairs={int(module_output_counts.get('attention_pairs', 0))} "
                     f"module_mlp_pairs={int(module_output_counts.get('mlp_pairs', 0))} "
@@ -2552,8 +2712,10 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     f"span_pairs={int(pair_count)}",
                     flush=True,
                 )
-        if save_best_layer_loss and best_state is not None:
-            _restore_module_state(candidate_layer, best_state)
+        if save_best_layer_behavior and best_behavior_state is not None:
+            _restore_named_module_states({"block": candidate_layer, "output_head": output_head}, best_behavior_state)
+        elif save_best_layer_loss and best_state is not None:
+            _restore_named_module_states({"block": candidate_layer, "output_head": output_head}, best_state)
 
         after_metrics = _cross_tokenizer_block_alignment_metrics(
             torch,
@@ -2581,6 +2743,9 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             "losses": losses,
             "best_loss": best_loss,
             "best_step": best_step,
+            "behavior_history": behavior_history,
+            "best_behavior_step": best_behavior_step,
+            "best_behavior": best_behavior_summary,
             "before": before_metrics,
             "after": after_metrics,
         }
@@ -2597,7 +2762,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             if gate_decision["accepted"]:
                 previous_gate_ppl = candidate_ppl
             elif layer_state is not None:
-                _restore_module_state(candidate_layer, layer_state)
+                _restore_named_module_states({"block": candidate_layer, "output_head": output_head}, layer_state)
                 with torch.no_grad():
                     candidate.eval()
                     reverted_ppl = _heldout_ppl_mean(
@@ -2634,7 +2799,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             if gate_decision["accepted"]:
                 previous_gate_behavior = candidate_behavior
             elif layer_state is not None:
-                _restore_module_state(candidate_layer, layer_state)
+                _restore_named_module_states({"block": candidate_layer, "output_head": output_head}, layer_state)
                 with torch.no_grad():
                     candidate.eval()
                     reverted_behavior = _heldout_behavior_summary(
@@ -2690,6 +2855,11 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "stepwise_donor_kd_weight": float(stepwise_donor_kd_weight),
         "stepwise_donor_max_new_tokens": int(stepwise_donor_max_new_tokens),
         "stepwise_donor_interval": int(stepwise_donor_interval),
+        "projected_vocab_kd_weight": float(projected_vocab_kd_weight),
+        "projected_vocab_kd_mode": projected_vocab_kd_mode,
+        "byte_kd_weight": float(byte_kd_weight),
+        "train_output_head_with_kd": bool(train_output_head_with_kd),
+        "output_head_tied_to_input": bool(output_head_tied_to_input),
         "module_output_kd_weight": float(module_output_kd_weight),
         "module_output_targets": module_output_targets,
         "module_output_transport": module_output_transport,
@@ -2702,6 +2872,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "grad_clip": float(grad_clip),
         "report_interval": int(interval),
         "save_best_layer_loss": bool(save_best_layer_loss),
+        "save_best_layer_behavior": bool(save_best_layer_behavior),
+        "layer_behavior_eval_interval": int(behavior_interval),
         "calibration_text_count": len(texts),
         "eval_overlap_count": eval_overlap_count,
         "hidden_projection": {key: value for key, value in hidden_projection_report.items() if key != "map"},
@@ -4857,6 +5029,22 @@ def _restore_module_state(module, state: dict[str, Any]) -> None:
     module.load_state_dict(state, strict=True)
 
 
+def _snapshot_named_module_states(modules: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {
+        name: _snapshot_module_state(module)
+        for name, module in modules.items()
+        if module is not None
+    }
+
+
+def _restore_named_module_states(modules: dict[str, Any], states: dict[str, dict[str, Any]]) -> None:
+    for name, state in states.items():
+        module = modules.get(name)
+        if module is None:
+            raise ValueError(f"Cannot restore missing module state {name!r}.")
+        _restore_module_state(module, state)
+
+
 def _heldout_ppl_mean(torch, model, tokenizer, texts: Sequence[str], device: str, max_length: int) -> float:
     if not texts:
         raise ValueError("Need at least one held-out text for the layer gate.")
@@ -5058,14 +5246,46 @@ def _layer_gate_behavior_decision(
 
 
 def _set_only_module_trainable(model, module) -> int:
+    return _set_only_modules_trainable(model, [module])
+
+
+def _set_only_modules_trainable(model, modules: Sequence[Any]) -> int:
     for param in model.parameters():
         param.requires_grad_(False)
-    for param in module.parameters():
-        param.requires_grad_(True)
-    trainable = sum(param.numel() for param in module.parameters() if param.requires_grad)
+    seen: set[int] = set()
+    trainable = 0
+    for module in modules:
+        if module is None:
+            continue
+        for param in module.parameters():
+            param_id = id(param)
+            if param_id in seen:
+                continue
+            seen.add(param_id)
+            param.requires_grad_(True)
+            trainable += int(param.numel())
     if trainable <= 0:
-        raise ValueError("Selected decoder block has no trainable parameters.")
+        raise ValueError("Selected module set has no trainable parameters.")
     return int(trainable)
+
+
+def _unique_trainable_parameters(modules: Sequence[Any]) -> list[Any]:
+    params = []
+    seen: set[int] = set()
+    for module in modules:
+        if module is None:
+            continue
+        for param in module.parameters():
+            if not param.requires_grad:
+                continue
+            param_id = id(param)
+            if param_id in seen:
+                continue
+            seen.add(param_id)
+            params.append(param)
+    if not params:
+        raise ValueError("No trainable parameters selected.")
+    return params
 
 
 def _hidden_state_after_decoder_layer(hidden_states, layer_idx: int):
@@ -8538,6 +8758,77 @@ def _cross_tokenizer_projected_vocab_loss(
             )
         )
     return torch.stack(losses).mean()
+
+
+def _tokenizer_first_byte_buckets(torch, tokenizer, device: str):
+    other_bucket = 256
+    special_ids = set(getattr(tokenizer, "all_special_ids", []) or [])
+    buckets = []
+    for token_id in range(len(tokenizer)):
+        bucket = other_bucket
+        if int(token_id) not in special_ids:
+            try:
+                decoded = tokenizer.decode([int(token_id)], clean_up_tokenization_spaces=False)
+            except Exception:
+                decoded = ""
+            encoded = decoded.encode("utf-8", errors="ignore") if decoded else b""
+            if encoded:
+                bucket = int(encoded[0])
+        buckets.append(bucket)
+    return torch.tensor(buckets, dtype=torch.long, device=device)
+
+
+def _first_byte_probs_from_logits(torch, logits, byte_buckets, temperature: float):
+    if temperature <= 0:
+        raise ValueError("temperature must be positive.")
+    if logits.dim() != 2:
+        raise ValueError("byte KD logits must be a 2D tensor.")
+    vocab = min(int(logits.shape[-1]), int(byte_buckets.numel()))
+    if vocab <= 0:
+        raise ValueError("Need at least one token bucket for byte KD.")
+    values = torch.nan_to_num(
+        logits[:, :vocab].contiguous().to(torch.float32),
+        nan=0.0,
+        posinf=1e4,
+        neginf=-1e4,
+    )
+    buckets = byte_buckets[:vocab].to(device=values.device, dtype=torch.long)
+    probs = torch.nn.functional.softmax(values / float(temperature), dim=-1)
+    byte_probs = torch.zeros((int(values.shape[0]), 257), dtype=probs.dtype, device=values.device)
+    byte_probs.scatter_add_(1, buckets.view(1, -1).expand(int(values.shape[0]), -1), probs)
+    return byte_probs / byte_probs.sum(dim=-1, keepdim=True).clamp_min(1e-12)
+
+
+def _cross_tokenizer_first_byte_loss(
+    torch,
+    shift_student,
+    teacher,
+    span_pairs,
+    candidate_byte_buckets,
+    source_byte_buckets,
+    temperature: float,
+):
+    if int(span_pairs.numel()) <= 0:
+        return torch.zeros((), dtype=shift_student.dtype, device=shift_student.device)
+    shift_teacher = torch.nan_to_num(
+        teacher.logits[:, :-1, :].contiguous().to(torch.float32),
+        nan=0.0,
+        posinf=1e4,
+        neginf=-1e4,
+    )
+    pair_idx = span_pairs.to(device=shift_student.device, dtype=torch.long)
+    batch_idx = pair_idx[:, 0]
+    candidate_pos = pair_idx[:, 1]
+    source_pos = pair_idx[:, 2]
+    student_logits = shift_student[batch_idx, candidate_pos]
+    teacher_logits = shift_teacher[batch_idx, source_pos]
+    student_byte_probs = _first_byte_probs_from_logits(torch, student_logits, candidate_byte_buckets, temperature)
+    with torch.no_grad():
+        teacher_byte_probs = _first_byte_probs_from_logits(torch, teacher_logits, source_byte_buckets, temperature)
+    student_logp = student_byte_probs.clamp_min(1e-12).log()
+    teacher_logp = teacher_byte_probs.clamp_min(1e-12).log()
+    token_kl = (teacher_byte_probs * (teacher_logp - student_logp)).sum(dim=-1)
+    return token_kl.mean() * (float(temperature) ** 2)
 
 
 def _project_candidate_probs_to_source_vocab(
