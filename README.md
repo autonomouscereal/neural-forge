@@ -355,6 +355,28 @@ neural-forge vision-chain runs/vision-chain-report.json `
   --text-model runs/qwen-merged
 ```
 
+Broad behavior gates:
+
+```powershell
+neural-forge hf-build-eval-suite runs/broad-suite-1000.json `
+  --behavior-count 1000 `
+  --generation-count 200 `
+  --choice-count 250 `
+  --text-count 64 `
+  --seed 20260628
+neural-forge hf-eval runs/qwen-merged-shrunk runs/qwen-merged-shrunk-broad.json `
+  --eval-suite runs/broad-suite-1000.json `
+  --max-new-tokens 96
+neural-forge hf-rank-evals runs/rank-broad.json runs/*-broad.json
+```
+
+The broad suite keeps the original smoke checks available while adding a
+repeatable larger gate for compression experiments. `hf-eval --eval-suite`
+records the suite counts in the report, and `hf-rank-evals` ranks by behavior
+pass rate, behavior correct count, generation health, choice accuracy, size,
+then PPL. This keeps a candidate with better greedy behavior above one that
+only lowered perplexity.
+
 Blank target control:
 
 ```powershell

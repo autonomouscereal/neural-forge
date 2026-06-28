@@ -304,7 +304,24 @@ def build_parser() -> argparse.ArgumentParser:
     hf_eval.add_argument("--device", default="cuda:0")
     hf_eval.add_argument("--trust-remote-code", action="store_true")
     hf_eval.add_argument("--max-new-tokens", type=int, default=96)
+    hf_eval.add_argument("--eval-suite", help="JSON/JSONL eval suite with text, choice, generation, and behavior probes.")
+    hf_eval.add_argument("--max-text-evals", type=int)
+    hf_eval.add_argument("--max-choice-probes", type=int)
+    hf_eval.add_argument("--max-generation-prompts", type=int)
+    hf_eval.add_argument("--max-behavior-probes", type=int)
     hf_eval.set_defaults(func=cmd_hf_eval)
+
+    hf_build_eval_suite = sub.add_parser(
+        "hf-build-eval-suite",
+        help="Create a deterministic broad HF text eval suite for behavior-first gates.",
+    )
+    hf_build_eval_suite.add_argument("output")
+    hf_build_eval_suite.add_argument("--behavior-count", type=int, default=1000)
+    hf_build_eval_suite.add_argument("--generation-count", type=int, default=120)
+    hf_build_eval_suite.add_argument("--choice-count", type=int, default=200)
+    hf_build_eval_suite.add_argument("--text-count", type=int, default=64)
+    hf_build_eval_suite.add_argument("--seed", type=int, default=0)
+    hf_build_eval_suite.set_defaults(func=cmd_hf_build_eval_suite)
 
     hf_tie_head = sub.add_parser(
         "hf-tie-head",
@@ -1320,6 +1337,24 @@ def cmd_hf_eval(args: argparse.Namespace) -> dict[str, object]:
         device=args.device,
         trust_remote_code=args.trust_remote_code,
         max_new_tokens=args.max_new_tokens,
+        eval_suite=args.eval_suite,
+        max_text_evals=args.max_text_evals,
+        max_choice_probes=args.max_choice_probes,
+        max_generation_prompts=args.max_generation_prompts,
+        max_behavior_probes=args.max_behavior_probes,
+    )
+
+
+def cmd_hf_build_eval_suite(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_tools import build_eval_suite
+
+    return build_eval_suite(
+        output_file=args.output,
+        behavior_count=args.behavior_count,
+        generation_count=args.generation_count,
+        choice_count=args.choice_count,
+        text_count=args.text_count,
+        seed=args.seed,
     )
 
 

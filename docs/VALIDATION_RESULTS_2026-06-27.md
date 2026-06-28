@@ -1532,6 +1532,95 @@ Interpretation:
   virtual compaction with sequential Gram/activation compensation, then
   behavior-gated module reconstruction and rollout-level representation KD.
 
+### Broad 1000-Probe Gate Re-Rank
+
+Code changes:
+
+- Added `hf-build-eval-suite`, which writes deterministic larger HF text eval
+  suites. The first remote suite used `1000` behavior probes, `200` generation
+  prompts, `250` choice probes, and `64` PPL texts.
+- `hf-eval` now accepts `--eval-suite` plus caps for text, choice, generation,
+  and behavior probe counts. Reports record suite counts and include top-level
+  generation-health summaries.
+- `hf-rank-evals` now ranks by behavior pass rate, behavior correct count,
+  generation-health rate, generation-health correct count, choice accuracy,
+  size, then PPL. `hf-gate` also reports lost behavior/generation IDs when
+  baseline and candidate reports share item IDs.
+- Prompt-level generation caching was added inside `evaluate_text_model`, so a
+  1000-probe suite with repeated prompt families still scores all probes but
+  avoids re-decoding identical prompts.
+
+Remote suite:
+
+- Suite:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/broad_behavior_suite_1000_20260628.json`
+- Rank:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/broad_eval_1000_20260628/rank_broad_1000.json`
+- Decode cap: `max_new_tokens=48`.
+
+Broad rank:
+
+| Rank | Checkpoint | Behavior | Generation | Choice | PPL mean |
+|---:|---|---:|---:|---:|---:|
+| 1 | Block + head byte KD behavior-best L2/S8 | 600/1000 | 160/200 | 25/250 | 14,259.01 |
+| 2 | RSD behavior-best 60s baseline | 600/1000 | 160/200 | 25/250 | 14,290.37 |
+| 3 | Curated token-auto tied-head | 600/1000 | 160/200 | 24/250 | 14,442.64 |
+| 4 | Donor-generated hidden L2/S8 | 600/1000 | 160/200 | 22/250 | 14,475.51 |
+| 5 | Byte-hidden bridge L2/S8 | 600/1000 | 120/200 | 21/250 | 14,217.58 |
+| 6 | Focused LM answer-rank | 600/1000 | 80/200 | 30/250 | 19,012.19 |
+| 7 | Answer-rank behavior run | 600/1000 | 40/200 | 31/250 | 19,564.62 |
+| 8 | Older mixed8192 checkpoint | 2/1000 | 80/200 | 83/250 | 7,783.28 |
+
+Category split:
+
+- All `600/1000` models passed the repeated tokenizer-mismatch, rain/common
+  sense, and neuron-merge definition probe families: `200/200` each.
+- All `600/1000` models still scored `0/200` on synthetic arithmetic
+  answer-only probes and `0/200` on executable Python function probes.
+- The older mixed8192 checkpoint scored `2/200` math but `0/200` on tokenizer,
+  rain, merge-definition, and Python behavior categories. Its lower PPL and
+  stronger choice score were therefore misleading for greedy behavior.
+- Generation-health categories separate the newer candidates: byte/RSD/
+  curated/teacher-generated runs passed pruning, merge-risk, rain, and
+  tokenizer generation families, but still failed Python generation. Focused LM
+  restored Python-style generation relevance at the cost of other generation
+  categories.
+
+Interpretation:
+
+- The old six-item behavior gate was too coarse. It correctly detected some
+  improvement, but it could not show that the improvement was concentrated in
+  topical/common-sense pattern probes while math and executable code remained
+  completely unrecovered.
+- The best current strict 29.90x blank-target candidate under the broad gate is
+  still the block byte-KD behavior-best run, narrowly above the RSD baseline.
+  The byte-hidden bridge and donor-generated hidden additions did not beat it.
+- The next structural recovery experiment should explicitly target math/code
+  generative manifolds and not assume that higher PPL or topical pattern-pass
+  gains imply general intelligence transfer.
+
+External lm-eval slice after the broad re-rank:
+
+- Run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/lmeval_broad_rerank_20260628/summary.json`
+- Tasks: `arc_easy`, `hellaswag`, `piqa`, `winogrande`.
+- Limit: `50` samples per task; batch size `1`; `float16`; `cuda:0`.
+
+| Model | ARC-Easy acc_norm | HellaSwag acc_norm | PIQA acc_norm | WinoGrande acc |
+|---|---:|---:|---:|---:|
+| Donor `Qwen/Qwen3-4B-Base` | 0.76 | 0.74 | 0.74 | 0.78 |
+| Block + head byte KD behavior-best L2/S8 | 0.28 | 0.34 | 0.48 | 0.52 |
+| RSD behavior-best 60s baseline | 0.28 | 0.34 | 0.48 | 0.50 |
+| Older mixed8192 checkpoint | 0.28 | 0.28 | 0.52 | 0.52 |
+
+The limit-50 slice confirms the broad gate result without overstating it. The
+strict folded children are still far below the 4B donor on external tasks. The
+byte-KD behavior-best checkpoint is only a narrow improvement over the RSD
+baseline and is not a donor-level compression proof. The older mixed8192
+checkpoint still looks competitive on PIQA and lower PPL, but its `2/1000`
+broad behavior score shows why PPL/choice cannot be the promotion criterion for
+this work.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best

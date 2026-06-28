@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import json
 import math
+import random
 import re
 from pathlib import Path
 from typing import Any, Sequence
@@ -721,8 +722,18 @@ def evaluate_text_model(
     device: str = "cuda:0",
     trust_remote_code: bool = False,
     max_new_tokens: int = 96,
+    eval_suite: str | Path | dict[str, Any] | None = None,
+    max_text_evals: int | None = None,
+    max_choice_probes: int | None = None,
+    max_generation_prompts: int | None = None,
+    max_behavior_probes: int | None = None,
 ) -> dict[str, Any]:
     torch, transformers = _torch_and_transformers()
+    suite = _load_eval_suite(eval_suite)
+    text_evals = _limit_sequence(suite["text_evals"], max_text_evals)
+    choice_probes = _limit_sequence(suite["choice_probes"], max_choice_probes)
+    generation_specs = _limit_sequence(suite["generation_prompts"], max_generation_prompts)
+    behavior_probes = _limit_sequence(suite["behavior_probes"], max_behavior_probes)
     dtype = _dtype_from_name(torch, torch_dtype)
     tokenizer = transformers.AutoTokenizer.from_pretrained(model_id_or_path, trust_remote_code=trust_remote_code)
     model = transformers.AutoModelForCausalLM.from_pretrained(
@@ -736,42 +747,104 @@ def evaluate_text_model(
     if tokenizer.pad_token_id is None and tokenizer.eos_token_id is not None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    generation_cache: dict[str, dict[str, Any]] = {}
+
+    def cached_generate(prompt: str) -> dict[str, Any]:
+        if prompt not in generation_cache:
+            generation_cache[prompt] = _generate_text(torch, model, tokenizer, prompt, device, max_new_tokens)
+        return dict(generation_cache[prompt])
+
     with torch.no_grad():
-        ppls = [_perplexity(torch, model, tokenizer, text, device) for text in TEXT_EVALS]
-        probes = [_score_choice_probe(torch, model, tokenizer, probe, device) for probe in CHOICE_PROBES]
-        generations = [_generate_text(torch, model, tokenizer, prompt, device, max_new_tokens) for prompt in GENERATION_PROMPTS]
+        ppls = [_perplexity(torch, model, tokenizer, text, device) for text in text_evals]
+        probes = [_score_choice_probe(torch, model, tokenizer, probe, device) for probe in choice_probes]
+        generations = [
+            _generation_from_cached_spec(cached_generate(str(spec["prompt"])), spec)
+            for spec in generation_specs
+        ]
         behavior_items = [
             _score_behavior_probe(
                 probe,
-                _generate_text(torch, model, tokenizer, probe["prompt"], device, max_new_tokens),
+                cached_generate(str(probe["prompt"])),
             )
-            for probe in BEHAVIOR_PROBES
+            for probe in behavior_probes
         ]
 
+    generation_diagnostics = [_generation_health(item, 0, 0.0) for item in generations]
+    behavior_correct = sum(1 for item in behavior_items if item["passed"])
+    choice_correct = sum(1 for item in probes if item["correct"])
     report = {
         "model": model_id_or_path,
         "param_count": sum(p.numel() for p in model.parameters()),
+        "eval_suite": {
+            "source": suite["source"],
+            "text_eval_count": len(text_evals),
+            "choice_probe_count": len(choice_probes),
+            "generation_prompt_count": len(generation_specs),
+            "behavior_probe_count": len(behavior_probes),
+        },
         "perplexity": {
-            "mean": float(sum(ppls) / len(ppls)),
+            "mean": float(sum(ppls) / max(1, len(ppls))),
             "items": ppls,
         },
         "choice_accuracy": {
-            "correct": sum(1 for item in probes if item["correct"]),
+            "correct": choice_correct,
             "total": len(probes),
-            "accuracy": sum(1 for item in probes if item["correct"]) / len(probes),
+            "accuracy": choice_correct / max(1, len(probes)),
             "items": probes,
         },
         "generations": generations,
-        "generation_diagnostics": [_generation_health(item, 0, 0.0) for item in generations],
+        "generation_diagnostics": generation_diagnostics,
+        "generation_health": {
+            "correct": sum(1 for item in generation_diagnostics if item["passed"]),
+            "total": len(generation_diagnostics),
+            "pass_rate": (
+                sum(1 for item in generation_diagnostics if item["passed"]) / max(1, len(generation_diagnostics))
+            ),
+        },
         "behavior_suite": {
-            "correct": sum(1 for item in behavior_items if item["passed"]),
+            "correct": behavior_correct,
             "total": len(behavior_items),
-            "pass_rate": sum(1 for item in behavior_items if item["passed"]) / max(1, len(behavior_items)),
+            "pass_rate": behavior_correct / max(1, len(behavior_items)),
             "items": behavior_items,
         },
     }
     _write_json(output_file, report)
     return report
+
+
+def build_eval_suite(
+    output_file: str | Path,
+    behavior_count: int = 1000,
+    generation_count: int = 120,
+    choice_count: int = 200,
+    text_count: int = 64,
+    seed: int = 0,
+) -> dict[str, Any]:
+    """Write a deterministic broad text eval suite for model-surgery gates."""
+
+    if behavior_count < 0 or generation_count < 0 or choice_count < 0 or text_count < 0:
+        raise ValueError("suite counts must be non-negative.")
+    rng = random.Random(int(seed))
+    suite = {
+        "text_evals": _synthetic_text_evals(int(text_count)),
+        "choice_probes": _synthetic_choice_probes(int(choice_count), rng),
+        "generation_prompts": _synthetic_generation_prompts(int(generation_count)),
+        "behavior_probes": _synthetic_behavior_probes(int(behavior_count), rng),
+    }
+    report = {
+        "operation": "build_eval_suite",
+        "output_file": str(output_file),
+        "seed": int(seed),
+        "counts": {
+            "text_evals": len(suite["text_evals"]),
+            "choice_probes": len(suite["choice_probes"]),
+            "generation_prompts": len(suite["generation_prompts"]),
+            "behavior_probes": len(suite["behavior_probes"]),
+        },
+        "suite": suite,
+    }
+    _write_json(output_file, report)
+    return {key: value for key, value in report.items() if key != "suite"}
 
 
 def tie_output_head_checkpoint(
@@ -857,6 +930,10 @@ def gate_text_report(
         _generation_health(item, min_continuation_chars, min_unique_token_ratio)
         for item in candidate.get("generations", [])
     ]
+    baseline_generation_checks = [
+        _generation_health(item, min_continuation_chars, min_unique_token_ratio)
+        for item in baseline.get("generations", [])
+    ]
 
     checks = [
         {
@@ -890,9 +967,21 @@ def gate_text_report(
     ]
     behavior_suite = candidate.get("behavior_suite")
     baseline_behavior_suite = baseline.get("behavior_suite")
+    lost_behavior_ids: list[str] = []
     if behavior_suite is not None or baseline_behavior_suite is not None or min_behavior_pass_rate > 0:
         baseline_behavior_pass_rate = float((baseline_behavior_suite or {}).get("pass_rate", 0.0))
         behavior_pass_rate = float((behavior_suite or {}).get("pass_rate", 0.0))
+        baseline_passed_ids = {
+            str(item.get("id"))
+            for item in (baseline_behavior_suite or {}).get("items", [])
+            if item.get("passed") and item.get("id") is not None
+        }
+        candidate_passed_ids = {
+            str(item.get("id"))
+            for item in (behavior_suite or {}).get("items", [])
+            if item.get("passed") and item.get("id") is not None
+        }
+        lost_behavior_ids = sorted(baseline_passed_ids - candidate_passed_ids)
         checks.append(
             {
                 "name": "behavior_suite",
@@ -909,8 +998,21 @@ def gate_text_report(
                 "threshold": float(max_behavior_drop),
                 "baseline_pass_rate": baseline_behavior_pass_rate,
                 "candidate_pass_rate": behavior_pass_rate,
+                "lost_passed_ids": lost_behavior_ids[:50],
+                "lost_passed_id_count": len(lost_behavior_ids),
             }
         )
+    generation_passed_ids = {
+        str(item.get("id") or item.get("prompt"))
+        for item in generation_checks
+        if item.get("passed") and (item.get("id") is not None or item.get("prompt"))
+    }
+    baseline_generation_passed_ids = {
+        str(item.get("id") or item.get("prompt"))
+        for item in baseline_generation_checks
+        if item.get("passed") and (item.get("id") is not None or item.get("prompt"))
+    }
+    lost_generation_ids = sorted(baseline_generation_passed_ids - generation_passed_ids)
     verdict = {
         "operation": "gate_text_report",
         "passed": all(check["passed"] for check in checks if check.get("hard", True)),
@@ -921,20 +1023,40 @@ def gate_text_report(
             "param_count": baseline.get("param_count"),
             "perplexity_mean": base_ppl,
             "choice_accuracy": base_acc,
+            "generation_health_rate": (
+                sum(1 for check in baseline_generation_checks if check["passed"]) / len(baseline_generation_checks)
+                if baseline_generation_checks
+                else 0.0
+            ),
+            "behavior_pass_rate": None
+            if baseline.get("behavior_suite") is None
+            else float(baseline["behavior_suite"].get("pass_rate", 0.0)),
         },
         "candidate": {
             "param_count": candidate.get("param_count"),
             "perplexity_mean": cand_ppl,
             "perplexity_ratio": ppl_ratio,
             "choice_accuracy": cand_acc,
+            "generation_health_correct": sum(1 for check in generation_checks if check["passed"]),
+            "generation_health_total": len(generation_checks),
             "generation_health_rate": (
                 sum(1 for check in generation_checks if check["passed"]) / len(generation_checks)
                 if generation_checks
                 else 0.0
             ),
+            "lost_generation_ids": lost_generation_ids[:50],
+            "lost_generation_id_count": len(lost_generation_ids),
             "behavior_pass_rate": None
             if candidate.get("behavior_suite") is None
             else float(candidate["behavior_suite"].get("pass_rate", 0.0)),
+            "behavior_correct": None
+            if candidate.get("behavior_suite") is None
+            else int(candidate["behavior_suite"].get("correct", 0)),
+            "behavior_total": None
+            if candidate.get("behavior_suite") is None
+            else int(candidate["behavior_suite"].get("total", 0)),
+            "lost_behavior_ids": lost_behavior_ids[:50],
+            "lost_behavior_id_count": len(lost_behavior_ids),
         },
         "checks": checks,
     }
@@ -999,6 +1121,7 @@ def rank_evaluation_reports(
             if generation_checks
             else 0.0
         )
+        generation_health_correct = sum(1 for check in generation_checks if check["passed"])
         param_count = int(report.get("param_count") or 0)
         source = str(item) if not isinstance(item, dict) else f"<dict:{index}>"
         entry = {
@@ -1014,11 +1137,15 @@ def rank_evaluation_reports(
             "behavior_correct": int(behavior.get("correct", 0)),
             "behavior_total": int(behavior.get("total", 0)),
             "generation_health_rate": generation_health_rate,
+            "generation_health_correct": int(generation_health_correct),
+            "generation_health_total": len(generation_checks),
             "generation_checks": generation_checks,
             "sort_key": [
                 behavior_pass_rate,
-                choice_accuracy,
+                int(behavior.get("correct", 0)),
                 generation_health_rate,
+                int(generation_health_correct),
+                choice_accuracy,
                 -param_count,
                 -ppl,
             ],
@@ -1028,8 +1155,10 @@ def rank_evaluation_reports(
     entries.sort(
         key=lambda entry: (
             -entry["behavior_pass_rate"],
-            -entry["choice_accuracy"],
+            -entry["behavior_correct"],
             -entry["generation_health_rate"],
+            -entry["generation_health_correct"],
+            -entry["choice_accuracy"],
             entry["param_count"],
             entry["perplexity_mean"],
             entry["source"],
@@ -1042,8 +1171,10 @@ def rank_evaluation_reports(
         "operation": "rank_evaluation_reports",
         "ranking_policy": [
             "behavior_pass_rate_desc",
-            "choice_accuracy_desc",
+            "behavior_correct_desc",
             "generation_health_rate_desc",
+            "generation_health_correct_desc",
+            "choice_accuracy_desc",
             "param_count_asc",
             "perplexity_mean_asc",
         ],
@@ -1699,6 +1830,166 @@ def _load_report(report: str | Path | dict[str, Any]) -> dict[str, Any]:
     return json.loads(Path(report).read_text(encoding="utf-8"))
 
 
+def _load_eval_suite(suite: str | Path | dict[str, Any] | None) -> dict[str, Any]:
+    if suite is None:
+        return _normalize_eval_suite(
+            {
+                "text_evals": list(TEXT_EVALS),
+                "choice_probes": list(CHOICE_PROBES),
+                "generation_prompts": [
+                    {
+                        "id": f"builtin_generation_{index}",
+                        "prompt": prompt,
+                        "relevance_rules": GENERATION_RELEVANCE_RULES.get(prompt, []),
+                    }
+                    for index, prompt in enumerate(GENERATION_PROMPTS)
+                ],
+                "behavior_probes": list(BEHAVIOR_PROBES),
+            },
+            source="builtin",
+        )
+    if isinstance(suite, dict):
+        source = str(suite.get("output_file") or suite.get("source") or "<dict>")
+        return _normalize_eval_suite(suite.get("suite", suite), source=source)
+
+    path = Path(suite)
+    text = path.read_text(encoding="utf-8")
+    if path.suffix.lower() == ".jsonl":
+        rows = [json.loads(line) for line in text.splitlines() if line.strip()]
+        data: dict[str, Any] = {"text_evals": [], "choice_probes": [], "generation_prompts": [], "behavior_probes": []}
+        for row in rows:
+            kind = str(row.get("type") or row.get("kind") or "").lower()
+            if kind in {"text", "text_eval", "ppl"} or ("text" in row and not row.get("prompt")):
+                data["text_evals"].append(row.get("text", row.get("value", "")))
+            elif kind in {"choice", "choice_probe", "multiple_choice"} or ("choices" in row and "answer" in row):
+                data["choice_probes"].append(row)
+            elif kind in {"generation", "generation_prompt"} or ("relevance_rules" in row and "prompt" in row):
+                data["generation_prompts"].append(row)
+            elif "prompt" in row and "kind" in row:
+                data["behavior_probes"].append(row)
+            else:
+                raise ValueError(f"Cannot infer eval-suite row type for {row!r}.")
+        return _normalize_eval_suite(data, source=str(path))
+
+    loaded = json.loads(text)
+    if isinstance(loaded, list):
+        return _load_eval_suite({"suite": _jsonl_rows_to_suite(loaded), "source": str(path)})
+    if not isinstance(loaded, dict):
+        raise ValueError("Eval suite JSON must be an object or list.")
+    return _normalize_eval_suite(loaded.get("suite", loaded), source=str(path))
+
+
+def _jsonl_rows_to_suite(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    data: dict[str, Any] = {"text_evals": [], "choice_probes": [], "generation_prompts": [], "behavior_probes": []}
+    for row in rows:
+        kind = str(row.get("type") or row.get("kind") or "").lower()
+        if kind in {"text", "text_eval", "ppl"} or ("text" in row and not row.get("prompt")):
+            data["text_evals"].append(row.get("text", row.get("value", "")))
+        elif kind in {"choice", "choice_probe", "multiple_choice"} or ("choices" in row and "answer" in row):
+            data["choice_probes"].append(row)
+        elif kind in {"generation", "generation_prompt"} or ("relevance_rules" in row and "prompt" in row):
+            data["generation_prompts"].append(row)
+        elif "prompt" in row and "kind" in row:
+            data["behavior_probes"].append(row)
+        else:
+            raise ValueError(f"Cannot infer eval-suite row type for {row!r}.")
+    return data
+
+
+def _normalize_eval_suite(data: dict[str, Any], source: str) -> dict[str, Any]:
+    raw_text_evals = data.get("text_evals")
+    raw_choice_probes = data.get("choice_probes")
+    raw_generation_prompts = data.get("generation_prompts")
+    raw_behavior_probes = data.get("behavior_probes")
+    text_evals = [
+        str(item.get("text", item)) if isinstance(item, dict) else str(item)
+        for item in (raw_text_evals or [])
+    ]
+    choice_probes = [
+        _normalize_choice_probe(item, index)
+        for index, item in enumerate(raw_choice_probes or [])
+    ]
+    generation_prompts = [
+        _normalize_generation_prompt(item, index)
+        for index, item in enumerate(raw_generation_prompts or [])
+    ]
+    behavior_probes = [
+        _normalize_behavior_probe(item, index)
+        for index, item in enumerate(raw_behavior_probes or [])
+    ]
+    if raw_text_evals is None:
+        text_evals = list(TEXT_EVALS)
+    if raw_choice_probes is None:
+        choice_probes = list(CHOICE_PROBES)
+    if raw_generation_prompts is None:
+        generation_prompts = [
+            {
+                "id": f"builtin_generation_{index}",
+                "prompt": prompt,
+                "relevance_rules": GENERATION_RELEVANCE_RULES.get(prompt, []),
+            }
+            for index, prompt in enumerate(GENERATION_PROMPTS)
+        ]
+    if raw_behavior_probes is None:
+        behavior_probes = list(BEHAVIOR_PROBES)
+    return {
+        "source": source,
+        "text_evals": text_evals,
+        "choice_probes": choice_probes,
+        "generation_prompts": generation_prompts,
+        "behavior_probes": behavior_probes,
+    }
+
+
+def _normalize_choice_probe(item: dict[str, Any], index: int) -> dict[str, Any]:
+    if not isinstance(item, dict):
+        raise ValueError("Choice probes must be objects.")
+    probe = dict(item)
+    probe.setdefault("id", f"choice_{index:04d}")
+    if "prompt" not in probe or "choices" not in probe or "answer" not in probe:
+        raise ValueError("Choice probe requires prompt, choices, and answer.")
+    probe["choices"] = [str(choice) for choice in probe["choices"]]
+    probe["answer"] = int(probe["answer"])
+    return probe
+
+
+def _normalize_generation_prompt(item: str | dict[str, Any], index: int) -> dict[str, Any]:
+    if isinstance(item, str):
+        return {
+            "id": f"generation_{index:04d}",
+            "prompt": item,
+            "relevance_rules": GENERATION_RELEVANCE_RULES.get(item, []),
+        }
+    if not isinstance(item, dict):
+        raise ValueError("Generation prompts must be strings or objects.")
+    prompt = str(item.get("prompt", ""))
+    if not prompt:
+        raise ValueError("Generation prompt requires prompt text.")
+    return {
+        "id": str(item.get("id") or f"generation_{index:04d}"),
+        "prompt": prompt,
+        "relevance_rules": item.get("relevance_rules", item.get("pattern_groups", GENERATION_RELEVANCE_RULES.get(prompt, []))),
+    }
+
+
+def _normalize_behavior_probe(item: dict[str, Any], index: int) -> dict[str, Any]:
+    if not isinstance(item, dict):
+        raise ValueError("Behavior probes must be objects.")
+    probe = dict(item)
+    probe.setdefault("id", f"behavior_{index:04d}")
+    if "prompt" not in probe or "kind" not in probe:
+        raise ValueError("Behavior probe requires prompt and kind.")
+    return probe
+
+
+def _limit_sequence(items: Sequence[Any], limit: int | None) -> list[Any]:
+    if limit is None:
+        return list(items)
+    if limit < 0:
+        raise ValueError("suite limits must be non-negative.")
+    return list(items)[: int(limit)]
+
+
 def _generation_health(item: dict[str, Any], min_continuation_chars: int, min_unique_token_ratio: float) -> dict[str, Any]:
     prompt = str(item.get("prompt", ""))
     output = str(item.get("output", ""))
@@ -1716,8 +2007,9 @@ def _generation_health(item: dict[str, Any], min_continuation_chars: int, min_un
             and int(diagnostics.get("max_token_run", 999)) <= 12
         )
     )
-    relevance = _generation_relevance(prompt, continuation)
+    relevance = _generation_relevance(prompt, continuation, item.get("relevance_rules"))
     return {
+        "id": item.get("id"),
         "prompt": prompt,
         "passed": long_enough and diverse_enough and relevance["passed"],
         "continuation_chars": len(continuation),
@@ -1731,8 +2023,8 @@ def _generation_health(item: dict[str, Any], min_continuation_chars: int, min_un
     }
 
 
-def _generation_relevance(prompt: str, continuation: str) -> dict[str, Any]:
-    pattern_groups = GENERATION_RELEVANCE_RULES.get(prompt)
+def _generation_relevance(prompt: str, continuation: str, relevance_rules: Sequence[Sequence[str]] | None = None) -> dict[str, Any]:
+    pattern_groups = relevance_rules if relevance_rules is not None else GENERATION_RELEVANCE_RULES.get(prompt)
     if not pattern_groups:
         return {"checked": False, "passed": True, "matched_groups": [], "missing_groups": []}
 
@@ -1795,6 +2087,198 @@ def _max_run_length(items: Sequence[Any]) -> int:
 
 def _ratio_tag(ratio: float) -> str:
     return f"{ratio:.4f}".replace(".", "p").replace("-", "m")
+
+
+def _synthetic_text_evals(count: int) -> list[str]:
+    templates = [
+        "Neural model compression should preserve useful behavior, not only lower perplexity.",
+        "A folded child model needs calibration data that covers arithmetic, code, and instruction following.",
+        "Tokenizer mismatch can make copied embedding rows point at the wrong symbols.",
+        "Merge-first pruning combines redundant channels before deleting capacity.",
+        "A safe driving answer should mention slowing down and increasing following distance.",
+        "Small language models are useful when they answer concisely and avoid repetitive loops.",
+        "Cross-family model surgery needs behavior gates because local activation losses can be misleading.",
+        "A Python function should use valid syntax and return the requested value.",
+    ]
+    return [templates[index % len(templates)] for index in range(int(count))]
+
+
+def _synthetic_choice_probes(count: int, rng: random.Random) -> list[dict[str, Any]]:
+    probes = []
+    for index in range(int(count)):
+        mode = index % 4
+        if mode == 0:
+            a = 7 + (index * 3) % 43
+            b = 5 + (index * 5) % 37
+            answer = a + b
+            prompt = f"Question: What is {a} + {b}?\nAnswer:"
+            choices = [f" {answer}", f" {answer + 1}", f" {answer - 1}", f" {a * b}"]
+            answer_index = 0
+        elif mode == 1:
+            a = 3 + (index * 2) % 19
+            b = 2 + (index * 7) % 13
+            answer = a * b
+            prompt = f"Question: What is {a} * {b}?\nAnswer:"
+            choices = [f" {answer}", f" {answer + a}", f" {answer - b}", f" {a + b}"]
+            answer_index = 0
+        elif mode == 2:
+            prompt = (
+                "Question: Which Python expression returns the sum of a and b?\n"
+                "A. a + b\nB. a - b\nC. len(a)\nD. print(a)\nAnswer:"
+            )
+            choices = [" A", " B", " C", " D"]
+            answer_index = 0
+        else:
+            prompt = (
+                "Question: A road is covered in heavy rain. What should a driver do?\n"
+                "A. speed up\nB. slow down and keep distance\nC. close their eyes\nD. turn off headlights\nAnswer:"
+            )
+            choices = [" A", " B", " C", " D"]
+            answer_index = 1
+        indexed = list(enumerate(choices))
+        rng.shuffle(indexed)
+        shuffled_choices = [choice for _, choice in indexed]
+        shuffled_answer = next(pos for pos, (old_index, _) in enumerate(indexed) if old_index == answer_index)
+        probes.append(
+            {
+                "id": f"synthetic_choice_{index:04d}",
+                "prompt": prompt,
+                "choices": shuffled_choices,
+                "answer": shuffled_answer,
+            }
+        )
+    return probes
+
+
+def _synthetic_generation_prompts(count: int) -> list[dict[str, Any]]:
+    templates = [
+        (
+            "generation_pruning",
+            "Explain neural pruning in two concise sentences.",
+            [
+                [r"\bprun\w*", r"\bremove\w*", r"\bcompress\w*", r"\bfold\w*"],
+                [r"\bneuron\w*", r"\bweight\w*", r"\bchannel\w*", r"\bparameter\w*"],
+            ],
+        ),
+        (
+            "generation_model_merge_risk",
+            "Give one risk when merging two language models.",
+            [
+                [r"\bmerge\w*", r"\bstitch\w*", r"\bcombin\w*", r"\bfus\w*"],
+                [r"\brisk\w*", r"\bmismatch\w*", r"\bforget\w*", r"\bdegrad\w*", r"\bcollapse\w*"],
+                [r"\bmodel\w*", r"\btokeni[sz]er\w*", r"\bweight\w*", r"\bcapabilit\w*"],
+            ],
+        ),
+        (
+            "generation_python_add",
+            "Write a tiny Python function that adds two numbers.",
+            [[r"\bdef\b", r"\blambda\b"], [r"\+", r"\badd\w*\b", r"\bsum\b"], [r"\breturn\b", r":"]],
+        ),
+        (
+            "generation_tokenizer_mismatch",
+            "In one sentence, why can tokenizer mismatch hurt model stitching?",
+            [
+                [r"\btokeni[sz]er\w*", r"\bvocab\w*", r"\btokens?\b"],
+                [r"\bmismatch\w*", r"\bdiffer\w*", r"\balign\w*", r"\bincompat\w*"],
+                [r"\bembedding\w*", r"\blogits?\b", r"\brows?\b", r"\bids?\b"],
+            ],
+        ),
+        (
+            "generation_rain_safety",
+            "A driver sees heavy rain on the road. What should they do?",
+            [
+                [r"\bslow\w*", r"\bcaution\w*", r"\bsafe\w*", r"\breduce\w*"],
+                [r"\bdistance\b", r"\bheadlights?\b", r"\bwipers?\b", r"\bpull over\b"],
+            ],
+        ),
+    ]
+    prompts = []
+    for index in range(int(count)):
+        base_id, prompt, rules = templates[index % len(templates)]
+        prompts.append({"id": f"{base_id}_{index:04d}", "prompt": prompt, "relevance_rules": rules})
+    return prompts
+
+
+def _synthetic_behavior_probes(count: int, rng: random.Random) -> list[dict[str, Any]]:
+    probes = []
+    for index in range(int(count)):
+        mode = index % 5
+        if mode == 0:
+            a = 6 + (index * 7) % 41
+            b = 4 + (index * 11) % 29
+            op = "+" if index % 10 == 0 else "*"
+            answer = a + b if op == "+" else a * b
+            probes.append(
+                {
+                    "id": f"synthetic_math_{index:04d}",
+                    "prompt": f"Question: What is {a} {op} {b}? Answer with only the number.\nAnswer:",
+                    "kind": "first_number",
+                    "answer": str(answer),
+                }
+            )
+        elif mode == 1:
+            probes.append(
+                {
+                    "id": f"synthetic_tokenizer_{index:04d}",
+                    "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nAnswer:",
+                    "kind": "pattern_groups",
+                    "pattern_groups": [
+                        [r"\btokeni[sz]er\w*", r"\bvocab\w*", r"\btokens?\b"],
+                        [r"\bmismatch\w*", r"\bdiffer\w*", r"\balign\w*", r"\bincompat\w*"],
+                        [r"\bembedding\w*", r"\blogits?\b", r"\btoken ids?\b", r"\brows?\b"],
+                    ],
+                }
+            )
+        elif mode == 2:
+            probes.append(
+                {
+                    "id": f"synthetic_rain_{index:04d}",
+                    "prompt": "A driver sees heavy rain on the road. What should they do?\nAnswer:",
+                    "kind": "pattern_groups",
+                    "pattern_groups": [
+                        [r"\bslow\w*", r"\bcaution\w*", r"\bsafe\w*", r"\breduce\w*"],
+                        [r"\bdistance\b", r"\bfollow\w*", r"\bheadlights?\b", r"\bwipers?\b", r"\bpull over\b"],
+                    ],
+                }
+            )
+        elif mode == 3:
+            probes.append(
+                {
+                    "id": f"synthetic_merge_definition_{index:04d}",
+                    "prompt": "Briefly define neuron merging for model compression.\nAnswer:",
+                    "kind": "pattern_groups",
+                    "pattern_groups": [
+                        [r"\bmerg\w*", r"\bfold\w*", r"\bcombin\w*"],
+                        [r"\bneurons?\b", r"\bchannels?\b", r"\bfilters?\b"],
+                        [r"\bsimilar\w*", r"\bredundan\w*", r"\baverage\w*", r"\bsum\w*"],
+                    ],
+                }
+            )
+        else:
+            fn_specs = [
+                ("add", "+", lambda a, b: a + b),
+                ("subtract", "-", lambda a, b: a - b),
+                ("multiply", "*", lambda a, b: a * b),
+            ]
+            function_name, symbol, func = fn_specs[(index // 5) % len(fn_specs)]
+            tests = []
+            for case in range(3):
+                a = rng.randint(-9, 12)
+                b = rng.randint(-7, 11)
+                tests.append({"args": [a, b], "expected": func(a, b)})
+            probes.append(
+                {
+                    "id": f"synthetic_python_{function_name}_{index:04d}",
+                    "prompt": (
+                        f"Write a tiny Python function named {function_name} that returns a {symbol} b.\n"
+                        "```python\n"
+                    ),
+                    "kind": "python_function",
+                    "function_name": function_name,
+                    "tests": tests,
+                }
+            )
+    return probes
 
 
 def _default_calibration_texts() -> list[str]:
@@ -2267,6 +2751,19 @@ def _generate_text(torch, model, tokenizer, prompt: str, device: str, max_new_to
         "output": decoded,
         "diagnostics": _generation_diagnostics(continuation, generated_ids),
     }
+
+
+def _generate_text_for_spec(torch, model, tokenizer, spec: dict[str, Any], device: str, max_new_tokens: int) -> dict[str, Any]:
+    item = _generate_text(torch, model, tokenizer, str(spec["prompt"]), device, max_new_tokens)
+    return _generation_from_cached_spec(item, spec)
+
+
+def _generation_from_cached_spec(generation: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
+    item = dict(generation)
+    item["id"] = spec.get("id")
+    if spec.get("relevance_rules") is not None:
+        item["relevance_rules"] = spec.get("relevance_rules")
+    return item
 
 
 def _score_behavior_probe(probe: dict[str, Any], generation: dict[str, Any]) -> dict[str, Any]:

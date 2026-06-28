@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from neural_forge.hf_tools import GENERATION_PROMPTS
+from neural_forge.hf_tools import build_eval_suite
 from neural_forge.hf_tools import _behavior_first_candidate_sort_key
 from neural_forge.hf_tools import gate_text_report
 from neural_forge.hf_tools import rank_evaluation_reports
@@ -10,6 +11,7 @@ from neural_forge.hf_tools import _assert_tokenizers_compatible
 from neural_forge.hf_tools import _ensure_unique_ratio_tags
 from neural_forge.hf_tools import _finite_float
 from neural_forge.hf_tools import _generation_diagnostics
+from neural_forge.hf_tools import _load_eval_suite
 from neural_forge.hf_tools import _ratio_tag
 from neural_forge.hf_tools import _score_behavior_probe
 
@@ -127,6 +129,117 @@ def test_rank_evaluation_reports_prefers_behavior_over_ppl(tmp_path) -> None:
     assert report["best"]["model"] == "better-behavior"
     assert report["candidates"][0]["behavior_pass_rate"] == pytest.approx(0.5)
     assert report["candidates"][1]["perplexity_mean"] == pytest.approx(90)
+
+
+def test_rank_evaluation_reports_uses_large_suite_correct_count_after_rate_tie(tmp_path) -> None:
+    small = _report(100, 1.0)
+    small["model"] = "small-suite"
+    small["behavior_suite"] = {"pass_rate": 0.5, "correct": 5, "total": 10, "items": []}
+    large = _report(120, 0.75)
+    large["model"] = "large-suite"
+    large["behavior_suite"] = {"pass_rate": 0.5, "correct": 500, "total": 1000, "items": []}
+
+    report = rank_evaluation_reports([small, large], output_file=tmp_path / "rank.json")
+
+    assert report["best"]["model"] == "large-suite"
+    assert report["candidates"][0]["behavior_correct"] == 500
+
+
+def test_gate_text_report_reports_lost_behavior_and_generation_ids() -> None:
+    baseline = _report(100, 1.0)
+    baseline["behavior_suite"] = {
+        "pass_rate": 1.0,
+        "correct": 2,
+        "total": 2,
+        "items": [{"id": "kept", "passed": True}, {"id": "lost", "passed": True}],
+    }
+    baseline["generations"] = [
+        {
+            "id": "gen_lost",
+            "prompt": "Custom prompt",
+            "output": "Custom prompt relevant words",
+            "relevance_rules": [[r"relevant"]],
+        }
+    ]
+    candidate = _report(100, 1.0)
+    candidate["behavior_suite"] = {
+        "pass_rate": 0.5,
+        "correct": 1,
+        "total": 2,
+        "items": [{"id": "kept", "passed": True}, {"id": "lost", "passed": False}],
+    }
+    candidate["generations"] = [
+        {
+            "id": "gen_lost",
+            "prompt": "Custom prompt",
+            "output": "Custom prompt off topic",
+            "relevance_rules": [[r"relevant"]],
+        }
+    ]
+
+    verdict = gate_text_report(baseline, candidate, max_behavior_drop=0.0, min_continuation_chars=0)
+
+    assert verdict["passed"] is False
+    assert verdict["candidate"]["lost_behavior_ids"] == ["lost"]
+    assert verdict["candidate"]["lost_generation_ids"] == ["gen_lost"]
+
+
+def test_eval_suite_builder_and_loader_round_trip(tmp_path) -> None:
+    path = tmp_path / "suite.json"
+
+    report = build_eval_suite(
+        path,
+        behavior_count=1000,
+        generation_count=12,
+        choice_count=20,
+        text_count=8,
+        seed=7,
+    )
+    loaded = _load_eval_suite(path)
+
+    assert report["counts"]["behavior_probes"] == 1000
+    assert len(loaded["behavior_probes"]) == 1000
+    assert len(loaded["generation_prompts"]) == 12
+    assert loaded["generation_prompts"][0]["relevance_rules"]
+    assert len(loaded["choice_probes"]) == 20
+    assert len(loaded["text_evals"]) == 8
+
+
+def test_eval_suite_builder_preserves_explicit_zero_counts(tmp_path) -> None:
+    path = tmp_path / "suite.json"
+
+    build_eval_suite(
+        path,
+        behavior_count=0,
+        generation_count=0,
+        choice_count=0,
+        text_count=0,
+        seed=7,
+    )
+    loaded = _load_eval_suite(path)
+
+    assert loaded["behavior_probes"] == []
+    assert loaded["generation_prompts"] == []
+    assert loaded["choice_probes"] == []
+    assert loaded["text_evals"] == []
+
+
+def test_eval_suite_loader_accepts_jsonl_rows(tmp_path) -> None:
+    path = tmp_path / "suite.jsonl"
+    rows = [
+        {"type": "text_eval", "text": "A model should answer clearly."},
+        {"type": "generation", "id": "gen", "prompt": "Say merge risk.", "relevance_rules": [[r"risk"]]},
+        {"type": "choice", "id": "choice", "prompt": "Question: 1 + 1?\nAnswer:", "choices": [" 2", " 3"], "answer": 0},
+        {"id": "math", "prompt": "Question: What is 2 + 3?\nAnswer:", "kind": "first_number", "answer": "5"},
+    ]
+    path.write_text("\n".join(__import__("json").dumps(row) for row in rows), encoding="utf-8")
+
+    suite = _load_eval_suite(path)
+
+    assert suite["text_evals"] == ["A model should answer clearly."]
+    assert suite["generation_prompts"][0]["id"] == "gen"
+    assert suite["choice_probes"][0]["id"] == "choice"
+    assert suite["behavior_probes"][0]["id"] == "math"
 
 
 def test_behavior_first_candidate_sort_key_uses_shrink_and_ppl_only_after_output_ties() -> None:

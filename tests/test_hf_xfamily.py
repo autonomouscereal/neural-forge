@@ -4404,6 +4404,96 @@ def test_hf_rank_evals_handler_passes_flags(monkeypatch) -> None:
     }
 
 
+def test_hf_eval_handler_passes_broad_suite_flags(monkeypatch) -> None:
+    import neural_forge.hf_tools as hf_tools
+
+    captured = {}
+
+    def fake_eval(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(hf_tools, "evaluate_text_model", fake_eval)
+    args = build_parser().parse_args(
+        [
+            "hf-eval",
+            "model",
+            "report.json",
+            "--dtype",
+            "float32",
+            "--device",
+            "cpu",
+            "--max-new-tokens",
+            "33",
+            "--eval-suite",
+            "suite.json",
+            "--max-text-evals",
+            "7",
+            "--max-choice-probes",
+            "8",
+            "--max-generation-prompts",
+            "9",
+            "--max-behavior-probes",
+            "10",
+        ]
+    )
+    result = args.func(args)
+
+    assert result == {"ok": True}
+    assert captured == {
+        "model_id_or_path": "model",
+        "output_file": "report.json",
+        "torch_dtype": "float32",
+        "device": "cpu",
+        "trust_remote_code": False,
+        "max_new_tokens": 33,
+        "eval_suite": "suite.json",
+        "max_text_evals": 7,
+        "max_choice_probes": 8,
+        "max_generation_prompts": 9,
+        "max_behavior_probes": 10,
+    }
+
+
+def test_hf_build_eval_suite_handler_passes_counts(monkeypatch) -> None:
+    import neural_forge.hf_tools as hf_tools
+
+    captured = {}
+
+    def fake_build(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(hf_tools, "build_eval_suite", fake_build)
+    args = build_parser().parse_args(
+        [
+            "hf-build-eval-suite",
+            "suite.json",
+            "--behavior-count",
+            "1000",
+            "--generation-count",
+            "125",
+            "--choice-count",
+            "250",
+            "--text-count",
+            "32",
+            "--seed",
+            "9",
+        ]
+    )
+    result = args.func(args)
+
+    assert result == {"ok": True}
+    assert captured == {
+        "output_file": "suite.json",
+        "behavior_count": 1000,
+        "generation_count": 125,
+        "choice_count": 250,
+        "text_count": 32,
+        "seed": 9,
+    }
+
+
 def test_hf_reconstruct_folded_handler_passes_flags(monkeypatch) -> None:
     import neural_forge.cli as cli
     import neural_forge.hf_recovery as hf_recovery
