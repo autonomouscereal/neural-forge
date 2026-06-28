@@ -600,6 +600,55 @@ Interpretation:
   stronger behavior-coupled/on-policy objective or deeper blockwise fitting,
   not another PPL-only reconstruction pass.
 
+### Stepwise Donor-Correction Follow-Up
+
+Code change:
+
+- Added `hf-xfamily-recover --teacher-generate-lm-weight`, which asks the donor
+  to generate plain-text continuations from calibration prompts and trains the
+  folded child on those strings using the child tokenizer. This is a
+  tokenizer-agnostic bridge: it does not assume shared vocab rows.
+- Added `hf-xfamily-recover --stepwise-donor-kd-weight`, which generates greedy
+  child prefixes, decodes each prefix to text, scores that prefix with the
+  donor, projects donor next-token logits into the child vocabulary, and trains
+  the child at the exact next-token position.
+- Added finite gradient/parameter guards to cross-tokenizer recovery and
+  blockwise recovery. Same-tokenizer recovery already had these; blank-target
+  cross-tokenizer runs should fail fast rather than silently corrupt weights.
+
+Rationale from 2025-2026 research and agent review:
+
+- On-policy/cross-tokenizer distillation work points at per-prefix correction
+  rather than offline sequence-averaged KD.
+- Byte/chunk-level and ALM-style methods matter because tokenizer mismatch is
+  most visible in numerals/code, where prior runs could rank a full candidate
+  answer correctly while still decoding the wrong first token.
+- Chain-based distillation and decode-aware calibration suggest the single-step
+  `4B -> 135M` jump is probably too abrupt without intermediate anchors, but
+  stepwise donor correction is still useful infrastructure for testing that
+  hypothesis.
+
+Strict 25x validation on the current best blank-target child:
+
+| Checkpoint | Params | Ratio | PPL mean | Choice | Behavior | lm-eval ARC-Easy | lm-eval PIQA | Manual notes |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| Prior best `alpha05_ffn1496_folded_xreconstruct_mlp_a05` | 160,752,960 | 25.02x | 1,384.22 | 3/4 | 1/6 | 0.45 / 0.25 | 0.55 / 0.50 | topical but malformed; recognizable add-function skeleton |
+| Stepwise + teacher-LM, 24 steps | 160,752,960 | 25.02x | 1,648.56 | 2/4 | 0/6 | not promoted | not promoted | projected stepwise loss decreased, but output regressed into repetition/noise |
+| Teacher-generated LM only, 40 steps | 160,752,960 | 25.02x | 1,502.17 | 2/4 | 2/6 | 0.40 / 0.20 | 0.60 / 0.50 | slightly better regex behavior and PIQA raw, but code still wrong and repetition remains heavy |
+
+Interpretation:
+
+- The new losses are mechanically active: stepwise donor counts were nonzero
+  and losses decreased during recovery.
+- The projected-vocab stepwise loss is too blurry or too aggressively weighted
+  in the tested schedule; it worsened PPL, choice, behavior, and manual output.
+- Donor-generated plain-text LM recovery is less destructive and may be useful
+  as a staged warmup, but the 40-step ablation still does not beat the prior
+  strict best overall. It improves behavior regex to `2/6` and PIQA raw to
+  `0.60`, while losing ARC-Easy, choice, and PPL.
+- No result in this sweep meets the user's 25x useful-behavior bar. The best
+  strict checkpoint remains the prior FFN1496 + MLP reconstruction run.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best

@@ -653,6 +653,20 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--teacher-rank-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--teacher-rank-temperature", type=float, default=1.0)
     xfamily_recover.add_argument("--teacher-rank-max-negatives", type=int, default=4)
+    xfamily_recover.add_argument(
+        "--teacher-generate-lm-weight",
+        type=float,
+        default=0.0,
+        help="Train the child on donor-generated plain-text continuations using the child tokenizer.",
+    )
+    xfamily_recover.add_argument("--teacher-generate-max-new-tokens", type=int, default=64)
+    xfamily_recover.add_argument(
+        "--stepwise-donor-kd-weight",
+        type=float,
+        default=0.0,
+        help="Correct child greedy prefixes with donor next-token logits projected into the child vocab.",
+    )
+    xfamily_recover.add_argument("--stepwise-donor-max-new-tokens", type=int, default=16)
     xfamily_recover.add_argument("--on-policy-anchor-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--on-policy-unlikelihood-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--on-policy-max-new-tokens", type=int, default=24)
@@ -833,6 +847,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     xfamily_block_recover.add_argument("--layer-gate-max-ppl-ratio", type=float, default=1.10)
     xfamily_block_recover.add_argument("--layer-gate-max-texts", type=int, default=4)
+    xfamily_block_recover.add_argument("--on-policy-anchor-kd-weight", type=float, default=0.0)
+    xfamily_block_recover.add_argument("--on-policy-unlikelihood-weight", type=float, default=0.0)
+    xfamily_block_recover.add_argument("--on-policy-max-new-tokens", type=int, default=24)
+    xfamily_block_recover.add_argument("--on-policy-interval", type=int, default=10)
+    xfamily_block_recover.add_argument(
+        "--on-policy-response-loss-mode",
+        choices=["none", "auto", "assistant", "answer"],
+        default="auto",
+        help="Prompt truncation mode used before block-recovery on-policy rollouts.",
+    )
+    xfamily_block_recover.add_argument("--on-policy-unlikelihood-window", type=int, default=16)
+    xfamily_block_recover.add_argument("--temperature", type=float, default=2.0)
     xfamily_block_recover.add_argument("--dtype", default="float16")
     xfamily_block_recover.add_argument("--candidate-dtype", default="float32")
     xfamily_block_recover.add_argument("--device", default="cuda:0")
@@ -1533,6 +1559,10 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         teacher_rank_weight=args.teacher_rank_weight,
         teacher_rank_temperature=args.teacher_rank_temperature,
         teacher_rank_max_negatives=args.teacher_rank_max_negatives,
+        teacher_generate_lm_weight=args.teacher_generate_lm_weight,
+        teacher_generate_max_new_tokens=args.teacher_generate_max_new_tokens,
+        stepwise_donor_kd_weight=args.stepwise_donor_kd_weight,
+        stepwise_donor_max_new_tokens=args.stepwise_donor_max_new_tokens,
         on_policy_anchor_kd_weight=args.on_policy_anchor_kd_weight,
         on_policy_unlikelihood_weight=args.on_policy_unlikelihood_weight,
         on_policy_max_new_tokens=args.on_policy_max_new_tokens,
@@ -1642,6 +1672,13 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         layer_gate_metric=args.layer_gate_metric,
         layer_gate_max_ppl_ratio=args.layer_gate_max_ppl_ratio,
         layer_gate_max_texts=args.layer_gate_max_texts,
+        on_policy_anchor_kd_weight=args.on_policy_anchor_kd_weight,
+        on_policy_unlikelihood_weight=args.on_policy_unlikelihood_weight,
+        on_policy_max_new_tokens=args.on_policy_max_new_tokens,
+        on_policy_interval=args.on_policy_interval,
+        on_policy_response_loss_mode=args.on_policy_response_loss_mode,
+        on_policy_unlikelihood_window=args.on_policy_unlikelihood_window,
+        temperature=args.temperature,
         torch_dtype=args.dtype,
         candidate_torch_dtype=args.candidate_dtype,
         device=args.device,

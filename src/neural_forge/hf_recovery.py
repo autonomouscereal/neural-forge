@@ -435,6 +435,10 @@ def recover_cross_tokenizer_causal_lm(
     teacher_rank_weight: float = 0.0,
     teacher_rank_temperature: float = 1.0,
     teacher_rank_max_negatives: int = 4,
+    teacher_generate_lm_weight: float = 0.0,
+    teacher_generate_max_new_tokens: int = 64,
+    stepwise_donor_kd_weight: float = 0.0,
+    stepwise_donor_max_new_tokens: int = 16,
     on_policy_anchor_kd_weight: float = 0.0,
     on_policy_unlikelihood_weight: float = 0.0,
     on_policy_max_new_tokens: int = 24,
@@ -476,10 +480,16 @@ def recover_cross_tokenizer_causal_lm(
         or alm_kd_weight < 0
         or answer_contrastive_weight < 0
         or teacher_rank_weight < 0
+        or teacher_generate_lm_weight < 0
+        or stepwise_donor_kd_weight < 0
         or on_policy_anchor_kd_weight < 0
         or on_policy_unlikelihood_weight < 0
     ):
         raise ValueError("loss weights must be non-negative.")
+    if teacher_generate_max_new_tokens <= 0:
+        raise ValueError("teacher_generate_max_new_tokens must be positive.")
+    if stepwise_donor_max_new_tokens <= 0:
+        raise ValueError("stepwise_donor_max_new_tokens must be positive.")
     if token_focus not in {"auto", "response", "numbers", "code", "all"}:
         raise ValueError("token_focus must be auto, response, numbers, code, or all.")
     if token_max_pairs <= 0:
@@ -521,6 +531,8 @@ def recover_cross_tokenizer_causal_lm(
         and alm_kd_weight == 0
         and answer_contrastive_weight == 0
         and teacher_rank_weight == 0
+        and teacher_generate_lm_weight == 0
+        and stepwise_donor_kd_weight == 0
         and on_policy_anchor_kd_weight == 0
         and on_policy_unlikelihood_weight == 0
     ):
@@ -586,7 +598,7 @@ def recover_cross_tokenizer_causal_lm(
     projected_vocab_groups = None
     projected_vocab_mask = None
     projected_vocab_valid = None
-    if projected_vocab_kd_weight > 0:
+    if projected_vocab_kd_weight > 0 or stepwise_donor_kd_weight > 0:
         projected_vocab_groups, projected_vocab_mask, projected_vocab_valid = _candidate_to_source_token_groups(
             torch,
             source_tokenizer,
@@ -688,6 +700,31 @@ def recover_cross_tokenizer_causal_lm(
         response_loss_mode=response_loss_mode,
         append_eos=append_eos,
     )
+    teacher_generated_texts: list[str] = []
+    teacher_generated_batches: list[dict[str, Any]] = []
+    if teacher_generate_lm_weight > 0:
+        teacher_generated_texts = _teacher_generated_lm_texts(
+            torch,
+            source,
+            source_tokenizer,
+            texts,
+            response_loss_mode,
+            max_new_tokens=teacher_generate_max_new_tokens,
+            max_length=max_length,
+            batch_size=batch_size,
+            device=device,
+        )
+        if not teacher_generated_texts:
+            raise ValueError("teacher_generate_lm_weight requested but donor generation produced no training texts.")
+        teacher_generated_batches = _make_batches(
+            candidate_tokenizer,
+            teacher_generated_texts,
+            batch_size=batch_size,
+            max_length=max_length,
+            device=device,
+            response_loss_mode="none",
+            append_eos=append_eos,
+        )
 
     losses = []
     span_pair_counts = []
@@ -868,15 +905,67 @@ def recover_cross_tokenizer_causal_lm(
             )
             on_policy_counts.append(int(on_policy_count))
             loss = loss + on_policy_loss
+        teacher_generate_loss = None
+        if teacher_generated_batches:
+            teacher_batch = teacher_generated_batches[(step - 1) % len(teacher_generated_batches)]
+            teacher_student = candidate(
+                **_model_forward_inputs(teacher_batch),
+                use_cache=False,
+            )
+            teacher_generate_loss = _candidate_lm_stabilizer_loss(
+                torch,
+                teacher_student,
+                teacher_batch["input_ids"],
+                teacher_batch.get("attention_mask"),
+            )
+            loss = loss + float(teacher_generate_lm_weight) * teacher_generate_loss
+        stepwise_donor_loss = None
+        stepwise_donor_count = 0
+        if stepwise_donor_kd_weight > 0:
+            if projected_vocab_groups is None or projected_vocab_mask is None or projected_vocab_valid is None:
+                raise ValueError("projected vocab maps are required when stepwise donor KD is positive.")
+            stepwise_donor_loss, stepwise_donor_count = _cross_tokenizer_stepwise_prefix_kd_loss(
+                torch,
+                source,
+                candidate,
+                source_tokenizer,
+                candidate_tokenizer,
+                candidate_batch.get("raw_texts", candidate_batch.get("texts", [])),
+                response_loss_mode,
+                int(stepwise_donor_max_new_tokens),
+                max_length,
+                device,
+                projected_vocab_groups,
+                projected_vocab_mask,
+                projected_vocab_valid,
+                temperature,
+            )
+            loss = loss + float(stepwise_donor_kd_weight) * stepwise_donor_loss
         if not bool(torch.isfinite(loss).detach().cpu()):
             raise RuntimeError(f"Non-finite cross-tokenizer recovery loss at step {step}; aborting before save.")
         loss.backward()
+        _raise_if_nonfinite_gradients(torch, candidate, step)
         if grad_clip > 0:
             torch.nn.utils.clip_grad_norm_([p for p in candidate.parameters() if p.requires_grad], grad_clip)
         optimizer.step()
+        _raise_if_nonfinite_parameters(torch, candidate, step)
         if step == 1 or step % interval == 0 or step == steps:
             loss_value = float(loss.detach().cpu())
-            losses.append({"step": step, "loss": loss_value})
+            teacher_generate_loss_value = (
+                None if teacher_generate_loss is None else float(teacher_generate_loss.detach().cpu())
+            )
+            stepwise_donor_loss_value = (
+                None if stepwise_donor_loss is None else float(stepwise_donor_loss.detach().cpu())
+            )
+            losses.append(
+                {
+                    "step": step,
+                    "loss": loss_value,
+                    "teacher_generate_lm_loss": teacher_generate_loss_value,
+                    "stepwise_donor_kd_loss": stepwise_donor_loss_value,
+                    "stepwise_donor_count": int(stepwise_donor_count),
+                }
+            )
             print(
                 f"xfamily_recover step={step} loss={loss_value:.6f} "
                 f"span_pairs={span_pair_counts[-1] if span_pair_counts else 0} "
@@ -884,7 +973,10 @@ def recover_cross_tokenizer_causal_lm(
                 f"alm_chunks={alm_chunk_counts[-1] if alm_chunk_counts else 0} "
                 f"answer_contrastive={answer_contrastive_counts[-1] if answer_contrastive_counts else 0} "
                 f"teacher_rank={teacher_rank_counts[-1] if teacher_rank_counts else 0} "
-                f"on_policy={on_policy_counts[-1] if on_policy_counts else 0}",
+                f"on_policy={on_policy_counts[-1] if on_policy_counts else 0} "
+                f"teacher_generate_lm={teacher_generate_loss_value if teacher_generate_loss_value is not None else 0.0:.6f} "
+                f"stepwise_donor={stepwise_donor_loss_value if stepwise_donor_loss_value is not None else 0.0:.6f} "
+                f"stepwise_donor_count={int(stepwise_donor_count)}",
                 flush=True,
             )
             if save_best_loss and (best_loss is None or loss_value < best_loss):
@@ -938,6 +1030,12 @@ def recover_cross_tokenizer_causal_lm(
         "teacher_rank_temperature": teacher_rank_temperature,
         "teacher_rank_max_negatives": teacher_rank_max_negatives,
         "teacher_rank_count_observed": teacher_rank_counts,
+        "teacher_generate_lm_weight": teacher_generate_lm_weight,
+        "teacher_generate_max_new_tokens": teacher_generate_max_new_tokens,
+        "teacher_generated_text_count": len(teacher_generated_texts),
+        "teacher_generated_text_samples": teacher_generated_texts[:3],
+        "stepwise_donor_kd_weight": stepwise_donor_kd_weight,
+        "stepwise_donor_max_new_tokens": stepwise_donor_max_new_tokens,
         "on_policy_anchor_kd_weight": on_policy_anchor_kd_weight,
         "on_policy_unlikelihood_weight": on_policy_unlikelihood_weight,
         "on_policy_max_new_tokens": on_policy_max_new_tokens,
@@ -1641,6 +1739,13 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     layer_gate_metric: str = "none",
     layer_gate_max_ppl_ratio: float = 1.10,
     layer_gate_max_texts: int = 4,
+    on_policy_anchor_kd_weight: float = 0.0,
+    on_policy_unlikelihood_weight: float = 0.0,
+    on_policy_max_new_tokens: int = 24,
+    on_policy_interval: int = 10,
+    on_policy_response_loss_mode: str = "auto",
+    on_policy_unlikelihood_window: int = 16,
+    temperature: float = 2.0,
     torch_dtype: str = "float16",
     candidate_torch_dtype: str = "float32",
     device: str = "cuda:0",
@@ -1687,6 +1792,18 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("layer_gate_max_ppl_ratio must be positive.")
     if layer_gate_max_texts <= 0:
         raise ValueError("layer_gate_max_texts must be positive.")
+    if on_policy_anchor_kd_weight < 0 or on_policy_unlikelihood_weight < 0:
+        raise ValueError("on-policy weights must be non-negative.")
+    if on_policy_max_new_tokens <= 0:
+        raise ValueError("on_policy_max_new_tokens must be positive.")
+    if on_policy_interval <= 0:
+        raise ValueError("on_policy_interval must be positive.")
+    if on_policy_response_loss_mode not in {"none", "auto", "assistant", "answer"}:
+        raise ValueError("on_policy_response_loss_mode must be none, auto, assistant, or answer.")
+    if on_policy_unlikelihood_window <= 0:
+        raise ValueError("on_policy_unlikelihood_window must be positive.")
+    if temperature <= 0:
+        raise ValueError("temperature must be positive.")
     if grad_clip < 0:
         raise ValueError("grad_clip must be non-negative.")
     if report_interval is not None and report_interval <= 0:
@@ -1861,16 +1978,45 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     candidate_batch.get("attention_mask"),
                 )
                 loss = loss + float(lm_weight) * lm_loss
+            on_policy_loss = None
+            on_policy_count = 0
+            if (
+                (on_policy_anchor_kd_weight > 0 or on_policy_unlikelihood_weight > 0)
+                and (step == 1 or step % int(on_policy_interval) == 0)
+            ):
+                on_policy_texts = candidate_batch.get("raw_texts", candidate_batch.get("texts", []))
+                on_policy_loss, on_policy_count = _cross_tokenizer_on_policy_rollout_loss(
+                    torch,
+                    source,
+                    candidate,
+                    source_tokenizer,
+                    candidate_tokenizer,
+                    on_policy_texts,
+                    on_policy_response_loss_mode,
+                    int(on_policy_max_new_tokens),
+                    int(max_length),
+                    device,
+                    source_anchor_idx,
+                    candidate_anchor_idx,
+                    float(temperature),
+                    float(on_policy_anchor_kd_weight),
+                    float(on_policy_unlikelihood_weight),
+                    int(on_policy_unlikelihood_window),
+                )
+                loss = loss + on_policy_loss
             if not bool(torch.isfinite(loss).detach().cpu()):
                 raise RuntimeError(
                     f"Non-finite blockwise reconstruction loss at layer {candidate_idx}, step {step}; aborting."
                 )
             loss.backward()
+            _raise_if_nonfinite_gradients(torch, candidate, step)
             if grad_clip > 0:
                 torch.nn.utils.clip_grad_norm_([p for p in candidate_layer.parameters() if p.requires_grad], grad_clip)
             optimizer.step()
+            _raise_if_nonfinite_parameters(torch, candidate, step)
             loss_value = float(loss.detach().cpu())
             lm_loss_value = None if lm_loss is None else float(lm_loss.detach().cpu())
+            on_policy_loss_value = None if on_policy_loss is None else float(on_policy_loss.detach().cpu())
             if save_best_layer_loss and (best_loss is None or loss_value < best_loss):
                 best_loss = loss_value
                 best_step = int(step)
@@ -1882,6 +2028,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                         "loss": loss_value,
                         "block_loss": block_loss_value,
                         "lm_loss": lm_loss_value,
+                        "on_policy_loss": on_policy_loss_value,
+                        "on_policy_count": int(on_policy_count),
                         "span_pairs": int(pair_count),
                     }
                 )
@@ -1889,6 +2037,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     f"xfamily_block_recover layer={candidate_idx} step={step} "
                     f"loss={loss_value:.6f} block_loss={block_loss_value:.6f} "
                     f"lm_loss={lm_loss_value if lm_loss_value is not None else 0.0:.6f} "
+                    f"on_policy={on_policy_loss_value if on_policy_loss_value is not None else 0.0:.6f} "
+                    f"on_policy_count={int(on_policy_count)} "
                     f"span_pairs={int(pair_count)}",
                     flush=True,
                 )
@@ -1979,6 +2129,13 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "donor_layer_fold_mode": donor_layer_fold_mode,
         "layer_limit": layer_limit,
         "layer_gate": layer_gate,
+        "on_policy_anchor_kd_weight": float(on_policy_anchor_kd_weight),
+        "on_policy_unlikelihood_weight": float(on_policy_unlikelihood_weight),
+        "on_policy_max_new_tokens": int(on_policy_max_new_tokens),
+        "on_policy_interval": int(on_policy_interval),
+        "on_policy_response_loss_mode": on_policy_response_loss_mode,
+        "on_policy_unlikelihood_window": int(on_policy_unlikelihood_window),
+        "temperature": float(temperature),
         "torch_dtype": torch_dtype,
         "candidate_torch_dtype": candidate_torch_dtype,
         "grad_clip": float(grad_clip),
@@ -2837,6 +2994,235 @@ def _on_policy_prompt_text(text: str, response_loss_mode: str) -> str:
     if start is None or int(start) <= 0:
         return text
     return text[: int(start)]
+
+
+def _teacher_generated_lm_texts(
+    torch,
+    source_model,
+    source_tokenizer,
+    texts: Sequence[str],
+    response_loss_mode: str,
+    max_new_tokens: int,
+    max_length: int,
+    batch_size: int,
+    device: str,
+) -> list[str]:
+    if response_loss_mode not in {"none", "auto", "assistant", "answer"}:
+        raise ValueError("response_loss_mode must be none, auto, assistant, or answer.")
+    if max_new_tokens <= 0:
+        raise ValueError("max_new_tokens must be positive.")
+    if max_length <= 1:
+        raise ValueError("max_length must be greater than 1.")
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive.")
+    prompts = [_on_policy_prompt_text(str(text), response_loss_mode) for text in texts]
+    prompts = [prompt for prompt in prompts if prompt.strip()]
+    if not prompts:
+        return []
+
+    pad_id = source_tokenizer.pad_token_id
+    if pad_id is None:
+        pad_id = source_tokenizer.eos_token_id
+    prompt_max_length = max(2, int(max_length) - int(max_new_tokens))
+    generated_texts: list[str] = []
+    seen: set[str] = set()
+    was_training = source_model.training
+    source_model.eval()
+    try:
+        for start in range(0, len(prompts), int(batch_size)):
+            chunk = prompts[start : start + int(batch_size)]
+            encoded = source_tokenizer(
+                chunk,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=prompt_max_length,
+            )
+            encoded = {key: value.to(device) for key, value in encoded.items()}
+            with torch.no_grad():
+                generated = source_model.generate(
+                    **encoded,
+                    max_new_tokens=int(max_new_tokens),
+                    do_sample=False,
+                    pad_token_id=pad_id,
+                    eos_token_id=source_tokenizer.eos_token_id,
+                )
+            for row in generated.detach().cpu():
+                text = source_tokenizer.decode(
+                    row.tolist(),
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=False,
+                ).strip()
+                if text and text not in seen:
+                    seen.add(text)
+                    generated_texts.append(text)
+    finally:
+        if was_training:
+            source_model.train()
+    return generated_texts
+
+
+def _cross_tokenizer_stepwise_prefix_kd_loss(
+    torch,
+    source_model,
+    candidate_model,
+    source_tokenizer,
+    candidate_tokenizer,
+    texts: Sequence[str],
+    response_loss_mode: str,
+    max_new_tokens: int,
+    max_length: int,
+    device: str,
+    projected_vocab_groups,
+    projected_vocab_mask,
+    projected_vocab_valid,
+    temperature: float,
+):
+    if response_loss_mode not in {"none", "auto", "assistant", "answer"}:
+        raise ValueError("response_loss_mode must be none, auto, assistant, or answer.")
+    if max_new_tokens <= 0:
+        raise ValueError("max_new_tokens must be positive.")
+    if max_length <= 1:
+        raise ValueError("max_length must be greater than 1.")
+    if temperature <= 0:
+        raise ValueError("temperature must be positive.")
+    prompts = [_on_policy_prompt_text(str(text), response_loss_mode) for text in texts]
+    prompts = [prompt for prompt in prompts if prompt.strip()]
+    if not prompts:
+        param = next(candidate_model.parameters())
+        return torch.zeros((), dtype=param.dtype, device=param.device), 0
+
+    pad_id = candidate_tokenizer.pad_token_id
+    if pad_id is None:
+        pad_id = candidate_tokenizer.eos_token_id
+    prompt_max_length = max(2, int(max_length) - int(max_new_tokens))
+    encoded = candidate_tokenizer(
+        prompts,
+        return_tensors="pt",
+        padding=True,
+        truncation=True,
+        max_length=prompt_max_length,
+    )
+    encoded = {key: value.to(device) for key, value in encoded.items()}
+    prompt_lengths = (
+        encoded["attention_mask"].detach().sum(dim=1).to(dtype=torch.long)
+        if "attention_mask" in encoded
+        else torch.full((int(encoded["input_ids"].shape[0]),), int(encoded["input_ids"].shape[1]), dtype=torch.long, device=device)
+    )
+    was_training = candidate_model.training
+    try:
+        candidate_model.eval()
+        with torch.no_grad():
+            generated = candidate_model.generate(
+                **encoded,
+                max_new_tokens=int(max_new_tokens),
+                do_sample=False,
+                pad_token_id=pad_id,
+                eos_token_id=candidate_tokenizer.eos_token_id,
+            )
+    finally:
+        if was_training:
+            candidate_model.train()
+
+    generated = generated.to(device)
+    generated_mask = torch.ones_like(generated, dtype=torch.long, device=device)
+    row_lengths: list[int] = []
+    prompt_lengths_cpu = [int(item) for item in prompt_lengths.detach().cpu().tolist()]
+    generated_cpu = generated.detach().cpu()
+    for batch_idx, row in enumerate(generated_cpu):
+        ids = [int(item) for item in row.tolist()]
+        length = len(ids)
+        if pad_id is not None:
+            while length > prompt_lengths_cpu[batch_idx] and length > 0 and ids[length - 1] == int(pad_id):
+                length -= 1
+        row_lengths.append(max(0, length))
+        if length < int(generated.shape[1]):
+            generated_mask[batch_idx, length:] = 0
+
+    student = candidate_model(
+        input_ids=generated,
+        attention_mask=generated_mask,
+        use_cache=False,
+    )
+    shift_student = torch.nan_to_num(
+        student.logits[:, :-1, :].contiguous().to(torch.float32),
+        nan=0.0,
+        posinf=1e4,
+        neginf=-1e4,
+    )
+    prefix_texts: list[str] = []
+    row_positions: list[tuple[int, int]] = []
+    max_shift_pos = int(shift_student.shape[1]) - 1
+    for batch_idx, length in enumerate(row_lengths):
+        prompt_len = prompt_lengths_cpu[batch_idx]
+        if length <= prompt_len or prompt_len <= 0:
+            continue
+        first_logit_pos = max(0, prompt_len - 1)
+        last_logit_pos = min(length - 2, first_logit_pos + int(max_new_tokens) - 1, max_shift_pos)
+        for logit_pos in range(first_logit_pos, last_logit_pos + 1):
+            prefix_ids = [int(item) for item in generated_cpu[batch_idx, : logit_pos + 1].tolist()]
+            prefix = candidate_tokenizer.decode(
+                prefix_ids,
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
+            )
+            if not prefix.strip():
+                continue
+            prefix_texts.append(prefix)
+            row_positions.append((batch_idx, logit_pos))
+    if not row_positions:
+        param = next(candidate_model.parameters())
+        return torch.zeros((), dtype=param.dtype, device=param.device), 0
+
+    source_batch = source_tokenizer(
+        prefix_texts,
+        return_tensors="pt",
+        padding=True,
+        truncation=True,
+        max_length=max_length,
+    )
+    source_batch = {key: value.to(device) for key, value in source_batch.items()}
+    source_lengths = (
+        source_batch["attention_mask"].sum(dim=1).to(dtype=torch.long)
+        if "attention_mask" in source_batch
+        else torch.full(
+            (len(prefix_texts),),
+            int(source_batch["input_ids"].shape[1]),
+            dtype=torch.long,
+            device=device,
+        )
+    )
+    with torch.no_grad():
+        teacher = source_model(**_model_forward_inputs(source_batch), use_cache=False)
+    teacher_rows = torch.arange(len(prefix_texts), dtype=torch.long, device=device)
+    teacher_pos = (source_lengths - 1).clamp(min=0, max=int(teacher.logits.shape[1]) - 1)
+    teacher_logits = torch.nan_to_num(
+        teacher.logits[teacher_rows, teacher_pos].contiguous().to(torch.float32),
+        nan=0.0,
+        posinf=1e4,
+        neginf=-1e4,
+    )
+    projected_teacher = _project_source_logits_to_candidate_vocab(
+        torch,
+        teacher_logits,
+        projected_vocab_groups,
+        projected_vocab_mask,
+        projected_vocab_valid,
+    )
+    batch_positions = torch.tensor([item[0] for item in row_positions], dtype=torch.long, device=device)
+    token_positions = torch.tensor([item[1] for item in row_positions], dtype=torch.long, device=device)
+    student_logits = shift_student[batch_positions, token_positions]
+    loss = _entropy_aware_kl_loss(
+        torch,
+        student_logits,
+        projected_teacher,
+        temperature,
+        0.0,
+        0.55,
+        8.0,
+        vocab_valid=projected_vocab_valid,
+    )
+    return loss.to(device=student_logits.device, dtype=torch.float32), len(row_positions)
 
 
 def _sequence_response_nlls(
