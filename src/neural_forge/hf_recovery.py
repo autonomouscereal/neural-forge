@@ -1745,6 +1745,10 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     on_policy_interval: int = 10,
     on_policy_response_loss_mode: str = "auto",
     on_policy_unlikelihood_window: int = 16,
+    stepwise_donor_kd_weight: float = 0.0,
+    stepwise_donor_max_new_tokens: int = 8,
+    stepwise_donor_interval: int = 4,
+    projected_vocab_max_source_tokens: int = 8,
     temperature: float = 2.0,
     torch_dtype: str = "float16",
     candidate_torch_dtype: str = "float32",
@@ -1794,10 +1798,18 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("layer_gate_max_texts must be positive.")
     if on_policy_anchor_kd_weight < 0 or on_policy_unlikelihood_weight < 0:
         raise ValueError("on-policy weights must be non-negative.")
+    if stepwise_donor_kd_weight < 0:
+        raise ValueError("stepwise_donor_kd_weight must be non-negative.")
     if on_policy_max_new_tokens <= 0:
         raise ValueError("on_policy_max_new_tokens must be positive.")
     if on_policy_interval <= 0:
         raise ValueError("on_policy_interval must be positive.")
+    if stepwise_donor_max_new_tokens <= 0:
+        raise ValueError("stepwise_donor_max_new_tokens must be positive.")
+    if stepwise_donor_interval <= 0:
+        raise ValueError("stepwise_donor_interval must be positive.")
+    if projected_vocab_max_source_tokens <= 0:
+        raise ValueError("projected_vocab_max_source_tokens must be positive.")
     if on_policy_response_loss_mode not in {"none", "auto", "assistant", "answer"}:
         raise ValueError("on_policy_response_loss_mode must be none, auto, assistant, or answer.")
     if on_policy_unlikelihood_window <= 0:
@@ -1871,6 +1883,17 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         max_anchors=max_anchors,
     )
     hidden_projection = hidden_projection_report["map"].to(device=device, dtype=torch.float32)
+    projected_vocab_groups = None
+    projected_vocab_mask = None
+    projected_vocab_valid = None
+    if stepwise_donor_kd_weight > 0:
+        projected_vocab_groups, projected_vocab_mask, projected_vocab_valid = _candidate_to_source_token_groups(
+            torch,
+            source_tokenizer,
+            candidate_tokenizer,
+            max_source_tokens=projected_vocab_max_source_tokens,
+            device=device,
+        )
 
     texts = list(calibration_texts or RECOVERY_TEXTS)
     if not texts:
@@ -1965,7 +1988,13 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 hidden_metric,
                 span_max_pairs,
             )
-            if int(pair_count) <= 0 and lm_weight == 0:
+            if (
+                int(pair_count) <= 0
+                and lm_weight == 0
+                and on_policy_anchor_kd_weight == 0
+                and on_policy_unlikelihood_weight == 0
+                and stepwise_donor_kd_weight == 0
+            ):
                 skipped_steps += 1
                 continue
             block_loss_value = float(loss.detach().cpu())
@@ -2004,6 +2033,28 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     int(on_policy_unlikelihood_window),
                 )
                 loss = loss + on_policy_loss
+            stepwise_donor_loss = None
+            stepwise_donor_count = 0
+            if stepwise_donor_kd_weight > 0 and (step == 1 or step % int(stepwise_donor_interval) == 0):
+                if projected_vocab_groups is None or projected_vocab_mask is None or projected_vocab_valid is None:
+                    raise ValueError("projected vocab maps are required when stepwise donor KD is positive.")
+                stepwise_donor_loss, stepwise_donor_count = _cross_tokenizer_stepwise_prefix_kd_loss(
+                    torch,
+                    source,
+                    candidate,
+                    source_tokenizer,
+                    candidate_tokenizer,
+                    candidate_batch.get("raw_texts", candidate_batch.get("texts", [])),
+                    on_policy_response_loss_mode,
+                    int(stepwise_donor_max_new_tokens),
+                    int(max_length),
+                    device,
+                    projected_vocab_groups,
+                    projected_vocab_mask,
+                    projected_vocab_valid,
+                    float(temperature),
+                )
+                loss = loss + float(stepwise_donor_kd_weight) * stepwise_donor_loss
             if not bool(torch.isfinite(loss).detach().cpu()):
                 raise RuntimeError(
                     f"Non-finite blockwise reconstruction loss at layer {candidate_idx}, step {step}; aborting."
@@ -2017,6 +2068,9 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             loss_value = float(loss.detach().cpu())
             lm_loss_value = None if lm_loss is None else float(lm_loss.detach().cpu())
             on_policy_loss_value = None if on_policy_loss is None else float(on_policy_loss.detach().cpu())
+            stepwise_donor_loss_value = (
+                None if stepwise_donor_loss is None else float(stepwise_donor_loss.detach().cpu())
+            )
             if save_best_layer_loss and (best_loss is None or loss_value < best_loss):
                 best_loss = loss_value
                 best_step = int(step)
@@ -2030,6 +2084,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                         "lm_loss": lm_loss_value,
                         "on_policy_loss": on_policy_loss_value,
                         "on_policy_count": int(on_policy_count),
+                        "stepwise_donor_kd_loss": stepwise_donor_loss_value,
+                        "stepwise_donor_count": int(stepwise_donor_count),
                         "span_pairs": int(pair_count),
                     }
                 )
@@ -2039,6 +2095,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     f"lm_loss={lm_loss_value if lm_loss_value is not None else 0.0:.6f} "
                     f"on_policy={on_policy_loss_value if on_policy_loss_value is not None else 0.0:.6f} "
                     f"on_policy_count={int(on_policy_count)} "
+                    f"stepwise_donor={stepwise_donor_loss_value if stepwise_donor_loss_value is not None else 0.0:.6f} "
+                    f"stepwise_donor_count={int(stepwise_donor_count)} "
                     f"span_pairs={int(pair_count)}",
                     flush=True,
                 )
@@ -2135,6 +2193,10 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "on_policy_interval": int(on_policy_interval),
         "on_policy_response_loss_mode": on_policy_response_loss_mode,
         "on_policy_unlikelihood_window": int(on_policy_unlikelihood_window),
+        "stepwise_donor_kd_weight": float(stepwise_donor_kd_weight),
+        "stepwise_donor_max_new_tokens": int(stepwise_donor_max_new_tokens),
+        "stepwise_donor_interval": int(stepwise_donor_interval),
+        "projected_vocab_max_source_tokens": int(projected_vocab_max_source_tokens),
         "temperature": float(temperature),
         "torch_dtype": torch_dtype,
         "candidate_torch_dtype": candidate_torch_dtype,

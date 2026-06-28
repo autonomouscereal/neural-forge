@@ -868,6 +868,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Prompt truncation mode used before block-recovery on-policy rollouts.",
     )
     xfamily_block_recover.add_argument("--on-policy-unlikelihood-window", type=int, default=16)
+    xfamily_block_recover.add_argument("--stepwise-donor-kd-weight", type=float, default=0.0)
+    xfamily_block_recover.add_argument("--stepwise-donor-max-new-tokens", type=int, default=8)
+    xfamily_block_recover.add_argument("--stepwise-donor-interval", type=int, default=4)
+    xfamily_block_recover.add_argument("--projected-vocab-max-source-tokens", type=int, default=8)
     xfamily_block_recover.add_argument("--temperature", type=float, default=2.0)
     xfamily_block_recover.add_argument("--dtype", default="float16")
     xfamily_block_recover.add_argument("--candidate-dtype", default="float32")
@@ -1699,6 +1703,10 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         on_policy_interval=args.on_policy_interval,
         on_policy_response_loss_mode=args.on_policy_response_loss_mode,
         on_policy_unlikelihood_window=args.on_policy_unlikelihood_window,
+        stepwise_donor_kd_weight=args.stepwise_donor_kd_weight,
+        stepwise_donor_max_new_tokens=args.stepwise_donor_max_new_tokens,
+        stepwise_donor_interval=args.stepwise_donor_interval,
+        projected_vocab_max_source_tokens=args.projected_vocab_max_source_tokens,
         temperature=args.temperature,
         torch_dtype=args.dtype,
         candidate_torch_dtype=args.candidate_dtype,

@@ -691,6 +691,47 @@ The ranker correctly kept the original dual+ALM checkpoint first because the
 polish variants preserved regex behavior but lost choice accuracy. Manual output
 also did not improve.
 
+### Blockwise Stepwise Donor-KD Follow-Up
+
+Code change:
+
+- Added optional stepwise donor next-token KD to
+  `hf-xfamily-block-recover`. Unlike `hf-xfamily-recover`, this keeps only the
+  current child block trainable, so the donor prefix-correction signal is used
+  during block/interface repair instead of full-model recovery.
+- New flags:
+  `--stepwise-donor-kd-weight`, `--stepwise-donor-max-new-tokens`,
+  `--stepwise-donor-interval`, and `--projected-vocab-max-source-tokens`.
+- The blockwise skip condition now permits stepwise-only block updates even
+  when span alignment finds no activation pairs.
+
+Strict FFN1496 validation:
+
+- Starting checkpoint:
+  `alpha05_ffn1496_folded_xreconstruct_mlp_a05`, `160,752,960` params,
+  `25.02x`, PPL `1,384.22`, choice `3/4`, behavior `1/6`.
+- Run:
+  `runs/qwen4b_to_smollm135m_strict25_ffnfold_20260627_191250/block_stepwise_first4_s4`.
+- Settings: first 4 child blocks, 4 steps/layer, `lm_weight=0.03`,
+  `hidden_metric=both`, `stepwise_donor_kd_weight=0.05`,
+  `stepwise_donor_max_new_tokens=4`, PPL layer gate `1.05`.
+- Report: 4/4 layer updates accepted, 0 rejected; 12 logged updates had
+  nonzero stepwise donor counts, max count `4`.
+- Eval: PPL `1,383.58`, choice `2/4`, behavior `1/6`, ratio `25.02x`.
+- Rank artifact:
+  `runs/qwen4b_to_smollm135m_strict25_ffnfold_20260627_191250/rank_block_stepwise_first4_s4.json`.
+
+Interpretation:
+
+- The block-local stepwise signal is mechanically active and did not blow up.
+- It is not a useful improvement at this setting. PPL improved by less than
+  `1`, choice accuracy regressed, behavior did not improve, and manual outputs
+  remained repetitive/malformed.
+- This supports the current working conclusion: decode-aware losses are useful
+  infrastructure, but the next meaningful jump probably needs stronger
+  block/interface initialization before recovery, not another small loss
+  coefficient on the current weak folded manifold.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best
