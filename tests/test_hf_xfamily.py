@@ -120,6 +120,7 @@ from neural_forge.hf_xfamily import _resize_tensor_axis_mean_fold
 from neural_forge.hf_xfamily import _resize_tensor_to_shape
 from neural_forge.hf_xfamily import _scale_projection_to_target
 from neural_forge.hf_xfamily import _select_compression_candidates
+from neural_forge.hf_xfamily import _synthesize_cross_arch_layer_tensor
 from neural_forge.hf_xfamily import _target_to_donor_token_group_specs
 from neural_forge.hf_xfamily import _target_to_donor_token_groups
 from neural_forge.hf_xfamily import _target_to_donor_omp_group_specs
@@ -2172,6 +2173,47 @@ def test_truncate_linear_weight_delta_rank_keeps_reference_full_rank() -> None:
     assert report["effective_rank"] == 2
     assert int(torch.linalg.matrix_rank(truncated - reference).item()) == 2
     assert torch.diag(truncated).tolist() == pytest.approx([6.0, 5.0, 1.0, 1.0], abs=1e-5)
+
+
+def test_synthesize_cross_arch_layer_tensor_fuses_qkv_for_gpt2() -> None:
+    torch = pytest.importorskip("torch")
+    q = torch.arange(6, dtype=torch.float32).reshape(2, 3)
+    k = q + 10
+    v = q + 20
+    layer_state = {
+        "self_attn.q_proj.weight": q,
+        "self_attn.k_proj.weight": k,
+        "self_attn.v_proj.weight": v,
+    }
+
+    fused, report = _synthesize_cross_arch_layer_tensor(torch, layer_state, "attn.c_attn.weight")
+
+    expected = torch.cat([q, k, v], dim=0).t()
+    torch.testing.assert_close(fused, expected)
+    assert report["method"] == "fuse_qkv_transposed_for_gpt2_c_attn"
+
+
+def test_synthesize_cross_arch_layer_tensor_transposes_mlp_for_gpt2() -> None:
+    torch = pytest.importorskip("torch")
+    gate = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+    up = torch.tensor([[5.0, 6.0], [7.0, 8.0]])
+    down = torch.tensor([[9.0, 10.0], [11.0, 12.0]])
+    layer_state = {
+        "mlp.gate_proj.weight": gate,
+        "mlp.up_proj.weight": up,
+        "mlp.down_proj.weight": down,
+    }
+
+    c_fc, c_fc_report = _synthesize_cross_arch_layer_tensor(torch, layer_state, "mlp.c_fc.weight")
+    c_proj, c_proj_report = _synthesize_cross_arch_layer_tensor(torch, layer_state, "mlp.c_proj.weight")
+    c_fc_bias, c_fc_bias_report = _synthesize_cross_arch_layer_tensor(torch, layer_state, "mlp.c_fc.bias")
+
+    torch.testing.assert_close(c_fc, torch.stack([gate, up], dim=0).mean(dim=0).t())
+    torch.testing.assert_close(c_proj, down.t())
+    torch.testing.assert_close(c_fc_bias, torch.zeros(2))
+    assert c_fc_report["method"] == "average_gated_mlp_inputs_transposed_for_gpt2_c_fc"
+    assert c_proj_report["method"] == "transpose_down_proj_for_gpt2_c_proj"
+    assert c_fc_bias_report["method"] == "zero_mlp_input_bias_for_gpt2_c_fc"
 
 
 def test_fit_projected_linear_from_donor_activations_reports_validation_metrics() -> None:

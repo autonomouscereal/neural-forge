@@ -503,6 +503,7 @@ def donor_projected_init(
     neutralized_layer_keys = []
     activation_fit_reports = []
     activation_fit_attempt_reports = []
+    donor_layer_state_cache: dict[int, dict[str, Any]] = {}
     hidden_axis_weights = None
     if activation_profile is not None:
         hidden_axis_weights = {
@@ -528,6 +529,21 @@ def donor_projected_init(
         if donor_layer_fold_mode == "representative":
             donor_key = _lookup_layer_tensor_key(donor_layer_keys, donor_layer_idx, suffix)
             donor_tensor = None if donor_key is None else donor_state[donor_key]
+            synthetic_layer_report = None
+            if donor_tensor is None:
+                donor_layer_state = _donor_layer_state_from_index(
+                    donor_state,
+                    donor_layer_keys,
+                    donor_layer_idx,
+                    donor_layer_state_cache,
+                )
+                donor_tensor, synthetic_layer_report = _synthesize_cross_arch_layer_tensor(
+                    torch,
+                    donor_layer_state,
+                    suffix,
+                )
+                if donor_tensor is not None:
+                    donor_key = f"synthesized_donor_layer.{donor_layer_idx}.{suffix}"
         else:
             donor_key = f"folded_donor_layers.{target_layer_idx}.{suffix}"
             folded_state = _folded_donor_layer_state(
@@ -540,6 +556,15 @@ def donor_projected_init(
                 cache=folded_donor_layer_cache,
             )
             donor_tensor = _lookup_layer_tensor_value(folded_state, suffix)
+            synthetic_layer_report = None
+            if donor_tensor is None:
+                donor_tensor, synthetic_layer_report = _synthesize_cross_arch_layer_tensor(
+                    torch,
+                    folded_state,
+                    suffix,
+                )
+                if donor_tensor is not None:
+                    donor_key = f"synthesized_folded_donor_layers.{target_layer_idx}.{suffix}"
         if donor_tensor is None:
             if neutralize_unmatched_operators:
                 neutralized = _neutralized_unmatched_operator_tensor(torch, target_tensor, suffix)
@@ -714,6 +739,7 @@ def donor_projected_init(
                 "target_shape": list(target_tensor.shape),
                 "donor_shape": list(donor_tensor.shape),
                 "activation_fit": activation_fit_report,
+                "synthetic_cross_arch": synthetic_layer_report,
             }
         )
 
@@ -833,6 +859,9 @@ def donor_projected_init(
         "target_layers": len(target_layers),
         "donor_layers": len(donor_layers),
         "layer_tensors_initialized": len(layer_reports),
+        "synthetic_cross_arch_layer_tensors_initialized": sum(
+            1 for item in layer_reports if item.get("synthetic_cross_arch") is not None
+        ),
         "layer_tensors_neutralized": len(neutralized_layer_keys),
         "neutralized_layer_tensors": neutralized_layer_keys[:200],
         "layer_tensors_skipped": skipped_layer_keys[:200],
@@ -2233,6 +2262,151 @@ def _lookup_layer_tensor_value(layer_state: dict[str, Any], suffix: str):
         if value is not None:
             return value
     return None
+
+
+def _donor_layer_state_from_index(
+    donor_state: dict[str, Any],
+    donor_layer_keys: dict[tuple[int, str], str],
+    layer_idx: int,
+    cache: dict[int, dict[str, Any]],
+) -> dict[str, Any]:
+    layer_idx = int(layer_idx)
+    cached = cache.get(layer_idx)
+    if cached is not None:
+        return cached
+    layer_state: dict[str, Any] = {}
+    for (idx, suffix), key in donor_layer_keys.items():
+        if int(idx) == layer_idx:
+            layer_state[str(suffix)] = donor_state[key]
+    cache[layer_idx] = layer_state
+    return layer_state
+
+
+def _state_value(layer_state: dict[str, Any], *suffixes: str):
+    for suffix in suffixes:
+        value = _lookup_layer_tensor_value(layer_state, suffix)
+        if value is not None:
+            return value
+    return None
+
+
+def _zero_bias_from_weight(torch, weight, dim: int):
+    return torch.zeros(int(dim), dtype=weight.detach().cpu().to(torch.float32).dtype)
+
+
+def _synthesize_cross_arch_layer_tensor(torch, layer_state: dict[str, Any], suffix: str):
+    """Synthesize common fused/Conv1D target tensors from split decoder donors."""
+
+    marker = f".{str(suffix).lower()}"
+    if marker.endswith(".ln_1.weight"):
+        value = _state_value(layer_state, "input_layernorm.weight", "attention_norm.weight", "operator_norm.weight")
+        if value is not None:
+            return value.detach().cpu(), {"method": "layernorm_alias", "source_suffixes": ["input_layernorm.weight"]}
+    if marker.endswith(".ln_2.weight"):
+        value = _state_value(layer_state, "post_attention_layernorm.weight", "ffn_norm.weight")
+        if value is not None:
+            return value.detach().cpu(), {"method": "layernorm_alias", "source_suffixes": ["post_attention_layernorm.weight"]}
+    if marker.endswith(".ln_1.bias"):
+        value = _state_value(layer_state, "input_layernorm.bias", "attention_norm.bias", "operator_norm.bias")
+        if value is not None:
+            return value.detach().cpu(), {"method": "layernorm_bias_alias", "source_suffixes": ["input_layernorm.bias"]}
+        weight = _state_value(layer_state, "input_layernorm.weight", "attention_norm.weight", "operator_norm.weight")
+        if weight is not None:
+            return _zero_bias_from_weight(torch, weight, int(weight.numel())), {
+                "method": "zero_layernorm_bias",
+                "source_suffixes": ["input_layernorm.weight"],
+            }
+    if marker.endswith(".ln_2.bias"):
+        value = _state_value(layer_state, "post_attention_layernorm.bias", "ffn_norm.bias")
+        if value is not None:
+            return value.detach().cpu(), {"method": "layernorm_bias_alias", "source_suffixes": ["post_attention_layernorm.bias"]}
+        weight = _state_value(layer_state, "post_attention_layernorm.weight", "ffn_norm.weight")
+        if weight is not None:
+            return _zero_bias_from_weight(torch, weight, int(weight.numel())), {
+                "method": "zero_layernorm_bias",
+                "source_suffixes": ["post_attention_layernorm.weight"],
+            }
+
+    q = _state_value(layer_state, "self_attn.q_proj.weight", "attention.q_proj.weight", "operator.q_proj.weight")
+    k = _state_value(layer_state, "self_attn.k_proj.weight", "attention.k_proj.weight", "operator.k_proj.weight")
+    v = _state_value(layer_state, "self_attn.v_proj.weight", "attention.v_proj.weight", "operator.v_proj.weight")
+    o = _state_value(layer_state, "self_attn.o_proj.weight", "self_attn.out_proj.weight", "attention.o_proj.weight", "operator.out_proj.weight")
+    if marker.endswith(".attn.c_attn.weight") and q is not None and k is not None and v is not None:
+        fused = torch.cat(
+            [q.detach().cpu().to(torch.float32), k.detach().cpu().to(torch.float32), v.detach().cpu().to(torch.float32)],
+            dim=0,
+        ).t().contiguous()
+        return fused, {
+            "method": "fuse_qkv_transposed_for_gpt2_c_attn",
+            "source_suffixes": ["self_attn.q_proj.weight", "self_attn.k_proj.weight", "self_attn.v_proj.weight"],
+        }
+    if marker.endswith(".attn.c_attn.bias") and q is not None and k is not None and v is not None:
+        q_bias = _state_value(layer_state, "self_attn.q_proj.bias", "attention.q_proj.bias", "operator.q_proj.bias")
+        k_bias = _state_value(layer_state, "self_attn.k_proj.bias", "attention.k_proj.bias", "operator.k_proj.bias")
+        v_bias = _state_value(layer_state, "self_attn.v_proj.bias", "attention.v_proj.bias", "operator.v_proj.bias")
+        parts = []
+        for weight, bias in ((q, q_bias), (k, k_bias), (v, v_bias)):
+            if bias is None:
+                parts.append(torch.zeros(int(weight.shape[0]), dtype=torch.float32))
+            else:
+                parts.append(bias.detach().cpu().to(torch.float32))
+        return torch.cat(parts, dim=0).contiguous(), {
+            "method": "fuse_qkv_bias_for_gpt2_c_attn",
+            "source_suffixes": ["self_attn.q_proj.bias", "self_attn.k_proj.bias", "self_attn.v_proj.bias"],
+            "missing_biases_zeroed": True,
+        }
+    if marker.endswith(".attn.c_proj.weight") and o is not None:
+        return o.detach().cpu().to(torch.float32).t().contiguous(), {
+            "method": "transpose_o_proj_for_gpt2_c_proj",
+            "source_suffixes": ["self_attn.o_proj.weight"],
+        }
+    if marker.endswith(".attn.c_proj.bias") and o is not None:
+        bias = _state_value(layer_state, "self_attn.o_proj.bias", "self_attn.out_proj.bias", "attention.o_proj.bias", "operator.out_proj.bias")
+        if bias is not None:
+            return bias.detach().cpu(), {"method": "o_proj_bias_alias", "source_suffixes": ["self_attn.o_proj.bias"]}
+        return torch.zeros(int(o.shape[0]), dtype=torch.float32), {
+            "method": "zero_o_proj_bias_for_gpt2_c_proj",
+            "source_suffixes": ["self_attn.o_proj.weight"],
+        }
+
+    gate = _state_value(layer_state, "mlp.gate_proj.weight", "mlp.w1.weight", "feed_forward.w1.weight")
+    up = _state_value(layer_state, "mlp.up_proj.weight", "mlp.w3.weight", "feed_forward.w3.weight")
+    down = _state_value(layer_state, "mlp.down_proj.weight", "mlp.w2.weight", "feed_forward.w2.weight")
+    if marker.endswith(".mlp.c_fc.weight") and (gate is not None or up is not None):
+        sources = [item.detach().cpu().to(torch.float32) for item in (gate, up) if item is not None]
+        fused = torch.stack(sources, dim=0).mean(dim=0).t().contiguous()
+        return fused, {
+            "method": "average_gated_mlp_inputs_transposed_for_gpt2_c_fc",
+            "source_suffixes": ["mlp.gate_proj.weight", "mlp.up_proj.weight"],
+        }
+    if marker.endswith(".mlp.c_fc.bias") and (gate is not None or up is not None):
+        source_weight = gate if gate is not None else up
+        gate_bias = _state_value(layer_state, "mlp.gate_proj.bias", "mlp.w1.bias", "feed_forward.w1.bias")
+        up_bias = _state_value(layer_state, "mlp.up_proj.bias", "mlp.w3.bias", "feed_forward.w3.bias")
+        biases = [item.detach().cpu().to(torch.float32) for item in (gate_bias, up_bias) if item is not None]
+        if biases:
+            return torch.stack(biases, dim=0).mean(dim=0).contiguous(), {
+                "method": "average_gated_mlp_bias_for_gpt2_c_fc",
+                "source_suffixes": ["mlp.gate_proj.bias", "mlp.up_proj.bias"],
+            }
+        return torch.zeros(int(source_weight.shape[0]), dtype=torch.float32), {
+            "method": "zero_mlp_input_bias_for_gpt2_c_fc",
+            "source_suffixes": ["mlp.gate_proj.weight", "mlp.up_proj.weight"],
+        }
+    if marker.endswith(".mlp.c_proj.weight") and down is not None:
+        return down.detach().cpu().to(torch.float32).t().contiguous(), {
+            "method": "transpose_down_proj_for_gpt2_c_proj",
+            "source_suffixes": ["mlp.down_proj.weight"],
+        }
+    if marker.endswith(".mlp.c_proj.bias") and down is not None:
+        bias = _state_value(layer_state, "mlp.down_proj.bias", "mlp.w2.bias", "feed_forward.w2.bias")
+        if bias is not None:
+            return bias.detach().cpu(), {"method": "down_proj_bias_alias", "source_suffixes": ["mlp.down_proj.bias"]}
+        return torch.zeros(int(down.shape[0]), dtype=torch.float32), {
+            "method": "zero_down_proj_bias_for_gpt2_c_proj",
+            "source_suffixes": ["mlp.down_proj.weight"],
+        }
+    return None, None
 
 
 def _layer_suffix_candidates(suffix: str) -> list[str]:
