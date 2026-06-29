@@ -40,6 +40,10 @@ def train_hf_native_vision_graft(
     max_new_tokens: int = 6,
     task_keys: Sequence[str] | None = None,
     grad_clip: float = 1.0,
+    text_retention_file: str | Path | None = None,
+    text_retention_weight: float = 0.0,
+    text_retention_batch_size: int = 2,
+    text_retention_max_length: int = 128,
 ) -> dict[str, Any]:
     """Train/evaluate a raw-patch prefix graft on a real HF causal LM parent."""
 
@@ -53,9 +57,20 @@ def train_hf_native_vision_graft(
         raise ValueError("train_last_layers must be non-negative.")
     if grad_clip < 0:
         raise ValueError("grad_clip must be non-negative.")
+    if text_retention_weight < 0:
+        raise ValueError("text_retention_weight must be non-negative.")
+    if text_retention_batch_size <= 0:
+        raise ValueError("text_retention_batch_size must be positive.")
+    if text_retention_max_length <= 1:
+        raise ValueError("text_retention_max_length must be greater than one.")
+    if text_retention_weight > 0 and train_last_layers == 0:
+        raise ValueError("Text retention loss requires train_last_layers > 0.")
     if train_last_layers > 0 and torch_dtype.lower() in {"auto", "source", "float16", "fp16"}:
         raise ValueError("Training LM layers requires an explicit non-fp16 dtype; use --dtype float32 or keep --train-last-layers 0.")
     active_task_keys = _normalize_task_keys(task_keys)
+    retention_texts = _load_retention_texts(text_retention_file)
+    if text_retention_weight > 0 and not retention_texts:
+        raise ValueError("text_retention_weight is positive but no retention texts were loaded.")
 
     torch, transformers = _torch_and_transformers()
     _seed_everything(torch, seed)
@@ -109,6 +124,20 @@ def train_hf_native_vision_graft(
         optimizer.zero_grad(set_to_none=True)
         outputs = _forward_with_graft(torch, model, graft, batch, labels=batch["labels"])
         loss = outputs.loss
+        retention_loss = None
+        if text_retention_weight > 0:
+            text_batch = _make_text_retention_batch(
+                torch,
+                tokenizer,
+                retention_texts,
+                batch_size=text_retention_batch_size,
+                max_length=text_retention_max_length,
+                seed=seed * 1_000_000 + step,
+                device=device,
+            )
+            text_outputs = model(**text_batch, use_cache=False)
+            retention_loss = text_outputs.loss
+            loss = loss + float(text_retention_weight) * retention_loss
         if not bool(torch.isfinite(loss).detach().cpu()):
             raise RuntimeError(f"Non-finite loss at step {step}; aborting before saving a graft.")
         loss.backward()
@@ -116,7 +145,10 @@ def train_hf_native_vision_graft(
             torch.nn.utils.clip_grad_norm_(optimizer_params, grad_clip)
         optimizer.step()
         if step == 1 or step % max(1, steps // 10) == 0:
-            losses.append({"step": step, "loss": float(loss.detach().cpu())})
+            entry = {"step": step, "loss": float(loss.detach().cpu())}
+            if retention_loss is not None:
+                entry["text_retention_loss"] = float(retention_loss.detach().cpu())
+            losses.append(entry)
 
     metrics = _evaluate_graft(
         torch,
@@ -158,6 +190,11 @@ def train_hf_native_vision_graft(
         "lr": lr,
         "train_last_layers": train_last_layers,
         "grad_clip": grad_clip,
+        "text_retention_file": None if text_retention_file is None else str(text_retention_file),
+        "text_retention_weight": text_retention_weight,
+        "text_retention_batch_size": text_retention_batch_size,
+        "text_retention_max_length": text_retention_max_length,
+        "text_retention_text_count": len(retention_texts),
         "task_keys": active_task_keys,
         "losses": losses,
         "baseline_metrics": baseline_metrics,
@@ -172,6 +209,30 @@ def train_hf_native_vision_graft(
 
 def graft_prompt(question: str) -> str:
     return f"Image patches are provided before this text. Question: {question} Answer:"
+
+
+def _load_retention_texts(path: str | Path | None) -> list[str]:
+    if path is None:
+        return []
+    source = Path(path)
+    texts: list[str] = []
+    with source.open("r", encoding="utf-8") as handle:
+        for raw in handle:
+            line = raw.strip()
+            if not line:
+                continue
+            text = line
+            if line.startswith("{"):
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError:
+                    item = None
+                if isinstance(item, dict):
+                    text = str(item.get("text") or item.get("prompt") or "")
+                elif isinstance(item, str):
+                    text = item
+            texts.append(text.replace("<|endoftext|>", "").strip())
+    return [text for text in texts if text]
 
 
 def graft_answer_options(answer_key: str) -> list[str]:
@@ -256,6 +317,32 @@ def _make_hf_vision_batch(torch, tokenizer, batch_size: int, seed: int, device: 
         "attention_mask": torch.tensor(attention, dtype=torch.long, device=device),
         "examples": examples,
     }
+
+
+def _make_text_retention_batch(
+    torch,
+    tokenizer,
+    texts: Sequence[str],
+    batch_size: int,
+    max_length: int,
+    seed: int,
+    device: str,
+) -> dict[str, Any]:
+    rng = random.Random(seed)
+    selected = [texts[rng.randrange(len(texts))] for _ in range(batch_size)]
+    encoded = tokenizer(
+        selected,
+        add_special_tokens=False,
+        truncation=True,
+        max_length=max_length,
+        padding=True,
+        return_tensors="pt",
+    )
+    input_ids = encoded["input_ids"].to(device)
+    attention_mask = encoded["attention_mask"].to(device)
+    labels = input_ids.clone()
+    labels[attention_mask == 0] = -100
+    return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels}
 
 
 def _make_hf_vision_example(rng: random.Random, seed: int, task_keys: Sequence[str] | None = None) -> dict[str, Any]:

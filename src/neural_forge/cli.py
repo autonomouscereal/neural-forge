@@ -1291,6 +1291,10 @@ def build_parser() -> argparse.ArgumentParser:
     hf_vision_graft.add_argument("--max-new-tokens", type=int, default=6)
     hf_vision_graft.add_argument("--task-keys", default=None, help="Comma-separated subset: square_color,circle_color,digit.")
     hf_vision_graft.add_argument("--grad-clip", type=float, default=1.0)
+    hf_vision_graft.add_argument("--text-retention-file")
+    hf_vision_graft.add_argument("--text-retention-weight", type=float, default=0.0)
+    hf_vision_graft.add_argument("--text-retention-batch-size", type=int, default=2)
+    hf_vision_graft.add_argument("--text-retention-max-length", type=int, default=128)
     hf_vision_graft.set_defaults(func=cmd_hf_vision_graft)
 
     return parser
@@ -2385,6 +2389,10 @@ def cmd_hf_vision_graft(args: argparse.Namespace) -> dict[str, object]:
         max_new_tokens=args.max_new_tokens,
         task_keys=None if args.task_keys is None else [part.strip() for part in args.task_keys.split(",") if part.strip()],
         grad_clip=args.grad_clip,
+        text_retention_file=args.text_retention_file,
+        text_retention_weight=args.text_retention_weight,
+        text_retention_batch_size=args.text_retention_batch_size,
+        text_retention_max_length=args.text_retention_max_length,
     )
 
 

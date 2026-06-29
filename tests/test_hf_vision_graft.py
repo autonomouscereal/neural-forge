@@ -5,6 +5,7 @@ import random
 from neural_forge.hf_vision_graft import GRAFT_QUESTIONS
 from neural_forge.hf_vision_graft import _encode_prompt_answer
 from neural_forge.hf_vision_graft import _extract_answer_prefix
+from neural_forge.hf_vision_graft import _load_retention_texts
 from neural_forge.hf_vision_graft import _make_hf_vision_example
 from neural_forge.hf_vision_graft import _normalize_task_keys
 from neural_forge.hf_vision_graft import graft_answer_options
@@ -67,6 +68,27 @@ def test_extract_answer_prefix_stops_after_valid_task_answer() -> None:
     assert _extract_answer_prefix("yellow. Write a story", ["red", "yellow"]) == "yellow"
     assert _extract_answer_prefix("green", ["green", "blue"]) == "green"
     assert _extract_answer_prefix("greenish", ["green", "blue"]) is None
+
+
+def test_load_retention_texts_accepts_plain_text_and_jsonl(tmp_path) -> None:
+    path = tmp_path / "retention.jsonl"
+    path.write_text(
+        "\n".join(
+            [
+                "plain text row",
+                '{"text": "json text row<|endoftext|>"}',
+                '{"prompt": "prompt fallback row"}',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert _load_retention_texts(path) == [
+        "plain text row",
+        "json text row",
+        "prompt fallback row",
+    ]
 
 
 def test_trainable_layer_fp16_is_rejected_before_model_load(tmp_path) -> None:
