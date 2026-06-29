@@ -114,6 +114,54 @@ current model but does not transfer donor arithmetic. The next folding work
 should focus on staged representation/interface geometry rather than stronger
 answer CE on top of a weak fold.
 
+## Activation Geometry And Head-Interface Follow-Up
+
+Added hidden geometry objectives for recovery and block folding:
+
+- `gram`: row-wise activation Gram/cosine geometry loss, dimension-free.
+- `projected-gram`: projected hidden loss plus row-wise Gram geometry.
+- `geometry`: CKA plus row-wise Gram geometry plus feature decorrelation.
+- `projected-geometry`: projected hidden loss plus CKA, row-wise Gram geometry,
+  and feature decorrelation.
+
+Also added `--untie-output-head-for-kd` to clone a tied LM head before optional
+blockwise head training. This prevents output-head KD from silently mutating
+input embeddings in tied-head models.
+
+Validation on Qwen3-4B to SmolLM2-135M:
+
+| Run | Start | Head handling | Hidden metric | Generation | Behavior | Choice | Mean PPL | Read |
+|---|---|---|---|---:|---:|---:|---:|---|
+| `qwen4b_block_resplm_untiedhead_from_best_s8_gpu0_20260629` | best recovered child | untied trained head | projected-rsd | 200/200 | 161/200 | 42/64 | 32,038.51 | Preserved the current plateau but did not improve math. |
+| `qwen4b_block_resplm_untiedhead_from_random_s8_gpu4_20260629` | pure random blank | untied trained head | projected-rsd | 0/200 | 0/200 | 24/64 | 76,384.24 | Still incoherent; untied head alone does not implant capability. |
+| `qwen4b_block_resplm_untiedhead_from_donorproj_s8_gpu6_20260629` | donor-projected blank | untied trained head | projected-rsd | 0/200 | 0/200 | 21/64 | 32,776.91 | Lower PPL than random but no useful behavior. |
+| `qwen4b_block_projectedgeometry_nohead_donorproj_s10_gpu4_20260629` | donor-projected blank | no head training | projected-geometry | 0/200 | 0/200 | 22/64 | 89,631.74 | Better activation geometry did not make the blank target decodable. |
+| `qwen4b_block_projectedgeometry_headfit_donorproj_s10_gpu4_20260629` | previous row + closed-form head fit | head fit after fold | projected-geometry | 0/200 | 1/200 | 18/64 | 4,515.98 | PPL improved dramatically while behavior stayed essentially absent. |
+| `qwen4b_block_both_nohead_donorproj_s10_gpu6_20260629` | donor-projected blank | no head training | both | 0/200 | 0/200 | 22/64 | 85,373.72 | CKA+projected loss also failed from donor-projected blank. |
+| `qwen4b_block_projectedgeometry_nohead_from_best_s10_gpu0_20260629` | best recovered child | no head training | projected-geometry | 200/200 | 161/200 | 42/64 | 33,631.99 | Preserved behavior but did not move the plateau. |
+
+Manual inspection:
+
+- Donor Qwen3-4B answered `6+4 -> 10`, `41*30 -> 1230`, `35+27 -> 62`,
+  produced a correct Python `add`, and gave coherent model-merging and
+  rain-safety explanations.
+- `qwen4b_mathboost_answer_cleanopen_800_gpu4` remained semi-coherent but
+  answered `6+4 -> 4`, `41*30 -> 1250`, `35+27 -> 85`.
+- `qwen4b_block_projectedgeometry_nohead_from_best_s10_gpu0_20260629`
+  answered `6+4 -> 40`, `41*30 -> 1200`, `35+27 -> 85`; it kept some useful
+  text/code behavior but did not improve arithmetic.
+- `qwen4b_block_projectedgeometry_headfit_donorproj_s10_gpu4_20260629`
+  generated repeated shallow phrases such as "What is the answer..." and
+  numeric loops. It is not useful despite the much lower PPL.
+
+Conclusion: activation-geometry losses and closed-form head fitting are useful
+diagnostics, but the current blank donor-projection path is still missing a
+true staged representation/interface transplant. The clearest failure mode is
+that local hidden/head reconstruction can improve PPL without producing
+coherent generation or behavior. Next work should combine tokenizer
+transplantation, stronger on-policy representation transfer, and sequential
+GRAIL/OT-style compensation before head/interface repair.
+
 ## Raw-Patch Vision Graft
 
 Implementation change:

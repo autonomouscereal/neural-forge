@@ -24,7 +24,7 @@ behavior recovery in the strict blank-target runs.
 | Activation-space optimal transport folding | DOTResize, arXiv `2507.04517`; Transport and Merge, arXiv `2602.05495` | Replace simple rank/depth grouping with entropic transport over activation signatures for MLP channels, attention heads, and residual dimensions before any pruning. `--activation-feature-mode covariance` is now implemented as an opt-in co-activation signature for this path; it still needs broad-gate validation before promotion. |
 | Sequential activation compensation | GRAIL, arXiv `2602.23795`; Chain of Merges, arXiv `2508.21421`; RegMean++, arXiv `2508.03121` | After folding each donor layer group into the target block, solve a local ridge/Gram compensation map, absorb it into downstream projections, then recompute activations before moving to the next block. Gate promotion by behavior, not just local reconstruction error. |
 | Cross-tokenizer likelihood matching | ALM, arXiv `2503.20083`; Cross-Tokenizer Likelihood Scoring, OpenReview 2026 | Add byte-offset chunk likelihood regression and tokenizer-bias debiasing as a regression test for cross-tokenizer recovery. Useful when projected-vocab and byte losses disagree with greedy behavior. |
-| Geometry-preserving hidden recovery | CKA-QAD, arXiv `2606.05682`; Flex-KD / task-tangent geometry, arXiv `2507.10155` | Keep `projected-rsd` and CKA losses, but add task-focused feature selection for math/code spans so the tiny child preserves behavior-relevant directions instead of average hidden geometry. |
+| Geometry-preserving hidden recovery | CKA-QAD, arXiv `2606.05682`; Flex-KD / task-tangent geometry, arXiv `2507.10155`; geometry-aware representational alignment, arXiv `2509.25253` | `gram`, `projected-gram`, `geometry`, and `projected-geometry` are now implemented. The first broad runs preserved a recovered child but did not make a donor-projected blank child useful, so the next version needs task-focused feature selection for math/code spans instead of average hidden geometry alone. |
 | Submodule-level replacement | SubFit, arXiv `2606.02559`; Merging Feed-Forward Sublayers, arXiv `2501.06126` | Fold and fit attention and MLP residual outputs independently, instead of treating each transformer block as one indivisible unit. |
 
 ## Current Evidence
@@ -50,3 +50,13 @@ the strict Qwen3-4B to blank SmolLM2-135M `29.90x` case:
   training preserved the conservative profile without improving arithmetic. The
   next attempt should avoid tied-head mutation and use staged hidden/interface
   transfer before response CE.
+- untied-head blockwise KD avoids mutating input embeddings, but it still did
+  not transfer useful behavior into pure random or donor-projected blank
+  targets. It only preserved the existing recovered-child plateau.
+- `projected-geometry` and closed-form head calibration showed a sharp PPL
+  trap: the donor-projected blank headfit run improved mean PPL from about
+  `89,632` to `4,516`, but behavior stayed at `1/200` and generation stayed
+  `0/200`. PPL/head reconstruction cannot be used as the promotion signal.
+- manual generations confirmed the failure: donor outputs were coherent, the
+  best recovered child remained semi-coherent but arithmetically wrong, and the
+  blank headfit model repeated answer-like phrases rather than solving tasks.

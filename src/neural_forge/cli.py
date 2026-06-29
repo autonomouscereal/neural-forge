@@ -656,7 +656,21 @@ def build_parser() -> argparse.ArgumentParser:
     recover.add_argument("--kd-weight", type=float, default=0.5)
     recover.add_argument("--lm-weight", type=float, default=0.5)
     recover.add_argument("--hidden-kd-weight", type=float, default=0.0)
-    recover.add_argument("--hidden-kd-metric", choices=["projected", "cka", "both", "rsd", "projected-rsd"], default="cka")
+    recover.add_argument(
+        "--hidden-kd-metric",
+        choices=[
+            "projected",
+            "cka",
+            "both",
+            "rsd",
+            "projected-rsd",
+            "gram",
+            "projected-gram",
+            "geometry",
+            "projected-geometry",
+        ],
+        default="cka",
+    )
     recover.add_argument("--hidden-layer", choices=["last", "middle", "all"], default="last")
     recover.add_argument("--hidden-token-mode", choices=["tokens", "response", "pooled"], default="tokens")
     recover.add_argument("--hidden-ridge", type=float, default=1e-3)
@@ -783,7 +797,17 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--hidden-layer", choices=["last", "middle"], default="last")
     xfamily_recover.add_argument(
         "--hidden-kd-metric",
-        choices=["projected", "cka", "both", "rsd", "projected-rsd"],
+        choices=[
+            "projected",
+            "cka",
+            "both",
+            "rsd",
+            "projected-rsd",
+            "gram",
+            "projected-gram",
+            "geometry",
+            "projected-geometry",
+        ],
         default="projected",
     )
     xfamily_recover.add_argument("--hidden-max-anchors", type=int, default=2048)
@@ -1001,7 +1025,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     xfamily_block_recover.add_argument(
         "--hidden-metric",
-        choices=["projected", "cka", "both", "rsd", "projected-rsd"],
+        choices=[
+            "projected",
+            "cka",
+            "both",
+            "rsd",
+            "projected-rsd",
+            "gram",
+            "projected-gram",
+            "geometry",
+            "projected-geometry",
+        ],
         default="projected",
         help="Block activation objective used for span-aligned donor/target hidden rows.",
     )
@@ -1172,6 +1206,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--train-output-head-with-kd",
         action="store_true",
         help="Train the output head together with each block when output-space donor KD is enabled.",
+    )
+    xfamily_block_recover.add_argument(
+        "--untie-output-head-for-kd",
+        action="store_true",
+        help="Clone a tied LM head before KD/head training so input token embeddings are not mutated.",
     )
     xfamily_block_recover.add_argument(
         "--allow-tied-output-head-training",
@@ -2289,6 +2328,7 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         byte_kd_weight=args.byte_kd_weight,
         byte_hidden_kd_weight=args.byte_hidden_kd_weight,
         train_output_head_with_kd=args.train_output_head_with_kd,
+        untie_output_head_for_kd=args.untie_output_head_for_kd,
         allow_tied_output_head_training=args.allow_tied_output_head_training,
         module_output_kd_weight=args.module_output_kd_weight,
         module_output_targets=args.module_output_targets,

@@ -48,11 +48,13 @@ from neural_forge.hf_recovery import _layer_gate_snapshot_indices
 from neural_forge.hf_recovery import _linear_cka_tensor
 from neural_forge.hf_recovery import _mlp_projection_spec
 from neural_forge.hf_recovery import _on_policy_prompt_text
+from neural_forge.hf_recovery import _output_head_tied_to_input
 from neural_forge.hf_recovery import _proportional_layer_index
 from neural_forge.hf_recovery import _project_candidate_probs_to_source_vocab
 from neural_forge.hf_recovery import _project_source_logits_to_candidate_vocab
 from neural_forge.hf_recovery import _recovery_loss
 from neural_forge.hf_recovery import _recent_token_unlikelihood_loss
+from neural_forge.hf_recovery import _row_gram_geometry_loss
 from neural_forge.hf_recovery import _select_anchor_tokens
 from neural_forge.hf_recovery import _set_train_scope
 from neural_forge.hf_recovery import _same_tokenizer_reference_loss
@@ -1388,6 +1390,43 @@ def test_hidden_representation_loss_supports_direct_cka_dimension_mismatch() -> 
 
     assert cka.item() == pytest.approx(1.0)
     assert loss.item() == pytest.approx(0.0)
+    assert student.grad is not None
+
+
+def test_row_gram_geometry_loss_is_dimension_free_and_order_sensitive() -> None:
+    torch = pytest.importorskip("torch")
+    student = torch.tensor(
+        [[1.0, 0.0], [0.0, 1.0], [-1.0, 0.0], [0.0, -1.0]],
+        requires_grad=True,
+    )
+    teacher = torch.tensor(
+        [[2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [-2.0, 0.0, 0.0], [0.0, -2.0, 0.0]],
+        requires_grad=False,
+    )
+    scrambled_teacher = teacher[[0, 2, 1, 3]]
+
+    aligned = _row_gram_geometry_loss(torch, student, teacher)
+    scrambled = _row_gram_geometry_loss(torch, student, scrambled_teacher)
+    aligned.backward()
+
+    assert aligned.item() == pytest.approx(0.0)
+    assert scrambled.item() > aligned.item()
+    assert student.grad is not None
+
+
+def test_hidden_representation_loss_projected_geometry_combines_projection_and_row_geometry() -> None:
+    torch = pytest.importorskip("torch")
+    student = torch.randn(6, 2, requires_grad=True)
+    teacher = torch.randn(6, 3)
+
+    with pytest.raises(ValueError, match="hidden_projection"):
+        _hidden_representation_loss(torch, student, teacher, hidden_projection=None, hidden_kd_metric="projected-geometry")
+
+    projection = torch.randn(3, 2)
+    loss = _hidden_representation_loss(torch, student, teacher, projection, hidden_kd_metric="projected-geometry")
+    loss.backward()
+
+    assert torch.isfinite(loss)
     assert student.grad is not None
 
 
@@ -2922,6 +2961,15 @@ def test_untie_output_head_clones_shared_embedding_weight() -> None:
     assert model.get_input_embeddings().weight.data_ptr() == old_ptr
     assert model.get_output_embeddings().weight.data_ptr() != old_ptr
     assert torch.allclose(model.get_output_embeddings().weight.detach(), model.get_input_embeddings().weight.detach())
+
+
+def test_output_head_tied_to_input_detects_shared_weight() -> None:
+    torch = pytest.importorskip("torch")
+    shared = torch.nn.Embedding(4, 3)
+    separate = torch.nn.Linear(3, 4, bias=False)
+
+    assert _output_head_tied_to_input(shared, shared) is True
+    assert _output_head_tied_to_input(separate, shared) is False
 
 
 def test_cross_tokenizer_recovery_loss_uses_anchor_subspace() -> None:
@@ -5319,7 +5367,7 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "--hidden-projection-scope",
             "layer-input",
             "--hidden-metric",
-            "both",
+            "projected-geometry",
             "--block-target",
             "delta",
             "--residual-magnitude-compensation",
@@ -5423,6 +5471,7 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "--byte-hidden-kd-weight",
             "0.07",
             "--train-output-head-with-kd",
+            "--untie-output-head-for-kd",
             "--allow-tied-output-head-training",
             "--module-output-kd-weight",
             "0.44",
@@ -5479,7 +5528,7 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "response_loss_mode": "answer",
         "hidden_ridge": 0.02,
         "hidden_projection_scope": "layer-input",
-        "hidden_metric": "both",
+        "hidden_metric": "projected-geometry",
         "block_target": "delta",
         "residual_magnitude_compensation": "lowrank-pre",
         "residual_compensation_min_scale": 0.25,
@@ -5532,6 +5581,7 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "byte_kd_weight": 0.11,
         "byte_hidden_kd_weight": 0.07,
         "train_output_head_with_kd": True,
+        "untie_output_head_for_kd": True,
         "allow_tied_output_head_training": True,
         "module_output_kd_weight": 0.44,
         "module_output_targets": "mlp",

@@ -38,8 +38,21 @@ RECOVERY_TEXTS = [
     "Short recovery training can reduce surgery shock, but it must be validated on unseen prompts.",
 ]
 
-HIDDEN_KD_METRICS = {"projected", "cka", "both", "rsd", "projected-rsd"}
-PROJECTED_HIDDEN_KD_METRICS = {"projected", "both", "projected-rsd"}
+HIDDEN_KD_METRICS = {
+    "projected",
+    "cka",
+    "both",
+    "rsd",
+    "projected-rsd",
+    "gram",
+    "projected-gram",
+    "geometry",
+    "projected-geometry",
+}
+PROJECTED_HIDDEN_KD_METRICS = {"projected", "both", "projected-rsd", "projected-gram", "projected-geometry"}
+HIDDEN_KD_METRIC_DESCRIPTION = (
+    "projected, cka, both, rsd, projected-rsd, gram, projected-gram, geometry, or projected-geometry"
+)
 MODULE_OUTPUT_TARGETS = {"attention", "mlp", "both"}
 MODULE_OUTPUT_TRANSPORTS = {"paired", "sinkhorn", "both"}
 
@@ -162,7 +175,7 @@ def recover_causal_lm(
     if response_loss_mode not in {"none", "auto", "assistant", "answer"}:
         raise ValueError("response_loss_mode must be none, auto, assistant, or answer.")
     if hidden_kd_metric not in HIDDEN_KD_METRICS:
-        raise ValueError("hidden_kd_metric must be projected, cka, both, rsd, or projected-rsd.")
+        raise ValueError(f"hidden_kd_metric must be {HIDDEN_KD_METRIC_DESCRIPTION}.")
     if hidden_layer not in {"last", "middle", "all"}:
         raise ValueError("hidden_layer must be last, middle, or all.")
     if hidden_token_mode not in {"tokens", "response", "pooled"}:
@@ -719,7 +732,7 @@ def recover_cross_tokenizer_causal_lm(
     if hidden_layer not in {"last", "middle"}:
         raise ValueError("hidden_layer must be last or middle.")
     if hidden_kd_metric not in HIDDEN_KD_METRICS:
-        raise ValueError("hidden_kd_metric must be projected, cka, both, rsd, or projected-rsd.")
+        raise ValueError(f"hidden_kd_metric must be {HIDDEN_KD_METRIC_DESCRIPTION}.")
     if hidden_max_anchors <= 0:
         raise ValueError("hidden_max_anchors must be positive.")
     if temperature <= 0:
@@ -2220,6 +2233,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     byte_kd_weight: float = 0.0,
     byte_hidden_kd_weight: float = 0.0,
     train_output_head_with_kd: bool = False,
+    untie_output_head_for_kd: bool = False,
     allow_tied_output_head_training: bool = False,
     module_output_kd_weight: float = 0.0,
     module_output_targets: str = "both",
@@ -2272,7 +2286,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     if hidden_projection_scope not in {"global", "layer-input"}:
         raise ValueError("hidden_projection_scope must be global or layer-input.")
     if hidden_metric not in HIDDEN_KD_METRICS:
-        raise ValueError("hidden_metric must be projected, cka, both, rsd, or projected-rsd.")
+        raise ValueError(f"hidden_metric must be {HIDDEN_KD_METRIC_DESCRIPTION}.")
     if block_target not in {"hidden", "delta"}:
         raise ValueError("block_target must be hidden or delta.")
     if residual_magnitude_compensation not in {"none", "pre", "pre-linear", "linear-pre", "pre-lowrank", "lowrank-pre"}:
@@ -2371,6 +2385,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError(
             "train_output_head_with_kd requires projected, byte, stepwise, teacher-generated, or response LM loss."
         )
+    if untie_output_head_for_kd and not train_output_head_with_kd:
+        raise ValueError("untie_output_head_for_kd requires train_output_head_with_kd.")
     if module_output_kd_weight < 0:
         raise ValueError("module_output_kd_weight must be non-negative.")
     if module_output_targets not in MODULE_OUTPUT_TARGETS:
@@ -2408,6 +2424,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
 
     from neural_forge.hf_xfamily import _canonical_token
     from neural_forge.hf_xfamily import _canonical_token_map
+    from neural_forge.hf_xfamily import _untie_output_head
     from neural_forge.hf_xfamily import _donor_layer_group_for_target
     from neural_forge.hf_xfamily import _donor_layer_groups_by_energy
     from neural_forge.hf_xfamily import _representative_donor_layer_for_group
@@ -2450,20 +2467,15 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     candidate_output_embeddings = candidate.get_output_embeddings()
     if byte_hidden_kd_weight > 0 and candidate_output_embeddings is None:
         raise ValueError("byte_hidden_kd_weight requires candidate output embeddings for the fixed byte probe.")
-    output_head = candidate_output_embeddings if train_output_head_with_kd else None
     if train_output_head_with_kd and candidate_output_embeddings is None:
         raise ValueError("train_output_head_with_kd requires an output embedding/lm_head module.")
+    output_head_untied_for_kd = False
+    if train_output_head_with_kd and untie_output_head_for_kd:
+        output_head_untied_for_kd = bool(_untie_output_head(torch, candidate))
+        candidate_output_embeddings = candidate.get_output_embeddings()
+    output_head = candidate_output_embeddings if train_output_head_with_kd else None
     input_embeddings = candidate.get_input_embeddings() if train_output_head_with_kd else None
-    output_head_weight = getattr(output_head, "weight", None)
-    input_embedding_weight = getattr(input_embeddings, "weight", None)
-    output_head_tied_to_input = bool(
-        output_head_weight is not None
-        and input_embedding_weight is not None
-        and (
-            output_head_weight is input_embedding_weight
-            or output_head_weight.data_ptr() == input_embedding_weight.data_ptr()
-        )
-    )
+    output_head_tied_to_input = _output_head_tied_to_input(output_head, input_embeddings)
     output_head_training_warning = None
     if train_output_head_with_kd and output_head_tied_to_input:
         output_head_training_warning = (
@@ -3578,6 +3590,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "byte_kd_weight": float(byte_kd_weight),
         "byte_hidden_kd_weight": float(byte_hidden_kd_weight),
         "train_output_head_with_kd": bool(train_output_head_with_kd),
+        "untie_output_head_for_kd": bool(untie_output_head_for_kd),
+        "output_head_untied_for_kd": bool(output_head_untied_for_kd),
         "allow_tied_output_head_training": bool(allow_tied_output_head_training),
         "output_head_tied_to_input": bool(output_head_tied_to_input),
         "output_head_training_warning": output_head_training_warning,
@@ -4477,7 +4491,7 @@ def _cross_tokenizer_on_policy_hidden_loss(
     if hidden_layer not in {"last", "middle"}:
         raise ValueError("hidden_layer must be last or middle.")
     if hidden_kd_metric not in HIDDEN_KD_METRICS:
-        raise ValueError("hidden_kd_metric must be projected, cka, both, rsd, or projected-rsd.")
+        raise ValueError(f"hidden_kd_metric must be {HIDDEN_KD_METRIC_DESCRIPTION}.")
     if hidden_projection is None and hidden_kd_metric in PROJECTED_HIDDEN_KD_METRICS:
         raise ValueError("hidden_projection is required when on_policy_hidden_kd_weight is positive.")
 
@@ -5765,6 +5779,19 @@ def _restore_layer_gate_states(candidate_layers: Sequence[Any], states: dict[int
         _restore_module_state(candidate_layers[int(layer_idx)], state)
 
 
+def _output_head_tied_to_input(output_head, input_embeddings) -> bool:
+    output_head_weight = getattr(output_head, "weight", None)
+    input_embedding_weight = getattr(input_embeddings, "weight", None)
+    return bool(
+        output_head_weight is not None
+        and input_embedding_weight is not None
+        and (
+            output_head_weight is input_embedding_weight
+            or output_head_weight.data_ptr() == input_embedding_weight.data_ptr()
+        )
+    )
+
+
 def _block_recovery_snapshot_modules(
     candidate_layers: Sequence[Any],
     candidate_idx: int,
@@ -6517,7 +6544,7 @@ def _cross_tokenizer_block_on_policy_hidden_loss(
     if span_max_pairs <= 0:
         raise ValueError("span_max_pairs must be positive.")
     if hidden_metric not in HIDDEN_KD_METRICS:
-        raise ValueError("hidden_metric must be projected, cka, both, rsd, or projected-rsd.")
+        raise ValueError(f"hidden_metric must be {HIDDEN_KD_METRIC_DESCRIPTION}.")
     if hidden_projection is None and hidden_metric in PROJECTED_HIDDEN_KD_METRICS:
         raise ValueError("hidden_projection is required when on_policy_hidden_kd_weight is positive.")
     prompts = [_on_policy_prompt_text(str(text), response_loss_mode) for text in texts]
@@ -9546,9 +9573,35 @@ def _linear_cka_tensor(torch, first, second):
     return cross / (x_norm * y_norm).clamp_min(1e-12)
 
 
+def _row_gram_geometry_loss(torch, first, second, max_rows: int = 384):
+    x = torch.nan_to_num(first.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    y = torch.nan_to_num(second.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    if x.dim() != 2:
+        x = x.reshape(-1, x.shape[-1])
+    if y.dim() != 2:
+        y = y.reshape(-1, y.shape[-1])
+    if int(x.shape[0]) != int(y.shape[0]):
+        raise ValueError("Gram geometry rows must be aligned.")
+    row_count = int(x.shape[0])
+    if row_count <= 1:
+        return torch.zeros((), dtype=x.dtype, device=x.device)
+    if row_count > int(max_rows):
+        idx = torch.linspace(0, row_count - 1, steps=int(max_rows), device=x.device).round().to(torch.long)
+        x = x.index_select(dim=0, index=idx)
+        y = y.index_select(dim=0, index=idx)
+        row_count = int(max_rows)
+    x_norm = x / x.pow(2).sum(dim=-1, keepdim=True).sqrt().clamp_min(1e-8)
+    y_norm = y / y.pow(2).sum(dim=-1, keepdim=True).sqrt().clamp_min(1e-8)
+    x_gram = x_norm.matmul(x_norm.t())
+    y_gram = y_norm.matmul(y_norm.t())
+    eye = torch.eye(row_count, dtype=torch.bool, device=x_gram.device)
+    diff = (x_gram - y_gram).masked_fill(eye, 0.0)
+    return diff.pow(2).sum() / max(1, row_count * (row_count - 1))
+
+
 def _hidden_representation_loss(torch, student_rows, teacher_rows, hidden_projection, hidden_kd_metric: str):
     if hidden_kd_metric not in HIDDEN_KD_METRICS:
-        raise ValueError("hidden_kd_metric must be projected, cka, both, rsd, or projected-rsd.")
+        raise ValueError(f"hidden_kd_metric must be {HIDDEN_KD_METRIC_DESCRIPTION}.")
     student = torch.nan_to_num(student_rows.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
     teacher = torch.nan_to_num(teacher_rows.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
     losses = []
@@ -9562,9 +9615,11 @@ def _hidden_representation_loss(torch, student_rows, teacher_rows, hidden_projec
         cosine_loss = 1.0 - cosine.mean()
         mse_loss = torch.nn.functional.mse_loss(student_norm, teacher_norm)
         losses.append(0.5 * cosine_loss + 0.5 * mse_loss)
-    if hidden_kd_metric in {"cka", "both", "rsd"}:
+    if hidden_kd_metric in {"cka", "both", "rsd", "geometry", "projected-geometry"}:
         losses.append(1.0 - _linear_cka_tensor(torch, student, teacher))
-    if hidden_kd_metric in {"rsd", "projected-rsd"}:
+    if hidden_kd_metric in {"gram", "projected-gram", "geometry", "projected-geometry"}:
+        losses.append(_row_gram_geometry_loss(torch, student, teacher))
+    if hidden_kd_metric in {"rsd", "projected-rsd", "geometry", "projected-geometry"}:
         losses.append(_feature_decorrelation_loss(torch, student))
     return torch.stack(losses).mean()
 
