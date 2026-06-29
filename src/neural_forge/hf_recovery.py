@@ -2041,6 +2041,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     residual_compensation_max_scale: float = 1.50,
     residual_compensation_linear_ridge: float = 1e-3,
     residual_compensation_alpha: float = 1.0,
+    residual_compensation_linear_rank: int = 32,
     max_anchors: int = 2048,
     span_max_pairs: int = 512,
     donor_layer_fold_mode: str = "fold",
@@ -2115,8 +2116,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("hidden_metric must be projected, cka, both, rsd, or projected-rsd.")
     if block_target not in {"hidden", "delta"}:
         raise ValueError("block_target must be hidden or delta.")
-    if residual_magnitude_compensation not in {"none", "pre", "pre-linear", "linear-pre"}:
-        raise ValueError("residual_magnitude_compensation must be none, pre, pre-linear, or linear-pre.")
+    if residual_magnitude_compensation not in {"none", "pre", "pre-linear", "linear-pre", "pre-lowrank", "lowrank-pre"}:
+        raise ValueError("residual_magnitude_compensation must be none, pre, pre-linear, linear-pre, pre-lowrank, or lowrank-pre.")
     if residual_compensation_min_scale <= 0 or residual_compensation_max_scale <= 0:
         raise ValueError("residual compensation scales must be positive.")
     if residual_compensation_min_scale > residual_compensation_max_scale:
@@ -2125,6 +2126,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("residual_compensation_linear_ridge must be non-negative.")
     if not 0 <= residual_compensation_alpha <= 1:
         raise ValueError("residual_compensation_alpha must be between 0 and 1.")
+    if residual_compensation_linear_rank <= 0:
+        raise ValueError("residual_compensation_linear_rank must be positive.")
     if max_anchors <= 0:
         raise ValueError("max_anchors must be positive.")
     if span_max_pairs <= 0:
@@ -2504,6 +2507,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 residual_magnitude_compensation,
                 float(residual_compensation_linear_ridge),
                 float(residual_compensation_alpha),
+                int(residual_compensation_linear_rank),
             )
         losses = []
         skipped_steps = 0
@@ -3154,6 +3158,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "residual_compensation_max_scale": float(residual_compensation_max_scale),
         "residual_compensation_linear_ridge": float(residual_compensation_linear_ridge),
         "residual_compensation_alpha": float(residual_compensation_alpha),
+        "residual_compensation_linear_rank": int(residual_compensation_linear_rank),
         "max_anchors": int(max_anchors),
         "span_max_pairs": int(span_max_pairs),
         "donor_layer_fold_mode": donor_layer_fold_mode,
@@ -6270,8 +6275,9 @@ def _apply_layer_residual_magnitude_compensation(
     mode: str,
     linear_ridge: float,
     alpha: float,
+    linear_rank: int,
 ) -> dict[str, Any]:
-    canonical_mode = "pre-linear" if mode == "linear-pre" else mode
+    canonical_mode = {"linear-pre": "pre-linear", "lowrank-pre": "pre-lowrank"}.get(mode, mode)
     if alignment_metrics.get("skipped"):
         return {
             "enabled": True,
@@ -6279,13 +6285,15 @@ def _apply_layer_residual_magnitude_compensation(
             "mode": canonical_mode,
             "reason": alignment_metrics.get("reason", "alignment_metrics_skipped"),
         }
-    if canonical_mode == "pre-linear":
+    if canonical_mode in {"pre-linear", "pre-lowrank"}:
         return _apply_layer_residual_linear_compensation(
             torch,
             layer,
             alignment_state,
             float(linear_ridge),
             float(alpha),
+            int(linear_rank),
+            canonical_mode,
         )
     if canonical_mode != "pre":
         return {
@@ -6329,12 +6337,14 @@ def _apply_layer_residual_linear_compensation(
     alignment_state: dict[str, Any],
     linear_ridge: float,
     alpha: float,
+    linear_rank: int,
+    mode: str = "pre-linear",
 ) -> dict[str, Any]:
     if alignment_state.get("skipped"):
         return {
             "enabled": True,
             "applied": False,
-            "mode": "pre-linear",
+            "mode": mode,
             "reason": alignment_state.get("reason", "alignment_state_skipped"),
         }
     candidate_matrix = alignment_state.get("candidate_matrix")
@@ -6343,36 +6353,48 @@ def _apply_layer_residual_linear_compensation(
         return {
             "enabled": True,
             "applied": False,
-            "mode": "pre-linear",
+            "mode": mode,
             "reason": "missing_alignment_matrices",
         }
     if int(candidate_matrix.shape[1]) != int(projected_matrix.shape[1]):
         return {
             "enabled": True,
             "applied": False,
-            "mode": "pre-linear",
+            "mode": mode,
             "reason": "hidden_size_mismatch",
             "candidate_hidden_size": int(candidate_matrix.shape[1]),
             "projected_hidden_size": int(projected_matrix.shape[1]),
         }
+    fit_alpha = 1.0 if mode == "pre-lowrank" else float(alpha)
     fit = _fit_activation_map(
         torch,
         candidate_matrix,
         projected_matrix,
         float(linear_ridge),
-        reconstruction_alpha=float(alpha),
+        reconstruction_alpha=fit_alpha,
         reconstruction_objective="ridge",
         cosine_steps=0,
         cosine_lr=0.0,
         cosine_l2=0.0,
     )
-    module_reports = _apply_residual_output_map_to_modules(torch, layer, fit["map"])
+    map_to_apply = fit["map"]
+    lowrank_report = None
+    if mode == "pre-lowrank":
+        lowrank_map, lowrank_report = _low_rank_delta_map(torch, map_to_apply, float(alpha), int(linear_rank))
+        map_to_apply = lowrank_map
+        fit["reconstruction_alpha"] = float(alpha)
+        predicted = candidate_matrix[: int(fit["tokens"])].to(torch.float32).matmul(map_to_apply)
+        target = projected_matrix[: int(fit["tokens"])].to(torch.float32)
+        fit["relative_error_after"] = _relative_reconstruction_error(torch, predicted, target)
+        fit["mean_cosine_after"] = _mean_row_cosine(torch, predicted, target)
+    module_reports = _apply_residual_output_map_to_modules(torch, layer, map_to_apply)
     return {
         "enabled": True,
         "applied": bool(module_reports),
-        "mode": "pre-linear",
+        "mode": mode,
         "ridge": float(linear_ridge),
         "alpha": float(alpha),
+        "linear_rank": int(linear_rank),
         "tokens": int(fit["tokens"]),
         "hidden_size": int(fit["hidden_size"]),
         "relative_error_before": float(fit["relative_error_before"]),
@@ -6382,6 +6404,7 @@ def _apply_layer_residual_linear_compensation(
         "mean_cosine_solved": float(fit["mean_cosine_solved"]),
         "mean_cosine_after": float(fit["mean_cosine_after"]),
         "solver": fit.get("solver"),
+        "lowrank": lowrank_report,
         "modules": module_reports,
         "reason": "applied" if module_reports else "no_supported_output_modules",
     }
@@ -6423,6 +6446,36 @@ def _scale_layer_residual_output_modules(torch, layer, scale: float) -> list[dic
                 }
             )
     return reports
+
+
+def _low_rank_delta_map(torch, full_map, alpha: float, rank: int):
+    map_cpu = full_map.detach().cpu().to(torch.float32)
+    if int(map_cpu.shape[0]) != int(map_cpu.shape[1]):
+        raise ValueError("Low-rank residual compensation map must be square.")
+    hidden = int(map_cpu.shape[0])
+    used_rank = max(1, min(int(rank), hidden))
+    identity = torch.eye(hidden, dtype=map_cpu.dtype)
+    delta = map_cpu - identity
+    singular_values = torch.linalg.svdvals(delta)
+    total_energy = float(singular_values.pow(2).sum().detach().cpu())
+    if used_rank >= hidden:
+        truncated = delta
+    else:
+        u, s, vh = torch.linalg.svd(delta, full_matrices=False)
+        truncated = (u[:, :used_rank] * s[:used_rank]).matmul(vh[:used_rank, :])
+    retained_error = float((delta - truncated).norm().detach().cpu())
+    retained_energy = float(torch.linalg.svdvals(truncated).pow(2).sum().detach().cpu())
+    compensated = identity + float(alpha) * truncated
+    return compensated, {
+        "rank": int(used_rank),
+        "requested_rank": int(rank),
+        "hidden_size": hidden,
+        "alpha": float(alpha),
+        "delta_norm": float(delta.norm().detach().cpu()),
+        "truncated_delta_norm": float(truncated.norm().detach().cpu()),
+        "discarded_delta_norm": retained_error,
+        "retained_energy_ratio": retained_energy / max(total_energy, 1e-12),
+    }
 
 
 def _apply_residual_output_map_to_modules(torch, layer, mapping) -> list[dict[str, Any]]:

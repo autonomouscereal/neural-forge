@@ -1713,7 +1713,7 @@ Interpretation:
 Code changes:
 
 - `hf-xfamily-block-recover` now accepts
-  `--residual-magnitude-compensation none|pre|pre-linear|linear-pre`,
+  `--residual-magnitude-compensation none|pre|pre-linear|linear-pre|pre-lowrank|lowrank-pre`,
   `--residual-compensation-min-scale`, and
   `--residual-compensation-max-scale`.
 - In `pre` mode, block recovery measures the active child residual-update RMS
@@ -1726,6 +1726,9 @@ Code changes:
   with identity by `--residual-compensation-alpha`, then absorbs it into the
   active child attention output projection and MLP output projection. The
   checkpoint remains adapter-free.
+- In `pre-lowrank` mode, block recovery fits the same ridge map, truncates the
+  delta from identity to `--residual-compensation-linear-rank`, then absorbs
+  only that low-rank correction into the residual output projections.
 - Reports now include `candidate_rms`, `projected_rms`, and
   `projected_to_candidate_rms_ratio` for the before/after block-alignment
   metrics, plus a per-layer compensation report.
@@ -1740,6 +1743,8 @@ SmolLM-shaped blank target path:
 | Residual linear compensation alpha 0.25 | 3,822.54 | 3/4 | 3/6 | 2/3 | not run | not run | both maps reverted by behavior gate |
 | Residual linear compensation alpha 0.05 | 3,822.54 | 3/4 | 3/6 | 2/3 | not run | not run | both maps reverted by behavior gate |
 | Residual linear compensation alpha 0.01 | 3,829.40 | 3/4 | 3/6 | 1/3 | 600/1000 | 80/200 | rejected; lower broad PPL but worse generation |
+| Residual low-rank rank16 alpha 0.05 | 3,822.54 | 3/4 | 3/6 | 2/3 | not run | not run | both maps reverted by behavior gate |
+| Residual low-rank rank16 alpha 0.01 | 3,809.66 | 3/4 | 3/6 | 2/3 | 600/1000 | 160/200 | narrow new broad-gate leader; still no math/code recovery |
 
 Artifacts:
 
@@ -1761,6 +1766,16 @@ Artifacts:
   `runs/qwen4b_to_smollm135m_transport_random_20260627/broad_eval_1000_20260628/eval_residual_linear_a001_l2.json`
 - Residual linear alpha `0.01` broad rank:
   `runs/qwen4b_to_smollm135m_transport_random_20260627/broad_eval_1000_20260628/rank_with_residual_linear_a001_l2.json`
+- Residual low-rank rank16 alpha `0.05` run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_residual_lowrank_r16_a005_l2_20260628_191809`
+- Residual low-rank rank16 alpha `0.01` run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_residual_lowrank_r16_a001_l2_20260628_192318`
+- Residual low-rank rank16 alpha `0.01` broad eval:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/broad_eval_1000_20260628/eval_residual_lowrank_r16_a001_l2.json`
+- Residual low-rank rank16 alpha `0.01` broad rank:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/broad_eval_1000_20260628/rank_with_residual_lowrank_r16_a001_l2.json`
+- Residual low-rank rank16 alpha `0.01` lm-eval:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/lmeval_residual_lowrank_r16_a001_20260628/summary.json`
 
 Mechanical signal:
 
@@ -1781,12 +1796,19 @@ Mechanical signal:
   improved from `1.4028` to `1.3927`. Post-save strict eval still regressed
   generation health to `1/3`, showing the in-loop behavior gate is weaker than
   final reload evaluation for this edit.
+- Low-rank rank16/alpha `0.05` kept the largest local fit from becoming a saved
+  artifact: both layer maps were reverted. Low-rank rank16/alpha `0.01`
+  reverted layer 0 but accepted layer 1, improving strict PPL from `3,822.54`
+  to `3,809.66` while preserving strict behavior `3/6` and generation `2/3`.
+  The retained low-rank energy was uneven: layer 0 retained about `19.1%` of
+  the fitted delta energy, while layer 1 retained about `98.3%`.
 
 Broad-suite recheck across all current broad artifacts:
 
 | Broad eval | Behavior | Generation | Choice | PPL mean |
 |---|---:|---:|---:|---:|
 | `eval_block_byte_best.json` | 600/1000 | 160/200 | 25/250 | 14,259.01 |
+| `eval_residual_lowrank_r16_a001_l2.json` | 600/1000 | 160/200 | 25/250 | 14,191.81 |
 | `eval_residual_comp_l2.json` | 600/1000 | 160/200 | 25/250 | 14,259.01 |
 | `eval_rsd_behaviorbest.json` | 600/1000 | 160/200 | 25/250 | 14,290.37 |
 | `eval_residual_linear_a001_l2.json` | 600/1000 | 80/200 | 25/250 | 13,723.28 |
@@ -1808,14 +1830,24 @@ Interpretation:
   local donor/child activation alignment. It is still not safe as a direct
   promotion rule: the only accepted alpha reduced broad PPL but cut broad
   generation health from `160/200` to `80/200`.
+- Low-rank residual compensation is the first positive structural move in this
+  branch. Rank16/alpha `0.01` preserved the broad behavior/generation/choice
+  scores of the previous best while improving broad PPL from `14,259.01` to
+  `14,191.81`, so it ranks above the prior block byte-KD behavior-best
+  candidate under the behavior-first policy.
 - The result is a concrete example of why hidden-space alignment and PPL cannot
   be optimized alone. Both attempted scale edits improved local reconstruction
   loss, and the alpha `0.01` linear edit improved PPL, but final generation
   quality regressed.
-- The 1000-probe recheck did not reveal a hidden better combination among the
-  previously tested broad artifacts. The current best remains the block
-  byte-KD behavior-best candidate, and it is still only a narrow partial
-  transfer result rather than a 25x donor-capability proof.
+- Manual inspection did not show qualitative capability recovery. Arithmetic
+  still emits digit runs, Python remains malformed, and the useful generations
+  are essentially the same topical/common-sense fragments as the prior best.
+- External lm-eval limit-50 also did not improve over the prior broad-rerank
+  winner: ARC-Easy `0.28`, HellaSwag `0.34`, PIQA `0.48`, and WinoGrande
+  `0.52`, matching the previous block byte-KD behavior-best slice.
+- The current best is therefore the rank16/alpha `0.01` low-rank residual
+  candidate only in the narrow broad-gate/PPL sense. It is still a partial
+  transfer result, not a 25x donor-capability proof.
 - The next structural path should constrain the map before absorption:
   low-rank clone factors, FLAT-LLM-style PCA/activation-rank folding, or
   behavior-selected subspace maps, followed by final reload/broad evaluation

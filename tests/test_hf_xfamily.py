@@ -56,6 +56,7 @@ from neural_forge.hf_recovery import _same_tokenizer_reference_loss
 from neural_forge.hf_recovery import _same_tokenizer_hidden_loss
 from neural_forge.hf_recovery import _same_tokenizer_top_k_kl
 from neural_forge.hf_recovery import _apply_residual_output_map_to_modules
+from neural_forge.hf_recovery import _low_rank_delta_map
 from neural_forge.hf_recovery import _scale_layer_residual_output_modules
 from neural_forge.hf_recovery import _source_group_delta_state
 from neural_forge.hf_recovery import _source_group_module_output_state
@@ -3554,6 +3555,18 @@ def test_apply_residual_output_map_to_modules_absorbs_map_into_outputs() -> None
     assert torch.allclose(mlp_output(inputs).detach(), mlp_before.matmul(mapping))
 
 
+def test_low_rank_delta_map_truncates_delta_from_identity() -> None:
+    torch = pytest.importorskip("torch")
+    full_map = torch.tensor([[3.0, 0.0], [0.0, 2.0]])
+
+    lowrank, report = _low_rank_delta_map(torch, full_map, alpha=0.5, rank=1)
+
+    assert torch.allclose(lowrank, torch.tensor([[2.0, 0.0], [0.0, 1.0]]))
+    assert report["rank"] == 1
+    assert report["requested_rank"] == 1
+    assert report["retained_energy_ratio"] == pytest.approx(0.8)
+
+
 def test_layer_gate_decision_accepts_non_regression() -> None:
     accepted = _layer_gate_decision(previous_ppl=100.0, candidate_ppl=99.0, max_ppl_ratio=1.0)
     rejected = _layer_gate_decision(previous_ppl=100.0, candidate_ppl=103.0, max_ppl_ratio=1.02)
@@ -4769,7 +4782,7 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "--block-target",
             "delta",
             "--residual-magnitude-compensation",
-            "linear-pre",
+            "lowrank-pre",
             "--residual-compensation-min-scale",
             "0.25",
             "--residual-compensation-max-scale",
@@ -4778,6 +4791,8 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "0.003",
             "--residual-compensation-alpha",
             "0.35",
+            "--residual-compensation-linear-rank",
+            "11",
             "--max-anchors",
             "222",
             "--span-max-pairs",
@@ -4888,11 +4903,12 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "hidden_ridge": 0.02,
         "hidden_metric": "both",
         "block_target": "delta",
-        "residual_magnitude_compensation": "linear-pre",
+        "residual_magnitude_compensation": "lowrank-pre",
         "residual_compensation_min_scale": 0.25,
         "residual_compensation_max_scale": 1.75,
         "residual_compensation_linear_ridge": 0.003,
         "residual_compensation_alpha": 0.35,
+        "residual_compensation_linear_rank": 11,
         "max_anchors": 222,
         "span_max_pairs": 77,
         "donor_layer_fold_mode": "average",
