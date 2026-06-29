@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from neural_forge.cli import build_parser
@@ -4355,6 +4357,100 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "activation_device": "cpu",
         "torch_dtype": "float32",
         "trust_remote_code": True,
+    }
+
+
+def test_hf_donor_project_init_handler_can_run_post_init_eval(monkeypatch) -> None:
+    import neural_forge.cli as cli
+    import neural_forge.hf_tools as hf_tools
+    import neural_forge.hf_xfamily as hf_xfamily
+
+    captured_init = {}
+    captured_eval = {}
+
+    def fake_project_init(**kwargs):
+        captured_init.update(kwargs)
+        return {"operation": "donor_projected_init", "output_dir": kwargs["output_dir"]}
+
+    def fake_eval(**kwargs):
+        captured_eval.update(kwargs)
+        return {
+            "param_count": 123,
+            "perplexity": {"mean": 42.0, "items": ["large"]},
+            "choice_accuracy": {"correct": 3, "total": 4, "accuracy": 0.75, "items": ["large"]},
+            "behavior_suite": {"correct": 5, "total": 10, "pass_rate": 0.5, "items": ["large"]},
+            "generation_health": {"correct": 6, "total": 10, "pass_rate": 0.6},
+            "generations": ["large"],
+        }
+
+    monkeypatch.setattr(hf_xfamily, "donor_projected_init", fake_project_init)
+    monkeypatch.setattr(hf_tools, "evaluate_text_model", fake_eval)
+    monkeypatch.setattr(cli, "_load_recovery_calibration_texts", lambda path, max_texts: None)
+
+    args = build_parser().parse_args(
+        [
+            "hf-donor-project-init",
+            "out",
+            "--target-config-model",
+            "target-config",
+            "--target-tokenizer-model",
+            "target-tokenizer",
+            "--donor-model",
+            "donor",
+            "--post-init-eval-suite",
+            "suite.json",
+            "--post-init-eval-output",
+            "eval.json",
+            "--post-init-max-text-evals",
+            "11",
+            "--post-init-max-choice-probes",
+            "22",
+            "--post-init-max-generation-prompts",
+            "33",
+            "--post-init-max-behavior-probes",
+            "44",
+            "--post-init-max-new-tokens",
+            "55",
+            "--post-init-eval-device",
+            "cpu",
+            "--post-init-eval-dtype",
+            "float32",
+            "--trust-remote-code",
+        ]
+    )
+    result = args.func(args)
+
+    assert captured_init["output_dir"] == "out"
+    assert captured_eval == {
+        "model_id_or_path": "out",
+        "output_file": Path("eval.json"),
+        "torch_dtype": "float32",
+        "device": "cpu",
+        "trust_remote_code": True,
+        "max_new_tokens": 55,
+        "eval_suite": "suite.json",
+        "max_text_evals": 11,
+        "max_choice_probes": 22,
+        "max_generation_prompts": 33,
+        "max_behavior_probes": 44,
+    }
+    assert result == {
+        "operation": "donor_projected_init_with_post_init_eval",
+        "init_report": {"operation": "donor_projected_init", "output_dir": "out"},
+        "post_init_eval_report": "eval.json",
+        "post_init_eval_summary": {
+            "param_count": 123,
+            "perplexity_mean": 42.0,
+            "choice_correct": 3,
+            "choice_total": 4,
+            "choice_accuracy": 0.75,
+            "behavior_correct": 5,
+            "behavior_total": 10,
+            "behavior_pass_rate": 0.5,
+            "generation_correct": 6,
+            "generation_total": 10,
+            "generation_pass_rate": 0.6,
+        },
     }
 
 

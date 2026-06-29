@@ -239,3 +239,27 @@ it is that target-RMS plus 26 down-projection fits over only 8 calibration texts
 creates an unstable autoregressive manifold. Next candidate should either use a
 much smaller fit alpha with behavior-gated init, or separate covariance
 transport from activation-fitted linears so their failure modes can be isolated.
+
+Follow-up ablations isolated those failure modes:
+
+| Candidate | Feature Mode | Activation Fits | Behavior | Generation | Choice | PPL | Manual Output |
+|---|---|---:|---:|---:|---:|---:|---|
+| `qwen4b_tied29_covariance_transport_nofit_20260628_230821` | covariance | no | `0/200` | `0/200` | `25/64` | `303,241,410.14` | repeated `THE`, `Fried`, fenced-code ticks, and stray fragments |
+| `qwen4b_tied29_stats_transport_fit_mlpout_a003_20260628_231320` | stats | MLP output, alpha `0.03` | `0/200` | `0/200` | `7/64` | `258,154,649.12` | repeated token fragments; one merge-risk prompt produced empty output |
+
+These ablations reject two tempting explanations: the collapse is not only from
+covariance features, and it is not fixed by reducing the activation-fit alpha
+from `0.15` to `0.03`. The shared risky ingredients are direct target-RMS
+transport into the blank tied target and un-gated raw initializer promotion.
+`hf-donor-project-init` now has optional `--post-init-eval-suite` controls so
+raw initializer schedules can immediately write a broad behavior/generation
+report and return compact metrics. Next work should avoid treating
+donor-projected init as a final artifact. It should either:
+
+- run initializer schedules through a behavior-gated ablation harness before
+  recovery;
+- split tokenizer/embedding transplant, attention/MLP transport, and
+  reconstruction into separately ranked artifacts; or
+- move to staged parent compression / chain anchors before the final blank
+  SmolLM2 target, because one-jump raw transport is not producing a usable
+  autoregressive manifold.

@@ -244,6 +244,21 @@ def build_parser() -> argparse.ArgumentParser:
     hf_donor_init.add_argument("--activation-max-calibration-texts", type=int)
     hf_donor_init.add_argument("--activation-max-length", type=int, default=128)
     hf_donor_init.add_argument("--activation-device", default="cuda:0")
+    hf_donor_init.add_argument(
+        "--post-init-eval-suite",
+        help="Optional eval suite to run immediately after donor-projected initialization.",
+    )
+    hf_donor_init.add_argument(
+        "--post-init-eval-output",
+        help="Optional output JSON path for the immediate post-init eval report.",
+    )
+    hf_donor_init.add_argument("--post-init-max-text-evals", type=int)
+    hf_donor_init.add_argument("--post-init-max-choice-probes", type=int)
+    hf_donor_init.add_argument("--post-init-max-generation-prompts", type=int)
+    hf_donor_init.add_argument("--post-init-max-behavior-probes", type=int)
+    hf_donor_init.add_argument("--post-init-max-new-tokens", type=int, default=96)
+    hf_donor_init.add_argument("--post-init-eval-device", default="cuda:0")
+    hf_donor_init.add_argument("--post-init-eval-dtype")
     hf_donor_init.add_argument("--dtype", default="float16")
     hf_donor_init.add_argument("--trust-remote-code", action="store_true")
     hf_donor_init.set_defaults(func=cmd_hf_donor_project_init)
@@ -1598,7 +1613,7 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         args.activation_calibration_file,
         args.activation_max_calibration_texts,
     )
-    return donor_projected_init(
+    init_report = donor_projected_init(
         target_config_model=args.target_config_model,
         target_base_model=args.target_base_model,
         target_tokenizer_model=args.target_tokenizer_model,
@@ -1641,6 +1656,63 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         torch_dtype=args.dtype,
         trust_remote_code=args.trust_remote_code,
     )
+    if not args.post_init_eval_suite:
+        return init_report
+
+    from neural_forge.hf_tools import evaluate_text_model
+
+    eval_output = (
+        Path(args.post_init_eval_output)
+        if args.post_init_eval_output
+        else Path(args.output) / "neural_forge_post_init_eval_report.json"
+    )
+    eval_report = evaluate_text_model(
+        model_id_or_path=args.output,
+        output_file=eval_output,
+        torch_dtype=args.post_init_eval_dtype or args.dtype,
+        device=args.post_init_eval_device,
+        trust_remote_code=args.trust_remote_code,
+        max_new_tokens=args.post_init_max_new_tokens,
+        eval_suite=args.post_init_eval_suite,
+        max_text_evals=args.post_init_max_text_evals,
+        max_choice_probes=args.post_init_max_choice_probes,
+        max_generation_prompts=args.post_init_max_generation_prompts,
+        max_behavior_probes=args.post_init_max_behavior_probes,
+    )
+    return {
+        "operation": "donor_projected_init_with_post_init_eval",
+        "init_report": init_report,
+        "post_init_eval_report": str(eval_output),
+        "post_init_eval_summary": _compact_eval_report(eval_report),
+    }
+
+
+def _compact_eval_report(report: dict[str, object]) -> dict[str, object]:
+    choice = report.get("choice_accuracy", {})
+    behavior = report.get("behavior_suite", {})
+    generation = report.get("generation_health", {})
+    perplexity = report.get("perplexity", {})
+    if not isinstance(choice, dict):
+        choice = {}
+    if not isinstance(behavior, dict):
+        behavior = {}
+    if not isinstance(generation, dict):
+        generation = {}
+    if not isinstance(perplexity, dict):
+        perplexity = {}
+    return {
+        "param_count": report.get("param_count"),
+        "perplexity_mean": perplexity.get("mean"),
+        "choice_correct": choice.get("correct"),
+        "choice_total": choice.get("total"),
+        "choice_accuracy": choice.get("accuracy"),
+        "behavior_correct": behavior.get("correct"),
+        "behavior_total": behavior.get("total"),
+        "behavior_pass_rate": behavior.get("pass_rate"),
+        "generation_correct": generation.get("correct"),
+        "generation_total": generation.get("total"),
+        "generation_pass_rate": generation.get("pass_rate"),
+    }
 
 
 def cmd_hf_xfamily_vocab_merge(args: argparse.Namespace) -> dict[str, object]:

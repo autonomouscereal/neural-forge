@@ -455,6 +455,26 @@ experimental initializer strategy, not a promoted default; it must be followed
 by `hf-eval`, `hf-gate`, manual generation inspection, and benchmark slices
 before claiming capability transfer.
 
+For risky blank-target initializers, run the first behavior gate inside the
+initializer command so raw folded artifacts are not promoted from shape validity
+alone:
+
+```powershell
+neural-forge hf-donor-project-init runs/qwen4b-projected-smollm2 `
+  --target-config-model HuggingFaceTB/SmolLM2-135M `
+  --target-tokenizer-model HuggingFaceTB/SmolLM2-135M `
+  --donor-model Qwen/Qwen3-4B-Base `
+  --fold-mode transport `
+  --activation-feature-mode covariance `
+  --post-init-eval-suite runs/broad-suite-1000.json `
+  --post-init-max-behavior-probes 200 `
+  --post-init-max-generation-prompts 200 `
+  --post-init-eval-output runs/qwen4b-projected-smollm2/post-init-eval.json
+```
+
+The command still saves the full eval report, but its stdout only includes a
+compact behavior/choice/generation/PPL summary.
+
 `--activation-feature-mode covariance` is an additional donor-fold feature mode
 for `fold-mode=transport` or `--activation-fold-assignment similarity`. It
 standardizes donor activation channels and appends a covariance/PCA signature,
