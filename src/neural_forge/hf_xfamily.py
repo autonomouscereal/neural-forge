@@ -993,6 +993,11 @@ def sweep_cross_family_mlp_merge(
     recovery_dtype: str = "float32",
     recovery_grad_clip: float = 1.0,
     recovery_calibration_texts: list[str] | None = None,
+    eval_suite: str | Path | dict[str, Any] | None = None,
+    max_text_evals: int | None = None,
+    max_choice_probes: int | None = None,
+    max_generation_prompts: int | None = None,
+    max_behavior_probes: int | None = None,
 ) -> dict[str, Any]:
     """Sweep cross-family MLP-channel transplants and gate each result."""
 
@@ -1018,6 +1023,13 @@ def sweep_cross_family_mlp_merge(
     if recover_candidates:
         recovered_root.mkdir(parents=True, exist_ok=True)
     report_root.mkdir(parents=True, exist_ok=True)
+    eval_kwargs = {
+        "eval_suite": eval_suite,
+        "max_text_evals": max_text_evals,
+        "max_choice_probes": max_choice_probes,
+        "max_generation_prompts": max_generation_prompts,
+        "max_behavior_probes": max_behavior_probes,
+    }
 
     if baseline_report is None:
         baseline_path = report_root / "baseline_host.json"
@@ -1028,6 +1040,7 @@ def sweep_cross_family_mlp_merge(
             device=device,
             trust_remote_code=trust_remote_code,
             max_new_tokens=max_new_tokens,
+            **eval_kwargs,
         )
     else:
         baseline_path = Path(baseline_report)
@@ -1067,6 +1080,7 @@ def sweep_cross_family_mlp_merge(
             device=device,
             trust_remote_code=trust_remote_code,
             max_new_tokens=max_new_tokens,
+            **eval_kwargs,
         )
         gate = gate_text_report(
             baseline,
@@ -1113,6 +1127,11 @@ def sweep_cross_family_mlp_merge(
                 recovery_dtype=recovery_dtype,
                 recovery_grad_clip=recovery_grad_clip,
                 recovery_calibration_texts=recovery_calibration_texts,
+                eval_suite=eval_suite,
+                max_text_evals=max_text_evals,
+                max_choice_probes=max_choice_probes,
+                max_generation_prompts=max_generation_prompts,
+                max_behavior_probes=max_behavior_probes,
             )
             item["recovery"] = recovery
         candidates.append(item)
@@ -1153,6 +1172,13 @@ def sweep_cross_family_mlp_merge(
             "dtype": recovery_dtype,
             "grad_clip": recovery_grad_clip,
             "calibration_text_count": len(recovery_calibration_texts or []),
+        },
+        "eval_limits": {
+            "eval_suite": str(eval_suite) if isinstance(eval_suite, Path) else eval_suite,
+            "max_text_evals": max_text_evals,
+            "max_choice_probes": max_choice_probes,
+            "max_generation_prompts": max_generation_prompts,
+            "max_behavior_probes": max_behavior_probes,
         },
         "gate_thresholds": {
             "max_ppl_ratio": max_ppl_ratio,
@@ -1215,6 +1241,11 @@ def cross_family_merge_compress_pipeline(
     recovery_dtype: str = "float32",
     recovery_grad_clip: float = 1.0,
     recovery_calibration_texts: list[str] | None = None,
+    eval_suite: str | Path | dict[str, Any] | None = None,
+    max_text_evals: int | None = None,
+    max_choice_probes: int | None = None,
+    max_generation_prompts: int | None = None,
+    max_behavior_probes: int | None = None,
 ) -> dict[str, Any]:
     """Run cross-family MLP merge, merge-first compression, and optional recovery."""
 
@@ -1237,6 +1268,13 @@ def cross_family_merge_compress_pipeline(
     report_root.mkdir(parents=True, exist_ok=True)
     if recover_candidates:
         recovered_root.mkdir(parents=True, exist_ok=True)
+    eval_kwargs = {
+        "eval_suite": eval_suite,
+        "max_text_evals": max_text_evals,
+        "max_choice_probes": max_choice_probes,
+        "max_generation_prompts": max_generation_prompts,
+        "max_behavior_probes": max_behavior_probes,
+    }
 
     if baseline_report is None:
         host_baseline_path = report_root / "host_baseline.json"
@@ -1247,6 +1285,7 @@ def cross_family_merge_compress_pipeline(
             device=device,
             trust_remote_code=trust_remote_code,
             max_new_tokens=max_new_tokens,
+            **eval_kwargs,
         )
     else:
         host_baseline_path = Path(baseline_report)
@@ -1283,6 +1322,7 @@ def cross_family_merge_compress_pipeline(
         device=device,
         trust_remote_code=trust_remote_code,
         max_new_tokens=max_new_tokens,
+        **eval_kwargs,
     )
     xfamily_host_gate = gate_text_report(
         host_baseline,
@@ -1311,6 +1351,7 @@ def cross_family_merge_compress_pipeline(
         assignment=assignment,
         include_combinations=include_combinations,
         target_shrink=target_shrink,
+        **eval_kwargs,
     )
 
     selected = _select_compression_candidates(compression_summary, target_shrink)
@@ -1367,6 +1408,11 @@ def cross_family_merge_compress_pipeline(
                 recovery_dtype=recovery_dtype,
                 recovery_grad_clip=recovery_grad_clip,
                 recovery_calibration_texts=recovery_calibration_texts,
+                eval_suite=eval_suite,
+                max_text_evals=max_text_evals,
+                max_choice_probes=max_choice_probes,
+                max_generation_prompts=max_generation_prompts,
+                max_behavior_probes=max_behavior_probes,
             )
             recovered_xfamily_gate_path = report_root / f"{tag}_recovered_xfamily_gate.json"
             recovered_xfamily_gate = gate_text_report(
@@ -1439,6 +1485,13 @@ def cross_family_merge_compress_pipeline(
             "grad_clip": recovery_grad_clip,
             "calibration_text_count": len(recovery_calibration_texts or []),
         },
+        "eval_limits": {
+            "eval_suite": str(eval_suite) if isinstance(eval_suite, Path) else eval_suite,
+            "max_text_evals": max_text_evals,
+            "max_choice_probes": max_choice_probes,
+            "max_generation_prompts": max_generation_prompts,
+            "max_behavior_probes": max_behavior_probes,
+        },
         "gate_thresholds": {
             "max_ppl_ratio": max_ppl_ratio,
             "max_accuracy_drop": max_accuracy_drop,
@@ -1474,6 +1527,11 @@ def _recover_and_gate_candidate(
     recovery_dtype: str,
     recovery_grad_clip: float,
     recovery_calibration_texts: list[str] | None = None,
+    eval_suite: str | Path | dict[str, Any] | None = None,
+    max_text_evals: int | None = None,
+    max_choice_probes: int | None = None,
+    max_generation_prompts: int | None = None,
+    max_behavior_probes: int | None = None,
 ) -> dict[str, Any]:
     from neural_forge.hf_recovery import recover_causal_lm
 
@@ -1494,6 +1552,9 @@ def _recover_and_gate_candidate(
         trust_remote_code=trust_remote_code,
         calibration_texts=recovery_calibration_texts,
         grad_clip=recovery_grad_clip,
+        behavior_eval_suite=eval_suite,
+        behavior_max_probes=6 if max_behavior_probes is None else max_behavior_probes,
+        behavior_max_generation_prompts=max_generation_prompts,
     )
     recovered_eval = evaluate_text_model(
         str(recovered_dir),
@@ -1502,6 +1563,11 @@ def _recover_and_gate_candidate(
         device=device,
         trust_remote_code=trust_remote_code,
         max_new_tokens=max_new_tokens,
+        eval_suite=eval_suite,
+        max_text_evals=max_text_evals,
+        max_choice_probes=max_choice_probes,
+        max_generation_prompts=max_generation_prompts,
+        max_behavior_probes=max_behavior_probes,
     )
     recovered_gate = gate_text_report(
         baseline,

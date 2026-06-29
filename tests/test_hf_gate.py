@@ -10,6 +10,7 @@ from neural_forge.hf_tools import rank_evaluation_reports
 from neural_forge.hf_tools import _assert_tokenizers_compatible
 from neural_forge.hf_tools import _ensure_unique_ratio_tags
 from neural_forge.hf_tools import _finite_float
+from neural_forge.hf_tools import _generate_text_batch
 from neural_forge.hf_tools import _generation_diagnostics
 from neural_forge.hf_tools import _load_eval_suite
 from neural_forge.hf_tools import _ratio_tag
@@ -284,7 +285,7 @@ def test_eval_suite_builder_and_loader_round_trip(tmp_path) -> None:
     report = build_eval_suite(
         path,
         behavior_count=1000,
-        generation_count=12,
+        generation_count=1000,
         choice_count=20,
         text_count=8,
         seed=7,
@@ -292,9 +293,14 @@ def test_eval_suite_builder_and_loader_round_trip(tmp_path) -> None:
     loaded = _load_eval_suite(path)
 
     assert report["counts"]["behavior_probes"] == 1000
+    assert report["counts"]["generation_prompts"] == 1000
     assert len(loaded["behavior_probes"]) == 1000
-    assert len(loaded["generation_prompts"]) == 12
+    assert len(loaded["generation_prompts"]) == 1000
     assert loaded["generation_prompts"][0]["relevance_rules"]
+    assert loaded["generation_prompts"][2]["category"] == "code"
+    assert loaded["generation_prompts"][0]["prompt"] != loaded["generation_prompts"][5]["prompt"]
+    assert loaded["behavior_probes"][0]["category"] == "math"
+    assert loaded["behavior_probes"][4]["category"] == "code"
     assert len(loaded["choice_probes"]) == 20
     assert len(loaded["text_evals"]) == 8
 
@@ -471,6 +477,83 @@ def test_generation_diagnostics_detects_repetition() -> None:
     assert diagnostics["top_token_share"] == pytest.approx(0.6)
     assert diagnostics["max_token_run"] == 3
     assert diagnostics["generated_max_token_id_run"] == 3
+
+
+def test_generate_text_batch_preserves_prompt_order_and_padding_side() -> None:
+    torch = pytest.importorskip("torch")
+
+    class _BatchInputs(dict):
+        def to(self, device):
+            return self
+
+    class _Tokenizer:
+        eos_token_id = 0
+        eos_token = "<eos>"
+        pad_token_id = 7
+
+        def __init__(self) -> None:
+            self.padding_side = "right"
+
+        def __call__(self, prompts, return_tensors=None, padding=False):
+            assert return_tensors == "pt"
+            prompt_list = [prompts] if isinstance(prompts, str) else list(prompts)
+            width = max(len(prompt) for prompt in prompt_list)
+            rows = []
+            masks = []
+            for prompt in prompt_list:
+                ids = [ord(char) for char in prompt]
+                pad = [self.pad_token_id] * (width - len(ids))
+                if self.padding_side == "left":
+                    row = pad + ids
+                    mask = [0] * len(pad) + [1] * len(ids)
+                else:
+                    row = ids + pad
+                    mask = [1] * len(ids) + [0] * len(pad)
+                rows.append(row)
+                masks.append(mask)
+            return _BatchInputs(
+                {
+                    "input_ids": torch.tensor(rows, dtype=torch.long),
+                    "attention_mask": torch.tensor(masks, dtype=torch.long),
+                }
+            )
+
+        def decode(self, ids, skip_special_tokens=False):
+            values = ids.detach().cpu().tolist() if hasattr(ids, "detach") else list(ids)
+            chars = []
+            for value in values:
+                if skip_special_tokens and int(value) in {self.eos_token_id, self.pad_token_id}:
+                    continue
+                chars.append(chr(int(value)))
+            return "".join(chars)
+
+    class _Model:
+        def __init__(self) -> None:
+            self.seen_batches = []
+
+        def generate(self, input_ids, attention_mask=None, max_new_tokens=None, do_sample=None, pad_token_id=None):
+            assert do_sample is False
+            assert pad_token_id == 7
+            self.seen_batches.append(input_ids.detach().cpu().tolist())
+            suffixes = []
+            for row_index in range(input_ids.shape[0]):
+                suffix = [ord("x"), ord(str(row_index + 1))]
+                suffixes.append(suffix[: int(max_new_tokens)])
+            return torch.cat([input_ids, torch.tensor(suffixes, dtype=torch.long)], dim=1)
+
+    tokenizer = _Tokenizer()
+    model = _Model()
+
+    results = _generate_text_batch(torch, model, tokenizer, ["A", "BC", "D"], "cpu", 2, batch_size=2)
+
+    assert tokenizer.padding_side == "right"
+    assert [item["prompt"] for item in results] == ["A", "BC", "D"]
+    assert [item["output"] for item in results] == ["Ax1", "BCx2", "Dx1"]
+    assert [item["diagnostics"]["generated_token_count"] for item in results] == [2, 2, 2]
+    assert model.seen_batches == [
+        [[7, ord("A")], [ord("B"), ord("C")]],
+        [[ord("D")]],
+    ]
 
 
 def test_ratio_tag_handles_alpha_values() -> None:

@@ -747,24 +747,34 @@ def evaluate_text_model(
     if tokenizer.pad_token_id is None and tokenizer.eos_token_id is not None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    generation_cache: dict[str, dict[str, Any]] = {}
-
-    def cached_generate(prompt: str) -> dict[str, Any]:
-        if prompt not in generation_cache:
-            generation_cache[prompt] = _generate_text(torch, model, tokenizer, prompt, device, max_new_tokens)
-        return dict(generation_cache[prompt])
+    requested_prompts = []
+    seen_prompts = set()
+    for spec in generation_specs:
+        prompt = str(spec["prompt"])
+        if prompt not in seen_prompts:
+            seen_prompts.add(prompt)
+            requested_prompts.append(prompt)
+    for probe in behavior_probes:
+        prompt = str(probe["prompt"])
+        if prompt not in seen_prompts:
+            seen_prompts.add(prompt)
+            requested_prompts.append(prompt)
 
     with torch.no_grad():
         ppls = [_perplexity(torch, model, tokenizer, text, device) for text in text_evals]
         probes = [_score_choice_probe(torch, model, tokenizer, probe, device) for probe in choice_probes]
+        generation_cache = {
+            item["prompt"]: item
+            for item in _generate_text_batch(torch, model, tokenizer, requested_prompts, device, max_new_tokens)
+        }
         generations = [
-            _generation_from_cached_spec(cached_generate(str(spec["prompt"])), spec)
+            _generation_from_cached_spec(dict(generation_cache[str(spec["prompt"])]), spec)
             for spec in generation_specs
         ]
         behavior_items = [
             _score_behavior_probe(
                 probe,
-                cached_generate(str(probe["prompt"])),
+                dict(generation_cache[str(probe["prompt"])]),
             )
             for probe in behavior_probes
         ]
@@ -815,7 +825,7 @@ def evaluate_text_model(
 def build_eval_suite(
     output_file: str | Path,
     behavior_count: int = 1000,
-    generation_count: int = 120,
+    generation_count: int = 1000,
     choice_count: int = 200,
     text_count: int = 64,
     seed: int = 0,
@@ -1487,6 +1497,11 @@ def search_merge_first_compression(
     assignment: str = "combined-cosine",
     include_combinations: bool = True,
     target_shrink: float | None = None,
+    eval_suite: str | Path | dict[str, Any] | None = None,
+    max_text_evals: int | None = None,
+    max_choice_probes: int | None = None,
+    max_generation_prompts: int | None = None,
+    max_behavior_probes: int | None = None,
 ) -> dict[str, Any]:
     """Search merge-first width/depth compression candidates and gate each one."""
 
@@ -1519,6 +1534,11 @@ def search_merge_first_compression(
             device=device,
             trust_remote_code=trust_remote_code,
             max_new_tokens=max_new_tokens,
+            eval_suite=eval_suite,
+            max_text_evals=max_text_evals,
+            max_choice_probes=max_choice_probes,
+            max_generation_prompts=max_generation_prompts,
+            max_behavior_probes=max_behavior_probes,
         )
     else:
         baseline_path = Path(baseline_report)
@@ -1538,6 +1558,11 @@ def search_merge_first_compression(
             device=device,
             trust_remote_code=trust_remote_code,
             max_new_tokens=max_new_tokens,
+            eval_suite=eval_suite,
+            max_text_evals=max_text_evals,
+            max_choice_probes=max_choice_probes,
+            max_generation_prompts=max_generation_prompts,
+            max_behavior_probes=max_behavior_probes,
         )
         gate = gate_text_report(
             baseline,
@@ -1640,6 +1665,13 @@ def search_merge_first_compression(
         "assignment": assignment,
         "include_combinations": include_combinations,
         "target_shrink": target_shrink,
+        "eval_limits": {
+            "eval_suite": str(eval_suite) if isinstance(eval_suite, Path) else eval_suite,
+            "max_text_evals": max_text_evals,
+            "max_choice_probes": max_choice_probes,
+            "max_generation_prompts": max_generation_prompts,
+            "max_behavior_probes": max_behavior_probes,
+        },
         "gate_thresholds": {
             "max_ppl_ratio": max_ppl_ratio,
             "max_accuracy_drop": max_accuracy_drop,
@@ -2120,11 +2152,14 @@ def _normalize_generation_prompt(item: str | dict[str, Any], index: int) -> dict
     prompt = str(item.get("prompt", ""))
     if not prompt:
         raise ValueError("Generation prompt requires prompt text.")
-    return {
+    normalized = {
         "id": str(item.get("id") or f"generation_{index:04d}"),
         "prompt": prompt,
         "relevance_rules": item.get("relevance_rules", item.get("pattern_groups", GENERATION_RELEVANCE_RULES.get(prompt, []))),
     }
+    if item.get("category") is not None:
+        normalized["category"] = str(item.get("category"))
+    return normalized
 
 
 def _normalize_behavior_probe(item: dict[str, Any], index: int) -> dict[str, Any]:
@@ -2311,6 +2346,7 @@ def _synthetic_generation_prompts(count: int) -> list[dict[str, Any]]:
         (
             "generation_pruning",
             "Explain neural pruning in two concise sentences.",
+            "model_surgery",
             [
                 [r"\bprun\w*", r"\bremove\w*", r"\bcompress\w*", r"\bfold\w*"],
                 [r"\bneuron\w*", r"\bweight\w*", r"\bchannel\w*", r"\bparameter\w*"],
@@ -2319,6 +2355,7 @@ def _synthetic_generation_prompts(count: int) -> list[dict[str, Any]]:
         (
             "generation_model_merge_risk",
             "Give one risk when merging two language models.",
+            "model_surgery",
             [
                 [r"\bmerge\w*", r"\bstitch\w*", r"\bcombin\w*", r"\bfus\w*"],
                 [r"\brisk\w*", r"\bmismatch\w*", r"\bforget\w*", r"\bdegrad\w*", r"\bcollapse\w*"],
@@ -2328,11 +2365,13 @@ def _synthetic_generation_prompts(count: int) -> list[dict[str, Any]]:
         (
             "generation_python_add",
             "Write a tiny Python function that adds two numbers.",
+            "code",
             [[r"\bdef\b", r"\blambda\b"], [r"\+", r"\badd\w*\b", r"\bsum\b"], [r"\breturn\b", r":"]],
         ),
         (
             "generation_tokenizer_mismatch",
             "In one sentence, why can tokenizer mismatch hurt model stitching?",
+            "tokenizer",
             [
                 [r"\btokeni[sz]er\w*", r"\bvocab\w*", r"\btokens?\b"],
                 [r"\bmismatch\w*", r"\bdiffer\w*", r"\balign\w*", r"\bincompat\w*"],
@@ -2342,6 +2381,7 @@ def _synthetic_generation_prompts(count: int) -> list[dict[str, Any]]:
         (
             "generation_rain_safety",
             "A driver sees heavy rain on the road. What should they do?",
+            "commonsense",
             [
                 [r"\bslow\w*", r"\bcaution\w*", r"\bsafe\w*", r"\breduce\w*"],
                 [r"\bdistance\b", r"\bheadlights?\b", r"\bwipers?\b", r"\bpull over\b"],
@@ -2350,8 +2390,15 @@ def _synthetic_generation_prompts(count: int) -> list[dict[str, Any]]:
     ]
     prompts = []
     for index in range(int(count)):
-        base_id, prompt, rules = templates[index % len(templates)]
-        prompts.append({"id": f"{base_id}_{index:04d}", "prompt": prompt, "relevance_rules": rules})
+        base_id, prompt, category, rules = templates[index % len(templates)]
+        prompts.append(
+            {
+                "id": f"{base_id}_{index:04d}",
+                "category": category,
+                "prompt": f"{prompt}\nVariation id: {index:04d}.",
+                "relevance_rules": rules,
+            }
+        )
     return prompts
 
 
@@ -2367,6 +2414,7 @@ def _synthetic_behavior_probes(count: int, rng: random.Random) -> list[dict[str,
             probes.append(
                 {
                     "id": f"synthetic_math_{index:04d}",
+                    "category": "math",
                     "prompt": f"Question: What is {a} {op} {b}? Answer with only the number.\nAnswer:",
                     "kind": "first_number",
                     "answer": str(answer),
@@ -2376,6 +2424,7 @@ def _synthetic_behavior_probes(count: int, rng: random.Random) -> list[dict[str,
             probes.append(
                 {
                     "id": f"synthetic_tokenizer_{index:04d}",
+                    "category": "tokenizer",
                     "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nAnswer:",
                     "kind": "pattern_groups",
                     "pattern_groups": [
@@ -2389,6 +2438,7 @@ def _synthetic_behavior_probes(count: int, rng: random.Random) -> list[dict[str,
             probes.append(
                 {
                     "id": f"synthetic_rain_{index:04d}",
+                    "category": "commonsense",
                     "prompt": "A driver sees heavy rain on the road. What should they do?\nAnswer:",
                     "kind": "pattern_groups",
                     "pattern_groups": [
@@ -2401,6 +2451,7 @@ def _synthetic_behavior_probes(count: int, rng: random.Random) -> list[dict[str,
             probes.append(
                 {
                     "id": f"synthetic_merge_definition_{index:04d}",
+                    "category": "model_surgery",
                     "prompt": "Briefly define neuron merging for model compression.\nAnswer:",
                     "kind": "pattern_groups",
                     "pattern_groups": [
@@ -2425,6 +2476,7 @@ def _synthetic_behavior_probes(count: int, rng: random.Random) -> list[dict[str,
             probes.append(
                 {
                     "id": f"synthetic_python_{function_name}_{index:04d}",
+                    "category": "code",
                     "prompt": (
                         f"Write a tiny Python function named {function_name} that returns a {symbol} b.\n"
                         "```python\n"
@@ -2893,11 +2945,12 @@ def _score_choice_probe(torch, model, tokenizer, probe: dict[str, Any], device: 
 
 def _generate_text(torch, model, tokenizer, prompt: str, device: str, max_new_tokens: int) -> dict[str, Any]:
     inputs = tokenizer(prompt, return_tensors="pt").to(device)
+    pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
     output_ids = model.generate(
         **inputs,
         max_new_tokens=max_new_tokens,
         do_sample=False,
-        pad_token_id=tokenizer.eos_token_id,
+        pad_token_id=pad_token_id,
     )
     decoded = tokenizer.decode(output_ids[0], skip_special_tokens=True)
     continuation = decoded[len(prompt) :] if decoded.startswith(prompt) else decoded
@@ -2907,6 +2960,55 @@ def _generate_text(torch, model, tokenizer, prompt: str, device: str, max_new_to
         "output": decoded,
         "diagnostics": _generation_diagnostics(continuation, generated_ids),
     }
+
+
+def _generate_text_batch(
+    torch,
+    model,
+    tokenizer,
+    prompts: Sequence[str],
+    device: str,
+    max_new_tokens: int,
+    batch_size: int = 8,
+) -> list[dict[str, Any]]:
+    prompt_list = [str(prompt) for prompt in prompts]
+    if not prompt_list:
+        return []
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive.")
+    if tokenizer.pad_token_id is None and tokenizer.eos_token_id is not None:
+        tokenizer.pad_token = tokenizer.eos_token
+    pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+    old_padding_side = getattr(tokenizer, "padding_side", None)
+    if old_padding_side is not None:
+        tokenizer.padding_side = "left"
+    try:
+        results = []
+        for start in range(0, len(prompt_list), int(batch_size)):
+            batch_prompts = prompt_list[start : start + int(batch_size)]
+            inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True).to(device)
+            output_ids = model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                pad_token_id=pad_token_id,
+            )
+            prompt_width = int(inputs["input_ids"].shape[1])
+            for index, prompt in enumerate(batch_prompts):
+                decoded = tokenizer.decode(output_ids[index], skip_special_tokens=True)
+                continuation = decoded[len(prompt) :] if decoded.startswith(prompt) else decoded
+                generated_ids = output_ids[index, prompt_width:].detach().cpu().tolist()
+                results.append(
+                    {
+                        "prompt": prompt,
+                        "output": decoded,
+                        "diagnostics": _generation_diagnostics(continuation, generated_ids),
+                    }
+                )
+        return results
+    finally:
+        if old_padding_side is not None:
+            tokenizer.padding_side = old_padding_side
 
 
 def _generate_text_for_spec(torch, model, tokenizer, spec: dict[str, Any], device: str, max_new_tokens: int) -> dict[str, Any]:

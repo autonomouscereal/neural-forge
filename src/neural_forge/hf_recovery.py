@@ -16,6 +16,7 @@ from neural_forge.hf_tools import (
     _decoder_layer_container,
     _dtype_from_name,
     _generate_text,
+    _generate_text_batch,
     _generation_health,
     _load_eval_suite,
     _passed_category_breakdown,
@@ -40,6 +41,28 @@ HIDDEN_KD_METRICS = {"projected", "cka", "both", "rsd", "projected-rsd"}
 PROJECTED_HIDDEN_KD_METRICS = {"projected", "both", "projected-rsd"}
 MODULE_OUTPUT_TARGETS = {"attention", "mlp", "both"}
 MODULE_OUTPUT_TRANSPORTS = {"paired", "sinkhorn", "both"}
+
+
+def _recovery_behavior_eval_suite(
+    suite: str | Path | dict[str, Any] | None,
+) -> tuple[dict[str, Any] | None, Sequence[dict[str, Any]] | None, Sequence[dict[str, Any]] | None]:
+    if suite is None:
+        return None, None, None
+    loaded = _load_eval_suite(suite)
+    behavior_probes = loaded["behavior_probes"]
+    if not behavior_probes:
+        raise ValueError("behavior_eval_suite must contain at least one behavior probe.")
+    return loaded, behavior_probes, loaded["generation_prompts"]
+
+
+def _recovery_behavior_eval_suite_report(suite: dict[str, Any] | None) -> dict[str, Any] | None:
+    if suite is None:
+        return None
+    return {
+        "source": suite.get("source"),
+        "behavior_probe_count": len(suite.get("behavior_probes", [])),
+        "generation_prompt_count": len(suite.get("generation_prompts", [])),
+    }
 
 
 def recover_causal_lm(
@@ -82,6 +105,8 @@ def recover_causal_lm(
     behavior_eval_interval: int | None = None,
     behavior_max_new_tokens: int = 96,
     behavior_max_probes: int = 6,
+    behavior_eval_suite: str | Path | dict[str, Any] | None = None,
+    behavior_max_generation_prompts: int | None = None,
 ) -> dict[str, Any]:
     """Run a short recovery pass after surgery.
 
@@ -155,6 +180,8 @@ def recover_causal_lm(
         raise ValueError("behavior_max_new_tokens must be positive.")
     if behavior_max_probes <= 0:
         raise ValueError("behavior_max_probes must be positive.")
+    if behavior_max_generation_prompts is not None and behavior_max_generation_prompts <= 0:
+        raise ValueError("behavior_max_generation_prompts must be positive when provided.")
 
     if (
         kd_weight > 0
@@ -236,6 +263,7 @@ def recover_causal_lm(
     if not texts:
         raise ValueError("Need at least one recovery text.")
     eval_overlap_count = len(set(texts) & set(TEXT_EVALS))
+    behavior_suite, behavior_probes, generation_prompts = _recovery_behavior_eval_suite(behavior_eval_suite)
     batches = _make_batches(
         tokenizer,
         texts,
@@ -268,6 +296,9 @@ def recover_causal_lm(
                 device,
                 int(behavior_max_new_tokens),
                 int(behavior_max_probes),
+                behavior_probes,
+                generation_prompts,
+                behavior_max_generation_prompts,
             )
         if was_training:
             candidate.train()
@@ -356,6 +387,9 @@ def recover_causal_lm(
                     device,
                     int(behavior_max_new_tokens),
                     int(behavior_max_probes),
+                    behavior_probes,
+                    generation_prompts,
+                    behavior_max_generation_prompts,
                 )
             if was_training:
                 candidate.train()
@@ -415,6 +449,10 @@ def recover_causal_lm(
         "behavior_eval_interval": behavior_interval,
         "behavior_max_new_tokens": int(behavior_max_new_tokens),
         "behavior_max_probes": int(behavior_max_probes),
+        "behavior_eval_suite": _recovery_behavior_eval_suite_report(behavior_suite),
+        "behavior_max_generation_prompts": (
+            None if behavior_max_generation_prompts is None else int(behavior_max_generation_prompts)
+        ),
         "behavior_history": behavior_history,
         "best_behavior_step": best_behavior_step,
         "best_behavior": best_behavior_summary,
@@ -540,6 +578,8 @@ def recover_cross_tokenizer_causal_lm(
     behavior_eval_interval: int | None = None,
     behavior_max_new_tokens: int = 96,
     behavior_max_probes: int = 6,
+    behavior_eval_suite: str | Path | dict[str, Any] | None = None,
+    behavior_max_generation_prompts: int | None = None,
 ) -> dict[str, Any]:
     """Recover a cross-tokenizer folded child against donor anchor logits.
 
@@ -680,6 +720,8 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("behavior_max_new_tokens must be positive.")
     if behavior_max_probes <= 0:
         raise ValueError("behavior_max_probes must be positive.")
+    if behavior_max_generation_prompts is not None and behavior_max_generation_prompts <= 0:
+        raise ValueError("behavior_max_generation_prompts must be positive when provided.")
 
     from neural_forge.hf_xfamily import _canonical_token
     from neural_forge.hf_xfamily import _canonical_token_map
@@ -694,6 +736,11 @@ def recover_cross_tokenizer_causal_lm(
     if candidate_tokenizer.pad_token_id is None and candidate_tokenizer.eos_token_id is not None:
         candidate_tokenizer.pad_token = candidate_tokenizer.eos_token
 
+    print(
+        f"xfamily_recover phase=anchor_build max_anchors={int(max_anchors)} "
+        f"selection={anchor_selection} min_chars={int(anchor_min_chars)}",
+        flush=True,
+    )
     anchors = _shared_recovery_anchors(
         source_tokenizer,
         candidate_tokenizer,
@@ -704,12 +751,18 @@ def recover_cross_tokenizer_causal_lm(
     )
     if not anchors:
         raise ValueError("No shared decoded-token anchors found for cross-tokenizer recovery.")
+    print(f"xfamily_recover phase=anchor_build_done anchors={len(anchors)}", flush=True)
     source_anchor_idx = torch.tensor([item[1] for item in anchors], dtype=torch.long, device=device)
     candidate_anchor_idx = torch.tensor([item[2] for item in anchors], dtype=torch.long, device=device)
     projected_vocab_groups = None
     projected_vocab_mask = None
     projected_vocab_valid = None
     if projected_vocab_kd_weight > 0 or focused_projected_vocab_kd_weight > 0 or stepwise_donor_kd_weight > 0:
+        print(
+            "xfamily_recover phase=projected_vocab_group_build "
+            f"max_source_tokens={int(projected_vocab_max_source_tokens)}",
+            flush=True,
+        )
         projected_vocab_groups, projected_vocab_mask, projected_vocab_valid = _candidate_to_source_token_groups(
             torch,
             source_tokenizer,
@@ -717,7 +770,9 @@ def recover_cross_tokenizer_causal_lm(
             max_source_tokens=projected_vocab_max_source_tokens,
             device=device,
         )
+        print("xfamily_recover phase=projected_vocab_group_build_done", flush=True)
 
+    print("xfamily_recover phase=model_load", flush=True)
     source = transformers.AutoModelForCausalLM.from_pretrained(
         source_model,
         torch_dtype=dtype,
@@ -742,6 +797,7 @@ def recover_cross_tokenizer_causal_lm(
             device_map=None,
             trust_remote_code=trust_remote_code,
         )
+    print("xfamily_recover phase=model_load_done", flush=True)
     source.to(device)
     candidate.to(device)
     if reference is not None:
@@ -793,6 +849,7 @@ def recover_cross_tokenizer_causal_lm(
     if not texts:
         raise ValueError("Need at least one recovery text.")
     eval_overlap_count = len(set(texts) & set(TEXT_EVALS))
+    behavior_suite, behavior_probes, generation_prompts = _recovery_behavior_eval_suite(behavior_eval_suite)
     batches = _make_paired_batches(
         source_tokenizer,
         candidate_tokenizer,
@@ -858,6 +915,11 @@ def recover_cross_tokenizer_causal_lm(
     best_behavior_step = None
     best_behavior_state = None
     if save_best_behavior:
+        print(
+            f"xfamily_recover phase=behavior_eval step=0 probes={int(behavior_max_probes)} "
+            f"generation_prompts={len(generation_prompts) if generation_prompts is not None else len(GENERATION_PROMPTS)}",
+            flush=True,
+        )
         was_training = candidate.training
         candidate.eval()
         with torch.no_grad():
@@ -868,6 +930,9 @@ def recover_cross_tokenizer_causal_lm(
                 device,
                 int(behavior_max_new_tokens),
                 int(behavior_max_probes),
+                behavior_probes,
+                generation_prompts,
+                behavior_max_generation_prompts,
             )
         if was_training:
             candidate.train()
@@ -1157,6 +1222,11 @@ def recover_cross_tokenizer_causal_lm(
                 best_state = {key: value.detach().cpu().clone() for key, value in candidate.state_dict().items()}
         if save_best_behavior and (step == 1 or step % behavior_interval == 0 or step == steps):
             loss_value = float(loss.detach().cpu())
+            print(
+                f"xfamily_recover phase=behavior_eval step={int(step)} probes={int(behavior_max_probes)} "
+                f"generation_prompts={len(generation_prompts) if generation_prompts is not None else len(GENERATION_PROMPTS)}",
+                flush=True,
+            )
             was_training = candidate.training
             candidate.eval()
             with torch.no_grad():
@@ -1167,6 +1237,9 @@ def recover_cross_tokenizer_causal_lm(
                     device,
                     int(behavior_max_new_tokens),
                     int(behavior_max_probes),
+                    behavior_probes,
+                    generation_prompts,
+                    behavior_max_generation_prompts,
                 )
             if was_training:
                 candidate.train()
@@ -1259,6 +1332,10 @@ def recover_cross_tokenizer_causal_lm(
         "behavior_eval_interval": behavior_interval,
         "behavior_max_new_tokens": int(behavior_max_new_tokens),
         "behavior_max_probes": int(behavior_max_probes),
+        "behavior_eval_suite": _recovery_behavior_eval_suite_report(behavior_suite),
+        "behavior_max_generation_prompts": (
+            None if behavior_max_generation_prompts is None else int(behavior_max_generation_prompts)
+        ),
         "behavior_history": behavior_history,
         "best_behavior_step": best_behavior_step,
         "best_behavior": best_behavior_summary,
@@ -1661,6 +1738,8 @@ def reconstruct_cross_tokenizer_causal_lm(
     layer_gate_max_texts: int = 4,
     layer_gate_max_behavior_drop: float = 0.0,
     layer_gate_behavior_max_new_tokens: int = 96,
+    layer_gate_eval_suite: str | Path | dict[str, Any] | None = None,
+    layer_gate_max_generation_prompts: int | None = None,
     torch_dtype: str = "float16",
     candidate_torch_dtype: str = "float32",
     device: str = "cuda:0",
@@ -1736,6 +1815,8 @@ def reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("layer_gate_max_behavior_drop must be in [0, 1].")
     if layer_gate_behavior_max_new_tokens <= 0:
         raise ValueError("layer_gate_behavior_max_new_tokens must be positive.")
+    if layer_gate_max_generation_prompts is not None and layer_gate_max_generation_prompts <= 0:
+        raise ValueError("layer_gate_max_generation_prompts must be positive when provided.")
 
     from neural_forge.hf_xfamily import _canonical_token
     from neural_forge.hf_xfamily import _canonical_token_map
@@ -1823,6 +1904,17 @@ def reconstruct_cross_tokenizer_causal_lm(
         "max_behavior_drop": float(layer_gate_max_behavior_drop),
         "behavior_max_new_tokens": int(layer_gate_behavior_max_new_tokens),
     }
+    layer_gate_suite, layer_gate_behavior_probes, layer_gate_generation_prompts = _recovery_behavior_eval_suite(
+        layer_gate_eval_suite
+    )
+    if layer_gate_suite is not None:
+        layer_gate["eval_suite"] = {
+            **(_recovery_behavior_eval_suite_report(layer_gate_suite) or {}),
+            "max_behavior_probes": int(layer_gate_max_texts),
+            "max_generation_prompts": (
+                None if layer_gate_max_generation_prompts is None else int(layer_gate_max_generation_prompts)
+            ),
+        }
     gate_texts = list(TEXT_EVALS[: int(layer_gate_max_texts)])
     previous_gate_ppl: float | None = None
     previous_gate_behavior: dict[str, Any] | None = None
@@ -1958,6 +2050,9 @@ def reconstruct_cross_tokenizer_causal_lm(
                     device,
                     int(layer_gate_behavior_max_new_tokens),
                     int(layer_gate_max_texts),
+                    layer_gate_behavior_probes,
+                    layer_gate_generation_prompts,
+                    layer_gate_max_generation_prompts,
                 )
                 gate_decision = _layer_gate_behavior_decision(
                     previous_gate_behavior or candidate_behavior,
@@ -1976,6 +2071,9 @@ def reconstruct_cross_tokenizer_causal_lm(
                         device,
                         int(layer_gate_behavior_max_new_tokens),
                         int(layer_gate_max_texts),
+                        layer_gate_behavior_probes,
+                        layer_gate_generation_prompts,
+                        layer_gate_max_generation_prompts,
                     )
                     gate_decision["reverted"] = True
                     gate_decision["reverted_behavior"] = reverted_behavior
@@ -5570,31 +5668,50 @@ def _heldout_behavior_summary(
     generation_source = list(generation_prompts if generation_prompts is not None else GENERATION_PROMPTS)
     if max_generation_prompts is not None:
         generation_source = generation_source[: int(max_generation_prompts)]
+    probe_generations = _generate_text_batch(
+        torch,
+        model,
+        tokenizer,
+        [str(probe["prompt"]) for probe in probes],
+        device,
+        int(max_new_tokens),
+    )
     items = [
-        _score_behavior_probe(
-            probe,
-            _generate_text(torch, model, tokenizer, str(probe["prompt"]), device, int(max_new_tokens)),
-        )
-        for probe in probes
+        _score_behavior_probe(probe, generation)
+        for probe, generation in zip(probes, probe_generations, strict=True)
     ]
-    def _generation_from_prompt(prompt):
+
+    generation_prompt_texts = [
+        str(prompt.get("prompt", "")) if isinstance(prompt, dict) else str(prompt)
+        for prompt in generation_source
+    ]
+    generated_prompts = _generate_text_batch(
+        torch,
+        model,
+        tokenizer,
+        generation_prompt_texts,
+        device,
+        int(max_new_tokens),
+    )
+
+    def _generation_from_prompt(prompt, generated):
         if isinstance(prompt, dict):
-            generated = _generate_text(torch, model, tokenizer, str(prompt.get("prompt", "")), device, int(max_new_tokens))
+            generated = dict(generated)
             generated["id"] = prompt.get("id")
             if prompt.get("category") is not None:
                 generated["category"] = prompt.get("category")
             if prompt.get("relevance_rules") is not None:
                 generated["relevance_rules"] = prompt.get("relevance_rules")
             return generated
-        return _generate_text(torch, model, tokenizer, str(prompt), device, int(max_new_tokens))
+        return generated
 
     generation_items = [
         _generation_health(
-            _generation_from_prompt(prompt),
+            _generation_from_prompt(prompt, generated),
             min_continuation_chars=24,
             min_unique_token_ratio=0.20,
         )
-        for prompt in generation_source
+        for prompt, generated in zip(generation_source, generated_prompts, strict=True)
     ]
     correct = sum(1 for item in items if item["passed"])
     generation_correct = sum(1 for item in generation_items if item["passed"])

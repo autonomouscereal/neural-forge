@@ -538,6 +538,16 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "calibration.jsonl",
             "--recover-max-calibration-texts",
             "12",
+            "--eval-suite",
+            "mlp-suite.json",
+            "--max-text-evals",
+            "11",
+            "--max-choice-probes",
+            "22",
+            "--max-generation-prompts",
+            "33",
+            "--max-behavior-probes",
+            "1000",
         ]
     )
     xfamily_compress_args = parser.parse_args(
@@ -586,6 +596,16 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "calibration.jsonl",
             "--recover-max-calibration-texts",
             "8",
+            "--eval-suite",
+            "compress-suite.json",
+            "--max-text-evals",
+            "12",
+            "--max-choice-probes",
+            "23",
+            "--max-generation-prompts",
+            "34",
+            "--max-behavior-probes",
+            "1000",
         ]
     )
     xfamily_recover_args = parser.parse_args(
@@ -725,6 +745,10 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "22",
             "--behavior-max-probes",
             "5",
+            "--behavior-eval-suite",
+            "suite.json",
+            "--behavior-max-generation-prompts",
+            "7",
             "--calibration-file",
             "calibration.jsonl",
             "--max-calibration-texts",
@@ -797,6 +821,11 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.75",
             "--response-loss-mode",
             "auto",
+            "--save-best-behavior",
+            "--behavior-eval-suite",
+            "same-suite.json",
+            "--behavior-max-generation-prompts",
+            "4",
         ]
     )
     assert sweep_args.output_dir == "out"
@@ -903,6 +932,11 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_mlp_args.recover_train_scope == "ffn"
     assert xfamily_mlp_args.recover_calibration_file == "calibration.jsonl"
     assert xfamily_mlp_args.recover_max_calibration_texts == 12
+    assert xfamily_mlp_args.eval_suite == "mlp-suite.json"
+    assert xfamily_mlp_args.max_text_evals == 11
+    assert xfamily_mlp_args.max_choice_probes == 22
+    assert xfamily_mlp_args.max_generation_prompts == 33
+    assert xfamily_mlp_args.max_behavior_probes == 1000
     assert xfamily_compress_args.donor_model == "LiquidAI/LFM2.5-230M"
     assert xfamily_compress_args.channel_assignment == "activation-correlation"
     assert xfamily_compress_args.activation_calibration_file == "activation.jsonl"
@@ -918,6 +952,11 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_compress_args.recover_only_failed is True
     assert xfamily_compress_args.recover_calibration_file == "calibration.jsonl"
     assert xfamily_compress_args.recover_max_calibration_texts == 8
+    assert xfamily_compress_args.eval_suite == "compress-suite.json"
+    assert xfamily_compress_args.max_text_evals == 12
+    assert xfamily_compress_args.max_choice_probes == 23
+    assert xfamily_compress_args.max_generation_prompts == 34
+    assert xfamily_compress_args.max_behavior_probes == 1000
     assert xfamily_recover_args.source_model == "donor"
     assert xfamily_recover_args.candidate_model == "candidate"
     assert xfamily_recover_args.output == "recovered"
@@ -957,6 +996,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_recover_args.behavior_eval_interval == 4
     assert xfamily_recover_args.behavior_max_new_tokens == 22
     assert xfamily_recover_args.behavior_max_probes == 5
+    assert xfamily_recover_args.behavior_eval_suite == "suite.json"
+    assert xfamily_recover_args.behavior_max_generation_prompts == 7
     assert xfamily_recover_args.calibration_file == "calibration.jsonl"
     assert xfamily_head_args.source_model == "donor"
     assert xfamily_head_args.candidate_model == "candidate"
@@ -986,6 +1027,9 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert recover_args.first_token_kd_weight == 1.5
     assert recover_args.first_token_lm_weight == 0.75
     assert recover_args.response_loss_mode == "auto"
+    assert recover_args.save_best_behavior is True
+    assert recover_args.behavior_eval_suite == "same-suite.json"
+    assert recover_args.behavior_max_generation_prompts == 4
     with pytest.raises(SystemExit):
         parser.parse_args(
             [
@@ -1021,6 +1065,10 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "--append-eos",
             "--train-scope",
             "last1",
+            "--behavior-eval-suite",
+            "lm-suite.json",
+            "--behavior-max-generation-prompts",
+            "8",
             "--calibration-file",
             "calibration.jsonl",
             "--max-calibration-texts",
@@ -1037,6 +1085,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert lm_recover_args.response_loss_mode == "answer"
     assert lm_recover_args.append_eos is True
     assert lm_recover_args.train_scope == "last1"
+    assert lm_recover_args.behavior_eval_suite == "lm-suite.json"
+    assert lm_recover_args.behavior_max_generation_prompts == 8
     assert lm_recover_args.calibration_file == "calibration.jsonl"
     assert lm_recover_args.max_calibration_texts == 9
 
@@ -1144,6 +1194,10 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.17",
             "--layer-gate-behavior-max-new-tokens",
             "33",
+            "--layer-gate-eval-suite",
+            "reconstruct-suite.json",
+            "--layer-gate-max-generation-prompts",
+            "44",
             "--dtype",
             "float16",
             "--candidate-dtype",
@@ -1181,6 +1235,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_reconstruct_args.layer_gate_max_texts == 2
     assert xfamily_reconstruct_args.layer_gate_max_behavior_drop == pytest.approx(0.17)
     assert xfamily_reconstruct_args.layer_gate_behavior_max_new_tokens == 33
+    assert xfamily_reconstruct_args.layer_gate_eval_suite == "reconstruct-suite.json"
+    assert xfamily_reconstruct_args.layer_gate_max_generation_prompts == 44
     assert xfamily_reconstruct_args.dtype == "float16"
     assert xfamily_reconstruct_args.candidate_dtype == "float32"
     assert xfamily_reconstruct_args.device == "cpu"
@@ -4312,6 +4368,10 @@ def test_hf_lm_recover_handler_passes_teacherless_flags(monkeypatch) -> None:
             "cpu",
             "--grad-clip",
             "0.5",
+            "--behavior-eval-suite",
+            "lm-suite.json",
+            "--behavior-max-generation-prompts",
+            "8",
             "--calibration-file",
             "calibration.jsonl",
             "--max-calibration-texts",
@@ -4350,6 +4410,8 @@ def test_hf_lm_recover_handler_passes_teacherless_flags(monkeypatch) -> None:
         "behavior_eval_interval": None,
         "behavior_max_new_tokens": 96,
         "behavior_max_probes": 6,
+        "behavior_eval_suite": "lm-suite.json",
+        "behavior_max_generation_prompts": 8,
     }
 
 
@@ -4504,6 +4566,10 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "21",
             "--behavior-max-probes",
             "5",
+            "--behavior-eval-suite",
+            "suite.json",
+            "--behavior-max-generation-prompts",
+            "9",
             "--calibration-file",
             "calibration.jsonl",
             "--max-calibration-texts",
@@ -4587,6 +4653,8 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "behavior_eval_interval": 4,
         "behavior_max_new_tokens": 21,
         "behavior_max_probes": 5,
+        "behavior_eval_suite": "suite.json",
+        "behavior_max_generation_prompts": 9,
     }
 
 
@@ -4940,6 +5008,10 @@ def test_hf_xfamily_reconstruct_handler_passes_flags(monkeypatch) -> None:
             "0.17",
             "--layer-gate-behavior-max-new-tokens",
             "33",
+            "--layer-gate-eval-suite",
+            "reconstruct-suite.json",
+            "--layer-gate-max-generation-prompts",
+            "44",
             "--dtype",
             "float16",
             "--candidate-dtype",
@@ -4983,6 +5055,8 @@ def test_hf_xfamily_reconstruct_handler_passes_flags(monkeypatch) -> None:
         "layer_gate_max_texts": 2,
         "layer_gate_max_behavior_drop": 0.17,
         "layer_gate_behavior_max_new_tokens": 33,
+        "layer_gate_eval_suite": "reconstruct-suite.json",
+        "layer_gate_max_generation_prompts": 44,
         "torch_dtype": "float16",
         "candidate_torch_dtype": "float32",
         "device": "cpu",
@@ -5356,6 +5430,16 @@ def test_xfamily_mlp_handler_passes_recovery_flags(monkeypatch) -> None:
             "calibration.jsonl",
             "--recover-max-calibration-texts",
             "3",
+            "--eval-suite",
+            "mlp-suite.json",
+            "--max-text-evals",
+            "11",
+            "--max-choice-probes",
+            "22",
+            "--max-generation-prompts",
+            "33",
+            "--max-behavior-probes",
+            "1000",
         ]
     )
     result = args.func(args)
@@ -5373,6 +5457,11 @@ def test_xfamily_mlp_handler_passes_recovery_flags(monkeypatch) -> None:
     assert captured["layer_alpha_min_scale"] == 0.25
     assert captured["layer_alpha_max_scale"] == 1.25
     assert captured["layer_alpha_similarity_floor"] == 0.3
+    assert captured["eval_suite"] == "mlp-suite.json"
+    assert captured["max_text_evals"] == 11
+    assert captured["max_choice_probes"] == 22
+    assert captured["max_generation_prompts"] == 33
+    assert captured["max_behavior_probes"] == 1000
 
 
 def test_xfamily_compress_handler_passes_pipeline_flags(monkeypatch) -> None:
@@ -5433,6 +5522,16 @@ def test_xfamily_compress_handler_passes_pipeline_flags(monkeypatch) -> None:
             "calibration.jsonl",
             "--recover-max-calibration-texts",
             "3",
+            "--eval-suite",
+            "compress-suite.json",
+            "--max-text-evals",
+            "12",
+            "--max-choice-probes",
+            "23",
+            "--max-generation-prompts",
+            "34",
+            "--max-behavior-probes",
+            "1000",
         ]
     )
     result = args.func(args)
@@ -5456,6 +5555,11 @@ def test_xfamily_compress_handler_passes_pipeline_flags(monkeypatch) -> None:
     assert captured["layer_alpha_min_scale"] == 0.25
     assert captured["layer_alpha_max_scale"] == 1.25
     assert captured["layer_alpha_similarity_floor"] == 0.3
+    assert captured["eval_suite"] == "compress-suite.json"
+    assert captured["max_text_evals"] == 12
+    assert captured["max_choice_probes"] == 23
+    assert captured["max_generation_prompts"] == 34
+    assert captured["max_behavior_probes"] == 1000
 
 
 def test_select_compression_candidates_prefers_target_passed() -> None:

@@ -328,7 +328,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hf_build_eval_suite.add_argument("output")
     hf_build_eval_suite.add_argument("--behavior-count", type=int, default=1000)
-    hf_build_eval_suite.add_argument("--generation-count", type=int, default=120)
+    hf_build_eval_suite.add_argument("--generation-count", type=int, default=1000)
     hf_build_eval_suite.add_argument("--choice-count", type=int, default=200)
     hf_build_eval_suite.add_argument("--text-count", type=int, default=64)
     hf_build_eval_suite.add_argument("--seed", type=int, default=0)
@@ -548,6 +548,11 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_mlp_sweep.add_argument("--recover-grad-clip", type=float, default=1.0)
     xfamily_mlp_sweep.add_argument("--recover-calibration-file")
     xfamily_mlp_sweep.add_argument("--recover-max-calibration-texts", type=int)
+    xfamily_mlp_sweep.add_argument("--eval-suite", help="JSON/JSONL eval suite used for baseline, candidate, and recovered gates.")
+    xfamily_mlp_sweep.add_argument("--max-text-evals", type=int)
+    xfamily_mlp_sweep.add_argument("--max-choice-probes", type=int)
+    xfamily_mlp_sweep.add_argument("--max-generation-prompts", type=int)
+    xfamily_mlp_sweep.add_argument("--max-behavior-probes", type=int)
     xfamily_mlp_sweep.set_defaults(func=cmd_hf_xfamily_mlp_sweep)
 
     xfamily_compress = sub.add_parser(
@@ -614,6 +619,11 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_compress.add_argument("--recover-grad-clip", type=float, default=1.0)
     xfamily_compress.add_argument("--recover-calibration-file")
     xfamily_compress.add_argument("--recover-max-calibration-texts", type=int)
+    xfamily_compress.add_argument("--eval-suite", help="JSON/JSONL eval suite used for baseline, candidate, compression, and recovered gates.")
+    xfamily_compress.add_argument("--max-text-evals", type=int)
+    xfamily_compress.add_argument("--max-choice-probes", type=int)
+    xfamily_compress.add_argument("--max-generation-prompts", type=int)
+    xfamily_compress.add_argument("--max-behavior-probes", type=int)
     xfamily_compress.set_defaults(func=cmd_hf_xfamily_compress)
 
     recover = sub.add_parser("hf-recover", help="Run lightweight same-tokenizer recovery training after HF surgery.")
@@ -659,6 +669,8 @@ def build_parser() -> argparse.ArgumentParser:
     recover.add_argument("--behavior-eval-interval", type=int)
     recover.add_argument("--behavior-max-new-tokens", type=int, default=96)
     recover.add_argument("--behavior-max-probes", type=int, default=6)
+    recover.add_argument("--behavior-eval-suite")
+    recover.add_argument("--behavior-max-generation-prompts", type=int)
     recover.add_argument("--calibration-file")
     recover.add_argument("--max-calibration-texts", type=int)
     recover.set_defaults(func=cmd_hf_recover)
@@ -776,6 +788,8 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--behavior-eval-interval", type=int)
     xfamily_recover.add_argument("--behavior-max-new-tokens", type=int, default=96)
     xfamily_recover.add_argument("--behavior-max-probes", type=int, default=6)
+    xfamily_recover.add_argument("--behavior-eval-suite")
+    xfamily_recover.add_argument("--behavior-max-generation-prompts", type=int)
     xfamily_recover.add_argument("--calibration-file")
     xfamily_recover.add_argument("--max-calibration-texts", type=int)
     xfamily_recover.set_defaults(func=cmd_hf_xfamily_recover)
@@ -900,6 +914,15 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=96,
         help="Generation length for behavior probes used by --layer-gate-metric behavior.",
+    )
+    xfamily_reconstruct.add_argument(
+        "--layer-gate-eval-suite",
+        help="JSON/JSONL eval suite whose behavior probes replace the built-in layer behavior gate probes.",
+    )
+    xfamily_reconstruct.add_argument(
+        "--layer-gate-max-generation-prompts",
+        type=int,
+        help="Maximum generation prompts used from --layer-gate-eval-suite for each layer behavior gate.",
     )
     xfamily_reconstruct.add_argument("--dtype", default="float16")
     xfamily_reconstruct.add_argument("--candidate-dtype", default="float32")
@@ -1173,6 +1196,8 @@ def build_parser() -> argparse.ArgumentParser:
     lm_recover.add_argument("--behavior-eval-interval", type=int)
     lm_recover.add_argument("--behavior-max-new-tokens", type=int, default=96)
     lm_recover.add_argument("--behavior-max-probes", type=int, default=6)
+    lm_recover.add_argument("--behavior-eval-suite")
+    lm_recover.add_argument("--behavior-max-generation-prompts", type=int)
     lm_recover.add_argument("--calibration-file")
     lm_recover.add_argument("--max-calibration-texts", type=int)
     lm_recover.set_defaults(func=cmd_hf_lm_recover)
@@ -1736,6 +1761,11 @@ def cmd_hf_xfamily_mlp_sweep(args: argparse.Namespace) -> dict[str, object]:
         recovery_dtype=args.recover_dtype,
         recovery_grad_clip=args.recover_grad_clip,
         recovery_calibration_texts=recovery_calibration_texts,
+        eval_suite=args.eval_suite,
+        max_text_evals=args.max_text_evals,
+        max_choice_probes=args.max_choice_probes,
+        max_generation_prompts=args.max_generation_prompts,
+        max_behavior_probes=args.max_behavior_probes,
     )
 
 
@@ -1801,6 +1831,11 @@ def cmd_hf_xfamily_compress(args: argparse.Namespace) -> dict[str, object]:
         recovery_dtype=args.recover_dtype,
         recovery_grad_clip=args.recover_grad_clip,
         recovery_calibration_texts=recovery_calibration_texts,
+        eval_suite=args.eval_suite,
+        max_text_evals=args.max_text_evals,
+        max_choice_probes=args.max_choice_probes,
+        max_generation_prompts=args.max_generation_prompts,
+        max_behavior_probes=args.max_behavior_probes,
     )
 
 
@@ -1847,6 +1882,8 @@ def cmd_hf_recover(args: argparse.Namespace) -> dict[str, object]:
         behavior_eval_interval=args.behavior_eval_interval,
         behavior_max_new_tokens=args.behavior_max_new_tokens,
         behavior_max_probes=args.behavior_max_probes,
+        behavior_eval_suite=args.behavior_eval_suite,
+        behavior_max_generation_prompts=args.behavior_max_generation_prompts,
     )
 
 
@@ -1927,6 +1964,8 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         behavior_eval_interval=args.behavior_eval_interval,
         behavior_max_new_tokens=args.behavior_max_new_tokens,
         behavior_max_probes=args.behavior_max_probes,
+        behavior_eval_suite=args.behavior_eval_suite,
+        behavior_max_generation_prompts=args.behavior_max_generation_prompts,
     )
 
 
@@ -1984,6 +2023,8 @@ def cmd_hf_xfamily_reconstruct(args: argparse.Namespace) -> dict[str, object]:
         layer_gate_max_texts=args.layer_gate_max_texts,
         layer_gate_max_behavior_drop=args.layer_gate_max_behavior_drop,
         layer_gate_behavior_max_new_tokens=args.layer_gate_behavior_max_new_tokens,
+        layer_gate_eval_suite=args.layer_gate_eval_suite,
+        layer_gate_max_generation_prompts=args.layer_gate_max_generation_prompts,
         torch_dtype=args.dtype,
         candidate_torch_dtype=args.candidate_dtype,
         device=args.device,
@@ -2111,6 +2152,8 @@ def cmd_hf_lm_recover(args: argparse.Namespace) -> dict[str, object]:
         behavior_eval_interval=args.behavior_eval_interval,
         behavior_max_new_tokens=args.behavior_max_new_tokens,
         behavior_max_probes=args.behavior_max_probes,
+        behavior_eval_suite=args.behavior_eval_suite,
+        behavior_max_generation_prompts=args.behavior_max_generation_prompts,
     )
 
 

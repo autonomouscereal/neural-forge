@@ -118,3 +118,66 @@ This confirms that some previous attempts produced isolated code-generation or
 math-choice movement, but none combine those gains with broad behavior. Future
 recovery sweeps should be judged on hard-category movement explicitly, not only
 aggregate `600/1000` behavior.
+
+## 2026-06-29 Broad Recovery Gate Update
+
+`hf-recover`, `hf-lm-recover`, and `hf-xfamily-recover` now accept
+`--behavior-eval-suite` and `--behavior-max-generation-prompts`. This moves the
+1000-probe category-aware gate into `--save-best-behavior` checkpoint selection
+instead of using it only after a run finishes. `--behavior-max-probes` controls
+the behavior slice. `hf-build-eval-suite` now defaults to 1000 behavior probes
+and 1000 unique generation prompts. Broad generation in `hf-eval` and recovery
+behavior checks is batched, so recovery can now be run with broad probes:
+
+```powershell
+--behavior-eval-suite broad_behavior_suite_1000_20260628.json --behavior-max-probes 1000 --behavior-max-generation-prompts 1000
+```
+
+Smaller generation slices such as `--behavior-max-generation-prompts 200` remain
+useful for quick diagnostic intervals.
+
+`hf-xfamily-reconstruct`, `hf-sweep-xfamily-mlp`, and `hf-xfamily-compress`
+now also expose broad eval-suite controls so layer gates, sweep gates, pipeline
+baseline/candidate gates, and recovered-candidate gates can be judged on the
+same held-out suite instead of a tiny smoke slice.
+
+Remote validation on the Qwen3-4B-Base into random SmolLM2-135M target run:
+
+- Recovery run:
+  `qwen4b_tied29_broadgate_noproj_logged_xrecover_20260628_215158`
+- Recovery gate suite:
+  `broad_behavior_suite_1000_20260628.json`
+- Step 0: behavior `600/1000`, generation health `120/200`
+- Step 1: behavior `600/1000`, generation health `120/200`
+- Step 40: behavior `600/1000`, generation health `40/200`
+- Best behavior checkpoint: step 1
+
+Post-recovery `hf-eval` on the same 1000-behavior/200-generation suite ranked
+the recovered model third of 29 broad reports:
+
+| Rank | Report | Behavior | Hard Behavior | Generation | Hard Generation | Choice | PPL |
+|---:|---|---:|---:|---:|---:|---:|---:|
+| 1 | `eval_prerecon_blockinterface_a001_suitegate_b100g40_l1.json` | `600/1000` | `0/400` | `160/200` | `0/40` | `25/250` | `14191.81` |
+| 2 | `eval_residual_lowrank_r16_a001_l2.json` | `600/1000` | `0/400` | `160/200` | `0/40` | `25/250` | `14191.81` |
+| 3 | `qwen4b_tied29_broadgate_noproj_logged_xrecover_20260628_215158_broad.json` | `600/1000` | `0/400` | `160/200` | `0/40` | `25/250` | `14240.93` |
+
+A stricter new suite with 1000 behavior probes and 1000 unique categorized
+generation prompts was built as
+`broad_behavior_generation_suite_1000_20260629.json`. Re-evaluating the prior
+top candidate and the recovered checkpoint showed the recovery improved broad
+generation-health counts while leaving behavior intelligence unchanged:
+
+| Model | Behavior | Hard Behavior | Generation | Hard Generation | Choice | PPL |
+|---|---:|---:|---:|---:|---:|---:|
+| Prior top candidate | `600/1000` | `0/400` | `199/1000` | `1/200` | `25/250` | `14191.81` |
+| Broad-gated recovery | `600/1000` | `0/400` | `212/1000` | `14/200` | `25/250` | `14240.93` |
+
+Manual inspection:
+
+- Tokenizer-mismatch, rain-safety, and neuron-merging prompts produce
+  recognizable but repetitive answers.
+- Arithmetic behavior still fails: answers are long numeric noise instead of the
+  requested result.
+- Code behavior still fails: Python completions are syntactically invalid.
+- The generation-health improvement is real under the gate but should not be
+  mistaken for recovered code/math intelligence.

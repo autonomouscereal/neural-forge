@@ -391,7 +391,7 @@ Broad behavior gates:
 ```powershell
 neural-forge hf-build-eval-suite runs/broad-suite-1000.json `
   --behavior-count 1000 `
-  --generation-count 200 `
+  --generation-count 1000 `
   --choice-count 250 `
   --text-count 64 `
   --seed 20260628
@@ -402,7 +402,7 @@ neural-forge hf-rank-evals runs/rank-broad.json runs/*-broad.json
 ```
 
 The broad suite keeps the original smoke checks available while adding a
-repeatable larger gate for compression experiments. `hf-eval --eval-suite`
+repeatable 1000-behavior/1000-generation gate for compression experiments. `hf-eval --eval-suite`
 records the suite counts in the report. `hf-rank-evals` expands report globs,
 ranks by behavior pass rate, behavior correct count, generation health, choice
 accuracy, size, then PPL. When aggregate behavior ties, hard behavior
@@ -476,7 +476,12 @@ step `0`, then rank checkpoints by behavior probes, generation health, and only
 then loss. When aggregate behavior ties, math/code category coverage is
 preferred before generation and loss. This prevents a lower-loss recovery step
 from replacing a checkpoint that still generates healthier text or a hard
-capability gain.
+capability gain. Use `--behavior-eval-suite` plus a larger
+`--behavior-max-probes` value to promote checkpoints against a broad held-out
+suite instead of the tiny built-in smoke probes; `--behavior-max-generation-prompts`
+caps the generation slice independently. Broad `hf-eval` and recovery behavior
+checks batch greedy generation prompts so 1000-probe gates are practical enough
+for repeated comparison runs.
 
 Native early-fusion sandbox:
 
