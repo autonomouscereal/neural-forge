@@ -403,10 +403,13 @@ neural-forge hf-rank-evals runs/rank-broad.json runs/*-broad.json
 
 The broad suite keeps the original smoke checks available while adding a
 repeatable larger gate for compression experiments. `hf-eval --eval-suite`
-records the suite counts in the report, and `hf-rank-evals` ranks by behavior
-pass rate, behavior correct count, generation health, choice accuracy, size,
-then PPL. This keeps a candidate with better greedy behavior above one that
-only lowered perplexity.
+records the suite counts in the report. `hf-rank-evals` expands report globs,
+ranks by behavior pass rate, behavior correct count, generation health, choice
+accuracy, size, then PPL, and writes compact `summary_rows` with
+behavior/generation category breakdowns plus warnings when tiny smoke reports
+and 1000-probe reports are mixed. This keeps a candidate with better greedy
+behavior above one that only lowered perplexity and makes domain-specific
+regressions visible.
 
 Blank target control:
 
@@ -450,6 +453,13 @@ depth slice when the donor's changes are concentrated elsewhere. This is an
 experimental initializer strategy, not a promoted default; it must be followed
 by `hf-eval`, `hf-gate`, manual generation inspection, and benchmark slices
 before claiming capability transfer.
+
+If `--activation-fit-linears` is enabled, `hf-donor-project-init` writes both
+applied fits and attempted fits with validation MSE/cosine diagnostics. The
+default `--activation-fit-gate validation` rejects fits that cannot beat the
+folded reference on enough held-out activation rows. A fit that improves this
+local diagnostic can still destroy broad behavior, so activation-fit reports are
+debugging evidence, not promotion evidence.
 
 `hf-gate` checks PPL ratio, choice-probe accuracy, behavior probes, generation
 length, generation diversity, and prompt-specific generation relevance for the

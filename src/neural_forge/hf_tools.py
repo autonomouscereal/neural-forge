@@ -1082,6 +1082,77 @@ def _behavior_first_candidate_sort_key(item: dict[str, Any]) -> tuple[float, flo
     )
 
 
+def _eval_item_category(item: dict[str, Any], kind: str) -> str:
+    explicit = item.get("category")
+    if explicit:
+        return str(explicit)
+    identifier = str(item.get("id") or "").lower()
+    prompt = str(item.get("prompt") or "").lower()
+    if "python" in identifier or "python" in prompt or "function" in prompt:
+        return "code"
+    if "math" in identifier or "addition" in identifier or "multiply" in identifier:
+        return "math"
+    if "tokenizer" in identifier or "tokenizer" in prompt or "vocab" in prompt:
+        return "tokenizer"
+    if "rain" in identifier or "driver" in prompt or "heavy rain" in prompt:
+        return "commonsense"
+    if "merge" in identifier or "merging" in prompt or "stitch" in prompt or "compression" in prompt:
+        return "model_surgery"
+    if "pruning" in identifier or "pruning" in prompt:
+        return "model_surgery"
+    if kind == "choice":
+        return "choice"
+    return "other"
+
+
+def _passed_category_breakdown(items: Sequence[dict[str, Any]], kind: str) -> dict[str, dict[str, Any]]:
+    breakdown: dict[str, dict[str, Any]] = {}
+    for item in items:
+        category = _eval_item_category(item, kind)
+        row = breakdown.setdefault(
+            category,
+            {"correct": 0, "total": 0, "pass_rate": 0.0, "failed_ids": [], "passed_ids": []},
+        )
+        row["total"] += 1
+        item_id = item.get("id") or item.get("prompt")
+        passed = bool(item.get("passed", item.get("correct", False)))
+        if passed:
+            row["correct"] += 1
+            if item_id is not None and len(row["passed_ids"]) < 20:
+                row["passed_ids"].append(str(item_id))
+        elif item_id is not None and len(row["failed_ids"]) < 20:
+            row["failed_ids"].append(str(item_id))
+    for row in breakdown.values():
+        row["pass_rate"] = row["correct"] / max(1, row["total"])
+    return dict(sorted(breakdown.items()))
+
+
+def _eval_suite_signature(report: dict[str, Any]) -> dict[str, Any]:
+    suite = report.get("eval_suite") or {}
+    return {
+        "source": suite.get("source"),
+        "text_eval_count": int(suite.get("text_eval_count", 0) or 0),
+        "choice_probe_count": int(suite.get("choice_probe_count", 0) or 0),
+        "generation_prompt_count": int(suite.get("generation_prompt_count", 0) or 0),
+        "behavior_probe_count": int(suite.get("behavior_probe_count", 0) or 0),
+    }
+
+
+def _rank_suite_warnings(signatures: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    warnings: list[dict[str, Any]] = []
+    if not signatures:
+        return warnings
+    count_keys = ("text_eval_count", "choice_probe_count", "generation_prompt_count", "behavior_probe_count")
+    count_sets = {key: sorted({int(sig.get(key, 0) or 0) for sig in signatures}) for key in count_keys}
+    mismatched_counts = {key: values for key, values in count_sets.items() if len(values) > 1}
+    if mismatched_counts:
+        warnings.append({"type": "mixed_eval_suite_counts", "counts": mismatched_counts})
+    sources = sorted({str(sig.get("source")) for sig in signatures if sig.get("source") is not None})
+    if len(sources) > 1:
+        warnings.append({"type": "mixed_eval_suite_sources", "sources": sources[:20], "source_count": len(sources)})
+    return warnings
+
+
 def rank_evaluation_reports(
     reports: Sequence[str | Path | dict[str, Any]],
     output_file: str | Path | None = None,
@@ -1103,8 +1174,11 @@ def rank_evaluation_reports(
         raise ValueError("min_unique_token_ratio must be in [0, 1].")
 
     entries = []
+    suite_signatures = []
     for index, item in enumerate(reports):
         report = _load_report(item)
+        suite_signature = _eval_suite_signature(report)
+        suite_signatures.append(suite_signature)
         ppl = float(report.get("perplexity", {}).get("mean", 1e300))
         if not math.isfinite(ppl):
             ppl = 1e300
@@ -1122,6 +1196,7 @@ def rank_evaluation_reports(
             else 0.0
         )
         generation_health_correct = sum(1 for check in generation_checks if check["passed"])
+        behavior_items = list(behavior.get("items", []))
         param_count = int(report.get("param_count") or 0)
         source = str(item) if not isinstance(item, dict) else f"<dict:{index}>"
         entry = {
@@ -1140,6 +1215,9 @@ def rank_evaluation_reports(
             "generation_health_correct": int(generation_health_correct),
             "generation_health_total": len(generation_checks),
             "generation_checks": generation_checks,
+            "behavior_category_breakdown": _passed_category_breakdown(behavior_items, "behavior"),
+            "generation_category_breakdown": _passed_category_breakdown(generation_checks, "generation"),
+            "eval_suite": suite_signature,
             "sort_key": [
                 behavior_pass_rate,
                 int(behavior.get("correct", 0)),
@@ -1167,6 +1245,24 @@ def rank_evaluation_reports(
     for rank, entry in enumerate(entries, start=1):
         entry["rank"] = rank
 
+    summary_rows = [
+        {
+            "rank": entry["rank"],
+            "source": entry["source"],
+            "model": entry["model"],
+            "param_count": entry["param_count"],
+            "perplexity_mean": entry["perplexity_mean"],
+            "choice": f"{entry['choice_correct']}/{entry['choice_total']}",
+            "behavior": f"{entry['behavior_correct']}/{entry['behavior_total']}",
+            "generation": f"{entry['generation_health_correct']}/{entry['generation_health_total']}",
+            "choice_accuracy": entry["choice_accuracy"],
+            "behavior_pass_rate": entry["behavior_pass_rate"],
+            "generation_health_rate": entry["generation_health_rate"],
+            "behavior_category_breakdown": entry["behavior_category_breakdown"],
+            "generation_category_breakdown": entry["generation_category_breakdown"],
+        }
+        for entry in entries
+    ]
     report = {
         "operation": "rank_evaluation_reports",
         "ranking_policy": [
@@ -1180,6 +1276,8 @@ def rank_evaluation_reports(
         ],
         "min_continuation_chars": int(min_continuation_chars),
         "min_unique_token_ratio": float(min_unique_token_ratio),
+        "suite_warnings": _rank_suite_warnings(suite_signatures),
+        "summary_rows": summary_rows,
         "best": entries[0],
         "candidates": entries,
     }
@@ -2761,6 +2859,8 @@ def _generate_text_for_spec(torch, model, tokenizer, spec: dict[str, Any], devic
 def _generation_from_cached_spec(generation: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
     item = dict(generation)
     item["id"] = spec.get("id")
+    if spec.get("category") is not None:
+        item["category"] = spec.get("category")
     if spec.get("relevance_rules") is not None:
         item["relevance_rules"] = spec.get("relevance_rules")
     return item
@@ -2791,6 +2891,7 @@ def _score_behavior_probe(probe: dict[str, Any], generation: dict[str, Any]) -> 
         raise ValueError(f"Unknown behavior probe kind: {kind}")
     return {
         "id": str(probe["id"]),
+        "category": probe.get("category"),
         "prompt": prompt,
         "kind": kind,
         "passed": bool(passed),

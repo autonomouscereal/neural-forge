@@ -91,6 +91,7 @@ from neural_forge.hf_xfamily import _donor_layer_groups_for_target_count
 from neural_forge.hf_xfamily import _representative_donor_layer_for_group
 from neural_forge.hf_xfamily import _effective_layer_alpha
 from neural_forge.hf_xfamily import _fit_linear_weight_from_activation_rows
+from neural_forge.hf_xfamily import _fit_projected_linear_from_donor_activations
 from neural_forge.hf_xfamily import _hidden_basis_axes_for_layer_tensor
 from neural_forge.hf_xfamily import _initialize_token_weights_from_donor
 from neural_forge.hf_xfamily import _initialize_non_layer_tensors_from_donor
@@ -433,6 +434,16 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.6",
             "--activation-fit-ridge",
             "0.2",
+            "--activation-fit-gate",
+            "validation",
+            "--activation-fit-validation-fraction",
+            "0.25",
+            "--activation-fit-min-validation-rows",
+            "12",
+            "--activation-fit-min-relative-improvement",
+            "0.03",
+            "--activation-fit-max-cosine-drop",
+            "0.04",
             "--activation-feature-mode",
             "subspace",
             "--activation-subspace-rank",
@@ -822,6 +833,11 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.activation_fit_max_rows == 88
     assert donor_init_args.activation_fit_alpha == pytest.approx(0.6)
     assert donor_init_args.activation_fit_ridge == pytest.approx(0.2)
+    assert donor_init_args.activation_fit_gate == "validation"
+    assert donor_init_args.activation_fit_validation_fraction == pytest.approx(0.25)
+    assert donor_init_args.activation_fit_min_validation_rows == 12
+    assert donor_init_args.activation_fit_min_relative_improvement == pytest.approx(0.03)
+    assert donor_init_args.activation_fit_max_cosine_drop == pytest.approx(0.04)
     assert donor_init_args.activation_feature_mode == "subspace"
     assert donor_init_args.activation_subspace_rank == 6
     assert donor_init_args.untie_output_head is True
@@ -1966,6 +1982,150 @@ def test_fit_linear_weight_from_activation_rows_recovers_mapping() -> None:
     fitted = _fit_linear_weight_from_activation_rows(torch, inputs, outputs, ridge=0.0)
 
     assert fitted.flatten().tolist() == pytest.approx(expected_weight.flatten().tolist())
+
+
+def test_fit_projected_linear_from_donor_activations_reports_validation_metrics() -> None:
+    torch = pytest.importorskip("torch")
+    inputs = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 1.0],
+            [2.0, 1.0],
+            [1.0, 2.0],
+            [3.0, 1.0],
+            [1.0, 3.0],
+            [2.0, 3.0],
+            [3.0, 2.0],
+            [4.0, 1.0],
+        ],
+        dtype=torch.float32,
+    )
+    expected_weight = torch.eye(2, dtype=torch.float32)
+    activation_profile = {
+        "linear_fit_rows": {
+            0: {
+                "self_attn.q_proj.weight": {
+                    "input": inputs,
+                    "output": inputs.matmul(expected_weight.t()),
+                }
+            }
+        }
+    }
+    wrong_same_rms_reference = torch.tensor([[0.0, 1.0], [1.0, 0.0]], dtype=torch.float32)
+
+    result = _fit_projected_linear_from_donor_activations(
+        torch,
+        activation_profile,
+        "self_attn.q_proj.weight",
+        (2, 2),
+        _Obj(num_attention_heads=1, num_key_value_heads=1),
+        _Obj(num_attention_heads=1, num_key_value_heads=1),
+        donor_layer_idx=0,
+        donor_layer_group=[0],
+        ridge=0.0,
+        fold_mode="mean",
+        reference_weight=wrong_same_rms_reference,
+        validation_fraction=0.2,
+        min_validation_rows=2,
+        return_report=True,
+    )
+
+    assert result["weight"].flatten().tolist() == pytest.approx(expected_weight.flatten().tolist(), abs=1e-5)
+    report = result["report"]
+    assert report["accepted"] is True
+    assert report["validation_rows"] == 2
+    assert report["train_rows"] == 8
+    assert report["validation_fit_mse"] < report["validation_reference_mse"]
+    assert report["validation_relative_improvement"] > 0.0
+
+
+def test_fit_projected_linear_from_donor_activations_rejects_no_validation_gain() -> None:
+    torch = pytest.importorskip("torch")
+    inputs = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 1.0],
+            [2.0, 1.0],
+            [1.0, 2.0],
+            [3.0, 1.0],
+            [1.0, 3.0],
+            [2.0, 3.0],
+            [3.0, 2.0],
+            [4.0, 1.0],
+        ],
+        dtype=torch.float32,
+    )
+    expected_weight = torch.eye(2, dtype=torch.float32)
+    activation_profile = {
+        "linear_fit_rows": {
+            0: {
+                "self_attn.q_proj.weight": {
+                    "input": inputs,
+                    "output": inputs.matmul(expected_weight.t()),
+                }
+            }
+        }
+    }
+
+    result = _fit_projected_linear_from_donor_activations(
+        torch,
+        activation_profile,
+        "self_attn.q_proj.weight",
+        (2, 2),
+        _Obj(num_attention_heads=1, num_key_value_heads=1),
+        _Obj(num_attention_heads=1, num_key_value_heads=1),
+        donor_layer_idx=0,
+        donor_layer_group=[0],
+        ridge=0.0,
+        fold_mode="mean",
+        reference_weight=expected_weight,
+        validation_fraction=0.2,
+        min_validation_rows=2,
+        return_report=True,
+    )
+
+    assert result["weight"] is None
+    assert result["report"]["accepted"] is False
+    assert result["report"]["reason"] == "validation_mse_not_improved"
+
+
+def test_fit_projected_linear_from_donor_activations_rejects_insufficient_validation_rows() -> None:
+    torch = pytest.importorskip("torch")
+    inputs = torch.tensor([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]], dtype=torch.float32)
+    activation_profile = {
+        "linear_fit_rows": {
+            0: {
+                "self_attn.q_proj.weight": {
+                    "input": inputs,
+                    "output": inputs,
+                }
+            }
+        }
+    }
+
+    result = _fit_projected_linear_from_donor_activations(
+        torch,
+        activation_profile,
+        "self_attn.q_proj.weight",
+        (2, 2),
+        _Obj(num_attention_heads=1, num_key_value_heads=1),
+        _Obj(num_attention_heads=1, num_key_value_heads=1),
+        donor_layer_idx=0,
+        donor_layer_group=[0],
+        ridge=0.0,
+        fold_mode="mean",
+        reference_weight=torch.eye(2, dtype=torch.float32),
+        validation_fraction=0.2,
+        min_validation_rows=2,
+        return_report=True,
+    )
+
+    assert result["weight"] is None
+    assert result["report"]["accepted"] is False
+    assert result["report"]["reason"] == "insufficient_validation_rows"
+    assert result["report"]["validation_gate_skipped"] is True
 
 
 def test_activation_fit_suffix_selector_limits_module_families() -> None:
@@ -4056,6 +4216,11 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "activation_fit_max_rows": 44,
         "activation_fit_alpha": 0.5,
         "activation_fit_ridge": 0.3,
+        "activation_fit_gate": "validation",
+        "activation_fit_validation_fraction": 0.20,
+        "activation_fit_min_validation_rows": 8,
+        "activation_fit_min_relative_improvement": 0.0,
+        "activation_fit_max_cosine_drop": 0.01,
         "activation_feature_mode": "subspace",
         "activation_subspace_rank": 5,
         "untie_output_head": True,
@@ -4483,6 +4648,33 @@ def test_hf_rank_evals_handler_passes_flags(monkeypatch) -> None:
         "min_continuation_chars": 12,
         "min_unique_token_ratio": 0.35,
     }
+
+
+def test_hf_rank_evals_handler_expands_report_globs(monkeypatch, tmp_path) -> None:
+    import neural_forge.hf_tools as hf_tools
+
+    first = tmp_path / "first-broad.json"
+    second = tmp_path / "second-broad.json"
+    first.write_text("{}", encoding="utf-8")
+    second.write_text("{}", encoding="utf-8")
+    captured = {}
+
+    def fake_rank(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(hf_tools, "rank_evaluation_reports", fake_rank)
+    args = build_parser().parse_args(
+        [
+            "hf-rank-evals",
+            "rank.json",
+            str(tmp_path / "*-broad.json"),
+        ]
+    )
+    result = args.func(args)
+
+    assert result == {"ok": True}
+    assert captured["reports"] == [str(first), str(second)]
 
 
 def test_hf_eval_handler_passes_broad_suite_flags(monkeypatch) -> None:

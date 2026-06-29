@@ -270,6 +270,11 @@ def donor_projected_init(
     activation_fit_max_rows: int = 0,
     activation_fit_alpha: float = 1.0,
     activation_fit_ridge: float = 1e-1,
+    activation_fit_gate: str = "validation",
+    activation_fit_validation_fraction: float = 0.20,
+    activation_fit_min_validation_rows: int = 8,
+    activation_fit_min_relative_improvement: float = 0.0,
+    activation_fit_max_cosine_drop: float = 0.01,
     activation_feature_mode: str = "stats",
     activation_subspace_rank: int = 8,
     untie_output_head: bool = False,
@@ -330,6 +335,16 @@ def donor_projected_init(
         raise ValueError("activation_fit_max_rows must be non-negative.")
     if activation_fit_ridge < 0:
         raise ValueError("activation_fit_ridge must be non-negative.")
+    if activation_fit_gate not in {"none", "validation"}:
+        raise ValueError("activation_fit_gate must be none or validation.")
+    if not 0 <= float(activation_fit_validation_fraction) < 1:
+        raise ValueError("activation_fit_validation_fraction must be in [0, 1).")
+    if activation_fit_min_validation_rows < 0:
+        raise ValueError("activation_fit_min_validation_rows must be non-negative.")
+    if activation_fit_min_relative_improvement < 0:
+        raise ValueError("activation_fit_min_relative_improvement must be non-negative.")
+    if activation_fit_max_cosine_drop < 0:
+        raise ValueError("activation_fit_max_cosine_drop must be non-negative.")
     if activation_feature_mode not in {"stats", "subspace"}:
         raise ValueError("activation_feature_mode must be stats or subspace.")
     if activation_subspace_rank < 0:
@@ -455,6 +470,7 @@ def donor_projected_init(
     changed_keys = []
     skipped_layer_keys = []
     activation_fit_reports = []
+    activation_fit_attempt_reports = []
     hidden_axis_weights = None
     if activation_profile is not None:
         hidden_axis_weights = {
@@ -600,17 +616,30 @@ def donor_projected_init(
                 transport_backend=transport_backend,
                 assignment_cache=axis_assignment_cache,
                 reference_weight=projected,
+                fit_gate=activation_fit_gate,
+                validation_fraction=activation_fit_validation_fraction,
+                min_validation_rows=activation_fit_min_validation_rows,
+                min_relative_improvement=activation_fit_min_relative_improvement,
+                max_cosine_drop=activation_fit_max_cosine_drop,
+                return_report=True,
             )
-            if fitted is not None:
-                projected = (1.0 - activation_fit_alpha) * projected + activation_fit_alpha * fitted
-                activation_fit_report = {
-                    "target_key": target_key,
-                    "suffix": suffix,
-                    "target_shape": list(target_tensor.shape),
-                    "alpha": float(activation_fit_alpha),
-                    "ridge": float(activation_fit_ridge),
-                }
+            fit_report = dict(fitted["report"])
+            activation_fit_report = {
+                "target_key": target_key,
+                "suffix": suffix,
+                "target_shape": list(target_tensor.shape),
+                "alpha": float(activation_fit_alpha),
+                "ridge": float(activation_fit_ridge),
+                **fit_report,
+            }
+            activation_fit_attempt_reports.append(activation_fit_report)
+            fit_weight = fitted["weight"]
+            if fit_weight is not None and bool(fit_report.get("accepted")):
+                projected = (1.0 - activation_fit_alpha) * projected + activation_fit_alpha * fit_weight
+                activation_fit_report["applied"] = True
                 activation_fit_reports.append(activation_fit_report)
+            else:
+                activation_fit_report["applied"] = False
         target_state[target_key] = projected.to(dtype=target_tensor.dtype)
         changed_keys.append(target_key)
         layer_reports.append(
@@ -714,9 +743,20 @@ def donor_projected_init(
         "activation_fit_max_rows": int(activation_fit_max_rows),
         "activation_fit_alpha": float(activation_fit_alpha),
         "activation_fit_ridge": float(activation_fit_ridge),
+        "activation_fit_gate": activation_fit_gate,
+        "activation_fit_validation_fraction": float(activation_fit_validation_fraction),
+        "activation_fit_min_validation_rows": int(activation_fit_min_validation_rows),
+        "activation_fit_min_relative_improvement": float(activation_fit_min_relative_improvement),
+        "activation_fit_max_cosine_drop": float(activation_fit_max_cosine_drop),
         "activation_feature_mode": activation_feature_mode,
         "activation_subspace_rank": int(activation_subspace_rank),
         "activation_fit_reports": activation_fit_reports,
+        "activation_fit_attempt_reports": activation_fit_attempt_reports,
+        "activation_fit_attempt_count": len(activation_fit_attempt_reports),
+        "activation_fit_applied_count": len(activation_fit_reports),
+        "activation_fit_rejected_count": sum(
+            1 for item in activation_fit_attempt_reports if not bool(item.get("applied"))
+        ),
         "untie_output_head": bool(untie_output_head),
         "activation_calibration_text_count": len(activation_calibration_texts or []),
         "activation_max_length": activation_max_length,
@@ -3354,16 +3394,57 @@ def _fit_projected_linear_from_donor_activations(
     transport_backend: str = "sparse",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
     reference_weight=None,
+    fit_gate: str = "validation",
+    validation_fraction: float = 0.20,
+    min_validation_rows: int = 8,
+    min_relative_improvement: float = 0.0,
+    max_cosine_drop: float = 0.01,
+    return_report: bool = False,
 ):
+    if fit_gate not in {"none", "validation"}:
+        raise ValueError("fit_gate must be none or validation.")
+    if not 0 <= float(validation_fraction) < 1:
+        raise ValueError("validation_fraction must be in [0, 1).")
+    if min_validation_rows < 0:
+        raise ValueError("min_validation_rows must be non-negative.")
+    if min_relative_improvement < 0:
+        raise ValueError("min_relative_improvement must be non-negative.")
+    if max_cosine_drop < 0:
+        raise ValueError("max_cosine_drop must be non-negative.")
+
+    def finish(weight, report: dict[str, Any]):
+        report = {
+            "fit_gate": fit_gate,
+            "validation_fraction": float(validation_fraction),
+            "min_validation_rows": int(min_validation_rows),
+            "min_relative_improvement": float(min_relative_improvement),
+            "max_cosine_drop": float(max_cosine_drop),
+            **report,
+        }
+        if return_report:
+            return {"weight": weight, "report": report}
+        return weight
+
+    def reject(reject_reason: str, **extra):
+        return finish(None, {**extra, "accepted": False, "reason": reject_reason})
+
     rows = _linear_fit_rows_for_suffix(torch, activation_profile, donor_layer_group or [donor_layer_idx], suffix)
     if rows is None:
-        return None
+        return reject("missing_activation_rows")
     source_input = rows["input"]
     source_output = rows["output"]
     if source_input.dim() != 2 or source_output.dim() != 2:
-        return None
+        return reject(
+            "invalid_activation_rank",
+            source_input_rank=int(source_input.dim()),
+            source_output_rank=int(source_output.dim()),
+        )
     if int(source_input.shape[0]) < 2 or int(source_output.shape[0]) < 2:
-        return None
+        return reject(
+            "too_few_source_rows",
+            source_input_rows=int(source_input.shape[0]),
+            source_output_rows=int(source_output.shape[0]),
+        )
     target_out, target_in = int(target_shape[0]), int(target_shape[1])
     folded_input = _resize_linear_activation_rows(
         torch,
@@ -3402,14 +3483,14 @@ def _fit_projected_linear_from_donor_activations(
         assignment_cache=assignment_cache,
     )
     if folded_input is None or folded_output is None:
-        return None
+        return reject("activation_row_resize_failed")
     row_count = min(int(folded_input.shape[0]), int(folded_output.shape[0]))
     if row_count < 2:
-        return None
+        return reject("too_few_folded_rows", row_count=int(row_count))
     folded_input = folded_input[:row_count]
     folded_output = folded_output[:row_count]
-    validation_rows = int(max(0, min(row_count // 5, row_count - 2)))
-    if validation_rows >= 8 and reference_weight is not None:
+    validation_rows = int(max(0, min(int(row_count * float(validation_fraction)), row_count - 2)))
+    if validation_rows > 0 and validation_rows >= int(min_validation_rows) and reference_weight is not None:
         train_input = folded_input[:-validation_rows]
         train_output = folded_output[:-validation_rows]
         val_input = folded_input[-validation_rows:]
@@ -3424,13 +3505,53 @@ def _fit_projected_linear_from_donor_activations(
     if reference_weight is not None:
         reference = reference_weight.detach().cpu().to(torch.float32)
         fitted = _scale_projection_to_target(torch, fitted, reference, "target-rms")
+    report = {
+        "accepted": True,
+        "reason": "accepted",
+        "row_count": int(row_count),
+        "train_rows": int(train_input.shape[0]),
+        "validation_rows": int(0 if val_input is None else val_input.shape[0]),
+        "target_shape": [int(target_out), int(target_in)],
+    }
     if val_input is not None and val_output is not None and reference_weight is not None:
         reference = reference_weight.detach().cpu().to(torch.float32)
-        fit_error = val_input.matmul(fitted.t()).sub(val_output).pow(2).mean()
-        reference_error = val_input.matmul(reference.t()).sub(val_output).pow(2).mean()
-        if not bool(torch.isfinite(fit_error)) or float(fit_error) >= float(reference_error):
-            return None
-    return fitted
+        fit_prediction = val_input.matmul(fitted.t())
+        reference_prediction = val_input.matmul(reference.t())
+        fit_error = fit_prediction.sub(val_output).pow(2).mean()
+        reference_error = reference_prediction.sub(val_output).pow(2).mean()
+        fit_cosine = torch.nn.functional.cosine_similarity(fit_prediction, val_output, dim=1).mean()
+        reference_cosine = torch.nn.functional.cosine_similarity(reference_prediction, val_output, dim=1).mean()
+        relative_improvement = (
+            float(reference_error) - float(fit_error)
+        ) / max(abs(float(reference_error)), 1e-12)
+        cosine_delta = float(fit_cosine) - float(reference_cosine)
+        report.update(
+            {
+                "validation_reference_mse": float(reference_error),
+                "validation_fit_mse": float(fit_error),
+                "validation_relative_improvement": float(relative_improvement),
+                "validation_reference_cosine": float(reference_cosine),
+                "validation_fit_cosine": float(fit_cosine),
+                "validation_cosine_delta": float(cosine_delta),
+            }
+        )
+        if fit_gate == "validation":
+            if not bool(torch.isfinite(fit_error)) or not bool(torch.isfinite(reference_error)):
+                return reject("nonfinite_validation_mse", **report)
+            if float(fit_error) >= float(reference_error):
+                return reject("validation_mse_not_improved", **report)
+            if relative_improvement < float(min_relative_improvement):
+                return reject("validation_improvement_below_threshold", **report)
+            if bool(torch.isfinite(fit_cosine)) and bool(torch.isfinite(reference_cosine)):
+                if float(fit_cosine) + float(max_cosine_drop) < float(reference_cosine):
+                    return reject("validation_cosine_drop", **report)
+    elif fit_gate == "validation" and reference_weight is not None:
+        report["validation_gate_skipped"] = True
+        return reject("insufficient_validation_rows", **report)
+    elif fit_gate == "validation":
+        report["reason"] = "accepted_without_validation_split"
+        report["validation_gate_skipped"] = True
+    return finish(fitted, report)
 
 
 def _linear_fit_rows_for_suffix(torch, activation_profile, layer_group: Sequence[int], suffix: str):

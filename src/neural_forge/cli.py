@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 from pathlib import Path
 from typing import Sequence
@@ -212,6 +213,16 @@ def build_parser() -> argparse.ArgumentParser:
     hf_donor_init.add_argument("--activation-fit-max-rows", type=int, default=0)
     hf_donor_init.add_argument("--activation-fit-alpha", type=float, default=1.0)
     hf_donor_init.add_argument("--activation-fit-ridge", type=float, default=1e-1)
+    hf_donor_init.add_argument(
+        "--activation-fit-gate",
+        choices=["none", "validation"],
+        default="validation",
+        help="Reject activation-fitted linears that do not beat the folded reference on held-out activation rows.",
+    )
+    hf_donor_init.add_argument("--activation-fit-validation-fraction", type=float, default=0.20)
+    hf_donor_init.add_argument("--activation-fit-min-validation-rows", type=int, default=8)
+    hf_donor_init.add_argument("--activation-fit-min-relative-improvement", type=float, default=0.0)
+    hf_donor_init.add_argument("--activation-fit-max-cosine-drop", type=float, default=0.01)
     hf_donor_init.add_argument(
         "--activation-feature-mode",
         choices=["stats", "subspace"],
@@ -1459,8 +1470,12 @@ def cmd_hf_gate(args: argparse.Namespace) -> dict[str, object]:
 def cmd_hf_rank_evals(args: argparse.Namespace) -> dict[str, object]:
     from neural_forge.hf_tools import rank_evaluation_reports
 
+    reports = []
+    for item in args.reports:
+        matches = sorted(glob.glob(item))
+        reports.extend(matches if matches else [item])
     return rank_evaluation_reports(
-        reports=args.reports,
+        reports=reports,
         output_file=args.output,
         min_continuation_chars=args.min_continuation_chars,
         min_unique_token_ratio=args.min_unique_token_ratio,
@@ -1587,6 +1602,11 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         activation_fit_max_rows=args.activation_fit_max_rows,
         activation_fit_alpha=args.activation_fit_alpha,
         activation_fit_ridge=args.activation_fit_ridge,
+        activation_fit_gate=args.activation_fit_gate,
+        activation_fit_validation_fraction=args.activation_fit_validation_fraction,
+        activation_fit_min_validation_rows=args.activation_fit_min_validation_rows,
+        activation_fit_min_relative_improvement=args.activation_fit_min_relative_improvement,
+        activation_fit_max_cosine_drop=args.activation_fit_max_cosine_drop,
         activation_feature_mode=args.activation_feature_mode,
         activation_subspace_rank=args.activation_subspace_rank,
         untie_output_head=args.untie_output_head,

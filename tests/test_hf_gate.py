@@ -145,6 +145,65 @@ def test_rank_evaluation_reports_uses_large_suite_correct_count_after_rate_tie(t
     assert report["candidates"][0]["behavior_correct"] == 500
 
 
+def test_rank_evaluation_reports_adds_category_breakdowns_and_suite_warnings(tmp_path) -> None:
+    candidate = _report(120, 0.75)
+    candidate["model"] = "candidate"
+    candidate["eval_suite"] = {
+        "source": "broad-a.json",
+        "text_eval_count": 64,
+        "choice_probe_count": 250,
+        "generation_prompt_count": 2,
+        "behavior_probe_count": 4,
+    }
+    candidate["behavior_suite"] = {
+        "pass_rate": 0.5,
+        "correct": 2,
+        "total": 4,
+        "items": [
+            {"id": "synthetic_math_0000", "passed": True},
+            {"id": "synthetic_python_add_0001", "passed": False},
+            {"id": "synthetic_tokenizer_0002", "passed": True},
+            {"id": "synthetic_merge_definition_0003", "passed": False},
+        ],
+    }
+    candidate["generations"] = [
+        {
+            "id": "generation_python_add_0000",
+            "prompt": "Write a tiny Python function that adds two numbers.",
+            "output": "Write a tiny Python function that adds two numbers.\ndef add(a, b):\n    return a + b",
+            "relevance_rules": [[r"\bdef\b"], [r"\+"], [r"\breturn\b"]],
+        },
+        {
+            "id": "generation_tokenizer_mismatch_0001",
+            "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?",
+            "output": "In one sentence, why can tokenizer mismatch hurt model stitching?    ",
+            "relevance_rules": [[r"\btokeni[sz]er\w*"]],
+        },
+    ]
+    other_suite = _report(200, 0.5)
+    other_suite["model"] = "other-suite"
+    other_suite["eval_suite"] = {
+        "source": "tiny.json",
+        "text_eval_count": 4,
+        "choice_probe_count": 4,
+        "generation_prompt_count": 1,
+        "behavior_probe_count": 6,
+    }
+    other_suite["behavior_suite"] = {"pass_rate": 0.0, "correct": 0, "total": 6, "items": []}
+
+    report = rank_evaluation_reports([candidate, other_suite], output_file=tmp_path / "rank.json", min_continuation_chars=0)
+    top = report["summary_rows"][0]
+
+    assert top["model"] == "candidate"
+    assert top["behavior"] == "2/4"
+    assert top["generation"] == "1/2"
+    assert top["behavior_category_breakdown"]["math"]["correct"] == 1
+    assert top["behavior_category_breakdown"]["code"]["total"] == 1
+    assert top["generation_category_breakdown"]["code"]["correct"] == 1
+    assert any(warning["type"] == "mixed_eval_suite_counts" for warning in report["suite_warnings"])
+    assert any(warning["type"] == "mixed_eval_suite_sources" for warning in report["suite_warnings"])
+
+
 def test_gate_text_report_reports_lost_behavior_and_generation_ids() -> None:
     baseline = _report(100, 1.0)
     baseline["behavior_suite"] = {

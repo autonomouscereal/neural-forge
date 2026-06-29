@@ -1,0 +1,92 @@
+# Validation Results 2026-06-28
+
+This note records the gate expansion and rerank done after the small six-probe
+layer gates proved too weak for blank-target Qwen3-4B to SmolLM2-135M folding.
+
+## Tooling Changes
+
+- `hf-donor-project-init` activation-fitted linears now report every attempted
+  fit, not only applied fits. Reports include train rows, validation rows,
+  folded-reference validation MSE, fitted validation MSE, relative improvement,
+  cosine movement, applied/rejected counts, and rejection reasons.
+- `--activation-fit-gate validation` now rejects fits that cannot be checked
+  against enough held-out activation rows. Use `--activation-fit-gate none`
+  only for explicit unsafe experiments.
+- `hf-rank-evals` now writes `summary_rows`, behavior/generation category
+  breakdowns, and suite mismatch warnings. This makes 1000-probe broad reports
+  directly comparable without trusting PPL or tiny smoke probes.
+- `hf-rank-evals` expands report globs itself, which is useful from PowerShell
+  where native wildcard expansion is inconsistent for Python CLIs.
+
+## Test Status
+
+- Local: `PYTHONPATH=src python -m pytest -q` -> `106 passed, 88 skipped`.
+- Remote AI server focused torch-backed tests:
+  `11 passed, 166 deselected`.
+
+## Broad Existing Rerank
+
+Artifacts:
+
+- Broad rank:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/broad_eval_1000_20260628/rank_broad_existing_all15_with_categories_20260628.json`
+- All-report schema-filtered rank:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/broad_eval_1000_20260628/rank_all_existing_schemafiltered_with_categories_20260628.json`
+
+The corrected broad-only rank includes 15 reports. The first script was too
+aggressive and accidentally filtered names containing `lowrank`, `rank`, or
+`gate`; the final rank uses report schema fields instead.
+
+| Rank | Checkpoint | Behavior | Generation | Choice | PPL |
+|---:|---|---:|---:|---:|---:|
+| 1 | `qwen4b_tied29_lowrank_prerecon_blockinterface_a001_suitegate_b100g40_l1_20260628_201550` | 600/1000 | 160/200 | 25/250 | 14191.81 |
+| 2 | `qwen4b_tied29_residual_lowrank_r16_a001_l2_20260628_192318` | 600/1000 | 160/200 | 25/250 | 14191.81 |
+| 3 | `qwen4b_tied29_block_byte_behaviorbest_l2s8_20260628_141222` | 600/1000 | 160/200 | 25/250 | 14259.01 |
+| 4 | `qwen4b_tied29_residual_comp_l2_20260628_181118` | 600/1000 | 160/200 | 25/250 | 14259.01 |
+| 5 | `qwen4b_tied29_rsd_behaviorbest_60s` | 600/1000 | 160/200 | 25/250 | 14290.37 |
+| 10 | `qwen4b_tied29_focused_lm_answer_rank_120s_20260628_123426` | 600/1000 | 80/200 | 30/250 | 19012.19 |
+| 14 | `qwen4b_mean_cached_cka_mixed8192_1200s_best` | 2/1000 | 80/200 | 83/250 | 7783.28 |
+| 15 | `qwen4b_activation_fit_inputproj_a0005_smollm135m_20260628_204104` | 0/1000 | 0/200 | 19/250 | 79179.90 |
+
+Category signal from the top two broad candidates:
+
+- Behavior `600/1000` is not broad intelligence. It is `200/200`
+  commonsense, `200/200` tokenizer, and `200/200` model-surgery definition
+  probes, with `0/200` math and `0/200` code.
+- Generation `160/200` is the same pattern: commonsense `40/40`, tokenizer
+  `40/40`, model-surgery `80/80`, and code `0/40`.
+- The focused answer-rank run flips a different slice: code generation reaches
+  `40/40`, but model-surgery and tokenizer generations drop to `0`, so it is
+  not a better general candidate.
+- The mixed8192 CKA run has the best broad choice score in this set
+  (`83/250`) and much lower PPL, but only `2/1000` behavior. This is the clearest
+  current example of PPL/choice movement not meaning usable behavior transfer.
+- The activation-fit input-projection initializer is a hard negative:
+  `0/1000` behavior, `0/200` generation, and `79,179.90` broad PPL.
+
+## Interpretation
+
+The current narrow leader is the suite-gated block-interface low-rank candidate,
+but it is only a tie-preserving checkpoint over the previous low-rank residual
+leader. The suite gate prevented a broad-generation regression; it did not
+recover missing math or code behavior.
+
+Direct activation-fitted weight replacement should be treated as a diagnostic
+and small structural repair primitive, not the core blank-target compression
+method. The current 2025-2026 source trail points to representation and
+tokenizer bridges before folding or absorbing weights:
+
+- CKA hidden-state matching can compare teacher and student hidden states with
+  different dimensions: [OpenReview ICLR 2025](https://openreview.net/forum?id=IcVSKhVpKu).
+- Approximate Likelihood Matching targets cross-tokenizer distillation without
+  requiring identical vocabularies: [arXiv 2503.20083](https://arxiv.org/abs/2503.20083).
+- Byte-Level Distillation gives a common byte interface for mismatched
+  tokenizers, while still warning that consistent gains are not solved:
+  [arXiv 2604.07466](https://arxiv.org/abs/2604.07466).
+- Cross-architecture Transport and Merge uses feature/layer optimal transport
+  over activations to infer neuron correspondences before weight fusion:
+  [arXiv 2602.05495](https://arxiv.org/abs/2602.05495).
+
+Next work should combine ALM/byte-token bridges, CKA or Procrustes-style hidden
+geometry, task-focused feature selection, and only then activation-aware folding
+or low-rank absorption. The broad gate remains the promotion authority.
