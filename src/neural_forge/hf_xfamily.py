@@ -102,6 +102,7 @@ def cross_family_vocab_merge(
 
     target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)
+    generation_config_report = _sanitize_generation_config_for_save(host, host_tokenizer)
     host.save_pretrained(target, safe_serialization=True)
     host_tokenizer.save_pretrained(target)
     report = {
@@ -119,6 +120,7 @@ def cross_family_vocab_merge(
         "host_hidden_size": int(host_emb.shape[1]),
         "donor_hidden_size": int(donor_emb.shape[1]),
         "lm_head_updated": head_updated,
+        "generation_config_sanitized": generation_config_report,
         "param_count": sum(param.numel() for param in host.parameters()),
     }
     _write_json(target / "neural_forge_xfamily_vocab_report.json", report)
@@ -794,6 +796,7 @@ def donor_projected_init(
 
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
+    generation_config_report = _sanitize_generation_config_for_save(target, target_tokenizer)
     target.save_pretrained(output, safe_serialization=True)
     target_tokenizer.save_pretrained(output)
     report = {
@@ -875,6 +878,7 @@ def donor_projected_init(
         "token_report": token_report,
         "param_count": sum(param.numel() for param in target.parameters()),
         "axis_assignment_cache_entries": _axis_assignment_cache_report(axis_assignment_cache),
+        "generation_config_sanitized": generation_config_report,
     }
     _write_json(output / "neural_forge_donor_projected_init_report.json", report)
     return report
@@ -1029,6 +1033,7 @@ def cross_family_mlp_merge(
 
     target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)
+    generation_config_report = _sanitize_generation_config_for_save(host, host_tokenizer)
     host.save_pretrained(target, safe_serialization=True)
     host_tokenizer.save_pretrained(target)
     report = {
@@ -1058,6 +1063,7 @@ def cross_family_mlp_merge(
         "layer_alpha_max_scale": layer_alpha_max_scale,
         "layer_alpha_similarity_floor": layer_alpha_similarity_floor,
         "layers": layer_reports,
+        "generation_config_sanitized": generation_config_report,
         "param_count": sum(param.numel() for param in host.parameters()),
     }
     _write_json(target / "neural_forge_xfamily_mlp_report.json", report)
@@ -2326,11 +2332,122 @@ def _synthesize_cross_arch_layer_tensor(torch, layer_state: dict[str, Any], suff
                 "method": "zero_layernorm_bias",
                 "source_suffixes": ["post_attention_layernorm.weight"],
             }
+    if marker.endswith(".input_layernorm.weight") or marker.endswith(".attention_norm.weight"):
+        value = _state_value(layer_state, "ln_1.weight")
+        if value is not None:
+            return value.detach().cpu(), {"method": "layernorm_alias", "source_suffixes": ["ln_1.weight"]}
+    if marker.endswith(".post_attention_layernorm.weight") or marker.endswith(".ffn_norm.weight"):
+        value = _state_value(layer_state, "ln_2.weight")
+        if value is not None:
+            return value.detach().cpu(), {"method": "layernorm_alias", "source_suffixes": ["ln_2.weight"]}
+    if marker.endswith(".input_layernorm.bias") or marker.endswith(".attention_norm.bias"):
+        value = _state_value(layer_state, "ln_1.bias")
+        if value is not None:
+            return value.detach().cpu(), {"method": "layernorm_bias_alias", "source_suffixes": ["ln_1.bias"]}
+        weight = _state_value(layer_state, "ln_1.weight")
+        if weight is not None:
+            return _zero_bias_from_weight(torch, weight, int(weight.numel())), {
+                "method": "zero_layernorm_bias",
+                "source_suffixes": ["ln_1.weight"],
+            }
+    if marker.endswith(".post_attention_layernorm.bias") or marker.endswith(".ffn_norm.bias"):
+        value = _state_value(layer_state, "ln_2.bias")
+        if value is not None:
+            return value.detach().cpu(), {"method": "layernorm_bias_alias", "source_suffixes": ["ln_2.bias"]}
+        weight = _state_value(layer_state, "ln_2.weight")
+        if weight is not None:
+            return _zero_bias_from_weight(torch, weight, int(weight.numel())), {
+                "method": "zero_layernorm_bias",
+                "source_suffixes": ["ln_2.weight"],
+            }
 
     q = _state_value(layer_state, "self_attn.q_proj.weight", "attention.q_proj.weight", "operator.q_proj.weight")
     k = _state_value(layer_state, "self_attn.k_proj.weight", "attention.k_proj.weight", "operator.k_proj.weight")
     v = _state_value(layer_state, "self_attn.v_proj.weight", "attention.v_proj.weight", "operator.v_proj.weight")
     o = _state_value(layer_state, "self_attn.o_proj.weight", "self_attn.out_proj.weight", "attention.o_proj.weight", "operator.out_proj.weight")
+    c_attn = _state_value(layer_state, "attn.c_attn.weight", "self_attn.c_attn.weight")
+    c_proj = _state_value(layer_state, "attn.c_proj.weight", "self_attn.c_proj.weight")
+    if c_attn is not None and (
+        marker.endswith(".self_attn.q_proj.weight")
+        or marker.endswith(".attention.q_proj.weight")
+        or marker.endswith(".operator.q_proj.weight")
+        or marker.endswith(".self_attn.k_proj.weight")
+        or marker.endswith(".attention.k_proj.weight")
+        or marker.endswith(".operator.k_proj.weight")
+        or marker.endswith(".self_attn.v_proj.weight")
+        or marker.endswith(".attention.v_proj.weight")
+        or marker.endswith(".operator.v_proj.weight")
+    ):
+        chunks = torch.chunk(c_attn.detach().cpu().to(torch.float32), 3, dim=1)
+        if marker.endswith(".q_proj.weight"):
+            index = 0
+            stream = "q"
+        elif marker.endswith(".k_proj.weight"):
+            index = 1
+            stream = "k"
+        else:
+            index = 2
+            stream = "v"
+        return chunks[index].t().contiguous(), {
+            "method": f"split_gpt2_c_attn_for_{stream}_proj",
+            "source_suffixes": ["attn.c_attn.weight"],
+        }
+    if c_attn is not None and (
+        marker.endswith(".self_attn.q_proj.bias")
+        or marker.endswith(".attention.q_proj.bias")
+        or marker.endswith(".operator.q_proj.bias")
+        or marker.endswith(".self_attn.k_proj.bias")
+        or marker.endswith(".attention.k_proj.bias")
+        or marker.endswith(".operator.k_proj.bias")
+        or marker.endswith(".self_attn.v_proj.bias")
+        or marker.endswith(".attention.v_proj.bias")
+        or marker.endswith(".operator.v_proj.bias")
+    ):
+        c_attn_bias = _state_value(layer_state, "attn.c_attn.bias", "self_attn.c_attn.bias")
+        width = int(c_attn.shape[1] // 3)
+        if c_attn_bias is None:
+            chunks = [torch.zeros(width, dtype=torch.float32) for _ in range(3)]
+            zeroed = True
+        else:
+            chunks = list(torch.chunk(c_attn_bias.detach().cpu().to(torch.float32), 3, dim=0))
+            zeroed = False
+        if marker.endswith(".q_proj.bias"):
+            index = 0
+            stream = "q"
+        elif marker.endswith(".k_proj.bias"):
+            index = 1
+            stream = "k"
+        else:
+            index = 2
+            stream = "v"
+        return chunks[index].contiguous(), {
+            "method": f"split_gpt2_c_attn_bias_for_{stream}_proj",
+            "source_suffixes": ["attn.c_attn.bias"],
+            "missing_biases_zeroed": zeroed,
+        }
+    if c_proj is not None and (
+        marker.endswith(".self_attn.o_proj.weight")
+        or marker.endswith(".self_attn.out_proj.weight")
+        or marker.endswith(".attention.o_proj.weight")
+        or marker.endswith(".operator.out_proj.weight")
+    ):
+        return c_proj.detach().cpu().to(torch.float32).t().contiguous(), {
+            "method": "transpose_gpt2_c_proj_for_o_proj",
+            "source_suffixes": ["attn.c_proj.weight"],
+        }
+    if c_proj is not None and (
+        marker.endswith(".self_attn.o_proj.bias")
+        or marker.endswith(".self_attn.out_proj.bias")
+        or marker.endswith(".attention.o_proj.bias")
+        or marker.endswith(".operator.out_proj.bias")
+    ):
+        bias = _state_value(layer_state, "attn.c_proj.bias", "self_attn.c_proj.bias")
+        if bias is not None:
+            return bias.detach().cpu(), {"method": "gpt2_c_proj_bias_alias", "source_suffixes": ["attn.c_proj.bias"]}
+        return torch.zeros(int(c_proj.shape[1]), dtype=torch.float32), {
+            "method": "zero_gpt2_c_proj_bias_for_o_proj",
+            "source_suffixes": ["attn.c_proj.weight"],
+        }
     if marker.endswith(".attn.c_attn.weight") and q is not None and k is not None and v is not None:
         fused = torch.cat(
             [q.detach().cpu().to(torch.float32), k.detach().cpu().to(torch.float32), v.detach().cpu().to(torch.float32)],
@@ -2372,6 +2489,52 @@ def _synthesize_cross_arch_layer_tensor(torch, layer_state: dict[str, Any], suff
     gate = _state_value(layer_state, "mlp.gate_proj.weight", "mlp.w1.weight", "feed_forward.w1.weight")
     up = _state_value(layer_state, "mlp.up_proj.weight", "mlp.w3.weight", "feed_forward.w3.weight")
     down = _state_value(layer_state, "mlp.down_proj.weight", "mlp.w2.weight", "feed_forward.w2.weight")
+    c_fc = _state_value(layer_state, "mlp.c_fc.weight", "feed_forward.c_fc.weight")
+    mlp_c_proj = _state_value(layer_state, "mlp.c_proj.weight", "feed_forward.c_proj.weight")
+    if c_fc is not None and (
+        marker.endswith(".mlp.gate_proj.weight")
+        or marker.endswith(".mlp.up_proj.weight")
+        or marker.endswith(".feed_forward.w1.weight")
+        or marker.endswith(".feed_forward.w3.weight")
+    ):
+        stream = "gate" if marker.endswith(".gate_proj.weight") or marker.endswith(".w1.weight") else "up"
+        return c_fc.detach().cpu().to(torch.float32).t().contiguous(), {
+            "method": f"transpose_gpt2_c_fc_for_{stream}_proj",
+            "source_suffixes": ["mlp.c_fc.weight"],
+        }
+    if c_fc is not None and (
+        marker.endswith(".mlp.gate_proj.bias")
+        or marker.endswith(".mlp.up_proj.bias")
+        or marker.endswith(".feed_forward.w1.bias")
+        or marker.endswith(".feed_forward.w3.bias")
+    ):
+        bias = _state_value(layer_state, "mlp.c_fc.bias", "feed_forward.c_fc.bias")
+        stream = "gate" if marker.endswith(".gate_proj.bias") or marker.endswith(".w1.bias") else "up"
+        if bias is not None:
+            return bias.detach().cpu(), {"method": f"gpt2_c_fc_bias_for_{stream}_proj", "source_suffixes": ["mlp.c_fc.bias"]}
+        return torch.zeros(int(c_fc.shape[1]), dtype=torch.float32), {
+            "method": f"zero_gpt2_c_fc_bias_for_{stream}_proj",
+            "source_suffixes": ["mlp.c_fc.weight"],
+        }
+    if mlp_c_proj is not None and (
+        marker.endswith(".mlp.down_proj.weight")
+        or marker.endswith(".feed_forward.w2.weight")
+    ):
+        return mlp_c_proj.detach().cpu().to(torch.float32).t().contiguous(), {
+            "method": "transpose_gpt2_mlp_c_proj_for_down_proj",
+            "source_suffixes": ["mlp.c_proj.weight"],
+        }
+    if mlp_c_proj is not None and (
+        marker.endswith(".mlp.down_proj.bias")
+        or marker.endswith(".feed_forward.w2.bias")
+    ):
+        bias = _state_value(layer_state, "mlp.c_proj.bias", "feed_forward.c_proj.bias")
+        if bias is not None:
+            return bias.detach().cpu(), {"method": "gpt2_mlp_c_proj_bias_for_down_proj", "source_suffixes": ["mlp.c_proj.bias"]}
+        return torch.zeros(int(mlp_c_proj.shape[1]), dtype=torch.float32), {
+            "method": "zero_gpt2_mlp_c_proj_bias_for_down_proj",
+            "source_suffixes": ["mlp.c_proj.weight"],
+        }
     if marker.endswith(".mlp.c_fc.weight") and (gate is not None or up is not None):
         sources = [item.detach().cpu().to(torch.float32) for item in (gate, up) if item is not None]
         fused = torch.stack(sources, dim=0).mean(dim=0).t().contiguous()
@@ -5825,6 +5988,80 @@ def _mean_row_cosine(torch, predicted, target) -> float:
     numerator = (predicted * target).sum(dim=1)
     denominator = predicted.pow(2).sum(dim=1).sqrt().mul(target.pow(2).sum(dim=1).sqrt()).clamp_min(1e-12)
     return float((numerator / denominator).mean().detach().cpu())
+
+
+def _sanitize_generation_config_for_save(model, tokenizer=None) -> dict[str, Any]:
+    generation_config = getattr(model, "generation_config", None)
+    model_config = getattr(model, "config", None)
+    vocab_size = None
+    try:
+        embedding = model.get_input_embeddings()
+        weight = getattr(embedding, "weight", None)
+        shape = getattr(weight, "shape", None)
+        if shape:
+            vocab_size = int(shape[0])
+    except Exception:
+        vocab_size = None
+
+    def valid_token_id(value: Any) -> bool:
+        if isinstance(value, bool) or not isinstance(value, int):
+            return False
+        if value < 0:
+            return False
+        return vocab_size is None or value < vocab_size
+
+    def iter_candidate_ids(value: Any):
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                yield item
+        else:
+            yield value
+
+    candidate_ids: list[int] = []
+    for owner in (tokenizer, model_config, generation_config):
+        if owner is None:
+            continue
+        for attr in ("pad_token_id", "eos_token_id", "bos_token_id", "decoder_start_token_id"):
+            for candidate in iter_candidate_ids(getattr(owner, attr, None)):
+                if valid_token_id(candidate):
+                    candidate_ids.append(int(candidate))
+    fallback = next((item for item in candidate_ids if item > 0), None)
+    if fallback is None:
+        fallback = candidate_ids[0] if candidate_ids else 0
+
+    changes: list[dict[str, Any]] = []
+
+    def sanitize_owner(owner, owner_name: str) -> None:
+        if owner is None:
+            return
+        for attr in ("pad_token_id", "bos_token_id", "decoder_start_token_id"):
+            if not hasattr(owner, attr):
+                continue
+            before = getattr(owner, attr, None)
+            if before is not None and not valid_token_id(before):
+                setattr(owner, attr, int(fallback))
+                changes.append({"owner": owner_name, "field": attr, "before": before, "after": int(fallback)})
+        if hasattr(owner, "eos_token_id"):
+            before = getattr(owner, "eos_token_id", None)
+            if isinstance(before, (list, tuple)):
+                after = [int(item) for item in before if valid_token_id(item)]
+                if len(after) != len(before):
+                    if not after:
+                        after = [int(fallback)]
+                    setattr(owner, "eos_token_id", after)
+                    changes.append({"owner": owner_name, "field": "eos_token_id", "before": list(before), "after": after})
+            elif before is not None and not valid_token_id(before):
+                setattr(owner, "eos_token_id", int(fallback))
+                changes.append({"owner": owner_name, "field": "eos_token_id", "before": before, "after": int(fallback)})
+
+    sanitize_owner(model_config, "config")
+    sanitize_owner(generation_config, "generation_config")
+    return {
+        "changed": bool(changes),
+        "vocab_size": vocab_size,
+        "fallback_token_id": int(fallback),
+        "changes": changes,
+    }
 
 
 def _write_json(path: str | Path, data: dict[str, Any]) -> None:

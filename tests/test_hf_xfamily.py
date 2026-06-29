@@ -120,6 +120,7 @@ from neural_forge.hf_xfamily import _resize_tensor_axis_mean_fold
 from neural_forge.hf_xfamily import _resize_tensor_to_shape
 from neural_forge.hf_xfamily import _scale_projection_to_target
 from neural_forge.hf_xfamily import _select_compression_candidates
+from neural_forge.hf_xfamily import _sanitize_generation_config_for_save
 from neural_forge.hf_xfamily import _synthesize_cross_arch_layer_tensor
 from neural_forge.hf_xfamily import _target_to_donor_token_group_specs
 from neural_forge.hf_xfamily import _target_to_donor_token_groups
@@ -2214,6 +2215,65 @@ def test_synthesize_cross_arch_layer_tensor_transposes_mlp_for_gpt2() -> None:
     assert c_fc_report["method"] == "average_gated_mlp_inputs_transposed_for_gpt2_c_fc"
     assert c_proj_report["method"] == "transpose_down_proj_for_gpt2_c_proj"
     assert c_fc_bias_report["method"] == "zero_mlp_input_bias_for_gpt2_c_fc"
+
+
+def test_synthesize_cross_arch_layer_tensor_splits_gpt2_qkv_for_split_attention() -> None:
+    torch = pytest.importorskip("torch")
+    q = torch.arange(6, dtype=torch.float32).reshape(3, 2)
+    k = q + 10
+    v = q + 20
+    c_attn = torch.cat([q, k, v], dim=1)
+    layer_state = {"attn.c_attn.weight": c_attn, "attn.c_attn.bias": torch.arange(6, dtype=torch.float32)}
+
+    q_proj, q_report = _synthesize_cross_arch_layer_tensor(torch, layer_state, "self_attn.q_proj.weight")
+    k_proj, k_report = _synthesize_cross_arch_layer_tensor(torch, layer_state, "self_attn.k_proj.weight")
+    v_bias, v_bias_report = _synthesize_cross_arch_layer_tensor(torch, layer_state, "self_attn.v_proj.bias")
+
+    torch.testing.assert_close(q_proj, q.t())
+    torch.testing.assert_close(k_proj, k.t())
+    torch.testing.assert_close(v_bias, torch.tensor([4.0, 5.0]))
+    assert q_report["method"] == "split_gpt2_c_attn_for_q_proj"
+    assert k_report["method"] == "split_gpt2_c_attn_for_k_proj"
+    assert v_bias_report["method"] == "split_gpt2_c_attn_bias_for_v_proj"
+
+
+def test_synthesize_cross_arch_layer_tensor_splits_gpt2_mlp_for_gated_target() -> None:
+    torch = pytest.importorskip("torch")
+    c_fc = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+    c_proj = torch.tensor([[7.0, 8.0], [9.0, 10.0], [11.0, 12.0]])
+    layer_state = {"mlp.c_fc.weight": c_fc, "mlp.c_proj.weight": c_proj}
+
+    gate, gate_report = _synthesize_cross_arch_layer_tensor(torch, layer_state, "mlp.gate_proj.weight")
+    up, up_report = _synthesize_cross_arch_layer_tensor(torch, layer_state, "mlp.up_proj.weight")
+    down, down_report = _synthesize_cross_arch_layer_tensor(torch, layer_state, "mlp.down_proj.weight")
+
+    torch.testing.assert_close(gate, c_fc.t())
+    torch.testing.assert_close(up, c_fc.t())
+    torch.testing.assert_close(down, c_proj.t())
+    assert gate_report["method"] == "transpose_gpt2_c_fc_for_gate_proj"
+    assert up_report["method"] == "transpose_gpt2_c_fc_for_up_proj"
+    assert down_report["method"] == "transpose_gpt2_mlp_c_proj_for_down_proj"
+
+
+def test_sanitize_generation_config_for_save_repairs_negative_pad_token() -> None:
+    class TinyModel:
+        def __init__(self) -> None:
+            self.config = type("Config", (), {"pad_token_id": -1, "eos_token_id": 2, "bos_token_id": 1})()
+            self.generation_config = type("GenerationConfig", (), {"pad_token_id": -1, "eos_token_id": 2})()
+            self._embedding = type("Embedding", (), {"weight": type("Weight", (), {"shape": (8, 4)})()})()
+
+        def get_input_embeddings(self):
+            return self._embedding
+
+    tokenizer = type("Tokenizer", (), {"pad_token_id": None, "eos_token_id": 2, "bos_token_id": 1})()
+    model = TinyModel()
+
+    report = _sanitize_generation_config_for_save(model, tokenizer)
+
+    assert report["changed"] is True
+    assert model.config.pad_token_id == 2
+    assert model.generation_config.pad_token_id == 2
+    assert report["fallback_token_id"] == 2
 
 
 def test_fit_projected_linear_from_donor_activations_reports_validation_metrics() -> None:
