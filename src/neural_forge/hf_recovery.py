@@ -16,6 +16,7 @@ from neural_forge.hf_tools import (
     _dtype_from_name,
     _generate_text,
     _generation_health,
+    _load_eval_suite,
     _ridge_solve_features,
     _score_behavior_probe,
     _torch_and_transformers,
@@ -1843,6 +1844,9 @@ def reconstruct_cross_tokenizer_causal_lm(
                 device,
                 int(layer_gate_behavior_max_new_tokens),
                 int(layer_gate_max_texts),
+                layer_gate_behavior_probes,
+                layer_gate_generation_prompts,
+                layer_gate_max_generation_prompts,
             )
             layer_gate["initial_behavior"] = previous_gate_behavior
         for candidate_idx in range(layer_count):
@@ -2042,6 +2046,19 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     residual_compensation_linear_ridge: float = 1e-3,
     residual_compensation_alpha: float = 1.0,
     residual_compensation_linear_rank: int = 32,
+    pre_reconstruction_target: str = "none",
+    pre_reconstruction_ridge: float = 1e-3,
+    pre_reconstruction_alpha: float = 0.05,
+    pre_reconstruction_objective: str = "ridge",
+    pre_reconstruction_cosine_steps: int = 40,
+    pre_reconstruction_cosine_lr: float = 1e-2,
+    pre_reconstruction_cosine_l2: float = 1e-4,
+    pre_reconstruction_fit_gate: str = "validation",
+    pre_reconstruction_validation_fraction: float = 0.25,
+    pre_reconstruction_min_validation_rows: int = 32,
+    pre_reconstruction_max_tokens_per_layer: int = 512,
+    pre_reconstruction_min_relative_improvement: float = 0.0,
+    pre_reconstruction_max_cosine_drop: float = 0.01,
     max_anchors: int = 2048,
     span_max_pairs: int = 512,
     donor_layer_fold_mode: str = "fold",
@@ -2052,6 +2069,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     layer_gate_max_texts: int = 4,
     layer_gate_max_behavior_drop: float = 0.0,
     layer_gate_behavior_max_new_tokens: int = 96,
+    layer_gate_eval_suite: str | Path | dict[str, Any] | None = None,
+    layer_gate_max_generation_prompts: int | None = None,
     on_policy_anchor_kd_weight: float = 0.0,
     on_policy_unlikelihood_weight: float = 0.0,
     on_policy_hidden_kd_weight: float = 0.0,
@@ -2128,6 +2147,32 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("residual_compensation_alpha must be between 0 and 1.")
     if residual_compensation_linear_rank <= 0:
         raise ValueError("residual_compensation_linear_rank must be positive.")
+    if pre_reconstruction_target not in {"none", "consumer-input", "block-interface", "all"}:
+        raise ValueError("pre_reconstruction_target must be none, consumer-input, block-interface, or all.")
+    if pre_reconstruction_ridge < 0:
+        raise ValueError("pre_reconstruction_ridge must be non-negative.")
+    if not 0 <= pre_reconstruction_alpha <= 1:
+        raise ValueError("pre_reconstruction_alpha must be between 0 and 1.")
+    if pre_reconstruction_objective not in {"ridge", "cosine"}:
+        raise ValueError("pre_reconstruction_objective must be ridge or cosine.")
+    if pre_reconstruction_cosine_steps < 0:
+        raise ValueError("pre_reconstruction_cosine_steps must be non-negative.")
+    if pre_reconstruction_cosine_lr <= 0:
+        raise ValueError("pre_reconstruction_cosine_lr must be positive.")
+    if pre_reconstruction_cosine_l2 < 0:
+        raise ValueError("pre_reconstruction_cosine_l2 must be non-negative.")
+    if pre_reconstruction_fit_gate not in {"none", "validation"}:
+        raise ValueError("pre_reconstruction_fit_gate must be none or validation.")
+    if not 0.0 <= float(pre_reconstruction_validation_fraction) < 1.0:
+        raise ValueError("pre_reconstruction_validation_fraction must be in [0, 1).")
+    if pre_reconstruction_min_validation_rows <= 0:
+        raise ValueError("pre_reconstruction_min_validation_rows must be positive.")
+    if pre_reconstruction_max_tokens_per_layer <= 0:
+        raise ValueError("pre_reconstruction_max_tokens_per_layer must be positive.")
+    if pre_reconstruction_min_relative_improvement < 0:
+        raise ValueError("pre_reconstruction_min_relative_improvement must be non-negative.")
+    if pre_reconstruction_max_cosine_drop < 0:
+        raise ValueError("pre_reconstruction_max_cosine_drop must be non-negative.")
     if max_anchors <= 0:
         raise ValueError("max_anchors must be positive.")
     if span_max_pairs <= 0:
@@ -2148,6 +2193,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("layer_gate_max_behavior_drop must be in [0, 1].")
     if layer_gate_behavior_max_new_tokens <= 0:
         raise ValueError("layer_gate_behavior_max_new_tokens must be positive.")
+    if layer_gate_max_generation_prompts is not None and layer_gate_max_generation_prompts <= 0:
+        raise ValueError("layer_gate_max_generation_prompts must be positive when provided.")
     if on_policy_anchor_kd_weight < 0 or on_policy_unlikelihood_weight < 0 or on_policy_hidden_kd_weight < 0:
         raise ValueError("on-policy weights must be non-negative.")
     if stepwise_donor_kd_weight < 0:
@@ -2432,6 +2479,23 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "max_behavior_drop": float(layer_gate_max_behavior_drop),
         "behavior_max_new_tokens": int(layer_gate_behavior_max_new_tokens),
     }
+    layer_gate_behavior_probes = None
+    layer_gate_generation_prompts = None
+    layer_gate_suite_report = None
+    if layer_gate_eval_suite is not None:
+        loaded_gate_suite = _load_eval_suite(layer_gate_eval_suite)
+        layer_gate_behavior_probes = list(loaded_gate_suite.get("behavior_probes") or [])
+        layer_gate_generation_prompts = list(loaded_gate_suite.get("generation_prompts") or [])
+        layer_gate_suite_report = {
+            "source": loaded_gate_suite.get("source"),
+            "behavior_probe_count": int(len(layer_gate_behavior_probes)),
+            "generation_prompt_count": int(len(layer_gate_generation_prompts)),
+            "max_behavior_probes": int(layer_gate_max_texts),
+            "max_generation_prompts": (
+                None if layer_gate_max_generation_prompts is None else int(layer_gate_max_generation_prompts)
+            ),
+        }
+        layer_gate["eval_suite"] = layer_gate_suite_report
     previous_gate_ppl: float | None = None
     previous_gate_behavior: dict[str, Any] | None = None
     with torch.no_grad():
@@ -2450,6 +2514,9 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 device,
                 int(layer_gate_behavior_max_new_tokens),
                 int(layer_gate_max_texts),
+                layer_gate_behavior_probes,
+                layer_gate_generation_prompts,
+                layer_gate_max_generation_prompts,
             )
             candidate.train()
             layer_gate["initial_behavior"] = previous_gate_behavior
@@ -2463,17 +2530,55 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             else source_group
         )
         candidate_layer = candidate_layers[candidate_idx]
+        snapshot_modules = _block_recovery_snapshot_modules(
+            candidate_layers,
+            candidate_idx,
+            candidate_layer,
+            output_head,
+            pre_reconstruction_target,
+        )
+        layer_state = (
+            _snapshot_named_module_states(snapshot_modules)
+            if layer_gate_metric in {"ppl", "behavior"} or save_best_layer_loss or save_best_layer_behavior
+            else None
+        )
+        pre_reconstruction_report = None
+        if pre_reconstruction_target != "none":
+            pre_reconstruction_report = _reconstruct_cross_tokenizer_layer(
+                torch,
+                source,
+                candidate,
+                source_layers[int(source_idx)],
+                candidate_layer,
+                source_layers,
+                candidate_layers,
+                int(candidate_idx),
+                source_group,
+                source_tokenizer,
+                candidate_tokenizer,
+                paired_batches,
+                hidden_projection,
+                _canonical_token,
+                float(pre_reconstruction_ridge),
+                float(pre_reconstruction_alpha),
+                pre_reconstruction_target,
+                pre_reconstruction_objective,
+                int(pre_reconstruction_cosine_steps),
+                float(pre_reconstruction_cosine_lr),
+                float(pre_reconstruction_cosine_l2),
+                pre_reconstruction_fit_gate,
+                float(pre_reconstruction_validation_fraction),
+                int(pre_reconstruction_min_validation_rows),
+                float(pre_reconstruction_min_relative_improvement),
+                float(pre_reconstruction_max_cosine_drop),
+                int(pre_reconstruction_max_tokens_per_layer),
+            )
         trainable_modules = [candidate_layer]
         if train_output_head_with_kd and output_head is not None:
             trainable_modules.append(output_head)
         trainable_params = _set_only_modules_trainable(candidate, trainable_modules)
         optimizer_params = _unique_trainable_parameters(trainable_modules)
         optimizer = torch.optim.AdamW(optimizer_params, lr=lr)
-        layer_state = (
-            _snapshot_named_module_states({"block": candidate_layer, "output_head": output_head})
-            if layer_gate_metric in {"ppl", "behavior"} or save_best_layer_loss or save_best_layer_behavior
-            else None
-        )
         before_alignment = _cross_tokenizer_block_alignment_state(
             torch,
             source,
@@ -2529,6 +2634,9 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     device,
                     int(layer_gate_behavior_max_new_tokens),
                     int(layer_gate_max_texts),
+                    layer_gate_behavior_probes,
+                    layer_gate_generation_prompts,
+                    layer_gate_max_generation_prompts,
                 )
                 candidate.train()
             behavior_entry = _behavior_history_entry(0, None, behavior_summary)
@@ -2537,7 +2645,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             best_behavior_summary = dict(behavior_entry)
             best_behavior_step = 0
             best_behavior_loss = math.inf
-            best_behavior_state = _snapshot_named_module_states({"block": candidate_layer, "output_head": output_head})
+            best_behavior_state = _snapshot_named_module_states(snapshot_modules)
         for step in range(1, steps_per_layer + 1):
             source_batch, candidate_batch = paired_batches[(step - 1) % len(paired_batches)]
             optimizer.zero_grad(set_to_none=True)
@@ -2938,7 +3046,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             if save_best_layer_loss and (best_loss is None or loss_value < best_loss):
                 best_loss = loss_value
                 best_step = int(step)
-                best_state = _snapshot_named_module_states({"block": candidate_layer, "output_head": output_head})
+                best_state = _snapshot_named_module_states(snapshot_modules)
             if save_best_layer_behavior and (step == 1 or step % behavior_interval == 0 or step == steps_per_layer):
                 with torch.no_grad():
                     candidate.eval()
@@ -2949,6 +3057,9 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                         device,
                         int(layer_gate_behavior_max_new_tokens),
                         int(layer_gate_max_texts),
+                        layer_gate_behavior_probes,
+                        layer_gate_generation_prompts,
+                        layer_gate_max_generation_prompts,
                     )
                     candidate.train()
                 behavior_entry = _behavior_history_entry(step, loss_value, behavior_summary)
@@ -2959,7 +3070,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     best_behavior_step = int(step)
                     best_behavior_loss = loss_value
                     best_behavior_state = _snapshot_named_module_states(
-                        {"block": candidate_layer, "output_head": output_head}
+                        snapshot_modules
                     )
             if step == 1 or step % interval == 0 or step == steps_per_layer:
                 losses.append(
@@ -3022,9 +3133,9 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     flush=True,
                 )
         if save_best_layer_behavior and best_behavior_state is not None:
-            _restore_named_module_states({"block": candidate_layer, "output_head": output_head}, best_behavior_state)
+            _restore_named_module_states(snapshot_modules, best_behavior_state)
         elif save_best_layer_loss and best_state is not None:
-            _restore_named_module_states({"block": candidate_layer, "output_head": output_head}, best_state)
+            _restore_named_module_states(snapshot_modules, best_state)
 
         after_alignment = _cross_tokenizer_block_alignment_state(
             torch,
@@ -3060,6 +3171,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             "behavior_history": behavior_history,
             "best_behavior_step": best_behavior_step,
             "best_behavior": best_behavior_summary,
+            "pre_reconstruction": pre_reconstruction_report,
             "residual_magnitude_compensation": compensation_report,
             "before": before_metrics,
             "after": after_metrics,
@@ -3077,7 +3189,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             if gate_decision["accepted"]:
                 previous_gate_ppl = candidate_ppl
             elif layer_state is not None:
-                _restore_named_module_states({"block": candidate_layer, "output_head": output_head}, layer_state)
+                _restore_named_module_states(snapshot_modules, layer_state)
                 with torch.no_grad():
                     candidate.eval()
                     reverted_ppl = _heldout_ppl_mean(
@@ -3103,6 +3215,9 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     device,
                     int(layer_gate_behavior_max_new_tokens),
                     int(layer_gate_max_texts),
+                    layer_gate_behavior_probes,
+                    layer_gate_generation_prompts,
+                    layer_gate_max_generation_prompts,
                 )
                 candidate.train()
             gate_decision = _layer_gate_behavior_decision(
@@ -3114,7 +3229,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             if gate_decision["accepted"]:
                 previous_gate_behavior = candidate_behavior
             elif layer_state is not None:
-                _restore_named_module_states({"block": candidate_layer, "output_head": output_head}, layer_state)
+                _restore_named_module_states(snapshot_modules, layer_state)
                 with torch.no_grad():
                     candidate.eval()
                     reverted_behavior = _heldout_behavior_summary(
@@ -3124,6 +3239,9 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                         device,
                         int(layer_gate_behavior_max_new_tokens),
                         int(layer_gate_max_texts),
+                        layer_gate_behavior_probes,
+                        layer_gate_generation_prompts,
+                        layer_gate_max_generation_prompts,
                     )
                     candidate.train()
                 gate_decision["reverted"] = True
@@ -3159,6 +3277,21 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "residual_compensation_linear_ridge": float(residual_compensation_linear_ridge),
         "residual_compensation_alpha": float(residual_compensation_alpha),
         "residual_compensation_linear_rank": int(residual_compensation_linear_rank),
+        "pre_reconstruction": {
+            "target": pre_reconstruction_target,
+            "ridge": float(pre_reconstruction_ridge),
+            "alpha": float(pre_reconstruction_alpha),
+            "objective": pre_reconstruction_objective,
+            "cosine_steps": int(pre_reconstruction_cosine_steps),
+            "cosine_lr": float(pre_reconstruction_cosine_lr),
+            "cosine_l2": float(pre_reconstruction_cosine_l2),
+            "fit_gate": pre_reconstruction_fit_gate,
+            "validation_fraction": float(pre_reconstruction_validation_fraction),
+            "min_validation_rows": int(pre_reconstruction_min_validation_rows),
+            "max_tokens_per_layer": int(pre_reconstruction_max_tokens_per_layer),
+            "min_relative_improvement": float(pre_reconstruction_min_relative_improvement),
+            "max_cosine_drop": float(pre_reconstruction_max_cosine_drop),
+        },
         "max_anchors": int(max_anchors),
         "span_max_pairs": int(span_max_pairs),
         "donor_layer_fold_mode": donor_layer_fold_mode,
@@ -5352,6 +5485,24 @@ def _restore_layer_gate_states(candidate_layers: Sequence[Any], states: dict[int
         _restore_module_state(candidate_layers[int(layer_idx)], state)
 
 
+def _block_recovery_snapshot_modules(
+    candidate_layers: Sequence[Any],
+    candidate_idx: int,
+    candidate_layer,
+    output_head,
+    pre_reconstruction_target: str,
+) -> dict[str, Any]:
+    modules: dict[str, Any] = {"block": candidate_layer}
+    if output_head is not None:
+        modules["output_head"] = output_head
+    if (
+        pre_reconstruction_target in {"consumer-input", "block-interface", "all"}
+        and int(candidate_idx) + 1 < len(candidate_layers)
+    ):
+        modules["consumer_block"] = candidate_layers[int(candidate_idx) + 1]
+    return modules
+
+
 def _snapshot_module_state(module) -> dict[str, Any]:
     return {key: value.detach().cpu().clone() for key, value in module.state_dict().items()}
 
@@ -5407,10 +5558,16 @@ def _heldout_behavior_summary(
     device: str,
     max_new_tokens: int,
     max_probes: int,
+    behavior_probes: Sequence[dict[str, Any]] | None = None,
+    generation_prompts: Sequence[str | dict[str, Any]] | None = None,
+    max_generation_prompts: int | None = None,
 ) -> dict[str, Any]:
-    probes = list(BEHAVIOR_PROBES[: int(max_probes)])
+    probes = list((behavior_probes if behavior_probes is not None else BEHAVIOR_PROBES)[: int(max_probes)])
     if not probes:
         raise ValueError("Need at least one held-out behavior probe for the layer gate.")
+    generation_source = list(generation_prompts if generation_prompts is not None else GENERATION_PROMPTS)
+    if max_generation_prompts is not None:
+        generation_source = generation_source[: int(max_generation_prompts)]
     items = [
         _score_behavior_probe(
             probe,
@@ -5418,13 +5575,22 @@ def _heldout_behavior_summary(
         )
         for probe in probes
     ]
+    def _generation_from_prompt(prompt):
+        if isinstance(prompt, dict):
+            generated = _generate_text(torch, model, tokenizer, str(prompt.get("prompt", "")), device, int(max_new_tokens))
+            generated["id"] = prompt.get("id")
+            if prompt.get("relevance_rules") is not None:
+                generated["relevance_rules"] = prompt.get("relevance_rules")
+            return generated
+        return _generate_text(torch, model, tokenizer, str(prompt), device, int(max_new_tokens))
+
     generation_items = [
         _generation_health(
-            _generate_text(torch, model, tokenizer, str(prompt), device, int(max_new_tokens)),
+            _generation_from_prompt(prompt),
             min_continuation_chars=24,
             min_unique_token_ratio=0.20,
         )
-        for prompt in GENERATION_PROMPTS
+        for prompt in generation_source
     ]
     correct = sum(1 for item in items if item["passed"])
     generation_correct = sum(1 for item in generation_items if item["passed"])

@@ -939,6 +939,37 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_block_recover.add_argument("--residual-compensation-linear-ridge", type=float, default=1e-3)
     xfamily_block_recover.add_argument("--residual-compensation-alpha", type=float, default=1.0)
     xfamily_block_recover.add_argument("--residual-compensation-linear-rank", type=int, default=32)
+    xfamily_block_recover.add_argument(
+        "--pre-reconstruction-target",
+        choices=["none", "consumer-input", "block-interface", "all"],
+        default="none",
+        help=(
+            "Optionally run cross-tokenizer activation reconstruction before each block is trained. "
+            "consumer-input and block-interface mutate downstream consumer projections and are reverted by layer gates."
+        ),
+    )
+    xfamily_block_recover.add_argument("--pre-reconstruction-ridge", type=float, default=1e-3)
+    xfamily_block_recover.add_argument("--pre-reconstruction-alpha", type=float, default=0.05)
+    xfamily_block_recover.add_argument(
+        "--pre-reconstruction-objective",
+        choices=["ridge", "cosine"],
+        default="ridge",
+        help="Linear-map objective for pre-reconstruction interface maps.",
+    )
+    xfamily_block_recover.add_argument("--pre-reconstruction-cosine-steps", type=int, default=40)
+    xfamily_block_recover.add_argument("--pre-reconstruction-cosine-lr", type=float, default=1e-2)
+    xfamily_block_recover.add_argument("--pre-reconstruction-cosine-l2", type=float, default=1e-4)
+    xfamily_block_recover.add_argument(
+        "--pre-reconstruction-fit-gate",
+        choices=["none", "validation"],
+        default="validation",
+        help="Gate fitted pre-reconstruction maps on held-out activation rows before mutating weights.",
+    )
+    xfamily_block_recover.add_argument("--pre-reconstruction-validation-fraction", type=float, default=0.25)
+    xfamily_block_recover.add_argument("--pre-reconstruction-min-validation-rows", type=int, default=32)
+    xfamily_block_recover.add_argument("--pre-reconstruction-max-tokens-per-layer", type=int, default=512)
+    xfamily_block_recover.add_argument("--pre-reconstruction-min-relative-improvement", type=float, default=0.0)
+    xfamily_block_recover.add_argument("--pre-reconstruction-max-cosine-drop", type=float, default=0.01)
     xfamily_block_recover.add_argument("--max-anchors", type=int, default=2048)
     xfamily_block_recover.add_argument("--span-max-pairs", type=int, default=512)
     xfamily_block_recover.add_argument(
@@ -976,6 +1007,15 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=96,
         help="Maximum generated tokens per held-out behavior probe for behavior layer gating.",
+    )
+    xfamily_block_recover.add_argument(
+        "--layer-gate-eval-suite",
+        help="Optional eval suite whose behavior and generation probes replace the tiny built-in layer behavior gate set.",
+    )
+    xfamily_block_recover.add_argument(
+        "--layer-gate-max-generation-prompts",
+        type=int,
+        help="Maximum generation prompts used from --layer-gate-eval-suite for each layer behavior gate.",
     )
     xfamily_block_recover.add_argument("--on-policy-anchor-kd-weight", type=float, default=0.0)
     xfamily_block_recover.add_argument("--on-policy-unlikelihood-weight", type=float, default=0.0)
@@ -1953,6 +1993,19 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         residual_compensation_linear_ridge=args.residual_compensation_linear_ridge,
         residual_compensation_alpha=args.residual_compensation_alpha,
         residual_compensation_linear_rank=args.residual_compensation_linear_rank,
+        pre_reconstruction_target=args.pre_reconstruction_target,
+        pre_reconstruction_ridge=args.pre_reconstruction_ridge,
+        pre_reconstruction_alpha=args.pre_reconstruction_alpha,
+        pre_reconstruction_objective=args.pre_reconstruction_objective,
+        pre_reconstruction_cosine_steps=args.pre_reconstruction_cosine_steps,
+        pre_reconstruction_cosine_lr=args.pre_reconstruction_cosine_lr,
+        pre_reconstruction_cosine_l2=args.pre_reconstruction_cosine_l2,
+        pre_reconstruction_fit_gate=args.pre_reconstruction_fit_gate,
+        pre_reconstruction_validation_fraction=args.pre_reconstruction_validation_fraction,
+        pre_reconstruction_min_validation_rows=args.pre_reconstruction_min_validation_rows,
+        pre_reconstruction_max_tokens_per_layer=args.pre_reconstruction_max_tokens_per_layer,
+        pre_reconstruction_min_relative_improvement=args.pre_reconstruction_min_relative_improvement,
+        pre_reconstruction_max_cosine_drop=args.pre_reconstruction_max_cosine_drop,
         max_anchors=args.max_anchors,
         span_max_pairs=args.span_max_pairs,
         donor_layer_fold_mode=args.donor_layer_fold_mode,
@@ -1963,6 +2016,8 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         layer_gate_max_texts=args.layer_gate_max_texts,
         layer_gate_max_behavior_drop=args.layer_gate_max_behavior_drop,
         layer_gate_behavior_max_new_tokens=args.layer_gate_behavior_max_new_tokens,
+        layer_gate_eval_suite=args.layer_gate_eval_suite,
+        layer_gate_max_generation_prompts=args.layer_gate_max_generation_prompts,
         on_policy_anchor_kd_weight=args.on_policy_anchor_kd_weight,
         on_policy_unlikelihood_weight=args.on_policy_unlikelihood_weight,
         on_policy_hidden_kd_weight=args.on_policy_hidden_kd_weight,

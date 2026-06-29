@@ -1853,6 +1853,71 @@ Interpretation:
   behavior-selected subspace maps, followed by final reload/broad evaluation
   instead of trusting in-loop local metrics.
 
+### Gated Pre-Reconstruction Interface Repair
+
+Code changes:
+
+- `hf-xfamily-block-recover` now accepts
+  `--pre-reconstruction-target none|consumer-input|block-interface|all`.
+  This reuses the existing cross-tokenizer activation reconstruction machinery
+  inside block recovery before each active block is trained.
+- `consumer-input` and `block-interface` mutate downstream consumer input
+  projections, so block recovery now snapshots the downstream consumer block
+  along with the active block/output head. A rejected layer gate fully reverts
+  the interface map instead of leaving a half-applied downstream edit.
+- `--layer-gate-eval-suite` lets the in-loop behavior gate use the same broad
+  suite format as `hf-eval`, with `--layer-gate-max-texts` controlling behavior
+  probes and `--layer-gate-max-generation-prompts` controlling generation
+  prompts. This directly addresses cases where the tiny six-probe layer gate
+  accepts edits that the 1000-probe broad gate later rejects.
+
+Remote validation on the current rank16/alpha `0.01` low-rank residual leader:
+
+| Checkpoint | Strict PPL | Strict choice | Strict behavior | Strict generation | Broad behavior | Broad generation | Broad choice | Broad PPL | Verdict |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| Low-rank residual rank16 alpha 0.01 | 3,809.66 | 3/4 | 3/6 | 2/3 | 600/1000 | 160/200 | 25/250 | 14,191.81 | current narrow leader |
+| Pre-reconstruction block-interface alpha 0.01, tiny layer gate | 3,817.95 | 3/4 | 3/6 | 2/3 | 600/1000 | 120/200 | 24/250 | 14,164.24 | rejected; broad generation regressed |
+| Pre-reconstruction block-interface alpha 0.01, suite layer gate B100/G40/L1 | 3,809.66 | 3/4 | 3/6 | 2/3 | 600/1000 | 160/200 | 25/250 | 14,191.81 | gate reverted the interface map; preserved leader |
+
+Artifacts:
+
+- Tiny-gate run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_lowrank_prerecon_blockinterface_a001_l2_20260628_195425`
+- Tiny-gate broad eval:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/broad_eval_1000_20260628/eval_prerecon_blockinterface_a001_l2.json`
+- Suite-gate run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_lowrank_prerecon_blockinterface_a001_suitegate_b100g40_l1_20260628_201550`
+- Suite-gate broad eval:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/broad_eval_1000_20260628/eval_prerecon_blockinterface_a001_suitegate_b100g40_l1.json`
+
+Mechanical signal:
+
+- The tiny-gate run applied two block-interface maps. Each map touched
+  downstream `self_attn.q_proj`, `self_attn.k_proj`, `self_attn.v_proj`,
+  `mlp.gate_proj`, and `mlp.up_proj`.
+- Layer 0 interface reconstruction improved local relative error from `9.3805`
+  to `9.2868`; layer 1 improved from `5.6212` to `5.5651`. The validation
+  fit gates accepted both maps with small positive held-out activation gains.
+- The old six-probe in-loop behavior gate accepted both maps (`3/6` behavior,
+  `2/3` generation), but full broad generation dropped from `160/200` to
+  `120/200` and broad choice dropped from `25/250` to `24/250`.
+- The suite-backed layer gate used `100` behavior probes and `40` generation
+  prompts from the broad suite. It saw candidate behavior `60/100` and
+  generation `32/40`, but detected lost previously passed behavior IDs
+  (`neuron_merge_definition`, `rain_common_sense`, `tokenizer_mismatch`) and
+  rejected/reverted the interface map. Final strict and broad metrics were
+  identical to the prior low-rank residual leader.
+
+Interpretation:
+
+- Interface pre-reconstruction is mechanically active and can reduce activation
+  error, but it is not safe to promote from local activation/PPL movement.
+- The larger suite-backed layer gate is necessary: it prevented a regression
+  that the old small gate accepted and the post-hoc broad gate later caught.
+- Manual-style outputs from the rejected tiny-gate candidate still failed the
+  core math/code behaviors: multiplication and addition were digit runs, and
+  `python_add_function` remained malformed.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best

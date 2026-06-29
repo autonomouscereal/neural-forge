@@ -56,6 +56,7 @@ from neural_forge.hf_recovery import _same_tokenizer_reference_loss
 from neural_forge.hf_recovery import _same_tokenizer_hidden_loss
 from neural_forge.hf_recovery import _same_tokenizer_top_k_kl
 from neural_forge.hf_recovery import _apply_residual_output_map_to_modules
+from neural_forge.hf_recovery import _block_recovery_snapshot_modules
 from neural_forge.hf_recovery import _low_rank_delta_map
 from neural_forge.hf_recovery import _scale_layer_residual_output_modules
 from neural_forge.hf_recovery import _source_group_delta_state
@@ -3717,6 +3718,21 @@ def test_layer_gate_snapshot_indices_include_consumer_layer() -> None:
     assert _layer_gate_snapshot_indices(layers, 2, "all") == [2]
 
 
+def test_block_recovery_snapshot_modules_include_consumer_for_pre_reconstruction() -> None:
+    layers = [_Obj(name=str(idx)) for idx in range(3)]
+    output_head = _Obj(name="head")
+
+    no_pre = _block_recovery_snapshot_modules(layers, 1, layers[1], output_head, "none")
+    interface = _block_recovery_snapshot_modules(layers, 1, layers[1], output_head, "block-interface")
+    final_layer = _block_recovery_snapshot_modules(layers, 2, layers[2], output_head, "all")
+
+    assert sorted(no_pre) == ["block", "output_head"]
+    assert interface["block"] is layers[1]
+    assert interface["consumer_block"] is layers[2]
+    assert interface["output_head"] is output_head
+    assert "consumer_block" not in final_layer
+
+
 def test_validation_reconstruction_gate_rejects_bad_map() -> None:
     torch = pytest.importorskip("torch")
     target = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
@@ -4793,6 +4809,32 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "0.35",
             "--residual-compensation-linear-rank",
             "11",
+            "--pre-reconstruction-target",
+            "block-interface",
+            "--pre-reconstruction-ridge",
+            "0.006",
+            "--pre-reconstruction-alpha",
+            "0.04",
+            "--pre-reconstruction-objective",
+            "cosine",
+            "--pre-reconstruction-cosine-steps",
+            "5",
+            "--pre-reconstruction-cosine-lr",
+            "0.02",
+            "--pre-reconstruction-cosine-l2",
+            "0.0003",
+            "--pre-reconstruction-fit-gate",
+            "validation",
+            "--pre-reconstruction-validation-fraction",
+            "0.3",
+            "--pre-reconstruction-min-validation-rows",
+            "9",
+            "--pre-reconstruction-max-tokens-per-layer",
+            "44",
+            "--pre-reconstruction-min-relative-improvement",
+            "0.02",
+            "--pre-reconstruction-max-cosine-drop",
+            "0.04",
             "--max-anchors",
             "222",
             "--span-max-pairs",
@@ -4813,6 +4855,10 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "0.12",
             "--layer-gate-behavior-max-new-tokens",
             "41",
+            "--layer-gate-eval-suite",
+            "broad_suite.json",
+            "--layer-gate-max-generation-prompts",
+            "17",
             "--on-policy-anchor-kd-weight",
             "0.31",
             "--on-policy-unlikelihood-weight",
@@ -4909,6 +4955,19 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "residual_compensation_linear_ridge": 0.003,
         "residual_compensation_alpha": 0.35,
         "residual_compensation_linear_rank": 11,
+        "pre_reconstruction_target": "block-interface",
+        "pre_reconstruction_ridge": 0.006,
+        "pre_reconstruction_alpha": 0.04,
+        "pre_reconstruction_objective": "cosine",
+        "pre_reconstruction_cosine_steps": 5,
+        "pre_reconstruction_cosine_lr": 0.02,
+        "pre_reconstruction_cosine_l2": 0.0003,
+        "pre_reconstruction_fit_gate": "validation",
+        "pre_reconstruction_validation_fraction": 0.3,
+        "pre_reconstruction_min_validation_rows": 9,
+        "pre_reconstruction_max_tokens_per_layer": 44,
+        "pre_reconstruction_min_relative_improvement": 0.02,
+        "pre_reconstruction_max_cosine_drop": 0.04,
         "max_anchors": 222,
         "span_max_pairs": 77,
         "donor_layer_fold_mode": "average",
@@ -4919,6 +4978,8 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "layer_gate_max_texts": 2,
         "layer_gate_max_behavior_drop": 0.12,
         "layer_gate_behavior_max_new_tokens": 41,
+        "layer_gate_eval_suite": "broad_suite.json",
+        "layer_gate_max_generation_prompts": 17,
         "on_policy_anchor_kd_weight": 0.31,
         "on_policy_unlikelihood_weight": 0.27,
         "on_policy_hidden_kd_weight": 0.18,

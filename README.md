@@ -187,6 +187,20 @@ those same output projections, and `pre-lowrank` truncates the fitted
 delta-from-identity map before absorption. Keep these behind behavior gates;
 validation found cases where local reconstruction loss and PPL improved while
 generation health regressed.
+`--pre-reconstruction-target consumer-input|block-interface|all` runs an
+activation-map reconstruction stage before each block is trained. This reuses
+the cross-tokenizer reconstruction machinery to repair downstream consumer
+input projections or the next-block interface inside the stronger block
+recovery rollback path. Use a small `--pre-reconstruction-alpha` and
+`--pre-reconstruction-fit-gate validation`; the layer behavior gate snapshots
+the downstream consumer block so rejected interface maps do not remain half
+applied.
+For expensive structural edits, `--layer-gate-eval-suite` lets block recovery
+use the same deterministic broad suite format as `hf-eval` for layer behavior
+gates. Pair it with larger `--layer-gate-max-texts` values and
+`--layer-gate-max-generation-prompts` when a small six-probe gate is too weak;
+the post-run `hf-eval --eval-suite` broad gate should still be treated as the
+promotion authority.
 `hf-xfamily-block-recover --module-output-kd-weight` adds differentiable
 attention/MLP output reconstruction for the currently trainable child block.
 Use `--module-output-targets attention|mlp|both` and
