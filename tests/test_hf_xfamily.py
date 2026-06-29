@@ -64,6 +64,7 @@ from neural_forge.hf_recovery import _low_rank_delta_map
 from neural_forge.hf_recovery import _scale_layer_residual_output_modules
 from neural_forge.hf_recovery import _source_group_delta_state
 from neural_forge.hf_recovery import _source_group_module_output_state
+from neural_forge.hf_recovery import _temporary_padding_side
 from neural_forge.hf_recovery import _tokenizer_first_byte_buckets
 from neural_forge.hf_recovery import _validation_reconstruction_gate
 from neural_forge.hf_recovery import load_calibration_texts
@@ -3464,6 +3465,16 @@ def test_on_policy_prompt_text_keeps_prompt_side_of_response() -> None:
     assert _on_policy_prompt_text("plain text", "none") == "plain text"
 
 
+def test_temporary_padding_side_restores_tokenizer_state() -> None:
+    class Tokenizer:
+        padding_side = "right"
+
+    tokenizer = Tokenizer()
+    with _temporary_padding_side(tokenizer, "left"):
+        assert tokenizer.padding_side == "left"
+    assert tokenizer.padding_side == "right"
+
+
 def test_project_source_logits_to_candidate_vocab_averages_source_token_groups() -> None:
     torch = pytest.importorskip("torch")
     source_logits = torch.tensor([[1.0, 3.0, 5.0, 7.0]])
@@ -4547,6 +4558,10 @@ def test_hf_lm_recover_handler_passes_teacherless_flags(monkeypatch) -> None:
             "0.0002",
             "--first-token-lm-weight",
             "1.7",
+            "--answer-contrastive-weight",
+            "0.31",
+            "--answer-contrastive-max-negatives",
+            "6",
             "--unlikelihood-weight",
             "0.09",
             "--unlikelihood-window",
@@ -4588,6 +4603,8 @@ def test_hf_lm_recover_handler_passes_teacherless_flags(monkeypatch) -> None:
         "kd_weight": 0.0,
         "lm_weight": 1.0,
         "first_token_lm_weight": 1.7,
+        "answer_contrastive_weight": 0.31,
+        "answer_contrastive_max_negatives": 6,
         "unlikelihood_weight": 0.09,
         "unlikelihood_window": 18,
         "entropy_weight": 0.003,

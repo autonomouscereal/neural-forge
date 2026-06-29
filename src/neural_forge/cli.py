@@ -1195,6 +1195,8 @@ def build_parser() -> argparse.ArgumentParser:
     lm_recover.add_argument("--max-length", type=int, default=96)
     lm_recover.add_argument("--lr", type=float, default=5e-5)
     lm_recover.add_argument("--first-token-lm-weight", type=float, default=0.0)
+    lm_recover.add_argument("--answer-contrastive-weight", type=float, default=0.0)
+    lm_recover.add_argument("--answer-contrastive-max-negatives", type=int, default=4)
     lm_recover.add_argument("--unlikelihood-weight", type=float, default=0.0)
     lm_recover.add_argument("--unlikelihood-window", type=int, default=16)
     lm_recover.add_argument("--entropy-weight", type=float, default=0.0)
@@ -2281,6 +2283,8 @@ def cmd_hf_lm_recover(args: argparse.Namespace) -> dict[str, object]:
         kd_weight=0.0,
         lm_weight=1.0,
         first_token_lm_weight=args.first_token_lm_weight,
+        answer_contrastive_weight=args.answer_contrastive_weight,
+        answer_contrastive_max_negatives=args.answer_contrastive_max_negatives,
         unlikelihood_weight=args.unlikelihood_weight,
         unlikelihood_window=args.unlikelihood_window,
         entropy_weight=args.entropy_weight,

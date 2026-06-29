@@ -38,6 +38,31 @@ The earlier recovered model had clean generation but failed behavior probes. Mul
 
 The math-heavy passes improved choice slightly but did not recover robust generated arithmetic. This is the main unresolved capability gap in the compressed blank target.
 
+## Arithmetic Recovery Follow-Up
+
+Additional multi-GPU sweeps tested answer-contrastive recovery, Qwen-donor ranked answer transfer, stepwise donor correction, and sharper numeric drill recovery.
+
+Teacherless answer-contrastive results:
+
+- `qwen4b_contrast_math_headnorm_2200_gpu0`: generation 138/200, behavior 160/200, choice 45/64, math 0/40.
+- `qwen4b_contrast_math_last4_2000_gpu4`: generation 183/200, behavior 161/200, choice 40/64, math 1/40.
+- `qwen4b_contrast_math_all_best_1800_gpu6`: generation 200/200, behavior 161/200, choice 43/64, math 1/40.
+
+Donor-aware answer ranking:
+
+- `qwen4b_donor_rank_numeric_last4_700_gpu4`: generation 179/200, behavior 161/200, choice 38/64, math 1/40.
+
+Best narrow positive result:
+
+- `qwen4b_mathdrill_last8_lr1e5_contrast_150s_gpu6`: generation 200/200, behavior 162/200, choice 41/64, math 2/40, PPL 37,366.27.
+
+Manual inspection of the best narrow result still showed obvious arithmetic failures: `6 + 4 -> 30`, `41 * 30 -> 700`, and `35 + 27 -> 75`. The same checkpoint retained clean neuron-merging, tokenizer-mismatch, rainy-road, and Python `add` outputs. This means the current approach can nudge held-out numeric probes without destroying recovered text behavior, but it has not recovered general arithmetic reasoning.
+
+Implementation changes from this sweep:
+
+- `hf-lm-recover` now exposes answer-contrastive recovery with `--answer-contrastive-weight` and `--answer-contrastive-max-negatives`.
+- Generation-heavy cross-tokenizer recovery helpers now temporarily use left padding during decoder-only `.generate()` calls and restore tokenizer state afterward.
+
 ## Raw-Patch Vision Graft
 
 Implementation change:

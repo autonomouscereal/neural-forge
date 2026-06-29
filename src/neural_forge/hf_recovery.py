@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -86,6 +87,8 @@ def recover_causal_lm(
     first_token_top_k_kd_weight: float = 0.0,
     first_token_kd_weight: float = 0.0,
     first_token_lm_weight: float = 0.0,
+    answer_contrastive_weight: float = 0.0,
+    answer_contrastive_max_negatives: int = 4,
     unlikelihood_weight: float = 0.0,
     unlikelihood_window: int = 16,
     entropy_weight: float = 0.0,
@@ -132,6 +135,7 @@ def recover_causal_lm(
         or first_token_top_k_kd_weight < 0
         or first_token_kd_weight < 0
         or first_token_lm_weight < 0
+        or answer_contrastive_weight < 0
         or unlikelihood_weight < 0
         or entropy_weight < 0
     ):
@@ -144,10 +148,13 @@ def recover_causal_lm(
         and first_token_top_k_kd_weight == 0
         and first_token_kd_weight == 0
         and first_token_lm_weight == 0
+        and answer_contrastive_weight == 0
         and unlikelihood_weight == 0
         and entropy_weight == 0
     ):
         raise ValueError("At least one loss weight must be positive.")
+    if answer_contrastive_max_negatives <= 0:
+        raise ValueError("answer_contrastive_max_negatives must be positive.")
     if unlikelihood_window <= 0:
         raise ValueError("unlikelihood_window must be positive.")
     if temperature <= 0:
@@ -275,6 +282,7 @@ def recover_causal_lm(
     )
 
     losses = []
+    answer_contrastive_counts = []
     interval = int(report_interval or max(1, steps // 10))
     best_loss = None
     best_step = None
@@ -359,6 +367,19 @@ def recover_causal_lm(
                 hidden_token_mode,
             )
             loss = loss + float(hidden_kd_weight) * hidden_loss
+        if answer_contrastive_weight > 0:
+            contrastive, contrastive_count = _answer_contrastive_loss(
+                torch,
+                candidate,
+                candidate_tokenizer,
+                batch.get("raw_texts", batch.get("texts", [])),
+                response_loss_mode,
+                answer_contrastive_max_negatives,
+                max_length,
+                device,
+            )
+            answer_contrastive_counts.append(int(contrastive_count))
+            loss = loss + float(answer_contrastive_weight) * contrastive
         if not bool(torch.isfinite(loss).detach().cpu()):
             raise RuntimeError(f"Non-finite recovery loss at step {step}; aborting before save.")
         loss.backward()
@@ -437,6 +458,9 @@ def recover_causal_lm(
         "first_token_top_k_kd_weight": first_token_top_k_kd_weight,
         "first_token_kd_weight": first_token_kd_weight,
         "first_token_lm_weight": first_token_lm_weight,
+        "answer_contrastive_weight": answer_contrastive_weight,
+        "answer_contrastive_max_negatives": answer_contrastive_max_negatives,
+        "answer_contrastive_count_observed": answer_contrastive_counts,
         "unlikelihood_weight": unlikelihood_weight,
         "unlikelihood_window": unlikelihood_window,
         "entropy_weight": entropy_weight,
@@ -4179,13 +4203,14 @@ def _cross_tokenizer_on_policy_rollout_loss(
         return torch.zeros((), dtype=param.dtype, device=param.device), 0
 
     prompt_max_length = max(2, int(max_length) - int(max_new_tokens))
-    encoded = candidate_tokenizer(
-        prompts,
-        return_tensors="pt",
-        padding=True,
-        truncation=True,
-        max_length=prompt_max_length,
-    )
+    with _temporary_padding_side(candidate_tokenizer, "left"):
+        encoded = candidate_tokenizer(
+            prompts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=prompt_max_length,
+        )
     encoded = {key: value.to(device) for key, value in encoded.items()}
     pad_id = candidate_tokenizer.pad_token_id
     if pad_id is None:
@@ -4193,14 +4218,15 @@ def _cross_tokenizer_on_policy_rollout_loss(
     was_training = candidate_model.training
     try:
         candidate_model.eval()
-        with torch.no_grad():
-            generated = candidate_model.generate(
-                **encoded,
-                max_new_tokens=int(max_new_tokens),
-                do_sample=False,
-                pad_token_id=pad_id,
-                eos_token_id=candidate_tokenizer.eos_token_id,
-            )
+        with _temporary_padding_side(candidate_tokenizer, "left"):
+            with torch.no_grad():
+                generated = candidate_model.generate(
+                    **encoded,
+                    max_new_tokens=int(max_new_tokens),
+                    do_sample=False,
+                    pad_token_id=pad_id,
+                    eos_token_id=candidate_tokenizer.eos_token_id,
+                )
     finally:
         if was_training:
             candidate_model.train()
@@ -4330,13 +4356,14 @@ def _cross_tokenizer_on_policy_hidden_loss(
         return torch.zeros((), dtype=param.dtype, device=param.device), 0
 
     prompt_max_length = max(2, int(max_length) - int(max_new_tokens))
-    encoded = candidate_tokenizer(
-        prompts,
-        return_tensors="pt",
-        padding=True,
-        truncation=True,
-        max_length=prompt_max_length,
-    )
+    with _temporary_padding_side(candidate_tokenizer, "left"):
+        encoded = candidate_tokenizer(
+            prompts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=prompt_max_length,
+        )
     encoded = {key: value.to(device) for key, value in encoded.items()}
     pad_id = candidate_tokenizer.pad_token_id
     if pad_id is None:
@@ -4344,14 +4371,15 @@ def _cross_tokenizer_on_policy_hidden_loss(
     was_training = candidate_model.training
     try:
         candidate_model.eval()
-        with torch.no_grad():
-            generated = candidate_model.generate(
-                **encoded,
-                max_new_tokens=int(max_new_tokens),
-                do_sample=False,
-                pad_token_id=pad_id,
-                eos_token_id=candidate_tokenizer.eos_token_id,
-            )
+        with _temporary_padding_side(candidate_tokenizer, "left"):
+            with torch.no_grad():
+                generated = candidate_model.generate(
+                    **encoded,
+                    max_new_tokens=int(max_new_tokens),
+                    do_sample=False,
+                    pad_token_id=pad_id,
+                    eos_token_id=candidate_tokenizer.eos_token_id,
+                )
     finally:
         if was_training:
             candidate_model.train()
@@ -4435,6 +4463,19 @@ def _on_policy_prompt_text(text: str, response_loss_mode: str) -> str:
     return text[: int(start)]
 
 
+@contextmanager
+def _temporary_padding_side(tokenizer, padding_side: str):
+    original = getattr(tokenizer, "padding_side", None)
+    if original is None:
+        yield
+        return
+    tokenizer.padding_side = padding_side
+    try:
+        yield
+    finally:
+        tokenizer.padding_side = original
+
+
 def _teacher_generated_lm_texts(
     torch,
     source_model,
@@ -4470,22 +4511,23 @@ def _teacher_generated_lm_texts(
     try:
         for start in range(0, len(prompts), int(batch_size)):
             chunk = prompts[start : start + int(batch_size)]
-            encoded = source_tokenizer(
-                chunk,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-                max_length=prompt_max_length,
-            )
-            encoded = {key: value.to(device) for key, value in encoded.items()}
-            with torch.no_grad():
-                generated = source_model.generate(
-                    **encoded,
-                    max_new_tokens=int(max_new_tokens),
-                    do_sample=False,
-                    pad_token_id=pad_id,
-                    eos_token_id=source_tokenizer.eos_token_id,
+            with _temporary_padding_side(source_tokenizer, "left"):
+                encoded = source_tokenizer(
+                    chunk,
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                    max_length=prompt_max_length,
                 )
+                encoded = {key: value.to(device) for key, value in encoded.items()}
+                with torch.no_grad():
+                    generated = source_model.generate(
+                        **encoded,
+                        max_new_tokens=int(max_new_tokens),
+                        do_sample=False,
+                        pad_token_id=pad_id,
+                        eos_token_id=source_tokenizer.eos_token_id,
+                    )
             for row in generated.detach().cpu():
                 text = source_tokenizer.decode(
                     row.tolist(),
@@ -4535,30 +4577,34 @@ def _cross_tokenizer_stepwise_prefix_kd_loss(
     if pad_id is None:
         pad_id = candidate_tokenizer.eos_token_id
     prompt_max_length = max(2, int(max_length) - int(max_new_tokens))
-    encoded = candidate_tokenizer(
-        prompts,
-        return_tensors="pt",
-        padding=True,
-        truncation=True,
-        max_length=prompt_max_length,
-    )
+    with _temporary_padding_side(candidate_tokenizer, "left"):
+        encoded = candidate_tokenizer(
+            prompts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=prompt_max_length,
+        )
     encoded = {key: value.to(device) for key, value in encoded.items()}
-    prompt_lengths = (
-        encoded["attention_mask"].detach().sum(dim=1).to(dtype=torch.long)
-        if "attention_mask" in encoded
-        else torch.full((int(encoded["input_ids"].shape[0]),), int(encoded["input_ids"].shape[1]), dtype=torch.long, device=device)
+    prompt_width = int(encoded["input_ids"].shape[1])
+    prompt_lengths = torch.full(
+        (int(encoded["input_ids"].shape[0]),),
+        prompt_width,
+        dtype=torch.long,
+        device=device,
     )
     was_training = candidate_model.training
     try:
         candidate_model.eval()
-        with torch.no_grad():
-            generated = candidate_model.generate(
-                **encoded,
-                max_new_tokens=int(max_new_tokens),
-                do_sample=False,
-                pad_token_id=pad_id,
-                eos_token_id=candidate_tokenizer.eos_token_id,
-            )
+        with _temporary_padding_side(candidate_tokenizer, "left"):
+            with torch.no_grad():
+                generated = candidate_model.generate(
+                    **encoded,
+                    max_new_tokens=int(max_new_tokens),
+                    do_sample=False,
+                    pad_token_id=pad_id,
+                    eos_token_id=candidate_tokenizer.eos_token_id,
+                )
     finally:
         if was_training:
             candidate_model.train()
@@ -6347,13 +6393,14 @@ def _cross_tokenizer_block_on_policy_hidden_loss(
         return torch.zeros((), dtype=param.dtype, device=param.device), 0
 
     prompt_max_length = max(2, int(max_length) - int(max_new_tokens))
-    encoded = candidate_tokenizer(
-        prompts,
-        return_tensors="pt",
-        padding=True,
-        truncation=True,
-        max_length=prompt_max_length,
-    )
+    with _temporary_padding_side(candidate_tokenizer, "left"):
+        encoded = candidate_tokenizer(
+            prompts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=prompt_max_length,
+        )
     encoded = {key: value.to(device) for key, value in encoded.items()}
     pad_id = candidate_tokenizer.pad_token_id
     if pad_id is None:
@@ -6361,14 +6408,15 @@ def _cross_tokenizer_block_on_policy_hidden_loss(
     was_training = candidate_model.training
     try:
         candidate_model.eval()
-        with torch.no_grad():
-            generated = candidate_model.generate(
-                **encoded,
-                max_new_tokens=int(max_new_tokens),
-                do_sample=False,
-                pad_token_id=pad_id,
-                eos_token_id=candidate_tokenizer.eos_token_id,
-            )
+        with _temporary_padding_side(candidate_tokenizer, "left"):
+            with torch.no_grad():
+                generated = candidate_model.generate(
+                    **encoded,
+                    max_new_tokens=int(max_new_tokens),
+                    do_sample=False,
+                    pad_token_id=pad_id,
+                    eos_token_id=candidate_tokenizer.eos_token_id,
+                )
     finally:
         if was_training:
             candidate_model.train()
