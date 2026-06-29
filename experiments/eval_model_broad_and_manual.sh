@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MODEL_DIR="${MODEL_DIR:?Set MODEL_DIR to the checkpoint directory to evaluate.}"
+TAG="${TAG:-$(basename "$MODEL_DIR")}"
+RUN_ROOT="${RUN_ROOT:-/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627}"
+REPO_ROOT="${REPO_ROOT:-/home/cereal/model-surgery-lab/neural-forge-src}"
+GPU_UUID="${GPU_UUID:-GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561}"
+DEVICE="${DEVICE:-cuda:0}"
+DTYPE="${DTYPE:-float16}"
+
+cd "$REPO_ROOT"
+source /home/cereal/model-surgery-lab/venv/bin/activate
+
+OUT_DIR="$RUN_ROOT/evals"
+mkdir -p "$OUT_DIR"
+BROAD_JSON="$OUT_DIR/eval_${TAG}_1000x200x250.json"
+MANUAL_JSON="$OUT_DIR/manual_${TAG}.json"
+
+CUDA_VISIBLE_DEVICES="$GPU_UUID" python -m neural_forge.cli hf-eval \
+  "$MODEL_DIR" \
+  "$BROAD_JSON" \
+  --eval-suite "$RUN_ROOT/behavior_suite.json" \
+  --max-behavior-probes 1000 \
+  --max-generation-prompts 200 \
+  --max-choice-probes 250 \
+  --max-text-evals 128 \
+  --max-new-tokens 96 \
+  --device "$DEVICE" \
+  --dtype "$DTYPE"
+
+CUDA_VISIBLE_DEVICES="$GPU_UUID" python - <<PY
+import json
+from pathlib import Path
+
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+model_dir = "$MODEL_DIR"
+out = Path("$MANUAL_JSON")
+prompts = [
+    "Q: What is 6+4? A:",
+    "Write a Python function that adds two numbers.",
+    "Explain one risk when merging two neural models.",
+    "A person hears thunder after seeing lightning. What should they do?",
+    "In model surgery, why is behavior testing better than only checking perplexity?",
+    "Briefly explain tokenizer mismatch in cross-family model merging.",
+    "What should happen before pruning neurons in a merge-first compression pipeline?",
+]
+
+tokenizer = AutoTokenizer.from_pretrained(model_dir, trust_remote_code=True)
+model = AutoModelForCausalLM.from_pretrained(
+    model_dir,
+    torch_dtype=torch.float16 if "$DTYPE" == "float16" else torch.float32,
+    device_map={"": "$DEVICE"},
+    trust_remote_code=True,
+)
+if tokenizer.pad_token_id is None and tokenizer.eos_token_id is not None:
+    tokenizer.pad_token = tokenizer.eos_token
+items = []
+for prompt in prompts:
+    encoded = tokenizer(prompt, return_tensors="pt").to("$DEVICE")
+    with torch.no_grad():
+        generated = model.generate(
+            **encoded,
+            max_new_tokens=96,
+            do_sample=False,
+            pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
+            eos_token_id=tokenizer.eos_token_id,
+        )
+    text = tokenizer.decode(generated[0], skip_special_tokens=True)
+    items.append({"prompt": prompt, "output": text})
+out.write_text(json.dumps({"model": model_dir, "manual_generations": items}, indent=2), encoding="utf-8")
+print(json.dumps({"broad_eval": "$BROAD_JSON", "manual_eval": "$MANUAL_JSON"}, indent=2))
+PY
