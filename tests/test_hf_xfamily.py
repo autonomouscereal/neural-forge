@@ -22,8 +22,10 @@ from neural_forge.hf_recovery import _cross_tokenizer_recovery_loss
 from neural_forge.hf_recovery import _cross_tokenizer_dual_space_kd_loss
 from neural_forge.hf_recovery import _cross_tokenizer_alm_chunk_loss
 from neural_forge.hf_recovery import _cross_tokenizer_focus_span_pairs
+from neural_forge.hf_recovery import _cross_tokenizer_overlap_span_pairs
 from neural_forge.hf_recovery import _cross_tokenizer_sequence_nll_loss
 from neural_forge.hf_recovery import _cross_tokenizer_span_pairs
+from neural_forge.hf_recovery import _cross_tokenizer_span_pairs_for_mode
 from neural_forge.hf_recovery import _entropy_aware_kl_loss
 from neural_forge.hf_recovery import _fit_activation_map
 from neural_forge.hf_recovery import _fit_lm_head_from_hidden_logits
@@ -68,6 +70,7 @@ from neural_forge.hf_recovery import _source_group_delta_state
 from neural_forge.hf_recovery import _source_group_module_output_state
 from neural_forge.hf_recovery import _temporary_padding_side
 from neural_forge.hf_recovery import _tokenizer_first_byte_buckets
+from neural_forge.hf_recovery import _validate_blockwise_learning_rate
 from neural_forge.hf_recovery import _validation_reconstruction_gate
 from neural_forge.hf_recovery import load_calibration_texts
 from neural_forge.hf_tools import TEXT_EVALS
@@ -76,6 +79,10 @@ from neural_forge.hf_tools import _layer_groups_tag
 from neural_forge.hf_tools import _linear_cka
 from neural_forge.hf_tools import _normalize_layer_groups
 from neural_forge.hf_xfamily import _canonical_token
+from neural_forge.hf_xfamily import _chain_stage_promotes
+from neural_forge.hf_xfamily import _lookup_layer_tensor_key
+from neural_forge.hf_xfamily import _lookup_layer_tensor_value
+from neural_forge.hf_xfamily import _parse_chain_stages
 from neural_forge.hf_xfamily import _canonical_token_map
 from neural_forge.hf_xfamily import _assign_donor_to_host
 from neural_forge.hf_xfamily import _activation_similarity_assignment
@@ -100,9 +107,12 @@ from neural_forge.hf_xfamily import _effective_layer_alpha
 from neural_forge.hf_xfamily import _fit_linear_weight_from_activation_rows
 from neural_forge.hf_xfamily import _fit_projected_linear_from_donor_activations
 from neural_forge.hf_xfamily import _hidden_basis_axes_for_layer_tensor
+from neural_forge.hf_xfamily import _truncate_linear_weight_rank
+from neural_forge.hf_xfamily import _truncate_linear_weight_delta_rank
 from neural_forge.hf_xfamily import _initialize_token_weights_from_donor
 from neural_forge.hf_xfamily import _initialize_non_layer_tensors_from_donor
 from neural_forge.hf_xfamily import _mlp_spec
+from neural_forge.hf_xfamily import _neutralized_unmatched_operator_tensor
 from neural_forge.hf_xfamily import _proportional_index
 from neural_forge.hf_xfamily import _project_token_weight_rows
 from neural_forge.hf_xfamily import _resize_attention_tensor_to_shape
@@ -447,6 +457,18 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.6",
             "--activation-fit-ridge",
             "0.2",
+            "--activation-fit-rank",
+            "17",
+            "--activation-fit-rank-mode",
+            "delta",
+            "--activation-fit-method",
+            "lrc",
+            "--activation-fit-factor-steps",
+            "9",
+            "--activation-fit-factor-lr",
+            "0.07",
+            "--activation-fit-factor-l2",
+            "0.005",
             "--activation-fit-gate",
             "validation",
             "--activation-fit-validation-fraction",
@@ -875,6 +897,12 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.activation_fit_max_rows == 88
     assert donor_init_args.activation_fit_alpha == pytest.approx(0.6)
     assert donor_init_args.activation_fit_ridge == pytest.approx(0.2)
+    assert donor_init_args.activation_fit_rank == 17
+    assert donor_init_args.activation_fit_rank_mode == "delta"
+    assert donor_init_args.activation_fit_method == "lrc"
+    assert donor_init_args.activation_fit_factor_steps == 9
+    assert donor_init_args.activation_fit_factor_lr == pytest.approx(0.07)
+    assert donor_init_args.activation_fit_factor_l2 == pytest.approx(0.005)
     assert donor_init_args.activation_fit_gate == "validation"
     assert donor_init_args.activation_fit_validation_fraction == pytest.approx(0.25)
     assert donor_init_args.activation_fit_min_validation_rows == 12
@@ -2117,6 +2145,35 @@ def test_fit_linear_weight_from_activation_rows_recovers_mapping() -> None:
     assert fitted.flatten().tolist() == pytest.approx(expected_weight.flatten().tolist())
 
 
+def test_truncate_linear_weight_rank_limits_effective_rank() -> None:
+    torch = pytest.importorskip("torch")
+
+    weight = torch.diag(torch.tensor([5.0, 4.0, 3.0, 2.0]))
+    truncated, report = _truncate_linear_weight_rank(torch, weight, rank=2)
+
+    assert report["rank_truncated"] is True
+    assert report["effective_rank"] == 2
+    assert report["rank_energy_ratio"] == pytest.approx((25.0 + 16.0) / (25.0 + 16.0 + 9.0 + 4.0))
+    assert int(torch.linalg.matrix_rank(truncated).item()) == 2
+    assert torch.diag(truncated).tolist() == pytest.approx([5.0, 4.0, 0.0, 0.0], abs=1e-5)
+
+
+def test_truncate_linear_weight_delta_rank_keeps_reference_full_rank() -> None:
+    torch = pytest.importorskip("torch")
+
+    reference = torch.eye(4)
+    delta = torch.diag(torch.tensor([5.0, 4.0, 3.0, 2.0]))
+    fitted = reference + delta
+
+    truncated, report = _truncate_linear_weight_delta_rank(torch, fitted, reference, rank=2)
+
+    assert report["rank_mode"] == "delta"
+    assert report["delta_rank_truncated"] is True
+    assert report["effective_rank"] == 2
+    assert int(torch.linalg.matrix_rank(truncated - reference).item()) == 2
+    assert torch.diag(truncated).tolist() == pytest.approx([6.0, 5.0, 1.0, 1.0], abs=1e-5)
+
+
 def test_fit_projected_linear_from_donor_activations_reports_validation_metrics() -> None:
     torch = pytest.importorskip("torch")
     inputs = torch.tensor(
@@ -2171,6 +2228,62 @@ def test_fit_projected_linear_from_donor_activations_reports_validation_metrics(
     assert report["train_rows"] == 8
     assert report["validation_fit_mse"] < report["validation_reference_mse"]
     assert report["validation_relative_improvement"] > 0.0
+
+
+def test_fit_projected_linear_from_donor_activations_lrc_materializes_delta() -> None:
+    torch = pytest.importorskip("torch")
+    generator = torch.Generator().manual_seed(51)
+    inputs = torch.randn(48, 4, generator=generator)
+    reference = torch.eye(3, 4, dtype=torch.float32) * 0.05
+    low_rank_delta = torch.tensor(
+        [[0.30, -0.10, 0.20, 0.00], [0.15, -0.05, 0.10, 0.00], [-0.30, 0.10, -0.20, 0.00]],
+        dtype=torch.float32,
+    )
+    target_weight = reference + low_rank_delta
+    activation_profile = {
+        "linear_fit_rows": {
+            0: {
+                "mlp.down_proj.weight": {
+                    "input": inputs,
+                    "output": inputs.matmul(target_weight.t()),
+                }
+            }
+        }
+    }
+
+    result = _fit_projected_linear_from_donor_activations(
+        torch,
+        activation_profile,
+        "mlp.down_proj.weight",
+        tuple(reference.shape),
+        _Obj(num_attention_heads=1, num_key_value_heads=1),
+        _Obj(num_attention_heads=1, num_key_value_heads=1),
+        donor_layer_idx=0,
+        donor_layer_group=[0],
+        ridge=0.0,
+        rank=1,
+        method="lrc",
+        alpha=1.0,
+        factor_steps=20,
+        factor_lr=0.05,
+        fold_mode="mean",
+        reference_weight=reference,
+        validation_fraction=0.25,
+        min_validation_rows=8,
+        min_relative_improvement=0.50,
+        return_report=True,
+    )
+
+    report = result["report"]
+    assert report["method"] == "lrc"
+    assert report["accepted"] is True
+    assert report["effective_lrc_rank"] == 1
+    assert report["fit_gate"]["mode"] == "validation"
+    assert int(torch.linalg.matrix_rank((result["weight"] - reference).to(torch.float32))) <= 1
+    before = inputs.matmul(reference.t())
+    after = inputs.matmul(result["weight"].to(torch.float32).t())
+    target = inputs.matmul(target_weight.t())
+    assert torch.mean((after - target) ** 2) < torch.mean((before - target) ** 2) * 0.1
 
 
 def test_fit_projected_linear_from_donor_activations_rejects_no_validation_gain() -> None:
@@ -2919,6 +3032,39 @@ def test_recent_token_unlikelihood_penalizes_context_repeats() -> None:
     assert float(loss) > 1.0
 
 
+def test_recent_token_unlikelihood_can_penalize_on_policy_label_repeats() -> None:
+    torch = pytest.importorskip("torch")
+    logits = torch.zeros((1, 3, 5), dtype=torch.float32)
+    logits[:, :, 2] = 8.0
+    input_ids = torch.tensor([[2, 2, 2, 2]])
+    labels = input_ids[:, 1:]
+    mask = torch.ones_like(labels, dtype=torch.bool)
+
+    teacher_forced_loss = _recent_token_unlikelihood_loss(torch, logits, input_ids, labels, mask, window=2)
+    on_policy_loss = _recent_token_unlikelihood_loss(
+        torch,
+        logits,
+        input_ids,
+        labels,
+        mask,
+        window=2,
+        exclude_current_label=False,
+    )
+
+    assert float(teacher_forced_loss) == pytest.approx(0.0)
+    assert float(on_policy_loss) > 1.0
+
+
+def test_validate_blockwise_learning_rate_allows_structural_zero_step() -> None:
+    _validate_blockwise_learning_rate(0.0, 0)
+    _validate_blockwise_learning_rate(1e-8, 4)
+
+    with pytest.raises(ValueError, match="positive"):
+        _validate_blockwise_learning_rate(0.0, 4)
+    with pytest.raises(ValueError, match="non-negative"):
+        _validate_blockwise_learning_rate(-1e-8, 0)
+
+
 def test_stratified_anchor_selection_prefers_wordlike_spread() -> None:
     tokens = ["!", ",", "a", "in", "cat", "merge", "neuron", "activation", "compression", "zz"]
 
@@ -3207,6 +3353,116 @@ def test_cross_tokenizer_span_pairs_match_exact_offsets_and_tokens() -> None:
     )
 
     assert activation_pairs.tolist() == [[0, 1, 1], [0, 2, 2]]
+
+
+def test_layer_tensor_alias_lookup_maps_lfm_mlp_names_to_qwen_suffixes() -> None:
+    index = {
+        (3, "mlp.gate_proj.weight"): "model.layers.3.mlp.gate_proj.weight",
+        (3, "mlp.up_proj.weight"): "model.layers.3.mlp.up_proj.weight",
+        (3, "self_attn.o_proj.weight"): "model.layers.3.self_attn.o_proj.weight",
+        (3, "self_attn.q_norm.weight"): "model.layers.3.self_attn.q_norm.weight",
+        (3, "self_attn.k_norm.weight"): "model.layers.3.self_attn.k_norm.weight",
+    }
+    folded_state = {
+        "mlp.gate_proj.weight": "gate",
+        "mlp.down_proj.weight": "down",
+        "input_layernorm.weight": "norm",
+        "self_attn.o_proj.weight": "attn_out",
+        "self_attn.q_norm.weight": "q_norm",
+        "self_attn.k_norm.weight": "k_norm",
+    }
+
+    assert _lookup_layer_tensor_key(index, 3, "feed_forward.w1.weight") == "model.layers.3.mlp.gate_proj.weight"
+    assert _lookup_layer_tensor_key(index, 3, "feed_forward.w3.weight") == "model.layers.3.mlp.up_proj.weight"
+    assert _lookup_layer_tensor_key(index, 3, "operator.out_proj.weight") == "model.layers.3.self_attn.o_proj.weight"
+    assert _lookup_layer_tensor_key(index, 3, "self_attn.out_proj.weight") == "model.layers.3.self_attn.o_proj.weight"
+    assert _lookup_layer_tensor_key(index, 3, "self_attn.q_layernorm.weight") == "model.layers.3.self_attn.q_norm.weight"
+    assert _lookup_layer_tensor_key(index, 3, "self_attn.k_layernorm.weight") == "model.layers.3.self_attn.k_norm.weight"
+    assert _lookup_layer_tensor_value(folded_state, "feed_forward.w1.weight") == "gate"
+    assert _lookup_layer_tensor_value(folded_state, "feed_forward.w2.weight") == "down"
+    assert _lookup_layer_tensor_value(folded_state, "operator_norm.weight") == "norm"
+    assert _lookup_layer_tensor_value(folded_state, "self_attn.out_proj.weight") == "attn_out"
+    assert _lookup_layer_tensor_value(folded_state, "self_attn.q_layernorm.weight") == "q_norm"
+    assert _lookup_layer_tensor_value(folded_state, "self_attn.k_layernorm.weight") == "k_norm"
+
+
+def test_neutralized_unmatched_operator_tensor_zeroes_lfm_conv_output_only() -> None:
+    torch = pytest.importorskip("torch")
+    conv_out = torch.ones(4, 4)
+    conv_in = torch.ones(12, 4)
+
+    neutralized = _neutralized_unmatched_operator_tensor(torch, conv_out, "conv.out_proj.weight")
+
+    assert neutralized is not None
+    assert torch.count_nonzero(neutralized).item() == 0
+    assert _neutralized_unmatched_operator_tensor(torch, conv_in, "conv.in_proj.weight") is None
+    assert _neutralized_unmatched_operator_tensor(torch, conv_out, "feed_forward.w2.weight") is None
+
+
+def test_cross_tokenizer_overlap_span_pairs_match_split_tokens_by_offsets() -> None:
+    torch = pytest.importorskip("torch")
+    source_batch = {
+        "input_ids": torch.tensor([[0, 10, 11, 12, 0]]),
+        "attention_mask": torch.tensor([[1, 1, 1, 1, 0]]),
+        "offset_mapping": torch.tensor([[[0, 0], [0, 2], [3, 4], [4, 6], [0, 0]]]),
+    }
+    candidate_batch = {
+        "input_ids": torch.tensor([[0, 20, 21, 22, 0]]),
+        "attention_mask": torch.tensor([[1, 1, 1, 1, 0]]),
+        "offset_mapping": torch.tensor([[[0, 0], [0, 1], [1, 2], [3, 6], [0, 0]]]),
+    }
+
+    pairs = _cross_tokenizer_overlap_span_pairs(
+        torch,
+        source_batch,
+        candidate_batch,
+        max_pairs=8,
+        shift_positions=True,
+    )
+
+    assert pairs.tolist() == [[0, 0, 0], [0, 1, 0], [0, 2, 2]]
+
+
+def test_cross_tokenizer_span_pairs_for_mode_can_union_exact_and_overlap() -> None:
+    torch = pytest.importorskip("torch")
+    source_tokenizer = _Tokenizer(["<eos>", "ab", "cd"])
+    candidate_tokenizer = _Tokenizer(["<eos>", "ab", "c", "d"])
+    source_batch = {
+        "input_ids": torch.tensor([[0, 1, 2, 0]]),
+        "attention_mask": torch.tensor([[1, 1, 1, 0]]),
+        "offset_mapping": torch.tensor([[[0, 0], [0, 2], [3, 5], [0, 0]]]),
+    }
+    candidate_batch = {
+        "input_ids": torch.tensor([[0, 1, 2, 3]]),
+        "attention_mask": torch.tensor([[1, 1, 1, 1]]),
+        "offset_mapping": torch.tensor([[[0, 0], [0, 2], [3, 4], [4, 5]]]),
+    }
+
+    exact = _cross_tokenizer_span_pairs_for_mode(
+        torch,
+        source_tokenizer,
+        candidate_tokenizer,
+        source_batch,
+        candidate_batch,
+        _canonical_token,
+        max_pairs=8,
+        shift_positions=False,
+        mode="exact",
+    )
+    combined = _cross_tokenizer_span_pairs_for_mode(
+        torch,
+        source_tokenizer,
+        candidate_tokenizer,
+        source_batch,
+        candidate_batch,
+        _canonical_token,
+        max_pairs=8,
+        shift_positions=False,
+        mode="both",
+    )
+
+    assert exact.tolist() == [[0, 1, 1]]
+    assert combined.tolist() == [[0, 1, 1], [0, 2, 2], [0, 3, 2]]
 
 
 def test_focus_char_spans_select_numeric_response() -> None:
@@ -4355,6 +4611,18 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "0.5",
             "--activation-fit-ridge",
             "0.3",
+            "--activation-fit-rank",
+            "12",
+            "--activation-fit-rank-mode",
+            "delta",
+            "--activation-fit-method",
+            "lrc",
+            "--activation-fit-factor-steps",
+            "13",
+            "--activation-fit-factor-lr",
+            "0.08",
+            "--activation-fit-factor-l2",
+            "0.006",
             "--activation-feature-mode",
             "subspace",
             "--activation-subspace-rank",
@@ -4404,6 +4672,12 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "activation_fit_max_rows": 44,
         "activation_fit_alpha": 0.5,
         "activation_fit_ridge": 0.3,
+        "activation_fit_rank": 12,
+        "activation_fit_rank_mode": "delta",
+        "activation_fit_method": "lrc",
+        "activation_fit_factor_steps": 13,
+        "activation_fit_factor_lr": 0.08,
+        "activation_fit_factor_l2": 0.006,
         "activation_fit_gate": "validation",
         "activation_fit_validation_fraction": 0.20,
         "activation_fit_min_validation_rows": 8,
@@ -4415,6 +4689,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "activation_calibration_texts": ["activation text"],
         "activation_max_length": 64,
         "activation_device": "cpu",
+        "neutralize_unmatched_operators": False,
         "torch_dtype": "float32",
         "trust_remote_code": True,
     }
@@ -5412,6 +5687,8 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "222",
             "--span-max-pairs",
             "77",
+            "--span-pair-mode",
+            "both",
             "--donor-layer-fold-mode",
             "average",
             "--donor-layer-group-strategy",
@@ -5462,14 +5739,34 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "0.09",
             "--teacher-generate-max-new-tokens",
             "23",
+            "--alm-kd-weight",
+            "0.08",
+            "--alm-max-chunks",
+            "12",
+            "--alm-min-chars",
+            "3",
             "--projected-vocab-kd-weight",
             "0.19",
+            "--focused-block-hidden-kd-weight",
+            "0.16",
+            "--focused-projected-vocab-kd-weight",
+            "0.14",
+            "--focused-lm-weight",
+            "0.12",
+            "--token-focus",
+            "numbers",
             "--projected-vocab-kd-mode",
             "both",
             "--byte-kd-weight",
             "0.11",
             "--byte-hidden-kd-weight",
             "0.07",
+            "--block-io-kd-weight",
+            "0.21",
+            "--block-io-ridge",
+            "0.004",
+            "--block-io-loss",
+            "cosine",
             "--train-output-head-with-kd",
             "--untie-output-head-for-kd",
             "--allow-tied-output-head-training",
@@ -5551,6 +5848,7 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "pre_reconstruction_max_cosine_drop": 0.04,
         "max_anchors": 222,
         "span_max_pairs": 77,
+        "span_pair_mode": "both",
         "donor_layer_fold_mode": "average",
         "donor_layer_group_strategy": "activation-energy",
         "layer_limit": 3,
@@ -5576,10 +5874,20 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "teacher_generate_projected_vocab_kd_weight": 0.15,
         "teacher_generate_byte_kd_weight": 0.09,
         "teacher_generate_max_new_tokens": 23,
+        "alm_kd_weight": 0.08,
+        "alm_max_chunks": 12,
+        "alm_min_chars": 3,
         "projected_vocab_kd_weight": 0.19,
+        "focused_block_hidden_kd_weight": 0.16,
+        "focused_projected_vocab_kd_weight": 0.14,
+        "focused_lm_weight": 0.12,
+        "token_focus": "numbers",
         "projected_vocab_kd_mode": "both",
         "byte_kd_weight": 0.11,
         "byte_hidden_kd_weight": 0.07,
+        "block_io_kd_weight": 0.21,
+        "block_io_ridge": 0.004,
+        "block_io_loss": "cosine",
         "train_output_head_with_kd": True,
         "untie_output_head_for_kd": True,
         "allow_tied_output_head_training": True,
@@ -5602,6 +5910,431 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "layer_behavior_eval_interval": 2,
         "layer_checkpoint_interval": 5,
     }
+
+
+def test_chain_stage_promotion_requires_gate_and_behavior_rank() -> None:
+    incumbent = {
+        "tag": "anchor",
+        "shrink": 0.0,
+        "metrics": {
+            "behavior_pass_rate": 0.80,
+            "choice_accuracy": 0.60,
+            "generation_health_rate": 1.0,
+            "perplexity_mean": 100.0,
+        },
+    }
+    better = {
+        "tag": "block",
+        "shrink": 0.0,
+        "metrics": {
+            "behavior_pass_rate": 0.81,
+            "choice_accuracy": 0.60,
+            "generation_health_rate": 1.0,
+            "perplexity_mean": 120.0,
+        },
+    }
+    worse = {
+        "tag": "alm",
+        "shrink": 0.0,
+        "metrics": {
+            "behavior_pass_rate": 0.79,
+            "choice_accuracy": 0.70,
+            "generation_health_rate": 1.0,
+            "perplexity_mean": 50.0,
+        },
+    }
+
+    assert _chain_stage_promotes(incumbent, better, {"passed": True}, "gate-and-rank") is True
+    assert _chain_stage_promotes(incumbent, worse, {"passed": True}, "gate-and-rank") is False
+    assert _chain_stage_promotes(incumbent, better, {"passed": False}, "gate-and-rank") is False
+    assert _chain_stage_promotes(incumbent, worse, {"passed": True}, "gate-only") is True
+
+
+def test_parse_chain_stages_rejects_unknown_stage() -> None:
+    assert _parse_chain_stages("block,alm") == ["block", "alm"]
+    assert _parse_chain_stages(["init", "block"]) == ["init", "block"]
+
+    with pytest.raises(ValueError, match="Unsupported chain stages"):
+        _parse_chain_stages("block,banana")
+
+
+def test_chain_anchor_orchestrator_preserves_incumbent_on_failed_stage(monkeypatch, tmp_path) -> None:
+    import neural_forge.hf_recovery as hf_recovery
+    import neural_forge.hf_xfamily as hf_xfamily
+
+    eval_calls = []
+
+    def fake_eval(model_id_or_path, output_file, **kwargs):
+        eval_calls.append(str(model_id_or_path))
+        report = {
+            "model": str(model_id_or_path),
+            "param_count": 10,
+            "perplexity": {"mean": 100.0},
+            "choice_accuracy": {"accuracy": 0.5},
+            "generations": [],
+            "behavior_suite": {
+                "pass_rate": 0.80 if len(eval_calls) == 1 else 0.70,
+                "correct": 8 if len(eval_calls) == 1 else 7,
+                "total": 10,
+                "items": [],
+            },
+        }
+        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_file).write_text("{}", encoding="utf-8")
+        return report
+
+    def fake_gate(baseline_report, candidate_report, output_file=None, **kwargs):
+        passed = len(eval_calls) == 1
+        gate = {
+            "passed": passed,
+            "candidate": {
+                "param_count": 10,
+                "perplexity_mean": 100.0,
+                "choice_accuracy": 0.5,
+                "generation_health_rate": 1.0,
+                "behavior_pass_rate": 0.80 if passed else 0.70,
+            },
+        }
+        if output_file is not None:
+            Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+            Path(output_file).write_text("{}", encoding="utf-8")
+        return gate
+
+    def fake_block(**kwargs):
+        Path(kwargs["output_dir"]).mkdir(parents=True, exist_ok=True)
+        return {"operation": "fake_block"}
+
+    monkeypatch.setattr(hf_xfamily, "evaluate_text_model", fake_eval)
+    monkeypatch.setattr(hf_xfamily, "gate_text_report", fake_gate)
+    monkeypatch.setattr(hf_recovery, "blockwise_reconstruct_cross_tokenizer_causal_lm", fake_block)
+
+    summary = hf_xfamily.chain_anchor_staged_compress(
+        "donor",
+        "anchor",
+        tmp_path,
+        stages="block",
+        promote_policy="gate-and-rank",
+        device="cpu",
+    )
+
+    assert summary["best_model_dir"] == "anchor"
+    assert summary["promoted_stage_count"] == 0
+    assert summary["stage_records"][0]["promoted"] is False
+
+
+def test_chain_anchor_init_stage_forwards_activation_fit_flags(monkeypatch, tmp_path) -> None:
+    import neural_forge.hf_xfamily as hf_xfamily
+
+    captured = {}
+
+    def fake_eval(model_id_or_path, output_file, **kwargs):
+        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_file).write_text("{}", encoding="utf-8")
+        return {
+            "model": str(model_id_or_path),
+            "param_count": 10,
+            "perplexity": {"mean": 100.0},
+            "choice_accuracy": {"accuracy": 0.5},
+            "generations": [],
+            "behavior_suite": {"pass_rate": 0.8, "correct": 8, "total": 10, "items": []},
+        }
+
+    def fake_gate(baseline_report, candidate_report, output_file=None, **kwargs):
+        if output_file is not None:
+            Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+            Path(output_file).write_text("{}", encoding="utf-8")
+        return {
+            "passed": True,
+            "candidate": {
+                "param_count": 10,
+                "perplexity_mean": 100.0,
+                "choice_accuracy": 0.5,
+                "generation_health_rate": 1.0,
+                "behavior_pass_rate": 0.8,
+            },
+        }
+
+    def fake_init(**kwargs):
+        captured.update(kwargs)
+        Path(kwargs["output_dir"]).mkdir(parents=True, exist_ok=True)
+        return {"operation": "fake_init"}
+
+    monkeypatch.setattr(hf_xfamily, "evaluate_text_model", fake_eval)
+    monkeypatch.setattr(hf_xfamily, "gate_text_report", fake_gate)
+    monkeypatch.setattr(hf_xfamily, "donor_projected_init", fake_init)
+
+    summary = hf_xfamily.chain_anchor_staged_compress(
+        "donor",
+        "anchor",
+        tmp_path,
+        stages="init",
+        calibration_texts=["sample"],
+        init_fold_mode="transport",
+        init_hidden_basis_mode="activation-pca",
+        init_hidden_basis_scope="layer",
+        init_hidden_basis_max_rows=4096,
+        init_hidden_basis_preprocess="uncentered-rowrms",
+        init_activation_fold_assignment="similarity",
+        init_transport_backend="sinkhorn",
+        init_donor_layer_fold_mode="fold",
+        init_donor_layer_group_strategy="activation-energy",
+        init_attention_fold_mode="activation-coupled",
+        init_attention_head_dim_transport="qk-vo",
+        init_token_init_mode="donor-tokenized-weighted",
+        init_projection_scale="target-rms",
+        init_projection_blend_alpha=0.7,
+        init_consumer_hidden_reduction="sqrt-sum",
+        init_activation_fit_linears=True,
+        init_activation_fit_target="mlp-output",
+        init_activation_fit_max_rows=1024,
+        init_activation_fit_alpha=0.6,
+        init_activation_fit_ridge=0.03,
+        init_activation_fit_rank=64,
+        init_activation_fit_rank_mode="delta",
+        init_activation_fit_method="lrc",
+        init_activation_fit_factor_steps=11,
+        init_activation_fit_factor_lr=0.04,
+        init_activation_fit_factor_l2=0.002,
+        init_activation_fit_gate="none",
+        init_activation_fit_validation_fraction=0.15,
+        init_activation_fit_min_validation_rows=4,
+        init_activation_fit_min_relative_improvement=0.02,
+        init_activation_fit_max_cosine_drop=0.04,
+        init_activation_feature_mode="covariance",
+        init_activation_subspace_rank=12,
+        init_activation_max_length=160,
+        device="cpu",
+    )
+
+    assert summary["stage_count"] == 1
+    assert captured["target_config_model"] == "anchor"
+    assert captured["target_base_model"] == "anchor"
+    assert captured["donor_model"] == "donor"
+    assert captured["activation_calibration_texts"] == ["sample"]
+    assert captured["fold_mode"] == "transport"
+    assert captured["hidden_basis_mode"] == "activation-pca"
+    assert captured["hidden_basis_scope"] == "layer"
+    assert captured["hidden_basis_max_rows"] == 4096
+    assert captured["hidden_basis_preprocess"] == "uncentered-rowrms"
+    assert captured["activation_fold_assignment"] == "similarity"
+    assert captured["transport_backend"] == "sinkhorn"
+    assert captured["donor_layer_group_strategy"] == "activation-energy"
+    assert captured["attention_fold_mode"] == "activation-coupled"
+    assert captured["attention_head_dim_transport"] == "qk-vo"
+    assert captured["token_init_mode"] == "donor-tokenized-weighted"
+    assert captured["projection_scale"] == "target-rms"
+    assert captured["projection_blend_alpha"] == 0.7
+    assert captured["consumer_hidden_reduction"] == "sqrt-sum"
+    assert captured["activation_fit_linears"] is True
+    assert captured["activation_fit_target"] == "mlp-output"
+    assert captured["activation_fit_max_rows"] == 1024
+    assert captured["activation_fit_alpha"] == 0.6
+    assert captured["activation_fit_ridge"] == 0.03
+    assert captured["activation_fit_rank"] == 64
+    assert captured["activation_fit_rank_mode"] == "delta"
+    assert captured["activation_fit_method"] == "lrc"
+    assert captured["activation_fit_factor_steps"] == 11
+    assert captured["activation_fit_factor_lr"] == 0.04
+    assert captured["activation_fit_factor_l2"] == 0.002
+    assert captured["activation_fit_gate"] == "none"
+    assert captured["activation_fit_validation_fraction"] == 0.15
+    assert captured["activation_fit_min_validation_rows"] == 4
+    assert captured["activation_fit_min_relative_improvement"] == 0.02
+    assert captured["activation_fit_max_cosine_drop"] == 0.04
+    assert captured["activation_feature_mode"] == "covariance"
+    assert captured["activation_subspace_rank"] == 12
+    assert captured["activation_max_length"] == 160
+
+
+def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
+    import neural_forge.cli as cli
+    import neural_forge.hf_xfamily as hf_xfamily
+
+    captured = {}
+
+    def fake_chain(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(hf_xfamily, "chain_anchor_staged_compress", fake_chain)
+    monkeypatch.setattr(cli, "_load_recovery_calibration_texts", lambda path, max_texts: ["chain text"])
+    args = build_parser().parse_args(
+        [
+            "hf-xfamily-chain-anchor-compress",
+            "donor",
+            "anchor",
+            "out",
+            "--stages",
+            "block,alm",
+            "--eval-suite",
+            "suite.json",
+            "--max-behavior-probes",
+            "200",
+            "--max-generation-prompts",
+            "80",
+            "--stage-max-behavior-drop",
+            "0.02",
+            "--promote-policy",
+            "gate-only",
+            "--init-fold-mode",
+            "transport",
+            "--init-hidden-basis-mode",
+            "activation-pca",
+            "--init-hidden-basis-scope",
+            "layer",
+            "--init-hidden-basis-max-rows",
+            "4096",
+            "--init-hidden-basis-preprocess",
+            "uncentered-rowrms",
+            "--init-activation-fold-assignment",
+            "similarity",
+            "--init-transport-backend",
+            "sinkhorn",
+            "--init-donor-layer-group-strategy",
+            "activation-energy",
+            "--init-attention-fold-mode",
+            "activation-coupled",
+            "--init-attention-head-dim-transport",
+            "qk-vo",
+            "--init-token-init-mode",
+            "donor-tokenized-weighted",
+            "--init-projection-scale",
+            "target-rms",
+            "--init-projection-blend-alpha",
+            "0.75",
+            "--init-consumer-hidden-reduction",
+            "sqrt-sum",
+            "--init-activation-fit-linears",
+            "--init-activation-fit-target",
+            "mlp-output",
+            "--init-activation-fit-max-rows",
+            "1024",
+            "--init-activation-fit-alpha",
+            "0.6",
+            "--init-activation-fit-ridge",
+            "0.03",
+            "--init-activation-fit-rank",
+            "64",
+            "--init-activation-fit-rank-mode",
+            "delta",
+            "--init-activation-fit-method",
+            "lrc",
+            "--init-activation-fit-factor-steps",
+            "17",
+            "--init-activation-fit-factor-lr",
+            "0.05",
+            "--init-activation-fit-factor-l2",
+            "0.003",
+            "--init-activation-fit-gate",
+            "none",
+            "--init-activation-fit-validation-fraction",
+            "0.15",
+            "--init-activation-fit-min-validation-rows",
+            "4",
+            "--init-activation-fit-min-relative-improvement",
+            "0.02",
+            "--init-activation-fit-max-cosine-drop",
+            "0.04",
+            "--init-activation-feature-mode",
+            "covariance",
+            "--init-activation-subspace-rank",
+            "12",
+            "--init-activation-max-length",
+            "160",
+            "--block-steps-per-layer",
+            "6",
+            "--block-hidden-metric",
+            "projected-geometry",
+            "--block-residual-magnitude-compensation",
+            "lowrank-pre",
+            "--block-residual-compensation-alpha",
+            "0.005",
+            "--block-pre-reconstruction-target",
+            "block-interface",
+            "--block-donor-layer-fold-mode",
+            "average",
+            "--block-donor-layer-group-strategy",
+            "depth",
+            "--block-module-output-kd-weight",
+            "0.03",
+            "--block-save-best-layer-behavior",
+            "--alm-steps",
+            "40",
+            "--alm-kd-weight",
+            "0.07",
+            "--alm-save-best-behavior",
+            "--dtype",
+            "bfloat16",
+            "--candidate-dtype",
+            "float32",
+            "--device",
+            "cpu",
+            "--calibration-file",
+            "calib.jsonl",
+            "--max-calibration-texts",
+            "5",
+        ]
+    )
+    result = args.func(args)
+
+    assert result == {"ok": True}
+    assert captured["source_model"] == "donor"
+    assert captured["anchor_model"] == "anchor"
+    assert captured["stages"] == "block,alm"
+    assert captured["calibration_texts"] == ["chain text"]
+    assert captured["eval_suite"] == "suite.json"
+    assert captured["max_behavior_probes"] == 200
+    assert captured["max_generation_prompts"] == 80
+    assert captured["stage_max_behavior_drop"] == 0.02
+    assert captured["promote_policy"] == "gate-only"
+    assert captured["init_fold_mode"] == "transport"
+    assert captured["init_hidden_basis_mode"] == "activation-pca"
+    assert captured["init_hidden_basis_scope"] == "layer"
+    assert captured["init_hidden_basis_max_rows"] == 4096
+    assert captured["init_hidden_basis_preprocess"] == "uncentered-rowrms"
+    assert captured["init_activation_fold_assignment"] == "similarity"
+    assert captured["init_transport_backend"] == "sinkhorn"
+    assert captured["init_donor_layer_group_strategy"] == "activation-energy"
+    assert captured["init_attention_fold_mode"] == "activation-coupled"
+    assert captured["init_attention_head_dim_transport"] == "qk-vo"
+    assert captured["init_token_init_mode"] == "donor-tokenized-weighted"
+    assert captured["init_projection_scale"] == "target-rms"
+    assert captured["init_projection_blend_alpha"] == 0.75
+    assert captured["init_consumer_hidden_reduction"] == "sqrt-sum"
+    assert captured["init_activation_fit_linears"] is True
+    assert captured["init_activation_fit_target"] == "mlp-output"
+    assert captured["init_activation_fit_max_rows"] == 1024
+    assert captured["init_activation_fit_alpha"] == 0.6
+    assert captured["init_activation_fit_ridge"] == 0.03
+    assert captured["init_activation_fit_rank"] == 64
+    assert captured["init_activation_fit_rank_mode"] == "delta"
+    assert captured["init_activation_fit_method"] == "lrc"
+    assert captured["init_activation_fit_factor_steps"] == 17
+    assert captured["init_activation_fit_factor_lr"] == 0.05
+    assert captured["init_activation_fit_factor_l2"] == 0.003
+    assert captured["init_activation_fit_gate"] == "none"
+    assert captured["init_activation_fit_validation_fraction"] == 0.15
+    assert captured["init_activation_fit_min_validation_rows"] == 4
+    assert captured["init_activation_fit_min_relative_improvement"] == 0.02
+    assert captured["init_activation_fit_max_cosine_drop"] == 0.04
+    assert captured["init_activation_feature_mode"] == "covariance"
+    assert captured["init_activation_subspace_rank"] == 12
+    assert captured["init_activation_max_length"] == 160
+    assert captured["block_steps_per_layer"] == 6
+    assert captured["block_hidden_metric"] == "projected-geometry"
+    assert captured["block_residual_magnitude_compensation"] == "lowrank-pre"
+    assert captured["block_residual_compensation_alpha"] == 0.005
+    assert captured["block_pre_reconstruction_target"] == "block-interface"
+    assert captured["block_donor_layer_fold_mode"] == "average"
+    assert captured["block_donor_layer_group_strategy"] == "depth"
+    assert captured["block_module_output_kd_weight"] == 0.03
+    assert captured["block_save_best_layer_behavior"] is True
+    assert captured["alm_steps"] == 40
+    assert captured["alm_kd_weight"] == 0.07
+    assert captured["alm_save_best_behavior"] is True
+    assert captured["torch_dtype"] == "bfloat16"
+    assert captured["candidate_torch_dtype"] == "float32"
+    assert captured["device"] == "cpu"
 
 
 def test_xfamily_mlp_merge_handler_passes_activation_flags(monkeypatch) -> None:

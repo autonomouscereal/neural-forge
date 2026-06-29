@@ -270,6 +270,12 @@ def donor_projected_init(
     activation_fit_max_rows: int = 0,
     activation_fit_alpha: float = 1.0,
     activation_fit_ridge: float = 1e-1,
+    activation_fit_rank: int = 0,
+    activation_fit_rank_mode: str = "absolute",
+    activation_fit_method: str = "ridge",
+    activation_fit_factor_steps: int = 0,
+    activation_fit_factor_lr: float = 3e-2,
+    activation_fit_factor_l2: float = 0.0,
     activation_fit_gate: str = "validation",
     activation_fit_validation_fraction: float = 0.20,
     activation_fit_min_validation_rows: int = 8,
@@ -281,6 +287,7 @@ def donor_projected_init(
     activation_calibration_texts: list[str] | None = None,
     activation_max_length: int = 128,
     activation_device: str = "cuda:0",
+    neutralize_unmatched_operators: bool = False,
     torch_dtype: str = "float16",
     trust_remote_code: bool = False,
 ) -> dict[str, Any]:
@@ -335,6 +342,18 @@ def donor_projected_init(
         raise ValueError("activation_fit_max_rows must be non-negative.")
     if activation_fit_ridge < 0:
         raise ValueError("activation_fit_ridge must be non-negative.")
+    if activation_fit_rank < 0:
+        raise ValueError("activation_fit_rank must be non-negative.")
+    if activation_fit_rank_mode not in {"absolute", "delta"}:
+        raise ValueError("activation_fit_rank_mode must be absolute or delta.")
+    if activation_fit_method not in {"ridge", "lrc"}:
+        raise ValueError("activation_fit_method must be ridge or lrc.")
+    if activation_fit_factor_steps < 0:
+        raise ValueError("activation_fit_factor_steps must be non-negative.")
+    if activation_fit_factor_steps > 0 and activation_fit_factor_lr <= 0:
+        raise ValueError("activation_fit_factor_lr must be positive when factor steps are enabled.")
+    if activation_fit_factor_l2 < 0:
+        raise ValueError("activation_fit_factor_l2 must be non-negative.")
     if activation_fit_gate not in {"none", "validation"}:
         raise ValueError("activation_fit_gate must be none or validation.")
     if not 0 <= float(activation_fit_validation_fraction) < 1:
@@ -396,6 +415,13 @@ def donor_projected_init(
         raise ValueError("Target model has no decoder layers.")
     if not donor_layers:
         raise ValueError("Donor model has no decoder layers.")
+    if hidden_basis_mode == "activation-pca":
+        target_hidden_size = int(target.get_input_embeddings().weight.shape[1])
+        if int(hidden_basis_max_rows) < target_hidden_size:
+            raise ValueError(
+                "activation-pca hidden basis needs hidden_basis_max_rows >= target hidden size "
+                f"({hidden_basis_max_rows} < {target_hidden_size})."
+            )
     activation_profile = None
     if activation_calibration_texts:
         needs_layer_activation_rows = (
@@ -474,6 +500,7 @@ def donor_projected_init(
     layer_reports = []
     changed_keys = []
     skipped_layer_keys = []
+    neutralized_layer_keys = []
     activation_fit_reports = []
     activation_fit_attempt_reports = []
     hidden_axis_weights = None
@@ -499,7 +526,7 @@ def donor_projected_init(
             else donor_layer_group
         )
         if donor_layer_fold_mode == "representative":
-            donor_key = donor_layer_keys.get((donor_layer_idx, suffix))
+            donor_key = _lookup_layer_tensor_key(donor_layer_keys, donor_layer_idx, suffix)
             donor_tensor = None if donor_key is None else donor_state[donor_key]
         else:
             donor_key = f"folded_donor_layers.{target_layer_idx}.{suffix}"
@@ -512,8 +539,23 @@ def donor_projected_init(
                 donor_layer_group=donor_layer_group,
                 cache=folded_donor_layer_cache,
             )
-            donor_tensor = folded_state.get(suffix)
+            donor_tensor = _lookup_layer_tensor_value(folded_state, suffix)
         if donor_tensor is None:
+            if neutralize_unmatched_operators:
+                neutralized = _neutralized_unmatched_operator_tensor(torch, target_tensor, suffix)
+                if neutralized is not None:
+                    target_state[target_key] = neutralized.to(dtype=target_tensor.dtype)
+                    changed_keys.append(target_key)
+                    neutralized_layer_keys.append(
+                        {
+                            "target_key": target_key,
+                            "reason": "neutralized_unmatched_operator",
+                            "method": "zero_output_projection",
+                            "donor_layer_group": donor_layer_group,
+                            "donor_layer_fold_mode": donor_layer_fold_mode,
+                        }
+                    )
+                    continue
             skipped_layer_keys.append(
                 {
                     "target_key": target_key,
@@ -614,6 +656,13 @@ def donor_projected_init(
                 donor_layer_idx,
                 donor_layer_group,
                 ridge=activation_fit_ridge,
+                rank=activation_fit_rank,
+                rank_mode=activation_fit_rank_mode,
+                method=activation_fit_method,
+                alpha=activation_fit_alpha,
+                factor_steps=activation_fit_factor_steps,
+                factor_lr=activation_fit_factor_lr,
+                factor_l2=activation_fit_factor_l2,
                 fold_mode=tensor_fold_mode,
                 hidden_basis=hidden_basis if donor_tensor.dim() >= 2 else None,
                 axis_weights=axis_weights,
@@ -635,12 +684,18 @@ def donor_projected_init(
                 "target_shape": list(target_tensor.shape),
                 "alpha": float(activation_fit_alpha),
                 "ridge": float(activation_fit_ridge),
+                "rank": int(activation_fit_rank),
+                "rank_mode": activation_fit_rank_mode,
                 **fit_report,
             }
             activation_fit_attempt_reports.append(activation_fit_report)
             fit_weight = fitted["weight"]
             if fit_weight is not None and bool(fit_report.get("accepted")):
-                projected = (1.0 - activation_fit_alpha) * projected + activation_fit_alpha * fit_weight
+                if activation_fit_method == "lrc":
+                    projected = fit_weight
+                    activation_fit_report["alpha_already_materialized"] = True
+                else:
+                    projected = (1.0 - activation_fit_alpha) * projected + activation_fit_alpha * fit_weight
                 activation_fit_report["applied"] = True
                 activation_fit_reports.append(activation_fit_report)
             else:
@@ -749,6 +804,12 @@ def donor_projected_init(
         "activation_fit_requested_max_rows": int(activation_fit_max_rows),
         "activation_fit_alpha": float(activation_fit_alpha),
         "activation_fit_ridge": float(activation_fit_ridge),
+        "activation_fit_rank": int(activation_fit_rank),
+        "activation_fit_rank_mode": activation_fit_rank_mode,
+        "activation_fit_method": activation_fit_method,
+        "activation_fit_factor_steps": int(activation_fit_factor_steps),
+        "activation_fit_factor_lr": float(activation_fit_factor_lr),
+        "activation_fit_factor_l2": float(activation_fit_factor_l2),
         "activation_fit_gate": activation_fit_gate,
         "activation_fit_validation_fraction": float(activation_fit_validation_fraction),
         "activation_fit_min_validation_rows": int(activation_fit_min_validation_rows),
@@ -767,10 +828,13 @@ def donor_projected_init(
         "activation_calibration_text_count": len(activation_calibration_texts or []),
         "activation_max_length": activation_max_length,
         "activation_device": activation_device if activation_calibration_texts else None,
+        "neutralize_unmatched_operators": bool(neutralize_unmatched_operators),
         "torch_dtype": torch_dtype,
         "target_layers": len(target_layers),
         "donor_layers": len(donor_layers),
         "layer_tensors_initialized": len(layer_reports),
+        "layer_tensors_neutralized": len(neutralized_layer_keys),
+        "neutralized_layer_tensors": neutralized_layer_keys[:200],
         "layer_tensors_skipped": skipped_layer_keys[:200],
         "non_layer_tensors_initialized": len(non_layer_report["initialized"]),
         "non_layer_tensors_skipped": non_layer_report["skipped"][:200],
@@ -1605,6 +1669,469 @@ def _recover_and_gate_candidate(
     }
 
 
+def chain_anchor_staged_compress(
+    source_model: str,
+    anchor_model: str,
+    output_dir: str | Path,
+    stages: str | Sequence[str] = ("block", "alm"),
+    calibration_texts: Sequence[str] | None = None,
+    eval_suite: str | Path | dict[str, Any] | None = None,
+    max_text_evals: int | None = None,
+    max_choice_probes: int | None = None,
+    max_generation_prompts: int | None = None,
+    max_behavior_probes: int | None = None,
+    max_new_tokens: int = 96,
+    stage_max_ppl_ratio: float = 1.25,
+    stage_ppl_gate_mode: str = "advisory",
+    stage_max_accuracy_drop: float = 0.0,
+    stage_max_behavior_drop: float = 0.0,
+    stage_min_choice_accuracy: float = 0.0,
+    stage_min_behavior_pass_rate: float = 0.0,
+    promote_policy: str = "gate-and-rank",
+    init_seed: int = 0,
+    init_ridge: float = 1e-3,
+    init_max_anchors: int = 50_000,
+    init_fold_mode: str = "mean",
+    init_hidden_basis_mode: str = "none",
+    init_hidden_basis_scope: str = "global",
+    init_hidden_basis_max_rows: int = 2048,
+    init_hidden_basis_preprocess: str = "centered-rowrms",
+    init_activation_fold_assignment: str = "balanced",
+    init_transport_backend: str = "sparse",
+    init_donor_layer_fold_mode: str = "fold",
+    init_donor_layer_group_strategy: str = "depth",
+    init_attention_fold_mode: str = "independent",
+    init_attention_head_dim_transport: str = "none",
+    init_token_init_mode: str = "shared",
+    init_projection_scale: str = "none",
+    init_projection_blend_alpha: float = 1.0,
+    init_consumer_hidden_reduction: str = "mean",
+    init_activation_fit_linears: bool = False,
+    init_activation_fit_target: str = "all",
+    init_activation_fit_max_rows: int = 0,
+    init_activation_fit_alpha: float = 1.0,
+    init_activation_fit_ridge: float = 1e-1,
+    init_activation_fit_rank: int = 0,
+    init_activation_fit_rank_mode: str = "absolute",
+    init_activation_fit_method: str = "ridge",
+    init_activation_fit_factor_steps: int = 0,
+    init_activation_fit_factor_lr: float = 3e-2,
+    init_activation_fit_factor_l2: float = 0.0,
+    init_activation_fit_gate: str = "validation",
+    init_activation_fit_validation_fraction: float = 0.20,
+    init_activation_fit_min_validation_rows: int = 8,
+    init_activation_fit_min_relative_improvement: float = 0.0,
+    init_activation_fit_max_cosine_drop: float = 0.01,
+    init_activation_feature_mode: str = "stats",
+    init_activation_subspace_rank: int = 8,
+    init_activation_max_length: int = 128,
+    block_steps_per_layer: int = 4,
+    block_batch_size: int = 1,
+    block_max_length: int = 112,
+    block_lr: float = 2e-6,
+    block_lm_weight: float = 0.0,
+    block_response_lm_weight: float = 0.0,
+    block_first_token_lm_weight: float = 0.0,
+    block_response_end_lm_weight: float = 0.0,
+    block_response_loss_mode: str = "none",
+    block_hidden_ridge: float = 1e-3,
+    block_hidden_projection_scope: str = "layer-input",
+    block_hidden_metric: str = "projected-rsd",
+    block_span_pair_mode: str = "exact",
+    block_target: str = "delta",
+    block_residual_magnitude_compensation: str = "lowrank-pre",
+    block_residual_compensation_alpha: float = 0.01,
+    block_residual_compensation_linear_rank: int = 16,
+    block_pre_reconstruction_target: str = "none",
+    block_pre_reconstruction_alpha: float = 0.05,
+    block_pre_reconstruction_fit_gate: str = "validation",
+    block_max_anchors: int = 2048,
+    block_span_max_pairs: int = 512,
+    block_donor_layer_fold_mode: str = "fold",
+    block_donor_layer_group_strategy: str = "activation-energy",
+    block_layer_limit: int | None = None,
+    block_layer_gate_metric: str = "behavior",
+    block_layer_gate_max_texts: int = 200,
+    block_layer_gate_max_generation_prompts: int | None = None,
+    block_layer_gate_max_behavior_drop: float = 0.0,
+    block_layer_gate_behavior_max_new_tokens: int = 96,
+    block_alm_kd_weight: float = 0.0,
+    block_projected_vocab_kd_weight: float = 0.0,
+    block_byte_kd_weight: float = 0.0,
+    block_block_io_kd_weight: float = 0.0,
+    block_module_output_kd_weight: float = 0.0,
+    block_module_output_targets: str = "both",
+    block_module_output_transport: str = "paired",
+    block_temperature: float = 2.0,
+    block_grad_clip: float = 1.0,
+    block_report_interval: int | None = None,
+    block_save_best_layer_loss: bool = False,
+    block_save_best_layer_behavior: bool = False,
+    block_layer_behavior_eval_interval: int | None = None,
+    block_layer_checkpoint_interval: int = 0,
+    alm_steps: int = 80,
+    alm_batch_size: int = 1,
+    alm_max_length: int = 112,
+    alm_lr: float = 2e-6,
+    alm_anchor_kd_weight: float = 0.0,
+    alm_lm_weight: float = 0.0,
+    alm_dual_space_kd_weight: float = 0.0,
+    alm_kd_weight: float = 0.05,
+    alm_max_chunks: int = 64,
+    alm_min_chars: int = 2,
+    alm_projected_vocab_kd_weight: float = 0.0,
+    alm_span_hidden_kd_weight: float = 0.0,
+    alm_hidden_kd_metric: str = "projected-rsd",
+    alm_train_scope: str = "last4",
+    alm_response_loss_mode: str = "none",
+    alm_append_eos: bool = False,
+    alm_grad_clip: float = 1.0,
+    alm_report_interval: int | None = None,
+    alm_save_best_behavior: bool = False,
+    alm_behavior_eval_interval: int | None = None,
+    torch_dtype: str = "float16",
+    candidate_torch_dtype: str = "float32",
+    device: str = "cuda:0",
+    trust_remote_code: bool = False,
+) -> dict[str, Any]:
+    """Run staged donor-to-child updates while preserving the best incumbent.
+
+    The command is an orchestration harness: each stage writes a normal model,
+    evaluates it with the behavior-first suite, and promotes it only when it
+    passes the gate against the current incumbent.
+    """
+
+    stage_list = _parse_chain_stages(stages)
+    if promote_policy not in {"gate-and-rank", "gate-only", "always"}:
+        raise ValueError("promote_policy must be gate-and-rank, gate-only, or always.")
+    if stage_ppl_gate_mode not in {"hard", "advisory"}:
+        raise ValueError("stage_ppl_gate_mode must be hard or advisory.")
+    if max_new_tokens <= 0:
+        raise ValueError("max_new_tokens must be positive.")
+
+    output_root = Path(output_dir)
+    model_root = output_root / "models"
+    report_root = output_root / "reports"
+    model_root.mkdir(parents=True, exist_ok=True)
+    report_root.mkdir(parents=True, exist_ok=True)
+
+    anchor_report_path = report_root / "anchor_eval.json"
+    anchor_gate_path = report_root / "anchor_self_gate.json"
+    anchor_eval = evaluate_text_model(
+        anchor_model,
+        anchor_report_path,
+        torch_dtype=torch_dtype,
+        device=device,
+        trust_remote_code=trust_remote_code,
+        max_new_tokens=max_new_tokens,
+        eval_suite=eval_suite,
+        max_text_evals=max_text_evals,
+        max_choice_probes=max_choice_probes,
+        max_generation_prompts=max_generation_prompts,
+        max_behavior_probes=max_behavior_probes,
+    )
+    anchor_gate = gate_text_report(
+        anchor_eval,
+        anchor_eval,
+        output_file=anchor_gate_path,
+        max_ppl_ratio=stage_max_ppl_ratio,
+        ppl_gate_mode=stage_ppl_gate_mode,
+        max_accuracy_drop=stage_max_accuracy_drop,
+        max_behavior_drop=stage_max_behavior_drop,
+        min_choice_accuracy=stage_min_choice_accuracy,
+        min_behavior_pass_rate=stage_min_behavior_pass_rate,
+    )
+    incumbent = _chain_candidate_record(
+        tag="anchor",
+        model_dir=str(anchor_model),
+        report_path=anchor_report_path,
+        gate_path=anchor_gate_path,
+        gate=anchor_gate,
+        stage="anchor",
+        promoted=True,
+    )
+
+    stage_records: list[dict[str, Any]] = []
+    for index, stage in enumerate(stage_list, start=1):
+        stage_tag = f"{index:02d}_{stage}"
+        stage_model_dir = model_root / stage_tag
+        stage_report_path = report_root / f"{stage_tag}_eval.json"
+        stage_gate_path = report_root / f"{stage_tag}_gate.json"
+        stage_operation: dict[str, Any]
+
+        if stage == "init":
+            stage_operation = donor_projected_init(
+                target_config_model=anchor_model,
+                donor_model=source_model,
+                output_dir=stage_model_dir,
+                target_base_model=str(incumbent["model_dir"]),
+                target_tokenizer_model=anchor_model,
+                seed=init_seed,
+                ridge=init_ridge,
+                max_anchors=init_max_anchors,
+                fold_mode=init_fold_mode,
+                hidden_basis_mode=init_hidden_basis_mode,
+                hidden_basis_scope=init_hidden_basis_scope,
+                hidden_basis_max_rows=init_hidden_basis_max_rows,
+                hidden_basis_preprocess=init_hidden_basis_preprocess,
+                activation_fold_assignment=init_activation_fold_assignment,
+                transport_backend=init_transport_backend,
+                donor_layer_fold_mode=init_donor_layer_fold_mode,
+                donor_layer_group_strategy=init_donor_layer_group_strategy,
+                attention_fold_mode=init_attention_fold_mode,
+                attention_head_dim_transport=init_attention_head_dim_transport,
+                token_init_mode=init_token_init_mode,
+                projection_scale=init_projection_scale,
+                projection_blend_alpha=init_projection_blend_alpha,
+                consumer_hidden_reduction=init_consumer_hidden_reduction,
+                activation_fit_linears=init_activation_fit_linears,
+                activation_fit_target=init_activation_fit_target,
+                activation_fit_max_rows=init_activation_fit_max_rows,
+                activation_fit_alpha=init_activation_fit_alpha,
+                activation_fit_ridge=init_activation_fit_ridge,
+                activation_fit_rank=init_activation_fit_rank,
+                activation_fit_rank_mode=init_activation_fit_rank_mode,
+                activation_fit_method=init_activation_fit_method,
+                activation_fit_factor_steps=init_activation_fit_factor_steps,
+                activation_fit_factor_lr=init_activation_fit_factor_lr,
+                activation_fit_factor_l2=init_activation_fit_factor_l2,
+                activation_fit_gate=init_activation_fit_gate,
+                activation_fit_validation_fraction=init_activation_fit_validation_fraction,
+                activation_fit_min_validation_rows=init_activation_fit_min_validation_rows,
+                activation_fit_min_relative_improvement=init_activation_fit_min_relative_improvement,
+                activation_fit_max_cosine_drop=init_activation_fit_max_cosine_drop,
+                activation_feature_mode=init_activation_feature_mode,
+                activation_subspace_rank=init_activation_subspace_rank,
+                activation_calibration_texts=list(calibration_texts or []),
+                activation_max_length=init_activation_max_length,
+                activation_device=device,
+                torch_dtype=torch_dtype,
+                trust_remote_code=trust_remote_code,
+            )
+        elif stage == "block":
+            from neural_forge.hf_recovery import blockwise_reconstruct_cross_tokenizer_causal_lm
+
+            stage_operation = blockwise_reconstruct_cross_tokenizer_causal_lm(
+                source_model=source_model,
+                candidate_model=str(incumbent["model_dir"]),
+                output_dir=stage_model_dir,
+                steps_per_layer=block_steps_per_layer,
+                batch_size=block_batch_size,
+                max_length=block_max_length,
+                lr=block_lr,
+                lm_weight=block_lm_weight,
+                response_lm_weight=block_response_lm_weight,
+                first_token_lm_weight=block_first_token_lm_weight,
+                response_end_lm_weight=block_response_end_lm_weight,
+                response_loss_mode=block_response_loss_mode,
+                hidden_ridge=block_hidden_ridge,
+                hidden_projection_scope=block_hidden_projection_scope,
+                hidden_metric=block_hidden_metric,
+                span_pair_mode=block_span_pair_mode,
+                block_target=block_target,
+                residual_magnitude_compensation=block_residual_magnitude_compensation,
+                residual_compensation_alpha=block_residual_compensation_alpha,
+                residual_compensation_linear_rank=block_residual_compensation_linear_rank,
+                pre_reconstruction_target=block_pre_reconstruction_target,
+                pre_reconstruction_alpha=block_pre_reconstruction_alpha,
+                pre_reconstruction_fit_gate=block_pre_reconstruction_fit_gate,
+                max_anchors=block_max_anchors,
+                span_max_pairs=block_span_max_pairs,
+                donor_layer_fold_mode=block_donor_layer_fold_mode,
+                donor_layer_group_strategy=block_donor_layer_group_strategy,
+                layer_limit=block_layer_limit,
+                layer_gate_metric=block_layer_gate_metric,
+                layer_gate_max_texts=block_layer_gate_max_texts,
+                layer_gate_max_behavior_drop=block_layer_gate_max_behavior_drop,
+                layer_gate_behavior_max_new_tokens=block_layer_gate_behavior_max_new_tokens,
+                layer_gate_eval_suite=eval_suite,
+                layer_gate_max_generation_prompts=block_layer_gate_max_generation_prompts,
+                alm_kd_weight=block_alm_kd_weight,
+                projected_vocab_kd_weight=block_projected_vocab_kd_weight,
+                byte_kd_weight=block_byte_kd_weight,
+                block_io_kd_weight=block_block_io_kd_weight,
+                module_output_kd_weight=block_module_output_kd_weight,
+                module_output_targets=block_module_output_targets,
+                module_output_transport=block_module_output_transport,
+                temperature=block_temperature,
+                torch_dtype=torch_dtype,
+                candidate_torch_dtype=candidate_torch_dtype,
+                device=device,
+                trust_remote_code=trust_remote_code,
+                calibration_texts=list(calibration_texts or []),
+                grad_clip=block_grad_clip,
+                report_interval=block_report_interval,
+                save_best_layer_loss=block_save_best_layer_loss,
+                save_best_layer_behavior=block_save_best_layer_behavior,
+                layer_behavior_eval_interval=block_layer_behavior_eval_interval,
+                layer_checkpoint_interval=block_layer_checkpoint_interval,
+            )
+        elif stage == "alm":
+            from neural_forge.hf_recovery import recover_cross_tokenizer_causal_lm
+
+            stage_operation = recover_cross_tokenizer_causal_lm(
+                source_model=source_model,
+                candidate_model=str(incumbent["model_dir"]),
+                output_dir=stage_model_dir,
+                steps=alm_steps,
+                batch_size=alm_batch_size,
+                max_length=alm_max_length,
+                lr=alm_lr,
+                anchor_kd_weight=alm_anchor_kd_weight,
+                lm_weight=alm_lm_weight,
+                dual_space_kd_weight=alm_dual_space_kd_weight,
+                projected_vocab_kd_weight=alm_projected_vocab_kd_weight,
+                span_hidden_kd_weight=alm_span_hidden_kd_weight,
+                hidden_kd_metric=alm_hidden_kd_metric,
+                alm_kd_weight=alm_kd_weight,
+                alm_max_chunks=alm_max_chunks,
+                alm_min_chars=alm_min_chars,
+                response_loss_mode=alm_response_loss_mode,
+                append_eos=alm_append_eos,
+                train_scope=alm_train_scope,
+                torch_dtype=torch_dtype,
+                candidate_torch_dtype=candidate_torch_dtype,
+                device=device,
+                trust_remote_code=trust_remote_code,
+                calibration_texts=list(calibration_texts or []),
+                grad_clip=alm_grad_clip,
+                report_interval=alm_report_interval,
+                save_best_behavior=alm_save_best_behavior,
+                behavior_eval_interval=alm_behavior_eval_interval,
+                behavior_eval_suite=eval_suite,
+                behavior_max_probes=6 if max_behavior_probes is None else max_behavior_probes,
+                behavior_max_generation_prompts=max_generation_prompts,
+                behavior_max_new_tokens=max_new_tokens,
+            )
+        else:
+            raise ValueError(f"Unsupported chain stage: {stage}.")
+
+        stage_eval = evaluate_text_model(
+            str(stage_model_dir),
+            stage_report_path,
+            torch_dtype=torch_dtype,
+            device=device,
+            trust_remote_code=trust_remote_code,
+            max_new_tokens=max_new_tokens,
+            eval_suite=eval_suite,
+            max_text_evals=max_text_evals,
+            max_choice_probes=max_choice_probes,
+            max_generation_prompts=max_generation_prompts,
+            max_behavior_probes=max_behavior_probes,
+        )
+        stage_gate = gate_text_report(
+            incumbent["report"],
+            stage_eval,
+            output_file=stage_gate_path,
+            max_ppl_ratio=stage_max_ppl_ratio,
+            ppl_gate_mode=stage_ppl_gate_mode,
+            max_accuracy_drop=stage_max_accuracy_drop,
+            max_behavior_drop=stage_max_behavior_drop,
+            min_choice_accuracy=stage_min_choice_accuracy,
+            min_behavior_pass_rate=stage_min_behavior_pass_rate,
+        )
+        record = _chain_candidate_record(
+            tag=stage_tag,
+            model_dir=stage_model_dir,
+            report_path=stage_report_path,
+            gate_path=stage_gate_path,
+            gate=stage_gate,
+            stage=stage,
+            operation_report=stage_operation,
+        )
+        promoted = _chain_stage_promotes(incumbent, record, stage_gate, promote_policy)
+        record["promoted"] = bool(promoted)
+        record["incumbent_before"] = incumbent["tag"]
+        if promoted:
+            incumbent = record
+        record["incumbent_after"] = incumbent["tag"]
+        stage_records.append(record)
+        _write_chain_anchor_summary(output_root, source_model, anchor_model, stage_list, incumbent, stage_records)
+
+    return _write_chain_anchor_summary(output_root, source_model, anchor_model, stage_list, incumbent, stage_records)
+
+
+def _parse_chain_stages(stages: str | Sequence[str]) -> list[str]:
+    if isinstance(stages, str):
+        parts = [part.strip() for part in stages.split(",") if part.strip()]
+    else:
+        parts = [str(part).strip() for part in stages if str(part).strip()]
+    if not parts:
+        raise ValueError("At least one chain stage is required.")
+    allowed = {"init", "block", "alm"}
+    invalid = [part for part in parts if part not in allowed]
+    if invalid:
+        raise ValueError(f"Unsupported chain stages: {', '.join(invalid)}.")
+    return parts
+
+
+def _chain_candidate_record(
+    tag: str,
+    model_dir: str | Path,
+    report_path: str | Path,
+    gate_path: str | Path,
+    gate: dict[str, Any],
+    stage: str,
+    operation_report: dict[str, Any] | None = None,
+    promoted: bool = False,
+) -> dict[str, Any]:
+    return {
+        "tag": str(tag),
+        "stage": str(stage),
+        "model_dir": str(model_dir),
+        "report": str(report_path),
+        "gate_report": str(gate_path),
+        "passed": bool(gate.get("passed", False)),
+        "promoted": bool(promoted),
+        "metrics": dict(gate.get("candidate") or {}),
+        "gate": gate,
+        "operation_report": operation_report,
+    }
+
+
+def _chain_stage_promotes(
+    incumbent: dict[str, Any],
+    candidate: dict[str, Any],
+    gate: dict[str, Any],
+    promote_policy: str,
+) -> bool:
+    if promote_policy == "always":
+        return True
+    if not bool(gate.get("passed", False)):
+        return False
+    if promote_policy == "gate-only":
+        return True
+    if promote_policy != "gate-and-rank":
+        raise ValueError("promote_policy must be gate-and-rank, gate-only, or always.")
+    return _usable_candidate_sort_key(candidate) <= _usable_candidate_sort_key(incumbent)
+
+
+def _write_chain_anchor_summary(
+    output_root: Path,
+    source_model: str,
+    anchor_model: str,
+    stages: Sequence[str],
+    incumbent: dict[str, Any],
+    stage_records: Sequence[dict[str, Any]],
+) -> dict[str, Any]:
+    summary = {
+        "operation": "chain_anchor_staged_compress",
+        "source_model": source_model,
+        "anchor_model": anchor_model,
+        "stages": list(stages),
+        "best_model_dir": incumbent["model_dir"],
+        "best_tag": incumbent["tag"],
+        "best_metrics": incumbent.get("metrics", {}),
+        "stage_count": len(stage_records),
+        "promoted_stage_count": sum(1 for item in stage_records if item.get("promoted")),
+        "stage_records": list(stage_records),
+    }
+    report_root = output_root / "reports"
+    report_root.mkdir(parents=True, exist_ok=True)
+    _write_json(report_root / "chain_anchor_summary.json", summary)
+    return summary
+
+
 def _select_compression_candidates(summary: dict[str, Any], target_shrink: float | None) -> list[dict[str, Any]]:
     if target_shrink is not None and summary.get("target_passed_candidates"):
         return list(summary["target_passed_candidates"])
@@ -1692,6 +2219,71 @@ def _layer_tensor_index(state_dict: dict[str, Any]) -> dict[tuple[int, str], str
     return indexed
 
 
+def _lookup_layer_tensor_key(index: dict[tuple[int, str], str], layer_idx: int, suffix: str) -> str | None:
+    for candidate in _layer_suffix_candidates(suffix):
+        key = index.get((int(layer_idx), candidate))
+        if key is not None:
+            return key
+    return None
+
+
+def _lookup_layer_tensor_value(layer_state: dict[str, Any], suffix: str):
+    for candidate in _layer_suffix_candidates(suffix):
+        value = layer_state.get(candidate)
+        if value is not None:
+            return value
+    return None
+
+
+def _layer_suffix_candidates(suffix: str) -> list[str]:
+    """Return exact suffix first, then common cross-family decoder aliases."""
+
+    normalized = str(suffix)
+    aliases = {
+        "feed_forward.w1.weight": ["mlp.gate_proj.weight", "mlp.w1.weight"],
+        "feed_forward.w3.weight": ["mlp.up_proj.weight", "mlp.w3.weight"],
+        "feed_forward.w2.weight": ["mlp.down_proj.weight", "mlp.w2.weight"],
+        "feed_forward.w1.bias": ["mlp.gate_proj.bias", "mlp.w1.bias"],
+        "feed_forward.w3.bias": ["mlp.up_proj.bias", "mlp.w3.bias"],
+        "feed_forward.w2.bias": ["mlp.down_proj.bias", "mlp.w2.bias"],
+        "operator.q_proj.weight": ["self_attn.q_proj.weight", "attention.q_proj.weight"],
+        "operator.k_proj.weight": ["self_attn.k_proj.weight", "attention.k_proj.weight"],
+        "operator.v_proj.weight": ["self_attn.v_proj.weight", "attention.v_proj.weight"],
+        "operator.out_proj.weight": ["self_attn.o_proj.weight", "attention.o_proj.weight"],
+        "operator.q_proj.bias": ["self_attn.q_proj.bias", "attention.q_proj.bias"],
+        "operator.k_proj.bias": ["self_attn.k_proj.bias", "attention.k_proj.bias"],
+        "operator.v_proj.bias": ["self_attn.v_proj.bias", "attention.v_proj.bias"],
+        "operator.out_proj.bias": ["self_attn.o_proj.bias", "attention.o_proj.bias"],
+        "attention.q_proj.weight": ["self_attn.q_proj.weight", "operator.q_proj.weight"],
+        "attention.k_proj.weight": ["self_attn.k_proj.weight", "operator.k_proj.weight"],
+        "attention.v_proj.weight": ["self_attn.v_proj.weight", "operator.v_proj.weight"],
+        "attention.out_proj.weight": ["self_attn.o_proj.weight", "operator.out_proj.weight"],
+        "attention.o_proj.weight": ["self_attn.o_proj.weight", "operator.out_proj.weight"],
+        "self_attn.out_proj.weight": ["self_attn.o_proj.weight", "attention.o_proj.weight", "operator.out_proj.weight"],
+        "attention.q_proj.bias": ["self_attn.q_proj.bias", "operator.q_proj.bias"],
+        "attention.k_proj.bias": ["self_attn.k_proj.bias", "operator.k_proj.bias"],
+        "attention.v_proj.bias": ["self_attn.v_proj.bias", "operator.v_proj.bias"],
+        "attention.out_proj.bias": ["self_attn.o_proj.bias", "operator.out_proj.bias"],
+        "attention.o_proj.bias": ["self_attn.o_proj.bias", "operator.out_proj.bias"],
+        "self_attn.out_proj.bias": ["self_attn.o_proj.bias", "attention.o_proj.bias", "operator.out_proj.bias"],
+        "self_attn.q_layernorm.weight": ["self_attn.q_norm.weight", "attention.q_norm.weight", "operator.q_norm.weight"],
+        "self_attn.k_layernorm.weight": ["self_attn.k_norm.weight", "attention.k_norm.weight", "operator.k_norm.weight"],
+        "attention.q_layernorm.weight": ["self_attn.q_norm.weight", "attention.q_norm.weight", "operator.q_norm.weight"],
+        "attention.k_layernorm.weight": ["self_attn.k_norm.weight", "attention.k_norm.weight", "operator.k_norm.weight"],
+        "operator.q_layernorm.weight": ["self_attn.q_norm.weight", "attention.q_norm.weight", "operator.q_norm.weight"],
+        "operator.k_layernorm.weight": ["self_attn.k_norm.weight", "attention.k_norm.weight", "operator.k_norm.weight"],
+        "operator_norm.weight": ["input_layernorm.weight"],
+        "operator_norm.bias": ["input_layernorm.bias"],
+        "attention_norm.weight": ["input_layernorm.weight", "operator_norm.weight"],
+        "attention_norm.bias": ["input_layernorm.bias", "operator_norm.bias"],
+        "ffn_norm.weight": ["post_attention_layernorm.weight"],
+        "ffn_norm.bias": ["post_attention_layernorm.bias"],
+    }
+    candidates = [normalized]
+    candidates.extend(item for item in aliases.get(normalized, []) if item not in candidates)
+    return candidates
+
+
 def _parse_layer_tensor_key(key: str) -> tuple[int, str] | None:
     match = re.match(r"^.+(?:layers|h)\.(\d+)\.(.+)$", key)
     if match is None:
@@ -1707,6 +2299,14 @@ def _projectable_tensor(torch, target_tensor, donor_tensor) -> bool:
         and donor_tensor.is_floating_point()
         and target_tensor.dim() == donor_tensor.dim()
     )
+
+
+def _neutralized_unmatched_operator_tensor(torch, target_tensor, suffix: str):
+    if not hasattr(target_tensor, "is_floating_point") or not target_tensor.is_floating_point():
+        return None
+    if suffix.endswith("conv.out_proj.weight") or suffix.endswith("conv.out_proj.bias"):
+        return torch.zeros_like(target_tensor.detach().cpu())
+    return None
 
 
 def _initialize_non_layer_tensors_from_donor(
@@ -3471,6 +4071,13 @@ def _fit_projected_linear_from_donor_activations(
     donor_layer_group: Sequence[int] | None,
     ridge: float,
     fold_mode: str,
+    rank: int = 0,
+    rank_mode: str = "absolute",
+    method: str = "ridge",
+    alpha: float = 1.0,
+    factor_steps: int = 0,
+    factor_lr: float = 3e-2,
+    factor_l2: float = 0.0,
     hidden_basis=None,
     axis_weights: dict[int, Any] | None = None,
     activation_fold_assignment: str = "balanced",
@@ -3494,6 +4101,20 @@ def _fit_projected_linear_from_donor_activations(
         raise ValueError("min_relative_improvement must be non-negative.")
     if max_cosine_drop < 0:
         raise ValueError("max_cosine_drop must be non-negative.")
+    if rank < 0:
+        raise ValueError("rank must be non-negative.")
+    if rank_mode not in {"absolute", "delta"}:
+        raise ValueError("rank_mode must be absolute or delta.")
+    if method not in {"ridge", "lrc"}:
+        raise ValueError("method must be ridge or lrc.")
+    if float(alpha) <= 0.0:
+        raise ValueError("alpha must be positive.")
+    if int(factor_steps) < 0:
+        raise ValueError("factor_steps must be non-negative.")
+    if int(factor_steps) > 0 and float(factor_lr) <= 0.0:
+        raise ValueError("factor_lr must be positive when factor_steps is positive.")
+    if float(factor_l2) < 0.0:
+        raise ValueError("factor_l2 must be non-negative.")
 
     def finish(weight, report: dict[str, Any]):
         report = {
@@ -3502,6 +4123,13 @@ def _fit_projected_linear_from_donor_activations(
             "min_validation_rows": int(min_validation_rows),
             "min_relative_improvement": float(min_relative_improvement),
             "max_cosine_drop": float(max_cosine_drop),
+            "rank": int(rank),
+            "rank_mode": rank_mode,
+            "method": method,
+            "alpha": float(alpha),
+            "factor_steps": int(factor_steps),
+            "factor_lr": float(factor_lr),
+            "factor_l2": float(factor_l2),
             **report,
         }
         if return_report:
@@ -3572,6 +4200,41 @@ def _fit_projected_linear_from_donor_activations(
         return reject("too_few_folded_rows", row_count=int(row_count))
     folded_input = folded_input[:row_count]
     folded_output = folded_output[:row_count]
+    if method == "lrc":
+        if reference_weight is None:
+            return reject("missing_reference_weight_for_lrc", row_count=int(row_count))
+        from neural_forge.lrc import fit_materialized_linear_lrc_delta
+
+        reference = reference_weight.detach().cpu().to(torch.float32)
+        lrc_rank = int(rank) if int(rank) > 0 else min(16, int(reference.shape[0]), int(reference.shape[1]))
+        fitted, lrc_report = fit_materialized_linear_lrc_delta(
+            reference,
+            folded_input,
+            folded_output,
+            rank=lrc_rank,
+            alpha=float(alpha),
+            ridge=float(ridge),
+            factor_steps=int(factor_steps),
+            factor_lr=float(factor_lr),
+            factor_l2=float(factor_l2),
+            validation_fraction=float(validation_fraction),
+            min_validation_rows=int(min_validation_rows),
+            min_relative_improvement=float(min_relative_improvement),
+            max_cosine_drop=float(max_cosine_drop),
+            require_validation=fit_gate == "validation",
+            max_rows=None,
+        )
+        report = {
+            **lrc_report,
+            "accepted": bool(lrc_report.get("accepted")),
+            "reason": str(lrc_report.get("reason", "unknown")),
+            "row_count": int(row_count),
+            "target_shape": [int(target_out), int(target_in)],
+            "requested_rank": int(rank),
+            "effective_lrc_rank": int(lrc_rank),
+            "rank_defaulted": int(rank) <= 0,
+        }
+        return finish(fitted if bool(lrc_report.get("accepted")) else None, report)
     validation_rows = int(max(0, min(int(row_count * float(validation_fraction)), row_count - 2)))
     if validation_rows > 0 and validation_rows >= int(min_validation_rows) and reference_weight is not None:
         train_input = folded_input[:-validation_rows]
@@ -3587,7 +4250,14 @@ def _fit_projected_linear_from_donor_activations(
     fitted = torch.nan_to_num(fitted, nan=0.0, posinf=0.0, neginf=0.0)
     if reference_weight is not None:
         reference = reference_weight.detach().cpu().to(torch.float32)
-        fitted = _scale_projection_to_target(torch, fitted, reference, "target-rms")
+        if rank_mode == "delta":
+            fitted = _scale_projection_to_target(torch, fitted, reference, "target-rms")
+            fitted, rank_report = _truncate_linear_weight_delta_rank(torch, fitted, reference, int(rank))
+        else:
+            fitted, rank_report = _truncate_linear_weight_rank(torch, fitted, int(rank))
+            fitted = _scale_projection_to_target(torch, fitted, reference, "target-rms")
+    else:
+        fitted, rank_report = _truncate_linear_weight_rank(torch, fitted, int(rank))
     report = {
         "accepted": True,
         "reason": "accepted",
@@ -3595,6 +4265,7 @@ def _fit_projected_linear_from_donor_activations(
         "train_rows": int(train_input.shape[0]),
         "validation_rows": int(0 if val_input is None else val_input.shape[0]),
         "target_shape": [int(target_out), int(target_in)],
+        **rank_report,
     }
     if val_input is not None and val_output is not None and reference_weight is not None:
         reference = reference_weight.detach().cpu().to(torch.float32)
@@ -3830,6 +4501,72 @@ def _fit_linear_weight_from_activation_rows(torch, input_rows, output_rows, ridg
         raise ValueError("input_rows and output_rows must have the same row count.")
     mapping = _ridge_map(torch, source, target, ridge)
     return mapping.t().contiguous()
+
+
+def _truncate_linear_weight_rank(torch, weight, rank: int):
+    target = torch.nan_to_num(weight.detach().cpu().to(torch.float32), nan=0.0, posinf=0.0, neginf=0.0)
+    if target.dim() != 2:
+        return target, {
+            "rank_truncated": False,
+            "effective_rank": 0,
+            "requested_rank": int(rank),
+        }
+    full_rank = min(int(target.shape[0]), int(target.shape[1]))
+    if int(rank) <= 0 or int(rank) >= full_rank:
+        return target, {
+            "rank_truncated": False,
+            "effective_rank": int(full_rank),
+            "requested_rank": int(rank),
+        }
+    try:
+        u, singular_values, vh = torch.linalg.svd(target, full_matrices=False)
+    except RuntimeError:
+        return target, {
+            "rank_truncated": False,
+            "effective_rank": int(full_rank),
+            "requested_rank": int(rank),
+            "rank_truncation_error": "svd_failed",
+        }
+    keep = max(1, int(rank))
+    truncated = (u[:, :keep] * singular_values[:keep].unsqueeze(0)).matmul(vh[:keep, :])
+    total_energy = singular_values.pow(2).sum().clamp_min(1e-12)
+    kept_energy = singular_values[:keep].pow(2).sum()
+    return truncated.contiguous(), {
+        "rank_truncated": True,
+        "effective_rank": int(keep),
+        "requested_rank": int(rank),
+        "full_rank": int(full_rank),
+        "rank_energy_ratio": float(kept_energy / total_energy),
+    }
+
+
+def _truncate_linear_weight_delta_rank(torch, weight, reference_weight, rank: int):
+    target = torch.nan_to_num(weight.detach().cpu().to(torch.float32), nan=0.0, posinf=0.0, neginf=0.0)
+    reference = torch.nan_to_num(
+        reference_weight.detach().cpu().to(torch.float32),
+        nan=0.0,
+        posinf=0.0,
+        neginf=0.0,
+    )
+    if target.shape != reference.shape:
+        raise ValueError("weight and reference_weight must have the same shape.")
+    delta = target - reference
+    truncated_delta, report = _truncate_linear_weight_rank(torch, delta, int(rank))
+    if int(rank) <= 0:
+        return target, {
+            **report,
+            "rank_mode": "delta",
+            "delta_rank_truncated": False,
+            "delta_norm": float(delta.norm().detach().cpu()),
+            "truncated_delta_norm": float(delta.norm().detach().cpu()),
+        }
+    return (reference + truncated_delta).contiguous(), {
+        **report,
+        "rank_mode": "delta",
+        "delta_rank_truncated": bool(report.get("rank_truncated", False)),
+        "delta_norm": float(delta.norm().detach().cpu()),
+        "truncated_delta_norm": float(truncated_delta.norm().detach().cpu()),
+    }
 
 
 def _aggregate_layer_activation_profile(torch, profiles: dict[int, Any], layer_group: Sequence[int], clamp_min=None):

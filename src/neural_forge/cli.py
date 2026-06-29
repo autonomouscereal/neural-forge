@@ -173,6 +173,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Use activation transport for per-head dimensions, sharing one map for Q/K and one for V/O.",
     )
     hf_donor_init.add_argument(
+        "--neutralize-unmatched-operators",
+        action="store_true",
+        help=(
+            "For target operator tensors with no donor counterpart, initialize safe residual no-ops where supported "
+            "(currently LFM-style short-conv output projections)."
+        ),
+    )
+    hf_donor_init.add_argument(
         "--token-init-mode",
         choices=["shared", "donor-tokenized", "donor-tokenized-weighted", "donor-omp"],
         default="shared",
@@ -213,6 +221,27 @@ def build_parser() -> argparse.ArgumentParser:
     hf_donor_init.add_argument("--activation-fit-max-rows", type=int, default=0)
     hf_donor_init.add_argument("--activation-fit-alpha", type=float, default=1.0)
     hf_donor_init.add_argument("--activation-fit-ridge", type=float, default=1e-1)
+    hf_donor_init.add_argument(
+        "--activation-fit-rank",
+        type=int,
+        default=0,
+        help="Optional reduced-rank truncation for activation-fitted linears; 0 disables truncation.",
+    )
+    hf_donor_init.add_argument(
+        "--activation-fit-rank-mode",
+        choices=["absolute", "delta"],
+        default="absolute",
+        help="Whether reduced-rank activation fitting truncates the fitted absolute weight or only its delta from the folded reference.",
+    )
+    hf_donor_init.add_argument(
+        "--activation-fit-method",
+        choices=["ridge", "lrc"],
+        default="ridge",
+        help="Use the historical ridge/SVD fit or train a gated low-rank clone delta and materialize it into the folded weight.",
+    )
+    hf_donor_init.add_argument("--activation-fit-factor-steps", type=int, default=0)
+    hf_donor_init.add_argument("--activation-fit-factor-lr", type=float, default=3e-2)
+    hf_donor_init.add_argument("--activation-fit-factor-l2", type=float, default=0.0)
     hf_donor_init.add_argument(
         "--activation-fit-gate",
         choices=["none", "validation"],
@@ -1090,6 +1119,12 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_block_recover.add_argument("--max-anchors", type=int, default=2048)
     xfamily_block_recover.add_argument("--span-max-pairs", type=int, default=512)
     xfamily_block_recover.add_argument(
+        "--span-pair-mode",
+        choices=["exact", "overlap", "both"],
+        default="exact",
+        help="How cross-tokenizer positions are paired for block/output KD: exact decoded-token matches, character-overlap matches, or both.",
+    )
+    xfamily_block_recover.add_argument(
         "--donor-layer-fold-mode",
         choices=["representative", "average", "fold"],
         default="fold",
@@ -1180,10 +1215,42 @@ def build_parser() -> argparse.ArgumentParser:
     )
     xfamily_block_recover.add_argument("--teacher-generate-max-new-tokens", type=int, default=64)
     xfamily_block_recover.add_argument(
+        "--alm-kd-weight",
+        type=float,
+        default=0.0,
+        help="ALM-style character-chunk likelihood matching for cross-tokenizer block recovery.",
+    )
+    xfamily_block_recover.add_argument("--alm-max-chunks", type=int, default=64)
+    xfamily_block_recover.add_argument("--alm-min-chars", type=int, default=2)
+    xfamily_block_recover.add_argument(
         "--projected-vocab-kd-weight",
         type=float,
         default=0.0,
         help="Static span-aligned donor next-token KD projected into the child vocab during each block step.",
+    )
+    xfamily_block_recover.add_argument(
+        "--focused-block-hidden-kd-weight",
+        type=float,
+        default=0.0,
+        help="Extra block hidden alignment on focused response spans such as numbers or code.",
+    )
+    xfamily_block_recover.add_argument(
+        "--focused-projected-vocab-kd-weight",
+        type=float,
+        default=0.0,
+        help="Extra projected-vocab donor KD on focused response spans such as numbers or code.",
+    )
+    xfamily_block_recover.add_argument(
+        "--focused-lm-weight",
+        type=float,
+        default=0.0,
+        help="Extra child-token LM loss on focused response spans such as numbers or code.",
+    )
+    xfamily_block_recover.add_argument(
+        "--token-focus",
+        choices=["auto", "response", "numbers", "code", "all"],
+        default="auto",
+        help="Focused span selector used by blockwise focused hidden/projected/LM losses.",
     )
     xfamily_block_recover.add_argument(
         "--projected-vocab-kd-mode",
@@ -1201,6 +1268,19 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.0,
         help="Use a fixed byte probe from child output embeddings to align active block hidden states with donor byte targets.",
+    )
+    xfamily_block_recover.add_argument(
+        "--block-io-kd-weight",
+        type=float,
+        default=0.0,
+        help="Fitted full-block input/output reconstruction loss in donor hidden space.",
+    )
+    xfamily_block_recover.add_argument("--block-io-ridge", type=float, default=1e-3)
+    xfamily_block_recover.add_argument(
+        "--block-io-loss",
+        choices=["smooth-l1", "cosine", "both"],
+        default="both",
+        help="Loss used after mapping candidate block outputs/deltas into donor hidden space.",
     )
     xfamily_block_recover.add_argument(
         "--train-output-head-with-kd",
@@ -1261,6 +1341,155 @@ def build_parser() -> argparse.ArgumentParser:
         help="Save a full candidate checkpoint every N completed block-fold layers. Disabled when 0.",
     )
     xfamily_block_recover.set_defaults(func=cmd_hf_xfamily_block_recover)
+
+    xfamily_chain = sub.add_parser(
+        "hf-xfamily-chain-anchor-compress",
+        help="Run staged donor-to-child updates while preserving a behavior-gated incumbent anchor.",
+    )
+    xfamily_chain.add_argument("source_model")
+    xfamily_chain.add_argument("anchor_model")
+    xfamily_chain.add_argument("output")
+    xfamily_chain.add_argument("--stages", default="block,alm", help="Comma-separated stage list: init,block,alm.")
+    xfamily_chain.add_argument("--eval-suite")
+    xfamily_chain.add_argument("--max-text-evals", type=int)
+    xfamily_chain.add_argument("--max-choice-probes", type=int)
+    xfamily_chain.add_argument("--max-generation-prompts", type=int)
+    xfamily_chain.add_argument("--max-behavior-probes", type=int)
+    xfamily_chain.add_argument("--max-new-tokens", type=int, default=96)
+    xfamily_chain.add_argument("--stage-max-ppl-ratio", type=float, default=1.25)
+    xfamily_chain.add_argument("--stage-ppl-gate-mode", choices=["hard", "advisory"], default="advisory")
+    xfamily_chain.add_argument("--stage-max-accuracy-drop", type=float, default=0.0)
+    xfamily_chain.add_argument("--stage-max-behavior-drop", type=float, default=0.0)
+    xfamily_chain.add_argument("--stage-min-choice-accuracy", type=float, default=0.0)
+    xfamily_chain.add_argument("--stage-min-behavior-pass-rate", type=float, default=0.0)
+    xfamily_chain.add_argument("--promote-policy", choices=["gate-and-rank", "gate-only", "always"], default="gate-and-rank")
+    xfamily_chain.add_argument("--init-fold-mode", choices=["mean", "rms", "transport"], default="mean")
+    xfamily_chain.add_argument("--init-hidden-basis-mode", choices=["none", "activation-pca", "shared-token-ridge"], default="none")
+    xfamily_chain.add_argument("--init-hidden-basis-scope", choices=["global", "layer"], default="global")
+    xfamily_chain.add_argument("--init-hidden-basis-max-rows", type=int, default=2048)
+    xfamily_chain.add_argument(
+        "--init-hidden-basis-preprocess",
+        choices=["centered-rowrms", "uncentered-rowrms", "uncentered"],
+        default="centered-rowrms",
+    )
+    xfamily_chain.add_argument("--init-activation-fold-assignment", choices=["balanced", "similarity"], default="balanced")
+    xfamily_chain.add_argument("--init-transport-backend", choices=["sparse", "sinkhorn"], default="sparse")
+    xfamily_chain.add_argument("--init-donor-layer-fold-mode", choices=["representative", "average", "fold"], default="fold")
+    xfamily_chain.add_argument("--init-donor-layer-group-strategy", choices=["depth", "activation-energy"], default="depth")
+    xfamily_chain.add_argument(
+        "--init-attention-fold-mode",
+        choices=["independent", "coupled", "activation-coupled"],
+        default="independent",
+    )
+    xfamily_chain.add_argument("--init-attention-head-dim-transport", choices=["none", "qk-vo"], default="none")
+    xfamily_chain.add_argument(
+        "--init-token-init-mode",
+        choices=["shared", "donor-tokenized", "donor-tokenized-weighted", "donor-omp"],
+        default="shared",
+    )
+    xfamily_chain.add_argument("--init-projection-scale", choices=["none", "target-rms"], default="none")
+    xfamily_chain.add_argument("--init-projection-blend-alpha", type=float, default=1.0)
+    xfamily_chain.add_argument("--init-consumer-hidden-reduction", choices=["mean", "sum", "sqrt-sum"], default="mean")
+    xfamily_chain.add_argument("--init-activation-fit-linears", action="store_true")
+    xfamily_chain.add_argument(
+        "--init-activation-fit-target",
+        choices=["all", "attention", "attention-output", "mlp", "mlp-output", "input-projections"],
+        default="all",
+    )
+    xfamily_chain.add_argument("--init-activation-fit-max-rows", type=int, default=0)
+    xfamily_chain.add_argument("--init-activation-fit-alpha", type=float, default=1.0)
+    xfamily_chain.add_argument("--init-activation-fit-ridge", type=float, default=1e-1)
+    xfamily_chain.add_argument("--init-activation-fit-rank", type=int, default=0)
+    xfamily_chain.add_argument("--init-activation-fit-rank-mode", choices=["absolute", "delta"], default="absolute")
+    xfamily_chain.add_argument("--init-activation-fit-method", choices=["ridge", "lrc"], default="ridge")
+    xfamily_chain.add_argument("--init-activation-fit-factor-steps", type=int, default=0)
+    xfamily_chain.add_argument("--init-activation-fit-factor-lr", type=float, default=3e-2)
+    xfamily_chain.add_argument("--init-activation-fit-factor-l2", type=float, default=0.0)
+    xfamily_chain.add_argument("--init-activation-fit-gate", choices=["none", "validation"], default="validation")
+    xfamily_chain.add_argument("--init-activation-fit-validation-fraction", type=float, default=0.20)
+    xfamily_chain.add_argument("--init-activation-fit-min-validation-rows", type=int, default=8)
+    xfamily_chain.add_argument("--init-activation-fit-min-relative-improvement", type=float, default=0.0)
+    xfamily_chain.add_argument("--init-activation-fit-max-cosine-drop", type=float, default=0.01)
+    xfamily_chain.add_argument("--init-activation-feature-mode", choices=["stats", "subspace", "covariance"], default="stats")
+    xfamily_chain.add_argument("--init-activation-subspace-rank", type=int, default=8)
+    xfamily_chain.add_argument("--init-activation-max-length", type=int, default=128)
+    xfamily_chain.add_argument("--block-steps-per-layer", type=int, default=4)
+    xfamily_chain.add_argument("--block-batch-size", type=int, default=1)
+    xfamily_chain.add_argument("--block-max-length", type=int, default=112)
+    xfamily_chain.add_argument("--block-lr", type=float, default=2e-6)
+    xfamily_chain.add_argument("--block-lm-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-response-lm-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-first-token-lm-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-response-end-lm-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-response-loss-mode", choices=["none", "auto", "assistant", "answer"], default="none")
+    xfamily_chain.add_argument("--block-hidden-projection-scope", choices=["global", "layer-input"], default="layer-input")
+    xfamily_chain.add_argument(
+        "--block-hidden-metric",
+        choices=[
+            "projected",
+            "cka",
+            "both",
+            "rsd",
+            "projected-rsd",
+            "gram",
+            "projected-gram",
+            "geometry",
+            "projected-geometry",
+        ],
+        default="projected-rsd",
+    )
+    xfamily_chain.add_argument("--block-span-pair-mode", choices=["exact", "overlap", "both"], default="exact")
+    xfamily_chain.add_argument("--block-target", choices=["hidden", "delta"], default="delta")
+    xfamily_chain.add_argument(
+        "--block-residual-magnitude-compensation",
+        choices=["none", "pre", "pre-linear", "linear-pre", "pre-lowrank", "lowrank-pre"],
+        default="lowrank-pre",
+    )
+    xfamily_chain.add_argument("--block-residual-compensation-alpha", type=float, default=0.01)
+    xfamily_chain.add_argument("--block-residual-compensation-linear-rank", type=int, default=16)
+    xfamily_chain.add_argument("--block-pre-reconstruction-target", choices=["none", "consumer-input", "block-interface", "all"], default="none")
+    xfamily_chain.add_argument("--block-pre-reconstruction-alpha", type=float, default=0.05)
+    xfamily_chain.add_argument("--block-pre-reconstruction-fit-gate", choices=["none", "validation"], default="validation")
+    xfamily_chain.add_argument("--block-donor-layer-fold-mode", choices=["representative", "average", "fold"], default="fold")
+    xfamily_chain.add_argument("--block-donor-layer-group-strategy", choices=["depth", "activation-energy"], default="activation-energy")
+    xfamily_chain.add_argument("--block-layer-limit", type=int)
+    xfamily_chain.add_argument("--block-layer-gate-metric", choices=["none", "ppl", "behavior"], default="behavior")
+    xfamily_chain.add_argument("--block-layer-gate-max-texts", type=int, default=200)
+    xfamily_chain.add_argument("--block-layer-gate-max-generation-prompts", type=int)
+    xfamily_chain.add_argument("--block-layer-gate-max-behavior-drop", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-alm-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-projected-vocab-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-byte-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-block-io-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-module-output-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-module-output-targets", choices=["attention", "mlp", "both"], default="both")
+    xfamily_chain.add_argument("--block-module-output-transport", choices=["paired", "sinkhorn", "both"], default="paired")
+    xfamily_chain.add_argument("--block-save-best-layer-loss", action="store_true")
+    xfamily_chain.add_argument("--block-save-best-layer-behavior", action="store_true")
+    xfamily_chain.add_argument("--block-layer-behavior-eval-interval", type=int)
+    xfamily_chain.add_argument("--block-layer-checkpoint-interval", type=int, default=0)
+    xfamily_chain.add_argument("--alm-steps", type=int, default=80)
+    xfamily_chain.add_argument("--alm-batch-size", type=int, default=1)
+    xfamily_chain.add_argument("--alm-max-length", type=int, default=112)
+    xfamily_chain.add_argument("--alm-lr", type=float, default=2e-6)
+    xfamily_chain.add_argument("--alm-anchor-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-lm-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-dual-space-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-kd-weight", type=float, default=0.05)
+    xfamily_chain.add_argument("--alm-projected-vocab-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-span-hidden-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-train-scope", default="last4")
+    xfamily_chain.add_argument("--alm-response-loss-mode", choices=["none", "auto", "assistant", "answer"], default="none")
+    xfamily_chain.add_argument("--alm-append-eos", action="store_true")
+    xfamily_chain.add_argument("--alm-save-best-behavior", action="store_true")
+    xfamily_chain.add_argument("--alm-behavior-eval-interval", type=int)
+    xfamily_chain.add_argument("--dtype", default="float16")
+    xfamily_chain.add_argument("--candidate-dtype", default="float32")
+    xfamily_chain.add_argument("--device", default="cuda:0")
+    xfamily_chain.add_argument("--trust-remote-code", action="store_true")
+    xfamily_chain.add_argument("--calibration-file")
+    xfamily_chain.add_argument("--max-calibration-texts", type=int)
+    xfamily_chain.set_defaults(func=cmd_hf_xfamily_chain_anchor_compress)
 
     lm_recover = sub.add_parser("hf-lm-recover", help="Run teacherless LM recovery on a folded HF causal LM.")
     lm_recover.add_argument("candidate_model")
@@ -1727,6 +1956,12 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         activation_fit_max_rows=args.activation_fit_max_rows,
         activation_fit_alpha=args.activation_fit_alpha,
         activation_fit_ridge=args.activation_fit_ridge,
+        activation_fit_rank=args.activation_fit_rank,
+        activation_fit_rank_mode=args.activation_fit_rank_mode,
+        activation_fit_method=args.activation_fit_method,
+        activation_fit_factor_steps=args.activation_fit_factor_steps,
+        activation_fit_factor_lr=args.activation_fit_factor_lr,
+        activation_fit_factor_l2=args.activation_fit_factor_l2,
         activation_fit_gate=args.activation_fit_gate,
         activation_fit_validation_fraction=args.activation_fit_validation_fraction,
         activation_fit_min_validation_rows=args.activation_fit_min_validation_rows,
@@ -1738,6 +1973,7 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         activation_calibration_texts=activation_calibration_texts,
         activation_max_length=args.activation_max_length,
         activation_device=args.activation_device,
+        neutralize_unmatched_operators=args.neutralize_unmatched_operators,
         torch_dtype=args.dtype,
         trust_remote_code=args.trust_remote_code,
     )
@@ -2276,6 +2512,7 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         hidden_ridge=args.hidden_ridge,
         hidden_projection_scope=args.hidden_projection_scope,
         hidden_metric=args.hidden_metric,
+        span_pair_mode=args.span_pair_mode,
         block_target=args.block_target,
         residual_magnitude_compensation=args.residual_magnitude_compensation,
         residual_compensation_min_scale=args.residual_compensation_min_scale,
@@ -2323,10 +2560,20 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         teacher_generate_projected_vocab_kd_weight=args.teacher_generate_projected_vocab_kd_weight,
         teacher_generate_byte_kd_weight=args.teacher_generate_byte_kd_weight,
         teacher_generate_max_new_tokens=args.teacher_generate_max_new_tokens,
+        alm_kd_weight=args.alm_kd_weight,
+        alm_max_chunks=args.alm_max_chunks,
+        alm_min_chars=args.alm_min_chars,
         projected_vocab_kd_weight=args.projected_vocab_kd_weight,
+        focused_block_hidden_kd_weight=args.focused_block_hidden_kd_weight,
+        focused_projected_vocab_kd_weight=args.focused_projected_vocab_kd_weight,
+        focused_lm_weight=args.focused_lm_weight,
+        token_focus=args.token_focus,
         projected_vocab_kd_mode=args.projected_vocab_kd_mode,
         byte_kd_weight=args.byte_kd_weight,
         byte_hidden_kd_weight=args.byte_hidden_kd_weight,
+        block_io_kd_weight=args.block_io_kd_weight,
+        block_io_ridge=args.block_io_ridge,
+        block_io_loss=args.block_io_loss,
         train_output_head_with_kd=args.train_output_head_with_kd,
         untie_output_head_for_kd=args.untie_output_head_for_kd,
         allow_tied_output_head_training=args.allow_tied_output_head_training,
@@ -2348,6 +2595,121 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         save_best_layer_behavior=args.save_best_layer_behavior,
         layer_behavior_eval_interval=args.layer_behavior_eval_interval,
         layer_checkpoint_interval=args.layer_checkpoint_interval,
+    )
+
+
+def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_xfamily import chain_anchor_staged_compress
+
+    return chain_anchor_staged_compress(
+        source_model=args.source_model,
+        anchor_model=args.anchor_model,
+        output_dir=args.output,
+        stages=args.stages,
+        calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+        eval_suite=args.eval_suite,
+        max_text_evals=args.max_text_evals,
+        max_choice_probes=args.max_choice_probes,
+        max_generation_prompts=args.max_generation_prompts,
+        max_behavior_probes=args.max_behavior_probes,
+        max_new_tokens=args.max_new_tokens,
+        stage_max_ppl_ratio=args.stage_max_ppl_ratio,
+        stage_ppl_gate_mode=args.stage_ppl_gate_mode,
+        stage_max_accuracy_drop=args.stage_max_accuracy_drop,
+        stage_max_behavior_drop=args.stage_max_behavior_drop,
+        stage_min_choice_accuracy=args.stage_min_choice_accuracy,
+        stage_min_behavior_pass_rate=args.stage_min_behavior_pass_rate,
+        promote_policy=args.promote_policy,
+        init_fold_mode=args.init_fold_mode,
+        init_hidden_basis_mode=args.init_hidden_basis_mode,
+        init_hidden_basis_scope=args.init_hidden_basis_scope,
+        init_hidden_basis_max_rows=args.init_hidden_basis_max_rows,
+        init_hidden_basis_preprocess=args.init_hidden_basis_preprocess,
+        init_activation_fold_assignment=args.init_activation_fold_assignment,
+        init_transport_backend=args.init_transport_backend,
+        init_donor_layer_fold_mode=args.init_donor_layer_fold_mode,
+        init_donor_layer_group_strategy=args.init_donor_layer_group_strategy,
+        init_attention_fold_mode=args.init_attention_fold_mode,
+        init_attention_head_dim_transport=args.init_attention_head_dim_transport,
+        init_token_init_mode=args.init_token_init_mode,
+        init_projection_scale=args.init_projection_scale,
+        init_projection_blend_alpha=args.init_projection_blend_alpha,
+        init_consumer_hidden_reduction=args.init_consumer_hidden_reduction,
+        init_activation_fit_linears=args.init_activation_fit_linears,
+        init_activation_fit_target=args.init_activation_fit_target,
+        init_activation_fit_max_rows=args.init_activation_fit_max_rows,
+        init_activation_fit_alpha=args.init_activation_fit_alpha,
+        init_activation_fit_ridge=args.init_activation_fit_ridge,
+        init_activation_fit_rank=args.init_activation_fit_rank,
+        init_activation_fit_rank_mode=args.init_activation_fit_rank_mode,
+        init_activation_fit_method=args.init_activation_fit_method,
+        init_activation_fit_factor_steps=args.init_activation_fit_factor_steps,
+        init_activation_fit_factor_lr=args.init_activation_fit_factor_lr,
+        init_activation_fit_factor_l2=args.init_activation_fit_factor_l2,
+        init_activation_fit_gate=args.init_activation_fit_gate,
+        init_activation_fit_validation_fraction=args.init_activation_fit_validation_fraction,
+        init_activation_fit_min_validation_rows=args.init_activation_fit_min_validation_rows,
+        init_activation_fit_min_relative_improvement=args.init_activation_fit_min_relative_improvement,
+        init_activation_fit_max_cosine_drop=args.init_activation_fit_max_cosine_drop,
+        init_activation_feature_mode=args.init_activation_feature_mode,
+        init_activation_subspace_rank=args.init_activation_subspace_rank,
+        init_activation_max_length=args.init_activation_max_length,
+        block_steps_per_layer=args.block_steps_per_layer,
+        block_batch_size=args.block_batch_size,
+        block_max_length=args.block_max_length,
+        block_lr=args.block_lr,
+        block_lm_weight=args.block_lm_weight,
+        block_response_lm_weight=args.block_response_lm_weight,
+        block_first_token_lm_weight=args.block_first_token_lm_weight,
+        block_response_end_lm_weight=args.block_response_end_lm_weight,
+        block_response_loss_mode=args.block_response_loss_mode,
+        block_hidden_projection_scope=args.block_hidden_projection_scope,
+        block_hidden_metric=args.block_hidden_metric,
+        block_span_pair_mode=args.block_span_pair_mode,
+        block_target=args.block_target,
+        block_residual_magnitude_compensation=args.block_residual_magnitude_compensation,
+        block_residual_compensation_alpha=args.block_residual_compensation_alpha,
+        block_residual_compensation_linear_rank=args.block_residual_compensation_linear_rank,
+        block_pre_reconstruction_target=args.block_pre_reconstruction_target,
+        block_pre_reconstruction_alpha=args.block_pre_reconstruction_alpha,
+        block_pre_reconstruction_fit_gate=args.block_pre_reconstruction_fit_gate,
+        block_donor_layer_fold_mode=args.block_donor_layer_fold_mode,
+        block_donor_layer_group_strategy=args.block_donor_layer_group_strategy,
+        block_layer_limit=args.block_layer_limit,
+        block_layer_gate_metric=args.block_layer_gate_metric,
+        block_layer_gate_max_texts=args.block_layer_gate_max_texts,
+        block_layer_gate_max_generation_prompts=args.block_layer_gate_max_generation_prompts,
+        block_layer_gate_max_behavior_drop=args.block_layer_gate_max_behavior_drop,
+        block_alm_kd_weight=args.block_alm_kd_weight,
+        block_projected_vocab_kd_weight=args.block_projected_vocab_kd_weight,
+        block_byte_kd_weight=args.block_byte_kd_weight,
+        block_block_io_kd_weight=args.block_block_io_kd_weight,
+        block_module_output_kd_weight=args.block_module_output_kd_weight,
+        block_module_output_targets=args.block_module_output_targets,
+        block_module_output_transport=args.block_module_output_transport,
+        block_save_best_layer_loss=args.block_save_best_layer_loss,
+        block_save_best_layer_behavior=args.block_save_best_layer_behavior,
+        block_layer_behavior_eval_interval=args.block_layer_behavior_eval_interval,
+        block_layer_checkpoint_interval=args.block_layer_checkpoint_interval,
+        alm_steps=args.alm_steps,
+        alm_batch_size=args.alm_batch_size,
+        alm_max_length=args.alm_max_length,
+        alm_lr=args.alm_lr,
+        alm_anchor_kd_weight=args.alm_anchor_kd_weight,
+        alm_lm_weight=args.alm_lm_weight,
+        alm_dual_space_kd_weight=args.alm_dual_space_kd_weight,
+        alm_kd_weight=args.alm_kd_weight,
+        alm_projected_vocab_kd_weight=args.alm_projected_vocab_kd_weight,
+        alm_span_hidden_kd_weight=args.alm_span_hidden_kd_weight,
+        alm_train_scope=args.alm_train_scope,
+        alm_response_loss_mode=args.alm_response_loss_mode,
+        alm_append_eos=args.alm_append_eos,
+        alm_save_best_behavior=args.alm_save_best_behavior,
+        alm_behavior_eval_interval=args.alm_behavior_eval_interval,
+        torch_dtype=args.dtype,
+        candidate_torch_dtype=args.candidate_dtype,
+        device=args.device,
+        trust_remote_code=args.trust_remote_code,
     )
 
 
