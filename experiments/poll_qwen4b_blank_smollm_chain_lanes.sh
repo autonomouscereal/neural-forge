@@ -9,6 +9,7 @@ TAGS=(
   qwen4b_blank_smollm_chain_all_rank8_subspace_alm_gpu6_20260629
   qwen4b_blank_smollm_chain_transport_only_blockio_alm_gpu0_20260629
   qwen4b_blank_smollm_chain_mlpout_true_lrc_rank16_blockio_alm_gpu4_20260629
+  qwen4b_blank_smollm_chain_oldbest_noactfit_cka_alm_gpu0_20260629
 )
 
 for tag in "${TAGS[@]}"; do
