@@ -63,6 +63,57 @@ Implementation changes from this sweep:
 - `hf-lm-recover` now exposes answer-contrastive recovery with `--answer-contrastive-weight` and `--answer-contrastive-max-negatives`.
 - Generation-heavy cross-tokenizer recovery helpers now temporarily use left padding during decoder-only `.generate()` calls and restore tokenizer state afterward.
 
+## Blockwise Folding Follow-Up
+
+Added two blockwise recovery controls:
+
+- `--hidden-projection-scope layer-input`: refits donor-hidden to child-hidden
+  projections from each active block's paired input activations instead of using
+  only the global shared-token embedding map.
+- `--layer-checkpoint-interval`: saves resumable/evaluable checkpoints after
+  every N completed folded target layers.
+
+Layer-input projection avoided the catastrophic global-projection failures but
+did not recover arithmetic:
+
+| Run | Start | Generation | Behavior | Choice | Mean PPL | Behavior breakdown |
+|---|---|---:|---:|---:|---:|---|
+| `qwen4b_block_layerproj_delta_passgate_s6_gpu0_20260629` | best 135M child | 195/200 | 161/200 | 38/64 | 38,350.52 | math 1/40; all other categories 40/40 |
+| `qwen4b_block_layerproj_hidden_passgate_s6_gpu4_20260629` | best 135M child | 200/200 | 161/200 | 39/64 | 40,204.89 | math 1/40; all other categories 40/40 |
+| `qwen4b_block_layerproj_conservative_passgate_s4_gpu6_20260629` | best 135M child | 200/200 | 161/200 | 42/64 | 29,254.60 | math 1/40; all other categories 40/40 |
+
+Manual inspection of the conservative layer-input run still failed arithmetic:
+`6 + 4 -> 40`, `41 * 30 -> 1258`, `35 + 27 -> 85`. It retained the Python
+`add` function but degraded some explanatory text compared with the donor.
+
+Added response-focused blockwise folding controls:
+
+- `--response-lm-weight`
+- `--first-token-lm-weight`
+- `--response-end-lm-weight`
+- `--response-loss-mode`
+
+Validation showed that direct response LM is dangerous when it mutates tied
+output embeddings:
+
+| Run | Start | Head/embedding trained | Generation | Behavior | Choice | Mean PPL | Read |
+|---|---|---:|---:|---:|---:|---:|---|
+| `qwen4b_block_resplm_from_best_s8_gpu0_20260629` | best 135M child | yes | 13/200 | 54/200 | 39/64 | 26,816.79 | PPL improved while behavior collapsed. |
+| `qwen4b_block_resplm_from_random_s8_gpu4_20260629` | pure random SmolLM blank | yes | 0/200 | 0/200 | 22/64 | 79,190.30 | Direct response CE did not plant capability into a pure random target. |
+| `qwen4b_block_resplm_from_donorproj_s8_gpu6_20260629` | donor-projected blank init | yes | 0/200 | 0/200 | 21/64 | 32,776.90 | Donor tensor init plus tied-head response CE still collapsed. |
+| `qwen4b_block_resplm_nohead_from_best_s8_gpu0_20260629` | best 135M child | no | 200/200 | 161/200 | 42/64 | 29,817.96 | Preserved the conservative profile but did not improve math. |
+
+Manual inspection of `qwen4b_block_resplm_nohead_from_best_s8_gpu0_20260629`
+showed `6 + 4 -> 40`, `41 * 30 -> 1258`, `35 + 27 -> 85`; Python `add` was
+correct, but tokenizer/neuron-merge explanations were worse than the baseline.
+
+Conclusion: response-token CE is useful instrumentation, but the tested
+schedules are not the compression solution. Tied-head response training lowers
+PPL while destroying behavior. No-head response training can preserve the
+current model but does not transfer donor arithmetic. The next folding work
+should focus on staged representation/interface geometry rather than stronger
+answer CE on top of a weak fold.
+
 ## Raw-Patch Vision Graft
 
 Implementation change:

@@ -5306,8 +5306,18 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "0.0004",
             "--lm-weight",
             "0.15",
+            "--response-lm-weight",
+            "0.55",
+            "--first-token-lm-weight",
+            "0.45",
+            "--response-end-lm-weight",
+            "0.25",
+            "--response-loss-mode",
+            "answer",
             "--hidden-ridge",
             "0.02",
+            "--hidden-projection-scope",
+            "layer-input",
             "--hidden-metric",
             "both",
             "--block-target",
@@ -5447,6 +5457,8 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "--save-best-layer-behavior",
             "--layer-behavior-eval-interval",
             "2",
+            "--layer-checkpoint-interval",
+            "5",
         ]
     )
     result = args.func(args)
@@ -5461,7 +5473,12 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "max_length": 80,
         "lr": 0.0004,
         "lm_weight": 0.15,
+        "response_lm_weight": 0.55,
+        "first_token_lm_weight": 0.45,
+        "response_end_lm_weight": 0.25,
+        "response_loss_mode": "answer",
         "hidden_ridge": 0.02,
+        "hidden_projection_scope": "layer-input",
         "hidden_metric": "both",
         "block_target": "delta",
         "residual_magnitude_compensation": "lowrank-pre",
@@ -5533,6 +5550,7 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "save_best_layer_loss": True,
         "save_best_layer_behavior": True,
         "layer_behavior_eval_interval": 2,
+        "layer_checkpoint_interval": 5,
     }
 
 

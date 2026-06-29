@@ -2161,7 +2161,12 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     max_length: int = 128,
     lr: float = 2e-5,
     lm_weight: float = 0.0,
+    response_lm_weight: float = 0.0,
+    first_token_lm_weight: float = 0.0,
+    response_end_lm_weight: float = 0.0,
+    response_loss_mode: str = "none",
     hidden_ridge: float = 1e-3,
+    hidden_projection_scope: str = "global",
     hidden_metric: str = "projected",
     block_target: str = "hidden",
     residual_magnitude_compensation: str = "none",
@@ -2233,6 +2238,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     save_best_layer_loss: bool = False,
     save_best_layer_behavior: bool = False,
     layer_behavior_eval_interval: int | None = None,
+    layer_checkpoint_interval: int = 0,
 ) -> dict[str, Any]:
     """Sequentially train each child block to match projected donor block outputs.
 
@@ -2253,8 +2259,18 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("lr must be positive.")
     if lm_weight < 0:
         raise ValueError("lm_weight must be non-negative.")
+    if response_lm_weight < 0 or first_token_lm_weight < 0 or response_end_lm_weight < 0:
+        raise ValueError("response LM weights must be non-negative.")
+    if response_loss_mode not in {"none", "auto", "assistant", "answer"}:
+        raise ValueError("response_loss_mode must be none, auto, assistant, or answer.")
+    if response_loss_mode == "none" and (
+        response_lm_weight > 0 or first_token_lm_weight > 0 or response_end_lm_weight > 0
+    ):
+        raise ValueError("response LM weights require response_loss_mode to be auto, assistant, or answer.")
     if hidden_ridge < 0:
         raise ValueError("hidden_ridge must be non-negative.")
+    if hidden_projection_scope not in {"global", "layer-input"}:
+        raise ValueError("hidden_projection_scope must be global or layer-input.")
     if hidden_metric not in HIDDEN_KD_METRICS:
         raise ValueError("hidden_metric must be projected, cka, both, rsd, or projected-rsd.")
     if block_target not in {"hidden", "delta"}:
@@ -2348,8 +2364,13 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         and byte_kd_weight == 0
         and teacher_generate_projected_vocab_kd_weight == 0
         and teacher_generate_byte_kd_weight == 0
+        and response_lm_weight == 0
+        and first_token_lm_weight == 0
+        and response_end_lm_weight == 0
     ):
-        raise ValueError("train_output_head_with_kd requires projected, byte, stepwise, or teacher-generated donor KD.")
+        raise ValueError(
+            "train_output_head_with_kd requires projected, byte, stepwise, teacher-generated, or response LM loss."
+        )
     if module_output_kd_weight < 0:
         raise ValueError("module_output_kd_weight must be non-negative.")
     if module_output_targets not in MODULE_OUTPUT_TARGETS:
@@ -2382,6 +2403,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("report_interval must be positive when provided.")
     if layer_behavior_eval_interval is not None and layer_behavior_eval_interval <= 0:
         raise ValueError("layer_behavior_eval_interval must be positive when provided.")
+    if layer_checkpoint_interval < 0:
+        raise ValueError("layer_checkpoint_interval must be non-negative.")
 
     from neural_forge.hf_xfamily import _canonical_token
     from neural_forge.hf_xfamily import _canonical_token_map
@@ -2515,6 +2538,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         max_length=max_length,
         device=device,
         include_offsets=True,
+        response_loss_mode=response_loss_mode,
     )
     teacher_generated_texts: list[str] = []
     teacher_generated_candidate_batches: list[dict[str, Any]] = []
@@ -2594,6 +2618,9 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     layer_count = len(candidate_layers) if layer_limit is None else min(int(layer_limit), len(candidate_layers))
     interval = int(report_interval or max(1, steps_per_layer // 4)) if steps_per_layer > 0 else 1
     behavior_interval = int(layer_behavior_eval_interval or interval)
+    target = Path(output_dir)
+    if layer_checkpoint_interval > 0:
+        target.mkdir(parents=True, exist_ok=True)
     layer_reports = []
     gate_texts = list(TEXT_EVALS[: int(layer_gate_max_texts)])
     layer_gate: dict[str, Any] = {
@@ -2653,6 +2680,27 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             if donor_layer_fold_mode == "representative"
             else source_group
         )
+        layer_hidden_projection = hidden_projection
+        layer_hidden_projection_report: dict[str, Any] | None = None
+        if hidden_projection_scope == "layer-input":
+            layer_hidden_projection_report = _fit_cross_tokenizer_layer_input_hidden_projection(
+                torch,
+                source,
+                candidate,
+                source_tokenizer,
+                candidate_tokenizer,
+                paired_batches,
+                source_group,
+                candidate_idx,
+                _canonical_token,
+                hidden_ridge,
+                pre_reconstruction_max_tokens_per_layer,
+            )
+            if not layer_hidden_projection_report.get("skipped"):
+                layer_hidden_projection = layer_hidden_projection_report["map"].to(
+                    device=device,
+                    dtype=torch.float32,
+                )
         candidate_layer = candidate_layers[candidate_idx]
         snapshot_modules = _block_recovery_snapshot_modules(
             candidate_layers,
@@ -2681,7 +2729,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 source_tokenizer,
                 candidate_tokenizer,
                 paired_batches,
-                hidden_projection,
+                layer_hidden_projection,
                 _canonical_token,
                 float(pre_reconstruction_ridge),
                 float(pre_reconstruction_alpha),
@@ -2712,7 +2760,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             paired_batches,
             source_group,
             candidate_idx,
-            hidden_projection,
+            layer_hidden_projection,
             _canonical_token,
             donor_layer_fold_mode,
             block_target,
@@ -2721,7 +2769,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         before_metrics = _cross_tokenizer_block_alignment_metrics(
             torch,
             before_alignment,
-            hidden_projection,
+            layer_hidden_projection,
             hidden_metric,
         )
         compensation_report = None
@@ -2794,7 +2842,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 candidate_batch,
                 source_group,
                 candidate_idx,
-                hidden_projection,
+                layer_hidden_projection,
                 _canonical_token,
                 donor_layer_fold_mode,
                 hidden_metric,
@@ -2899,7 +2947,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     candidate_batch,
                     source_group,
                     candidate_idx,
-                    hidden_projection,
+                    layer_hidden_projection,
                     _canonical_token,
                     donor_layer_fold_mode,
                     module_output_targets,
@@ -2914,6 +2962,9 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 and int(module_output_counts.get("attention_pairs", 0)) <= 0
                 and int(module_output_counts.get("mlp_pairs", 0)) <= 0
                 and lm_weight == 0
+                and response_lm_weight == 0
+                and first_token_lm_weight == 0
+                and response_end_lm_weight == 0
                 and on_policy_anchor_kd_weight == 0
                 and on_policy_unlikelihood_weight == 0
                 and on_policy_hidden_kd_weight == 0
@@ -2937,6 +2988,44 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     candidate_batch.get("attention_mask"),
                 )
                 loss = loss + float(lm_weight) * lm_loss
+            response_lm_loss = None
+            if response_lm_weight > 0:
+                response_lm_loss = _candidate_lm_stabilizer_loss(
+                    torch,
+                    student,
+                    candidate_batch["input_ids"],
+                    candidate_batch.get("attention_mask"),
+                    candidate_batch.get("loss_mask"),
+                )
+                loss = loss + float(response_lm_weight) * response_lm_loss
+            first_token_lm_loss = None
+            if first_token_lm_weight > 0:
+                first_mask = _first_response_shift_mask(
+                    torch,
+                    candidate_batch.get("loss_mask"),
+                    candidate_batch.get("attention_mask"),
+                )
+                first_token_lm_loss = _candidate_shift_lm_loss(
+                    torch,
+                    student,
+                    candidate_batch["input_ids"],
+                    first_mask,
+                )
+                loss = loss + float(first_token_lm_weight) * first_token_lm_loss
+            response_end_lm_loss = None
+            if response_end_lm_weight > 0:
+                end_mask = _last_response_shift_mask(
+                    torch,
+                    candidate_batch.get("loss_mask"),
+                    candidate_batch.get("attention_mask"),
+                )
+                response_end_lm_loss = _candidate_shift_lm_loss(
+                    torch,
+                    student,
+                    candidate_batch["input_ids"],
+                    end_mask,
+                )
+                loss = loss + float(response_end_lm_weight) * response_end_lm_loss
             on_policy_loss = None
             on_policy_count = 0
             if (
@@ -2980,7 +3069,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     device,
                     source_group,
                     candidate_idx,
-                    hidden_projection,
+                    layer_hidden_projection,
                     _canonical_token,
                     donor_layer_fold_mode,
                     hidden_metric,
@@ -3096,7 +3185,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                         teacher_candidate_batch,
                         source_group,
                         candidate_idx,
-                        hidden_projection,
+                        layer_hidden_projection,
                         _canonical_token,
                         donor_layer_fold_mode,
                         hidden_metric,
@@ -3138,6 +3227,13 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             _raise_if_nonfinite_parameters(torch, candidate, step)
             loss_value = float(loss.detach().cpu())
             lm_loss_value = None if lm_loss is None else float(lm_loss.detach().cpu())
+            response_lm_loss_value = None if response_lm_loss is None else float(response_lm_loss.detach().cpu())
+            first_token_lm_loss_value = (
+                None if first_token_lm_loss is None else float(first_token_lm_loss.detach().cpu())
+            )
+            response_end_lm_loss_value = (
+                None if response_end_lm_loss is None else float(response_end_lm_loss.detach().cpu())
+            )
             module_output_loss_value = (
                 None if module_output_loss is None else float(module_output_loss.detach().cpu())
             )
@@ -3203,6 +3299,9 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                         "loss": loss_value,
                         "block_loss": block_loss_value,
                         "lm_loss": lm_loss_value,
+                        "response_lm_loss": response_lm_loss_value,
+                        "first_token_lm_loss": first_token_lm_loss_value,
+                        "response_end_lm_loss": response_end_lm_loss_value,
                         "projected_vocab_kd_loss": projected_vocab_loss_value,
                         "projected_vocab_pairs": int(projected_vocab_pair_count),
                         "byte_kd_loss": byte_kd_loss_value,
@@ -3231,6 +3330,9 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     f"xfamily_block_recover layer={candidate_idx} step={step} "
                     f"loss={loss_value:.6f} block_loss={block_loss_value:.6f} "
                     f"lm_loss={lm_loss_value if lm_loss_value is not None else 0.0:.6f} "
+                    f"response_lm={response_lm_loss_value if response_lm_loss_value is not None else 0.0:.6f} "
+                    f"first_response_lm={first_token_lm_loss_value if first_token_lm_loss_value is not None else 0.0:.6f} "
+                    f"response_end_lm={response_end_lm_loss_value if response_end_lm_loss_value is not None else 0.0:.6f} "
                     f"projected_vocab={projected_vocab_loss_value if projected_vocab_loss_value is not None else 0.0:.6f} "
                     f"projected_vocab_pairs={int(projected_vocab_pair_count)} "
                     f"byte_kd={byte_kd_loss_value if byte_kd_loss_value is not None else 0.0:.6f} "
@@ -3270,7 +3372,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             paired_batches,
             source_group,
             candidate_idx,
-            hidden_projection,
+            layer_hidden_projection,
             _canonical_token,
             donor_layer_fold_mode,
             block_target,
@@ -3279,7 +3381,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         after_metrics = _cross_tokenizer_block_alignment_metrics(
             torch,
             after_alignment,
-            hidden_projection,
+            layer_hidden_projection,
             hidden_metric,
         )
         report: dict[str, Any] = {
@@ -3295,6 +3397,11 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             "behavior_history": behavior_history,
             "best_behavior_step": best_behavior_step,
             "best_behavior": best_behavior_summary,
+            "hidden_projection": (
+                None
+                if layer_hidden_projection_report is None
+                else {key: value for key, value in layer_hidden_projection_report.items() if key != "map"}
+            ),
             "pre_reconstruction": pre_reconstruction_report,
             "residual_magnitude_compensation": compensation_report,
             "before": before_metrics,
@@ -3373,12 +3480,33 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 previous_gate_behavior = reverted_behavior
             report["layer_gate"] = gate_decision
         layer_reports.append(report)
+        completed_layer_count = int(candidate_idx) + 1
+        if layer_checkpoint_interval > 0 and (
+            completed_layer_count % int(layer_checkpoint_interval) == 0
+            or completed_layer_count == int(layer_count)
+        ):
+            checkpoint_dir = target / "layer_checkpoints" / f"layer_{completed_layer_count:04d}"
+            checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            candidate.save_pretrained(checkpoint_dir, safe_serialization=True)
+            candidate_tokenizer.save_pretrained(checkpoint_dir)
+            progress_report = {
+                "operation": "blockwise_reconstruct_cross_tokenizer_causal_lm_progress",
+                "source_model": source_model,
+                "candidate_model": candidate_model,
+                "output_dir": str(target),
+                "checkpoint_dir": str(checkpoint_dir),
+                "layers_completed": completed_layer_count,
+                "layer_count": int(layer_count),
+                "layer_checkpoint_interval": int(layer_checkpoint_interval),
+                "latest_layer": report,
+            }
+            _write_json(checkpoint_dir / "neural_forge_xfamily_block_recovery_progress.json", progress_report)
+            _write_json(target / "neural_forge_xfamily_block_recovery_progress.json", progress_report)
         if device.startswith("cuda") and hasattr(torch, "cuda"):
             torch.cuda.empty_cache()
 
     for param in candidate.parameters():
         param.requires_grad_(False)
-    target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)
     candidate.save_pretrained(target, safe_serialization=True)
     candidate_tokenizer.save_pretrained(target)
@@ -3392,7 +3520,12 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "max_length": int(max_length),
         "lr": float(lr),
         "lm_weight": float(lm_weight),
+        "response_lm_weight": float(response_lm_weight),
+        "first_token_lm_weight": float(first_token_lm_weight),
+        "response_end_lm_weight": float(response_end_lm_weight),
+        "response_loss_mode": response_loss_mode,
         "hidden_ridge": float(hidden_ridge),
+        "hidden_projection_scope": hidden_projection_scope,
         "hidden_metric": hidden_metric,
         "block_target": block_target,
         "residual_magnitude_compensation": residual_magnitude_compensation,
@@ -3462,6 +3595,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "save_best_layer_loss": bool(save_best_layer_loss),
         "save_best_layer_behavior": bool(save_best_layer_behavior),
         "layer_behavior_eval_interval": int(behavior_interval),
+        "layer_checkpoint_interval": int(layer_checkpoint_interval),
         "calibration_text_count": len(texts),
         "eval_overlap_count": eval_overlap_count,
         "hidden_projection": {key: value for key, value in hidden_projection_report.items() if key != "map"},
@@ -6472,7 +6606,7 @@ def _cross_tokenizer_block_on_policy_hidden_loss(
     )
 
 
-def _candidate_lm_stabilizer_loss(torch, student, input_ids, attention_mask):
+def _candidate_shift_lm_loss(torch, student, input_ids, shift_mask):
     if int(input_ids.shape[-1]) <= 1:
         return torch.zeros((), dtype=student.logits.dtype, device=student.logits.device)
     shift_logits = torch.nan_to_num(
@@ -6482,10 +6616,10 @@ def _candidate_lm_stabilizer_loss(torch, student, input_ids, attention_mask):
         neginf=-1e4,
     )
     shift_labels = input_ids[:, 1:].contiguous()
-    if attention_mask is None:
+    if shift_mask is None:
         mask = torch.ones_like(shift_labels, dtype=torch.bool, device=shift_logits.device)
     else:
-        mask = attention_mask[:, 1:].contiguous().to(device=shift_logits.device).bool()
+        mask = shift_mask.to(device=shift_logits.device).bool()
     if int(mask.sum().detach().cpu().item()) <= 0:
         return torch.zeros((), dtype=student.logits.dtype, device=student.logits.device)
     token_ce = torch.nn.functional.cross_entropy(
@@ -6494,6 +6628,19 @@ def _candidate_lm_stabilizer_loss(torch, student, input_ids, attention_mask):
         reduction="none",
     ).view_as(shift_labels)
     return (token_ce * mask).sum() / mask.sum().clamp_min(1)
+
+
+def _candidate_lm_stabilizer_loss(torch, student, input_ids, attention_mask, loss_mask=None):
+    if int(input_ids.shape[-1]) <= 1:
+        return torch.zeros((), dtype=student.logits.dtype, device=student.logits.device)
+    shift_labels = input_ids[:, 1:].contiguous()
+    if attention_mask is None:
+        mask = torch.ones_like(shift_labels, dtype=torch.bool, device=student.logits.device)
+    else:
+        mask = attention_mask[:, 1:].contiguous().to(device=student.logits.device).bool()
+    if loss_mask is not None:
+        mask = mask & loss_mask[:, 1:].contiguous().to(device=student.logits.device).bool()
+    return _candidate_shift_lm_loss(torch, student, input_ids, mask)
 
 
 def _cross_tokenizer_block_alignment_state(

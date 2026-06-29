@@ -968,7 +968,37 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="Candidate-token LM stabilizer weight applied while each block is trained.",
     )
+    xfamily_block_recover.add_argument(
+        "--response-lm-weight",
+        type=float,
+        default=0.0,
+        help="Response-token-only LM weight applied while each block is trained.",
+    )
+    xfamily_block_recover.add_argument(
+        "--first-token-lm-weight",
+        type=float,
+        default=0.0,
+        help="Extra LM weight on the first response token during blockwise folding.",
+    )
+    xfamily_block_recover.add_argument(
+        "--response-end-lm-weight",
+        type=float,
+        default=0.0,
+        help="Extra LM weight on the last response token during blockwise folding.",
+    )
+    xfamily_block_recover.add_argument(
+        "--response-loss-mode",
+        choices=["none", "auto", "assistant", "answer"],
+        default="none",
+        help="How calibration responses are masked for blockwise response LM losses.",
+    )
     xfamily_block_recover.add_argument("--hidden-ridge", type=float, default=1e-3)
+    xfamily_block_recover.add_argument(
+        "--hidden-projection-scope",
+        choices=["global", "layer-input"],
+        default="global",
+        help="Use one shared-token hidden map or refit donor->child maps from each block input.",
+    )
     xfamily_block_recover.add_argument(
         "--hidden-metric",
         choices=["projected", "cka", "both", "rsd", "projected-rsd"],
@@ -1185,6 +1215,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Within each trained block, keep the checkpoint selected by held-out behavior probes.",
     )
     xfamily_block_recover.add_argument("--layer-behavior-eval-interval", type=int)
+    xfamily_block_recover.add_argument(
+        "--layer-checkpoint-interval",
+        type=int,
+        default=0,
+        help="Save a full candidate checkpoint every N completed block-fold layers. Disabled when 0.",
+    )
     xfamily_block_recover.set_defaults(func=cmd_hf_xfamily_block_recover)
 
     lm_recover = sub.add_parser("hf-lm-recover", help="Run teacherless LM recovery on a folded HF causal LM.")
@@ -2194,7 +2230,12 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         max_length=args.max_length,
         lr=args.lr,
         lm_weight=args.lm_weight,
+        response_lm_weight=args.response_lm_weight,
+        first_token_lm_weight=args.first_token_lm_weight,
+        response_end_lm_weight=args.response_end_lm_weight,
+        response_loss_mode=args.response_loss_mode,
         hidden_ridge=args.hidden_ridge,
+        hidden_projection_scope=args.hidden_projection_scope,
         hidden_metric=args.hidden_metric,
         block_target=args.block_target,
         residual_magnitude_compensation=args.residual_magnitude_compensation,
@@ -2266,6 +2307,7 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         save_best_layer_loss=args.save_best_layer_loss,
         save_best_layer_behavior=args.save_best_layer_behavior,
         layer_behavior_eval_interval=args.layer_behavior_eval_interval,
+        layer_checkpoint_interval=args.layer_checkpoint_interval,
     )
 
 

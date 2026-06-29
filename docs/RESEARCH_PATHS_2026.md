@@ -1,6 +1,6 @@
 # Research Paths For Model Folding And Recovery
 
-Current as of 2026-06-28. This file tracks implementation directions for the
+Current as of 2026-06-29. This file tracks implementation directions for the
 blank-target, cross-family compression goal. It deliberately focuses on
 2025-2026 work and actionable hooks for Neural Forge.
 
@@ -29,7 +29,7 @@ behavior recovery in the strict blank-target runs.
 
 ## Current Evidence
 
-The 2026-06-28 runs show that output-interface losses alone are not enough for
+The 2026-06-28 and 2026-06-29 runs show that output-interface losses alone are not enough for
 the strict Qwen3-4B to blank SmolLM2-135M `29.90x` case:
 
 - static projected-vocab KD, byte KD, and optional head training are active and
@@ -42,3 +42,11 @@ the strict Qwen3-4B to blank SmolLM2-135M `29.90x` case:
 - arithmetic and Python outputs still collapse, so the next useful work is
   structural activation compensation and stronger on-policy representation
   recovery.
+- per-layer input activation projections in `hf-xfamily-block-recover` prevent
+  the worst global-projection collapses, but the best 2026-06-29 run still held
+  math at `1/40`;
+- response-token LM losses were added to blockwise folding. Tied output-head
+  response training lowered PPL while collapsing behavior, and no-head response
+  training preserved the conservative profile without improving arithmetic. The
+  next attempt should avoid tied-head mutation and use staged hidden/interface
+  transfer before response CE.
