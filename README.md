@@ -455,12 +455,25 @@ experimental initializer strategy, not a promoted default; it must be followed
 by `hf-eval`, `hf-gate`, manual generation inspection, and benchmark slices
 before claiming capability transfer.
 
+`--activation-feature-mode covariance` is an additional donor-fold feature mode
+for `fold-mode=transport` or `--activation-fold-assignment similarity`. It
+standardizes donor activation channels and appends a covariance/PCA signature,
+so hidden axes, MLP channels, attention heads, and token/head projections can be
+folded by co-activation geometry rather than only scalar activation statistics.
+This is inspired by the current DOTResize / FLAT-LLM / GRAIL direction: merge or
+transport correlated signal first, then validate with behavior gates. It is
+default-off because prior activation methods improved local metrics without
+recovering math/code behavior.
+
 If `--activation-fit-linears` is enabled, `hf-donor-project-init` writes both
 applied fits and attempted fits with validation MSE/cosine diagnostics. The
 default `--activation-fit-gate validation` rejects fits that cannot beat the
 folded reference on enough held-out activation rows. A fit that improves this
 local diagnostic can still destroy broad behavior, so activation-fit reports are
-debugging evidence, not promotion evidence.
+debugging evidence, not promotion evidence. When `--activation-fit-linears` is
+enabled and `--activation-fit-max-rows` is left at `0`, donor linear activation
+collection now defaults to `--hidden-basis-max-rows`; the report records both
+requested and effective row caps.
 
 `hf-gate` checks PPL ratio, choice-probe accuracy, behavior probes, generation
 length, generation diversity, and prompt-specific generation relevance for the

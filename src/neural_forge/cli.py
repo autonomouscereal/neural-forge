@@ -225,7 +225,7 @@ def build_parser() -> argparse.ArgumentParser:
     hf_donor_init.add_argument("--activation-fit-max-cosine-drop", type=float, default=0.01)
     hf_donor_init.add_argument(
         "--activation-feature-mode",
-        choices=["stats", "subspace"],
+        choices=["stats", "subspace", "covariance"],
         default="stats",
         help="Activation feature summary used for transport/similarity assignment on folded axes.",
     )
@@ -233,7 +233,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--activation-subspace-rank",
         type=int,
         default=8,
-        help="Extra per-channel PCA/SVD signature dimensions when --activation-feature-mode subspace is used.",
+        help="Extra per-channel PCA/SVD signature dimensions when --activation-feature-mode subspace or covariance is used.",
     )
     hf_donor_init.add_argument(
         "--untie-output-head",

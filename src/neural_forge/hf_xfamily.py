@@ -345,14 +345,19 @@ def donor_projected_init(
         raise ValueError("activation_fit_min_relative_improvement must be non-negative.")
     if activation_fit_max_cosine_drop < 0:
         raise ValueError("activation_fit_max_cosine_drop must be non-negative.")
-    if activation_feature_mode not in {"stats", "subspace"}:
-        raise ValueError("activation_feature_mode must be stats or subspace.")
+    if activation_feature_mode not in {"stats", "subspace", "covariance"}:
+        raise ValueError("activation_feature_mode must be stats, subspace, or covariance.")
     if activation_subspace_rank < 0:
         raise ValueError("activation_subspace_rank must be non-negative.")
     projection_blend_alpha = _bounded_alpha(projection_blend_alpha, "projection_blend_alpha")
     activation_fit_alpha = _bounded_alpha(activation_fit_alpha, "activation_fit_alpha")
     if activation_max_length <= 1:
         raise ValueError("activation_max_length must be greater than 1.")
+    effective_activation_fit_max_rows = _effective_activation_fit_max_rows(
+        activation_fit_linears,
+        activation_fit_max_rows,
+        hidden_basis_max_rows,
+    )
 
     torch, transformers = _torch_and_transformers()
     dtype = _dtype_from_name(torch, torch_dtype)
@@ -405,7 +410,7 @@ def donor_projected_init(
             max_length=activation_max_length,
             device=activation_device,
             hidden_basis_max_rows=hidden_basis_max_rows if needs_layer_activation_rows else 0,
-            linear_fit_max_rows=activation_fit_max_rows if activation_fit_linears else 0,
+            linear_fit_max_rows=effective_activation_fit_max_rows if activation_fit_linears else 0,
             activation_feature_mode=activation_feature_mode,
             activation_subspace_rank=activation_subspace_rank,
         )
@@ -740,7 +745,8 @@ def donor_projected_init(
         "consumer_hidden_reduction": consumer_hidden_reduction,
         "activation_fit_linears": bool(activation_fit_linears),
         "activation_fit_target": activation_fit_target,
-        "activation_fit_max_rows": int(activation_fit_max_rows),
+        "activation_fit_max_rows": int(effective_activation_fit_max_rows),
+        "activation_fit_requested_max_rows": int(activation_fit_max_rows),
         "activation_fit_alpha": float(activation_fit_alpha),
         "activation_fit_ridge": float(activation_fit_ridge),
         "activation_fit_gate": activation_fit_gate,
@@ -779,6 +785,17 @@ def donor_projected_init(
     }
     _write_json(output / "neural_forge_donor_projected_init_report.json", report)
     return report
+
+
+def _effective_activation_fit_max_rows(
+    activation_fit_linears: bool,
+    activation_fit_max_rows: int,
+    hidden_basis_max_rows: int,
+) -> int:
+    requested = int(activation_fit_max_rows)
+    if activation_fit_linears and requested == 0:
+        return int(hidden_basis_max_rows)
+    return requested
 
 
 def cross_family_mlp_merge(
@@ -2935,8 +2952,8 @@ def _collect_donor_axis_activation_scores(
 ) -> dict[str, Any]:
     if not texts:
         raise ValueError("Need at least one activation calibration text.")
-    if activation_feature_mode not in {"stats", "subspace"}:
-        raise ValueError("activation_feature_mode must be stats or subspace.")
+    if activation_feature_mode not in {"stats", "subspace", "covariance"}:
+        raise ValueError("activation_feature_mode must be stats, subspace, or covariance.")
     if activation_subspace_rank < 0:
         raise ValueError("activation_subspace_rank must be non-negative.")
     hidden_scores = []
@@ -4575,8 +4592,8 @@ def _collect_mlp_activation_features(
 
 
 def _activation_channel_summary(torch, values, mode: str = "stats", subspace_rank: int = 8):
-    if mode not in {"stats", "subspace"}:
-        raise ValueError("mode must be stats or subspace.")
+    if mode not in {"stats", "subspace", "covariance"}:
+        raise ValueError("mode must be stats, subspace, or covariance.")
     if subspace_rank < 0:
         raise ValueError("subspace_rank must be non-negative.")
     values = values.to(torch.float32)
@@ -4588,6 +4605,11 @@ def _activation_channel_summary(torch, values, mode: str = "stats", subspace_ran
     stats = torch.stack([mean, std, abs_mean, positive_fraction], dim=1)
     if mode == "stats" or int(subspace_rank) == 0:
         return stats
+    if mode == "covariance":
+        return torch.cat(
+            [stats, _activation_channel_covariance_signature(torch, centered, std, int(subspace_rank))],
+            dim=1,
+        )
     return torch.cat([stats, _activation_channel_subspace_signature(torch, centered, int(subspace_rank))], dim=1)
 
 
@@ -4608,6 +4630,31 @@ def _activation_channel_subspace_signature(torch, centered, rank: int):
     components = vh[:keep].t().contiguous()
     # SVD signs are arbitrary. Canonicalize each component by its largest entry
     # so repeated calibration batches aggregate consistently.
+    for idx in range(keep):
+        column = components[:, idx]
+        pivot = int(torch.argmax(column.abs()).item())
+        if float(column[pivot].item()) < 0.0:
+            components[:, idx] = -column
+    scale = singular_values[:keep] / singular_values[:keep].max().clamp_min(1e-12)
+    signature[:, :keep] = components * scale.unsqueeze(0)
+    return signature
+
+
+def _activation_channel_covariance_signature(torch, centered, std, rank: int):
+    channels = int(centered.shape[1])
+    signature = torch.zeros((channels, int(rank)), dtype=torch.float32, device=centered.device)
+    if rank <= 0 or channels <= 0 or int(centered.shape[0]) < 2:
+        return signature
+    standardized = centered / std.unsqueeze(0).clamp_min(1e-6)
+    standardized = torch.nan_to_num(standardized, nan=0.0, posinf=0.0, neginf=0.0)
+    try:
+        _u, singular_values, vh = torch.linalg.svd(standardized, full_matrices=False)
+    except RuntimeError:
+        return signature
+    keep = min(int(rank), int(vh.shape[0]), channels)
+    if keep <= 0:
+        return signature
+    components = vh[:keep].t().contiguous()
     for idx in range(keep):
         column = components[:, idx]
         pivot = int(torch.argmax(column.abs()).item())

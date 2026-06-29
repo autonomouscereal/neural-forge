@@ -89,6 +89,7 @@ from neural_forge.hf_xfamily import _donor_layer_group_for_target
 from neural_forge.hf_xfamily import _donor_layer_groups_by_energy
 from neural_forge.hf_xfamily import _donor_layer_groups_for_target_count
 from neural_forge.hf_xfamily import _representative_donor_layer_for_group
+from neural_forge.hf_xfamily import _effective_activation_fit_max_rows
 from neural_forge.hf_xfamily import _effective_layer_alpha
 from neural_forge.hf_xfamily import _fit_linear_weight_from_activation_rows
 from neural_forge.hf_xfamily import _fit_projected_linear_from_donor_activations
@@ -332,6 +333,12 @@ def test_layer_alpha_settings_reject_invalid_ranges() -> None:
         _validate_layer_alpha_settings("similarity", 0.0, 1.0, 1.0)
 
 
+def test_activation_fit_linears_default_collects_parent_rows() -> None:
+    assert _effective_activation_fit_max_rows(True, 0, 2048) == 2048
+    assert _effective_activation_fit_max_rows(True, 64, 2048) == 64
+    assert _effective_activation_fit_max_rows(False, 0, 2048) == 0
+
+
 def test_activation_channel_assignment_uses_activation_features() -> None:
     torch = pytest.importorskip("torch")
     host_weight = torch.eye(2)
@@ -445,7 +452,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "--activation-fit-max-cosine-drop",
             "0.04",
             "--activation-feature-mode",
-            "subspace",
+            "covariance",
             "--activation-subspace-rank",
             "6",
             "--untie-output-head",
@@ -867,7 +874,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.activation_fit_min_validation_rows == 12
     assert donor_init_args.activation_fit_min_relative_improvement == pytest.approx(0.03)
     assert donor_init_args.activation_fit_max_cosine_drop == pytest.approx(0.04)
-    assert donor_init_args.activation_feature_mode == "subspace"
+    assert donor_init_args.activation_feature_mode == "covariance"
     assert donor_init_args.activation_subspace_rank == 6
     assert donor_init_args.untie_output_head is True
     assert donor_init_args.activation_calibration_file == "activation.jsonl"
@@ -1855,6 +1862,33 @@ def test_activation_channel_summary_can_append_subspace_signature() -> None:
     assert subspace.device == values.device
     assert torch.allclose(subspace[:, :4], stats)
     assert subspace[:, 4:].abs().sum().item() > 0.0
+
+
+def test_activation_channel_summary_covariance_groups_coactivation_patterns() -> None:
+    torch = pytest.importorskip("torch")
+    values = torch.tensor(
+        [
+            [1.0, 2.0, 1.0, 2.0],
+            [-1.0, -2.0, 1.0, 2.0],
+            [1.0, 2.0, -1.0, -2.0],
+            [-1.0, -2.0, -1.0, -2.0],
+            [1.0, 2.0, 1.0, 2.0],
+            [-1.0, -2.0, 1.0, 2.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    covariance = _activation_channel_summary(torch, values, mode="covariance", subspace_rank=2)
+    stats = _activation_channel_summary(torch, values)
+    assignment = _activation_similarity_assignment(torch, covariance, target_dim=2)
+
+    assert tuple(covariance.shape) == (4, 6)
+    assert covariance.device == values.device
+    assert torch.allclose(covariance[:, :4], stats)
+    assert covariance[:, 4:].abs().sum().item() > 0.0
+    assert assignment[0].item() == assignment[1].item()
+    assert assignment[2].item() == assignment[3].item()
+    assert assignment[0].item() != assignment[2].item()
 
 
 def test_attention_axis_weights_share_q_and_o_head_profiles() -> None:

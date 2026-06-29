@@ -181,3 +181,61 @@ Manual inspection:
 - Code behavior still fails: Python completions are syntactically invalid.
 - The generation-health improvement is real under the gate but should not be
   mistaken for recovered code/math intelligence.
+
+## 2026-06-29 Covariance Fold Feature Mode
+
+`hf-donor-project-init` now accepts `--activation-feature-mode covariance` in
+addition to `stats` and `subspace`. The new mode standardizes each donor
+activation channel, computes a low-rank covariance/PCA signature, and appends
+that signature to the existing scalar activation statistics before assignment
+or transport. This gives `fold-mode=transport` and
+`--activation-fold-assignment similarity` a co-activation geometry signal for
+hidden axes, MLP channels, attention heads, and token/head projection folding.
+
+This is an implementation response to the 2025-2026 activation-folding source
+trail already tracked in `docs/RESEARCH_PATHS_2026.md`: DOTResize-style
+transport, FLAT-LLM activation-space folding, Transport-and-Merge activation
+alignment, and GRAIL/Gram-style reconstruction. It is still default-off. The
+previous broad gates showed that local activation fits and PPL improvements can
+hide broken arithmetic/code behavior, so covariance folding is only a new
+candidate generator until remote broad-gate and manual-output results prove it
+helps.
+
+The same patch fixed an activation-fit collection trap: passing
+`--activation-fit-linears` with the default `--activation-fit-max-rows 0`
+previously collected no donor parent input/output rows, so the linear fit stage
+had no real parent function signal unless another flag was remembered. It now
+defaults the effective fit row cap to `--hidden-basis-max-rows` when linear
+fitting is enabled and records both requested and effective caps in the
+initializer report.
+
+Remote candidate validation:
+
+- Candidate:
+  `qwen4b_tied29_covariance_transport_fit_mlpout_20260628_225904`
+- Donor/target: `Qwen/Qwen3-4B-Base` folded into blank
+  `HuggingFaceTB/SmolLM2-135M`, tied output head, `134,515,008` params
+  (`~29.74x` compression using a 4B donor estimate).
+- Settings: `fold-mode=transport`, `activation-feature-mode=covariance`,
+  `activation-fold-assignment=similarity`, `donor-layer-fold-mode=fold`,
+  `donor-layer-group-strategy=activation-energy`,
+  `attention-fold-mode=activation-coupled`, `token-init-mode=donor-tokenized-weighted`,
+  `projection-scale=target-rms`, and validation-gated `mlp-output`
+  activation fits.
+- Activation-fit row bug check: requested fit rows `0`, effective fit rows
+  `512`; fit attempts `30`, applied `26`, rejected `4`; axis assignment cache
+  entries `122`.
+- Smoke broad eval against 200 behavior and 200 generation prompts from
+  `broad_behavior_generation_suite_1000_20260629.json`: behavior `0/200`,
+  generation health `0/200`, choice `11/64`, PPL `232,017,789.60`.
+- Manual output is rejected. Example prompts produce repeated fragments such as
+  `THE`, fenced-code ticks, and stray tokens rather than pruning/model-merge
+  explanations or valid Python.
+
+Interpretation: covariance features and the fixed parent activation-row
+collection are mechanically active, but this specific schedule is worse than
+the current broad leaders. The likely issue is not missing donor rows anymore;
+it is that target-RMS plus 26 down-projection fits over only 8 calibration texts
+creates an unstable autoregressive manifold. Next candidate should either use a
+much smaller fit alpha with behavior-gated init, or separate covariance
+transport from activation-fitted linears so their failure modes can be isolated.
