@@ -12,11 +12,13 @@ from neural_forge.hf_tools import (
     BEHAVIOR_PROBES,
     GENERATION_PROMPTS,
     TEXT_EVALS,
+    _category_breakdown_summary,
     _decoder_layer_container,
     _dtype_from_name,
     _generate_text,
     _generation_health,
     _load_eval_suite,
+    _passed_category_breakdown,
     _ridge_solve_features,
     _score_behavior_probe,
     _torch_and_transformers,
@@ -5579,6 +5581,8 @@ def _heldout_behavior_summary(
         if isinstance(prompt, dict):
             generated = _generate_text(torch, model, tokenizer, str(prompt.get("prompt", "")), device, int(max_new_tokens))
             generated["id"] = prompt.get("id")
+            if prompt.get("category") is not None:
+                generated["category"] = prompt.get("category")
             if prompt.get("relevance_rules") is not None:
                 generated["relevance_rules"] = prompt.get("relevance_rules")
             return generated
@@ -5594,6 +5598,8 @@ def _heldout_behavior_summary(
     ]
     correct = sum(1 for item in items if item["passed"])
     generation_correct = sum(1 for item in generation_items if item["passed"])
+    behavior_breakdown = _passed_category_breakdown(items, "behavior")
+    generation_breakdown = _passed_category_breakdown(generation_items, "generation")
     return {
         "correct": int(correct),
         "total": int(len(items)),
@@ -5601,9 +5607,14 @@ def _heldout_behavior_summary(
         "generation_health_correct": int(generation_correct),
         "generation_health_total": int(len(generation_items)),
         "generation_health_rate": float(generation_correct / max(1, len(generation_items))),
+        "behavior_category_breakdown": behavior_breakdown,
+        "generation_category_breakdown": generation_breakdown,
+        "behavior_category_summary": _category_breakdown_summary(behavior_breakdown),
+        "generation_category_summary": _category_breakdown_summary(generation_breakdown),
         "items": [
             {
                 "id": item["id"],
+                "category": item.get("category"),
                 "passed": bool(item["passed"]),
                 "continuation": item.get("continuation", ""),
             }
@@ -5611,6 +5622,8 @@ def _heldout_behavior_summary(
         ],
         "generation_items": [
             {
+                "id": item.get("id"),
+                "category": item.get("category"),
                 "prompt": item["prompt"],
                 "passed": bool(item["passed"]),
                 "continuation_chars": int(item.get("continuation_chars", 0)),
@@ -5632,6 +5645,10 @@ def _behavior_history_entry(step: int, loss_value: float | None, behavior_summar
         "generation_health_correct": int(behavior_summary.get("generation_health_correct", 0)),
         "generation_health_total": int(behavior_summary.get("generation_health_total", 0)),
         "generation_health_rate": float(behavior_summary.get("generation_health_rate", 0.0)),
+        "behavior_category_breakdown": behavior_summary.get("behavior_category_breakdown", {}),
+        "generation_category_breakdown": behavior_summary.get("generation_category_breakdown", {}),
+        "behavior_category_summary": behavior_summary.get("behavior_category_summary", {}),
+        "generation_category_summary": behavior_summary.get("generation_category_summary", {}),
         "passed_ids": [str(item["id"]) for item in behavior_summary.get("items", []) if bool(item.get("passed"))],
         "generation_passed_prompts": [
             str(item["prompt"]) for item in behavior_summary.get("generation_items", []) if bool(item.get("passed"))
@@ -5669,6 +5686,16 @@ def _behavior_checkpoint_is_better(
     incumbent_rate = float(incumbent.get("pass_rate", 0.0))
     if abs(candidate_rate - incumbent_rate) > 1e-12:
         return candidate_rate > incumbent_rate
+    candidate_behavior_categories = _category_summary_for_behavior_entry(candidate, "behavior")
+    incumbent_behavior_categories = _category_summary_for_behavior_entry(incumbent, "behavior")
+    candidate_hard_correct = int(candidate_behavior_categories.get("hard_category_correct", 0))
+    incumbent_hard_correct = int(incumbent_behavior_categories.get("hard_category_correct", 0))
+    if candidate_hard_correct != incumbent_hard_correct:
+        return candidate_hard_correct > incumbent_hard_correct
+    candidate_min_category = float(candidate_behavior_categories.get("min_pass_rate", 0.0))
+    incumbent_min_category = float(incumbent_behavior_categories.get("min_pass_rate", 0.0))
+    if abs(candidate_min_category - incumbent_min_category) > 1e-12:
+        return candidate_min_category > incumbent_min_category
     candidate_generation_correct = int(candidate.get("generation_health_correct", 0))
     incumbent_generation_correct = int(incumbent.get("generation_health_correct", 0))
     if candidate_generation_correct != incumbent_generation_correct:
@@ -5677,10 +5704,31 @@ def _behavior_checkpoint_is_better(
     incumbent_generation_rate = float(incumbent.get("generation_health_rate", 0.0))
     if abs(candidate_generation_rate - incumbent_generation_rate) > 1e-12:
         return candidate_generation_rate > incumbent_generation_rate
+    candidate_generation_categories = _category_summary_for_behavior_entry(candidate, "generation")
+    incumbent_generation_categories = _category_summary_for_behavior_entry(incumbent, "generation")
+    candidate_generation_hard = int(candidate_generation_categories.get("hard_category_correct", 0))
+    incumbent_generation_hard = int(incumbent_generation_categories.get("hard_category_correct", 0))
+    if candidate_generation_hard != incumbent_generation_hard:
+        return candidate_generation_hard > incumbent_generation_hard
+    candidate_generation_min = float(candidate_generation_categories.get("min_pass_rate", 0.0))
+    incumbent_generation_min = float(incumbent_generation_categories.get("min_pass_rate", 0.0))
+    if abs(candidate_generation_min - incumbent_generation_min) > 1e-12:
+        return candidate_generation_min > incumbent_generation_min
     candidate_loss = float(candidate.get("loss", math.inf))
     if incumbent_loss is None:
         return True
     return candidate_loss < float(incumbent_loss)
+
+
+def _category_summary_for_behavior_entry(entry: dict[str, Any], kind: str) -> dict[str, Any]:
+    summary_key = f"{kind}_category_summary"
+    breakdown_key = f"{kind}_category_breakdown"
+    if isinstance(entry.get(summary_key), dict) and entry[summary_key]:
+        return entry[summary_key]
+    if isinstance(entry.get(breakdown_key), dict) and entry[breakdown_key]:
+        return _category_breakdown_summary(entry[breakdown_key])
+    item_key = "generation_items" if kind == "generation" else "items"
+    return _category_breakdown_summary(_passed_category_breakdown(entry.get(item_key, []), kind))
 
 
 def _layer_gate_behavior_decision(

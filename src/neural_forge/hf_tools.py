@@ -1127,6 +1127,43 @@ def _passed_category_breakdown(items: Sequence[dict[str, Any]], kind: str) -> di
     return dict(sorted(breakdown.items()))
 
 
+def _category_breakdown_summary(
+    breakdown: dict[str, dict[str, Any]],
+    hard_categories: Sequence[str] = ("math", "code"),
+) -> dict[str, Any]:
+    totals = [int(row.get("total", 0) or 0) for row in breakdown.values()]
+    rates = [
+        float(row.get("pass_rate", 0.0))
+        for row in breakdown.values()
+        if int(row.get("total", 0) or 0) > 0
+    ]
+    hard_correct = 0
+    hard_total = 0
+    hard_breakdown: dict[str, dict[str, Any]] = {}
+    for category in hard_categories:
+        row = breakdown.get(str(category))
+        if row is None:
+            continue
+        hard_correct += int(row.get("correct", 0) or 0)
+        hard_total += int(row.get("total", 0) or 0)
+        hard_breakdown[str(category)] = {
+            "correct": int(row.get("correct", 0) or 0),
+            "total": int(row.get("total", 0) or 0),
+            "pass_rate": float(row.get("pass_rate", 0.0)),
+        }
+    return {
+        "category_count": len(breakdown),
+        "covered_category_count": sum(1 for total in totals if total > 0),
+        "min_pass_rate": min(rates) if rates else 0.0,
+        "mean_pass_rate": sum(rates) / max(1, len(rates)),
+        "hard_categories": list(hard_categories),
+        "hard_category_correct": int(hard_correct),
+        "hard_category_total": int(hard_total),
+        "hard_category_pass_rate": hard_correct / max(1, hard_total),
+        "hard_category_breakdown": hard_breakdown,
+    }
+
+
 def _eval_suite_signature(report: dict[str, Any]) -> dict[str, Any]:
     suite = report.get("eval_suite") or {}
     return {
@@ -1197,6 +1234,10 @@ def rank_evaluation_reports(
         )
         generation_health_correct = sum(1 for check in generation_checks if check["passed"])
         behavior_items = list(behavior.get("items", []))
+        behavior_breakdown = _passed_category_breakdown(behavior_items, "behavior")
+        generation_breakdown = _passed_category_breakdown(generation_checks, "generation")
+        behavior_category_summary = _category_breakdown_summary(behavior_breakdown)
+        generation_category_summary = _category_breakdown_summary(generation_breakdown)
         param_count = int(report.get("param_count") or 0)
         source = str(item) if not isinstance(item, dict) else f"<dict:{index}>"
         entry = {
@@ -1215,14 +1256,20 @@ def rank_evaluation_reports(
             "generation_health_correct": int(generation_health_correct),
             "generation_health_total": len(generation_checks),
             "generation_checks": generation_checks,
-            "behavior_category_breakdown": _passed_category_breakdown(behavior_items, "behavior"),
-            "generation_category_breakdown": _passed_category_breakdown(generation_checks, "generation"),
+            "behavior_category_breakdown": behavior_breakdown,
+            "generation_category_breakdown": generation_breakdown,
+            "behavior_category_summary": behavior_category_summary,
+            "generation_category_summary": generation_category_summary,
             "eval_suite": suite_signature,
             "sort_key": [
                 behavior_pass_rate,
                 int(behavior.get("correct", 0)),
+                int(behavior_category_summary["hard_category_correct"]),
+                float(behavior_category_summary["min_pass_rate"]),
                 generation_health_rate,
                 int(generation_health_correct),
+                int(generation_category_summary["hard_category_correct"]),
+                float(generation_category_summary["min_pass_rate"]),
                 choice_accuracy,
                 -param_count,
                 -ppl,
@@ -1234,8 +1281,12 @@ def rank_evaluation_reports(
         key=lambda entry: (
             -entry["behavior_pass_rate"],
             -entry["behavior_correct"],
+            -entry["behavior_category_summary"]["hard_category_correct"],
+            -entry["behavior_category_summary"]["min_pass_rate"],
             -entry["generation_health_rate"],
             -entry["generation_health_correct"],
+            -entry["generation_category_summary"]["hard_category_correct"],
+            -entry["generation_category_summary"]["min_pass_rate"],
             -entry["choice_accuracy"],
             entry["param_count"],
             entry["perplexity_mean"],
@@ -1260,6 +1311,8 @@ def rank_evaluation_reports(
             "generation_health_rate": entry["generation_health_rate"],
             "behavior_category_breakdown": entry["behavior_category_breakdown"],
             "generation_category_breakdown": entry["generation_category_breakdown"],
+            "behavior_category_summary": entry["behavior_category_summary"],
+            "generation_category_summary": entry["generation_category_summary"],
         }
         for entry in entries
     ]
@@ -1268,8 +1321,12 @@ def rank_evaluation_reports(
         "ranking_policy": [
             "behavior_pass_rate_desc",
             "behavior_correct_desc",
+            "behavior_hard_category_correct_desc",
+            "behavior_min_category_pass_rate_desc",
             "generation_health_rate_desc",
             "generation_health_correct_desc",
+            "generation_hard_category_correct_desc",
+            "generation_min_category_pass_rate_desc",
             "choice_accuracy_desc",
             "param_count_asc",
             "perplexity_mean_asc",
@@ -2108,6 +2165,7 @@ def _generation_health(item: dict[str, Any], min_continuation_chars: int, min_un
     relevance = _generation_relevance(prompt, continuation, item.get("relevance_rules"))
     return {
         "id": item.get("id"),
+        "category": item.get("category"),
         "prompt": prompt,
         "passed": long_enough and diverse_enough and relevance["passed"],
         "continuation_chars": len(continuation),

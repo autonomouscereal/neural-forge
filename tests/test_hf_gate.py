@@ -204,6 +204,41 @@ def test_rank_evaluation_reports_adds_category_breakdowns_and_suite_warnings(tmp
     assert any(warning["type"] == "mixed_eval_suite_sources" for warning in report["suite_warnings"])
 
 
+def test_rank_evaluation_reports_prefers_hard_category_coverage_after_behavior_tie(tmp_path) -> None:
+    easy = _report(90, 1.0)
+    easy["model"] = "easy-categories"
+    easy["behavior_suite"] = {
+        "pass_rate": 0.5,
+        "correct": 2,
+        "total": 4,
+        "items": [
+            {"id": "synthetic_tokenizer_0001", "passed": True},
+            {"id": "synthetic_rain_0002", "passed": True},
+            {"id": "synthetic_math_0000", "passed": False},
+            {"id": "synthetic_python_add_0004", "passed": False},
+        ],
+    }
+    hard = _report(130, 1.0)
+    hard["model"] = "hard-categories"
+    hard["behavior_suite"] = {
+        "pass_rate": 0.5,
+        "correct": 2,
+        "total": 4,
+        "items": [
+            {"id": "synthetic_tokenizer_0001", "passed": False},
+            {"id": "synthetic_rain_0002", "passed": False},
+            {"id": "synthetic_math_0000", "passed": True},
+            {"id": "synthetic_python_add_0004", "passed": True},
+        ],
+    }
+
+    report = rank_evaluation_reports([easy, hard], output_file=tmp_path / "rank.json")
+
+    assert report["best"]["model"] == "hard-categories"
+    assert report["best"]["behavior_category_summary"]["hard_category_correct"] == 2
+    assert report["summary_rows"][0]["behavior_category_summary"]["hard_category_correct"] == 2
+
+
 def test_gate_text_report_reports_lost_behavior_and_generation_ids() -> None:
     baseline = _report(100, 1.0)
     baseline["behavior_suite"] = {

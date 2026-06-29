@@ -3828,6 +3828,42 @@ def test_behavior_checkpoint_selection_prioritizes_behavior_over_loss() -> None:
     assert _behavior_checkpoint_is_better(worse, incumbent, incumbent_loss=1.0) is False
 
 
+def test_behavior_checkpoint_selection_prefers_hard_categories_after_behavior_tie() -> None:
+    incumbent = {
+        "correct": 2,
+        "total": 4,
+        "pass_rate": 0.5,
+        "generation_health_correct": 1,
+        "generation_health_rate": 0.5,
+        "loss": 0.1,
+        "items": [
+            {"id": "synthetic_tokenizer_0001", "passed": True},
+            {"id": "synthetic_rain_0002", "passed": True},
+            {"id": "synthetic_math_0000", "passed": False},
+            {"id": "synthetic_python_add_0004", "passed": False},
+        ],
+    }
+    hard_category_win = {
+        "correct": 2,
+        "total": 4,
+        "pass_rate": 0.5,
+        "generation_health_correct": 1,
+        "generation_health_rate": 0.5,
+        "loss": 9.0,
+        "items": [
+            {"id": "synthetic_tokenizer_0001", "passed": False},
+            {"id": "synthetic_rain_0002", "passed": False},
+            {"id": "synthetic_math_0000", "passed": True},
+            {"id": "synthetic_python_add_0004", "passed": True},
+        ],
+    }
+    hard_category_loss = dict(incumbent)
+    hard_category_loss["loss"] = 0.01
+
+    assert _behavior_checkpoint_is_better(hard_category_win, incumbent, incumbent_loss=0.1) is True
+    assert _behavior_checkpoint_is_better(hard_category_loss, hard_category_win, incumbent_loss=9.0) is False
+
+
 def test_usable_candidate_sort_key_prioritizes_output_before_shrink_and_ppl() -> None:
     better_output = {
         "tag": "better-output",

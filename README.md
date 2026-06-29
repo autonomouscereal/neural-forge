@@ -405,11 +405,12 @@ The broad suite keeps the original smoke checks available while adding a
 repeatable larger gate for compression experiments. `hf-eval --eval-suite`
 records the suite counts in the report. `hf-rank-evals` expands report globs,
 ranks by behavior pass rate, behavior correct count, generation health, choice
-accuracy, size, then PPL, and writes compact `summary_rows` with
-behavior/generation category breakdowns plus warnings when tiny smoke reports
-and 1000-probe reports are mixed. This keeps a candidate with better greedy
-behavior above one that only lowered perplexity and makes domain-specific
-regressions visible.
+accuracy, size, then PPL. When aggregate behavior ties, hard behavior
+categories (`math`, `code`) and minimum category pass rate break ties before
+generation/PPL. It also writes compact `summary_rows` with behavior/generation
+category summaries plus warnings when tiny smoke reports and 1000-probe reports
+are mixed. This keeps a candidate with better greedy behavior above one that
+only lowered perplexity and makes domain-specific regressions visible.
 
 Blank target control:
 
@@ -472,8 +473,10 @@ coherence evidence.
 
 Recovery commands with `--save-best-behavior` snapshot the untouched input as
 step `0`, then rank checkpoints by behavior probes, generation health, and only
-then loss. This prevents a lower-loss recovery step from replacing a checkpoint
-that still generates healthier text.
+then loss. When aggregate behavior ties, math/code category coverage is
+preferred before generation and loss. This prevents a lower-loss recovery step
+from replacing a checkpoint that still generates healthier text or a hard
+capability gain.
 
 Native early-fusion sandbox:
 

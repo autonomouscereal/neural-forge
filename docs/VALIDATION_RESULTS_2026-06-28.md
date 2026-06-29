@@ -90,3 +90,31 @@ tokenizer bridges before folding or absorbing weights:
 Next work should combine ALM/byte-token bridges, CKA or Procrustes-style hidden
 geometry, task-focused feature selection, and only then activation-aware folding
 or low-rank absorption. The broad gate remains the promotion authority.
+
+## 2026-06-29 Category-Aware Gate Update
+
+The broad ranker now uses hard category tie breakers after aggregate behavior:
+`math` and `code` behavior coverage, then minimum behavior category pass rate,
+then generation health and downstream metrics. Recovery commands with
+`--save-best-behavior` use the same category-aware selector when aggregate
+behavior ties.
+
+New artifact:
+
+- `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/broad_eval_1000_20260628/rank_broad_existing_all15_categoryaware_20260629.json`
+
+The current top order did not materially change because the leading candidates
+all have the same missing hard capabilities:
+
+| Rank | Checkpoint | Behavior | Hard Behavior | Generation | Hard Generation | Choice | PPL |
+|---:|---|---:|---:|---:|---:|---:|---:|
+| 1 | `qwen4b_tied29_lowrank_prerecon_blockinterface_a001_suitegate_b100g40_l1_20260628_201550` | 600/1000 | 0/400 | 160/200 | 0/40 | 25/250 | 14191.81 |
+| 2 | `qwen4b_tied29_residual_lowrank_r16_a001_l2_20260628_192318` | 600/1000 | 0/400 | 160/200 | 0/40 | 25/250 | 14191.81 |
+| 10 | `qwen4b_tied29_focused_lm_answer_rank_120s_20260628_123426` | 600/1000 | 0/400 | 80/200 | 40/40 | 30/250 | 19012.19 |
+| 14 | `qwen4b_mean_cached_cka_mixed8192_1200s_best` | 2/1000 | 2/400 | 80/200 | 40/40 | 83/250 | 7783.28 |
+| 15 | `qwen4b_activation_fit_inputproj_a0005_smollm135m_20260628_204104` | 0/1000 | 0/400 | 0/200 | 0/40 | 19/250 | 79179.90 |
+
+This confirms that some previous attempts produced isolated code-generation or
+math-choice movement, but none combine those gains with broad behavior. Future
+recovery sweeps should be judged on hard-category movement explicitly, not only
+aggregate `600/1000` behavior.
