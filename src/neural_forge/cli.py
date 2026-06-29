@@ -998,6 +998,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="Add block hidden alignment on donor-generated completions during block recovery.",
     )
+    xfamily_block_recover.add_argument(
+        "--teacher-generate-projected-vocab-kd-weight",
+        type=float,
+        default=0.0,
+        help="Apply projected-vocab donor KD on donor-generated completions during block recovery.",
+    )
+    xfamily_block_recover.add_argument(
+        "--teacher-generate-byte-kd-weight",
+        type=float,
+        default=0.0,
+        help="Apply tokenizer-neutral first-byte KD on donor-generated completions during block recovery.",
+    )
     xfamily_block_recover.add_argument("--teacher-generate-max-new-tokens", type=int, default=64)
     xfamily_block_recover.add_argument(
         "--projected-vocab-kd-weight",
@@ -1026,6 +1038,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--train-output-head-with-kd",
         action="store_true",
         help="Train the output head together with each block when output-space donor KD is enabled.",
+    )
+    xfamily_block_recover.add_argument(
+        "--allow-tied-output-head-training",
+        action="store_true",
+        help="Allow --train-output-head-with-kd to mutate tied input/output embeddings.",
     )
     xfamily_block_recover.add_argument(
         "--module-output-kd-weight",
@@ -1941,12 +1958,15 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         stepwise_donor_interval=args.stepwise_donor_interval,
         teacher_generate_lm_weight=args.teacher_generate_lm_weight,
         teacher_generate_hidden_kd_weight=args.teacher_generate_hidden_kd_weight,
+        teacher_generate_projected_vocab_kd_weight=args.teacher_generate_projected_vocab_kd_weight,
+        teacher_generate_byte_kd_weight=args.teacher_generate_byte_kd_weight,
         teacher_generate_max_new_tokens=args.teacher_generate_max_new_tokens,
         projected_vocab_kd_weight=args.projected_vocab_kd_weight,
         projected_vocab_kd_mode=args.projected_vocab_kd_mode,
         byte_kd_weight=args.byte_kd_weight,
         byte_hidden_kd_weight=args.byte_hidden_kd_weight,
         train_output_head_with_kd=args.train_output_head_with_kd,
+        allow_tied_output_head_training=args.allow_tied_output_head_training,
         module_output_kd_weight=args.module_output_kd_weight,
         module_output_targets=args.module_output_targets,
         module_output_transport=args.module_output_transport,

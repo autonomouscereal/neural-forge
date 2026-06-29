@@ -194,14 +194,22 @@ fixed byte probe built from the child output embeddings, so byte supervision can
 reach the folded block without training or relying on the LM head.
 `--train-output-head-with-kd` optionally
 trains the output head with each block under the same layer behavior gate; this
-is default-off because tied input/output heads also mutate token embeddings.
-When a tied head is detected, the recovery report records
+is default-off because tied input/output heads also mutate token embeddings. If
+a tied head is detected, recovery now refuses the run unless
+`--allow-tied-output-head-training` is passed for an explicit embedding-mutation
+experiment. When that opt-in is used, the recovery report records
 `output_head_training_warning`.
 `--teacher-generate-lm-weight` lets the donor generate short completions from
 the calibration prompts, re-tokenizes those completions with the child
 tokenizer, and applies child-token LM loss while the current block and optional
 output head are trainable. `--teacher-generate-hidden-kd-weight` applies the
-same generated texts to span-aligned block hidden recovery. These are
+same generated texts to span-aligned block hidden recovery.
+`--teacher-generate-projected-vocab-kd-weight` applies projected-vocab donor KD
+on those donor-generated continuations, and
+`--teacher-generate-byte-kd-weight` adds first-byte KD on the same positions.
+Those two interface losses are useful when the donor can generate the right
+math/code continuation but the child's greedy path is stuck in digit or syntax
+loops under tokenizer mismatch. These are
 default-off because donor-generated text can overfit small calibration prompts;
 use behavior-gated runs to check whether they improve coherence rather than
 only local loss.

@@ -1621,6 +1621,93 @@ checkpoint still looks competitive on PIQA and lower PPL, but its `2/1000`
 broad behavior score shows why PPL/choice cannot be the promotion criterion for
 this work.
 
+### Donor-Generated Projected-Vocab and Byte KD Follow-Up
+
+Code changes:
+
+- `hf-xfamily-block-recover` now accepts
+  `--teacher-generate-projected-vocab-kd-weight` and
+  `--teacher-generate-byte-kd-weight`.
+- These losses run on donor-generated continuations that are retokenized by the
+  child. They add projected-vocab donor KD and first-byte KD on the same
+  generated examples already used by `--teacher-generate-lm-weight` and
+  `--teacher-generate-hidden-kd-weight`.
+- This was motivated by recent cross-tokenizer distillation work such as
+  [SimCT](https://arxiv.org/abs/2605.07711),
+  [X-Token](https://arxiv.org/abs/2605.21699), and
+  [Cross-Tokenizer LLM Distillation through a Byte-Level Interface](https://arxiv.org/abs/2604.07466):
+  when tokenizers disagree, useful teacher signal has to cross through
+  realizable continuation units or byte-level interfaces, not only exact shared
+  token IDs.
+- `--train-output-head-with-kd` is now safer: if the output head is tied to
+  input embeddings, block recovery refuses the run unless
+  `--allow-tied-output-head-training` is explicitly passed. This prevents
+  accidental token-embedding mutation during output-interface experiments.
+
+Remote validation on the same strict `134,515,008` parameter, `29.90x`
+SmolLM-shaped blank target path:
+
+| Checkpoint | Strict PPL | Strict choice | Strict behavior | Strict generation | Broad behavior | Broad generation | Verdict |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Block + head byte KD behavior-best baseline | 3,822.54 | 3/4 | 3/6 | 2/3 | 600/1000 | 160/200 | previous best |
+| Donor-generated projected-vocab + byte KD, frozen head | 3,838.26 | 3/4 | 3/6 | 0/3 | 600/1000 | 80/200 | rejected |
+| Donor-generated projected-vocab + byte KD, tied-head opt-in | 3,835.34 | 3/4 | 3/6 | 0/3 | not run | not run | rejected after strict regression |
+
+Artifacts:
+
+- Frozen-head run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_teachergen_projbyte_l2s8_20260628_173009`
+- Frozen-head strict eval:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/eval_qwen4b_tied29_teachergen_projbyte_l2s8_strict.json`
+- Frozen-head broad eval:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/broad_eval_1000_20260628/eval_teachergen_projbyte_l2s8.json`
+- Head-trainable run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_teachergen_projbyte_head_l2s10_20260628_174842`
+- Head-trainable strict eval:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/eval_qwen4b_tied29_teachergen_projbyte_head_l2s10_strict.json`
+
+Mechanical signal:
+
+- The donor generated correct calibration continuations, including
+  `12 * 13 -> 156`, `19 + 26 -> 45`, and `7 * 8 -> 56`.
+- The new losses were active. The frozen-head run logged
+  `teacher_generate_projected_vocab_pairs` around `18-21` and
+  `teacher_generate_byte_pairs` around `18-21` with nonzero loss values.
+- Layer behavior selection prevented the worst states from being saved. In the
+  frozen-head run, layer 0 selected step `1`; layer 1 selected step `0`. Later
+  lower-loss steps repeatedly reduced generation health.
+- The head-trainable variant detected
+  `output_head_is_tied_to_input_embeddings`, confirming that output-head KD can
+  mutate token embeddings in this target. The new code now requires explicit
+  opt-in for that behavior.
+
+Behavior findings:
+
+- Frozen-head broad eval stayed at `600/1000`, with the same category split as
+  the prior topical/common-sense candidates: math `0/200`, Python `0/200`,
+  tokenizer `200/200`, rain `200/200`, merge-definition `200/200`.
+- Generation health regressed from `160/200` to `80/200`.
+- Strict manual-style probes still failed the core target behaviors:
+  arithmetic remained long digit runs, and Python remained malformed syntax.
+- Therefore, donor-generated output-interface KD is useful telemetry and a
+  plausible auxiliary loss, but it is not the missing structural recovery
+  mechanism for this 29.90x blank-target fold.
+
+Interpretation:
+
+- The child can receive correct donor-generated strings and nonzero
+  cross-tokenizer output-interface losses, yet still not move out of its
+  digit/code attractors. This suggests the failure is deeper than missing
+  output supervision on short continuations.
+- The next higher-leverage implementation should move earlier in the pipeline:
+  donor-side virtual compaction or closed-form interface repair before block
+  training, closer to
+  [DOTResize](https://arxiv.org/abs/2507.04517),
+  [Prune&Comp](https://arxiv.org/abs/2507.18212), and
+  [Ghosted Layers](https://arxiv.org/abs/2605.15491)-style activation
+  compensation, then reuse projected-vocab/byte/on-policy losses as auxiliary
+  recovery signals rather than the primary repair.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best
