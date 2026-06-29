@@ -259,6 +259,10 @@ def build_parser() -> argparse.ArgumentParser:
     hf_donor_init.add_argument("--post-init-max-new-tokens", type=int, default=96)
     hf_donor_init.add_argument("--post-init-eval-device", default="cuda:0")
     hf_donor_init.add_argument("--post-init-eval-dtype")
+    hf_donor_init.add_argument("--post-init-min-behavior-pass-rate", type=float)
+    hf_donor_init.add_argument("--post-init-min-generation-pass-rate", type=float)
+    hf_donor_init.add_argument("--post-init-min-choice-accuracy", type=float)
+    hf_donor_init.add_argument("--post-init-max-ppl", type=float)
     hf_donor_init.add_argument("--dtype", default="float16")
     hf_donor_init.add_argument("--trust-remote-code", action="store_true")
     hf_donor_init.set_defaults(func=cmd_hf_donor_project_init)
@@ -1679,11 +1683,19 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         max_generation_prompts=args.post_init_max_generation_prompts,
         max_behavior_probes=args.post_init_max_behavior_probes,
     )
+    eval_summary = _compact_eval_report(eval_report)
     return {
         "operation": "donor_projected_init_with_post_init_eval",
         "init_report": init_report,
         "post_init_eval_report": str(eval_output),
-        "post_init_eval_summary": _compact_eval_report(eval_report),
+        "post_init_eval_summary": eval_summary,
+        "post_init_gate": _post_init_gate_decision(
+            eval_summary,
+            min_behavior_pass_rate=args.post_init_min_behavior_pass_rate,
+            min_generation_pass_rate=args.post_init_min_generation_pass_rate,
+            min_choice_accuracy=args.post_init_min_choice_accuracy,
+            max_ppl=args.post_init_max_ppl,
+        ),
     }
 
 
@@ -1712,6 +1724,65 @@ def _compact_eval_report(report: dict[str, object]) -> dict[str, object]:
         "generation_correct": generation.get("correct"),
         "generation_total": generation.get("total"),
         "generation_pass_rate": generation.get("pass_rate"),
+    }
+
+
+def _post_init_gate_decision(
+    summary: dict[str, object],
+    min_behavior_pass_rate: float | None = None,
+    min_generation_pass_rate: float | None = None,
+    min_choice_accuracy: float | None = None,
+    max_ppl: float | None = None,
+) -> dict[str, object]:
+    checks: list[dict[str, object]] = []
+
+    def value_float(name: str) -> float | None:
+        value = summary.get(name)
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def add_min_check(name: str, metric: str, threshold: float | None) -> None:
+        if threshold is None:
+            return
+        value = value_float(metric)
+        checks.append(
+            {
+                "name": name,
+                "metric": metric,
+                "value": value,
+                "threshold": float(threshold),
+                "passed": value is not None and value >= float(threshold),
+                "direction": "min",
+            }
+        )
+
+    def add_max_check(name: str, metric: str, threshold: float | None) -> None:
+        if threshold is None:
+            return
+        value = value_float(metric)
+        checks.append(
+            {
+                "name": name,
+                "metric": metric,
+                "value": value,
+                "threshold": float(threshold),
+                "passed": value is not None and value <= float(threshold),
+                "direction": "max",
+            }
+        )
+
+    add_min_check("behavior_pass_rate", "behavior_pass_rate", min_behavior_pass_rate)
+    add_min_check("generation_pass_rate", "generation_pass_rate", min_generation_pass_rate)
+    add_min_check("choice_accuracy", "choice_accuracy", min_choice_accuracy)
+    add_max_check("perplexity_mean", "perplexity_mean", max_ppl)
+    return {
+        "active": bool(checks),
+        "passed": all(bool(check["passed"]) for check in checks) if checks else True,
+        "checks": checks,
     }
 
 

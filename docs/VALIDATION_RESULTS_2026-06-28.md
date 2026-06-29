@@ -253,8 +253,11 @@ from `0.15` to `0.03`. The shared risky ingredients are direct target-RMS
 transport into the blank tied target and un-gated raw initializer promotion.
 `hf-donor-project-init` now has optional `--post-init-eval-suite` controls so
 raw initializer schedules can immediately write a broad behavior/generation
-report and return compact metrics. Next work should avoid treating
-donor-projected init as a final artifact. It should either:
+report and return compact metrics. It also has optional post-init promotion
+thresholds for behavior pass rate, generation pass rate, choice accuracy, and
+PPL, so collapsed raw initializers can return an explicit failed gate before
+recovery. Next work should avoid treating donor-projected init as a final
+artifact. It should either:
 
 - run initializer schedules through a behavior-gated ablation harness before
   recovery;

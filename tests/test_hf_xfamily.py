@@ -6,6 +6,7 @@ import pytest
 
 from neural_forge.cli import build_parser
 from neural_forge.cli import _parse_layer_groups
+from neural_forge.cli import _post_init_gate_decision
 from neural_forge.hf_recovery import RECOVERY_TEXTS
 from neural_forge.hf_recovery import _answer_contrastive_candidates
 from neural_forge.hf_recovery import _alm_text_chunks
@@ -4415,6 +4416,14 @@ def test_hf_donor_project_init_handler_can_run_post_init_eval(monkeypatch) -> No
             "cpu",
             "--post-init-eval-dtype",
             "float32",
+            "--post-init-min-behavior-pass-rate",
+            "0.4",
+            "--post-init-min-generation-pass-rate",
+            "0.5",
+            "--post-init-min-choice-accuracy",
+            "0.7",
+            "--post-init-max-ppl",
+            "50",
             "--trust-remote-code",
         ]
     )
@@ -4451,7 +4460,64 @@ def test_hf_donor_project_init_handler_can_run_post_init_eval(monkeypatch) -> No
             "generation_total": 10,
             "generation_pass_rate": 0.6,
         },
+        "post_init_gate": {
+            "active": True,
+            "passed": True,
+            "checks": [
+                {
+                    "name": "behavior_pass_rate",
+                    "metric": "behavior_pass_rate",
+                    "value": 0.5,
+                    "threshold": 0.4,
+                    "passed": True,
+                    "direction": "min",
+                },
+                {
+                    "name": "generation_pass_rate",
+                    "metric": "generation_pass_rate",
+                    "value": 0.6,
+                    "threshold": 0.5,
+                    "passed": True,
+                    "direction": "min",
+                },
+                {
+                    "name": "choice_accuracy",
+                    "metric": "choice_accuracy",
+                    "value": 0.75,
+                    "threshold": 0.7,
+                    "passed": True,
+                    "direction": "min",
+                },
+                {
+                    "name": "perplexity_mean",
+                    "metric": "perplexity_mean",
+                    "value": 42.0,
+                    "threshold": 50.0,
+                    "passed": True,
+                    "direction": "max",
+                },
+            ],
+        },
     }
+
+
+def test_post_init_gate_rejects_collapsed_initializer_metrics() -> None:
+    gate = _post_init_gate_decision(
+        {
+            "behavior_pass_rate": 0.0,
+            "generation_pass_rate": 0.0,
+            "choice_accuracy": 0.17,
+            "perplexity_mean": 232_000_000.0,
+        },
+        min_behavior_pass_rate=0.1,
+        min_generation_pass_rate=0.1,
+        min_choice_accuracy=0.25,
+        max_ppl=100_000.0,
+    )
+
+    assert gate["active"] is True
+    assert gate["passed"] is False
+    assert [check["passed"] for check in gate["checks"]] == [False, False, False, False]
 
 
 def test_hf_lm_recover_handler_passes_teacherless_flags(monkeypatch) -> None:
