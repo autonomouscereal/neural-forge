@@ -1713,7 +1713,7 @@ Interpretation:
 Code changes:
 
 - `hf-xfamily-block-recover` now accepts
-  `--residual-magnitude-compensation none|pre`,
+  `--residual-magnitude-compensation none|pre|pre-linear|linear-pre`,
   `--residual-compensation-min-scale`, and
   `--residual-compensation-max-scale`.
 - In `pre` mode, block recovery measures the active child residual-update RMS
@@ -1721,6 +1721,11 @@ Code changes:
   the child attention output projection and MLP output projection by a clamped
   ratio so the child residual magnitude is closer to the donor-side folded
   target.
+- In `pre-linear` mode, block recovery fits a ridge map from child
+  residual-delta rows to projected donor residual-delta rows, blends that map
+  with identity by `--residual-compensation-alpha`, then absorbs it into the
+  active child attention output projection and MLP output projection. The
+  checkpoint remains adapter-free.
 - Reports now include `candidate_rms`, `projected_rms`, and
   `projected_to_candidate_rms_ratio` for the before/after block-alignment
   metrics, plus a per-layer compensation report.
@@ -1732,6 +1737,9 @@ SmolLM-shaped blank target path:
 |---|---:|---:|---:|---:|---:|---:|---|
 | Block + head byte KD behavior-best baseline | 3,822.54 | 3/4 | 3/6 | 2/3 | 600/1000 | 160/200 | previous best |
 | Residual magnitude compensation, no training steps | 3,822.54 | 3/4 | 3/6 | 2/3 | 600/1000 | 160/200 | tied only because both scale edits were reverted |
+| Residual linear compensation alpha 0.25 | 3,822.54 | 3/4 | 3/6 | 2/3 | not run | not run | both maps reverted by behavior gate |
+| Residual linear compensation alpha 0.05 | 3,822.54 | 3/4 | 3/6 | 2/3 | not run | not run | both maps reverted by behavior gate |
+| Residual linear compensation alpha 0.01 | 3,829.40 | 3/4 | 3/6 | 1/3 | 600/1000 | 80/200 | rejected; lower broad PPL but worse generation |
 
 Artifacts:
 
@@ -1743,6 +1751,16 @@ Artifacts:
   `runs/qwen4b_to_smollm135m_transport_random_20260627/broad_eval_1000_20260628/eval_residual_comp_l2.json`
 - Broad rank with the residual-comp candidate:
   `runs/qwen4b_to_smollm135m_transport_random_20260627/broad_eval_1000_20260628/rank_with_residual_comp_l2.json`
+- Residual linear alpha `0.25` run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_residual_linear_l2_20260628_184704`
+- Residual linear alpha `0.05` run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_residual_linear_a005_l2_20260628_185250`
+- Residual linear alpha `0.01` run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_residual_linear_a001_l2_20260628_185743`
+- Residual linear alpha `0.01` broad eval:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/broad_eval_1000_20260628/eval_residual_linear_a001_l2.json`
+- Residual linear alpha `0.01` broad rank:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/broad_eval_1000_20260628/rank_with_residual_linear_a001_l2.json`
 
 Mechanical signal:
 
@@ -1753,6 +1771,16 @@ Mechanical signal:
 - Both layers were rejected by the behavior gate. Layer 0 dropped from `3/6`
   behavior and `2/3` generation health to `1/6` and `0/3`; layer 1 kept `3/6`
   behavior but dropped generation health from `2/3` to `0/3`.
+- Full-rank residual linear maps were mechanically stronger than scalar RMS.
+  At alpha `0.25`, layer 0 local block loss improved from `0.5242` to `0.4830`,
+  and layer 1 improved from `1.4034` to `1.1788`; both maps were behavior
+  reverted. At alpha `0.05`, both maps were also reverted after generation
+  health dropped to `1/3`.
+- Alpha `0.01` was accepted by the in-loop behavior gate on both layers:
+  layer 0 local block loss improved from `0.5242` to `0.5229`, and layer 1
+  improved from `1.4028` to `1.3927`. Post-save strict eval still regressed
+  generation health to `1/3`, showing the in-loop behavior gate is weaker than
+  final reload evaluation for this edit.
 
 Broad-suite recheck across all current broad artifacts:
 
@@ -1761,6 +1789,7 @@ Broad-suite recheck across all current broad artifacts:
 | `eval_block_byte_best.json` | 600/1000 | 160/200 | 25/250 | 14,259.01 |
 | `eval_residual_comp_l2.json` | 600/1000 | 160/200 | 25/250 | 14,259.01 |
 | `eval_rsd_behaviorbest.json` | 600/1000 | 160/200 | 25/250 | 14,290.37 |
+| `eval_residual_linear_a001_l2.json` | 600/1000 | 80/200 | 25/250 | 13,723.28 |
 | `eval_curated_token_auto.json` | 600/1000 | 160/200 | 24/250 | 14,442.64 |
 | `eval_block_teachergen.json` | 600/1000 | 160/200 | 22/250 | 14,475.51 |
 | `eval_block_bytehidden.json` | 600/1000 | 120/200 | 21/250 | 14,217.58 |
@@ -1774,13 +1803,23 @@ Interpretation:
 - Residual magnitude compensation is a useful diagnostic and may become part of
   a stronger activation-compensated fold, but this isolated pre-scale was not a
   promoted improvement.
+- Residual linear compensation is a more expressive structural primitive and
+  proves that adapter-free, closed-form residual maps can materially improve
+  local donor/child activation alignment. It is still not safe as a direct
+  promotion rule: the only accepted alpha reduced broad PPL but cut broad
+  generation health from `160/200` to `80/200`.
 - The result is a concrete example of why hidden-space alignment and PPL cannot
   be optimized alone. Both attempted scale edits improved local reconstruction
-  loss, but the behavior gate caught generation collapse and reverted them.
+  loss, and the alpha `0.01` linear edit improved PPL, but final generation
+  quality regressed.
 - The 1000-probe recheck did not reveal a hidden better combination among the
   previously tested broad artifacts. The current best remains the block
   byte-KD behavior-best candidate, and it is still only a narrow partial
   transfer result rather than a 25x donor-capability proof.
+- The next structural path should constrain the map before absorption:
+  low-rank clone factors, FLAT-LLM-style PCA/activation-rank folding, or
+  behavior-selected subspace maps, followed by final reload/broad evaluation
+  instead of trusting in-loop local metrics.
 
 ## Current Conclusion
 

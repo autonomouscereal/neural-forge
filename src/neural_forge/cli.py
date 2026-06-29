@@ -930,12 +930,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     xfamily_block_recover.add_argument(
         "--residual-magnitude-compensation",
-        choices=["none", "pre"],
+        choices=["none", "pre", "pre-linear", "linear-pre"],
         default="none",
-        help="Optionally scale child attention/MLP output projections to match projected donor residual-delta RMS before layer training.",
+        help="Optionally compensate child attention/MLP output projections to match projected donor residual-delta activations before layer training.",
     )
     xfamily_block_recover.add_argument("--residual-compensation-min-scale", type=float, default=0.50)
     xfamily_block_recover.add_argument("--residual-compensation-max-scale", type=float, default=1.50)
+    xfamily_block_recover.add_argument("--residual-compensation-linear-ridge", type=float, default=1e-3)
+    xfamily_block_recover.add_argument("--residual-compensation-alpha", type=float, default=1.0)
     xfamily_block_recover.add_argument("--max-anchors", type=int, default=2048)
     xfamily_block_recover.add_argument("--span-max-pairs", type=int, default=512)
     xfamily_block_recover.add_argument(
@@ -1947,6 +1949,8 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         residual_magnitude_compensation=args.residual_magnitude_compensation,
         residual_compensation_min_scale=args.residual_compensation_min_scale,
         residual_compensation_max_scale=args.residual_compensation_max_scale,
+        residual_compensation_linear_ridge=args.residual_compensation_linear_ridge,
+        residual_compensation_alpha=args.residual_compensation_alpha,
         max_anchors=args.max_anchors,
         span_max_pairs=args.span_max_pairs,
         donor_layer_fold_mode=args.donor_layer_fold_mode,

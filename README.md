@@ -178,12 +178,14 @@ alignment to the currently trainable child block.
 For block recovery, `--block-target delta` trains the residual update produced
 by the child block against the folded donor-layer update instead of matching
 absolute hidden states.
-`--residual-magnitude-compensation pre` is an experimental pre-training
-normalization step for `--block-target delta`: it scales the active child
-attention and MLP output projections so the child residual-update RMS is closer
-to the projected donor residual-update RMS before layer recovery. Keep it behind
-behavior gates; validation found cases where local reconstruction loss improved
-while generation health regressed, and the layer gate correctly reverted them.
+`--residual-magnitude-compensation pre|pre-linear` is an experimental
+pre-training normalization step for `--block-target delta`: `pre` scales the
+active child attention and MLP output projections toward the projected donor
+residual-update RMS, while `pre-linear` fits a ridge linear map from child
+residual deltas to projected donor residual deltas and absorbs it into those
+same output projections. Keep both behind behavior gates; validation found
+cases where local reconstruction loss and PPL improved while generation health
+regressed.
 `hf-xfamily-block-recover --module-output-kd-weight` adds differentiable
 attention/MLP output reconstruction for the currently trainable child block.
 Use `--module-output-targets attention|mlp|both` and

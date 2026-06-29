@@ -2039,6 +2039,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     residual_magnitude_compensation: str = "none",
     residual_compensation_min_scale: float = 0.50,
     residual_compensation_max_scale: float = 1.50,
+    residual_compensation_linear_ridge: float = 1e-3,
+    residual_compensation_alpha: float = 1.0,
     max_anchors: int = 2048,
     span_max_pairs: int = 512,
     donor_layer_fold_mode: str = "fold",
@@ -2113,12 +2115,16 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("hidden_metric must be projected, cka, both, rsd, or projected-rsd.")
     if block_target not in {"hidden", "delta"}:
         raise ValueError("block_target must be hidden or delta.")
-    if residual_magnitude_compensation not in {"none", "pre"}:
-        raise ValueError("residual_magnitude_compensation must be none or pre.")
+    if residual_magnitude_compensation not in {"none", "pre", "pre-linear", "linear-pre"}:
+        raise ValueError("residual_magnitude_compensation must be none, pre, pre-linear, or linear-pre.")
     if residual_compensation_min_scale <= 0 or residual_compensation_max_scale <= 0:
         raise ValueError("residual compensation scales must be positive.")
     if residual_compensation_min_scale > residual_compensation_max_scale:
         raise ValueError("residual_compensation_min_scale must be <= residual_compensation_max_scale.")
+    if residual_compensation_linear_ridge < 0:
+        raise ValueError("residual_compensation_linear_ridge must be non-negative.")
+    if not 0 <= residual_compensation_alpha <= 1:
+        raise ValueError("residual_compensation_alpha must be between 0 and 1.")
     if max_anchors <= 0:
         raise ValueError("max_anchors must be positive.")
     if span_max_pairs <= 0:
@@ -2465,7 +2471,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             if layer_gate_metric in {"ppl", "behavior"} or save_best_layer_loss or save_best_layer_behavior
             else None
         )
-        before_metrics = _cross_tokenizer_block_alignment_metrics(
+        before_alignment = _cross_tokenizer_block_alignment_state(
             torch,
             source,
             candidate,
@@ -2477,18 +2483,27 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             hidden_projection,
             _canonical_token,
             donor_layer_fold_mode,
-            hidden_metric,
             block_target,
             span_max_pairs,
         )
+        before_metrics = _cross_tokenizer_block_alignment_metrics(
+            torch,
+            before_alignment,
+            hidden_projection,
+            hidden_metric,
+        )
         compensation_report = None
-        if residual_magnitude_compensation == "pre":
+        if residual_magnitude_compensation != "none":
             compensation_report = _apply_layer_residual_magnitude_compensation(
                 torch,
                 candidate_layer,
+                before_alignment,
                 before_metrics,
                 float(residual_compensation_min_scale),
                 float(residual_compensation_max_scale),
+                residual_magnitude_compensation,
+                float(residual_compensation_linear_ridge),
+                float(residual_compensation_alpha),
             )
         losses = []
         skipped_steps = 0
@@ -3007,7 +3022,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         elif save_best_layer_loss and best_state is not None:
             _restore_named_module_states({"block": candidate_layer, "output_head": output_head}, best_state)
 
-        after_metrics = _cross_tokenizer_block_alignment_metrics(
+        after_alignment = _cross_tokenizer_block_alignment_state(
             torch,
             source,
             candidate,
@@ -3019,9 +3034,14 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             hidden_projection,
             _canonical_token,
             donor_layer_fold_mode,
-            hidden_metric,
             block_target,
             span_max_pairs,
+        )
+        after_metrics = _cross_tokenizer_block_alignment_metrics(
+            torch,
+            after_alignment,
+            hidden_projection,
+            hidden_metric,
         )
         report: dict[str, Any] = {
             "candidate_layer": int(candidate_idx),
@@ -3132,6 +3152,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "residual_magnitude_compensation": residual_magnitude_compensation,
         "residual_compensation_min_scale": float(residual_compensation_min_scale),
         "residual_compensation_max_scale": float(residual_compensation_max_scale),
+        "residual_compensation_linear_ridge": float(residual_compensation_linear_ridge),
+        "residual_compensation_alpha": float(residual_compensation_alpha),
         "max_anchors": int(max_anchors),
         "span_max_pairs": int(span_max_pairs),
         "donor_layer_fold_mode": donor_layer_fold_mode,
@@ -6090,7 +6112,7 @@ def _candidate_lm_stabilizer_loss(torch, student, input_ids, attention_mask):
     return (token_ce * mask).sum() / mask.sum().clamp_min(1)
 
 
-def _cross_tokenizer_block_alignment_metrics(
+def _cross_tokenizer_block_alignment_state(
     torch,
     source,
     candidate,
@@ -6102,7 +6124,6 @@ def _cross_tokenizer_block_alignment_metrics(
     hidden_projection,
     canonical_fn,
     donor_layer_fold_mode: str,
-    hidden_metric: str,
     block_target: str,
     span_max_pairs: int,
 ) -> dict[str, Any]:
@@ -6178,12 +6199,37 @@ def _cross_tokenizer_block_alignment_metrics(
     projected = source_matrix.to(device=hidden_projection.device, dtype=torch.float32).matmul(
         hidden_projection.to(dtype=torch.float32)
     ).detach().cpu()
+    return {
+        "skipped": False,
+        "block_target": block_target,
+        "span_pairs": int(rows),
+        "candidate_matrix": candidate_matrix,
+        "source_matrix": source_matrix,
+        "projected_matrix": projected,
+    }
+
+
+def _cross_tokenizer_block_alignment_metrics(
+    torch,
+    alignment_state: dict[str, Any],
+    hidden_projection,
+    hidden_metric: str,
+) -> dict[str, Any]:
+    if alignment_state.get("skipped"):
+        return {
+            "skipped": True,
+            "reason": alignment_state.get("reason", "alignment_state_skipped"),
+            "span_pairs": int(alignment_state.get("span_pairs", 0)),
+        }
+    candidate_matrix = alignment_state["candidate_matrix"]
+    source_matrix = alignment_state["source_matrix"]
+    projected = alignment_state["projected_matrix"]
     candidate_rms = _activation_rms(torch, candidate_matrix)
     projected_rms = _activation_rms(torch, projected)
     metrics = {
         "skipped": False,
-        "block_target": block_target,
-        "span_pairs": int(rows),
+        "block_target": alignment_state.get("block_target"),
+        "span_pairs": int(alignment_state.get("span_pairs", int(candidate_matrix.shape[0]))),
         "candidate_hidden_size": int(candidate_matrix.shape[1]),
         "source_hidden_size": int(source_matrix.shape[1]),
         "candidate_rms": candidate_rms,
@@ -6217,15 +6263,36 @@ def _activation_rms(torch, rows) -> float:
 def _apply_layer_residual_magnitude_compensation(
     torch,
     layer,
+    alignment_state: dict[str, Any],
     alignment_metrics: dict[str, Any],
     min_scale: float,
     max_scale: float,
+    mode: str,
+    linear_ridge: float,
+    alpha: float,
 ) -> dict[str, Any]:
+    canonical_mode = "pre-linear" if mode == "linear-pre" else mode
     if alignment_metrics.get("skipped"):
         return {
             "enabled": True,
             "applied": False,
+            "mode": canonical_mode,
             "reason": alignment_metrics.get("reason", "alignment_metrics_skipped"),
+        }
+    if canonical_mode == "pre-linear":
+        return _apply_layer_residual_linear_compensation(
+            torch,
+            layer,
+            alignment_state,
+            float(linear_ridge),
+            float(alpha),
+        )
+    if canonical_mode != "pre":
+        return {
+            "enabled": True,
+            "applied": False,
+            "mode": canonical_mode,
+            "reason": "unsupported_residual_compensation_mode",
         }
     candidate_rms = float(alignment_metrics.get("candidate_rms", 0.0))
     projected_rms = float(alignment_metrics.get("projected_rms", 0.0))
@@ -6233,6 +6300,7 @@ def _apply_layer_residual_magnitude_compensation(
         return {
             "enabled": True,
             "applied": False,
+            "mode": canonical_mode,
             "reason": "invalid_rms",
             "candidate_rms": candidate_rms,
             "projected_rms": projected_rms,
@@ -6243,12 +6311,77 @@ def _apply_layer_residual_magnitude_compensation(
     return {
         "enabled": True,
         "applied": bool(module_reports),
+        "mode": canonical_mode,
         "raw_scale": float(raw_scale),
         "scale": float(scale),
         "min_scale": float(min_scale),
         "max_scale": float(max_scale),
         "candidate_rms": candidate_rms,
         "projected_rms": projected_rms,
+        "modules": module_reports,
+        "reason": "applied" if module_reports else "no_supported_output_modules",
+    }
+
+
+def _apply_layer_residual_linear_compensation(
+    torch,
+    layer,
+    alignment_state: dict[str, Any],
+    linear_ridge: float,
+    alpha: float,
+) -> dict[str, Any]:
+    if alignment_state.get("skipped"):
+        return {
+            "enabled": True,
+            "applied": False,
+            "mode": "pre-linear",
+            "reason": alignment_state.get("reason", "alignment_state_skipped"),
+        }
+    candidate_matrix = alignment_state.get("candidate_matrix")
+    projected_matrix = alignment_state.get("projected_matrix")
+    if candidate_matrix is None or projected_matrix is None:
+        return {
+            "enabled": True,
+            "applied": False,
+            "mode": "pre-linear",
+            "reason": "missing_alignment_matrices",
+        }
+    if int(candidate_matrix.shape[1]) != int(projected_matrix.shape[1]):
+        return {
+            "enabled": True,
+            "applied": False,
+            "mode": "pre-linear",
+            "reason": "hidden_size_mismatch",
+            "candidate_hidden_size": int(candidate_matrix.shape[1]),
+            "projected_hidden_size": int(projected_matrix.shape[1]),
+        }
+    fit = _fit_activation_map(
+        torch,
+        candidate_matrix,
+        projected_matrix,
+        float(linear_ridge),
+        reconstruction_alpha=float(alpha),
+        reconstruction_objective="ridge",
+        cosine_steps=0,
+        cosine_lr=0.0,
+        cosine_l2=0.0,
+    )
+    module_reports = _apply_residual_output_map_to_modules(torch, layer, fit["map"])
+    return {
+        "enabled": True,
+        "applied": bool(module_reports),
+        "mode": "pre-linear",
+        "ridge": float(linear_ridge),
+        "alpha": float(alpha),
+        "tokens": int(fit["tokens"]),
+        "hidden_size": int(fit["hidden_size"]),
+        "relative_error_before": float(fit["relative_error_before"]),
+        "relative_error_solved": float(fit["relative_error_solved"]),
+        "relative_error_after": float(fit["relative_error_after"]),
+        "mean_cosine_before": float(fit["mean_cosine_before"]),
+        "mean_cosine_solved": float(fit["mean_cosine_solved"]),
+        "mean_cosine_after": float(fit["mean_cosine_after"]),
+        "solver": fit.get("solver"),
         "modules": module_reports,
         "reason": "applied" if module_reports else "no_supported_output_modules",
     }
@@ -6287,6 +6420,54 @@ def _scale_layer_residual_output_modules(torch, layer, scale: float) -> list[dic
                     "scale": float(scale),
                     "weight_shape": [int(item) for item in weight.shape],
                     "bias_scaled": bias_scaled,
+                }
+            )
+    return reports
+
+
+def _apply_residual_output_map_to_modules(torch, layer, mapping) -> list[dict[str, Any]]:
+    reports: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    specs = []
+    attention_spec = _attention_projection_spec(layer)
+    if attention_spec is not None:
+        specs.append(("attention", attention_spec["output_name"], attention_spec["output"]))
+    mlp_spec = _mlp_projection_spec(layer)
+    if mlp_spec is not None:
+        specs.append(("mlp", mlp_spec["output_name"], mlp_spec["output"]))
+    map_cpu = mapping.detach().cpu().to(torch.float32)
+    if int(map_cpu.shape[0]) != int(map_cpu.shape[1]):
+        raise ValueError("Residual output compensation map must be square.")
+    with torch.no_grad():
+        for kind, name, module in specs:
+            if module is None:
+                continue
+            weight = getattr(module, "weight", None)
+            if weight is None:
+                continue
+            module_id = id(weight)
+            if module_id in seen:
+                continue
+            seen.add(module_id)
+            old_weight = weight.data.detach().cpu().to(torch.float32)
+            if int(old_weight.shape[0]) != int(map_cpu.shape[0]):
+                raise ValueError(
+                    f"Cannot absorb residual output map with output {map_cpu.shape[0]} into weight {tuple(old_weight.shape)}."
+                )
+            updated = map_cpu.T.matmul(old_weight)
+            weight.data.copy_(updated.to(device=weight.device, dtype=weight.dtype))
+            bias = getattr(module, "bias", None)
+            bias_updated = bool(bias is not None)
+            if bias is not None:
+                old_bias = bias.data.detach().cpu().to(torch.float32)
+                bias.data.copy_(old_bias.matmul(map_cpu).to(device=bias.device, dtype=bias.dtype))
+            reports.append(
+                {
+                    "kind": kind,
+                    "name": name,
+                    "map_shape": [int(item) for item in map_cpu.shape],
+                    "weight_shape": [int(item) for item in weight.shape],
+                    "bias_updated": bias_updated,
                 }
             )
     return reports

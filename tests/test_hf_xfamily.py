@@ -55,6 +55,7 @@ from neural_forge.hf_recovery import _set_train_scope
 from neural_forge.hf_recovery import _same_tokenizer_reference_loss
 from neural_forge.hf_recovery import _same_tokenizer_hidden_loss
 from neural_forge.hf_recovery import _same_tokenizer_top_k_kl
+from neural_forge.hf_recovery import _apply_residual_output_map_to_modules
 from neural_forge.hf_recovery import _scale_layer_residual_output_modules
 from neural_forge.hf_recovery import _source_group_delta_state
 from neural_forge.hf_recovery import _source_group_module_output_state
@@ -3527,6 +3528,32 @@ def test_scale_layer_residual_output_modules_scales_attention_and_mlp_outputs() 
     assert mlp_output.bias.detach().flatten().tolist() == pytest.approx([4.0] * 2)
 
 
+def test_apply_residual_output_map_to_modules_absorbs_map_into_outputs() -> None:
+    torch = pytest.importorskip("torch")
+    attention_output = torch.nn.Linear(2, 2, bias=True)
+    mlp_output = torch.nn.Linear(2, 2, bias=True)
+    gate = torch.nn.Linear(2, 2, bias=False)
+    up = torch.nn.Linear(2, 2, bias=False)
+    attention_output.weight.data.copy_(torch.tensor([[1.0, 2.0], [3.0, 4.0]]))
+    attention_output.bias.data.copy_(torch.tensor([0.5, -1.0]))
+    mlp_output.weight.data.copy_(torch.tensor([[2.0, -1.0], [0.25, 0.75]]))
+    mlp_output.bias.data.copy_(torch.tensor([1.5, -0.5]))
+    layer = _Obj(
+        self_attn=_Obj(o_proj=attention_output),
+        mlp=_Obj(gate_proj=gate, up_proj=up, down_proj=mlp_output),
+    )
+    inputs = torch.tensor([[1.0, -2.0], [0.25, 0.5]])
+    attention_before = attention_output(inputs).detach()
+    mlp_before = mlp_output(inputs).detach()
+    mapping = torch.tensor([[1.25, -0.5], [0.75, 0.5]])
+
+    reports = _apply_residual_output_map_to_modules(torch, layer, mapping)
+
+    assert [item["kind"] for item in reports] == ["attention", "mlp"]
+    assert torch.allclose(attention_output(inputs).detach(), attention_before.matmul(mapping))
+    assert torch.allclose(mlp_output(inputs).detach(), mlp_before.matmul(mapping))
+
+
 def test_layer_gate_decision_accepts_non_regression() -> None:
     accepted = _layer_gate_decision(previous_ppl=100.0, candidate_ppl=99.0, max_ppl_ratio=1.0)
     rejected = _layer_gate_decision(previous_ppl=100.0, candidate_ppl=103.0, max_ppl_ratio=1.02)
@@ -4742,11 +4769,15 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "--block-target",
             "delta",
             "--residual-magnitude-compensation",
-            "pre",
+            "linear-pre",
             "--residual-compensation-min-scale",
             "0.25",
             "--residual-compensation-max-scale",
             "1.75",
+            "--residual-compensation-linear-ridge",
+            "0.003",
+            "--residual-compensation-alpha",
+            "0.35",
             "--max-anchors",
             "222",
             "--span-max-pairs",
@@ -4857,9 +4888,11 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "hidden_ridge": 0.02,
         "hidden_metric": "both",
         "block_target": "delta",
-        "residual_magnitude_compensation": "pre",
+        "residual_magnitude_compensation": "linear-pre",
         "residual_compensation_min_scale": 0.25,
         "residual_compensation_max_scale": 1.75,
+        "residual_compensation_linear_ridge": 0.003,
+        "residual_compensation_alpha": 0.35,
         "max_anchors": 222,
         "span_max_pairs": 77,
         "donor_layer_fold_mode": "average",
