@@ -1708,6 +1708,80 @@ Interpretation:
   compensation, then reuse projected-vocab/byte/on-policy losses as auxiliary
   recovery signals rather than the primary repair.
 
+### Residual Magnitude Compensation Follow-Up
+
+Code changes:
+
+- `hf-xfamily-block-recover` now accepts
+  `--residual-magnitude-compensation none|pre`,
+  `--residual-compensation-min-scale`, and
+  `--residual-compensation-max-scale`.
+- In `pre` mode, block recovery measures the active child residual-update RMS
+  and projected donor residual-update RMS before a layer is trained. It scales
+  the child attention output projection and MLP output projection by a clamped
+  ratio so the child residual magnitude is closer to the donor-side folded
+  target.
+- Reports now include `candidate_rms`, `projected_rms`, and
+  `projected_to_candidate_rms_ratio` for the before/after block-alignment
+  metrics, plus a per-layer compensation report.
+
+Remote validation on the same strict `134,515,008` parameter, `29.90x`
+SmolLM-shaped blank target path:
+
+| Checkpoint | Strict PPL | Strict choice | Strict behavior | Strict generation | Broad behavior | Broad generation | Verdict |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Block + head byte KD behavior-best baseline | 3,822.54 | 3/4 | 3/6 | 2/3 | 600/1000 | 160/200 | previous best |
+| Residual magnitude compensation, no training steps | 3,822.54 | 3/4 | 3/6 | 2/3 | 600/1000 | 160/200 | tied only because both scale edits were reverted |
+
+Artifacts:
+
+- Run:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_tied29_residual_comp_l2_20260628_181118`
+- Strict eval:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/eval_qwen4b_tied29_residual_comp_l2_strict.json`
+- Broad eval:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/broad_eval_1000_20260628/eval_residual_comp_l2.json`
+- Broad rank with the residual-comp candidate:
+  `runs/qwen4b_to_smollm135m_transport_random_20260627/broad_eval_1000_20260628/rank_with_residual_comp_l2.json`
+
+Mechanical signal:
+
+- Layer 0 raw residual ratio was `0.1527`, clamped to scale `0.75`; local
+  residual-delta loss improved from `0.6543` to `0.6527`.
+- Layer 1 raw residual ratio was `1.6273`, clamped to scale `1.25`; local
+  residual-delta loss improved from `0.9266909` to `0.9266678`.
+- Both layers were rejected by the behavior gate. Layer 0 dropped from `3/6`
+  behavior and `2/3` generation health to `1/6` and `0/3`; layer 1 kept `3/6`
+  behavior but dropped generation health from `2/3` to `0/3`.
+
+Broad-suite recheck across all current broad artifacts:
+
+| Broad eval | Behavior | Generation | Choice | PPL mean |
+|---|---:|---:|---:|---:|
+| `eval_block_byte_best.json` | 600/1000 | 160/200 | 25/250 | 14,259.01 |
+| `eval_residual_comp_l2.json` | 600/1000 | 160/200 | 25/250 | 14,259.01 |
+| `eval_rsd_behaviorbest.json` | 600/1000 | 160/200 | 25/250 | 14,290.37 |
+| `eval_curated_token_auto.json` | 600/1000 | 160/200 | 24/250 | 14,442.64 |
+| `eval_block_teachergen.json` | 600/1000 | 160/200 | 22/250 | 14,475.51 |
+| `eval_block_bytehidden.json` | 600/1000 | 120/200 | 21/250 | 14,217.58 |
+| `eval_focused_lm_answer.json` | 600/1000 | 80/200 | 30/250 | 19,012.19 |
+| `eval_teachergen_projbyte_l2s8.json` | 600/1000 | 80/200 | 24/250 | 14,301.77 |
+| `eval_answer_rank.json` | 600/1000 | 40/200 | 31/250 | 19,564.62 |
+| `eval_mixed8192_best.json` | 2/1000 | 80/200 | 83/250 | 7,783.28 |
+
+Interpretation:
+
+- Residual magnitude compensation is a useful diagnostic and may become part of
+  a stronger activation-compensated fold, but this isolated pre-scale was not a
+  promoted improvement.
+- The result is a concrete example of why hidden-space alignment and PPL cannot
+  be optimized alone. Both attempted scale edits improved local reconstruction
+  loss, but the behavior gate caught generation collapse and reverted them.
+- The 1000-probe recheck did not reveal a hidden better combination among the
+  previously tested broad artifacts. The current best remains the block
+  byte-KD behavior-best candidate, and it is still only a narrow partial
+  transfer result rather than a 25x donor-capability proof.
+
 ## Current Conclusion
 
 The SmolLM blank-target fold is no longer just fitting tensor shapes. The best

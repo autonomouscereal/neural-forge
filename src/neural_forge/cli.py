@@ -928,6 +928,14 @@ def build_parser() -> argparse.ArgumentParser:
         default="hidden",
         help="Train block recovery on absolute hidden states or residual update deltas.",
     )
+    xfamily_block_recover.add_argument(
+        "--residual-magnitude-compensation",
+        choices=["none", "pre"],
+        default="none",
+        help="Optionally scale child attention/MLP output projections to match projected donor residual-delta RMS before layer training.",
+    )
+    xfamily_block_recover.add_argument("--residual-compensation-min-scale", type=float, default=0.50)
+    xfamily_block_recover.add_argument("--residual-compensation-max-scale", type=float, default=1.50)
     xfamily_block_recover.add_argument("--max-anchors", type=int, default=2048)
     xfamily_block_recover.add_argument("--span-max-pairs", type=int, default=512)
     xfamily_block_recover.add_argument(
@@ -1936,6 +1944,9 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         hidden_ridge=args.hidden_ridge,
         hidden_metric=args.hidden_metric,
         block_target=args.block_target,
+        residual_magnitude_compensation=args.residual_magnitude_compensation,
+        residual_compensation_min_scale=args.residual_compensation_min_scale,
+        residual_compensation_max_scale=args.residual_compensation_max_scale,
         max_anchors=args.max_anchors,
         span_max_pairs=args.span_max_pairs,
         donor_layer_fold_mode=args.donor_layer_fold_mode,
