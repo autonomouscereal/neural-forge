@@ -1461,9 +1461,48 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--block-projected-vocab-kd-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--block-byte-kd-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--block-block-io-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-on-policy-anchor-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-on-policy-unlikelihood-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-on-policy-hidden-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-on-policy-max-new-tokens", type=int, default=24)
+    xfamily_chain.add_argument("--block-on-policy-interval", type=int, default=10)
+    xfamily_chain.add_argument(
+        "--block-on-policy-response-loss-mode",
+        choices=["none", "auto", "assistant", "answer"],
+        default="auto",
+    )
+    xfamily_chain.add_argument("--block-on-policy-unlikelihood-window", type=int, default=16)
+    xfamily_chain.add_argument("--block-stepwise-donor-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-stepwise-donor-max-new-tokens", type=int, default=8)
+    xfamily_chain.add_argument("--block-stepwise-donor-interval", type=int, default=4)
+    xfamily_chain.add_argument("--block-teacher-generate-lm-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-teacher-generate-hidden-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-teacher-generate-projected-vocab-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-teacher-generate-byte-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-teacher-generate-max-new-tokens", type=int, default=64)
+    xfamily_chain.add_argument("--block-alm-max-chunks", type=int, default=64)
+    xfamily_chain.add_argument("--block-alm-min-chars", type=int, default=2)
+    xfamily_chain.add_argument("--block-focused-block-hidden-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-focused-projected-vocab-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-focused-lm-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-token-focus", choices=["auto", "response", "numbers", "code", "all"], default="auto")
+    xfamily_chain.add_argument(
+        "--block-projected-vocab-kd-mode",
+        choices=["teacher-to-student", "student-to-teacher", "both"],
+        default="teacher-to-student",
+    )
+    xfamily_chain.add_argument("--block-byte-hidden-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-block-io-ridge", type=float, default=1e-3)
+    xfamily_chain.add_argument("--block-block-io-loss", choices=["smooth-l1", "cosine", "both"], default="both")
+    xfamily_chain.add_argument("--block-train-output-head-with-kd", action="store_true")
+    xfamily_chain.add_argument("--block-untie-output-head-for-kd", action="store_true")
+    xfamily_chain.add_argument("--block-allow-tied-output-head-training", action="store_true")
     xfamily_chain.add_argument("--block-module-output-kd-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--block-module-output-targets", choices=["attention", "mlp", "both"], default="both")
     xfamily_chain.add_argument("--block-module-output-transport", choices=["paired", "sinkhorn", "both"], default="paired")
+    xfamily_chain.add_argument("--block-module-output-temperature", type=float, default=1.0)
+    xfamily_chain.add_argument("--block-module-output-sinkhorn-iterations", type=int, default=12)
+    xfamily_chain.add_argument("--block-projected-vocab-max-source-tokens", type=int, default=8)
     xfamily_chain.add_argument("--block-save-best-layer-loss", action="store_true")
     xfamily_chain.add_argument("--block-save-best-layer-behavior", action="store_true")
     xfamily_chain.add_argument("--block-layer-behavior-eval-interval", type=int)
@@ -2684,9 +2723,40 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         block_projected_vocab_kd_weight=args.block_projected_vocab_kd_weight,
         block_byte_kd_weight=args.block_byte_kd_weight,
         block_block_io_kd_weight=args.block_block_io_kd_weight,
+        block_on_policy_anchor_kd_weight=args.block_on_policy_anchor_kd_weight,
+        block_on_policy_unlikelihood_weight=args.block_on_policy_unlikelihood_weight,
+        block_on_policy_hidden_kd_weight=args.block_on_policy_hidden_kd_weight,
+        block_on_policy_max_new_tokens=args.block_on_policy_max_new_tokens,
+        block_on_policy_interval=args.block_on_policy_interval,
+        block_on_policy_response_loss_mode=args.block_on_policy_response_loss_mode,
+        block_on_policy_unlikelihood_window=args.block_on_policy_unlikelihood_window,
+        block_stepwise_donor_kd_weight=args.block_stepwise_donor_kd_weight,
+        block_stepwise_donor_max_new_tokens=args.block_stepwise_donor_max_new_tokens,
+        block_stepwise_donor_interval=args.block_stepwise_donor_interval,
+        block_teacher_generate_lm_weight=args.block_teacher_generate_lm_weight,
+        block_teacher_generate_hidden_kd_weight=args.block_teacher_generate_hidden_kd_weight,
+        block_teacher_generate_projected_vocab_kd_weight=args.block_teacher_generate_projected_vocab_kd_weight,
+        block_teacher_generate_byte_kd_weight=args.block_teacher_generate_byte_kd_weight,
+        block_teacher_generate_max_new_tokens=args.block_teacher_generate_max_new_tokens,
+        block_alm_max_chunks=args.block_alm_max_chunks,
+        block_alm_min_chars=args.block_alm_min_chars,
+        block_focused_block_hidden_kd_weight=args.block_focused_block_hidden_kd_weight,
+        block_focused_projected_vocab_kd_weight=args.block_focused_projected_vocab_kd_weight,
+        block_focused_lm_weight=args.block_focused_lm_weight,
+        block_token_focus=args.block_token_focus,
+        block_projected_vocab_kd_mode=args.block_projected_vocab_kd_mode,
+        block_byte_hidden_kd_weight=args.block_byte_hidden_kd_weight,
+        block_block_io_ridge=args.block_block_io_ridge,
+        block_block_io_loss=args.block_block_io_loss,
+        block_train_output_head_with_kd=args.block_train_output_head_with_kd,
+        block_untie_output_head_for_kd=args.block_untie_output_head_for_kd,
+        block_allow_tied_output_head_training=args.block_allow_tied_output_head_training,
         block_module_output_kd_weight=args.block_module_output_kd_weight,
         block_module_output_targets=args.block_module_output_targets,
         block_module_output_transport=args.block_module_output_transport,
+        block_module_output_temperature=args.block_module_output_temperature,
+        block_module_output_sinkhorn_iterations=args.block_module_output_sinkhorn_iterations,
+        block_projected_vocab_max_source_tokens=args.block_projected_vocab_max_source_tokens,
         block_save_best_layer_loss=args.block_save_best_layer_loss,
         block_save_best_layer_behavior=args.block_save_best_layer_behavior,
         block_layer_behavior_eval_interval=args.block_layer_behavior_eval_interval,

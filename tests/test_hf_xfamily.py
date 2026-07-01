@@ -2240,6 +2240,47 @@ def test_synthesize_cross_arch_layer_tensor_splits_gpt2_qkv_for_split_attention(
     assert v_bias_report["method"] == "split_gpt2_c_attn_bias_for_v_proj"
 
 
+def test_synthesize_cross_arch_layer_tensor_splits_lfm_conv_for_split_attention() -> None:
+    torch = pytest.importorskip("torch")
+    q = torch.arange(6, dtype=torch.float32).reshape(2, 3)
+    k = q + 10
+    v = q + 20
+    out = q + 30
+    layer_state = {
+        "conv.in_proj.weight": torch.cat([q, k, v], dim=0),
+        "conv.out_proj.weight": out,
+    }
+
+    q_proj, q_report = _synthesize_cross_arch_layer_tensor(torch, layer_state, "self_attn.q_proj.weight")
+    k_proj, k_report = _synthesize_cross_arch_layer_tensor(torch, layer_state, "self_attn.k_proj.weight")
+    v_proj, v_report = _synthesize_cross_arch_layer_tensor(torch, layer_state, "self_attn.v_proj.weight")
+    o_proj, o_report = _synthesize_cross_arch_layer_tensor(torch, layer_state, "self_attn.o_proj.weight")
+
+    torch.testing.assert_close(q_proj, q)
+    torch.testing.assert_close(k_proj, k)
+    torch.testing.assert_close(v_proj, v)
+    torch.testing.assert_close(o_proj, out)
+    assert q_report["method"] == "split_lfm_conv_in_proj_for_q_proj"
+    assert k_report["method"] == "split_lfm_conv_in_proj_for_k_proj"
+    assert v_report["method"] == "split_lfm_conv_in_proj_for_v_proj"
+    assert o_report["method"] == "lfm_conv_out_proj_for_attention_output"
+
+
+def test_synthesize_cross_arch_layer_tensor_fuses_lfm_conv_for_gpt2() -> None:
+    torch = pytest.importorskip("torch")
+    conv_in = torch.arange(18, dtype=torch.float32).reshape(6, 3)
+    conv_out = torch.arange(9, dtype=torch.float32).reshape(3, 3)
+    layer_state = {"conv.in_proj.weight": conv_in, "conv.out_proj.weight": conv_out}
+
+    c_attn, c_attn_report = _synthesize_cross_arch_layer_tensor(torch, layer_state, "attn.c_attn.weight")
+    c_proj, c_proj_report = _synthesize_cross_arch_layer_tensor(torch, layer_state, "attn.c_proj.weight")
+
+    torch.testing.assert_close(c_attn, conv_in.t())
+    torch.testing.assert_close(c_proj, conv_out.t())
+    assert c_attn_report["method"] == "transpose_lfm_conv_in_proj_for_gpt2_c_attn"
+    assert c_proj_report["method"] == "transpose_lfm_conv_out_proj_for_gpt2_c_proj"
+
+
 def test_synthesize_cross_arch_layer_tensor_splits_gpt2_mlp_for_gated_target() -> None:
     torch = pytest.importorskip("torch")
     c_fc = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
@@ -6151,6 +6192,7 @@ def test_chain_anchor_orchestrator_preserves_incumbent_on_failed_stage(monkeypat
     import neural_forge.hf_xfamily as hf_xfamily
 
     eval_calls = []
+    block_captured = {}
 
     def fake_eval(model_id_or_path, output_file, **kwargs):
         eval_calls.append(str(model_id_or_path))
@@ -6189,6 +6231,7 @@ def test_chain_anchor_orchestrator_preserves_incumbent_on_failed_stage(monkeypat
         return gate
 
     def fake_block(**kwargs):
+        block_captured.update(kwargs)
         Path(kwargs["output_dir"]).mkdir(parents=True, exist_ok=True)
         return {"operation": "fake_block"}
 
@@ -6202,12 +6245,34 @@ def test_chain_anchor_orchestrator_preserves_incumbent_on_failed_stage(monkeypat
         tmp_path,
         stages="block",
         promote_policy="gate-and-rank",
+        block_on_policy_anchor_kd_weight=0.04,
+        block_on_policy_hidden_kd_weight=0.06,
+        block_stepwise_donor_kd_weight=0.05,
+        block_teacher_generate_lm_weight=0.011,
+        block_focused_lm_weight=0.017,
+        block_token_focus="numbers",
+        block_projected_vocab_kd_mode="both",
+        block_train_output_head_with_kd=True,
+        block_untie_output_head_for_kd=True,
+        block_module_output_temperature=1.7,
+        block_projected_vocab_max_source_tokens=11,
         device="cpu",
     )
 
     assert summary["best_model_dir"] == "anchor"
     assert summary["promoted_stage_count"] == 0
     assert summary["stage_records"][0]["promoted"] is False
+    assert block_captured["on_policy_anchor_kd_weight"] == 0.04
+    assert block_captured["on_policy_hidden_kd_weight"] == 0.06
+    assert block_captured["stepwise_donor_kd_weight"] == 0.05
+    assert block_captured["teacher_generate_lm_weight"] == 0.011
+    assert block_captured["focused_lm_weight"] == 0.017
+    assert block_captured["token_focus"] == "numbers"
+    assert block_captured["projected_vocab_kd_mode"] == "both"
+    assert block_captured["train_output_head_with_kd"] is True
+    assert block_captured["untie_output_head_for_kd"] is True
+    assert block_captured["module_output_temperature"] == 1.7
+    assert block_captured["projected_vocab_max_source_tokens"] == 11
 
 
 def test_chain_anchor_init_stage_forwards_activation_fit_flags(monkeypatch, tmp_path) -> None:
@@ -6443,8 +6508,66 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "average",
             "--block-donor-layer-group-strategy",
             "depth",
+            "--block-on-policy-anchor-kd-weight",
+            "0.04",
+            "--block-on-policy-unlikelihood-weight",
+            "0.005",
+            "--block-on-policy-hidden-kd-weight",
+            "0.06",
+            "--block-on-policy-max-new-tokens",
+            "19",
+            "--block-on-policy-interval",
+            "3",
+            "--block-on-policy-response-loss-mode",
+            "answer",
+            "--block-on-policy-unlikelihood-window",
+            "7",
+            "--block-stepwise-donor-kd-weight",
+            "0.05",
+            "--block-stepwise-donor-max-new-tokens",
+            "6",
+            "--block-stepwise-donor-interval",
+            "2",
+            "--block-teacher-generate-lm-weight",
+            "0.011",
+            "--block-teacher-generate-hidden-kd-weight",
+            "0.012",
+            "--block-teacher-generate-projected-vocab-kd-weight",
+            "0.013",
+            "--block-teacher-generate-byte-kd-weight",
+            "0.014",
+            "--block-teacher-generate-max-new-tokens",
+            "21",
+            "--block-alm-max-chunks",
+            "22",
+            "--block-alm-min-chars",
+            "3",
+            "--block-focused-block-hidden-kd-weight",
+            "0.015",
+            "--block-focused-projected-vocab-kd-weight",
+            "0.016",
+            "--block-focused-lm-weight",
+            "0.017",
+            "--block-token-focus",
+            "numbers",
+            "--block-projected-vocab-kd-mode",
+            "both",
+            "--block-byte-hidden-kd-weight",
+            "0.018",
+            "--block-block-io-ridge",
+            "0.019",
+            "--block-block-io-loss",
+            "cosine",
+            "--block-train-output-head-with-kd",
+            "--block-untie-output-head-for-kd",
             "--block-module-output-kd-weight",
             "0.03",
+            "--block-module-output-temperature",
+            "1.7",
+            "--block-module-output-sinkhorn-iterations",
+            "9",
+            "--block-projected-vocab-max-source-tokens",
+            "11",
             "--block-save-best-layer-behavior",
             "--alm-steps",
             "40",
@@ -6515,7 +6638,37 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["block_pre_reconstruction_target"] == "block-interface"
     assert captured["block_donor_layer_fold_mode"] == "average"
     assert captured["block_donor_layer_group_strategy"] == "depth"
+    assert captured["block_on_policy_anchor_kd_weight"] == 0.04
+    assert captured["block_on_policy_unlikelihood_weight"] == 0.005
+    assert captured["block_on_policy_hidden_kd_weight"] == 0.06
+    assert captured["block_on_policy_max_new_tokens"] == 19
+    assert captured["block_on_policy_interval"] == 3
+    assert captured["block_on_policy_response_loss_mode"] == "answer"
+    assert captured["block_on_policy_unlikelihood_window"] == 7
+    assert captured["block_stepwise_donor_kd_weight"] == 0.05
+    assert captured["block_stepwise_donor_max_new_tokens"] == 6
+    assert captured["block_stepwise_donor_interval"] == 2
+    assert captured["block_teacher_generate_lm_weight"] == 0.011
+    assert captured["block_teacher_generate_hidden_kd_weight"] == 0.012
+    assert captured["block_teacher_generate_projected_vocab_kd_weight"] == 0.013
+    assert captured["block_teacher_generate_byte_kd_weight"] == 0.014
+    assert captured["block_teacher_generate_max_new_tokens"] == 21
+    assert captured["block_alm_max_chunks"] == 22
+    assert captured["block_alm_min_chars"] == 3
+    assert captured["block_focused_block_hidden_kd_weight"] == 0.015
+    assert captured["block_focused_projected_vocab_kd_weight"] == 0.016
+    assert captured["block_focused_lm_weight"] == 0.017
+    assert captured["block_token_focus"] == "numbers"
+    assert captured["block_projected_vocab_kd_mode"] == "both"
+    assert captured["block_byte_hidden_kd_weight"] == 0.018
+    assert captured["block_block_io_ridge"] == 0.019
+    assert captured["block_block_io_loss"] == "cosine"
+    assert captured["block_train_output_head_with_kd"] is True
+    assert captured["block_untie_output_head_for_kd"] is True
     assert captured["block_module_output_kd_weight"] == 0.03
+    assert captured["block_module_output_temperature"] == 1.7
+    assert captured["block_module_output_sinkhorn_iterations"] == 9
+    assert captured["block_projected_vocab_max_source_tokens"] == 11
     assert captured["block_save_best_layer_behavior"] is True
     assert captured["alm_steps"] == 40
     assert captured["alm_kd_weight"] == 0.07

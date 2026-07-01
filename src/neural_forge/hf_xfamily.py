@@ -1794,9 +1794,40 @@ def chain_anchor_staged_compress(
     block_projected_vocab_kd_weight: float = 0.0,
     block_byte_kd_weight: float = 0.0,
     block_block_io_kd_weight: float = 0.0,
+    block_on_policy_anchor_kd_weight: float = 0.0,
+    block_on_policy_unlikelihood_weight: float = 0.0,
+    block_on_policy_hidden_kd_weight: float = 0.0,
+    block_on_policy_max_new_tokens: int = 24,
+    block_on_policy_interval: int = 10,
+    block_on_policy_response_loss_mode: str = "auto",
+    block_on_policy_unlikelihood_window: int = 16,
+    block_stepwise_donor_kd_weight: float = 0.0,
+    block_stepwise_donor_max_new_tokens: int = 8,
+    block_stepwise_donor_interval: int = 4,
+    block_teacher_generate_lm_weight: float = 0.0,
+    block_teacher_generate_hidden_kd_weight: float = 0.0,
+    block_teacher_generate_projected_vocab_kd_weight: float = 0.0,
+    block_teacher_generate_byte_kd_weight: float = 0.0,
+    block_teacher_generate_max_new_tokens: int = 64,
+    block_alm_max_chunks: int = 64,
+    block_alm_min_chars: int = 2,
+    block_focused_block_hidden_kd_weight: float = 0.0,
+    block_focused_projected_vocab_kd_weight: float = 0.0,
+    block_focused_lm_weight: float = 0.0,
+    block_token_focus: str = "auto",
+    block_projected_vocab_kd_mode: str = "teacher-to-student",
+    block_byte_hidden_kd_weight: float = 0.0,
+    block_block_io_ridge: float = 1e-3,
+    block_block_io_loss: str = "both",
+    block_train_output_head_with_kd: bool = False,
+    block_untie_output_head_for_kd: bool = False,
+    block_allow_tied_output_head_training: bool = False,
     block_module_output_kd_weight: float = 0.0,
     block_module_output_targets: str = "both",
     block_module_output_transport: str = "paired",
+    block_module_output_temperature: float = 1.0,
+    block_module_output_sinkhorn_iterations: int = 12,
+    block_projected_vocab_max_source_tokens: int = 8,
     block_temperature: float = 2.0,
     block_grad_clip: float = 1.0,
     block_report_interval: int | None = None,
@@ -1982,12 +2013,43 @@ def chain_anchor_staged_compress(
                 layer_gate_eval_suite=eval_suite,
                 layer_gate_max_generation_prompts=block_layer_gate_max_generation_prompts,
                 alm_kd_weight=block_alm_kd_weight,
+                alm_max_chunks=block_alm_max_chunks,
+                alm_min_chars=block_alm_min_chars,
                 projected_vocab_kd_weight=block_projected_vocab_kd_weight,
+                focused_block_hidden_kd_weight=block_focused_block_hidden_kd_weight,
+                focused_projected_vocab_kd_weight=block_focused_projected_vocab_kd_weight,
+                focused_lm_weight=block_focused_lm_weight,
+                token_focus=block_token_focus,
+                projected_vocab_kd_mode=block_projected_vocab_kd_mode,
                 byte_kd_weight=block_byte_kd_weight,
+                byte_hidden_kd_weight=block_byte_hidden_kd_weight,
                 block_io_kd_weight=block_block_io_kd_weight,
+                block_io_ridge=block_block_io_ridge,
+                block_io_loss=block_block_io_loss,
+                on_policy_anchor_kd_weight=block_on_policy_anchor_kd_weight,
+                on_policy_unlikelihood_weight=block_on_policy_unlikelihood_weight,
+                on_policy_hidden_kd_weight=block_on_policy_hidden_kd_weight,
+                on_policy_max_new_tokens=block_on_policy_max_new_tokens,
+                on_policy_interval=block_on_policy_interval,
+                on_policy_response_loss_mode=block_on_policy_response_loss_mode,
+                on_policy_unlikelihood_window=block_on_policy_unlikelihood_window,
+                stepwise_donor_kd_weight=block_stepwise_donor_kd_weight,
+                stepwise_donor_max_new_tokens=block_stepwise_donor_max_new_tokens,
+                stepwise_donor_interval=block_stepwise_donor_interval,
+                teacher_generate_lm_weight=block_teacher_generate_lm_weight,
+                teacher_generate_hidden_kd_weight=block_teacher_generate_hidden_kd_weight,
+                teacher_generate_projected_vocab_kd_weight=block_teacher_generate_projected_vocab_kd_weight,
+                teacher_generate_byte_kd_weight=block_teacher_generate_byte_kd_weight,
+                teacher_generate_max_new_tokens=block_teacher_generate_max_new_tokens,
+                train_output_head_with_kd=block_train_output_head_with_kd,
+                untie_output_head_for_kd=block_untie_output_head_for_kd,
+                allow_tied_output_head_training=block_allow_tied_output_head_training,
                 module_output_kd_weight=block_module_output_kd_weight,
                 module_output_targets=block_module_output_targets,
                 module_output_transport=block_module_output_transport,
+                module_output_temperature=block_module_output_temperature,
+                module_output_sinkhorn_iterations=block_module_output_sinkhorn_iterations,
+                projected_vocab_max_source_tokens=block_projected_vocab_max_source_tokens,
                 temperature=block_temperature,
                 torch_dtype=torch_dtype,
                 candidate_torch_dtype=candidate_torch_dtype,
@@ -2365,8 +2427,55 @@ def _synthesize_cross_arch_layer_tensor(torch, layer_state: dict[str, Any], suff
     k = _state_value(layer_state, "self_attn.k_proj.weight", "attention.k_proj.weight", "operator.k_proj.weight")
     v = _state_value(layer_state, "self_attn.v_proj.weight", "attention.v_proj.weight", "operator.v_proj.weight")
     o = _state_value(layer_state, "self_attn.o_proj.weight", "self_attn.out_proj.weight", "attention.o_proj.weight", "operator.out_proj.weight")
+    conv_in = _state_value(layer_state, "conv.in_proj.weight", "operator.in_proj.weight")
+    conv_out = _state_value(layer_state, "conv.out_proj.weight", "operator.out_proj.weight")
     c_attn = _state_value(layer_state, "attn.c_attn.weight", "self_attn.c_attn.weight")
     c_proj = _state_value(layer_state, "attn.c_proj.weight", "self_attn.c_proj.weight")
+    if conv_in is not None and (
+        marker.endswith(".self_attn.q_proj.weight")
+        or marker.endswith(".attention.q_proj.weight")
+        or marker.endswith(".operator.q_proj.weight")
+        or marker.endswith(".self_attn.k_proj.weight")
+        or marker.endswith(".attention.k_proj.weight")
+        or marker.endswith(".operator.k_proj.weight")
+        or marker.endswith(".self_attn.v_proj.weight")
+        or marker.endswith(".attention.v_proj.weight")
+        or marker.endswith(".operator.v_proj.weight")
+    ):
+        chunks = torch.chunk(conv_in.detach().cpu().to(torch.float32), 3, dim=0)
+        if marker.endswith(".q_proj.weight"):
+            index = 0
+            stream = "q"
+        elif marker.endswith(".k_proj.weight"):
+            index = 1
+            stream = "k"
+        else:
+            index = 2
+            stream = "v"
+        return chunks[index].contiguous(), {
+            "method": f"split_lfm_conv_in_proj_for_{stream}_proj",
+            "source_suffixes": ["conv.in_proj.weight"],
+        }
+    if conv_out is not None and (
+        marker.endswith(".self_attn.o_proj.weight")
+        or marker.endswith(".self_attn.out_proj.weight")
+        or marker.endswith(".attention.o_proj.weight")
+        or marker.endswith(".operator.out_proj.weight")
+    ):
+        return conv_out.detach().cpu().to(torch.float32).contiguous(), {
+            "method": "lfm_conv_out_proj_for_attention_output",
+            "source_suffixes": ["conv.out_proj.weight"],
+        }
+    if marker.endswith(".attn.c_attn.weight") and conv_in is not None:
+        return conv_in.detach().cpu().to(torch.float32).t().contiguous(), {
+            "method": "transpose_lfm_conv_in_proj_for_gpt2_c_attn",
+            "source_suffixes": ["conv.in_proj.weight"],
+        }
+    if marker.endswith(".attn.c_proj.weight") and conv_out is not None:
+        return conv_out.detach().cpu().to(torch.float32).t().contiguous(), {
+            "method": "transpose_lfm_conv_out_proj_for_gpt2_c_proj",
+            "source_suffixes": ["conv.out_proj.weight"],
+        }
     if c_attn is not None and (
         marker.endswith(".self_attn.q_proj.weight")
         or marker.endswith(".attention.q_proj.weight")
