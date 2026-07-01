@@ -5,6 +5,13 @@ RUN_ROOT="${RUN_ROOT:-/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4
 REPO_ROOT="${REPO_ROOT:-/home/cereal/model-surgery-lab/neural-forge-src}"
 GPU_UUID="${GPU_UUID:-GPU-2ce6a95c-7b1f-644a-3808-d781732a0582}"
 TAG="${TAG:-qwen4b_blank_smollm_chain_mlpout_true_lrc_rank16_blockio_alm_gpu4_20260629}"
+ACT_TARGET="${ACT_TARGET:-mlp-output}"
+LRC_ALPHA="${LRC_ALPHA:-0.25}"
+LRC_RANK="${LRC_RANK:-16}"
+LRC_FACTOR_STEPS="${LRC_FACTOR_STEPS:-40}"
+RESIDUAL_MODE="${RESIDUAL_MODE:-lowrank-pre}"
+RESIDUAL_ALPHA="${RESIDUAL_ALPHA:-0.01}"
+RESIDUAL_RANK="${RESIDUAL_RANK:-16}"
 
 cd "$REPO_ROOT"
 source /home/cereal/model-surgery-lab/venv/bin/activate
@@ -45,14 +52,14 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-projection-blend-alpha 1.0 \
   --init-consumer-hidden-reduction sqrt-sum \
   --init-activation-fit-linears \
-  --init-activation-fit-target mlp-output \
+  --init-activation-fit-target "$ACT_TARGET" \
   --init-activation-fit-max-rows 2048 \
-  --init-activation-fit-alpha 0.25 \
+  --init-activation-fit-alpha "$LRC_ALPHA" \
   --init-activation-fit-ridge 0.03 \
-  --init-activation-fit-rank 16 \
+  --init-activation-fit-rank "$LRC_RANK" \
   --init-activation-fit-rank-mode delta \
   --init-activation-fit-method lrc \
-  --init-activation-fit-factor-steps 40 \
+  --init-activation-fit-factor-steps "$LRC_FACTOR_STEPS" \
   --init-activation-fit-factor-lr 0.03 \
   --init-activation-fit-factor-l2 0.0001 \
   --init-activation-fit-gate validation \
@@ -70,9 +77,9 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --block-hidden-metric projected-geometry \
   --block-span-pair-mode both \
   --block-target delta \
-  --block-residual-magnitude-compensation lowrank-pre \
-  --block-residual-compensation-alpha 0.01 \
-  --block-residual-compensation-linear-rank 16 \
+  --block-residual-magnitude-compensation "$RESIDUAL_MODE" \
+  --block-residual-compensation-alpha "$RESIDUAL_ALPHA" \
+  --block-residual-compensation-linear-rank "$RESIDUAL_RANK" \
   --block-pre-reconstruction-target block-interface \
   --block-pre-reconstruction-alpha 0.02 \
   --block-pre-reconstruction-fit-gate validation \

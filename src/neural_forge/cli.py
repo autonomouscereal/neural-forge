@@ -1442,7 +1442,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--block-target", choices=["hidden", "delta"], default="delta")
     xfamily_chain.add_argument(
         "--block-residual-magnitude-compensation",
-        choices=["none", "pre", "pre-linear", "linear-pre", "pre-lowrank", "lowrank-pre"],
+        choices=["none", "pre", "pre-linear", "linear-pre", "pre-lowrank", "lowrank-pre", "pre-eora", "eora-pre"],
         default="lowrank-pre",
     )
     xfamily_chain.add_argument("--block-residual-compensation-alpha", type=float, default=0.01)

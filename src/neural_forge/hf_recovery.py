@@ -7303,7 +7303,7 @@ def _apply_layer_residual_magnitude_compensation(
     alpha: float,
     linear_rank: int,
 ) -> dict[str, Any]:
-    canonical_mode = {"linear-pre": "pre-linear", "lowrank-pre": "pre-lowrank"}.get(mode, mode)
+    canonical_mode = {"linear-pre": "pre-linear", "lowrank-pre": "pre-lowrank", "eora-pre": "pre-eora"}.get(mode, mode)
     if alignment_metrics.get("skipped"):
         return {
             "enabled": True,
@@ -7311,7 +7311,7 @@ def _apply_layer_residual_magnitude_compensation(
             "mode": canonical_mode,
             "reason": alignment_metrics.get("reason", "alignment_metrics_skipped"),
         }
-    if canonical_mode in {"pre-linear", "pre-lowrank"}:
+    if canonical_mode in {"pre-linear", "pre-lowrank", "pre-eora"}:
         return _apply_layer_residual_linear_compensation(
             torch,
             layer,
@@ -7391,7 +7391,7 @@ def _apply_layer_residual_linear_compensation(
             "candidate_hidden_size": int(candidate_matrix.shape[1]),
             "projected_hidden_size": int(projected_matrix.shape[1]),
         }
-    fit_alpha = 1.0 if mode == "pre-lowrank" else float(alpha)
+    fit_alpha = 1.0 if mode in {"pre-lowrank", "pre-eora"} else float(alpha)
     fit = _fit_activation_map(
         torch,
         candidate_matrix,
@@ -7407,6 +7407,21 @@ def _apply_layer_residual_linear_compensation(
     lowrank_report = None
     if mode == "pre-lowrank":
         lowrank_map, lowrank_report = _low_rank_delta_map(torch, map_to_apply, float(alpha), int(linear_rank))
+        map_to_apply = lowrank_map
+        fit["reconstruction_alpha"] = float(alpha)
+        predicted = candidate_matrix[: int(fit["tokens"])].to(torch.float32).matmul(map_to_apply)
+        target = projected_matrix[: int(fit["tokens"])].to(torch.float32)
+        fit["relative_error_after"] = _relative_reconstruction_error(torch, predicted, target)
+        fit["mean_cosine_after"] = _mean_row_cosine(torch, predicted, target)
+    elif mode == "pre-eora":
+        lowrank_map, lowrank_report = _eigenspace_low_rank_delta_map(
+            torch,
+            map_to_apply,
+            candidate_matrix,
+            float(alpha),
+            int(linear_rank),
+            ridge=float(linear_ridge),
+        )
         map_to_apply = lowrank_map
         fit["reconstruction_alpha"] = float(alpha)
         predicted = candidate_matrix[: int(fit["tokens"])].to(torch.float32).matmul(map_to_apply)
@@ -7501,6 +7516,67 @@ def _low_rank_delta_map(torch, full_map, alpha: float, rank: int):
         "truncated_delta_norm": float(truncated.norm().detach().cpu()),
         "discarded_delta_norm": retained_error,
         "retained_energy_ratio": retained_energy / max(total_energy, 1e-12),
+    }
+
+
+def _eigenspace_low_rank_delta_map(torch, full_map, activation_rows, alpha: float, rank: int, ridge: float = 1e-6):
+    map_cpu = torch.nan_to_num(full_map.detach().cpu().to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    rows_cpu = torch.nan_to_num(activation_rows.detach().cpu().to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    if int(map_cpu.dim()) != 2 or int(map_cpu.shape[0]) != int(map_cpu.shape[1]):
+        raise ValueError("Eigenspace residual compensation map must be square.")
+    if int(rows_cpu.dim()) != 2 or int(rows_cpu.shape[1]) != int(map_cpu.shape[0]):
+        raise ValueError("activation_rows must be rank-2 with width matching full_map.")
+    if int(rank) <= 0:
+        raise ValueError("rank must be positive.")
+    if not 0 <= float(alpha) <= 1:
+        raise ValueError("alpha must be in [0, 1].")
+    if float(ridge) < 0:
+        raise ValueError("ridge must be non-negative.")
+    hidden = int(map_cpu.shape[0])
+    identity = torch.eye(hidden, dtype=map_cpu.dtype)
+    delta = map_cpu - identity
+    if float(delta.norm().detach().cpu()) == 0.0:
+        return identity, {
+            "method": "eigenspace_low_rank_delta",
+            "rank": 0,
+            "requested_rank": int(rank),
+            "hidden_size": hidden,
+            "alpha": float(alpha),
+            "ridge": float(ridge),
+            "activation_rows": int(rows_cpu.shape[0]),
+            "reason": "zero_delta",
+        }
+
+    covariance = rows_cpu.t().matmul(rows_cpu) / max(int(rows_cpu.shape[0]), 1)
+    if float(ridge) > 0:
+        covariance = covariance + float(ridge) * torch.eye(hidden, dtype=covariance.dtype)
+    eigenvalues, eigenvectors = torch.linalg.eigh(covariance)
+    eigenvalues = eigenvalues.clamp_min(float(ridge) if float(ridge) > 0 else 1e-12)
+    weighted_delta = eigenvalues.sqrt().unsqueeze(1) * eigenvectors.t().matmul(delta)
+    u, singular_values, vh = torch.linalg.svd(weighted_delta, full_matrices=False)
+    full_rank = min(int(weighted_delta.shape[0]), int(weighted_delta.shape[1]))
+    used_rank = max(1, min(int(rank), full_rank))
+    weighted_truncated = (u[:, :used_rank] * singular_values[:used_rank]).matmul(vh[:used_rank, :])
+    truncated = eigenvectors.matmul(eigenvalues.sqrt().reciprocal().unsqueeze(1) * weighted_truncated)
+    compensated = identity + float(alpha) * truncated
+    total_energy = float(singular_values.pow(2).sum().detach().cpu())
+    retained_energy = float(singular_values[:used_rank].pow(2).sum().detach().cpu())
+    retained_error = float((rows_cpu.matmul(delta - truncated)).norm().detach().cpu())
+    return compensated.contiguous(), {
+        "method": "eigenspace_low_rank_delta",
+        "rank": int(used_rank),
+        "requested_rank": int(rank),
+        "full_rank": int(full_rank),
+        "hidden_size": hidden,
+        "alpha": float(alpha),
+        "ridge": float(ridge),
+        "activation_rows": int(rows_cpu.shape[0]),
+        "delta_norm": float(delta.norm().detach().cpu()),
+        "truncated_delta_norm": float(truncated.norm().detach().cpu()),
+        "activation_weighted_discarded_delta_norm": retained_error,
+        "retained_energy_ratio": retained_energy / max(total_energy, 1e-12),
+        "top_eigenvalues": [float(item.detach().cpu()) for item in eigenvalues[-min(8, int(eigenvalues.numel())) :]],
+        "singular_values": [float(item.detach().cpu()) for item in singular_values[: min(8, int(singular_values.numel()))]],
     }
 
 

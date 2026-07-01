@@ -64,6 +64,7 @@ from neural_forge.hf_recovery import _same_tokenizer_hidden_loss
 from neural_forge.hf_recovery import _same_tokenizer_top_k_kl
 from neural_forge.hf_recovery import _apply_residual_output_map_to_modules
 from neural_forge.hf_recovery import _block_recovery_snapshot_modules
+from neural_forge.hf_recovery import _eigenspace_low_rank_delta_map
 from neural_forge.hf_recovery import _low_rank_delta_map
 from neural_forge.hf_recovery import _scale_layer_residual_output_modules
 from neural_forge.hf_recovery import _source_group_delta_state
@@ -4236,6 +4237,28 @@ def test_low_rank_delta_map_truncates_delta_from_identity() -> None:
     assert report["rank"] == 1
     assert report["requested_rank"] == 1
     assert report["retained_energy_ratio"] == pytest.approx(0.8)
+
+
+def test_eigenspace_low_rank_delta_map_prefers_active_axis() -> None:
+    torch = pytest.importorskip("torch")
+    full_map = torch.tensor([[1.2, 0.0], [0.0, 4.0]], dtype=torch.float32)
+    activation_rows = torch.tensor(
+        [
+            [10.0, 0.01],
+            [9.0, -0.01],
+            [11.0, 0.0],
+            [10.5, 0.01],
+        ],
+        dtype=torch.float32,
+    )
+
+    ordinary, ordinary_report = _low_rank_delta_map(torch, full_map, alpha=1.0, rank=1)
+    eora, eora_report = _eigenspace_low_rank_delta_map(torch, full_map, activation_rows, alpha=1.0, rank=1)
+
+    assert ordinary_report["rank"] == 1
+    assert eora_report["method"] == "eigenspace_low_rank_delta"
+    assert abs(float(ordinary[0, 0]) - 1.2) > abs(float(eora[0, 0]) - 1.2)
+    assert abs(float(eora[1, 1]) - 4.0) > abs(float(ordinary[1, 1]) - 4.0)
 
 
 def test_layer_gate_decision_accepts_non_regression() -> None:
