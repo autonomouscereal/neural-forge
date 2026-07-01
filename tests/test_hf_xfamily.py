@@ -62,6 +62,7 @@ from neural_forge.hf_recovery import _set_train_scope
 from neural_forge.hf_recovery import _same_tokenizer_reference_loss
 from neural_forge.hf_recovery import _same_tokenizer_hidden_loss
 from neural_forge.hf_recovery import _same_tokenizer_top_k_kl
+from neural_forge.hf_recovery import _apply_layer_residual_magnitude_compensation
 from neural_forge.hf_recovery import _apply_residual_output_map_to_modules
 from neural_forge.hf_recovery import _block_recovery_snapshot_modules
 from neural_forge.hf_recovery import _eigenspace_low_rank_delta_map
@@ -4347,6 +4348,26 @@ def test_apply_residual_output_map_to_modules_absorbs_map_into_outputs() -> None
     assert [item["kind"] for item in reports] == ["attention", "mlp"]
     assert torch.allclose(attention_output(inputs).detach(), attention_before.matmul(mapping))
     assert torch.allclose(mlp_output(inputs).detach(), mlp_before.matmul(mapping))
+
+
+def test_residual_magnitude_compensation_accepts_eora_alias() -> None:
+    torch = pytest.importorskip("torch")
+
+    report = _apply_layer_residual_magnitude_compensation(
+        torch,
+        object(),
+        {},
+        {"skipped": True, "reason": "unit-test-skip"},
+        0.5,
+        1.5,
+        "eora-pre",
+        1e-3,
+        0.01,
+        16,
+    )
+
+    assert report["mode"] == "pre-eora"
+    assert report["reason"] == "unit-test-skip"
 
 
 def test_low_rank_delta_map_truncates_delta_from_identity() -> None:

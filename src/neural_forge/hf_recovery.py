@@ -2307,8 +2307,20 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("span_pair_mode must be exact, overlap, or both.")
     if block_target not in {"hidden", "delta"}:
         raise ValueError("block_target must be hidden or delta.")
-    if residual_magnitude_compensation not in {"none", "pre", "pre-linear", "linear-pre", "pre-lowrank", "lowrank-pre"}:
-        raise ValueError("residual_magnitude_compensation must be none, pre, pre-linear, linear-pre, pre-lowrank, or lowrank-pre.")
+    if residual_magnitude_compensation not in {
+        "none",
+        "pre",
+        "pre-linear",
+        "linear-pre",
+        "pre-lowrank",
+        "lowrank-pre",
+        "pre-eora",
+        "eora-pre",
+    }:
+        raise ValueError(
+            "residual_magnitude_compensation must be none, pre, pre-linear, linear-pre, "
+            "pre-lowrank, lowrank-pre, pre-eora, or eora-pre."
+        )
     if residual_compensation_min_scale <= 0 or residual_compensation_max_scale <= 0:
         raise ValueError("residual compensation scales must be positive.")
     if residual_compensation_min_scale > residual_compensation_max_scale:
