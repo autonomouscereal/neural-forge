@@ -8,24 +8,29 @@ REPO_ROOT="${REPO_ROOT:-/home/cereal/model-surgery-lab/neural-forge-src}"
 GPU_UUID="${GPU_UUID:-GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561}"
 DEVICE="${DEVICE:-cuda:0}"
 DTYPE="${DTYPE:-float16}"
+MAX_BEHAVIOR_PROBES="${MAX_BEHAVIOR_PROBES:-1000}"
+MAX_GENERATION_PROMPTS="${MAX_GENERATION_PROMPTS:-200}"
+MAX_CHOICE_PROBES="${MAX_CHOICE_PROBES:-250}"
+MAX_TEXT_EVALS="${MAX_TEXT_EVALS:-128}"
+MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-96}"
 
 cd "$REPO_ROOT"
 source /home/cereal/model-surgery-lab/venv/bin/activate
 
 OUT_DIR="$RUN_ROOT/evals"
 mkdir -p "$OUT_DIR"
-BROAD_JSON="$OUT_DIR/eval_${TAG}_1000x200x250.json"
+BROAD_JSON="$OUT_DIR/eval_${TAG}_${MAX_BEHAVIOR_PROBES}x${MAX_GENERATION_PROMPTS}x${MAX_CHOICE_PROBES}.json"
 MANUAL_JSON="$OUT_DIR/manual_${TAG}.json"
 
 CUDA_VISIBLE_DEVICES="$GPU_UUID" python -m neural_forge.cli hf-eval \
   "$MODEL_DIR" \
   "$BROAD_JSON" \
   --eval-suite "$RUN_ROOT/behavior_suite.json" \
-  --max-behavior-probes 1000 \
-  --max-generation-prompts 200 \
-  --max-choice-probes 250 \
-  --max-text-evals 128 \
-  --max-new-tokens 96 \
+  --max-behavior-probes "$MAX_BEHAVIOR_PROBES" \
+  --max-generation-prompts "$MAX_GENERATION_PROMPTS" \
+  --max-choice-probes "$MAX_CHOICE_PROBES" \
+  --max-text-evals "$MAX_TEXT_EVALS" \
+  --max-new-tokens "$MAX_NEW_TOKENS" \
   --device "$DEVICE" \
   --dtype "$DTYPE"
 
