@@ -86,7 +86,7 @@ def test_fit_linear_lrc_delta_rejects_validation_regression_and_keeps_weight(tor
     assert report["accepted"] is False
     assert report["mutation_skipped"] is True
     assert report["fit_gate"]["mode"] == "validation"
-    assert report["reason"] == "insufficient_relative_error_improvement"
+    assert report["reason"] == "relative_error_not_improved"
     torch.testing.assert_close(linear.weight, before_weight)
 
 

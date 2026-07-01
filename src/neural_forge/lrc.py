@@ -122,8 +122,10 @@ def _split_fit_rows(torch, inputs, targets, validation_fraction: float, min_vali
     if rows <= 1 or validation_fraction <= 0.0:
         return None
     validation_rows = max(int(min_validation_rows), int(round(rows * float(validation_fraction))))
+    if validation_rows >= rows:
+        return None
     validation_rows = min(validation_rows, rows - 1)
-    if validation_rows <= 0:
+    if validation_rows < int(min_validation_rows):
         return None
     train_rows = rows - validation_rows
     if train_rows <= 0:
