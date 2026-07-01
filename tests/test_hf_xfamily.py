@@ -92,6 +92,7 @@ from neural_forge.hf_xfamily import _activation_fit_suffix_enabled
 from neural_forge.hf_xfamily import _activation_channel_summary
 from neural_forge.hf_xfamily import _attention_axis_weights_for_tensor
 from neural_forge.hf_xfamily import _attention_head_activation_profile
+from neural_forge.hf_xfamily import _attention_projection_modules
 from neural_forge.hf_xfamily import _axis_reductions_for_layer_tensor
 from neural_forge.hf_xfamily import _axis_reductions_for_non_layer_tensor_key
 from neural_forge.hf_xfamily import _balanced_activation_assignment
@@ -3537,6 +3538,18 @@ def test_linear_fit_rows_for_suffix_uses_cross_family_aliases() -> None:
     assert result is not None
     torch.testing.assert_close(result["input"], rows["input"])
     torch.testing.assert_close(result["output"], rows["output"])
+
+
+def test_attention_projection_modules_supports_lfm_operator_container() -> None:
+    q = _Obj()
+    k = _Obj()
+    v = _Obj()
+    out = _Obj()
+    layer = _Obj(operator=_Obj(q_proj=q, k_proj=k, v_proj=v, out_proj=out))
+
+    modules = _attention_projection_modules(layer)
+
+    assert modules == {"q": q, "k": k, "v": v, "o": out}
 
 
 def test_neutralized_unmatched_operator_tensor_zeroes_lfm_conv_output_only() -> None:

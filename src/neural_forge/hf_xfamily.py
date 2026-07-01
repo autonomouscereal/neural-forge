@@ -4200,7 +4200,7 @@ def _activation_2d(torch, tensor):
 
 def _attention_projection_modules(layer) -> dict[str, Any]:
     attention = None
-    for name in ("self_attn", "attn", "attention"):
+    for name in ("self_attn", "attn", "attention", "operator"):
         candidate = getattr(layer, name, None)
         if candidate is not None:
             attention = candidate
