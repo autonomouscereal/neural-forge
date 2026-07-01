@@ -4251,6 +4251,24 @@ def test_absorb_input_map_into_linears_updates_weight_orientation() -> None:
     assert linear.weight.detach().flatten().tolist() == pytest.approx([2.0, 0.0, 0.0, 3.0])
 
 
+def test_absorb_input_map_into_hf_conv1d_layout() -> None:
+    torch = pytest.importorskip("torch")
+
+    class Conv1D(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.tensor([[1.0, 2.0], [3.0, 4.0]]))
+
+    Conv1D.__module__ = "transformers.pytorch_utils"
+    conv = Conv1D()
+    mapping = torch.tensor([[1.0, 2.0], [0.0, 1.0]])
+
+    _absorb_input_map_into_linears(torch, [("attn.c_proj", conv)], mapping)
+
+    expected = torch.tensor([[7.0, 10.0], [3.0, 4.0]])
+    torch.testing.assert_close(conv.weight.detach(), expected)
+
+
 def test_mlp_spec_detects_lfm_feed_forward_names() -> None:
     layer = _Obj(feed_forward=_Obj(w1=object(), w3=object(), w2=object()))
     spec = _mlp_spec(layer)

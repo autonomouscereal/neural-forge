@@ -9327,12 +9327,20 @@ def _absorb_input_map_into_linears(torch, linears: Sequence[tuple[str, Any]], ma
     map_cpu = mapping.detach().cpu().to(torch.float32)
     for _name, linear in linears:
         weight = linear.weight.data.detach().cpu().to(torch.float32)
-        if int(weight.shape[1]) != int(map_cpu.shape[0]):
+        if _is_hf_conv1d_like(linear) and int(weight.shape[0]) == int(map_cpu.shape[0]):
+            updated = map_cpu.matmul(weight)
+        elif int(weight.shape[1]) == int(map_cpu.shape[0]):
+            updated = weight.matmul(map_cpu.T)
+        else:
             raise ValueError(
                 f"Cannot absorb reconstruction map with input {map_cpu.shape[0]} into weight {tuple(weight.shape)}."
             )
-        updated = weight.matmul(map_cpu.T)
         linear.weight.data.copy_(updated.to(device=linear.weight.device, dtype=linear.weight.dtype))
+
+
+def _is_hf_conv1d_like(module: Any) -> bool:
+    cls = module.__class__
+    return cls.__name__ == "Conv1D" and "transformers" in str(getattr(cls, "__module__", ""))
 
 
 def _recovery_loss(
