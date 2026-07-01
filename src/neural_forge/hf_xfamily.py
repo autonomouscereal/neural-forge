@@ -2616,8 +2616,17 @@ def _layer_suffix_candidates(suffix: str) -> list[str]:
         "ffn_norm.weight": ["post_attention_layernorm.weight"],
         "ffn_norm.bias": ["post_attention_layernorm.bias"],
     }
-    candidates = [normalized]
-    candidates.extend(item for item in aliases.get(normalized, []) if item not in candidates)
+    candidates = []
+    queue = [normalized]
+    while queue:
+        candidate = queue.pop(0)
+        if candidate in candidates:
+            continue
+        candidates.append(candidate)
+        queue.extend(item for item in aliases.get(candidate, []) if item not in candidates)
+        for source, targets in aliases.items():
+            if candidate in targets and source not in candidates:
+                queue.append(source)
     return candidates
 
 
@@ -4649,11 +4658,16 @@ def _linear_fit_rows_for_suffix(torch, activation_profile, layer_group: Sequence
     if activation_profile is None:
         return None
     rows_by_layer = activation_profile.get("linear_fit_rows") or {}
+    suffix_candidates = _layer_suffix_candidates(suffix)
     input_rows = []
     output_rows = []
     for layer_idx in layer_group:
         layer_rows = rows_by_layer.get(int(layer_idx), {})
-        values = layer_rows.get(str(suffix))
+        values = None
+        for candidate in suffix_candidates:
+            values = layer_rows.get(str(candidate))
+            if values is not None:
+                break
         if values is None:
             continue
         input_rows.append(values["input"].detach().cpu().to(torch.float32))
@@ -4785,6 +4799,9 @@ def _activation_fit_suffix_enabled(suffix: str, activation_fit_target: str) -> b
         or marker.endswith(".attention.q_proj.weight")
         or marker.endswith(".attention.k_proj.weight")
         or marker.endswith(".attention.v_proj.weight")
+        or marker.endswith(".operator.q_proj.weight")
+        or marker.endswith(".operator.k_proj.weight")
+        or marker.endswith(".operator.v_proj.weight")
         or marker.endswith(".attn.q_proj.weight")
         or marker.endswith(".attn.k_proj.weight")
         or marker.endswith(".attn.v_proj.weight")
@@ -4798,6 +4815,8 @@ def _activation_fit_suffix_enabled(suffix: str, activation_fit_target: str) -> b
         or marker.endswith(".attention.o_proj.weight")
         or marker.endswith(".attention.out_proj.weight")
         or marker.endswith(".attention.dense.weight")
+        or marker.endswith(".operator.out_proj.weight")
+        or marker.endswith(".operator.o_proj.weight")
         or marker.endswith(".attn.o_proj.weight")
         or marker.endswith(".attn.out_proj.weight")
         or marker.endswith(".attn.c_proj.weight")

@@ -108,6 +108,7 @@ from neural_forge.hf_xfamily import _effective_layer_alpha
 from neural_forge.hf_xfamily import _fit_linear_weight_from_activation_rows
 from neural_forge.hf_xfamily import _fit_projected_linear_from_donor_activations
 from neural_forge.hf_xfamily import _hidden_basis_axes_for_layer_tensor
+from neural_forge.hf_xfamily import _linear_fit_rows_for_suffix
 from neural_forge.hf_xfamily import _truncate_linear_weight_rank
 from neural_forge.hf_xfamily import _truncate_linear_weight_delta_rank
 from neural_forge.hf_xfamily import _initialize_token_weights_from_donor
@@ -2479,10 +2480,12 @@ def test_fit_projected_linear_from_donor_activations_rejects_insufficient_valida
 
 def test_activation_fit_suffix_selector_limits_module_families() -> None:
     assert _activation_fit_suffix_enabled("self_attn.o_proj.weight", "attention-output") is True
+    assert _activation_fit_suffix_enabled("operator.out_proj.weight", "attention-output") is True
     assert _activation_fit_suffix_enabled("self_attn.q_proj.weight", "attention-output") is False
     assert _activation_fit_suffix_enabled("mlp.down_proj.weight", "mlp-output") is True
     assert _activation_fit_suffix_enabled("mlp.gate_proj.weight", "mlp-output") is False
     assert _activation_fit_suffix_enabled("self_attn.k_proj.weight", "input-projections") is True
+    assert _activation_fit_suffix_enabled("operator.q_proj.weight", "input-projections") is True
     assert _activation_fit_suffix_enabled("mlp.up_proj.weight", "input-projections") is True
     assert _activation_fit_suffix_enabled("mlp.down_proj.weight", "input-projections") is False
 
@@ -3487,6 +3490,53 @@ def test_layer_tensor_alias_lookup_maps_lfm_mlp_names_to_qwen_suffixes() -> None
     assert _lookup_layer_tensor_value(folded_state, "self_attn.out_proj.weight") == "attn_out"
     assert _lookup_layer_tensor_value(folded_state, "self_attn.q_layernorm.weight") == "q_norm"
     assert _lookup_layer_tensor_value(folded_state, "self_attn.k_layernorm.weight") == "k_norm"
+
+
+def test_layer_tensor_alias_lookup_maps_qwen_suffixes_to_lfm_names() -> None:
+    index = {
+        (3, "feed_forward.w1.weight"): "model.layers.3.feed_forward.w1.weight",
+        (3, "feed_forward.w3.weight"): "model.layers.3.feed_forward.w3.weight",
+        (3, "feed_forward.w2.weight"): "model.layers.3.feed_forward.w2.weight",
+        (3, "operator.out_proj.weight"): "model.layers.3.operator.out_proj.weight",
+        (3, "operator_norm.weight"): "model.layers.3.operator_norm.weight",
+        (3, "ffn_norm.weight"): "model.layers.3.ffn_norm.weight",
+    }
+    folded_state = {
+        "feed_forward.w1.weight": "gate",
+        "feed_forward.w3.weight": "up",
+        "feed_forward.w2.weight": "down",
+        "operator.out_proj.weight": "attn_out",
+        "operator_norm.weight": "attn_norm",
+        "ffn_norm.weight": "ffn_norm",
+    }
+
+    assert _lookup_layer_tensor_key(index, 3, "mlp.gate_proj.weight") == "model.layers.3.feed_forward.w1.weight"
+    assert _lookup_layer_tensor_key(index, 3, "mlp.up_proj.weight") == "model.layers.3.feed_forward.w3.weight"
+    assert _lookup_layer_tensor_key(index, 3, "mlp.down_proj.weight") == "model.layers.3.feed_forward.w2.weight"
+    assert _lookup_layer_tensor_key(index, 3, "self_attn.o_proj.weight") == "model.layers.3.operator.out_proj.weight"
+    assert _lookup_layer_tensor_key(index, 3, "input_layernorm.weight") == "model.layers.3.operator_norm.weight"
+    assert _lookup_layer_tensor_key(index, 3, "post_attention_layernorm.weight") == "model.layers.3.ffn_norm.weight"
+    assert _lookup_layer_tensor_value(folded_state, "mlp.gate_proj.weight") == "gate"
+    assert _lookup_layer_tensor_value(folded_state, "mlp.up_proj.weight") == "up"
+    assert _lookup_layer_tensor_value(folded_state, "mlp.down_proj.weight") == "down"
+    assert _lookup_layer_tensor_value(folded_state, "self_attn.o_proj.weight") == "attn_out"
+    assert _lookup_layer_tensor_value(folded_state, "input_layernorm.weight") == "attn_norm"
+    assert _lookup_layer_tensor_value(folded_state, "post_attention_layernorm.weight") == "ffn_norm"
+
+
+def test_linear_fit_rows_for_suffix_uses_cross_family_aliases() -> None:
+    torch = pytest.importorskip("torch")
+    rows = {
+        "input": torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
+        "output": torch.tensor([[5.0, 6.0], [7.0, 8.0]]),
+    }
+    activation_profile = {"linear_fit_rows": {3: {"feed_forward.w2.weight": rows}}}
+
+    result = _linear_fit_rows_for_suffix(torch, activation_profile, [3], "mlp.down_proj.weight")
+
+    assert result is not None
+    torch.testing.assert_close(result["input"], rows["input"])
+    torch.testing.assert_close(result["output"], rows["output"])
 
 
 def test_neutralized_unmatched_operator_tensor_zeroes_lfm_conv_output_only() -> None:
