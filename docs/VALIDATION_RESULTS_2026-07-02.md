@@ -117,6 +117,58 @@ Queued proof lane:
   `INIT_ACTIVATION_FOLD_ASSIGNMENT=signed-similarity`.
 - Dependency: waiting behind the activation-CKA queue PID `3136217`.
 
+## Fold RMS Stat Repair
+
+Added an opt-in magnitude repair for merge-first donor projection:
+`fold_stat_repair=rms`. It runs after many donor axes have been assigned or
+transported into fewer target axes. Plain mean folding can damp useful
+orthogonal donor rows by averaging them; this repair rescales each folded target
+axis toward the RMS power of the donor axes that fed it.
+
+What changed:
+
+- `hf-donor-project-init --fold-stat-repair rms`
+- `hf-xfamily-chain-anchor-compress --init-fold-stat-repair rms`
+- The repair is threaded through generic tensor folding, attention
+  head/head-dim partition folding, non-layer tensors, token/lm-head hidden-axis
+  projection, and activation-fit row folding.
+- Assignment folding and sparse/Sinkhorn transport both use the same repair
+  path. Mean, sum, and sqrt-sum reductions compute desired RMS with matching
+  energy semantics so consumer-path summation is not blindly converted back to
+  a mean.
+- The main Qwen-4B to blank-SmolLM launcher accepts
+  `INIT_FOLD_STAT_REPAIR`, defaulting to `none` for reproducibility.
+
+Why this matters:
+
+- The current best structural lanes already use activation/signed similarity,
+  transport, CKA depth folding, per-module reductions, and projection RMS
+  scaling. This patch targets the remaining local failure mode where a good
+  fold assignment can still shrink the signal before recovery sees it.
+- It is default-off because over-amplifying folded axes can hurt some layers.
+  The proof lane is a controlled A/B against the signed activation-CKA recipe.
+
+Validation:
+
+- Local focused tests:
+  `3 passed, 1 skipped, 234 deselected`
+- Local full suite:
+  `146 passed, 144 skipped`
+- Remote launcher syntax check:
+  `bash -n experiments/launch_qwen4b_blank_smollm_true_lrc_chain.sh`
+- Remote focused tests:
+  `4 passed, 234 deselected`
+- Remote full suite:
+  `290 passed`
+
+Queued proof lane:
+
+- Tag:
+  `qwen4b_blank_smollm_signed_cka_rms_repair_geomean_full_gpu4_20260702`
+- Recipe: same signed activation-CKA geomean true-LRC/EoRA/GRAIL chain, plus
+  `INIT_FOLD_STAT_REPAIR=rms`.
+- Dependency: should run after signed activation-CKA queue PID `3168176`.
+
 ## Answer-Boundary Margin Recovery
 
 Added an opt-in ALM recovery loss aimed at the current exact-answer failure:
