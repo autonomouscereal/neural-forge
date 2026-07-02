@@ -395,6 +395,31 @@ Queued exactness combo lane:
 - Final eval target:
   `eval_qwen4b_blank_smollm_quantile_medoid_exact_combo_alm_gpu1_20260702_exactgen_20260702_1000x1000x250.json`
 
+Immediate exactness probe from existing recovered checkpoint:
+
+- Tag:
+  `qwen4b_mathdrill_l4_exact_combo_probe_gpu2_20260702`
+- Queue PID: `2751973`
+- Child PID: `2752007`
+- Queue script:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_mathdrill_l4_exact_combo_probe_gpu2_20260702.queue.sh`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_mathdrill_l4_exact_combo_probe_gpu2_20260702.queue.log`
+- Run log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_mathdrill_l4_exact_combo_probe_gpu2_20260702.log`
+- Initial revision: `a34f48e6f180dd20c8895d61a505d2c5f2e0e14e`
+- GPU: index `2`, Tesla P40 UUID
+  `GPU-a92b0dfe-83f8-11ff-db0d-c65921f365b4`
+- Anchor:
+  `qwen4b_mathdrill_anchor_newloss_l4_gpu6_20260701/models/02_alm`
+- Reason: the quantile-medoid structural proof lanes are still waiting behind
+  upstream queue PID `2441342`; this immediate probe tests the exact-answer
+  recovery mix on a known non-random recovered 135M checkpoint.
+- Recipe: ALM-only recovery with the same exactness-focused ingredients as the
+  queued combo lane, shortened to `160` ALM steps.
+- Final eval target:
+  `eval_qwen4b_mathdrill_l4_exact_combo_probe_gpu2_20260702_exactgen_20260702_1000x1000x250.json`
+
 ## Active Full-Run Status Snapshot
 
 Polled AI server state at `2026-07-02T00:43:54-06:00`.
