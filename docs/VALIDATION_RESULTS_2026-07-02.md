@@ -1582,3 +1582,61 @@ Queued proof chain:
 This lane addresses the explicit Liquid LFM requirement and makes the
 cross-family donor result measurable before and after compaction instead of
 only checking that the tensor surgery completed.
+
+## Remote Repo Correction And Immediate GPU4 Cross-Family Launch
+
+After the remote-repo correction, verified live GitHub state:
+
+- Remote repository:
+  `https://github.com/autonomouscereal/neural-forge.git`
+- Local branch:
+  `codex/lrc-blank-compression`
+- Remote branches checked:
+  `main` and `codex/lrc-blank-compression`
+- All three refs matched:
+  `4d9a01def3950d186dc03122afa2a60395424e2e`
+- Commit distribution since 2026-06-25:
+  31 on 2026-06-26, 53 on 2026-06-27, 27 on 2026-06-28,
+  10 on 2026-06-29, 41 on 2026-07-01, and 50 on 2026-07-02.
+- AI-server deployed source stamp:
+  `4d9a01d`
+
+Queue inspection showed GPU4 was idle while the queued Qwen+GPT-2 sequential
+all-donor proof lanes waited behind non-GPU evidence watcher PID `3777320`.
+Added a direct no-default-dependency wrapper:
+
+- Script:
+  `experiments/queue_qwen4b_gpt2_multidonor_seqall_teacherreplay_now_20260702.sh`
+- Tag:
+  `qwen4b_gpt2_multidonor_seqall_teacherreplay_now_gpu4_20260702`
+- Launch time:
+  `2026-07-02T07:14:12-06:00`
+- Queue wrapper PID:
+  `3914812`
+- Actual compression PID:
+  `3914822`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_gpt2_multidonor_seqall_teacherreplay_now_gpu4_20260702.queue_direct.log`
+- Run log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_gpt2_multidonor_seqall_teacherreplay_now_gpu4_20260702.log`
+- Sanity check after launch:
+  GPU4 was active and compression PID `3914822` was running.
+
+Recipe:
+
+- Donors: `Qwen/Qwen3-4B-Base,openai-community/gpt2`
+- Donor weights: `0.85,0.15`
+- Target: blank SmolLM2-135M
+- Recovery mode: `sequential-all`
+- Fold stack:
+  activation-CKA-weighted donor grouping, balanced signed similarity width
+  folding, quantile-medoid transport support, fold RMS repair, LRC delta RMS
+  guard, layer-input-gated hidden projection, all-target group-aware
+  reconstruction, and trainable byte hidden probe.
+- Recovery pressure:
+  teacher-generated continuation replay is enabled for block and ALM recovery
+  with `auto` response masking.
+
+This is not a success claim yet. It is an active proof run that should be
+judged only after the cached parent/donor/child retention evals and manual
+generations are available.
