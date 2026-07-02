@@ -69,3 +69,40 @@ the strict Qwen3-4B to blank SmolLM2-135M `29.90x` case:
   hidden defaults. The next lane should start from the strongest clean text
   anchor and combine low-rank/EoRA residual repair with block-interface
   pre-reconstruction before any ALM/math drill cleanup.
+
+## 2026-07-01 Research Refresh
+
+Fresh 2025-2026 search and sub-agent review point to three next changes with
+the best fit to current failures:
+
+1. Sparse cross-tokenizer projection for numbers/code. X-Token (`2605.21699`)
+   explicitly calls out multi-digit and uncommon-token failures under
+   tokenizer mismatch and uses a sparse projection matrix plus top-ranked token
+   mappings. Neural Forge already has projected-vocab and byte KD; the missing
+   piece is reporting and preserving sparse mappings for digits, code
+   punctuation, and near-equivalent surface forms instead of relying only on
+   strict decoded-token matches.
+2. Byte-level and on-policy cross-tokenizer recovery. Byte-Level Distillation
+   (`2604.07466`) and cross-family on-policy distillation (`2606.09456`) both
+   reinforce the direction already started by `--byte-kd-weight`,
+   `--byte-hidden-kd-weight`, `--on-policy-hidden-kd-weight`, and
+   teacher-generated recovery streams. The next implementation should make byte
+   supervision a temporary learned interface and add coverage diagnostics.
+3. Fold/transport before prune. DOTResize (`2507.04517`), Transport and Merge
+   (`2602.05495`), GRAIL (`2602.23795`), Model Folding (`2502.10216`), and Cut
+   Less, Fold More (`2602.18116`) all support the same experimental rule:
+   compute activation/geometry-aware transport or folding first, absorb local
+   reconstruction maps, and prune only after measuring fold perturbation. This
+   supports extending the existing sinkhorn/activation geometry path rather
+   than adding more discard-only pruning.
+
+Immediate repo implication:
+
+- `hf-xfamily-chain-anchor-compress` now accepts multi-donor init through
+  comma-separated `source_model` plus `--donor-weights`/`--source-weights`.
+  Recovery remains single-teacher for now, using the first donor as primary.
+- The queued full lane
+  `qwen4b_gpt2_multidonor_blank_smollm_eora_full_gpu6_20260702` tests
+  Qwen3-4B plus GPT-2 folded into blank SmolLM2-135M, then applies the current
+  EoRA/GRAIL-style block-interface recovery with 1000 behavior probes and 1000
+  generation prompts.

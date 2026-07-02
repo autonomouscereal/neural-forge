@@ -232,3 +232,51 @@ families into a blank target architecture. This is not yet an intelligence
 retention claim; it is a checkpoint-construction and diagnostics milestone that
 enables the next real behavior lane: run the same multi-donor init through
 block-interface recovery and compare parent/donor/candidate behavior reports.
+
+## Multi-Donor Chain Recovery Wiring
+
+Code revisions:
+
+- `f7f85e0` (`Wire multi donor init into chain recovery`)
+- `f1b4cbe` (`Parameterize blank SmolLM chain launcher`)
+- `259a459` (`Expose full eval controls in blank SmolLM launcher`)
+
+Validation:
+
+- Local full test suite after chain wiring: `134 passed`, `121 skipped`.
+- Remote focused chain tests: `5 passed`.
+- Remote full test suite: `255 passed`.
+- Remote launcher syntax: `bash -n` passed.
+
+Implementation:
+
+- `hf-xfamily-chain-anchor-compress` now accepts comma-separated sources and
+  `--donor-weights`/`--source-weights`.
+- The chain `init` stage dispatches to `multi_donor_projected_init` when
+  multiple donors or explicit weights are provided.
+- Existing single-donor chain behavior is preserved, including positional
+  `stages` compatibility.
+- `block` and `alm` recovery stages still use a single teacher API; they now
+  use the first source model as `primary_source_model` and record the full
+  source list and weights in `chain_anchor_summary.json`.
+
+Queued full behavior lane:
+
+- Tag: `qwen4b_gpt2_multidonor_blank_smollm_eora_full_gpu6_20260702`.
+- Queue PID: `2203637`.
+- Queue script:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_gpt2_multidonor_blank_smollm_eora_full_gpu6_20260702.queue.sh`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_gpt2_multidonor_blank_smollm_eora_full_gpu6_20260702.queue.log`
+- Sources: `Qwen/Qwen3-4B-Base,openai-community/gpt2`.
+- Weights: `0.85,0.15`.
+- Primary recovery teacher: `Qwen/Qwen3-4B-Base`.
+- Target: blank `SmolLM2-135M`.
+- Init scale: `geomean-rms`.
+- Final eval caps: `1000` behavior probes, `1000` generation prompts, `250`
+  choice probes, `128` text/PPL items.
+- Block layer gate caps: `1000` behavior probes and `400` generation prompts.
+
+The queue is intentionally behind the existing GPU6 queue
+`qwen4b_blank_smollm_eora_grail_cosine_full_gpu6_20260702`, then waits for
+GPU6 Python jobs to clear before launching.
