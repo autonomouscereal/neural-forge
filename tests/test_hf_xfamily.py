@@ -8671,6 +8671,88 @@ def test_chain_anchor_init_stage_forwards_activation_fit_flags(monkeypatch, tmp_
     assert captured["activation_max_length"] == 160
 
 
+def test_chain_anchor_final_tie_export_records_exact_size_candidate(monkeypatch, tmp_path) -> None:
+    import neural_forge.hf_tools as hf_tools
+    import neural_forge.hf_xfamily as hf_xfamily
+
+    init_calls = []
+    tie_calls = []
+
+    def fake_eval(model_id_or_path, output_file, **kwargs):
+        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_file).write_text("{}", encoding="utf-8")
+        name = Path(str(model_id_or_path)).name
+        param_count = 10 if name == "final_tied" else 30
+        return {
+            "model": str(model_id_or_path),
+            "param_count": param_count,
+            "perplexity": {"mean": 100.0},
+            "choice_accuracy": {"accuracy": 0.5},
+            "generations": [],
+            "behavior_suite": {"pass_rate": 0.8, "correct": 8, "total": 10, "items": []},
+        }
+
+    def fake_gate(baseline_report, candidate_report, output_file=None, **kwargs):
+        if output_file is not None:
+            Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+            Path(output_file).write_text("{}", encoding="utf-8")
+        return {
+            "passed": True,
+            "candidate": {
+                "param_count": int(candidate_report["param_count"]),
+                "perplexity_mean": 100.0,
+                "choice_accuracy": 0.5,
+                "generation_health_rate": 1.0,
+                "behavior_pass_rate": 0.8,
+            },
+        }
+
+    def fake_init(**kwargs):
+        init_calls.append(kwargs)
+        Path(kwargs["output_dir"]).mkdir(parents=True, exist_ok=True)
+        return {"operation": "fake_init"}
+
+    def fake_tie(model_id_or_path, output_dir, **kwargs):
+        tie_calls.append({"model_id_or_path": model_id_or_path, "output_dir": output_dir, **kwargs})
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        return {
+            "operation": "tie_output_head_checkpoint",
+            "before_param_count": 30,
+            "after_param_count": 10,
+            "removed_param_count": 20,
+            "tied": True,
+        }
+
+    monkeypatch.setattr(hf_xfamily, "evaluate_text_model", fake_eval)
+    monkeypatch.setattr(hf_xfamily, "gate_text_report", fake_gate)
+    monkeypatch.setattr(hf_xfamily, "donor_projected_init", fake_init)
+    monkeypatch.setattr(hf_tools, "tie_output_head_checkpoint", fake_tie)
+
+    summary = hf_xfamily.chain_anchor_staged_compress(
+        "donor",
+        "anchor",
+        tmp_path,
+        stages="init",
+        final_output_head_policy="tie",
+        candidate_torch_dtype="float32",
+        device="cpu",
+    )
+
+    assert len(init_calls) == 1
+    assert len(tie_calls) == 1
+    assert tie_calls[0]["model_id_or_path"] == str(tmp_path / "models" / "01_init")
+    assert tie_calls[0]["output_dir"] == tmp_path / "models" / "final_tied"
+    assert tie_calls[0]["torch_dtype"] == "float32"
+    assert summary["stage_count"] == 1
+    assert summary["best_tag"] == "01_init"
+    assert summary["final_tag"] == "final_tied"
+    assert summary["final_model_dir"] == str(tmp_path / "models" / "final_tied")
+    assert summary["final_output_head_policy"] == "tie"
+    assert summary["final_metrics"]["param_count"] == 10
+    assert summary["final_output_head_record"]["operation_report"]["removed_param_count"] == 20
+    assert summary["final_output_head_record"]["input_tag"] == "01_init"
+
+
 def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     import neural_forge.cli as cli
     import neural_forge.hf_xfamily as hf_xfamily
@@ -8707,6 +8789,8 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "gate-only",
             "--stage-input-policy",
             "sequential",
+            "--final-output-head-policy",
+            "tie",
             "--init-fold-mode",
             "transport",
             "--init-hidden-basis-mode",
@@ -8988,6 +9072,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["stage_max_behavior_drop"] == 0.02
     assert captured["promote_policy"] == "gate-only"
     assert captured["stage_input_policy"] == "sequential"
+    assert captured["final_output_head_policy"] == "tie"
     assert captured["init_fold_mode"] == "transport"
     assert captured["init_hidden_basis_mode"] == "activation-pca"
     assert captured["init_hidden_basis_scope"] == "layer"

@@ -24,6 +24,7 @@ INIT_ACTIVATION_DOMAIN_BALANCE="${INIT_ACTIVATION_DOMAIN_BALANCE:-none}"
 INIT_DONOR_LAYER_GROUP_STRATEGY="${INIT_DONOR_LAYER_GROUP_STRATEGY:-activation-geometry}"
 BLOCK_DONOR_LAYER_GROUP_STRATEGY="${BLOCK_DONOR_LAYER_GROUP_STRATEGY:-activation-geometry}"
 INIT_UNTIE_OUTPUT_HEAD="${INIT_UNTIE_OUTPUT_HEAD:-1}"
+FINAL_OUTPUT_HEAD_POLICY="${FINAL_OUTPUT_HEAD_POLICY:-preserve}"
 PROMOTE_POLICY="${PROMOTE_POLICY:-always}"
 STAGE_INPUT_POLICY="${STAGE_INPUT_POLICY:-incumbent}"
 BLOCK_STEPS_PER_LAYER="${BLOCK_STEPS_PER_LAYER:-4}"
@@ -147,6 +148,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --stage-ppl-gate-mode advisory \
   --promote-policy "$PROMOTE_POLICY" \
   --stage-input-policy "$STAGE_INPUT_POLICY" \
+  --final-output-head-policy "$FINAL_OUTPUT_HEAD_POLICY" \
   --init-fold-mode transport \
   --init-hidden-basis-mode activation-pca \
   --init-hidden-basis-scope layer \

@@ -2103,6 +2103,7 @@ def chain_anchor_staged_compress(
     trust_remote_code: bool = False,
     source_weights: Sequence[float] | str | None = None,
     recovery_source_mode: str = "primary",
+    final_output_head_policy: str = "preserve",
 ) -> dict[str, Any]:
     """Run staged donor-to-child updates while preserving the best incumbent.
 
@@ -2122,6 +2123,8 @@ def chain_anchor_staged_compress(
         raise ValueError("stage_ppl_gate_mode must be hard or advisory.")
     if recovery_source_mode not in {"primary", "sequential-all"}:
         raise ValueError("recovery_source_mode must be primary or sequential-all.")
+    if final_output_head_policy not in {"preserve", "tie"}:
+        raise ValueError("final_output_head_policy must be preserve or tie.")
     if max_new_tokens <= 0:
         raise ValueError("max_new_tokens must be positive.")
 
@@ -2509,6 +2512,59 @@ def chain_anchor_staged_compress(
             recovery_source_mode=recovery_source_mode,
         )
 
+    final_candidate = working_candidate
+    final_output_head_record = None
+    if final_output_head_policy == "tie":
+        from neural_forge.hf_tools import tie_output_head_checkpoint
+
+        tied_model_dir = model_root / "final_tied"
+        tied_report_path = report_root / "final_tied_eval.json"
+        tied_gate_path = report_root / "final_tied_gate.json"
+        tie_report = tie_output_head_checkpoint(
+            str(final_candidate["model_dir"]),
+            tied_model_dir,
+            torch_dtype=candidate_torch_dtype,
+            device=device,
+            trust_remote_code=trust_remote_code,
+        )
+        tied_eval = evaluate_text_model(
+            str(tied_model_dir),
+            tied_report_path,
+            torch_dtype=torch_dtype,
+            device=device,
+            trust_remote_code=trust_remote_code,
+            max_new_tokens=max_new_tokens,
+            eval_suite=eval_suite,
+            max_text_evals=max_text_evals,
+            max_choice_probes=max_choice_probes,
+            max_generation_prompts=max_generation_prompts,
+            max_behavior_probes=max_behavior_probes,
+        )
+        tied_gate = gate_text_report(
+            final_candidate["report"],
+            tied_eval,
+            output_file=tied_gate_path,
+            max_ppl_ratio=stage_max_ppl_ratio,
+            ppl_gate_mode=stage_ppl_gate_mode,
+            max_accuracy_drop=stage_max_accuracy_drop,
+            max_behavior_drop=stage_max_behavior_drop,
+            min_choice_accuracy=stage_min_choice_accuracy,
+            min_behavior_pass_rate=stage_min_behavior_pass_rate,
+        )
+        final_output_head_record = _chain_candidate_record(
+            tag="final_tied",
+            model_dir=tied_model_dir,
+            report_path=tied_report_path,
+            gate_path=tied_gate_path,
+            gate=tied_gate,
+            stage="final-output-head",
+            operation_report=tie_report,
+        )
+        final_output_head_record["input_tag"] = final_candidate["tag"]
+        final_output_head_record["input_model_dir"] = final_candidate["model_dir"]
+        final_output_head_record["incumbent_before"] = incumbent["tag"]
+        final_candidate = final_output_head_record
+
     return _write_chain_anchor_summary(
         output_root,
         source_model,
@@ -2517,11 +2573,13 @@ def chain_anchor_staged_compress(
         incumbent,
         stage_records,
         stage_input_policy=stage_input_policy,
-        final_candidate=working_candidate,
+        final_candidate=final_candidate,
         source_models=source_models,
         source_weights=source_weight_values,
         primary_source_model=primary_source_model,
         recovery_source_mode=recovery_source_mode,
+        final_output_head_policy=final_output_head_policy,
+        final_output_head_record=final_output_head_record,
     )
 
 
@@ -2665,6 +2723,8 @@ def _write_chain_anchor_summary(
     source_weights: Sequence[float] | None = None,
     primary_source_model: str | None = None,
     recovery_source_mode: str = "primary",
+    final_output_head_policy: str = "preserve",
+    final_output_head_record: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     final = final_candidate or incumbent
     summary = {
@@ -2674,6 +2734,7 @@ def _write_chain_anchor_summary(
         "source_weights": None if source_weights is None else [float(weight) for weight in source_weights],
         "primary_source_model": primary_source_model or source_model,
         "recovery_source_mode": recovery_source_mode,
+        "final_output_head_policy": final_output_head_policy,
         "anchor_model": anchor_model,
         "stages": list(stages),
         "stage_input_policy": stage_input_policy,
@@ -2687,6 +2748,8 @@ def _write_chain_anchor_summary(
         "promoted_stage_count": sum(1 for item in stage_records if item.get("promoted")),
         "stage_records": list(stage_records),
     }
+    if final_output_head_record is not None:
+        summary["final_output_head_record"] = dict(final_output_head_record)
     report_root = output_root / "reports"
     report_root.mkdir(parents=True, exist_ok=True)
     _write_json(report_root / "chain_anchor_summary.json", summary)

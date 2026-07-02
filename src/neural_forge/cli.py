@@ -1556,6 +1556,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="incumbent",
         help="Feed each stage from the promoted incumbent or sequentially from the previous stage output.",
     )
+    xfamily_chain.add_argument(
+        "--final-output-head-policy",
+        choices=["preserve", "tie"],
+        default="preserve",
+        help="Optionally tie the final output head to input embeddings after recovery, then re-evaluate the exact-size export.",
+    )
     xfamily_chain.add_argument("--init-fold-mode", choices=["mean", "rms", "transport"], default="mean")
     xfamily_chain.add_argument("--init-hidden-basis-mode", choices=["none", "activation-pca", "shared-token-ridge"], default="none")
     xfamily_chain.add_argument("--init-hidden-basis-scope", choices=["global", "layer"], default="global")
@@ -3020,6 +3026,7 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         stage_min_behavior_pass_rate=args.stage_min_behavior_pass_rate,
         promote_policy=args.promote_policy,
         stage_input_policy=args.stage_input_policy,
+        final_output_head_policy=args.final_output_head_policy,
         init_fold_mode=args.init_fold_mode,
         init_hidden_basis_mode=args.init_hidden_basis_mode,
         init_hidden_basis_scope=args.init_hidden_basis_scope,
