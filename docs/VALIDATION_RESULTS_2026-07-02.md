@@ -50,6 +50,9 @@ Validation:
   `11 passed, 216 deselected`
 - Remote full suite:
   `279 passed`
+- Follow-up eager-attention hardening for enabled attention-influence recovery:
+  local focused `2 passed, 1 skipped, 224 deselected`; remote focused
+  `3 passed, 224 deselected`; remote full `279 passed`.
 
 Current status:
 
@@ -58,6 +61,27 @@ Current status:
 - The next proof step is an A/B GPU lane against the cached Qwen3-4B parent and
   existing recovered 135M baselines, using exact-generation/manual probes, not
   PPL alone.
+
+Queued A/B proof lane:
+
+- Tag:
+  `qwen4b_blank_smollm_module_eora_quantile_medoid_aim004_alm_gpu4_20260702`
+- Queue PID: `2712676`
+- Queue script:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_module_eora_quantile_medoid_aim004_alm_gpu4_20260702.queue.sh`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_module_eora_quantile_medoid_aim004_alm_gpu4_20260702.queue.log`
+- Initial revision: `f9098088d6786dbe39701b5f3b233429f93fa2b2`
+- GPU: index `4`, RTX 3090 UUID
+  `GPU-2ce6a95c-7b1f-644a-3808-d781732a0582`
+- Upstream dependency: waits for the existing quantile-medoid proof queue PID
+  `2588435`.
+- Recipe: ALM-only recovery A/B from
+  `qwen4b_blank_smollm_module_eora_quantile_medoid_drill_lrc_gpu4_20260702/models/01_block`
+  with `--alm-attention-influence-weight 0.04` and
+  `--alm-attention-influence-layer middle`.
+- Final eval target:
+  `eval_qwen4b_blank_smollm_module_eora_quantile_medoid_aim004_alm_gpu4_20260702_exactgen_20260702_1000x1000x250.json`
 
 ## Activation-Quantile Transport Support
 
