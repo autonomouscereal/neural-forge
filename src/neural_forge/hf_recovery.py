@@ -2376,8 +2376,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("span_max_pairs must be positive.")
     if donor_layer_fold_mode not in {"representative", "average", "fold"}:
         raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
-    if donor_layer_group_strategy not in {"depth", "activation-energy"}:
-        raise ValueError("donor_layer_group_strategy must be depth or activation-energy.")
+    if donor_layer_group_strategy not in {"depth", "activation-energy", "activation-geometry"}:
+        raise ValueError("donor_layer_group_strategy must be depth, activation-energy, or activation-geometry.")
     if layer_limit is not None and layer_limit <= 0:
         raise ValueError("layer_limit must be positive when provided.")
     if layer_gate_metric not in {"none", "ppl", "behavior"}:
@@ -2696,6 +2696,24 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             "delta_scores": [float(item) for item in source_delta_scores],
             "total_delta_score": float(sum(source_delta_scores)),
         }
+    elif donor_layer_group_strategy == "activation-geometry":
+        geometry = _source_layer_geometry_scores_from_batches(
+            torch,
+            source,
+            paired_batches,
+            source_layer_count=len(source_layers),
+        )
+        geometry_scores = geometry["geometry_scores"]
+        full_source_layer_groups = _donor_layer_groups_by_energy(geometry_scores, len(candidate_layers))
+        donor_layer_group_report = {
+            "strategy": "activation-geometry",
+            "groups": [[int(item) for item in group] for group in full_source_layer_groups],
+            "delta_scores": [float(item) for item in geometry["delta_scores"]],
+            "representative_scores": [float(item) for item in geometry_scores],
+            "geometry_scores": [float(item) for item in geometry_scores],
+            "total_geometry_score": float(sum(geometry_scores)),
+            "layer_geometry": geometry["layer_geometry"],
+        }
 
     layer_count = len(candidate_layers) if layer_limit is None else min(int(layer_limit), len(candidate_layers))
     interval = int(report_interval or max(1, steps_per_layer // 4)) if steps_per_layer > 0 else 1
@@ -2756,7 +2774,10 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
 
     for candidate_idx in range(layer_count):
         source_group = [int(item) for item in full_source_layer_groups[int(candidate_idx)]]
-        source_idx = _representative_donor_layer_for_group(source_group, donor_layer_group_report.get("delta_scores"))
+        representative_scores = donor_layer_group_report.get("representative_scores")
+        if representative_scores is None:
+            representative_scores = donor_layer_group_report.get("delta_scores")
+        source_idx = _representative_donor_layer_for_group(source_group, representative_scores)
         source_group = (
             [source_idx]
             if donor_layer_fold_mode == "representative"
@@ -6202,6 +6223,80 @@ def _source_layer_delta_scores_from_batches(
     if not any(score > 1e-8 for score in scores):
         return [1.0 for _ in scores]
     return [max(float(score), 1e-12) for score in scores]
+
+
+def _source_layer_geometry_scores_from_batches(
+    torch,
+    source_model,
+    paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]],
+    source_layer_count: int,
+    max_rows_per_layer: int = 512,
+) -> dict[str, Any]:
+    if source_layer_count <= 0:
+        raise ValueError("source_layer_count must be positive.")
+    if max_rows_per_layer <= 0:
+        raise ValueError("max_rows_per_layer must be positive.")
+    if not paired_batches:
+        raise ValueError("Need at least one paired batch for source layer geometry scoring.")
+
+    from neural_forge.hf_xfamily import _activation_layer_geometry_scores
+
+    input_parts: list[list[Any]] = [[] for _ in range(int(source_layer_count))]
+    output_parts: list[list[Any]] = [[] for _ in range(int(source_layer_count))]
+    row_counts = [0 for _ in range(int(source_layer_count))]
+    was_training = source_model.training
+    source_model.eval()
+    with torch.no_grad():
+        for source_batch, _candidate_batch in paired_batches:
+            if all(count >= int(max_rows_per_layer) for count in row_counts):
+                break
+            outputs = source_model(
+                **_model_forward_inputs(source_batch),
+                use_cache=False,
+                output_hidden_states=True,
+            )
+            hidden_states = list(outputs.hidden_states or [])
+            usable = min(int(source_layer_count), max(0, len(hidden_states) - 1))
+            for layer_idx in range(usable):
+                needed = int(max_rows_per_layer) - int(row_counts[layer_idx])
+                if needed <= 0:
+                    continue
+                before = hidden_states[layer_idx].detach().to(torch.float32)
+                after = hidden_states[layer_idx + 1].detach().to(torch.float32)
+                batch = min(int(before.shape[0]), int(after.shape[0]))
+                seq = min(int(before.shape[1]), int(after.shape[1])) if before.dim() > 1 and after.dim() > 1 else 0
+                dims = min(int(before.shape[-1]), int(after.shape[-1]))
+                if batch <= 0 or seq <= 0 or dims <= 0:
+                    continue
+                before_rows = before[:batch, :seq, :dims].reshape(-1, dims)
+                after_rows = after[:batch, :seq, :dims].reshape(-1, dims)
+                take = min(needed, int(before_rows.shape[0]), int(after_rows.shape[0]))
+                if take <= 0:
+                    continue
+                input_parts[layer_idx].append(before_rows[:take].detach().cpu())
+                output_parts[layer_idx].append(after_rows[:take].detach().cpu())
+                row_counts[layer_idx] += int(take)
+    if was_training:
+        source_model.train()
+    input_rows_by_layer = {
+        int(idx): torch.cat(parts, dim=0)
+        for idx, parts in enumerate(input_parts)
+        if parts
+    }
+    output_rows_by_layer = {
+        int(idx): torch.cat(parts, dim=0)
+        for idx, parts in enumerate(output_parts)
+        if parts
+    }
+    report = _activation_layer_geometry_scores(
+        torch,
+        input_rows_by_layer,
+        output_rows_by_layer,
+        int(source_layer_count),
+    )
+    report["rows_per_layer"] = [int(item) for item in row_counts]
+    report["max_rows_per_layer"] = int(max_rows_per_layer)
+    return report
 
 
 def _layer_gate_decision(previous_ppl: float, candidate_ppl: float, max_ppl_ratio: float) -> dict[str, Any]:

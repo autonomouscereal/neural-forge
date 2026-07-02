@@ -87,6 +87,7 @@ from neural_forge.hf_xfamily import _lookup_layer_tensor_value
 from neural_forge.hf_xfamily import _parse_chain_stages
 from neural_forge.hf_xfamily import _canonical_token_map
 from neural_forge.hf_xfamily import _assign_donor_to_host
+from neural_forge.hf_xfamily import _activation_layer_geometry_scores
 from neural_forge.hf_xfamily import _activation_similarity_assignment
 from neural_forge.hf_xfamily import _activation_axis_weights_for_tensor
 from neural_forge.hf_xfamily import _activation_fit_suffix_enabled
@@ -104,6 +105,7 @@ from neural_forge.hf_xfamily import _channel_assignment_features
 from neural_forge.hf_xfamily import _donor_layer_group_for_target
 from neural_forge.hf_xfamily import _donor_layer_groups_by_energy
 from neural_forge.hf_xfamily import _donor_layer_groups_for_target_count
+from neural_forge.hf_xfamily import _donor_layer_geometry_scores
 from neural_forge.hf_xfamily import _representative_donor_layer_for_group
 from neural_forge.hf_xfamily import _effective_activation_fit_max_rows
 from neural_forge.hf_xfamily import _effective_layer_alpha
@@ -2725,6 +2727,60 @@ def test_transport_fold_can_use_importance_survivor_support() -> None:
     assert transport["target_support_indices"].tolist() == [1, 3]
 
 
+def test_activation_layer_geometry_scores_residual_novelty() -> None:
+    torch = pytest.importorskip("torch")
+    inputs = {
+        0: torch.tensor([[1.0, 0.0], [0.9, 0.1], [1.1, -0.1]], dtype=torch.float32),
+        1: torch.tensor([[1.0, 0.0], [0.9, 0.1], [1.1, -0.1]], dtype=torch.float32),
+        2: torch.tensor([[0.0, 1.0], [0.1, 0.9], [-0.1, 1.1]], dtype=torch.float32),
+    }
+    outputs = {
+        0: inputs[0] + torch.tensor([[0.01, 0.0], [0.01, 0.0], [0.01, 0.0]]),
+        1: inputs[1] + torch.tensor([[0.8, 0.0], [0.8, 0.0], [0.8, 0.0]]),
+        2: inputs[2] + torch.tensor([[0.0, -0.8], [0.0, -0.8], [0.0, -0.8]]),
+    }
+
+    report = _activation_layer_geometry_scores(torch, inputs, outputs, layer_count=3)
+
+    assert report["geometry_scores"][1] > report["geometry_scores"][0]
+    assert report["geometry_scores"][2] > report["delta_scores"][2]
+    assert report["layer_geometry"][1]["linear_cka"] is not None
+    assert report["layer_geometry"][2]["delta_novelty"] >= 0.0
+
+
+def test_activation_geometry_group_strategy_reports_geometry_scores() -> None:
+    torch = pytest.importorskip("torch")
+    profile = {
+        "hidden_basis_input_rows": {
+            0: torch.zeros((4, 3)),
+            1: torch.zeros((4, 3)),
+            2: torch.zeros((4, 3)),
+            3: torch.zeros((4, 3)),
+        },
+        "hidden_basis_output_rows": {
+            0: torch.ones((4, 3)) * 0.01,
+            1: torch.ones((4, 3)) * 0.02,
+            2: torch.ones((4, 3)) * 1.5,
+            3: torch.ones((4, 3)) * 0.03,
+        },
+    }
+
+    groups, report = _donor_layer_groups_for_target_count(
+        torch,
+        target_layer_count=2,
+        donor_layer_count=4,
+        strategy="activation-geometry",
+        activation_profile=profile,
+    )
+    geometry = _donor_layer_geometry_scores(torch, profile, donor_layer_count=4)
+
+    assert len(groups) == 2
+    assert report["strategy"] == "activation-geometry"
+    assert report["representative_scores"] == pytest.approx(report["geometry_scores"])
+    assert report["geometry_scores"] == pytest.approx(geometry["geometry_scores"])
+    assert len(report["layer_geometry"]) == 4
+
+
 def test_domain_balanced_mean_weights_domains_evenly() -> None:
     torch = pytest.importorskip("torch")
 
@@ -4942,7 +4998,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "--donor-layer-fold-mode",
             "average",
             "--donor-layer-group-strategy",
-            "activation-energy",
+            "activation-geometry",
             "--attention-fold-mode",
             "activation-coupled",
             "--attention-head-dim-transport",
@@ -5016,7 +5072,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "transport_backend": "sparse",
         "transport_support": "importance",
         "donor_layer_fold_mode": "average",
-        "donor_layer_group_strategy": "activation-energy",
+        "donor_layer_group_strategy": "activation-geometry",
         "attention_fold_mode": "activation-coupled",
         "attention_head_dim_transport": "qk-vo",
         "token_init_mode": "donor-omp",
@@ -6662,7 +6718,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "--init-transport-support",
             "importance",
             "--init-donor-layer-group-strategy",
-            "activation-energy",
+            "activation-geometry",
             "--init-attention-fold-mode",
             "activation-coupled",
             "--init-attention-head-dim-transport",
@@ -6727,7 +6783,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "--block-donor-layer-fold-mode",
             "average",
             "--block-donor-layer-group-strategy",
-            "depth",
+            "activation-geometry",
             "--block-on-policy-anchor-kd-weight",
             "0.04",
             "--block-on-policy-unlikelihood-weight",
@@ -6875,7 +6931,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["init_activation_fold_assignment"] == "similarity"
     assert captured["init_transport_backend"] == "sinkhorn"
     assert captured["init_transport_support"] == "importance"
-    assert captured["init_donor_layer_group_strategy"] == "activation-energy"
+    assert captured["init_donor_layer_group_strategy"] == "activation-geometry"
     assert captured["init_attention_fold_mode"] == "activation-coupled"
     assert captured["init_attention_head_dim_transport"] == "qk-vo"
     assert captured["init_token_init_mode"] == "donor-tokenized-weighted"
@@ -6908,7 +6964,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["block_residual_compensation_alpha"] == 0.005
     assert captured["block_pre_reconstruction_target"] == "block-interface"
     assert captured["block_donor_layer_fold_mode"] == "average"
-    assert captured["block_donor_layer_group_strategy"] == "depth"
+    assert captured["block_donor_layer_group_strategy"] == "activation-geometry"
     assert captured["block_on_policy_anchor_kd_weight"] == 0.04
     assert captured["block_on_policy_unlikelihood_weight"] == 0.005
     assert captured["block_on_policy_hidden_kd_weight"] == 0.06

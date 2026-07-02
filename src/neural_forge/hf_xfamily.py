@@ -18,6 +18,7 @@ from neural_forge.hf_tools import (
     _dtype_from_name,
     _ensure_unique_ratio_tags,
     _finite_float,
+    _linear_cka,
     _load_report,
     _merge_layer_state_dicts,
     _ratio_tag,
@@ -328,8 +329,8 @@ def donor_projected_init(
         raise ValueError("transport_support must be centroid or importance.")
     if donor_layer_fold_mode not in {"representative", "average", "fold"}:
         raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
-    if donor_layer_group_strategy not in {"depth", "activation-energy"}:
-        raise ValueError("donor_layer_group_strategy must be depth or activation-energy.")
+    if donor_layer_group_strategy not in {"depth", "activation-energy", "activation-geometry"}:
+        raise ValueError("donor_layer_group_strategy must be depth, activation-energy, or activation-geometry.")
     if attention_fold_mode not in {"independent", "coupled", "activation-coupled"}:
         raise ValueError("attention_fold_mode must be independent, coupled, or activation-coupled.")
     if attention_head_dim_transport not in {"none", "qk-vo"}:
@@ -432,9 +433,10 @@ def donor_projected_init(
             )
     activation_profile = None
     if activation_calibration_texts:
-        needs_layer_activation_rows = (
-            hidden_basis_mode == "activation-pca" or donor_layer_group_strategy == "activation-energy"
-        )
+        needs_layer_activation_rows = hidden_basis_mode == "activation-pca" or donor_layer_group_strategy in {
+            "activation-energy",
+            "activation-geometry",
+        }
         activation_profile = _collect_donor_axis_activation_scores(
             torch,
             donor,
@@ -455,8 +457,10 @@ def donor_projected_init(
         raise ValueError("attention head-dimension transport requires activation calibration texts.")
     if activation_fit_linears and activation_profile is None:
         raise ValueError("activation linear fitting requires activation calibration texts.")
-    if donor_layer_group_strategy == "activation-energy" and activation_profile is None:
-        raise ValueError("activation-energy donor layer grouping requires activation calibration texts.")
+    if donor_layer_group_strategy in {"activation-energy", "activation-geometry"} and activation_profile is None:
+        raise ValueError(
+            f"{donor_layer_group_strategy} donor layer grouping requires activation calibration texts."
+        )
     hidden_basis = None
     hidden_basis_report = None
     layer_hidden_bases = None
@@ -526,10 +530,10 @@ def donor_projected_init(
             continue
         target_layer_idx, suffix = parsed
         donor_layer_group = donor_layer_groups[int(target_layer_idx)]
-        donor_layer_idx = _representative_donor_layer_for_group(
-            donor_layer_group,
-            donor_layer_group_report.get("delta_scores"),
-        )
+        representative_scores = donor_layer_group_report.get("representative_scores")
+        if representative_scores is None:
+            representative_scores = donor_layer_group_report.get("delta_scores")
+        donor_layer_idx = _representative_donor_layer_for_group(donor_layer_group, representative_scores)
         donor_layer_group = (
             [donor_layer_idx]
             if donor_layer_fold_mode == "representative"
@@ -3085,8 +3089,8 @@ def _donor_layer_groups_for_target_count(
 ) -> tuple[list[list[int]], dict[str, Any]]:
     if target_layer_count <= 0 or donor_layer_count <= 0:
         raise ValueError("Layer counts must be positive.")
-    if strategy not in {"depth", "activation-energy"}:
-        raise ValueError("donor layer group strategy must be depth or activation-energy.")
+    if strategy not in {"depth", "activation-energy", "activation-geometry"}:
+        raise ValueError("donor layer group strategy must be depth, activation-energy, or activation-geometry.")
     if strategy == "depth":
         groups = [
             _donor_layer_group_for_target(idx, int(target_layer_count), int(donor_layer_count))
@@ -3094,7 +3098,20 @@ def _donor_layer_groups_for_target_count(
         ]
         return groups, {"strategy": "depth", "groups": groups, "delta_scores": None}
     if activation_profile is None:
-        raise ValueError("activation-energy donor layer grouping requires an activation profile.")
+        raise ValueError(f"{strategy} donor layer grouping requires an activation profile.")
+    if strategy == "activation-geometry":
+        geometry = _donor_layer_geometry_scores(torch, activation_profile, int(donor_layer_count))
+        scores = geometry["geometry_scores"]
+        groups = _donor_layer_groups_by_energy(scores, int(target_layer_count))
+        return groups, {
+            "strategy": "activation-geometry",
+            "groups": [[int(item) for item in group] for group in groups],
+            "delta_scores": [float(item) for item in geometry["delta_scores"]],
+            "representative_scores": [float(item) for item in scores],
+            "geometry_scores": [float(item) for item in scores],
+            "total_geometry_score": float(sum(scores)),
+            "layer_geometry": geometry["layer_geometry"],
+        }
     scores = _donor_layer_delta_scores(torch, activation_profile, int(donor_layer_count))
     groups = _donor_layer_groups_by_energy(scores, int(target_layer_count))
     return groups, {
@@ -3126,6 +3143,164 @@ def _donor_layer_delta_scores(torch, activation_profile: dict[str, Any], donor_l
     if not any(score > 1e-8 for score in scores):
         return [1.0 for _ in scores]
     return scores
+
+
+def _donor_layer_geometry_scores(
+    torch,
+    activation_profile: dict[str, Any],
+    donor_layer_count: int,
+) -> dict[str, Any]:
+    return _activation_layer_geometry_scores(
+        torch,
+        activation_profile.get("hidden_basis_input_rows") or {},
+        activation_profile.get("hidden_basis_output_rows") or {},
+        donor_layer_count,
+    )
+
+
+def _activation_layer_geometry_scores(
+    torch,
+    input_rows_by_layer: dict[int, Any],
+    output_rows_by_layer: dict[int, Any],
+    layer_count: int,
+) -> dict[str, Any]:
+    if layer_count <= 0:
+        raise ValueError("layer_count must be positive.")
+    delta_scores: list[float] = []
+    geometry_scores: list[float] = []
+    layer_geometry: list[dict[str, Any]] = []
+    previous_delta = None
+    for layer_idx in range(int(layer_count)):
+        input_rows = input_rows_by_layer.get(int(layer_idx))
+        output_rows = output_rows_by_layer.get(int(layer_idx))
+        if input_rows is None or output_rows is None:
+            delta_scores.append(1.0)
+            geometry_scores.append(1.0)
+            layer_geometry.append(
+                {
+                    "layer": int(layer_idx),
+                    "delta_score": 1.0,
+                    "geometry_score": 1.0,
+                    "linear_cka": None,
+                    "mean_row_cosine": None,
+                    "delta_novelty": None,
+                    "fallback": "missing_activation_rows",
+                }
+            )
+            previous_delta = None
+            continue
+        input_matrix, output_matrix = _paired_activation_matrices(torch, input_rows, output_rows)
+        if input_matrix is None or output_matrix is None:
+            delta_scores.append(1.0)
+            geometry_scores.append(1.0)
+            layer_geometry.append(
+                {
+                    "layer": int(layer_idx),
+                    "delta_score": 1.0,
+                    "geometry_score": 1.0,
+                    "linear_cka": None,
+                    "mean_row_cosine": None,
+                    "delta_novelty": None,
+                    "fallback": "empty_activation_rows",
+                }
+            )
+            previous_delta = None
+            continue
+        delta = output_matrix - input_matrix
+        delta_score = float(delta.pow(2).mean().sqrt().detach().cpu())
+        cka = _safe_linear_cka(torch, input_matrix, output_matrix)
+        row_cosine = _safe_mean_row_cosine(torch, input_matrix, output_matrix)
+        novelty = 1.0 if previous_delta is None else _delta_novelty(torch, delta, previous_delta)
+        previous_delta = delta.detach().cpu()
+        cka_shift = 1.0 - max(0.0, min(1.0, cka))
+        row_shift = 0.5 * (1.0 - max(-1.0, min(1.0, row_cosine)))
+        geometry_multiplier = 1.0 + cka_shift + row_shift + (0.5 * max(0.0, min(2.0, novelty)))
+        geometry_score = max(delta_score, 1e-12) * max(geometry_multiplier, 1e-6)
+        delta_scores.append(max(delta_score, 1e-12))
+        geometry_scores.append(max(float(geometry_score), 1e-12))
+        layer_geometry.append(
+            {
+                "layer": int(layer_idx),
+                "delta_score": float(max(delta_score, 1e-12)),
+                "geometry_score": float(max(geometry_score, 1e-12)),
+                "linear_cka": float(cka),
+                "mean_row_cosine": float(row_cosine),
+                "delta_novelty": float(novelty),
+                "geometry_multiplier": float(geometry_multiplier),
+            }
+        )
+    if not any(score > 1e-8 for score in geometry_scores):
+        geometry_scores = [1.0 for _ in geometry_scores]
+    if not any(score > 1e-8 for score in delta_scores):
+        delta_scores = [1.0 for _ in delta_scores]
+    return {
+        "delta_scores": [float(max(score, 1e-12)) for score in delta_scores],
+        "geometry_scores": [float(max(score, 1e-12)) for score in geometry_scores],
+        "layer_geometry": layer_geometry,
+    }
+
+
+def _paired_activation_matrices(torch, first, second):
+    first_matrix = first.detach().cpu().to(torch.float32)
+    second_matrix = second.detach().cpu().to(torch.float32)
+    if first_matrix.dim() > 2:
+        first_matrix = first_matrix.reshape(-1, first_matrix.shape[-1])
+    if second_matrix.dim() > 2:
+        second_matrix = second_matrix.reshape(-1, second_matrix.shape[-1])
+    if first_matrix.dim() != 2 or second_matrix.dim() != 2:
+        return None, None
+    rows = min(int(first_matrix.shape[0]), int(second_matrix.shape[0]))
+    dims = min(int(first_matrix.shape[1]), int(second_matrix.shape[1]))
+    if rows <= 0 or dims <= 0:
+        return None, None
+    return first_matrix[:rows, :dims], second_matrix[:rows, :dims]
+
+
+def _safe_linear_cka(torch, first, second) -> float:
+    if int(first.shape[0]) < 2 or int(second.shape[0]) < 2:
+        return 1.0
+    try:
+        value = float(_linear_cka(torch, first, second))
+    except Exception:
+        return 1.0
+    if not math.isfinite(value):
+        return 1.0
+    return value
+
+
+def _safe_mean_row_cosine(torch, first, second) -> float:
+    try:
+        value = float(
+            torch.nn.functional.cosine_similarity(
+                torch.nan_to_num(first.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4),
+                torch.nan_to_num(second.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4),
+                dim=1,
+                eps=1e-8,
+            )
+            .mean()
+            .detach()
+            .cpu()
+        )
+    except Exception:
+        return 1.0
+    if not math.isfinite(value):
+        return 1.0
+    return value
+
+
+def _delta_novelty(torch, current_delta, previous_delta) -> float:
+    current = current_delta.detach().cpu().to(torch.float32).flatten()
+    previous = previous_delta.detach().cpu().to(torch.float32).flatten()
+    size = min(int(current.numel()), int(previous.numel()))
+    if size <= 0:
+        return 1.0
+    current = torch.nan_to_num(current[:size], nan=0.0, posinf=1e4, neginf=-1e4)
+    previous = torch.nan_to_num(previous[:size], nan=0.0, posinf=1e4, neginf=-1e4)
+    cosine = torch.nn.functional.cosine_similarity(current.unsqueeze(0), previous.unsqueeze(0), dim=1, eps=1e-8)
+    value = float((1.0 - cosine.abs()).detach().cpu())
+    if not math.isfinite(value):
+        return 1.0
+    return max(0.0, min(2.0, value))
 
 
 def _donor_layer_groups_by_energy(delta_scores: Sequence[float], target_layer_count: int) -> list[list[int]]:

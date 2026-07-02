@@ -7,6 +7,7 @@ GPU_UUID="${GPU_UUID:-GPU-2ce6a95c-7b1f-644a-3808-d781732a0582}"
 SOURCE_MODEL="${SOURCE_MODEL:-Qwen/Qwen3-4B-Base}"
 ANCHOR_MODEL="${ANCHOR_MODEL:-/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_strict25_ffnfold_20260627_191250/alpha05_ffn1496_folded_xreconstruct_mlp_a05}"
 TAG="${TAG:-qwen4b_ffn1496_anchor_blockalm_gpu4_20260629}"
+BLOCK_DONOR_LAYER_GROUP_STRATEGY="${BLOCK_DONOR_LAYER_GROUP_STRATEGY:-activation-geometry}"
 
 cd "$REPO_ROOT"
 source /home/cereal/model-surgery-lab/venv/bin/activate
@@ -50,7 +51,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --block-pre-reconstruction-alpha 0.02 \
   --block-pre-reconstruction-fit-gate validation \
   --block-donor-layer-fold-mode fold \
-  --block-donor-layer-group-strategy activation-energy \
+  --block-donor-layer-group-strategy "$BLOCK_DONOR_LAYER_GROUP_STRATEGY" \
   --block-layer-gate-metric behavior \
   --block-layer-gate-max-texts 160 \
   --block-layer-gate-max-generation-prompts 80 \

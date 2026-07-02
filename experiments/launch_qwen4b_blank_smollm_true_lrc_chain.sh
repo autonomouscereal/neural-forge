@@ -16,6 +16,8 @@ INIT_PROJECTION_SCALE="${INIT_PROJECTION_SCALE:-target-rms}"
 INIT_PROJECTION_BLEND_ALPHA="${INIT_PROJECTION_BLEND_ALPHA:-1.0}"
 INIT_TRANSPORT_SUPPORT="${INIT_TRANSPORT_SUPPORT:-centroid}"
 INIT_ACTIVATION_DOMAIN_BALANCE="${INIT_ACTIVATION_DOMAIN_BALANCE:-none}"
+INIT_DONOR_LAYER_GROUP_STRATEGY="${INIT_DONOR_LAYER_GROUP_STRATEGY:-activation-geometry}"
+BLOCK_DONOR_LAYER_GROUP_STRATEGY="${BLOCK_DONOR_LAYER_GROUP_STRATEGY:-activation-geometry}"
 PROMOTE_POLICY="${PROMOTE_POLICY:-always}"
 STAGE_INPUT_POLICY="${STAGE_INPUT_POLICY:-incumbent}"
 BLOCK_STEPS_PER_LAYER="${BLOCK_STEPS_PER_LAYER:-4}"
@@ -132,7 +134,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-transport-backend sinkhorn \
   --init-transport-support "$INIT_TRANSPORT_SUPPORT" \
   --init-donor-layer-fold-mode fold \
-  --init-donor-layer-group-strategy activation-energy \
+  --init-donor-layer-group-strategy "$INIT_DONOR_LAYER_GROUP_STRATEGY" \
   --init-attention-fold-mode activation-coupled \
   --init-attention-head-dim-transport none \
   --init-token-init-mode donor-tokenized-weighted \
@@ -173,7 +175,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --block-pre-reconstruction-alpha 0.02 \
   --block-pre-reconstruction-fit-gate validation \
   --block-donor-layer-fold-mode fold \
-  --block-donor-layer-group-strategy activation-energy \
+  --block-donor-layer-group-strategy "$BLOCK_DONOR_LAYER_GROUP_STRATEGY" \
   --block-layer-gate-metric behavior \
   --block-layer-gate-max-texts 160 \
   --block-layer-gate-max-generation-prompts 80 \
