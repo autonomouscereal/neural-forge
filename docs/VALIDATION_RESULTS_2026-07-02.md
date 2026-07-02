@@ -1406,6 +1406,67 @@ This is an evidence-producing lane, not a promotion claim. It must beat the
 fixed byte-probe all-target lane on exact behavior/manual generations and the
 lm-eval slice before becoming the next default.
 
+## Sequential All-Donor Recovery Patch
+
+Confirmed the GitHub remote and deployment state after the remote-repo
+correction:
+
+- Remote repository:
+  `https://github.com/autonomouscereal/neural-forge.git`
+- Branches pushed:
+  `main` and `codex/lrc-blank-compression`
+- Deployed source stamp:
+  `65e4b6e`
+
+Implemented `--recovery-source-mode` for
+`hf-xfamily-chain-anchor-compress`:
+
+- `primary` keeps the previous default: recovery uses the first donor.
+- `sequential-all` runs block and ALM recovery through every donor in order.
+  For a Qwen+GPT-2 source list, the child is recovered against Qwen first,
+  then the resulting child is recovered against GPT-2 before stage evaluation.
+- The chain summary now records `recovery_source_mode`, and multi-source
+  recovery reports include each donor, input model, output model, and donor
+  weight.
+
+Validation:
+
+- Local full suite:
+  `148 passed, 156 skipped`
+- Remote focused chain/parser tests:
+  `8 passed, 243 deselected`
+- Remote full suite:
+  `304 passed`
+- Remote launcher syntax:
+  `bash -n` passed for the updated launcher and new queue wrappers.
+
+Queued Qwen+GPT-2 proof lane:
+
+- Script:
+  `experiments/queue_qwen4b_gpt2_multidonor_seqall_trainable_byteprobe_20260702.sh`
+- Tag:
+  `qwen4b_gpt2_multidonor_seqall_trainable_byteprobe_full_gpu4_20260702`
+- Queue wrapper PID:
+  `3848365`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_gpt2_multidonor_seqall_trainable_byteprobe_full_gpu4_20260702.seqall_queue_wrapper.log`
+- Dependency:
+  waits behind trainable byte-probe lm-eval watcher PID `3777320`.
+- Recipe:
+  Qwen3-4B plus GPT-2 folded into blank SmolLM2-135M with donor weights
+  `0.85,0.15`, activation-CKA weighted grouping, all-target reconstruction,
+  layer-input-gated projection, trainable byte hidden probe, and
+  `RECOVERY_SOURCE_MODE=sequential-all`.
+
+Post-run evidence watchers:
+
+- Retention/manual watcher PID `3848369`, waiting for the queued training PID
+  after queue wrapper completion.
+- lm-eval watcher PID `3848374`, waiting behind retention/manual comparison.
+
+This lane directly addresses the gap where the existing multidonor run folded
+GPT-2 during init but recovered only against Qwen.
+
 ## LFM2.5-230M Cross-Family Proof Queue
 
 The earlier Liquid LFM lanes were only light smoke/eval-gate attempts and did

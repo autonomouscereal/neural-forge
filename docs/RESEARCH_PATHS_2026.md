@@ -100,7 +100,10 @@ Immediate repo implication:
 
 - `hf-xfamily-chain-anchor-compress` now accepts multi-donor init through
   comma-separated `source_model` plus `--donor-weights`/`--source-weights`.
-  Recovery remains single-teacher for now, using the first donor as primary.
+  Recovery defaults to the first donor for backward compatibility, but
+  `--recovery-source-mode sequential-all` runs block and ALM recovery
+  sequentially against every comma-separated donor so multi-donor folding is
+  no longer init-only.
 - Projected-vocab KD now uses sparse surface-piece fallback for fragile
   digit/code/mixed-digit child tokens and reports category coverage in recovery
   and head-calibration artifacts. This is the first concrete X-Token-inspired
