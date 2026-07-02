@@ -8,6 +8,7 @@ TAG="${TAG:-qwen4b_blank_smollm_chain_mlpout_true_lrc_rank16_blockio_alm_gpu4_20
 SOURCE_MODEL="${SOURCE_MODEL:-Qwen/Qwen3-4B-Base}"
 SOURCE_WEIGHTS="${SOURCE_WEIGHTS:-}"
 CALIBRATION_FILE="${CALIBRATION_FILE:-$RUN_ROOT/calibration_mix.jsonl}"
+EVAL_SUITE_FILE="${EVAL_SUITE_FILE:-$RUN_ROOT/behavior_suite.json}"
 MAX_CALIBRATION_TEXTS="${MAX_CALIBRATION_TEXTS:-384}"
 MAX_BEHAVIOR_PROBES="${MAX_BEHAVIOR_PROBES:-200}"
 MAX_GENERATION_PROMPTS="${MAX_GENERATION_PROMPTS:-100}"
@@ -153,7 +154,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --stages init,block,alm \
   --calibration-file "$CALIBRATION_FILE" \
   --max-calibration-texts "$MAX_CALIBRATION_TEXTS" \
-  --eval-suite "$RUN_ROOT/behavior_suite.json" \
+  --eval-suite "$EVAL_SUITE_FILE" \
   --max-behavior-probes "$MAX_BEHAVIOR_PROBES" \
   --max-generation-prompts "$MAX_GENERATION_PROMPTS" \
   --max-choice-probes "$MAX_CHOICE_PROBES" \
