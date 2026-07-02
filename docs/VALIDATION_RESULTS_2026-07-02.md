@@ -1467,6 +1467,68 @@ Post-run evidence watchers:
 This lane directly addresses the gap where the existing multidonor run folded
 GPT-2 during init but recovered only against Qwen.
 
+## Teacher-Generated Continuation Replay
+
+Manual inspection of the current best Qwen->blank SmolLM children showed that
+exact behavior scores can improve while free-form generations remain visibly
+weak:
+
+- Parent Qwen answers `6+4` and simple Python addition correctly.
+- Folded children often produce malformed arithmetic such as `7: 12` or
+  `Answer: 88`, while sometimes preserving a tiny add function.
+- Commonsense prompts can drift into tokenizer/model-surgery answer text.
+
+This means the next recovery pressure should target donor-style continuations,
+not only another metric gate.
+
+Implemented default-off teacher replay masking:
+
+- `hf-xfamily-recover --teacher-generate-loss-mode {none,auto,assistant,answer}`
+- `hf-xfamily-block-recover --teacher-generate-loss-mode {none,auto,assistant,answer}`
+- `hf-xfamily-chain-anchor-compress --block-teacher-generate-loss-mode`
+- `hf-xfamily-chain-anchor-compress --alm-teacher-generate-loss-mode`
+
+Default `none` preserves the previous behavior. `auto` lets donor-generated
+continuation replay use the existing response-mask inference, so losses can
+focus on the answer/assistant/last-line continuation rather than spending the
+same small recovery budget on prompt tokens.
+
+Validation:
+
+- Local full suite:
+  `148 passed, 156 skipped`
+- Remote focused recovery/chain tests:
+  `4 passed, 247 deselected`
+- Remote full suite:
+  `304 passed`
+- Remote launcher syntax:
+  `bash -n` passed for the updated launcher and new wrappers.
+- Deployed source stamp:
+  `750555a`
+
+Queued focused-replay lane:
+
+- Script:
+  `experiments/queue_qwen4b_gpt2_multidonor_seqall_teacherreplay_20260702.sh`
+- Tag:
+  `qwen4b_gpt2_multidonor_seqall_teacherreplay_full_gpu4_20260702`
+- Queue wrapper PID:
+  `3887874`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_gpt2_multidonor_seqall_teacherreplay_full_gpu4_20260702.queue_wrapper.log`
+- Dependency:
+  waits behind sequential-all lm-eval watcher PID `3848374`.
+- Recipe:
+  same Qwen3-4B + GPT-2 sequential-all blank SmolLM2-135M fold, but with
+  `BLOCK_TEACHER_GENERATE_LOSS_MODE=auto`,
+  `ALM_TEACHER_GENERATE_LOSS_MODE=auto`,
+  stronger block teacher replay, and ALM teacher replay enabled.
+
+Post-run evidence watchers:
+
+- Retention/manual watcher PID `3887877`, waiting for the queued training PID.
+- lm-eval watcher PID `3887883`, waiting behind retention/manual comparison.
+
 ## LFM2.5-230M Cross-Family Proof Queue
 
 The earlier Liquid LFM lanes were only light smoke/eval-gate attempts and did
