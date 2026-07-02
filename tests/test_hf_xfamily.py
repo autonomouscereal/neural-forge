@@ -3921,6 +3921,7 @@ def test_cross_tokenizer_recovery_accepts_calibration_order_parameter() -> None:
 
     parameters = inspect.signature(recover_cross_tokenizer_causal_lm).parameters
     assert parameters["calibration_order"].default == "original"
+    assert parameters["teacher_generate_loss_mode"].default == "none"
 
 
 def test_activation_axis_weights_aggregate_folded_donor_group() -> None:
@@ -7158,6 +7159,8 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "0.29",
             "--teacher-generate-max-new-tokens",
             "37",
+            "--teacher-generate-loss-mode",
+            "answer",
             "--stepwise-donor-kd-weight",
             "0.33",
             "--stepwise-donor-max-new-tokens",
@@ -7277,9 +7280,10 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "teacher_rank_weight": 0.31,
         "teacher_rank_temperature": 0.8,
         "teacher_rank_max_negatives": 6,
-        "teacher_generate_lm_weight": 0.29,
-        "teacher_generate_max_new_tokens": 37,
-        "stepwise_donor_kd_weight": 0.33,
+            "teacher_generate_lm_weight": 0.29,
+            "teacher_generate_max_new_tokens": 37,
+            "teacher_generate_loss_mode": "answer",
+            "stepwise_donor_kd_weight": 0.33,
         "stepwise_donor_max_new_tokens": 13,
         "on_policy_anchor_kd_weight": 0.41,
         "on_policy_unlikelihood_weight": 0.52,
@@ -7923,6 +7927,8 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "0.09",
             "--teacher-generate-max-new-tokens",
             "23",
+            "--teacher-generate-loss-mode",
+            "auto",
             "--alm-kd-weight",
             "0.08",
             "--alm-max-chunks",
@@ -8066,9 +8072,10 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "teacher_generate_lm_weight": 0.17,
         "teacher_generate_hidden_kd_weight": 0.13,
         "teacher_generate_projected_vocab_kd_weight": 0.15,
-        "teacher_generate_byte_kd_weight": 0.09,
-        "teacher_generate_max_new_tokens": 23,
-        "alm_kd_weight": 0.08,
+            "teacher_generate_byte_kd_weight": 0.09,
+            "teacher_generate_max_new_tokens": 23,
+            "teacher_generate_loss_mode": "auto",
+            "alm_kd_weight": 0.08,
         "alm_max_chunks": 12,
         "alm_min_chars": 3,
         "projected_vocab_kd_weight": 0.19,
@@ -8846,6 +8853,8 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "0.014",
             "--block-teacher-generate-max-new-tokens",
             "21",
+            "--block-teacher-generate-loss-mode",
+            "answer",
             "--block-alm-max-chunks",
             "22",
             "--block-alm-min-chars",
@@ -8933,6 +8942,8 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "0.031",
             "--alm-teacher-generate-max-new-tokens",
             "33",
+            "--alm-teacher-generate-loss-mode",
+            "auto",
             "--alm-stepwise-donor-kd-weight",
             "0.032",
             "--alm-stepwise-donor-max-new-tokens",
@@ -9051,6 +9062,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["block_teacher_generate_projected_vocab_kd_weight"] == 0.013
     assert captured["block_teacher_generate_byte_kd_weight"] == 0.014
     assert captured["block_teacher_generate_max_new_tokens"] == 21
+    assert captured["block_teacher_generate_loss_mode"] == "answer"
     assert captured["block_alm_max_chunks"] == 22
     assert captured["block_alm_min_chars"] == 3
     assert captured["block_focused_block_hidden_kd_weight"] == 0.015
@@ -9096,6 +9108,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["alm_teacher_rank_max_negatives"] == 8
     assert captured["alm_teacher_generate_lm_weight"] == 0.031
     assert captured["alm_teacher_generate_max_new_tokens"] == 33
+    assert captured["alm_teacher_generate_loss_mode"] == "auto"
     assert captured["alm_stepwise_donor_kd_weight"] == 0.032
     assert captured["alm_stepwise_donor_max_new_tokens"] == 12
     assert captured["alm_on_policy_anchor_kd_weight"] == 0.033

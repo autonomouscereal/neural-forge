@@ -912,6 +912,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     xfamily_recover.add_argument("--teacher-generate-max-new-tokens", type=int, default=64)
     xfamily_recover.add_argument(
+        "--teacher-generate-loss-mode",
+        choices=["none", "auto", "assistant", "answer"],
+        default="none",
+        help="Optional response mask used when training on donor-generated continuations.",
+    )
+    xfamily_recover.add_argument(
         "--stepwise-donor-kd-weight",
         type=float,
         default=0.0,
@@ -1345,6 +1351,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     xfamily_block_recover.add_argument("--teacher-generate-max-new-tokens", type=int, default=64)
     xfamily_block_recover.add_argument(
+        "--teacher-generate-loss-mode",
+        choices=["none", "auto", "assistant", "answer"],
+        default="none",
+        help="Optional response mask used when training on donor-generated continuations.",
+    )
+    xfamily_block_recover.add_argument(
         "--alm-kd-weight",
         type=float,
         default=0.0,
@@ -1717,6 +1729,11 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--block-teacher-generate-projected-vocab-kd-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--block-teacher-generate-byte-kd-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--block-teacher-generate-max-new-tokens", type=int, default=64)
+    xfamily_chain.add_argument(
+        "--block-teacher-generate-loss-mode",
+        choices=["none", "auto", "assistant", "answer"],
+        default="none",
+    )
     xfamily_chain.add_argument("--block-alm-max-chunks", type=int, default=64)
     xfamily_chain.add_argument("--block-alm-min-chars", type=int, default=2)
     xfamily_chain.add_argument("--block-focused-block-hidden-kd-weight", type=float, default=0.0)
@@ -1790,6 +1807,11 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--alm-teacher-rank-max-negatives", type=int, default=4)
     xfamily_chain.add_argument("--alm-teacher-generate-lm-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-teacher-generate-max-new-tokens", type=int, default=64)
+    xfamily_chain.add_argument(
+        "--alm-teacher-generate-loss-mode",
+        choices=["none", "auto", "assistant", "answer"],
+        default="none",
+    )
     xfamily_chain.add_argument("--alm-stepwise-donor-kd-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-stepwise-donor-max-new-tokens", type=int, default=16)
     xfamily_chain.add_argument("--alm-on-policy-anchor-kd-weight", type=float, default=0.0)
@@ -2758,6 +2780,7 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         teacher_rank_max_negatives=args.teacher_rank_max_negatives,
         teacher_generate_lm_weight=args.teacher_generate_lm_weight,
         teacher_generate_max_new_tokens=args.teacher_generate_max_new_tokens,
+        teacher_generate_loss_mode=args.teacher_generate_loss_mode,
         stepwise_donor_kd_weight=args.stepwise_donor_kd_weight,
         stepwise_donor_max_new_tokens=args.stepwise_donor_max_new_tokens,
         on_policy_anchor_kd_weight=args.on_policy_anchor_kd_weight,
@@ -2928,6 +2951,7 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         teacher_generate_projected_vocab_kd_weight=args.teacher_generate_projected_vocab_kd_weight,
         teacher_generate_byte_kd_weight=args.teacher_generate_byte_kd_weight,
         teacher_generate_max_new_tokens=args.teacher_generate_max_new_tokens,
+        teacher_generate_loss_mode=args.teacher_generate_loss_mode,
         alm_kd_weight=args.alm_kd_weight,
         alm_max_chunks=args.alm_max_chunks,
         alm_min_chars=args.alm_min_chars,
@@ -3093,6 +3117,7 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         block_teacher_generate_projected_vocab_kd_weight=args.block_teacher_generate_projected_vocab_kd_weight,
         block_teacher_generate_byte_kd_weight=args.block_teacher_generate_byte_kd_weight,
         block_teacher_generate_max_new_tokens=args.block_teacher_generate_max_new_tokens,
+        block_teacher_generate_loss_mode=args.block_teacher_generate_loss_mode,
         block_alm_max_chunks=args.block_alm_max_chunks,
         block_alm_min_chars=args.block_alm_min_chars,
         block_focused_block_hidden_kd_weight=args.block_focused_block_hidden_kd_weight,
@@ -3152,6 +3177,7 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         alm_teacher_rank_max_negatives=args.alm_teacher_rank_max_negatives,
         alm_teacher_generate_lm_weight=args.alm_teacher_generate_lm_weight,
         alm_teacher_generate_max_new_tokens=args.alm_teacher_generate_max_new_tokens,
+        alm_teacher_generate_loss_mode=args.alm_teacher_generate_loss_mode,
         alm_stepwise_donor_kd_weight=args.alm_stepwise_donor_kd_weight,
         alm_stepwise_donor_max_new_tokens=args.alm_stepwise_donor_max_new_tokens,
         alm_on_policy_anchor_kd_weight=args.alm_on_policy_anchor_kd_weight,

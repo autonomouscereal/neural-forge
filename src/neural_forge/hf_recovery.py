@@ -651,6 +651,7 @@ def recover_cross_tokenizer_causal_lm(
     teacher_rank_max_negatives: int = 4,
     teacher_generate_lm_weight: float = 0.0,
     teacher_generate_max_new_tokens: int = 64,
+    teacher_generate_loss_mode: str = "none",
     stepwise_donor_kd_weight: float = 0.0,
     stepwise_donor_max_new_tokens: int = 16,
     on_policy_anchor_kd_weight: float = 0.0,
@@ -715,6 +716,8 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("loss weights must be non-negative.")
     if teacher_generate_max_new_tokens <= 0:
         raise ValueError("teacher_generate_max_new_tokens must be positive.")
+    if teacher_generate_loss_mode not in {"none", "auto", "assistant", "answer"}:
+        raise ValueError("teacher_generate_loss_mode must be none, auto, assistant, or answer.")
     if stepwise_donor_max_new_tokens <= 0:
         raise ValueError("stepwise_donor_max_new_tokens must be positive.")
     if token_focus not in {"auto", "response", "numbers", "code", "all"}:
@@ -1021,7 +1024,7 @@ def recover_cross_tokenizer_causal_lm(
             batch_size=batch_size,
             max_length=max_length,
             device=device,
-            response_loss_mode="none",
+            response_loss_mode=teacher_generate_loss_mode,
             append_eos=append_eos,
         )
 
@@ -1519,6 +1522,7 @@ def recover_cross_tokenizer_causal_lm(
         "teacher_rank_count_observed": teacher_rank_counts,
         "teacher_generate_lm_weight": teacher_generate_lm_weight,
         "teacher_generate_max_new_tokens": teacher_generate_max_new_tokens,
+        "teacher_generate_loss_mode": teacher_generate_loss_mode,
         "teacher_generated_text_count": len(teacher_generated_texts),
         "teacher_generated_text_samples": teacher_generated_texts[:3],
         "calibration_order": calibration_order,
@@ -2539,6 +2543,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     teacher_generate_projected_vocab_kd_weight: float = 0.0,
     teacher_generate_byte_kd_weight: float = 0.0,
     teacher_generate_max_new_tokens: int = 64,
+    teacher_generate_loss_mode: str = "none",
     alm_kd_weight: float = 0.0,
     alm_max_chunks: int = 64,
     alm_min_chars: int = 2,
@@ -2707,6 +2712,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("teacher-generated recovery weights must be non-negative.")
     if teacher_generate_max_new_tokens <= 0:
         raise ValueError("teacher_generate_max_new_tokens must be positive.")
+    if teacher_generate_loss_mode not in {"none", "auto", "assistant", "answer"}:
+        raise ValueError("teacher_generate_loss_mode must be none, auto, assistant, or answer.")
     if alm_kd_weight < 0:
         raise ValueError("alm_kd_weight must be non-negative.")
     if alm_max_chunks <= 0:
@@ -2979,7 +2986,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 batch_size=batch_size,
                 max_length=max_length,
                 device=device,
-                response_loss_mode="none",
+                response_loss_mode=teacher_generate_loss_mode,
                 append_eos=False,
             )
         if (
@@ -2995,7 +3002,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 max_length=max_length,
                 device=device,
                 include_offsets=True,
-                response_loss_mode="none",
+                response_loss_mode=teacher_generate_loss_mode,
                 append_eos=False,
             )
 
@@ -4348,6 +4355,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "teacher_generate_projected_vocab_kd_weight": float(teacher_generate_projected_vocab_kd_weight),
         "teacher_generate_byte_kd_weight": float(teacher_generate_byte_kd_weight),
         "teacher_generate_max_new_tokens": int(teacher_generate_max_new_tokens),
+        "teacher_generate_loss_mode": teacher_generate_loss_mode,
         "teacher_generated_text_count": len(teacher_generated_texts),
         "teacher_generated_text_samples": teacher_generated_texts[:3],
         "calibration_order": calibration_order,
