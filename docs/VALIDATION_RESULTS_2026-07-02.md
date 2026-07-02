@@ -1311,3 +1311,33 @@ Post-run retention watcher:
   `3345256` is also honored before final parent-retention comparison.
 - Watcher log:
   `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_cka_weighted_block_weighted_layerproj_gated_all_full_gpu4_20260702_retention_compare.queue.log`
+
+## Multidonor Cross-Family Retention Watch
+
+Added retained-evidence queues for the active cross-family donor-combination
+run:
+
+- Active run:
+  `qwen4b_gpt2_multidonor_blank_smollm_eora_full_gpu6_20260702`
+  - Source donors: `Qwen/Qwen3-4B-Base,openai-community/gpt2`
+  - Target: blank SmolLM2-135M
+  - Run PID: `3305569`
+- GPT-2 donor exactgen eval:
+  `experiments/queue_donor_gpt2_exactgen_uuid_20260702.sh`
+  - Queue PID: `3692476`
+  - Waits behind Qwen parent exactgen queue PID `3345256`
+  - Output report:
+    `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/evals/eval_donor_gpt2_exactgen_20260702_1000x1000x250.json`
+- Multidonor child retention watcher:
+  `experiments/queue_qwen4b_gpt2_multidonor_retention_20260702.sh`
+  - Watcher PID: `3693224`
+  - Waits behind active multidonor run PID `3305569`, Qwen parent exactgen
+    queue PID `3345256`, and GPT-2 donor eval queue PID `3692476`
+  - Compares the child against cached Qwen parent, GPT-2 donor, blank random,
+    and recovered single-parent baselines.
+  - Watcher log:
+    `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_gpt2_multidonor_blank_smollm_eora_full_gpu6_20260702_retention_compare.queue.log`
+
+This is still queued evidence, not a success claim. The point is to make the
+different-family donor-combination lane produce behavior/manual retention
+reports automatically once the long GPU jobs clear.
