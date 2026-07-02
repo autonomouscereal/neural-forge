@@ -2039,6 +2039,7 @@ def chain_anchor_staged_compress(
     candidate_torch_dtype: str = "float32",
     device: str = "cuda:0",
     trust_remote_code: bool = False,
+    source_weights: Sequence[float] | str | None = None,
 ) -> dict[str, Any]:
     """Run staged donor-to-child updates while preserving the best incumbent.
 
@@ -2048,6 +2049,8 @@ def chain_anchor_staged_compress(
     """
 
     stage_list = _parse_chain_stages(stages)
+    source_models, source_weight_values = _parse_source_models_and_weights(source_model, source_weights)
+    primary_source_model = source_models[0]
     if promote_policy not in {"gate-and-rank", "gate-only", "always"}:
         raise ValueError("promote_policy must be gate-and-rank, gate-only, or always.")
     if stage_input_policy not in {"incumbent", "sequential"}:
@@ -2111,9 +2114,17 @@ def chain_anchor_staged_compress(
         input_model_dir = str(input_candidate["model_dir"])
 
         if stage == "init":
-            stage_operation = donor_projected_init(
+            if len(source_models) > 1 or source_weight_values is not None:
+                init_project = multi_donor_projected_init
+                init_source_kwargs = {
+                    "donor_models": source_models,
+                    "donor_weights": source_weight_values,
+                }
+            else:
+                init_project = donor_projected_init
+                init_source_kwargs = {"donor_model": primary_source_model}
+            stage_operation = init_project(
                 target_config_model=anchor_model,
-                donor_model=source_model,
                 output_dir=stage_model_dir,
                 target_base_model=input_model_dir,
                 target_tokenizer_model=anchor_model,
@@ -2161,12 +2172,13 @@ def chain_anchor_staged_compress(
                 activation_device=device,
                 torch_dtype=torch_dtype,
                 trust_remote_code=trust_remote_code,
+                **init_source_kwargs,
             )
         elif stage == "block":
             from neural_forge.hf_recovery import blockwise_reconstruct_cross_tokenizer_causal_lm
 
             stage_operation = blockwise_reconstruct_cross_tokenizer_causal_lm(
-                source_model=source_model,
+                source_model=primary_source_model,
                 candidate_model=input_model_dir,
                 output_dir=stage_model_dir,
                 steps_per_layer=block_steps_per_layer,
@@ -2269,7 +2281,7 @@ def chain_anchor_staged_compress(
             from neural_forge.hf_recovery import recover_cross_tokenizer_causal_lm
 
             stage_operation = recover_cross_tokenizer_causal_lm(
-                source_model=source_model,
+                source_model=primary_source_model,
                 candidate_model=input_model_dir,
                 output_dir=stage_model_dir,
                 steps=alm_steps,
@@ -2384,6 +2396,9 @@ def chain_anchor_staged_compress(
             stage_records,
             stage_input_policy=stage_input_policy,
             final_candidate=working_candidate,
+            source_models=source_models,
+            source_weights=source_weight_values,
+            primary_source_model=primary_source_model,
         )
 
     return _write_chain_anchor_summary(
@@ -2395,6 +2410,9 @@ def chain_anchor_staged_compress(
         stage_records,
         stage_input_policy=stage_input_policy,
         final_candidate=working_candidate,
+        source_models=source_models,
+        source_weights=source_weight_values,
+        primary_source_model=primary_source_model,
     )
 
 
@@ -2410,6 +2428,29 @@ def _parse_chain_stages(stages: str | Sequence[str]) -> list[str]:
     if invalid:
         raise ValueError(f"Unsupported chain stages: {', '.join(invalid)}.")
     return parts
+
+
+def _parse_source_models_and_weights(
+    source_model: str | Sequence[str],
+    source_weights: Sequence[float] | str | None = None,
+) -> tuple[list[str], list[float] | None]:
+    if isinstance(source_model, str):
+        sources = [part.strip() for part in source_model.split(",") if part.strip()]
+    else:
+        sources = [str(part).strip() for part in source_model if str(part).strip()]
+    if not sources:
+        raise ValueError("source_model must include at least one donor.")
+    if source_weights is None:
+        return sources, None
+    if isinstance(source_weights, str):
+        weights = [float(part.strip()) for part in source_weights.split(",") if part.strip()]
+    else:
+        weights = [float(item) for item in source_weights]
+    if len(weights) != len(sources):
+        raise ValueError("source_weights must match source_model donor count.")
+    if any((not math.isfinite(weight)) or weight <= 0 for weight in weights):
+        raise ValueError("source_weights must be positive finite values.")
+    return sources, weights
 
 
 def _chain_candidate_record(
@@ -2462,11 +2503,17 @@ def _write_chain_anchor_summary(
     stage_records: Sequence[dict[str, Any]],
     stage_input_policy: str = "incumbent",
     final_candidate: dict[str, Any] | None = None,
+    source_models: Sequence[str] | None = None,
+    source_weights: Sequence[float] | None = None,
+    primary_source_model: str | None = None,
 ) -> dict[str, Any]:
     final = final_candidate or incumbent
     summary = {
         "operation": "chain_anchor_staged_compress",
         "source_model": source_model,
+        "source_models": list(source_models or [source_model]),
+        "source_weights": None if source_weights is None else [float(weight) for weight in source_weights],
+        "primary_source_model": primary_source_model or source_model,
         "anchor_model": anchor_model,
         "stages": list(stages),
         "stage_input_policy": stage_input_policy,

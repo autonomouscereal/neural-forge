@@ -1389,6 +1389,15 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("source_model")
     xfamily_chain.add_argument("anchor_model")
     xfamily_chain.add_argument("output")
+    xfamily_chain.add_argument(
+        "--source-weights",
+        "--donor-weights",
+        dest="source_weights",
+        help=(
+            "Optional comma-separated weights when source_model contains multiple comma-separated donors. "
+            "The init stage folds all donors; recovery stages use the first donor as the teacher."
+        ),
+    )
     xfamily_chain.add_argument("--stages", default="block,alm", help="Comma-separated stage list: init,block,alm.")
     xfamily_chain.add_argument("--eval-suite")
     xfamily_chain.add_argument("--max-text-evals", type=int)
@@ -2769,6 +2778,7 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
 
     return chain_anchor_staged_compress(
         source_model=args.source_model,
+        source_weights=args.source_weights,
         anchor_model=args.anchor_model,
         output_dir=args.output,
         stages=args.stages,

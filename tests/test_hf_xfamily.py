@@ -85,6 +85,7 @@ from neural_forge.hf_xfamily import _chain_stage_promotes
 from neural_forge.hf_xfamily import _lookup_layer_tensor_key
 from neural_forge.hf_xfamily import _lookup_layer_tensor_value
 from neural_forge.hf_xfamily import _parse_chain_stages
+from neural_forge.hf_xfamily import _parse_source_models_and_weights
 from neural_forge.hf_xfamily import _canonical_token_map
 from neural_forge.hf_xfamily import _assign_donor_to_host
 from neural_forge.hf_xfamily import _activation_layer_geometry_scores
@@ -6579,6 +6580,21 @@ def test_parse_chain_stages_rejects_unknown_stage() -> None:
         _parse_chain_stages("block,banana")
 
 
+def test_parse_source_models_and_weights_validates_multi_donor() -> None:
+    assert _parse_source_models_and_weights("donor-a, donor-b", "0.25,0.75") == (
+        ["donor-a", "donor-b"],
+        [0.25, 0.75],
+    )
+    assert _parse_source_models_and_weights(["donor-a"], None) == (["donor-a"], None)
+
+    with pytest.raises(ValueError, match="source_weights"):
+        _parse_source_models_and_weights("donor-a,donor-b", "1.0")
+    with pytest.raises(ValueError, match="positive finite"):
+        _parse_source_models_and_weights("donor-a", "0")
+    with pytest.raises(ValueError, match="source_model"):
+        _parse_source_models_and_weights(",", None)
+
+
 def test_chain_anchor_orchestrator_preserves_incumbent_on_failed_stage(monkeypatch, tmp_path) -> None:
     import neural_forge.hf_recovery as hf_recovery
     import neural_forge.hf_xfamily as hf_xfamily
@@ -6743,6 +6759,129 @@ def test_chain_anchor_sequential_stage_input_keeps_fold_pipeline_moving(monkeypa
     assert summary["stage_records"][1]["input_model_dir"] == str(tmp_path / "models" / "01_init")
 
 
+def test_chain_anchor_keeps_positional_stages_compatibility(monkeypatch, tmp_path) -> None:
+    import neural_forge.hf_xfamily as hf_xfamily
+
+    captured = {}
+
+    def fake_eval(model_id_or_path, output_file, **kwargs):
+        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_file).write_text("{}", encoding="utf-8")
+        return {
+            "model": str(model_id_or_path),
+            "param_count": 10,
+            "perplexity": {"mean": 100.0},
+            "choice_accuracy": {"accuracy": 0.5},
+            "generations": [],
+            "behavior_suite": {"pass_rate": 0.8, "correct": 8, "total": 10, "items": []},
+        }
+
+    def fake_gate(baseline_report, candidate_report, output_file=None, **kwargs):
+        if output_file is not None:
+            Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+            Path(output_file).write_text("{}", encoding="utf-8")
+        return {
+            "passed": True,
+            "candidate": {
+                "param_count": 10,
+                "perplexity_mean": 100.0,
+                "choice_accuracy": 0.5,
+                "generation_health_rate": 1.0,
+                "behavior_pass_rate": 0.8,
+            },
+        }
+
+    def fake_init(**kwargs):
+        captured.update(kwargs)
+        Path(kwargs["output_dir"]).mkdir(parents=True, exist_ok=True)
+        return {"operation": "fake_init"}
+
+    monkeypatch.setattr(hf_xfamily, "evaluate_text_model", fake_eval)
+    monkeypatch.setattr(hf_xfamily, "gate_text_report", fake_gate)
+    monkeypatch.setattr(hf_xfamily, "donor_projected_init", fake_init)
+
+    summary = hf_xfamily.chain_anchor_staged_compress("donor", "anchor", tmp_path, "init", device="cpu")
+
+    assert summary["stages"] == ["init"]
+    assert captured["donor_model"] == "donor"
+
+
+def test_chain_anchor_init_stage_dispatches_multi_donor_then_primary_teacher(monkeypatch, tmp_path) -> None:
+    import neural_forge.hf_recovery as hf_recovery
+    import neural_forge.hf_xfamily as hf_xfamily
+
+    init_captured = {}
+    block_captured = {}
+
+    def fake_eval(model_id_or_path, output_file, **kwargs):
+        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_file).write_text("{}", encoding="utf-8")
+        return {
+            "model": str(model_id_or_path),
+            "param_count": 10,
+            "perplexity": {"mean": 100.0},
+            "choice_accuracy": {"accuracy": 0.5},
+            "generations": [],
+            "behavior_suite": {"pass_rate": 0.8, "correct": 8, "total": 10, "items": []},
+        }
+
+    def fake_gate(baseline_report, candidate_report, output_file=None, **kwargs):
+        if output_file is not None:
+            Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+            Path(output_file).write_text("{}", encoding="utf-8")
+        return {
+            "passed": True,
+            "candidate": {
+                "param_count": 10,
+                "perplexity_mean": 100.0,
+                "choice_accuracy": 0.5,
+                "generation_health_rate": 1.0,
+                "behavior_pass_rate": 0.8,
+            },
+        }
+
+    def fake_multi_init(**kwargs):
+        init_captured.update(kwargs)
+        Path(kwargs["output_dir"]).mkdir(parents=True, exist_ok=True)
+        return {"operation": "fake_multi_init"}
+
+    def fake_single_init(**kwargs):
+        raise AssertionError("single-donor init should not run for comma-separated sources")
+
+    def fake_block(**kwargs):
+        block_captured.update(kwargs)
+        Path(kwargs["output_dir"]).mkdir(parents=True, exist_ok=True)
+        return {"operation": "fake_block"}
+
+    monkeypatch.setattr(hf_xfamily, "evaluate_text_model", fake_eval)
+    monkeypatch.setattr(hf_xfamily, "gate_text_report", fake_gate)
+    monkeypatch.setattr(hf_xfamily, "multi_donor_projected_init", fake_multi_init)
+    monkeypatch.setattr(hf_xfamily, "donor_projected_init", fake_single_init)
+    monkeypatch.setattr(hf_recovery, "blockwise_reconstruct_cross_tokenizer_causal_lm", fake_block)
+
+    summary = hf_xfamily.chain_anchor_staged_compress(
+        "donor-a,donor-b",
+        "anchor",
+        tmp_path,
+        source_weights="0.25,0.75",
+        stages="init,block",
+        promote_policy="always",
+        stage_input_policy="sequential",
+        device="cpu",
+    )
+
+    assert init_captured["donor_models"] == ["donor-a", "donor-b"]
+    assert init_captured["donor_weights"] == [0.25, 0.75]
+    assert init_captured["target_base_model"] == "anchor"
+    assert block_captured["source_model"] == "donor-a"
+    assert block_captured["candidate_model"] == str(tmp_path / "models" / "01_init")
+    assert summary["source_model"] == "donor-a,donor-b"
+    assert summary["source_models"] == ["donor-a", "donor-b"]
+    assert summary["source_weights"] == [0.25, 0.75]
+    assert summary["primary_source_model"] == "donor-a"
+    assert summary["final_tag"] == "02_block"
+
+
 def test_chain_anchor_init_stage_forwards_activation_fit_flags(monkeypatch, tmp_path) -> None:
     import neural_forge.hf_xfamily as hf_xfamily
 
@@ -6888,9 +7027,11 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     args = build_parser().parse_args(
         [
             "hf-xfamily-chain-anchor-compress",
-            "donor",
+            "donor-a,donor-b",
             "anchor",
             "out",
+            "--donor-weights",
+            "0.25,0.75",
             "--stages",
             "block,alm",
             "--eval-suite",
@@ -7146,7 +7287,8 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     result = args.func(args)
 
     assert result == {"ok": True}
-    assert captured["source_model"] == "donor"
+    assert captured["source_model"] == "donor-a,donor-b"
+    assert captured["source_weights"] == "0.25,0.75"
     assert captured["anchor_model"] == "anchor"
     assert captured["stages"] == "block,alm"
     assert captured["calibration_texts"] == ["chain text"]
