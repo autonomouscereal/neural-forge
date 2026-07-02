@@ -8459,6 +8459,77 @@ def test_chain_anchor_init_stage_dispatches_multi_donor_then_primary_teacher(mon
     assert summary["final_tag"] == "02_block"
 
 
+def test_chain_anchor_sequential_all_recovery_uses_each_donor(monkeypatch, tmp_path) -> None:
+    import neural_forge.hf_recovery as hf_recovery
+    import neural_forge.hf_xfamily as hf_xfamily
+
+    block_calls = []
+
+    def fake_eval(model_id_or_path, output_file, **kwargs):
+        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_file).write_text("{}", encoding="utf-8")
+        return {
+            "model": str(model_id_or_path),
+            "param_count": 10,
+            "perplexity": {"mean": 100.0},
+            "choice_accuracy": {"accuracy": 0.5},
+            "generations": [],
+            "behavior_suite": {"pass_rate": 0.8, "correct": 8, "total": 10, "items": []},
+        }
+
+    def fake_gate(baseline_report, candidate_report, output_file=None, **kwargs):
+        if output_file is not None:
+            Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+            Path(output_file).write_text("{}", encoding="utf-8")
+        return {
+            "passed": True,
+            "candidate": {
+                "param_count": 10,
+                "perplexity_mean": 100.0,
+                "choice_accuracy": 0.5,
+                "generation_health_rate": 1.0,
+                "behavior_pass_rate": 0.8,
+            },
+        }
+
+    def fake_block(**kwargs):
+        block_calls.append(dict(kwargs))
+        Path(kwargs["output_dir"]).mkdir(parents=True, exist_ok=True)
+        return {"operation": "fake_block", "source_model": kwargs["source_model"]}
+
+    monkeypatch.setattr(hf_xfamily, "evaluate_text_model", fake_eval)
+    monkeypatch.setattr(hf_xfamily, "gate_text_report", fake_gate)
+    monkeypatch.setattr(hf_recovery, "blockwise_reconstruct_cross_tokenizer_causal_lm", fake_block)
+
+    summary = hf_xfamily.chain_anchor_staged_compress(
+        "donor-a,donor-b",
+        "anchor",
+        tmp_path,
+        source_weights="0.70,0.30",
+        stages="block",
+        recovery_source_mode="sequential-all",
+        promote_policy="always",
+        device="cpu",
+    )
+
+    first_output = tmp_path / "models" / "01_block" / "source_01_donor-a"
+    final_output = tmp_path / "models" / "01_block"
+    assert [call["source_model"] for call in block_calls] == ["donor-a", "donor-b"]
+    assert block_calls[0]["candidate_model"] == "anchor"
+    assert block_calls[0]["output_dir"] == first_output
+    assert block_calls[1]["candidate_model"] == str(first_output)
+    assert block_calls[1]["output_dir"] == final_output
+    operation = summary["stage_records"][0]["operation_report"]
+    assert operation["operation"] == "sequential_multi_source_block_recovery"
+    assert operation["recovery_source_mode"] == "sequential-all"
+    assert operation["source_models"] == ["donor-a", "donor-b"]
+    assert operation["source_weights"] == [0.70, 0.30]
+    assert operation["steps"][0]["source_weight"] == 0.70
+    assert operation["steps"][1]["source_weight"] == 0.30
+    assert summary["recovery_source_mode"] == "sequential-all"
+    assert summary["final_model_dir"] == str(final_output)
+
+
 def test_chain_anchor_init_stage_forwards_activation_fit_flags(monkeypatch, tmp_path) -> None:
     import neural_forge.hf_xfamily as hf_xfamily
 
@@ -8613,6 +8684,8 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "out",
             "--donor-weights",
             "0.25,0.75",
+            "--recovery-source-mode",
+            "sequential-all",
             "--stages",
             "block,alm",
             "--eval-suite",
@@ -8894,6 +8967,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert result == {"ok": True}
     assert captured["source_model"] == "donor-a,donor-b"
     assert captured["source_weights"] == "0.25,0.75"
+    assert captured["recovery_source_mode"] == "sequential-all"
     assert captured["anchor_model"] == "anchor"
     assert captured["stages"] == "block,alm"
     assert captured["calibration_texts"] == ["chain text"]

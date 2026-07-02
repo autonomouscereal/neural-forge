@@ -2100,6 +2100,7 @@ def chain_anchor_staged_compress(
     device: str = "cuda:0",
     trust_remote_code: bool = False,
     source_weights: Sequence[float] | str | None = None,
+    recovery_source_mode: str = "primary",
 ) -> dict[str, Any]:
     """Run staged donor-to-child updates while preserving the best incumbent.
 
@@ -2117,6 +2118,8 @@ def chain_anchor_staged_compress(
         raise ValueError("stage_input_policy must be incumbent or sequential.")
     if stage_ppl_gate_mode not in {"hard", "advisory"}:
         raise ValueError("stage_ppl_gate_mode must be hard or advisory.")
+    if recovery_source_mode not in {"primary", "sequential-all"}:
+        raise ValueError("recovery_source_mode must be primary or sequential-all.")
     if max_new_tokens <= 0:
         raise ValueError("max_new_tokens must be positive.")
 
@@ -2239,176 +2242,204 @@ def chain_anchor_staged_compress(
         elif stage == "block":
             from neural_forge.hf_recovery import blockwise_reconstruct_cross_tokenizer_causal_lm
 
-            stage_operation = blockwise_reconstruct_cross_tokenizer_causal_lm(
-                source_model=primary_source_model,
-                candidate_model=input_model_dir,
-                output_dir=stage_model_dir,
-                steps_per_layer=block_steps_per_layer,
-                batch_size=block_batch_size,
-                max_length=block_max_length,
-                lr=block_lr,
-                lm_weight=block_lm_weight,
-                response_lm_weight=block_response_lm_weight,
-                first_token_lm_weight=block_first_token_lm_weight,
-                response_end_lm_weight=block_response_end_lm_weight,
-                response_loss_mode=block_response_loss_mode,
-                hidden_ridge=block_hidden_ridge,
-                hidden_projection_scope=block_hidden_projection_scope,
-                hidden_metric=block_hidden_metric,
-                span_pair_mode=block_span_pair_mode,
-                block_target=block_target,
-                residual_magnitude_compensation=block_residual_magnitude_compensation,
-                residual_compensation_min_scale=block_residual_compensation_min_scale,
-                residual_compensation_max_scale=block_residual_compensation_max_scale,
-                residual_compensation_linear_ridge=block_residual_compensation_linear_ridge,
-                residual_compensation_alpha=block_residual_compensation_alpha,
-                residual_compensation_linear_rank=block_residual_compensation_linear_rank,
-                pre_reconstruction_target=block_pre_reconstruction_target,
-                pre_reconstruction_ridge=block_pre_reconstruction_ridge,
-                pre_reconstruction_alpha=block_pre_reconstruction_alpha,
-                pre_reconstruction_objective=block_pre_reconstruction_objective,
-                pre_reconstruction_cosine_steps=block_pre_reconstruction_cosine_steps,
-                pre_reconstruction_cosine_lr=block_pre_reconstruction_cosine_lr,
-                pre_reconstruction_cosine_l2=block_pre_reconstruction_cosine_l2,
-                pre_reconstruction_fit_gate=block_pre_reconstruction_fit_gate,
-                pre_reconstruction_validation_fraction=block_pre_reconstruction_validation_fraction,
-                pre_reconstruction_min_validation_rows=block_pre_reconstruction_min_validation_rows,
-                pre_reconstruction_max_tokens_per_layer=block_pre_reconstruction_max_tokens_per_layer,
-                pre_reconstruction_min_relative_improvement=block_pre_reconstruction_min_relative_improvement,
-                pre_reconstruction_max_cosine_drop=block_pre_reconstruction_max_cosine_drop,
-                max_anchors=block_max_anchors,
-                span_max_pairs=block_span_max_pairs,
-                donor_layer_fold_mode=block_donor_layer_fold_mode,
-                donor_layer_group_strategy=block_donor_layer_group_strategy,
-                layer_limit=block_layer_limit,
-                layer_gate_metric=block_layer_gate_metric,
-                layer_gate_max_texts=block_layer_gate_max_texts,
-                layer_gate_max_behavior_drop=block_layer_gate_max_behavior_drop,
-                layer_gate_behavior_max_new_tokens=block_layer_gate_behavior_max_new_tokens,
-                layer_gate_eval_suite=eval_suite,
-                layer_gate_max_generation_prompts=block_layer_gate_max_generation_prompts,
-                alm_kd_weight=block_alm_kd_weight,
-                alm_max_chunks=block_alm_max_chunks,
-                alm_min_chars=block_alm_min_chars,
-                projected_vocab_kd_weight=block_projected_vocab_kd_weight,
-                focused_block_hidden_kd_weight=block_focused_block_hidden_kd_weight,
-                focused_projected_vocab_kd_weight=block_focused_projected_vocab_kd_weight,
-                focused_lm_weight=block_focused_lm_weight,
-                token_focus=block_token_focus,
-                projected_vocab_kd_mode=block_projected_vocab_kd_mode,
-                byte_kd_weight=block_byte_kd_weight,
-                byte_hidden_kd_weight=block_byte_hidden_kd_weight,
-                byte_hidden_probe_mode=block_byte_hidden_probe_mode,
-                byte_hidden_probe_anchor_weight=block_byte_hidden_probe_anchor_weight,
-                block_io_kd_weight=block_block_io_kd_weight,
-                block_io_ridge=block_block_io_ridge,
-                block_io_loss=block_block_io_loss,
-                on_policy_anchor_kd_weight=block_on_policy_anchor_kd_weight,
-                on_policy_unlikelihood_weight=block_on_policy_unlikelihood_weight,
-                on_policy_hidden_kd_weight=block_on_policy_hidden_kd_weight,
-                on_policy_max_new_tokens=block_on_policy_max_new_tokens,
-                on_policy_interval=block_on_policy_interval,
-                on_policy_response_loss_mode=block_on_policy_response_loss_mode,
-                on_policy_unlikelihood_window=block_on_policy_unlikelihood_window,
-                stepwise_donor_kd_weight=block_stepwise_donor_kd_weight,
-                stepwise_donor_max_new_tokens=block_stepwise_donor_max_new_tokens,
-                stepwise_donor_interval=block_stepwise_donor_interval,
-                teacher_generate_lm_weight=block_teacher_generate_lm_weight,
-                teacher_generate_hidden_kd_weight=block_teacher_generate_hidden_kd_weight,
-                teacher_generate_projected_vocab_kd_weight=block_teacher_generate_projected_vocab_kd_weight,
-                teacher_generate_byte_kd_weight=block_teacher_generate_byte_kd_weight,
-                teacher_generate_max_new_tokens=block_teacher_generate_max_new_tokens,
-                train_output_head_with_kd=block_train_output_head_with_kd,
-                untie_output_head_for_kd=block_untie_output_head_for_kd,
-                allow_tied_output_head_training=block_allow_tied_output_head_training,
-                module_output_kd_weight=block_module_output_kd_weight,
-                module_output_targets=block_module_output_targets,
-                module_output_transport=block_module_output_transport,
-                module_output_temperature=block_module_output_temperature,
-                module_output_sinkhorn_iterations=block_module_output_sinkhorn_iterations,
-                projected_vocab_max_source_tokens=block_projected_vocab_max_source_tokens,
-                temperature=block_temperature,
-                torch_dtype=torch_dtype,
-                candidate_torch_dtype=candidate_torch_dtype,
-                device=device,
-                trust_remote_code=trust_remote_code,
-                calibration_texts=list(calibration_texts or []),
-                calibration_order=block_calibration_order,
-                grad_clip=block_grad_clip,
-                nonfinite_step_policy=block_nonfinite_step_policy,
-                max_nonfinite_steps_per_layer=block_max_nonfinite_steps_per_layer,
-                report_interval=block_report_interval,
-                save_best_layer_loss=block_save_best_layer_loss,
-                save_best_layer_behavior=block_save_best_layer_behavior,
-                layer_behavior_eval_interval=block_layer_behavior_eval_interval,
-                layer_checkpoint_interval=block_layer_checkpoint_interval,
-            )
+            def run_block_recovery(source: str, candidate: str, destination: Path) -> dict[str, Any]:
+                return blockwise_reconstruct_cross_tokenizer_causal_lm(
+                    source_model=source,
+                    candidate_model=candidate,
+                    output_dir=destination,
+                    steps_per_layer=block_steps_per_layer,
+                    batch_size=block_batch_size,
+                    max_length=block_max_length,
+                    lr=block_lr,
+                    lm_weight=block_lm_weight,
+                    response_lm_weight=block_response_lm_weight,
+                    first_token_lm_weight=block_first_token_lm_weight,
+                    response_end_lm_weight=block_response_end_lm_weight,
+                    response_loss_mode=block_response_loss_mode,
+                    hidden_ridge=block_hidden_ridge,
+                    hidden_projection_scope=block_hidden_projection_scope,
+                    hidden_metric=block_hidden_metric,
+                    span_pair_mode=block_span_pair_mode,
+                    block_target=block_target,
+                    residual_magnitude_compensation=block_residual_magnitude_compensation,
+                    residual_compensation_min_scale=block_residual_compensation_min_scale,
+                    residual_compensation_max_scale=block_residual_compensation_max_scale,
+                    residual_compensation_linear_ridge=block_residual_compensation_linear_ridge,
+                    residual_compensation_alpha=block_residual_compensation_alpha,
+                    residual_compensation_linear_rank=block_residual_compensation_linear_rank,
+                    pre_reconstruction_target=block_pre_reconstruction_target,
+                    pre_reconstruction_ridge=block_pre_reconstruction_ridge,
+                    pre_reconstruction_alpha=block_pre_reconstruction_alpha,
+                    pre_reconstruction_objective=block_pre_reconstruction_objective,
+                    pre_reconstruction_cosine_steps=block_pre_reconstruction_cosine_steps,
+                    pre_reconstruction_cosine_lr=block_pre_reconstruction_cosine_lr,
+                    pre_reconstruction_cosine_l2=block_pre_reconstruction_cosine_l2,
+                    pre_reconstruction_fit_gate=block_pre_reconstruction_fit_gate,
+                    pre_reconstruction_validation_fraction=block_pre_reconstruction_validation_fraction,
+                    pre_reconstruction_min_validation_rows=block_pre_reconstruction_min_validation_rows,
+                    pre_reconstruction_max_tokens_per_layer=block_pre_reconstruction_max_tokens_per_layer,
+                    pre_reconstruction_min_relative_improvement=block_pre_reconstruction_min_relative_improvement,
+                    pre_reconstruction_max_cosine_drop=block_pre_reconstruction_max_cosine_drop,
+                    max_anchors=block_max_anchors,
+                    span_max_pairs=block_span_max_pairs,
+                    donor_layer_fold_mode=block_donor_layer_fold_mode,
+                    donor_layer_group_strategy=block_donor_layer_group_strategy,
+                    layer_limit=block_layer_limit,
+                    layer_gate_metric=block_layer_gate_metric,
+                    layer_gate_max_texts=block_layer_gate_max_texts,
+                    layer_gate_max_behavior_drop=block_layer_gate_max_behavior_drop,
+                    layer_gate_behavior_max_new_tokens=block_layer_gate_behavior_max_new_tokens,
+                    layer_gate_eval_suite=eval_suite,
+                    layer_gate_max_generation_prompts=block_layer_gate_max_generation_prompts,
+                    alm_kd_weight=block_alm_kd_weight,
+                    alm_max_chunks=block_alm_max_chunks,
+                    alm_min_chars=block_alm_min_chars,
+                    projected_vocab_kd_weight=block_projected_vocab_kd_weight,
+                    focused_block_hidden_kd_weight=block_focused_block_hidden_kd_weight,
+                    focused_projected_vocab_kd_weight=block_focused_projected_vocab_kd_weight,
+                    focused_lm_weight=block_focused_lm_weight,
+                    token_focus=block_token_focus,
+                    projected_vocab_kd_mode=block_projected_vocab_kd_mode,
+                    byte_kd_weight=block_byte_kd_weight,
+                    byte_hidden_kd_weight=block_byte_hidden_kd_weight,
+                    byte_hidden_probe_mode=block_byte_hidden_probe_mode,
+                    byte_hidden_probe_anchor_weight=block_byte_hidden_probe_anchor_weight,
+                    block_io_kd_weight=block_block_io_kd_weight,
+                    block_io_ridge=block_block_io_ridge,
+                    block_io_loss=block_block_io_loss,
+                    on_policy_anchor_kd_weight=block_on_policy_anchor_kd_weight,
+                    on_policy_unlikelihood_weight=block_on_policy_unlikelihood_weight,
+                    on_policy_hidden_kd_weight=block_on_policy_hidden_kd_weight,
+                    on_policy_max_new_tokens=block_on_policy_max_new_tokens,
+                    on_policy_interval=block_on_policy_interval,
+                    on_policy_response_loss_mode=block_on_policy_response_loss_mode,
+                    on_policy_unlikelihood_window=block_on_policy_unlikelihood_window,
+                    stepwise_donor_kd_weight=block_stepwise_donor_kd_weight,
+                    stepwise_donor_max_new_tokens=block_stepwise_donor_max_new_tokens,
+                    stepwise_donor_interval=block_stepwise_donor_interval,
+                    teacher_generate_lm_weight=block_teacher_generate_lm_weight,
+                    teacher_generate_hidden_kd_weight=block_teacher_generate_hidden_kd_weight,
+                    teacher_generate_projected_vocab_kd_weight=block_teacher_generate_projected_vocab_kd_weight,
+                    teacher_generate_byte_kd_weight=block_teacher_generate_byte_kd_weight,
+                    teacher_generate_max_new_tokens=block_teacher_generate_max_new_tokens,
+                    train_output_head_with_kd=block_train_output_head_with_kd,
+                    untie_output_head_for_kd=block_untie_output_head_for_kd,
+                    allow_tied_output_head_training=block_allow_tied_output_head_training,
+                    module_output_kd_weight=block_module_output_kd_weight,
+                    module_output_targets=block_module_output_targets,
+                    module_output_transport=block_module_output_transport,
+                    module_output_temperature=block_module_output_temperature,
+                    module_output_sinkhorn_iterations=block_module_output_sinkhorn_iterations,
+                    projected_vocab_max_source_tokens=block_projected_vocab_max_source_tokens,
+                    temperature=block_temperature,
+                    torch_dtype=torch_dtype,
+                    candidate_torch_dtype=candidate_torch_dtype,
+                    device=device,
+                    trust_remote_code=trust_remote_code,
+                    calibration_texts=list(calibration_texts or []),
+                    calibration_order=block_calibration_order,
+                    grad_clip=block_grad_clip,
+                    nonfinite_step_policy=block_nonfinite_step_policy,
+                    max_nonfinite_steps_per_layer=block_max_nonfinite_steps_per_layer,
+                    report_interval=block_report_interval,
+                    save_best_layer_loss=block_save_best_layer_loss,
+                    save_best_layer_behavior=block_save_best_layer_behavior,
+                    layer_behavior_eval_interval=block_layer_behavior_eval_interval,
+                    layer_checkpoint_interval=block_layer_checkpoint_interval,
+                )
+
+            recovery_sources = _chain_recovery_sources(source_models, recovery_source_mode)
+            if len(recovery_sources) == 1:
+                stage_operation = run_block_recovery(recovery_sources[0], input_model_dir, stage_model_dir)
+            else:
+                stage_operation = _run_sequential_chain_recovery(
+                    stage_name="block",
+                    recovery_sources=recovery_sources,
+                    source_weights=source_weight_values,
+                    input_model_dir=input_model_dir,
+                    stage_model_dir=stage_model_dir,
+                    recovery_fn=run_block_recovery,
+                )
         elif stage == "alm":
             from neural_forge.hf_recovery import recover_cross_tokenizer_causal_lm
 
-            stage_operation = recover_cross_tokenizer_causal_lm(
-                source_model=primary_source_model,
-                candidate_model=input_model_dir,
-                output_dir=stage_model_dir,
-                steps=alm_steps,
-                batch_size=alm_batch_size,
-                max_length=alm_max_length,
-                lr=alm_lr,
-                anchor_kd_weight=alm_anchor_kd_weight,
-                lm_weight=alm_lm_weight,
-                first_token_lm_weight=alm_first_token_lm_weight,
-                response_end_lm_weight=alm_response_end_lm_weight,
-                focused_lm_weight=alm_focused_lm_weight,
-                dual_space_kd_weight=alm_dual_space_kd_weight,
-                attention_influence_weight=alm_attention_influence_weight,
-                attention_influence_layer=alm_attention_influence_layer,
-                projected_vocab_kd_weight=alm_projected_vocab_kd_weight,
-                focused_projected_vocab_kd_weight=alm_focused_projected_vocab_kd_weight,
-                span_hidden_kd_weight=alm_span_hidden_kd_weight,
-                token_kd_weight=alm_token_kd_weight,
-                token_focus=alm_token_focus,
-                token_max_pairs=alm_token_max_pairs,
-                token_teacher_confidence_floor=alm_token_teacher_confidence_floor,
-                answer_contrastive_weight=alm_answer_contrastive_weight,
-                answer_contrastive_max_negatives=alm_answer_contrastive_max_negatives,
-                answer_first_token_margin_weight=alm_answer_first_token_margin_weight,
-                answer_first_token_margin=alm_answer_first_token_margin,
-                answer_first_token_max_negatives=alm_answer_first_token_max_negatives,
-                answer_first_token_top_negatives=alm_answer_first_token_top_negatives,
-                teacher_rank_weight=alm_teacher_rank_weight,
-                teacher_rank_temperature=alm_teacher_rank_temperature,
-                teacher_rank_max_negatives=alm_teacher_rank_max_negatives,
-                teacher_generate_lm_weight=alm_teacher_generate_lm_weight,
-                teacher_generate_max_new_tokens=alm_teacher_generate_max_new_tokens,
-                stepwise_donor_kd_weight=alm_stepwise_donor_kd_weight,
-                stepwise_donor_max_new_tokens=alm_stepwise_donor_max_new_tokens,
-                on_policy_anchor_kd_weight=alm_on_policy_anchor_kd_weight,
-                on_policy_unlikelihood_weight=alm_on_policy_unlikelihood_weight,
-                on_policy_hidden_kd_weight=alm_on_policy_hidden_kd_weight,
-                on_policy_max_new_tokens=alm_on_policy_max_new_tokens,
-                on_policy_interval=alm_on_policy_interval,
-                hidden_kd_metric=alm_hidden_kd_metric,
-                alm_kd_weight=alm_kd_weight,
-                alm_max_chunks=alm_max_chunks,
-                alm_min_chars=alm_min_chars,
-                response_loss_mode=alm_response_loss_mode,
-                append_eos=alm_append_eos,
-                train_scope=alm_train_scope,
-                torch_dtype=torch_dtype,
-                candidate_torch_dtype=candidate_torch_dtype,
-                device=device,
-                trust_remote_code=trust_remote_code,
-                calibration_texts=list(calibration_texts or []),
-                calibration_order=alm_calibration_order,
-                grad_clip=alm_grad_clip,
-                report_interval=alm_report_interval,
-                save_best_behavior=alm_save_best_behavior,
-                behavior_eval_interval=alm_behavior_eval_interval,
-                behavior_eval_suite=eval_suite,
-                behavior_max_probes=6 if max_behavior_probes is None else max_behavior_probes,
-                behavior_max_generation_prompts=max_generation_prompts,
-                behavior_max_new_tokens=max_new_tokens,
-            )
+            def run_alm_recovery(source: str, candidate: str, destination: Path) -> dict[str, Any]:
+                return recover_cross_tokenizer_causal_lm(
+                    source_model=source,
+                    candidate_model=candidate,
+                    output_dir=destination,
+                    steps=alm_steps,
+                    batch_size=alm_batch_size,
+                    max_length=alm_max_length,
+                    lr=alm_lr,
+                    anchor_kd_weight=alm_anchor_kd_weight,
+                    lm_weight=alm_lm_weight,
+                    first_token_lm_weight=alm_first_token_lm_weight,
+                    response_end_lm_weight=alm_response_end_lm_weight,
+                    focused_lm_weight=alm_focused_lm_weight,
+                    dual_space_kd_weight=alm_dual_space_kd_weight,
+                    attention_influence_weight=alm_attention_influence_weight,
+                    attention_influence_layer=alm_attention_influence_layer,
+                    projected_vocab_kd_weight=alm_projected_vocab_kd_weight,
+                    focused_projected_vocab_kd_weight=alm_focused_projected_vocab_kd_weight,
+                    span_hidden_kd_weight=alm_span_hidden_kd_weight,
+                    token_kd_weight=alm_token_kd_weight,
+                    token_focus=alm_token_focus,
+                    token_max_pairs=alm_token_max_pairs,
+                    token_teacher_confidence_floor=alm_token_teacher_confidence_floor,
+                    answer_contrastive_weight=alm_answer_contrastive_weight,
+                    answer_contrastive_max_negatives=alm_answer_contrastive_max_negatives,
+                    answer_first_token_margin_weight=alm_answer_first_token_margin_weight,
+                    answer_first_token_margin=alm_answer_first_token_margin,
+                    answer_first_token_max_negatives=alm_answer_first_token_max_negatives,
+                    answer_first_token_top_negatives=alm_answer_first_token_top_negatives,
+                    teacher_rank_weight=alm_teacher_rank_weight,
+                    teacher_rank_temperature=alm_teacher_rank_temperature,
+                    teacher_rank_max_negatives=alm_teacher_rank_max_negatives,
+                    teacher_generate_lm_weight=alm_teacher_generate_lm_weight,
+                    teacher_generate_max_new_tokens=alm_teacher_generate_max_new_tokens,
+                    stepwise_donor_kd_weight=alm_stepwise_donor_kd_weight,
+                    stepwise_donor_max_new_tokens=alm_stepwise_donor_max_new_tokens,
+                    on_policy_anchor_kd_weight=alm_on_policy_anchor_kd_weight,
+                    on_policy_unlikelihood_weight=alm_on_policy_unlikelihood_weight,
+                    on_policy_hidden_kd_weight=alm_on_policy_hidden_kd_weight,
+                    on_policy_max_new_tokens=alm_on_policy_max_new_tokens,
+                    on_policy_interval=alm_on_policy_interval,
+                    hidden_kd_metric=alm_hidden_kd_metric,
+                    alm_kd_weight=alm_kd_weight,
+                    alm_max_chunks=alm_max_chunks,
+                    alm_min_chars=alm_min_chars,
+                    response_loss_mode=alm_response_loss_mode,
+                    append_eos=alm_append_eos,
+                    train_scope=alm_train_scope,
+                    torch_dtype=torch_dtype,
+                    candidate_torch_dtype=candidate_torch_dtype,
+                    device=device,
+                    trust_remote_code=trust_remote_code,
+                    calibration_texts=list(calibration_texts or []),
+                    calibration_order=alm_calibration_order,
+                    grad_clip=alm_grad_clip,
+                    report_interval=alm_report_interval,
+                    save_best_behavior=alm_save_best_behavior,
+                    behavior_eval_interval=alm_behavior_eval_interval,
+                    behavior_eval_suite=eval_suite,
+                    behavior_max_probes=6 if max_behavior_probes is None else max_behavior_probes,
+                    behavior_max_generation_prompts=max_generation_prompts,
+                    behavior_max_new_tokens=max_new_tokens,
+                )
+
+            recovery_sources = _chain_recovery_sources(source_models, recovery_source_mode)
+            if len(recovery_sources) == 1:
+                stage_operation = run_alm_recovery(recovery_sources[0], input_model_dir, stage_model_dir)
+            else:
+                stage_operation = _run_sequential_chain_recovery(
+                    stage_name="alm",
+                    recovery_sources=recovery_sources,
+                    source_weights=source_weight_values,
+                    input_model_dir=input_model_dir,
+                    stage_model_dir=stage_model_dir,
+                    recovery_fn=run_alm_recovery,
+                )
         else:
             raise ValueError(f"Unsupported chain stage: {stage}.")
 
@@ -2471,6 +2502,7 @@ def chain_anchor_staged_compress(
             source_models=source_models,
             source_weights=source_weight_values,
             primary_source_model=primary_source_model,
+            recovery_source_mode=recovery_source_mode,
         )
 
     return _write_chain_anchor_summary(
@@ -2485,6 +2517,7 @@ def chain_anchor_staged_compress(
         source_models=source_models,
         source_weights=source_weight_values,
         primary_source_model=primary_source_model,
+        recovery_source_mode=recovery_source_mode,
     )
 
 
@@ -2523,6 +2556,55 @@ def _parse_source_models_and_weights(
     if any((not math.isfinite(weight)) or weight <= 0 for weight in weights):
         raise ValueError("source_weights must be positive finite values.")
     return sources, weights
+
+
+def _chain_recovery_sources(source_models: Sequence[str], recovery_source_mode: str) -> list[str]:
+    if recovery_source_mode == "primary":
+        return [str(source_models[0])]
+    if recovery_source_mode == "sequential-all":
+        return [str(source) for source in source_models]
+    raise ValueError("recovery_source_mode must be primary or sequential-all.")
+
+
+def _safe_chain_source_slug(source_model: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "_", source_model).strip("._-")
+    return slug[:48] or "source"
+
+
+def _run_sequential_chain_recovery(
+    *,
+    stage_name: str,
+    recovery_sources: Sequence[str],
+    source_weights: Sequence[float] | None,
+    input_model_dir: str,
+    stage_model_dir: Path,
+    recovery_fn,
+) -> dict[str, Any]:
+    current_input = str(input_model_dir)
+    step_records: list[dict[str, Any]] = []
+    for index, source in enumerate(recovery_sources):
+        is_last = index == len(recovery_sources) - 1
+        destination = stage_model_dir if is_last else stage_model_dir / f"source_{index + 1:02d}_{_safe_chain_source_slug(source)}"
+        report = recovery_fn(source, current_input, destination)
+        step_records.append(
+            {
+                "index": index,
+                "source_model": source,
+                "source_weight": None if source_weights is None else float(source_weights[index]),
+                "input_model_dir": current_input,
+                "model_dir": str(destination),
+                "report": report,
+            }
+        )
+        current_input = str(destination)
+    return {
+        "operation": f"sequential_multi_source_{stage_name}_recovery",
+        "recovery_source_mode": "sequential-all",
+        "source_models": [str(source) for source in recovery_sources],
+        "source_weights": None if source_weights is None else [float(weight) for weight in source_weights],
+        "final_model_dir": str(stage_model_dir),
+        "steps": step_records,
+    }
 
 
 def _chain_candidate_record(
@@ -2578,6 +2660,7 @@ def _write_chain_anchor_summary(
     source_models: Sequence[str] | None = None,
     source_weights: Sequence[float] | None = None,
     primary_source_model: str | None = None,
+    recovery_source_mode: str = "primary",
 ) -> dict[str, Any]:
     final = final_candidate or incumbent
     summary = {
@@ -2586,6 +2669,7 @@ def _write_chain_anchor_summary(
         "source_models": list(source_models or [source_model]),
         "source_weights": None if source_weights is None else [float(weight) for weight in source_weights],
         "primary_source_model": primary_source_model or source_model,
+        "recovery_source_mode": recovery_source_mode,
         "anchor_model": anchor_model,
         "stages": list(stages),
         "stage_input_policy": stage_input_policy,

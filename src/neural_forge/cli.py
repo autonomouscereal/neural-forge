@@ -1515,8 +1515,14 @@ def build_parser() -> argparse.ArgumentParser:
         dest="source_weights",
         help=(
             "Optional comma-separated weights when source_model contains multiple comma-separated donors. "
-            "The init stage folds all donors; recovery stages use the first donor as the teacher."
+            "The init stage folds all donors; recovery stages use --recovery-source-mode."
         ),
+    )
+    xfamily_chain.add_argument(
+        "--recovery-source-mode",
+        choices=["primary", "sequential-all"],
+        default="primary",
+        help="Use only the first donor for recovery, or recover sequentially against every comma-separated donor.",
     )
     xfamily_chain.add_argument("--stages", default="block,alm", help="Comma-separated stage list: init,block,alm.")
     xfamily_chain.add_argument("--eval-suite")
@@ -2971,6 +2977,7 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
     return chain_anchor_staged_compress(
         source_model=args.source_model,
         source_weights=args.source_weights,
+        recovery_source_mode=args.recovery_source_mode,
         anchor_model=args.anchor_model,
         output_dir=args.output,
         stages=args.stages,
