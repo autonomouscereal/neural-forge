@@ -66,6 +66,9 @@ done
 MODEL_DIR="$(resolve_model_dir "$MODEL_DIR")"
 echo "resolved_model_dir=$MODEL_DIR explicit_model_dir=${MODEL_DIR_EXPLICIT:-0}"
 MODEL_ENTRIES="${MODEL_ENTRIES:-child=$MODEL_DIR;qwen_parent=Qwen/Qwen3-4B-Base;blank_random=$RUN_ROOT/blank_smollm2_135m_seed0;cleanopen_l4=$RUN_ROOT/qwen4b_cleanopen_anchor_newloss_l4_gpu0_20260701;mathdrill_l4=$RUN_ROOT/qwen4b_mathdrill_anchor_newloss_l4_gpu6_20260701}"
+if [[ -n "${EXTRA_MODEL_ENTRIES:-}" ]]; then
+  MODEL_ENTRIES="$MODEL_ENTRIES;$EXTRA_MODEL_ENTRIES"
+fi
 echo "model_entries_explicit=${MODEL_ENTRIES_EXPLICIT:-0}"
 
 if [[ ! -d "$MODEL_DIR" ]]; then
