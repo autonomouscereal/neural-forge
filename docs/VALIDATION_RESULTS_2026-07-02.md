@@ -165,9 +165,14 @@ Queued proof lane:
 
 - Tag:
   `qwen4b_blank_smollm_signed_cka_rms_repair_geomean_full_gpu4_20260702`
+- Queue PID: `3218886`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_signed_cka_rms_repair_geomean_full_gpu4_20260702.queue.log`
 - Recipe: same signed activation-CKA geomean true-LRC/EoRA/GRAIL chain, plus
   `INIT_FOLD_STAT_REPAIR=rms`.
 - Dependency: should run after signed activation-CKA queue PID `3168176`.
+- Current status at queue start:
+  waiting for prior PID `3168176`.
 
 ## Answer-Boundary Margin Recovery
 
