@@ -1710,3 +1710,44 @@ tokenizer/family boundaries:
 This is an A/B against the active direct teacher-replay lane, not a promotion.
 It should only be judged after both child retention/manual and lm-eval
 artifacts land.
+
+## LFM GPU0 Reroute
+
+GPU0 had enough free VRAM but was held by small idle service CUDA contexts
+(ComfyUI at about 256 MB and LM Studio node at about 442 MB). The queue scripts
+previously treated any Python process on a GPU as busy, which would leave useful
+proof work waiting indefinitely even when memory was available.
+
+Added `WAIT_FOR_GPU_BUSY_PYTHON=0` to the GPU wait logic in:
+
+- `experiments/queue_parent_qwen3_4b_exactgen_uuid_20260702.sh`
+- `experiments/queue_lfm230m_blank_smollm_trainable_byteprobe_20260702.sh`
+
+This is default-off and only used when intentionally sharing a GPU with known
+idle service contexts.
+
+Started an immediate LFM proof chain on RTX 3090 GPU0:
+
+- Donor exact-generation eval:
+  - Tag: `donor_lfm230m_exactgen_gpu0_now2_20260702`
+  - PID: `4005558`
+  - Log:
+    `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/donor_lfm230m_exactgen_gpu0_now2_20260702.queue.log`
+  - Report:
+    `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/evals/eval_donor_lfm230m_exactgen_20260702_1000x1000x250.json`
+- LFM -> blank SmolLM compression:
+  - Tag: `lfm230m_blank_smollm_trainable_byteprobe_gpu0_now2_20260702`
+  - Queue PID: `4006054`
+  - Waits for donor eval PID `4005558`
+  - Log:
+    `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/lfm230m_blank_smollm_trainable_byteprobe_gpu0_now2_20260702.queue.log`
+- Retention/manual watcher:
+  - PID: `4006733`
+  - Waits for queue PID `4006054` and then the real run pid file.
+- lm-eval watcher:
+  - PID: `4007374`
+  - Waits for retention PID `4006733`.
+
+The donor eval reached model load on GPU0 immediately. This reroute keeps the
+Liquid LFM requirement moving without killing shared services or the older
+queued GPU6 lane.

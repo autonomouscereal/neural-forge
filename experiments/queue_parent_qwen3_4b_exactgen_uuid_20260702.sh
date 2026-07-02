@@ -8,6 +8,7 @@ TAG="${TAG:-parent_qwen3_4b_base_exactgen_uuid_20260702}"
 WAIT_PIDS="${WAIT_PIDS:-}"
 MEM_THRESHOLD="${MEM_THRESHOLD:-2000}"
 POLL_SECONDS="${POLL_SECONDS:-300}"
+WAIT_FOR_GPU_BUSY_PYTHON="${WAIT_FOR_GPU_BUSY_PYTHON:-1}"
 
 SUITE="${SUITE:-$RUN_ROOT/behavior_suite_exactgen_20260702.json}"
 REPORT="${REPORT:-$RUN_ROOT/evals/eval_parent_qwen3_4b_base_exactgen_20260702_1000x1000x250.json}"
@@ -50,7 +51,7 @@ while true; do
       awk -F, -v gpu="$GPU_UUID" '$2 ~ gpu && $3 ~ /python/ {print $1}' |
       wc -l
   )
-  if [ -n "$used" ] && [ "$used" -le "$MEM_THRESHOLD" ] && [ "$busy" = "0" ]; then
+  if [ -n "$used" ] && [ "$used" -le "$MEM_THRESHOLD" ] && { [ "$busy" = "0" ] || [ "$WAIT_FOR_GPU_BUSY_PYTHON" = "0" ]; }; then
     break
   fi
   echo "$(date -Is) waiting_for_gpu_uuid=$GPU_UUID memory_used_mb=${used:-unknown} busy_python=$busy threshold_mb=$MEM_THRESHOLD"
