@@ -4276,10 +4276,21 @@ def _hidden_basis_axes_for_layer_tensor(torch, donor_tensor, suffix: str, layer_
     return axis_bases or None
 
 
-def _axis_assignment_cache_key(base_key, source_dim: int, target_dim: int, assignment_mode: str, fold_mode: str = "mean"):
+def _axis_assignment_cache_key(
+    base_key,
+    source_dim: int,
+    target_dim: int,
+    assignment_mode: str,
+    fold_mode: str = "mean",
+    transport_backend: str | None = None,
+    transport_support: str | None = None,
+):
     if base_key is None:
         return None
-    return (_freeze_assignment_key(base_key), int(source_dim), int(target_dim), str(assignment_mode), str(fold_mode))
+    key = (_freeze_assignment_key(base_key), int(source_dim), int(target_dim), str(assignment_mode), str(fold_mode))
+    if str(fold_mode) == "transport":
+        key = (*key, str(transport_backend or ""), str(transport_support or ""))
+    return key
 
 
 def _freeze_assignment_key(value):
@@ -4719,6 +4730,8 @@ def _resize_tensor_axis_mean_fold(
             target_dim=target_dim,
             assignment_mode=assignment_mode,
             fold_mode=fold_mode,
+            transport_backend=transport_backend,
+            transport_support=transport_support,
         )
         if weights is None and features is None:
             fold_weights = torch.ones(source_dim, dtype=flat.dtype)

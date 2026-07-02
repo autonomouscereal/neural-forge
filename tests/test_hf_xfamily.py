@@ -3190,6 +3190,55 @@ def test_transport_fold_can_use_quantile_medoid_support() -> None:
     assert transport["target_masses"].sum().item() == pytest.approx(1.0)
 
 
+def test_transport_cache_key_keeps_support_modes_separate() -> None:
+    torch = pytest.importorskip("torch")
+    cache = {}
+    features = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.96, 0.04],
+            [0.0, 1.0],
+            [0.08, 0.92],
+            [0.7, 0.7],
+            [0.65, 0.75],
+        ],
+        dtype=torch.float32,
+    )
+    weights = torch.tensor([0.1, 0.2, 2.0, 50.0, 60.0, 70.0], dtype=torch.float32)
+    source = torch.arange(6, dtype=torch.float32).unsqueeze(1)
+    key = ("mlp", (0, 1), "shared-axis")
+
+    _resize_tensor_axis_mean_fold(
+        torch,
+        source,
+        axis=0,
+        target_dim=3,
+        fold_mode="transport",
+        weights=weights,
+        features=features,
+        transport_support="quantile",
+        assignment_cache=cache,
+        assignment_cache_key=key,
+    )
+    _resize_tensor_axis_mean_fold(
+        torch,
+        source,
+        axis=0,
+        target_dim=3,
+        fold_mode="transport",
+        weights=weights,
+        features=features,
+        transport_support="quantile-medoid",
+        assignment_cache=cache,
+        assignment_cache_key=key,
+    )
+
+    assert len(cache) == 2
+    supports = {item["transport_support"]: item["target_support_indices"].tolist() for item in cache.values()}
+    assert supports["quantile"] == [0, 2, 5]
+    assert supports["quantile-medoid"] == [1, 3, 5]
+
+
 def test_activation_layer_geometry_scores_residual_novelty() -> None:
     torch = pytest.importorskip("torch")
     inputs = {

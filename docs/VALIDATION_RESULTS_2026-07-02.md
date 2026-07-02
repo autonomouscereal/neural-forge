@@ -162,6 +162,32 @@ Validation:
 - Remote focused Torch tests: `4 passed, 221 deselected`
 - Remote full suite: `277 passed`
 
+## Transport Cache Isolation By Support Mode
+
+Updated the shared axis-assignment cache key used during width folding.
+
+What changed:
+
+- Transport cache keys now include `transport_backend` and
+  `transport_support` whenever `fold_mode="transport"`.
+- Non-transport mean/RMS assignment keys are unchanged.
+
+Why this matters:
+
+- Gate/up/down MLP tensors deliberately share a semantic axis key so the same
+  merged neuron map is used across the whole MLP path.
+- A future chain can also evaluate multiple transport supports for the same
+  semantic axis. Without support/backend in the key, a `quantile` map could be
+  silently reused by a `quantile-medoid`, `medoid`, or Sinkhorn variant.
+- This keeps fold-first A/B lanes honest: a reported support mode now really
+  owns its transport plan.
+
+Validation:
+
+- Local full suite: `142 passed, 136 skipped`
+- Remote focused Torch tests: `5 passed, 221 deselected`
+- Remote full suite: `278 passed`
+
 ## Weighted Projected-Vocab Recovery
 
 Added weighted cross-tokenizer projected-vocab maps for recovery losses.
