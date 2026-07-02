@@ -18,8 +18,11 @@ INIT_PROJECTION_SCALE="${INIT_PROJECTION_SCALE:-target-rms}"
 INIT_PROJECTION_BLEND_ALPHA="${INIT_PROJECTION_BLEND_ALPHA:-1.0}"
 INIT_TRANSPORT_SUPPORT="${INIT_TRANSPORT_SUPPORT:-centroid}"
 INIT_ACTIVATION_DOMAIN_BALANCE="${INIT_ACTIVATION_DOMAIN_BALANCE:-none}"
+PROMOTE_POLICY="${PROMOTE_POLICY:-always}"
+STAGE_INPUT_POLICY="${STAGE_INPUT_POLICY:-incumbent}"
 BLOCK_STEPS_PER_LAYER="${BLOCK_STEPS_PER_LAYER:-4}"
 BLOCK_LR="${BLOCK_LR:-2e-6}"
+BLOCK_CALIBRATION_ORDER="${BLOCK_CALIBRATION_ORDER:-original}"
 BLOCK_ALM_KD_WEIGHT="${BLOCK_ALM_KD_WEIGHT:-0.0}"
 BLOCK_PROJECTED_VOCAB_KD_WEIGHT="${BLOCK_PROJECTED_VOCAB_KD_WEIGHT:-0.0}"
 BLOCK_BYTE_KD_WEIGHT="${BLOCK_BYTE_KD_WEIGHT:-0.0}"
@@ -62,6 +65,7 @@ ALM_KD_WEIGHT="${ALM_KD_WEIGHT:-0.05}"
 ALM_PROJECTED_VOCAB_KD_WEIGHT="${ALM_PROJECTED_VOCAB_KD_WEIGHT:-0.04}"
 ALM_SPAN_HIDDEN_KD_WEIGHT="${ALM_SPAN_HIDDEN_KD_WEIGHT:-0.08}"
 ALM_TRAIN_SCOPE="${ALM_TRAIN_SCOPE:-all}"
+ALM_CALIBRATION_ORDER="${ALM_CALIBRATION_ORDER:-original}"
 
 BLOCK_OUTPUT_HEAD_ARGS=()
 if [[ "${BLOCK_TRAIN_OUTPUT_HEAD_WITH_KD:-0}" == "1" ]]; then
@@ -96,7 +100,8 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --max-text-evals 96 \
   --max-new-tokens 96 \
   --stage-ppl-gate-mode advisory \
-  --promote-policy always \
+  --promote-policy "$PROMOTE_POLICY" \
+  --stage-input-policy "$STAGE_INPUT_POLICY" \
   --init-fold-mode transport \
   --init-hidden-basis-mode activation-pca \
   --init-hidden-basis-scope layer \
@@ -190,6 +195,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --block-projected-vocab-max-source-tokens "$BLOCK_PROJECTED_VOCAB_MAX_SOURCE_TOKENS" \
   --block-save-best-layer-behavior \
   --block-layer-behavior-eval-interval 2 \
+  --block-calibration-order "$BLOCK_CALIBRATION_ORDER" \
   --alm-steps "$ALM_STEPS" \
   --alm-batch-size 1 \
   --alm-max-length 128 \
@@ -201,6 +207,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --alm-train-scope "$ALM_TRAIN_SCOPE" \
   --alm-save-best-behavior \
   --alm-behavior-eval-interval 40 \
+  --alm-calibration-order "$ALM_CALIBRATION_ORDER" \
   --dtype float16 \
   --candidate-dtype float32 \
   --device cuda:0 > "$LOG" 2>&1 &

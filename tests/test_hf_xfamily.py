@@ -2740,6 +2740,25 @@ def test_domain_balanced_mean_weights_domains_evenly() -> None:
     assert _activation_calibration_domain("Tokenizer vocab rows can mismatch embeddings") == "tokenizer"
 
 
+def test_recovery_text_order_round_robins_domains() -> None:
+    from neural_forge.hf_recovery import _order_recovery_texts, _recovery_domain_counts
+
+    texts = [
+        "def add(a, b): return a + b",
+        "write a Python function",
+        "Question: What is 12 + 13?",
+        "Calculate 7 * 8",
+        "Is this safe in rain?",
+    ]
+
+    assert _order_recovery_texts(texts, "original") == texts
+    ordered = _order_recovery_texts(texts, "domain-balanced")
+    assert ordered == [texts[0], texts[2], texts[4], texts[1], texts[3]]
+    assert _recovery_domain_counts(ordered) == {"code": 2, "math": 2, "safety": 1}
+    with pytest.raises(ValueError, match="calibration_order"):
+        _order_recovery_texts(texts, "shuffle")
+
+
 def test_activation_axis_weights_aggregate_folded_donor_group() -> None:
     torch = pytest.importorskip("torch")
     donor_tensor = torch.ones((4, 6), dtype=torch.float32)
@@ -5439,6 +5458,8 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "calibration.jsonl",
             "--max-calibration-texts",
             "3",
+            "--calibration-order",
+            "domain-balanced",
         ]
     )
     result = args.func(args)
@@ -5511,6 +5532,7 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "device": "cpu",
         "trust_remote_code": False,
         "calibration_texts": ["calibration text"],
+        "calibration_order": "domain-balanced",
         "grad_clip": 0.5,
         "report_interval": 2,
         "save_best_loss": True,
@@ -6124,6 +6146,8 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "calibration.jsonl",
             "--max-calibration-texts",
             "6",
+            "--calibration-order",
+            "domain-balanced",
             "--grad-clip",
             "0.7",
             "--report-interval",
@@ -6232,6 +6256,7 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "device": "cpu",
         "trust_remote_code": True,
         "calibration_texts": ["block text"],
+        "calibration_order": "domain-balanced",
         "grad_clip": 0.7,
         "report_interval": 2,
         "save_best_layer_loss": True,
@@ -6373,6 +6398,82 @@ def test_chain_anchor_orchestrator_preserves_incumbent_on_failed_stage(monkeypat
     assert block_captured["untie_output_head_for_kd"] is True
     assert block_captured["module_output_temperature"] == 1.7
     assert block_captured["projected_vocab_max_source_tokens"] == 11
+
+
+def test_chain_anchor_sequential_stage_input_keeps_fold_pipeline_moving(monkeypatch, tmp_path) -> None:
+    import neural_forge.hf_recovery as hf_recovery
+    import neural_forge.hf_xfamily as hf_xfamily
+
+    init_captured = {}
+    block_captured = {}
+
+    def fake_eval(model_id_or_path, output_file, **kwargs):
+        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_file).write_text("{}", encoding="utf-8")
+        return {
+            "model": str(model_id_or_path),
+            "param_count": 10,
+            "perplexity": {"mean": 100.0},
+            "choice_accuracy": {"accuracy": 0.5},
+            "generations": [],
+            "behavior_suite": {"pass_rate": 0.70, "correct": 7, "total": 10, "items": []},
+        }
+
+    def fake_gate(baseline_report, candidate_report, output_file=None, **kwargs):
+        passed = (
+            isinstance(baseline_report, dict)
+            and isinstance(candidate_report, dict)
+            and baseline_report["model"] == candidate_report["model"] == "anchor"
+        )
+        gate = {
+            "passed": passed,
+            "candidate": {
+                "param_count": 10,
+                "perplexity_mean": 100.0,
+                "choice_accuracy": 0.5,
+                "generation_health_rate": 1.0,
+                "behavior_pass_rate": 0.70,
+            },
+        }
+        if output_file is not None:
+            Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+            Path(output_file).write_text("{}", encoding="utf-8")
+        return gate
+
+    def fake_init(**kwargs):
+        init_captured.update(kwargs)
+        Path(kwargs["output_dir"]).mkdir(parents=True, exist_ok=True)
+        return {"operation": "fake_init"}
+
+    def fake_block(**kwargs):
+        block_captured.update(kwargs)
+        Path(kwargs["output_dir"]).mkdir(parents=True, exist_ok=True)
+        return {"operation": "fake_block"}
+
+    monkeypatch.setattr(hf_xfamily, "evaluate_text_model", fake_eval)
+    monkeypatch.setattr(hf_xfamily, "gate_text_report", fake_gate)
+    monkeypatch.setattr(hf_xfamily, "donor_projected_init", fake_init)
+    monkeypatch.setattr(hf_recovery, "blockwise_reconstruct_cross_tokenizer_causal_lm", fake_block)
+
+    summary = hf_xfamily.chain_anchor_staged_compress(
+        "donor",
+        "anchor",
+        tmp_path,
+        stages="init,block",
+        promote_policy="gate-and-rank",
+        stage_input_policy="sequential",
+        device="cpu",
+    )
+
+    assert summary["stage_input_policy"] == "sequential"
+    assert summary["best_tag"] == "anchor"
+    assert summary["final_tag"] == "02_block"
+    assert init_captured["target_base_model"] == "anchor"
+    assert block_captured["candidate_model"] == str(tmp_path / "models" / "01_init")
+    assert summary["stage_records"][0]["input_tag"] == "anchor"
+    assert summary["stage_records"][0]["promoted"] is False
+    assert summary["stage_records"][1]["input_tag"] == "01_init"
+    assert summary["stage_records"][1]["input_model_dir"] == str(tmp_path / "models" / "01_init")
 
 
 def test_chain_anchor_init_stage_forwards_activation_fit_flags(monkeypatch, tmp_path) -> None:
@@ -6533,6 +6634,8 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "0.02",
             "--promote-policy",
             "gate-only",
+            "--stage-input-policy",
+            "sequential",
             "--init-fold-mode",
             "transport",
             "--init-hidden-basis-mode",
@@ -6677,11 +6780,15 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "--block-projected-vocab-max-source-tokens",
             "11",
             "--block-save-best-layer-behavior",
+            "--block-calibration-order",
+            "domain-balanced",
             "--alm-steps",
             "40",
             "--alm-kd-weight",
             "0.07",
             "--alm-save-best-behavior",
+            "--alm-calibration-order",
+            "domain-balanced",
             "--dtype",
             "bfloat16",
             "--candidate-dtype",
@@ -6706,6 +6813,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["max_generation_prompts"] == 80
     assert captured["stage_max_behavior_drop"] == 0.02
     assert captured["promote_policy"] == "gate-only"
+    assert captured["stage_input_policy"] == "sequential"
     assert captured["init_fold_mode"] == "transport"
     assert captured["init_hidden_basis_mode"] == "activation-pca"
     assert captured["init_hidden_basis_scope"] == "layer"
@@ -6780,9 +6888,11 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["block_module_output_sinkhorn_iterations"] == 9
     assert captured["block_projected_vocab_max_source_tokens"] == 11
     assert captured["block_save_best_layer_behavior"] is True
+    assert captured["block_calibration_order"] == "domain-balanced"
     assert captured["alm_steps"] == 40
     assert captured["alm_kd_weight"] == 0.07
     assert captured["alm_save_best_behavior"] is True
+    assert captured["alm_calibration_order"] == "domain-balanced"
     assert captured["torch_dtype"] == "bfloat16"
     assert captured["candidate_torch_dtype"] == "float32"
     assert captured["device"] == "cpu"

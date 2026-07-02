@@ -1741,6 +1741,7 @@ def chain_anchor_staged_compress(
     stage_min_choice_accuracy: float = 0.0,
     stage_min_behavior_pass_rate: float = 0.0,
     promote_policy: str = "gate-and-rank",
+    stage_input_policy: str = "incumbent",
     init_seed: int = 0,
     init_ridge: float = 1e-3,
     init_max_anchors: int = 50_000,
@@ -1855,6 +1856,7 @@ def chain_anchor_staged_compress(
     block_save_best_layer_behavior: bool = False,
     block_layer_behavior_eval_interval: int | None = None,
     block_layer_checkpoint_interval: int = 0,
+    block_calibration_order: str = "original",
     alm_steps: int = 80,
     alm_batch_size: int = 1,
     alm_max_length: int = 112,
@@ -1875,6 +1877,7 @@ def chain_anchor_staged_compress(
     alm_report_interval: int | None = None,
     alm_save_best_behavior: bool = False,
     alm_behavior_eval_interval: int | None = None,
+    alm_calibration_order: str = "original",
     torch_dtype: str = "float16",
     candidate_torch_dtype: str = "float32",
     device: str = "cuda:0",
@@ -1890,6 +1893,8 @@ def chain_anchor_staged_compress(
     stage_list = _parse_chain_stages(stages)
     if promote_policy not in {"gate-and-rank", "gate-only", "always"}:
         raise ValueError("promote_policy must be gate-and-rank, gate-only, or always.")
+    if stage_input_policy not in {"incumbent", "sequential"}:
+        raise ValueError("stage_input_policy must be incumbent or sequential.")
     if stage_ppl_gate_mode not in {"hard", "advisory"}:
         raise ValueError("stage_ppl_gate_mode must be hard or advisory.")
     if max_new_tokens <= 0:
@@ -1936,6 +1941,7 @@ def chain_anchor_staged_compress(
         stage="anchor",
         promoted=True,
     )
+    working_candidate = incumbent
 
     stage_records: list[dict[str, Any]] = []
     for index, stage in enumerate(stage_list, start=1):
@@ -1944,13 +1950,15 @@ def chain_anchor_staged_compress(
         stage_report_path = report_root / f"{stage_tag}_eval.json"
         stage_gate_path = report_root / f"{stage_tag}_gate.json"
         stage_operation: dict[str, Any]
+        input_candidate = working_candidate if stage_input_policy == "sequential" else incumbent
+        input_model_dir = str(input_candidate["model_dir"])
 
         if stage == "init":
             stage_operation = donor_projected_init(
                 target_config_model=anchor_model,
                 donor_model=source_model,
                 output_dir=stage_model_dir,
-                target_base_model=str(incumbent["model_dir"]),
+                target_base_model=input_model_dir,
                 target_tokenizer_model=anchor_model,
                 seed=init_seed,
                 ridge=init_ridge,
@@ -2001,7 +2009,7 @@ def chain_anchor_staged_compress(
 
             stage_operation = blockwise_reconstruct_cross_tokenizer_causal_lm(
                 source_model=source_model,
-                candidate_model=str(incumbent["model_dir"]),
+                candidate_model=input_model_dir,
                 output_dir=stage_model_dir,
                 steps_per_layer=block_steps_per_layer,
                 batch_size=block_batch_size,
@@ -2078,6 +2086,7 @@ def chain_anchor_staged_compress(
                 device=device,
                 trust_remote_code=trust_remote_code,
                 calibration_texts=list(calibration_texts or []),
+                calibration_order=block_calibration_order,
                 grad_clip=block_grad_clip,
                 report_interval=block_report_interval,
                 save_best_layer_loss=block_save_best_layer_loss,
@@ -2090,7 +2099,7 @@ def chain_anchor_staged_compress(
 
             stage_operation = recover_cross_tokenizer_causal_lm(
                 source_model=source_model,
-                candidate_model=str(incumbent["model_dir"]),
+                candidate_model=input_model_dir,
                 output_dir=stage_model_dir,
                 steps=alm_steps,
                 batch_size=alm_batch_size,
@@ -2113,6 +2122,7 @@ def chain_anchor_staged_compress(
                 device=device,
                 trust_remote_code=trust_remote_code,
                 calibration_texts=list(calibration_texts or []),
+                calibration_order=alm_calibration_order,
                 grad_clip=alm_grad_clip,
                 report_interval=alm_report_interval,
                 save_best_behavior=alm_save_best_behavior,
@@ -2161,13 +2171,38 @@ def chain_anchor_staged_compress(
         promoted = _chain_stage_promotes(incumbent, record, stage_gate, promote_policy)
         record["promoted"] = bool(promoted)
         record["incumbent_before"] = incumbent["tag"]
+        record["input_tag"] = input_candidate["tag"]
+        record["input_model_dir"] = input_model_dir
         if promoted:
             incumbent = record
         record["incumbent_after"] = incumbent["tag"]
+        if stage_input_policy == "sequential":
+            working_candidate = record
+        else:
+            working_candidate = incumbent
+        record["next_input_after"] = working_candidate["tag"]
         stage_records.append(record)
-        _write_chain_anchor_summary(output_root, source_model, anchor_model, stage_list, incumbent, stage_records)
+        _write_chain_anchor_summary(
+            output_root,
+            source_model,
+            anchor_model,
+            stage_list,
+            incumbent,
+            stage_records,
+            stage_input_policy=stage_input_policy,
+            final_candidate=working_candidate,
+        )
 
-    return _write_chain_anchor_summary(output_root, source_model, anchor_model, stage_list, incumbent, stage_records)
+    return _write_chain_anchor_summary(
+        output_root,
+        source_model,
+        anchor_model,
+        stage_list,
+        incumbent,
+        stage_records,
+        stage_input_policy=stage_input_policy,
+        final_candidate=working_candidate,
+    )
 
 
 def _parse_chain_stages(stages: str | Sequence[str]) -> list[str]:
@@ -2232,15 +2267,22 @@ def _write_chain_anchor_summary(
     stages: Sequence[str],
     incumbent: dict[str, Any],
     stage_records: Sequence[dict[str, Any]],
+    stage_input_policy: str = "incumbent",
+    final_candidate: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    final = final_candidate or incumbent
     summary = {
         "operation": "chain_anchor_staged_compress",
         "source_model": source_model,
         "anchor_model": anchor_model,
         "stages": list(stages),
+        "stage_input_policy": stage_input_policy,
         "best_model_dir": incumbent["model_dir"],
         "best_tag": incumbent["tag"],
         "best_metrics": incumbent.get("metrics", {}),
+        "final_model_dir": final["model_dir"],
+        "final_tag": final["tag"],
+        "final_metrics": final.get("metrics", {}),
         "stage_count": len(stage_records),
         "promoted_stage_count": sum(1 for item in stage_records if item.get("promoted")),
         "stage_records": list(stage_records),

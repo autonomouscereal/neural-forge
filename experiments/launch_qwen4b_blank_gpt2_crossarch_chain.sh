@@ -9,6 +9,10 @@ ANCHOR_MODEL="${ANCHOR_MODEL:-$RUN_ROOT/blank_gpt2_124m_seed0}"
 TAG="${TAG:-qwen4b_blank_gpt2_crossarch_lrc_alm_gpu6_20260629}"
 INIT_TRANSPORT_SUPPORT="${INIT_TRANSPORT_SUPPORT:-centroid}"
 INIT_ACTIVATION_DOMAIN_BALANCE="${INIT_ACTIVATION_DOMAIN_BALANCE:-none}"
+PROMOTE_POLICY="${PROMOTE_POLICY:-always}"
+STAGE_INPUT_POLICY="${STAGE_INPUT_POLICY:-incumbent}"
+BLOCK_CALIBRATION_ORDER="${BLOCK_CALIBRATION_ORDER:-original}"
+ALM_CALIBRATION_ORDER="${ALM_CALIBRATION_ORDER:-original}"
 
 cd "$REPO_ROOT"
 source /home/cereal/model-surgery-lab/venv/bin/activate
@@ -41,7 +45,8 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --max-text-evals 96 \
   --max-new-tokens 96 \
   --stage-ppl-gate-mode advisory \
-  --promote-policy always \
+  --promote-policy "$PROMOTE_POLICY" \
+  --stage-input-policy "$STAGE_INPUT_POLICY" \
   --init-fold-mode transport \
   --init-hidden-basis-mode activation-pca \
   --init-hidden-basis-scope layer \
@@ -103,6 +108,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --block-module-output-transport both \
   --block-save-best-layer-behavior \
   --block-layer-behavior-eval-interval 2 \
+  --block-calibration-order "$BLOCK_CALIBRATION_ORDER" \
   --alm-steps 220 \
   --alm-batch-size 1 \
   --alm-max-length 128 \
@@ -114,6 +120,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --alm-train-scope all \
   --alm-save-best-behavior \
   --alm-behavior-eval-interval 40 \
+  --alm-calibration-order "$ALM_CALIBRATION_ORDER" \
   --dtype float16 \
   --candidate-dtype float32 \
   --device cuda:0 > "$LOG" 2>&1 &

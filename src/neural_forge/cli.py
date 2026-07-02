@@ -879,6 +879,12 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--behavior-max-generation-prompts", type=int)
     xfamily_recover.add_argument("--calibration-file")
     xfamily_recover.add_argument("--max-calibration-texts", type=int)
+    xfamily_recover.add_argument(
+        "--calibration-order",
+        choices=["original", "domain-balanced"],
+        default="original",
+        help="Order recovery calibration texts as provided or round-robin by keyword-inferred domain.",
+    )
     xfamily_recover.set_defaults(func=cmd_hf_xfamily_recover)
 
     reconstruct = sub.add_parser(
@@ -1340,6 +1346,12 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_block_recover.add_argument("--trust-remote-code", action="store_true")
     xfamily_block_recover.add_argument("--calibration-file")
     xfamily_block_recover.add_argument("--max-calibration-texts", type=int)
+    xfamily_block_recover.add_argument(
+        "--calibration-order",
+        choices=["original", "domain-balanced"],
+        default="original",
+        help="Order recovery calibration texts as provided or round-robin by keyword-inferred domain.",
+    )
     xfamily_block_recover.add_argument("--grad-clip", type=float, default=1.0)
     xfamily_block_recover.add_argument("--report-interval", type=int)
     xfamily_block_recover.add_argument("--save-best-layer-loss", action="store_true")
@@ -1378,6 +1390,12 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--stage-min-choice-accuracy", type=float, default=0.0)
     xfamily_chain.add_argument("--stage-min-behavior-pass-rate", type=float, default=0.0)
     xfamily_chain.add_argument("--promote-policy", choices=["gate-and-rank", "gate-only", "always"], default="gate-and-rank")
+    xfamily_chain.add_argument(
+        "--stage-input-policy",
+        choices=["incumbent", "sequential"],
+        default="incumbent",
+        help="Feed each stage from the promoted incumbent or sequentially from the previous stage output.",
+    )
     xfamily_chain.add_argument("--init-fold-mode", choices=["mean", "rms", "transport"], default="mean")
     xfamily_chain.add_argument("--init-hidden-basis-mode", choices=["none", "activation-pca", "shared-token-ridge"], default="none")
     xfamily_chain.add_argument("--init-hidden-basis-scope", choices=["global", "layer"], default="global")
@@ -1524,6 +1542,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--block-save-best-layer-behavior", action="store_true")
     xfamily_chain.add_argument("--block-layer-behavior-eval-interval", type=int)
     xfamily_chain.add_argument("--block-layer-checkpoint-interval", type=int, default=0)
+    xfamily_chain.add_argument("--block-calibration-order", choices=["original", "domain-balanced"], default="original")
     xfamily_chain.add_argument("--alm-steps", type=int, default=80)
     xfamily_chain.add_argument("--alm-batch-size", type=int, default=1)
     xfamily_chain.add_argument("--alm-max-length", type=int, default=112)
@@ -1539,6 +1558,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--alm-append-eos", action="store_true")
     xfamily_chain.add_argument("--alm-save-best-behavior", action="store_true")
     xfamily_chain.add_argument("--alm-behavior-eval-interval", type=int)
+    xfamily_chain.add_argument("--alm-calibration-order", choices=["original", "domain-balanced"], default="original")
     xfamily_chain.add_argument("--dtype", default="float16")
     xfamily_chain.add_argument("--candidate-dtype", default="float32")
     xfamily_chain.add_argument("--device", default="cuda:0")
@@ -2475,6 +2495,7 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         device=args.device,
         trust_remote_code=args.trust_remote_code,
         calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+        calibration_order=args.calibration_order,
         grad_clip=args.grad_clip,
         report_interval=args.report_interval,
         save_best_loss=args.save_best_loss,
@@ -2647,6 +2668,7 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         device=args.device,
         trust_remote_code=args.trust_remote_code,
         calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+        calibration_order=args.calibration_order,
         grad_clip=args.grad_clip,
         report_interval=args.report_interval,
         save_best_layer_loss=args.save_best_layer_loss,
@@ -2678,6 +2700,7 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         stage_min_choice_accuracy=args.stage_min_choice_accuracy,
         stage_min_behavior_pass_rate=args.stage_min_behavior_pass_rate,
         promote_policy=args.promote_policy,
+        stage_input_policy=args.stage_input_policy,
         init_fold_mode=args.init_fold_mode,
         init_hidden_basis_mode=args.init_hidden_basis_mode,
         init_hidden_basis_scope=args.init_hidden_basis_scope,
@@ -2782,6 +2805,7 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         block_save_best_layer_behavior=args.block_save_best_layer_behavior,
         block_layer_behavior_eval_interval=args.block_layer_behavior_eval_interval,
         block_layer_checkpoint_interval=args.block_layer_checkpoint_interval,
+        block_calibration_order=args.block_calibration_order,
         alm_steps=args.alm_steps,
         alm_batch_size=args.alm_batch_size,
         alm_max_length=args.alm_max_length,
@@ -2797,6 +2821,7 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         alm_append_eos=args.alm_append_eos,
         alm_save_best_behavior=args.alm_save_best_behavior,
         alm_behavior_eval_interval=args.alm_behavior_eval_interval,
+        alm_calibration_order=args.alm_calibration_order,
         torch_dtype=args.dtype,
         candidate_torch_dtype=args.candidate_dtype,
         device=args.device,

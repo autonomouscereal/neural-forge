@@ -120,6 +120,7 @@ def recover_causal_lm(
     device: str = "cuda:0",
     trust_remote_code: bool = False,
     calibration_texts: Sequence[str] | None = None,
+    calibration_order: str = "original",
     response_loss_mode: str = "none",
     append_eos: bool = False,
     grad_clip: float = 1.0,
@@ -209,6 +210,8 @@ def recover_causal_lm(
         raise ValueError("behavior_max_probes must be positive.")
     if behavior_max_generation_prompts is not None and behavior_max_generation_prompts <= 0:
         raise ValueError("behavior_max_generation_prompts must be positive when provided.")
+    if calibration_order not in {"original", "domain-balanced"}:
+        raise ValueError("calibration_order must be original or domain-balanced.")
 
     if (
         kd_weight > 0
@@ -286,10 +289,11 @@ def recover_causal_lm(
         )
         hidden_projection = hidden_projection_report["map"].to(device=device, dtype=torch.float32)
     optimizer = torch.optim.AdamW([p for p in candidate.parameters() if p.requires_grad], lr=lr)
-    texts = list(calibration_texts or RECOVERY_TEXTS)
+    texts = _order_recovery_texts(calibration_texts or RECOVERY_TEXTS, calibration_order)
     if not texts:
         raise ValueError("Need at least one recovery text.")
     eval_overlap_count = len(set(texts) & set(TEXT_EVALS))
+    calibration_domain_counts = _recovery_domain_counts(texts) if calibration_order == "domain-balanced" else {}
     behavior_suite, behavior_probes, generation_prompts = _recovery_behavior_eval_suite(behavior_eval_suite)
     batches = _make_batches(
         tokenizer,
@@ -513,6 +517,8 @@ def recover_causal_lm(
         "train_scope": train_scope,
         "candidate_train_dtype": candidate_train_dtype,
         "trainable_param_count": trainable_params,
+        "calibration_order": calibration_order,
+        "calibration_domain_counts": calibration_domain_counts,
         "calibration_text_count": len(texts),
         "eval_overlap_count": eval_overlap_count,
         "losses": losses,
@@ -1353,6 +1359,8 @@ def recover_cross_tokenizer_causal_lm(
         "teacher_generate_max_new_tokens": teacher_generate_max_new_tokens,
         "teacher_generated_text_count": len(teacher_generated_texts),
         "teacher_generated_text_samples": teacher_generated_texts[:3],
+        "calibration_order": calibration_order,
+        "calibration_domain_counts": calibration_domain_counts,
         "stepwise_donor_kd_weight": stepwise_donor_kd_weight,
         "stepwise_donor_max_new_tokens": stepwise_donor_max_new_tokens,
         "on_policy_anchor_kd_weight": on_policy_anchor_kd_weight,
@@ -2264,6 +2272,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     device: str = "cuda:0",
     trust_remote_code: bool = False,
     calibration_texts: Sequence[str] | None = None,
+    calibration_order: str = "original",
     grad_clip: float = 1.0,
     report_interval: int | None = None,
     save_best_layer_loss: bool = False,
@@ -2474,6 +2483,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("layer_behavior_eval_interval must be positive when provided.")
     if layer_checkpoint_interval < 0:
         raise ValueError("layer_checkpoint_interval must be non-negative.")
+    if calibration_order not in {"original", "domain-balanced"}:
+        raise ValueError("calibration_order must be original or domain-balanced.")
 
     from neural_forge.hf_xfamily import _canonical_token
     from neural_forge.hf_xfamily import _canonical_token_map
@@ -2592,10 +2603,11 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             candidate_byte_buckets,
         ).to(device=device, dtype=torch.float32)
 
-    texts = list(calibration_texts or RECOVERY_TEXTS)
+    texts = _order_recovery_texts(calibration_texts or RECOVERY_TEXTS, calibration_order)
     if not texts:
         raise ValueError("Need at least one blockwise reconstruction text.")
     eval_overlap_count = len(set(texts) & set(TEXT_EVALS))
+    calibration_domain_counts = _recovery_domain_counts(texts) if calibration_order == "domain-balanced" else {}
     paired_batches = _make_paired_batches(
         source_tokenizer,
         candidate_tokenizer,
@@ -3824,6 +3836,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "teacher_generate_max_new_tokens": int(teacher_generate_max_new_tokens),
         "teacher_generated_text_count": len(teacher_generated_texts),
         "teacher_generated_text_samples": teacher_generated_texts[:3],
+        "calibration_order": calibration_order,
+        "calibration_domain_counts": calibration_domain_counts,
         "alm_kd_weight": float(alm_kd_weight),
         "alm_max_chunks": int(alm_max_chunks),
         "alm_min_chars": int(alm_min_chars),
@@ -4118,6 +4132,56 @@ def _make_batches(
             )
         batches.append(batch)
     return batches
+
+
+def _order_recovery_texts(texts: Sequence[str], calibration_order: str) -> list[str]:
+    ordered = list(texts)
+    if calibration_order == "original":
+        return ordered
+    if calibration_order != "domain-balanced":
+        raise ValueError("calibration_order must be original or domain-balanced.")
+    groups: dict[str, list[str]] = {}
+    order: list[str] = []
+    for text in ordered:
+        domain = _recovery_text_domain(text)
+        if domain not in groups:
+            groups[domain] = []
+            order.append(domain)
+        groups[domain].append(text)
+    balanced: list[str] = []
+    max_len = max((len(group) for group in groups.values()), default=0)
+    for idx in range(max_len):
+        for domain in order:
+            group = groups[domain]
+            if idx < len(group):
+                balanced.append(group[idx])
+    return balanced
+
+
+def _recovery_domain_counts(texts: Sequence[str]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for text in texts:
+        domain = _recovery_text_domain(text)
+        counts[domain] = counts.get(domain, 0) + 1
+    return counts
+
+
+def _recovery_text_domain(text: str) -> str:
+    try:
+        from neural_forge.hf_xfamily import _activation_calibration_domain
+
+        return str(_activation_calibration_domain(text))
+    except Exception:
+        lowered = str(text).lower()
+        if any(marker in lowered for marker in ("def ", "python", "function", "return ", "```", "code")):
+            return "code"
+        if any(marker in lowered for marker in ("tokenizer", "tokenization", "vocab", "merge", "pruning", "neuron")):
+            return "model_surgery"
+        if any(ch.isdigit() for ch in lowered) or any(marker in lowered for marker in ("math", "calculate", "sum")):
+            return "math"
+        if any(marker in lowered for marker in ("safe", "unsafe", "risk", "policy")):
+            return "safety"
+        return "general"
 
 
 def _append_eos_text(tokenizer, text: str) -> str:
