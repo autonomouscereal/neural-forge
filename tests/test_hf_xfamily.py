@@ -6806,12 +6806,40 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "projected-geometry",
             "--block-residual-magnitude-compensation",
             "lowrank-pre",
+            "--block-residual-compensation-min-scale",
+            "0.35",
+            "--block-residual-compensation-max-scale",
+            "1.65",
+            "--block-residual-compensation-linear-ridge",
+            "0.007",
             "--block-residual-compensation-alpha",
             "0.005",
             "--block-pre-reconstruction-target",
             "block-interface",
+            "--block-pre-reconstruction-ridge",
+            "0.008",
             "--block-donor-layer-fold-mode",
             "average",
+            "--block-pre-reconstruction-objective",
+            "cosine",
+            "--block-pre-reconstruction-cosine-steps",
+            "6",
+            "--block-pre-reconstruction-cosine-lr",
+            "0.03",
+            "--block-pre-reconstruction-cosine-l2",
+            "0.0007",
+            "--block-pre-reconstruction-fit-gate",
+            "none",
+            "--block-pre-reconstruction-validation-fraction",
+            "0.2",
+            "--block-pre-reconstruction-min-validation-rows",
+            "10",
+            "--block-pre-reconstruction-max-tokens-per-layer",
+            "48",
+            "--block-pre-reconstruction-min-relative-improvement",
+            "0.03",
+            "--block-pre-reconstruction-max-cosine-drop",
+            "0.05",
             "--block-donor-layer-group-strategy",
             "activation-geometry",
             "--block-on-policy-anchor-kd-weight",
@@ -6992,8 +7020,22 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["block_steps_per_layer"] == 6
     assert captured["block_hidden_metric"] == "projected-geometry"
     assert captured["block_residual_magnitude_compensation"] == "lowrank-pre"
+    assert captured["block_residual_compensation_min_scale"] == 0.35
+    assert captured["block_residual_compensation_max_scale"] == 1.65
+    assert captured["block_residual_compensation_linear_ridge"] == 0.007
     assert captured["block_residual_compensation_alpha"] == 0.005
     assert captured["block_pre_reconstruction_target"] == "block-interface"
+    assert captured["block_pre_reconstruction_ridge"] == 0.008
+    assert captured["block_pre_reconstruction_objective"] == "cosine"
+    assert captured["block_pre_reconstruction_cosine_steps"] == 6
+    assert captured["block_pre_reconstruction_cosine_lr"] == 0.03
+    assert captured["block_pre_reconstruction_cosine_l2"] == 0.0007
+    assert captured["block_pre_reconstruction_fit_gate"] == "none"
+    assert captured["block_pre_reconstruction_validation_fraction"] == 0.2
+    assert captured["block_pre_reconstruction_min_validation_rows"] == 10
+    assert captured["block_pre_reconstruction_max_tokens_per_layer"] == 48
+    assert captured["block_pre_reconstruction_min_relative_improvement"] == 0.03
+    assert captured["block_pre_reconstruction_max_cosine_drop"] == 0.05
     assert captured["block_donor_layer_fold_mode"] == "average"
     assert captured["block_donor_layer_group_strategy"] == "activation-geometry"
     assert captured["block_on_policy_anchor_kd_weight"] == 0.04

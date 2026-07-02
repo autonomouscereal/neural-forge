@@ -1491,11 +1491,28 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["none", "pre", "pre-linear", "linear-pre", "pre-lowrank", "lowrank-pre", "pre-eora", "eora-pre"],
         default="lowrank-pre",
     )
+    xfamily_chain.add_argument("--block-residual-compensation-min-scale", type=float, default=0.50)
+    xfamily_chain.add_argument("--block-residual-compensation-max-scale", type=float, default=1.50)
+    xfamily_chain.add_argument("--block-residual-compensation-linear-ridge", type=float, default=1e-3)
     xfamily_chain.add_argument("--block-residual-compensation-alpha", type=float, default=0.01)
     xfamily_chain.add_argument("--block-residual-compensation-linear-rank", type=int, default=16)
     xfamily_chain.add_argument("--block-pre-reconstruction-target", choices=["none", "consumer-input", "block-interface", "all"], default="none")
+    xfamily_chain.add_argument("--block-pre-reconstruction-ridge", type=float, default=1e-3)
     xfamily_chain.add_argument("--block-pre-reconstruction-alpha", type=float, default=0.05)
+    xfamily_chain.add_argument(
+        "--block-pre-reconstruction-objective",
+        choices=["ridge", "cosine"],
+        default="ridge",
+    )
+    xfamily_chain.add_argument("--block-pre-reconstruction-cosine-steps", type=int, default=40)
+    xfamily_chain.add_argument("--block-pre-reconstruction-cosine-lr", type=float, default=1e-2)
+    xfamily_chain.add_argument("--block-pre-reconstruction-cosine-l2", type=float, default=1e-4)
     xfamily_chain.add_argument("--block-pre-reconstruction-fit-gate", choices=["none", "validation"], default="validation")
+    xfamily_chain.add_argument("--block-pre-reconstruction-validation-fraction", type=float, default=0.25)
+    xfamily_chain.add_argument("--block-pre-reconstruction-min-validation-rows", type=int, default=32)
+    xfamily_chain.add_argument("--block-pre-reconstruction-max-tokens-per-layer", type=int, default=512)
+    xfamily_chain.add_argument("--block-pre-reconstruction-min-relative-improvement", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-pre-reconstruction-max-cosine-drop", type=float, default=0.01)
     xfamily_chain.add_argument("--block-donor-layer-fold-mode", choices=["representative", "average", "fold"], default="fold")
     xfamily_chain.add_argument(
         "--block-donor-layer-group-strategy",
@@ -2789,11 +2806,24 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         block_span_pair_mode=args.block_span_pair_mode,
         block_target=args.block_target,
         block_residual_magnitude_compensation=args.block_residual_magnitude_compensation,
+        block_residual_compensation_min_scale=args.block_residual_compensation_min_scale,
+        block_residual_compensation_max_scale=args.block_residual_compensation_max_scale,
+        block_residual_compensation_linear_ridge=args.block_residual_compensation_linear_ridge,
         block_residual_compensation_alpha=args.block_residual_compensation_alpha,
         block_residual_compensation_linear_rank=args.block_residual_compensation_linear_rank,
         block_pre_reconstruction_target=args.block_pre_reconstruction_target,
+        block_pre_reconstruction_ridge=args.block_pre_reconstruction_ridge,
         block_pre_reconstruction_alpha=args.block_pre_reconstruction_alpha,
+        block_pre_reconstruction_objective=args.block_pre_reconstruction_objective,
+        block_pre_reconstruction_cosine_steps=args.block_pre_reconstruction_cosine_steps,
+        block_pre_reconstruction_cosine_lr=args.block_pre_reconstruction_cosine_lr,
+        block_pre_reconstruction_cosine_l2=args.block_pre_reconstruction_cosine_l2,
         block_pre_reconstruction_fit_gate=args.block_pre_reconstruction_fit_gate,
+        block_pre_reconstruction_validation_fraction=args.block_pre_reconstruction_validation_fraction,
+        block_pre_reconstruction_min_validation_rows=args.block_pre_reconstruction_min_validation_rows,
+        block_pre_reconstruction_max_tokens_per_layer=args.block_pre_reconstruction_max_tokens_per_layer,
+        block_pre_reconstruction_min_relative_improvement=args.block_pre_reconstruction_min_relative_improvement,
+        block_pre_reconstruction_max_cosine_drop=args.block_pre_reconstruction_max_cosine_drop,
         block_donor_layer_fold_mode=args.block_donor_layer_fold_mode,
         block_donor_layer_group_strategy=args.block_donor_layer_group_strategy,
         block_layer_limit=args.block_layer_limit,

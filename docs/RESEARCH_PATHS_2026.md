@@ -26,6 +26,9 @@ behavior recovery in the strict blank-target runs.
 | Cross-tokenizer likelihood matching | ALM, arXiv `2503.20083`; Cross-Tokenizer Likelihood Scoring, OpenReview 2026 | Add byte-offset chunk likelihood regression and tokenizer-bias debiasing as a regression test for cross-tokenizer recovery. Useful when projected-vocab and byte losses disagree with greedy behavior. |
 | Geometry-preserving hidden recovery | CKA-QAD, arXiv `2606.05682`; Flex-KD / task-tangent geometry, arXiv `2507.10155`; geometry-aware representational alignment, arXiv `2509.25253` | `gram`, `projected-gram`, `geometry`, and `projected-geometry` are now implemented. The first broad runs preserved a recovered child but did not make a donor-projected blank child useful, so the next version needs task-focused feature selection for math/code spans instead of average hidden geometry alone. |
 | Submodule-level replacement | SubFit, arXiv `2606.02559`; Merging Feed-Forward Sublayers, arXiv `2501.06126` | Fold and fit attention and MLP residual outputs independently, instead of treating each transformer block as one indivisible unit. |
+| Fold-first diagnostics | Cut Less, Fold More, arXiv `2602.18116`; Model Folding, arXiv `2502.10216` | Add projection-error, variance-preservation, and functional-perturbation diagnostics to folded candidates before recovery. This should reject brittle folds that only look good by tensor shape or PPL. |
+| Learned tokenizer-neutral byte bridge | Byte-Level Distillation, arXiv `2604.07466`; X-Token, arXiv `2605.21699` | Upgrade fixed first-byte buckets into a temporary learned byte/codepoint head during block recovery, and report digit/code/token coverage for projected-vocab KD. This directly targets the current arithmetic and code-token gap. |
+| Staged intermediate anchors | Chain-based Distillation, arXiv `2605.07783`; Reasoning-Aware Compression, arXiv `2509.12464` | Test donor-generated reasoning/code traces and intermediate shape anchors instead of only one-hop `4B -> 135M`. This may provide a recoverable activation manifold before strict blank-target compression. |
 
 ## Current Evidence
 
@@ -60,3 +63,9 @@ the strict Qwen3-4B to blank SmolLM2-135M `29.90x` case:
 - manual generations confirmed the failure: donor outputs were coherent, the
   best recovered child remained semi-coherent but arithmetically wrong, and the
   blank headfit model repeated answer-like phrases rather than solving tasks.
+- chain runs now expose the full block-interface pre-reconstruction and residual
+  compensation controls, so GRAIL/Ghosted-layer-style ridge/cosine boundary
+  repairs can be swept from the staged launcher instead of being locked behind
+  hidden defaults. The next lane should start from the strongest clean text
+  anchor and combine low-rank/EoRA residual repair with block-interface
+  pre-reconstruction before any ALM/math drill cleanup.

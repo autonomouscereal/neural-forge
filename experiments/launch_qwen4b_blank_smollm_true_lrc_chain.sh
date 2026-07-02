@@ -10,8 +10,24 @@ LRC_ALPHA="${LRC_ALPHA:-0.25}"
 LRC_RANK="${LRC_RANK:-16}"
 LRC_FACTOR_STEPS="${LRC_FACTOR_STEPS:-40}"
 RESIDUAL_MODE="${RESIDUAL_MODE:-lowrank-pre}"
+RESIDUAL_MIN_SCALE="${RESIDUAL_MIN_SCALE:-0.50}"
+RESIDUAL_MAX_SCALE="${RESIDUAL_MAX_SCALE:-1.50}"
+RESIDUAL_LINEAR_RIDGE="${RESIDUAL_LINEAR_RIDGE:-1e-3}"
 RESIDUAL_ALPHA="${RESIDUAL_ALPHA:-0.01}"
 RESIDUAL_RANK="${RESIDUAL_RANK:-16}"
+PRE_RECONSTRUCTION_TARGET="${PRE_RECONSTRUCTION_TARGET:-block-interface}"
+PRE_RECONSTRUCTION_RIDGE="${PRE_RECONSTRUCTION_RIDGE:-1e-3}"
+PRE_RECONSTRUCTION_ALPHA="${PRE_RECONSTRUCTION_ALPHA:-0.02}"
+PRE_RECONSTRUCTION_OBJECTIVE="${PRE_RECONSTRUCTION_OBJECTIVE:-ridge}"
+PRE_RECONSTRUCTION_COSINE_STEPS="${PRE_RECONSTRUCTION_COSINE_STEPS:-40}"
+PRE_RECONSTRUCTION_COSINE_LR="${PRE_RECONSTRUCTION_COSINE_LR:-1e-2}"
+PRE_RECONSTRUCTION_COSINE_L2="${PRE_RECONSTRUCTION_COSINE_L2:-1e-4}"
+PRE_RECONSTRUCTION_FIT_GATE="${PRE_RECONSTRUCTION_FIT_GATE:-validation}"
+PRE_RECONSTRUCTION_VALIDATION_FRACTION="${PRE_RECONSTRUCTION_VALIDATION_FRACTION:-0.25}"
+PRE_RECONSTRUCTION_MIN_VALIDATION_ROWS="${PRE_RECONSTRUCTION_MIN_VALIDATION_ROWS:-32}"
+PRE_RECONSTRUCTION_MAX_TOKENS_PER_LAYER="${PRE_RECONSTRUCTION_MAX_TOKENS_PER_LAYER:-512}"
+PRE_RECONSTRUCTION_MIN_RELATIVE_IMPROVEMENT="${PRE_RECONSTRUCTION_MIN_RELATIVE_IMPROVEMENT:-0.0}"
+PRE_RECONSTRUCTION_MAX_COSINE_DROP="${PRE_RECONSTRUCTION_MAX_COSINE_DROP:-0.01}"
 INIT_PROJECTION_SCALE="${INIT_PROJECTION_SCALE:-target-rms}"
 INIT_PROJECTION_BLEND_ALPHA="${INIT_PROJECTION_BLEND_ALPHA:-1.0}"
 INIT_TRANSPORT_SUPPORT="${INIT_TRANSPORT_SUPPORT:-centroid}"
@@ -175,11 +191,24 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --block-span-pair-mode both \
   --block-target delta \
   --block-residual-magnitude-compensation "$RESIDUAL_MODE" \
+  --block-residual-compensation-min-scale "$RESIDUAL_MIN_SCALE" \
+  --block-residual-compensation-max-scale "$RESIDUAL_MAX_SCALE" \
+  --block-residual-compensation-linear-ridge "$RESIDUAL_LINEAR_RIDGE" \
   --block-residual-compensation-alpha "$RESIDUAL_ALPHA" \
   --block-residual-compensation-linear-rank "$RESIDUAL_RANK" \
-  --block-pre-reconstruction-target block-interface \
-  --block-pre-reconstruction-alpha 0.02 \
-  --block-pre-reconstruction-fit-gate validation \
+  --block-pre-reconstruction-target "$PRE_RECONSTRUCTION_TARGET" \
+  --block-pre-reconstruction-ridge "$PRE_RECONSTRUCTION_RIDGE" \
+  --block-pre-reconstruction-alpha "$PRE_RECONSTRUCTION_ALPHA" \
+  --block-pre-reconstruction-objective "$PRE_RECONSTRUCTION_OBJECTIVE" \
+  --block-pre-reconstruction-cosine-steps "$PRE_RECONSTRUCTION_COSINE_STEPS" \
+  --block-pre-reconstruction-cosine-lr "$PRE_RECONSTRUCTION_COSINE_LR" \
+  --block-pre-reconstruction-cosine-l2 "$PRE_RECONSTRUCTION_COSINE_L2" \
+  --block-pre-reconstruction-fit-gate "$PRE_RECONSTRUCTION_FIT_GATE" \
+  --block-pre-reconstruction-validation-fraction "$PRE_RECONSTRUCTION_VALIDATION_FRACTION" \
+  --block-pre-reconstruction-min-validation-rows "$PRE_RECONSTRUCTION_MIN_VALIDATION_ROWS" \
+  --block-pre-reconstruction-max-tokens-per-layer "$PRE_RECONSTRUCTION_MAX_TOKENS_PER_LAYER" \
+  --block-pre-reconstruction-min-relative-improvement "$PRE_RECONSTRUCTION_MIN_RELATIVE_IMPROVEMENT" \
+  --block-pre-reconstruction-max-cosine-drop "$PRE_RECONSTRUCTION_MAX_COSINE_DROP" \
   --block-donor-layer-fold-mode fold \
   --block-donor-layer-group-strategy "$BLOCK_DONOR_LAYER_GROUP_STRATEGY" \
   --block-layer-gate-metric behavior \
