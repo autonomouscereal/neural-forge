@@ -107,6 +107,13 @@ def build_parser() -> argparse.ArgumentParser:
     hf_donor_init.add_argument("--target-base-model")
     hf_donor_init.add_argument("--target-tokenizer-model")
     hf_donor_init.add_argument("--donor-model", required=True)
+    hf_donor_init.add_argument(
+        "--donor-weights",
+        help=(
+            "Optional comma-separated weights when --donor-model contains multiple comma-separated donors. "
+            "The donors are folded sequentially into the same target shape with weighted blend alphas."
+        ),
+    )
     hf_donor_init.add_argument("--seed", type=int, default=0)
     hf_donor_init.add_argument("--ridge", type=float, default=1e-3)
     hf_donor_init.add_argument("--max-anchors", type=int, default=50_000)
@@ -2060,63 +2067,80 @@ def cmd_hf_random_init(args: argparse.Namespace) -> dict[str, object]:
 
 def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
     from neural_forge.hf_xfamily import donor_projected_init
+    from neural_forge.hf_xfamily import multi_donor_projected_init
 
     activation_calibration_texts = _load_recovery_calibration_texts(
         args.activation_calibration_file,
         args.activation_max_calibration_texts,
     )
-    init_report = donor_projected_init(
-        target_config_model=args.target_config_model,
-        target_base_model=args.target_base_model,
-        target_tokenizer_model=args.target_tokenizer_model,
-        donor_model=args.donor_model,
-        output_dir=args.output,
-        seed=args.seed,
-        ridge=args.ridge,
-        max_anchors=args.max_anchors,
-        fold_mode=args.fold_mode,
-        hidden_basis_mode=args.hidden_basis_mode,
-        hidden_basis_scope=args.hidden_basis_scope,
-        hidden_basis_max_rows=args.hidden_basis_max_rows,
-        hidden_basis_preprocess=args.hidden_basis_preprocess,
-        activation_fold_assignment=args.activation_fold_assignment,
-        transport_backend=args.transport_backend,
-        transport_support=args.transport_support,
-        donor_layer_fold_mode=args.donor_layer_fold_mode,
-        donor_layer_group_strategy=args.donor_layer_group_strategy,
-        attention_fold_mode=args.attention_fold_mode,
-        attention_head_dim_transport=args.attention_head_dim_transport,
-        token_init_mode=args.token_init_mode,
-        projection_scale=args.projection_scale,
-        projection_blend_alpha=args.projection_blend_alpha,
-        consumer_hidden_reduction=args.consumer_hidden_reduction,
-        activation_fit_linears=args.activation_fit_linears,
-        activation_fit_target=args.activation_fit_target,
-        activation_fit_max_rows=args.activation_fit_max_rows,
-        activation_fit_alpha=args.activation_fit_alpha,
-        activation_fit_ridge=args.activation_fit_ridge,
-        activation_fit_rank=args.activation_fit_rank,
-        activation_fit_rank_mode=args.activation_fit_rank_mode,
-        activation_fit_method=args.activation_fit_method,
-        activation_fit_factor_steps=args.activation_fit_factor_steps,
-        activation_fit_factor_lr=args.activation_fit_factor_lr,
-        activation_fit_factor_l2=args.activation_fit_factor_l2,
-        activation_fit_gate=args.activation_fit_gate,
-        activation_fit_validation_fraction=args.activation_fit_validation_fraction,
-        activation_fit_min_validation_rows=args.activation_fit_min_validation_rows,
-        activation_fit_min_relative_improvement=args.activation_fit_min_relative_improvement,
-        activation_fit_max_cosine_drop=args.activation_fit_max_cosine_drop,
-        activation_feature_mode=args.activation_feature_mode,
-        activation_subspace_rank=args.activation_subspace_rank,
-        activation_domain_balance=args.activation_domain_balance,
-        untie_output_head=args.untie_output_head,
-        activation_calibration_texts=activation_calibration_texts,
-        activation_max_length=args.activation_max_length,
-        activation_device=args.activation_device,
-        neutralize_unmatched_operators=args.neutralize_unmatched_operators,
-        torch_dtype=args.dtype,
-        trust_remote_code=args.trust_remote_code,
-    )
+    donor_models = [part.strip() for part in str(args.donor_model).split(",") if part.strip()]
+    if not donor_models:
+        raise ValueError("--donor-model must include at least one donor.")
+    donor_weights = None
+    if args.donor_weights:
+        donor_weights = [float(part.strip()) for part in str(args.donor_weights).split(",") if part.strip()]
+    common_kwargs = {
+        "target_config_model": args.target_config_model,
+        "target_base_model": args.target_base_model,
+        "target_tokenizer_model": args.target_tokenizer_model,
+        "output_dir": args.output,
+        "seed": args.seed,
+        "ridge": args.ridge,
+        "max_anchors": args.max_anchors,
+        "fold_mode": args.fold_mode,
+        "hidden_basis_mode": args.hidden_basis_mode,
+        "hidden_basis_scope": args.hidden_basis_scope,
+        "hidden_basis_max_rows": args.hidden_basis_max_rows,
+        "hidden_basis_preprocess": args.hidden_basis_preprocess,
+        "activation_fold_assignment": args.activation_fold_assignment,
+        "transport_backend": args.transport_backend,
+        "transport_support": args.transport_support,
+        "donor_layer_fold_mode": args.donor_layer_fold_mode,
+        "donor_layer_group_strategy": args.donor_layer_group_strategy,
+        "attention_fold_mode": args.attention_fold_mode,
+        "attention_head_dim_transport": args.attention_head_dim_transport,
+        "token_init_mode": args.token_init_mode,
+        "projection_scale": args.projection_scale,
+        "projection_blend_alpha": args.projection_blend_alpha,
+        "consumer_hidden_reduction": args.consumer_hidden_reduction,
+        "activation_fit_linears": args.activation_fit_linears,
+        "activation_fit_target": args.activation_fit_target,
+        "activation_fit_max_rows": args.activation_fit_max_rows,
+        "activation_fit_alpha": args.activation_fit_alpha,
+        "activation_fit_ridge": args.activation_fit_ridge,
+        "activation_fit_rank": args.activation_fit_rank,
+        "activation_fit_rank_mode": args.activation_fit_rank_mode,
+        "activation_fit_method": args.activation_fit_method,
+        "activation_fit_factor_steps": args.activation_fit_factor_steps,
+        "activation_fit_factor_lr": args.activation_fit_factor_lr,
+        "activation_fit_factor_l2": args.activation_fit_factor_l2,
+        "activation_fit_gate": args.activation_fit_gate,
+        "activation_fit_validation_fraction": args.activation_fit_validation_fraction,
+        "activation_fit_min_validation_rows": args.activation_fit_min_validation_rows,
+        "activation_fit_min_relative_improvement": args.activation_fit_min_relative_improvement,
+        "activation_fit_max_cosine_drop": args.activation_fit_max_cosine_drop,
+        "activation_feature_mode": args.activation_feature_mode,
+        "activation_subspace_rank": args.activation_subspace_rank,
+        "activation_domain_balance": args.activation_domain_balance,
+        "untie_output_head": args.untie_output_head,
+        "activation_calibration_texts": activation_calibration_texts,
+        "activation_max_length": args.activation_max_length,
+        "activation_device": args.activation_device,
+        "neutralize_unmatched_operators": args.neutralize_unmatched_operators,
+        "torch_dtype": args.dtype,
+        "trust_remote_code": args.trust_remote_code,
+    }
+    if len(donor_models) > 1 or donor_weights is not None:
+        init_report = multi_donor_projected_init(
+            donor_models=donor_models,
+            donor_weights=donor_weights,
+            **common_kwargs,
+        )
+    else:
+        init_report = donor_projected_init(
+            donor_model=donor_models[0],
+            **common_kwargs,
+        )
     if not args.post_init_eval_suite:
         return init_report
 

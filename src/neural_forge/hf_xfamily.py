@@ -918,6 +918,111 @@ def donor_projected_init(
     return report
 
 
+def multi_donor_projected_init(
+    target_config_model: str,
+    donor_models: Sequence[str],
+    output_dir: str | Path,
+    donor_weights: Sequence[float] | None = None,
+    **kwargs,
+) -> dict[str, Any]:
+    """Fold multiple donor families into one target shape via weighted stages.
+
+    Each donor is projected into the target architecture with `donor_projected_init`.
+    For donor `i`, the effective projection blend is `weight_i / cumulative_weight`
+    times the requested projection blend alpha. With the default alpha of 1.0,
+    the final checkpoint is a sequential weighted average of donor-projected
+    target-shaped tensors rather than a same-shape checkpoint average.
+    """
+
+    donors = [str(item).strip() for item in donor_models if str(item).strip()]
+    if not donors:
+        raise ValueError("donor_models must contain at least one donor.")
+    if donor_weights is None:
+        weights = [1.0 for _ in donors]
+    else:
+        weights = [float(item) for item in donor_weights]
+        if len(weights) != len(donors):
+            raise ValueError("donor_weights must match donor_models length.")
+    if any((not math.isfinite(weight)) or weight <= 0 for weight in weights):
+        raise ValueError("donor_weights must be positive finite values.")
+
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    stage_root = output / "multi_donor_stages"
+    stage_root.mkdir(parents=True, exist_ok=True)
+    requested_blend_alpha = _bounded_alpha(float(kwargs.get("projection_blend_alpha", 1.0)), "projection_blend_alpha")
+    base_model = kwargs.get("target_base_model")
+    cumulative_weight = 0.0
+    stage_reports = []
+    current_base = base_model
+    for index, (donor_model, weight) in enumerate(zip(donors, weights)):
+        cumulative_weight += float(weight)
+        stage_alpha = requested_blend_alpha * (float(weight) / cumulative_weight)
+        stage_output = output if index == len(donors) - 1 else stage_root / f"{index:02d}_{_model_path_tag(donor_model)}"
+        stage_kwargs = dict(kwargs)
+        stage_kwargs["target_base_model"] = current_base
+        stage_kwargs["projection_blend_alpha"] = stage_alpha
+        stage_kwargs["seed"] = int(stage_kwargs.get("seed", 0)) + index
+        report = donor_projected_init(
+            target_config_model=target_config_model,
+            donor_model=donor_model,
+            output_dir=stage_output,
+            **stage_kwargs,
+        )
+        current_base = str(stage_output)
+        stage_reports.append(
+            {
+                "stage": int(index),
+                "donor_model": donor_model,
+                "donor_weight": float(weight),
+                "cumulative_weight": float(cumulative_weight),
+                "effective_projection_blend_alpha": float(stage_alpha),
+                "output_dir": str(stage_output),
+                "param_count": report.get("param_count"),
+                "layer_tensors_initialized": report.get("layer_tensors_initialized"),
+                "projection_scale": report.get("projection_scale"),
+                "projection_diagnostic_summary": report.get("projection_diagnostic_summary"),
+                "token_report": {
+                    key: report.get("token_report", {}).get(key)
+                    for key in (
+                        "mode",
+                        "anchors_used",
+                        "shared_decoded_tokens",
+                        "embedding_rows_initialized",
+                        "special_rows_initialized",
+                        "tokenized_rows_initialized",
+                        "weighted_tokenized_rows_initialized",
+                        "lm_head_rows_initialized",
+                        "lm_head_tied_to_embeddings",
+                    )
+                },
+                "report_file": str(Path(stage_output) / "neural_forge_donor_projected_init_report.json"),
+            }
+        )
+
+    summary = {
+        "operation": "multi_donor_projected_init",
+        "target_config_model": target_config_model,
+        "target_base_model": base_model,
+        "target_tokenizer_model": kwargs.get("target_tokenizer_model"),
+        "donor_models": donors,
+        "donor_weights": [float(weight) for weight in weights],
+        "requested_projection_blend_alpha": float(requested_blend_alpha),
+        "output_dir": str(output),
+        "stage_root": str(stage_root),
+        "stage_reports": stage_reports,
+        "final_output_dir": str(output),
+        "final_report_file": str(output / "neural_forge_donor_projected_init_report.json"),
+    }
+    _write_json(output / "neural_forge_multi_donor_projected_init_report.json", summary)
+    return summary
+
+
+def _model_path_tag(model: str) -> str:
+    tag = re.sub(r"[^A-Za-z0-9._-]+", "_", str(model).strip()).strip("._-")
+    return tag[:80] or "donor"
+
+
 def _effective_activation_fit_max_rows(
     activation_fit_linears: bool,
     activation_fit_max_rows: int,

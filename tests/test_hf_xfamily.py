@@ -450,7 +450,9 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "--target-tokenizer-model",
             "HuggingFaceTB/SmolLM2-135M",
             "--donor-model",
-            "Qwen/Qwen3-4B-Base",
+            "Qwen/Qwen3-4B-Base,openai-community/gpt2",
+            "--donor-weights",
+            "0.7,0.3",
             "--seed",
             "456",
             "--max-anchors",
@@ -915,7 +917,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.target_config_model == "HuggingFaceTB/SmolLM2-135M"
     assert donor_init_args.target_base_model == "HuggingFaceTB/SmolLM2-135M"
     assert donor_init_args.target_tokenizer_model == "HuggingFaceTB/SmolLM2-135M"
-    assert donor_init_args.donor_model == "Qwen/Qwen3-4B-Base"
+    assert donor_init_args.donor_model == "Qwen/Qwen3-4B-Base,openai-community/gpt2"
+    assert donor_init_args.donor_weights == "0.7,0.3"
     assert donor_init_args.seed == 456
     assert donor_init_args.max_anchors == 1000
     assert donor_init_args.fold_mode == "mean"
@@ -5206,6 +5209,105 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "torch_dtype": "float32",
         "trust_remote_code": True,
     }
+
+
+def test_hf_donor_project_init_handler_dispatches_multi_donor(monkeypatch) -> None:
+    import neural_forge.cli as cli
+    import neural_forge.hf_xfamily as hf_xfamily
+
+    captured = {}
+
+    def fake_multi_donor_init(**kwargs):
+        captured.update(kwargs)
+        return {"operation": "multi_donor_projected_init", "output_dir": kwargs["output_dir"]}
+
+    def fake_single_donor_init(**kwargs):
+        raise AssertionError("single-donor initializer should not run for comma-separated donors")
+
+    monkeypatch.setattr(hf_xfamily, "multi_donor_projected_init", fake_multi_donor_init)
+    monkeypatch.setattr(hf_xfamily, "donor_projected_init", fake_single_donor_init)
+    monkeypatch.setattr(cli, "_load_recovery_calibration_texts", lambda path, max_texts: ["activation text"])
+
+    args = build_parser().parse_args(
+        [
+            "hf-donor-project-init",
+            "out",
+            "--target-config-model",
+            "target-config",
+            "--target-base-model",
+            "target-base",
+            "--target-tokenizer-model",
+            "target-tokenizer",
+            "--donor-model",
+            "donor-a,donor-b",
+            "--donor-weights",
+            "0.25,0.75",
+            "--activation-calibration-file",
+            "activation.jsonl",
+            "--activation-max-calibration-texts",
+            "7",
+        ]
+    )
+    result = args.func(args)
+
+    assert result == {"operation": "multi_donor_projected_init", "output_dir": "out"}
+    assert captured["donor_models"] == ["donor-a", "donor-b"]
+    assert captured["donor_weights"] == [0.25, 0.75]
+    assert captured["target_config_model"] == "target-config"
+    assert captured["target_base_model"] == "target-base"
+    assert captured["target_tokenizer_model"] == "target-tokenizer"
+    assert captured["activation_calibration_texts"] == ["activation text"]
+
+
+def test_multi_donor_projected_init_uses_weighted_stage_alphas(monkeypatch, tmp_path) -> None:
+    import neural_forge.hf_xfamily as hf_xfamily
+
+    calls = []
+
+    def fake_single_donor_init(**kwargs):
+        calls.append(kwargs)
+        Path(kwargs["output_dir"]).mkdir(parents=True, exist_ok=True)
+        return {
+            "param_count": 123,
+            "layer_tensors_initialized": 5,
+            "projection_scale": kwargs.get("projection_scale"),
+            "projection_diagnostic_summary": {"count": 5},
+            "token_report": {
+                "mode": "donor-tokenized-weighted",
+                "anchors_used": 12,
+                "embedding_rows_initialized": 34,
+            },
+        }
+
+    monkeypatch.setattr(hf_xfamily, "donor_projected_init", fake_single_donor_init)
+
+    output = tmp_path / "multi"
+    summary = hf_xfamily.multi_donor_projected_init(
+        target_config_model="target",
+        donor_models=["donor-a", "donor/b", "donor c"],
+        donor_weights=[1.0, 2.0, 1.0],
+        output_dir=output,
+        target_base_model=None,
+        target_tokenizer_model="target-tokenizer",
+        projection_blend_alpha=0.8,
+        projection_scale="geomean-rms",
+        seed=41,
+    )
+
+    assert [call["donor_model"] for call in calls] == ["donor-a", "donor/b", "donor c"]
+    assert calls[0]["projection_blend_alpha"] == pytest.approx(0.8)
+    assert calls[1]["projection_blend_alpha"] == pytest.approx(0.8 * 2.0 / 3.0)
+    assert calls[2]["projection_blend_alpha"] == pytest.approx(0.8 * 1.0 / 4.0)
+    assert calls[0]["target_base_model"] is None
+    assert calls[1]["target_base_model"] == str(output / "multi_donor_stages" / "00_donor-a")
+    assert calls[2]["target_base_model"] == str(output / "multi_donor_stages" / "01_donor_b")
+    assert calls[2]["output_dir"] == output
+    assert [call["seed"] for call in calls] == [41, 42, 43]
+
+    assert summary["operation"] == "multi_donor_projected_init"
+    assert summary["donor_weights"] == [1.0, 2.0, 1.0]
+    assert summary["stage_reports"][2]["effective_projection_blend_alpha"] == pytest.approx(0.2)
+    assert (output / "neural_forge_multi_donor_projected_init_report.json").exists()
 
 
 def test_hf_donor_project_init_handler_can_run_post_init_eval(monkeypatch) -> None:
