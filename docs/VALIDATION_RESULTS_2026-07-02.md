@@ -1621,6 +1621,20 @@ Added a direct no-default-dependency wrapper:
   `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_gpt2_multidonor_seqall_teacherreplay_now_gpu4_20260702.log`
 - Sanity check after launch:
   GPU4 was active and compression PID `3914822` was running.
+- Retention/manual watcher:
+  - Script:
+    `experiments/queue_qwen4b_gpt2_multidonor_seqall_teacherreplay_now_retention_20260702.sh`
+  - PID: `3969491`
+  - Waits for compression PID `3914822`
+  - Log:
+    `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_gpt2_multidonor_seqall_teacherreplay_now_gpu4_20260702_retention_now.queue.log`
+- lm-eval watcher:
+  - Script:
+    `experiments/queue_qwen4b_gpt2_multidonor_seqall_teacherreplay_now_lmeval_20260702.sh`
+  - PID: `3969700`
+  - Waits for retention watcher PID `3969491`
+  - Log:
+    `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_gpt2_multidonor_seqall_teacherreplay_now_gpu4_20260702_lmeval_now.queue.log`
 
 Recipe:
 
@@ -1640,3 +1654,20 @@ Recipe:
 This is not a success claim yet. It is an active proof run that should be
 judged only after the cached parent/donor/child retention evals and manual
 generations are available.
+
+Related negative evidence from the older importance/domain LRC lane:
+
+- Tag:
+  `qwen4b_blank_smollm_chain_importance_domain_lrc_gpu0_20260701`
+- Summary:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/qwen4b_blank_smollm_chain_importance_domain_lrc_gpu0_20260701/reports/chain_anchor_summary.json`
+- Result:
+  init was not promoted; the best model remained the blank SmolLM anchor.
+- Init metrics:
+  behavior `0/200`, generation-health `0/100`, choice accuracy `0.22`,
+  PPL `485165195.41`, worse than the blank anchor PPL `86365.46`.
+
+Interpretation: the importance/domain LRC variant should not be treated as a
+current best path. It is useful as a failure/control, while the active
+Qwen+GPT-2 sequential-all teacher-replay lane carries the stronger merge-first
+recipe.
