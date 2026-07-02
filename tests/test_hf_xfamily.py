@@ -5077,6 +5077,32 @@ def test_layer_tensor_alias_lookup_maps_qwen_suffixes_to_lfm_names() -> None:
     assert _lookup_layer_tensor_value(folded_state, "post_attention_layernorm.weight") == "ffn_norm"
 
 
+def test_layer_tensor_alias_lookup_maps_qwen_suffixes_to_gpt2_mlp_names() -> None:
+    index = {
+        (3, "mlp.c_fc.weight"): "model.h.3.mlp.c_fc.weight",
+        (3, "mlp.c_proj.weight"): "model.h.3.mlp.c_proj.weight",
+        (3, "mlp.c_fc.bias"): "model.h.3.mlp.c_fc.bias",
+        (3, "mlp.c_proj.bias"): "model.h.3.mlp.c_proj.bias",
+    }
+    folded_state = {
+        "mlp.c_fc.weight": "c_fc",
+        "mlp.c_proj.weight": "c_proj",
+        "mlp.c_fc.bias": "c_fc_bias",
+        "mlp.c_proj.bias": "c_proj_bias",
+    }
+
+    assert _lookup_layer_tensor_key(index, 3, "mlp.gate_proj.weight") == "model.h.3.mlp.c_fc.weight"
+    assert _lookup_layer_tensor_key(index, 3, "mlp.up_proj.weight") == "model.h.3.mlp.c_fc.weight"
+    assert _lookup_layer_tensor_key(index, 3, "mlp.down_proj.weight") == "model.h.3.mlp.c_proj.weight"
+    assert _lookup_layer_tensor_key(index, 3, "mlp.gate_proj.bias") == "model.h.3.mlp.c_fc.bias"
+    assert _lookup_layer_tensor_key(index, 3, "mlp.down_proj.bias") == "model.h.3.mlp.c_proj.bias"
+    assert _lookup_layer_tensor_value(folded_state, "mlp.gate_proj.weight") == "c_fc"
+    assert _lookup_layer_tensor_value(folded_state, "mlp.up_proj.weight") == "c_fc"
+    assert _lookup_layer_tensor_value(folded_state, "mlp.down_proj.weight") == "c_proj"
+    assert _lookup_layer_tensor_value(folded_state, "mlp.gate_proj.bias") == "c_fc_bias"
+    assert _lookup_layer_tensor_value(folded_state, "mlp.down_proj.bias") == "c_proj_bias"
+
+
 def test_linear_fit_rows_for_suffix_uses_cross_family_aliases() -> None:
     torch = pytest.importorskip("torch")
     rows = {
@@ -5090,6 +5116,38 @@ def test_linear_fit_rows_for_suffix_uses_cross_family_aliases() -> None:
     assert result is not None
     torch.testing.assert_close(result["input"], rows["input"])
     torch.testing.assert_close(result["output"], rows["output"])
+
+
+def test_linear_fit_rows_for_suffix_uses_gpt2_mlp_aliases() -> None:
+    torch = pytest.importorskip("torch")
+    c_fc_rows = {
+        "input": torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
+        "output": torch.tensor([[5.0, 6.0, 7.0], [8.0, 9.0, 10.0]]),
+    }
+    c_proj_rows = {
+        "input": torch.tensor([[11.0, 12.0, 13.0], [14.0, 15.0, 16.0]]),
+        "output": torch.tensor([[17.0, 18.0], [19.0, 20.0]]),
+    }
+    activation_profile = {
+        "linear_fit_rows": {
+            3: {
+                "mlp.c_fc.weight": c_fc_rows,
+                "mlp.c_proj.weight": c_proj_rows,
+            }
+        }
+    }
+
+    gate = _linear_fit_rows_for_suffix(torch, activation_profile, [3], "mlp.gate_proj.weight")
+    up = _linear_fit_rows_for_suffix(torch, activation_profile, [3], "mlp.up_proj.weight")
+    down = _linear_fit_rows_for_suffix(torch, activation_profile, [3], "mlp.down_proj.weight")
+
+    assert gate is not None
+    assert up is not None
+    assert down is not None
+    torch.testing.assert_close(gate["input"], c_fc_rows["input"])
+    torch.testing.assert_close(up["output"], c_fc_rows["output"])
+    torch.testing.assert_close(down["input"], c_proj_rows["input"])
+    torch.testing.assert_close(down["output"], c_proj_rows["output"])
 
 
 def test_attention_projection_modules_supports_lfm_operator_container() -> None:
