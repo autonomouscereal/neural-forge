@@ -213,13 +213,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hf_donor_init.add_argument(
         "--donor-layer-group-strategy",
-        choices=["depth", "activation-energy", "activation-geometry", "activation-cka"],
+        choices=["depth", "activation-energy", "activation-geometry", "activation-cka", "activation-cka-weighted"],
         default="depth",
         help=(
             "How donor layers are grouped before depth folding. activation-energy partitions donor layers by "
             "calibrated residual update energy instead of uniform depth bins; activation-geometry also weights "
             "CKA/cosine shift and residual novelty; activation-cka clusters donor residual-update directions "
-            "by pairwise activation CKA so similar non-contiguous layers merge before folding."
+            "by pairwise activation CKA so similar non-contiguous layers merge before folding; "
+            "activation-cka-weighted also weights folded activation profiles by CKA assignment strength and "
+            "residual delta."
         ),
     )
     hf_donor_init.add_argument(
@@ -1547,7 +1549,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--init-donor-layer-fold-mode", choices=["representative", "average", "fold"], default="fold")
     xfamily_chain.add_argument(
         "--init-donor-layer-group-strategy",
-        choices=["depth", "activation-energy", "activation-geometry", "activation-cka"],
+        choices=["depth", "activation-energy", "activation-geometry", "activation-cka", "activation-cka-weighted"],
         default="depth",
     )
     xfamily_chain.add_argument(

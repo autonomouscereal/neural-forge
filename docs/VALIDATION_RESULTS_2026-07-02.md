@@ -1075,3 +1075,56 @@ Next fold-level follow-up from code review:
   mode so folded donor-layer MLP/head activation profiles are weighted by
   CKA assignment strength times residual delta score, instead of uniformly
   averaging every layer in a group.
+
+## CKA-Weighted Folded Layer Profiles
+
+Implemented the follow-up as an opt-in donor-init grouping strategy:
+
+- `hf-donor-project-init --donor-layer-group-strategy activation-cka-weighted`
+- `hf-xfamily-chain-anchor-compress --init-donor-layer-group-strategy
+  activation-cka-weighted`
+
+The grouping itself uses the same activation-CKA layer clusters as
+`activation-cka`, but folded MLP neuron profiles and attention head/head-dim
+profiles are no longer uniformly averaged inside each donor-layer group. For
+each CKA group, profile aggregation weights each source layer by:
+
+`assignment_similarity * residual_delta_score`
+
+and normalizes those weights within the group. This keeps the merge-first
+depth fold while letting high-signal, strongly matched donor layers dominate
+the neuron/head transport signatures used by width folding.
+
+Why this matters:
+
+- The previous CKA group could merge the right layers, then dilute the MLP/head
+  activation signatures by averaging all group members equally.
+- The new mode changes the fold itself, not just recovery/eval gates.
+- Existing `activation-cka` behavior is unchanged; the weighted path is a
+  controlled A/B.
+
+Validation so far:
+
+- Local compile:
+  `python -m py_compile src/neural_forge/hf_xfamily.py src/neural_forge/cli.py`
+- Local focused parser/fold checks with `PYTHONPATH=src`:
+  `2 passed, 2 skipped, 239 deselected`
+- Local full suite:
+  `147 passed, 149 skipped`
+- Remote syntax and focused Torch-backed checks:
+  `4 passed, 239 deselected`
+- Remote full suite:
+  `296 passed`
+
+Queued proof lane to run after the balanced signed quantile-medoid control:
+
+- Script:
+  `experiments/queue_qwen4b_blank_smollm_cka_weighted_balanced_qmedoid_20260702.sh`
+- Tag:
+  `qwen4b_blank_smollm_cka_weighted_balanced_qmedoid_full_gpu4_20260702`
+- Intended dependency:
+  wait behind balanced-signed control queue PID `3424146`.
+- Intended recipe:
+  same as `qwen4b_blank_smollm_balanced_signed_cka_qmedoid_lrcguard_full_gpu4_20260702`,
+  but with `INIT_DONOR_LAYER_GROUP_STRATEGY=activation-cka-weighted` and
+  `BLOCK_DONOR_LAYER_GROUP_STRATEGY=activation-cka`.

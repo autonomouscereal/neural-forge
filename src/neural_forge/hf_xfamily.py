@@ -344,9 +344,16 @@ def donor_projected_init(
         raise ValueError("transport_support must be centroid, importance, quantile, medoid, or quantile-medoid.")
     if donor_layer_fold_mode not in {"representative", "average", "fold"}:
         raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
-    if donor_layer_group_strategy not in {"depth", "activation-energy", "activation-geometry", "activation-cka"}:
+    if donor_layer_group_strategy not in {
+        "depth",
+        "activation-energy",
+        "activation-geometry",
+        "activation-cka",
+        "activation-cka-weighted",
+    }:
         raise ValueError(
-            "donor_layer_group_strategy must be depth, activation-energy, activation-geometry, or activation-cka."
+            "donor_layer_group_strategy must be depth, activation-energy, activation-geometry, "
+            "activation-cka, or activation-cka-weighted."
         )
     if attention_fold_mode not in {"independent", "coupled", "activation-coupled"}:
         raise ValueError("attention_fold_mode must be independent, coupled, or activation-coupled.")
@@ -456,6 +463,7 @@ def donor_projected_init(
             "activation-energy",
             "activation-geometry",
             "activation-cka",
+            "activation-cka-weighted",
         }
         activation_profile = _collect_donor_axis_activation_scores(
             torch,
@@ -477,7 +485,11 @@ def donor_projected_init(
         raise ValueError("attention head-dimension transport requires activation calibration texts.")
     if activation_fit_linears and activation_profile is None:
         raise ValueError("activation linear fitting requires activation calibration texts.")
-    if donor_layer_group_strategy in {"activation-energy", "activation-geometry", "activation-cka"} and activation_profile is None:
+    if (
+        donor_layer_group_strategy
+        in {"activation-energy", "activation-geometry", "activation-cka", "activation-cka-weighted"}
+        and activation_profile is None
+    ):
         raise ValueError(
             f"{donor_layer_group_strategy} donor layer grouping requires activation calibration texts."
         )
@@ -528,6 +540,7 @@ def donor_projected_init(
         strategy=donor_layer_group_strategy,
         activation_profile=activation_profile,
     )
+    donor_layer_group_weights = _donor_layer_group_weight_lookup(donor_layer_group_report)
     folded_donor_layer_cache: dict[int, dict[str, Any]] = {}
     axis_assignment_cache: dict[Any, dict[str, Any]] = {}
     layer_reports = []
@@ -558,6 +571,11 @@ def donor_projected_init(
             [donor_layer_idx]
             if donor_layer_fold_mode == "representative"
             else donor_layer_group
+        )
+        layer_group_weights = (
+            None
+            if donor_layer_fold_mode == "representative"
+            else donor_layer_group_weights.get(tuple(int(item) for item in donor_layer_group))
         )
         if donor_layer_fold_mode == "representative":
             donor_key = _lookup_layer_tensor_key(donor_layer_keys, donor_layer_idx, suffix)
@@ -634,6 +652,7 @@ def donor_projected_init(
             donor_layer_idx,
             donor_layer_group,
             activation_profile,
+            layer_group_weights=layer_group_weights,
         )
         axis_reductions = _axis_reductions_for_layer_tensor(suffix)
         axis_reductions = _with_consumer_hidden_reduction(axis_reductions, consumer_hidden_reduction)
@@ -654,6 +673,7 @@ def donor_projected_init(
                     donor_layer_idx,
                     donor_layer_group,
                     activation_profile,
+                    layer_group_weights=layer_group_weights,
                 )
             projected = _resize_attention_tensor_to_shape(
                 torch,
@@ -3504,9 +3524,10 @@ def _donor_layer_groups_for_target_count(
 ) -> tuple[list[list[int]], dict[str, Any]]:
     if target_layer_count <= 0 or donor_layer_count <= 0:
         raise ValueError("Layer counts must be positive.")
-    if strategy not in {"depth", "activation-energy", "activation-geometry", "activation-cka"}:
+    if strategy not in {"depth", "activation-energy", "activation-geometry", "activation-cka", "activation-cka-weighted"}:
         raise ValueError(
-            "donor layer group strategy must be depth, activation-energy, activation-geometry, or activation-cka."
+            "donor layer group strategy must be depth, activation-energy, activation-geometry, "
+            "activation-cka, or activation-cka-weighted."
         )
     if strategy == "depth":
         groups = [
@@ -3529,13 +3550,20 @@ def _donor_layer_groups_for_target_count(
             "total_geometry_score": float(sum(scores)),
             "layer_geometry": geometry["layer_geometry"],
         }
-    if strategy == "activation-cka":
+    if strategy in {"activation-cka", "activation-cka-weighted"}:
         cka = _donor_layer_cka_groups(
             torch,
             activation_profile,
             donor_layer_count=int(donor_layer_count),
             target_layer_count=int(target_layer_count),
         )
+        if strategy == "activation-cka-weighted":
+            cka = {
+                **cka,
+                "strategy": "activation-cka-weighted",
+                "group_layer_weights": _activation_cka_group_layer_weights(cka),
+                "group_layer_weight_mode": "assignment_similarity_times_delta_score",
+            }
         return cka["groups"], cka
     scores = _donor_layer_delta_scores(torch, activation_profile, int(donor_layer_count))
     groups = _donor_layer_groups_by_energy(scores, int(target_layer_count))
@@ -3803,6 +3831,48 @@ def _activation_cka_seed_layers(
         )
         seeds.append(int(next_seed))
     return seeds
+
+
+def _activation_cka_group_layer_weights(report: dict[str, Any]) -> list[list[float]]:
+    groups = report.get("groups") or []
+    delta_scores = report.get("delta_scores") or []
+    assignment_similarity = report.get("assignment_similarity") or []
+    group_weights: list[list[float]] = []
+    for group in groups:
+        raw_weights = []
+        for layer_idx in group:
+            layer_idx = int(layer_idx)
+            delta = (
+                float(delta_scores[layer_idx])
+                if 0 <= layer_idx < len(delta_scores)
+                else 1.0
+            )
+            similarity = (
+                float(assignment_similarity[layer_idx])
+                if 0 <= layer_idx < len(assignment_similarity)
+                else 1.0
+            )
+            raw_weights.append(max(delta, 1e-12) * max(similarity, 1e-3))
+        total = sum(raw_weights)
+        if not raw_weights:
+            group_weights.append([])
+        elif not math.isfinite(total) or total <= 0.0:
+            group_weights.append([1.0 / float(len(raw_weights)) for _ in raw_weights])
+        else:
+            group_weights.append([float(item / total) for item in raw_weights])
+    return group_weights
+
+
+def _donor_layer_group_weight_lookup(report: dict[str, Any]) -> dict[tuple[int, ...], list[float]]:
+    groups = report.get("groups") or []
+    weights = report.get("group_layer_weights") or []
+    lookup: dict[tuple[int, ...], list[float]] = {}
+    for group, group_weights in zip(groups, weights):
+        key = tuple(int(item) for item in group)
+        values = [float(item) for item in group_weights]
+        if key and len(values) == len(key):
+            lookup[key] = values
+    return lookup
 
 
 def _paired_activation_matrices(torch, first, second):
@@ -6034,6 +6104,7 @@ def _activation_axis_weights_for_tensor(
     donor_layer_idx: int,
     donor_layer_group: Sequence[int] | None,
     activation_profile,
+    layer_group_weights: Sequence[float] | None = None,
 ):
     if activation_profile is None:
         return None
@@ -6047,11 +6118,13 @@ def _activation_axis_weights_for_tensor(
         activation_profile.get("mlp_scores", {}),
         layer_group,
         clamp_min=1e-12,
+        layer_weights=layer_group_weights,
     )
     mlp_features = _aggregate_layer_activation_profile(
         torch,
         activation_profile.get("mlp_features", {}),
         layer_group,
+        layer_weights=layer_group_weights,
     )
     for axis, source_dim in enumerate(donor_tensor.shape):
         if int(source_dim) == int(hidden_scores.numel()):
@@ -6118,6 +6191,7 @@ def _attention_axis_weights_for_tensor(
     donor_layer_idx: int,
     donor_layer_group: Sequence[int] | None,
     activation_profile,
+    layer_group_weights: Sequence[float] | None = None,
 ):
     if activation_profile is None:
         return None
@@ -6129,8 +6203,23 @@ def _attention_axis_weights_for_tensor(
     head_dim_profiles = activation_profile.get("attention_head_dim_profiles") or {}
     layer_group = list(donor_layer_group or [donor_layer_idx])
     layer_group_key = tuple(int(item) for item in layer_group)
-    scores = _aggregate_layer_attention_profile(torch, head_profiles, layer_group, stream, "scores", clamp_min=1e-12)
-    features = _aggregate_layer_attention_profile(torch, head_profiles, layer_group, stream, "features")
+    scores = _aggregate_layer_attention_profile(
+        torch,
+        head_profiles,
+        layer_group,
+        stream,
+        "scores",
+        clamp_min=1e-12,
+        layer_weights=layer_group_weights,
+    )
+    features = _aggregate_layer_attention_profile(
+        torch,
+        head_profiles,
+        layer_group,
+        stream,
+        "features",
+        layer_weights=layer_group_weights,
+    )
     head_dim_scores = _aggregate_layer_attention_profile(
         torch,
         head_dim_profiles,
@@ -6138,6 +6227,7 @@ def _attention_axis_weights_for_tensor(
         dim_stream,
         "scores",
         clamp_min=1e-12,
+        layer_weights=layer_group_weights,
     )
     head_dim_features = _aggregate_layer_attention_profile(
         torch,
@@ -6145,6 +6235,7 @@ def _attention_axis_weights_for_tensor(
         layer_group,
         dim_stream,
         "features",
+        layer_weights=layer_group_weights,
     )
     if scores is None:
         return None
@@ -6197,18 +6288,28 @@ def _aggregate_layer_attention_profile(
     stream: str,
     field: str,
     clamp_min=None,
+    layer_weights: Sequence[float] | None = None,
 ):
     rows = []
-    for layer_idx in layer_group:
+    weights = []
+    for group_pos, layer_idx in enumerate(layer_group):
         layer_profile = profiles.get(int(layer_idx), {})
         stream_profile = layer_profile.get(stream, {})
         value = stream_profile.get(field)
         if value is not None:
             rows.append(value.detach().cpu().to(torch.float32))
+            if layer_weights is not None and int(group_pos) < len(layer_weights):
+                weights.append(max(float(layer_weights[int(group_pos)]), 1e-12))
     if not rows:
         return None
     stacked = torch.stack(rows, dim=0)
-    merged = stacked.mean(dim=0)
+    if weights and len(weights) == len(rows):
+        weight_tensor = torch.tensor(weights, dtype=torch.float32)
+        weight_tensor = weight_tensor / weight_tensor.sum().clamp_min(1e-12)
+        view_shape = (len(weights),) + (1,) * (stacked.dim() - 1)
+        merged = (stacked * weight_tensor.view(view_shape)).sum(dim=0)
+    else:
+        merged = stacked.mean(dim=0)
     if clamp_min is not None:
         merged = merged.clamp_min(float(clamp_min))
     return merged
@@ -6750,12 +6851,31 @@ def _truncate_linear_weight_delta_rank(torch, weight, reference_weight, rank: in
     }
 
 
-def _aggregate_layer_activation_profile(torch, profiles: dict[int, Any], layer_group: Sequence[int], clamp_min=None):
-    rows = [profiles[int(layer_idx)] for layer_idx in layer_group if int(layer_idx) in profiles]
+def _aggregate_layer_activation_profile(
+    torch,
+    profiles: dict[int, Any],
+    layer_group: Sequence[int],
+    clamp_min=None,
+    layer_weights: Sequence[float] | None = None,
+):
+    rows = []
+    weights = []
+    for group_pos, layer_idx in enumerate(layer_group):
+        if int(layer_idx) not in profiles:
+            continue
+        rows.append(profiles[int(layer_idx)])
+        if layer_weights is not None and int(group_pos) < len(layer_weights):
+            weights.append(max(float(layer_weights[int(group_pos)]), 1e-12))
     if not rows:
         return None
     stacked = torch.stack([row.detach().cpu().to(torch.float32) for row in rows], dim=0)
-    merged = stacked.mean(dim=0)
+    if weights and len(weights) == len(rows):
+        weight_tensor = torch.tensor(weights, dtype=torch.float32)
+        weight_tensor = weight_tensor / weight_tensor.sum().clamp_min(1e-12)
+        view_shape = (len(weights),) + (1,) * (stacked.dim() - 1)
+        merged = (stacked * weight_tensor.view(view_shape)).sum(dim=0)
+    else:
+        merged = stacked.mean(dim=0)
     if clamp_min is not None:
         merged = merged.clamp_min(float(clamp_min))
     return merged

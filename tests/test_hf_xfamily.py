@@ -106,9 +106,11 @@ from neural_forge.hf_xfamily import _activation_quantile_support_indices
 from neural_forge.hf_xfamily import _activation_layer_geometry_scores
 from neural_forge.hf_xfamily import _activation_similarity_assignment
 from neural_forge.hf_xfamily import _activation_signed_similarity_assignment
+from neural_forge.hf_xfamily import _activation_cka_group_layer_weights
 from neural_forge.hf_xfamily import _activation_axis_weights_for_tensor
 from neural_forge.hf_xfamily import _activation_fit_suffix_enabled
 from neural_forge.hf_xfamily import _activation_channel_summary
+from neural_forge.hf_xfamily import _aggregate_layer_activation_profile
 from neural_forge.hf_xfamily import _mlp_neuron_activation_values
 from neural_forge.hf_xfamily import _attention_axis_weights_for_tensor
 from neural_forge.hf_xfamily import _attention_head_activation_profile
@@ -611,6 +613,32 @@ def test_cli_accepts_activation_cka_layer_group_strategy() -> None:
     assert block_recover_args.donor_layer_group_strategy == "activation-cka"
     assert chain_args.init_donor_layer_group_strategy == "activation-cka"
     assert chain_args.block_donor_layer_group_strategy == "activation-cka"
+
+    weighted_init_args = parser.parse_args(
+        [
+            "hf-donor-project-init",
+            "projected-out",
+            "--target-config-model",
+            "target-model",
+            "--donor-model",
+            "donor-model",
+            "--donor-layer-group-strategy",
+            "activation-cka-weighted",
+        ]
+    )
+    weighted_chain_args = parser.parse_args(
+        [
+            "hf-xfamily-chain-anchor-compress",
+            "source-model",
+            "candidate-config",
+            "chain-out",
+            "--init-donor-layer-group-strategy",
+            "activation-cka-weighted",
+        ]
+    )
+
+    assert weighted_init_args.donor_layer_group_strategy == "activation-cka-weighted"
+    assert weighted_chain_args.init_donor_layer_group_strategy == "activation-cka-weighted"
 
 
 def test_cli_accepts_signed_activation_fold_assignment() -> None:
@@ -1790,6 +1818,63 @@ def test_donor_layer_groups_can_cluster_by_activation_cka() -> None:
     assert report["cka_similarity"][0][2] == pytest.approx(1.0)
     assert report["cka_similarity"][0][1] == pytest.approx(0.0)
     assert report["assignment_similarity"][2] == pytest.approx(1.0)
+
+
+def test_donor_layer_groups_can_report_activation_cka_profile_weights() -> None:
+    torch = pytest.importorskip("torch")
+    activation_profile = {
+        "hidden_basis_input_rows": {idx: torch.zeros((4, 2)) for idx in range(4)},
+        "hidden_basis_output_rows": {
+            0: torch.tensor([[-1.0, 0.0], [1.0, 0.0], [-1.0, 0.0], [1.0, 0.0]]),
+            1: torch.tensor([[0.0, -1.0], [0.0, -1.0], [0.0, 1.0], [0.0, 1.0]]),
+            2: torch.tensor([[-2.0, 0.0], [2.0, 0.0], [-2.0, 0.0], [2.0, 0.0]]),
+            3: torch.tensor([[0.0, -1.0], [0.0, -1.0], [0.0, 1.0], [0.0, 1.0]]),
+        },
+    }
+
+    groups, report = _donor_layer_groups_for_target_count(
+        torch,
+        target_layer_count=2,
+        donor_layer_count=4,
+        strategy="activation-cka-weighted",
+        activation_profile=activation_profile,
+    )
+
+    assert report["strategy"] == "activation-cka-weighted"
+    assert "group_layer_weights" in report
+    assert len(report["group_layer_weights"]) == len(groups)
+    for group, weights in zip(groups, report["group_layer_weights"]):
+        assert len(weights) == len(group)
+        assert sum(weights) == pytest.approx(1.0)
+
+
+def test_aggregate_layer_activation_profile_can_use_group_weights() -> None:
+    torch = pytest.importorskip("torch")
+    profiles = {
+        0: torch.tensor([0.0, 10.0]),
+        1: torch.tensor([10.0, 0.0]),
+    }
+
+    merged = _aggregate_layer_activation_profile(
+        torch,
+        profiles,
+        [0, 1],
+        layer_weights=[0.25, 0.75],
+    )
+
+    assert merged.tolist() == pytest.approx([7.5, 2.5])
+
+
+def test_activation_cka_group_layer_weights_follow_similarity_and_delta() -> None:
+    weights = _activation_cka_group_layer_weights(
+        {
+            "groups": [[0, 1]],
+            "delta_scores": [1.0, 3.0],
+            "assignment_similarity": [0.5, 1.0],
+        }
+    )
+
+    assert weights[0] == pytest.approx([0.5 / 3.5, 3.0 / 3.5])
 
 
 def test_linear_cka_detects_similar_activation_spaces() -> None:
