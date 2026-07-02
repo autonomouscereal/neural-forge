@@ -10,6 +10,8 @@ from neural_forge.cli import _parse_layer_groups
 from neural_forge.cli import _post_init_gate_decision
 from neural_forge.hf_recovery import RECOVERY_TEXTS
 from neural_forge.hf_recovery import _answer_contrastive_candidates
+from neural_forge.hf_recovery import _answer_first_token_margin_loss
+from neural_forge.hf_recovery import _answer_first_token_negative_ids
 from neural_forge.hf_recovery import _alm_text_chunks
 from neural_forge.hf_recovery import _append_eos_text
 from neural_forge.hf_recovery import _activation_row_transport_loss
@@ -912,6 +914,12 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.09",
             "--answer-contrastive-max-negatives",
             "3",
+            "--answer-first-token-margin-weight",
+            "0.19",
+            "--answer-first-token-margin",
+            "1.4",
+            "--answer-first-token-max-negatives",
+            "9",
             "--teacher-rank-weight",
             "0.11",
             "--teacher-rank-temperature",
@@ -1144,6 +1152,9 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_recover_args.alm_min_chars == 4
     assert xfamily_recover_args.answer_contrastive_weight == 0.09
     assert xfamily_recover_args.answer_contrastive_max_negatives == 3
+    assert xfamily_recover_args.answer_first_token_margin_weight == pytest.approx(0.19)
+    assert xfamily_recover_args.answer_first_token_margin == pytest.approx(1.4)
+    assert xfamily_recover_args.answer_first_token_max_negatives == 9
     assert xfamily_recover_args.teacher_rank_weight == 0.11
     assert xfamily_recover_args.teacher_rank_temperature == 0.7
     assert xfamily_recover_args.teacher_rank_max_negatives == 5
@@ -4390,6 +4401,87 @@ def test_answer_contrastive_candidates_build_numeric_and_choice_sets() -> None:
     assert choices == ["Question: pick\nAnswer: B", "Question: pick\nAnswer: A", "Question: pick\nAnswer: C"]
 
 
+class _OffsetTokenizer:
+    def __init__(self) -> None:
+        self.vocab = {str(index): index for index in range(1000)}
+        self.vocab.update({"A": 1001, "B": 1002, "C": 1003, "D": 1004, "?": 1005, "+": 1006})
+
+    def __call__(self, text, add_special_tokens=False, return_offsets_mapping=False, **_kwargs):
+        import re
+
+        ids = []
+        offsets = []
+        for match in re.finditer(r"-?\d+|[A-D]|\S", text):
+            token = match.group(0)
+            ids.append(self.vocab.get(token, 999))
+            offsets.append((match.start(), match.end()))
+        result = {"input_ids": ids}
+        if return_offsets_mapping:
+            result["offset_mapping"] = offsets
+        return result
+
+
+def test_answer_first_token_negative_ids_include_prompt_number_distractors() -> None:
+    tokenizer = _OffsetTokenizer()
+    text = "Question: What is 6 + 4?\nAnswer: 10"
+
+    negative_ids = _answer_first_token_negative_ids(
+        tokenizer,
+        text,
+        response_loss_mode="answer",
+        max_negatives=6,
+        gold_id=10,
+        vocab_size=2000,
+    )
+
+    assert 6 in negative_ids
+    assert 4 in negative_ids
+    assert 10 not in negative_ids
+
+
+def test_answer_first_token_margin_loss_penalizes_prompt_number_copy() -> None:
+    torch = pytest.importorskip("torch")
+    tokenizer = _OffsetTokenizer()
+    text = "Question: What is 6 + 4?\nAnswer: 10"
+    input_ids = torch.tensor([[1, 2, 3, 10]])
+    attention_mask = torch.ones_like(input_ids)
+    loss_mask = torch.tensor([[0, 0, 0, 1]])
+
+    bad_logits = torch.zeros((1, 3, 2000), dtype=torch.float32)
+    bad_logits[0, 2, 6] = 3.0
+    good_logits = torch.zeros((1, 3, 2000), dtype=torch.float32)
+    good_logits[0, 2, 10] = 4.0
+
+    bad_loss, bad_count = _answer_first_token_margin_loss(
+        torch,
+        bad_logits,
+        input_ids,
+        attention_mask,
+        loss_mask,
+        tokenizer,
+        [text],
+        response_loss_mode="answer",
+        max_negatives=6,
+        margin=1.0,
+    )
+    good_loss, good_count = _answer_first_token_margin_loss(
+        torch,
+        good_logits,
+        input_ids,
+        attention_mask,
+        loss_mask,
+        tokenizer,
+        [text],
+        response_loss_mode="answer",
+        max_negatives=6,
+        margin=1.0,
+    )
+
+    assert bad_count == 1
+    assert good_count == 1
+    assert bad_loss.item() > good_loss.item()
+
+
 def test_candidate_rank_kl_rewards_matching_teacher_preference() -> None:
     torch = pytest.importorskip("torch")
     teacher_nll = torch.tensor([0.1, 4.0, 5.0])
@@ -6290,6 +6382,12 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "0.21",
             "--answer-contrastive-max-negatives",
             "5",
+            "--answer-first-token-margin-weight",
+            "0.43",
+            "--answer-first-token-margin",
+            "1.8",
+            "--answer-first-token-max-negatives",
+            "10",
             "--teacher-rank-weight",
             "0.31",
             "--teacher-rank-temperature",
@@ -6412,6 +6510,9 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "alm_min_chars": 3,
         "answer_contrastive_weight": 0.21,
         "answer_contrastive_max_negatives": 5,
+        "answer_first_token_margin_weight": 0.43,
+        "answer_first_token_margin": 1.8,
+        "answer_first_token_max_negatives": 10,
         "teacher_rank_weight": 0.31,
         "teacher_rank_temperature": 0.8,
         "teacher_rank_max_negatives": 6,
@@ -7937,6 +8038,12 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "0.028",
             "--alm-answer-contrastive-max-negatives",
             "7",
+            "--alm-answer-first-token-margin-weight",
+            "0.038",
+            "--alm-answer-first-token-margin",
+            "1.6",
+            "--alm-answer-first-token-max-negatives",
+            "9",
             "--alm-teacher-rank-weight",
             "0.029",
             "--alm-teacher-rank-temperature",
@@ -8094,6 +8201,9 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["alm_token_teacher_confidence_floor"] == 0.27
     assert captured["alm_answer_contrastive_weight"] == 0.028
     assert captured["alm_answer_contrastive_max_negatives"] == 7
+    assert captured["alm_answer_first_token_margin_weight"] == 0.038
+    assert captured["alm_answer_first_token_margin"] == 1.6
+    assert captured["alm_answer_first_token_max_negatives"] == 9
     assert captured["alm_teacher_rank_weight"] == 0.029
     assert captured["alm_teacher_rank_temperature"] == 0.7
     assert captured["alm_teacher_rank_max_negatives"] == 8

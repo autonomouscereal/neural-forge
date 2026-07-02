@@ -861,6 +861,9 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--alm-min-chars", type=int, default=2)
     xfamily_recover.add_argument("--answer-contrastive-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--answer-contrastive-max-negatives", type=int, default=4)
+    xfamily_recover.add_argument("--answer-first-token-margin-weight", type=float, default=0.0)
+    xfamily_recover.add_argument("--answer-first-token-margin", type=float, default=1.0)
+    xfamily_recover.add_argument("--answer-first-token-max-negatives", type=int, default=8)
     xfamily_recover.add_argument("--teacher-rank-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--teacher-rank-temperature", type=float, default=1.0)
     xfamily_recover.add_argument("--teacher-rank-max-negatives", type=int, default=4)
@@ -1673,6 +1676,9 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--alm-token-teacher-confidence-floor", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-answer-contrastive-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-answer-contrastive-max-negatives", type=int, default=4)
+    xfamily_chain.add_argument("--alm-answer-first-token-margin-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-answer-first-token-margin", type=float, default=1.0)
+    xfamily_chain.add_argument("--alm-answer-first-token-max-negatives", type=int, default=8)
     xfamily_chain.add_argument("--alm-teacher-rank-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-teacher-rank-temperature", type=float, default=1.0)
     xfamily_chain.add_argument("--alm-teacher-rank-max-negatives", type=int, default=4)
@@ -2630,6 +2636,9 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         alm_min_chars=args.alm_min_chars,
         answer_contrastive_weight=args.answer_contrastive_weight,
         answer_contrastive_max_negatives=args.answer_contrastive_max_negatives,
+        answer_first_token_margin_weight=args.answer_first_token_margin_weight,
+        answer_first_token_margin=args.answer_first_token_margin,
+        answer_first_token_max_negatives=args.answer_first_token_max_negatives,
         teacher_rank_weight=args.teacher_rank_weight,
         teacher_rank_temperature=args.teacher_rank_temperature,
         teacher_rank_max_negatives=args.teacher_rank_max_negatives,
@@ -3009,6 +3018,9 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         alm_token_teacher_confidence_floor=args.alm_token_teacher_confidence_floor,
         alm_answer_contrastive_weight=args.alm_answer_contrastive_weight,
         alm_answer_contrastive_max_negatives=args.alm_answer_contrastive_max_negatives,
+        alm_answer_first_token_margin_weight=args.alm_answer_first_token_margin_weight,
+        alm_answer_first_token_margin=args.alm_answer_first_token_margin,
+        alm_answer_first_token_max_negatives=args.alm_answer_first_token_max_negatives,
         alm_teacher_rank_weight=args.alm_teacher_rank_weight,
         alm_teacher_rank_temperature=args.alm_teacher_rank_temperature,
         alm_teacher_rank_max_negatives=args.alm_teacher_rank_max_negatives,

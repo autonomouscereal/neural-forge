@@ -1,5 +1,54 @@
 # Validation Results - 2026-07-02
 
+## Answer-Boundary Margin Recovery
+
+Added an opt-in ALM recovery loss aimed at the current exact-answer failure:
+the compact model often emits a prompt number or nearby arithmetic distractor
+as the first answer token.
+
+What changed:
+
+- `hf-xfamily-recover --answer-first-token-margin-weight`
+- `hf-xfamily-recover --answer-first-token-margin`
+- `hf-xfamily-recover --answer-first-token-max-negatives`
+- `hf-xfamily-chain-anchor-compress --alm-answer-first-token-margin-weight`
+- `hf-xfamily-chain-anchor-compress --alm-answer-first-token-margin`
+- `hf-xfamily-chain-anchor-compress --alm-answer-first-token-max-negatives`
+- The loss builds numeric or multiple-choice distractors from the same
+  answer-candidate set used by answer contrastive recovery, including copied
+  prompt numbers such as `6` and `4` for `6 + 4 -> 10`.
+- It applies a direct hinge margin at the first response token: the gold answer
+  token must beat distractor token logits by the configured margin.
+- Token IDs are selected with tokenizer offset mappings when available so BPE
+  tokens that absorb the pre-answer space are handled correctly.
+
+Why this matters:
+
+- The latest exact-generation reports show useful broad behavior transfer but
+  repeated exact arithmetic failures. For example, the cleanopen full ALM
+  exact-gen report answered `6+4 -> 6`.
+- Existing answer contrastive and teacher-rank losses compare whole candidate
+  sequence likelihoods. This new objective directly attacks the first-token
+  prompt-copy failure without replacing the broader recovery stack.
+- The loss is default-off, so historical runs and queued recipes remain
+  reproducible until a queue explicitly opts in.
+
+Validation:
+
+- Local focused xfamily tests:
+  `3 passed, 1 skipped, 225 deselected`
+- Local full xfamily module:
+  `96 passed, 133 skipped`
+- Local full suite:
+  `143 passed, 138 skipped`
+
+Current status:
+
+- This is an implementation improvement, not proof of retention yet.
+- Next proof step is a margin-enabled exactness probe from the known
+  mathdrill recovered checkpoint and, if positive, a follow-up ALM lane after
+  the quantile-medoid blank-target structural checkpoint finishes.
+
 ## Attention-Influence Cross-Tokenizer Recovery
 
 Added an optional AIM-style recovery loss for cross-tokenizer and cross-family

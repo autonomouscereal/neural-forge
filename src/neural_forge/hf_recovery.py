@@ -632,6 +632,9 @@ def recover_cross_tokenizer_causal_lm(
     alm_min_chars: int = 2,
     answer_contrastive_weight: float = 0.0,
     answer_contrastive_max_negatives: int = 4,
+    answer_first_token_margin_weight: float = 0.0,
+    answer_first_token_margin: float = 1.0,
+    answer_first_token_max_negatives: int = 8,
     teacher_rank_weight: float = 0.0,
     teacher_rank_temperature: float = 1.0,
     teacher_rank_max_negatives: int = 4,
@@ -690,6 +693,7 @@ def recover_cross_tokenizer_causal_lm(
         or token_kd_weight < 0
         or alm_kd_weight < 0
         or answer_contrastive_weight < 0
+        or answer_first_token_margin_weight < 0
         or teacher_rank_weight < 0
         or teacher_generate_lm_weight < 0
         or stepwise_donor_kd_weight < 0
@@ -714,6 +718,10 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("alm_min_chars must be positive.")
     if answer_contrastive_max_negatives <= 0:
         raise ValueError("answer_contrastive_max_negatives must be positive.")
+    if answer_first_token_max_negatives <= 0:
+        raise ValueError("answer_first_token_max_negatives must be positive.")
+    if answer_first_token_margin <= 0:
+        raise ValueError("answer_first_token_margin must be positive.")
     if teacher_rank_max_negatives <= 0:
         raise ValueError("teacher_rank_max_negatives must be positive.")
     if teacher_rank_temperature <= 0:
@@ -747,6 +755,7 @@ def recover_cross_tokenizer_causal_lm(
         and token_kd_weight == 0
         and alm_kd_weight == 0
         and answer_contrastive_weight == 0
+        and answer_first_token_margin_weight == 0
         and teacher_rank_weight == 0
         and teacher_generate_lm_weight == 0
         and stepwise_donor_kd_weight == 0
@@ -779,8 +788,10 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("temperature must be positive.")
     if response_loss_mode not in {"none", "auto", "assistant", "answer"}:
         raise ValueError("response_loss_mode must be none, auto, assistant, or answer.")
-    if response_loss_mode == "none" and (first_token_lm_weight > 0 or response_end_lm_weight > 0):
-        raise ValueError("response-boundary LM losses require response_loss_mode to be auto, assistant, or answer.")
+    if response_loss_mode == "none" and (
+        first_token_lm_weight > 0 or response_end_lm_weight > 0 or answer_first_token_margin_weight > 0
+    ):
+        raise ValueError("response-boundary losses require response_loss_mode to be auto, assistant, or answer.")
     if max_anchors <= 0:
         raise ValueError("max_anchors must be positive.")
     if anchor_selection not in {"shortest", "longest", "stratified"}:
@@ -1006,6 +1017,7 @@ def recover_cross_tokenizer_causal_lm(
     token_focus_counts = []
     alm_chunk_counts = []
     answer_contrastive_counts = []
+    answer_first_token_margin_counts = []
     teacher_rank_counts = []
     on_policy_counts = []
     on_policy_hidden_counts = []
@@ -1208,6 +1220,27 @@ def recover_cross_tokenizer_causal_lm(
             )
             answer_contrastive_counts.append(int(contrastive_count))
             loss = loss + float(answer_contrastive_weight) * contrastive
+        answer_first_token_margin_loss = None
+        if answer_first_token_margin_weight > 0:
+            answer_first_token_margin_loss, answer_margin_count = _answer_first_token_margin_loss(
+                torch,
+                torch.nan_to_num(
+                    student.logits[:, :-1, :].contiguous().to(torch.float32),
+                    nan=0.0,
+                    posinf=1e4,
+                    neginf=-1e4,
+                ),
+                candidate_batch["input_ids"],
+                candidate_batch.get("attention_mask"),
+                candidate_batch.get("loss_mask"),
+                candidate_tokenizer,
+                candidate_batch.get("raw_texts", candidate_batch.get("texts", [])),
+                response_loss_mode,
+                answer_first_token_max_negatives,
+                answer_first_token_margin,
+            )
+            answer_first_token_margin_counts.append(int(answer_margin_count))
+            loss = loss + float(answer_first_token_margin_weight) * answer_first_token_margin_loss
         if teacher_rank_weight > 0:
             teacher_rank, teacher_rank_count = _teacher_ranked_candidate_loss(
                 torch,
@@ -1333,6 +1366,11 @@ def recover_cross_tokenizer_causal_lm(
             attention_influence_loss_value = (
                 None if attention_influence_loss is None else float(attention_influence_loss.detach().cpu())
             )
+            answer_first_token_margin_loss_value = (
+                None
+                if answer_first_token_margin_loss is None
+                else float(answer_first_token_margin_loss.detach().cpu())
+            )
             losses.append(
                 {
                     "step": step,
@@ -1344,6 +1382,10 @@ def recover_cross_tokenizer_causal_lm(
                     "stepwise_donor_count": int(stepwise_donor_count),
                     "on_policy_hidden_kd_loss": on_policy_hidden_loss_value,
                     "on_policy_hidden_count": int(on_policy_hidden_count),
+                    "answer_first_token_margin_loss": answer_first_token_margin_loss_value,
+                    "answer_first_token_margin_count": (
+                        int(answer_first_token_margin_counts[-1]) if answer_first_token_margin_counts else 0
+                    ),
                 }
             )
             print(
@@ -1352,6 +1394,7 @@ def recover_cross_tokenizer_causal_lm(
                 f"token_focus={token_focus_counts[-1] if token_focus_counts else 0} "
                 f"alm_chunks={alm_chunk_counts[-1] if alm_chunk_counts else 0} "
                 f"answer_contrastive={answer_contrastive_counts[-1] if answer_contrastive_counts else 0} "
+                f"answer_margin={answer_first_token_margin_counts[-1] if answer_first_token_margin_counts else 0} "
                 f"teacher_rank={teacher_rank_counts[-1] if teacher_rank_counts else 0} "
                 f"on_policy={on_policy_counts[-1] if on_policy_counts else 0} "
                 f"on_policy_hidden={on_policy_hidden_counts[-1] if on_policy_hidden_counts else 0} "
@@ -1451,6 +1494,10 @@ def recover_cross_tokenizer_causal_lm(
         "answer_contrastive_weight": answer_contrastive_weight,
         "answer_contrastive_max_negatives": answer_contrastive_max_negatives,
         "answer_contrastive_count_observed": answer_contrastive_counts,
+        "answer_first_token_margin_weight": answer_first_token_margin_weight,
+        "answer_first_token_margin": answer_first_token_margin,
+        "answer_first_token_max_negatives": answer_first_token_max_negatives,
+        "answer_first_token_margin_count_observed": answer_first_token_margin_counts,
         "teacher_rank_weight": teacher_rank_weight,
         "teacher_rank_temperature": teacher_rank_temperature,
         "teacher_rank_max_negatives": teacher_rank_max_negatives,
@@ -4968,6 +5015,63 @@ def _teacher_ranked_candidate_loss(
     return torch.stack(losses).mean(), len(losses)
 
 
+def _answer_first_token_margin_loss(
+    torch,
+    shift_student,
+    input_ids,
+    attention_mask,
+    loss_mask,
+    tokenizer,
+    texts: Sequence[str],
+    response_loss_mode: str,
+    max_negatives: int,
+    margin: float,
+):
+    if max_negatives <= 0:
+        raise ValueError("max_negatives must be positive.")
+    if margin <= 0:
+        raise ValueError("margin must be positive.")
+    first_mask = _first_response_shift_mask(torch, loss_mask, attention_mask)
+    if first_mask is None or int(first_mask.sum().detach().cpu().item()) <= 0:
+        param_dtype = shift_student.dtype
+        return torch.zeros((), dtype=param_dtype, device=shift_student.device), 0
+
+    losses = []
+    count = 0
+    batch_size = min(int(first_mask.shape[0]), len(texts))
+    vocab_size = int(shift_student.shape[-1])
+    for batch_idx in range(batch_size):
+        positions = torch.nonzero(first_mask[batch_idx], as_tuple=False).flatten()
+        if int(positions.numel()) <= 0:
+            continue
+        logit_pos = int(positions[0].detach().cpu().item())
+        label_pos = logit_pos + 1
+        if label_pos < 0 or label_pos >= int(input_ids.shape[1]):
+            continue
+        gold_id = int(input_ids[batch_idx, label_pos].detach().cpu().item())
+        if gold_id < 0 or gold_id >= vocab_size:
+            continue
+        negative_ids = _answer_first_token_negative_ids(
+            tokenizer,
+            str(texts[batch_idx]),
+            response_loss_mode,
+            max_negatives,
+            gold_id,
+            vocab_size,
+        )
+        if not negative_ids:
+            continue
+        row_logits = shift_student[batch_idx, logit_pos]
+        gold_logit = row_logits[gold_id]
+        negatives = torch.tensor(negative_ids, dtype=torch.long, device=shift_student.device)
+        neg_logits = row_logits.index_select(0, negatives)
+        losses.append(torch.relu(float(margin) + neg_logits - gold_logit).mean())
+        count += 1
+    if not losses:
+        return torch.zeros((), dtype=shift_student.dtype, device=shift_student.device), 0
+    return torch.stack(losses).mean(), int(count)
+
+
 def _cross_tokenizer_on_policy_rollout_loss(
     torch,
     source_model,
@@ -5632,6 +5736,93 @@ def _numeric_answer_negatives(gold: str, max_negatives: int, prompt: str = "") -
         if len(negatives) >= max_negatives:
             break
     return negatives
+
+
+def _answer_first_token_negative_ids(
+    tokenizer,
+    text: str,
+    response_loss_mode: str,
+    max_negatives: int,
+    gold_id: int,
+    vocab_size: int | None = None,
+) -> list[int]:
+    if max_negatives <= 0:
+        raise ValueError("max_negatives must be positive.")
+    start = _infer_response_char_start(text, response_loss_mode)
+    if start is None:
+        return []
+    answer_start = int(start)
+    while answer_start < len(text) and text[answer_start].isspace():
+        answer_start += 1
+    prefix = text[:answer_start]
+    response = text[answer_start:].strip()
+    if not response:
+        return []
+
+    negatives: list[str]
+    number = re.match(r"-?\d+(?:\.\d+)?", response)
+    if number is not None:
+        negatives = _numeric_answer_negatives(number.group(0), max_negatives, prompt=prefix)
+    else:
+        choice = re.match(r"([A-D])(?:[.)])?", response, flags=re.IGNORECASE)
+        if choice is None:
+            return []
+        gold = choice.group(1).upper()
+        negatives = [letter for letter in ("A", "B", "C", "D") if letter != gold][:max_negatives]
+
+    ids: list[int] = []
+    for negative in negatives:
+        token_id = _first_token_id_for_prefix_option(tokenizer, prefix, negative)
+        if token_id is None:
+            continue
+        if vocab_size is not None and (int(token_id) < 0 or int(token_id) >= int(vocab_size)):
+            continue
+        if int(token_id) == int(gold_id) or int(token_id) in ids:
+            continue
+        ids.append(int(token_id))
+        if len(ids) >= int(max_negatives):
+            break
+    return ids
+
+
+def _first_token_id_for_prefix_option(tokenizer, prefix: str, option: str) -> int | None:
+    full_text = f"{prefix}{option}"
+    prefix_len = len(prefix)
+    try:
+        encoded = tokenizer(full_text, add_special_tokens=False, return_offsets_mapping=True)
+        ids = _flatten_tokenizer_ids(encoded.get("input_ids", []))
+        offsets = encoded.get("offset_mapping", [])
+        if offsets and len(offsets) == len(ids):
+            for token_id, offset in zip(ids, offsets):
+                if len(offset) < 2:
+                    continue
+                start, end = int(offset[0]), int(offset[1])
+                if end > prefix_len and end > start:
+                    return int(token_id)
+    except Exception:
+        pass
+
+    fallback_options = [option]
+    if prefix and prefix[-1].isspace():
+        fallback_options.insert(0, f" {option}")
+    for text in fallback_options:
+        try:
+            ids = _flatten_tokenizer_ids(tokenizer(text, add_special_tokens=False).get("input_ids", []))
+        except Exception:
+            ids = []
+        if ids:
+            return int(ids[0])
+    return None
+
+
+def _flatten_tokenizer_ids(ids) -> list[int]:
+    if ids is None:
+        return []
+    if hasattr(ids, "tolist"):
+        ids = ids.tolist()
+    if ids and isinstance(ids[0], list):
+        ids = ids[0]
+    return [int(item) for item in ids]
 
 
 def _arithmetic_prompt_negative_values(prompt: str, gold_value: int) -> list[int]:
