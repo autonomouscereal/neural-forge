@@ -96,6 +96,7 @@ from neural_forge.hf_xfamily import _parse_chain_stages
 from neural_forge.hf_xfamily import _parse_source_models_and_weights
 from neural_forge.hf_xfamily import _canonical_token_map
 from neural_forge.hf_xfamily import _assign_donor_to_host
+from neural_forge.hf_xfamily import _activation_medoid_support_indices
 from neural_forge.hf_xfamily import _activation_quantile_support_indices
 from neural_forge.hf_xfamily import _activation_layer_geometry_scores
 from neural_forge.hf_xfamily import _activation_similarity_assignment
@@ -3000,6 +3001,25 @@ def test_quantile_support_preserves_activation_weight_strata() -> None:
     assert support.tolist() == [0, 2, 5]
 
 
+def test_medoid_support_uses_real_activation_cluster_representatives() -> None:
+    torch = pytest.importorskip("torch")
+    features = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.92, 0.08],
+            [0.0, 1.0],
+            [0.08, 0.92],
+        ],
+        dtype=torch.float32,
+    )
+    weights = torch.tensor([1.0, 3.0, 1.0, 4.0], dtype=torch.float32)
+    assignment = torch.tensor([0, 0, 1, 1], dtype=torch.long)
+
+    support = _activation_medoid_support_indices(torch, features, weights, assignment, target_dim=2)
+
+    assert support.tolist() == [1, 3]
+
+
 def test_transport_fold_can_use_quantile_support() -> None:
     torch = pytest.importorskip("torch")
     cache = {}
@@ -3036,6 +3056,43 @@ def test_transport_fold_can_use_quantile_support() -> None:
     assert transport["target_support_indices"].tolist() == [0, 2, 5]
     assert transport["target_masses"].sum().item() == pytest.approx(1.0)
     assert transport["target_masses"].tolist() != pytest.approx([1 / 3, 1 / 3, 1 / 3])
+
+
+def test_transport_fold_can_use_medoid_support() -> None:
+    torch = pytest.importorskip("torch")
+    cache = {}
+    features = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.92, 0.08],
+            [0.0, 1.0],
+            [0.08, 0.92],
+        ],
+        dtype=torch.float32,
+    )
+    weights = torch.tensor([1.0, 3.0, 1.0, 4.0], dtype=torch.float32)
+    source = torch.tensor([[10.0], [20.0], [30.0], [40.0]], dtype=torch.float32)
+
+    folded = _resize_tensor_axis_mean_fold(
+        torch,
+        source,
+        axis=0,
+        target_dim=2,
+        fold_mode="transport",
+        weights=weights,
+        features=features,
+        transport_backend="sinkhorn",
+        transport_support="medoid",
+        assignment_cache=cache,
+        assignment_cache_key=("hidden", "medoid-support-test"),
+    )
+
+    assert folded.shape == (2, 1)
+    transport = next(iter(cache.values()))
+    assert transport["transport_support"] == "medoid"
+    assert transport["target_support_indices"].tolist() == [1, 3]
+    assert transport["transport_matrix"].shape == (4, 2)
+    assert transport["target_masses"].sum().item() == pytest.approx(1.0)
 
 
 def test_activation_layer_geometry_scores_residual_novelty() -> None:

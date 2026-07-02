@@ -325,8 +325,8 @@ def donor_projected_init(
         raise ValueError("activation_fold_assignment must be balanced or similarity.")
     if transport_backend not in {"sparse", "sinkhorn"}:
         raise ValueError("transport_backend must be sparse or sinkhorn.")
-    if transport_support not in {"centroid", "importance", "quantile"}:
-        raise ValueError("transport_support must be centroid, importance, or quantile.")
+    if transport_support not in {"centroid", "importance", "quantile", "medoid"}:
+        raise ValueError("transport_support must be centroid, importance, quantile, or medoid.")
     if donor_layer_fold_mode not in {"representative", "average", "fold"}:
         raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
     if donor_layer_group_strategy not in {"depth", "activation-energy", "activation-geometry"}:
@@ -3775,8 +3775,8 @@ def _resize_tensor_to_shape(
         raise ValueError("activation_fold_assignment must be balanced or similarity.")
     if transport_backend not in {"sparse", "sinkhorn"}:
         raise ValueError("transport_backend must be sparse or sinkhorn.")
-    if transport_support not in {"centroid", "importance", "quantile"}:
-        raise ValueError("transport_support must be centroid, importance, or quantile.")
+    if transport_support not in {"centroid", "importance", "quantile", "medoid"}:
+        raise ValueError("transport_support must be centroid, importance, quantile, or medoid.")
     if tuple(source.shape) == tuple(target_shape):
         return source.clone()
     if source.dim() != len(target_shape):
@@ -4370,6 +4370,53 @@ def _activation_quantile_support_indices(torch, feature_rows, fold_weights, targ
     return torch.tensor(selected[:target_dim], dtype=torch.long).sort().values
 
 
+def _activation_medoid_support_indices(torch, feature_rows, fold_weights, assignment, target_dim: int):
+    source_dim = int(feature_rows.shape[0])
+    target_dim = int(target_dim)
+    if target_dim <= 0:
+        raise ValueError("target_dim must be positive.")
+    if source_dim <= target_dim:
+        return torch.arange(source_dim, dtype=torch.long)
+    rows = _row_normalize(feature_rows.detach().cpu().to(torch.float32))
+    weights = fold_weights.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12)
+    groups = assignment.detach().cpu().to(torch.long).flatten()
+    if int(weights.numel()) != source_dim:
+        raise ValueError("Medoid support weights must match feature rows.")
+    if int(groups.numel()) != source_dim:
+        raise ValueError("Medoid support assignment must match feature rows.")
+    selected: list[int] = []
+    selected_set: set[int] = set()
+    for target_idx in range(target_dim):
+        mask = groups == int(target_idx)
+        if not bool(mask.any()):
+            continue
+        cluster_indices = mask.nonzero(as_tuple=False).flatten()
+        cluster_rows = rows.index_select(0, cluster_indices)
+        cluster_weights = weights.index_select(0, cluster_indices)
+        centroid = (cluster_rows * cluster_weights.unsqueeze(1)).sum(dim=0) / cluster_weights.sum().clamp_min(1e-12)
+        centroid = _row_normalize(centroid.view(1, -1))[0]
+        similarity = cluster_rows.matmul(centroid)
+        # Small weight term breaks near ties toward high-signal donor axes without letting weights dominate geometry.
+        score = similarity + 0.01 * (cluster_weights / cluster_weights.max().clamp_min(1e-12))
+        for local_idx in torch.argsort(score, descending=True).tolist():
+            source_idx = int(cluster_indices[int(local_idx)].item())
+            if source_idx not in selected_set:
+                selected.append(source_idx)
+                selected_set.add(source_idx)
+                break
+    if len(selected) < target_dim:
+        fallback_order = torch.argsort(weights, descending=True).tolist()
+        for source_idx in fallback_order:
+            source_idx = int(source_idx)
+            if source_idx in selected_set:
+                continue
+            selected.append(source_idx)
+            selected_set.add(source_idx)
+            if len(selected) == target_dim:
+                break
+    return torch.tensor(selected[:target_dim], dtype=torch.long).sort().values
+
+
 def _activation_transport_target_mass(torch, scores, fold_weights, target_dim: int):
     target_dim = int(target_dim)
     if target_dim <= 0:
@@ -4399,8 +4446,8 @@ def _build_sparse_activation_transport(
 ):
     if transport_backend not in {"sparse", "sinkhorn"}:
         raise ValueError("transport_backend must be sparse or sinkhorn.")
-    if transport_support not in {"centroid", "importance", "quantile"}:
-        raise ValueError("transport_support must be centroid, importance, or quantile.")
+    if transport_support not in {"centroid", "importance", "quantile", "medoid"}:
+        raise ValueError("transport_support must be centroid, importance, quantile, or medoid.")
     feature_rows = features.detach().cpu().to(torch.float32)
     if feature_rows.dim() != 2:
         raise ValueError("Activation features must be a rank-2 tensor.")
@@ -4427,6 +4474,16 @@ def _build_sparse_activation_transport(
             target_dim,
         )
         centroid_rows = feature_rows[support_indices]
+    elif transport_support == "medoid":
+        seed_assignment = _activation_similarity_assignment(torch, feature_rows, target_dim, fold_weights, iterations=4)
+        support_indices = _activation_medoid_support_indices(
+            torch,
+            feature_rows,
+            fold_weights,
+            seed_assignment,
+            target_dim,
+        )
+        centroid_rows = feature_rows[support_indices]
     else:
         seed_assignment = _activation_similarity_assignment(torch, feature_rows, target_dim, fold_weights, iterations=4)
         centroids = []
@@ -4442,7 +4499,7 @@ def _build_sparse_activation_transport(
     centroid_rows = _row_normalize(centroid_rows)
     top_k = max(1, min(int(top_k), target_dim))
     scores = feature_rows.matmul(centroid_rows.t())
-    if transport_support in {"importance", "quantile"}:
+    if transport_support in {"importance", "quantile", "medoid"}:
         target_mass = _activation_transport_target_mass(torch, scores, fold_weights, target_dim)
     else:
         target_mass = torch.full((target_dim,), 1.0 / float(target_dim), dtype=torch.float32)
@@ -4576,8 +4633,8 @@ def _resize_tensor_axis_mean_fold(
         raise ValueError("assignment_mode must be balanced or similarity.")
     if transport_backend not in {"sparse", "sinkhorn"}:
         raise ValueError("transport_backend must be sparse or sinkhorn.")
-    if transport_support not in {"centroid", "importance", "quantile"}:
-        raise ValueError("transport_support must be centroid, importance, or quantile.")
+    if transport_support not in {"centroid", "importance", "quantile", "medoid"}:
+        raise ValueError("transport_support must be centroid, importance, quantile, or medoid.")
     source_dim = int(tensor.shape[axis])
     if source_dim == target_dim:
         return tensor
