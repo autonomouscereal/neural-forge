@@ -11,6 +11,7 @@ What changed:
 - Activation transport can now seed target support axes from activation-weight strata instead of only clustered centroids or top-importance rows.
 - For `importance` and `quantile` support, transport target masses are estimated from nearest-support activation load and used in both dense Sinkhorn transport and sparse balancing.
 - Transport diagnostics now include `target_masses` so reports can prove whether support-energy balancing was active.
+- `experiments/launch_qwen4b_blank_smollm_true_lrc_chain.sh` now accepts `CALIBRATION_FILE` so quantile runs can use the held-out-safe drill mix.
 
 Why this matters:
 
