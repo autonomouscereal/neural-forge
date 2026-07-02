@@ -5473,6 +5473,19 @@ def _initialize_token_weights_from_donor(
             donor_map,
             weighted=token_init_mode == "donor-tokenized-weighted",
         )
+    special_target_ids: list[int] = []
+    special_donor_groups: list[list[int]] = []
+    special_group_weights: list[list[float]] = []
+    if token_init_mode != "shared":
+        special_target_ids, special_donor_groups, special_group_weights = _target_to_donor_special_token_group_specs(
+            target_tokenizer,
+            donor_tokenizer,
+            seen_target_ids=set(target_ids),
+        )
+    if special_target_ids:
+        target_ids.extend(special_target_ids)
+        donor_id_groups.extend(special_donor_groups)
+        donor_group_weights.extend(special_group_weights)
 
     target_embeddings = target.get_input_embeddings()
     donor_embeddings = donor.get_input_embeddings()
@@ -5542,6 +5555,7 @@ def _initialize_token_weights_from_donor(
         "anchors_used": len(anchors),
         "tokenized_rows_initialized": int(tokenized_rows),
         "weighted_tokenized_rows_initialized": int(weighted_rows),
+        "special_rows_initialized": int(len(special_target_ids)),
         "embedding_rows_initialized": int(embedding_rows_initialized),
         "lm_head_rows_initialized": int(lm_head_rows_initialized) if lm_head_updated else 0,
         "lm_head_updated": lm_head_updated,
@@ -5703,6 +5717,139 @@ def _target_to_donor_token_group_specs(
         if weighted and len(donor_ids) > 1:
             weighted_rows += 1
     return target_ids, donor_id_groups, donor_group_weights, tokenized_rows, weighted_rows
+
+
+def _target_to_donor_special_token_group_specs(
+    target_tokenizer,
+    donor_tokenizer,
+    seen_target_ids: set[int] | None = None,
+) -> tuple[list[int], list[list[int]], list[list[float]]]:
+    seen = {int(item) for item in (seen_target_ids or set())}
+    target_roles = _special_token_ids_by_role(target_tokenizer)
+    donor_roles = _special_token_ids_by_role(donor_tokenizer)
+    donor_decoded = _special_token_ids_by_decoded_surface(donor_tokenizer)
+    donor_vocab_size = len(donor_tokenizer)
+    target_ids: list[int] = []
+    donor_id_groups: list[list[int]] = []
+    donor_group_weights: list[list[float]] = []
+    for role, role_target_ids in target_roles.items():
+        for target_id in role_target_ids:
+            target_id = int(target_id)
+            if target_id in seen:
+                continue
+            donor_ids = _donor_special_ids_for_target_role(
+                role,
+                target_id,
+                target_tokenizer,
+                donor_roles,
+                donor_decoded,
+            )
+            donor_ids = [int(item) for item in donor_ids if 0 <= int(item) < donor_vocab_size]
+            if not donor_ids:
+                continue
+            target_ids.append(target_id)
+            donor_id_groups.append(donor_ids)
+            donor_group_weights.append([1.0] * len(donor_ids))
+            seen.add(target_id)
+    return target_ids, donor_id_groups, donor_group_weights
+
+
+def _special_token_ids_by_role(tokenizer) -> dict[str, list[int]]:
+    roles: dict[str, list[int]] = {}
+
+    def add(role: str, value) -> None:
+        if value is None:
+            return
+        values = value if isinstance(value, (list, tuple, set)) else [value]
+        for item in values:
+            try:
+                token_id = int(item)
+            except (TypeError, ValueError):
+                continue
+            if token_id < 0:
+                continue
+            bucket = roles.setdefault(role, [])
+            if token_id not in bucket:
+                bucket.append(token_id)
+
+    for role in (
+        "bos_token_id",
+        "eos_token_id",
+        "pad_token_id",
+        "unk_token_id",
+        "sep_token_id",
+        "cls_token_id",
+        "mask_token_id",
+    ):
+        add(role, getattr(tokenizer, role, None))
+    for token_id in getattr(tokenizer, "additional_special_tokens_ids", []) or []:
+        add("additional_special_tokens_ids", token_id)
+    for token_id in getattr(tokenizer, "all_special_ids", []) or []:
+        add("all_special_ids", token_id)
+    return roles
+
+
+def _special_token_ids_by_decoded_surface(tokenizer) -> dict[str, list[int]]:
+    mapping: dict[str, list[int]] = {}
+    for token_id in getattr(tokenizer, "all_special_ids", []) or []:
+        try:
+            token_id = int(token_id)
+        except (TypeError, ValueError):
+            continue
+        decoded = _decode_single_token(tokenizer, token_id)
+        candidates = [decoded, decoded.strip(), _canonical_token(decoded)]
+        for candidate in candidates:
+            if not candidate:
+                continue
+            bucket = mapping.setdefault(candidate, [])
+            if token_id not in bucket:
+                bucket.append(token_id)
+    return mapping
+
+
+def _donor_special_ids_for_target_role(
+    role: str,
+    target_id: int,
+    target_tokenizer,
+    donor_roles: dict[str, list[int]],
+    donor_decoded: dict[str, list[int]],
+) -> list[int]:
+    role_preferences = {
+        "bos_token_id": ("bos_token_id", "eos_token_id", "all_special_ids"),
+        "eos_token_id": ("eos_token_id", "bos_token_id", "all_special_ids"),
+        "pad_token_id": ("pad_token_id", "eos_token_id", "all_special_ids"),
+        "unk_token_id": ("unk_token_id", "all_special_ids"),
+        "sep_token_id": ("sep_token_id", "eos_token_id", "all_special_ids"),
+        "cls_token_id": ("cls_token_id", "bos_token_id", "all_special_ids"),
+        "mask_token_id": ("mask_token_id", "unk_token_id", "all_special_ids"),
+        "additional_special_tokens_ids": ("additional_special_tokens_ids", "all_special_ids"),
+        "all_special_ids": ("all_special_ids",),
+    }
+    donor_ids: list[int] = []
+
+    def add(items: Sequence[int] | None) -> None:
+        if not items:
+            return
+        for item in items:
+            item = int(item)
+            if item not in donor_ids:
+                donor_ids.append(item)
+
+    decoded = _decode_single_token(target_tokenizer, int(target_id))
+    if role in {"additional_special_tokens_ids", "all_special_ids"}:
+        for candidate in (decoded, decoded.strip(), _canonical_token(decoded)):
+            add(donor_decoded.get(candidate))
+            if donor_ids:
+                return donor_ids
+    for preferred_role in role_preferences.get(role, (role, "all_special_ids")):
+        add(donor_roles.get(preferred_role))
+        if donor_ids:
+            return donor_ids
+    for candidate in (decoded, decoded.strip(), _canonical_token(decoded)):
+        add(donor_decoded.get(candidate))
+        if donor_ids:
+            return donor_ids
+    return donor_ids
 
 
 def _target_to_donor_omp_group_specs(

@@ -129,6 +129,7 @@ from neural_forge.hf_xfamily import _select_compression_candidates
 from neural_forge.hf_xfamily import _sanitize_generation_config_for_save
 from neural_forge.hf_xfamily import _synthesize_cross_arch_layer_tensor
 from neural_forge.hf_xfamily import _target_to_donor_token_group_specs
+from neural_forge.hf_xfamily import _target_to_donor_special_token_group_specs
 from neural_forge.hf_xfamily import _target_to_donor_token_groups
 from neural_forge.hf_xfamily import _target_to_donor_omp_group_specs
 from neural_forge.hf_xfamily import _untie_output_head
@@ -221,6 +222,32 @@ def test_target_to_donor_token_group_specs_can_weight_tokenized_pieces() -> None
     assert donor_weights == [[1.0], [1.0, 6.0]]
     assert tokenized_rows == 1
     assert weighted_rows == 1
+
+
+def test_target_to_donor_special_token_groups_use_roles_and_surfaces() -> None:
+    target_tokenizer = _Tokenizer(["<pad>", "<bos>", "<eos>", "hello", "<extra>"])
+    target_tokenizer.all_special_ids = [0, 1, 2, 4]
+    target_tokenizer.pad_token_id = 0
+    target_tokenizer.bos_token_id = 1
+    target_tokenizer.eos_token_id = 2
+    target_tokenizer.additional_special_tokens_ids = [4]
+    donor_tokenizer = _Tokenizer(["<s>", "</s>", "<unk>", "<pad>", "<extra>"])
+    donor_tokenizer.all_special_ids = [0, 1, 2, 3, 4]
+    donor_tokenizer.bos_token_id = 0
+    donor_tokenizer.eos_token_id = 1
+    donor_tokenizer.unk_token_id = 2
+    donor_tokenizer.pad_token_id = 3
+    donor_tokenizer.additional_special_tokens_ids = [4]
+
+    target_ids, donor_groups, donor_weights = _target_to_donor_special_token_group_specs(
+        target_tokenizer,
+        donor_tokenizer,
+        seen_target_ids={3},
+    )
+
+    assert target_ids == [1, 2, 0, 4]
+    assert donor_groups == [[0], [1], [3], [4]]
+    assert donor_weights == [[1.0], [1.0], [1.0], [1.0]]
 
 
 def test_target_to_donor_omp_group_specs_uses_sparse_character_pieces() -> None:
