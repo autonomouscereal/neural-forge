@@ -74,6 +74,26 @@ Current status:
 - It still needs behavior/manual evidence against the cached parent, blank, and
   recovered baselines before it can be promoted.
 
+Queued proof lane:
+
+- Tag:
+  `qwen4b_blank_smollm_module_eora_quantile_medoid_drill_lrc_gpu4_20260702`
+- Queue PID: `2588435`
+- Queue script:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_module_eora_quantile_medoid_drill_lrc_gpu4_20260702.queue.sh`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_module_eora_quantile_medoid_drill_lrc_gpu4_20260702.queue.log`
+- Initial revision: `a013d18bc39a0f290931d7f534348ef3c11e480d`
+- GPU: index `4`, RTX 3090 UUID
+  `GPU-2ce6a95c-7b1f-644a-3808-d781732a0582`
+- Upstream dependency: waits for the existing GPU4 quantile proof queue PID
+  `2441342`.
+- Recipe mirrors
+  `qwen4b_blank_smollm_module_eora_quantile_drill_lrc_gpu0_20260702` and
+  changes the structural init support from `quantile` to `quantile-medoid`.
+- Final eval target:
+  `eval_qwen4b_blank_smollm_module_eora_quantile_medoid_drill_lrc_gpu4_20260702_exactgen_20260702_1000x1000x250.json`
+
 ## Weighted Projected-Vocab Recovery
 
 Added weighted cross-tokenizer projected-vocab maps for recovery losses.
