@@ -67,6 +67,7 @@ from neural_forge.hf_recovery import _same_tokenizer_hidden_loss
 from neural_forge.hf_recovery import _same_tokenizer_top_k_kl
 from neural_forge.hf_recovery import _apply_layer_residual_magnitude_compensation
 from neural_forge.hf_recovery import _apply_residual_output_map_to_modules
+from neural_forge.hf_recovery import _apply_residual_output_map_to_module
 from neural_forge.hf_recovery import _block_recovery_snapshot_modules
 from neural_forge.hf_recovery import _eigenspace_low_rank_delta_map
 from neural_forge.hf_recovery import _low_rank_delta_map
@@ -4891,6 +4892,26 @@ def test_apply_residual_output_map_to_modules_absorbs_map_into_outputs() -> None
     assert torch.allclose(mlp_output(inputs).detach(), mlp_before.matmul(mapping))
 
 
+def test_apply_residual_output_map_to_module_only_updates_selected_output() -> None:
+    torch = pytest.importorskip("torch")
+    attention_output = torch.nn.Linear(2, 2, bias=True)
+    mlp_output = torch.nn.Linear(2, 2, bias=True)
+    attention_output.weight.data.copy_(torch.tensor([[1.0, 2.0], [3.0, 4.0]]))
+    attention_output.bias.data.copy_(torch.tensor([0.5, -1.0]))
+    mlp_output.weight.data.copy_(torch.tensor([[2.0, -1.0], [0.25, 0.75]]))
+    mlp_output.bias.data.copy_(torch.tensor([1.5, -0.5]))
+    inputs = torch.tensor([[1.0, -2.0], [0.25, 0.5]])
+    attention_before = attention_output(inputs).detach()
+    mlp_before = mlp_output(inputs).detach()
+    mapping = torch.tensor([[1.25, -0.5], [0.75, 0.5]])
+
+    report = _apply_residual_output_map_to_module(torch, "attention", "self_attn.o_proj", attention_output, mapping)
+
+    assert report["kind"] == "attention"
+    assert torch.allclose(attention_output(inputs).detach(), attention_before.matmul(mapping))
+    assert torch.allclose(mlp_output(inputs).detach(), mlp_before)
+
+
 def test_residual_magnitude_compensation_accepts_eora_alias() -> None:
     torch = pytest.importorskip("torch")
 
@@ -4909,6 +4930,57 @@ def test_residual_magnitude_compensation_accepts_eora_alias() -> None:
 
     assert report["mode"] == "pre-eora"
     assert report["reason"] == "unit-test-skip"
+
+
+def test_residual_magnitude_compensation_accepts_module_eora_alias_without_alignment() -> None:
+    torch = pytest.importorskip("torch")
+
+    report = _apply_layer_residual_magnitude_compensation(
+        torch,
+        object(),
+        {},
+        {},
+        0.5,
+        1.5,
+        "module-eora-pre",
+        1e-3,
+        0.01,
+        16,
+    )
+
+    assert report["mode"] == "pre-module-eora"
+    assert report["reason"] == "missing_module_compensation_context"
+    assert "source" in report["missing"]
+
+
+def test_hf_xfamily_block_recover_parser_accepts_module_residual_compensation_mode() -> None:
+    args = build_parser().parse_args(
+        [
+            "hf-xfamily-block-recover",
+            "donor",
+            "candidate",
+            "out",
+            "--residual-magnitude-compensation",
+            "module-eora-pre",
+        ]
+    )
+
+    assert args.residual_magnitude_compensation == "module-eora-pre"
+
+
+def test_hf_xfamily_chain_parser_accepts_module_residual_compensation_mode() -> None:
+    args = build_parser().parse_args(
+        [
+            "hf-xfamily-chain-anchor-compress",
+            "donor",
+            "anchor",
+            "out",
+            "--block-residual-magnitude-compensation",
+            "pre-module-lowrank",
+        ]
+    )
+
+    assert args.block_residual_magnitude_compensation == "pre-module-lowrank"
 
 
 def test_low_rank_delta_map_truncates_delta_from_identity() -> None:

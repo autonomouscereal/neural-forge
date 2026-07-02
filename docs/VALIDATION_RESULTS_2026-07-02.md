@@ -53,3 +53,35 @@ Validation:
 - Local full suite: `140 passed, 127 skipped`
 - Remote focused weighted projection/recovery tests: `12 passed, 203 deselected`
 - Remote full suite: `267 passed`
+
+## Module-Specific Residual Compensation
+
+Added opt-in module-specific pre-compensation modes for block recovery:
+
+- `pre-module-linear`
+- `pre-module-lowrank`
+- `pre-module-eora`
+- Aliases: `module-linear-pre`, `module-lowrank-pre`, `module-eora-pre`
+
+What changed:
+
+- Broad modes such as `lowrank-pre` still fit one block residual map and absorb it into both attention and MLP output projections.
+- Module modes now capture folded donor attention/MLP module outputs across the full donor layer group, project them into the target hidden space, and fit separate maps for the candidate attention output projection and MLP output projection.
+- The fitted maps are validation-gated before mutation using the same held-out row settings as pre-reconstruction.
+- The direct block recovery CLI and chain launcher both accept the new modes.
+
+Why this matters:
+
+- The old broad residual map could force attention and MLP outputs through the same hidden-to-hidden correction even when their module geometries diverged after cross-architecture folding.
+- The new path is closer to the desired parent-to-child fold: every donor module output in the assigned layer group is folded first, then each child module output is compensated independently.
+
+Validation:
+
+- Local focused module compensation/parser tests: `2 passed, 4 skipped, 213 deselected`
+- Local full suite: `142 passed, 129 skipped`
+- Remote focused module compensation/parser tests: `6 passed, 213 deselected`
+- Remote full suite: `271 passed`
+
+Current status:
+
+- This is a structural folding improvement. It still needs a GPU behavior A/B against the existing `lowrank-pre` / `eora-pre` lanes on the exact-generation suite before it can be called a retention win.

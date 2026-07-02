@@ -56,6 +56,27 @@ HIDDEN_KD_METRIC_DESCRIPTION = (
 MODULE_OUTPUT_TARGETS = {"attention", "mlp", "both"}
 MODULE_OUTPUT_TRANSPORTS = {"paired", "sinkhorn", "both"}
 SPAN_PAIR_MODES = {"exact", "overlap", "both"}
+RESIDUAL_MAGNITUDE_COMPENSATION_MODES = {
+    "none",
+    "pre",
+    "pre-linear",
+    "linear-pre",
+    "pre-lowrank",
+    "lowrank-pre",
+    "pre-eora",
+    "eora-pre",
+    "pre-module-linear",
+    "module-linear-pre",
+    "pre-module-lowrank",
+    "module-lowrank-pre",
+    "pre-module-eora",
+    "module-eora-pre",
+}
+MODULE_RESIDUAL_COMPENSATION_MODES = {
+    "pre-module-linear",
+    "pre-module-lowrank",
+    "pre-module-eora",
+}
 
 
 def _validate_blockwise_learning_rate(lr: float, steps_per_layer: int) -> None:
@@ -2363,19 +2384,12 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("span_pair_mode must be exact, overlap, or both.")
     if block_target not in {"hidden", "delta"}:
         raise ValueError("block_target must be hidden or delta.")
-    if residual_magnitude_compensation not in {
-        "none",
-        "pre",
-        "pre-linear",
-        "linear-pre",
-        "pre-lowrank",
-        "lowrank-pre",
-        "pre-eora",
-        "eora-pre",
-    }:
+    if residual_magnitude_compensation not in RESIDUAL_MAGNITUDE_COMPENSATION_MODES:
         raise ValueError(
             "residual_magnitude_compensation must be none, pre, pre-linear, linear-pre, "
-            "pre-lowrank, lowrank-pre, pre-eora, or eora-pre."
+            "pre-lowrank, lowrank-pre, pre-eora, eora-pre, pre-module-linear, "
+            "module-linear-pre, pre-module-lowrank, module-lowrank-pre, "
+            "pre-module-eora, or module-eora-pre."
         )
     if residual_compensation_min_scale <= 0 or residual_compensation_max_scale <= 0:
         raise ValueError("residual compensation scales must be positive.")
@@ -2945,6 +2959,28 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 float(residual_compensation_linear_ridge),
                 float(residual_compensation_alpha),
                 int(residual_compensation_linear_rank),
+                source=source,
+                candidate=candidate,
+                source_layers=source_layers,
+                source_layer_group=source_group,
+                source_attention_layer=source_layers[max(0, min(source_group[0], len(source_layers) - 1))]
+                if source_group
+                else source_layers[int(source_idx)],
+                source_mlp_layer=source_layers[max(0, min(source_group[-1], len(source_layers) - 1))]
+                if source_group
+                else source_layers[int(source_idx)],
+                source_tokenizer=source_tokenizer,
+                candidate_tokenizer=candidate_tokenizer,
+                paired_batches=paired_batches,
+                hidden_projection=layer_hidden_projection,
+                canonical_fn=_canonical_token,
+                donor_layer_fold_mode=donor_layer_fold_mode,
+                fit_gate=pre_reconstruction_fit_gate,
+                fit_gate_validation_fraction=float(pre_reconstruction_validation_fraction),
+                fit_gate_min_validation_rows=int(pre_reconstruction_min_validation_rows),
+                fit_gate_min_relative_improvement=float(pre_reconstruction_min_relative_improvement),
+                fit_gate_max_cosine_drop=float(pre_reconstruction_max_cosine_drop),
+                max_tokens_per_layer=int(pre_reconstruction_max_tokens_per_layer),
             )
         losses = []
         skipped_steps = 0
@@ -7684,8 +7720,61 @@ def _apply_layer_residual_magnitude_compensation(
     linear_ridge: float,
     alpha: float,
     linear_rank: int,
+    *,
+    source=None,
+    candidate=None,
+    source_layers: Sequence[Any] | None = None,
+    source_layer_group: Sequence[int] | None = None,
+    source_attention_layer=None,
+    source_mlp_layer=None,
+    source_tokenizer=None,
+    candidate_tokenizer=None,
+    paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]] | None = None,
+    hidden_projection=None,
+    canonical_fn=None,
+    donor_layer_fold_mode: str = "fold",
+    fit_gate: str = "none",
+    fit_gate_validation_fraction: float = 0.25,
+    fit_gate_min_validation_rows: int = 32,
+    fit_gate_min_relative_improvement: float = 0.0,
+    fit_gate_max_cosine_drop: float = 0.01,
+    max_tokens_per_layer: int = 512,
 ) -> dict[str, Any]:
-    canonical_mode = {"linear-pre": "pre-linear", "lowrank-pre": "pre-lowrank", "eora-pre": "pre-eora"}.get(mode, mode)
+    canonical_mode = {
+        "linear-pre": "pre-linear",
+        "lowrank-pre": "pre-lowrank",
+        "eora-pre": "pre-eora",
+        "module-linear-pre": "pre-module-linear",
+        "module-lowrank-pre": "pre-module-lowrank",
+        "module-eora-pre": "pre-module-eora",
+    }.get(mode, mode)
+    if canonical_mode in MODULE_RESIDUAL_COMPENSATION_MODES:
+        return _apply_layer_module_residual_compensation(
+            torch,
+            source,
+            candidate,
+            source_layers,
+            source_layer_group,
+            source_attention_layer,
+            source_mlp_layer,
+            layer,
+            source_tokenizer,
+            candidate_tokenizer,
+            paired_batches,
+            hidden_projection,
+            canonical_fn,
+            donor_layer_fold_mode,
+            float(linear_ridge),
+            float(alpha),
+            int(linear_rank),
+            canonical_mode,
+            fit_gate,
+            float(fit_gate_validation_fraction),
+            int(fit_gate_min_validation_rows),
+            float(fit_gate_min_relative_improvement),
+            float(fit_gate_max_cosine_drop),
+            int(max_tokens_per_layer),
+        )
     if alignment_metrics.get("skipped"):
         return {
             "enabled": True,
@@ -7830,6 +7919,591 @@ def _apply_layer_residual_linear_compensation(
         "lowrank": lowrank_report,
         "modules": module_reports,
         "reason": "applied" if module_reports else "no_supported_output_modules",
+    }
+
+
+def _apply_layer_module_residual_compensation(
+    torch,
+    source,
+    candidate,
+    source_layers: Sequence[Any] | None,
+    source_layer_group: Sequence[int] | None,
+    source_attention_layer,
+    source_mlp_layer,
+    candidate_layer,
+    source_tokenizer,
+    candidate_tokenizer,
+    paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]] | None,
+    hidden_projection,
+    canonical_fn,
+    donor_layer_fold_mode: str,
+    linear_ridge: float,
+    alpha: float,
+    linear_rank: int,
+    mode: str,
+    fit_gate: str,
+    fit_gate_validation_fraction: float,
+    fit_gate_min_validation_rows: int,
+    fit_gate_min_relative_improvement: float,
+    fit_gate_max_cosine_drop: float,
+    max_tokens_per_layer: int,
+) -> dict[str, Any]:
+    report: dict[str, Any] = {
+        "enabled": True,
+        "applied": False,
+        "mode": mode,
+        "ridge": float(linear_ridge),
+        "alpha": float(alpha),
+        "linear_rank": int(linear_rank),
+        "modules": [],
+    }
+    required = {
+        "source": source,
+        "candidate": candidate,
+        "source_layers": source_layers,
+        "source_layer_group": source_layer_group,
+        "source_tokenizer": source_tokenizer,
+        "candidate_tokenizer": candidate_tokenizer,
+        "paired_batches": paired_batches,
+        "hidden_projection": hidden_projection,
+        "canonical_fn": canonical_fn,
+    }
+    missing = [key for key, value in required.items() if value is None]
+    if missing:
+        report["reason"] = "missing_module_compensation_context"
+        report["missing"] = missing
+        return report
+    if fit_gate not in {"none", "validation"}:
+        report["reason"] = "unsupported_fit_gate"
+        report["fit_gate"] = fit_gate
+        return report
+
+    module_reports = [
+        _apply_attention_residual_output_compensation(
+            torch,
+            source,
+            candidate,
+            source_layers,
+            source_layer_group,
+            source_attention_layer,
+            candidate_layer,
+            source_tokenizer,
+            candidate_tokenizer,
+            paired_batches or [],
+            hidden_projection,
+            canonical_fn,
+            donor_layer_fold_mode,
+            linear_ridge,
+            alpha,
+            linear_rank,
+            mode,
+            fit_gate,
+            fit_gate_validation_fraction,
+            fit_gate_min_validation_rows,
+            fit_gate_min_relative_improvement,
+            fit_gate_max_cosine_drop,
+            max_tokens_per_layer,
+        ),
+        _apply_mlp_residual_output_compensation(
+            torch,
+            source,
+            candidate,
+            source_layers,
+            source_layer_group,
+            source_mlp_layer,
+            candidate_layer,
+            source_tokenizer,
+            candidate_tokenizer,
+            paired_batches or [],
+            hidden_projection,
+            canonical_fn,
+            donor_layer_fold_mode,
+            linear_ridge,
+            alpha,
+            linear_rank,
+            mode,
+            fit_gate,
+            fit_gate_validation_fraction,
+            fit_gate_min_validation_rows,
+            fit_gate_min_relative_improvement,
+            fit_gate_max_cosine_drop,
+            max_tokens_per_layer,
+        ),
+    ]
+    report["modules"] = module_reports
+    report["applied"] = any(bool(item.get("applied")) for item in module_reports)
+    report["reason"] = "applied" if report["applied"] else "no_module_compensation_applied"
+    return report
+
+
+def _apply_attention_residual_output_compensation(
+    torch,
+    source,
+    candidate,
+    source_layers: Sequence[Any] | None,
+    source_layer_group: Sequence[int] | None,
+    source_layer,
+    candidate_layer,
+    source_tokenizer,
+    candidate_tokenizer,
+    paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]],
+    hidden_projection,
+    canonical_fn,
+    donor_layer_fold_mode: str,
+    linear_ridge: float,
+    alpha: float,
+    linear_rank: int,
+    mode: str,
+    fit_gate: str,
+    fit_gate_validation_fraction: float,
+    fit_gate_min_validation_rows: int,
+    fit_gate_min_relative_improvement: float,
+    fit_gate_max_cosine_drop: float,
+    max_tokens_per_layer: int,
+) -> dict[str, Any]:
+    spec = _attention_projection_spec(candidate_layer)
+    if spec is None:
+        return {
+            "kind": "attention",
+            "applied": False,
+            "skipped": True,
+            "reason": "unsupported_attention_output_shape",
+        }
+    candidate_rows, target_rows, matched = _collect_cross_tokenizer_module_output_alignment_rows(
+        torch,
+        source,
+        candidate,
+        source_layers,
+        source_layer_group,
+        source_layer,
+        candidate_layer,
+        "attention",
+        source_tokenizer,
+        candidate_tokenizer,
+        paired_batches,
+        hidden_projection,
+        canonical_fn,
+        donor_layer_fold_mode,
+        max_tokens_per_layer,
+    )
+    if int(matched) <= 0:
+        return {
+            "kind": "attention",
+            "applied": False,
+            "skipped": True,
+            "reason": "no_cross_tokenizer_attention_output_pairs",
+        }
+    rows = min(int(target_rows.shape[0]), int(candidate_rows.shape[0]))
+    fit_report = _fit_gated_residual_output_map(
+        torch,
+        candidate_rows[:rows].to(torch.float32),
+        target_rows[:rows].to(torch.float32),
+        None,
+        None,
+        None,
+        linear_ridge,
+        alpha,
+        linear_rank,
+        mode,
+        fit_gate,
+        fit_gate_validation_fraction,
+        fit_gate_min_validation_rows,
+        fit_gate_min_relative_improvement,
+        fit_gate_max_cosine_drop,
+    )
+    module_report = {
+        "kind": "attention",
+        "name": spec["output_name"],
+        "matched_pairs": int(matched),
+        "tokens": int(rows),
+        **{key: value for key, value in fit_report.items() if key != "map"},
+    }
+    if fit_report.get("mutation_skipped"):
+        return {**module_report, "applied": False}
+    applied = _apply_residual_output_map_to_module(torch, "attention", spec["output_name"], spec["output"], fit_report["map"])
+    return {**module_report, "applied": True, "module": applied}
+
+
+def _apply_mlp_residual_output_compensation(
+    torch,
+    source,
+    candidate,
+    source_layers: Sequence[Any] | None,
+    source_layer_group: Sequence[int] | None,
+    source_layer,
+    candidate_layer,
+    source_tokenizer,
+    candidate_tokenizer,
+    paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]],
+    hidden_projection,
+    canonical_fn,
+    donor_layer_fold_mode: str,
+    linear_ridge: float,
+    alpha: float,
+    linear_rank: int,
+    mode: str,
+    fit_gate: str,
+    fit_gate_validation_fraction: float,
+    fit_gate_min_validation_rows: int,
+    fit_gate_min_relative_improvement: float,
+    fit_gate_max_cosine_drop: float,
+    max_tokens_per_layer: int,
+) -> dict[str, Any]:
+    spec = _mlp_projection_spec(candidate_layer)
+    if spec is None:
+        return {
+            "kind": "mlp",
+            "applied": False,
+            "skipped": True,
+            "reason": "unsupported_mlp_shape",
+        }
+    candidate_rows, target_rows, matched = _collect_cross_tokenizer_module_output_alignment_rows(
+        torch,
+        source,
+        candidate,
+        source_layers,
+        source_layer_group,
+        source_layer,
+        candidate_layer,
+        "mlp",
+        source_tokenizer,
+        candidate_tokenizer,
+        paired_batches,
+        hidden_projection,
+        canonical_fn,
+        donor_layer_fold_mode,
+        max_tokens_per_layer,
+    )
+    if int(matched) <= 0:
+        return {
+            "kind": "mlp",
+            "applied": False,
+            "skipped": True,
+            "reason": "no_cross_tokenizer_mlp_output_pairs",
+        }
+    rows = min(int(target_rows.shape[0]), int(candidate_rows.shape[0]))
+    fit_report = _fit_gated_residual_output_map(
+        torch,
+        candidate_rows[:rows].to(torch.float32),
+        target_rows[:rows].to(torch.float32),
+        None,
+        None,
+        None,
+        linear_ridge,
+        alpha,
+        linear_rank,
+        mode,
+        fit_gate,
+        fit_gate_validation_fraction,
+        fit_gate_min_validation_rows,
+        fit_gate_min_relative_improvement,
+        fit_gate_max_cosine_drop,
+    )
+    module_report = {
+        "kind": "mlp",
+        "name": spec["output_name"],
+        "matched_pairs": int(matched),
+        "tokens": int(rows),
+        **{key: value for key, value in fit_report.items() if key != "map"},
+    }
+    if fit_report.get("mutation_skipped"):
+        return {**module_report, "applied": False}
+    applied = _apply_residual_output_map_to_module(torch, "mlp", spec["output_name"], spec["output"], fit_report["map"])
+    return {**module_report, "applied": True, "module": applied}
+
+
+def _collect_cross_tokenizer_module_output_alignment_rows(
+    torch,
+    source,
+    candidate,
+    source_layers: Sequence[Any] | None,
+    source_layer_group: Sequence[int] | None,
+    source_layer,
+    candidate_layer,
+    target: str,
+    source_tokenizer,
+    candidate_tokenizer,
+    paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]],
+    hidden_projection,
+    canonical_fn,
+    donor_layer_fold_mode: str,
+    max_tokens: int,
+):
+    if target not in MODULE_OUTPUT_TARGETS - {"both"}:
+        raise ValueError("target must be attention or mlp.")
+    group = [int(item) for item in (source_layer_group or [])]
+    if not group:
+        group = [0]
+        source_layers = [source_layer]
+    elif source_layers is None:
+        source_layers = [source_layer]
+        group = [0]
+
+    candidate_module = None
+    if target == "attention":
+        candidate_module = _attention_module(candidate_layer)
+    else:
+        candidate_spec = _mlp_projection_spec(candidate_layer)
+        candidate_module = None if candidate_spec is None else candidate_spec["mlp"]
+    if candidate_module is None:
+        empty = torch.empty((0, 0), dtype=torch.float32)
+        return empty, empty, 0
+
+    candidate_pieces = []
+    target_pieces = []
+    token_count = 0
+    was_source_training = source.training
+    was_candidate_training = candidate.training
+
+    def source_module_for_idx(idx: int):
+        if source_layers is None or idx < 0 or idx >= len(source_layers):
+            return None
+        layer = source_layers[idx]
+        if target == "attention":
+            return _attention_module(layer)
+        spec = _mlp_projection_spec(layer)
+        return None if spec is None else spec["mlp"]
+
+    try:
+        source.eval()
+        candidate.eval()
+        for source_batch, candidate_batch in paired_batches:
+            if token_count >= max_tokens:
+                break
+            source_captured: dict[int, Any] = {}
+            candidate_captured: dict[str, Any] = {}
+            handles = []
+
+            def make_source_hook(layer_idx: int):
+                def hook(_module, _inputs, output):
+                    source_captured[int(layer_idx)] = _module_output_tensor(output).detach().to(torch.float32)
+
+                return hook
+
+            def candidate_hook(_module, _inputs, output):
+                candidate_captured["output"] = _module_output_tensor(output).detach().to(torch.float32)
+
+            try:
+                handles.append(candidate_module.register_forward_hook(candidate_hook))
+                for idx in group:
+                    source_module = source_module_for_idx(int(idx))
+                    if source_module is not None:
+                        handles.append(source_module.register_forward_hook(make_source_hook(int(idx))))
+                if len(handles) <= 1:
+                    continue
+                with torch.no_grad():
+                    source(**_model_forward_inputs(source_batch), use_cache=False)
+                    candidate(**_model_forward_inputs(candidate_batch), use_cache=False)
+            finally:
+                for handle in handles:
+                    handle.remove()
+
+            if "output" not in candidate_captured or any(idx not in source_captured for idx in group):
+                continue
+            pairs = _cross_tokenizer_span_pairs(
+                torch,
+                source_tokenizer,
+                candidate_tokenizer,
+                source_batch,
+                candidate_batch,
+                canonical_fn,
+                max_pairs=max_tokens - token_count,
+                shift_positions=False,
+            )
+            if int(pairs.numel()) <= 0:
+                continue
+            source_output = _source_group_module_output_state(
+                torch,
+                source_captured,
+                group,
+                donor_layer_fold_mode,
+            )
+            candidate_rows, projected_rows, matched = _projected_module_rows_for_pairs(
+                torch,
+                candidate_captured["output"],
+                source_output,
+                pairs,
+                hidden_projection,
+            )
+            if int(matched) <= 0:
+                continue
+            remaining = int(max_tokens) - token_count
+            take = min(int(matched), remaining)
+            if take <= 0:
+                break
+            candidate_pieces.append(candidate_rows[:take].detach().cpu())
+            target_pieces.append(projected_rows[:take].detach().cpu())
+            token_count += take
+    finally:
+        if was_source_training:
+            source.train()
+        if was_candidate_training:
+            candidate.train()
+
+    if not candidate_pieces or not target_pieces:
+        empty = torch.empty((0, 0), dtype=torch.float32)
+        return empty, empty, 0
+    candidate_rows = torch.cat(candidate_pieces, dim=0)[:max_tokens]
+    target_rows = torch.cat(target_pieces, dim=0)[:max_tokens]
+    rows = min(int(candidate_rows.shape[0]), int(target_rows.shape[0]))
+    return candidate_rows[:rows], target_rows[:rows], rows
+
+
+def _fit_gated_residual_output_map(
+    torch,
+    candidate_rows,
+    target_rows,
+    residual_rows,
+    full_before_rows,
+    full_target_rows,
+    linear_ridge: float,
+    alpha: float,
+    linear_rank: int,
+    mode: str,
+    fit_gate: str,
+    fit_gate_validation_fraction: float,
+    fit_gate_min_validation_rows: int,
+    fit_gate_min_relative_improvement: float,
+    fit_gate_max_cosine_drop: float,
+) -> dict[str, Any]:
+    tensors = [candidate_rows.to(torch.float32), target_rows.to(torch.float32)]
+    has_full_gate = residual_rows is not None and full_before_rows is not None and full_target_rows is not None
+    if has_full_gate:
+        tensors.extend([residual_rows.to(torch.float32), full_before_rows.to(torch.float32), full_target_rows.to(torch.float32)])
+    rows = min(int(tensor.shape[0]) for tensor in tensors)
+    tensors = [tensor[:rows] for tensor in tensors]
+    fit_candidate_rows = tensors[0]
+    fit_target_rows = tensors[1]
+    validation_tensors = None
+    fit_gate_report: dict[str, Any] = {}
+    if fit_gate == "validation":
+        split = _split_reconstruction_rows(tensors, fit_gate_validation_fraction, fit_gate_min_validation_rows)
+        if split is None:
+            fit_gate_report["fit_gate"] = {"mode": "validation", "accepted": True, "reason": "insufficient_rows"}
+        else:
+            fit_tensors = split["train"]
+            validation_tensors = split["validation"]
+            fit_candidate_rows = fit_tensors[0]
+            fit_target_rows = fit_tensors[1]
+            fit_gate_report["fit_gate"] = {
+                "mode": "validation",
+                "rows": int(split["rows"]),
+                "train_rows": int(split["train_rows"]),
+                "validation_rows": int(split["validation_rows"]),
+            }
+
+    map_to_apply, fit, lowrank_report = _fit_residual_output_map(
+        torch,
+        fit_candidate_rows,
+        fit_target_rows,
+        linear_ridge,
+        alpha,
+        linear_rank,
+        mode,
+    )
+    if validation_tensors is not None:
+        validation_candidate = validation_tensors[0]
+        validation_target = validation_tensors[1]
+        before = validation_candidate
+        after = validation_candidate.matmul(map_to_apply)
+        target = validation_target
+        if has_full_gate:
+            validation_residual = validation_tensors[2]
+            before = validation_tensors[3]
+            target = validation_tensors[4]
+            after = validation_residual + validation_candidate.matmul(map_to_apply)
+        gate = _validation_reconstruction_gate(
+            torch,
+            before,
+            after,
+            target,
+            fit_gate_min_relative_improvement,
+            fit_gate_max_cosine_drop,
+        )
+        fit_gate_report["fit_gate"] = {**fit_gate_report["fit_gate"], **gate}
+        if not gate["accepted"]:
+            return {
+                **_residual_output_fit_report(fit, lowrank_report, mode, linear_ridge, alpha, linear_rank),
+                **fit_gate_report,
+                "mutation_skipped": True,
+            }
+    return {
+        "map": map_to_apply,
+        **_residual_output_fit_report(fit, lowrank_report, mode, linear_ridge, alpha, linear_rank),
+        **fit_gate_report,
+    }
+
+
+def _fit_residual_output_map(
+    torch,
+    candidate_rows,
+    target_rows,
+    linear_ridge: float,
+    alpha: float,
+    linear_rank: int,
+    mode: str,
+):
+    fit_alpha = 1.0 if mode in {"pre-module-lowrank", "pre-module-eora"} else float(alpha)
+    fit = _fit_activation_map(
+        torch,
+        candidate_rows,
+        target_rows,
+        float(linear_ridge),
+        reconstruction_alpha=fit_alpha,
+        reconstruction_objective="ridge",
+        cosine_steps=0,
+        cosine_lr=0.0,
+        cosine_l2=0.0,
+    )
+    map_to_apply = fit["map"]
+    lowrank_report = None
+    if mode == "pre-module-lowrank":
+        map_to_apply, lowrank_report = _low_rank_delta_map(torch, map_to_apply, float(alpha), int(linear_rank))
+        fit["reconstruction_alpha"] = float(alpha)
+        predicted = candidate_rows[: int(fit["tokens"])].to(torch.float32).matmul(map_to_apply)
+        target = target_rows[: int(fit["tokens"])].to(torch.float32)
+        fit["relative_error_after"] = _relative_reconstruction_error(torch, predicted, target)
+        fit["mean_cosine_after"] = _mean_row_cosine(torch, predicted, target)
+    elif mode == "pre-module-eora":
+        map_to_apply, lowrank_report = _eigenspace_low_rank_delta_map(
+            torch,
+            map_to_apply,
+            candidate_rows,
+            float(alpha),
+            int(linear_rank),
+            ridge=float(linear_ridge),
+        )
+        fit["reconstruction_alpha"] = float(alpha)
+        predicted = candidate_rows[: int(fit["tokens"])].to(torch.float32).matmul(map_to_apply)
+        target = target_rows[: int(fit["tokens"])].to(torch.float32)
+        fit["relative_error_after"] = _relative_reconstruction_error(torch, predicted, target)
+        fit["mean_cosine_after"] = _mean_row_cosine(torch, predicted, target)
+    return map_to_apply, fit, lowrank_report
+
+
+def _residual_output_fit_report(
+    fit: dict[str, Any],
+    lowrank_report,
+    mode: str,
+    linear_ridge: float,
+    alpha: float,
+    linear_rank: int,
+) -> dict[str, Any]:
+    return {
+        "skipped": False,
+        "mode": mode,
+        "ridge": float(linear_ridge),
+        "alpha": float(alpha),
+        "linear_rank": int(linear_rank),
+        "hidden_size": int(fit["hidden_size"]),
+        "relative_error_before": float(fit["relative_error_before"]),
+        "relative_error_solved": float(fit["relative_error_solved"]),
+        "relative_error_after": float(fit["relative_error_after"]),
+        "mean_cosine_before": float(fit["mean_cosine_before"]),
+        "mean_cosine_solved": float(fit["mean_cosine_solved"]),
+        "mean_cosine_after": float(fit["mean_cosine_after"]),
+        "solver": fit.get("solver"),
+        "lowrank": lowrank_report,
     }
 
 
@@ -8008,6 +8682,35 @@ def _apply_residual_output_map_to_modules(torch, layer, mapping) -> list[dict[st
                 }
             )
     return reports
+
+
+def _apply_residual_output_map_to_module(torch, kind: str, name: str, module, mapping) -> dict[str, Any]:
+    weight = getattr(module, "weight", None)
+    if weight is None:
+        raise ValueError("Cannot absorb residual output map into a module without a weight.")
+    map_cpu = mapping.detach().cpu().to(torch.float32)
+    if int(map_cpu.shape[0]) != int(map_cpu.shape[1]):
+        raise ValueError("Residual output compensation map must be square.")
+    old_weight = weight.data.detach().cpu().to(torch.float32)
+    if int(old_weight.shape[0]) != int(map_cpu.shape[0]):
+        raise ValueError(
+            f"Cannot absorb residual output map with output {map_cpu.shape[0]} into weight {tuple(old_weight.shape)}."
+        )
+    with torch.no_grad():
+        updated = map_cpu.T.matmul(old_weight)
+        weight.data.copy_(updated.to(device=weight.device, dtype=weight.dtype))
+        bias = getattr(module, "bias", None)
+        bias_updated = bool(bias is not None)
+        if bias is not None:
+            old_bias = bias.data.detach().cpu().to(torch.float32)
+            bias.data.copy_(old_bias.matmul(map_cpu).to(device=bias.device, dtype=bias.dtype))
+    return {
+        "kind": kind,
+        "name": name,
+        "map_shape": [int(item) for item in map_cpu.shape],
+        "weight_shape": [int(item) for item in weight.shape],
+        "bias_updated": bias_updated,
+    }
 
 
 def _split_reconstruction_rows(

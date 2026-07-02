@@ -17,6 +17,23 @@ from neural_forge.surgery import (
     resize_to_widths,
 )
 
+RESIDUAL_MAGNITUDE_COMPENSATION_CHOICES = [
+    "none",
+    "pre",
+    "pre-linear",
+    "linear-pre",
+    "pre-lowrank",
+    "lowrank-pre",
+    "pre-eora",
+    "eora-pre",
+    "pre-module-linear",
+    "module-linear-pre",
+    "pre-module-lowrank",
+    "module-lowrank-pre",
+    "pre-module-eora",
+    "module-eora-pre",
+]
+
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
@@ -1127,9 +1144,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     xfamily_block_recover.add_argument(
         "--residual-magnitude-compensation",
-        choices=["none", "pre", "pre-linear", "linear-pre", "pre-lowrank", "lowrank-pre"],
+        choices=RESIDUAL_MAGNITUDE_COMPENSATION_CHOICES,
         default="none",
-        help="Optionally compensate child attention/MLP output projections to match projected donor residual-delta activations before layer training.",
+        help=(
+            "Optionally compensate child attention/MLP output projections to match projected donor "
+            "residual-delta activations before layer training. The pre-module-* modes fit separate "
+            "attention-output and MLP-output maps."
+        ),
     )
     xfamily_block_recover.add_argument("--residual-compensation-min-scale", type=float, default=0.50)
     xfamily_block_recover.add_argument("--residual-compensation-max-scale", type=float, default=1.50)
@@ -1534,7 +1555,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--block-target", choices=["hidden", "delta"], default="delta")
     xfamily_chain.add_argument(
         "--block-residual-magnitude-compensation",
-        choices=["none", "pre", "pre-linear", "linear-pre", "pre-lowrank", "lowrank-pre", "pre-eora", "eora-pre"],
+        choices=RESIDUAL_MAGNITUDE_COMPENSATION_CHOICES,
         default="lowrank-pre",
     )
     xfamily_chain.add_argument("--block-residual-compensation-min-scale", type=float, default=0.50)
