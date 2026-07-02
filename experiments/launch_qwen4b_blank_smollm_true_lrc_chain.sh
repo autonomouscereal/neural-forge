@@ -7,6 +7,7 @@ GPU_UUID="${GPU_UUID:-GPU-2ce6a95c-7b1f-644a-3808-d781732a0582}"
 TAG="${TAG:-qwen4b_blank_smollm_chain_mlpout_true_lrc_rank16_blockio_alm_gpu4_20260629}"
 SOURCE_MODEL="${SOURCE_MODEL:-Qwen/Qwen3-4B-Base}"
 SOURCE_WEIGHTS="${SOURCE_WEIGHTS:-}"
+RECOVERY_SOURCE_MODE="${RECOVERY_SOURCE_MODE:-primary}"
 CALIBRATION_FILE="${CALIBRATION_FILE:-$RUN_ROOT/calibration_mix.jsonl}"
 EVAL_SUITE_FILE="${EVAL_SUITE_FILE:-$RUN_ROOT/behavior_suite.json}"
 MAX_CALIBRATION_TEXTS="${MAX_CALIBRATION_TEXTS:-384}"
@@ -161,6 +162,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   "$RUN_ROOT/blank_smollm2_135m_seed0" \
   "$OUT" \
   "${SOURCE_WEIGHT_ARGS[@]}" \
+  --recovery-source-mode "$RECOVERY_SOURCE_MODE" \
   --stages init,block,alm \
   --calibration-file "$CALIBRATION_FILE" \
   --max-calibration-texts "$MAX_CALIBRATION_TEXTS" \
