@@ -6956,6 +6956,9 @@ def test_multi_donor_projected_init_uses_weighted_stage_alphas(monkeypatch, tmp_
             "param_count": 123,
             "layer_tensors_initialized": 5,
             "projection_scale": kwargs.get("projection_scale"),
+            "activation_fit_attempt_count": 30,
+            "activation_fit_applied_count": 24,
+            "activation_fit_rejected_count": 6,
             "projection_diagnostic_summary": {"count": 5},
             "token_report": {
                 "mode": "donor-tokenized-weighted",
@@ -6992,6 +6995,9 @@ def test_multi_donor_projected_init_uses_weighted_stage_alphas(monkeypatch, tmp_
     assert summary["operation"] == "multi_donor_projected_init"
     assert summary["donor_weights"] == [1.0, 2.0, 1.0]
     assert summary["stage_reports"][2]["effective_projection_blend_alpha"] == pytest.approx(0.2)
+    assert summary["stage_reports"][2]["activation_fit_attempt_count"] == 30
+    assert summary["stage_reports"][2]["activation_fit_applied_count"] == 24
+    assert summary["stage_reports"][2]["activation_fit_rejected_count"] == 6
     assert (output / "neural_forge_multi_donor_projected_init_report.json").exists()
 
 

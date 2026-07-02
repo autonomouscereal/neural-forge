@@ -1032,6 +1032,9 @@ def multi_donor_projected_init(
                 "param_count": report.get("param_count"),
                 "layer_tensors_initialized": report.get("layer_tensors_initialized"),
                 "projection_scale": report.get("projection_scale"),
+                "activation_fit_attempt_count": report.get("activation_fit_attempt_count"),
+                "activation_fit_applied_count": report.get("activation_fit_applied_count"),
+                "activation_fit_rejected_count": report.get("activation_fit_rejected_count"),
                 "projection_diagnostic_summary": report.get("projection_diagnostic_summary"),
                 "token_report": {
                     key: report.get("token_report", {}).get(key)
