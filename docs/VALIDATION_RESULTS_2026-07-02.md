@@ -109,10 +109,13 @@ Queued proof lane:
 
 - Tag:
   `qwen4b_blank_smollm_signed_cka_geomean_full_gpu4_20260702`
+- Queue PID: `3168176`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_signed_cka_geomean_full_gpu4_20260702.queue.log`
 - Recipe: same geomean RMS + activation-CKA true-LRC/EoRA/GRAIL chain as the
   activation-CKA control, but with
   `INIT_ACTIVATION_FOLD_ASSIGNMENT=signed-similarity`.
-- Intended dependency: wait behind the activation-CKA queue PID `3136217`.
+- Dependency: waiting behind the activation-CKA queue PID `3136217`.
 
 ## Answer-Boundary Margin Recovery
 
