@@ -11,11 +11,14 @@ ACT_TARGET="${ACT_TARGET:-mlp-output}"
 LRC_ALPHA="${LRC_ALPHA:-0.25}"
 LRC_RANK="${LRC_RANK:-16}"
 LRC_FACTOR_STEPS="${LRC_FACTOR_STEPS:-40}"
+LRC_MAX_DELTA_RMS_RATIO="${LRC_MAX_DELTA_RMS_RATIO:-0}"
 RESIDUAL_MODE="${RESIDUAL_MODE:-lowrank-pre}"
 RESIDUAL_ALPHA="${RESIDUAL_ALPHA:-0.01}"
 RESIDUAL_RANK="${RESIDUAL_RANK:-16}"
 INIT_PROJECTION_SCALE="${INIT_PROJECTION_SCALE:-target-rms}"
 INIT_PROJECTION_BLEND_ALPHA="${INIT_PROJECTION_BLEND_ALPHA:-1.0}"
+INIT_ACTIVATION_FOLD_ASSIGNMENT="${INIT_ACTIVATION_FOLD_ASSIGNMENT:-similarity}"
+INIT_FOLD_STAT_REPAIR="${INIT_FOLD_STAT_REPAIR:-none}"
 INIT_TRANSPORT_SUPPORT="${INIT_TRANSPORT_SUPPORT:-centroid}"
 INIT_ACTIVATION_DOMAIN_BALANCE="${INIT_ACTIVATION_DOMAIN_BALANCE:-none}"
 INIT_DONOR_LAYER_GROUP_STRATEGY="${INIT_DONOR_LAYER_GROUP_STRATEGY:-activation-geometry}"
@@ -25,6 +28,7 @@ PROMOTE_POLICY="${PROMOTE_POLICY:-always}"
 STAGE_INPUT_POLICY="${STAGE_INPUT_POLICY:-incumbent}"
 BLOCK_STEPS_PER_LAYER="${BLOCK_STEPS_PER_LAYER:-4}"
 BLOCK_LR="${BLOCK_LR:-2e-6}"
+BLOCK_HIDDEN_PROJECTION_SCOPE="${BLOCK_HIDDEN_PROJECTION_SCOPE:-layer-input}"
 BLOCK_CALIBRATION_ORDER="${BLOCK_CALIBRATION_ORDER:-original}"
 BLOCK_ALM_KD_WEIGHT="${BLOCK_ALM_KD_WEIGHT:-0.0}"
 BLOCK_PROJECTED_VOCAB_KD_WEIGHT="${BLOCK_PROJECTED_VOCAB_KD_WEIGHT:-0.0}"
@@ -63,6 +67,11 @@ BLOCK_MODULE_OUTPUT_TRANSPORT="${BLOCK_MODULE_OUTPUT_TRANSPORT:-both}"
 BLOCK_MODULE_OUTPUT_TEMPERATURE="${BLOCK_MODULE_OUTPUT_TEMPERATURE:-1.0}"
 BLOCK_MODULE_OUTPUT_SINKHORN_ITERATIONS="${BLOCK_MODULE_OUTPUT_SINKHORN_ITERATIONS:-12}"
 BLOCK_PROJECTED_VOCAB_MAX_SOURCE_TOKENS="${BLOCK_PROJECTED_VOCAB_MAX_SOURCE_TOKENS:-8}"
+BLOCK_NONFINITE_STEP_POLICY="${BLOCK_NONFINITE_STEP_POLICY:-raise}"
+BLOCK_MAX_NONFINITE_STEPS_PER_LAYER="${BLOCK_MAX_NONFINITE_STEPS_PER_LAYER:-0}"
+PRE_RECONSTRUCTION_TARGET="${PRE_RECONSTRUCTION_TARGET:-block-interface}"
+PRE_RECONSTRUCTION_ALPHA="${PRE_RECONSTRUCTION_ALPHA:-0.02}"
+PRE_RECONSTRUCTION_FIT_GATE="${PRE_RECONSTRUCTION_FIT_GATE:-validation}"
 ALM_STEPS="${ALM_STEPS:-180}"
 ALM_LR="${ALM_LR:-2e-6}"
 ALM_LM_WEIGHT="${ALM_LM_WEIGHT:-0.10}"
@@ -141,7 +150,8 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-hidden-basis-scope layer \
   --init-hidden-basis-max-rows 4096 \
   --init-hidden-basis-preprocess uncentered-rowrms \
-  --init-activation-fold-assignment similarity \
+  --init-activation-fold-assignment "$INIT_ACTIVATION_FOLD_ASSIGNMENT" \
+  --init-fold-stat-repair "$INIT_FOLD_STAT_REPAIR" \
   --init-transport-backend sinkhorn \
   --init-transport-support "$INIT_TRANSPORT_SUPPORT" \
   --init-donor-layer-fold-mode fold \
@@ -164,6 +174,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-activation-fit-factor-steps "$LRC_FACTOR_STEPS" \
   --init-activation-fit-factor-lr 0.03 \
   --init-activation-fit-factor-l2 0.0001 \
+  --init-activation-fit-max-delta-rms-ratio "$LRC_MAX_DELTA_RMS_RATIO" \
   --init-activation-fit-gate validation \
   --init-activation-fit-validation-fraction 0.20 \
   --init-activation-fit-min-validation-rows 16 \
@@ -177,15 +188,16 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --block-batch-size 1 \
   --block-max-length 128 \
   --block-lr "$BLOCK_LR" \
+  --block-hidden-projection-scope "$BLOCK_HIDDEN_PROJECTION_SCOPE" \
   --block-hidden-metric projected-geometry \
   --block-span-pair-mode both \
   --block-target delta \
   --block-residual-magnitude-compensation "$RESIDUAL_MODE" \
   --block-residual-compensation-alpha "$RESIDUAL_ALPHA" \
   --block-residual-compensation-linear-rank "$RESIDUAL_RANK" \
-  --block-pre-reconstruction-target block-interface \
-  --block-pre-reconstruction-alpha 0.02 \
-  --block-pre-reconstruction-fit-gate validation \
+  --block-pre-reconstruction-target "$PRE_RECONSTRUCTION_TARGET" \
+  --block-pre-reconstruction-alpha "$PRE_RECONSTRUCTION_ALPHA" \
+  --block-pre-reconstruction-fit-gate "$PRE_RECONSTRUCTION_FIT_GATE" \
   --block-donor-layer-fold-mode fold \
   --block-donor-layer-group-strategy "$BLOCK_DONOR_LAYER_GROUP_STRATEGY" \
   --block-layer-gate-metric behavior \
@@ -230,6 +242,8 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --block-module-output-temperature "$BLOCK_MODULE_OUTPUT_TEMPERATURE" \
   --block-module-output-sinkhorn-iterations "$BLOCK_MODULE_OUTPUT_SINKHORN_ITERATIONS" \
   --block-projected-vocab-max-source-tokens "$BLOCK_PROJECTED_VOCAB_MAX_SOURCE_TOKENS" \
+  --block-nonfinite-step-policy "$BLOCK_NONFINITE_STEP_POLICY" \
+  --block-max-nonfinite-steps-per-layer "$BLOCK_MAX_NONFINITE_STEPS_PER_LAYER" \
   --block-save-best-layer-behavior \
   --block-layer-behavior-eval-interval 2 \
   --block-calibration-order "$BLOCK_CALIBRATION_ORDER" \
