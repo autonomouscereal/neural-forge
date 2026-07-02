@@ -5,6 +5,7 @@ REPO_ROOT="${REPO_ROOT:-/home/cereal/model-surgery-lab/neural-forge-src}"
 RUN_ROOT="${RUN_ROOT:-$REPO_ROOT/runs/qwen4b_to_smollm135m_transport_random_20260627}"
 EVAL_DIR="${EVAL_DIR:-$RUN_ROOT/evals}"
 TAG="${TAG:?Set TAG to the completed run tag to evaluate.}"
+MODEL_DIR_EXPLICIT="${MODEL_DIR+x}"
 MODEL_DIR="${MODEL_DIR:-$RUN_ROOT/$TAG}"
 QUEUE_PID="${QUEUE_PID:-0}"
 QUEUE_PID_FILE="${QUEUE_PID_FILE:-}"
@@ -81,6 +82,37 @@ if "behavior_suite" not in data or "choice_accuracy" not in data:
 PY
 }
 
+resolve_model_dir() {
+  local candidate="$1"
+  if [[ -f "$candidate/config.json" ]]; then
+    echo "$candidate"
+    return 0
+  fi
+  local summary="$candidate/reports/chain_anchor_summary.json"
+  if [[ -s "$summary" ]]; then
+    local resolved
+    if resolved=$(/home/cereal/model-surgery-lab/venv/bin/python - "$summary" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+summary = Path(sys.argv[1])
+data = json.loads(summary.read_text(encoding="utf-8"))
+for key in ("final_model_dir", "best_model_dir"):
+    value = data.get(key)
+    if value and (Path(value) / "config.json").exists():
+        print(value)
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+    ); then
+      echo "$resolved"
+      return 0
+    fi
+  fi
+  echo "$candidate"
+}
+
 wait_for_gpu() {
   while true; do
     used=$(nvidia-smi -i "$GPU_UUID" --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | tr -dc '0-9' || echo 999999)
@@ -103,6 +135,9 @@ safe_label() {
 
 wait_for_pids "upstream" $QUEUE_PID
 wait_for_pid_file "$QUEUE_PID_FILE"
+
+MODEL_DIR="$(resolve_model_dir "$MODEL_DIR")"
+echo "resolved_model_dir=$MODEL_DIR explicit_model_dir=${MODEL_DIR_EXPLICIT:-0}"
 
 if [[ ! -d "$MODEL_DIR" ]]; then
   echo "missing_model_dir=$MODEL_DIR" >&2
