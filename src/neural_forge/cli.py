@@ -172,6 +172,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     hf_donor_init.add_argument(
+        "--fold-stat-repair",
+        choices=["none", "rms"],
+        default="none",
+        help=(
+            "Optional per-fold RMS repair after many donor axes collapse into one target axis. "
+            "rms rescales each folded target axis toward the donor axes that fed it."
+        ),
+    )
+    hf_donor_init.add_argument(
         "--transport-backend",
         choices=["sparse", "sinkhorn"],
         default="sparse",
@@ -1494,6 +1503,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["balanced", "similarity", "signed-similarity"],
         default="balanced",
     )
+    xfamily_chain.add_argument("--init-fold-stat-repair", choices=["none", "rms"], default="none")
     xfamily_chain.add_argument("--init-transport-backend", choices=["sparse", "sinkhorn"], default="sparse")
     xfamily_chain.add_argument(
         "--init-transport-support",
@@ -2198,6 +2208,7 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         "hidden_basis_max_rows": args.hidden_basis_max_rows,
         "hidden_basis_preprocess": args.hidden_basis_preprocess,
         "activation_fold_assignment": args.activation_fold_assignment,
+        "fold_stat_repair": args.fold_stat_repair,
         "transport_backend": args.transport_backend,
         "transport_support": args.transport_support,
         "donor_layer_fold_mode": args.donor_layer_fold_mode,
@@ -2905,6 +2916,7 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         init_hidden_basis_max_rows=args.init_hidden_basis_max_rows,
         init_hidden_basis_preprocess=args.init_hidden_basis_preprocess,
         init_activation_fold_assignment=args.init_activation_fold_assignment,
+        init_fold_stat_repair=args.init_fold_stat_repair,
         init_transport_backend=args.init_transport_backend,
         init_transport_support=args.init_transport_support,
         init_donor_layer_fold_mode=args.init_donor_layer_fold_mode,

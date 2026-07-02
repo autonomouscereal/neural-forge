@@ -43,6 +43,7 @@ PRE_RECONSTRUCTION_MAX_COSINE_DROP="${PRE_RECONSTRUCTION_MAX_COSINE_DROP:-0.01}"
 INIT_PROJECTION_SCALE="${INIT_PROJECTION_SCALE:-target-rms}"
 INIT_PROJECTION_BLEND_ALPHA="${INIT_PROJECTION_BLEND_ALPHA:-1.0}"
 INIT_ACTIVATION_FOLD_ASSIGNMENT="${INIT_ACTIVATION_FOLD_ASSIGNMENT:-similarity}"
+INIT_FOLD_STAT_REPAIR="${INIT_FOLD_STAT_REPAIR:-none}"
 INIT_TRANSPORT_SUPPORT="${INIT_TRANSPORT_SUPPORT:-centroid}"
 INIT_ACTIVATION_DOMAIN_BALANCE="${INIT_ACTIVATION_DOMAIN_BALANCE:-none}"
 INIT_DONOR_LAYER_GROUP_STRATEGY="${INIT_DONOR_LAYER_GROUP_STRATEGY:-activation-geometry}"
@@ -172,6 +173,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-hidden-basis-max-rows 4096 \
   --init-hidden-basis-preprocess uncentered-rowrms \
   --init-activation-fold-assignment "$INIT_ACTIVATION_FOLD_ASSIGNMENT" \
+  --init-fold-stat-repair "$INIT_FOLD_STAT_REPAIR" \
   --init-transport-backend sinkhorn \
   --init-transport-support "$INIT_TRANSPORT_SUPPORT" \
   --init-donor-layer-fold-mode fold \

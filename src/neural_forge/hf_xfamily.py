@@ -259,6 +259,7 @@ def donor_projected_init(
     hidden_basis_max_rows: int = 2048,
     hidden_basis_preprocess: str = "centered-rowrms",
     activation_fold_assignment: str = "balanced",
+    fold_stat_repair: str = "none",
     transport_backend: str = "sparse",
     transport_support: str = "centroid",
     donor_layer_fold_mode: str = "representative",
@@ -323,6 +324,8 @@ def donor_projected_init(
         raise ValueError("hidden_basis_preprocess must be centered-rowrms, uncentered-rowrms, or uncentered.")
     if activation_fold_assignment not in {"balanced", "similarity", "signed-similarity"}:
         raise ValueError("activation_fold_assignment must be balanced, similarity, or signed-similarity.")
+    if fold_stat_repair not in {"none", "rms"}:
+        raise ValueError("fold_stat_repair must be none or rms.")
     if transport_backend not in {"sparse", "sinkhorn"}:
         raise ValueError("transport_backend must be sparse or sinkhorn.")
     if transport_support not in {"centroid", "importance", "quantile", "medoid", "quantile-medoid"}:
@@ -654,6 +657,7 @@ def donor_projected_init(
                 axis_weights=axis_weights,
                 axis_reductions=axis_reductions,
                 activation_fold_assignment=activation_fold_assignment,
+                fold_stat_repair=fold_stat_repair,
                 transport_backend=transport_backend,
                 transport_support=transport_support,
                 assignment_cache=axis_assignment_cache,
@@ -676,6 +680,7 @@ def donor_projected_init(
                 axis_weights=axis_weights,
                 axis_reductions=axis_reductions,
                 activation_fold_assignment=activation_fold_assignment,
+                fold_stat_repair=fold_stat_repair,
                 transport_backend=transport_backend,
                 transport_support=transport_support,
                 assignment_cache=axis_assignment_cache,
@@ -716,6 +721,7 @@ def donor_projected_init(
                 hidden_basis=hidden_basis if donor_tensor.dim() >= 2 else None,
                 axis_weights=axis_weights,
                 activation_fold_assignment=activation_fold_assignment,
+                fold_stat_repair=fold_stat_repair,
                 transport_backend=transport_backend,
                 transport_support=transport_support,
                 assignment_cache=axis_assignment_cache,
@@ -779,6 +785,7 @@ def donor_projected_init(
         hidden_basis=hidden_basis,
         hidden_axis_weights=hidden_axis_weights,
         activation_fold_assignment=activation_fold_assignment,
+        fold_stat_repair=fold_stat_repair,
         transport_backend=transport_backend,
         transport_support=transport_support,
         projection_scale=projection_scale,
@@ -812,6 +819,7 @@ def donor_projected_init(
         lm_head_hidden_basis=lm_head_hidden_basis,
         hidden_axis_weights=hidden_axis_weights,
         activation_fold_assignment=activation_fold_assignment,
+        fold_stat_repair=fold_stat_repair,
         transport_backend=transport_backend,
         transport_support=transport_support,
         projection_scale=projection_scale,
@@ -848,6 +856,7 @@ def donor_projected_init(
         "hidden_basis": hidden_basis_report,
         "layer_hidden_basis": layer_hidden_basis_report,
         "activation_fold_assignment": activation_fold_assignment,
+        "fold_stat_repair": fold_stat_repair,
         "transport_backend": transport_backend,
         "transport_support": transport_support,
         "donor_layer_fold_mode": donor_layer_fold_mode,
@@ -1875,6 +1884,7 @@ def chain_anchor_staged_compress(
     init_hidden_basis_max_rows: int = 2048,
     init_hidden_basis_preprocess: str = "centered-rowrms",
     init_activation_fold_assignment: str = "balanced",
+    init_fold_stat_repair: str = "none",
     init_transport_backend: str = "sparse",
     init_transport_support: str = "centroid",
     init_donor_layer_fold_mode: str = "fold",
@@ -2146,6 +2156,7 @@ def chain_anchor_staged_compress(
                 hidden_basis_max_rows=init_hidden_basis_max_rows,
                 hidden_basis_preprocess=init_hidden_basis_preprocess,
                 activation_fold_assignment=init_activation_fold_assignment,
+                fold_stat_repair=init_fold_stat_repair,
                 transport_backend=init_transport_backend,
                 transport_support=init_transport_support,
                 donor_layer_fold_mode=init_donor_layer_fold_mode,
@@ -3092,6 +3103,7 @@ def _initialize_non_layer_tensors_from_donor(
     hidden_basis=None,
     hidden_axis_weights=None,
     activation_fold_assignment: str = "balanced",
+    fold_stat_repair: str = "none",
     transport_backend: str = "sparse",
     transport_support: str = "centroid",
     projection_scale: str = "none",
@@ -3141,6 +3153,7 @@ def _initialize_non_layer_tensors_from_donor(
                 consumer_hidden_reduction,
             ),
             activation_fold_assignment=activation_fold_assignment,
+            fold_stat_repair=fold_stat_repair,
             transport_backend=transport_backend,
             transport_support=transport_support,
             assignment_cache=assignment_cache,
@@ -3932,6 +3945,7 @@ def _resize_tensor_to_shape(
     axis_weights: dict[int, Any] | None = None,
     axis_reductions: dict[int, str] | None = None,
     activation_fold_assignment: str = "balanced",
+    fold_stat_repair: str = "none",
     transport_backend: str = "sparse",
     transport_support: str = "centroid",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
@@ -3940,6 +3954,8 @@ def _resize_tensor_to_shape(
         raise ValueError("fold_mode must be mean, rms, or transport.")
     if activation_fold_assignment not in {"balanced", "similarity", "signed-similarity"}:
         raise ValueError("activation_fold_assignment must be balanced, similarity, or signed-similarity.")
+    if fold_stat_repair not in {"none", "rms"}:
+        raise ValueError("fold_stat_repair must be none or rms.")
     if transport_backend not in {"sparse", "sinkhorn"}:
         raise ValueError("transport_backend must be sparse or sinkhorn.")
     if transport_support not in {"centroid", "importance", "quantile", "medoid", "quantile-medoid"}:
@@ -3970,6 +3986,7 @@ def _resize_tensor_to_shape(
                 features=features,
                 reduction="mean" if axis_reductions is None else axis_reductions.get(axis, "mean"),
                 assignment_mode=activation_fold_assignment,
+                fold_stat_repair=fold_stat_repair,
                 transport_backend=transport_backend,
                 transport_support=transport_support,
                 assignment_cache=assignment_cache,
@@ -3994,6 +4011,7 @@ def _resize_attention_tensor_to_shape(
     axis_weights: dict[int, Any] | None = None,
     axis_reductions: dict[int, str] | None = None,
     activation_fold_assignment: str = "balanced",
+    fold_stat_repair: str = "none",
     transport_backend: str = "sparse",
     transport_support: str = "centroid",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
@@ -4037,6 +4055,7 @@ def _resize_attention_tensor_to_shape(
             head_dim_features=head_dim_features,
             head_dim_fold_mode="transport" if attention_head_dim_transport == "qk-vo" and head_dim_has_profile else None,
             head_dim_assignment_mode=activation_fold_assignment,
+            fold_stat_repair=fold_stat_repair,
             assignment_cache=assignment_cache,
             head_assignment_key=head_semantic_key or _attention_axis_assignment_key(suffix, semantic_prefix, "heads"),
             head_dim_assignment_key=head_dim_semantic_key
@@ -4070,6 +4089,7 @@ def _resize_attention_tensor_to_shape(
                 features=features,
                 reduction="mean" if axis_reductions is None else axis_reductions.get(axis, "mean"),
                 assignment_mode=activation_fold_assignment,
+                fold_stat_repair=fold_stat_repair,
                 transport_backend=transport_backend,
                 transport_support=transport_support,
                 assignment_cache=assignment_cache,
@@ -4166,6 +4186,7 @@ def _resize_head_partitioned_axis(
     head_dim_features=None,
     head_dim_fold_mode: str | None = None,
     head_dim_assignment_mode: str = "balanced",
+    fold_stat_repair: str = "none",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
     head_assignment_key=None,
     head_dim_assignment_key=None,
@@ -4190,6 +4211,7 @@ def _resize_head_partitioned_axis(
         features=head_features,
         reduction=reduction,
         assignment_mode=head_assignment_mode,
+        fold_stat_repair=fold_stat_repair,
         transport_backend=transport_backend,
         transport_support=transport_support,
         assignment_cache=assignment_cache,
@@ -4205,6 +4227,7 @@ def _resize_head_partitioned_axis(
         features=head_dim_features,
         reduction=reduction,
         assignment_mode=head_dim_assignment_mode,
+        fold_stat_repair=fold_stat_repair,
         transport_backend=transport_backend,
         transport_support=transport_support,
         assignment_cache=assignment_cache,
@@ -4891,6 +4914,112 @@ def _apply_sparse_axis_transport(
     return folded
 
 
+def _fold_stat_repair_desired_rms_from_assignment(
+    torch,
+    flat,
+    assignment,
+    fold_weights,
+    target_dim: int,
+    reduction: str,
+):
+    source_power = flat.detach().to(torch.float32).pow(2).mean(dim=1)
+    assignment = assignment.detach().cpu().to(torch.long)
+    if reduction == "mean":
+        coeffs = fold_weights.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12)
+        accum = torch.zeros(target_dim, dtype=torch.float32)
+        counts = torch.zeros(target_dim, dtype=torch.float32)
+        accum.index_add_(0, assignment, source_power * coeffs)
+        counts.index_add_(0, assignment, coeffs)
+        desired_power = accum / counts.clamp_min(1e-12)
+    elif reduction == "sqrt-sum":
+        accum = torch.zeros(target_dim, dtype=torch.float32)
+        counts = torch.zeros(target_dim, dtype=torch.float32)
+        accum.index_add_(0, assignment, source_power)
+        counts.index_add_(0, assignment, fold_weights.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12))
+        desired_power = accum / counts.clamp_min(1e-12)
+    else:
+        accum = torch.zeros(target_dim, dtype=torch.float32)
+        accum.index_add_(0, assignment, source_power)
+        desired_power = accum
+    return desired_power.clamp_min(0.0).sqrt()
+
+
+def _fold_stat_repair_desired_rms_from_transport(torch, flat, transport: dict[str, Any], fold_weights, reduction: str):
+    source_power = flat.detach().to(torch.float32).pow(2).mean(dim=1)
+    target_dim = int(transport["target_dim"])
+    if "transport_matrix" in transport:
+        matrix = transport["transport_matrix"].detach().cpu().to(torch.float32)
+        if reduction == "mean":
+            coeffs = matrix * fold_weights.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12).unsqueeze(1)
+            accum = coeffs.t().matmul(source_power)
+            counts = coeffs.sum(dim=0)
+            desired_power = accum / counts.clamp_min(1e-12)
+        elif reduction == "sqrt-sum":
+            accum = matrix.t().matmul(source_power)
+            counts = matrix.sum(dim=0)
+            desired_power = accum / counts.clamp_min(1e-12)
+        else:
+            desired_power = matrix.t().matmul(source_power)
+        return desired_power.clamp_min(0.0).sqrt()
+
+    indices = transport["transport_indices"].detach().cpu().to(torch.long)
+    values = transport["transport_values"].detach().cpu().to(torch.float32)
+    if int(indices.shape[0]) != int(source_power.numel()):
+        raise ValueError("Sparse transport has the wrong source dimension.")
+    if reduction == "mean":
+        base_coeffs = values * fold_weights.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12).unsqueeze(1)
+    else:
+        base_coeffs = values
+    accum = torch.zeros(target_dim, dtype=torch.float32)
+    counts = torch.zeros(target_dim, dtype=torch.float32)
+    for slot in range(int(indices.shape[1])):
+        target_idx = indices[:, slot].contiguous()
+        coeff = base_coeffs[:, slot].contiguous()
+        accum.index_add_(0, target_idx, source_power * coeff)
+        if reduction != "sum":
+            counts.index_add_(0, target_idx, coeff)
+    if reduction == "sum":
+        desired_power = accum
+    else:
+        desired_power = accum / counts.clamp_min(1e-12)
+    return desired_power.clamp_min(0.0).sqrt()
+
+
+def _repair_folded_axis_stats(
+    torch,
+    flat,
+    folded,
+    fold_stat_repair: str,
+    fold_weights,
+    reduction: str,
+    assignment=None,
+    transport: dict[str, Any] | None = None,
+):
+    if fold_stat_repair == "none":
+        return folded
+    if fold_stat_repair != "rms":
+        raise ValueError("fold_stat_repair must be none or rms.")
+    target_dim = int(folded.shape[0])
+    if transport is not None:
+        desired_rms = _fold_stat_repair_desired_rms_from_transport(torch, flat, transport, fold_weights, reduction)
+    else:
+        if assignment is None:
+            return folded
+        desired_rms = _fold_stat_repair_desired_rms_from_assignment(
+            torch,
+            flat,
+            assignment,
+            fold_weights,
+            target_dim,
+            reduction,
+        )
+    current_rms = folded.detach().to(torch.float32).pow(2).mean(dim=1).sqrt()
+    finite = torch.isfinite(desired_rms) & torch.isfinite(current_rms) & (desired_rms > 0) & (current_rms > 0)
+    scale = torch.ones(target_dim, dtype=torch.float32)
+    scale[finite] = (desired_rms[finite] / current_rms[finite]).clamp(0.125, 8.0)
+    return folded * scale.to(folded.dtype).unsqueeze(1)
+
+
 def _resize_tensor_axis_mean_fold(
     torch,
     tensor,
@@ -4901,6 +5030,7 @@ def _resize_tensor_axis_mean_fold(
     features=None,
     reduction: str = "mean",
     assignment_mode: str = "balanced",
+    fold_stat_repair: str = "none",
     transport_backend: str = "sparse",
     transport_support: str = "centroid",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
@@ -4914,6 +5044,8 @@ def _resize_tensor_axis_mean_fold(
         raise ValueError("reduction must be mean, sum, or sqrt-sum.")
     if assignment_mode not in {"balanced", "similarity", "signed-similarity"}:
         raise ValueError("assignment_mode must be balanced, similarity, or signed-similarity.")
+    if fold_stat_repair not in {"none", "rms"}:
+        raise ValueError("fold_stat_repair must be none or rms.")
     if transport_backend not in {"sparse", "sinkhorn"}:
         raise ValueError("transport_backend must be sparse or sinkhorn.")
     if transport_support not in {"centroid", "importance", "quantile", "medoid", "quantile-medoid"}:
@@ -4949,6 +5081,15 @@ def _resize_tensor_axis_mean_fold(
         cached = None if cache_key is None or assignment_cache is None else assignment_cache.get(cache_key)
         if cached is not None and "transport_indices" in cached:
             folded = _apply_sparse_axis_transport(torch, flat, cached, fold_weights, reduction, fold_mode)
+            folded = _repair_folded_axis_stats(
+                torch,
+                flat,
+                folded,
+                fold_stat_repair,
+                fold_weights,
+                reduction,
+                transport=cached,
+            )
             return folded.reshape((target_dim, *rest_shape)).movedim(0, axis).contiguous()
         if fold_mode == "transport" and features is not None:
             if cached is None:
@@ -4964,6 +5105,15 @@ def _resize_tensor_axis_mean_fold(
                 if cache_key is not None and assignment_cache is not None:
                     assignment_cache[cache_key] = cached
             folded = _apply_sparse_axis_transport(torch, flat, cached, fold_weights, reduction, fold_mode)
+            folded = _repair_folded_axis_stats(
+                torch,
+                flat,
+                folded,
+                fold_stat_repair,
+                fold_weights,
+                reduction,
+                transport=cached,
+            )
             return folded.reshape((target_dim, *rest_shape)).movedim(0, axis).contiguous()
         assignment = None
         assignment_signs = None
@@ -5020,6 +5170,15 @@ def _resize_tensor_axis_mean_fold(
             folded = folded / divisor.clamp_min(1.0).unsqueeze(1)
         elif reduction == "sqrt-sum":
             folded = folded / counts.clamp_min(1.0).sqrt().unsqueeze(1)
+        folded = _repair_folded_axis_stats(
+            torch,
+            flat,
+            folded,
+            fold_stat_repair,
+            fold_weights,
+            reduction,
+            assignment=assignment,
+        )
     else:
         source_idx = torch.floor(torch.arange(target_dim, dtype=torch.float32) * source_dim / target_dim)
         source_idx = source_idx.to(torch.long).clamp_max(source_dim - 1)
@@ -5878,6 +6037,7 @@ def _fit_projected_linear_from_donor_activations(
     hidden_basis=None,
     axis_weights: dict[int, Any] | None = None,
     activation_fold_assignment: str = "balanced",
+    fold_stat_repair: str = "none",
     transport_backend: str = "sparse",
     transport_support: str = "centroid",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
@@ -5970,6 +6130,7 @@ def _fit_projected_linear_from_donor_activations(
         hidden_basis=hidden_basis,
         axis_weights=axis_weights,
         activation_fold_assignment=activation_fold_assignment,
+        fold_stat_repair=fold_stat_repair,
         transport_backend=transport_backend,
         transport_support=transport_support,
         assignment_cache=assignment_cache,
@@ -5989,6 +6150,7 @@ def _fit_projected_linear_from_donor_activations(
         hidden_basis=hidden_basis,
         axis_weights=axis_weights,
         activation_fold_assignment=activation_fold_assignment,
+        fold_stat_repair=fold_stat_repair,
         transport_backend=transport_backend,
         transport_support=transport_support,
         assignment_cache=assignment_cache,
@@ -6146,6 +6308,7 @@ def _resize_linear_activation_rows(
     hidden_basis=None,
     axis_weights: dict[int, Any] | None = None,
     activation_fold_assignment: str = "balanced",
+    fold_stat_repair: str = "none",
     transport_backend: str = "sparse",
     transport_support: str = "centroid",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
@@ -6181,6 +6344,7 @@ def _resize_linear_activation_rows(
             head_weights=head_weights,
             head_features=head_features,
             head_assignment_mode=activation_fold_assignment,
+            fold_stat_repair=fold_stat_repair,
             assignment_cache=assignment_cache,
             head_assignment_key=head_key,
             head_dim_assignment_key=("linear-fit", "attention", stream, "head_dim", tuple(int(i) for i in donor_layer_group or [donor_layer_idx])),
@@ -6203,6 +6367,7 @@ def _resize_linear_activation_rows(
         axis_weights=row_axis_weights,
         axis_reductions={1: "mean"},
         activation_fold_assignment=activation_fold_assignment,
+        fold_stat_repair=fold_stat_repair,
         transport_backend=transport_backend,
         transport_support=transport_support,
         assignment_cache=assignment_cache,
@@ -6406,6 +6571,7 @@ def _initialize_token_weights_from_donor(
     lm_head_hidden_basis=None,
     hidden_axis_weights=None,
     activation_fold_assignment: str = "balanced",
+    fold_stat_repair: str = "none",
     transport_backend: str = "sparse",
     transport_support: str = "centroid",
     projection_scale: str = "none",
@@ -6469,6 +6635,7 @@ def _initialize_token_weights_from_donor(
         hidden_basis=hidden_basis,
         hidden_axis_weights=hidden_axis_weights,
         activation_fold_assignment=activation_fold_assignment,
+        fold_stat_repair=fold_stat_repair,
         transport_backend=transport_backend,
         transport_support=transport_support,
         projection_scale=projection_scale,
@@ -6505,6 +6672,7 @@ def _initialize_token_weights_from_donor(
                 hidden_basis=hidden_basis if lm_head_hidden_basis is None else lm_head_hidden_basis,
                 hidden_axis_weights=hidden_axis_weights,
                 activation_fold_assignment=activation_fold_assignment,
+                fold_stat_repair=fold_stat_repair,
                 transport_backend=transport_backend,
                 transport_support=transport_support,
                 projection_scale=projection_scale,
@@ -6542,6 +6710,7 @@ def _project_token_weight_rows(
     hidden_basis=None,
     hidden_axis_weights=None,
     activation_fold_assignment: str = "balanced",
+    fold_stat_repair: str = "none",
     transport_backend: str = "sparse",
     transport_support: str = "centroid",
     projection_scale: str = "none",
@@ -6584,6 +6753,7 @@ def _project_token_weight_rows(
             axis_weights={} if hidden_axis_weights is None else {1: hidden_axis_weights},
             axis_reductions={1: hidden_axis_reduction},
             activation_fold_assignment=activation_fold_assignment,
+            fold_stat_repair=fold_stat_repair,
             transport_backend=transport_backend,
             transport_support=transport_support,
             assignment_cache=assignment_cache,

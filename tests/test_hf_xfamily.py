@@ -642,6 +642,36 @@ def test_cli_accepts_signed_activation_fold_assignment() -> None:
     assert chain_args.init_activation_fold_assignment == "signed-similarity"
 
 
+def test_cli_accepts_fold_stat_repair() -> None:
+    parser = build_parser()
+
+    donor_init_args = parser.parse_args(
+        [
+            "hf-donor-project-init",
+            "projected-out",
+            "--target-config-model",
+            "target-model",
+            "--donor-model",
+            "donor-model",
+            "--fold-stat-repair",
+            "rms",
+        ]
+    )
+    chain_args = parser.parse_args(
+        [
+            "hf-xfamily-chain-anchor-compress",
+            "source-model",
+            "candidate-config",
+            "chain-out",
+            "--init-fold-stat-repair",
+            "rms",
+        ]
+    )
+
+    assert donor_init_args.fold_stat_repair == "rms"
+    assert chain_args.init_fold_stat_repair == "rms"
+
+
 def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     parser = build_parser()
     sweep_args = parser.parse_args(
@@ -3039,6 +3069,53 @@ def test_cached_mlp_fold_reuses_assignment_and_sums_outgoing_paths() -> None:
     assert folded_incoming[:, 0].tolist() == pytest.approx([20.0 / 11.0, 1900.0 / 10.0])
     assert folded_outgoing.flatten().tolist() == pytest.approx([7.0, 11.0])
     assert len(cache) == 1
+
+
+def test_fold_stat_repair_preserves_assignment_cluster_rms() -> None:
+    torch = pytest.importorskip("torch")
+    features = torch.tensor(
+        [
+            [1.0, 0.0],
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [0.0, 1.0],
+        ],
+        dtype=torch.float32,
+    )
+    source = torch.tensor(
+        [
+            [10.0, 0.0],
+            [0.0, 10.0],
+            [100.0, 0.0],
+            [0.0, 100.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    folded_plain = _resize_tensor_axis_mean_fold(
+        torch,
+        source,
+        axis=0,
+        target_dim=2,
+        features=features,
+        assignment_mode="similarity",
+        reduction="mean",
+    )
+    folded_repaired = _resize_tensor_axis_mean_fold(
+        torch,
+        source,
+        axis=0,
+        target_dim=2,
+        features=features,
+        assignment_mode="similarity",
+        reduction="mean",
+        fold_stat_repair="rms",
+    )
+
+    plain_rms = folded_plain.pow(2).mean(dim=1).sqrt().sort().values
+    repaired_rms = folded_repaired.pow(2).mean(dim=1).sqrt().sort().values
+    assert plain_rms.tolist() == pytest.approx([5.0, 50.0])
+    assert repaired_rms.tolist() == pytest.approx([2**0.5 * 5.0, 2**0.5 * 50.0])
 
 
 def test_mlp_neuron_activation_values_use_gated_product() -> None:
@@ -6085,6 +6162,8 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "99",
             "--activation-fold-assignment",
             "similarity",
+            "--fold-stat-repair",
+            "rms",
             "--transport-support",
             "quantile",
             "--donor-layer-fold-mode",
@@ -6161,6 +6240,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "hidden_basis_max_rows": 99,
         "hidden_basis_preprocess": "centered-rowrms",
         "activation_fold_assignment": "similarity",
+        "fold_stat_repair": "rms",
         "transport_backend": "sparse",
         "transport_support": "quantile",
         "donor_layer_fold_mode": "average",
@@ -8001,6 +8081,7 @@ def test_chain_anchor_init_stage_forwards_activation_fit_flags(monkeypatch, tmp_
         init_hidden_basis_max_rows=4096,
         init_hidden_basis_preprocess="uncentered-rowrms",
         init_activation_fold_assignment="similarity",
+        init_fold_stat_repair="rms",
         init_transport_backend="sinkhorn",
         init_transport_support="importance",
         init_donor_layer_fold_mode="fold",
@@ -8046,6 +8127,7 @@ def test_chain_anchor_init_stage_forwards_activation_fit_flags(monkeypatch, tmp_
     assert captured["hidden_basis_max_rows"] == 4096
     assert captured["hidden_basis_preprocess"] == "uncentered-rowrms"
     assert captured["activation_fold_assignment"] == "similarity"
+    assert captured["fold_stat_repair"] == "rms"
     assert captured["transport_backend"] == "sinkhorn"
     assert captured["transport_support"] == "importance"
     assert captured["donor_layer_group_strategy"] == "activation-energy"
@@ -8124,6 +8206,8 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "uncentered-rowrms",
             "--init-activation-fold-assignment",
             "similarity",
+            "--init-fold-stat-repair",
+            "rms",
             "--init-transport-backend",
             "sinkhorn",
             "--init-transport-support",
@@ -8382,6 +8466,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["init_hidden_basis_max_rows"] == 4096
     assert captured["init_hidden_basis_preprocess"] == "uncentered-rowrms"
     assert captured["init_activation_fold_assignment"] == "similarity"
+    assert captured["init_fold_stat_repair"] == "rms"
     assert captured["init_transport_backend"] == "sinkhorn"
     assert captured["init_transport_support"] == "importance"
     assert captured["init_donor_layer_group_strategy"] == "activation-geometry"
