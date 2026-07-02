@@ -1295,3 +1295,19 @@ Queued proof lane:
     `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_cka_weighted_block_weighted_layerproj_gated_all_full_gpu4_20260702.queue.log`
   - Purpose: exercise `PRE_RECONSTRUCTION_TARGET=all` with the new
     group-aware folded donor targets.
+
+Post-run retention watcher:
+
+- Added `experiments/queue_eval_retention_compare.sh`, a generic cached
+  evaluation/retention queue. It waits for a model run, evaluates the child
+  once on the exact-generation suite, writes manual generations, selects the
+  best cached parent report available, and compares against parent plus cached
+  baseline experiments without rerunning parent baselines.
+- Added
+  `experiments/queue_qwen4b_blank_smollm_layerproj_gated_all_retention_20260702.sh`
+  for the all-target lane.
+- Watcher PID: `3675521`
+- Waits behind all-target queue PID `3634313`; parent exactgen queue PID
+  `3345256` is also honored before final parent-retention comparison.
+- Watcher log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_cka_weighted_block_weighted_layerproj_gated_all_full_gpu4_20260702_retention_compare.queue.log`
