@@ -201,11 +201,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hf_donor_init.add_argument(
         "--projection-scale",
-        choices=["none", "target-rms", "source-rms"],
+        choices=["none", "target-rms", "source-rms", "geomean-rms"],
         default="none",
         help=(
             "Optional RMS rescale for folded parent tensors before loading into the child shape. "
-            "target-rms matches the initialized child tensor; source-rms preserves donor tensor scale."
+            "target-rms matches the initialized child tensor; source-rms preserves donor tensor scale; "
+            "geomean-rms uses the geometric mean of both."
         ),
     )
     hf_donor_init.add_argument(
@@ -1430,7 +1431,11 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["shared", "donor-tokenized", "donor-tokenized-weighted", "donor-omp"],
         default="shared",
     )
-    xfamily_chain.add_argument("--init-projection-scale", choices=["none", "target-rms", "source-rms"], default="none")
+    xfamily_chain.add_argument(
+        "--init-projection-scale",
+        choices=["none", "target-rms", "source-rms", "geomean-rms"],
+        default="none",
+    )
     xfamily_chain.add_argument("--init-projection-blend-alpha", type=float, default=1.0)
     xfamily_chain.add_argument("--init-consumer-hidden-reduction", choices=["mean", "sum", "sqrt-sum"], default="mean")
     xfamily_chain.add_argument("--init-activation-fit-linears", action="store_true")

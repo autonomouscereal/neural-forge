@@ -337,8 +337,8 @@ def donor_projected_init(
         raise ValueError("attention_head_dim_transport must be none or qk-vo.")
     if token_init_mode not in {"shared", "donor-tokenized", "donor-tokenized-weighted", "donor-omp"}:
         raise ValueError("token_init_mode must be shared, donor-tokenized, donor-tokenized-weighted, or donor-omp.")
-    if projection_scale not in {"none", "target-rms", "source-rms"}:
-        raise ValueError("projection_scale must be none, target-rms, or source-rms.")
+    if projection_scale not in {"none", "target-rms", "source-rms", "geomean-rms"}:
+        raise ValueError("projection_scale must be none, target-rms, source-rms, or geomean-rms.")
     if consumer_hidden_reduction not in {"mean", "sum", "sqrt-sum"}:
         raise ValueError("consumer_hidden_reduction must be mean, sum, or sqrt-sum.")
     if activation_fit_target not in {"all", "attention", "attention-output", "mlp", "mlp-output", "input-projections"}:
@@ -3097,16 +3097,23 @@ def _hidden_axis_weights_for_non_layer_tensor(donor_tensor, hidden_axis_weights)
 def _scale_projection_to_target(torch, projected, target_tensor, projection_scale: str, source_tensor=None):
     if projection_scale == "none":
         return projected
-    if projection_scale not in {"target-rms", "source-rms"}:
-        raise ValueError("projection_scale must be none, target-rms, or source-rms.")
-    if projection_scale == "source-rms":
+    if projection_scale not in {"target-rms", "source-rms", "geomean-rms"}:
+        raise ValueError("projection_scale must be none, target-rms, source-rms, or geomean-rms.")
+    if projection_scale in {"source-rms", "geomean-rms"}:
         if source_tensor is None:
-            raise ValueError("source-rms projection scale requires source_tensor.")
-        reference_values = source_tensor.detach().cpu().to(torch.float32)
+            raise ValueError(f"{projection_scale} projection scale requires source_tensor.")
+        source_values = source_tensor.detach().cpu().to(torch.float32)
+        if projection_scale == "source-rms":
+            reference_rms = source_values.pow(2).mean().sqrt()
+        else:
+            target_values = target_tensor.detach().cpu().to(torch.float32)
+            source_rms = source_values.pow(2).mean().sqrt()
+            target_rms = target_values.pow(2).mean().sqrt()
+            reference_rms = (source_rms * target_rms).sqrt()
     else:
-        reference_values = target_tensor.detach().cpu().to(torch.float32)
+        target_values = target_tensor.detach().cpu().to(torch.float32)
+        reference_rms = target_values.pow(2).mean().sqrt()
     projected_values = projected.to(torch.float32)
-    reference_rms = reference_values.pow(2).mean().sqrt()
     projected_rms = projected_values.pow(2).mean().sqrt()
     return projected_values * (reference_rms / projected_rms.clamp_min(1e-12))
 

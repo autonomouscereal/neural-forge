@@ -482,7 +482,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "--token-init-mode",
             "donor-omp",
             "--projection-scale",
-            "source-rms",
+            "geomean-rms",
             "--projection-blend-alpha",
             "0.35",
             "--consumer-hidden-reduction",
@@ -931,7 +931,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.attention_fold_mode == "coupled"
     assert donor_init_args.attention_head_dim_transport == "qk-vo"
     assert donor_init_args.token_init_mode == "donor-omp"
-    assert donor_init_args.projection_scale == "source-rms"
+    assert donor_init_args.projection_scale == "geomean-rms"
     assert donor_init_args.projection_blend_alpha == 0.35
     assert donor_init_args.consumer_hidden_reduction == "sqrt-sum"
     assert donor_init_args.activation_fit_linears is True
@@ -2618,6 +2618,19 @@ def test_scale_projection_to_target_can_preserve_source_rms() -> None:
 
     assert float(scaled.pow(2).mean().sqrt()) == pytest.approx(float(source.pow(2).mean().sqrt()))
     assert float(scaled.pow(2).mean().sqrt()) != pytest.approx(float(target.pow(2).mean().sqrt()))
+
+
+def test_scale_projection_to_target_can_use_geomean_rms() -> None:
+    torch = pytest.importorskip("torch")
+    projected = torch.ones((2, 2), dtype=torch.float32) * 2.0
+    target = torch.ones((2, 2), dtype=torch.float32) * 0.5
+    source = torch.ones((4, 4), dtype=torch.float32) * 8.0
+
+    scaled = _scale_projection_to_target(torch, projected, target, "geomean-rms", source_tensor=source)
+
+    expected_rms = (float(target.pow(2).mean().sqrt()) * float(source.pow(2).mean().sqrt())) ** 0.5
+    assert float(scaled.pow(2).mean().sqrt()) == pytest.approx(expected_rms)
+    assert float(target.pow(2).mean().sqrt()) < expected_rms < float(source.pow(2).mean().sqrt())
 
 
 def test_blend_projection_with_target_interpolates_values() -> None:
@@ -6815,7 +6828,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "--init-token-init-mode",
             "donor-tokenized-weighted",
             "--init-projection-scale",
-            "source-rms",
+            "geomean-rms",
             "--init-projection-blend-alpha",
             "0.75",
             "--init-consumer-hidden-reduction",
@@ -7053,7 +7066,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["init_attention_fold_mode"] == "activation-coupled"
     assert captured["init_attention_head_dim_transport"] == "qk-vo"
     assert captured["init_token_init_mode"] == "donor-tokenized-weighted"
-    assert captured["init_projection_scale"] == "source-rms"
+    assert captured["init_projection_scale"] == "geomean-rms"
     assert captured["init_projection_blend_alpha"] == 0.75
     assert captured["init_consumer_hidden_reduction"] == "sqrt-sum"
     assert captured["init_activation_fit_linears"] is True
