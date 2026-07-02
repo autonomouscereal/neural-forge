@@ -22,6 +22,8 @@ from neural_forge.hf_recovery import _behavior_checkpoint_is_better
 from neural_forge.hf_recovery import _candidate_rank_kl_loss
 from neural_forge.hf_recovery import _candidate_to_source_token_groups
 from neural_forge.hf_recovery import _candidate_index_after_depth_fold
+from neural_forge.hf_recovery import _collect_cross_tokenizer_attention_output_calibration
+from neural_forge.hf_recovery import _collect_cross_tokenizer_module_activations
 from neural_forge.hf_recovery import _cross_tokenizer_recovery_loss
 from neural_forge.hf_recovery import _cross_tokenizer_dual_space_kd_loss
 from neural_forge.hf_recovery import _cross_tokenizer_alm_chunk_loss
@@ -2075,6 +2077,155 @@ def test_source_group_module_output_state_uses_weighted_fold_targets() -> None:
 
     assert folded.squeeze().item() == pytest.approx(13.0)
     assert averaged.squeeze().item() == pytest.approx(6.5)
+
+
+def test_collect_cross_tokenizer_module_activations_folds_source_layer_group(monkeypatch) -> None:
+    torch = pytest.importorskip("torch")
+    import neural_forge.hf_recovery as hf_recovery
+
+    class StaticModule(torch.nn.Module):
+        def __init__(self, values):
+            super().__init__()
+            self.register_buffer("values", values)
+
+        def forward(self, inputs):
+            return self.values.to(device=inputs.device)
+
+    class HookedModel(torch.nn.Module):
+        def __init__(self, modules):
+            super().__init__()
+            self.layers = torch.nn.ModuleDict({str(idx): module for idx, module in modules.items()})
+
+        def forward(self, input_ids, **_kwargs):
+            inputs = torch.zeros((input_ids.shape[0], input_ids.shape[1], 2), dtype=torch.float32)
+            for module in self.layers.values():
+                module(inputs)
+            return {}
+
+    def fake_span_pairs(*_args, **_kwargs):
+        return torch.tensor([[0, 0, 0], [0, 2, 2]], dtype=torch.long)
+
+    monkeypatch.setattr(hf_recovery, "_cross_tokenizer_span_pairs", fake_span_pairs)
+    source_modules = {
+        1: StaticModule(torch.tensor([[[1.0, 10.0], [2.0, 20.0], [3.0, 30.0]]])),
+        2: StaticModule(torch.tensor([[[4.0, 40.0], [5.0, 50.0], [6.0, 60.0]]])),
+    }
+    candidate_module = StaticModule(torch.tensor([[[7.0, 70.0], [8.0, 80.0], [9.0, 90.0]]]))
+    source = HookedModel(source_modules)
+    candidate = HookedModel({0: candidate_module})
+    batch = {"input_ids": torch.tensor([[1, 2, 3]])}
+
+    source_rows, candidate_rows, matched = _collect_cross_tokenizer_module_activations(
+        torch,
+        source,
+        candidate,
+        source_modules[1],
+        candidate_module,
+        None,
+        None,
+        [(batch, batch)],
+        lambda token: token,
+        8,
+        source_modules_by_layer=source_modules,
+        source_layer_group=[1, 2],
+        donor_layer_fold_mode="fold",
+        source_layer_group_weights=[0.25, 0.75],
+    )
+
+    assert matched == 2
+    assert torch.allclose(source_rows, torch.tensor([[6.5, 65.0], [10.5, 105.0]]))
+    assert torch.allclose(candidate_rows, torch.tensor([[7.0, 70.0], [9.0, 90.0]]))
+
+
+def test_collect_cross_tokenizer_attention_output_calibration_folds_source_layer_group(monkeypatch) -> None:
+    torch = pytest.importorskip("torch")
+    import neural_forge.hf_recovery as hf_recovery
+
+    class StaticModule(torch.nn.Module):
+        def __init__(self, values):
+            super().__init__()
+            self.register_buffer("values", values)
+
+        def forward(self, inputs):
+            return self.values.to(device=inputs.device)
+
+    class StaticOutput(torch.nn.Module):
+        def __init__(self, values):
+            super().__init__()
+            self.register_buffer("values", values)
+
+        def forward(self, inputs):
+            return self.values.to(device=inputs.device)
+
+    class CandidateAttention(torch.nn.Module):
+        def __init__(self, output_module, hidden):
+            super().__init__()
+            self.output_module = output_module
+            self.register_buffer("hidden", hidden)
+
+        def forward(self, inputs):
+            hidden = self.hidden.to(device=inputs.device)
+            return self.output_module(hidden)
+
+    class SourceModel(torch.nn.Module):
+        def __init__(self, modules):
+            super().__init__()
+            self.layers = torch.nn.ModuleDict({str(idx): module for idx, module in modules.items()})
+
+        def forward(self, input_ids, **_kwargs):
+            inputs = torch.zeros((input_ids.shape[0], input_ids.shape[1], 2), dtype=torch.float32)
+            for module in self.layers.values():
+                module(inputs)
+            return {}
+
+    class CandidateModel(torch.nn.Module):
+        def __init__(self, attention):
+            super().__init__()
+            self.attention = attention
+
+        def forward(self, input_ids, **_kwargs):
+            inputs = torch.zeros((input_ids.shape[0], input_ids.shape[1], 2), dtype=torch.float32)
+            self.attention(inputs)
+            return {}
+
+    def fake_span_pairs(*_args, **_kwargs):
+        return torch.tensor([[0, 0, 0], [0, 2, 2]], dtype=torch.long)
+
+    monkeypatch.setattr(hf_recovery, "_cross_tokenizer_span_pairs", fake_span_pairs)
+    source_attentions = {
+        1: StaticModule(torch.tensor([[[2.0, 20.0], [3.0, 30.0], [4.0, 40.0]]])),
+        2: StaticModule(torch.tensor([[[8.0, 80.0], [9.0, 90.0], [10.0, 100.0]]])),
+    }
+    candidate_output = StaticOutput(torch.tensor([[[5.0, 50.0], [6.0, 60.0], [7.0, 70.0]]]))
+    candidate_attention = CandidateAttention(
+        candidate_output,
+        torch.tensor([[[11.0, 110.0], [12.0, 120.0], [13.0, 130.0]]]),
+    )
+    source = SourceModel(source_attentions)
+    candidate = CandidateModel(candidate_attention)
+    batch = {"input_ids": torch.tensor([[1, 2, 3]])}
+
+    source_rows, hidden_rows, candidate_rows, matched = _collect_cross_tokenizer_attention_output_calibration(
+        torch,
+        source,
+        candidate,
+        source_attentions[1],
+        {"attention": candidate_attention, "output": candidate_output, "output_name": "out"},
+        None,
+        None,
+        [(batch, batch)],
+        lambda token: token,
+        8,
+        source_attentions_by_layer=source_attentions,
+        source_layer_group=[1, 2],
+        donor_layer_fold_mode="average",
+        source_layer_group_weights=[0.25, 0.75],
+    )
+
+    assert matched == 2
+    assert torch.allclose(source_rows, torch.tensor([[6.5, 65.0], [8.5, 85.0]]))
+    assert torch.allclose(hidden_rows, torch.tensor([[11.0, 110.0], [13.0, 130.0]]))
+    assert torch.allclose(candidate_rows, torch.tensor([[5.0, 50.0], [7.0, 70.0]]))
 
 
 def test_activation_row_transport_loss_handles_permuted_rows() -> None:

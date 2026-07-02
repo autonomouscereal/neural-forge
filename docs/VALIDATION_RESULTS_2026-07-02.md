@@ -1250,3 +1250,38 @@ Validation:
   `2 passed, 2 skipped, 243 deselected`
 - Local full suite:
   `147 passed, 153 skipped`
+
+## Group-Aware Folded Reconstruction Targets
+
+Fixed a reconstruction gap where `PRE_RECONSTRUCTION_TARGET=all` still used a
+single donor layer for attention, attention-output, MLP, and MLP-output targets
+even when block recovery assigned a folded donor source group.
+
+What changed:
+
+- Attention input reconstruction now collects every source layernorm output in
+  the assigned donor group and folds it with the configured donor fold mode and
+  group weights.
+- Attention output reconstruction now folds attention module outputs across the
+  assigned donor group.
+- MLP input reconstruction now folds every source post-attention layernorm
+  output in the assigned donor group.
+- MLP output reconstruction now derives the source target from folded source
+  hidden states, preserving residual semantics instead of summing full layer
+  outputs.
+- New queue wrapper:
+  `experiments/queue_qwen4b_blank_smollm_cka_weighted_block_weighted_layerproj_gated_all_20260702.sh`.
+
+Validation:
+
+- Local compile:
+  `python -m compileall -q src/neural_forge tests`
+- Local focused suite used the repo `.venv` but skipped Torch-backed tests
+  because local Torch is not installed:
+  `4 skipped, 245 deselected`
+- Remote focused Torch-backed tests:
+  `4 passed, 245 deselected`
+- Remote full suite:
+  `302 passed`
+- Remote queue syntax:
+  `bash -n experiments/queue_qwen4b_blank_smollm_cka_weighted_block_weighted_layerproj_gated_all_20260702.sh`

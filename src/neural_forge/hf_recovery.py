@@ -2347,6 +2347,7 @@ def reconstruct_cross_tokenizer_causal_lm(
                 fit_gate_min_relative_improvement=fit_gate_min_relative_improvement,
                 fit_gate_max_cosine_drop=fit_gate_max_cosine_drop,
                 max_tokens_per_layer=max_tokens_per_layer,
+                donor_layer_fold_mode=donor_layer_fold_mode,
             )
             repair["source_layer"] = int(source_idx)
             repair["source_layer_group"] = [int(item) for item in source_group]
@@ -3188,6 +3189,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 float(pre_reconstruction_min_relative_improvement),
                 float(pre_reconstruction_max_cosine_drop),
                 int(pre_reconstruction_max_tokens_per_layer),
+                donor_layer_fold_mode=donor_layer_fold_mode,
+                source_layer_group_weights=source_group_weights,
             )
         trainable_modules = [candidate_layer]
         if train_output_head_with_kd and output_head is not None:
@@ -7968,6 +7971,24 @@ def _source_group_module_output_state(
     return module_outputs[idx].to(torch.float32)
 
 
+def _source_group_layer_modules(
+    source_layers: Sequence[Any] | None,
+    source_layer_group: Sequence[int],
+    module_getter,
+) -> dict[int, Any]:
+    if not source_layers or not source_layer_group:
+        return {}
+    modules: dict[int, Any] = {}
+    for raw_idx in source_layer_group:
+        idx = int(raw_idx)
+        if idx < 0 or idx >= len(source_layers):
+            continue
+        module = module_getter(source_layers[idx])
+        if module is not None:
+            modules[idx] = module
+    return modules
+
+
 def _activation_row_transport_loss(
     torch,
     student_rows,
@@ -9600,6 +9621,8 @@ def _reconstruct_cross_tokenizer_layer(
     fit_gate_min_relative_improvement: float,
     fit_gate_max_cosine_drop: float,
     max_tokens_per_layer: int,
+    donor_layer_fold_mode: str = "representative",
+    source_layer_group_weights: Sequence[float] | None = None,
 ) -> dict[str, Any]:
     repair_report: dict[str, Any] = {}
     source_group = [int(item) for item in (source_layer_group or [])]
@@ -9611,6 +9634,13 @@ def _reconstruct_cross_tokenizer_layer(
 
     if reconstruction_target in {"attention", "attention-all", "both", "all"}:
         source_attn_norm = _get_layer_module(source_attn_layer, ("input_layernorm", "ln_1"))
+        source_attn_norm_modules = _source_group_layer_modules(
+            source_layers,
+            source_group,
+            lambda layer: _get_layer_module(layer, ("input_layernorm", "ln_1")),
+        )
+        if len(source_attn_norm_modules) != len(source_group):
+            source_attn_norm_modules = {}
         candidate_attn_norm = _get_layer_module(candidate_layer, ("input_layernorm", "ln_1"))
         attn_linears = _attention_input_linears(candidate_layer)
         repair_report["attention_reconstruction"] = _reconstruct_cross_tokenizer_module_pair(
@@ -9637,6 +9667,10 @@ def _reconstruct_cross_tokenizer_layer(
             fit_gate_min_relative_improvement,
             fit_gate_max_cosine_drop,
             max_tokens_per_layer,
+            source_modules_by_layer=source_attn_norm_modules or None,
+            source_layer_group=source_group,
+            donor_layer_fold_mode=donor_layer_fold_mode,
+            source_layer_group_weights=source_layer_group_weights,
         )
     else:
         repair_report["attention_reconstruction"] = {
@@ -9644,6 +9678,13 @@ def _reconstruct_cross_tokenizer_layer(
             "reason": "reconstruction_target_excludes_attention",
         }
     if reconstruction_target in {"attention-output", "attention-all", "all"}:
+        source_attention_modules = _source_group_layer_modules(
+            source_layers,
+            source_group,
+            _attention_module,
+        )
+        if len(source_attention_modules) != len(source_group):
+            source_attention_modules = {}
         repair_report["attention_output_reconstruction"] = _reconstruct_cross_tokenizer_attention_output(
             torch,
             source,
@@ -9667,6 +9708,10 @@ def _reconstruct_cross_tokenizer_layer(
             fit_gate_min_relative_improvement,
             fit_gate_max_cosine_drop,
             max_tokens_per_layer,
+            source_attentions_by_layer=source_attention_modules or None,
+            source_layer_group=source_group,
+            donor_layer_fold_mode=donor_layer_fold_mode,
+            source_layer_group_weights=source_layer_group_weights,
         )
     else:
         repair_report["attention_output_reconstruction"] = {
@@ -9676,6 +9721,13 @@ def _reconstruct_cross_tokenizer_layer(
 
     if reconstruction_target in {"mlp", "mlp-all", "both", "all"}:
         source_mlp_norm = _get_layer_module(source_mlp_layer, ("post_attention_layernorm", "ln_2"))
+        source_mlp_norm_modules = _source_group_layer_modules(
+            source_layers,
+            source_group,
+            lambda layer: _get_layer_module(layer, ("post_attention_layernorm", "ln_2")),
+        )
+        if len(source_mlp_norm_modules) != len(source_group):
+            source_mlp_norm_modules = {}
         candidate_mlp_norm = _get_layer_module(candidate_layer, ("post_attention_layernorm", "ln_2"))
         mlp_linears = _mlp_input_linears(candidate_layer)
         repair_report["mlp_reconstruction"] = _reconstruct_cross_tokenizer_module_pair(
@@ -9702,6 +9754,10 @@ def _reconstruct_cross_tokenizer_layer(
             fit_gate_min_relative_improvement,
             fit_gate_max_cosine_drop,
             max_tokens_per_layer,
+            source_modules_by_layer=source_mlp_norm_modules or None,
+            source_layer_group=source_group,
+            donor_layer_fold_mode=donor_layer_fold_mode,
+            source_layer_group_weights=source_layer_group_weights,
         )
     else:
         repair_report["mlp_reconstruction"] = {
@@ -9732,6 +9788,9 @@ def _reconstruct_cross_tokenizer_layer(
             fit_gate_min_relative_improvement,
             fit_gate_max_cosine_drop,
             max_tokens_per_layer,
+            source_layer_group=source_group,
+            donor_layer_fold_mode=donor_layer_fold_mode,
+            source_layer_group_weights=source_layer_group_weights,
         )
     else:
         repair_report["mlp_output_reconstruction"] = {
@@ -10108,8 +10167,17 @@ def _reconstruct_cross_tokenizer_module_pair(
     fit_gate_min_relative_improvement: float,
     fit_gate_max_cosine_drop: float,
     max_tokens_per_layer: int,
+    source_modules_by_layer: dict[int, Any] | None = None,
+    source_layer_group: Sequence[int] | None = None,
+    donor_layer_fold_mode: str = "representative",
+    source_layer_group_weights: Sequence[float] | None = None,
 ) -> dict[str, Any]:
-    if source_module is None or candidate_module is None or not candidate_linears:
+    if candidate_module is None or not candidate_linears:
+        return {
+            "skipped": True,
+            "reason": "missing_module_or_candidate_input_linears",
+        }
+    if source_module is None and not source_modules_by_layer:
         return {
             "skipped": True,
             "reason": "missing_module_or_candidate_input_linears",
@@ -10125,12 +10193,24 @@ def _reconstruct_cross_tokenizer_module_pair(
         paired_batches,
         canonical_fn,
         max_tokens_per_layer,
+        source_modules_by_layer=source_modules_by_layer,
+        source_layer_group=source_layer_group,
+        donor_layer_fold_mode=donor_layer_fold_mode,
+        source_layer_group_weights=source_layer_group_weights,
     )
     if int(matched) <= 0:
         return {
             "skipped": True,
             "reason": "no_cross_tokenizer_activation_pairs",
         }
+    group_report = {}
+    if source_modules_by_layer and source_layer_group:
+        group_report = {
+            "source_layer_group": [int(item) for item in source_layer_group],
+            "donor_layer_fold_mode": donor_layer_fold_mode,
+        }
+        if source_layer_group_weights is not None:
+            group_report["source_layer_group_weights"] = [float(item) for item in source_layer_group_weights]
     source_projected = source_rows.to(device=hidden_projection.device, dtype=torch.float32).matmul(
         hidden_projection.to(dtype=torch.float32)
     ).detach().cpu()
@@ -10178,13 +10258,13 @@ def _reconstruct_cross_tokenizer_module_pair(
         )
         fit_report["fit_gate"] = {**fit_report["fit_gate"], **gate}
         if not gate["accepted"]:
-            return {key: value for key, value in fitted.items() if key != "map"} | fit_report | {
+            return {key: value for key, value in fitted.items() if key != "map"} | fit_report | group_report | {
                 "matched_pairs": int(matched),
                 "linears_updated": [],
                 "mutation_skipped": True,
             }
     _absorb_input_map_into_linears(torch, candidate_linears, fitted["map"])
-    return {key: value for key, value in fitted.items() if key != "map"} | fit_report | {
+    return {key: value for key, value in fitted.items() if key != "map"} | fit_report | group_report | {
         "matched_pairs": int(matched),
         "linears_updated": [name for name, _module in candidate_linears],
     }
@@ -10213,10 +10293,14 @@ def _reconstruct_cross_tokenizer_attention_output(
     fit_gate_min_relative_improvement: float,
     fit_gate_max_cosine_drop: float,
     max_tokens_per_layer: int,
+    source_attentions_by_layer: dict[int, Any] | None = None,
+    source_layer_group: Sequence[int] | None = None,
+    donor_layer_fold_mode: str = "representative",
+    source_layer_group_weights: Sequence[float] | None = None,
 ) -> dict[str, Any]:
     spec = _attention_projection_spec(candidate_layer)
     source_attention = _attention_module(source_layer)
-    if spec is None or source_attention is None:
+    if spec is None or (source_attention is None and not source_attentions_by_layer):
         return {"skipped": True, "reason": "unsupported_attention_output_shape"}
 
     source_output, hidden, candidate_output, matched = _collect_cross_tokenizer_attention_output_calibration(
@@ -10230,9 +10314,21 @@ def _reconstruct_cross_tokenizer_attention_output(
         paired_batches,
         canonical_fn,
         max_tokens_per_layer,
+        source_attentions_by_layer=source_attentions_by_layer,
+        source_layer_group=source_layer_group,
+        donor_layer_fold_mode=donor_layer_fold_mode,
+        source_layer_group_weights=source_layer_group_weights,
     )
     if int(matched) <= 0:
         return {"skipped": True, "reason": "no_cross_tokenizer_attention_output_pairs"}
+    group_report = {}
+    if source_attentions_by_layer and source_layer_group:
+        group_report = {
+            "source_layer_group": [int(item) for item in source_layer_group],
+            "donor_layer_fold_mode": donor_layer_fold_mode,
+        }
+        if source_layer_group_weights is not None:
+            group_report["source_layer_group_weights"] = [float(item) for item in source_layer_group_weights]
     source_projected = source_output.to(device=hidden_projection.device, dtype=torch.float32).matmul(
         hidden_projection.to(dtype=torch.float32)
     ).detach().cpu()
@@ -10321,6 +10417,7 @@ def _reconstruct_cross_tokenizer_attention_output(
                 "solver": {key: value for key, value in solved_report.items() if key != "map"},
                 "mutation_skipped": True,
                 **fit_report,
+                **group_report,
             }
     spec["output"].weight.data.copy_(blended_weight.to(device=spec["output"].weight.device, dtype=spec["output"].weight.dtype))
     return {
@@ -10340,6 +10437,7 @@ def _reconstruct_cross_tokenizer_attention_output(
         "mean_cosine_after": after_cosine,
         "solver": {key: value for key, value in solved_report.items() if key != "map"},
         **fit_report,
+        **group_report,
     }
 
 
@@ -10366,6 +10464,9 @@ def _reconstruct_cross_tokenizer_mlp_output(
     fit_gate_min_relative_improvement: float,
     fit_gate_max_cosine_drop: float,
     max_tokens_per_layer: int,
+    source_layer_group: Sequence[int] | None = None,
+    donor_layer_fold_mode: str = "representative",
+    source_layer_group_weights: Sequence[float] | None = None,
 ) -> dict[str, Any]:
     spec = _mlp_projection_spec(candidate_layer)
     if spec is None:
@@ -10383,9 +10484,20 @@ def _reconstruct_cross_tokenizer_mlp_output(
         paired_batches,
         canonical_fn,
         max_tokens_per_layer,
+        source_layer_group=source_layer_group,
+        donor_layer_fold_mode=donor_layer_fold_mode,
+        source_layer_group_weights=source_layer_group_weights,
     )
     if int(matched) <= 0:
         return {"skipped": True, "reason": "no_cross_tokenizer_mlp_output_pairs"}
+    group_report = {}
+    if source_layer_group:
+        group_report = {
+            "source_layer_group": [int(item) for item in source_layer_group],
+            "donor_layer_fold_mode": donor_layer_fold_mode,
+        }
+        if source_layer_group_weights is not None:
+            group_report["source_layer_group_weights"] = [float(item) for item in source_layer_group_weights]
     source_projected = source_output.to(device=hidden_projection.device, dtype=torch.float32).matmul(
         hidden_projection.to(dtype=torch.float32)
     ).detach().cpu()
@@ -10493,6 +10605,7 @@ def _reconstruct_cross_tokenizer_mlp_output(
                 "solver": {key: value for key, value in solved_report.items() if key != "map"},
                 "mutation_skipped": True,
                 **fit_report,
+                **group_report,
             }
     spec["output"].weight.data.copy_(blended_weight.to(device=spec["output"].weight.device, dtype=spec["output"].weight.dtype))
     return {
@@ -10512,6 +10625,7 @@ def _reconstruct_cross_tokenizer_mlp_output(
         "mean_cosine_after": after_cosine,
         "solver": {key: value for key, value in solved_report.items() if key != "map"},
         **fit_report,
+        **group_report,
     }
 
 
@@ -10526,20 +10640,41 @@ def _collect_cross_tokenizer_module_activations(
     paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]],
     canonical_fn,
     max_tokens: int,
+    source_modules_by_layer: dict[int, Any] | None = None,
+    source_layer_group: Sequence[int] | None = None,
+    donor_layer_fold_mode: str = "representative",
+    source_layer_group_weights: Sequence[float] | None = None,
 ):
     source_pieces = []
     candidate_pieces = []
     captured: dict[str, Any] = {}
+    captured_source_outputs: dict[int, Any] = {}
+    source_group = [int(item) for item in (source_layer_group or [])]
+    use_source_group = bool(source_modules_by_layer) and bool(source_group)
 
     def source_hook(_module, _inputs, output):
         tensor = output[0] if isinstance(output, tuple) else output
         captured["source"] = tensor.detach().to(torch.float32)
 
+    def make_source_group_hook(layer_idx: int):
+        def source_group_hook(_module, _inputs, output):
+            tensor = output[0] if isinstance(output, tuple) else output
+            captured_source_outputs[int(layer_idx)] = tensor.detach().to(torch.float32)
+
+        return source_group_hook
+
     def candidate_hook(_module, _inputs, output):
         tensor = output[0] if isinstance(output, tuple) else output
         captured["candidate"] = tensor.detach().to(torch.float32)
 
-    source_handle = source_module.register_forward_hook(source_hook)
+    source_handles = []
+    if use_source_group:
+        for layer_idx in source_group:
+            module = source_modules_by_layer.get(int(layer_idx)) if source_modules_by_layer is not None else None
+            if module is not None:
+                source_handles.append(module.register_forward_hook(make_source_group_hook(int(layer_idx))))
+    elif source_module is not None:
+        source_handles.append(source_module.register_forward_hook(source_hook))
     candidate_handle = candidate_module.register_forward_hook(candidate_hook)
     token_count = 0
     try:
@@ -10549,9 +10684,25 @@ def _collect_cross_tokenizer_module_activations(
             if token_count >= max_tokens:
                 break
             captured.clear()
+            captured_source_outputs.clear()
             source(**_model_forward_inputs(source_batch), use_cache=False)
             candidate(**_model_forward_inputs(candidate_batch), use_cache=False)
-            if "source" not in captured or "candidate" not in captured:
+            if "candidate" not in captured:
+                continue
+            if use_source_group:
+                try:
+                    source_values = _source_group_module_output_state(
+                        torch,
+                        captured_source_outputs,
+                        source_group,
+                        donor_layer_fold_mode,
+                        source_layer_group_weights,
+                    )
+                except ValueError:
+                    continue
+            elif "source" in captured:
+                source_values = captured["source"]
+            else:
                 continue
             pairs = _cross_tokenizer_span_pairs(
                 torch,
@@ -10565,7 +10716,6 @@ def _collect_cross_tokenizer_module_activations(
             )
             if int(pairs.numel()) <= 0:
                 continue
-            source_values = captured["source"]
             candidate_values = captured["candidate"]
             if source_values.dim() != 3 or candidate_values.dim() != 3:
                 continue
@@ -10592,7 +10742,8 @@ def _collect_cross_tokenizer_module_activations(
             candidate_pieces.append(candidate_selected[:remaining])
             token_count += int(min(source_selected.shape[0], remaining))
     finally:
-        source_handle.remove()
+        for source_handle in source_handles:
+            source_handle.remove()
         candidate_handle.remove()
     if not source_pieces or not candidate_pieces:
         return (
@@ -10617,15 +10768,29 @@ def _collect_cross_tokenizer_attention_output_calibration(
     paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]],
     canonical_fn,
     max_tokens: int,
+    source_attentions_by_layer: dict[int, Any] | None = None,
+    source_layer_group: Sequence[int] | None = None,
+    donor_layer_fold_mode: str = "representative",
+    source_layer_group_weights: Sequence[float] | None = None,
 ):
     source_pieces = []
     hidden_pieces = []
     candidate_output_pieces = []
     captured: dict[str, Any] = {}
+    captured_source_outputs: dict[int, Any] = {}
+    source_group = [int(item) for item in (source_layer_group or [])]
+    use_source_group = bool(source_attentions_by_layer) and bool(source_group)
 
     def source_attention_hook(_module, _inputs, output):
         tensor = output[0] if isinstance(output, tuple) else output
         captured["source_attention_output"] = tensor.detach().to(torch.float32)
+
+    def make_source_attention_hook(layer_idx: int):
+        def source_group_attention_hook(_module, _inputs, output):
+            tensor = output[0] if isinstance(output, tuple) else output
+            captured_source_outputs[int(layer_idx)] = tensor.detach().to(torch.float32)
+
+        return source_group_attention_hook
 
     def candidate_output_pre_hook(_module, inputs):
         captured["candidate_output_hidden"] = inputs[0].detach().to(torch.float32)
@@ -10634,7 +10799,14 @@ def _collect_cross_tokenizer_attention_output_calibration(
         tensor = output[0] if isinstance(output, tuple) else output
         captured["candidate_attention_output"] = tensor.detach().to(torch.float32)
 
-    source_handle = source_attention.register_forward_hook(source_attention_hook)
+    source_handles = []
+    if use_source_group:
+        for layer_idx in source_group:
+            module = source_attentions_by_layer.get(int(layer_idx)) if source_attentions_by_layer is not None else None
+            if module is not None:
+                source_handles.append(module.register_forward_hook(make_source_attention_hook(int(layer_idx))))
+    elif source_attention is not None:
+        source_handles.append(source_attention.register_forward_hook(source_attention_hook))
     hidden_handle = candidate_attention_spec["output"].register_forward_pre_hook(candidate_output_pre_hook)
     candidate_handle = candidate_attention_spec["attention"].register_forward_hook(candidate_attention_hook)
     token_count = 0
@@ -10645,14 +10817,29 @@ def _collect_cross_tokenizer_attention_output_calibration(
             if token_count >= max_tokens:
                 break
             captured.clear()
+            captured_source_outputs.clear()
             source(**_model_forward_inputs(source_batch), use_cache=False)
             candidate(**_model_forward_inputs(candidate_batch), use_cache=False)
             required = {
-                "source_attention_output",
                 "candidate_output_hidden",
                 "candidate_attention_output",
             }
             if any(key not in captured for key in required):
+                continue
+            if use_source_group:
+                try:
+                    source_values = _source_group_module_output_state(
+                        torch,
+                        captured_source_outputs,
+                        source_group,
+                        donor_layer_fold_mode,
+                        source_layer_group_weights,
+                    )
+                except ValueError:
+                    continue
+            elif "source_attention_output" in captured:
+                source_values = captured["source_attention_output"]
+            else:
                 continue
             pairs = _cross_tokenizer_span_pairs(
                 torch,
@@ -10666,7 +10853,6 @@ def _collect_cross_tokenizer_attention_output_calibration(
             )
             if int(pairs.numel()) <= 0:
                 continue
-            source_values = captured["source_attention_output"]
             hidden_values = captured["candidate_output_hidden"]
             output_values = captured["candidate_attention_output"]
             if source_values.dim() != 3 or hidden_values.dim() != 3 or output_values.dim() != 3:
@@ -10702,7 +10888,8 @@ def _collect_cross_tokenizer_attention_output_calibration(
             candidate_output_pieces.append(output_selected[:take])
             token_count += take
     finally:
-        source_handle.remove()
+        for source_handle in source_handles:
+            source_handle.remove()
         hidden_handle.remove()
         candidate_handle.remove()
     if not source_pieces or not hidden_pieces or not candidate_output_pieces:
@@ -10727,12 +10914,17 @@ def _collect_cross_tokenizer_mlp_output_calibration(
     paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]],
     canonical_fn,
     max_tokens: int,
+    source_layer_group: Sequence[int] | None = None,
+    donor_layer_fold_mode: str = "representative",
+    source_layer_group_weights: Sequence[float] | None = None,
 ):
     source_pieces = []
     hidden_pieces = []
     residual_pieces = []
     candidate_output_pieces = []
     captured: dict[str, Any] = {}
+    source_group = [int(item) for item in (source_layer_group or [])]
+    use_source_group = bool(source_group)
 
     def source_layer_hook(_module, _inputs, output):
         tensor = output[0] if isinstance(output, tuple) else output
@@ -10750,7 +10942,7 @@ def _collect_cross_tokenizer_mlp_output_calibration(
         tensor = output[0] if isinstance(output, tuple) else output
         captured["candidate_layer_output"] = tensor.detach().to(torch.float32)
 
-    source_handle = source_layer.register_forward_hook(source_layer_hook)
+    source_handle = None if use_source_group else source_layer.register_forward_hook(source_layer_hook)
     mlp_handle = candidate_mlp_spec["mlp"].register_forward_hook(candidate_mlp_hook)
     candidate_handle = candidate_layer.register_forward_hook(candidate_layer_hook)
     token_count = 0
@@ -10761,15 +10953,33 @@ def _collect_cross_tokenizer_mlp_output_calibration(
             if token_count >= max_tokens:
                 break
             captured.clear()
-            source(**_model_forward_inputs(source_batch), use_cache=False)
+            source_outputs = source(
+                **_model_forward_inputs(source_batch),
+                use_cache=False,
+                output_hidden_states=use_source_group,
+            )
             candidate(**_model_forward_inputs(candidate_batch), use_cache=False)
             required = {
-                "source_output",
                 "candidate_hidden",
                 "candidate_mlp_output",
                 "candidate_layer_output",
             }
             if any(key not in captured for key in required):
+                continue
+            if use_source_group:
+                try:
+                    source_values = _source_group_hidden_state(
+                        torch,
+                        source_outputs.hidden_states,
+                        source_group,
+                        donor_layer_fold_mode,
+                        source_layer_group_weights,
+                    ).detach().to(torch.float32)
+                except (AttributeError, ValueError):
+                    continue
+            elif "source_output" in captured:
+                source_values = captured["source_output"]
+            else:
                 continue
             pairs = _cross_tokenizer_span_pairs(
                 torch,
@@ -10783,7 +10993,6 @@ def _collect_cross_tokenizer_mlp_output_calibration(
             )
             if int(pairs.numel()) <= 0:
                 continue
-            source_values = captured["source_output"]
             hidden_values = captured["candidate_hidden"]
             mlp_values = captured["candidate_mlp_output"]
             layer_values = captured["candidate_layer_output"]
@@ -10829,7 +11038,8 @@ def _collect_cross_tokenizer_mlp_output_calibration(
             candidate_output_pieces.append(layer_selected[:take])
             token_count += take
     finally:
-        source_handle.remove()
+        if source_handle is not None:
+            source_handle.remove()
         mlp_handle.remove()
         candidate_handle.remove()
     if not source_pieces or not hidden_pieces or not residual_pieces or not candidate_output_pieces:
