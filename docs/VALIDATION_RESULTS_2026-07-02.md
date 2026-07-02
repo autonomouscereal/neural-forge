@@ -94,6 +94,42 @@ Queued proof lane:
 - Final eval target:
   `eval_qwen4b_blank_smollm_module_eora_quantile_medoid_drill_lrc_gpu4_20260702_exactgen_20260702_1000x1000x250.json`
 
+## Gated MLP Activation Profiles For Folding
+
+Updated the donor activation profile used for MLP intermediate-axis transport.
+
+What changed:
+
+- Gated MLP channel scores/features now come from the actual intermediate
+  neuron stream `activation(gate_proj(x)) * up_proj(x)`.
+- The old path collected `gate_proj` and `up_proj` outputs independently and
+  averaged their summaries before building the merge/transport map.
+- Linear input/output hooks are still retained for activation-fit rows; only
+  the channel signature used to decide which MLP neurons are merged changed.
+
+Why this matters:
+
+- For SwiGLU/Gated-MLP models, the folded neuron is not the gate row or the up
+  row in isolation. It is the multiplicative path consumed by `down_proj`.
+- Cross-family width folding already reuses the same assignment cache for
+  `gate_proj`, `up_proj`, and `down_proj` intermediate axes. This change makes
+  that shared assignment correspond to the functional neuron being merged.
+- This is a fold-first structural improvement. It does not add adapters or a
+  post-hoc benchmark gate.
+
+Validation:
+
+- Local full suite: `142 passed, 134 skipped`
+- Remote focused Torch tests: `6 passed, 218 deselected`
+- Remote full suite: `276 passed`
+
+Current status:
+
+- Queued lanes that have not yet launched their Python process will consume this
+  updated source mirror when they start.
+- Existing running full jobs are unchanged because they already imported their
+  code before this patch.
+
 ## Weighted Projected-Vocab Recovery
 
 Added weighted cross-tokenizer projected-vocab maps for recovery losses.

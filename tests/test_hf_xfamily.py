@@ -104,6 +104,7 @@ from neural_forge.hf_xfamily import _activation_similarity_assignment
 from neural_forge.hf_xfamily import _activation_axis_weights_for_tensor
 from neural_forge.hf_xfamily import _activation_fit_suffix_enabled
 from neural_forge.hf_xfamily import _activation_channel_summary
+from neural_forge.hf_xfamily import _mlp_neuron_activation_values
 from neural_forge.hf_xfamily import _attention_axis_weights_for_tensor
 from neural_forge.hf_xfamily import _attention_head_activation_profile
 from neural_forge.hf_xfamily import _attention_projection_modules
@@ -2896,6 +2897,40 @@ def test_cached_mlp_fold_reuses_assignment_and_sums_outgoing_paths() -> None:
     assert folded_incoming[:, 0].tolist() == pytest.approx([20.0 / 11.0, 1900.0 / 10.0])
     assert folded_outgoing.flatten().tolist() == pytest.approx([7.0, 11.0])
     assert len(cache) == 1
+
+
+def test_mlp_neuron_activation_values_use_gated_product() -> None:
+    torch = pytest.importorskip("torch")
+
+    class _TinyGatedMlp(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.gate_proj = torch.nn.Linear(2, 3, bias=False)
+            self.up_proj = torch.nn.Linear(2, 3, bias=False)
+            self.down_proj = torch.nn.Linear(3, 2, bias=False)
+            self.act_fn = torch.nn.Sigmoid()
+
+    mlp = _TinyGatedMlp()
+    mlp.gate_proj.weight.data.copy_(
+        torch.tensor([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]], dtype=torch.float32)
+    )
+    mlp.up_proj.weight.data.copy_(
+        torch.tensor([[2.0, 0.0], [0.0, 3.0], [4.0, 5.0]], dtype=torch.float32)
+    )
+    spec = {
+        "kind": "gated",
+        "mlp": mlp,
+        "inputs": [mlp.gate_proj, mlp.up_proj],
+        "input_names": ["gate_proj", "up_proj"],
+        "output": mlp.down_proj,
+        "output_name": "down_proj",
+    }
+    inputs = (torch.tensor([[1.0, 2.0]], dtype=torch.float32),)
+
+    values = _mlp_neuron_activation_values(torch, spec, inputs)
+
+    expected = torch.sigmoid(mlp.gate_proj(inputs[0])) * mlp.up_proj(inputs[0])
+    assert torch.allclose(values, expected)
 
 
 def test_transport_fold_uses_balanced_sinkhorn_feature_map() -> None:

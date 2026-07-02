@@ -4969,10 +4969,12 @@ def _collect_donor_axis_activation_scores(
 
         return hook
 
-    def mlp_hook(layer_idx: int):
-        def hook(_module, _inputs, output):
-            tensor = output[0] if isinstance(output, tuple) else output
-            values = tensor.detach().to(torch.float32)
+    def mlp_neuron_hook(layer_idx: int, spec: dict[str, Any]):
+        def hook(_module, inputs):
+            values = _mlp_neuron_activation_values(torch, spec, inputs)
+            if values is None:
+                return
+            values = values.detach().to(torch.float32)
             mlp_scores[layer_idx].append(_activation_abs_score(torch, values).cpu())
             mlp_features[layer_idx].append(
                 _activation_channel_summary(
@@ -5062,8 +5064,8 @@ def _collect_donor_axis_activation_scores(
         spec = _mlp_spec(layer)
         if spec is None:
             continue
+        handles.append(spec["mlp"].register_forward_pre_hook(mlp_neuron_hook(layer_idx, spec)))
         for name, linear in zip(spec["input_names"], spec["inputs"]):
-            handles.append(linear.register_forward_hook(mlp_hook(layer_idx)))
             handles.append(linear.register_forward_hook(linear_fit_hook(layer_idx, f"{_mlp_prefix(layer, spec)}.{name}.weight")))
         handles.append(
             spec["output"].register_forward_hook(linear_fit_hook(layer_idx, f"{_mlp_prefix(layer, spec)}.{spec['output_name']}.weight"))
@@ -5300,6 +5302,52 @@ def _attention_head_activation_profile(torch, tensor, heads: int) -> dict[str, A
         "head_dim_scores": head_dim_scores,
         "head_dim_features": head_dim_features,
     }
+
+
+def _mlp_neuron_activation_values(torch, spec: dict[str, Any], inputs):
+    if not inputs:
+        return None
+    module_inputs = inputs[0]
+    if module_inputs is None:
+        return None
+    if spec.get("kind") == "gated" and len(spec.get("inputs", [])) >= 2:
+        gate = _linear_module_forward(torch, spec["inputs"][0], module_inputs)
+        up = _linear_module_forward(torch, spec["inputs"][1], module_inputs)
+        return _mlp_activation_fn(torch, spec.get("mlp"))(gate) * up
+    if spec.get("inputs"):
+        projected = _linear_module_forward(torch, spec["inputs"][0], module_inputs)
+        return _mlp_activation_fn(torch, spec.get("mlp"))(projected)
+    return None
+
+
+def _linear_module_forward(torch, module, inputs):
+    weight = module.weight
+    bias = getattr(module, "bias", None)
+    values = inputs.to(device=weight.device, dtype=weight.dtype)
+    return torch.nn.functional.linear(values, weight, bias)
+
+
+def _mlp_activation_fn(torch, mlp):
+    for attr in ("act_fn", "activation_fn", "act"):
+        activation = getattr(mlp, attr, None)
+        if callable(activation):
+            return activation
+        if isinstance(activation, str):
+            return _named_activation_fn(torch, activation)
+    return torch.nn.functional.silu
+
+
+def _named_activation_fn(torch, name: str):
+    lowered = str(name).lower()
+    if lowered in {"silu", "swish"}:
+        return torch.nn.functional.silu
+    if lowered == "gelu":
+        return torch.nn.functional.gelu
+    if lowered == "relu":
+        return torch.nn.functional.relu
+    if lowered == "tanh":
+        return torch.tanh
+    return torch.nn.functional.silu
 
 
 def _activation_axis_weights_for_tensor(
