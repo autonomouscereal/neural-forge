@@ -1751,3 +1751,49 @@ Started an immediate LFM proof chain on RTX 3090 GPU0:
 The donor eval reached model load on GPU0 immediately. This reroute keeps the
 Liquid LFM requirement moving without killing shared services or the older
 queued GPU6 lane.
+
+## LFM Teacher-Replay And Attention-Influence Follow-Up
+
+The LFM launcher now exposes the same teacher-generated continuation masking
+controls as the Qwen blank-target launcher:
+
+- `BLOCK_TEACHER_GENERATE_LOSS_MODE`
+- `ALM_TEACHER_GENERATE_LOSS_MODE`
+
+Both default to `none` for historical reproducibility and pass through to
+`hf-xfamily-chain-anchor-compress`.
+
+Queued a follow-up LFM A/B behind the current LFM GPU0 proof chain:
+
+- Script:
+  `experiments/queue_lfm230m_blank_smollm_trainable_byteprobe_teacherreplay_aim_20260702.sh`
+- Tag:
+  `lfm230m_blank_smollm_trainable_byteprobe_teacherreplay_aim004mid_gpu0_20260702`
+- Queue PID:
+  `4049925`
+- Waits behind:
+  current LFM lm-eval watcher PID `4007374`
+- Retention watcher PID:
+  `4050019`
+- lm-eval watcher PID:
+  `4050105`
+- Corrected GPU0 retention watcher PID:
+  `4056331`
+- Corrected GPU0 lm-eval watcher PID:
+  `4056494`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/lfm230m_blank_smollm_trainable_byteprobe_teacherreplay_aim004mid_gpu0_20260702.queue.log`
+- Recipe delta versus the current LFM GPU0 run:
+  stronger teacher-generated replay, `BLOCK_TEACHER_GENERATE_LOSS_MODE=auto`,
+  `ALM_TEACHER_GENERATE_LOSS_MODE=auto`,
+  `ALM_ATTENTION_INFLUENCE_WEIGHT=0.04`, and
+  `ALM_ATTENTION_INFLUENCE_LAYER=middle`.
+
+This is queued as the next LFM model-side experiment if the first LFM run is
+weak; it should not be promoted until the donor, child, manual, and lm-eval
+artifacts are compared.
+
+Note: the first follow-up retention/lm-eval watchers inherited the older LFM
+GPU6 default before the wrapper default was corrected. The additional GPU0
+watcher pair above waits on the same queue and will write the same report paths;
+the older watchers should hit those cached outputs if they run later.
