@@ -4451,12 +4451,32 @@ def test_project_source_logits_to_candidate_vocab_averages_source_token_groups()
     assert projected[0, 2].item() == pytest.approx(-10000.0)
 
 
+def test_project_source_logits_to_candidate_vocab_uses_piece_weights() -> None:
+    torch = pytest.importorskip("torch")
+    source_logits = torch.tensor([[0.0, 10.0, 20.0]])
+    groups = torch.tensor([[1, 2]])
+    mask = torch.tensor([[1.0, 1.0]])
+    weights = torch.tensor([[0.25, 0.75]])
+    valid = torch.tensor([True])
+
+    projected = _project_source_logits_to_candidate_vocab(
+        torch,
+        source_logits,
+        groups,
+        mask,
+        valid,
+        projected_vocab_weights=weights,
+    )
+
+    assert projected[0, 0].item() == pytest.approx(17.5)
+
+
 def test_candidate_to_source_token_groups_uses_sparse_surface_fallback_for_digits() -> None:
     torch = pytest.importorskip("torch")
     source_tokenizer = _Tokenizer(["<eos>", "4", "2", "hello"])
     candidate_tokenizer = _Tokenizer(["<eos>", "42", "hello"])
 
-    groups, mask, valid = _candidate_to_source_token_groups(
+    groups, mask, weights, valid = _candidate_to_source_token_groups(
         torch,
         source_tokenizer,
         candidate_tokenizer,
@@ -4467,8 +4487,10 @@ def test_candidate_to_source_token_groups_uses_sparse_surface_fallback_for_digit
     assert valid.tolist() == [False, True, True]
     assert groups[1, :2].tolist() == [1, 2]
     assert mask[1].tolist() == pytest.approx([1.0, 1.0, 0.0])
+    assert weights[1].sum().item() == pytest.approx(1.0)
     assert groups[2, 0].item() == 3
     assert mask[2].tolist() == pytest.approx([1.0, 0.0, 0.0])
+    assert weights[2].tolist() == pytest.approx([1.0, 0.0, 0.0])
 
 
 def test_projected_vocab_group_summary_reports_digit_and_multi_source_rows() -> None:
@@ -4651,6 +4673,30 @@ def test_project_candidate_probs_to_source_vocab_scatters_valid_groups() -> None
     assert projected[0, 2].item() == pytest.approx(0.3)
     assert projected[0, 3].item() == pytest.approx(0.3)
     assert projected[0, 4].item() == pytest.approx(0.0)
+
+
+def test_project_candidate_probs_to_source_vocab_uses_piece_weights() -> None:
+    torch = pytest.importorskip("torch")
+    candidate_probs = torch.tensor([[0.8, 0.2]])
+    groups = torch.tensor([[1, 2], [3, 0]])
+    mask = torch.tensor([[1.0, 1.0], [1.0, 0.0]])
+    weights = torch.tensor([[0.25, 0.75], [1.0, 0.0]])
+    valid = torch.tensor([True, True])
+
+    projected, source_valid = _project_candidate_probs_to_source_vocab(
+        torch,
+        candidate_probs,
+        groups,
+        mask,
+        valid,
+        source_vocab_size=4,
+        projected_vocab_weights=weights,
+    )
+
+    assert source_valid.tolist() == [False, True, True, True]
+    assert projected[0, 1].item() == pytest.approx(0.2)
+    assert projected[0, 2].item() == pytest.approx(0.6)
+    assert projected[0, 3].item() == pytest.approx(0.2)
 
 
 def test_fit_lm_head_from_hidden_logits_reduces_reconstruction_error() -> None:

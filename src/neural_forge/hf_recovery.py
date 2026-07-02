@@ -808,6 +808,7 @@ def recover_cross_tokenizer_causal_lm(
     candidate_anchor_idx = torch.tensor([item[2] for item in anchors], dtype=torch.long, device=device)
     projected_vocab_groups = None
     projected_vocab_mask = None
+    projected_vocab_weights = None
     projected_vocab_valid = None
     projected_vocab_group_report = None
     if projected_vocab_kd_weight > 0 or focused_projected_vocab_kd_weight > 0 or stepwise_donor_kd_weight > 0:
@@ -816,7 +817,12 @@ def recover_cross_tokenizer_causal_lm(
             f"max_source_tokens={int(projected_vocab_max_source_tokens)}",
             flush=True,
         )
-        projected_vocab_groups, projected_vocab_mask, projected_vocab_valid = _candidate_to_source_token_groups(
+        (
+            projected_vocab_groups,
+            projected_vocab_mask,
+            projected_vocab_weights,
+            projected_vocab_valid,
+        ) = _candidate_to_source_token_groups(
             torch,
             source_tokenizer,
             candidate_tokenizer,
@@ -828,6 +834,7 @@ def recover_cross_tokenizer_causal_lm(
             candidate_tokenizer,
             projected_vocab_mask,
             projected_vocab_valid,
+            projected_vocab_weights,
         )
         print(
             "xfamily_recover phase=projected_vocab_group_build_done "
@@ -1097,6 +1104,7 @@ def recover_cross_tokenizer_causal_lm(
             token_focus_spans=token_focus_spans,
             token_teacher_confidence_floor=token_teacher_confidence_floor,
             focused_lm_weight=focused_lm_weight,
+            projected_vocab_weights=projected_vocab_weights,
         )
         if alm_kd_weight > 0:
             alm_loss, alm_count = _cross_tokenizer_alm_chunk_loss(
@@ -1220,7 +1228,12 @@ def recover_cross_tokenizer_causal_lm(
         stepwise_donor_loss = None
         stepwise_donor_count = 0
         if stepwise_donor_kd_weight > 0:
-            if projected_vocab_groups is None or projected_vocab_mask is None or projected_vocab_valid is None:
+            if (
+                projected_vocab_groups is None
+                or projected_vocab_mask is None
+                or projected_vocab_weights is None
+                or projected_vocab_valid is None
+            ):
                 raise ValueError("projected vocab maps are required when stepwise donor KD is positive.")
             stepwise_donor_loss, stepwise_donor_count = _cross_tokenizer_stepwise_prefix_kd_loss(
                 torch,
@@ -1235,6 +1248,7 @@ def recover_cross_tokenizer_causal_lm(
                 device,
                 projected_vocab_groups,
                 projected_vocab_mask,
+                projected_vocab_weights,
                 projected_vocab_valid,
                 temperature,
             )
@@ -1506,7 +1520,12 @@ def calibrate_cross_tokenizer_lm_head(
     if output_head is None:
         raise ValueError("Candidate model has no output embeddings to calibrate.")
 
-    projected_vocab_groups, projected_vocab_mask, projected_vocab_valid = _candidate_to_source_token_groups(
+    (
+        projected_vocab_groups,
+        projected_vocab_mask,
+        projected_vocab_weights,
+        projected_vocab_valid,
+    ) = _candidate_to_source_token_groups(
         torch,
         source_tokenizer,
         candidate_tokenizer,
@@ -1518,6 +1537,7 @@ def calibrate_cross_tokenizer_lm_head(
         candidate_tokenizer,
         projected_vocab_mask,
         projected_vocab_valid,
+        projected_vocab_weights,
     )
     valid_vocab = projected_vocab_valid.detach().cpu().bool()
     valid_idx = torch.nonzero(valid_vocab, as_tuple=False).flatten()
@@ -1571,6 +1591,7 @@ def calibrate_cross_tokenizer_lm_head(
                 projected_vocab_groups,
                 projected_vocab_mask,
                 projected_vocab_valid,
+                projected_vocab_weights=projected_vocab_weights,
             )
             remain = int(max_calibration_rows) - rows_collected
             if int(rows.shape[0]) > remain:
@@ -2602,6 +2623,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     hidden_projection = hidden_projection_report["map"].to(device=device, dtype=torch.float32)
     projected_vocab_groups = None
     projected_vocab_mask = None
+    projected_vocab_weights = None
     projected_vocab_valid = None
     projected_vocab_group_report = None
     if (
@@ -2610,7 +2632,12 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         or focused_projected_vocab_kd_weight > 0
         or teacher_generate_projected_vocab_kd_weight > 0
     ):
-        projected_vocab_groups, projected_vocab_mask, projected_vocab_valid = _candidate_to_source_token_groups(
+        (
+            projected_vocab_groups,
+            projected_vocab_mask,
+            projected_vocab_weights,
+            projected_vocab_valid,
+        ) = _candidate_to_source_token_groups(
             torch,
             source_tokenizer,
             candidate_tokenizer,
@@ -2622,6 +2649,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             candidate_tokenizer,
             projected_vocab_mask,
             projected_vocab_valid,
+            projected_vocab_weights,
         )
     source_byte_buckets = None
     candidate_byte_buckets = None
@@ -3073,7 +3101,12 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             projected_vocab_loss = None
             projected_vocab_pair_count = int(output_span_pair_count) if projected_vocab_kd_weight > 0 else 0
             if projected_vocab_kd_weight > 0:
-                if projected_vocab_groups is None or projected_vocab_mask is None or projected_vocab_valid is None:
+                if (
+                    projected_vocab_groups is None
+                    or projected_vocab_mask is None
+                    or projected_vocab_weights is None
+                    or projected_vocab_valid is None
+                ):
                     raise ValueError("projected vocab maps are required when projected_vocab_kd_weight is positive.")
                 if projected_vocab_pair_count > 0:
                     shift_student = torch.nan_to_num(
@@ -3089,13 +3122,19 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                         output_span_pairs,
                         projected_vocab_groups,
                         projected_vocab_mask,
+                        projected_vocab_weights,
                         projected_vocab_valid,
                         float(temperature),
                         projected_vocab_kd_mode,
                     )
                     loss = loss + float(projected_vocab_kd_weight) * projected_vocab_loss
             if focused_projected_vocab_kd_weight > 0:
-                if projected_vocab_groups is None or projected_vocab_mask is None or projected_vocab_valid is None:
+                if (
+                    projected_vocab_groups is None
+                    or projected_vocab_mask is None
+                    or projected_vocab_weights is None
+                    or projected_vocab_valid is None
+                ):
                     raise ValueError("projected vocab maps are required when focused_projected_vocab_kd_weight is positive.")
                 if focus_pairs is not None and int(focus_pairs.numel()) > 0:
                     shift_student = torch.nan_to_num(
@@ -3111,6 +3150,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                         focus_pairs,
                         projected_vocab_groups,
                         projected_vocab_mask,
+                        projected_vocab_weights,
                         projected_vocab_valid,
                         float(temperature),
                         projected_vocab_kd_mode,
@@ -3406,7 +3446,12 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     else 0
                 )
                 if teacher_generate_projected_vocab_kd_weight > 0 and teacher_generate_projected_vocab_count > 0:
-                    if projected_vocab_groups is None or projected_vocab_mask is None or projected_vocab_valid is None:
+                    if (
+                        projected_vocab_groups is None
+                        or projected_vocab_mask is None
+                        or projected_vocab_weights is None
+                        or projected_vocab_valid is None
+                    ):
                         raise ValueError(
                             "projected vocab maps are required when teacher-generated projected KD is positive."
                         )
@@ -3423,6 +3468,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                         teacher_output_span_pairs,
                         projected_vocab_groups,
                         projected_vocab_mask,
+                        projected_vocab_weights,
                         projected_vocab_valid,
                         float(temperature),
                         projected_vocab_kd_mode,
@@ -3472,7 +3518,12 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             stepwise_donor_loss = None
             stepwise_donor_count = 0
             if stepwise_donor_kd_weight > 0 and (step == 1 or step % int(stepwise_donor_interval) == 0):
-                if projected_vocab_groups is None or projected_vocab_mask is None or projected_vocab_valid is None:
+                if (
+                    projected_vocab_groups is None
+                    or projected_vocab_mask is None
+                    or projected_vocab_weights is None
+                    or projected_vocab_valid is None
+                ):
                     raise ValueError("projected vocab maps are required when stepwise donor KD is positive.")
                 stepwise_donor_loss, stepwise_donor_count = _cross_tokenizer_stepwise_prefix_kd_loss(
                     torch,
@@ -3487,6 +3538,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     device,
                     projected_vocab_groups,
                     projected_vocab_mask,
+                    projected_vocab_weights,
                     projected_vocab_valid,
                     float(temperature),
                 )
@@ -5220,6 +5272,7 @@ def _cross_tokenizer_stepwise_prefix_kd_loss(
     device: str,
     projected_vocab_groups,
     projected_vocab_mask,
+    projected_vocab_weights,
     projected_vocab_valid,
     temperature: float,
 ):
@@ -5357,6 +5410,7 @@ def _cross_tokenizer_stepwise_prefix_kd_loss(
         projected_vocab_groups,
         projected_vocab_mask,
         projected_vocab_valid,
+        projected_vocab_weights=projected_vocab_weights,
     )
     batch_positions = torch.tensor([item[0] for item in row_positions], dtype=torch.long, device=device)
     token_positions = torch.tensor([item[1] for item in row_positions], dtype=torch.long, device=device)
@@ -5603,6 +5657,7 @@ def _projected_vocab_group_summary(
     candidate_tokenizer,
     projected_vocab_mask,
     projected_vocab_valid,
+    projected_vocab_weights=None,
 ) -> dict[str, Any]:
     from neural_forge.hf_xfamily import _canonical_token
 
@@ -5619,6 +5674,14 @@ def _projected_vocab_group_summary(
         "multi_source_rows": int((counts > 1).sum().item()),
         "max_source_tokens_observed": int(counts.max().item()) if int(counts.numel()) else 0,
     }
+    if projected_vocab_weights is not None:
+        weights = projected_vocab_weights.detach().cpu().to(torch.float32)
+        active_weights = weights * projected_vocab_mask.detach().cpu().to(torch.float32)
+        weight_sums = active_weights.sum(dim=-1)
+        non_uniform = (active_weights - projected_vocab_mask.detach().cpu().to(torch.float32) / counts.clamp_min(1.0).unsqueeze(-1)).abs()
+        summary["weighted_rows"] = int(((non_uniform.sum(dim=-1) > 1e-6) & valid).sum().item())
+        summary["min_weight_sum"] = float(weight_sums[valid].min().item()) if bool(valid.any()) else 0.0
+        summary["max_weight_sum"] = float(weight_sums[valid].max().item()) if bool(valid.any()) else 0.0
     for category in ("special", "digit", "mixed_digit", "code", "alpha", "other", "empty"):
         summary[f"{category}_rows"] = 0
         summary[f"{category}_valid_rows"] = 0
@@ -5666,9 +5729,11 @@ def _candidate_to_source_token_groups(
     omp_candidate_limit = max(32, int(max_source_tokens) * 8)
     groups = []
     masks = []
+    weights = []
     valids = []
     for candidate_id in range(len(candidate_tokenizer)):
         ids: list[int] = []
+        token_weights: list[float] = []
         if candidate_id not in candidate_special_ids:
             decoded = _decode_token_for_projection(candidate_tokenizer, int(candidate_id))
             if decoded and not any(ord(ch) < 32 for ch in decoded):
@@ -5679,6 +5744,7 @@ def _candidate_to_source_token_groups(
                     if int(item) not in source_special_ids and 0 <= int(item) < source_vocab_size
                 ]
                 ids = direct_ids[: int(max_source_tokens)]
+                token_weights = [1.0 / max(1, len(ids))] * len(ids)
                 if _projected_vocab_prefers_sparse_surface(
                     decoded,
                     _canonical_token,
@@ -5702,14 +5768,27 @@ def _candidate_to_source_token_groups(
                     )
                     if sparse_ids:
                         ids = [int(item) for item in sparse_ids[: int(max_source_tokens)]]
+                        token_weights = [float(item) for item in _weights[: len(ids)]]
+        if ids:
+            if len(token_weights) != len(ids) or sum(token_weights) <= 0:
+                token_weights = [1.0 / len(ids)] * len(ids)
+            else:
+                total_weight = sum(max(0.0, float(item)) for item in token_weights)
+                if total_weight <= 0:
+                    token_weights = [1.0 / len(ids)] * len(ids)
+                else:
+                    token_weights = [max(0.0, float(item)) / total_weight for item in token_weights]
         valid = bool(ids)
         padded = ids + [0] * (int(max_source_tokens) - len(ids))
+        padded_weights = token_weights + [0.0] * (int(max_source_tokens) - len(token_weights))
         groups.append(padded[: int(max_source_tokens)])
         masks.append([1.0 if idx < len(ids) else 0.0 for idx in range(int(max_source_tokens))])
+        weights.append(padded_weights[: int(max_source_tokens)])
         valids.append(valid)
     return (
         torch.tensor(groups, dtype=torch.long, device=device),
         torch.tensor(masks, dtype=torch.float32, device=device),
+        torch.tensor(weights, dtype=torch.float32, device=device),
         torch.tensor(valids, dtype=torch.bool, device=device),
     )
 
@@ -9852,6 +9931,7 @@ def _cross_tokenizer_recovery_loss(
     token_focus_spans=None,
     token_teacher_confidence_floor: float = 0.0,
     focused_lm_weight: float = 0.0,
+    projected_vocab_weights=None,
 ):
     shift_student = torch.nan_to_num(
         student.logits[:, :-1, :].contiguous().to(torch.float32),
@@ -9938,7 +10018,12 @@ def _cross_tokenizer_recovery_loss(
         )
         total = total + float(span_hidden_kd_weight) * span_hidden
     if projected_vocab_kd_weight > 0 and span_pairs is not None and int(span_pairs.numel()) > 0:
-        if projected_vocab_groups is None or projected_vocab_mask is None or projected_vocab_valid is None:
+        if (
+            projected_vocab_groups is None
+            or projected_vocab_mask is None
+            or projected_vocab_weights is None
+            or projected_vocab_valid is None
+        ):
             raise ValueError("projected vocab maps are required when projected_vocab_kd_weight is positive.")
         projected = _cross_tokenizer_projected_vocab_loss(
             torch,
@@ -9947,6 +10032,7 @@ def _cross_tokenizer_recovery_loss(
             span_pairs,
             projected_vocab_groups,
             projected_vocab_mask,
+            projected_vocab_weights,
             projected_vocab_valid,
             temperature,
             projected_vocab_kd_mode,
@@ -9969,7 +10055,12 @@ def _cross_tokenizer_recovery_loss(
         )
         total = total + float(token_kd_weight) * token_kd
     if focused_projected_vocab_kd_weight > 0 and token_focus_spans:
-        if projected_vocab_groups is None or projected_vocab_mask is None or projected_vocab_valid is None:
+        if (
+            projected_vocab_groups is None
+            or projected_vocab_mask is None
+            or projected_vocab_weights is None
+            or projected_vocab_valid is None
+        ):
             raise ValueError("projected vocab maps are required when focused_projected_vocab_kd_weight is positive.")
         focus_pairs = _focus_spans_to_span_pairs(torch, token_focus_spans, device=shift_student.device)
         if int(focus_pairs.numel()) > 0:
@@ -9980,6 +10071,7 @@ def _cross_tokenizer_recovery_loss(
                 focus_pairs,
                 projected_vocab_groups,
                 projected_vocab_mask,
+                projected_vocab_weights,
                 projected_vocab_valid,
                 temperature,
                 projected_vocab_kd_mode,
@@ -10755,6 +10847,7 @@ def _cross_tokenizer_projected_vocab_loss(
     span_pairs,
     projected_vocab_groups,
     projected_vocab_mask,
+    projected_vocab_weights,
     projected_vocab_valid,
     temperature: float,
     projected_vocab_kd_mode: str = "teacher-to-student",
@@ -10784,6 +10877,7 @@ def _cross_tokenizer_projected_vocab_loss(
             projected_vocab_groups,
             projected_vocab_mask,
             projected_vocab_valid,
+            projected_vocab_weights=projected_vocab_weights,
         )
         losses.append(
             _entropy_aware_kl_loss(
@@ -10811,6 +10905,7 @@ def _cross_tokenizer_projected_vocab_loss(
             projected_vocab_mask,
             projected_vocab_valid,
             source_vocab_size=int(teacher_logits.shape[-1]),
+            projected_vocab_weights=projected_vocab_weights,
         )
         teacher_valid_logits = teacher_logits.masked_fill(~source_valid.view(1, -1), -1e4)
         teacher_logp = torch.nn.functional.log_softmax(teacher_valid_logits / temperature, dim=-1)
@@ -10987,11 +11082,16 @@ def _project_candidate_probs_to_source_vocab(
     projected_vocab_mask,
     projected_vocab_valid,
     source_vocab_size: int,
+    projected_vocab_weights=None,
 ):
     if source_vocab_size <= 0:
         raise ValueError("source_vocab_size must be positive.")
     groups = projected_vocab_groups.to(device=candidate_probs.device, dtype=torch.long)
     group_mask = projected_vocab_mask.to(device=candidate_probs.device, dtype=candidate_probs.dtype)
+    if projected_vocab_weights is None:
+        group_weights = group_mask
+    else:
+        group_weights = projected_vocab_weights.to(device=candidate_probs.device, dtype=candidate_probs.dtype) * group_mask
     candidate_valid = projected_vocab_valid.to(device=candidate_probs.device, dtype=torch.bool)
     if int(groups.shape[0]) != int(candidate_probs.shape[-1]):
         raise ValueError("projected vocab group rows must match candidate vocab size.")
@@ -11001,8 +11101,9 @@ def _project_candidate_probs_to_source_vocab(
     if valid_group_count <= 0:
         raise ValueError("At least one valid projected source token is required.")
     source_valid[groups.masked_select(valid_group_mask.bool()).clamp(0, int(source_vocab_size) - 1)] = True
-    counts = valid_group_mask.sum(dim=-1, keepdim=True).clamp_min(1.0)
-    weights = valid_group_mask / counts
+    weights = group_weights * candidate_valid.to(dtype=candidate_probs.dtype).unsqueeze(-1)
+    weights = weights / weights.sum(dim=-1, keepdim=True).clamp_min(1e-12)
+    weights = weights * valid_group_mask.bool().to(dtype=candidate_probs.dtype)
     contributions = candidate_probs.masked_fill(~candidate_valid.view(1, -1), 0.0).unsqueeze(-1) * weights.unsqueeze(0)
     projected = torch.zeros(
         int(candidate_probs.shape[0]),
@@ -11021,16 +11122,21 @@ def _project_source_logits_to_candidate_vocab(
     projected_vocab_groups,
     projected_vocab_mask,
     projected_vocab_valid,
+    projected_vocab_weights=None,
 ):
     groups = projected_vocab_groups.to(device=source_logits.device, dtype=torch.long)
     mask = projected_vocab_mask.to(device=source_logits.device, dtype=source_logits.dtype)
+    if projected_vocab_weights is None:
+        weights = mask
+    else:
+        weights = projected_vocab_weights.to(device=source_logits.device, dtype=source_logits.dtype) * mask
+    weights = weights / weights.sum(dim=-1, keepdim=True).clamp_min(1e-12)
+    weights = weights * mask.bool().to(dtype=source_logits.dtype)
     valid = projected_vocab_valid.to(device=source_logits.device, dtype=torch.bool)
     gather_idx = groups.unsqueeze(0).expand(int(source_logits.shape[0]), -1, -1)
     expanded = source_logits.unsqueeze(1).expand(-1, int(groups.shape[0]), -1)
     gathered = expanded.gather(dim=-1, index=gather_idx)
-    summed = (gathered * mask.unsqueeze(0)).sum(dim=-1)
-    counts = mask.sum(dim=-1).clamp_min(1.0)
-    projected = summed / counts.unsqueeze(0)
+    projected = (gathered * weights.unsqueeze(0)).sum(dim=-1)
     return projected.masked_fill(~valid.unsqueeze(0), -1e4)
 
 

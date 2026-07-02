@@ -29,3 +29,27 @@ Current status:
 
 - This is a fold/merge implementation improvement, not a proof of intelligence retention by itself.
 - The next required evidence is a queued Qwen3-4B -> blank SmolLM2-135M quantile-support run with parent/before/after behavior and manual sample comparison.
+
+## Weighted Projected-Vocab Recovery
+
+Added weighted cross-tokenizer projected-vocab maps for recovery losses.
+
+What changed:
+
+- `_candidate_to_source_token_groups` now returns normalized source-piece weights in addition to ids, masks, and validity.
+- OMP token-piece weights are preserved for digit, mixed-digit, and code-like tokens instead of discarded after sparse surface matching.
+- Teacher-to-student projected logits now use weighted source-token combinations.
+- Student-to-teacher projected probabilities now scatter candidate probability mass using the same source-piece weights.
+- Projected-vocab group summaries report weighted-row counts and weight-sum ranges.
+
+Why this matters:
+
+- Prior projected-vocab KD treated multi-piece donor token groups as uniform averages.
+- That weakens cross-tokenizer transfer for numbers, code surfaces, punctuation-heavy tokens, and composed tokens where one donor piece explains more of the candidate surface than another.
+- The change keeps existing callers backward-compatible; weights are only required when projected-vocab KD paths are active.
+
+Validation:
+
+- Local full suite: `140 passed, 127 skipped`
+- Remote focused weighted projection/recovery tests: `12 passed, 203 deselected`
+- Remote full suite: `267 passed`
