@@ -5383,16 +5383,55 @@ def _activation_axis_weights_for_tensor(
                 "features": hidden_features,
                 "assignment_key": ("hidden", "residual"),
             }
-    suffix_marker = f".{suffix}."
-    if mlp_scores is not None and (".mlp." in suffix_marker or ".feed_forward." in suffix_marker):
+    mlp_axes = _mlp_intermediate_axes_for_tensor_suffix(suffix, rank=len(tuple(donor_tensor.shape)))
+    if mlp_scores is not None and mlp_axes:
         for axis, source_dim in enumerate(donor_tensor.shape):
-            if int(source_dim) == int(mlp_scores.numel()):
+            if int(axis) in mlp_axes and int(source_dim) == int(mlp_scores.numel()):
                 axis_weights[axis] = {
                     "weights": mlp_scores,
                     "features": mlp_features,
                     "assignment_key": ("mlp", layer_group_key),
                 }
     return axis_weights or None
+
+
+def _mlp_intermediate_axes_for_tensor_suffix(suffix: str, rank: int) -> set[int]:
+    marker = f".{suffix.lower()}"
+    if rank <= 0:
+        return set()
+    if marker.endswith(
+        (
+            ".gate_proj.bias",
+            ".up_proj.bias",
+            ".w1.bias",
+            ".w3.bias",
+            ".dense_h_to_4h.bias",
+            ".fc1.bias",
+            ".c_fc.bias",
+        )
+    ):
+        return {0}
+    if rank < 2:
+        return set()
+    if marker.endswith(
+        (
+            ".gate_proj.weight",
+            ".up_proj.weight",
+            ".w1.weight",
+            ".w3.weight",
+            ".dense_h_to_4h.weight",
+            ".fc1.weight",
+        )
+    ):
+        return {0}
+    if marker.endswith((".down_proj.weight", ".w2.weight", ".dense_4h_to_h.weight", ".fc2.weight")):
+        return {1}
+    if ".mlp." in marker or ".feed_forward." in marker:
+        if marker.endswith(".c_fc.weight"):
+            return {1}
+        if marker.endswith(".c_proj.weight"):
+            return {0}
+    return set()
 
 
 def _attention_axis_weights_for_tensor(

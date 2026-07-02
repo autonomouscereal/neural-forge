@@ -130,6 +130,38 @@ Current status:
 - Existing running full jobs are unchanged because they already imported their
   code before this patch.
 
+## Semantic MLP Intermediate-Axis Routing
+
+Tightened how MLP activation profiles are attached to tensor axes during
+cross-family width folding.
+
+What changed:
+
+- MLP neuron transport is now routed by tensor suffix, not by dimension match
+  alone.
+- `gate_proj`, `up_proj`, `w1`, `w3`, `dense_h_to_4h`, and `fc1` weights use
+  MLP intermediate profiles on axis `0`.
+- `down_proj`, `w2`, `dense_4h_to_h`, and `fc2` weights use MLP intermediate
+  profiles on axis `1`.
+- GPT-style `mlp.c_fc.weight` and `mlp.c_proj.weight` are handled with their
+  transposed Conv1D conventions.
+
+Why this matters:
+
+- The previous dimension-only rule worked for Qwen/SmolLM-style shapes where
+  hidden size and intermediate size are different.
+- It could misroute MLP neuron transport in compact or custom target shapes
+  where hidden and intermediate dimensions happen to match.
+- This is directly aligned with arbitrary target architecture support: the
+  hidden residual axis and MLP intermediate-neuron axis can now coexist even
+  when their lengths are equal.
+
+Validation:
+
+- Local full suite: `142 passed, 135 skipped`
+- Remote focused Torch tests: `4 passed, 221 deselected`
+- Remote full suite: `277 passed`
+
 ## Weighted Projected-Vocab Recovery
 
 Added weighted cross-tokenizer projected-vocab maps for recovery losses.

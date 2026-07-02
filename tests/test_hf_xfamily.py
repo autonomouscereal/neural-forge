@@ -3289,7 +3289,7 @@ def test_cross_tokenizer_recovery_accepts_calibration_order_parameter() -> None:
 
 def test_activation_axis_weights_aggregate_folded_donor_group() -> None:
     torch = pytest.importorskip("torch")
-    donor_tensor = torch.ones((4, 6), dtype=torch.float32)
+    donor_tensor = torch.ones((6, 4), dtype=torch.float32)
     profile = {
         "hidden_scores": torch.ones(5),
         "hidden_features": torch.ones((5, 2)),
@@ -3313,8 +3313,43 @@ def test_activation_axis_weights_aggregate_folded_donor_group() -> None:
     )
 
     assert weights is not None
-    assert weights[1]["weights"].tolist() == pytest.approx([2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
-    assert weights[1]["features"].flatten().tolist() == pytest.approx([2.0] * 12)
+    assert weights[0]["weights"].tolist() == pytest.approx([2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+    assert weights[0]["features"].flatten().tolist() == pytest.approx([2.0] * 12)
+
+
+def test_activation_axis_weights_route_mlp_axes_by_suffix_when_dims_overlap() -> None:
+    torch = pytest.importorskip("torch")
+    donor_tensor = torch.ones((6, 6), dtype=torch.float32)
+    profile = {
+        "hidden_scores": torch.arange(1, 7, dtype=torch.float32),
+        "hidden_features": torch.ones((6, 2)),
+        "mlp_scores": {0: torch.arange(11, 17, dtype=torch.float32)},
+        "mlp_features": {0: torch.ones((6, 2)) * 5.0},
+    }
+
+    gate_weights = _activation_axis_weights_for_tensor(
+        torch,
+        donor_tensor,
+        "mlp.gate_proj.weight",
+        donor_layer_idx=0,
+        donor_layer_group=[0],
+        activation_profile=profile,
+    )
+    down_weights = _activation_axis_weights_for_tensor(
+        torch,
+        donor_tensor,
+        "mlp.down_proj.weight",
+        donor_layer_idx=0,
+        donor_layer_group=[0],
+        activation_profile=profile,
+    )
+
+    assert gate_weights is not None
+    assert down_weights is not None
+    assert gate_weights[0]["assignment_key"] == ("mlp", (0,))
+    assert gate_weights[1]["assignment_key"] == ("hidden", "residual")
+    assert down_weights[0]["assignment_key"] == ("hidden", "residual")
+    assert down_weights[1]["assignment_key"] == ("mlp", (0,))
 
 
 def test_activation_similarity_assignment_groups_activation_signatures() -> None:
