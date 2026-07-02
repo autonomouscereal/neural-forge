@@ -809,6 +809,7 @@ def recover_cross_tokenizer_causal_lm(
     projected_vocab_groups = None
     projected_vocab_mask = None
     projected_vocab_valid = None
+    projected_vocab_group_report = None
     if projected_vocab_kd_weight > 0 or focused_projected_vocab_kd_weight > 0 or stepwise_donor_kd_weight > 0:
         print(
             "xfamily_recover phase=projected_vocab_group_build "
@@ -822,7 +823,20 @@ def recover_cross_tokenizer_causal_lm(
             max_source_tokens=projected_vocab_max_source_tokens,
             device=device,
         )
-        print("xfamily_recover phase=projected_vocab_group_build_done", flush=True)
+        projected_vocab_group_report = _projected_vocab_group_summary(
+            torch,
+            candidate_tokenizer,
+            projected_vocab_mask,
+            projected_vocab_valid,
+        )
+        print(
+            "xfamily_recover phase=projected_vocab_group_build_done "
+            f"valid_rows={projected_vocab_group_report['valid_rows']} "
+            f"multi_source_rows={projected_vocab_group_report['multi_source_rows']} "
+            f"digit_valid_rows={projected_vocab_group_report['digit_valid_rows']} "
+            f"code_valid_rows={projected_vocab_group_report['code_valid_rows']}",
+            flush=True,
+        )
 
     print("xfamily_recover phase=model_load", flush=True)
     source = transformers.AutoModelForCausalLM.from_pretrained(
@@ -1338,6 +1352,7 @@ def recover_cross_tokenizer_causal_lm(
         "focused_projected_vocab_kd_weight": focused_projected_vocab_kd_weight,
         "projected_vocab_kd_mode": projected_vocab_kd_mode,
         "projected_vocab_max_source_tokens": projected_vocab_max_source_tokens,
+        "projected_vocab_group": projected_vocab_group_report,
         "reference_model": reference_model,
         "reference_kd_weight": reference_kd_weight,
         "unlikelihood_weight": unlikelihood_weight,
@@ -1498,6 +1513,12 @@ def calibrate_cross_tokenizer_lm_head(
         max_source_tokens=projected_vocab_max_source_tokens,
         device=device,
     )
+    projected_vocab_group_report = _projected_vocab_group_summary(
+        torch,
+        candidate_tokenizer,
+        projected_vocab_mask,
+        projected_vocab_valid,
+    )
     valid_vocab = projected_vocab_valid.detach().cpu().bool()
     valid_idx = torch.nonzero(valid_vocab, as_tuple=False).flatten()
     if int(valid_idx.numel()) == 0:
@@ -1605,6 +1626,7 @@ def calibrate_cross_tokenizer_lm_head(
         "projected_vocab_max_source_tokens": int(projected_vocab_max_source_tokens),
         "valid_vocab_rows": int(valid_idx.numel()),
         "candidate_vocab_size": len(candidate_tokenizer),
+        "projected_vocab_group": projected_vocab_group_report,
         "span_pair_count_observed": span_pair_counts,
         "torch_dtype": torch_dtype,
         "candidate_torch_dtype": candidate_torch_dtype,
@@ -2581,6 +2603,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     projected_vocab_groups = None
     projected_vocab_mask = None
     projected_vocab_valid = None
+    projected_vocab_group_report = None
     if (
         stepwise_donor_kd_weight > 0
         or projected_vocab_kd_weight > 0
@@ -2593,6 +2616,12 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             candidate_tokenizer,
             max_source_tokens=projected_vocab_max_source_tokens,
             device=device,
+        )
+        projected_vocab_group_report = _projected_vocab_group_summary(
+            torch,
+            candidate_tokenizer,
+            projected_vocab_mask,
+            projected_vocab_valid,
         )
     source_byte_buckets = None
     candidate_byte_buckets = None
@@ -3872,6 +3901,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "focused_lm_weight": float(focused_lm_weight),
         "token_focus": token_focus,
         "projected_vocab_kd_mode": projected_vocab_kd_mode,
+        "projected_vocab_group": projected_vocab_group_report,
         "byte_kd_weight": float(byte_kd_weight),
         "byte_hidden_kd_weight": float(byte_hidden_kd_weight),
         "block_io_kd_weight": float(block_io_kd_weight),
@@ -5542,6 +5572,78 @@ def _decoded_token(tokenizer, token_id: int, canonical_fn) -> str:
     return canonical_fn(decoded)
 
 
+def _projected_vocab_surface_category(decoded: str, canonical_fn) -> str:
+    canonical = canonical_fn(decoded)
+    if not canonical:
+        return "empty"
+    if canonical.isdigit():
+        return "digit"
+    has_alpha = any(ch.isalpha() for ch in canonical)
+    has_digit = any(ch.isdigit() for ch in canonical)
+    if has_alpha and has_digit:
+        return "mixed_digit"
+    if re.search(r"[{}\[\]().,;:+=*/<>_`'\"\\|-]", canonical):
+        return "code"
+    if has_alpha:
+        return "alpha"
+    return "other"
+
+
+def _projected_vocab_prefers_sparse_surface(decoded: str, canonical_fn, source_token_count: int, max_source_tokens: int) -> bool:
+    if source_token_count <= 0:
+        return True
+    if source_token_count <= max_source_tokens:
+        return False
+    category = _projected_vocab_surface_category(decoded, canonical_fn)
+    return category in {"digit", "mixed_digit", "code"}
+
+
+def _projected_vocab_group_summary(
+    torch,
+    candidate_tokenizer,
+    projected_vocab_mask,
+    projected_vocab_valid,
+) -> dict[str, Any]:
+    from neural_forge.hf_xfamily import _canonical_token
+
+    valid = projected_vocab_valid.detach().cpu().bool()
+    counts = projected_vocab_mask.detach().cpu().to(torch.float32).sum(dim=-1)
+    summary: dict[str, Any] = {
+        "candidate_vocab_size": int(len(candidate_tokenizer)),
+        "valid_rows": int(valid.sum().item()),
+        "valid_fraction": (
+            float(valid.sum().item() / max(1, len(candidate_tokenizer)))
+            if len(candidate_tokenizer) > 0
+            else 0.0
+        ),
+        "multi_source_rows": int((counts > 1).sum().item()),
+        "max_source_tokens_observed": int(counts.max().item()) if int(counts.numel()) else 0,
+    }
+    for category in ("special", "digit", "mixed_digit", "code", "alpha", "other", "empty"):
+        summary[f"{category}_rows"] = 0
+        summary[f"{category}_valid_rows"] = 0
+    special_ids = set(getattr(candidate_tokenizer, "all_special_ids", []) or [])
+    for candidate_id in range(len(candidate_tokenizer)):
+        if int(candidate_id) in special_ids:
+            category = "special"
+        else:
+            decoded = _decode_token_for_projection(candidate_tokenizer, int(candidate_id))
+            category = _projected_vocab_surface_category(decoded, _canonical_token)
+        summary[f"{category}_rows"] += 1
+        if bool(valid[int(candidate_id)].item()):
+            summary[f"{category}_valid_rows"] += 1
+    return summary
+
+
+def _decode_token_for_projection(tokenizer, token_id: int) -> str:
+    try:
+        return tokenizer.decode([int(token_id)], clean_up_tokenization_spaces=False)
+    except TypeError:
+        return tokenizer.decode([int(token_id)])
+    except Exception:
+        return ""
+
+
 def _candidate_to_source_token_groups(
     torch,
     source_tokenizer,
@@ -5549,31 +5651,57 @@ def _candidate_to_source_token_groups(
     max_source_tokens: int,
     device: str,
 ):
+    from neural_forge.hf_xfamily import _canonical_token
+    from neural_forge.hf_xfamily import _canonical_token_map
+    from neural_forge.hf_xfamily import _donor_omp_candidate_ids
+    from neural_forge.hf_xfamily import _encode_without_specials
+    from neural_forge.hf_xfamily import _omp_token_piece_weights
+
     if max_source_tokens <= 0:
         raise ValueError("max_source_tokens must be positive.")
     candidate_special_ids = set(getattr(candidate_tokenizer, "all_special_ids", []) or [])
     source_special_ids = set(getattr(source_tokenizer, "all_special_ids", []) or [])
     source_vocab_size = len(source_tokenizer)
+    source_map = _canonical_token_map(source_tokenizer)
+    omp_candidate_limit = max(32, int(max_source_tokens) * 8)
     groups = []
     masks = []
     valids = []
     for candidate_id in range(len(candidate_tokenizer)):
         ids: list[int] = []
         if candidate_id not in candidate_special_ids:
-            try:
-                decoded = candidate_tokenizer.decode([candidate_id], clean_up_tokenization_spaces=False)
-            except Exception:
-                decoded = ""
+            decoded = _decode_token_for_projection(candidate_tokenizer, int(candidate_id))
             if decoded and not any(ord(ch) < 32 for ch in decoded):
-                try:
-                    encoded = source_tokenizer.encode(decoded, add_special_tokens=False)
-                except Exception:
-                    encoded = []
-                ids = [
+                encoded = _encode_without_specials(source_tokenizer, decoded)
+                direct_ids = [
                     int(item)
-                    for item in encoded[: int(max_source_tokens)]
+                    for item in encoded
                     if int(item) not in source_special_ids and 0 <= int(item) < source_vocab_size
                 ]
+                ids = direct_ids[: int(max_source_tokens)]
+                if _projected_vocab_prefers_sparse_surface(
+                    decoded,
+                    _canonical_token,
+                    source_token_count=len(direct_ids),
+                    max_source_tokens=int(max_source_tokens),
+                ):
+                    candidate_ids = _donor_omp_candidate_ids(
+                        source_tokenizer,
+                        source_map,
+                        decoded,
+                        source_vocab_size,
+                        source_special_ids,
+                        max_candidates=omp_candidate_limit,
+                    )
+                    sparse_ids, _weights = _omp_token_piece_weights(
+                        torch,
+                        decoded,
+                        source_tokenizer,
+                        candidate_ids,
+                        max_selected=max_source_tokens,
+                    )
+                    if sparse_ids:
+                        ids = [int(item) for item in sparse_ids[: int(max_source_tokens)]]
         valid = bool(ids)
         padded = ids + [0] * (int(max_source_tokens) - len(ids))
         groups.append(padded[: int(max_source_tokens)])

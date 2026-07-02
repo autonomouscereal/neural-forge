@@ -101,6 +101,11 @@ Immediate repo implication:
 - `hf-xfamily-chain-anchor-compress` now accepts multi-donor init through
   comma-separated `source_model` plus `--donor-weights`/`--source-weights`.
   Recovery remains single-teacher for now, using the first donor as primary.
+- Projected-vocab KD now uses sparse surface-piece fallback for fragile
+  digit/code/mixed-digit child tokens and reports category coverage in recovery
+  and head-calibration artifacts. This is the first concrete X-Token-inspired
+  coverage fix; it still needs behavior evidence from the queued blank-target
+  lanes.
 - The queued full lane
   `qwen4b_gpt2_multidonor_blank_smollm_eora_full_gpu6_20260702` tests
   Qwen3-4B plus GPT-2 folded into blank SmolLM2-135M, then applies the current

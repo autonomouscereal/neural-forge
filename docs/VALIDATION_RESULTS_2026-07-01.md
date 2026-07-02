@@ -280,3 +280,31 @@ Queued full behavior lane:
 The queue is intentionally behind the existing GPU6 queue
 `qwen4b_blank_smollm_eora_grail_cosine_full_gpu6_20260702`, then waits for
 GPU6 Python jobs to clear before launching.
+
+## Projected Vocab Sparse Surface Recovery
+
+Code revision: pending commit after `6b377e4`.
+
+Implementation:
+
+- `hf_recovery._candidate_to_source_token_groups` now falls back to the existing
+  sparse surface-piece selector when direct source-tokenizer encoding is empty
+  or truncates fragile digit/code/mixed-digit tokens.
+- Cross-tokenizer ALM recovery, blockwise recovery, and LM-head calibration now
+  record `projected_vocab_group` coverage summaries, including valid rows,
+  multi-source rows, digit rows, and code rows.
+
+Validation:
+
+- Local syntax/collection: `134 passed`, `123 skipped` in the Windows venv.
+- Remote focused Torch tests:
+  `2 passed, 204 deselected`.
+- Remote full suite:
+  `257 passed`.
+
+Interpretation:
+
+This is not a standalone intelligence-retention claim. It closes one specific
+cross-tokenizer failure mode from the X-Token/byte-interface research path: the
+recovery losses can now see and report sparse donor token groups for compact
+child tokens such as `42` instead of silently losing or truncating those rows.

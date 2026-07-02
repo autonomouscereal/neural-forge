@@ -17,6 +17,7 @@ from neural_forge.hf_recovery import _assert_same_vocab
 from neural_forge.hf_recovery import _absorb_input_map_into_linears
 from neural_forge.hf_recovery import _behavior_checkpoint_is_better
 from neural_forge.hf_recovery import _candidate_rank_kl_loss
+from neural_forge.hf_recovery import _candidate_to_source_token_groups
 from neural_forge.hf_recovery import _candidate_index_after_depth_fold
 from neural_forge.hf_recovery import _cross_tokenizer_recovery_loss
 from neural_forge.hf_recovery import _cross_tokenizer_dual_space_kd_loss
@@ -53,6 +54,7 @@ from neural_forge.hf_recovery import _on_policy_prompt_text
 from neural_forge.hf_recovery import _output_head_tied_to_input
 from neural_forge.hf_recovery import _proportional_layer_index
 from neural_forge.hf_recovery import _project_candidate_probs_to_source_vocab
+from neural_forge.hf_recovery import _projected_vocab_group_summary
 from neural_forge.hf_recovery import _project_source_logits_to_candidate_vocab
 from neural_forge.hf_recovery import _recovery_loss
 from neural_forge.hf_recovery import _recent_token_unlikelihood_loss
@@ -4243,6 +4245,52 @@ def test_project_source_logits_to_candidate_vocab_averages_source_token_groups()
     assert projected[0, 0].item() == pytest.approx(3.0)
     assert projected[0, 1].item() == pytest.approx(6.0)
     assert projected[0, 2].item() == pytest.approx(-10000.0)
+
+
+def test_candidate_to_source_token_groups_uses_sparse_surface_fallback_for_digits() -> None:
+    torch = pytest.importorskip("torch")
+    source_tokenizer = _Tokenizer(["<eos>", "4", "2", "hello"])
+    candidate_tokenizer = _Tokenizer(["<eos>", "42", "hello"])
+
+    groups, mask, valid = _candidate_to_source_token_groups(
+        torch,
+        source_tokenizer,
+        candidate_tokenizer,
+        max_source_tokens=3,
+        device="cpu",
+    )
+
+    assert valid.tolist() == [False, True, True]
+    assert groups[1, :2].tolist() == [1, 2]
+    assert mask[1].tolist() == pytest.approx([1.0, 1.0, 0.0])
+    assert groups[2, 0].item() == 3
+    assert mask[2].tolist() == pytest.approx([1.0, 0.0, 0.0])
+
+
+def test_projected_vocab_group_summary_reports_digit_and_multi_source_rows() -> None:
+    torch = pytest.importorskip("torch")
+    tokenizer = _Tokenizer(["<eos>", "42", "a+b", "hello"])
+    mask = torch.tensor(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [1.0, 1.0, 1.0],
+            [1.0, 0.0, 0.0],
+        ]
+    )
+    valid = torch.tensor([False, True, True, True])
+
+    summary = _projected_vocab_group_summary(torch, tokenizer, mask, valid)
+
+    assert summary["candidate_vocab_size"] == 4
+    assert summary["valid_rows"] == 3
+    assert summary["multi_source_rows"] == 2
+    assert summary["special_rows"] == 1
+    assert summary["special_valid_rows"] == 0
+    assert summary["digit_rows"] == 1
+    assert summary["digit_valid_rows"] == 1
+    assert summary["code_rows"] == 1
+    assert summary["code_valid_rows"] == 1
 
 
 def test_first_byte_projection_keeps_control_bytes_and_other_bucket() -> None:
