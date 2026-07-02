@@ -1122,6 +1122,10 @@ Queued proof lane to run after the balanced signed quantile-medoid control:
   `experiments/queue_qwen4b_blank_smollm_cka_weighted_balanced_qmedoid_20260702.sh`
 - Tag:
   `qwen4b_blank_smollm_cka_weighted_balanced_qmedoid_full_gpu4_20260702`
+- Queue PID:
+  `3452698`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_cka_weighted_balanced_qmedoid_full_gpu4_20260702.queue.log`
 - Intended dependency:
   wait behind balanced-signed control queue PID `3424146`.
 - Intended recipe:
