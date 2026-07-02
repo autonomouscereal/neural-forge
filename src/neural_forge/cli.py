@@ -1549,10 +1549,32 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--alm-lr", type=float, default=2e-6)
     xfamily_chain.add_argument("--alm-anchor-kd-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-lm-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-first-token-lm-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-response-end-lm-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-focused-lm-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-dual-space-kd-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-kd-weight", type=float, default=0.05)
     xfamily_chain.add_argument("--alm-projected-vocab-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-focused-projected-vocab-kd-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-span-hidden-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-token-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-token-focus", choices=["auto", "response", "numbers", "code", "all"], default="auto")
+    xfamily_chain.add_argument("--alm-token-max-pairs", type=int, default=512)
+    xfamily_chain.add_argument("--alm-token-teacher-confidence-floor", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-answer-contrastive-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-answer-contrastive-max-negatives", type=int, default=4)
+    xfamily_chain.add_argument("--alm-teacher-rank-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-teacher-rank-temperature", type=float, default=1.0)
+    xfamily_chain.add_argument("--alm-teacher-rank-max-negatives", type=int, default=4)
+    xfamily_chain.add_argument("--alm-teacher-generate-lm-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-teacher-generate-max-new-tokens", type=int, default=64)
+    xfamily_chain.add_argument("--alm-stepwise-donor-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-stepwise-donor-max-new-tokens", type=int, default=16)
+    xfamily_chain.add_argument("--alm-on-policy-anchor-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-on-policy-unlikelihood-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-on-policy-hidden-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-on-policy-max-new-tokens", type=int, default=24)
+    xfamily_chain.add_argument("--alm-on-policy-interval", type=int, default=10)
     xfamily_chain.add_argument("--alm-train-scope", default="last4")
     xfamily_chain.add_argument("--alm-response-loss-mode", choices=["none", "auto", "assistant", "answer"], default="none")
     xfamily_chain.add_argument("--alm-append-eos", action="store_true")
@@ -2812,10 +2834,32 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         alm_lr=args.alm_lr,
         alm_anchor_kd_weight=args.alm_anchor_kd_weight,
         alm_lm_weight=args.alm_lm_weight,
+        alm_first_token_lm_weight=args.alm_first_token_lm_weight,
+        alm_response_end_lm_weight=args.alm_response_end_lm_weight,
+        alm_focused_lm_weight=args.alm_focused_lm_weight,
         alm_dual_space_kd_weight=args.alm_dual_space_kd_weight,
         alm_kd_weight=args.alm_kd_weight,
         alm_projected_vocab_kd_weight=args.alm_projected_vocab_kd_weight,
+        alm_focused_projected_vocab_kd_weight=args.alm_focused_projected_vocab_kd_weight,
         alm_span_hidden_kd_weight=args.alm_span_hidden_kd_weight,
+        alm_token_kd_weight=args.alm_token_kd_weight,
+        alm_token_focus=args.alm_token_focus,
+        alm_token_max_pairs=args.alm_token_max_pairs,
+        alm_token_teacher_confidence_floor=args.alm_token_teacher_confidence_floor,
+        alm_answer_contrastive_weight=args.alm_answer_contrastive_weight,
+        alm_answer_contrastive_max_negatives=args.alm_answer_contrastive_max_negatives,
+        alm_teacher_rank_weight=args.alm_teacher_rank_weight,
+        alm_teacher_rank_temperature=args.alm_teacher_rank_temperature,
+        alm_teacher_rank_max_negatives=args.alm_teacher_rank_max_negatives,
+        alm_teacher_generate_lm_weight=args.alm_teacher_generate_lm_weight,
+        alm_teacher_generate_max_new_tokens=args.alm_teacher_generate_max_new_tokens,
+        alm_stepwise_donor_kd_weight=args.alm_stepwise_donor_kd_weight,
+        alm_stepwise_donor_max_new_tokens=args.alm_stepwise_donor_max_new_tokens,
+        alm_on_policy_anchor_kd_weight=args.alm_on_policy_anchor_kd_weight,
+        alm_on_policy_unlikelihood_weight=args.alm_on_policy_unlikelihood_weight,
+        alm_on_policy_hidden_kd_weight=args.alm_on_policy_hidden_kd_weight,
+        alm_on_policy_max_new_tokens=args.alm_on_policy_max_new_tokens,
+        alm_on_policy_interval=args.alm_on_policy_interval,
         alm_train_scope=args.alm_train_scope,
         alm_response_loss_mode=args.alm_response_loss_mode,
         alm_append_eos=args.alm_append_eos,

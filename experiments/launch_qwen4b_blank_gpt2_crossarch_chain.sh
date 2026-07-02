@@ -13,6 +13,29 @@ PROMOTE_POLICY="${PROMOTE_POLICY:-always}"
 STAGE_INPUT_POLICY="${STAGE_INPUT_POLICY:-incumbent}"
 BLOCK_CALIBRATION_ORDER="${BLOCK_CALIBRATION_ORDER:-original}"
 ALM_CALIBRATION_ORDER="${ALM_CALIBRATION_ORDER:-original}"
+ALM_FIRST_TOKEN_LM_WEIGHT="${ALM_FIRST_TOKEN_LM_WEIGHT:-0.0}"
+ALM_RESPONSE_END_LM_WEIGHT="${ALM_RESPONSE_END_LM_WEIGHT:-0.0}"
+ALM_FOCUSED_LM_WEIGHT="${ALM_FOCUSED_LM_WEIGHT:-0.0}"
+ALM_FOCUSED_PROJECTED_VOCAB_KD_WEIGHT="${ALM_FOCUSED_PROJECTED_VOCAB_KD_WEIGHT:-0.0}"
+ALM_TOKEN_KD_WEIGHT="${ALM_TOKEN_KD_WEIGHT:-0.0}"
+ALM_TOKEN_FOCUS="${ALM_TOKEN_FOCUS:-auto}"
+ALM_TOKEN_MAX_PAIRS="${ALM_TOKEN_MAX_PAIRS:-512}"
+ALM_TOKEN_TEACHER_CONFIDENCE_FLOOR="${ALM_TOKEN_TEACHER_CONFIDENCE_FLOOR:-0.0}"
+ALM_ANSWER_CONTRASTIVE_WEIGHT="${ALM_ANSWER_CONTRASTIVE_WEIGHT:-0.0}"
+ALM_ANSWER_CONTRASTIVE_MAX_NEGATIVES="${ALM_ANSWER_CONTRASTIVE_MAX_NEGATIVES:-4}"
+ALM_TEACHER_RANK_WEIGHT="${ALM_TEACHER_RANK_WEIGHT:-0.0}"
+ALM_TEACHER_RANK_TEMPERATURE="${ALM_TEACHER_RANK_TEMPERATURE:-1.0}"
+ALM_TEACHER_RANK_MAX_NEGATIVES="${ALM_TEACHER_RANK_MAX_NEGATIVES:-4}"
+ALM_TEACHER_GENERATE_LM_WEIGHT="${ALM_TEACHER_GENERATE_LM_WEIGHT:-0.0}"
+ALM_TEACHER_GENERATE_MAX_NEW_TOKENS="${ALM_TEACHER_GENERATE_MAX_NEW_TOKENS:-64}"
+ALM_STEPWISE_DONOR_KD_WEIGHT="${ALM_STEPWISE_DONOR_KD_WEIGHT:-0.0}"
+ALM_STEPWISE_DONOR_MAX_NEW_TOKENS="${ALM_STEPWISE_DONOR_MAX_NEW_TOKENS:-16}"
+ALM_ON_POLICY_ANCHOR_KD_WEIGHT="${ALM_ON_POLICY_ANCHOR_KD_WEIGHT:-0.0}"
+ALM_ON_POLICY_UNLIKELIHOOD_WEIGHT="${ALM_ON_POLICY_UNLIKELIHOOD_WEIGHT:-0.0}"
+ALM_ON_POLICY_HIDDEN_KD_WEIGHT="${ALM_ON_POLICY_HIDDEN_KD_WEIGHT:-0.0}"
+ALM_ON_POLICY_MAX_NEW_TOKENS="${ALM_ON_POLICY_MAX_NEW_TOKENS:-24}"
+ALM_ON_POLICY_INTERVAL="${ALM_ON_POLICY_INTERVAL:-10}"
+ALM_RESPONSE_LOSS_MODE="${ALM_RESPONSE_LOSS_MODE:-none}"
 
 cd "$REPO_ROOT"
 source /home/cereal/model-surgery-lab/venv/bin/activate
@@ -114,10 +137,33 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --alm-max-length 128 \
   --alm-lr 2e-6 \
   --alm-lm-weight 0.10 \
+  --alm-first-token-lm-weight "$ALM_FIRST_TOKEN_LM_WEIGHT" \
+  --alm-response-end-lm-weight "$ALM_RESPONSE_END_LM_WEIGHT" \
+  --alm-focused-lm-weight "$ALM_FOCUSED_LM_WEIGHT" \
   --alm-kd-weight 0.05 \
   --alm-projected-vocab-kd-weight 0.04 \
+  --alm-focused-projected-vocab-kd-weight "$ALM_FOCUSED_PROJECTED_VOCAB_KD_WEIGHT" \
   --alm-span-hidden-kd-weight 0.08 \
+  --alm-token-kd-weight "$ALM_TOKEN_KD_WEIGHT" \
+  --alm-token-focus "$ALM_TOKEN_FOCUS" \
+  --alm-token-max-pairs "$ALM_TOKEN_MAX_PAIRS" \
+  --alm-token-teacher-confidence-floor "$ALM_TOKEN_TEACHER_CONFIDENCE_FLOOR" \
+  --alm-answer-contrastive-weight "$ALM_ANSWER_CONTRASTIVE_WEIGHT" \
+  --alm-answer-contrastive-max-negatives "$ALM_ANSWER_CONTRASTIVE_MAX_NEGATIVES" \
+  --alm-teacher-rank-weight "$ALM_TEACHER_RANK_WEIGHT" \
+  --alm-teacher-rank-temperature "$ALM_TEACHER_RANK_TEMPERATURE" \
+  --alm-teacher-rank-max-negatives "$ALM_TEACHER_RANK_MAX_NEGATIVES" \
+  --alm-teacher-generate-lm-weight "$ALM_TEACHER_GENERATE_LM_WEIGHT" \
+  --alm-teacher-generate-max-new-tokens "$ALM_TEACHER_GENERATE_MAX_NEW_TOKENS" \
+  --alm-stepwise-donor-kd-weight "$ALM_STEPWISE_DONOR_KD_WEIGHT" \
+  --alm-stepwise-donor-max-new-tokens "$ALM_STEPWISE_DONOR_MAX_NEW_TOKENS" \
+  --alm-on-policy-anchor-kd-weight "$ALM_ON_POLICY_ANCHOR_KD_WEIGHT" \
+  --alm-on-policy-unlikelihood-weight "$ALM_ON_POLICY_UNLIKELIHOOD_WEIGHT" \
+  --alm-on-policy-hidden-kd-weight "$ALM_ON_POLICY_HIDDEN_KD_WEIGHT" \
+  --alm-on-policy-max-new-tokens "$ALM_ON_POLICY_MAX_NEW_TOKENS" \
+  --alm-on-policy-interval "$ALM_ON_POLICY_INTERVAL" \
   --alm-train-scope all \
+  --alm-response-loss-mode "$ALM_RESPONSE_LOSS_MODE" \
   --alm-save-best-behavior \
   --alm-behavior-eval-interval 40 \
   --alm-calibration-order "$ALM_CALIBRATION_ORDER" \

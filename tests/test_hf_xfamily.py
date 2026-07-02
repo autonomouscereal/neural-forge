@@ -6793,8 +6793,52 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "domain-balanced",
             "--alm-steps",
             "40",
+            "--alm-first-token-lm-weight",
+            "0.021",
+            "--alm-response-end-lm-weight",
+            "0.022",
+            "--alm-focused-lm-weight",
+            "0.023",
             "--alm-kd-weight",
             "0.07",
+            "--alm-focused-projected-vocab-kd-weight",
+            "0.024",
+            "--alm-token-kd-weight",
+            "0.025",
+            "--alm-token-focus",
+            "numbers",
+            "--alm-token-max-pairs",
+            "66",
+            "--alm-token-teacher-confidence-floor",
+            "0.27",
+            "--alm-answer-contrastive-weight",
+            "0.028",
+            "--alm-answer-contrastive-max-negatives",
+            "7",
+            "--alm-teacher-rank-weight",
+            "0.029",
+            "--alm-teacher-rank-temperature",
+            "0.7",
+            "--alm-teacher-rank-max-negatives",
+            "8",
+            "--alm-teacher-generate-lm-weight",
+            "0.031",
+            "--alm-teacher-generate-max-new-tokens",
+            "33",
+            "--alm-stepwise-donor-kd-weight",
+            "0.032",
+            "--alm-stepwise-donor-max-new-tokens",
+            "12",
+            "--alm-on-policy-anchor-kd-weight",
+            "0.033",
+            "--alm-on-policy-unlikelihood-weight",
+            "0.034",
+            "--alm-on-policy-hidden-kd-weight",
+            "0.035",
+            "--alm-on-policy-max-new-tokens",
+            "18",
+            "--alm-on-policy-interval",
+            "5",
             "--alm-save-best-behavior",
             "--alm-calibration-order",
             "domain-balanced",
@@ -6899,7 +6943,29 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["block_save_best_layer_behavior"] is True
     assert captured["block_calibration_order"] == "domain-balanced"
     assert captured["alm_steps"] == 40
+    assert captured["alm_first_token_lm_weight"] == 0.021
+    assert captured["alm_response_end_lm_weight"] == 0.022
+    assert captured["alm_focused_lm_weight"] == 0.023
     assert captured["alm_kd_weight"] == 0.07
+    assert captured["alm_focused_projected_vocab_kd_weight"] == 0.024
+    assert captured["alm_token_kd_weight"] == 0.025
+    assert captured["alm_token_focus"] == "numbers"
+    assert captured["alm_token_max_pairs"] == 66
+    assert captured["alm_token_teacher_confidence_floor"] == 0.27
+    assert captured["alm_answer_contrastive_weight"] == 0.028
+    assert captured["alm_answer_contrastive_max_negatives"] == 7
+    assert captured["alm_teacher_rank_weight"] == 0.029
+    assert captured["alm_teacher_rank_temperature"] == 0.7
+    assert captured["alm_teacher_rank_max_negatives"] == 8
+    assert captured["alm_teacher_generate_lm_weight"] == 0.031
+    assert captured["alm_teacher_generate_max_new_tokens"] == 33
+    assert captured["alm_stepwise_donor_kd_weight"] == 0.032
+    assert captured["alm_stepwise_donor_max_new_tokens"] == 12
+    assert captured["alm_on_policy_anchor_kd_weight"] == 0.033
+    assert captured["alm_on_policy_unlikelihood_weight"] == 0.034
+    assert captured["alm_on_policy_hidden_kd_weight"] == 0.035
+    assert captured["alm_on_policy_max_new_tokens"] == 18
+    assert captured["alm_on_policy_interval"] == 5
     assert captured["alm_save_best_behavior"] is True
     assert captured["alm_calibration_order"] == "domain-balanced"
     assert captured["torch_dtype"] == "bfloat16"
