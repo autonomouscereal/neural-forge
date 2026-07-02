@@ -1058,6 +1058,12 @@ Queued proof lane to run after the existing nonfinite LRC guard lane:
   `experiments/queue_qwen4b_blank_smollm_balanced_signed_cka_qmedoid_lrcguard_20260702.sh`
 - Tag:
   `qwen4b_blank_smollm_balanced_signed_cka_qmedoid_lrcguard_full_gpu4_20260702`
+- Queue PID:
+  `3424146`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_balanced_signed_cka_qmedoid_lrcguard_full_gpu4_20260702.queue.log`
+- Dependency:
+  waiting behind nonfinite LRC guard queue PID `3325882`.
 - Intended recipe:
   `activation-cka` depth grouping, `balanced-signed-similarity` width folding,
   `quantile-medoid` transport support, fold RMS repair, geomean RMS projection
