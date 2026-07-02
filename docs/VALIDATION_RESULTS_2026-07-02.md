@@ -208,14 +208,27 @@ Validation:
   `3 passed, 1 skipped, 239 deselected`
 - Local full suite:
   `146 passed, 145 skipped`
+- Remote launcher syntax checks:
+  `bash -n experiments/launch_qwen4b_blank_smollm_true_lrc_chain.sh`
+  and
+  `bash -n experiments/queue_qwen4b_blank_smollm_signed_cka_rms_lrcguard_geomean_20260702.sh`
+- Remote focused tests:
+  `4 passed, 239 deselected`
+- Remote full suite:
+  `291 passed`
 
 Queued proof lane:
 
 - Tag:
   `qwen4b_blank_smollm_signed_cka_rms_lrcguard_geomean_full_gpu4_20260702`
+- Queue PID: `3270254`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_signed_cka_rms_lrcguard_geomean_full_gpu4_20260702.queue.log`
 - Recipe: same signed activation-CKA + fold-RMS geomean true-LRC/EoRA/GRAIL
   chain, plus `LRC_MAX_DELTA_RMS_RATIO=1.5`.
 - Dependency: should run after fold-RMS queue PID `3218886`.
+- Current status at queue start:
+  waiting for prior PID `3218886`.
 
 ## Answer-Boundary Margin Recovery
 
