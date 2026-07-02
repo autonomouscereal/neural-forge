@@ -41,6 +41,12 @@ Validation:
   `96 passed, 133 skipped`
 - Local full suite:
   `143 passed, 138 skipped`
+- Remote focused xfamily tests after deployment:
+  `4 passed, 225 deselected`
+- Remote full xfamily module after deployment:
+  `229 passed`
+- Remote full suite after deployment:
+  `281 passed`
 
 Current status:
 
@@ -48,6 +54,47 @@ Current status:
 - Next proof step is a margin-enabled exactness probe from the known
   mathdrill recovered checkpoint and, if positive, a follow-up ALM lane after
   the quantile-medoid blank-target structural checkpoint finishes.
+
+Queued margin-enabled proof lanes:
+
+- Immediate A/B probe tag:
+  `qwen4b_mathdrill_l4_answer_margin_probe_gpu0uuid_20260702`
+- Queue PID: `2905156`
+- Queue script:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_mathdrill_l4_answer_margin_probe_gpu0uuid_20260702.queue.sh`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_mathdrill_l4_answer_margin_probe_gpu0uuid_20260702.queue.sh.log`
+- GPU: RTX 3090 UUID `GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561`
+- Dependency: waits for control queue PID `2830714`
+  (`qwen4b_mathdrill_l4_exact_combo_probe_gpu0uuid_20260702`).
+- Anchor:
+  `qwen4b_mathdrill_anchor_newloss_l4_gpu6_20260701/models/02_alm`
+- New objective settings:
+  `--alm-answer-first-token-margin-weight 0.08`,
+  `--alm-answer-first-token-margin 1.5`,
+  `--alm-answer-first-token-max-negatives 10`.
+- Final eval target:
+  `eval_qwen4b_mathdrill_l4_answer_margin_probe_gpu0uuid_20260702_exactgen_20260702_1000x1000x250.json`
+
+- Quantile-medoid follow-up tag:
+  `qwen4b_blank_smollm_quantile_medoid_answer_margin_alm_gpu6uuid_20260702`
+- Queue PID: `2905158`
+- Queue script:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_quantile_medoid_answer_margin_alm_gpu6uuid_20260702.queue.sh`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_quantile_medoid_answer_margin_alm_gpu6uuid_20260702.queue.sh.log`
+- GPU: Quadro RTX 8000 UUID
+  `GPU-f5a09535-fc85-a027-50f7-734b344747dd`
+- Dependency: waits for control queue PID `2830665`
+  (`qwen4b_blank_smollm_quantile_medoid_exact_combo_alm_gpu6uuid_20260702`).
+- Anchor:
+  `qwen4b_blank_smollm_module_eora_quantile_medoid_drill_lrc_gpu4_20260702/models/01_block`
+- New objective settings:
+  `--alm-answer-first-token-margin-weight 0.07`,
+  `--alm-answer-first-token-margin 1.5`,
+  `--alm-answer-first-token-max-negatives 10`.
+- Final eval target:
+  `eval_qwen4b_blank_smollm_quantile_medoid_answer_margin_alm_gpu6uuid_20260702_exactgen_20260702_1000x1000x250.json`
 
 ## Attention-Influence Cross-Tokenizer Recovery
 
