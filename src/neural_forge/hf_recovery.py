@@ -598,6 +598,7 @@ def recover_cross_tokenizer_causal_lm(
     device: str = "cuda:0",
     trust_remote_code: bool = False,
     calibration_texts: Sequence[str] | None = None,
+    calibration_order: str = "original",
     response_loss_mode: str = "none",
     token_kd_weight: float = 0.0,
     token_focus: str = "auto",
@@ -771,6 +772,8 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("behavior_max_probes must be positive.")
     if behavior_max_generation_prompts is not None and behavior_max_generation_prompts <= 0:
         raise ValueError("behavior_max_generation_prompts must be positive when provided.")
+    if calibration_order not in {"original", "domain-balanced"}:
+        raise ValueError("calibration_order must be original or domain-balanced.")
 
     from neural_forge.hf_xfamily import _canonical_token
     from neural_forge.hf_xfamily import _canonical_token_map
@@ -894,10 +897,11 @@ def recover_cross_tokenizer_causal_lm(
 
     trainable_params = _set_train_scope(candidate, train_scope)
     optimizer = torch.optim.AdamW([p for p in candidate.parameters() if p.requires_grad], lr=lr)
-    texts = list(calibration_texts or RECOVERY_TEXTS)
+    texts = _order_recovery_texts(calibration_texts or RECOVERY_TEXTS, calibration_order)
     if not texts:
         raise ValueError("Need at least one recovery text.")
     eval_overlap_count = len(set(texts) & set(TEXT_EVALS))
+    calibration_domain_counts = _recovery_domain_counts(texts) if calibration_order == "domain-balanced" else {}
     behavior_suite, behavior_probes, generation_prompts = _recovery_behavior_eval_suite(behavior_eval_suite)
     batches = _make_paired_batches(
         source_tokenizer,

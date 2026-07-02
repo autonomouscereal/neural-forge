@@ -2759,6 +2759,15 @@ def test_recovery_text_order_round_robins_domains() -> None:
         _order_recovery_texts(texts, "shuffle")
 
 
+def test_cross_tokenizer_recovery_accepts_calibration_order_parameter() -> None:
+    import inspect
+
+    from neural_forge.hf_recovery import recover_cross_tokenizer_causal_lm
+
+    parameters = inspect.signature(recover_cross_tokenizer_causal_lm).parameters
+    assert parameters["calibration_order"].default == "original"
+
+
 def test_activation_axis_weights_aggregate_folded_donor_group() -> None:
     torch = pytest.importorskip("torch")
     donor_tensor = torch.ones((4, 6), dtype=torch.float32)
