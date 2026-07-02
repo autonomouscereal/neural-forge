@@ -2510,6 +2510,7 @@ def chain_anchor_staged_compress(
             source_weights=source_weight_values,
             primary_source_model=primary_source_model,
             recovery_source_mode=recovery_source_mode,
+            final_output_head_policy=final_output_head_policy,
         )
 
     final_candidate = working_candidate
