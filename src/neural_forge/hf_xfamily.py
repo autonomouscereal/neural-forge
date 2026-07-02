@@ -3220,91 +3220,12 @@ def _layer_suffix_candidates(suffix: str) -> list[str]:
 
     normalized = str(suffix)
     aliases = {
-        "mlp.gate_proj.weight": [
-            "mlp.w1.weight",
-            "feed_forward.w1.weight",
-            "mlp.c_fc.weight",
-            "feed_forward.c_fc.weight",
-        ],
-        "mlp.up_proj.weight": [
-            "mlp.w3.weight",
-            "feed_forward.w3.weight",
-            "mlp.c_fc.weight",
-            "feed_forward.c_fc.weight",
-        ],
-        "mlp.down_proj.weight": [
-            "mlp.w2.weight",
-            "feed_forward.w2.weight",
-            "mlp.c_proj.weight",
-            "feed_forward.c_proj.weight",
-        ],
-        "mlp.gate_proj.bias": [
-            "mlp.w1.bias",
-            "feed_forward.w1.bias",
-            "mlp.c_fc.bias",
-            "feed_forward.c_fc.bias",
-        ],
-        "mlp.up_proj.bias": [
-            "mlp.w3.bias",
-            "feed_forward.w3.bias",
-            "mlp.c_fc.bias",
-            "feed_forward.c_fc.bias",
-        ],
-        "mlp.down_proj.bias": [
-            "mlp.w2.bias",
-            "feed_forward.w2.bias",
-            "mlp.c_proj.bias",
-            "feed_forward.c_proj.bias",
-        ],
-        "feed_forward.w1.weight": [
-            "mlp.gate_proj.weight",
-            "mlp.w1.weight",
-            "mlp.c_fc.weight",
-            "feed_forward.c_fc.weight",
-        ],
-        "feed_forward.w3.weight": [
-            "mlp.up_proj.weight",
-            "mlp.w3.weight",
-            "mlp.c_fc.weight",
-            "feed_forward.c_fc.weight",
-        ],
-        "feed_forward.w2.weight": [
-            "mlp.down_proj.weight",
-            "mlp.w2.weight",
-            "mlp.c_proj.weight",
-            "feed_forward.c_proj.weight",
-        ],
-        "feed_forward.w1.bias": [
-            "mlp.gate_proj.bias",
-            "mlp.w1.bias",
-            "mlp.c_fc.bias",
-            "feed_forward.c_fc.bias",
-        ],
-        "feed_forward.w3.bias": [
-            "mlp.up_proj.bias",
-            "mlp.w3.bias",
-            "mlp.c_fc.bias",
-            "feed_forward.c_fc.bias",
-        ],
-        "feed_forward.w2.bias": [
-            "mlp.down_proj.bias",
-            "mlp.w2.bias",
-            "mlp.c_proj.bias",
-            "feed_forward.c_proj.bias",
-        ],
-        "mlp.c_fc.weight": [
-            "mlp.gate_proj.weight",
-            "mlp.up_proj.weight",
-            "feed_forward.w1.weight",
-            "feed_forward.w3.weight",
-        ],
-        "mlp.c_proj.weight": ["mlp.down_proj.weight", "feed_forward.w2.weight"],
-        "mlp.c_fc.bias": ["mlp.gate_proj.bias", "mlp.up_proj.bias", "feed_forward.w1.bias", "feed_forward.w3.bias"],
-        "mlp.c_proj.bias": ["mlp.down_proj.bias", "feed_forward.w2.bias"],
-        "feed_forward.c_fc.weight": ["mlp.c_fc.weight", "mlp.gate_proj.weight", "mlp.up_proj.weight"],
-        "feed_forward.c_proj.weight": ["mlp.c_proj.weight", "mlp.down_proj.weight"],
-        "feed_forward.c_fc.bias": ["mlp.c_fc.bias", "mlp.gate_proj.bias", "mlp.up_proj.bias"],
-        "feed_forward.c_proj.bias": ["mlp.c_proj.bias", "mlp.down_proj.bias"],
+        "feed_forward.w1.weight": ["mlp.gate_proj.weight", "mlp.w1.weight"],
+        "feed_forward.w3.weight": ["mlp.up_proj.weight", "mlp.w3.weight"],
+        "feed_forward.w2.weight": ["mlp.down_proj.weight", "mlp.w2.weight"],
+        "feed_forward.w1.bias": ["mlp.gate_proj.bias", "mlp.w1.bias"],
+        "feed_forward.w3.bias": ["mlp.up_proj.bias", "mlp.w3.bias"],
+        "feed_forward.w2.bias": ["mlp.down_proj.bias", "mlp.w2.bias"],
         "operator.q_proj.weight": ["self_attn.q_proj.weight", "attention.q_proj.weight"],
         "operator.k_proj.weight": ["self_attn.k_proj.weight", "attention.k_proj.weight"],
         "operator.v_proj.weight": ["self_attn.v_proj.weight", "attention.v_proj.weight"],
@@ -6111,6 +6032,19 @@ def _collect_donor_axis_activation_scores(
 
         return hook
 
+    def fused_qkv_attention_output_hook(layer_idx: int):
+        def hook(_module, _inputs, output):
+            tensor = output[0] if isinstance(output, tuple) else output
+            values = tensor.detach().to(torch.float32)
+            if values.shape[-1] % 3 != 0:
+                return
+            q_values, k_values, v_values = torch.chunk(values, 3, dim=-1)
+            append_attention_profile(layer_idx, "q", "qk", q_values, q_heads)
+            append_attention_profile(layer_idx, "kv", "qk", k_values, kv_heads)
+            append_attention_profile(layer_idx, "kv", "vo", v_values, kv_heads)
+
+        return hook
+
     def attention_input_hook(layer_idx: int, dim_stream: str, heads: int | None):
         def hook(_module, inputs):
             if not inputs:
@@ -6149,6 +6083,9 @@ def _collect_donor_axis_activation_scores(
         handles.append(layer.register_forward_pre_hook(hidden_hook(layer_idx)))
         handles.append(layer.register_forward_hook(hidden_output_hook(layer_idx)))
         attention_modules = _attention_projection_modules(layer)
+        if attention_modules.get("qkv") is not None:
+            handles.append(attention_modules["qkv"].register_forward_hook(fused_qkv_attention_output_hook(layer_idx)))
+            handles.append(attention_modules["qkv"].register_forward_hook(linear_fit_hook(layer_idx, "attn.c_attn.weight")))
         if attention_modules.get("q") is not None:
             handles.append(attention_modules["q"].register_forward_hook(attention_output_hook(layer_idx, "q", "qk", q_heads)))
             handles.append(attention_modules["q"].register_forward_hook(linear_fit_hook(layer_idx, "self_attn.q_proj.weight")))
@@ -6354,6 +6291,7 @@ def _attention_projection_modules(layer) -> dict[str, Any]:
     if attention is None:
         return {}
     return {
+        "qkv": _first_existing_attr(attention, ("c_attn", "query_key_value")),
         "q": _first_existing_attr(attention, ("q_proj", "query", "q")),
         "k": _first_existing_attr(attention, ("k_proj", "key", "k")),
         "v": _first_existing_attr(attention, ("v_proj", "value", "v")),
@@ -6934,16 +6872,11 @@ def _linear_fit_rows_for_suffix(torch, activation_profile, layer_group: Sequence
     if activation_profile is None:
         return None
     rows_by_layer = activation_profile.get("linear_fit_rows") or {}
-    suffix_candidates = _layer_suffix_candidates(suffix)
     input_rows = []
     output_rows = []
     for layer_idx in layer_group:
         layer_rows = rows_by_layer.get(int(layer_idx), {})
-        values = None
-        for candidate in suffix_candidates:
-            values = layer_rows.get(str(candidate))
-            if values is not None:
-                break
+        values = _linear_fit_row_values_for_suffix(torch, layer_rows, suffix)
         if values is None:
             continue
         input_rows.append(values["input"].detach().cpu().to(torch.float32))
@@ -6951,6 +6884,122 @@ def _linear_fit_rows_for_suffix(torch, activation_profile, layer_group: Sequence
     if not input_rows or not output_rows:
         return None
     return {"input": torch.cat(input_rows, dim=0), "output": torch.cat(output_rows, dim=0)}
+
+
+def _linear_fit_row_values_for_suffix(torch, layer_rows: dict[str, Any], suffix: str):
+    values = _first_linear_fit_row_values(layer_rows, _linear_fit_suffix_candidates(suffix))
+    if values is not None:
+        return values
+    return _synthesize_linear_fit_rows_for_suffix(torch, layer_rows, suffix)
+
+
+def _linear_fit_suffix_candidates(suffix: str) -> list[str]:
+    candidates = list(_layer_suffix_candidates(suffix))
+    marker = f".{str(suffix).lower()}"
+    extra = {
+        ".mlp.gate_proj.weight": ["mlp.c_fc.weight", "feed_forward.c_fc.weight"],
+        ".mlp.up_proj.weight": ["mlp.c_fc.weight", "feed_forward.c_fc.weight"],
+        ".mlp.down_proj.weight": ["mlp.c_proj.weight", "feed_forward.c_proj.weight"],
+        ".feed_forward.w1.weight": ["mlp.c_fc.weight", "feed_forward.c_fc.weight"],
+        ".feed_forward.w3.weight": ["mlp.c_fc.weight", "feed_forward.c_fc.weight"],
+        ".feed_forward.w2.weight": ["mlp.c_proj.weight", "feed_forward.c_proj.weight"],
+        ".mlp.c_fc.weight": ["mlp.gate_proj.weight", "mlp.up_proj.weight", "feed_forward.w1.weight", "feed_forward.w3.weight"],
+        ".mlp.c_proj.weight": ["mlp.down_proj.weight", "feed_forward.w2.weight"],
+        ".feed_forward.c_fc.weight": ["mlp.c_fc.weight", "mlp.gate_proj.weight", "mlp.up_proj.weight"],
+        ".feed_forward.c_proj.weight": ["mlp.c_proj.weight", "mlp.down_proj.weight"],
+    }
+    for ending, aliases in extra.items():
+        if marker.endswith(ending):
+            for alias in aliases:
+                if alias not in candidates:
+                    candidates.append(alias)
+    return candidates
+
+
+def _first_linear_fit_row_values(layer_rows: dict[str, Any], candidates: Sequence[str]):
+    for candidate in candidates:
+        values = layer_rows.get(str(candidate))
+        if isinstance(values, dict) and values.get("input") is not None and values.get("output") is not None:
+            return values
+    return None
+
+
+def _synthesize_linear_fit_rows_for_suffix(torch, layer_rows: dict[str, Any], suffix: str):
+    part = _split_attention_projection_part(suffix)
+    if part is not None:
+        fused = _first_linear_fit_row_values(
+            layer_rows,
+            ("attn.c_attn.weight", "self_attn.c_attn.weight", "query_key_value.weight"),
+        )
+        if fused is None:
+            return None
+        output = fused["output"].detach().cpu().to(torch.float32)
+        if output.dim() != 2 or int(output.shape[1]) % 3 != 0:
+            return None
+        width = int(output.shape[1] // 3)
+        start = int(part) * width
+        return {
+            "input": fused["input"].detach().cpu().to(torch.float32),
+            "output": output[:, start : start + width],
+        }
+    if _is_fused_attention_projection_suffix(suffix):
+        q_rows = _first_linear_fit_row_values(
+            layer_rows,
+            ("self_attn.q_proj.weight", "attention.q_proj.weight", "operator.q_proj.weight", "attn.q_proj.weight"),
+        )
+        k_rows = _first_linear_fit_row_values(
+            layer_rows,
+            ("self_attn.k_proj.weight", "attention.k_proj.weight", "operator.k_proj.weight", "attn.k_proj.weight"),
+        )
+        v_rows = _first_linear_fit_row_values(
+            layer_rows,
+            ("self_attn.v_proj.weight", "attention.v_proj.weight", "operator.v_proj.weight", "attn.v_proj.weight"),
+        )
+        if q_rows is None or k_rows is None or v_rows is None:
+            return None
+        row_count = min(
+            int(q_rows["input"].shape[0]),
+            int(k_rows["input"].shape[0]),
+            int(v_rows["input"].shape[0]),
+            int(q_rows["output"].shape[0]),
+            int(k_rows["output"].shape[0]),
+            int(v_rows["output"].shape[0]),
+        )
+        if row_count <= 0:
+            return None
+        q_input = q_rows["input"].detach().cpu().to(torch.float32)[:row_count]
+        k_input = k_rows["input"].detach().cpu().to(torch.float32)[:row_count]
+        v_input = v_rows["input"].detach().cpu().to(torch.float32)[:row_count]
+        if q_input.shape != k_input.shape or q_input.shape != v_input.shape:
+            return None
+        return {
+            "input": q_input,
+            "output": torch.cat(
+                [
+                    q_rows["output"].detach().cpu().to(torch.float32)[:row_count],
+                    k_rows["output"].detach().cpu().to(torch.float32)[:row_count],
+                    v_rows["output"].detach().cpu().to(torch.float32)[:row_count],
+                ],
+                dim=1,
+            ),
+        }
+    return None
+
+
+def _split_attention_projection_part(suffix: str) -> int | None:
+    marker = f".{str(suffix).lower()}"
+    if marker.endswith((".q_proj.weight", ".query.weight")):
+        return 0
+    if marker.endswith((".k_proj.weight", ".key.weight")):
+        return 1
+    if marker.endswith((".v_proj.weight", ".value.weight")):
+        return 2
+    return None
+
+
+def _is_fused_attention_projection_suffix(suffix: str) -> bool:
+    marker = f".{str(suffix).lower()}"
+    return marker.endswith((".attn.c_attn.weight", ".self_attn.c_attn.weight", ".query_key_value.weight", ".c_attn.weight"))
 
 
 def _resize_linear_activation_rows(
@@ -7234,12 +7283,16 @@ def _activation_fit_suffix_enabled(suffix: str, activation_fit_target: str) -> b
         or marker.endswith(".feed_forward.w3.weight")
         or marker.endswith(".mlp.dense_h_to_4h.weight")
         or marker.endswith(".mlp.fc1.weight")
+        or marker.endswith(".mlp.c_fc.weight")
+        or marker.endswith(".feed_forward.c_fc.weight")
     )
     mlp_output = (
         marker.endswith(".mlp.down_proj.weight")
         or marker.endswith(".feed_forward.w2.weight")
         or marker.endswith(".mlp.dense_4h_to_h.weight")
         or marker.endswith(".mlp.fc2.weight")
+        or marker.endswith(".mlp.c_proj.weight")
+        or marker.endswith(".feed_forward.c_proj.weight")
     )
     if activation_fit_target == "all":
         return attention_input or attention_output or mlp_input or mlp_output
@@ -8134,6 +8187,15 @@ def _mlp_spec(layer) -> dict[str, Any] | None:
         }
     if mlp is None:
         return None
+    if all(hasattr(mlp, name) for name in ("c_fc", "c_proj")):
+        return {
+            "kind": "dense",
+            "mlp": mlp,
+            "inputs": [mlp.c_fc],
+            "input_names": ["c_fc"],
+            "output": mlp.c_proj,
+            "output_name": "c_proj",
+        }
     if all(hasattr(mlp, name) for name in ("gate_proj", "up_proj", "down_proj")):
         return {
             "kind": "gated",

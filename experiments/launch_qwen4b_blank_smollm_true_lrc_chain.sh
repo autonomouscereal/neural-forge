@@ -57,6 +57,7 @@ STAGE_INPUT_POLICY="${STAGE_INPUT_POLICY:-incumbent}"
 BLOCK_STEPS_PER_LAYER="${BLOCK_STEPS_PER_LAYER:-4}"
 BLOCK_LR="${BLOCK_LR:-2e-6}"
 BLOCK_HIDDEN_PROJECTION_SCOPE="${BLOCK_HIDDEN_PROJECTION_SCOPE:-layer-input}"
+BLOCK_HIDDEN_METRIC="${BLOCK_HIDDEN_METRIC:-projected-geometry}"
 BLOCK_CALIBRATION_ORDER="${BLOCK_CALIBRATION_ORDER:-original}"
 BLOCK_ALM_KD_WEIGHT="${BLOCK_ALM_KD_WEIGHT:-0.0}"
 BLOCK_PROJECTED_VOCAB_KD_WEIGHT="${BLOCK_PROJECTED_VOCAB_KD_WEIGHT:-0.0}"
@@ -223,7 +224,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --block-max-length 128 \
   --block-lr "$BLOCK_LR" \
   --block-hidden-projection-scope "$BLOCK_HIDDEN_PROJECTION_SCOPE" \
-  --block-hidden-metric projected-geometry \
+  --block-hidden-metric "$BLOCK_HIDDEN_METRIC" \
   --block-span-pair-mode both \
   --block-target delta \
   --block-residual-magnitude-compensation "$RESIDUAL_MODE" \

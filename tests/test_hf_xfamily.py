@@ -3263,11 +3263,17 @@ def test_activation_fit_suffix_selector_limits_module_families() -> None:
     assert _activation_fit_suffix_enabled("operator.out_proj.weight", "attention-output") is True
     assert _activation_fit_suffix_enabled("self_attn.q_proj.weight", "attention-output") is False
     assert _activation_fit_suffix_enabled("mlp.down_proj.weight", "mlp-output") is True
+    assert _activation_fit_suffix_enabled("mlp.c_proj.weight", "mlp-output") is True
     assert _activation_fit_suffix_enabled("mlp.gate_proj.weight", "mlp-output") is False
+    assert _activation_fit_suffix_enabled("mlp.c_fc.weight", "mlp-output") is False
     assert _activation_fit_suffix_enabled("self_attn.k_proj.weight", "input-projections") is True
     assert _activation_fit_suffix_enabled("operator.q_proj.weight", "input-projections") is True
     assert _activation_fit_suffix_enabled("mlp.up_proj.weight", "input-projections") is True
+    assert _activation_fit_suffix_enabled("mlp.c_fc.weight", "input-projections") is True
     assert _activation_fit_suffix_enabled("mlp.down_proj.weight", "input-projections") is False
+    assert _activation_fit_suffix_enabled("mlp.c_proj.weight", "input-projections") is False
+    assert _activation_fit_suffix_enabled("feed_forward.c_fc.weight", "mlp") is True
+    assert _activation_fit_suffix_enabled("feed_forward.c_proj.weight", "mlp") is True
 
 
 def test_non_layer_initializer_folds_final_norm_and_skips_special_tensors() -> None:
@@ -5077,7 +5083,8 @@ def test_layer_tensor_alias_lookup_maps_qwen_suffixes_to_lfm_names() -> None:
     assert _lookup_layer_tensor_value(folded_state, "post_attention_layernorm.weight") == "ffn_norm"
 
 
-def test_layer_tensor_alias_lookup_maps_qwen_suffixes_to_gpt2_mlp_names() -> None:
+def test_layer_tensor_alias_lookup_does_not_raw_map_gpt2_mlp_names() -> None:
+    torch = pytest.importorskip("torch")
     index = {
         (3, "mlp.c_fc.weight"): "model.h.3.mlp.c_fc.weight",
         (3, "mlp.c_proj.weight"): "model.h.3.mlp.c_proj.weight",
@@ -5091,16 +5098,18 @@ def test_layer_tensor_alias_lookup_maps_qwen_suffixes_to_gpt2_mlp_names() -> Non
         "mlp.c_proj.bias": "c_proj_bias",
     }
 
-    assert _lookup_layer_tensor_key(index, 3, "mlp.gate_proj.weight") == "model.h.3.mlp.c_fc.weight"
-    assert _lookup_layer_tensor_key(index, 3, "mlp.up_proj.weight") == "model.h.3.mlp.c_fc.weight"
-    assert _lookup_layer_tensor_key(index, 3, "mlp.down_proj.weight") == "model.h.3.mlp.c_proj.weight"
-    assert _lookup_layer_tensor_key(index, 3, "mlp.gate_proj.bias") == "model.h.3.mlp.c_fc.bias"
-    assert _lookup_layer_tensor_key(index, 3, "mlp.down_proj.bias") == "model.h.3.mlp.c_proj.bias"
-    assert _lookup_layer_tensor_value(folded_state, "mlp.gate_proj.weight") == "c_fc"
-    assert _lookup_layer_tensor_value(folded_state, "mlp.up_proj.weight") == "c_fc"
-    assert _lookup_layer_tensor_value(folded_state, "mlp.down_proj.weight") == "c_proj"
-    assert _lookup_layer_tensor_value(folded_state, "mlp.gate_proj.bias") == "c_fc_bias"
-    assert _lookup_layer_tensor_value(folded_state, "mlp.down_proj.bias") == "c_proj_bias"
+    assert _lookup_layer_tensor_key(index, 3, "mlp.gate_proj.weight") is None
+    assert _lookup_layer_tensor_key(index, 3, "mlp.up_proj.weight") is None
+    assert _lookup_layer_tensor_key(index, 3, "mlp.down_proj.weight") is None
+    assert _lookup_layer_tensor_key(index, 3, "mlp.gate_proj.bias") is None
+    assert _lookup_layer_tensor_key(index, 3, "mlp.down_proj.bias") is None
+    assert _lookup_layer_tensor_value(folded_state, "mlp.gate_proj.weight") is None
+    assert _lookup_layer_tensor_value(folded_state, "mlp.up_proj.weight") is None
+    assert _lookup_layer_tensor_value(folded_state, "mlp.down_proj.weight") is None
+    c_fc = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+    gate, gate_report = _synthesize_cross_arch_layer_tensor(torch, {"mlp.c_fc.weight": c_fc}, "mlp.gate_proj.weight")
+    torch.testing.assert_close(gate, c_fc.t())
+    assert gate_report["method"] == "transpose_gpt2_c_fc_for_gate_proj"
 
 
 def test_linear_fit_rows_for_suffix_uses_cross_family_aliases() -> None:
@@ -5150,6 +5159,59 @@ def test_linear_fit_rows_for_suffix_uses_gpt2_mlp_aliases() -> None:
     torch.testing.assert_close(down["output"], c_proj_rows["output"])
 
 
+def test_linear_fit_rows_for_suffix_splits_gpt2_c_attn_rows() -> None:
+    torch = pytest.importorskip("torch")
+    inputs = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+    output = torch.tensor(
+        [
+            [10.0, 11.0, 20.0, 21.0, 30.0, 31.0],
+            [12.0, 13.0, 22.0, 23.0, 32.0, 33.0],
+        ]
+    )
+    activation_profile = {
+        "linear_fit_rows": {
+            3: {
+                "attn.c_attn.weight": {
+                    "input": inputs,
+                    "output": output,
+                }
+            }
+        }
+    }
+
+    q_rows = _linear_fit_rows_for_suffix(torch, activation_profile, [3], "self_attn.q_proj.weight")
+    k_rows = _linear_fit_rows_for_suffix(torch, activation_profile, [3], "self_attn.k_proj.weight")
+    v_rows = _linear_fit_rows_for_suffix(torch, activation_profile, [3], "self_attn.v_proj.weight")
+
+    assert q_rows is not None
+    assert k_rows is not None
+    assert v_rows is not None
+    torch.testing.assert_close(q_rows["input"], inputs)
+    torch.testing.assert_close(q_rows["output"], output[:, 0:2])
+    torch.testing.assert_close(k_rows["output"], output[:, 2:4])
+    torch.testing.assert_close(v_rows["output"], output[:, 4:6])
+
+
+def test_linear_fit_rows_for_suffix_fuses_split_attention_rows_for_gpt2() -> None:
+    torch = pytest.importorskip("torch")
+    inputs = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+    activation_profile = {
+        "linear_fit_rows": {
+            3: {
+                "self_attn.q_proj.weight": {"input": inputs, "output": torch.tensor([[10.0], [11.0]])},
+                "self_attn.k_proj.weight": {"input": inputs, "output": torch.tensor([[20.0], [21.0]])},
+                "self_attn.v_proj.weight": {"input": inputs, "output": torch.tensor([[30.0], [31.0]])},
+            }
+        }
+    }
+
+    rows = _linear_fit_rows_for_suffix(torch, activation_profile, [3], "attn.c_attn.weight")
+
+    assert rows is not None
+    torch.testing.assert_close(rows["input"], inputs)
+    torch.testing.assert_close(rows["output"], torch.tensor([[10.0, 20.0, 30.0], [11.0, 21.0, 31.0]]))
+
+
 def test_attention_projection_modules_supports_lfm_operator_container() -> None:
     q = _Obj()
     k = _Obj()
@@ -5159,7 +5221,32 @@ def test_attention_projection_modules_supports_lfm_operator_container() -> None:
 
     modules = _attention_projection_modules(layer)
 
-    assert modules == {"q": q, "k": k, "v": v, "o": out}
+    assert modules == {"qkv": None, "q": q, "k": k, "v": v, "o": out}
+
+
+def test_attention_projection_modules_supports_gpt2_c_attn() -> None:
+    c_attn = _Obj()
+    c_proj = _Obj()
+    layer = _Obj(attn=_Obj(c_attn=c_attn, c_proj=c_proj))
+
+    modules = _attention_projection_modules(layer)
+
+    assert modules == {"qkv": c_attn, "q": None, "k": None, "v": None, "o": c_proj}
+
+
+def test_mlp_spec_detects_gpt2_c_fc_c_proj() -> None:
+    c_fc = _Obj()
+    c_proj = _Obj()
+    layer = _Obj(mlp=_Obj(c_fc=c_fc, c_proj=c_proj))
+
+    spec = _mlp_spec(layer)
+
+    assert spec is not None
+    assert spec["kind"] == "dense"
+    assert spec["inputs"] == [c_fc]
+    assert spec["input_names"] == ["c_fc"]
+    assert spec["output"] is c_proj
+    assert spec["output_name"] == "c_proj"
 
 
 def test_neutralized_unmatched_operator_tensor_zeroes_lfm_conv_output_only() -> None:
