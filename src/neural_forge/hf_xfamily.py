@@ -4776,6 +4776,7 @@ def _axis_assignment_cache_report(assignment_cache: dict[Any, dict[str, Any]]) -
                 else item["target_masses"].tolist(),
                 "target_support_indices": support_indices.tolist() if support_indices is not None else None,
                 "transport_matrix_shape": list(transport_matrix.shape) if transport_matrix is not None else None,
+                "transport_diagnostics": item.get("transport_diagnostics"),
                 "source_dim": int(item.get("source_dim", 0)),
                 "target_dim": int(item.get("target_dim", 0)),
                 "assignment_mode": str(item.get("assignment_mode", "")),

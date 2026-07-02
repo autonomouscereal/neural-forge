@@ -121,6 +121,7 @@ from neural_forge.hf_xfamily import _mlp_neuron_activation_values
 from neural_forge.hf_xfamily import _attention_axis_weights_for_tensor
 from neural_forge.hf_xfamily import _attention_head_activation_profile
 from neural_forge.hf_xfamily import _attention_projection_modules
+from neural_forge.hf_xfamily import _axis_assignment_cache_report
 from neural_forge.hf_xfamily import _axis_reductions_for_layer_tensor
 from neural_forge.hf_xfamily import _axis_reductions_for_non_layer_tensor_key
 from neural_forge.hf_xfamily import _balanced_activation_assignment
@@ -3573,6 +3574,10 @@ def test_transport_fold_uses_balanced_sinkhorn_feature_map() -> None:
     assert diagnostics["target_load_l1_error"] < 0.05
     assert diagnostics["effective_targets_mean"] >= 1.0
     assert diagnostics["weighted_similarity_mean"] > 0.9
+    report = _axis_assignment_cache_report(cache)
+    assert report[0]["transport_diagnostics"]["target_load_l1_error"] == pytest.approx(
+        diagnostics["target_load_l1_error"]
+    )
 
 
 def test_transport_fold_can_use_importance_survivor_support() -> None:
