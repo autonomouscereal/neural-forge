@@ -356,13 +356,16 @@ Polled and parsed the AI-server reports again at
 | Cleanopen recovered 135M L4 ALM | `134,515,008` | `803/1000` | `149/250` | `1000/1000` | `36704.57` |
 | Mathdrill recovered 135M L4 ALM | `134,515,008` | `805/1000` | `150/250` | `1000/1000` | `36407.37` |
 | Cleanopen full block checkpoint | `134,515,008` | `803/1000` | `150/250` | `1000/1000` | `37026.94` |
+| Cleanopen full ALM exact-gen | `134,515,008` | `804/1000` | `154/250` | `926/1000` | `29460.00` |
 | Qwen3-4B -> blank GPT-2 init | `124,439,808` | `0/200` | `11/100` | `0/100` | `43116.57` |
 
 Manual sample check still shows the key weakness:
 
 - Parent: `6 + 4 -> 10`
 - Blank: nonsense continuation
-- Recovered SmolLM lanes: fluent answers, but `6 + 4 -> 30`
+- Recovered SmolLM lanes: fluent answers, but exact arithmetic remains weak.
+  The July 1 L4 lanes produced malformed/wrong `6+4` continuations, and the
+  July 2 cleanopen full ALM exact-gen report answered `6+4 -> 6`.
 - GPT-2 cross-architecture init: repeated/function-token collapse
 
 Interpretation:
@@ -375,7 +378,48 @@ Interpretation:
 - New recovery lanes should target exact answer grounding, not only lower PPL or
   generic fluent generation.
 
+Cleanopen full ALM exact-generation report:
+
+- Report:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/evals/eval_cleanopen_full_02_alm_exactgen_20260702_1000x1000x250.json`
+- Source checkpoint:
+  `qwen4b_cleanopen_anchor_newloss_full_gpu4_20260701/models/02_alm`
+- This run improved PPL and forced-choice versus the earlier L4 recovered
+  baselines (`154/250` choice vs. `149/250` and `150/250`), but exact
+  generation health fell to `926/1000`.
+- Manual exact sample from the report:
+  `Question: What is 6 + 4? ... Answer: 6`, failed against expected `10`.
+- Qualitative samples remain useful for non-exact prompts: pruning, model
+  merge risk, Python `add(a, b)`, tokenizer mismatch, and rain-safety prompts
+  generated coherent text/code. This is retained behavior, not random noise,
+  but it is not enough for the compression goal because exact arithmetic and
+  forced-choice retention still lag the parent.
+
 Queued exactness combo lane:
+
+- Previous P40 attempt:
+  `qwen4b_blank_smollm_quantile_medoid_exact_combo_alm_gpu1_20260702`
+  was canceled. The installed PyTorch build does not support the Tesla P40
+  `sm_61` cards and raises `CUDA error: no kernel image is available for
+  execution on the device`.
+- Replacement tag:
+  `qwen4b_blank_smollm_quantile_medoid_exact_combo_alm_gpu6uuid_20260702`
+- Queue PID: `2830665`
+- Queue script:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_quantile_medoid_exact_combo_alm_gpu6uuid_20260702.queue.sh`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_quantile_medoid_exact_combo_alm_gpu6uuid_20260702.queue.sh.log`
+- GPU: Quadro RTX 8000 UUID
+  `GPU-f5a09535-fc85-a027-50f7-734b344747dd`
+- Upstream dependency: waits for quantile-medoid proof queue PID `2588435`.
+- Recipe: ALM-only recovery from the quantile-medoid `01_block` checkpoint with
+  attention influence, answer contrastive candidates, teacher-ranked
+  candidates, number-focused token KD, first/last answer token LM,
+  teacher-generate LM, stepwise donor KD, and on-policy hidden/anchor KD.
+- Final eval target:
+  `eval_qwen4b_blank_smollm_quantile_medoid_exact_combo_alm_gpu6uuid_20260702_exactgen_20260702_1000x1000x250.json`
+
+Superseded P40 queue metadata retained for audit:
 
 - Tag:
   `qwen4b_blank_smollm_quantile_medoid_exact_combo_alm_gpu1_20260702`
@@ -420,24 +464,51 @@ Immediate exactness probe from existing recovered checkpoint:
 - Final eval target:
   `eval_qwen4b_mathdrill_l4_exact_combo_probe_gpu2_20260702_exactgen_20260702_1000x1000x250.json`
 
+Replacement immediate exactness probe:
+
+- Previous P40 attempt:
+  `qwen4b_mathdrill_l4_exact_combo_probe_gpu2_20260702` was canceled for the
+  same unsupported `sm_61` kernel reason.
+- Replacement tag:
+  `qwen4b_mathdrill_l4_exact_combo_probe_gpu0uuid_20260702`
+- Queue PID: `2830714`
+- Queue script:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_mathdrill_l4_exact_combo_probe_gpu0uuid_20260702.queue.sh`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_mathdrill_l4_exact_combo_probe_gpu0uuid_20260702.queue.sh.log`
+- GPU: RTX 3090 UUID `GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561`
+- Anchor:
+  `qwen4b_mathdrill_anchor_newloss_l4_gpu6_20260701/models/02_alm`
+- Final eval target:
+  `eval_qwen4b_mathdrill_l4_exact_combo_probe_gpu0uuid_20260702_exactgen_20260702_1000x1000x250.json`
+
 ## Active Full-Run Status Snapshot
 
-Polled AI server state at `2026-07-02T00:43:54-06:00`.
+Polled AI server state again at `2026-07-02T02:07:59-06:00`.
 
-The three long full runs occupying usable GPUs were still progressing, not
-stalled:
+The cleanopen full run has finished and produced the exact-generation report
+summarized above. The remaining long and queued runs are still progressing or
+waiting behind explicit dependencies:
 
-| Run | Latest block status | Best observed in-loop behavior |
-|---|---:|---:|
-| `qwen4b_cleanopen_anchor_newloss_full_gpu4_20260701` | layer `28`, step `4` | `803/1000`, generation health `400/400` |
-| `qwen4b_mathdrill_anchor_newloss_full_gpu6_20260701` | layer `26`, step `4` | `807/1000`, generation health `400/400` |
-| `qwen4b_mathdrill_anchor_eora_geom_full_gpu0_fix_20260701` | layer `16`, step `0` | `807/1000`, generation health `400/400` |
+| Run/queue | Current status | Latest observed signal |
+|---|---|---:|
+| `qwen4b_cleanopen_anchor_newloss_full_gpu4_20260701` | done; exact eval parsed | `804/1000` behavior, `154/250` choice, `926/1000` generation health |
+| `qwen4b_mathdrill_anchor_newloss_full_gpu6_20260701` | ALM stage active | step `1` started from `807/1000`, generation health `1000/1000` |
+| `qwen4b_mathdrill_anchor_eora_geom_full_gpu0_fix_20260701` | block stage active around layer `19` | `807/1000`, generation health `400/400` |
+| `qwen4b_blank_smollm_eora_grail_source_rms_full_gpu4_20260702` | active on RTX 3090 UUID `GPU-2ce...` | model load / early chain active |
+| `qwen4b_blank_smollm_quantile_geomean_drill_lrc_eora_gpu4_20260702` | queued | waits behind upstream GPU4 lane |
+| `qwen4b_blank_smollm_module_eora_quantile_medoid_drill_lrc_gpu4_20260702` | queued | waits behind quantile proof lane |
+| `qwen4b_blank_smollm_module_eora_quantile_medoid_aim004_alm_gpu4_20260702` | queued | waits behind quantile-medoid proof lane |
+| `qwen4b_blank_smollm_quantile_medoid_exact_combo_alm_gpu6uuid_20260702` | queued | waits behind quantile-medoid proof lane |
+| `qwen4b_mathdrill_l4_exact_combo_probe_gpu0uuid_20260702` | queued | waits for RTX 3090 UUID `GPU-4ead...` to clear |
 
 Interpretation:
 
-- These jobs are preserving the current recovered-child plateau while folding
-  through the full block stack.
-- They have not yet produced final exact-generation reports, so they are not
-  completion evidence.
+- The cleanopen full result improves PPL and forced choice, but exact arithmetic
+  is still not recovered. It is evidence of useful behavior transfer, not goal
+  completion.
+- The currently queued replacement exactness lanes are on supported RTX/RTX8000
+  UUIDs. The older P40 queue artifacts are audit history only and should not be
+  used as live proof.
 - The queued exact-generation comparisons and drill selector should remain the
-  promotion signal once these jobs finish.
+  promotion signal once the active blank-target structural lanes finish.
