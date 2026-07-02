@@ -115,3 +115,51 @@ Immediate repo implication:
   Qwen3-4B plus GPT-2 folded into blank SmolLM2-135M, then applies the current
   EoRA/GRAIL-style block-interface recovery with 1000 behavior probes and 1000
   generation prompts.
+
+## 2026-07-02 Research/Experiment Refresh
+
+Additional 2025-2026 source refresh keeps the main implementation path pointed
+at merge/fold/recombine before pruning:
+
+1. DOTResize (`2507.04517`) remains the closest primary-source match for
+   width reduction by neuron recombination instead of discard-only pruning. Its
+   practical implication for Neural Forge is that every compressed target layer
+   should preserve an all-source-to-survivor transport map, not just top-k
+   survivor rows.
+2. Cross-Tokenizer Distillation via Approximate Likelihood Matching
+   (`2503.20083`) supports the current ALM/chunk likelihood losses, especially
+   when source and target tokenizers differ. The new recovery drill calibration
+   file is intentionally prompt/response JSONL so ALM and child-token LM losses
+   can supervise exact arithmetic/code spans without reusing held-out eval rows.
+3. Cross-Architecture Merging for LLMs (`2602.05495`) directly supports
+   activation-space optimal transport for heterogeneous architectures and
+   capacities. This reinforces the current `activation-pca`,
+   activation-geometry layer grouping, and Sinkhorn transport lanes.
+4. EoRA-style post-compression error recovery remains useful as a lightweight
+   local correction layer, but the current experiments keep it behavior-gated
+   because local reconstruction/PPL gains have already proven insufficient.
+5. DERN-style expert/neuron recombination (`2025.findings-emnlp.820`) is useful
+   conceptually even outside MoE: recombine transferable neuron segments before
+   dropping anything. The analog in Neural Forge is MLP gate/up/down triplet
+   handling and module-output KD, not independent row pruning.
+
+New queued experiment:
+
+- `hf-build-recovery-calibration` generated `1800` non-eval drill rows:
+  arithmetic, tiny Python functions, tokenizer mismatch, model-surgery, and
+  commonsense.
+- `qwen4b_blank_best_drill_recover_gpu6_20260702` waits for the three
+  Qwen3-4B -> blank SmolLM2-135M EoRA/GRAIL lanes, exact-evals each candidate,
+  selects the best by behavior-first exact metrics, applies drill recovery, and
+  exact-evals the recovered model.
+
+Immediate next interpretation rule:
+
+- If drill recovery improves exact math/code but hurts commonsense/tokenizer
+  categories, split recovery batches by domain and lower domain-destructive LM
+  weights.
+- If exact behavior does not move while ALM/projected-vocab losses improve,
+  the next code change should be learned byte/codepoint probes or activation
+  interface reconstruction, not more PPL optimization.
+- If one RMS/transport initialization wins clearly before drill recovery, use
+  it as the new default for the next multi-donor and modality-graft lanes.

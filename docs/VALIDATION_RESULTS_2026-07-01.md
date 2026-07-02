@@ -355,3 +355,57 @@ Queued exact-generation comparison:
 - P40 GPUs were tested first but rejected for this Torch build because CUDA
   raised `no kernel image is available for execution on the device`; the P40
   eval attempts were killed and replaced with RTX/RTX8000 queues.
+
+## 2026-07-02 Recovery Drill Calibration And Blank Selector Queue
+
+Code revision: `65a6586` (`Add recovery calibration drill builder`).
+
+Implementation:
+
+- Added `hf-build-recovery-calibration`, which writes non-eval JSONL
+  prompt/response recovery rows for arithmetic, tiny Python functions,
+  tokenizer mismatch, model-surgery explanations, and commonsense.
+- The recovery rows are deliberately separate from the held-out exact-generation
+  eval suite so we can drill failure modes without evaluating on the same rows.
+- Validation passed locally (`138 passed`, `123 skipped`) and on the AI server
+  after deployment (`261 passed`).
+
+Generated remote calibration artifacts:
+
+- Drill file:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/recovery_drills_math_code_20260702.jsonl`.
+- Drill counts: `1200` math, `240` code, `120` tokenizer, `120`
+  model-surgery, `120` commonsense, `1800` total rows.
+- Combined recovery file:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/calibration_mix_plus_recovery_drills_20260702.jsonl`.
+- Combined count: original `1342` rows plus `1800` drill rows = `3142`
+  recovery rows.
+
+Queued blank-target selector/recovery experiment:
+
+- Queue PID: `2331766`.
+- Queue script:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_best_drill_recover_gpu6_20260702.queue.sh`.
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_best_drill_recover_gpu6_20260702.queue.log`.
+- It waits for the three strict blank-target Qwen3-4B -> blank
+  SmolLM2-135M lanes:
+  `qwen4b_blank_smollm_eora_grail_cosine_full_gpu6_20260702`,
+  `qwen4b_blank_smollm_eora_grail_source_rms_full_gpu4_20260702`, and
+  `qwen4b_blank_smollm_eora_grail_geomean_rms_full_gpu0_20260702`.
+- After those finish, it exact-evals each finished `models/02_alm` candidate on
+  `behavior_suite_exactgen_20260702.json` with `1000` behavior probes, `1000`
+  generation prompts, `250` choice probes, and `128` text/PPL items.
+- It ranks the three exact reports behavior-first, selects the best blank
+  candidate, then runs an additional ALM/projected-vocab/on-policy recovery pass
+  using `calibration_mix_plus_recovery_drills_20260702.jsonl`.
+- It exact-evals the drill-recovered model and writes a parent/before/after
+  rank report when the parent exact report is available.
+
+Interpretation:
+
+This is the first queued test that uses exact generation as the model-selection
+signal before drill recovery on the strict blank-target compression path. It
+should answer whether the new math/code recovery rows improve the useful
+behavior of a Qwen3-4B -> blank SmolLM2-135M candidate instead of only improving
+PPL or permissive generation-health metrics.
