@@ -1132,3 +1132,85 @@ Queued proof lane to run after the balanced signed quantile-medoid control:
   same as `qwen4b_blank_smollm_balanced_signed_cka_qmedoid_lrcguard_full_gpu4_20260702`,
   but with `INIT_DONOR_LAYER_GROUP_STRATEGY=activation-cka-weighted` and
   `BLOCK_DONOR_LAYER_GROUP_STRATEGY=activation-cka`.
+
+## CKA-Weighted Block Recovery Targets
+
+Extended `activation-cka-weighted` from donor init into block recovery.
+Previously, block recovery could cluster donor layers by activation CKA, but
+the hidden, delta, IO, module-output, teacher-generated, on-policy, and
+residual-compensation targets still folded every source layer uniformly. The
+new block recovery path uses the same per-group weights:
+
+`assignment_similarity * residual_delta_score`
+
+and normalizes them inside each donor-layer group. For `fold` mode, uniform
+weights preserve the old summed residual magnitude; skewed weights keep the
+merge-first fold while letting the stronger donor layer dominate the compacted
+teacher target.
+
+What changed:
+
+- `hf-xfamily-block-recover --donor-layer-group-strategy
+  activation-cka-weighted`
+- `hf-xfamily-chain-anchor-compress --block-donor-layer-group-strategy
+  activation-cka-weighted`
+- Weighted fold targets now flow through:
+  - block hidden/delta KD
+  - block IO reconstruction KD
+  - module-output KD
+  - focused hidden KD
+  - on-policy hidden KD
+  - teacher-generated hidden KD
+  - before/after block alignment metrics
+  - module residual compensation row collection
+- Per-layer reports now include `source_layer_group_weights`.
+- Fixed the signed/CKA queue wrapper inheritance bug: the base geomean queue
+  script now respects wrapper-provided environment variables instead of
+  overwriting them before launch.
+
+Validation:
+
+- Local compile:
+  `python -m py_compile src/neural_forge/hf_recovery.py src/neural_forge/cli.py`
+- Local full suite:
+  `147 passed, 151 skipped`
+- Remote focused Torch-backed tests:
+  `5 passed, 240 deselected`
+- Remote full suite:
+  `298 passed`
+- Remote queue syntax:
+  `bash -n` passed for the base signed/CKA queue, balanced signed wrapper,
+  init-weighted wrapper, and block-weighted wrapper.
+
+Corrected proof lanes queued behind the older already-started wrappers:
+
+- Corrected balanced signed control:
+  `qwen4b_blank_smollm_balanced_signed_cka_qmedoid_lrcguard_fixedenv_full_gpu4_20260702`
+  - Queue PID: `3511259`
+  - Waits behind older queue PID `3452698`
+  - Queue log:
+    `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_balanced_signed_cka_qmedoid_lrcguard_fixedenv_full_gpu4_20260702.queue.log`
+
+- Corrected init-weighted lane:
+  `qwen4b_blank_smollm_cka_weighted_balanced_qmedoid_fixedenv_full_gpu4_20260702`
+  - Queue PID: `3511261`
+  - Waits behind corrected balanced control PID `3511259`
+  - Queue log:
+    `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_cka_weighted_balanced_qmedoid_fixedenv_full_gpu4_20260702.queue.log`
+
+- New init-plus-block weighted lane:
+  `qwen4b_blank_smollm_cka_weighted_block_weighted_balanced_qmedoid_full_gpu4_20260702`
+  - Queue PID: `3511265`
+  - Waits behind corrected init-weighted PID `3511261`
+  - Queue script:
+    `experiments/queue_qwen4b_blank_smollm_cka_weighted_block_weighted_balanced_qmedoid_20260702.sh`
+  - Queue log:
+    `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_cka_weighted_block_weighted_balanced_qmedoid_full_gpu4_20260702.queue.log`
+
+Interpretation:
+
+- This is still not goal completion. It is a more faithful parent-to-blank-child
+  fold target and a corrected experiment queue.
+- The older queued wrapper processes were left running, per the no-kill rule.
+  The fixed-env lanes above provide the interpretable A/B evidence once GPU4
+  clears.

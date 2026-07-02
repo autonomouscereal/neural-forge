@@ -77,6 +77,7 @@ from neural_forge.hf_recovery import _eigenspace_low_rank_delta_map
 from neural_forge.hf_recovery import _low_rank_delta_map
 from neural_forge.hf_recovery import _scale_layer_residual_output_modules
 from neural_forge.hf_recovery import _source_group_delta_state
+from neural_forge.hf_recovery import _source_group_hidden_state
 from neural_forge.hf_recovery import _source_group_module_output_state
 from neural_forge.hf_recovery import _temporary_padding_side
 from neural_forge.hf_recovery import _tokenizer_first_byte_buckets
@@ -634,11 +635,25 @@ def test_cli_accepts_activation_cka_layer_group_strategy() -> None:
             "chain-out",
             "--init-donor-layer-group-strategy",
             "activation-cka-weighted",
+            "--block-donor-layer-group-strategy",
+            "activation-cka-weighted",
+        ]
+    )
+    weighted_block_args = parser.parse_args(
+        [
+            "hf-xfamily-block-recover",
+            "source-model",
+            "candidate-model",
+            "recovered-out",
+            "--donor-layer-group-strategy",
+            "activation-cka-weighted",
         ]
     )
 
     assert weighted_init_args.donor_layer_group_strategy == "activation-cka-weighted"
     assert weighted_chain_args.init_donor_layer_group_strategy == "activation-cka-weighted"
+    assert weighted_chain_args.block_donor_layer_group_strategy == "activation-cka-weighted"
+    assert weighted_block_args.donor_layer_group_strategy == "activation-cka-weighted"
 
 
 def test_cli_accepts_signed_activation_fold_assignment() -> None:
@@ -2011,6 +2026,26 @@ def test_source_group_delta_state_matches_fold_and_average_modes() -> None:
     assert representative.squeeze().tolist() == [2.0, 2.0]
 
 
+def test_source_group_state_uses_weighted_fold_targets() -> None:
+    torch = pytest.importorskip("torch")
+    hidden_states = [
+        torch.full((1, 1, 1), 0.0),
+        torch.full((1, 1, 1), 1.0),
+        torch.full((1, 1, 1), 3.0),
+        torch.full((1, 1, 1), 8.0),
+    ]
+
+    uniform_delta = _source_group_delta_state(torch, hidden_states, [1, 2], "fold", [0.5, 0.5])
+    skewed_delta = _source_group_delta_state(torch, hidden_states, [1, 2], "fold", [0.2, 0.8])
+    skewed_hidden = _source_group_hidden_state(torch, hidden_states, [1, 2], "fold", [0.2, 0.8])
+    weighted_average = _source_group_delta_state(torch, hidden_states, [1, 2], "average", [0.2, 0.8])
+
+    assert uniform_delta.squeeze().item() == pytest.approx(7.0)
+    assert skewed_delta.squeeze().item() == pytest.approx(8.8)
+    assert skewed_hidden.squeeze().item() == pytest.approx(9.8)
+    assert weighted_average.squeeze().item() == pytest.approx(4.4)
+
+
 def test_source_group_module_output_state_matches_fold_and_average_modes() -> None:
     torch = pytest.importorskip("torch")
     outputs = {
@@ -2025,6 +2060,20 @@ def test_source_group_module_output_state_matches_fold_and_average_modes() -> No
     assert folded.squeeze().tolist() == [7.0, 7.0]
     assert averaged.squeeze().tolist() == [3.5, 3.5]
     assert representative.squeeze().tolist() == [2.0, 2.0]
+
+
+def test_source_group_module_output_state_uses_weighted_fold_targets() -> None:
+    torch = pytest.importorskip("torch")
+    outputs = {
+        1: torch.full((1, 1, 1), 2.0),
+        2: torch.full((1, 1, 1), 8.0),
+    }
+
+    folded = _source_group_module_output_state(torch, outputs, [1, 2], "fold", [0.25, 0.75])
+    averaged = _source_group_module_output_state(torch, outputs, [1, 2], "average", [0.25, 0.75])
+
+    assert folded.squeeze().item() == pytest.approx(13.0)
+    assert averaged.squeeze().item() == pytest.approx(6.5)
 
 
 def test_activation_row_transport_loss_handles_permuted_rows() -> None:

@@ -1253,13 +1253,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     xfamily_block_recover.add_argument(
         "--donor-layer-group-strategy",
-        choices=["depth", "activation-energy", "activation-geometry", "activation-cka"],
+        choices=["depth", "activation-energy", "activation-geometry", "activation-cka", "activation-cka-weighted"],
         default="depth",
         help=(
             "How donor layers are grouped before block recovery. activation-energy uses teacher residual "
             "update norms on calibration batches instead of uniform depth bins; activation-geometry also weights "
             "CKA/cosine shift and residual novelty; activation-cka clusters teacher residual-update directions "
-            "by pairwise activation CKA so similar non-contiguous layers merge before folding."
+            "by pairwise activation CKA so similar non-contiguous layers merge before folding; "
+            "activation-cka-weighted also weights folded block recovery targets by assignment strength and novelty."
         ),
     )
     xfamily_block_recover.add_argument("--layer-limit", type=int)
@@ -1657,7 +1658,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--block-donor-layer-fold-mode", choices=["representative", "average", "fold"], default="fold")
     xfamily_chain.add_argument(
         "--block-donor-layer-group-strategy",
-        choices=["depth", "activation-energy", "activation-geometry", "activation-cka"],
+        choices=["depth", "activation-energy", "activation-geometry", "activation-cka", "activation-cka-weighted"],
         default="activation-energy",
     )
     xfamily_chain.add_argument("--block-layer-limit", type=int)

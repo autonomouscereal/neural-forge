@@ -2663,9 +2663,16 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("span_max_pairs must be positive.")
     if donor_layer_fold_mode not in {"representative", "average", "fold"}:
         raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
-    if donor_layer_group_strategy not in {"depth", "activation-energy", "activation-geometry", "activation-cka"}:
+    if donor_layer_group_strategy not in {
+        "depth",
+        "activation-energy",
+        "activation-geometry",
+        "activation-cka",
+        "activation-cka-weighted",
+    }:
         raise ValueError(
-            "donor_layer_group_strategy must be depth, activation-energy, activation-geometry, or activation-cka."
+            "donor_layer_group_strategy must be depth, activation-energy, activation-geometry, "
+            "activation-cka, or activation-cka-weighted."
         )
     if layer_limit is not None and layer_limit <= 0:
         raise ValueError("layer_limit must be positive when provided.")
@@ -3017,7 +3024,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             "total_geometry_score": float(sum(geometry_scores)),
             "layer_geometry": geometry["layer_geometry"],
         }
-    elif donor_layer_group_strategy == "activation-cka":
+    elif donor_layer_group_strategy in {"activation-cka", "activation-cka-weighted"}:
         cka = _source_layer_cka_groups_from_batches(
             torch,
             source,
@@ -3027,6 +3034,15 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         )
         full_source_layer_groups = cka["groups"]
         donor_layer_group_report = cka
+        if donor_layer_group_strategy == "activation-cka-weighted":
+            from neural_forge.hf_xfamily import _activation_cka_group_layer_weights
+
+            donor_layer_group_report = {
+                **cka,
+                "strategy": "activation-cka-weighted",
+                "group_layer_weights": _activation_cka_group_layer_weights(cka),
+                "group_layer_weight_mode": "assignment_similarity_times_delta_score",
+            }
 
     layer_count = len(candidate_layers) if layer_limit is None else min(int(layer_limit), len(candidate_layers))
     interval = int(report_interval or max(1, steps_per_layer // 4)) if steps_per_layer > 0 else 1
@@ -3085,6 +3101,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             candidate.train()
             layer_gate["initial_behavior"] = previous_gate_behavior
 
+    source_layer_group_weights_by_group = _source_layer_group_weight_lookup(donor_layer_group_report)
     for candidate_idx in range(layer_count):
         source_group = [int(item) for item in full_source_layer_groups[int(candidate_idx)]]
         representative_scores = donor_layer_group_report.get("representative_scores")
@@ -3095,6 +3112,11 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             [source_idx]
             if donor_layer_fold_mode == "representative"
             else source_group
+        )
+        source_group_weights = (
+            None
+            if donor_layer_fold_mode == "representative"
+            else source_layer_group_weights_by_group.get(tuple(int(item) for item in source_group))
         )
         layer_hidden_projection = hidden_projection
         layer_hidden_projection_report: dict[str, Any] | None = None
@@ -3181,6 +3203,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             donor_layer_fold_mode,
             block_target,
             span_max_pairs,
+            source_group_weights,
         )
         before_metrics = _cross_tokenizer_block_alignment_metrics(
             torch,
@@ -3217,6 +3240,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 hidden_projection=layer_hidden_projection,
                 canonical_fn=_canonical_token,
                 donor_layer_fold_mode=donor_layer_fold_mode,
+                source_layer_group_weights=source_group_weights,
                 fit_gate=pre_reconstruction_fit_gate,
                 fit_gate_validation_fraction=float(pre_reconstruction_validation_fraction),
                 fit_gate_min_validation_rows=int(pre_reconstruction_min_validation_rows),
@@ -3334,6 +3358,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 hidden_metric,
                 block_target,
                 span_max_pairs,
+                source_group_weights=source_group_weights,
                 span_pairs=block_span_pairs,
             )
             block_loss_value = float(loss.detach().cpu())
@@ -3347,6 +3372,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     source_group,
                     candidate_idx,
                     donor_layer_fold_mode,
+                    source_group_weights,
                     block_target,
                     block_span_pairs,
                     float(block_io_ridge),
@@ -3407,6 +3433,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     hidden_metric,
                     block_target,
                     span_max_pairs,
+                    source_group_weights=source_group_weights,
                     span_pairs=focus_pairs,
                 )
                 loss = loss + float(focused_block_hidden_kd_weight) * focused_block_hidden_loss
@@ -3572,6 +3599,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     layer_hidden_projection,
                     _canonical_token,
                     donor_layer_fold_mode,
+                    source_group_weights,
                     module_output_targets,
                     module_output_transport,
                     float(module_output_temperature),
@@ -3703,6 +3731,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     hidden_metric,
                     block_target,
                     span_max_pairs,
+                    source_layer_group_weights=source_group_weights,
                 )
                 loss = loss + float(on_policy_hidden_kd_weight) * on_policy_hidden_loss
             teacher_generate_lm_loss = None
@@ -3825,6 +3854,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                         hidden_metric,
                         block_target,
                         span_max_pairs,
+                        source_group_weights=source_group_weights,
                     )
                     loss = loss + float(teacher_generate_hidden_kd_weight) * teacher_generate_hidden_loss
             stepwise_donor_loss = None
@@ -4056,6 +4086,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             donor_layer_fold_mode,
             block_target,
             span_max_pairs,
+            source_group_weights,
         )
         after_metrics = _cross_tokenizer_block_alignment_metrics(
             torch,
@@ -4067,6 +4098,9 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             "candidate_layer": int(candidate_idx),
             "source_layer": int(source_idx),
             "source_layer_group": [int(item) for item in source_group],
+            "source_layer_group_weights": (
+                None if source_group_weights is None else [float(item) for item in source_group_weights]
+            ),
             "trainable_params": int(trainable_params),
             "steps": int(steps_per_layer),
             "skipped_steps": int(skipped_steps),
@@ -7510,32 +7544,111 @@ def _hidden_state_after_decoder_layer(hidden_states, layer_idx: int):
     return hidden_states[state_idx]
 
 
-def _source_group_hidden_state(torch, hidden_states, source_layer_group: Sequence[int], donor_layer_fold_mode: str):
+def _normalized_source_group_weights(
+    source_layer_group: Sequence[int],
+    source_layer_group_weights: Sequence[float] | None,
+) -> list[float] | None:
+    if source_layer_group_weights is None:
+        return None
+    group = [int(item) for item in source_layer_group]
+    weights = [float(item) for item in source_layer_group_weights]
+    if len(group) <= 1 or len(weights) != len(group):
+        return None
+    clean = [max(0.0, weight) if math.isfinite(weight) else 0.0 for weight in weights]
+    total = sum(clean)
+    if total <= 0:
+        return None
+    return [weight / total for weight in clean]
+
+
+def _source_layer_group_weight_lookup(report: dict[str, Any]) -> dict[tuple[int, ...], list[float]]:
+    groups = report.get("groups") or []
+    weights = report.get("group_layer_weights") or []
+    lookup: dict[tuple[int, ...], list[float]] = {}
+    for group, group_weights in zip(groups, weights, strict=False):
+        key = tuple(int(item) for item in group)
+        values = [float(item) for item in group_weights]
+        if key and len(key) == len(values):
+            lookup[key] = values
+    return lookup
+
+
+def _weighted_state_sum(torch, states: Sequence[Any], weights: Sequence[float], scale: float = 1.0):
+    if not states:
+        raise ValueError("Need at least one state to fold.")
+    values = [state.to(torch.float32) for state in states]
+    weight_tensor = torch.tensor(
+        [float(item) for item in weights],
+        dtype=torch.float32,
+        device=values[0].device,
+    )
+    view_shape = [len(values)] + [1] * values[0].dim()
+    return (torch.stack(values, dim=0) * weight_tensor.view(*view_shape)).sum(dim=0) * float(scale)
+
+
+def _source_group_hidden_state(
+    torch,
+    hidden_states,
+    source_layer_group: Sequence[int],
+    donor_layer_fold_mode: str,
+    source_layer_group_weights: Sequence[float] | None = None,
+):
     if not source_layer_group:
         raise ValueError("Need at least one source layer for blockwise reconstruction.")
     group = [int(item) for item in source_layer_group]
+    weights = _normalized_source_group_weights(group, source_layer_group_weights)
     if donor_layer_fold_mode == "average" and len(group) > 1:
         states = [_hidden_state_after_decoder_layer(hidden_states, idx).to(torch.float32) for idx in group]
+        if weights is not None:
+            return _weighted_state_sum(torch, states, weights)
         return torch.stack(states, dim=0).mean(dim=0)
+    if donor_layer_fold_mode == "fold" and len(group) > 1 and weights is not None:
+        start_idx = min(group)
+        deltas = [
+            (_hidden_state_after_decoder_layer(hidden_states, idx) - hidden_states[int(idx)]).to(torch.float32)
+            for idx in group
+        ]
+        return hidden_states[int(start_idx)].to(torch.float32) + _weighted_state_sum(
+            torch,
+            deltas,
+            weights,
+            scale=len(group),
+        )
     source_idx = group[0] if donor_layer_fold_mode == "representative" else max(group)
     return _hidden_state_after_decoder_layer(hidden_states, source_idx)
 
 
-def _source_group_input_state(torch, hidden_states, source_layer_group: Sequence[int], donor_layer_fold_mode: str):
+def _source_group_input_state(
+    torch,
+    hidden_states,
+    source_layer_group: Sequence[int],
+    donor_layer_fold_mode: str,
+    source_layer_group_weights: Sequence[float] | None = None,
+):
     if not source_layer_group:
         raise ValueError("Need at least one source layer for blockwise reconstruction.")
     group = [int(item) for item in source_layer_group]
+    weights = _normalized_source_group_weights(group, source_layer_group_weights)
     if donor_layer_fold_mode == "average" and len(group) > 1:
         states = [hidden_states[int(idx)].to(torch.float32) for idx in group]
+        if weights is not None:
+            return _weighted_state_sum(torch, states, weights)
         return torch.stack(states, dim=0).mean(dim=0)
     source_idx = group[0] if donor_layer_fold_mode == "representative" else min(group)
     return hidden_states[int(source_idx)]
 
 
-def _source_group_delta_state(torch, hidden_states, source_layer_group: Sequence[int], donor_layer_fold_mode: str):
+def _source_group_delta_state(
+    torch,
+    hidden_states,
+    source_layer_group: Sequence[int],
+    donor_layer_fold_mode: str,
+    source_layer_group_weights: Sequence[float] | None = None,
+):
     if not source_layer_group:
         raise ValueError("Need at least one source layer for blockwise reconstruction.")
     group = [int(item) for item in source_layer_group]
+    weights = _normalized_source_group_weights(group, source_layer_group_weights)
     if donor_layer_fold_mode == "average" and len(group) > 1:
         deltas = [
             (
@@ -7544,7 +7657,18 @@ def _source_group_delta_state(torch, hidden_states, source_layer_group: Sequence
             ).to(torch.float32)
             for idx in group
         ]
+        if weights is not None:
+            return _weighted_state_sum(torch, deltas, weights)
         return torch.stack(deltas, dim=0).mean(dim=0)
+    if donor_layer_fold_mode == "fold" and len(group) > 1 and weights is not None:
+        deltas = [
+            (
+                _hidden_state_after_decoder_layer(hidden_states, idx)
+                - hidden_states[int(idx)]
+            ).to(torch.float32)
+            for idx in group
+        ]
+        return _weighted_state_sum(torch, deltas, weights, scale=len(group))
     source_idx = group[0] if donor_layer_fold_mode == "representative" else max(group)
     start_idx = source_idx if donor_layer_fold_mode == "representative" else min(group)
     return _hidden_state_after_decoder_layer(hidden_states, source_idx) - hidden_states[int(start_idx)]
@@ -7600,6 +7724,7 @@ def _cross_tokenizer_block_hidden_loss(
     hidden_metric: str,
     block_target: str,
     span_max_pairs: int,
+    source_layer_group_weights: Sequence[float] | None = None,
     span_pairs=None,
 ):
     if block_target not in {"hidden", "delta"}:
@@ -7621,10 +7746,22 @@ def _cross_tokenizer_block_hidden_loss(
         return torch.zeros((), dtype=student.logits.dtype, device=device), 0
     if block_target == "delta":
         candidate_hidden = _candidate_layer_delta_state(student.hidden_states, candidate_layer_idx)
-        source_hidden = _source_group_delta_state(torch, teacher.hidden_states, source_layer_group, donor_layer_fold_mode)
+        source_hidden = _source_group_delta_state(
+            torch,
+            teacher.hidden_states,
+            source_layer_group,
+            donor_layer_fold_mode,
+            source_layer_group_weights,
+        )
     else:
         candidate_hidden = _hidden_state_after_decoder_layer(student.hidden_states, candidate_layer_idx)
-        source_hidden = _source_group_hidden_state(torch, teacher.hidden_states, source_layer_group, donor_layer_fold_mode)
+        source_hidden = _source_group_hidden_state(
+            torch,
+            teacher.hidden_states,
+            source_layer_group,
+            donor_layer_fold_mode,
+            source_layer_group_weights,
+        )
     student_rows, teacher_rows, row_count = _span_aligned_hidden_rows(torch, candidate_hidden, source_hidden, pairs)
     if int(row_count) <= 0:
         return torch.zeros((), dtype=student.logits.dtype, device=student.logits.device), 0
@@ -7645,6 +7782,7 @@ def _cross_tokenizer_block_io_reconstruction_loss(
     source_layer_group: Sequence[int],
     candidate_layer_idx: int,
     donor_layer_fold_mode: str,
+    source_layer_group_weights: Sequence[float] | None,
     block_target: str,
     span_pairs,
     ridge: float,
@@ -7660,7 +7798,13 @@ def _cross_tokenizer_block_io_reconstruction_loss(
         return torch.zeros((), dtype=student.logits.dtype, device=student.logits.device), 0
 
     candidate_input = student.hidden_states[int(candidate_layer_idx)]
-    source_input = _source_group_input_state(torch, teacher.hidden_states, source_layer_group, donor_layer_fold_mode)
+    source_input = _source_group_input_state(
+        torch,
+        teacher.hidden_states,
+        source_layer_group,
+        donor_layer_fold_mode,
+        source_layer_group_weights,
+    )
     candidate_input_rows, source_input_rows, input_count = _span_aligned_hidden_rows(
         torch,
         candidate_input,
@@ -7672,10 +7816,22 @@ def _cross_tokenizer_block_io_reconstruction_loss(
 
     if block_target == "delta":
         candidate_output = _candidate_layer_delta_state(student.hidden_states, candidate_layer_idx)
-        source_output = _source_group_delta_state(torch, teacher.hidden_states, source_layer_group, donor_layer_fold_mode)
+        source_output = _source_group_delta_state(
+            torch,
+            teacher.hidden_states,
+            source_layer_group,
+            donor_layer_fold_mode,
+            source_layer_group_weights,
+        )
     else:
         candidate_output = _hidden_state_after_decoder_layer(student.hidden_states, candidate_layer_idx)
-        source_output = _source_group_hidden_state(torch, teacher.hidden_states, source_layer_group, donor_layer_fold_mode)
+        source_output = _source_group_hidden_state(
+            torch,
+            teacher.hidden_states,
+            source_layer_group,
+            donor_layer_fold_mode,
+            source_layer_group_weights,
+        )
     candidate_output_rows, source_output_rows, output_count = _span_aligned_hidden_rows(
         torch,
         candidate_output,
@@ -7713,18 +7869,24 @@ def _source_group_module_output_state(
     module_outputs: dict[int, Any],
     source_layer_group: Sequence[int],
     donor_layer_fold_mode: str,
+    source_layer_group_weights: Sequence[float] | None = None,
 ):
     if not source_layer_group:
         raise ValueError("Need at least one source layer for module-output folding.")
     group = [int(item) for item in source_layer_group]
+    weights = _normalized_source_group_weights(group, source_layer_group_weights)
     missing = [idx for idx in group if idx not in module_outputs]
     if missing:
         raise ValueError(f"Missing module outputs for source layers: {missing}")
     if donor_layer_fold_mode == "average" and len(group) > 1:
         values = [module_outputs[idx].to(torch.float32) for idx in group]
+        if weights is not None:
+            return _weighted_state_sum(torch, values, weights)
         return torch.stack(values, dim=0).mean(dim=0)
     if donor_layer_fold_mode == "fold" and len(group) > 1:
         values = [module_outputs[idx].to(torch.float32) for idx in group]
+        if weights is not None:
+            return _weighted_state_sum(torch, values, weights, scale=len(group))
         return torch.stack(values, dim=0).sum(dim=0)
     idx = group[0] if donor_layer_fold_mode == "representative" else max(group)
     return module_outputs[idx].to(torch.float32)
@@ -7809,6 +7971,7 @@ def _cross_tokenizer_block_module_output_loss(
     hidden_projection,
     canonical_fn,
     donor_layer_fold_mode: str,
+    source_layer_group_weights: Sequence[float] | None,
     module_output_targets: str,
     module_output_transport: str,
     module_output_temperature: float,
@@ -7922,6 +8085,7 @@ def _cross_tokenizer_block_module_output_loss(
             available,
             group,
             donor_layer_fold_mode,
+            source_layer_group_weights,
         )
         student_rows, teacher_rows, row_count = _projected_module_rows_for_pairs(
             torch,
@@ -7968,6 +8132,7 @@ def _cross_tokenizer_block_on_policy_hidden_loss(
     hidden_metric: str,
     block_target: str,
     span_max_pairs: int,
+    source_layer_group_weights: Sequence[float] | None = None,
 ):
     if max_new_tokens <= 0:
         raise ValueError("max_new_tokens must be positive.")
@@ -8062,6 +8227,7 @@ def _cross_tokenizer_block_on_policy_hidden_loss(
         hidden_metric,
         block_target,
         span_max_pairs,
+        source_layer_group_weights=source_layer_group_weights,
     )
 
 
@@ -8116,6 +8282,7 @@ def _cross_tokenizer_block_alignment_state(
     donor_layer_fold_mode: str,
     block_target: str,
     span_max_pairs: int,
+    source_layer_group_weights: Sequence[float] | None = None,
 ) -> dict[str, Any]:
     if block_target not in {"hidden", "delta"}:
         raise ValueError("block_target must be hidden or delta.")
@@ -8156,6 +8323,7 @@ def _cross_tokenizer_block_alignment_state(
                     teacher.hidden_states,
                     source_layer_group,
                     donor_layer_fold_mode,
+                    source_layer_group_weights,
                 )
             else:
                 candidate_hidden = _hidden_state_after_decoder_layer(student.hidden_states, candidate_layer_idx)
@@ -8164,6 +8332,7 @@ def _cross_tokenizer_block_alignment_state(
                     teacher.hidden_states,
                     source_layer_group,
                     donor_layer_fold_mode,
+                    source_layer_group_weights,
                 )
             batch_candidate, batch_source, rows = _span_aligned_hidden_rows(torch, candidate_hidden, source_hidden, pairs)
             if int(rows) <= 0:
@@ -8266,6 +8435,7 @@ def _apply_layer_residual_magnitude_compensation(
     candidate=None,
     source_layers: Sequence[Any] | None = None,
     source_layer_group: Sequence[int] | None = None,
+    source_layer_group_weights: Sequence[float] | None = None,
     source_attention_layer=None,
     source_mlp_layer=None,
     source_tokenizer=None,
@@ -8296,6 +8466,7 @@ def _apply_layer_residual_magnitude_compensation(
             candidate,
             source_layers,
             source_layer_group,
+            source_layer_group_weights,
             source_attention_layer,
             source_mlp_layer,
             layer,
@@ -8469,6 +8640,7 @@ def _apply_layer_module_residual_compensation(
     candidate,
     source_layers: Sequence[Any] | None,
     source_layer_group: Sequence[int] | None,
+    source_layer_group_weights: Sequence[float] | None,
     source_attention_layer,
     source_mlp_layer,
     candidate_layer,
@@ -8526,6 +8698,7 @@ def _apply_layer_module_residual_compensation(
             candidate,
             source_layers,
             source_layer_group,
+            source_layer_group_weights,
             source_attention_layer,
             candidate_layer,
             source_tokenizer,
@@ -8551,6 +8724,7 @@ def _apply_layer_module_residual_compensation(
             candidate,
             source_layers,
             source_layer_group,
+            source_layer_group_weights,
             source_mlp_layer,
             candidate_layer,
             source_tokenizer,
@@ -8583,6 +8757,7 @@ def _apply_attention_residual_output_compensation(
     candidate,
     source_layers: Sequence[Any] | None,
     source_layer_group: Sequence[int] | None,
+    source_layer_group_weights: Sequence[float] | None,
     source_layer,
     candidate_layer,
     source_tokenizer,
@@ -8616,6 +8791,7 @@ def _apply_attention_residual_output_compensation(
         candidate,
         source_layers,
         source_layer_group,
+        source_layer_group_weights,
         source_layer,
         candidate_layer,
         "attention",
@@ -8671,6 +8847,7 @@ def _apply_mlp_residual_output_compensation(
     candidate,
     source_layers: Sequence[Any] | None,
     source_layer_group: Sequence[int] | None,
+    source_layer_group_weights: Sequence[float] | None,
     source_layer,
     candidate_layer,
     source_tokenizer,
@@ -8704,6 +8881,7 @@ def _apply_mlp_residual_output_compensation(
         candidate,
         source_layers,
         source_layer_group,
+        source_layer_group_weights,
         source_layer,
         candidate_layer,
         "mlp",
@@ -8759,6 +8937,7 @@ def _collect_cross_tokenizer_module_output_alignment_rows(
     candidate,
     source_layers: Sequence[Any] | None,
     source_layer_group: Sequence[int] | None,
+    source_layer_group_weights: Sequence[float] | None,
     source_layer,
     candidate_layer,
     target: str,
@@ -8858,6 +9037,7 @@ def _collect_cross_tokenizer_module_output_alignment_rows(
                 source_captured,
                 group,
                 donor_layer_fold_mode,
+                source_layer_group_weights,
             )
             candidate_rows, projected_rows, matched = _projected_module_rows_for_pairs(
                 torch,
