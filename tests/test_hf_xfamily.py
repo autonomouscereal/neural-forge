@@ -7570,6 +7570,10 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "domain-balanced",
             "--grad-clip",
             "0.7",
+            "--nonfinite-step-policy",
+            "skip-step",
+            "--max-nonfinite-steps-per-layer",
+            "4",
             "--report-interval",
             "2",
             "--save-best-layer-loss",
@@ -7678,6 +7682,8 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "calibration_texts": ["block text"],
         "calibration_order": "domain-balanced",
         "grad_clip": 0.7,
+        "nonfinite_step_policy": "skip-step",
+        "max_nonfinite_steps_per_layer": 4,
         "report_interval": 2,
         "save_best_layer_loss": True,
         "save_best_layer_behavior": True,
@@ -8378,6 +8384,10 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "9",
             "--block-projected-vocab-max-source-tokens",
             "11",
+            "--block-nonfinite-step-policy",
+            "skip-step",
+            "--block-max-nonfinite-steps-per-layer",
+            "5",
             "--block-save-best-layer-behavior",
             "--block-calibration-order",
             "domain-balanced",
@@ -8560,6 +8570,8 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["block_module_output_temperature"] == 1.7
     assert captured["block_module_output_sinkhorn_iterations"] == 9
     assert captured["block_projected_vocab_max_source_tokens"] == 11
+    assert captured["block_nonfinite_step_policy"] == "skip-step"
+    assert captured["block_max_nonfinite_steps_per_layer"] == 5
     assert captured["block_save_best_layer_behavior"] is True
     assert captured["block_calibration_order"] == "domain-balanced"
     assert captured["alm_steps"] == 40

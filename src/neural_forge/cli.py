@@ -1446,6 +1446,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Order recovery calibration texts as provided or round-robin by keyword-inferred domain.",
     )
     xfamily_block_recover.add_argument("--grad-clip", type=float, default=1.0)
+    xfamily_block_recover.add_argument(
+        "--nonfinite-step-policy",
+        choices=["raise", "skip-step"],
+        default="raise",
+        help="Abort on non-finite blockwise losses/gradients/parameters, or skip the bad optimizer step.",
+    )
+    xfamily_block_recover.add_argument(
+        "--max-nonfinite-steps-per-layer",
+        type=int,
+        default=0,
+        help="Maximum skipped non-finite steps per layer when --nonfinite-step-policy=skip-step; 0 means no cap.",
+    )
     xfamily_block_recover.add_argument("--report-interval", type=int)
     xfamily_block_recover.add_argument("--save-best-layer-loss", action="store_true")
     xfamily_block_recover.add_argument(
@@ -1684,6 +1696,18 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--block-module-output-temperature", type=float, default=1.0)
     xfamily_chain.add_argument("--block-module-output-sinkhorn-iterations", type=int, default=12)
     xfamily_chain.add_argument("--block-projected-vocab-max-source-tokens", type=int, default=8)
+    xfamily_chain.add_argument(
+        "--block-nonfinite-step-policy",
+        choices=["raise", "skip-step"],
+        default="raise",
+        help="Abort block recovery on non-finite steps, or skip the bad step and continue.",
+    )
+    xfamily_chain.add_argument(
+        "--block-max-nonfinite-steps-per-layer",
+        type=int,
+        default=0,
+        help="Maximum skipped non-finite block steps per layer when policy is skip-step; 0 means no cap.",
+    )
     xfamily_chain.add_argument("--block-save-best-layer-loss", action="store_true")
     xfamily_chain.add_argument("--block-save-best-layer-behavior", action="store_true")
     xfamily_chain.add_argument("--block-layer-behavior-eval-interval", type=int)
@@ -2889,6 +2913,8 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
         calibration_order=args.calibration_order,
         grad_clip=args.grad_clip,
+        nonfinite_step_policy=args.nonfinite_step_policy,
+        max_nonfinite_steps_per_layer=args.max_nonfinite_steps_per_layer,
         report_interval=args.report_interval,
         save_best_layer_loss=args.save_best_layer_loss,
         save_best_layer_behavior=args.save_best_layer_behavior,
@@ -3037,6 +3063,8 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         block_module_output_temperature=args.block_module_output_temperature,
         block_module_output_sinkhorn_iterations=args.block_module_output_sinkhorn_iterations,
         block_projected_vocab_max_source_tokens=args.block_projected_vocab_max_source_tokens,
+        block_nonfinite_step_policy=args.block_nonfinite_step_policy,
+        block_max_nonfinite_steps_per_layer=args.block_max_nonfinite_steps_per_layer,
         block_save_best_layer_loss=args.block_save_best_layer_loss,
         block_save_best_layer_behavior=args.block_save_best_layer_behavior,
         block_layer_behavior_eval_interval=args.block_layer_behavior_eval_interval,

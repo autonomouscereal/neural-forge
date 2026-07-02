@@ -549,27 +549,37 @@ def recover_causal_lm(
     return report
 
 
-def _raise_if_nonfinite_gradients(torch, model, step: int) -> None:
+def _nonfinite_gradient_names(torch, model, limit: int = 5) -> list[str]:
     bad = []
     for name, param in model.named_parameters():
         if not param.requires_grad or param.grad is None:
             continue
         if not bool(torch.isfinite(param.grad).all().detach().cpu()):
             bad.append(name)
-            if len(bad) >= 5:
+            if len(bad) >= limit:
                 break
+    return bad
+
+
+def _raise_if_nonfinite_gradients(torch, model, step: int) -> None:
+    bad = _nonfinite_gradient_names(torch, model)
     if bad:
         joined = ", ".join(bad)
         raise RuntimeError(f"Non-finite recovery gradients at step {step}: {joined}")
 
 
-def _raise_if_nonfinite_parameters(torch, model, step: int) -> None:
+def _nonfinite_parameter_names(torch, model, limit: int = 5) -> list[str]:
     bad = []
     for name, param in model.named_parameters():
         if not bool(torch.isfinite(param.data).all().detach().cpu()):
             bad.append(name)
-            if len(bad) >= 5:
+            if len(bad) >= limit:
                 break
+    return bad
+
+
+def _raise_if_nonfinite_parameters(torch, model, step: int) -> None:
+    bad = _nonfinite_parameter_names(torch, model)
     if bad:
         joined = ", ".join(bad)
         raise RuntimeError(f"Non-finite recovery parameters after step {step}: {joined}")
@@ -2556,6 +2566,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     calibration_texts: Sequence[str] | None = None,
     calibration_order: str = "original",
     grad_clip: float = 1.0,
+    nonfinite_step_policy: str = "raise",
+    max_nonfinite_steps_per_layer: int = 0,
     report_interval: int | None = None,
     save_best_layer_loss: bool = False,
     save_best_layer_behavior: bool = False,
@@ -2641,6 +2653,10 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("pre_reconstruction_min_relative_improvement must be non-negative.")
     if pre_reconstruction_max_cosine_drop < 0:
         raise ValueError("pre_reconstruction_max_cosine_drop must be non-negative.")
+    if nonfinite_step_policy not in {"raise", "skip-step"}:
+        raise ValueError("nonfinite_step_policy must be raise or skip-step.")
+    if max_nonfinite_steps_per_layer < 0:
+        raise ValueError("max_nonfinite_steps_per_layer must be non-negative.")
     if max_anchors <= 0:
         raise ValueError("max_anchors must be positive.")
     if span_max_pairs <= 0:
@@ -3210,6 +3226,11 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             )
         losses = []
         skipped_steps = 0
+        nonfinite_step_count = 0
+        nonfinite_loss_steps = 0
+        nonfinite_gradient_steps = 0
+        nonfinite_parameter_steps = 0
+        nonfinite_events: list[dict[str, Any]] = []
         best_loss = None
         best_step = None
         best_state = None
@@ -3246,6 +3267,35 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         for step in range(1, steps_per_layer + 1):
             source_batch, candidate_batch = paired_batches[(step - 1) % len(paired_batches)]
             optimizer.zero_grad(set_to_none=True)
+            def handle_nonfinite_step(kind: str, names: Sequence[str] | None = None) -> bool:
+                nonlocal nonfinite_step_count
+                nonfinite_step_count += 1
+                event = {
+                    "layer": int(candidate_idx),
+                    "step": int(step),
+                    "kind": kind,
+                    "names": list(names or []),
+                }
+                nonfinite_events.append(event)
+                over_limit = (
+                    max_nonfinite_steps_per_layer > 0
+                    and nonfinite_step_count > int(max_nonfinite_steps_per_layer)
+                )
+                if nonfinite_step_policy == "raise" or over_limit:
+                    joined = ", ".join(names or [])
+                    suffix = f": {joined}" if joined else ""
+                    raise RuntimeError(
+                        f"Non-finite blockwise reconstruction {kind} at layer {candidate_idx}, "
+                        f"step {step}{suffix}; aborting."
+                    )
+                optimizer.zero_grad(set_to_none=True)
+                print(
+                    f"xfamily_block_nonfinite_skip layer={candidate_idx} step={step} "
+                    f"kind={kind} count={nonfinite_step_count} names={','.join(names or [])}",
+                    flush=True,
+                )
+                return True
+
             with torch.no_grad():
                 teacher = source(
                     **_model_forward_inputs(source_batch),
@@ -3806,15 +3856,30 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 )
                 loss = loss + float(stepwise_donor_kd_weight) * stepwise_donor_loss
             if not bool(torch.isfinite(loss).detach().cpu()):
-                raise RuntimeError(
-                    f"Non-finite blockwise reconstruction loss at layer {candidate_idx}, step {step}; aborting."
-                )
+                nonfinite_loss_steps += 1
+                handle_nonfinite_step("loss")
+                continue
             loss.backward()
-            _raise_if_nonfinite_gradients(torch, candidate, step)
+            bad_gradient_names = _nonfinite_gradient_names(torch, candidate)
+            if bad_gradient_names:
+                nonfinite_gradient_steps += 1
+                handle_nonfinite_step("gradients", bad_gradient_names)
+                continue
             if grad_clip > 0:
                 torch.nn.utils.clip_grad_norm_(optimizer_params, grad_clip)
+            pre_step_state = (
+                _snapshot_named_module_states(snapshot_modules)
+                if nonfinite_step_policy == "skip-step"
+                else None
+            )
             optimizer.step()
-            _raise_if_nonfinite_parameters(torch, candidate, step)
+            bad_parameter_names = _nonfinite_parameter_names(torch, candidate)
+            if bad_parameter_names:
+                nonfinite_parameter_steps += 1
+                if pre_step_state is not None:
+                    _restore_named_module_states(snapshot_modules, pre_step_state)
+                handle_nonfinite_step("parameters", bad_parameter_names)
+                continue
             loss_value = float(loss.detach().cpu())
             lm_loss_value = None if lm_loss is None else float(lm_loss.detach().cpu())
             response_lm_loss_value = None if response_lm_loss is None else float(response_lm_loss.detach().cpu())
@@ -4005,6 +4070,13 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             "trainable_params": int(trainable_params),
             "steps": int(steps_per_layer),
             "skipped_steps": int(skipped_steps),
+            "nonfinite_step_policy": nonfinite_step_policy,
+            "max_nonfinite_steps_per_layer": int(max_nonfinite_steps_per_layer),
+            "nonfinite_steps": int(nonfinite_step_count),
+            "nonfinite_loss_steps": int(nonfinite_loss_steps),
+            "nonfinite_gradient_steps": int(nonfinite_gradient_steps),
+            "nonfinite_parameter_steps": int(nonfinite_parameter_steps),
+            "nonfinite_events": nonfinite_events,
             "losses": losses,
             "best_loss": best_loss,
             "best_step": best_step,
@@ -4237,6 +4309,16 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "torch_dtype": torch_dtype,
         "candidate_torch_dtype": candidate_torch_dtype,
         "grad_clip": float(grad_clip),
+        "nonfinite_step_policy": nonfinite_step_policy,
+        "max_nonfinite_steps_per_layer": int(max_nonfinite_steps_per_layer),
+        "nonfinite_steps": sum(int(item.get("nonfinite_steps", 0) or 0) for item in layer_reports),
+        "nonfinite_loss_steps": sum(int(item.get("nonfinite_loss_steps", 0) or 0) for item in layer_reports),
+        "nonfinite_gradient_steps": sum(
+            int(item.get("nonfinite_gradient_steps", 0) or 0) for item in layer_reports
+        ),
+        "nonfinite_parameter_steps": sum(
+            int(item.get("nonfinite_parameter_steps", 0) or 0) for item in layer_reports
+        ),
         "report_interval": int(interval),
         "save_best_layer_loss": bool(save_best_layer_loss),
         "save_best_layer_behavior": bool(save_best_layer_behavior),

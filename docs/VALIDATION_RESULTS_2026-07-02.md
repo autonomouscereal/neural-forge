@@ -230,6 +230,54 @@ Queued proof lane:
 - Current status at queue start:
   waiting for prior PID `3218886`.
 
+## Non-Finite Block Recovery Guard
+
+The source-rms and cosine EoRA/GRAIL blank-SmolLM lanes both reached block
+recovery layer 6 and then aborted with non-finite gradients in attention and
+MLP projection weights. This was a recovery stability failure after a useful
+merge/fold init signal, not a reason to abandon the structural lane.
+
+What changed:
+
+- `hf-xfamily-block-recover --nonfinite-step-policy {raise,skip-step}`
+- `hf-xfamily-block-recover --max-nonfinite-steps-per-layer`
+- `hf-xfamily-chain-anchor-compress --block-nonfinite-step-policy`
+- `hf-xfamily-chain-anchor-compress --block-max-nonfinite-steps-per-layer`
+- In `skip-step` mode, block recovery skips a non-finite loss or gradient step
+  before the optimizer update. If parameters become non-finite after an update,
+  the pre-step block state is restored and the step is skipped.
+- Reports now include per-layer and aggregate non-finite loss, gradient, and
+  parameter step counts.
+
+Validation:
+
+- Local focused handler tests:
+  `2 passed, 236 deselected`
+- Local adjacent focused tests:
+  `3 passed, 1 skipped, 234 deselected`
+- Local full suite:
+  `146 passed, 145 skipped`
+- Remote compile, focused tests, and launcher syntax checks:
+  `2 passed, 236 deselected`; `4 passed, 234 deselected`;
+  `bash -n` passed for the true-LRC launcher, LRC-guard queue, and non-finite
+  LRC-guard queue.
+- Remote full suite:
+  `291 passed`
+
+Queued stabilized proof lane:
+
+- Tag:
+  `qwen4b_blank_smollm_signed_cka_rms_lrcguard_nonfinite_geomean_full_gpu4_20260702`
+- Queue PID: `3325882`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_signed_cka_rms_lrcguard_nonfinite_geomean_full_gpu4_20260702.queue.log`
+- Dependency:
+  waits behind existing LRC-guard queue PID `3270254`.
+- Recipe:
+  signed activation-CKA + fold-RMS geomean true-LRC/EoRA/GRAIL chain,
+  `LRC_MAX_DELTA_RMS_RATIO=1.5`, and
+  `BLOCK_NONFINITE_STEP_POLICY=skip-step`.
+
 ## Answer-Boundary Margin Recovery
 
 Added an opt-in ALM recovery loss aimed at the current exact-answer failure:
