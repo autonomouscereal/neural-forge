@@ -109,6 +109,7 @@ from neural_forge.hf_xfamily import _assign_donor_to_host
 from neural_forge.hf_xfamily import _activation_medoid_support_indices
 from neural_forge.hf_xfamily import _activation_quantile_medoid_support_indices
 from neural_forge.hf_xfamily import _activation_quantile_support_indices
+from neural_forge.hf_xfamily import _activation_diverse_medoid_support_indices
 from neural_forge.hf_xfamily import _activation_layer_geometry_scores
 from neural_forge.hf_xfamily import _activation_similarity_assignment
 from neural_forge.hf_xfamily import _activation_signed_similarity_assignment
@@ -3673,6 +3674,28 @@ def test_quantile_medoid_support_uses_real_representatives_per_weight_stratum() 
     assert support.tolist() == [1, 3, 5]
 
 
+def test_diverse_medoid_support_covers_activation_geometry() -> None:
+    torch = pytest.importorskip("torch")
+    features = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.98, 0.02],
+            [0.0, 1.0],
+            [0.02, 0.98],
+            [-1.0, 0.0],
+            [-0.98, 0.02],
+        ],
+        dtype=torch.float32,
+    )
+    weights = torch.tensor([10.0, 9.0, 1.0, 1.0, 8.0, 7.0], dtype=torch.float32)
+
+    support = _activation_diverse_medoid_support_indices(torch, features, weights, target_dim=3)
+
+    assert 0 in support.tolist()
+    assert any(idx in support.tolist() for idx in [2, 3])
+    assert any(idx in support.tolist() for idx in [4, 5])
+
+
 def test_transport_fold_can_use_quantile_support() -> None:
     torch = pytest.importorskip("torch")
     cache = {}
@@ -3789,6 +3812,47 @@ def test_transport_fold_can_use_quantile_medoid_support() -> None:
     assert diagnostics["target_load_l1_error"] < 0.05
     assert diagnostics["row_entropy_normalized_mean"] >= 0.0
     assert diagnostics["weighted_transport_cost_mean"] < 1.0
+
+
+def test_transport_fold_can_use_diverse_medoid_support() -> None:
+    torch = pytest.importorskip("torch")
+    cache = {}
+    features = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.98, 0.02],
+            [0.0, 1.0],
+            [0.02, 0.98],
+            [-1.0, 0.0],
+            [-0.98, 0.02],
+        ],
+        dtype=torch.float32,
+    )
+    weights = torch.tensor([10.0, 9.0, 1.0, 1.0, 8.0, 7.0], dtype=torch.float32)
+    source = torch.arange(6, dtype=torch.float32).unsqueeze(1)
+
+    folded = _resize_tensor_axis_mean_fold(
+        torch,
+        source,
+        axis=0,
+        target_dim=3,
+        fold_mode="transport",
+        weights=weights,
+        features=features,
+        transport_backend="sinkhorn",
+        transport_support="diverse-medoid",
+        assignment_cache=cache,
+        assignment_cache_key=("hidden", "diverse-medoid-support-test"),
+    )
+
+    assert folded.shape == (3, 1)
+    transport = next(iter(cache.values()))
+    assert transport["transport_support"] == "diverse-medoid"
+    support = transport["target_support_indices"].tolist()
+    assert 0 in support
+    assert any(idx in support for idx in [2, 3])
+    assert any(idx in support for idx in [4, 5])
+    assert transport["transport_diagnostics"]["target_load_l1_error"] < 0.05
 
 
 def test_transport_cache_key_keeps_support_modes_separate() -> None:
