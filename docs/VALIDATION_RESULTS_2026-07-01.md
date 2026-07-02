@@ -409,3 +409,19 @@ signal before drill recovery on the strict blank-target compression path. It
 should answer whether the new math/code recovery rows improve the useful
 behavior of a Qwen3-4B -> blank SmolLM2-135M candidate instead of only improving
 PPL or permissive generation-health metrics.
+
+Dependent retention/manual-sample comparison queue:
+
+- Script added:
+  `experiments/queue_blank_drill_retention_compare.sh`.
+- Remote queue PID: `2359677`.
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_best_drill_retention_compare_20260702.queue.log`.
+- It waits behind selector/recovery PID `2331766`, then loads
+  `rank_blank_candidates_before_drill_exactgen_20260702.json` to identify the
+  best before-drill blank target candidate.
+- It writes three retention reports with manual samples:
+  parent vs before-drill, parent vs after-drill, and before-drill vs after-drill.
+- Output directory pattern:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/evals/retention_<best_tag>_drill_20260702/`.
+- This is intentionally CPU/report-only and does not consume a GPU.
