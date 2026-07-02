@@ -174,6 +174,49 @@ Queued proof lane:
 - Current status at queue start:
   waiting for prior PID `3168176`.
 
+## LRC Delta RMS Guard
+
+Added an opt-in safety control for activation-fitted low-rank clone deltas:
+`activation_fit_max_delta_rms_ratio`. The current blank-target init diagnostics
+showed accepted activation-fit/projection tensors with extreme target-relative
+RMS spikes, including p95 projected-to-target ratios around 5-6 and max ratios
+in the thousands. That can destroy generation before block recovery has a
+stable residual path to train.
+
+What changed:
+
+- `hf-donor-project-init --activation-fit-max-delta-rms-ratio`
+- `hf-xfamily-chain-anchor-compress --init-activation-fit-max-delta-rms-ratio`
+- The LRC materialized delta is RMS-clipped against the folded reference weight
+  before the validation gate evaluates it.
+- Reports now include base weight RMS, before/after materialized delta RMS
+  ratios, clip scale, and whether clipping was applied.
+- The Qwen-4B blank-SmolLM launcher accepts `LRC_MAX_DELTA_RMS_RATIO`, default
+  `0` to preserve existing queued lanes.
+
+Why this matters:
+
+- This keeps the merge-first activation-fit path but prevents a local activation
+  regression win from installing weight tensors that are globally too large for
+  the child architecture.
+- It is default-off and must be tested as an A/B against the signed-CKA +
+  fold-RMS lane.
+
+Validation:
+
+- Local focused tests:
+  `3 passed, 1 skipped, 239 deselected`
+- Local full suite:
+  `146 passed, 145 skipped`
+
+Queued proof lane:
+
+- Tag:
+  `qwen4b_blank_smollm_signed_cka_rms_lrcguard_geomean_full_gpu4_20260702`
+- Recipe: same signed activation-CKA + fold-RMS geomean true-LRC/EoRA/GRAIL
+  chain, plus `LRC_MAX_DELTA_RMS_RATIO=1.5`.
+- Dependency: should run after fold-RMS queue PID `3218886`.
+
 ## Answer-Boundary Margin Recovery
 
 Added an opt-in ALM recovery loss aimed at the current exact-answer failure:

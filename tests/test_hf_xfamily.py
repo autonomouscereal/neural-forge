@@ -772,6 +772,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.07",
             "--activation-fit-factor-l2",
             "0.005",
+            "--activation-fit-max-delta-rms-ratio",
+            "1.5",
             "--activation-fit-gate",
             "validation",
             "--activation-fit-validation-fraction",
@@ -1232,6 +1234,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.activation_fit_factor_steps == 9
     assert donor_init_args.activation_fit_factor_lr == pytest.approx(0.07)
     assert donor_init_args.activation_fit_factor_l2 == pytest.approx(0.005)
+    assert donor_init_args.activation_fit_max_delta_rms_ratio == pytest.approx(1.5)
     assert donor_init_args.activation_fit_gate == "validation"
     assert donor_init_args.activation_fit_validation_fraction == pytest.approx(0.25)
     assert donor_init_args.activation_fit_min_validation_rows == 12
@@ -6203,6 +6206,8 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "0.08",
             "--activation-fit-factor-l2",
             "0.006",
+            "--activation-fit-max-delta-rms-ratio",
+            "1.25",
             "--activation-feature-mode",
             "subspace",
             "--activation-subspace-rank",
@@ -6262,6 +6267,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "activation_fit_factor_steps": 13,
         "activation_fit_factor_lr": 0.08,
         "activation_fit_factor_l2": 0.006,
+        "activation_fit_max_delta_rms_ratio": 1.25,
         "activation_fit_gate": "validation",
         "activation_fit_validation_fraction": 0.20,
         "activation_fit_min_validation_rows": 8,
@@ -8103,6 +8109,7 @@ def test_chain_anchor_init_stage_forwards_activation_fit_flags(monkeypatch, tmp_
         init_activation_fit_factor_steps=11,
         init_activation_fit_factor_lr=0.04,
         init_activation_fit_factor_l2=0.002,
+        init_activation_fit_max_delta_rms_ratio=1.4,
         init_activation_fit_gate="none",
         init_activation_fit_validation_fraction=0.15,
         init_activation_fit_min_validation_rows=4,
@@ -8148,6 +8155,7 @@ def test_chain_anchor_init_stage_forwards_activation_fit_flags(monkeypatch, tmp_
     assert captured["activation_fit_factor_steps"] == 11
     assert captured["activation_fit_factor_lr"] == 0.04
     assert captured["activation_fit_factor_l2"] == 0.002
+    assert captured["activation_fit_max_delta_rms_ratio"] == 1.4
     assert captured["activation_fit_gate"] == "none"
     assert captured["activation_fit_validation_fraction"] == 0.15
     assert captured["activation_fit_min_validation_rows"] == 4
@@ -8247,6 +8255,8 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "0.05",
             "--init-activation-fit-factor-l2",
             "0.003",
+            "--init-activation-fit-max-delta-rms-ratio",
+            "1.6",
             "--init-activation-fit-gate",
             "none",
             "--init-activation-fit-validation-fraction",
@@ -8487,6 +8497,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["init_activation_fit_factor_steps"] == 17
     assert captured["init_activation_fit_factor_lr"] == 0.05
     assert captured["init_activation_fit_factor_l2"] == 0.003
+    assert captured["init_activation_fit_max_delta_rms_ratio"] == 1.6
     assert captured["init_activation_fit_gate"] == "none"
     assert captured["init_activation_fit_validation_fraction"] == 0.15
     assert captured["init_activation_fit_min_validation_rows"] == 4

@@ -21,6 +21,7 @@ ACT_TARGET="${ACT_TARGET:-mlp-output}"
 LRC_ALPHA="${LRC_ALPHA:-0.25}"
 LRC_RANK="${LRC_RANK:-16}"
 LRC_FACTOR_STEPS="${LRC_FACTOR_STEPS:-40}"
+LRC_MAX_DELTA_RMS_RATIO="${LRC_MAX_DELTA_RMS_RATIO:-0}"
 RESIDUAL_MODE="${RESIDUAL_MODE:-lowrank-pre}"
 RESIDUAL_MIN_SCALE="${RESIDUAL_MIN_SCALE:-0.50}"
 RESIDUAL_MAX_SCALE="${RESIDUAL_MAX_SCALE:-1.50}"
@@ -196,6 +197,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-activation-fit-factor-steps "$LRC_FACTOR_STEPS" \
   --init-activation-fit-factor-lr 0.03 \
   --init-activation-fit-factor-l2 0.0001 \
+  --init-activation-fit-max-delta-rms-ratio "$LRC_MAX_DELTA_RMS_RATIO" \
   --init-activation-fit-gate validation \
   --init-activation-fit-validation-fraction 0.20 \
   --init-activation-fit-min-validation-rows 16 \

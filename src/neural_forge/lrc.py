@@ -264,6 +264,7 @@ def fit_materialized_linear_lrc_delta(
     max_cosine_drop: float = 0.02,
     require_validation: bool = True,
     max_rows: int | None = 4096,
+    max_delta_rms_ratio: float = 0.0,
 ):
     """Fit a gated materialized low-rank delta for a Linear weight.
 
@@ -293,6 +294,8 @@ def fit_materialized_linear_lrc_delta(
         raise ValueError("factor_steps must be non-negative.")
     if int(factor_steps) > 0 and float(factor_lr) <= 0.0:
         raise ValueError("factor_lr must be positive when factor_steps is positive.")
+    if float(max_delta_rms_ratio) < 0.0:
+        raise ValueError("max_delta_rms_ratio must be non-negative.")
     if inputs.shape[0] != targets.shape[0]:
         raise ValueError("child_input_rows and donor_projected_output_rows must have the same row count.")
     if int(inputs.shape[1]) != in_features:
@@ -370,7 +373,18 @@ def fit_materialized_linear_lrc_delta(
         l2=float(factor_l2),
     )
     candidate_delta = refined_delta if bool(refine_report.get("refined")) else truncated_delta
+    materialized_delta = float(alpha) * candidate_delta
+    base_rms = base_weight.pow(2).mean().sqrt().clamp_min(1e-12)
+    delta_rms_before_clip = materialized_delta.pow(2).mean().sqrt()
+    delta_rms_ratio_before_clip = delta_rms_before_clip / base_rms
+    delta_clip_scale = 1.0
+    if float(max_delta_rms_ratio) > 0.0 and float(delta_rms_ratio_before_clip.detach().cpu()) > float(max_delta_rms_ratio):
+        delta_clip_scale = float(max_delta_rms_ratio) / max(float(delta_rms_ratio_before_clip.detach().cpu()), 1e-12)
+        candidate_delta = candidate_delta * float(delta_clip_scale)
+        materialized_delta = float(alpha) * candidate_delta
     candidate_weight = (base_weight + float(alpha) * candidate_delta).contiguous()
+    delta_rms_after_clip = materialized_delta.pow(2).mean().sqrt()
+    delta_rms_ratio_after_clip = delta_rms_after_clip / base_rms
 
     train_after = _linear_output(torch, train_inputs, candidate_weight, bias_cpu)
     validation_before = _linear_output(torch, validation_inputs, base_weight, bias_cpu)
@@ -401,7 +415,15 @@ def fit_materialized_linear_lrc_delta(
             "mean_cosine_train_after": mean_row_cosine(train_after, train_targets),
             "full_delta_norm": float(full_delta.norm().detach().cpu()),
             "truncated_delta_norm": float(truncated_delta.norm().detach().cpu()),
-            "materialized_delta_norm": float((float(alpha) * candidate_delta).norm().detach().cpu()),
+            "materialized_delta_norm": float(materialized_delta.norm().detach().cpu()),
+            "base_weight_rms": float(base_rms.detach().cpu()),
+            "materialized_delta_rms_before_clip": float(delta_rms_before_clip.detach().cpu()),
+            "materialized_delta_rms_ratio_before_clip": float(delta_rms_ratio_before_clip.detach().cpu()),
+            "materialized_delta_rms_after_clip": float(delta_rms_after_clip.detach().cpu()),
+            "materialized_delta_rms_ratio_after_clip": float(delta_rms_ratio_after_clip.detach().cpu()),
+            "max_delta_rms_ratio": float(max_delta_rms_ratio),
+            "delta_rms_clipped": bool(float(delta_clip_scale) < 1.0),
+            "delta_rms_clip_scale": float(delta_clip_scale),
         }
     )
     return selected_weight.to(device=original_device, dtype=original_dtype), report

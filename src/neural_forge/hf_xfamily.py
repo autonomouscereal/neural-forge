@@ -281,6 +281,7 @@ def donor_projected_init(
     activation_fit_factor_steps: int = 0,
     activation_fit_factor_lr: float = 3e-2,
     activation_fit_factor_l2: float = 0.0,
+    activation_fit_max_delta_rms_ratio: float = 0.0,
     activation_fit_gate: str = "validation",
     activation_fit_validation_fraction: float = 0.20,
     activation_fit_min_validation_rows: int = 8,
@@ -366,6 +367,8 @@ def donor_projected_init(
         raise ValueError("activation_fit_factor_lr must be positive when factor steps are enabled.")
     if activation_fit_factor_l2 < 0:
         raise ValueError("activation_fit_factor_l2 must be non-negative.")
+    if activation_fit_max_delta_rms_ratio < 0:
+        raise ValueError("activation_fit_max_delta_rms_ratio must be non-negative.")
     if activation_fit_gate not in {"none", "validation"}:
         raise ValueError("activation_fit_gate must be none or validation.")
     if not 0 <= float(activation_fit_validation_fraction) < 1:
@@ -717,6 +720,7 @@ def donor_projected_init(
                 factor_steps=activation_fit_factor_steps,
                 factor_lr=activation_fit_factor_lr,
                 factor_l2=activation_fit_factor_l2,
+                max_delta_rms_ratio=activation_fit_max_delta_rms_ratio,
                 fold_mode=tensor_fold_mode,
                 hidden_basis=hidden_basis if donor_tensor.dim() >= 2 else None,
                 axis_weights=axis_weights,
@@ -880,6 +884,7 @@ def donor_projected_init(
         "activation_fit_factor_steps": int(activation_fit_factor_steps),
         "activation_fit_factor_lr": float(activation_fit_factor_lr),
         "activation_fit_factor_l2": float(activation_fit_factor_l2),
+        "activation_fit_max_delta_rms_ratio": float(activation_fit_max_delta_rms_ratio),
         "activation_fit_gate": activation_fit_gate,
         "activation_fit_validation_fraction": float(activation_fit_validation_fraction),
         "activation_fit_min_validation_rows": int(activation_fit_min_validation_rows),
@@ -1906,6 +1911,7 @@ def chain_anchor_staged_compress(
     init_activation_fit_factor_steps: int = 0,
     init_activation_fit_factor_lr: float = 3e-2,
     init_activation_fit_factor_l2: float = 0.0,
+    init_activation_fit_max_delta_rms_ratio: float = 0.0,
     init_activation_fit_gate: str = "validation",
     init_activation_fit_validation_fraction: float = 0.20,
     init_activation_fit_min_validation_rows: int = 8,
@@ -2178,6 +2184,7 @@ def chain_anchor_staged_compress(
                 activation_fit_factor_steps=init_activation_fit_factor_steps,
                 activation_fit_factor_lr=init_activation_fit_factor_lr,
                 activation_fit_factor_l2=init_activation_fit_factor_l2,
+                activation_fit_max_delta_rms_ratio=init_activation_fit_max_delta_rms_ratio,
                 activation_fit_gate=init_activation_fit_gate,
                 activation_fit_validation_fraction=init_activation_fit_validation_fraction,
                 activation_fit_min_validation_rows=init_activation_fit_min_validation_rows,
@@ -6034,6 +6041,7 @@ def _fit_projected_linear_from_donor_activations(
     factor_steps: int = 0,
     factor_lr: float = 3e-2,
     factor_l2: float = 0.0,
+    max_delta_rms_ratio: float = 0.0,
     hidden_basis=None,
     axis_weights: dict[int, Any] | None = None,
     activation_fold_assignment: str = "balanced",
@@ -6073,6 +6081,8 @@ def _fit_projected_linear_from_donor_activations(
         raise ValueError("factor_lr must be positive when factor_steps is positive.")
     if float(factor_l2) < 0.0:
         raise ValueError("factor_l2 must be non-negative.")
+    if float(max_delta_rms_ratio) < 0.0:
+        raise ValueError("max_delta_rms_ratio must be non-negative.")
 
     def finish(weight, report: dict[str, Any]):
         report = {
@@ -6088,6 +6098,7 @@ def _fit_projected_linear_from_donor_activations(
             "factor_steps": int(factor_steps),
             "factor_lr": float(factor_lr),
             "factor_l2": float(factor_l2),
+            "max_delta_rms_ratio": float(max_delta_rms_ratio),
             **report,
         }
         if return_report:
@@ -6185,6 +6196,7 @@ def _fit_projected_linear_from_donor_activations(
             max_cosine_drop=float(max_cosine_drop),
             require_validation=fit_gate == "validation",
             max_rows=None,
+            max_delta_rms_ratio=float(max_delta_rms_ratio),
         )
         report = {
             **lrc_report,

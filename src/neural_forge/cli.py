@@ -302,6 +302,15 @@ def build_parser() -> argparse.ArgumentParser:
     hf_donor_init.add_argument("--activation-fit-factor-lr", type=float, default=3e-2)
     hf_donor_init.add_argument("--activation-fit-factor-l2", type=float, default=0.0)
     hf_donor_init.add_argument(
+        "--activation-fit-max-delta-rms-ratio",
+        type=float,
+        default=0.0,
+        help=(
+            "For activation-fit-method=lrc, optionally RMS-clip the materialized fitted delta to this "
+            "multiple of the folded reference weight RMS before validation. 0 disables clipping."
+        ),
+    )
+    hf_donor_init.add_argument(
         "--activation-fit-gate",
         choices=["none", "validation"],
         default="validation",
@@ -1549,6 +1558,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--init-activation-fit-factor-steps", type=int, default=0)
     xfamily_chain.add_argument("--init-activation-fit-factor-lr", type=float, default=3e-2)
     xfamily_chain.add_argument("--init-activation-fit-factor-l2", type=float, default=0.0)
+    xfamily_chain.add_argument("--init-activation-fit-max-delta-rms-ratio", type=float, default=0.0)
     xfamily_chain.add_argument("--init-activation-fit-gate", choices=["none", "validation"], default="validation")
     xfamily_chain.add_argument("--init-activation-fit-validation-fraction", type=float, default=0.20)
     xfamily_chain.add_argument("--init-activation-fit-min-validation-rows", type=int, default=8)
@@ -2230,6 +2240,7 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         "activation_fit_factor_steps": args.activation_fit_factor_steps,
         "activation_fit_factor_lr": args.activation_fit_factor_lr,
         "activation_fit_factor_l2": args.activation_fit_factor_l2,
+        "activation_fit_max_delta_rms_ratio": args.activation_fit_max_delta_rms_ratio,
         "activation_fit_gate": args.activation_fit_gate,
         "activation_fit_validation_fraction": args.activation_fit_validation_fraction,
         "activation_fit_min_validation_rows": args.activation_fit_min_validation_rows,
@@ -2938,6 +2949,7 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         init_activation_fit_factor_steps=args.init_activation_fit_factor_steps,
         init_activation_fit_factor_lr=args.init_activation_fit_factor_lr,
         init_activation_fit_factor_l2=args.init_activation_fit_factor_l2,
+        init_activation_fit_max_delta_rms_ratio=args.init_activation_fit_max_delta_rms_ratio,
         init_activation_fit_gate=args.init_activation_fit_gate,
         init_activation_fit_validation_fraction=args.init_activation_fit_validation_fraction,
         init_activation_fit_min_validation_rows=args.init_activation_fit_min_validation_rows,

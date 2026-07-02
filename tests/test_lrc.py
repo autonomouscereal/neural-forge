@@ -90,6 +90,34 @@ def test_fit_linear_lrc_delta_rejects_validation_regression_and_keeps_weight(tor
     torch.testing.assert_close(linear.weight, before_weight)
 
 
+def test_fit_materialized_linear_lrc_delta_clips_delta_rms_ratio(torch_module) -> None:
+    torch = torch_module
+    inputs = torch.eye(4).repeat(8, 1)
+    base_weight = torch.eye(4) * 0.1
+    targets = inputs.matmul((base_weight + torch.eye(4) * 10.0).t())
+
+    updated, report = fit_materialized_linear_lrc_delta(
+        base_weight,
+        inputs,
+        targets,
+        rank=4,
+        factor_steps=0,
+        validation_fraction=0.25,
+        min_validation_rows=4,
+        min_relative_improvement=0.0,
+        max_cosine_drop=1.0,
+        max_delta_rms_ratio=0.5,
+    )
+
+    delta = updated - base_weight
+    ratio = delta.pow(2).mean().sqrt() / base_weight.pow(2).mean().sqrt()
+    assert report["accepted"] is True
+    assert report["delta_rms_clipped"] is True
+    assert report["delta_rms_clip_scale"] < 1.0
+    assert report["materialized_delta_rms_ratio_after_clip"] <= 0.500001
+    assert float(ratio) <= 0.500001
+
+
 def test_fit_materialized_linear_lrc_delta_requires_validation_by_default(torch_module) -> None:
     torch = torch_module
     weight = torch.eye(2)
