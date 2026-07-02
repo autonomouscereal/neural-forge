@@ -182,3 +182,53 @@ As of the remote poll after this patch:
 - `qwen4b_blank_smollm_eora_grail_geomean_rms_full_gpu0_20260702` is queued
   behind GPU0. It matches the same EoRA/GRAIL strict blank-target lane but
   switches init projection scaling to `geomean-rms`.
+
+## Multi-Donor Blank-Target Fold Smoke
+
+Code revision: `1d4c53e` (`Add multi donor projected init`).
+
+Remote validation before smoke:
+
+- Focused multi-donor tests: `3 passed`.
+- Full remote test suite: `252 passed`.
+
+Smoke artifact:
+
+`/home/cereal/model-surgery-lab/runs/diagnostic_smokes/multidonor_gpt2_qwen06_to_blank_smollm135_geomean_20260701_222743`
+
+This verifies the first explicit A+B -> C fold path:
+
+- Target shape: blank `HuggingFaceTB/SmolLM2-135M`.
+- Donor A: `openai-community/gpt2`.
+- Donor B: `Qwen/Qwen3-0.6B-Base`.
+- Donor weights: `0.35,0.65`.
+- Projection scale: `geomean-rms`.
+- Token initialization: `donor-tokenized-weighted`.
+
+Result:
+
+- Final parameter count: `134,515,008`.
+- Stage 0 effective blend alpha: `1.0`.
+- Stage 1 effective blend alpha: `0.65`.
+- Stage 0 layer tensors initialized: `270`.
+- Stage 1 layer tensors initialized: `270`.
+- Final nonfinite diagnostic count: `0`.
+- Final initialized embedding rows: `48,993`.
+- Final weighted tokenized rows initialized: `9,550`.
+
+Final projection diagnostic summary:
+
+| Metric | Mean | Min | Max | P95 |
+| --- | ---: | ---: | ---: | ---: |
+| projected/source RMS ratio | 1.2175 | 0.1322 | 1.8120 | 1.5863 |
+| projected/target RMS ratio | 0.7703 | 0.4962 | 3.7498 | 1.7365 |
+| target update relative RMS | 0.7631 | 0.2243 | 2.9622 | 0.8179 |
+| target projection cosine | 0.7223 | 0.5762 | 0.9874 | 0.9802 |
+
+Interpretation:
+
+The sequential weighted projection path is operational for different donor
+families into a blank target architecture. This is not yet an intelligence
+retention claim; it is a checkpoint-construction and diagnostics milestone that
+enables the next real behavior lane: run the same multi-donor init through
+block-interface recovery and compare parent/donor/candidate behavior reports.
