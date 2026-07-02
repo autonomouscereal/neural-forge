@@ -18,7 +18,7 @@ DEVICE="${DEVICE:-cuda:0}"
 LM_EVAL_COMMAND="${LM_EVAL_COMMAND:-/home/cereal/ai-benchmark-lab/envs/lm-eval/bin/python -m lm_eval}"
 OUTPUT_DIR="${OUTPUT_DIR:-$RUN_ROOT/lm_eval_${TAG}_20260702}"
 CACHE_DIR="${CACHE_DIR:-$RUN_ROOT/lm_eval_cache_20260702}"
-MODEL_ENTRIES="${MODEL_ENTRIES:-child=$MODEL_DIR;qwen_parent=Qwen/Qwen3-4B-Base;blank_random=$RUN_ROOT/blank_smollm2_135m_seed0;cleanopen_l4=$RUN_ROOT/qwen4b_cleanopen_anchor_newloss_l4_gpu0_20260701;mathdrill_l4=$RUN_ROOT/qwen4b_mathdrill_anchor_newloss_l4_gpu6_20260701}"
+MODEL_ENTRIES_EXPLICIT="${MODEL_ENTRIES+x}"
 
 cd "$REPO_ROOT"
 mkdir -p "$OUTPUT_DIR" "$CACHE_DIR" "$RUN_ROOT/logs"
@@ -65,6 +65,8 @@ done
 
 MODEL_DIR="$(resolve_model_dir "$MODEL_DIR")"
 echo "resolved_model_dir=$MODEL_DIR explicit_model_dir=${MODEL_DIR_EXPLICIT:-0}"
+MODEL_ENTRIES="${MODEL_ENTRIES:-child=$MODEL_DIR;qwen_parent=Qwen/Qwen3-4B-Base;blank_random=$RUN_ROOT/blank_smollm2_135m_seed0;cleanopen_l4=$RUN_ROOT/qwen4b_cleanopen_anchor_newloss_l4_gpu0_20260701;mathdrill_l4=$RUN_ROOT/qwen4b_mathdrill_anchor_newloss_l4_gpu6_20260701}"
+echo "model_entries_explicit=${MODEL_ENTRIES_EXPLICIT:-0}"
 
 if [[ ! -d "$MODEL_DIR" ]]; then
   echo "missing_model_dir=$MODEL_DIR" >&2
