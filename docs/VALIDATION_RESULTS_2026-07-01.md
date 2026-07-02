@@ -374,12 +374,20 @@ Generated remote calibration artifacts:
 
 - Drill file:
   `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/recovery_drills_math_code_20260702.jsonl`.
-- Drill counts: `1200` math, `240` code, `120` tokenizer, `120`
-  model-surgery, `120` commonsense, `1800` total rows.
+- The drill file was regenerated with
+  `--exclude-eval-suite behavior_suite_exactgen_20260702.json` before the
+  queued recovery consumed it.
+- Requested drill counts: `1200` math, `240` code, `120` tokenizer, `120`
+  model-surgery, `120` commonsense, `1800` initial rows.
+- Held-out exact-suite exclusion removed `236` rows: `56` math, `60`
+  tokenizer, `60` model-surgery, and `60` commonsense. Final drill count:
+  `1564` rows.
 - Combined recovery file:
   `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/calibration_mix_plus_recovery_drills_20260702.jsonl`.
-- Combined count: original `1342` rows plus `1800` drill rows = `3142`
+- Combined count: original `1342` rows plus `1564` drill rows = `2906`
   recovery rows.
+- Exclusion report:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/recovery_drills_math_code_20260702.report.json`.
 
 Queued blank-target selector/recovery experiment:
 

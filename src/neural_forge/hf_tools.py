@@ -865,6 +865,7 @@ def build_recovery_calibration(
     model_surgery_count: int = 64,
     commonsense_count: int = 64,
     seed: int = 0,
+    exclude_eval_suite: str | Path | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Write synthetic non-eval recovery prompt/response rows as JSONL."""
 
@@ -885,6 +886,11 @@ def build_recovery_calibration(
     rows.extend(_synthetic_recovery_template_rows("model_surgery", counts["model_surgery"], _RECOVERY_MODEL_SURGERY_TEMPLATES))
     rows.extend(_synthetic_recovery_template_rows("commonsense", counts["commonsense"], _RECOVERY_COMMONSENSE_TEMPLATES))
     rng.shuffle(rows)
+    pre_exclusion_counts = _category_counts(rows)
+    excluded_prompts = _eval_suite_prompt_set(exclude_eval_suite) if exclude_eval_suite is not None else set()
+    excluded_rows = [row for row in rows if str(row.get("prompt", "")) in excluded_prompts]
+    if excluded_prompts:
+        rows = [row for row in rows if str(row.get("prompt", "")) not in excluded_prompts]
 
     target = Path(output_file)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -896,9 +902,35 @@ def build_recovery_calibration(
         "output_file": str(target),
         "seed": int(seed),
         "counts": counts,
+        "pre_exclusion_counts": pre_exclusion_counts,
+        "excluded_eval_suite": str(exclude_eval_suite) if exclude_eval_suite is not None else None,
+        "excluded_prompt_count": len(excluded_prompts),
+        "excluded_row_count": len(excluded_rows),
+        "excluded_counts": _category_counts(excluded_rows),
         "total_rows": len(rows),
+        "final_counts": _category_counts(rows),
         "sample_ids": [str(row["id"]) for row in rows[:10]],
     }
+
+
+def _eval_suite_prompt_set(eval_suite: str | Path | dict[str, Any] | None) -> set[str]:
+    if eval_suite is None:
+        return set()
+    suite = _load_eval_suite(eval_suite)
+    prompts: set[str] = set()
+    for collection in ("generation_prompts", "behavior_probes", "choice_probes"):
+        for item in suite.get(collection, []):
+            if isinstance(item, dict) and item.get("prompt") is not None:
+                prompts.add(str(item["prompt"]))
+    return prompts
+
+
+def _category_counts(rows: Sequence[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        category = str(row.get("category") or "unknown")
+        counts[category] = counts.get(category, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _synthetic_recovery_math_rows(count: int, rng: random.Random) -> list[dict[str, Any]]:

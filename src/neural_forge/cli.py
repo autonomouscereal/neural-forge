@@ -420,6 +420,10 @@ def build_parser() -> argparse.ArgumentParser:
     hf_build_recovery_calibration.add_argument("--model-surgery-count", type=int, default=64)
     hf_build_recovery_calibration.add_argument("--commonsense-count", type=int, default=64)
     hf_build_recovery_calibration.add_argument("--seed", type=int, default=0)
+    hf_build_recovery_calibration.add_argument(
+        "--exclude-eval-suite",
+        help="Optional eval suite whose prompts should be excluded from recovery rows.",
+    )
     hf_build_recovery_calibration.set_defaults(func=cmd_hf_build_recovery_calibration)
 
     hf_tie_head = sub.add_parser(
@@ -1969,6 +1973,7 @@ def cmd_hf_build_recovery_calibration(args: argparse.Namespace) -> dict[str, obj
         model_surgery_count=args.model_surgery_count,
         commonsense_count=args.commonsense_count,
         seed=args.seed,
+        exclude_eval_suite=args.exclude_eval_suite,
     )
 
 

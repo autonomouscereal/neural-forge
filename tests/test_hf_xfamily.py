@@ -425,6 +425,52 @@ def test_build_recovery_calibration_writes_prompt_response_jsonl(tmp_path) -> No
     assert any("def " in text for text in texts)
 
 
+def test_build_recovery_calibration_excludes_eval_suite_prompts(tmp_path) -> None:
+    output = tmp_path / "recovery.jsonl"
+    suite = tmp_path / "heldout.json"
+    heldout_prompt = "In one sentence, why can tokenizer mismatch hurt model stitching?\nAnswer:"
+    suite.write_text(
+        json.dumps(
+            {
+                "suite": {
+                    "text_evals": [],
+                    "choice_probes": [],
+                    "generation_prompts": [],
+                    "behavior_probes": [
+                        {
+                            "id": "heldout_tokenizer",
+                            "category": "tokenizer",
+                            "prompt": heldout_prompt,
+                            "kind": "pattern_groups",
+                            "pattern_groups": [],
+                        }
+                    ],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = build_recovery_calibration(
+        output,
+        math_count=0,
+        code_count=0,
+        tokenizer_count=3,
+        model_surgery_count=0,
+        commonsense_count=0,
+        seed=2,
+        exclude_eval_suite=suite,
+    )
+    rows = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
+
+    assert report["excluded_eval_suite"] == str(suite)
+    assert report["excluded_prompt_count"] == 1
+    assert report["excluded_row_count"] == 2
+    assert report["excluded_counts"] == {"tokenizer": 2}
+    assert report["total_rows"] == 1
+    assert all(row["prompt"] != heldout_prompt for row in rows)
+
+
 def test_cross_family_sweep_rejects_duplicate_alpha_tags(tmp_path) -> None:
     with pytest.raises(ValueError, match="Duplicate alpha output tag"):
         sweep_cross_family_vocab_merge(
@@ -6199,6 +6245,8 @@ def test_hf_build_recovery_calibration_handler_passes_counts(monkeypatch) -> Non
             "60",
             "--seed",
             "31",
+            "--exclude-eval-suite",
+            "heldout.json",
         ]
     )
     result = args.func(args)
@@ -6212,6 +6260,7 @@ def test_hf_build_recovery_calibration_handler_passes_counts(monkeypatch) -> Non
         "model_surgery_count": 70,
         "commonsense_count": 60,
         "seed": 31,
+        "exclude_eval_suite": "heldout.json",
     }
 
 
