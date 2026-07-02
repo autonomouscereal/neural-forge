@@ -61,6 +61,59 @@ Queued proof lane:
 - Current status at queue start:
   waiting for prior PID `2803948`.
 
+## Signed Activation Similarity Folding
+
+Added an opt-in width/channel folding assignment mode:
+`signed-similarity`. The existing activation similarity path grouped source
+axes by cosine direction, so opposite-but-equivalent residual coordinates could
+be treated as unrelated or cancel when folded. The signed mode groups by
+absolute activation similarity and stores a per-source sign that is applied
+when folding both incoming and outgoing axis contributions.
+
+What changed:
+
+- `hf-donor-project-init --activation-fold-assignment signed-similarity`
+- `hf-xfamily-chain-anchor-compress --init-activation-fold-assignment signed-similarity`
+- Sparse/Sinkhorn activation transport can now use absolute similarity for the
+  non-negative transport plan while applying a stored sign matrix to folded
+  source contributions.
+- Non-transport activation folding caches both target assignment and sign
+  vector, so paired incoming/outgoing folds use the same signed coordinate map.
+- `experiments/launch_qwen4b_blank_smollm_true_lrc_chain.sh` now exposes
+  `INIT_ACTIVATION_FOLD_ASSIGNMENT` while keeping the previous default
+  `similarity`.
+
+Why this matters:
+
+- 2026 signed-permutation transport notes point out that RMSNorm transformer
+  coordinates can match under sign flips, not just raw permutation.
+- This is still merge/fold-first: source axes are not dropped; they are routed
+  into target axes with sign correction before recovery.
+- The mode is default-off because MLP activation axes are not always sign
+  symmetric. It needs behavior A/B before promotion.
+
+Validation:
+
+- Local parser-focused check:
+  `1 passed, 2 skipped, 233 deselected`
+- Local compile check:
+  `python -m py_compile src/neural_forge/hf_xfamily.py src/neural_forge/cli.py`
+- Remote launcher syntax check:
+  `bash -n experiments/launch_qwen4b_blank_smollm_true_lrc_chain.sh`
+- Remote focused Torch-backed tests:
+  `3 passed, 233 deselected`
+- Remote full suite:
+  `288 passed`
+
+Queued proof lane:
+
+- Tag:
+  `qwen4b_blank_smollm_signed_cka_geomean_full_gpu4_20260702`
+- Recipe: same geomean RMS + activation-CKA true-LRC/EoRA/GRAIL chain as the
+  activation-CKA control, but with
+  `INIT_ACTIVATION_FOLD_ASSIGNMENT=signed-similarity`.
+- Intended dependency: wait behind the activation-CKA queue PID `3136217`.
+
 ## Answer-Boundary Margin Recovery
 
 Added an opt-in ALM recovery loss aimed at the current exact-answer failure:

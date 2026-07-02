@@ -105,6 +105,7 @@ from neural_forge.hf_xfamily import _activation_quantile_medoid_support_indices
 from neural_forge.hf_xfamily import _activation_quantile_support_indices
 from neural_forge.hf_xfamily import _activation_layer_geometry_scores
 from neural_forge.hf_xfamily import _activation_similarity_assignment
+from neural_forge.hf_xfamily import _activation_signed_similarity_assignment
 from neural_forge.hf_xfamily import _activation_axis_weights_for_tensor
 from neural_forge.hf_xfamily import _activation_fit_suffix_enabled
 from neural_forge.hf_xfamily import _activation_channel_summary
@@ -609,6 +610,36 @@ def test_cli_accepts_activation_cka_layer_group_strategy() -> None:
     assert block_recover_args.donor_layer_group_strategy == "activation-cka"
     assert chain_args.init_donor_layer_group_strategy == "activation-cka"
     assert chain_args.block_donor_layer_group_strategy == "activation-cka"
+
+
+def test_cli_accepts_signed_activation_fold_assignment() -> None:
+    parser = build_parser()
+
+    donor_init_args = parser.parse_args(
+        [
+            "hf-donor-project-init",
+            "projected-out",
+            "--target-config-model",
+            "target-model",
+            "--donor-model",
+            "donor-model",
+            "--activation-fold-assignment",
+            "signed-similarity",
+        ]
+    )
+    chain_args = parser.parse_args(
+        [
+            "hf-xfamily-chain-anchor-compress",
+            "source-model",
+            "candidate-config",
+            "chain-out",
+            "--init-activation-fold-assignment",
+            "signed-similarity",
+        ]
+    )
+
+    assert donor_init_args.activation_fold_assignment == "signed-similarity"
+    assert chain_args.init_activation_fold_assignment == "signed-similarity"
 
 
 def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
@@ -3527,6 +3558,70 @@ def test_activation_similarity_assignment_groups_activation_signatures() -> None
     assert assignment[0].item() == assignment[1].item()
     assert assignment[2].item() == assignment[3].item()
     assert assignment[0].item() != assignment[2].item()
+
+
+def test_signed_activation_similarity_assignment_recovers_flipped_axes() -> None:
+    torch = pytest.importorskip("torch")
+    features = torch.tensor(
+        [
+            [1.0, 0.0],
+            [-1.0, 0.0],
+            [0.0, 1.0],
+            [0.0, -1.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    assignment, signs = _activation_signed_similarity_assignment(torch, features, target_dim=2)
+
+    assert assignment[0].item() == assignment[1].item()
+    assert assignment[2].item() == assignment[3].item()
+    assert assignment[0].item() != assignment[2].item()
+    assert signs[0].item() == pytest.approx(-signs[1].item())
+    assert signs[2].item() == pytest.approx(-signs[3].item())
+
+
+def test_signed_activation_fold_aligns_opposite_axes_without_canceling() -> None:
+    torch = pytest.importorskip("torch")
+    features = torch.tensor(
+        [
+            [1.0, 0.0],
+            [-1.0, 0.0],
+            [0.0, 1.0],
+            [0.0, -1.0],
+        ],
+        dtype=torch.float32,
+    )
+    source = torch.tensor([[2.0], [-4.0], [10.0], [-14.0]], dtype=torch.float32)
+    cache = {}
+
+    folded = _resize_tensor_axis_mean_fold(
+        torch,
+        source,
+        axis=0,
+        target_dim=2,
+        features=features,
+        assignment_mode="signed-similarity",
+        assignment_cache=cache,
+        assignment_cache_key=("hidden", "signed-test"),
+    )
+    outgoing = torch.tensor([[2.0, -4.0, 10.0, -14.0]], dtype=torch.float32)
+    folded_outgoing = _resize_tensor_axis_mean_fold(
+        torch,
+        outgoing,
+        axis=1,
+        target_dim=2,
+        features=features,
+        reduction="sum",
+        assignment_mode="signed-similarity",
+        assignment_cache=cache,
+        assignment_cache_key=("hidden", "signed-test"),
+    )
+
+    assert sorted(float(item) for item in folded.flatten()) == pytest.approx([3.0, 12.0])
+    assert sorted(float(item) for item in folded_outgoing.flatten()) == pytest.approx([6.0, 24.0])
+    cached = next(iter(cache.values()))
+    assert cached["assignment_signs"] is not None
 
 
 def test_fit_activation_map_cosine_objective_reports_directional_fit() -> None:

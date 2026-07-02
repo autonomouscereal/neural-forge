@@ -162,7 +162,15 @@ def build_parser() -> argparse.ArgumentParser:
         default="centered-rowrms",
         help="Preprocessing for activation PCA hidden bases.",
     )
-    hf_donor_init.add_argument("--activation-fold-assignment", choices=["balanced", "similarity"], default="balanced")
+    hf_donor_init.add_argument(
+        "--activation-fold-assignment",
+        choices=["balanced", "similarity", "signed-similarity"],
+        default="balanced",
+        help=(
+            "How activation features assign source axes to folded target axes. signed-similarity groups opposite "
+            "activation directions by absolute similarity and applies the recovered sign during folding."
+        ),
+    )
     hf_donor_init.add_argument(
         "--transport-backend",
         choices=["sparse", "sinkhorn"],
@@ -1481,7 +1489,11 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["centered-rowrms", "uncentered-rowrms", "uncentered"],
         default="centered-rowrms",
     )
-    xfamily_chain.add_argument("--init-activation-fold-assignment", choices=["balanced", "similarity"], default="balanced")
+    xfamily_chain.add_argument(
+        "--init-activation-fold-assignment",
+        choices=["balanced", "similarity", "signed-similarity"],
+        default="balanced",
+    )
     xfamily_chain.add_argument("--init-transport-backend", choices=["sparse", "sinkhorn"], default="sparse")
     xfamily_chain.add_argument(
         "--init-transport-support",

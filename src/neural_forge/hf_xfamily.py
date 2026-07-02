@@ -321,8 +321,8 @@ def donor_projected_init(
         raise ValueError("hidden_basis_max_rows must be positive.")
     if hidden_basis_preprocess not in {"centered-rowrms", "uncentered-rowrms", "uncentered"}:
         raise ValueError("hidden_basis_preprocess must be centered-rowrms, uncentered-rowrms, or uncentered.")
-    if activation_fold_assignment not in {"balanced", "similarity"}:
-        raise ValueError("activation_fold_assignment must be balanced or similarity.")
+    if activation_fold_assignment not in {"balanced", "similarity", "signed-similarity"}:
+        raise ValueError("activation_fold_assignment must be balanced, similarity, or signed-similarity.")
     if transport_backend not in {"sparse", "sinkhorn"}:
         raise ValueError("transport_backend must be sparse or sinkhorn.")
     if transport_support not in {"centroid", "importance", "quantile", "medoid", "quantile-medoid"}:
@@ -3938,8 +3938,8 @@ def _resize_tensor_to_shape(
 ):
     if fold_mode not in {"mean", "rms", "transport"}:
         raise ValueError("fold_mode must be mean, rms, or transport.")
-    if activation_fold_assignment not in {"balanced", "similarity"}:
-        raise ValueError("activation_fold_assignment must be balanced or similarity.")
+    if activation_fold_assignment not in {"balanced", "similarity", "signed-similarity"}:
+        raise ValueError("activation_fold_assignment must be balanced, similarity, or signed-similarity.")
     if transport_backend not in {"sparse", "sinkhorn"}:
         raise ValueError("transport_backend must be sparse or sinkhorn.")
     if transport_support not in {"centroid", "importance", "quantile", "medoid", "quantile-medoid"}:
@@ -4505,6 +4505,7 @@ def _axis_assignment_cache_report(assignment_cache: dict[Any, dict[str, Any]]) -
                 "source_dim": int(item.get("source_dim", 0)),
                 "target_dim": int(item.get("target_dim", 0)),
                 "assignment_mode": str(item.get("assignment_mode", "")),
+                "signed": bool(item.get("assignment_signs") is not None or item.get("transport_signs") is not None),
             }
         )
     return report
@@ -4682,6 +4683,7 @@ def _build_sparse_activation_transport(
     dense_limit: int = 16_000_000,
     transport_backend: str = "sparse",
     transport_support: str = "centroid",
+    signed: bool = False,
 ):
     if transport_backend not in {"sparse", "sinkhorn"}:
         raise ValueError("transport_backend must be sparse or sinkhorn.")
@@ -4722,7 +4724,16 @@ def _build_sparse_activation_transport(
         )
         centroid_rows = feature_rows[support_indices]
     elif transport_support == "medoid":
-        seed_assignment = _activation_similarity_assignment(torch, feature_rows, target_dim, fold_weights, iterations=4)
+        if signed:
+            seed_assignment, _seed_signs = _activation_signed_similarity_assignment(
+                torch,
+                feature_rows,
+                target_dim,
+                fold_weights,
+                iterations=4,
+            )
+        else:
+            seed_assignment = _activation_similarity_assignment(torch, feature_rows, target_dim, fold_weights, iterations=4)
         support_indices = _activation_medoid_support_indices(
             torch,
             feature_rows,
@@ -4732,20 +4743,33 @@ def _build_sparse_activation_transport(
         )
         centroid_rows = feature_rows[support_indices]
     else:
-        seed_assignment = _activation_similarity_assignment(torch, feature_rows, target_dim, fold_weights, iterations=4)
+        if signed:
+            seed_assignment, seed_signs = _activation_signed_similarity_assignment(
+                torch,
+                feature_rows,
+                target_dim,
+                fold_weights,
+                iterations=4,
+            )
+        else:
+            seed_assignment = _activation_similarity_assignment(torch, feature_rows, target_dim, fold_weights, iterations=4)
+            seed_signs = torch.ones(source_dim, dtype=torch.float32)
         centroids = []
         for target_idx in range(target_dim):
             mask = seed_assignment == target_idx
             if bool(mask.any()):
                 cluster_weights = fold_weights[mask].unsqueeze(1)
-                centroid = (feature_rows[mask] * cluster_weights).sum(dim=0) / cluster_weights.sum().clamp_min(1e-12)
+                aligned_rows = feature_rows[mask] * seed_signs[mask].unsqueeze(1)
+                centroid = (aligned_rows * cluster_weights).sum(dim=0) / cluster_weights.sum().clamp_min(1e-12)
             else:
                 centroid = feature_rows[int(torch.argmax(fold_weights).item())]
             centroids.append(centroid)
         centroid_rows = torch.stack(centroids, dim=0)
     centroid_rows = _row_normalize(centroid_rows)
     top_k = max(1, min(int(top_k), target_dim))
-    scores = feature_rows.matmul(centroid_rows.t())
+    raw_scores = feature_rows.matmul(centroid_rows.t())
+    signs = torch.where(raw_scores < 0, -torch.ones_like(raw_scores), torch.ones_like(raw_scores))
+    scores = raw_scores.abs() if signed else raw_scores
     if transport_support in {"importance", "quantile", "medoid", "quantile-medoid"}:
         target_mass = _activation_transport_target_mass(torch, scores, fold_weights, target_dim)
     else:
@@ -4763,10 +4787,13 @@ def _build_sparse_activation_transport(
         plan = row_scale.unsqueeze(1) * kernel * col_scale.unsqueeze(0)
         values = plan / plan.sum(dim=1, keepdim=True).clamp_min(1e-30)
         top_values, top_indices = torch.topk(values, k=top_k, dim=1)
+        top_signs = torch.gather(signs, 1, top_indices) if signed else None
         return {
             "transport_matrix": values.detach().cpu().to(torch.float32),
+            "transport_signs": None if not signed else signs.detach().cpu().to(torch.float32),
             "transport_indices": top_indices.detach().cpu().to(torch.long),
             "transport_values": top_values.detach().cpu().to(torch.float32),
+            "transport_top_signs": None if top_signs is None else top_signs.detach().cpu().to(torch.float32),
             "source_dim": int(source_dim),
             "target_dim": int(target_dim),
             "assignment_mode": "transport",
@@ -4790,6 +4817,9 @@ def _build_sparse_activation_transport(
     return {
         "transport_indices": top_indices.detach().cpu().to(torch.long),
         "transport_values": values.detach().cpu().to(torch.float32),
+        "transport_top_signs": None
+        if not signed
+        else torch.gather(signs, 1, top_indices).detach().cpu().to(torch.float32),
         "source_dim": int(source_dim),
         "target_dim": int(target_dim),
         "assignment_mode": "transport",
@@ -4809,16 +4839,19 @@ def _apply_sparse_axis_transport(
 ):
     if "transport_matrix" in transport:
         matrix = transport["transport_matrix"].to(flat.dtype)
+        signs = transport.get("transport_signs")
+        signed_matrix = matrix if signs is None else matrix * signs.to(flat.dtype)
         source_dim = int(flat.shape[0])
         target_dim = int(transport["target_dim"])
         if int(matrix.shape[0]) != source_dim or int(matrix.shape[1]) != target_dim:
             raise ValueError("Dense transport matrix has the wrong shape.")
         if reduction in {"sum", "sqrt-sum"}:
-            coeffs = matrix
+            coeffs = signed_matrix
             count_coeffs = matrix
         else:
-            coeffs = matrix * fold_weights.to(flat.dtype).unsqueeze(1)
-            count_coeffs = coeffs
+            positive_coeffs = matrix * fold_weights.to(flat.dtype).unsqueeze(1)
+            coeffs = signed_matrix * fold_weights.to(flat.dtype).unsqueeze(1)
+            count_coeffs = positive_coeffs
         folded = coeffs.t().matmul(flat)
         counts = count_coeffs.sum(dim=0)
         if reduction == "mean":
@@ -4830,6 +4863,8 @@ def _apply_sparse_axis_transport(
 
     indices = transport["transport_indices"].to(torch.long)
     values = transport["transport_values"].to(flat.dtype)
+    signs = transport.get("transport_top_signs")
+    signed_values = values if signs is None else values * signs.to(flat.dtype)
     source_dim = int(flat.shape[0])
     target_dim = int(transport["target_dim"])
     if int(indices.shape[0]) != source_dim or int(values.shape[0]) != source_dim:
@@ -4837,11 +4872,12 @@ def _apply_sparse_axis_transport(
     folded = torch.zeros((target_dim, flat.shape[1]), dtype=flat.dtype)
     counts = torch.zeros(target_dim, dtype=flat.dtype)
     if reduction in {"sum", "sqrt-sum"}:
-        coeffs = values
+        coeffs = signed_values
         count_coeffs = values
     else:
-        coeffs = values * fold_weights.to(flat.dtype).unsqueeze(1)
-        count_coeffs = coeffs
+        positive_coeffs = values * fold_weights.to(flat.dtype).unsqueeze(1)
+        coeffs = signed_values * fold_weights.to(flat.dtype).unsqueeze(1)
+        count_coeffs = positive_coeffs
     for slot in range(int(indices.shape[1])):
         target_idx = indices[:, slot].contiguous()
         coeff = coeffs[:, slot].contiguous()
@@ -4876,8 +4912,8 @@ def _resize_tensor_axis_mean_fold(
         raise ValueError("fold_mode must be mean, rms, or transport.")
     if reduction not in {"mean", "sum", "sqrt-sum"}:
         raise ValueError("reduction must be mean, sum, or sqrt-sum.")
-    if assignment_mode not in {"balanced", "similarity"}:
-        raise ValueError("assignment_mode must be balanced or similarity.")
+    if assignment_mode not in {"balanced", "similarity", "signed-similarity"}:
+        raise ValueError("assignment_mode must be balanced, similarity, or signed-similarity.")
     if transport_backend not in {"sparse", "sinkhorn"}:
         raise ValueError("transport_backend must be sparse or sinkhorn.")
     if transport_support not in {"centroid", "importance", "quantile", "medoid", "quantile-medoid"}:
@@ -4923,18 +4959,28 @@ def _resize_tensor_axis_mean_fold(
                     weights=fold_weights,
                     transport_backend=transport_backend,
                     transport_support=transport_support,
+                    signed=assignment_mode == "signed-similarity",
                 )
                 if cache_key is not None and assignment_cache is not None:
                     assignment_cache[cache_key] = cached
             folded = _apply_sparse_axis_transport(torch, flat, cached, fold_weights, reduction, fold_mode)
             return folded.reshape((target_dim, *rest_shape)).movedim(0, axis).contiguous()
         assignment = None
+        assignment_signs = None
         if cached is not None and "assignment" in cached:
             assignment = cached["assignment"].to(torch.long)
+            assignment_signs = cached.get("assignment_signs")
         if assignment is None:
             if weights is None and features is None:
                 assignment = torch.floor(torch.arange(source_dim, dtype=torch.float32) * target_dim / source_dim)
                 assignment = assignment.to(torch.long).clamp_max(target_dim - 1)
+            elif assignment_mode == "signed-similarity" and features is not None:
+                assignment, assignment_signs = _activation_signed_similarity_assignment(
+                    torch,
+                    features,
+                    target_dim,
+                    fold_weights,
+                )
             elif assignment_mode == "similarity" and features is not None:
                 assignment = _activation_similarity_assignment(torch, features, target_dim, fold_weights)
             else:
@@ -4945,16 +4991,28 @@ def _resize_tensor_axis_mean_fold(
                     "source_dim": int(source_dim),
                     "target_dim": int(target_dim),
                     "assignment_mode": str(assignment_mode),
+                    "assignment_signs": None
+                    if assignment_signs is None
+                    else assignment_signs.detach().cpu().to(torch.float32),
                 }
         assignment = assignment.to(torch.long).cpu()
         if int(assignment.numel()) != source_dim:
             raise ValueError("Cached axis assignment has the wrong source dimension.")
         if int(assignment.min().item()) < 0 or int(assignment.max().item()) >= target_dim:
             raise ValueError("Cached axis assignment has out-of-range target bins.")
+        if assignment_signs is not None:
+            assignment_signs = assignment_signs.detach().cpu().to(flat.dtype).flatten()
+            if int(assignment_signs.numel()) != source_dim:
+                raise ValueError("Cached assignment signs have the wrong source dimension.")
         folded = torch.zeros((target_dim, flat.shape[1]), dtype=flat.dtype)
         counts = torch.zeros(target_dim, dtype=flat.dtype)
         value_weights = torch.ones_like(fold_weights) if reduction in {"sum", "sqrt-sum"} else fold_weights
-        weighted_flat = flat * value_weights.to(flat.dtype).unsqueeze(1)
+        sign_values = (
+            torch.ones(source_dim, dtype=flat.dtype)
+            if assignment_signs is None
+            else assignment_signs.to(flat.dtype)
+        )
+        weighted_flat = flat * (value_weights.to(flat.dtype) * sign_values).unsqueeze(1)
         folded.index_add_(0, assignment, weighted_flat)
         counts.index_add_(0, assignment, fold_weights.to(flat.dtype))
         if reduction == "mean":
@@ -5023,6 +5081,65 @@ def _activation_similarity_assignment(torch, features, target_dim: int, weights=
     return assignment.to(torch.long)
 
 
+def _activation_signed_similarity_assignment(torch, features, target_dim: int, weights=None, iterations: int = 8):
+    if target_dim <= 0:
+        raise ValueError("target_dim must be positive.")
+    feature_rows = features.detach().cpu().to(torch.float32)
+    if feature_rows.dim() != 2:
+        raise ValueError("Activation features must be a rank-2 tensor.")
+    source_dim = int(feature_rows.shape[0])
+    if source_dim == 0:
+        raise ValueError("Activation features cannot be empty.")
+    if source_dim < target_dim:
+        raise ValueError("target_dim cannot exceed activation feature rows.")
+    if weights is None:
+        fold_weights = torch.ones(source_dim, dtype=torch.float32)
+    else:
+        fold_weights = weights.detach().cpu().to(torch.float32).flatten()
+        if int(fold_weights.numel()) != source_dim:
+            raise ValueError("Activation assignment weights must match feature rows.")
+        fold_weights = fold_weights.clamp_min(1e-12)
+    if target_dim == 1:
+        return torch.zeros(source_dim, dtype=torch.long), torch.ones(source_dim, dtype=torch.float32)
+
+    feature_rows = _row_normalize(feature_rows)
+    first = int(torch.argmax(fold_weights).item())
+    centroids = [feature_rows[first]]
+    min_dist = 1.0 - feature_rows.matmul(centroids[0]).abs()
+    while len(centroids) < target_dim:
+        weighted_dist = min_dist * fold_weights
+        next_idx = int(torch.argmax(weighted_dist).item())
+        centroids.append(feature_rows[next_idx])
+        min_dist = torch.minimum(min_dist, 1.0 - feature_rows.matmul(centroids[-1]).abs())
+    centroid_tensor = torch.stack(centroids, dim=0)
+    assignment = torch.zeros(source_dim, dtype=torch.long)
+    signs = torch.ones(source_dim, dtype=torch.float32)
+    for _ in range(max(1, iterations)):
+        raw_scores = feature_rows.matmul(centroid_tensor.t())
+        assignment = torch.argmax(raw_scores.abs(), dim=1)
+        assignment = _fill_empty_signed_activation_clusters(
+            torch,
+            feature_rows,
+            assignment,
+            centroid_tensor,
+            fold_weights,
+        )
+        selected_scores = raw_scores.gather(1, assignment.view(-1, 1)).flatten()
+        signs = torch.where(selected_scores < 0, -torch.ones_like(selected_scores), torch.ones_like(selected_scores))
+        updated = []
+        for cluster_idx in range(target_dim):
+            mask = assignment == cluster_idx
+            cluster_weights = fold_weights[mask].unsqueeze(1)
+            aligned_rows = feature_rows[mask] * signs[mask].unsqueeze(1)
+            centroid = (aligned_rows * cluster_weights).sum(dim=0) / cluster_weights.sum().clamp_min(1e-12)
+            updated.append(centroid)
+        centroid_tensor = _row_normalize(torch.stack(updated, dim=0))
+    raw_scores = feature_rows.matmul(centroid_tensor.t())
+    selected_scores = raw_scores.gather(1, assignment.view(-1, 1)).flatten()
+    signs = torch.where(selected_scores < 0, -torch.ones_like(selected_scores), torch.ones_like(selected_scores))
+    return assignment.to(torch.long), signs.to(torch.float32)
+
+
 def _squared_distance_to_centroid(torch, feature_rows, centroid):
     diff = feature_rows - centroid.unsqueeze(0)
     return diff.pow(2).sum(dim=1)
@@ -5035,6 +5152,29 @@ def _fill_empty_activation_clusters(torch, feature_rows, assignment, centroids, 
     if not missing:
         return assignment
     scores = 1.0 - feature_rows.matmul(centroids.t()).max(dim=1).values
+    candidate_order = torch.argsort(scores * weights, descending=True).tolist()
+    assignment = assignment.clone()
+    used = set()
+    for cluster_idx in missing:
+        for source_idx in candidate_order:
+            if int(source_idx) in used:
+                continue
+            current_cluster = int(assignment[int(source_idx)].item())
+            if int((assignment == current_cluster).sum().item()) <= 1:
+                continue
+            assignment[int(source_idx)] = cluster_idx
+            used.add(int(source_idx))
+            break
+    return assignment
+
+
+def _fill_empty_signed_activation_clusters(torch, feature_rows, assignment, centroids, weights):
+    target_dim = int(centroids.shape[0])
+    present = set(int(item) for item in assignment.unique().tolist())
+    missing = [idx for idx in range(target_dim) if idx not in present]
+    if not missing:
+        return assignment
+    scores = 1.0 - feature_rows.matmul(centroids.t()).abs().max(dim=1).values
     candidate_order = torch.argsort(scores * weights, descending=True).tolist()
     assignment = assignment.clone()
     used = set()
