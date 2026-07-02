@@ -37,6 +37,7 @@ from neural_forge.hf_recovery import _fit_lm_head_answer_margin
 from neural_forge.hf_recovery import _fit_lm_head_from_hidden_logits
 from neural_forge.hf_recovery import _fit_lm_head_mean_shift
 from neural_forge.hf_recovery import _fit_shared_embedding_hidden_projection
+from neural_forge.hf_recovery import _hidden_projection_gate_report
 from neural_forge.hf_recovery import _first_response_shift_mask
 from neural_forge.hf_recovery import _focus_spans_to_shift_mask
 from neural_forge.hf_recovery import _focus_spans_to_span_pairs
@@ -1627,7 +1628,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "--max-anchors",
             "444",
             "--hidden-projection-scope",
-            "layer-input",
+            "layer-input-gated",
             "--layer-limit",
             "3",
             "--fit-gate",
@@ -1679,7 +1680,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_reconstruct_args.max_length == 88
     assert xfamily_reconstruct_args.max_tokens_per_layer == 55
     assert xfamily_reconstruct_args.max_anchors == 444
-    assert xfamily_reconstruct_args.hidden_projection_scope == "layer-input"
+    assert xfamily_reconstruct_args.hidden_projection_scope == "layer-input-gated"
     assert xfamily_reconstruct_args.layer_limit == 3
     assert xfamily_reconstruct_args.fit_gate == "validation"
     assert xfamily_reconstruct_args.fit_gate_validation_fraction == pytest.approx(0.2)
@@ -2222,6 +2223,57 @@ def test_shared_token_hidden_basis_recovers_anchor_projection() -> None:
     assert report["anchors"] == 3
     assert report["relative_error"] == pytest.approx(0.0, abs=1e-6)
     assert report["mean_cosine"] == pytest.approx(1.0, abs=1e-6)
+
+
+def test_hidden_projection_gate_prefers_better_layer_input_map() -> None:
+    torch = pytest.importorskip("torch")
+    source = torch.eye(3, dtype=torch.float32)
+    candidate = torch.tensor(
+        [
+            [2.0, 0.0],
+            [0.0, 3.0],
+            [1.0, 1.0],
+        ],
+        dtype=torch.float32,
+    )
+    fitted = candidate.clone()
+    baseline = torch.zeros((3, 2), dtype=torch.float32)
+
+    report = _hidden_projection_gate_report(
+        torch,
+        source,
+        candidate,
+        fitted,
+        baseline,
+        min_relative_improvement=0.01,
+        max_cosine_drop=0.0,
+    )
+
+    assert report["accepted"] is True
+    assert report["relative_improvement"] > 0.99
+    assert report["fitted_relative_error"] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_hidden_projection_gate_rejects_worse_layer_input_map() -> None:
+    torch = pytest.importorskip("torch")
+    source = torch.eye(2, dtype=torch.float32)
+    candidate = torch.eye(2, dtype=torch.float32)
+    fitted = torch.zeros((2, 2), dtype=torch.float32)
+    baseline = torch.eye(2, dtype=torch.float32)
+
+    report = _hidden_projection_gate_report(
+        torch,
+        source,
+        candidate,
+        fitted,
+        baseline,
+        min_relative_improvement=0.01,
+        max_cosine_drop=0.0,
+    )
+
+    assert report["accepted"] is False
+    assert report["relative_improvement"] < 0
+    assert report["baseline_relative_error"] == pytest.approx(0.0, abs=1e-6)
 
 
 def test_hidden_basis_resize_projects_hidden_axes() -> None:

@@ -1059,9 +1059,12 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_reconstruct.add_argument("--max-anchors", type=int, default=2048)
     xfamily_reconstruct.add_argument(
         "--hidden-projection-scope",
-        choices=["global", "layer-input"],
+        choices=["global", "layer-input", "layer-input-gated"],
         default="global",
-        help="Use the global shared-token hidden map or refit donor->child maps from each layer input.",
+        help=(
+            "Use the global shared-token hidden map, refit donor->child maps from each layer input, "
+            "or gate each layer-input map against the global baseline."
+        ),
     )
     xfamily_reconstruct.add_argument("--layer-limit", type=int)
     xfamily_reconstruct.add_argument(
@@ -1165,9 +1168,12 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_block_recover.add_argument("--hidden-ridge", type=float, default=1e-3)
     xfamily_block_recover.add_argument(
         "--hidden-projection-scope",
-        choices=["global", "layer-input"],
+        choices=["global", "layer-input", "layer-input-gated"],
         default="global",
-        help="Use one shared-token hidden map or refit donor->child maps from each block input.",
+        help=(
+            "Use one shared-token hidden map, refit donor->child maps from each block input, "
+            "or gate each block-input map against the global baseline."
+        ),
     )
     xfamily_block_recover.add_argument(
         "--hidden-metric",
@@ -1610,7 +1616,11 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--block-first-token-lm-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--block-response-end-lm-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--block-response-loss-mode", choices=["none", "auto", "assistant", "answer"], default="none")
-    xfamily_chain.add_argument("--block-hidden-projection-scope", choices=["global", "layer-input"], default="layer-input")
+    xfamily_chain.add_argument(
+        "--block-hidden-projection-scope",
+        choices=["global", "layer-input", "layer-input-gated"],
+        default="layer-input",
+    )
     xfamily_chain.add_argument(
         "--block-hidden-metric",
         choices=[

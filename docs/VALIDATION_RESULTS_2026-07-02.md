@@ -1214,3 +1214,39 @@ Interpretation:
 - The older queued wrapper processes were left running, per the no-kill rule.
   The fixed-env lanes above provide the interpretable A/B evidence once GPU4
   clears.
+
+## Gated Layer-Input Hidden Projection
+
+Added an opt-in `layer-input-gated` hidden projection scope for cross-tokenizer
+reconstruction and blockwise recovery.
+
+Why:
+
+- The existing `layer-input` scope refits a donor-hidden to child-hidden
+  projection from each child block input.
+- In the strict blank-target case, early child activations can still carry random
+  target-space noise even after donor folding.
+- `layer-input-gated` keeps the global folded-donor projection unless the
+  per-layer fit improves relative reconstruction error without exceeding the
+  configured cosine-drop gate. This preserves fold-first donor space when a
+  local child-input projection is worse.
+
+What changed:
+
+- `hf-xfamily-reconstruct --hidden-projection-scope layer-input-gated`
+- `hf-xfamily-block-recover --hidden-projection-scope layer-input-gated`
+- `hf-xfamily-chain-anchor-compress --block-hidden-projection-scope
+  layer-input-gated`
+- `experiments/launch_qwen4b_blank_smollm_true_lrc_chain.sh` now accepts
+  `BLOCK_HIDDEN_PROJECTION_SCOPE`, defaulting to the historical `layer-input`.
+- New wrapper:
+  `experiments/queue_qwen4b_blank_smollm_cka_weighted_block_weighted_layerproj_gated_20260702.sh`.
+
+Validation:
+
+- Local compile:
+  `python -m compileall -q src/neural_forge`
+- Local focused suite:
+  `2 passed, 2 skipped, 243 deselected`
+- Local full suite:
+  `147 passed, 153 skipped`

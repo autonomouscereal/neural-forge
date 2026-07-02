@@ -2134,8 +2134,8 @@ def reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("max_tokens_per_layer must be positive.")
     if max_anchors <= 0:
         raise ValueError("max_anchors must be positive.")
-    if hidden_projection_scope not in {"global", "layer-input"}:
-        raise ValueError("hidden_projection_scope must be global or layer-input.")
+    if hidden_projection_scope not in {"global", "layer-input", "layer-input-gated"}:
+        raise ValueError("hidden_projection_scope must be global, layer-input, or layer-input-gated.")
     if layer_limit is not None and layer_limit <= 0:
         raise ValueError("layer_limit must be positive when provided.")
     if fit_gate not in {"none", "validation"}:
@@ -2300,7 +2300,7 @@ def reconstruct_cross_tokenizer_causal_lm(
             )
             layer_hidden_projection = hidden_projection
             layer_hidden_projection_report: dict[str, Any] | None = None
-            if hidden_projection_scope == "layer-input":
+            if hidden_projection_scope in {"layer-input", "layer-input-gated"}:
                 layer_hidden_projection_report = _fit_cross_tokenizer_layer_input_hidden_projection(
                     torch,
                     source,
@@ -2313,6 +2313,9 @@ def reconstruct_cross_tokenizer_causal_lm(
                     _canonical_token,
                     ridge,
                     max_tokens_per_layer,
+                    baseline_projection=hidden_projection if hidden_projection_scope == "layer-input-gated" else None,
+                    min_relative_improvement=fit_gate_min_relative_improvement,
+                    max_cosine_drop=fit_gate_max_cosine_drop,
                 )
                 if not layer_hidden_projection_report.get("skipped"):
                     layer_hidden_projection = layer_hidden_projection_report["map"].to(device=device, dtype=torch.float32)
@@ -2602,8 +2605,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("response LM weights require response_loss_mode to be auto, assistant, or answer.")
     if hidden_ridge < 0:
         raise ValueError("hidden_ridge must be non-negative.")
-    if hidden_projection_scope not in {"global", "layer-input"}:
-        raise ValueError("hidden_projection_scope must be global or layer-input.")
+    if hidden_projection_scope not in {"global", "layer-input", "layer-input-gated"}:
+        raise ValueError("hidden_projection_scope must be global, layer-input, or layer-input-gated.")
     if hidden_metric not in HIDDEN_KD_METRICS:
         raise ValueError(f"hidden_metric must be {HIDDEN_KD_METRIC_DESCRIPTION}.")
     if span_pair_mode not in SPAN_PAIR_MODES:
@@ -3120,7 +3123,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         )
         layer_hidden_projection = hidden_projection
         layer_hidden_projection_report: dict[str, Any] | None = None
-        if hidden_projection_scope == "layer-input":
+        if hidden_projection_scope in {"layer-input", "layer-input-gated"}:
             layer_hidden_projection_report = _fit_cross_tokenizer_layer_input_hidden_projection(
                 torch,
                 source,
@@ -3133,6 +3136,9 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 _canonical_token,
                 hidden_ridge,
                 pre_reconstruction_max_tokens_per_layer,
+                baseline_projection=hidden_projection if hidden_projection_scope == "layer-input-gated" else None,
+                min_relative_improvement=pre_reconstruction_min_relative_improvement,
+                max_cosine_drop=pre_reconstruction_max_cosine_drop,
             )
             if not layer_hidden_projection_report.get("skipped"):
                 layer_hidden_projection = layer_hidden_projection_report["map"].to(
@@ -6460,6 +6466,9 @@ def _fit_cross_tokenizer_layer_input_hidden_projection(
     canonical_fn,
     ridge: float,
     max_tokens: int,
+    baseline_projection=None,
+    min_relative_improvement: float = 0.0,
+    max_cosine_drop: float = 0.01,
 ) -> dict[str, Any]:
     if not source_layer_group:
         return {"skipped": True, "reason": "missing_source_layer_group"}
@@ -6550,7 +6559,7 @@ def _fit_cross_tokenizer_layer_input_hidden_projection(
     candidate_matrix = candidate_matrix[:rows]
     projection = _ridge_solve_features(torch, source_matrix, candidate_matrix, ridge)
     predicted = source_matrix.matmul(projection)
-    return {
+    report = {
         "map": projection.detach(),
         "skipped": False,
         "scope": "layer-input",
@@ -6563,6 +6572,73 @@ def _fit_cross_tokenizer_layer_input_hidden_projection(
         "ridge": float(ridge),
         "relative_error": _relative_reconstruction_error(torch, predicted, candidate_matrix),
         "mean_cosine": _mean_row_cosine(torch, predicted, candidate_matrix),
+    }
+    if baseline_projection is not None:
+        gate = _hidden_projection_gate_report(
+            torch,
+            source_matrix,
+            candidate_matrix,
+            projection,
+            baseline_projection,
+            min_relative_improvement=min_relative_improvement,
+            max_cosine_drop=max_cosine_drop,
+        )
+        report["gate"] = gate
+        if not bool(gate["accepted"]):
+            return {
+                key: value
+                for key, value in report.items()
+                if key != "map"
+            } | {
+                "skipped": True,
+                "reason": "layer_input_projection_gate_rejected",
+            }
+    return report
+
+
+def _hidden_projection_gate_report(
+    torch,
+    source_matrix,
+    candidate_matrix,
+    fitted_projection,
+    baseline_projection,
+    min_relative_improvement: float = 0.0,
+    max_cosine_drop: float = 0.01,
+) -> dict[str, Any]:
+    if min_relative_improvement < 0:
+        raise ValueError("min_relative_improvement must be non-negative.")
+    if max_cosine_drop < 0:
+        raise ValueError("max_cosine_drop must be non-negative.")
+    source_rows = source_matrix.detach().to(torch.float32)
+    candidate_rows = candidate_matrix.detach().to(device=source_rows.device, dtype=torch.float32)
+    fitted = fitted_projection.detach().to(device=source_rows.device, dtype=torch.float32)
+    baseline = baseline_projection.detach().to(device=source_rows.device, dtype=torch.float32)
+    fitted_pred = source_rows.matmul(fitted)
+    baseline_pred = source_rows.matmul(baseline)
+    fitted_error = _relative_reconstruction_error(torch, fitted_pred, candidate_rows)
+    baseline_error = _relative_reconstruction_error(torch, baseline_pred, candidate_rows)
+    fitted_cosine = _mean_row_cosine(torch, fitted_pred, candidate_rows)
+    baseline_cosine = _mean_row_cosine(torch, baseline_pred, candidate_rows)
+    denominator = max(abs(float(baseline_error)), 1e-12)
+    relative_improvement = (float(baseline_error) - float(fitted_error)) / denominator
+    cosine_drop = float(baseline_cosine) - float(fitted_cosine)
+    accepted = (
+        math.isfinite(relative_improvement)
+        and math.isfinite(cosine_drop)
+        and relative_improvement >= float(min_relative_improvement)
+        and cosine_drop <= float(max_cosine_drop)
+    )
+    return {
+        "mode": "global_baseline",
+        "accepted": bool(accepted),
+        "min_relative_improvement": float(min_relative_improvement),
+        "max_cosine_drop": float(max_cosine_drop),
+        "relative_improvement": float(relative_improvement),
+        "cosine_drop": float(cosine_drop),
+        "fitted_relative_error": float(fitted_error),
+        "baseline_relative_error": float(baseline_error),
+        "fitted_mean_cosine": float(fitted_cosine),
+        "baseline_mean_cosine": float(baseline_cosine),
     }
 
 
