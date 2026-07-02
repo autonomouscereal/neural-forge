@@ -8,6 +8,7 @@ SOURCE_MODEL="${SOURCE_MODEL:-Qwen/Qwen3-4B-Base}"
 ANCHOR_MODEL="${ANCHOR_MODEL:-$RUN_ROOT/blank_gpt2_124m_seed0}"
 TAG="${TAG:-qwen4b_blank_gpt2_crossarch_lrc_alm_gpu6_20260629}"
 INIT_TRANSPORT_SUPPORT="${INIT_TRANSPORT_SUPPORT:-centroid}"
+INIT_ACTIVATION_DOMAIN_BALANCE="${INIT_ACTIVATION_DOMAIN_BALANCE:-none}"
 
 cd "$REPO_ROOT"
 source /home/cereal/model-surgery-lab/venv/bin/activate
@@ -75,6 +76,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-activation-fit-max-cosine-drop 0.02 \
   --init-activation-feature-mode covariance \
   --init-activation-subspace-rank 12 \
+  --init-activation-domain-balance "$INIT_ACTIVATION_DOMAIN_BALANCE" \
   --init-activation-max-length 160 \
   --block-steps-per-layer 4 \
   --block-batch-size 1 \

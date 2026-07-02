@@ -286,6 +286,7 @@ def donor_projected_init(
     activation_fit_max_cosine_drop: float = 0.01,
     activation_feature_mode: str = "stats",
     activation_subspace_rank: int = 8,
+    activation_domain_balance: str = "none",
     untie_output_head: bool = False,
     activation_calibration_texts: list[str] | None = None,
     activation_max_length: int = 128,
@@ -373,6 +374,8 @@ def donor_projected_init(
         raise ValueError("activation_feature_mode must be stats, subspace, or covariance.")
     if activation_subspace_rank < 0:
         raise ValueError("activation_subspace_rank must be non-negative.")
+    if activation_domain_balance not in {"none", "keyword"}:
+        raise ValueError("activation_domain_balance must be none or keyword.")
     projection_blend_alpha = _bounded_alpha(projection_blend_alpha, "projection_blend_alpha")
     activation_fit_alpha = _bounded_alpha(activation_fit_alpha, "activation_fit_alpha")
     if activation_max_length <= 1:
@@ -444,6 +447,7 @@ def donor_projected_init(
             linear_fit_max_rows=effective_activation_fit_max_rows if activation_fit_linears else 0,
             activation_feature_mode=activation_feature_mode,
             activation_subspace_rank=activation_subspace_rank,
+            activation_domain_balance=activation_domain_balance,
         )
     if attention_fold_mode == "activation-coupled" and activation_profile is None:
         raise ValueError("activation-coupled attention folding requires activation calibration texts.")
@@ -856,6 +860,10 @@ def donor_projected_init(
         "activation_fit_max_cosine_drop": float(activation_fit_max_cosine_drop),
         "activation_feature_mode": activation_feature_mode,
         "activation_subspace_rank": int(activation_subspace_rank),
+        "activation_domain_balance": activation_domain_balance,
+        "activation_domain_counts": {}
+        if activation_profile is None
+        else activation_profile.get("activation_domain_counts", {}),
         "activation_fit_reports": activation_fit_reports,
         "activation_fit_attempt_reports": activation_fit_attempt_reports,
         "activation_fit_attempt_count": len(activation_fit_attempt_reports),
@@ -1770,6 +1778,7 @@ def chain_anchor_staged_compress(
     init_activation_fit_max_cosine_drop: float = 0.01,
     init_activation_feature_mode: str = "stats",
     init_activation_subspace_rank: int = 8,
+    init_activation_domain_balance: str = "none",
     init_activation_max_length: int = 128,
     block_steps_per_layer: int = 4,
     block_batch_size: int = 1,
@@ -1980,6 +1989,7 @@ def chain_anchor_staged_compress(
                 activation_fit_max_cosine_drop=init_activation_fit_max_cosine_drop,
                 activation_feature_mode=init_activation_feature_mode,
                 activation_subspace_rank=init_activation_subspace_rank,
+                activation_domain_balance=init_activation_domain_balance,
                 activation_calibration_texts=list(calibration_texts or []),
                 activation_max_length=init_activation_max_length,
                 activation_device=device,
@@ -4050,6 +4060,7 @@ def _collect_donor_axis_activation_scores(
     linear_fit_max_rows: int = 0,
     activation_feature_mode: str = "stats",
     activation_subspace_rank: int = 8,
+    activation_domain_balance: str = "none",
 ) -> dict[str, Any]:
     if not texts:
         raise ValueError("Need at least one activation calibration text.")
@@ -4057,6 +4068,13 @@ def _collect_donor_axis_activation_scores(
         raise ValueError("activation_feature_mode must be stats, subspace, or covariance.")
     if activation_subspace_rank < 0:
         raise ValueError("activation_subspace_rank must be non-negative.")
+    if activation_domain_balance not in {"none", "keyword"}:
+        raise ValueError("activation_domain_balance must be none or keyword.")
+    text_domains = (
+        [_activation_calibration_domain(text) for text in texts]
+        if activation_domain_balance == "keyword"
+        else None
+    )
     hidden_scores = []
     hidden_features = []
     hidden_basis_pieces = []
@@ -4248,22 +4266,25 @@ def _collect_donor_axis_activation_scores(
 
     if not hidden_scores:
         raise RuntimeError("Activation calibration did not capture hidden states.")
+    hidden_domains = None
+    if text_domains is not None and len(hidden_scores) == len(texts) * len(donor_layers):
+        hidden_domains = [domain for domain in text_domains for _ in donor_layers]
     folded_mlp_scores = {}
     folded_mlp_features = {}
     for layer_idx, scores in mlp_scores.items():
         if scores:
-            folded_mlp_scores[layer_idx] = torch.stack(scores, dim=0).mean(dim=0).clamp_min(1e-12)
+            folded_mlp_scores[layer_idx] = _domain_balanced_mean(torch, scores, text_domains).clamp_min(1e-12)
     for layer_idx, features in mlp_features.items():
         if features:
-            folded_mlp_features[layer_idx] = torch.stack(features, dim=0).mean(dim=0)
+            folded_mlp_features[layer_idx] = _domain_balanced_mean(torch, features, text_domains)
     folded_attention_profiles = {}
     for layer_idx, by_stream in attention_head_profiles.items():
         stream_profiles = {}
         for stream, values in by_stream.items():
             if values["scores"] and values["features"]:
                 stream_profiles[stream] = {
-                    "scores": torch.stack(values["scores"], dim=0).mean(dim=0).clamp_min(1e-12),
-                    "features": torch.stack(values["features"], dim=0).mean(dim=0),
+                    "scores": _domain_balanced_mean(torch, values["scores"], text_domains).clamp_min(1e-12),
+                    "features": _domain_balanced_mean(torch, values["features"], text_domains),
                 }
         if stream_profiles:
             folded_attention_profiles[int(layer_idx)] = stream_profiles
@@ -4273,8 +4294,8 @@ def _collect_donor_axis_activation_scores(
         for stream, values in by_stream.items():
             if values["scores"] and values["features"]:
                 stream_profiles[stream] = {
-                    "scores": torch.stack(values["scores"], dim=0).mean(dim=0).clamp_min(1e-12),
-                    "features": torch.stack(values["features"], dim=0).mean(dim=0),
+                    "scores": _domain_balanced_mean(torch, values["scores"], text_domains).clamp_min(1e-12),
+                    "features": _domain_balanced_mean(torch, values["features"], text_domains),
                 }
         if stream_profiles:
             folded_attention_head_dim_profiles[int(layer_idx)] = stream_profiles
@@ -4290,8 +4311,8 @@ def _collect_donor_axis_activation_scores(
         if suffix_rows:
             folded_linear_fit_rows[int(layer_idx)] = suffix_rows
     return {
-        "hidden_scores": torch.stack(hidden_scores, dim=0).mean(dim=0).clamp_min(1e-12),
-        "hidden_features": torch.stack(hidden_features, dim=0).mean(dim=0),
+        "hidden_scores": _domain_balanced_mean(torch, hidden_scores, hidden_domains).clamp_min(1e-12),
+        "hidden_features": _domain_balanced_mean(torch, hidden_features, hidden_domains),
         "hidden_basis_rows": torch.cat(hidden_basis_pieces, dim=0) if hidden_basis_pieces else None,
         "hidden_basis_input_rows": {
             int(layer_idx): torch.cat(pieces, dim=0) for layer_idx, pieces in hidden_basis_input_pieces.items() if pieces
@@ -4306,7 +4327,52 @@ def _collect_donor_axis_activation_scores(
         "linear_fit_rows": folded_linear_fit_rows,
         "activation_feature_mode": activation_feature_mode,
         "activation_subspace_rank": int(activation_subspace_rank),
+        "activation_domain_balance": activation_domain_balance,
+        "activation_domain_counts": _domain_counts(text_domains),
     }
+
+
+def _domain_balanced_mean(torch, tensors: Sequence[Any], domains: Sequence[str] | None = None):
+    if not tensors:
+        raise ValueError("Need at least one tensor to average.")
+    if domains is None or len(domains) != len(tensors):
+        return torch.stack(list(tensors), dim=0).mean(dim=0)
+    grouped: dict[str, list[Any]] = {}
+    order = []
+    for domain, tensor in zip(domains, tensors):
+        key = str(domain)
+        if key not in grouped:
+            grouped[key] = []
+            order.append(key)
+        grouped[key].append(tensor)
+    domain_means = [torch.stack(grouped[key], dim=0).mean(dim=0) for key in order]
+    return torch.stack(domain_means, dim=0).mean(dim=0)
+
+
+def _domain_counts(domains: Sequence[str] | None) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for domain in domains or []:
+        key = str(domain)
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _activation_calibration_domain(text: str) -> str:
+    value = str(text).lower()
+    if re.search(r"\b(def|python|function|return|syntax|code|lambda|indent)\b", value):
+        return "code"
+    if re.search(r"\b(tokeni[sz]er|vocab|embedding|logit|token id|token ids|byte)\b", value):
+        return "tokenizer"
+    if re.search(r"\b(prun\w*|merg\w*|fold\w*|neuron\w*|compress\w*|model surgery|stitch\w*)\b", value):
+        return "model_surgery"
+    if re.search(r"\d+\s*[\+\-\*/]\s*\d+", value) or re.search(
+        r"\b(arithmetic|math|number|add|subtract|multiply|divide|sum|product)\b",
+        value,
+    ):
+        return "math"
+    if re.search(r"\b(driver|rain|thunder|lightning|safety|road|cautious)\b", value):
+        return "safety"
+    return "general"
 
 
 def _activation_abs_score(torch, tensor):

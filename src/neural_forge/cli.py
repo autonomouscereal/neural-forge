@@ -274,6 +274,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Extra per-channel PCA/SVD signature dimensions when --activation-feature-mode subspace or covariance is used.",
     )
     hf_donor_init.add_argument(
+        "--activation-domain-balance",
+        choices=["none", "keyword"],
+        default="none",
+        help="Optionally balance activation transport summaries across inferred calibration domains.",
+    )
+    hf_donor_init.add_argument(
         "--untie-output-head",
         action="store_true",
         help="Keep a separate donor-projected lm_head instead of tying it back to input embeddings.",
@@ -1422,6 +1428,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--init-activation-fit-max-cosine-drop", type=float, default=0.01)
     xfamily_chain.add_argument("--init-activation-feature-mode", choices=["stats", "subspace", "covariance"], default="stats")
     xfamily_chain.add_argument("--init-activation-subspace-rank", type=int, default=8)
+    xfamily_chain.add_argument("--init-activation-domain-balance", choices=["none", "keyword"], default="none")
     xfamily_chain.add_argument("--init-activation-max-length", type=int, default=128)
     xfamily_chain.add_argument("--block-steps-per-layer", type=int, default=4)
     xfamily_chain.add_argument("--block-batch-size", type=int, default=1)
@@ -2019,6 +2026,7 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         activation_fit_max_cosine_drop=args.activation_fit_max_cosine_drop,
         activation_feature_mode=args.activation_feature_mode,
         activation_subspace_rank=args.activation_subspace_rank,
+        activation_domain_balance=args.activation_domain_balance,
         untie_output_head=args.untie_output_head,
         activation_calibration_texts=activation_calibration_texts,
         activation_max_length=args.activation_max_length,
@@ -2704,6 +2712,7 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         init_activation_fit_max_cosine_drop=args.init_activation_fit_max_cosine_drop,
         init_activation_feature_mode=args.init_activation_feature_mode,
         init_activation_subspace_rank=args.init_activation_subspace_rank,
+        init_activation_domain_balance=args.init_activation_domain_balance,
         init_activation_max_length=args.init_activation_max_length,
         block_steps_per_layer=args.block_steps_per_layer,
         block_batch_size=args.block_batch_size,

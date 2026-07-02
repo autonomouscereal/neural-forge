@@ -491,6 +491,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "covariance",
             "--activation-subspace-rank",
             "6",
+            "--activation-domain-balance",
+            "keyword",
             "--untie-output-head",
             "--activation-calibration-file",
             "activation.jsonl",
@@ -919,6 +921,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.activation_fit_max_cosine_drop == pytest.approx(0.04)
     assert donor_init_args.activation_feature_mode == "covariance"
     assert donor_init_args.activation_subspace_rank == 6
+    assert donor_init_args.activation_domain_balance == "keyword"
     assert donor_init_args.untie_output_head is True
     assert donor_init_args.activation_calibration_file == "activation.jsonl"
     assert donor_init_args.activation_max_calibration_texts == 5
@@ -2720,6 +2723,21 @@ def test_transport_fold_can_use_importance_survivor_support() -> None:
     transport = next(iter(cache.values()))
     assert transport["transport_support"] == "importance"
     assert transport["target_support_indices"].tolist() == [1, 3]
+
+
+def test_domain_balanced_mean_weights_domains_evenly() -> None:
+    torch = pytest.importorskip("torch")
+
+    from neural_forge.hf_xfamily import _activation_calibration_domain, _domain_balanced_mean
+
+    tensors = [torch.tensor([0.0]), torch.tensor([2.0]), torch.tensor([100.0])]
+    balanced = _domain_balanced_mean(torch, tensors, ["code", "code", "math"])
+    unbalanced = _domain_balanced_mean(torch, tensors, None)
+    assert balanced.item() == pytest.approx(50.5)
+    assert unbalanced.item() == pytest.approx(34.0)
+    assert _activation_calibration_domain("Write a Python function with return a + b") == "code"
+    assert _activation_calibration_domain("Question: What is 6 + 4?") == "math"
+    assert _activation_calibration_domain("Tokenizer vocab rows can mismatch embeddings") == "tokenizer"
 
 
 def test_activation_axis_weights_aggregate_folded_donor_group() -> None:
@@ -4934,6 +4952,8 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "subspace",
             "--activation-subspace-rank",
             "5",
+            "--activation-domain-balance",
+            "keyword",
             "--untie-output-head",
             "--activation-calibration-file",
             "activation.jsonl",
@@ -4993,6 +5013,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "activation_fit_max_cosine_drop": 0.01,
         "activation_feature_mode": "subspace",
         "activation_subspace_rank": 5,
+        "activation_domain_balance": "keyword",
         "untie_output_head": True,
         "activation_calibration_texts": ["activation text"],
         "activation_max_length": 64,
@@ -6435,6 +6456,7 @@ def test_chain_anchor_init_stage_forwards_activation_fit_flags(monkeypatch, tmp_
         init_activation_fit_max_cosine_drop=0.04,
         init_activation_feature_mode="covariance",
         init_activation_subspace_rank=12,
+        init_activation_domain_balance="keyword",
         init_activation_max_length=160,
         device="cpu",
     )
@@ -6477,6 +6499,7 @@ def test_chain_anchor_init_stage_forwards_activation_fit_flags(monkeypatch, tmp_
     assert captured["activation_fit_max_cosine_drop"] == 0.04
     assert captured["activation_feature_mode"] == "covariance"
     assert captured["activation_subspace_rank"] == 12
+    assert captured["activation_domain_balance"] == "keyword"
     assert captured["activation_max_length"] == 160
 
 
@@ -6575,6 +6598,8 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "covariance",
             "--init-activation-subspace-rank",
             "12",
+            "--init-activation-domain-balance",
+            "keyword",
             "--init-activation-max-length",
             "160",
             "--block-steps-per-layer",
@@ -6714,6 +6739,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["init_activation_fit_max_cosine_drop"] == 0.04
     assert captured["init_activation_feature_mode"] == "covariance"
     assert captured["init_activation_subspace_rank"] == 12
+    assert captured["init_activation_domain_balance"] == "keyword"
     assert captured["init_activation_max_length"] == 160
     assert captured["block_steps_per_layer"] == 6
     assert captured["block_hidden_metric"] == "projected-geometry"
