@@ -1,5 +1,64 @@
 # Validation Results - 2026-07-02
 
+## Attention-Influence Cross-Tokenizer Recovery
+
+Added an optional AIM-style recovery loss for cross-tokenizer and cross-family
+blank-target compression.
+
+What changed:
+
+- `hf-xfamily-recover --attention-influence-weight`
+- `hf-xfamily-recover --attention-influence-layer {last,middle}`
+- `hf-xfamily-chain-anchor-compress --alm-attention-influence-weight`
+- `hf-xfamily-chain-anchor-compress --alm-attention-influence-layer {last,middle}`
+- The ALM recovery stage can now request teacher/student attentions and compare
+  row-normalized attention-influence submatrices over span-aligned tokens.
+- The loss is default-off, so existing queued runs and historical evidence keep
+  their exact recipes unless a queue script opts in.
+- The Qwen4B -> blank SmolLM, LFM230M -> blank SmolLM, and Qwen4B -> blank
+  GPT-2 launchers now expose `ALM_ATTENTION_INFLUENCE_WEIGHT` and
+  `ALM_ATTENTION_INFLUENCE_LAYER` for A/B GPU lanes.
+
+Why this matters:
+
+- The latest blank-target failures look less like tensor-shape failures and more
+  like a decoder-manifold/tokenizer-alignment failure after structural folding.
+- Projected-vocab KD aligns token distributions, and span hidden KD aligns local
+  hidden states, but neither explicitly asks the target to preserve the donor's
+  token-to-token interaction pattern.
+- This lane follows the 2025-2026 direction of model-aware tokenizer transfer
+  and cross-architecture transport: align structure and behavior across
+  tokenizer/family boundaries without adding adapters or assuming a pretrained
+  child.
+
+References used for direction:
+
+- MATT, Model-Aware Tokenizer Transfer, 2025:
+  https://arxiv.org/html/2510.21954v1
+- Transport and Merge, cross-architecture merging, 2026:
+  https://arxiv.org/abs/2602.05495
+- Chain of Merges, staged compression/merging, 2025:
+  https://arxiv.org/html/2508.21421v1
+
+Validation:
+
+- Local focused suite:
+  `2 passed, 9 skipped, 216 deselected`
+- Local full suite:
+  `142 passed, 137 skipped`
+- Remote focused Torch suite:
+  `11 passed, 216 deselected`
+- Remote full suite:
+  `279 passed`
+
+Current status:
+
+- This is a recovery objective improvement, not yet proof of intelligence
+  retention.
+- The next proof step is an A/B GPU lane against the cached Qwen3-4B parent and
+  existing recovered 135M baselines, using exact-generation/manual probes, not
+  PPL alone.
+
 ## Activation-Quantile Transport Support
 
 Added a structural fold lane for blank-target compression: `transport_support="quantile"`.

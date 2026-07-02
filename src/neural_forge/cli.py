@@ -826,6 +826,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="Cross-tokenizer DSKD-style loss using student hidden through teacher head and teacher hidden through student head.",
     )
+    xfamily_recover.add_argument(
+        "--attention-influence-weight",
+        type=float,
+        default=0.0,
+        help="AIM-style loss matching teacher/student attention influence over span-aligned tokens.",
+    )
+    xfamily_recover.add_argument("--attention-influence-layer", choices=["last", "middle"], default="last")
     xfamily_recover.add_argument("--projected-vocab-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--focused-projected-vocab-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument(
@@ -1654,6 +1661,8 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--alm-response-end-lm-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-focused-lm-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-dual-space-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-attention-influence-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-attention-influence-layer", choices=["last", "middle"], default="last")
     xfamily_chain.add_argument("--alm-kd-weight", type=float, default=0.05)
     xfamily_chain.add_argument("--alm-projected-vocab-kd-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-focused-projected-vocab-kd-weight", type=float, default=0.0)
@@ -2600,6 +2609,8 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         span_kd_weight=args.span_kd_weight,
         span_hidden_kd_weight=args.span_hidden_kd_weight,
         dual_space_kd_weight=args.dual_space_kd_weight,
+        attention_influence_weight=args.attention_influence_weight,
+        attention_influence_layer=args.attention_influence_layer,
         projected_vocab_kd_weight=args.projected_vocab_kd_weight,
         focused_projected_vocab_kd_weight=args.focused_projected_vocab_kd_weight,
         projected_vocab_kd_mode=args.projected_vocab_kd_mode,
@@ -2986,6 +2997,8 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         alm_response_end_lm_weight=args.alm_response_end_lm_weight,
         alm_focused_lm_weight=args.alm_focused_lm_weight,
         alm_dual_space_kd_weight=args.alm_dual_space_kd_weight,
+        alm_attention_influence_weight=args.alm_attention_influence_weight,
+        alm_attention_influence_layer=args.alm_attention_influence_layer,
         alm_kd_weight=args.alm_kd_weight,
         alm_projected_vocab_kd_weight=args.alm_projected_vocab_kd_weight,
         alm_focused_projected_vocab_kd_weight=args.alm_focused_projected_vocab_kd_weight,

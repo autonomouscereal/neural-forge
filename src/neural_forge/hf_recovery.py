@@ -592,6 +592,8 @@ def recover_cross_tokenizer_causal_lm(
     span_kd_weight: float = 0.0,
     span_hidden_kd_weight: float = 0.0,
     dual_space_kd_weight: float = 0.0,
+    attention_influence_weight: float = 0.0,
+    attention_influence_layer: str = "last",
     projected_vocab_kd_weight: float = 0.0,
     focused_projected_vocab_kd_weight: float = 0.0,
     projected_vocab_kd_mode: str = "teacher-to-student",
@@ -679,6 +681,7 @@ def recover_cross_tokenizer_causal_lm(
         or span_kd_weight < 0
         or span_hidden_kd_weight < 0
         or dual_space_kd_weight < 0
+        or attention_influence_weight < 0
         or projected_vocab_kd_weight < 0
         or focused_projected_vocab_kd_weight < 0
         or reference_kd_weight < 0
@@ -735,6 +738,7 @@ def recover_cross_tokenizer_causal_lm(
         and span_kd_weight == 0
         and span_hidden_kd_weight == 0
         and dual_space_kd_weight == 0
+        and attention_influence_weight == 0
         and projected_vocab_kd_weight == 0
         and focused_projected_vocab_kd_weight == 0
         and reference_kd_weight == 0
@@ -765,6 +769,8 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("hidden_ridge must be non-negative.")
     if hidden_layer not in {"last", "middle"}:
         raise ValueError("hidden_layer must be last or middle.")
+    if attention_influence_layer not in {"last", "middle"}:
+        raise ValueError("attention_influence_layer must be last or middle.")
     if hidden_kd_metric not in HIDDEN_KD_METRICS:
         raise ValueError(f"hidden_kd_metric must be {HIDDEN_KD_METRIC_DESCRIPTION}.")
     if hidden_max_anchors <= 0:
@@ -961,6 +967,7 @@ def recover_cross_tokenizer_causal_lm(
             or focused_projected_vocab_kd_weight > 0
             or token_kd_weight > 0
             or alm_kd_weight > 0
+            or attention_influence_weight > 0
         ),
         response_loss_mode=response_loss_mode,
         append_eos=append_eos,
@@ -1046,6 +1053,7 @@ def recover_cross_tokenizer_causal_lm(
                 **_model_forward_inputs(source_batch),
                 use_cache=False,
                 output_hidden_states=hidden_kd_weight > 0 or span_hidden_kd_weight > 0 or dual_space_kd_weight > 0,
+                output_attentions=attention_influence_weight > 0,
             )
             reference_teacher = None
             if reference is not None:
@@ -1057,6 +1065,7 @@ def recover_cross_tokenizer_causal_lm(
             **_model_forward_inputs(candidate_batch),
             use_cache=False,
             output_hidden_states=hidden_kd_weight > 0 or span_hidden_kd_weight > 0 or dual_space_kd_weight > 0,
+            output_attentions=attention_influence_weight > 0,
         )
         span_pairs = None
         if span_kd_weight > 0 or span_hidden_kd_weight > 0 or dual_space_kd_weight > 0 or projected_vocab_kd_weight > 0:
@@ -1070,6 +1079,29 @@ def recover_cross_tokenizer_causal_lm(
                 max_pairs=span_max_pairs,
             )
             span_pair_counts.append(int(span_pairs.shape[0]))
+        attention_pairs = None
+        attention_influence_loss = None
+        if attention_influence_weight > 0:
+            attention_pairs = _cross_tokenizer_span_pairs(
+                torch,
+                source_tokenizer,
+                candidate_tokenizer,
+                source_batch,
+                candidate_batch,
+                _canonical_token,
+                max_pairs=span_max_pairs,
+                shift_positions=False,
+            )
+            attention_influence_loss = _cross_tokenizer_attention_influence_loss(
+                torch,
+                student,
+                teacher,
+                attention_pairs,
+                layer=attention_influence_layer,
+            )
+            loss_attention_pair_count = int(attention_pairs.shape[0])
+        else:
+            loss_attention_pair_count = 0
         token_focus_spans = None
         if token_kd_weight > 0 or focused_lm_weight > 0 or focused_projected_vocab_kd_weight > 0:
             token_focus_spans = _cross_tokenizer_focus_span_pairs(
@@ -1142,6 +1174,8 @@ def recover_cross_tokenizer_causal_lm(
             )
             alm_chunk_counts.append(int(alm_count))
             loss = loss + float(alm_kd_weight) * alm_loss
+        if attention_influence_loss is not None:
+            loss = loss + float(attention_influence_weight) * attention_influence_loss
         if dual_space_kd_weight > 0 and span_pairs is not None and int(span_pairs.numel()) > 0:
             dual_space = _cross_tokenizer_dual_space_kd_loss(
                 torch,
@@ -1293,10 +1327,15 @@ def recover_cross_tokenizer_causal_lm(
             on_policy_hidden_loss_value = (
                 None if on_policy_hidden_loss is None else float(on_policy_hidden_loss.detach().cpu())
             )
+            attention_influence_loss_value = (
+                None if attention_influence_loss is None else float(attention_influence_loss.detach().cpu())
+            )
             losses.append(
                 {
                     "step": step,
                     "loss": loss_value,
+                    "attention_influence_loss": attention_influence_loss_value,
+                    "attention_influence_pairs": int(loss_attention_pair_count),
                     "teacher_generate_lm_loss": teacher_generate_loss_value,
                     "stepwise_donor_kd_loss": stepwise_donor_loss_value,
                     "stepwise_donor_count": int(stepwise_donor_count),
@@ -1313,6 +1352,8 @@ def recover_cross_tokenizer_causal_lm(
                 f"teacher_rank={teacher_rank_counts[-1] if teacher_rank_counts else 0} "
                 f"on_policy={on_policy_counts[-1] if on_policy_counts else 0} "
                 f"on_policy_hidden={on_policy_hidden_counts[-1] if on_policy_hidden_counts else 0} "
+                f"attention_influence={attention_influence_loss_value if attention_influence_loss_value is not None else 0.0:.6f} "
+                f"attention_pairs={int(loss_attention_pair_count)} "
                 f"teacher_generate_lm={teacher_generate_loss_value if teacher_generate_loss_value is not None else 0.0:.6f} "
                 f"stepwise_donor={stepwise_donor_loss_value if stepwise_donor_loss_value is not None else 0.0:.6f} "
                 f"stepwise_donor_count={int(stepwise_donor_count)}",
@@ -1383,6 +1424,8 @@ def recover_cross_tokenizer_causal_lm(
         "span_kd_weight": span_kd_weight,
         "span_hidden_kd_weight": span_hidden_kd_weight,
         "dual_space_kd_weight": dual_space_kd_weight,
+        "attention_influence_weight": attention_influence_weight,
+        "attention_influence_layer": attention_influence_layer,
         "projected_vocab_kd_weight": projected_vocab_kd_weight,
         "focused_projected_vocab_kd_weight": focused_projected_vocab_kd_weight,
         "projected_vocab_kd_mode": projected_vocab_kd_mode,
@@ -10942,6 +10985,64 @@ def _focus_spans_to_shift_mask(torch, focus_spans, shape, device):
             if 0 <= pos < cols:
                 mask[batch_idx, pos] = True
     return mask
+
+
+def _cross_tokenizer_attention_influence_loss(torch, student, teacher, attention_pairs, layer: str = "last"):
+    if layer not in {"last", "middle"}:
+        raise ValueError("layer must be last or middle.")
+    if attention_pairs is None or int(attention_pairs.numel()) == 0:
+        logits = getattr(student, "logits", None)
+        device = logits.device if logits is not None else "cpu"
+        dtype = logits.dtype if logits is not None else torch.float32
+        return torch.zeros((), dtype=dtype, device=device)
+    student_attn = _select_attention_map(student, layer)
+    teacher_attn = _select_attention_map(teacher, layer)
+    if student_attn is None or teacher_attn is None:
+        raise ValueError("attention_influence_weight requires model outputs with attentions.")
+    student_map = _mean_attention_heads(torch, student_attn)
+    teacher_map = _mean_attention_heads(torch, teacher_attn).detach()
+    pairs = attention_pairs.to(device=student_map.device, dtype=torch.long)
+    losses = []
+    for batch_idx in torch.unique(pairs[:, 0]).detach().cpu().tolist():
+        batch_idx = int(batch_idx)
+        local = pairs[pairs[:, 0] == batch_idx]
+        if int(local.shape[0]) <= 1:
+            continue
+        candidate_pos = local[:, 1].clamp(0, int(student_map.shape[-1]) - 1)
+        source_pos = local[:, 2].to(device=teacher_map.device, dtype=torch.long).clamp(0, int(teacher_map.shape[-1]) - 1)
+        candidate_rows = student_map[batch_idx].index_select(0, candidate_pos).index_select(1, candidate_pos)
+        teacher_rows = teacher_map[batch_idx].index_select(0, source_pos).index_select(1, source_pos)
+        candidate_rows = _row_probability_normalize(torch, candidate_rows)
+        teacher_rows = _row_probability_normalize(torch, teacher_rows)
+        losses.append(torch.nn.functional.smooth_l1_loss(candidate_rows, teacher_rows.to(device=candidate_rows.device)))
+    if not losses:
+        return torch.zeros((), dtype=student_map.dtype, device=student_map.device)
+    return torch.stack(losses).mean()
+
+
+def _select_attention_map(outputs, layer: str):
+    attentions = getattr(outputs, "attentions", None)
+    if not attentions:
+        return None
+    if layer == "last":
+        return attentions[-1]
+    if layer == "middle":
+        return attentions[len(attentions) // 2]
+    raise ValueError("layer must be last or middle.")
+
+
+def _mean_attention_heads(torch, attention):
+    values = torch.nan_to_num(attention.to(torch.float32), nan=0.0, posinf=1.0, neginf=0.0)
+    if values.dim() == 4:
+        values = values.mean(dim=1)
+    if values.dim() != 3:
+        raise ValueError("attention maps must be rank-3 or rank-4.")
+    return values
+
+
+def _row_probability_normalize(torch, values):
+    clipped = torch.nan_to_num(values.to(torch.float32), nan=0.0, posinf=1.0, neginf=0.0).clamp_min(0.0)
+    return clipped / clipped.sum(dim=-1, keepdim=True).clamp_min(1e-12)
 
 
 def _cross_tokenizer_alm_chunk_loss(

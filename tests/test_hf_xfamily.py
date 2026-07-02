@@ -23,6 +23,7 @@ from neural_forge.hf_recovery import _candidate_index_after_depth_fold
 from neural_forge.hf_recovery import _cross_tokenizer_recovery_loss
 from neural_forge.hf_recovery import _cross_tokenizer_dual_space_kd_loss
 from neural_forge.hf_recovery import _cross_tokenizer_alm_chunk_loss
+from neural_forge.hf_recovery import _cross_tokenizer_attention_influence_loss
 from neural_forge.hf_recovery import _cross_tokenizer_focus_span_pairs
 from neural_forge.hf_recovery import _cross_tokenizer_overlap_span_pairs
 from neural_forge.hf_recovery import _cross_tokenizer_sequence_nll_loss
@@ -871,6 +872,10 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.12",
             "--dual-space-kd-weight",
             "0.25",
+            "--attention-influence-weight",
+            "0.16",
+            "--attention-influence-layer",
+            "middle",
             "--projected-vocab-kd-weight",
             "0.22",
             "--focused-projected-vocab-kd-weight",
@@ -1209,6 +1214,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_recover_args.span_kd_weight == 0.15
     assert xfamily_recover_args.span_hidden_kd_weight == 0.12
     assert xfamily_recover_args.dual_space_kd_weight == pytest.approx(0.25)
+    assert xfamily_recover_args.attention_influence_weight == pytest.approx(0.16)
+    assert xfamily_recover_args.attention_influence_layer == "middle"
     assert xfamily_recover_args.projected_vocab_kd_weight == 0.22
     assert xfamily_recover_args.focused_projected_vocab_kd_weight == pytest.approx(0.18)
     assert xfamily_recover_args.projected_vocab_kd_mode == "student-to-teacher"
@@ -4619,6 +4626,30 @@ def test_cross_tokenizer_dual_space_kd_loss_is_finite() -> None:
     assert float(loss.detach().cpu()) >= 0.0
 
 
+def test_cross_tokenizer_attention_influence_loss_matches_aligned_attention() -> None:
+    torch = pytest.importorskip("torch")
+    base = torch.tensor(
+        [[0.70, 0.20, 0.10], [0.10, 0.80, 0.10], [0.20, 0.20, 0.60]],
+        dtype=torch.float32,
+    )
+    student = _Obj(
+        logits=torch.zeros((1, 3, 5), dtype=torch.float32),
+        attentions=(base.view(1, 1, 3, 3),),
+    )
+    teacher = _Obj(
+        logits=torch.zeros((1, 3, 7), dtype=torch.float32),
+        attentions=(base.view(1, 1, 3, 3),),
+    )
+    pairs = torch.tensor([[0, 0, 0], [0, 1, 1], [0, 2, 2]], dtype=torch.long)
+
+    matched = _cross_tokenizer_attention_influence_loss(torch, student, teacher, pairs, layer="last")
+    teacher.attentions = (torch.flip(base, dims=[-1]).view(1, 1, 3, 3),)
+    mismatched = _cross_tokenizer_attention_influence_loss(torch, student, teacher, pairs, layer="last")
+
+    assert matched.item() == pytest.approx(0.0)
+    assert mismatched.item() > matched.item()
+
+
 def test_cross_tokenizer_alm_chunk_loss_uses_offset_chunks() -> None:
     torch = pytest.importorskip("torch")
     text = "A cat sat"
@@ -6217,6 +6248,10 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "0.12",
             "--dual-space-kd-weight",
             "0.19",
+            "--attention-influence-weight",
+            "0.17",
+            "--attention-influence-layer",
+            "middle",
             "--projected-vocab-kd-weight",
             "0.22",
             "--focused-projected-vocab-kd-weight",
@@ -6356,6 +6391,8 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "span_kd_weight": 0.15,
         "span_hidden_kd_weight": 0.12,
         "dual_space_kd_weight": 0.19,
+        "attention_influence_weight": 0.17,
+        "attention_influence_layer": "middle",
         "projected_vocab_kd_weight": 0.22,
         "focused_projected_vocab_kd_weight": 0.26,
         "projected_vocab_kd_mode": "both",
@@ -7880,6 +7917,10 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "0.022",
             "--alm-focused-lm-weight",
             "0.023",
+            "--alm-attention-influence-weight",
+            "0.026",
+            "--alm-attention-influence-layer",
+            "middle",
             "--alm-kd-weight",
             "0.07",
             "--alm-focused-projected-vocab-kd-weight",
@@ -8043,6 +8084,8 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["alm_first_token_lm_weight"] == 0.021
     assert captured["alm_response_end_lm_weight"] == 0.022
     assert captured["alm_focused_lm_weight"] == 0.023
+    assert captured["alm_attention_influence_weight"] == 0.026
+    assert captured["alm_attention_influence_layer"] == "middle"
     assert captured["alm_kd_weight"] == 0.07
     assert captured["alm_focused_projected_vocab_kd_weight"] == 0.024
     assert captured["alm_token_kd_weight"] == 0.025
