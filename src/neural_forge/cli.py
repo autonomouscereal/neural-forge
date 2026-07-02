@@ -864,6 +864,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--answer-first-token-margin-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--answer-first-token-margin", type=float, default=1.0)
     xfamily_recover.add_argument("--answer-first-token-max-negatives", type=int, default=8)
+    xfamily_recover.add_argument("--answer-first-token-top-negatives", type=int, default=0)
     xfamily_recover.add_argument("--teacher-rank-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--teacher-rank-temperature", type=float, default=1.0)
     xfamily_recover.add_argument("--teacher-rank-max-negatives", type=int, default=4)
@@ -1679,6 +1680,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--alm-answer-first-token-margin-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-answer-first-token-margin", type=float, default=1.0)
     xfamily_chain.add_argument("--alm-answer-first-token-max-negatives", type=int, default=8)
+    xfamily_chain.add_argument("--alm-answer-first-token-top-negatives", type=int, default=0)
     xfamily_chain.add_argument("--alm-teacher-rank-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-teacher-rank-temperature", type=float, default=1.0)
     xfamily_chain.add_argument("--alm-teacher-rank-max-negatives", type=int, default=4)
@@ -1750,7 +1752,12 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_head.add_argument("output")
     xfamily_head.add_argument("--ridge", type=float, default=1e-2)
     xfamily_head.add_argument("--head-blend-alpha", type=float, default=1.0)
-    xfamily_head.add_argument("--head-calibration-mode", choices=["full", "mean-shift"], default="full")
+    xfamily_head.add_argument("--head-calibration-mode", choices=["full", "mean-shift", "answer-margin"], default="full")
+    xfamily_head.add_argument("--response-loss-mode", choices=["none", "auto", "assistant", "answer"], default="auto")
+    xfamily_head.add_argument("--answer-first-token-margin", type=float, default=1.0)
+    xfamily_head.add_argument("--answer-first-token-max-negatives", type=int, default=8)
+    xfamily_head.add_argument("--answer-first-token-top-negatives", type=int, default=0)
+    xfamily_head.add_argument("--answer-margin-steps", type=int, default=3)
     xfamily_head.add_argument("--max-length", type=int, default=128)
     xfamily_head.add_argument("--max-calibration-rows", type=int, default=2048)
     xfamily_head.add_argument("--projected-vocab-max-source-tokens", type=int, default=6)
@@ -2639,6 +2646,7 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         answer_first_token_margin_weight=args.answer_first_token_margin_weight,
         answer_first_token_margin=args.answer_first_token_margin,
         answer_first_token_max_negatives=args.answer_first_token_max_negatives,
+        answer_first_token_top_negatives=args.answer_first_token_top_negatives,
         teacher_rank_weight=args.teacher_rank_weight,
         teacher_rank_temperature=args.teacher_rank_temperature,
         teacher_rank_max_negatives=args.teacher_rank_max_negatives,
@@ -3021,6 +3029,7 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         alm_answer_first_token_margin_weight=args.alm_answer_first_token_margin_weight,
         alm_answer_first_token_margin=args.alm_answer_first_token_margin,
         alm_answer_first_token_max_negatives=args.alm_answer_first_token_max_negatives,
+        alm_answer_first_token_top_negatives=args.alm_answer_first_token_top_negatives,
         alm_teacher_rank_weight=args.alm_teacher_rank_weight,
         alm_teacher_rank_temperature=args.alm_teacher_rank_temperature,
         alm_teacher_rank_max_negatives=args.alm_teacher_rank_max_negatives,
@@ -3095,6 +3104,11 @@ def cmd_hf_xfamily_calibrate_head(args: argparse.Namespace) -> dict[str, object]
         ridge=args.ridge,
         head_blend_alpha=args.head_blend_alpha,
         head_calibration_mode=args.head_calibration_mode,
+        response_loss_mode=args.response_loss_mode,
+        answer_first_token_margin=args.answer_first_token_margin,
+        answer_first_token_max_negatives=args.answer_first_token_max_negatives,
+        answer_first_token_top_negatives=args.answer_first_token_top_negatives,
+        answer_margin_steps=args.answer_margin_steps,
         max_length=args.max_length,
         max_calibration_rows=args.max_calibration_rows,
         projected_vocab_max_source_tokens=args.projected_vocab_max_source_tokens,

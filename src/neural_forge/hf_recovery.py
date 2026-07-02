@@ -635,6 +635,7 @@ def recover_cross_tokenizer_causal_lm(
     answer_first_token_margin_weight: float = 0.0,
     answer_first_token_margin: float = 1.0,
     answer_first_token_max_negatives: int = 8,
+    answer_first_token_top_negatives: int = 0,
     teacher_rank_weight: float = 0.0,
     teacher_rank_temperature: float = 1.0,
     teacher_rank_max_negatives: int = 4,
@@ -720,6 +721,8 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("answer_contrastive_max_negatives must be positive.")
     if answer_first_token_max_negatives <= 0:
         raise ValueError("answer_first_token_max_negatives must be positive.")
+    if answer_first_token_top_negatives < 0:
+        raise ValueError("answer_first_token_top_negatives must be non-negative.")
     if answer_first_token_margin <= 0:
         raise ValueError("answer_first_token_margin must be positive.")
     if teacher_rank_max_negatives <= 0:
@@ -1238,6 +1241,7 @@ def recover_cross_tokenizer_causal_lm(
                 response_loss_mode,
                 answer_first_token_max_negatives,
                 answer_first_token_margin,
+                top_negatives=answer_first_token_top_negatives,
             )
             answer_first_token_margin_counts.append(int(answer_margin_count))
             loss = loss + float(answer_first_token_margin_weight) * answer_first_token_margin_loss
@@ -1497,6 +1501,7 @@ def recover_cross_tokenizer_causal_lm(
         "answer_first_token_margin_weight": answer_first_token_margin_weight,
         "answer_first_token_margin": answer_first_token_margin,
         "answer_first_token_max_negatives": answer_first_token_max_negatives,
+        "answer_first_token_top_negatives": answer_first_token_top_negatives,
         "answer_first_token_margin_count_observed": answer_first_token_margin_counts,
         "teacher_rank_weight": teacher_rank_weight,
         "teacher_rank_temperature": teacher_rank_temperature,
@@ -1572,6 +1577,11 @@ def calibrate_cross_tokenizer_lm_head(
     ridge: float = 1e-2,
     head_blend_alpha: float = 1.0,
     head_calibration_mode: str = "full",
+    response_loss_mode: str = "auto",
+    answer_first_token_margin: float = 1.0,
+    answer_first_token_max_negatives: int = 8,
+    answer_first_token_top_negatives: int = 0,
+    answer_margin_steps: int = 3,
     max_length: int = 128,
     max_calibration_rows: int = 2048,
     projected_vocab_max_source_tokens: int = 6,
@@ -1587,8 +1597,18 @@ def calibrate_cross_tokenizer_lm_head(
         raise ValueError("ridge must be non-negative.")
     if not 0.0 <= float(head_blend_alpha) <= 1.0:
         raise ValueError("head_blend_alpha must be in [0, 1].")
-    if head_calibration_mode not in {"full", "mean-shift"}:
-        raise ValueError("head_calibration_mode must be full or mean-shift.")
+    if head_calibration_mode not in {"full", "mean-shift", "answer-margin"}:
+        raise ValueError("head_calibration_mode must be full, mean-shift, or answer-margin.")
+    if response_loss_mode not in {"none", "auto", "assistant", "answer"}:
+        raise ValueError("response_loss_mode must be none, auto, assistant, or answer.")
+    if answer_first_token_margin <= 0:
+        raise ValueError("answer_first_token_margin must be positive.")
+    if answer_first_token_max_negatives <= 0:
+        raise ValueError("answer_first_token_max_negatives must be positive.")
+    if answer_first_token_top_negatives < 0:
+        raise ValueError("answer_first_token_top_negatives must be non-negative.")
+    if answer_margin_steps <= 0:
+        raise ValueError("answer_margin_steps must be positive.")
     if max_length <= 1:
         raise ValueError("max_length must be greater than 1.")
     if max_calibration_rows <= 0:
@@ -1602,31 +1622,18 @@ def calibrate_cross_tokenizer_lm_head(
     torch, transformers = _torch_and_transformers()
     source_dtype = _dtype_from_name(torch, torch_dtype)
     candidate_dtype = _dtype_from_name(torch, candidate_torch_dtype)
-    source_tokenizer = transformers.AutoTokenizer.from_pretrained(source_model, trust_remote_code=trust_remote_code)
     candidate_tokenizer = transformers.AutoTokenizer.from_pretrained(candidate_model, trust_remote_code=trust_remote_code)
-    if source_tokenizer.pad_token_id is None and source_tokenizer.eos_token_id is not None:
-        source_tokenizer.pad_token = source_tokenizer.eos_token
     if candidate_tokenizer.pad_token_id is None and candidate_tokenizer.eos_token_id is not None:
         candidate_tokenizer.pad_token = candidate_tokenizer.eos_token
 
-    source = transformers.AutoModelForCausalLM.from_pretrained(
-        source_model,
-        torch_dtype=source_dtype,
-        device_map=None,
-        trust_remote_code=trust_remote_code,
-    )
     candidate = transformers.AutoModelForCausalLM.from_pretrained(
         candidate_model,
         torch_dtype=candidate_dtype,
         device_map=None,
         trust_remote_code=trust_remote_code,
     )
-    source.to(device)
     candidate.to(device)
-    source.eval()
     candidate.eval()
-    if hasattr(source.config, "use_cache"):
-        source.config.use_cache = False
     if hasattr(candidate.config, "use_cache"):
         candidate.config.use_cache = False
 
@@ -1634,94 +1641,184 @@ def calibrate_cross_tokenizer_lm_head(
     if output_head is None:
         raise ValueError("Candidate model has no output embeddings to calibrate.")
 
-    (
-        projected_vocab_groups,
-        projected_vocab_mask,
-        projected_vocab_weights,
-        projected_vocab_valid,
-    ) = _candidate_to_source_token_groups(
-        torch,
-        source_tokenizer,
-        candidate_tokenizer,
-        max_source_tokens=projected_vocab_max_source_tokens,
-        device=device,
-    )
-    projected_vocab_group_report = _projected_vocab_group_summary(
-        torch,
-        candidate_tokenizer,
-        projected_vocab_mask,
-        projected_vocab_valid,
-        projected_vocab_weights,
-    )
-    valid_vocab = projected_vocab_valid.detach().cpu().bool()
-    valid_idx = torch.nonzero(valid_vocab, as_tuple=False).flatten()
-    if int(valid_idx.numel()) == 0:
-        raise ValueError("No candidate vocab rows can be projected from source tokenizer.")
-
     texts = list(calibration_texts or RECOVERY_TEXTS)
     if not texts:
         raise ValueError("Need at least one head calibration text.")
-    batches = _make_paired_batches(
-        source_tokenizer,
-        candidate_tokenizer,
-        texts,
-        batch_size=1,
-        max_length=max_length,
-        device=device,
-        include_offsets=True,
-    )
+    projected_vocab_group_report = None
+    valid_idx = None
     hidden_chunks = []
     logit_chunks = []
+    answer_gold_ids: list[int] = []
+    answer_negative_ids: list[list[int]] = []
     span_pair_counts = []
     rows_collected = 0
-    with torch.no_grad():
-        for source_batch, candidate_batch in batches:
-            if rows_collected >= int(max_calibration_rows):
-                break
-            teacher = source(**_model_forward_inputs(source_batch), use_cache=False)
-            student = candidate(**_model_forward_inputs(candidate_batch), use_cache=False, output_hidden_states=True)
-            span_pairs = _cross_tokenizer_span_pairs(
-                torch,
-                source_tokenizer,
-                candidate_tokenizer,
-                source_batch,
-                candidate_batch,
-                _canonical_token,
-                max_pairs=max(1, int(max_calibration_rows) - rows_collected),
-            )
-            span_pair_counts.append(int(span_pairs.shape[0]))
-            if int(span_pairs.numel()) == 0:
-                continue
-            pair_idx = span_pairs.to(device=device, dtype=torch.long)
-            batch_idx = pair_idx[:, 0]
-            candidate_pos = pair_idx[:, 1]
-            source_pos = pair_idx[:, 2]
-            student_hidden = _select_hidden_state(student.hidden_states, "last")[:, :-1, :].contiguous().to(torch.float32)
-            teacher_logits = teacher.logits[:, :-1, :].contiguous().to(torch.float32)
-            rows = student_hidden[batch_idx, candidate_pos]
-            projected = _project_source_logits_to_candidate_vocab(
-                torch,
-                teacher_logits[batch_idx, source_pos],
-                projected_vocab_groups,
-                projected_vocab_mask,
-                projected_vocab_valid,
-                projected_vocab_weights=projected_vocab_weights,
-            )
-            remain = int(max_calibration_rows) - rows_collected
-            if int(rows.shape[0]) > remain:
-                rows = rows[:remain]
-                projected = projected[:remain]
-            hidden_chunks.append(rows.detach().cpu())
-            logit_chunks.append(projected.detach().cpu().index_select(dim=1, index=valid_idx))
-            rows_collected += int(rows.shape[0])
+
+    if head_calibration_mode == "answer-margin":
+        batches = _make_batches(
+            candidate_tokenizer,
+            texts,
+            batch_size=1,
+            max_length=max_length,
+            device=device,
+            include_offsets=True,
+            response_loss_mode=response_loss_mode,
+        )
+        with torch.no_grad():
+            for candidate_batch in batches:
+                if rows_collected >= int(max_calibration_rows):
+                    break
+                student = candidate(**_model_forward_inputs(candidate_batch), use_cache=False, output_hidden_states=True)
+                first_mask = _first_response_shift_mask(
+                    torch,
+                    candidate_batch.get("loss_mask"),
+                    candidate_batch.get("attention_mask"),
+                )
+                if first_mask is None or int(first_mask.sum().detach().cpu().item()) <= 0:
+                    span_pair_counts.append(0)
+                    continue
+                student_hidden = _select_hidden_state(student.hidden_states, "last")[:, :-1, :].contiguous().to(torch.float32)
+                input_ids = candidate_batch["input_ids"]
+                batch_texts = list(candidate_batch.get("raw_texts") or candidate_batch.get("texts") or [])
+                batch_rows = 0
+                batch_size = min(int(first_mask.shape[0]), len(batch_texts))
+                vocab_size = int(output_head.weight.shape[0])
+                for batch_idx in range(batch_size):
+                    if rows_collected >= int(max_calibration_rows):
+                        break
+                    positions = torch.nonzero(first_mask[batch_idx], as_tuple=False).flatten()
+                    if int(positions.numel()) <= 0:
+                        continue
+                    logit_pos = int(positions[0].detach().cpu().item())
+                    label_pos = logit_pos + 1
+                    if label_pos < 0 or label_pos >= int(input_ids.shape[1]):
+                        continue
+                    gold_id = int(input_ids[batch_idx, label_pos].detach().cpu().item())
+                    if gold_id < 0 or gold_id >= vocab_size:
+                        continue
+                    negative_ids = _answer_first_token_negative_ids(
+                        candidate_tokenizer,
+                        str(batch_texts[batch_idx]),
+                        response_loss_mode,
+                        int(answer_first_token_max_negatives),
+                        gold_id,
+                        vocab_size,
+                    )
+                    if int(answer_first_token_top_negatives) > 0:
+                        row_logits = student.logits[batch_idx, logit_pos].detach().to(torch.float32)
+                        top_k = min(vocab_size, int(answer_first_token_top_negatives) + 1)
+                        top_ids = torch.topk(row_logits, k=top_k, dim=-1).indices.detach().cpu().tolist()
+                        for top_id in top_ids:
+                            top_id = int(top_id)
+                            if top_id == gold_id or top_id in negative_ids:
+                                continue
+                            negative_ids.append(top_id)
+                            if len(negative_ids) >= int(answer_first_token_max_negatives) + int(answer_first_token_top_negatives):
+                                break
+                    if not negative_ids:
+                        continue
+                    hidden_chunks.append(student_hidden[batch_idx, logit_pos].detach().cpu().unsqueeze(0))
+                    answer_gold_ids.append(int(gold_id))
+                    answer_negative_ids.append([int(item) for item in negative_ids])
+                    rows_collected += 1
+                    batch_rows += 1
+                span_pair_counts.append(int(batch_rows))
+    else:
+        source_tokenizer = transformers.AutoTokenizer.from_pretrained(source_model, trust_remote_code=trust_remote_code)
+        if source_tokenizer.pad_token_id is None and source_tokenizer.eos_token_id is not None:
+            source_tokenizer.pad_token = source_tokenizer.eos_token
+        source = transformers.AutoModelForCausalLM.from_pretrained(
+            source_model,
+            torch_dtype=source_dtype,
+            device_map=None,
+            trust_remote_code=trust_remote_code,
+        )
+        source.to(device)
+        source.eval()
+        if hasattr(source.config, "use_cache"):
+            source.config.use_cache = False
+        (
+            projected_vocab_groups,
+            projected_vocab_mask,
+            projected_vocab_weights,
+            projected_vocab_valid,
+        ) = _candidate_to_source_token_groups(
+            torch,
+            source_tokenizer,
+            candidate_tokenizer,
+            max_source_tokens=projected_vocab_max_source_tokens,
+            device=device,
+        )
+        projected_vocab_group_report = _projected_vocab_group_summary(
+            torch,
+            candidate_tokenizer,
+            projected_vocab_mask,
+            projected_vocab_valid,
+            projected_vocab_weights,
+        )
+        valid_vocab = projected_vocab_valid.detach().cpu().bool()
+        valid_idx = torch.nonzero(valid_vocab, as_tuple=False).flatten()
+        if int(valid_idx.numel()) == 0:
+            raise ValueError("No candidate vocab rows can be projected from source tokenizer.")
+
+        batches = _make_paired_batches(
+            source_tokenizer,
+            candidate_tokenizer,
+            texts,
+            batch_size=1,
+            max_length=max_length,
+            device=device,
+            include_offsets=True,
+        )
+        with torch.no_grad():
+            for source_batch, candidate_batch in batches:
+                if rows_collected >= int(max_calibration_rows):
+                    break
+                teacher = source(**_model_forward_inputs(source_batch), use_cache=False)
+                student = candidate(**_model_forward_inputs(candidate_batch), use_cache=False, output_hidden_states=True)
+                span_pairs = _cross_tokenizer_span_pairs(
+                    torch,
+                    source_tokenizer,
+                    candidate_tokenizer,
+                    source_batch,
+                    candidate_batch,
+                    _canonical_token,
+                    max_pairs=max(1, int(max_calibration_rows) - rows_collected),
+                )
+                span_pair_counts.append(int(span_pairs.shape[0]))
+                if int(span_pairs.numel()) == 0:
+                    continue
+                pair_idx = span_pairs.to(device=device, dtype=torch.long)
+                batch_idx = pair_idx[:, 0]
+                candidate_pos = pair_idx[:, 1]
+                source_pos = pair_idx[:, 2]
+                student_hidden = _select_hidden_state(student.hidden_states, "last")[:, :-1, :].contiguous().to(torch.float32)
+                teacher_logits = teacher.logits[:, :-1, :].contiguous().to(torch.float32)
+                rows = student_hidden[batch_idx, candidate_pos]
+                projected = _project_source_logits_to_candidate_vocab(
+                    torch,
+                    teacher_logits[batch_idx, source_pos],
+                    projected_vocab_groups,
+                    projected_vocab_mask,
+                    projected_vocab_valid,
+                    projected_vocab_weights=projected_vocab_weights,
+                )
+                remain = int(max_calibration_rows) - rows_collected
+                if int(rows.shape[0]) > remain:
+                    rows = rows[:remain]
+                    projected = projected[:remain]
+                hidden_chunks.append(rows.detach().cpu())
+                logit_chunks.append(projected.detach().cpu().index_select(dim=1, index=valid_idx))
+                rows_collected += int(rows.shape[0])
 
     if rows_collected == 0:
         raise ValueError("No aligned token rows found for cross-tokenizer head calibration.")
 
     hidden_rows = torch.cat(hidden_chunks, dim=0).to(torch.float32)
-    target_logits = torch.cat(logit_chunks, dim=0).to(torch.float32)
-    current_head = output_head.weight.data.detach().cpu().to(torch.float32).index_select(dim=0, index=valid_idx)
     if head_calibration_mode == "full":
+        if valid_idx is None:
+            raise RuntimeError("Internal error: full head calibration requires projected vocab rows.")
+        target_logits = torch.cat(logit_chunks, dim=0).to(torch.float32)
+        current_head = output_head.weight.data.detach().cpu().to(torch.float32).index_select(dim=0, index=valid_idx)
         fitted_head, fit_report = _fit_lm_head_from_hidden_logits(
             torch,
             hidden_rows,
@@ -1730,7 +1827,13 @@ def calibrate_cross_tokenizer_lm_head(
             ridge=float(ridge),
             head_blend_alpha=float(head_blend_alpha),
         )
-    else:
+        updated = output_head.weight.data.detach().cpu().to(torch.float32)
+        updated[valid_idx] = fitted_head
+    elif head_calibration_mode == "mean-shift":
+        if valid_idx is None:
+            raise RuntimeError("Internal error: mean-shift head calibration requires projected vocab rows.")
+        target_logits = torch.cat(logit_chunks, dim=0).to(torch.float32)
+        current_head = output_head.weight.data.detach().cpu().to(torch.float32).index_select(dim=0, index=valid_idx)
         fitted_head, fit_report = _fit_lm_head_mean_shift(
             torch,
             hidden_rows,
@@ -1739,8 +1842,21 @@ def calibrate_cross_tokenizer_lm_head(
             ridge=float(ridge),
             head_blend_alpha=float(head_blend_alpha),
         )
-    updated = output_head.weight.data.detach().cpu().to(torch.float32)
-    updated[valid_idx] = fitted_head
+        updated = output_head.weight.data.detach().cpu().to(torch.float32)
+        updated[valid_idx] = fitted_head
+    else:
+        current_head = output_head.weight.data.detach().cpu().to(torch.float32)
+        updated, fit_report = _fit_lm_head_answer_margin(
+            torch,
+            hidden_rows,
+            answer_gold_ids,
+            answer_negative_ids,
+            current_head,
+            ridge=float(ridge),
+            head_blend_alpha=float(head_blend_alpha),
+            margin=float(answer_first_token_margin),
+            steps=int(answer_margin_steps),
+        )
     output_head.weight.data.copy_(updated.to(device=output_head.weight.device, dtype=output_head.weight.dtype))
 
     target = Path(output_dir)
@@ -1755,11 +1871,16 @@ def calibrate_cross_tokenizer_lm_head(
         "ridge": float(ridge),
         "head_blend_alpha": float(head_blend_alpha),
         "head_calibration_mode": head_calibration_mode,
+        "response_loss_mode": response_loss_mode,
+        "answer_first_token_margin": float(answer_first_token_margin),
+        "answer_first_token_max_negatives": int(answer_first_token_max_negatives),
+        "answer_first_token_top_negatives": int(answer_first_token_top_negatives),
+        "answer_margin_steps": int(answer_margin_steps),
         "max_length": int(max_length),
         "max_calibration_rows": int(max_calibration_rows),
         "rows_collected": int(rows_collected),
         "projected_vocab_max_source_tokens": int(projected_vocab_max_source_tokens),
-        "valid_vocab_rows": int(valid_idx.numel()),
+        "valid_vocab_rows": int(valid_idx.numel()) if valid_idx is not None else int(output_head.weight.shape[0]),
         "candidate_vocab_size": len(candidate_tokenizer),
         "projected_vocab_group": projected_vocab_group_report,
         "span_pair_count_observed": span_pair_counts,
@@ -5026,11 +5147,14 @@ def _answer_first_token_margin_loss(
     response_loss_mode: str,
     max_negatives: int,
     margin: float,
+    top_negatives: int = 0,
 ):
     if max_negatives <= 0:
         raise ValueError("max_negatives must be positive.")
     if margin <= 0:
         raise ValueError("margin must be positive.")
+    if top_negatives < 0:
+        raise ValueError("top_negatives must be non-negative.")
     first_mask = _first_response_shift_mask(torch, loss_mask, attention_mask)
     if first_mask is None or int(first_mask.sum().detach().cpu().item()) <= 0:
         param_dtype = shift_student.dtype
@@ -5051,6 +5175,7 @@ def _answer_first_token_margin_loss(
         gold_id = int(input_ids[batch_idx, label_pos].detach().cpu().item())
         if gold_id < 0 or gold_id >= vocab_size:
             continue
+        row_logits = shift_student[batch_idx, logit_pos]
         negative_ids = _answer_first_token_negative_ids(
             tokenizer,
             str(texts[batch_idx]),
@@ -5059,9 +5184,18 @@ def _answer_first_token_margin_loss(
             gold_id,
             vocab_size,
         )
+        if int(top_negatives) > 0:
+            top_k = min(vocab_size, int(top_negatives) + 1)
+            top_ids = torch.topk(row_logits.detach().to(torch.float32), k=top_k, dim=-1).indices.detach().cpu().tolist()
+            for top_id in top_ids:
+                top_id = int(top_id)
+                if top_id == gold_id or top_id in negative_ids:
+                    continue
+                negative_ids.append(top_id)
+                if len(negative_ids) >= int(max_negatives) + int(top_negatives):
+                    break
         if not negative_ids:
             continue
-        row_logits = shift_student[batch_idx, logit_pos]
         gold_logit = row_logits[gold_id]
         negatives = torch.tensor(negative_ids, dtype=torch.long, device=shift_student.device)
         neg_logits = row_logits.index_select(0, negatives)
@@ -12233,6 +12367,120 @@ def _fit_lm_head_mean_shift(
         "delta_norm": float((shifted - old_head).norm().detach().cpu().item()),
     }
     return shifted.contiguous(), report
+
+
+def _fit_lm_head_answer_margin(
+    torch,
+    hidden_rows,
+    gold_ids: Sequence[int],
+    negative_ids: Sequence[Sequence[int]],
+    current_head,
+    ridge: float,
+    head_blend_alpha: float,
+    margin: float,
+    steps: int,
+):
+    if ridge < 0:
+        raise ValueError("ridge must be non-negative.")
+    if not 0.0 <= float(head_blend_alpha) <= 1.0:
+        raise ValueError("head_blend_alpha must be in [0, 1].")
+    if margin <= 0:
+        raise ValueError("margin must be positive.")
+    if steps <= 0:
+        raise ValueError("steps must be positive.")
+    hidden = torch.nan_to_num(hidden_rows.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    old_head = torch.nan_to_num(current_head.to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    if hidden.dim() != 2 or old_head.dim() != 2:
+        raise ValueError("hidden_rows and current_head must be rank-2 tensors.")
+    if int(hidden.shape[0]) != len(gold_ids) or int(hidden.shape[0]) != len(negative_ids):
+        raise ValueError("hidden_rows, gold_ids, and negative_ids must have the same row count.")
+    if int(hidden.shape[1]) != int(old_head.shape[1]):
+        raise ValueError("current_head hidden dimension must match hidden_rows.")
+
+    vocab_size = int(old_head.shape[0])
+    rows: list[tuple[int, list[int]]] = []
+    touched: set[int] = set()
+    for gold_id, negatives in zip(gold_ids, negative_ids):
+        gold = int(gold_id)
+        if gold < 0 or gold >= vocab_size:
+            rows.append((-1, []))
+            continue
+        filtered = []
+        for negative_id in negatives:
+            negative = int(negative_id)
+            if negative < 0 or negative >= vocab_size or negative == gold or negative in filtered:
+                continue
+            filtered.append(negative)
+        if filtered:
+            touched.add(gold)
+            touched.update(filtered)
+        rows.append((gold, filtered))
+
+    def _hinge_stats(head):
+        losses = []
+        violation_count = 0
+        pair_count = 0
+        for row_idx, (gold, negatives) in enumerate(rows):
+            if gold < 0 or not negatives:
+                continue
+            h = hidden[row_idx]
+            gold_logit = head[gold].dot(h)
+            neg_tensor = torch.tensor(negatives, dtype=torch.long, device=head.device)
+            neg_logits = head.index_select(0, neg_tensor).matmul(h)
+            violations = torch.relu(float(margin) + neg_logits - gold_logit)
+            losses.append(violations.mean())
+            violation_count += int((violations > 0).sum().detach().cpu().item())
+            pair_count += int(violations.numel())
+        if not losses:
+            return 0.0, 0, 0
+        return float(torch.stack(losses).mean().detach().cpu().item()), int(violation_count), int(pair_count)
+
+    before_loss, before_violations, pair_count = _hinge_stats(old_head)
+    solved = old_head.clone()
+    updates = 0
+    for _step in range(int(steps)):
+        for row_idx, (gold, negatives) in enumerate(rows):
+            if gold < 0 or not negatives:
+                continue
+            h = hidden[row_idx]
+            norm_sq = h.dot(h).clamp_min(1e-12)
+            gold_logit = solved[gold].dot(h)
+            neg_tensor = torch.tensor(negatives, dtype=torch.long, device=solved.device)
+            neg_logits = solved.index_select(0, neg_tensor).matmul(h)
+            violations = float(margin) + neg_logits - gold_logit
+            active_mask = violations > 0
+            if int(active_mask.sum().detach().cpu().item()) <= 0:
+                continue
+            active_neg = neg_tensor[active_mask]
+            active_violations = violations[active_mask]
+            active_count = int(active_neg.numel())
+            step_size = active_violations.mean() / ((1.0 + 1.0 / max(1, active_count)) * norm_sq + float(ridge))
+            delta = step_size * h
+            solved[gold] = solved[gold] + delta
+            solved[active_neg] = solved[active_neg] - delta.unsqueeze(0) / max(1, active_count)
+            updates += active_count
+
+    if head_blend_alpha < 1.0:
+        solved = (1.0 - float(head_blend_alpha)) * old_head + float(head_blend_alpha) * solved
+    after_loss, after_violations, _after_pair_count = _hinge_stats(solved)
+    return solved.contiguous(), {
+        "mode": "answer-margin",
+        "rows": int(hidden.shape[0]),
+        "hidden_size": int(hidden.shape[1]),
+        "vocab_rows": int(old_head.shape[0]),
+        "ridge": float(ridge),
+        "head_blend_alpha": float(head_blend_alpha),
+        "margin": float(margin),
+        "steps": int(steps),
+        "pair_count": int(pair_count),
+        "touched_vocab_rows": int(len(touched)),
+        "updates": int(updates),
+        "hinge_loss_before": float(before_loss),
+        "hinge_loss_after": float(after_loss),
+        "violations_before": int(before_violations),
+        "violations_after": int(after_violations),
+        "delta_norm": float((solved - old_head).norm().detach().cpu().item()),
+    }
 
 
 def _select_hidden_state(hidden_states, hidden_layer: str):

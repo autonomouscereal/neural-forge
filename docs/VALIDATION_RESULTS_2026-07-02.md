@@ -608,3 +608,75 @@ Interpretation:
   used as live proof.
 - The queued exact-generation comparisons and drill selector should remain the
   promotion signal once the active blank-target structural lanes finish.
+
+## Answer-Top-Negative Recovery Probe
+
+Implemented an opt-in first-answer-token top-negative path for exact-answer
+recovery:
+
+- `hf-xfamily-calibrate-head --head-calibration-mode answer-margin`
+  now supports `--answer-first-token-top-negatives`.
+- `hf-xfamily-recover` now supports
+  `--answer-first-token-top-negatives`.
+- `hf-xfamily-chain-anchor-compress` now supports
+  `--alm-answer-first-token-top-negatives`.
+- The default remains `0`, so existing runs keep their previous behavior unless
+  the flag is explicitly set.
+
+Validation:
+
+- Local parser/handler checks:
+  `4 passed`.
+- Remote focused tests:
+  `6 passed`.
+- Remote full suite after the loss-side change:
+  `283 passed`.
+
+Head-only calibration from the cleanopen full compact checkpoint:
+
+- Candidate:
+  `qwen4b_cleanopen_anchor_newloss_full_gpu4_20260701/models/02_alm`
+- Output:
+  `qwen4b_cleanopen_full02_answer_margin_topneg24_a035_20260702`
+- Calibration report:
+  `512` answer rows, `12,984` margin pairs, `143` touched vocab rows,
+  hinge loss `1.535 -> 0.838`, violations `2305 -> 2010`.
+- Full exact eval:
+  `eval_qwen4b_cleanopen_full02_answer_margin_topneg24_a035_20260702_exactgen_1000x1000x250.json`
+- Result versus pre-calibration cleanopen full:
+  behavior `804/1000 -> 804/1000`, choice `154/250 -> 154/250`,
+  generation health `926/1000 -> 800/1000`, PPL
+  `29460.00 -> 28841.49`.
+- Manual read: not a promotion winner. Arithmetic stayed wrong and general
+  manual responses became less coherent despite the modest PPL improvement.
+
+Loss-side recovery with top-negative answer margin:
+
+- Output:
+  `qwen4b_cleanopen_full02_topneg_margin_recover_80s_nogate_20260702`
+- Recipe:
+  `80` recovery steps, all trainable params, `answer-first-token-margin-weight
+  0.04`, `answer-first-token-margin 2.0`, `answer-first-token-max-negatives
+  12`, `answer-first-token-top-negatives 24`, no intermediate behavior gate
+  because the first gated attempt started an oversized `1000`-generation step-0
+  eval before training.
+- Full exact eval:
+  `eval_qwen4b_cleanopen_full02_topneg_margin_recover_80s_nogate_20260702_exactgen_1000x1000x250.json`
+- Result versus pre-recovery cleanopen full:
+  behavior `804/1000 -> 804/1000`, choice `154/250 -> 146/250`,
+  generation health `926/1000 -> 980/1000`, PPL
+  `29460.00 -> 30729.52`.
+- Manual read: mixed/negative. The Python prompt improved from a wrong
+  `multiply` name to `def add(a, b): return a + b`, but arithmetic stayed
+  wrong (`6+4` still generated malformed text ending in `88`) and safety /
+  general answers remained confused.
+
+Interpretation:
+
+- Top-negative answer pressure is useful as a diagnostic and can improve
+  generation-health gates, but head-only and short all-param recovery do not fix
+  exact arithmetic or broad manual coherence on this compact checkpoint.
+- Do not promote these lanes as the current best model. Keep the implementation
+  because it gives future ALM/block-recovery lanes a sharper exact-answer loss,
+  but pair it with behavior-selected structural recovery rather than standalone
+  head correction.

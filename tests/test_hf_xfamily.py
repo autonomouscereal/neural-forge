@@ -33,6 +33,7 @@ from neural_forge.hf_recovery import _cross_tokenizer_span_pairs
 from neural_forge.hf_recovery import _cross_tokenizer_span_pairs_for_mode
 from neural_forge.hf_recovery import _entropy_aware_kl_loss
 from neural_forge.hf_recovery import _fit_activation_map
+from neural_forge.hf_recovery import _fit_lm_head_answer_margin
 from neural_forge.hf_recovery import _fit_lm_head_from_hidden_logits
 from neural_forge.hf_recovery import _fit_lm_head_mean_shift
 from neural_forge.hf_recovery import _fit_shared_embedding_hidden_projection
@@ -920,6 +921,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "1.4",
             "--answer-first-token-max-negatives",
             "9",
+            "--answer-first-token-top-negatives",
+            "6",
             "--teacher-rank-weight",
             "0.11",
             "--teacher-rank-temperature",
@@ -1011,6 +1014,16 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.7",
             "--head-calibration-mode",
             "mean-shift",
+            "--response-loss-mode",
+            "answer",
+            "--answer-first-token-margin",
+            "1.4",
+            "--answer-first-token-max-negatives",
+            "10",
+            "--answer-first-token-top-negatives",
+            "6",
+            "--answer-margin-steps",
+            "5",
             "--max-length",
             "80",
             "--max-calibration-rows",
@@ -1155,6 +1168,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_recover_args.answer_first_token_margin_weight == pytest.approx(0.19)
     assert xfamily_recover_args.answer_first_token_margin == pytest.approx(1.4)
     assert xfamily_recover_args.answer_first_token_max_negatives == 9
+    assert xfamily_recover_args.answer_first_token_top_negatives == 6
     assert xfamily_recover_args.teacher_rank_weight == 0.11
     assert xfamily_recover_args.teacher_rank_temperature == 0.7
     assert xfamily_recover_args.teacher_rank_max_negatives == 5
@@ -1262,6 +1276,12 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_head_args.output == "head-out"
     assert xfamily_head_args.ridge == 0.04
     assert xfamily_head_args.head_blend_alpha == 0.7
+    assert xfamily_head_args.head_calibration_mode == "mean-shift"
+    assert xfamily_head_args.response_loss_mode == "answer"
+    assert xfamily_head_args.answer_first_token_margin == pytest.approx(1.4)
+    assert xfamily_head_args.answer_first_token_max_negatives == 10
+    assert xfamily_head_args.answer_first_token_top_negatives == 6
+    assert xfamily_head_args.answer_margin_steps == 5
     assert xfamily_head_args.max_length == 80
     assert xfamily_head_args.max_calibration_rows == 222
     assert xfamily_head_args.projected_vocab_max_source_tokens == 5
@@ -4482,6 +4502,50 @@ def test_answer_first_token_margin_loss_penalizes_prompt_number_copy() -> None:
     assert bad_loss.item() > good_loss.item()
 
 
+def test_answer_first_token_margin_loss_can_use_current_top_negatives() -> None:
+    torch = pytest.importorskip("torch")
+    tokenizer = _OffsetTokenizer()
+    text = "Question: What is 6 + 4?\nAnswer: 10"
+    input_ids = torch.tensor([[1, 2, 3, 10]])
+    attention_mask = torch.ones_like(input_ids)
+    loss_mask = torch.tensor([[0, 0, 0, 1]])
+    logits = torch.zeros((1, 3, 2000), dtype=torch.float32)
+    logits[0, 2, 10] = 4.0
+    logits[0, 2, 777] = 5.5
+
+    no_top_loss, no_top_count = _answer_first_token_margin_loss(
+        torch,
+        logits,
+        input_ids,
+        attention_mask,
+        loss_mask,
+        tokenizer,
+        [text],
+        response_loss_mode="answer",
+        max_negatives=1,
+        margin=1.0,
+        top_negatives=0,
+    )
+    top_loss, top_count = _answer_first_token_margin_loss(
+        torch,
+        logits,
+        input_ids,
+        attention_mask,
+        loss_mask,
+        tokenizer,
+        [text],
+        response_loss_mode="answer",
+        max_negatives=1,
+        margin=1.0,
+        top_negatives=1,
+    )
+
+    assert no_top_count == 1
+    assert top_count == 1
+    assert no_top_loss.item() == pytest.approx(0.0)
+    assert top_loss.item() > no_top_loss.item()
+
+
 def test_candidate_rank_kl_rewards_matching_teacher_preference() -> None:
     torch = pytest.importorskip("torch")
     teacher_nll = torch.tensor([0.1, 4.0, 5.0])
@@ -5099,6 +5163,33 @@ def test_fit_lm_head_mean_shift_reduces_average_logit_error() -> None:
     assert report["mode"] == "mean-shift"
     assert report["mean_abs_logit_error_after"] < report["mean_abs_logit_error_before"]
     assert torch.allclose(after.mean(dim=0), targets.mean(dim=0), atol=1e-5)
+
+
+def test_fit_lm_head_answer_margin_reduces_first_token_violations() -> None:
+    torch = pytest.importorskip("torch")
+    hidden = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
+    current = torch.zeros((4, 2), dtype=torch.float32)
+
+    fitted, report = _fit_lm_head_answer_margin(
+        torch,
+        hidden,
+        gold_ids=[0, 1],
+        negative_ids=[[1, 2], [0, 3]],
+        current_head=current,
+        ridge=0.0,
+        head_blend_alpha=1.0,
+        margin=1.0,
+        steps=4,
+    )
+    logits = hidden.matmul(fitted.t())
+
+    assert report["mode"] == "answer-margin"
+    assert report["hinge_loss_after"] < report["hinge_loss_before"]
+    assert report["violations_after"] < report["violations_before"]
+    assert logits[0, 0] > logits[0, 1]
+    assert logits[0, 0] > logits[0, 2]
+    assert logits[1, 1] > logits[1, 0]
+    assert logits[1, 1] > logits[1, 3]
 
 
 def test_same_tokenizer_reference_loss_prefers_matching_logits() -> None:
@@ -6388,6 +6479,8 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
             "1.8",
             "--answer-first-token-max-negatives",
             "10",
+            "--answer-first-token-top-negatives",
+            "11",
             "--teacher-rank-weight",
             "0.31",
             "--teacher-rank-temperature",
@@ -6513,6 +6606,7 @@ def test_hf_xfamily_recover_handler_passes_anchor_flags(monkeypatch) -> None:
         "answer_first_token_margin_weight": 0.43,
         "answer_first_token_margin": 1.8,
         "answer_first_token_max_negatives": 10,
+        "answer_first_token_top_negatives": 11,
         "teacher_rank_weight": 0.31,
         "teacher_rank_temperature": 0.8,
         "teacher_rank_max_negatives": 6,
@@ -6581,6 +6675,16 @@ def test_hf_xfamily_calibrate_head_handler_passes_flags(monkeypatch) -> None:
             "0.7",
             "--head-calibration-mode",
             "mean-shift",
+            "--response-loss-mode",
+            "answer",
+            "--answer-first-token-margin",
+            "1.6",
+            "--answer-first-token-max-negatives",
+            "9",
+            "--answer-first-token-top-negatives",
+            "7",
+            "--answer-margin-steps",
+            "4",
             "--max-length",
             "80",
             "--max-calibration-rows",
@@ -6609,6 +6713,11 @@ def test_hf_xfamily_calibrate_head_handler_passes_flags(monkeypatch) -> None:
         "ridge": 0.04,
         "head_blend_alpha": 0.7,
         "head_calibration_mode": "mean-shift",
+        "response_loss_mode": "answer",
+        "answer_first_token_margin": 1.6,
+        "answer_first_token_max_negatives": 9,
+        "answer_first_token_top_negatives": 7,
+        "answer_margin_steps": 4,
         "max_length": 80,
         "max_calibration_rows": 222,
         "projected_vocab_max_source_tokens": 5,
@@ -8044,6 +8153,8 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "1.6",
             "--alm-answer-first-token-max-negatives",
             "9",
+            "--alm-answer-first-token-top-negatives",
+            "10",
             "--alm-teacher-rank-weight",
             "0.029",
             "--alm-teacher-rank-temperature",
@@ -8204,6 +8315,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["alm_answer_first_token_margin_weight"] == 0.038
     assert captured["alm_answer_first_token_margin"] == 1.6
     assert captured["alm_answer_first_token_max_negatives"] == 9
+    assert captured["alm_answer_first_token_top_negatives"] == 10
     assert captured["alm_teacher_rank_weight"] == 0.029
     assert captured["alm_teacher_rank_temperature"] == 0.7
     assert captured["alm_teacher_rank_max_negatives"] == 8
