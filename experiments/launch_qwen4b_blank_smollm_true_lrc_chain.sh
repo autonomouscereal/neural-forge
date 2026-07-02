@@ -5,6 +5,12 @@ RUN_ROOT="${RUN_ROOT:-/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4
 REPO_ROOT="${REPO_ROOT:-/home/cereal/model-surgery-lab/neural-forge-src}"
 GPU_UUID="${GPU_UUID:-GPU-2ce6a95c-7b1f-644a-3808-d781732a0582}"
 TAG="${TAG:-qwen4b_blank_smollm_chain_mlpout_true_lrc_rank16_blockio_alm_gpu4_20260629}"
+SOURCE_MODEL="${SOURCE_MODEL:-Qwen/Qwen3-4B-Base}"
+SOURCE_WEIGHTS="${SOURCE_WEIGHTS:-}"
+MAX_BEHAVIOR_PROBES="${MAX_BEHAVIOR_PROBES:-200}"
+MAX_GENERATION_PROMPTS="${MAX_GENERATION_PROMPTS:-100}"
+MAX_CHOICE_PROBES="${MAX_CHOICE_PROBES:-100}"
+MAX_TEXT_EVALS="${MAX_TEXT_EVALS:-96}"
 ACT_TARGET="${ACT_TARGET:-mlp-output}"
 LRC_ALPHA="${LRC_ALPHA:-0.25}"
 LRC_RANK="${LRC_RANK:-16}"
@@ -109,8 +115,12 @@ ALM_CALIBRATION_ORDER="${ALM_CALIBRATION_ORDER:-original}"
 
 BLOCK_OUTPUT_HEAD_ARGS=()
 INIT_OUTPUT_HEAD_ARGS=()
+SOURCE_WEIGHT_ARGS=()
 if [[ "$INIT_UNTIE_OUTPUT_HEAD" == "1" ]]; then
   INIT_OUTPUT_HEAD_ARGS+=(--init-untie-output-head)
+fi
+if [[ -n "$SOURCE_WEIGHTS" ]]; then
+  SOURCE_WEIGHT_ARGS+=(--donor-weights "$SOURCE_WEIGHTS")
 fi
 if [[ "${BLOCK_TRAIN_OUTPUT_HEAD_WITH_KD:-0}" == "1" ]]; then
   BLOCK_OUTPUT_HEAD_ARGS+=(--block-train-output-head-with-kd)
@@ -131,17 +141,18 @@ LOG="$RUN_ROOT/logs/$TAG.log"
 PID="$RUN_ROOT/logs/$TAG.pid"
 
 CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-chain-anchor-compress \
-  Qwen/Qwen3-4B-Base \
+  "$SOURCE_MODEL" \
   "$RUN_ROOT/blank_smollm2_135m_seed0" \
   "$OUT" \
+  "${SOURCE_WEIGHT_ARGS[@]}" \
   --stages init,block,alm \
   --calibration-file "$RUN_ROOT/calibration_mix.jsonl" \
   --max-calibration-texts 384 \
   --eval-suite "$RUN_ROOT/behavior_suite.json" \
-  --max-behavior-probes 200 \
-  --max-generation-prompts 100 \
-  --max-choice-probes 100 \
-  --max-text-evals 96 \
+  --max-behavior-probes "$MAX_BEHAVIOR_PROBES" \
+  --max-generation-prompts "$MAX_GENERATION_PROMPTS" \
+  --max-choice-probes "$MAX_CHOICE_PROBES" \
+  --max-text-evals "$MAX_TEXT_EVALS" \
   --max-new-tokens 96 \
   --stage-ppl-gate-mode advisory \
   --promote-policy "$PROMOTE_POLICY" \
