@@ -7,6 +7,7 @@ EVAL_DIR="${EVAL_DIR:-$RUN_ROOT/evals}"
 TAG="${TAG:?Set TAG to the completed run tag to evaluate.}"
 MODEL_DIR="${MODEL_DIR:-$RUN_ROOT/$TAG}"
 QUEUE_PID="${QUEUE_PID:-0}"
+QUEUE_PID_FILE="${QUEUE_PID_FILE:-}"
 PARENT_WAIT_PIDS="${PARENT_WAIT_PIDS:-}"
 GPU_UUID="${GPU_UUID:-GPU-2ce6a95c-7b1f-644a-3808-d781732a0582}"
 DEVICE="${DEVICE:-cuda:0}"
@@ -30,7 +31,7 @@ cd "$REPO_ROOT"
 mkdir -p "$EVAL_DIR" "$OUT_DIR" "$RUN_ROOT/logs"
 export PYTHONPATH="$REPO_ROOT/src:${PYTHONPATH:-}"
 
-echo "retention_queue_start=$(date -Is) tag=$TAG queue_pid=$QUEUE_PID gpu_uuid=$GPU_UUID revision=$(cat .deployed_revision 2>/dev/null || true)"
+echo "retention_queue_start=$(date -Is) tag=$TAG queue_pid=$QUEUE_PID queue_pid_file=${QUEUE_PID_FILE:-none} gpu_uuid=$GPU_UUID revision=$(cat .deployed_revision 2>/dev/null || true)"
 
 wait_for_pids() {
   local label="$1"
@@ -43,6 +44,26 @@ wait_for_pids() {
       echo "$(date -Is) waiting_for_${label}_pid=$pid"
       sleep "$POLL_SECONDS"
     done
+  done
+}
+
+wait_for_pid_file() {
+  local path="$1"
+  local run_pid=""
+  if [[ -z "$path" ]]; then
+    return 0
+  fi
+  while true; do
+    if [[ -s "$path" ]]; then
+      run_pid=$(tr -dc '0-9\n' < "$path" | head -n 1 || true)
+      if [[ "$run_pid" =~ ^[0-9]+$ && "$run_pid" != "0" ]]; then
+        echo "$(date -Is) selected_run_pid_from_file=$run_pid path=$path"
+        wait_for_pids "run" "$run_pid"
+        return 0
+      fi
+    fi
+    echo "$(date -Is) waiting_for_run_pid_file=$path"
+    sleep "$POLL_SECONDS"
   done
 }
 
@@ -81,6 +102,7 @@ safe_label() {
 }
 
 wait_for_pids "upstream" $QUEUE_PID
+wait_for_pid_file "$QUEUE_PID_FILE"
 
 if [[ ! -d "$MODEL_DIR" ]]; then
   echo "missing_model_dir=$MODEL_DIR" >&2

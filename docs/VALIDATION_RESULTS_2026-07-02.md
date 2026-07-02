@@ -1671,3 +1671,42 @@ Interpretation: the importance/domain LRC variant should not be treated as a
 current best path. It is useful as a failure/control, while the active
 Qwen+GPT-2 sequential-all teacher-replay lane carries the stronger merge-first
 recipe.
+
+## Retention Watcher PID-File Hardening And AIM A/B Queue
+
+The generic retention watcher now accepts `QUEUE_PID_FILE`. This matters for
+queued compression scripts that first wait behind other jobs, then launch the
+real Python compression process and write `$RUN_ROOT/logs/$TAG.pid`. The
+watcher now waits for any explicit wrapper PID, then waits for the actual run
+PID from that file before evaluating the model. This prevents exact-generation
+and manual eval from racing a still-running compression job.
+
+Updated retention wrappers to pass the tag pid file for the current cross-family
+proof lanes, LFM lane, trainable byte-probe lane, all-target lane, and the
+older active Qwen+GPT-2 multidonor run.
+
+Queued the next model-side A/B, based on the local 2025-2026 notes that
+attention-influence recovery may preserve token interaction structure across
+tokenizer/family boundaries:
+
+- Script:
+  `experiments/queue_qwen4b_gpt2_multidonor_seqall_teacherreplay_aim_20260702.sh`
+- Tag:
+  `qwen4b_gpt2_multidonor_seqall_teacherreplay_aim004mid_gpu4_20260702`
+- Queue wrapper PID:
+  `3989080`
+- Waits behind:
+  current direct-run lm-eval watcher PID `3969700`
+- Retention watcher PID:
+  `3989128`
+- lm-eval watcher PID:
+  `3989344`
+- Log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_gpt2_multidonor_seqall_teacherreplay_aim004mid_gpu4_20260702.queue_wrapper.log`
+- Recipe delta versus the current direct teacher-replay lane:
+  `ALM_ATTENTION_INFLUENCE_WEIGHT=0.04` and
+  `ALM_ATTENTION_INFLUENCE_LAYER=middle`.
+
+This is an A/B against the active direct teacher-replay lane, not a promotion.
+It should only be judged after both child retention/manual and lm-eval
+artifacts land.
