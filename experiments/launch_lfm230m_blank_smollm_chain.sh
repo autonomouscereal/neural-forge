@@ -16,6 +16,7 @@ RESIDUAL_ALPHA="${RESIDUAL_ALPHA:-0.01}"
 RESIDUAL_RANK="${RESIDUAL_RANK:-16}"
 INIT_PROJECTION_SCALE="${INIT_PROJECTION_SCALE:-target-rms}"
 INIT_PROJECTION_BLEND_ALPHA="${INIT_PROJECTION_BLEND_ALPHA:-1.0}"
+INIT_TRANSPORT_SUPPORT="${INIT_TRANSPORT_SUPPORT:-centroid}"
 BLOCK_STEPS_PER_LAYER="${BLOCK_STEPS_PER_LAYER:-4}"
 BLOCK_LR="${BLOCK_LR:-2e-6}"
 BLOCK_ALM_KD_WEIGHT="${BLOCK_ALM_KD_WEIGHT:-0.0}"
@@ -102,6 +103,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-hidden-basis-preprocess uncentered-rowrms \
   --init-activation-fold-assignment similarity \
   --init-transport-backend sinkhorn \
+  --init-transport-support "$INIT_TRANSPORT_SUPPORT" \
   --init-donor-layer-fold-mode fold \
   --init-donor-layer-group-strategy activation-energy \
   --init-attention-fold-mode activation-coupled \

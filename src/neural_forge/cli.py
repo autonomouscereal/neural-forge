@@ -146,6 +146,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Backend for fold-mode=transport: sparse centroid routing or dense Sinkhorn transport.",
     )
     hf_donor_init.add_argument(
+        "--transport-support",
+        choices=["centroid", "importance"],
+        default="centroid",
+        help=(
+            "Support set for activation transport. centroid preserves the existing clustered-centroid map; "
+            "importance routes all source axes onto the highest activation-weight survivor axes."
+        ),
+    )
+    hf_donor_init.add_argument(
         "--donor-layer-fold-mode",
         choices=["representative", "average", "fold"],
         default="representative",
@@ -1374,6 +1383,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     xfamily_chain.add_argument("--init-activation-fold-assignment", choices=["balanced", "similarity"], default="balanced")
     xfamily_chain.add_argument("--init-transport-backend", choices=["sparse", "sinkhorn"], default="sparse")
+    xfamily_chain.add_argument("--init-transport-support", choices=["centroid", "importance"], default="centroid")
     xfamily_chain.add_argument("--init-donor-layer-fold-mode", choices=["representative", "average", "fold"], default="fold")
     xfamily_chain.add_argument("--init-donor-layer-group-strategy", choices=["depth", "activation-energy"], default="depth")
     xfamily_chain.add_argument(
@@ -1982,6 +1992,7 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         hidden_basis_preprocess=args.hidden_basis_preprocess,
         activation_fold_assignment=args.activation_fold_assignment,
         transport_backend=args.transport_backend,
+        transport_support=args.transport_support,
         donor_layer_fold_mode=args.donor_layer_fold_mode,
         donor_layer_group_strategy=args.donor_layer_group_strategy,
         attention_fold_mode=args.attention_fold_mode,
@@ -2666,6 +2677,7 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         init_hidden_basis_preprocess=args.init_hidden_basis_preprocess,
         init_activation_fold_assignment=args.init_activation_fold_assignment,
         init_transport_backend=args.init_transport_backend,
+        init_transport_support=args.init_transport_support,
         init_donor_layer_fold_mode=args.init_donor_layer_fold_mode,
         init_donor_layer_group_strategy=args.init_donor_layer_group_strategy,
         init_attention_fold_mode=args.init_attention_fold_mode,

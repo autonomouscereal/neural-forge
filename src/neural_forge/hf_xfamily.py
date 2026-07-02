@@ -259,6 +259,7 @@ def donor_projected_init(
     hidden_basis_preprocess: str = "centered-rowrms",
     activation_fold_assignment: str = "balanced",
     transport_backend: str = "sparse",
+    transport_support: str = "centroid",
     donor_layer_fold_mode: str = "representative",
     donor_layer_group_strategy: str = "depth",
     attention_fold_mode: str = "independent",
@@ -322,6 +323,8 @@ def donor_projected_init(
         raise ValueError("activation_fold_assignment must be balanced or similarity.")
     if transport_backend not in {"sparse", "sinkhorn"}:
         raise ValueError("transport_backend must be sparse or sinkhorn.")
+    if transport_support not in {"centroid", "importance"}:
+        raise ValueError("transport_support must be centroid or importance.")
     if donor_layer_fold_mode not in {"representative", "average", "fold"}:
         raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
     if donor_layer_group_strategy not in {"depth", "activation-energy"}:
@@ -641,6 +644,7 @@ def donor_projected_init(
                 axis_reductions=axis_reductions,
                 activation_fold_assignment=activation_fold_assignment,
                 transport_backend=transport_backend,
+                transport_support=transport_support,
                 assignment_cache=axis_assignment_cache,
                 semantic_prefix=("layer", int(target_layer_idx)),
             )
@@ -662,6 +666,7 @@ def donor_projected_init(
                 axis_reductions=axis_reductions,
                 activation_fold_assignment=activation_fold_assignment,
                 transport_backend=transport_backend,
+                transport_support=transport_support,
                 assignment_cache=axis_assignment_cache,
             )
         projected = _scale_projection_to_target(torch, projected, target_tensor, projection_scale)
@@ -695,6 +700,7 @@ def donor_projected_init(
                 axis_weights=axis_weights,
                 activation_fold_assignment=activation_fold_assignment,
                 transport_backend=transport_backend,
+                transport_support=transport_support,
                 assignment_cache=axis_assignment_cache,
                 reference_weight=projected,
                 fit_gate=activation_fit_gate,
@@ -755,6 +761,7 @@ def donor_projected_init(
         hidden_axis_weights=hidden_axis_weights,
         activation_fold_assignment=activation_fold_assignment,
         transport_backend=transport_backend,
+        transport_support=transport_support,
         projection_scale=projection_scale,
         projection_blend_alpha=projection_blend_alpha,
         consumer_hidden_reduction=consumer_hidden_reduction,
@@ -786,6 +793,8 @@ def donor_projected_init(
         lm_head_hidden_basis=lm_head_hidden_basis,
         hidden_axis_weights=hidden_axis_weights,
         activation_fold_assignment=activation_fold_assignment,
+        transport_backend=transport_backend,
+        transport_support=transport_support,
         projection_scale=projection_scale,
         projection_blend_alpha=projection_blend_alpha,
         consumer_hidden_reduction=consumer_hidden_reduction,
@@ -818,6 +827,7 @@ def donor_projected_init(
         "layer_hidden_basis": layer_hidden_basis_report,
         "activation_fold_assignment": activation_fold_assignment,
         "transport_backend": transport_backend,
+        "transport_support": transport_support,
         "donor_layer_fold_mode": donor_layer_fold_mode,
         "donor_layer_group_strategy": donor_layer_group_strategy,
         "donor_layer_groups": donor_layer_group_report,
@@ -1733,6 +1743,7 @@ def chain_anchor_staged_compress(
     init_hidden_basis_preprocess: str = "centered-rowrms",
     init_activation_fold_assignment: str = "balanced",
     init_transport_backend: str = "sparse",
+    init_transport_support: str = "centroid",
     init_donor_layer_fold_mode: str = "fold",
     init_donor_layer_group_strategy: str = "depth",
     init_attention_fold_mode: str = "independent",
@@ -1942,6 +1953,7 @@ def chain_anchor_staged_compress(
                 hidden_basis_preprocess=init_hidden_basis_preprocess,
                 activation_fold_assignment=init_activation_fold_assignment,
                 transport_backend=init_transport_backend,
+                transport_support=init_transport_support,
                 donor_layer_fold_mode=init_donor_layer_fold_mode,
                 donor_layer_group_strategy=init_donor_layer_group_strategy,
                 attention_fold_mode=init_attention_fold_mode,
@@ -2774,6 +2786,7 @@ def _initialize_non_layer_tensors_from_donor(
     hidden_axis_weights=None,
     activation_fold_assignment: str = "balanced",
     transport_backend: str = "sparse",
+    transport_support: str = "centroid",
     projection_scale: str = "none",
     projection_blend_alpha: float = 1.0,
     consumer_hidden_reduction: str = "mean",
@@ -2822,6 +2835,7 @@ def _initialize_non_layer_tensors_from_donor(
             ),
             activation_fold_assignment=activation_fold_assignment,
             transport_backend=transport_backend,
+            transport_support=transport_support,
             assignment_cache=assignment_cache,
         )
         projected = _scale_projection_to_target(torch, projected, target_tensor, projection_scale)
@@ -3116,6 +3130,7 @@ def _resize_tensor_to_shape(
     axis_reductions: dict[int, str] | None = None,
     activation_fold_assignment: str = "balanced",
     transport_backend: str = "sparse",
+    transport_support: str = "centroid",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
 ):
     if fold_mode not in {"mean", "rms", "transport"}:
@@ -3124,6 +3139,8 @@ def _resize_tensor_to_shape(
         raise ValueError("activation_fold_assignment must be balanced or similarity.")
     if transport_backend not in {"sparse", "sinkhorn"}:
         raise ValueError("transport_backend must be sparse or sinkhorn.")
+    if transport_support not in {"centroid", "importance"}:
+        raise ValueError("transport_support must be centroid or importance.")
     if tuple(source.shape) == tuple(target_shape):
         return source.clone()
     if source.dim() != len(target_shape):
@@ -3151,6 +3168,7 @@ def _resize_tensor_to_shape(
                 reduction="mean" if axis_reductions is None else axis_reductions.get(axis, "mean"),
                 assignment_mode=activation_fold_assignment,
                 transport_backend=transport_backend,
+                transport_support=transport_support,
                 assignment_cache=assignment_cache,
                 assignment_cache_key=semantic_key,
             )
@@ -3174,6 +3192,7 @@ def _resize_attention_tensor_to_shape(
     axis_reductions: dict[int, str] | None = None,
     activation_fold_assignment: str = "balanced",
     transport_backend: str = "sparse",
+    transport_support: str = "centroid",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
     semantic_prefix=None,
 ):
@@ -3206,6 +3225,7 @@ def _resize_attention_tensor_to_shape(
             fold_mode=fold_mode,
             reduction="mean" if axis_reductions is None else axis_reductions.get(axis, "mean"),
             transport_backend=transport_backend,
+            transport_support=transport_support,
             head_weights=head_weights,
             head_features=head_features,
             head_fold_mode=attention_head_fold_mode,
@@ -3248,6 +3268,7 @@ def _resize_attention_tensor_to_shape(
                 reduction="mean" if axis_reductions is None else axis_reductions.get(axis, "mean"),
                 assignment_mode=activation_fold_assignment,
                 transport_backend=transport_backend,
+                transport_support=transport_support,
                 assignment_cache=assignment_cache,
                 assignment_cache_key=semantic_key,
             )
@@ -3333,6 +3354,7 @@ def _resize_head_partitioned_axis(
     fold_mode: str,
     reduction: str = "mean",
     transport_backend: str = "sparse",
+    transport_support: str = "centroid",
     head_weights=None,
     head_features=None,
     head_fold_mode: str | None = None,
@@ -3366,6 +3388,7 @@ def _resize_head_partitioned_axis(
         reduction=reduction,
         assignment_mode=head_assignment_mode,
         transport_backend=transport_backend,
+        transport_support=transport_support,
         assignment_cache=assignment_cache,
         assignment_cache_key=head_assignment_key,
     )
@@ -3380,6 +3403,7 @@ def _resize_head_partitioned_axis(
         reduction=reduction,
         assignment_mode=head_dim_assignment_mode,
         transport_backend=transport_backend,
+        transport_support=transport_support,
         assignment_cache=assignment_cache,
         assignment_cache_key=head_dim_assignment_key,
     )
@@ -3652,11 +3676,14 @@ def _axis_assignment_cache_report(assignment_cache: dict[Any, dict[str, Any]]) -
     for key, item in assignment_cache.items():
         map_type = "transport" if "transport_indices" in item or "transport_matrix" in item else "assignment"
         transport_matrix = item.get("transport_matrix")
+        support_indices = item.get("target_support_indices")
         report.append(
             {
                 "key": repr(key),
                 "map_type": map_type,
                 "transport_backend": item.get("transport_backend"),
+                "transport_support": item.get("transport_support"),
+                "target_support_indices": support_indices.tolist() if support_indices is not None else None,
                 "transport_matrix_shape": list(transport_matrix.shape) if transport_matrix is not None else None,
                 "source_dim": int(item.get("source_dim", 0)),
                 "target_dim": int(item.get("target_dim", 0)),
@@ -3676,9 +3703,12 @@ def _build_sparse_activation_transport(
     temperature: float = 0.08,
     dense_limit: int = 16_000_000,
     transport_backend: str = "sparse",
+    transport_support: str = "centroid",
 ):
     if transport_backend not in {"sparse", "sinkhorn"}:
         raise ValueError("transport_backend must be sparse or sinkhorn.")
+    if transport_support not in {"centroid", "importance"}:
+        raise ValueError("transport_support must be centroid or importance.")
     feature_rows = features.detach().cpu().to(torch.float32)
     if feature_rows.dim() != 2:
         raise ValueError("Activation features must be a rank-2 tensor.")
@@ -3692,17 +3722,23 @@ def _build_sparse_activation_transport(
         if int(fold_weights.numel()) != source_dim:
             raise ValueError("Activation transport weights must match feature rows.")
     feature_rows = _row_normalize(feature_rows)
-    seed_assignment = _activation_similarity_assignment(torch, feature_rows, target_dim, fold_weights, iterations=4)
-    centroids = []
-    for target_idx in range(target_dim):
-        mask = seed_assignment == target_idx
-        if bool(mask.any()):
-            cluster_weights = fold_weights[mask].unsqueeze(1)
-            centroid = (feature_rows[mask] * cluster_weights).sum(dim=0) / cluster_weights.sum().clamp_min(1e-12)
-        else:
-            centroid = feature_rows[int(torch.argmax(fold_weights).item())]
-        centroids.append(centroid)
-    centroid_rows = _row_normalize(torch.stack(centroids, dim=0))
+    support_indices = None
+    if transport_support == "importance":
+        support_indices = torch.topk(fold_weights, k=target_dim, largest=True).indices.sort().values
+        centroid_rows = feature_rows[support_indices]
+    else:
+        seed_assignment = _activation_similarity_assignment(torch, feature_rows, target_dim, fold_weights, iterations=4)
+        centroids = []
+        for target_idx in range(target_dim):
+            mask = seed_assignment == target_idx
+            if bool(mask.any()):
+                cluster_weights = fold_weights[mask].unsqueeze(1)
+                centroid = (feature_rows[mask] * cluster_weights).sum(dim=0) / cluster_weights.sum().clamp_min(1e-12)
+            else:
+                centroid = feature_rows[int(torch.argmax(fold_weights).item())]
+            centroids.append(centroid)
+        centroid_rows = torch.stack(centroids, dim=0)
+    centroid_rows = _row_normalize(centroid_rows)
     top_k = max(1, min(int(top_k), target_dim))
     scores = feature_rows.matmul(centroid_rows.t())
     if transport_backend == "sinkhorn" and int(source_dim) * int(target_dim) <= int(dense_limit):
@@ -3727,6 +3763,10 @@ def _build_sparse_activation_transport(
             "target_dim": int(target_dim),
             "assignment_mode": "transport",
             "transport_backend": "sinkhorn_dense",
+            "transport_support": transport_support,
+            "target_support_indices": None
+            if support_indices is None
+            else support_indices.detach().cpu().to(torch.long),
             "sinkhorn_iterations": int(balance_iterations),
         }
     top_scores, top_indices = torch.topk(scores, k=top_k, dim=1)
@@ -3743,6 +3783,8 @@ def _build_sparse_activation_transport(
         "source_dim": int(source_dim),
         "target_dim": int(target_dim),
         "assignment_mode": "transport",
+        "transport_support": transport_support,
+        "target_support_indices": None if support_indices is None else support_indices.detach().cpu().to(torch.long),
     }
 
 
@@ -3813,6 +3855,7 @@ def _resize_tensor_axis_mean_fold(
     reduction: str = "mean",
     assignment_mode: str = "balanced",
     transport_backend: str = "sparse",
+    transport_support: str = "centroid",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
     assignment_cache_key=None,
 ):
@@ -3826,6 +3869,8 @@ def _resize_tensor_axis_mean_fold(
         raise ValueError("assignment_mode must be balanced or similarity.")
     if transport_backend not in {"sparse", "sinkhorn"}:
         raise ValueError("transport_backend must be sparse or sinkhorn.")
+    if transport_support not in {"centroid", "importance"}:
+        raise ValueError("transport_support must be centroid or importance.")
     source_dim = int(tensor.shape[axis])
     if source_dim == target_dim:
         return tensor
@@ -3864,6 +3909,7 @@ def _resize_tensor_axis_mean_fold(
                     target_dim,
                     weights=fold_weights,
                     transport_backend=transport_backend,
+                    transport_support=transport_support,
                 )
                 if cache_key is not None and assignment_cache is not None:
                     assignment_cache[cache_key] = cached
@@ -4537,6 +4583,7 @@ def _fit_projected_linear_from_donor_activations(
     axis_weights: dict[int, Any] | None = None,
     activation_fold_assignment: str = "balanced",
     transport_backend: str = "sparse",
+    transport_support: str = "centroid",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
     reference_weight=None,
     fit_gate: str = "validation",
@@ -4628,6 +4675,7 @@ def _fit_projected_linear_from_donor_activations(
         axis_weights=axis_weights,
         activation_fold_assignment=activation_fold_assignment,
         transport_backend=transport_backend,
+        transport_support=transport_support,
         assignment_cache=assignment_cache,
     )
     folded_output = _resize_linear_activation_rows(
@@ -4646,6 +4694,7 @@ def _fit_projected_linear_from_donor_activations(
         axis_weights=axis_weights,
         activation_fold_assignment=activation_fold_assignment,
         transport_backend=transport_backend,
+        transport_support=transport_support,
         assignment_cache=assignment_cache,
     )
     if folded_input is None or folded_output is None:
@@ -4802,6 +4851,7 @@ def _resize_linear_activation_rows(
     axis_weights: dict[int, Any] | None = None,
     activation_fold_assignment: str = "balanced",
     transport_backend: str = "sparse",
+    transport_support: str = "centroid",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
 ):
     if side not in {"input", "output"}:
@@ -4831,6 +4881,7 @@ def _resize_linear_activation_rows(
             fold_mode="transport" if head_features is not None else fold_mode,
             reduction="mean",
             transport_backend=transport_backend,
+            transport_support=transport_support,
             head_weights=head_weights,
             head_features=head_features,
             head_assignment_mode=activation_fold_assignment,
@@ -4857,6 +4908,7 @@ def _resize_linear_activation_rows(
         axis_reductions={1: "mean"},
         activation_fold_assignment=activation_fold_assignment,
         transport_backend=transport_backend,
+        transport_support=transport_support,
         assignment_cache=assignment_cache,
     )
 
@@ -5059,6 +5111,7 @@ def _initialize_token_weights_from_donor(
     hidden_axis_weights=None,
     activation_fold_assignment: str = "balanced",
     transport_backend: str = "sparse",
+    transport_support: str = "centroid",
     projection_scale: str = "none",
     projection_blend_alpha: float = 1.0,
     consumer_hidden_reduction: str = "mean",
@@ -5108,6 +5161,7 @@ def _initialize_token_weights_from_donor(
         hidden_axis_weights=hidden_axis_weights,
         activation_fold_assignment=activation_fold_assignment,
         transport_backend=transport_backend,
+        transport_support=transport_support,
         projection_scale=projection_scale,
         projection_blend_alpha=projection_blend_alpha,
         assignment_cache=assignment_cache,
@@ -5143,6 +5197,7 @@ def _initialize_token_weights_from_donor(
                 hidden_axis_weights=hidden_axis_weights,
                 activation_fold_assignment=activation_fold_assignment,
                 transport_backend=transport_backend,
+                transport_support=transport_support,
                 projection_scale=projection_scale,
                 projection_blend_alpha=projection_blend_alpha,
                 assignment_cache=assignment_cache,
@@ -5178,6 +5233,7 @@ def _project_token_weight_rows(
     hidden_axis_weights=None,
     activation_fold_assignment: str = "balanced",
     transport_backend: str = "sparse",
+    transport_support: str = "centroid",
     projection_scale: str = "none",
     projection_blend_alpha: float = 1.0,
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
@@ -5219,6 +5275,7 @@ def _project_token_weight_rows(
             axis_reductions={1: hidden_axis_reduction},
             activation_fold_assignment=activation_fold_assignment,
             transport_backend=transport_backend,
+            transport_support=transport_support,
             assignment_cache=assignment_cache,
         )
         projected = _scale_projection_to_target(

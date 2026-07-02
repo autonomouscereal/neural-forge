@@ -7,6 +7,7 @@ GPU_UUID="${GPU_UUID:-GPU-f5a09535-fc85-a027-50f7-734b344747dd}"
 SOURCE_MODEL="${SOURCE_MODEL:-Qwen/Qwen3-4B-Base}"
 ANCHOR_MODEL="${ANCHOR_MODEL:-$RUN_ROOT/blank_gpt2_124m_seed0}"
 TAG="${TAG:-qwen4b_blank_gpt2_crossarch_lrc_alm_gpu6_20260629}"
+INIT_TRANSPORT_SUPPORT="${INIT_TRANSPORT_SUPPORT:-centroid}"
 
 cd "$REPO_ROOT"
 source /home/cereal/model-surgery-lab/venv/bin/activate
@@ -47,6 +48,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-hidden-basis-preprocess uncentered-rowrms \
   --init-activation-fold-assignment similarity \
   --init-transport-backend sinkhorn \
+  --init-transport-support "$INIT_TRANSPORT_SUPPORT" \
   --init-donor-layer-fold-mode fold \
   --init-donor-layer-group-strategy activation-energy \
   --init-attention-fold-mode activation-coupled \

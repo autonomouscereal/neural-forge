@@ -438,6 +438,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "similarity",
             "--transport-backend",
             "sinkhorn",
+            "--transport-support",
+            "importance",
             "--donor-layer-fold-mode",
             "fold",
             "--donor-layer-group-strategy",
@@ -890,6 +892,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.hidden_basis_preprocess == "uncentered-rowrms"
     assert donor_init_args.activation_fold_assignment == "similarity"
     assert donor_init_args.transport_backend == "sinkhorn"
+    assert donor_init_args.transport_support == "importance"
     assert donor_init_args.donor_layer_fold_mode == "fold"
     assert donor_init_args.donor_layer_group_strategy == "activation-energy"
     assert donor_init_args.attention_fold_mode == "coupled"
@@ -2683,6 +2686,40 @@ def test_transport_fold_uses_balanced_sinkhorn_feature_map() -> None:
     assert transport["transport_matrix"].shape == (4, 2)
     assert transport["transport_matrix"].sum(dim=1).tolist() == pytest.approx([1.0, 1.0, 1.0, 1.0])
     assert transport["transport_matrix"].sum(dim=0).tolist() == pytest.approx([2.0, 2.0], abs=0.05)
+
+
+def test_transport_fold_can_use_importance_survivor_support() -> None:
+    torch = pytest.importorskip("torch")
+    cache = {}
+    features = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.98, 0.02],
+            [0.0, 1.0],
+            [0.02, 0.98],
+        ],
+        dtype=torch.float32,
+    )
+    weights = torch.tensor([0.1, 10.0, 0.2, 8.0], dtype=torch.float32)
+    source = torch.tensor([[10.0], [20.0], [30.0], [40.0]], dtype=torch.float32)
+
+    folded = _resize_tensor_axis_mean_fold(
+        torch,
+        source,
+        axis=0,
+        target_dim=2,
+        fold_mode="transport",
+        weights=weights,
+        features=features,
+        transport_support="importance",
+        assignment_cache=cache,
+        assignment_cache_key=("hidden", "importance-support-test"),
+    )
+
+    assert folded.shape == (2, 1)
+    transport = next(iter(cache.values()))
+    assert transport["transport_support"] == "importance"
+    assert transport["target_support_indices"].tolist() == [1, 3]
 
 
 def test_activation_axis_weights_aggregate_folded_donor_group() -> None:
@@ -4854,6 +4891,8 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "99",
             "--activation-fold-assignment",
             "similarity",
+            "--transport-support",
+            "importance",
             "--donor-layer-fold-mode",
             "average",
             "--donor-layer-group-strategy",
@@ -4927,6 +4966,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "hidden_basis_preprocess": "centered-rowrms",
         "activation_fold_assignment": "similarity",
         "transport_backend": "sparse",
+        "transport_support": "importance",
         "donor_layer_fold_mode": "average",
         "donor_layer_group_strategy": "activation-energy",
         "attention_fold_mode": "activation-coupled",
@@ -6368,6 +6408,7 @@ def test_chain_anchor_init_stage_forwards_activation_fit_flags(monkeypatch, tmp_
         init_hidden_basis_preprocess="uncentered-rowrms",
         init_activation_fold_assignment="similarity",
         init_transport_backend="sinkhorn",
+        init_transport_support="importance",
         init_donor_layer_fold_mode="fold",
         init_donor_layer_group_strategy="activation-energy",
         init_attention_fold_mode="activation-coupled",
@@ -6410,6 +6451,7 @@ def test_chain_anchor_init_stage_forwards_activation_fit_flags(monkeypatch, tmp_
     assert captured["hidden_basis_preprocess"] == "uncentered-rowrms"
     assert captured["activation_fold_assignment"] == "similarity"
     assert captured["transport_backend"] == "sinkhorn"
+    assert captured["transport_support"] == "importance"
     assert captured["donor_layer_group_strategy"] == "activation-energy"
     assert captured["attention_fold_mode"] == "activation-coupled"
     assert captured["attention_head_dim_transport"] == "qk-vo"
@@ -6482,6 +6524,8 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "similarity",
             "--init-transport-backend",
             "sinkhorn",
+            "--init-transport-support",
+            "importance",
             "--init-donor-layer-group-strategy",
             "activation-energy",
             "--init-attention-fold-mode",
@@ -6644,6 +6688,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["init_hidden_basis_preprocess"] == "uncentered-rowrms"
     assert captured["init_activation_fold_assignment"] == "similarity"
     assert captured["init_transport_backend"] == "sinkhorn"
+    assert captured["init_transport_support"] == "importance"
     assert captured["init_donor_layer_group_strategy"] == "activation-energy"
     assert captured["init_attention_fold_mode"] == "activation-coupled"
     assert captured["init_attention_head_dim_transport"] == "qk-vo"
