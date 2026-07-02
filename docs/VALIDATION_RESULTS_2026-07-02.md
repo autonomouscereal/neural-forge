@@ -980,3 +980,92 @@ Interpretation:
   because it gives future ALM/block-recovery lanes a sharper exact-answer loss,
   but pair it with behavior-selected structural recovery rather than standalone
   head correction.
+
+## Current Parent-Retention Snapshot
+
+Generated comparison artifacts under:
+
+`/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/comparisons/current_retention_snapshot_20260702/`
+
+The snapshot compares cached parent behavior from
+`eval_parent_qwen3_4b_base_1000g_20260701_1000x1000x250.json` against the
+best completed 135M recovered candidates and the blank random control. It is
+not the final parent exact-generation cache; the UUID-based parent exactgen
+retry is still queued behind the RTX 8000 multi-donor job.
+
+| Candidate | Behavior | Parent-pass behavior retention | Generation | Parent-pass generation retention | Choice |
+|---|---:|---:|---:|---:|---:|
+| blank random | `0/1000` | `0.0000` | `0/1000` | `0.0000` | `28/250` |
+| cleanopen L4 ALM | `803/1000` | `0.5075` | `1000/1000` | `1.0000` | `149/250` |
+| mathdrill L4 ALM | `805/1000` | `0.5125` | `1000/1000` | `1.0000` | `150/250` |
+| cleanopen full ALM exactgen | `804/1000` | `0.5100` | `926/1000` | `0.1553` | `154/250` |
+| answer-margin topneg24 a035 | `804/1000` | `0.5100` | `800/1000` | `1.0000` | `154/250` |
+| topneg margin recover 80s no gate | `804/1000` | `0.5100` | `980/1000` | `1.0000` | `146/250` |
+
+Interpretation:
+
+- These recovered checkpoints are clearly above random and preserve a
+  substantial subset of parent-pass behavior, but they are not yet a solved
+  25x+ blank-target compression.
+- Exact numeric and forced-choice grounding remain weak. The best completed
+  candidates hover around `804-805/1000` behavior but only `146-154/250`
+  choice, and manual reads still show arithmetic answer-copy failures.
+- Future promotion should compare against the refreshed parent exactgen cache
+  once `parent_qwen3_4b_base_exactgen_uuid_retry_20260702` finishes.
+
+## Balanced Signed Similarity Transport
+
+Added two feature-aware balanced assignment modes for merge-first width folding:
+
+- `balanced-similarity`
+- `balanced-signed-similarity`
+
+The existing `similarity` and `signed-similarity` modes cluster activation
+directions well, but a strict `4B -> 135M` blank target can still overload a few
+child axes while leaving other axes thin. The new balanced modes seed every
+target axis with a strong representative and then softly penalize overloaded
+target-axis mass during assignment. The signed variant keeps the RMSNorm
+sign-flip correction from `signed-similarity`.
+
+What changed:
+
+- `hf-donor-project-init --activation-fold-assignment` accepts both balanced
+  similarity modes.
+- `hf-xfamily-chain-anchor-compress --init-activation-fold-assignment` accepts
+  both balanced similarity modes.
+- Transport construction now receives the full assignment mode, so balanced
+  signed modes influence both centroid seeding and target mass balancing.
+- Non-transport folding uses the same helper, so MLP axes, attention heads,
+  hidden axes, non-layer tensors, embeddings, and output heads stay consistent.
+
+Validation so far:
+
+- Local compile:
+  `python -m py_compile src/neural_forge/hf_xfamily.py src/neural_forge/cli.py`
+- Local focused parser/fold checks with `PYTHONPATH=src`:
+  `2 passed, 2 skipped, 236 deselected` and
+  `2 passed, 238 deselected`.
+- Local full suite:
+  `146 passed, 147 skipped`.
+- Remote syntax and focused Torch-backed checks:
+  `4 passed, 236 deselected` and `2 passed, 238 deselected`.
+- Remote full suite:
+  `293 passed`.
+
+Queued proof lane to run after the existing nonfinite LRC guard lane:
+
+- Script:
+  `experiments/queue_qwen4b_blank_smollm_balanced_signed_cka_qmedoid_lrcguard_20260702.sh`
+- Tag:
+  `qwen4b_blank_smollm_balanced_signed_cka_qmedoid_lrcguard_full_gpu4_20260702`
+- Intended recipe:
+  `activation-cka` depth grouping, `balanced-signed-similarity` width folding,
+  `quantile-medoid` transport support, fold RMS repair, geomean RMS projection
+  scaling, LRC delta RMS guard `1.5`, and nonfinite step rollback.
+
+Next fold-level follow-up from code review:
+
+- Add an explicit `activation-cka-weighted` or equivalent opt-in aggregation
+  mode so folded donor-layer MLP/head activation profiles are weighted by
+  CKA assignment strength times residual delta score, instead of uniformly
+  averaging every layer in a group.

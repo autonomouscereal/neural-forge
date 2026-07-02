@@ -28,6 +28,14 @@ from neural_forge.hf_tools import (
     search_merge_first_compression,
 )
 
+_ACTIVATION_FOLD_ASSIGNMENTS = {
+    "balanced",
+    "similarity",
+    "signed-similarity",
+    "balanced-similarity",
+    "balanced-signed-similarity",
+}
+
 
 def cross_family_vocab_merge(
     host_model: str,
@@ -323,8 +331,11 @@ def donor_projected_init(
         raise ValueError("hidden_basis_max_rows must be positive.")
     if hidden_basis_preprocess not in {"centered-rowrms", "uncentered-rowrms", "uncentered"}:
         raise ValueError("hidden_basis_preprocess must be centered-rowrms, uncentered-rowrms, or uncentered.")
-    if activation_fold_assignment not in {"balanced", "similarity", "signed-similarity"}:
-        raise ValueError("activation_fold_assignment must be balanced, similarity, or signed-similarity.")
+    if activation_fold_assignment not in _ACTIVATION_FOLD_ASSIGNMENTS:
+        raise ValueError(
+            "activation_fold_assignment must be balanced, similarity, signed-similarity, "
+            "balanced-similarity, or balanced-signed-similarity."
+        )
     if fold_stat_repair not in {"none", "rms"}:
         raise ValueError("fold_stat_repair must be none or rms.")
     if transport_backend not in {"sparse", "sinkhorn"}:
@@ -3963,8 +3974,11 @@ def _resize_tensor_to_shape(
 ):
     if fold_mode not in {"mean", "rms", "transport"}:
         raise ValueError("fold_mode must be mean, rms, or transport.")
-    if activation_fold_assignment not in {"balanced", "similarity", "signed-similarity"}:
-        raise ValueError("activation_fold_assignment must be balanced, similarity, or signed-similarity.")
+    if activation_fold_assignment not in _ACTIVATION_FOLD_ASSIGNMENTS:
+        raise ValueError(
+            "activation_fold_assignment must be balanced, similarity, signed-similarity, "
+            "balanced-similarity, or balanced-signed-similarity."
+        )
     if fold_stat_repair not in {"none", "rms"}:
         raise ValueError("fold_stat_repair must be none or rms.")
     if transport_backend not in {"sparse", "sinkhorn"}:
@@ -4706,6 +4720,60 @@ def _activation_transport_target_mass(torch, scores, fold_weights, target_dim: i
     return mass / mass.sum().clamp_min(1e-12)
 
 
+def _activation_assignment_mode_is_signed(mode: str) -> bool:
+    return str(mode) in {"signed-similarity", "balanced-signed-similarity"}
+
+
+def _activation_assignment_mode_is_mass_balanced(mode: str) -> bool:
+    return str(mode) in {"balanced-similarity", "balanced-signed-similarity"}
+
+
+def _activation_assignment_for_mode(
+    torch,
+    features,
+    target_dim: int,
+    fold_weights,
+    assignment_mode: str,
+    iterations: int = 8,
+):
+    if assignment_mode not in _ACTIVATION_FOLD_ASSIGNMENTS:
+        raise ValueError(
+            "assignment_mode must be balanced, similarity, signed-similarity, "
+            "balanced-similarity, or balanced-signed-similarity."
+        )
+    if assignment_mode == "balanced":
+        return _balanced_activation_assignment(torch, fold_weights, target_dim), None
+    if assignment_mode == "similarity":
+        return _activation_similarity_assignment(torch, features, target_dim, fold_weights, iterations=iterations), None
+    if assignment_mode == "signed-similarity":
+        assignment, signs = _activation_signed_similarity_assignment(
+            torch,
+            features,
+            target_dim,
+            fold_weights,
+            iterations=iterations,
+        )
+        return assignment, signs
+    if assignment_mode == "balanced-similarity":
+        return _activation_balanced_similarity_assignment(
+            torch,
+            features,
+            target_dim,
+            fold_weights,
+            signed=False,
+            iterations=iterations,
+        ), None
+    assignment, signs = _activation_balanced_similarity_assignment(
+        torch,
+        features,
+        target_dim,
+        fold_weights,
+        signed=True,
+        iterations=iterations,
+    )
+    return assignment, signs
+
+
 def _build_sparse_activation_transport(
     torch,
     features,
@@ -4718,7 +4786,16 @@ def _build_sparse_activation_transport(
     transport_backend: str = "sparse",
     transport_support: str = "centroid",
     signed: bool = False,
+    assignment_mode: str | None = None,
 ):
+    if assignment_mode is None:
+        assignment_mode = "signed-similarity" if signed else "similarity"
+    if assignment_mode not in _ACTIVATION_FOLD_ASSIGNMENTS:
+        raise ValueError(
+            "assignment_mode must be balanced, similarity, signed-similarity, "
+            "balanced-similarity, or balanced-signed-similarity."
+        )
+    signed = bool(signed) or _activation_assignment_mode_is_signed(assignment_mode)
     if transport_backend not in {"sparse", "sinkhorn"}:
         raise ValueError("transport_backend must be sparse or sinkhorn.")
     if transport_support not in {"centroid", "importance", "quantile", "medoid", "quantile-medoid"}:
@@ -4758,16 +4835,14 @@ def _build_sparse_activation_transport(
         )
         centroid_rows = feature_rows[support_indices]
     elif transport_support == "medoid":
-        if signed:
-            seed_assignment, _seed_signs = _activation_signed_similarity_assignment(
-                torch,
-                feature_rows,
-                target_dim,
-                fold_weights,
-                iterations=4,
-            )
-        else:
-            seed_assignment = _activation_similarity_assignment(torch, feature_rows, target_dim, fold_weights, iterations=4)
+        seed_assignment, _seed_signs = _activation_assignment_for_mode(
+            torch,
+            feature_rows,
+            target_dim,
+            fold_weights,
+            assignment_mode if assignment_mode != "balanced" else "similarity",
+            iterations=4,
+        )
         support_indices = _activation_medoid_support_indices(
             torch,
             feature_rows,
@@ -4777,16 +4852,15 @@ def _build_sparse_activation_transport(
         )
         centroid_rows = feature_rows[support_indices]
     else:
-        if signed:
-            seed_assignment, seed_signs = _activation_signed_similarity_assignment(
-                torch,
-                feature_rows,
-                target_dim,
-                fold_weights,
-                iterations=4,
-            )
-        else:
-            seed_assignment = _activation_similarity_assignment(torch, feature_rows, target_dim, fold_weights, iterations=4)
+        seed_assignment, seed_signs = _activation_assignment_for_mode(
+            torch,
+            feature_rows,
+            target_dim,
+            fold_weights,
+            assignment_mode if assignment_mode != "balanced" else "similarity",
+            iterations=4,
+        )
+        if seed_signs is None:
             seed_signs = torch.ones(source_dim, dtype=torch.float32)
         centroids = []
         for target_idx in range(target_dim):
@@ -4804,7 +4878,9 @@ def _build_sparse_activation_transport(
     raw_scores = feature_rows.matmul(centroid_rows.t())
     signs = torch.where(raw_scores < 0, -torch.ones_like(raw_scores), torch.ones_like(raw_scores))
     scores = raw_scores.abs() if signed else raw_scores
-    if transport_support in {"importance", "quantile", "medoid", "quantile-medoid"}:
+    if _activation_assignment_mode_is_mass_balanced(assignment_mode):
+        target_mass = torch.full((target_dim,), 1.0 / float(target_dim), dtype=torch.float32)
+    elif transport_support in {"importance", "quantile", "medoid", "quantile-medoid"}:
         target_mass = _activation_transport_target_mass(torch, scores, fold_weights, target_dim)
     else:
         target_mass = torch.full((target_dim,), 1.0 / float(target_dim), dtype=torch.float32)
@@ -5053,8 +5129,11 @@ def _resize_tensor_axis_mean_fold(
         raise ValueError("fold_mode must be mean, rms, or transport.")
     if reduction not in {"mean", "sum", "sqrt-sum"}:
         raise ValueError("reduction must be mean, sum, or sqrt-sum.")
-    if assignment_mode not in {"balanced", "similarity", "signed-similarity"}:
-        raise ValueError("assignment_mode must be balanced, similarity, or signed-similarity.")
+    if assignment_mode not in _ACTIVATION_FOLD_ASSIGNMENTS:
+        raise ValueError(
+            "assignment_mode must be balanced, similarity, signed-similarity, "
+            "balanced-similarity, or balanced-signed-similarity."
+        )
     if fold_stat_repair not in {"none", "rms"}:
         raise ValueError("fold_stat_repair must be none or rms.")
     if transport_backend not in {"sparse", "sinkhorn"}:
@@ -5111,7 +5190,7 @@ def _resize_tensor_axis_mean_fold(
                     weights=fold_weights,
                     transport_backend=transport_backend,
                     transport_support=transport_support,
-                    signed=assignment_mode == "signed-similarity",
+                    assignment_mode=assignment_mode,
                 )
                 if cache_key is not None and assignment_cache is not None:
                     assignment_cache[cache_key] = cached
@@ -5135,15 +5214,14 @@ def _resize_tensor_axis_mean_fold(
             if weights is None and features is None:
                 assignment = torch.floor(torch.arange(source_dim, dtype=torch.float32) * target_dim / source_dim)
                 assignment = assignment.to(torch.long).clamp_max(target_dim - 1)
-            elif assignment_mode == "signed-similarity" and features is not None:
-                assignment, assignment_signs = _activation_signed_similarity_assignment(
+            elif features is not None:
+                assignment, assignment_signs = _activation_assignment_for_mode(
                     torch,
                     features,
                     target_dim,
                     fold_weights,
+                    assignment_mode,
                 )
-            elif assignment_mode == "similarity" and features is not None:
-                assignment = _activation_similarity_assignment(torch, features, target_dim, fold_weights)
             else:
                 assignment = _balanced_activation_assignment(torch, fold_weights, target_dim)
             if cache_key is not None and assignment_cache is not None:
@@ -5308,6 +5386,115 @@ def _activation_signed_similarity_assignment(torch, features, target_dim: int, w
     selected_scores = raw_scores.gather(1, assignment.view(-1, 1)).flatten()
     signs = torch.where(selected_scores < 0, -torch.ones_like(selected_scores), torch.ones_like(selected_scores))
     return assignment.to(torch.long), signs.to(torch.float32)
+
+
+def _activation_balanced_similarity_assignment(
+    torch,
+    features,
+    target_dim: int,
+    weights=None,
+    signed: bool = False,
+    iterations: int = 8,
+    load_penalty: float = 0.35,
+):
+    if target_dim <= 0:
+        raise ValueError("target_dim must be positive.")
+    feature_rows = features.detach().cpu().to(torch.float32)
+    if feature_rows.dim() != 2:
+        raise ValueError("Activation features must be a rank-2 tensor.")
+    source_dim = int(feature_rows.shape[0])
+    if source_dim == 0:
+        raise ValueError("Activation features cannot be empty.")
+    if source_dim < target_dim:
+        raise ValueError("target_dim cannot exceed activation feature rows.")
+    if weights is None:
+        fold_weights = torch.ones(source_dim, dtype=torch.float32)
+    else:
+        fold_weights = weights.detach().cpu().to(torch.float32).flatten()
+        if int(fold_weights.numel()) != source_dim:
+            raise ValueError("Activation assignment weights must match feature rows.")
+        fold_weights = fold_weights.clamp_min(1e-12)
+    if target_dim == 1:
+        assignment = torch.zeros(source_dim, dtype=torch.long)
+        if signed:
+            return assignment, torch.ones(source_dim, dtype=torch.float32)
+        return assignment
+
+    feature_rows = _row_normalize(feature_rows)
+    if signed:
+        seed_assignment, seed_signs = _activation_signed_similarity_assignment(
+            torch,
+            feature_rows,
+            target_dim,
+            fold_weights,
+            iterations=iterations,
+        )
+    else:
+        seed_assignment = _activation_similarity_assignment(
+            torch,
+            feature_rows,
+            target_dim,
+            fold_weights,
+            iterations=iterations,
+        )
+        seed_signs = torch.ones(source_dim, dtype=torch.float32)
+
+    centroids = []
+    fallback_idx = int(torch.argmax(fold_weights).item())
+    for target_idx in range(target_dim):
+        mask = seed_assignment == int(target_idx)
+        if bool(mask.any()):
+            cluster_weights = fold_weights[mask].unsqueeze(1)
+            aligned_rows = feature_rows[mask] * seed_signs[mask].unsqueeze(1)
+            centroid = (aligned_rows * cluster_weights).sum(dim=0) / cluster_weights.sum().clamp_min(1e-12)
+        else:
+            centroid = feature_rows[fallback_idx]
+        centroids.append(centroid)
+    centroid_tensor = _row_normalize(torch.stack(centroids, dim=0))
+    raw_scores = feature_rows.matmul(centroid_tensor.t())
+    score_matrix = raw_scores.abs() if signed else raw_scores
+
+    assignment = torch.full((source_dim,), -1, dtype=torch.long)
+    signs = torch.ones(source_dim, dtype=torch.float32)
+    loads = torch.zeros(target_dim, dtype=torch.float32)
+    available = torch.ones(source_dim, dtype=torch.bool)
+
+    # Seed every target axis with one strong representative, prioritizing targets
+    # with weak best matches. This prevents empty folded axes without imposing a
+    # hard quota on semantically unrelated donor axes.
+    target_order = torch.argsort(score_matrix.max(dim=0).values, descending=False).tolist()
+    for target_idx in target_order:
+        masked_scores = score_matrix[:, int(target_idx)].clone()
+        masked_scores[~available] = -float("inf")
+        if not torch.isfinite(masked_scores).any():
+            break
+        source_idx = int(torch.argmax(masked_scores + (0.01 * fold_weights / fold_weights.max().clamp_min(1e-12))).item())
+        assignment[source_idx] = int(target_idx)
+        selected_score = raw_scores[source_idx, int(target_idx)]
+        if signed and float(selected_score.item()) < 0.0:
+            signs[source_idx] = -1.0
+        loads[int(target_idx)] += fold_weights[source_idx]
+        available[source_idx] = False
+
+    mean_load = (fold_weights.sum() / float(target_dim)).clamp_min(1e-12)
+    for source_idx in torch.argsort(fold_weights, descending=True).tolist():
+        source_idx = int(source_idx)
+        if int(assignment[source_idx].item()) >= 0:
+            continue
+        adjusted = score_matrix[source_idx].clone()
+        adjusted = adjusted - (float(load_penalty) * (loads / mean_load))
+        target_idx = int(torch.argmax(adjusted).item())
+        assignment[source_idx] = target_idx
+        selected_score = raw_scores[source_idx, target_idx]
+        if signed and float(selected_score.item()) < 0.0:
+            signs[source_idx] = -1.0
+        loads[target_idx] += fold_weights[source_idx]
+
+    if int((assignment < 0).sum().item()) > 0:
+        assignment[assignment < 0] = 0
+    if signed:
+        return assignment.to(torch.long), signs.to(torch.float32)
+    return assignment.to(torch.long)
 
 
 def _squared_distance_to_centroid(torch, feature_rows, centroid):

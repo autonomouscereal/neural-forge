@@ -116,6 +116,7 @@ from neural_forge.hf_xfamily import _attention_projection_modules
 from neural_forge.hf_xfamily import _axis_reductions_for_layer_tensor
 from neural_forge.hf_xfamily import _axis_reductions_for_non_layer_tensor_key
 from neural_forge.hf_xfamily import _balanced_activation_assignment
+from neural_forge.hf_xfamily import _activation_balanced_similarity_assignment
 from neural_forge.hf_xfamily import _blend_projection_with_target
 from neural_forge.hf_xfamily import _build_activation_hidden_basis
 from neural_forge.hf_xfamily import _build_shared_token_hidden_basis
@@ -640,6 +641,32 @@ def test_cli_accepts_signed_activation_fold_assignment() -> None:
 
     assert donor_init_args.activation_fold_assignment == "signed-similarity"
     assert chain_args.init_activation_fold_assignment == "signed-similarity"
+
+    balanced_donor_args = parser.parse_args(
+        [
+            "hf-donor-project-init",
+            "projected-out",
+            "--target-config-model",
+            "target-model",
+            "--donor-model",
+            "donor-model",
+            "--activation-fold-assignment",
+            "balanced-signed-similarity",
+        ]
+    )
+    balanced_chain_args = parser.parse_args(
+        [
+            "hf-xfamily-chain-anchor-compress",
+            "source-model",
+            "candidate-config",
+            "chain-out",
+            "--init-activation-fold-assignment",
+            "balanced-signed-similarity",
+        ]
+    )
+
+    assert balanced_donor_args.activation_fold_assignment == "balanced-signed-similarity"
+    assert balanced_chain_args.init_activation_fold_assignment == "balanced-signed-similarity"
 
 
 def test_cli_accepts_fold_stat_repair() -> None:
@@ -3659,6 +3686,40 @@ def test_signed_activation_similarity_assignment_recovers_flipped_axes() -> None
     assert assignment[0].item() != assignment[2].item()
     assert signs[0].item() == pytest.approx(-signs[1].item())
     assert signs[2].item() == pytest.approx(-signs[3].item())
+
+
+def test_balanced_similarity_assignment_spreads_equal_signature_mass() -> None:
+    torch = pytest.importorskip("torch")
+    features = torch.ones((8, 2), dtype=torch.float32)
+
+    assignment = _activation_balanced_similarity_assignment(torch, features, target_dim=2)
+    counts = torch.bincount(assignment, minlength=2)
+
+    assert sorted(counts.tolist()) == [4, 4]
+
+
+def test_balanced_signed_similarity_assignment_balances_and_preserves_signs() -> None:
+    torch = pytest.importorskip("torch")
+    features = torch.tensor(
+        [
+            [1.0, 0.0],
+            [-1.0, 0.0],
+            [1.0, 0.0],
+            [-1.0, 0.0],
+            [1.0, 0.0],
+            [-1.0, 0.0],
+            [1.0, 0.0],
+            [-1.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    assignment, signs = _activation_balanced_similarity_assignment(torch, features, target_dim=2, signed=True)
+    counts = torch.bincount(assignment, minlength=2)
+    aligned = features * signs.unsqueeze(1)
+
+    assert sorted(counts.tolist()) == [4, 4]
+    assert torch.all(aligned[:, 0] > 0)
 
 
 def test_signed_activation_fold_aligns_opposite_axes_without_canceling() -> None:

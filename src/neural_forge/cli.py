@@ -164,11 +164,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hf_donor_init.add_argument(
         "--activation-fold-assignment",
-        choices=["balanced", "similarity", "signed-similarity"],
+        choices=[
+            "balanced",
+            "similarity",
+            "signed-similarity",
+            "balanced-similarity",
+            "balanced-signed-similarity",
+        ],
         default="balanced",
         help=(
-            "How activation features assign source axes to folded target axes. signed-similarity groups opposite "
-            "activation directions by absolute similarity and applies the recovered sign during folding."
+            "How activation features assign source axes to folded target axes. signed modes group opposite "
+            "activation directions by absolute similarity and apply the recovered sign during folding; balanced "
+            "similarity modes softly penalize overloaded target axes."
         ),
     )
     hf_donor_init.add_argument(
@@ -1521,7 +1528,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     xfamily_chain.add_argument(
         "--init-activation-fold-assignment",
-        choices=["balanced", "similarity", "signed-similarity"],
+        choices=[
+            "balanced",
+            "similarity",
+            "signed-similarity",
+            "balanced-similarity",
+            "balanced-signed-similarity",
+        ],
         default="balanced",
     )
     xfamily_chain.add_argument("--init-fold-stat-repair", choices=["none", "rms"], default="none")
