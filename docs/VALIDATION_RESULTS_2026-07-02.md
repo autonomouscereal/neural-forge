@@ -1405,3 +1405,57 @@ Post-run evidence watchers:
 This is an evidence-producing lane, not a promotion claim. It must beat the
 fixed byte-probe all-target lane on exact behavior/manual generations and the
 lm-eval slice before becoming the next default.
+
+## LFM2.5-230M Cross-Family Proof Queue
+
+The earlier Liquid LFM lanes were only light smoke/eval-gate attempts and did
+not produce cached exact-generation donor/child retention artifacts. Added a
+proper proof lane using `LiquidAI/LFM2.5-230M` as a different-family donor into
+the same blank SmolLM2-135M target.
+
+Launcher changes:
+
+- `experiments/launch_lfm230m_blank_smollm_chain.sh` now exposes the current
+  fold/recovery controls used by the stronger Qwen lanes:
+  `INIT_ACTIVATION_FOLD_ASSIGNMENT`, `INIT_FOLD_STAT_REPAIR`,
+  `LRC_MAX_DELTA_RMS_RATIO`, `BLOCK_HIDDEN_PROJECTION_SCOPE`,
+  `PRE_RECONSTRUCTION_TARGET`, `BLOCK_NONFINITE_STEP_POLICY`, and the
+  trainable byte-probe flags.
+
+Queued proof chain:
+
+- LFM donor exact-generation eval:
+  - Script: `experiments/queue_donor_lfm230m_exactgen_uuid_20260702.sh`
+  - PID: `3801722`
+  - Waits behind multidonor lm-eval watcher PID `3720636`
+  - Report:
+    `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/evals/eval_donor_lfm230m_exactgen_20260702_1000x1000x250.json`
+
+- LFM -> blank SmolLM2-135M compression:
+  - Script:
+    `experiments/queue_lfm230m_blank_smollm_trainable_byteprobe_20260702.sh`
+  - Tag:
+    `lfm230m_blank_smollm_trainable_byteprobe_full_gpu6_20260702`
+  - PID: `3801723`
+  - Waits behind LFM donor eval PID `3801722`
+  - Recipe:
+    activation-CKA weighted depth folding, balanced signed similarity width
+    folding, quantile-medoid transport support, fold RMS repair, geomean RMS
+    projection scaling, LRC delta RMS guard, layer-input-gated projection,
+    `PRE_RECONSTRUCTION_TARGET=all`, and trainable byte hidden probe.
+
+- Retention/manual exact-generation watcher:
+  - PID: `3801724`
+  - Waits behind compression PID `3801723` and donor eval PID `3801722`
+  - Compares against LFM donor, blank random, and recovered Qwen single-parent
+    baselines.
+
+- lm-eval watcher:
+  - PID: `3801725`
+  - Waits behind retention PID `3801724`
+  - Compares child, LFM donor, blank random, cleanopen L4, and mathdrill L4 on
+    the cached lm-eval slice.
+
+This lane addresses the explicit Liquid LFM requirement and makes the
+cross-family donor result measurable before and after compaction instead of
+only checking that the tensor surgery completed.
