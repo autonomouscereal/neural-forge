@@ -151,6 +151,7 @@ from neural_forge.hf_xfamily import _neutralized_unmatched_operator_tensor
 from neural_forge.hf_xfamily import _proportional_index
 from neural_forge.hf_xfamily import _project_token_weight_rows
 from neural_forge.hf_xfamily import _resize_attention_tensor_to_shape
+from neural_forge.hf_xfamily import _resize_linear_activation_rows
 from neural_forge.hf_xfamily import _resize_tensor_axis_mean_fold
 from neural_forge.hf_xfamily import _resize_tensor_to_shape
 from neural_forge.hf_xfamily import _scale_projection_to_target
@@ -4065,6 +4066,65 @@ def test_activation_axis_weights_route_mlp_axes_by_suffix_when_dims_overlap() ->
     assert gate_weights[1]["assignment_key"] == ("hidden", "residual")
     assert down_weights[0]["assignment_key"] == ("hidden", "residual")
     assert down_weights[1]["assignment_key"] == ("mlp", (0,))
+
+
+def test_linear_activation_rows_use_weighted_mlp_group_profile() -> None:
+    torch = pytest.importorskip("torch")
+    rows = torch.tensor([[0.0, 10.0, 100.0, 200.0]], dtype=torch.float32)
+    profile = {
+        "hidden_scores": torch.ones(3, dtype=torch.float32),
+        "mlp_scores": {
+            0: torch.tensor([10.0, 1.0, 9.0, 1.0], dtype=torch.float32),
+            1: torch.tensor([1.0, 10.0, 1.0, 9.0], dtype=torch.float32),
+        },
+    }
+
+    folded = _resize_linear_activation_rows(
+        torch,
+        rows,
+        2,
+        "mlp.gate_proj.weight",
+        side="output",
+        donor_config=_Obj(num_attention_heads=1, num_key_value_heads=1),
+        target_config=_Obj(num_attention_heads=1, num_key_value_heads=1),
+        donor_layer_idx=0,
+        donor_layer_group=[0, 1],
+        layer_group_weights=[1.0, 0.0],
+        activation_profile=profile,
+        fold_mode="mean",
+    )
+
+    assert folded is not None
+    assert folded.flatten().tolist() == pytest.approx([10.0 / 11.0, 1100.0 / 10.0])
+
+
+def test_linear_activation_attention_rows_use_weighted_head_group_profile() -> None:
+    torch = pytest.importorskip("torch")
+    rows = torch.tensor([[0.0, 10.0, 100.0, 200.0]], dtype=torch.float32)
+    profile = {
+        "attention_head_profiles": {
+            0: {"q": {"scores": torch.tensor([10.0, 1.0, 9.0, 1.0], dtype=torch.float32)}},
+            1: {"q": {"scores": torch.tensor([1.0, 10.0, 1.0, 9.0], dtype=torch.float32)}},
+        }
+    }
+
+    folded = _resize_linear_activation_rows(
+        torch,
+        rows,
+        2,
+        "self_attn.q_proj.weight",
+        side="output",
+        donor_config=_Obj(num_attention_heads=4, num_key_value_heads=4),
+        target_config=_Obj(num_attention_heads=2, num_key_value_heads=2),
+        donor_layer_idx=0,
+        donor_layer_group=[0, 1],
+        layer_group_weights=[1.0, 0.0],
+        activation_profile=profile,
+        fold_mode="mean",
+    )
+
+    assert folded is not None
+    assert folded.flatten().tolist() == pytest.approx([10.0 / 11.0, 1100.0 / 10.0])
 
 
 def test_activation_similarity_assignment_groups_activation_signatures() -> None:

@@ -755,6 +755,7 @@ def donor_projected_init(
                 factor_l2=activation_fit_factor_l2,
                 max_delta_rms_ratio=activation_fit_max_delta_rms_ratio,
                 fold_mode=tensor_fold_mode,
+                layer_group_weights=layer_group_weights,
                 hidden_basis=hidden_basis if donor_tensor.dim() >= 2 else None,
                 axis_weights=axis_weights,
                 activation_fold_assignment=activation_fold_assignment,
@@ -6604,6 +6605,7 @@ def _fit_projected_linear_from_donor_activations(
     factor_lr: float = 3e-2,
     factor_l2: float = 0.0,
     max_delta_rms_ratio: float = 0.0,
+    layer_group_weights: Sequence[float] | None = None,
     hidden_basis=None,
     axis_weights: dict[int, Any] | None = None,
     activation_fold_assignment: str = "balanced",
@@ -6698,6 +6700,7 @@ def _fit_projected_linear_from_donor_activations(
         target_config=target_config,
         donor_layer_idx=donor_layer_idx,
         donor_layer_group=donor_layer_group,
+        layer_group_weights=layer_group_weights,
         activation_profile=activation_profile,
         fold_mode=fold_mode,
         hidden_basis=hidden_basis,
@@ -6718,6 +6721,7 @@ def _fit_projected_linear_from_donor_activations(
         target_config=target_config,
         donor_layer_idx=donor_layer_idx,
         donor_layer_group=donor_layer_group,
+        layer_group_weights=layer_group_weights,
         activation_profile=activation_profile,
         fold_mode=fold_mode,
         hidden_basis=hidden_basis,
@@ -6879,6 +6883,7 @@ def _resize_linear_activation_rows(
     donor_layer_group: Sequence[int] | None,
     activation_profile,
     fold_mode: str,
+    layer_group_weights: Sequence[float] | None = None,
     hidden_basis=None,
     axis_weights: dict[int, Any] | None = None,
     activation_fold_assignment: str = "balanced",
@@ -6902,6 +6907,7 @@ def _resize_linear_activation_rows(
             activation_profile,
             donor_layer_group or [donor_layer_idx],
             stream,
+            layer_group_weights=layer_group_weights,
         )
         head_weights, head_features, head_key = _axis_fold_profile(profile)
         return _resize_head_partitioned_axis(
@@ -6923,15 +6929,27 @@ def _resize_linear_activation_rows(
             head_assignment_key=head_key,
             head_dim_assignment_key=("linear-fit", "attention", stream, "head_dim", tuple(int(i) for i in donor_layer_group or [donor_layer_idx])),
         )
-    dummy = torch.zeros((1, int(values.shape[1])), dtype=torch.float32)
-    row_axis_weights = _activation_axis_weights_for_tensor(
+    row_axis_weights = _linear_activation_row_axis_weights_for_suffix(
         torch,
-        dummy,
+        values,
         suffix,
+        side,
         donor_layer_idx,
         donor_layer_group,
         activation_profile,
+        layer_group_weights=layer_group_weights,
     )
+    if row_axis_weights is None:
+        dummy = torch.zeros((1, int(values.shape[1])), dtype=torch.float32)
+        row_axis_weights = _activation_axis_weights_for_tensor(
+            torch,
+            dummy,
+            suffix,
+            donor_layer_idx,
+            donor_layer_group,
+            activation_profile,
+            layer_group_weights=layer_group_weights,
+        )
     return _resize_tensor_to_shape(
         torch,
         values,
@@ -6969,10 +6987,120 @@ def _linear_activation_attention_partition(suffix: str, side: str, donor_config,
     return None
 
 
-def _attention_head_profile_for_stream(torch, activation_profile, layer_group: Sequence[int], stream: str):
+def _linear_activation_row_axis_weights_for_suffix(
+    torch,
+    rows,
+    suffix: str,
+    side: str,
+    donor_layer_idx: int,
+    donor_layer_group: Sequence[int] | None,
+    activation_profile,
+    layer_group_weights: Sequence[float] | None = None,
+):
+    if activation_profile is None:
+        return None
+    row_kind = _linear_activation_row_axis_kind(suffix, side)
+    if row_kind is None:
+        return None
+    values = rows.detach().cpu().to(torch.float32)
+    if values.dim() != 2:
+        return None
+    source_dim = int(values.shape[1])
+    layer_group = list(donor_layer_group or [donor_layer_idx])
+    layer_group_key = tuple(int(item) for item in layer_group)
+    if row_kind == "hidden":
+        hidden_scores = activation_profile.get("hidden_scores")
+        if hidden_scores is None or int(hidden_scores.numel()) != source_dim:
+            return None
+        return {
+            1: {
+                "weights": hidden_scores,
+                "features": activation_profile.get("hidden_features"),
+                "assignment_key": ("linear-fit-hidden", layer_group_key, side, suffix),
+            }
+        }
+    if row_kind == "mlp":
+        mlp_scores = _aggregate_layer_activation_profile(
+            torch,
+            activation_profile.get("mlp_scores", {}),
+            layer_group,
+            clamp_min=1e-12,
+            layer_weights=layer_group_weights,
+        )
+        if mlp_scores is None or int(mlp_scores.numel()) != source_dim:
+            return None
+        mlp_features = _aggregate_layer_activation_profile(
+            torch,
+            activation_profile.get("mlp_features", {}),
+            layer_group,
+            layer_weights=layer_group_weights,
+        )
+        return {
+            1: {
+                "weights": mlp_scores,
+                "features": mlp_features,
+                "assignment_key": ("linear-fit-mlp", layer_group_key, side, suffix),
+            }
+        }
+    return None
+
+
+def _linear_activation_row_axis_kind(suffix: str, side: str) -> str | None:
+    marker = f".{suffix.lower()}"
+    if side not in {"input", "output"}:
+        return None
+    mlp_expand = (
+        ".gate_proj.weight",
+        ".up_proj.weight",
+        ".w1.weight",
+        ".w3.weight",
+        ".dense_h_to_4h.weight",
+        ".fc1.weight",
+        ".c_fc.weight",
+    )
+    mlp_reduce = (
+        ".down_proj.weight",
+        ".w2.weight",
+        ".dense_4h_to_h.weight",
+        ".fc2.weight",
+        ".mlp.c_proj.weight",
+    )
+    if marker.endswith(mlp_expand):
+        return "hidden" if side == "input" else "mlp"
+    if marker.endswith(mlp_reduce):
+        return "mlp" if side == "input" else "hidden"
+    if marker.endswith((".q_proj.weight", ".k_proj.weight", ".v_proj.weight")):
+        return "hidden" if side == "input" else None
+    if marker.endswith((".o_proj.weight", ".out_proj.weight", ".attn.c_proj.weight")):
+        return None if side == "input" else "hidden"
+    return None
+
+
+def _attention_head_profile_for_stream(
+    torch,
+    activation_profile,
+    layer_group: Sequence[int],
+    stream: str,
+    layer_group_weights: Sequence[float] | None = None,
+):
     head_profiles = (activation_profile or {}).get("attention_head_profiles") or {}
-    scores = _aggregate_layer_attention_profile(torch, head_profiles, layer_group, stream, "scores", clamp_min=1e-12)
-    features = _aggregate_layer_attention_profile(torch, head_profiles, layer_group, stream, "features")
+    scores = _aggregate_layer_attention_profile(
+        torch,
+        head_profiles,
+        layer_group,
+        stream,
+        "scores",
+        clamp_min=1e-12,
+        layer_weights=layer_group_weights,
+    )
+    features = _aggregate_layer_attention_profile(
+        torch,
+        head_profiles,
+        layer_group,
+        stream,
+        "features",
+        layer_weights=layer_group_weights,
+    )
     if scores is None:
         return None
     return {
