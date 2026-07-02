@@ -7,6 +7,7 @@ Current active work is on branch `codex/lrc-blank-compression`, not `main`.
 
 Latest pushed commits on the active branch:
 
+- `2705f30` - Add geomean RMS fold scaling.
 - `4ac6b55` - Add source RMS fold scaling.
 - `1374a9e` - Add donor fold projection diagnostics.
 - `284c252` - Expose chain pre-reconstruction controls.
@@ -39,6 +40,10 @@ the folded donor tensor at donor/source RMS after resizing instead of matching
 the blank target initializer RMS. It is opt-in; existing `target-rms` and `none`
 runs are unchanged.
 
+They also accept `geomean-rms`, which scales the folded tensor to the geometric
+mean of source and target RMS. This is the middle lane between target-RMS
+damping and full donor/source-RMS preservation.
+
 Validation:
 
 - Local focused: `1 passed, 3 skipped, 193 deselected`.
@@ -47,6 +52,9 @@ Validation:
 - Remote full: `248 passed`.
 - Source-RMS patch validation: local full `129 passed, 120 skipped`; remote
   focused `4 passed, 194 deselected`; remote full `249 passed`.
+- Geomean-RMS patch validation: local focused `2 passed, 3 skipped`; local full
+  `129 passed, 121 skipped`; remote focused `5 passed, 194 deselected`; remote
+  full `250 passed`.
 
 ## Cross-Family Diagnostic Smoke
 
@@ -123,6 +131,36 @@ aggressive than `target-rms`; the next question is behavioral, not numeric:
 whether block-interface reconstruction plus EoRA compensation can use the
 larger donor signal or whether it destabilizes blank-target recovery.
 
+## Geomean-RMS Fold Smoke
+
+Smoke artifact:
+
+`/home/cereal/model-surgery-lab/neural-forge-src/runs/diagnostic_smokes/gpt2_to_blank_smollm135m_geomean_rms_projection_diag_20260701_221515`
+
+This repeats the GPT-2 -> blank SmolLM2-135M smoke with
+`projection_scale=geomean-rms`.
+
+Result:
+
+- Parameter count: `134,515,008`.
+- Layer tensors initialized: `270`.
+- Nonfinite diagnostic count: `0`.
+
+Projection diagnostic summary:
+
+| Metric | Mean | Min | Max | P95 |
+| --- | ---: | ---: | ---: | ---: |
+| projected/source RMS ratio | 0.8457 | 0.4113 | 2.3248 | 1.9600 |
+| projected/target RMS ratio | 1.4953 | 0.4301 | 2.4282 | 2.0730 |
+| target update relative RMS | 1.6780 | 0.3153 | 2.6309 | 2.2996 |
+| target projection cosine | 0.2183 | -0.0069 | 0.9942 | 0.9933 |
+
+Interpretation:
+
+`geomean-rms` lands between `target-rms` and `source-rms` as intended. It may be
+the better blank-target compromise if full source-RMS is too destabilizing but
+target-RMS damps donor signal before recovery can use it.
+
 ## Running Long Jobs
 
 As of the remote poll after this patch:
@@ -141,3 +179,6 @@ As of the remote poll after this patch:
 - `qwen4b_blank_smollm_eora_grail_source_rms_full_gpu4_20260702` is queued
   behind GPU4. It matches the current EoRA/GRAIL strict blank-target lane but
   switches init projection scaling to `source-rms`.
+- `qwen4b_blank_smollm_eora_grail_geomean_rms_full_gpu0_20260702` is queued
+  behind GPU0. It matches the same EoRA/GRAIL strict blank-target lane but
+  switches init projection scaling to `geomean-rms`.
