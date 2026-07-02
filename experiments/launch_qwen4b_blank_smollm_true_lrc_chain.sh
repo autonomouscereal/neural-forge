@@ -7,10 +7,14 @@ GPU_UUID="${GPU_UUID:-GPU-2ce6a95c-7b1f-644a-3808-d781732a0582}"
 TAG="${TAG:-qwen4b_blank_smollm_chain_mlpout_true_lrc_rank16_blockio_alm_gpu4_20260629}"
 SOURCE_MODEL="${SOURCE_MODEL:-Qwen/Qwen3-4B-Base}"
 SOURCE_WEIGHTS="${SOURCE_WEIGHTS:-}"
+MAX_CALIBRATION_TEXTS="${MAX_CALIBRATION_TEXTS:-384}"
 MAX_BEHAVIOR_PROBES="${MAX_BEHAVIOR_PROBES:-200}"
 MAX_GENERATION_PROMPTS="${MAX_GENERATION_PROMPTS:-100}"
 MAX_CHOICE_PROBES="${MAX_CHOICE_PROBES:-100}"
 MAX_TEXT_EVALS="${MAX_TEXT_EVALS:-96}"
+BLOCK_LAYER_GATE_MAX_TEXTS="${BLOCK_LAYER_GATE_MAX_TEXTS:-160}"
+BLOCK_LAYER_GATE_MAX_GENERATION_PROMPTS="${BLOCK_LAYER_GATE_MAX_GENERATION_PROMPTS:-80}"
+BLOCK_LAYER_GATE_MAX_BEHAVIOR_DROP="${BLOCK_LAYER_GATE_MAX_BEHAVIOR_DROP:-0.02}"
 ACT_TARGET="${ACT_TARGET:-mlp-output}"
 LRC_ALPHA="${LRC_ALPHA:-0.25}"
 LRC_RANK="${LRC_RANK:-16}"
@@ -147,7 +151,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   "${SOURCE_WEIGHT_ARGS[@]}" \
   --stages init,block,alm \
   --calibration-file "$RUN_ROOT/calibration_mix.jsonl" \
-  --max-calibration-texts 384 \
+  --max-calibration-texts "$MAX_CALIBRATION_TEXTS" \
   --eval-suite "$RUN_ROOT/behavior_suite.json" \
   --max-behavior-probes "$MAX_BEHAVIOR_PROBES" \
   --max-generation-prompts "$MAX_GENERATION_PROMPTS" \
@@ -223,9 +227,9 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --block-donor-layer-fold-mode fold \
   --block-donor-layer-group-strategy "$BLOCK_DONOR_LAYER_GROUP_STRATEGY" \
   --block-layer-gate-metric behavior \
-  --block-layer-gate-max-texts 160 \
-  --block-layer-gate-max-generation-prompts 80 \
-  --block-layer-gate-max-behavior-drop 0.02 \
+  --block-layer-gate-max-texts "$BLOCK_LAYER_GATE_MAX_TEXTS" \
+  --block-layer-gate-max-generation-prompts "$BLOCK_LAYER_GATE_MAX_GENERATION_PROMPTS" \
+  --block-layer-gate-max-behavior-drop "$BLOCK_LAYER_GATE_MAX_BEHAVIOR_DROP" \
   --block-alm-kd-weight "$BLOCK_ALM_KD_WEIGHT" \
   --block-projected-vocab-kd-weight "$BLOCK_PROJECTED_VOCAB_KD_WEIGHT" \
   --block-byte-kd-weight "$BLOCK_BYTE_KD_WEIGHT" \
