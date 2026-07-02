@@ -1285,3 +1285,13 @@ Validation:
   `302 passed`
 - Remote queue syntax:
   `bash -n experiments/queue_qwen4b_blank_smollm_cka_weighted_block_weighted_layerproj_gated_all_20260702.sh`
+
+Queued proof lane:
+
+- `qwen4b_blank_smollm_cka_weighted_block_weighted_layerproj_gated_all_full_gpu4_20260702`
+  - Queue PID: `3634313`
+  - Waits behind gated layer-projection lane PID `3576375`
+  - Queue log:
+    `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_cka_weighted_block_weighted_layerproj_gated_all_full_gpu4_20260702.queue.log`
+  - Purpose: exercise `PRE_RECONSTRUCTION_TARGET=all` with the new
+    group-aware folded donor targets.
