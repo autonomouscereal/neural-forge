@@ -344,6 +344,57 @@ Interpretation:
 - Broad behavior and generation-health scores can overstate exact math/code retention.
 - New lanes must be compared against parent and recovered baselines on exact-generation/manual probes, not only broad generation health.
 
+## Compact Exact-Generation Metric Snapshot
+
+Polled and parsed the AI-server reports again at
+`2026-07-02T01:33:36-06:00`.
+
+| Model/report | Params | Behavior | Choice | Generation health | PPL mean |
+|---|---:|---:|---:|---:|---:|
+| Qwen3-4B parent | `4,022,468,096` | `400/1000` | `250/250` | `161/1000` | `882.31` |
+| Random SmolLM2-135M blank | `134,515,008` | `0/1000` | `28/250` | `0/1000` | `102037.06` |
+| Cleanopen recovered 135M L4 ALM | `134,515,008` | `803/1000` | `149/250` | `1000/1000` | `36704.57` |
+| Mathdrill recovered 135M L4 ALM | `134,515,008` | `805/1000` | `150/250` | `1000/1000` | `36407.37` |
+| Cleanopen full block checkpoint | `134,515,008` | `803/1000` | `150/250` | `1000/1000` | `37026.94` |
+| Qwen3-4B -> blank GPT-2 init | `124,439,808` | `0/200` | `11/100` | `0/100` | `43116.57` |
+
+Manual sample check still shows the key weakness:
+
+- Parent: `6 + 4 -> 10`
+- Blank: nonsense continuation
+- Recovered SmolLM lanes: fluent answers, but `6 + 4 -> 30`
+- GPT-2 cross-architecture init: repeated/function-token collapse
+
+Interpretation:
+
+- The SmolLM blank-target compression path is not merely fitting tensor shapes;
+  it is implanting broad language behavior into a random 135M target.
+- The gap is exact-answer and forced-choice retention. The parent's forced
+  choice score is `250/250`, while the best recovered 135M lanes are only
+  around `150/250`.
+- New recovery lanes should target exact answer grounding, not only lower PPL or
+  generic fluent generation.
+
+Queued exactness combo lane:
+
+- Tag:
+  `qwen4b_blank_smollm_quantile_medoid_exact_combo_alm_gpu1_20260702`
+- Queue PID: `2729211`
+- Queue script:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_quantile_medoid_exact_combo_alm_gpu1_20260702.queue.sh`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_quantile_medoid_exact_combo_alm_gpu1_20260702.queue.log`
+- Initial revision: `1a470325178ecc2d7521c7e750b6cd50ef806785`
+- GPU: index `1`, Tesla P40 UUID
+  `GPU-c95fb5b3-f97c-bfb2-9760-79fe107ffe6d`
+- Upstream dependency: waits for quantile-medoid proof queue PID `2588435`.
+- Recipe: ALM-only recovery from the quantile-medoid `01_block` checkpoint with
+  attention influence, answer contrastive candidates, teacher-ranked candidates,
+  number-focused token KD, first/last answer token LM, teacher-generate LM,
+  stepwise donor KD, and on-policy hidden/anchor KD.
+- Final eval target:
+  `eval_qwen4b_blank_smollm_quantile_medoid_exact_combo_alm_gpu1_20260702_exactgen_20260702_1000x1000x250.json`
+
 ## Active Full-Run Status Snapshot
 
 Polled AI server state at `2026-07-02T00:43:54-06:00`.
