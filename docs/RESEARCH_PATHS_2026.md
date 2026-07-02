@@ -106,6 +106,10 @@ Immediate repo implication:
   and head-calibration artifacts. This is the first concrete X-Token-inspired
   coverage fix; it still needs behavior evidence from the queued blank-target
   lanes.
+- Broad eval generation prompts now support behavior-style exact expectations
+  and newly built suites include exact math/code generation checks. This was
+  added after manual inspection showed old `generation_health` could report
+  `1.0` while generated arithmetic was visibly wrong.
 - The queued full lane
   `qwen4b_gpt2_multidonor_blank_smollm_eora_full_gpu6_20260702` tests
   Qwen3-4B plus GPT-2 folded into blank SmolLM2-135M, then applies the current

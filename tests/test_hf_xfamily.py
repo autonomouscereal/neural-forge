@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -78,9 +79,12 @@ from neural_forge.hf_recovery import _validate_blockwise_learning_rate
 from neural_forge.hf_recovery import _validation_reconstruction_gate
 from neural_forge.hf_recovery import load_calibration_texts
 from neural_forge.hf_tools import TEXT_EVALS
+from neural_forge.hf_tools import build_eval_suite
+from neural_forge.hf_tools import _generation_health
 from neural_forge.hf_tools import _layer_groups_for_report
 from neural_forge.hf_tools import _layer_groups_tag
 from neural_forge.hf_tools import _linear_cka
+from neural_forge.hf_tools import _normalize_generation_prompt
 from neural_forge.hf_tools import _normalize_layer_groups
 from neural_forge.hf_xfamily import _canonical_token
 from neural_forge.hf_xfamily import _chain_stage_promotes
@@ -299,6 +303,70 @@ def test_join_prompt_response_preserves_answer_and_code_surfaces() -> None:
 
 def test_recovery_defaults_do_not_reuse_evaluation_prompts() -> None:
     assert set(RECOVERY_TEXTS).isdisjoint(TEXT_EVALS)
+
+
+def test_generation_health_checks_expected_first_number_when_present() -> None:
+    spec = _normalize_generation_prompt(
+        {
+            "id": "math_exact",
+            "category": "math",
+            "prompt": "Question: What is 6 + 4? Answer with only the number.\nAnswer:",
+            "kind": "first_number",
+            "answer": "10",
+            "relevance_rules": [],
+        },
+        0,
+    )
+    good = dict(spec)
+    good["output"] = f"{spec['prompt']} 10"
+    good["diagnostics"] = {
+        "distinct_1": 1.0,
+        "top_token_share": 1.0,
+        "max_token_run": 1,
+    }
+    bad = dict(spec)
+    bad["output"] = f"{spec['prompt']} 30"
+    bad["diagnostics"] = {
+        "distinct_1": 1.0,
+        "top_token_share": 1.0,
+        "max_token_run": 1,
+    }
+
+    good_check = _generation_health(good, min_continuation_chars=0, min_unique_token_ratio=0.0)
+    bad_check = _generation_health(bad, min_continuation_chars=0, min_unique_token_ratio=0.0)
+
+    assert good_check["passed"] is True
+    assert good_check["expected_behavior"]["passed"] is True
+    assert bad_check["passed"] is False
+    assert bad_check["expected_enough"] is False
+    assert bad_check["expected_behavior"]["details"]["prediction"] == "30"
+
+
+def test_build_eval_suite_includes_exact_generation_math_and_code(tmp_path) -> None:
+    output = tmp_path / "suite.json"
+
+    report = build_eval_suite(
+        output,
+        behavior_count=0,
+        generation_count=14,
+        choice_count=0,
+        text_count=0,
+        seed=7,
+    )
+
+    suite = json.loads(output.read_text(encoding="utf-8"))
+    prompts = suite["suite"]["generation_prompts"]
+    exact_math = [item for item in prompts if item.get("kind") == "first_number"]
+    exact_code = [item for item in prompts if item.get("kind") == "python_function"]
+
+    assert exact_math
+    assert exact_math[0]["category"] == "math"
+    assert exact_math[0]["answer"].lstrip("-").isdigit()
+    assert exact_code
+    assert exact_code[0]["category"] == "code"
+    assert exact_code[0]["function_name"] == "add"
+    assert report["counts"]["generation_prompts"] == 14
+    assert output.exists()
 
 
 def test_load_calibration_texts_handles_jsonl_message_rows(tmp_path) -> None:

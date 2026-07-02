@@ -283,7 +283,7 @@ GPU6 Python jobs to clear before launching.
 
 ## Projected Vocab Sparse Surface Recovery
 
-Code revision: pending commit after `6b377e4`.
+Code revision: `275f205` (`Add sparse projected vocab recovery coverage`).
 
 Implementation:
 
@@ -308,3 +308,50 @@ This is not a standalone intelligence-retention claim. It closes one specific
 cross-tokenizer failure mode from the X-Token/byte-interface research path: the
 recovery losses can now see and report sparse donor token groups for compact
 child tokens such as `42` instead of silently losing or truncating those rows.
+
+## Exact-Generation Evaluation Patch
+
+Code revision: pending commit after `275f205`.
+
+Problem found during manual inspection:
+
+- The `20260701` broad eval reports can show high aggregate behavior and
+  `generation_health=1.0` while simple generated answers are still wrong.
+- Example: `qwen4b_cleanopen_anchor_newloss_l4_gpu0_20260701/models/02_alm`
+  scored `803/1000` behavior and `1000/1000` generation health, but manual
+  output for `Q: What is 6+4? A:` began with `7: 12...`.
+- Category breakdown explains the mismatch: the same run had only `3/200`
+  math behavior probes correct, while tokenizer, commonsense, model-surgery,
+  and code pattern/function categories were `200/200`.
+
+Implementation:
+
+- Generation prompts may now carry behavior-style expected-answer fields such
+  as `kind=first_number`, `answer`, `kind=python_function`, `function_name`,
+  and `tests`.
+- `_generation_health` now includes `expected_behavior` and requires it to pass
+  when present.
+- Newly generated broad eval suites include exact math generation prompts and
+  executable Python-function generation prompts, in addition to relevance-only
+  prompts.
+
+Validation:
+
+- Local focused tests: `2 passed`.
+- Local full suite: `136 passed`, `123 skipped`.
+- Remote focused tests: `2 passed`, `206 deselected`.
+- Remote full suite: `259 passed`.
+
+Queued exact-generation comparison:
+
+- Suite:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/behavior_suite_exactgen_20260702.json`.
+- Parent `Qwen/Qwen3-4B-Base`: queued on GPU6 behind PID `2203637`,
+  queue PID `2287388`.
+- Candidate `qwen4b_cleanopen_anchor_newloss_l4_gpu0_20260701/models/02_alm`:
+  queued on GPU4 behind PID `2091717`, queue PID `2287395`.
+- Candidate `qwen4b_mathdrill_anchor_newloss_l4_gpu6_20260701/models/02_alm`:
+  queued on GPU0 behind PID `2111372`, queue PID `2287405`.
+- P40 GPUs were tested first but rejected for this Torch build because CUDA
+  raised `no kernel image is available for execution on the device`; the P40
+  eval attempts were killed and replaced with RTX/RTX8000 queues.

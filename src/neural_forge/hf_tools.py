@@ -2159,6 +2159,9 @@ def _normalize_generation_prompt(item: str | dict[str, Any], index: int) -> dict
     }
     if item.get("category") is not None:
         normalized["category"] = str(item.get("category"))
+    for key in ("kind", "answer", "function_name", "tests", "pattern_groups"):
+        if key in item:
+            normalized[key] = item[key]
     return normalized
 
 
@@ -2198,11 +2201,13 @@ def _generation_health(item: dict[str, Any], min_continuation_chars: int, min_un
         )
     )
     relevance = _generation_relevance(prompt, continuation, item.get("relevance_rules"))
+    expected = _generation_expected_behavior(item)
+    expectation_passed = True if expected is None else bool(expected["passed"])
     return {
         "id": item.get("id"),
         "category": item.get("category"),
         "prompt": prompt,
-        "passed": long_enough and diverse_enough and relevance["passed"],
+        "passed": long_enough and diverse_enough and relevance["passed"] and expectation_passed,
         "continuation_chars": len(continuation),
         "token_count": len(tokens),
         "unique_token_ratio": unique_ratio,
@@ -2210,7 +2215,33 @@ def _generation_health(item: dict[str, Any], min_continuation_chars: int, min_un
         "long_enough": long_enough,
         "diverse_enough": diverse_enough,
         "relevant_enough": relevance["passed"],
+        "expected_enough": expectation_passed,
+        "expected_behavior": expected,
         "relevance": relevance,
+    }
+
+
+def _generation_expected_behavior(item: dict[str, Any]) -> dict[str, Any] | None:
+    if item.get("kind") is None:
+        return None
+    probe = {
+        "id": str(item.get("id") or item.get("prompt") or "generation_expected"),
+        "category": item.get("category"),
+        "prompt": str(item.get("prompt", "")),
+        "kind": str(item.get("kind")),
+    }
+    for key in ("answer", "function_name", "tests", "pattern_groups"):
+        if key in item:
+            probe[key] = item[key]
+    try:
+        scored = _score_behavior_probe(probe, item)
+    except ValueError as exc:
+        return {"checked": True, "passed": False, "reason": str(exc)}
+    return {
+        "checked": True,
+        "passed": bool(scored.get("passed")),
+        "kind": probe["kind"],
+        "details": scored.get("details", {}),
     }
 
 
@@ -2390,7 +2421,44 @@ def _synthetic_generation_prompts(count: int) -> list[dict[str, Any]]:
     ]
     prompts = []
     for index in range(int(count)):
-        base_id, prompt, category, rules = templates[index % len(templates)]
+        mode = index % 7
+        if mode == 5:
+            a = 6 + (index * 7) % 41
+            b = 4 + (index * 11) % 29
+            op = "+" if index % 14 == 5 else "*"
+            answer = a + b if op == "+" else a * b
+            prompts.append(
+                {
+                    "id": f"generation_math_answer_{index:04d}",
+                    "category": "math",
+                    "prompt": f"Question: What is {a} {op} {b}? Answer with only the number.\nAnswer:",
+                    "kind": "first_number",
+                    "answer": str(answer),
+                    "relevance_rules": [],
+                }
+            )
+            continue
+        if mode == 6:
+            prompts.append(
+                {
+                    "id": f"generation_python_add_exact_{index:04d}",
+                    "category": "code",
+                    "prompt": (
+                        "Write a tiny Python function named add that returns a + b.\n"
+                        "```python\n"
+                    ),
+                    "kind": "python_function",
+                    "function_name": "add",
+                    "tests": [
+                        {"args": [2, 3], "expected": 5},
+                        {"args": [-1, 5], "expected": 4},
+                        {"args": [0, 0], "expected": 0},
+                    ],
+                    "relevance_rules": [[r"\bdef\b", r"\blambda\b"], [r"\+", r"\badd\w*\b"], [r"\breturn\b", r":"]],
+                }
+            )
+            continue
+        base_id, prompt, category, rules = templates[mode % len(templates)]
         prompts.append(
             {
                 "id": f"{base_id}_{index:04d}",
