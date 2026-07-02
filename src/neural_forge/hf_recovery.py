@@ -2550,6 +2550,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     projected_vocab_kd_mode: str = "teacher-to-student",
     byte_kd_weight: float = 0.0,
     byte_hidden_kd_weight: float = 0.0,
+    byte_hidden_probe_mode: str = "fixed",
+    byte_hidden_probe_anchor_weight: float = 0.0,
     block_io_kd_weight: float = 0.0,
     block_io_ridge: float = 1e-3,
     block_io_loss: str = "both",
@@ -2727,6 +2729,10 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("byte_kd_weight must be non-negative.")
     if byte_hidden_kd_weight < 0:
         raise ValueError("byte_hidden_kd_weight must be non-negative.")
+    if byte_hidden_probe_mode not in {"fixed", "trainable"}:
+        raise ValueError("byte_hidden_probe_mode must be fixed or trainable.")
+    if byte_hidden_probe_anchor_weight < 0:
+        raise ValueError("byte_hidden_probe_anchor_weight must be non-negative.")
     if block_io_kd_weight < 0:
         raise ValueError("block_io_kd_weight must be non-negative.")
     if block_io_ridge < 0:
@@ -2911,15 +2917,21 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     source_byte_buckets = None
     candidate_byte_buckets = None
     byte_hidden_probe_weight = None
+    byte_hidden_probe_anchor = None
     if byte_kd_weight > 0 or byte_hidden_kd_weight > 0 or teacher_generate_byte_kd_weight > 0:
         source_byte_buckets = _tokenizer_first_byte_buckets(torch, source_tokenizer, device=device)
         candidate_byte_buckets = _tokenizer_first_byte_buckets(torch, candidate_tokenizer, device=device)
     if byte_hidden_kd_weight > 0:
-        byte_hidden_probe_weight = _first_byte_head_from_output_embeddings(
+        fixed_byte_hidden_probe_weight = _first_byte_head_from_output_embeddings(
             torch,
             candidate_output_embeddings.weight,
             candidate_byte_buckets,
         ).to(device=device, dtype=torch.float32)
+        if byte_hidden_probe_mode == "trainable":
+            byte_hidden_probe_weight = torch.nn.Parameter(fixed_byte_hidden_probe_weight.detach().clone())
+            byte_hidden_probe_anchor = fixed_byte_hidden_probe_weight.detach().clone()
+        else:
+            byte_hidden_probe_weight = fixed_byte_hidden_probe_weight
 
     texts = _order_recovery_texts(calibration_texts or RECOVERY_TEXTS, calibration_order)
     if not texts:
@@ -3197,6 +3209,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             trainable_modules.append(output_head)
         trainable_params = _set_only_modules_trainable(candidate, trainable_modules)
         optimizer_params = _unique_trainable_parameters(trainable_modules)
+        if byte_hidden_probe_mode == "trainable" and byte_hidden_probe_weight is not None:
+            optimizer_params.append(byte_hidden_probe_weight)
         optimizer = torch.optim.AdamW(optimizer_params, lr=lr)
         before_alignment = _cross_tokenizer_block_alignment_state(
             torch,
@@ -3546,10 +3560,11 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     )
                     loss = loss + float(byte_kd_weight) * byte_kd_loss
             byte_hidden_loss = None
+            byte_hidden_probe_anchor_loss = None
             byte_hidden_pair_count = int(output_span_pair_count) if byte_hidden_kd_weight > 0 else 0
             if byte_hidden_kd_weight > 0:
                 if source_byte_buckets is None or byte_hidden_probe_weight is None:
-                    raise ValueError("source byte buckets and a fixed byte hidden probe are required for byte_hidden_kd_weight.")
+                    raise ValueError("source byte buckets and a byte hidden probe are required for byte_hidden_kd_weight.")
                 if byte_hidden_pair_count > 0:
                     byte_hidden_loss = _cross_tokenizer_hidden_first_byte_loss(
                         torch,
@@ -3562,6 +3577,17 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                         float(temperature),
                     )
                     loss = loss + float(byte_hidden_kd_weight) * byte_hidden_loss
+                    if (
+                        byte_hidden_probe_mode == "trainable"
+                        and byte_hidden_probe_anchor is not None
+                        and byte_hidden_probe_anchor_weight > 0
+                    ):
+                        byte_hidden_probe_anchor_loss = _byte_hidden_probe_anchor_loss(
+                            torch,
+                            byte_hidden_probe_weight,
+                            byte_hidden_probe_anchor,
+                        )
+                        loss = loss + float(byte_hidden_probe_anchor_weight) * byte_hidden_probe_anchor_loss
             alm_loss = None
             alm_count = 0
             if alm_kd_weight > 0:
@@ -3943,6 +3969,9 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             )
             byte_kd_loss_value = None if byte_kd_loss is None else float(byte_kd_loss.detach().cpu())
             byte_hidden_loss_value = None if byte_hidden_loss is None else float(byte_hidden_loss.detach().cpu())
+            byte_hidden_probe_anchor_loss_value = (
+                None if byte_hidden_probe_anchor_loss is None else float(byte_hidden_probe_anchor_loss.detach().cpu())
+            )
             alm_loss_value = None if alm_loss is None else float(alm_loss.detach().cpu())
             on_policy_loss_value = None if on_policy_loss is None else float(on_policy_loss.detach().cpu())
             on_policy_hidden_loss_value = (
@@ -4016,6 +4045,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                         "byte_pairs": int(byte_kd_pair_count),
                         "byte_hidden_kd_loss": byte_hidden_loss_value,
                         "byte_hidden_pairs": int(byte_hidden_pair_count),
+                        "byte_hidden_probe_anchor_loss": byte_hidden_probe_anchor_loss_value,
                         "alm_kd_loss": alm_loss_value,
                         "alm_chunks": int(alm_count),
                         "module_output_loss": module_output_loss_value,
@@ -4055,6 +4085,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                     f"byte_pairs={int(byte_kd_pair_count)} "
                     f"byte_hidden={byte_hidden_loss_value if byte_hidden_loss_value is not None else 0.0:.6f} "
                     f"byte_hidden_pairs={int(byte_hidden_pair_count)} "
+                    f"byte_hidden_probe_anchor={byte_hidden_probe_anchor_loss_value if byte_hidden_probe_anchor_loss_value is not None else 0.0:.6f} "
                     f"alm={alm_loss_value if alm_loss_value is not None else 0.0:.6f} "
                     f"alm_chunks={int(alm_count)} "
                     f"module_output={module_output_loss_value if module_output_loss_value is not None else 0.0:.6f} "
@@ -4333,6 +4364,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "projected_vocab_group": projected_vocab_group_report,
         "byte_kd_weight": float(byte_kd_weight),
         "byte_hidden_kd_weight": float(byte_hidden_kd_weight),
+        "byte_hidden_probe_mode": byte_hidden_probe_mode,
+        "byte_hidden_probe_anchor_weight": float(byte_hidden_probe_anchor_weight),
         "block_io_kd_weight": float(block_io_kd_weight),
         "block_io_ridge": float(block_io_ridge),
         "block_io_loss": block_io_loss,
@@ -12801,7 +12834,12 @@ def _cross_tokenizer_hidden_first_byte_loss(
     candidate_pos = candidate_pos[valid]
     source_pos = source_pos[valid]
     student_rows = torch.nn.functional.normalize(hidden[batch_idx, candidate_pos], dim=-1, eps=1e-8)
-    student_byte_logits = student_rows.matmul(byte_probe_weight.to(device=hidden.device, dtype=torch.float32).t())
+    probe = torch.nn.functional.normalize(
+        byte_probe_weight.to(device=hidden.device, dtype=torch.float32),
+        dim=-1,
+        eps=1e-8,
+    )
+    student_byte_logits = student_rows.matmul(probe.t())
     teacher_logits = shift_teacher.to(device=hidden.device)[batch_idx, source_pos]
     with torch.no_grad():
         teacher_byte_probs = _first_byte_probs_from_logits(torch, teacher_logits, source_byte_buckets, temperature)
@@ -12809,6 +12847,18 @@ def _cross_tokenizer_hidden_first_byte_loss(
     teacher_logp = teacher_byte_probs.clamp_min(1e-12).log()
     token_kl = (teacher_byte_probs * (teacher_logp - student_logp)).sum(dim=-1)
     return token_kl.mean().to(dtype=torch.float32) * (float(temperature) ** 2)
+
+
+def _byte_hidden_probe_anchor_loss(torch, byte_probe_weight, byte_probe_anchor):
+    if byte_probe_weight.shape != byte_probe_anchor.shape:
+        raise ValueError("byte probe anchor shape must match byte probe weight shape.")
+    weight = torch.nn.functional.normalize(byte_probe_weight.to(torch.float32), dim=-1, eps=1e-8)
+    anchor = torch.nn.functional.normalize(
+        byte_probe_anchor.to(device=byte_probe_weight.device, dtype=torch.float32),
+        dim=-1,
+        eps=1e-8,
+    )
+    return torch.nn.functional.mse_loss(weight, anchor)
 
 
 def _cross_tokenizer_first_byte_loss(

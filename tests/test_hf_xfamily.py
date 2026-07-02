@@ -49,6 +49,7 @@ from neural_forge.hf_recovery import _feature_decorrelation_loss
 from neural_forge.hf_recovery import _first_byte_head_from_output_embeddings
 from neural_forge.hf_recovery import _first_byte_probs_from_logits
 from neural_forge.hf_recovery import _cross_tokenizer_hidden_first_byte_loss
+from neural_forge.hf_recovery import _byte_hidden_probe_anchor_loss
 from neural_forge.hf_recovery import _last_response_shift_mask
 from neural_forge.hf_recovery import _hidden_representation_loss
 from neural_forge.hf_recovery import _infer_response_char_start
@@ -5685,6 +5686,20 @@ def test_hidden_first_byte_loss_prefers_hidden_state_matching_teacher_byte() -> 
     assert good_loss.item() < bad_loss.item()
 
 
+def test_byte_hidden_probe_anchor_loss_penalizes_direction_drift() -> None:
+    torch = pytest.importorskip("torch")
+
+    anchor = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
+    same = torch.tensor([[2.0, 0.0], [0.0, 3.0]], dtype=torch.float32)
+    drifted = torch.tensor([[0.0, 2.0], [3.0, 0.0]], dtype=torch.float32)
+
+    same_loss = _byte_hidden_probe_anchor_loss(torch, same, anchor)
+    drifted_loss = _byte_hidden_probe_anchor_loss(torch, drifted, anchor)
+
+    assert same_loss.item() == pytest.approx(0.0)
+    assert drifted_loss.item() > same_loss.item()
+
+
 def test_entropy_aware_kl_weight_zero_matches_forward_kl() -> None:
     torch = pytest.importorskip("torch")
     student = torch.tensor([[0.2, 1.4, -0.7], [2.0, 0.1, -1.2]])
@@ -7930,6 +7945,10 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "0.11",
             "--byte-hidden-kd-weight",
             "0.07",
+            "--byte-hidden-probe-mode",
+            "trainable",
+            "--byte-hidden-probe-anchor-weight",
+            "0.006",
             "--block-io-kd-weight",
             "0.21",
             "--block-io-ridge",
@@ -8060,6 +8079,8 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "projected_vocab_kd_mode": "both",
         "byte_kd_weight": 0.11,
         "byte_hidden_kd_weight": 0.07,
+        "byte_hidden_probe_mode": "trainable",
+        "byte_hidden_probe_anchor_weight": 0.006,
         "block_io_kd_weight": 0.21,
         "block_io_ridge": 0.004,
         "block_io_loss": "cosine",
@@ -8768,6 +8789,10 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "both",
             "--block-byte-hidden-kd-weight",
             "0.018",
+            "--block-byte-hidden-probe-mode",
+            "trainable",
+            "--block-byte-hidden-probe-anchor-weight",
+            "0.004",
             "--block-block-io-ridge",
             "0.019",
             "--block-block-io-loss",
@@ -8960,6 +8985,8 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["block_token_focus"] == "numbers"
     assert captured["block_projected_vocab_kd_mode"] == "both"
     assert captured["block_byte_hidden_kd_weight"] == 0.018
+    assert captured["block_byte_hidden_probe_mode"] == "trainable"
+    assert captured["block_byte_hidden_probe_anchor_weight"] == 0.004
     assert captured["block_block_io_ridge"] == 0.019
     assert captured["block_block_io_loss"] == "cosine"
     assert captured["block_train_output_head_with_kd"] is True

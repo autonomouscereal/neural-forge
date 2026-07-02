@@ -1400,6 +1400,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Use a fixed byte probe from child output embeddings to align active block hidden states with donor byte targets.",
     )
     xfamily_block_recover.add_argument(
+        "--byte-hidden-probe-mode",
+        choices=["fixed", "trainable"],
+        default="fixed",
+        help="Use the fixed output-embedding byte probe or a temporary trainable byte probe during block recovery.",
+    )
+    xfamily_block_recover.add_argument(
+        "--byte-hidden-probe-anchor-weight",
+        type=float,
+        default=0.0,
+        help="MSE regularization that keeps a trainable byte-hidden probe near its fixed initialization.",
+    )
+    xfamily_block_recover.add_argument(
         "--block-io-kd-weight",
         type=float,
         default=0.0,
@@ -1711,6 +1723,8 @@ def build_parser() -> argparse.ArgumentParser:
         default="teacher-to-student",
     )
     xfamily_chain.add_argument("--block-byte-hidden-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--block-byte-hidden-probe-mode", choices=["fixed", "trainable"], default="fixed")
+    xfamily_chain.add_argument("--block-byte-hidden-probe-anchor-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--block-block-io-ridge", type=float, default=1e-3)
     xfamily_chain.add_argument("--block-block-io-loss", choices=["smooth-l1", "cosine", "both"], default="both")
     xfamily_chain.add_argument("--block-train-output-head-with-kd", action="store_true")
@@ -2919,6 +2933,8 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         projected_vocab_kd_mode=args.projected_vocab_kd_mode,
         byte_kd_weight=args.byte_kd_weight,
         byte_hidden_kd_weight=args.byte_hidden_kd_weight,
+        byte_hidden_probe_mode=args.byte_hidden_probe_mode,
+        byte_hidden_probe_anchor_weight=args.byte_hidden_probe_anchor_weight,
         block_io_kd_weight=args.block_io_kd_weight,
         block_io_ridge=args.block_io_ridge,
         block_io_loss=args.block_io_loss,
@@ -3078,6 +3094,8 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         block_token_focus=args.block_token_focus,
         block_projected_vocab_kd_mode=args.block_projected_vocab_kd_mode,
         block_byte_hidden_kd_weight=args.block_byte_hidden_kd_weight,
+        block_byte_hidden_probe_mode=args.block_byte_hidden_probe_mode,
+        block_byte_hidden_probe_anchor_weight=args.block_byte_hidden_probe_anchor_weight,
         block_block_io_ridge=args.block_block_io_ridge,
         block_block_io_loss=args.block_block_io_loss,
         block_train_output_head_with_kd=args.block_train_output_head_with_kd,
