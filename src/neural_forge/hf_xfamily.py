@@ -329,8 +329,10 @@ def donor_projected_init(
         raise ValueError("transport_support must be centroid, importance, quantile, medoid, or quantile-medoid.")
     if donor_layer_fold_mode not in {"representative", "average", "fold"}:
         raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
-    if donor_layer_group_strategy not in {"depth", "activation-energy", "activation-geometry"}:
-        raise ValueError("donor_layer_group_strategy must be depth, activation-energy, or activation-geometry.")
+    if donor_layer_group_strategy not in {"depth", "activation-energy", "activation-geometry", "activation-cka"}:
+        raise ValueError(
+            "donor_layer_group_strategy must be depth, activation-energy, activation-geometry, or activation-cka."
+        )
     if attention_fold_mode not in {"independent", "coupled", "activation-coupled"}:
         raise ValueError("attention_fold_mode must be independent, coupled, or activation-coupled.")
     if attention_head_dim_transport not in {"none", "qk-vo"}:
@@ -436,6 +438,7 @@ def donor_projected_init(
         needs_layer_activation_rows = hidden_basis_mode == "activation-pca" or donor_layer_group_strategy in {
             "activation-energy",
             "activation-geometry",
+            "activation-cka",
         }
         activation_profile = _collect_donor_axis_activation_scores(
             torch,
@@ -457,7 +460,7 @@ def donor_projected_init(
         raise ValueError("attention head-dimension transport requires activation calibration texts.")
     if activation_fit_linears and activation_profile is None:
         raise ValueError("activation linear fitting requires activation calibration texts.")
-    if donor_layer_group_strategy in {"activation-energy", "activation-geometry"} and activation_profile is None:
+    if donor_layer_group_strategy in {"activation-energy", "activation-geometry", "activation-cka"} and activation_profile is None:
         raise ValueError(
             f"{donor_layer_group_strategy} donor layer grouping requires activation calibration texts."
         )
@@ -3466,8 +3469,10 @@ def _donor_layer_groups_for_target_count(
 ) -> tuple[list[list[int]], dict[str, Any]]:
     if target_layer_count <= 0 or donor_layer_count <= 0:
         raise ValueError("Layer counts must be positive.")
-    if strategy not in {"depth", "activation-energy", "activation-geometry"}:
-        raise ValueError("donor layer group strategy must be depth, activation-energy, or activation-geometry.")
+    if strategy not in {"depth", "activation-energy", "activation-geometry", "activation-cka"}:
+        raise ValueError(
+            "donor layer group strategy must be depth, activation-energy, activation-geometry, or activation-cka."
+        )
     if strategy == "depth":
         groups = [
             _donor_layer_group_for_target(idx, int(target_layer_count), int(donor_layer_count))
@@ -3489,6 +3494,14 @@ def _donor_layer_groups_for_target_count(
             "total_geometry_score": float(sum(scores)),
             "layer_geometry": geometry["layer_geometry"],
         }
+    if strategy == "activation-cka":
+        cka = _donor_layer_cka_groups(
+            torch,
+            activation_profile,
+            donor_layer_count=int(donor_layer_count),
+            target_layer_count=int(target_layer_count),
+        )
+        return cka["groups"], cka
     scores = _donor_layer_delta_scores(torch, activation_profile, int(donor_layer_count))
     groups = _donor_layer_groups_by_energy(scores, int(target_layer_count))
     return groups, {
@@ -3532,6 +3545,21 @@ def _donor_layer_geometry_scores(
         activation_profile.get("hidden_basis_input_rows") or {},
         activation_profile.get("hidden_basis_output_rows") or {},
         donor_layer_count,
+    )
+
+
+def _donor_layer_cka_groups(
+    torch,
+    activation_profile: dict[str, Any],
+    donor_layer_count: int,
+    target_layer_count: int,
+) -> dict[str, Any]:
+    return _activation_layer_cka_groups(
+        torch,
+        activation_profile.get("hidden_basis_input_rows") or {},
+        activation_profile.get("hidden_basis_output_rows") or {},
+        layer_count=donor_layer_count,
+        target_layer_count=target_layer_count,
     )
 
 
@@ -3617,7 +3645,134 @@ def _activation_layer_geometry_scores(
     }
 
 
+def _activation_layer_cka_groups(
+    torch,
+    input_rows_by_layer: dict[int, Any],
+    output_rows_by_layer: dict[int, Any],
+    layer_count: int,
+    target_layer_count: int,
+) -> dict[str, Any]:
+    if layer_count <= 0 or target_layer_count <= 0:
+        raise ValueError("layer_count and target_layer_count must be positive.")
+    if int(target_layer_count) >= int(layer_count):
+        groups = [
+            _donor_layer_group_for_target(idx, int(target_layer_count), int(layer_count))
+            for idx in range(int(target_layer_count))
+        ]
+        return {
+            "strategy": "activation-cka",
+            "groups": [[int(item) for item in group] for group in groups],
+            "delta_scores": [1.0 for _ in range(int(layer_count))],
+            "representative_scores": [1.0 for _ in range(int(layer_count))],
+            "cka_similarity": None,
+            "seed_layers": None,
+            "assignment_similarity": None,
+            "fallback": "target_depth_at_least_source_depth",
+        }
+
+    delta_rows: list[Any | None] = []
+    delta_scores: list[float] = []
+    row_counts: list[int] = []
+    for layer_idx in range(int(layer_count)):
+        input_rows = input_rows_by_layer.get(int(layer_idx))
+        output_rows = output_rows_by_layer.get(int(layer_idx))
+        input_matrix, output_matrix = _paired_activation_matrices(torch, input_rows, output_rows)
+        if input_matrix is None or output_matrix is None:
+            delta_rows.append(None)
+            delta_scores.append(1.0)
+            row_counts.append(0)
+            continue
+        delta = torch.nan_to_num(output_matrix - input_matrix, nan=0.0, posinf=1e4, neginf=-1e4)
+        delta_rows.append(delta)
+        delta_scores.append(max(float(delta.pow(2).mean().sqrt().detach().cpu()), 1e-12))
+        row_counts.append(int(delta.shape[0]))
+    if not any(score > 1e-8 for score in delta_scores):
+        delta_scores = [1.0 for _ in delta_scores]
+
+    similarity = [[0.0 for _ in range(int(layer_count))] for _ in range(int(layer_count))]
+    for row_idx in range(int(layer_count)):
+        for col_idx in range(row_idx, int(layer_count)):
+            if row_idx == col_idx:
+                value = 1.0
+            elif delta_rows[row_idx] is None or delta_rows[col_idx] is None:
+                value = 0.0
+            else:
+                first = delta_rows[row_idx]
+                second = delta_rows[col_idx]
+                rows = min(int(first.shape[0]), int(second.shape[0]))
+                dims = min(int(first.shape[1]), int(second.shape[1]))
+                if rows <= 1 or dims <= 0:
+                    value = 0.0
+                else:
+                    value = max(0.0, min(1.0, _safe_linear_cka(torch, first[:rows, :dims], second[:rows, :dims])))
+            similarity[row_idx][col_idx] = float(value)
+            similarity[col_idx][row_idx] = float(value)
+
+    seed_layers = _activation_cka_seed_layers(similarity, delta_scores, int(target_layer_count))
+    group_items: list[list[int]] = [[int(seed)] for seed in seed_layers]
+    assignment_similarity: list[float] = [0.0 for _ in range(int(layer_count))]
+    seed_to_group = {int(seed): idx for idx, seed in enumerate(seed_layers)}
+    for layer_idx in range(int(layer_count)):
+        if layer_idx in seed_to_group:
+            assignment_similarity[layer_idx] = 1.0
+            continue
+        best_group = max(
+            range(len(seed_layers)),
+            key=lambda group_idx: (
+                float(similarity[layer_idx][int(seed_layers[group_idx])]),
+                -abs(layer_idx - int(seed_layers[group_idx])),
+                -int(seed_layers[group_idx]),
+            ),
+        )
+        group_items[best_group].append(int(layer_idx))
+        assignment_similarity[layer_idx] = float(similarity[layer_idx][int(seed_layers[best_group])])
+
+    groups = [sorted(group) for group in group_items if group]
+    groups.sort(key=lambda group: (min(group), max(group), len(group)))
+    representative_scores = [float(delta_scores[idx]) for idx in range(int(layer_count))]
+    return {
+        "strategy": "activation-cka",
+        "groups": [[int(item) for item in group] for group in groups],
+        "delta_scores": [float(item) for item in delta_scores],
+        "representative_scores": representative_scores,
+        "cka_similarity": similarity,
+        "seed_layers": [int(item) for item in seed_layers],
+        "assignment_similarity": [float(item) for item in assignment_similarity],
+        "rows_per_layer": [int(item) for item in row_counts],
+    }
+
+
+def _activation_cka_seed_layers(
+    similarity: Sequence[Sequence[float]],
+    delta_scores: Sequence[float],
+    target_layer_count: int,
+) -> list[int]:
+    layer_count = len(similarity)
+    if target_layer_count <= 0 or layer_count <= 0:
+        raise ValueError("Layer counts must be positive.")
+    target_count = min(int(target_layer_count), int(layer_count))
+    first_seed = max(
+        range(layer_count),
+        key=lambda idx: (float(delta_scores[idx]), -idx),
+    )
+    seeds = [int(first_seed)]
+    while len(seeds) < target_count:
+        remaining = [idx for idx in range(layer_count) if idx not in seeds]
+        next_seed = max(
+            remaining,
+            key=lambda idx: (
+                min(1.0 - float(similarity[idx][seed]) for seed in seeds),
+                float(delta_scores[idx]),
+                -idx,
+            ),
+        )
+        seeds.append(int(next_seed))
+    return seeds
+
+
 def _paired_activation_matrices(torch, first, second):
+    if first is None or second is None:
+        return None, None
     first_matrix = first.detach().cpu().to(torch.float32)
     second_matrix = second.detach().cpu().to(torch.float32)
     if first_matrix.dim() > 2:

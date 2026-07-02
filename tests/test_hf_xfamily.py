@@ -567,6 +567,50 @@ def test_activation_channel_assignment_uses_activation_features() -> None:
     assert _assign_donor_to_host(torch, donor_features, host_features).tolist() == [1, 0]
 
 
+def test_cli_accepts_activation_cka_layer_group_strategy() -> None:
+    parser = build_parser()
+
+    donor_init_args = parser.parse_args(
+        [
+            "hf-donor-project-init",
+            "projected-out",
+            "--target-config-model",
+            "target-model",
+            "--donor-model",
+            "donor-model",
+            "--donor-layer-group-strategy",
+            "activation-cka",
+        ]
+    )
+    block_recover_args = parser.parse_args(
+        [
+            "hf-xfamily-block-recover",
+            "source-model",
+            "candidate-model",
+            "recovered-out",
+            "--donor-layer-group-strategy",
+            "activation-cka",
+        ]
+    )
+    chain_args = parser.parse_args(
+        [
+            "hf-xfamily-chain-anchor-compress",
+            "source-model",
+            "candidate-config",
+            "chain-out",
+            "--init-donor-layer-group-strategy",
+            "activation-cka",
+            "--block-donor-layer-group-strategy",
+            "activation-cka",
+        ]
+    )
+
+    assert donor_init_args.donor_layer_group_strategy == "activation-cka"
+    assert block_recover_args.donor_layer_group_strategy == "activation-cka"
+    assert chain_args.init_donor_layer_group_strategy == "activation-cka"
+    assert chain_args.block_donor_layer_group_strategy == "activation-cka"
+
+
 def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     parser = build_parser()
     sweep_args = parser.parse_args(
@@ -1626,6 +1670,35 @@ def test_donor_layer_groups_report_activation_energy_scores() -> None:
     assert [item for group in groups for item in group] == [0, 1, 2]
     assert report["strategy"] == "activation-energy"
     assert report["delta_scores"][1] > report["delta_scores"][0]
+
+
+def test_donor_layer_groups_can_cluster_by_activation_cka() -> None:
+    torch = pytest.importorskip("torch")
+    x_delta = torch.tensor([[-1.0, 0.0], [1.0, 0.0], [-1.0, 0.0], [1.0, 0.0]])
+    y_delta = torch.tensor([[0.0, -1.0], [0.0, -1.0], [0.0, 1.0], [0.0, 1.0]])
+    activation_profile = {
+        "hidden_basis_input_rows": {idx: torch.zeros((4, 2)) for idx in range(4)},
+        "hidden_basis_output_rows": {
+            0: x_delta,
+            1: y_delta,
+            2: x_delta.clone(),
+            3: y_delta.clone(),
+        },
+    }
+
+    groups, report = _donor_layer_groups_for_target_count(
+        torch,
+        target_layer_count=2,
+        donor_layer_count=4,
+        strategy="activation-cka",
+        activation_profile=activation_profile,
+    )
+
+    assert {frozenset(group) for group in groups} == {frozenset({0, 2}), frozenset({1, 3})}
+    assert report["strategy"] == "activation-cka"
+    assert report["cka_similarity"][0][2] == pytest.approx(1.0)
+    assert report["cka_similarity"][0][1] == pytest.approx(0.0)
+    assert report["assignment_similarity"][2] == pytest.approx(1.0)
 
 
 def test_linear_cka_detects_similar_activation_spaces() -> None:

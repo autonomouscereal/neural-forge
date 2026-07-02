@@ -189,12 +189,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hf_donor_init.add_argument(
         "--donor-layer-group-strategy",
-        choices=["depth", "activation-energy", "activation-geometry"],
+        choices=["depth", "activation-energy", "activation-geometry", "activation-cka"],
         default="depth",
         help=(
             "How donor layers are grouped before depth folding. activation-energy partitions donor layers by "
             "calibrated residual update energy instead of uniform depth bins; activation-geometry also weights "
-            "CKA/cosine shift and residual novelty."
+            "CKA/cosine shift and residual novelty; activation-cka clusters donor residual-update directions "
+            "by pairwise activation CKA so similar non-contiguous layers merge before folding."
         ),
     )
     hf_donor_init.add_argument(
@@ -1217,12 +1218,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     xfamily_block_recover.add_argument(
         "--donor-layer-group-strategy",
-        choices=["depth", "activation-energy", "activation-geometry"],
+        choices=["depth", "activation-energy", "activation-geometry", "activation-cka"],
         default="depth",
         help=(
             "How donor layers are grouped before block recovery. activation-energy uses teacher residual "
             "update norms on calibration batches instead of uniform depth bins; activation-geometry also weights "
-            "CKA/cosine shift and residual novelty."
+            "CKA/cosine shift and residual novelty; activation-cka clusters teacher residual-update directions "
+            "by pairwise activation CKA so similar non-contiguous layers merge before folding."
         ),
     )
     xfamily_block_recover.add_argument("--layer-limit", type=int)
@@ -1489,7 +1491,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--init-donor-layer-fold-mode", choices=["representative", "average", "fold"], default="fold")
     xfamily_chain.add_argument(
         "--init-donor-layer-group-strategy",
-        choices=["depth", "activation-energy", "activation-geometry"],
+        choices=["depth", "activation-energy", "activation-geometry", "activation-cka"],
         default="depth",
     )
     xfamily_chain.add_argument(
@@ -1596,7 +1598,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--block-donor-layer-fold-mode", choices=["representative", "average", "fold"], default="fold")
     xfamily_chain.add_argument(
         "--block-donor-layer-group-strategy",
-        choices=["depth", "activation-energy", "activation-geometry"],
+        choices=["depth", "activation-energy", "activation-geometry", "activation-cka"],
         default="activation-energy",
     )
     xfamily_chain.add_argument("--block-layer-limit", type=int)
