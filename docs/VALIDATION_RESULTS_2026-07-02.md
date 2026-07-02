@@ -793,6 +793,28 @@ Queued exactness combo lane:
 - Final eval target:
   `eval_qwen4b_blank_smollm_quantile_medoid_exact_combo_alm_gpu6uuid_20260702_exactgen_20260702_1000x1000x250.json`
 
+Parent exact-generation retry:
+
+- The first parent exact-gen queue used `CUDA_VISIBLE_DEVICES=6` by physical
+  index. On this server that index path incorrectly exposed a Tesla P40 as
+  logical `cuda:0`, causing `CUDA error: no kernel image is available for
+  execution on the device`.
+- Added a UUID-based retry wrapper:
+  `experiments/queue_parent_qwen3_4b_exactgen_uuid_20260702.sh`.
+- Queue PID: `3345256`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/parent_qwen3_4b_base_exactgen_uuid_retry_20260702.queue.log`
+- Dependency:
+  waits behind active RTX 8000 multidonor job PID `3305569`.
+- The retry uses the Quadro RTX 8000 UUID
+  `GPU-f5a09535-fc85-a027-50f7-734b344747dd` and writes the canonical parent
+  report path:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/evals/eval_parent_qwen3_4b_base_exactgen_20260702_1000x1000x250.json`.
+- If an invalid partial JSON exists, the wrapper preserves it with an
+  `.invalid.<timestamp>` suffix before re-running. This keeps audit evidence
+  while allowing downstream parent-vs-child retention comparisons to use the
+  expected report path.
+
 Superseded P40 queue metadata retained for audit:
 
 - Tag:
