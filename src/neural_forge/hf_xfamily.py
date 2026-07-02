@@ -337,8 +337,8 @@ def donor_projected_init(
         raise ValueError("attention_head_dim_transport must be none or qk-vo.")
     if token_init_mode not in {"shared", "donor-tokenized", "donor-tokenized-weighted", "donor-omp"}:
         raise ValueError("token_init_mode must be shared, donor-tokenized, donor-tokenized-weighted, or donor-omp.")
-    if projection_scale not in {"none", "target-rms"}:
-        raise ValueError("projection_scale must be none or target-rms.")
+    if projection_scale not in {"none", "target-rms", "source-rms"}:
+        raise ValueError("projection_scale must be none, target-rms, or source-rms.")
     if consumer_hidden_reduction not in {"mean", "sum", "sqrt-sum"}:
         raise ValueError("consumer_hidden_reduction must be mean, sum, or sqrt-sum.")
     if activation_fit_target not in {"all", "attention", "attention-output", "mlp", "mlp-output", "input-projections"}:
@@ -677,7 +677,13 @@ def donor_projected_init(
                 transport_support=transport_support,
                 assignment_cache=axis_assignment_cache,
             )
-        projected = _scale_projection_to_target(torch, projected, target_tensor, projection_scale)
+        projected = _scale_projection_to_target(
+            torch,
+            projected,
+            target_tensor,
+            projection_scale,
+            source_tensor=donor_tensor,
+        )
         projected = _blend_projection_with_target(torch, projected, target_tensor, projection_blend_alpha)
         activation_fit_report = None
         if (
@@ -2972,7 +2978,13 @@ def _initialize_non_layer_tensors_from_donor(
             transport_support=transport_support,
             assignment_cache=assignment_cache,
         )
-        projected = _scale_projection_to_target(torch, projected, target_tensor, projection_scale)
+        projected = _scale_projection_to_target(
+            torch,
+            projected,
+            target_tensor,
+            projection_scale,
+            source_tensor=donor_tensor,
+        )
         projected = _blend_projection_with_target(torch, projected, target_tensor, projection_blend_alpha)
         target_state[target_key] = projected.to(dtype=target_tensor.dtype)
         initialized.append(
@@ -3082,16 +3094,21 @@ def _hidden_axis_weights_for_non_layer_tensor(donor_tensor, hidden_axis_weights)
     return axis_weights or None
 
 
-def _scale_projection_to_target(torch, projected, target_tensor, projection_scale: str):
+def _scale_projection_to_target(torch, projected, target_tensor, projection_scale: str, source_tensor=None):
     if projection_scale == "none":
         return projected
-    if projection_scale != "target-rms":
-        raise ValueError("projection_scale must be none or target-rms.")
-    target_values = target_tensor.detach().cpu().to(torch.float32)
+    if projection_scale not in {"target-rms", "source-rms"}:
+        raise ValueError("projection_scale must be none, target-rms, or source-rms.")
+    if projection_scale == "source-rms":
+        if source_tensor is None:
+            raise ValueError("source-rms projection scale requires source_tensor.")
+        reference_values = source_tensor.detach().cpu().to(torch.float32)
+    else:
+        reference_values = target_tensor.detach().cpu().to(torch.float32)
     projected_values = projected.to(torch.float32)
-    target_rms = target_values.pow(2).mean().sqrt()
+    reference_rms = reference_values.pow(2).mean().sqrt()
     projected_rms = projected_values.pow(2).mean().sqrt()
-    return projected_values * (target_rms / projected_rms.clamp_min(1e-12))
+    return projected_values * (reference_rms / projected_rms.clamp_min(1e-12))
 
 
 def _blend_projection_with_target(torch, projected, target_tensor, alpha: float):
@@ -5813,6 +5830,7 @@ def _project_token_weight_rows(
             projected,
             target_weight[torch.tensor(chunk_target_ids, dtype=torch.long)],
             projection_scale,
+            source_tensor=donor_rows,
         )
         projected = _blend_projection_with_target(
             torch,
