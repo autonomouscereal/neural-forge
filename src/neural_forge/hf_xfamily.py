@@ -741,6 +741,7 @@ def donor_projected_init(
                 activation_fit_reports.append(activation_fit_report)
             else:
                 activation_fit_report["applied"] = False
+        projection_diagnostic = _tensor_projection_diagnostic(torch, donor_tensor, projected, target_tensor)
         target_state[target_key] = projected.to(dtype=target_tensor.dtype)
         changed_keys.append(target_key)
         layer_reports.append(
@@ -755,6 +756,7 @@ def donor_projected_init(
                 "target_shape": list(target_tensor.shape),
                 "donor_shape": list(donor_tensor.shape),
                 "activation_fit": activation_fit_report,
+                "projection_diagnostic": projection_diagnostic,
                 "synthetic_cross_arch": synthetic_layer_report,
             }
         )
@@ -816,6 +818,9 @@ def donor_projected_init(
     generation_config_report = _sanitize_generation_config_for_save(target, target_tokenizer)
     target.save_pretrained(output, safe_serialization=True)
     target_tokenizer.save_pretrained(output)
+    projection_diagnostic_summary = _summarize_projection_diagnostics(
+        item["projection_diagnostic"] for item in layer_reports if item.get("projection_diagnostic") is not None
+    )
     report = {
         "operation": "donor_projected_init",
         "target_config_model": target_config_model,
@@ -884,6 +889,7 @@ def donor_projected_init(
         "target_layers": len(target_layers),
         "donor_layers": len(donor_layers),
         "layer_tensors_initialized": len(layer_reports),
+        "projection_diagnostic_summary": projection_diagnostic_summary,
         "synthetic_cross_arch_layer_tensors_initialized": sum(
             1 for item in layer_reports if item.get("synthetic_cross_arch") is not None
         ),
@@ -3094,6 +3100,161 @@ def _blend_projection_with_target(torch, projected, target_tensor, alpha: float)
         return projected
     target_values = target_tensor.detach().cpu().to(torch.float32)
     return (float(alpha) * projected.to(torch.float32)) + ((1.0 - float(alpha)) * target_values)
+
+
+def _sample_tensor_values(torch, tensor, max_values: int = 262_144):
+    values = tensor.detach().flatten()
+    if values.numel() > int(max_values):
+        indices = torch.linspace(0, values.numel() - 1, steps=int(max_values), dtype=torch.long, device=values.device)
+        values = values.index_select(0, indices)
+    return values.cpu().to(torch.float32)
+
+
+def _sample_paired_tensor_values(torch, left, right, max_values: int = 262_144):
+    left_values = left.detach().flatten()
+    right_values = right.detach().flatten()
+    if left_values.numel() != right_values.numel():
+        return None, None
+    if left_values.numel() > int(max_values):
+        indices = torch.linspace(0, left_values.numel() - 1, steps=int(max_values), dtype=torch.long)
+        left_values = left_values.index_select(0, indices.to(left_values.device))
+        right_values = right_values.index_select(0, indices.to(right_values.device))
+    return left_values.cpu().to(torch.float32), right_values.cpu().to(torch.float32)
+
+
+def _tensor_stats(torch, tensor, max_values: int = 262_144) -> dict[str, Any]:
+    values = _sample_tensor_values(torch, tensor, max_values=max_values)
+    numel = int(tensor.numel())
+    if numel == 0:
+        return {
+            "numel": 0,
+            "sampled_numel": 0,
+            "finite_fraction": 1.0,
+            "rms": None,
+            "mean_abs": None,
+            "max_abs": None,
+        }
+    finite_mask = torch.isfinite(values)
+    finite_fraction = float(finite_mask.to(torch.float32).mean().item())
+    if not bool(finite_mask.any().item()):
+        return {
+            "numel": numel,
+            "sampled_numel": int(values.numel()),
+            "finite_fraction": finite_fraction,
+            "rms": None,
+            "mean_abs": None,
+            "max_abs": None,
+        }
+    finite_values = values if finite_fraction == 1.0 else values[finite_mask]
+    abs_values = finite_values.abs()
+    return {
+        "numel": numel,
+        "sampled_numel": int(values.numel()),
+        "finite_fraction": finite_fraction,
+        "rms": float(finite_values.pow(2).mean().sqrt().item()),
+        "mean_abs": float(abs_values.mean().item()),
+        "max_abs": float(abs_values.max().item()),
+    }
+
+
+def _safe_numeric_ratio(numerator: Any, denominator: Any) -> float | None:
+    if numerator is None or denominator is None:
+        return None
+    numerator = float(numerator)
+    denominator = float(denominator)
+    if not math.isfinite(numerator) or not math.isfinite(denominator) or abs(denominator) < 1e-12:
+        return None
+    return float(numerator / denominator)
+
+
+def _same_shape_cosine(torch, left, right) -> float | None:
+    left_values, right_values = _sample_paired_tensor_values(torch, left, right)
+    if left_values is None or right_values is None or left_values.numel() == 0:
+        return None
+    finite = torch.isfinite(left_values) & torch.isfinite(right_values)
+    if not bool(finite.any().item()):
+        return None
+    left_values = left_values[finite]
+    right_values = right_values[finite]
+    denominator = left_values.norm() * right_values.norm()
+    if float(denominator.item()) < 1e-12:
+        return None
+    return float(torch.dot(left_values, right_values).div(denominator).item())
+
+
+def _tensor_projection_diagnostic(torch, source_tensor, projected_tensor, target_tensor) -> dict[str, Any]:
+    source_stats = _tensor_stats(torch, source_tensor)
+    projected_stats = _tensor_stats(torch, projected_tensor)
+    target_stats = _tensor_stats(torch, target_tensor)
+    projected_values, target_values = _sample_paired_tensor_values(torch, projected_tensor, target_tensor)
+    update_rms = None
+    if projected_values is not None and target_values is not None and projected_values.numel() > 0:
+        delta = projected_values - target_values
+        finite_delta = delta[torch.isfinite(delta)]
+        if finite_delta.numel() > 0:
+            update_rms = float(finite_delta.pow(2).mean().sqrt().item())
+    finite_fractions = [
+        float(source_stats["finite_fraction"]),
+        float(projected_stats["finite_fraction"]),
+        float(target_stats["finite_fraction"]),
+    ]
+    return {
+        "source": source_stats,
+        "projected": projected_stats,
+        "target_before": target_stats,
+        "projected_to_source_rms_ratio": _safe_numeric_ratio(projected_stats["rms"], source_stats["rms"]),
+        "projected_to_target_rms_ratio": _safe_numeric_ratio(projected_stats["rms"], target_stats["rms"]),
+        "target_update_rms": update_rms,
+        "target_update_relative_rms": _safe_numeric_ratio(update_rms, target_stats["rms"]),
+        "target_projection_cosine": _same_shape_cosine(torch, projected_tensor, target_tensor),
+        "nonfinite_detected": any(item < 1.0 for item in finite_fractions),
+    }
+
+
+def _numeric_report_values(reports: Sequence[dict[str, Any]], key: str) -> list[float]:
+    values = []
+    for report in reports:
+        value = report.get(key)
+        if isinstance(value, bool) or value is None:
+            continue
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value):
+            values.append(value)
+    return values
+
+
+def _series_summary(values: Sequence[float]) -> dict[str, float] | None:
+    values = [float(item) for item in values if math.isfinite(float(item))]
+    if not values:
+        return None
+    ordered = sorted(values)
+    return {
+        "mean": float(sum(values) / len(values)),
+        "min": float(ordered[0]),
+        "max": float(ordered[-1]),
+        "p95": float(ordered[min(len(ordered) - 1, int(math.ceil(0.95 * len(ordered))) - 1)]),
+    }
+
+
+def _summarize_projection_diagnostics(reports: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    reports = list(reports)
+    return {
+        "count": len(reports),
+        "nonfinite_detected_count": sum(1 for item in reports if bool(item.get("nonfinite_detected"))),
+        "projected_to_source_rms_ratio": _series_summary(
+            _numeric_report_values(reports, "projected_to_source_rms_ratio")
+        ),
+        "projected_to_target_rms_ratio": _series_summary(
+            _numeric_report_values(reports, "projected_to_target_rms_ratio")
+        ),
+        "target_update_relative_rms": _series_summary(
+            _numeric_report_values(reports, "target_update_relative_rms")
+        ),
+        "target_projection_cosine": _series_summary(_numeric_report_values(reports, "target_projection_cosine")),
+    }
 
 
 def _donor_layer_group_for_target(target_layer_idx: int, target_layer_count: int, donor_layer_count: int) -> list[int]:

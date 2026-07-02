@@ -128,10 +128,12 @@ from neural_forge.hf_xfamily import _scale_projection_to_target
 from neural_forge.hf_xfamily import _select_compression_candidates
 from neural_forge.hf_xfamily import _sanitize_generation_config_for_save
 from neural_forge.hf_xfamily import _synthesize_cross_arch_layer_tensor
+from neural_forge.hf_xfamily import _summarize_projection_diagnostics
 from neural_forge.hf_xfamily import _target_to_donor_token_group_specs
 from neural_forge.hf_xfamily import _target_to_donor_special_token_group_specs
 from neural_forge.hf_xfamily import _target_to_donor_token_groups
 from neural_forge.hf_xfamily import _target_to_donor_omp_group_specs
+from neural_forge.hf_xfamily import _tensor_projection_diagnostic
 from neural_forge.hf_xfamily import _untie_output_head
 from neural_forge.hf_xfamily import _usable_candidate_sort_key
 from neural_forge.hf_xfamily import _usable_pipeline_candidates
@@ -2614,6 +2616,52 @@ def test_blend_projection_with_target_interpolates_values() -> None:
     blended = _blend_projection_with_target(torch, projected, target, 0.25)
 
     assert blended.tolist() == [[4.0, 4.0], [4.0, 4.0]]
+
+
+def test_tensor_projection_diagnostic_reports_fold_scale() -> None:
+    torch = pytest.importorskip("torch")
+    source = torch.ones((4, 2), dtype=torch.float32) * 2.0
+    projected = torch.ones((2, 2), dtype=torch.float32) * 6.0
+    target = torch.ones((2, 2), dtype=torch.float32) * 4.0
+
+    report = _tensor_projection_diagnostic(torch, source, projected, target)
+
+    assert report["source"]["rms"] == pytest.approx(2.0)
+    assert report["projected"]["rms"] == pytest.approx(6.0)
+    assert report["target_before"]["rms"] == pytest.approx(4.0)
+    assert report["projected_to_source_rms_ratio"] == pytest.approx(3.0)
+    assert report["projected_to_target_rms_ratio"] == pytest.approx(1.5)
+    assert report["target_update_relative_rms"] == pytest.approx(0.5)
+    assert report["target_projection_cosine"] == pytest.approx(1.0)
+    assert report["nonfinite_detected"] is False
+
+
+def test_summarize_projection_diagnostics_keeps_extremes() -> None:
+    reports = [
+        {
+            "projected_to_source_rms_ratio": 0.5,
+            "projected_to_target_rms_ratio": 1.0,
+            "target_update_relative_rms": 0.2,
+            "target_projection_cosine": 0.9,
+            "nonfinite_detected": False,
+        },
+        {
+            "projected_to_source_rms_ratio": 2.0,
+            "projected_to_target_rms_ratio": 4.0,
+            "target_update_relative_rms": 1.2,
+            "target_projection_cosine": -0.1,
+            "nonfinite_detected": True,
+        },
+    ]
+
+    summary = _summarize_projection_diagnostics(reports)
+
+    assert summary["count"] == 2
+    assert summary["nonfinite_detected_count"] == 1
+    assert summary["projected_to_source_rms_ratio"]["mean"] == pytest.approx(1.25)
+    assert summary["projected_to_target_rms_ratio"]["max"] == pytest.approx(4.0)
+    assert summary["target_update_relative_rms"]["min"] == pytest.approx(0.2)
+    assert summary["target_projection_cosine"]["min"] == pytest.approx(-0.1)
 
 
 def test_activation_weighted_fold_uses_importance_bins() -> None:
