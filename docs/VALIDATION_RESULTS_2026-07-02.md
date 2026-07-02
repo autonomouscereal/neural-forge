@@ -1735,10 +1735,15 @@ Started an immediate LFM proof chain on RTX 3090 GPU0:
     `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/donor_lfm230m_exactgen_gpu0_now2_20260702.queue.log`
   - Report:
     `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/evals/eval_donor_lfm230m_exactgen_20260702_1000x1000x250.json`
+  - Completed at `2026-07-02T07:41:28-06:00`.
+  - Metrics:
+    behavior `382/1000`, generation health `622/1000`,
+    choice `250/250`, PPL mean `1245.7001`, params `229693184`.
 - LFM -> blank SmolLM compression:
   - Tag: `lfm230m_blank_smollm_trainable_byteprobe_gpu0_now2_20260702`
   - Queue PID: `4006054`
   - Waits for donor eval PID `4005558`
+  - Actual compression PID from tag pid file: `4056541`
   - Log:
     `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/lfm230m_blank_smollm_trainable_byteprobe_gpu0_now2_20260702.queue.log`
 - Retention/manual watcher:
