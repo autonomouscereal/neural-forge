@@ -30,6 +30,50 @@ Current status:
 - This is a fold/merge implementation improvement, not a proof of intelligence retention by itself.
 - The next required evidence is a queued Qwen3-4B -> blank SmolLM2-135M quantile-support run with parent/before/after behavior and manual sample comparison.
 
+## Activation Quantile-Medoid Transport Support
+
+Added a second structural support lane for blank-target width folding:
+`transport_support="quantile-medoid"`.
+
+What changed:
+
+- `hf-donor-project-init --transport-support quantile-medoid`
+- `hf-xfamily-chain-anchor-compress --init-transport-support quantile-medoid`
+- The support selector first partitions donor axes by activation-weight strata,
+  then picks the real donor axis nearest the weighted activation centroid within
+  each stratum.
+- This combines the two useful transport ideas tested so far:
+  `quantile` avoids collapsing all target axes onto the most active channels,
+  while `medoid` avoids using only synthetic centroid axes.
+- Like `importance`, `quantile`, and `medoid`, the new mode estimates transport
+  target masses from nearest-support activation load and records
+  `target_support_indices` / `target_masses` diagnostics.
+
+Why this matters:
+
+- The current failure mode is structural retention, not tensor shape fitting.
+- A top-k-only support set can lose low/mid activation channels that still
+  encode useful local behavior.
+- A pure centroid support set can blur real donor axes before the recovery stage
+  ever sees them.
+- `quantile-medoid` is an adapter-free fold-first option: every donor axis still
+  contributes through the transport plan, but compressed target axes are anchored
+  on real donor channels across the activation distribution.
+
+Validation:
+
+- Local full suite: `142 passed, 133 skipped`
+- Remote focused Torch tests: `6 passed, 217 deselected`
+- Remote full suite: `275 passed`
+
+Current status:
+
+- This is ready to queue as a strict Qwen3-4B -> blank SmolLM2-135M structural
+  lane using the existing chain launcher with
+  `INIT_TRANSPORT_SUPPORT=quantile-medoid`.
+- It still needs behavior/manual evidence against the cached parent, blank, and
+  recovered baselines before it can be promoted.
+
 ## Weighted Projected-Vocab Recovery
 
 Added weighted cross-tokenizer projected-vocab maps for recovery losses.
@@ -102,3 +146,25 @@ Interpretation:
 - The recovery stack is clearly implanting non-random language/code behavior into the blank 135M target.
 - Broad behavior and generation-health scores can overstate exact math/code retention.
 - New lanes must be compared against parent and recovered baselines on exact-generation/manual probes, not only broad generation health.
+
+## Active Full-Run Status Snapshot
+
+Polled AI server state at `2026-07-02T00:43:54-06:00`.
+
+The three long full runs occupying usable GPUs were still progressing, not
+stalled:
+
+| Run | Latest block status | Best observed in-loop behavior |
+|---|---:|---:|
+| `qwen4b_cleanopen_anchor_newloss_full_gpu4_20260701` | layer `28`, step `4` | `803/1000`, generation health `400/400` |
+| `qwen4b_mathdrill_anchor_newloss_full_gpu6_20260701` | layer `26`, step `4` | `807/1000`, generation health `400/400` |
+| `qwen4b_mathdrill_anchor_eora_geom_full_gpu0_fix_20260701` | layer `16`, step `0` | `807/1000`, generation health `400/400` |
+
+Interpretation:
+
+- These jobs are preserving the current recovered-child plateau while folding
+  through the full block stack.
+- They have not yet produced final exact-generation reports, so they are not
+  completion evidence.
+- The queued exact-generation comparisons and drill selector should remain the
+  promotion signal once these jobs finish.
