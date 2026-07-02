@@ -1,5 +1,66 @@
 # Validation Results - 2026-07-02
 
+## Activation-CKA Donor Layer Grouping
+
+Added a merge-first donor layer grouping strategy for blank-target compression:
+`activation-cka`. Instead of only slicing parent layers by depth or partitioning
+by scalar residual energy, the new mode clusters donor residual-update
+activation directions by pairwise linear CKA, allowing similar non-contiguous
+parent layers to merge into the same child layer group before any recovery or
+pruning-style cut.
+
+What changed:
+
+- `hf-donor-project-init --donor-layer-group-strategy activation-cka`
+- `hf-xfamily-block-recover --donor-layer-group-strategy activation-cka`
+- `hf-xfamily-chain-anchor-compress --init-donor-layer-group-strategy activation-cka`
+- `hf-xfamily-chain-anchor-compress --block-donor-layer-group-strategy activation-cka`
+- Donor init uses calibration hidden input/output rows already collected for
+  activation-energy and activation-geometry grouping.
+- Block recovery computes the same CKA groups from teacher hidden-state deltas
+  on paired calibration batches.
+- Reports include CKA similarity, seed layers, assignment similarity,
+  per-layer delta scores, and rows per layer.
+
+Why this matters:
+
+- Current evidence and 2025-2026 research notes keep pointing at
+  similarity-guided folding, DOT/transport merging, and FFN/submodule
+  similarity as better fit than prune-first deletion.
+- `activation-geometry` still partitions by contiguous energy bins after
+  scoring. `activation-cka` can actually merge similar non-contiguous donor
+  layers before folding them into a smaller blank target.
+- This is still a structural operator, not proof of intelligence retention by
+  itself. It must beat the activation-geometry controls under broad behavior
+  and manual exact-generation evals.
+
+Validation:
+
+- Local parser/import check with `PYTHONPATH=src`:
+  `1 passed, 3 skipped, 229 deselected`
+- Local compile check:
+  `python -m py_compile src/neural_forge/hf_xfamily.py src/neural_forge/hf_recovery.py src/neural_forge/cli.py`
+- Remote focused Torch-backed tests:
+  `4 passed, 229 deselected`
+- Remote full suite:
+  `285 passed`
+
+Queued proof lane:
+
+- Tag:
+  `qwen4b_blank_smollm_activation_cka_geomean_full_gpu4_20260702`
+- Queue PID: `3136217`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_activation_cka_geomean_full_gpu4_20260702.queue.log`
+- GPU target: RTX 3090 UUID
+  `GPU-2ce6a95c-7b1f-644a-3808-d781732a0582`
+- Dependency wait PIDs:
+  `2803948 2712676 2588435 2441342 596237`
+- Recipe: geomean RMS true-LRC/EoRA/GRAIL chain with both init and block
+  donor grouping set to `activation-cka`.
+- Current status at queue start:
+  waiting for prior PID `2803948`.
+
 ## Answer-Boundary Margin Recovery
 
 Added an opt-in ALM recovery loss aimed at the current exact-answer failure:
