@@ -95,6 +95,7 @@ from neural_forge.hf_xfamily import _parse_chain_stages
 from neural_forge.hf_xfamily import _parse_source_models_and_weights
 from neural_forge.hf_xfamily import _canonical_token_map
 from neural_forge.hf_xfamily import _assign_donor_to_host
+from neural_forge.hf_xfamily import _activation_quantile_support_indices
 from neural_forge.hf_xfamily import _activation_layer_geometry_scores
 from neural_forge.hf_xfamily import _activation_similarity_assignment
 from neural_forge.hf_xfamily import _activation_axis_weights_for_tensor
@@ -620,7 +621,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "--transport-backend",
             "sinkhorn",
             "--transport-support",
-            "importance",
+            "quantile",
             "--donor-layer-fold-mode",
             "fold",
             "--donor-layer-group-strategy",
@@ -1076,7 +1077,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.hidden_basis_preprocess == "uncentered-rowrms"
     assert donor_init_args.activation_fold_assignment == "similarity"
     assert donor_init_args.transport_backend == "sinkhorn"
-    assert donor_init_args.transport_support == "importance"
+    assert donor_init_args.transport_support == "quantile"
     assert donor_init_args.donor_layer_fold_mode == "fold"
     assert donor_init_args.donor_layer_group_strategy == "activation-energy"
     assert donor_init_args.attention_fold_mode == "coupled"
@@ -2976,6 +2977,64 @@ def test_transport_fold_can_use_importance_survivor_support() -> None:
     transport = next(iter(cache.values()))
     assert transport["transport_support"] == "importance"
     assert transport["target_support_indices"].tolist() == [1, 3]
+
+
+def test_quantile_support_preserves_activation_weight_strata() -> None:
+    torch = pytest.importorskip("torch")
+    features = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.9, 0.1],
+            [0.8, 0.2],
+            [0.2, 0.8],
+            [0.1, 0.9],
+            [0.0, 1.0],
+        ],
+        dtype=torch.float32,
+    )
+    weights = torch.tensor([0.1, 0.2, 0.3, 50.0, 60.0, 70.0], dtype=torch.float32)
+
+    support = _activation_quantile_support_indices(torch, features, weights, target_dim=3)
+
+    assert support.tolist() == [0, 2, 5]
+
+
+def test_transport_fold_can_use_quantile_support() -> None:
+    torch = pytest.importorskip("torch")
+    cache = {}
+    features = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.9, 0.1],
+            [0.8, 0.2],
+            [0.2, 0.8],
+            [0.1, 0.9],
+            [0.0, 1.0],
+        ],
+        dtype=torch.float32,
+    )
+    weights = torch.tensor([0.1, 0.2, 0.3, 50.0, 60.0, 70.0], dtype=torch.float32)
+    source = torch.arange(6, dtype=torch.float32).unsqueeze(1)
+
+    folded = _resize_tensor_axis_mean_fold(
+        torch,
+        source,
+        axis=0,
+        target_dim=3,
+        fold_mode="transport",
+        weights=weights,
+        features=features,
+        transport_support="quantile",
+        assignment_cache=cache,
+        assignment_cache_key=("hidden", "quantile-support-test"),
+    )
+
+    assert folded.shape == (3, 1)
+    transport = next(iter(cache.values()))
+    assert transport["transport_support"] == "quantile"
+    assert transport["target_support_indices"].tolist() == [0, 2, 5]
+    assert transport["target_masses"].sum().item() == pytest.approx(1.0)
+    assert transport["target_masses"].tolist() != pytest.approx([1 / 3, 1 / 3, 1 / 3])
 
 
 def test_activation_layer_geometry_scores_residual_novelty() -> None:
@@ -5291,7 +5350,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "--activation-fold-assignment",
             "similarity",
             "--transport-support",
-            "importance",
+            "quantile",
             "--donor-layer-fold-mode",
             "average",
             "--donor-layer-group-strategy",
@@ -5367,7 +5426,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "hidden_basis_preprocess": "centered-rowrms",
         "activation_fold_assignment": "similarity",
         "transport_backend": "sparse",
-        "transport_support": "importance",
+        "transport_support": "quantile",
         "donor_layer_fold_mode": "average",
         "donor_layer_group_strategy": "activation-geometry",
         "attention_fold_mode": "activation-coupled",

@@ -154,11 +154,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hf_donor_init.add_argument(
         "--transport-support",
-        choices=["centroid", "importance"],
+        choices=["centroid", "importance", "quantile"],
         default="centroid",
         help=(
             "Support set for activation transport. centroid preserves the existing clustered-centroid map; "
-            "importance routes all source axes onto the highest activation-weight survivor axes."
+            "importance routes all source axes onto the highest activation-weight survivor axes; "
+            "quantile anchors transport on activation-weight strata."
         ),
     )
     hf_donor_init.add_argument(
@@ -1446,7 +1447,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     xfamily_chain.add_argument("--init-activation-fold-assignment", choices=["balanced", "similarity"], default="balanced")
     xfamily_chain.add_argument("--init-transport-backend", choices=["sparse", "sinkhorn"], default="sparse")
-    xfamily_chain.add_argument("--init-transport-support", choices=["centroid", "importance"], default="centroid")
+    xfamily_chain.add_argument(
+        "--init-transport-support",
+        choices=["centroid", "importance", "quantile"],
+        default="centroid",
+    )
     xfamily_chain.add_argument("--init-donor-layer-fold-mode", choices=["representative", "average", "fold"], default="fold")
     xfamily_chain.add_argument(
         "--init-donor-layer-group-strategy",
