@@ -4908,7 +4908,7 @@ def _activation_diverse_medoid_support_indices(torch, feature_rows, fold_weights
     weight_score = weights / weights.max().clamp_min(1e-12)
     while len(selected) < target_dim:
         selected_rows = rows.index_select(0, torch.tensor(selected, dtype=torch.long))
-        similarity = rows.matmul(selected_rows.t()).abs().max(dim=1).values
+        similarity = rows.matmul(selected_rows.t()).max(dim=1).values
         diversity = (1.0 - similarity).clamp_min(0.0)
         score = diversity + 0.05 * weight_score
         for idx in selected:
