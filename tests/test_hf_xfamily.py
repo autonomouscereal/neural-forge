@@ -23,6 +23,7 @@ from neural_forge.hf_recovery import _candidate_rank_kl_loss
 from neural_forge.hf_recovery import _candidate_to_source_token_groups
 from neural_forge.hf_recovery import _candidate_index_after_depth_fold
 from neural_forge.hf_recovery import _collect_cross_tokenizer_attention_output_calibration
+from neural_forge.hf_recovery import _cross_tokenizer_block_hidden_loss
 from neural_forge.hf_recovery import _collect_cross_tokenizer_module_activations
 from neural_forge.hf_recovery import _cross_tokenizer_recovery_loss
 from neural_forge.hf_recovery import _cross_tokenizer_dual_space_kd_loss
@@ -8751,6 +8752,71 @@ def test_chain_anchor_final_tie_export_records_exact_size_candidate(monkeypatch,
     assert summary["final_metrics"]["param_count"] == 10
     assert summary["final_output_head_record"]["operation_report"]["removed_param_count"] == 20
     assert summary["final_output_head_record"]["input_tag"] == "01_init"
+
+
+def test_block_hidden_loss_accepts_source_group_weights_alias() -> None:
+    torch = pytest.importorskip("torch")
+
+    class _Output:
+        def __init__(self, hidden_states):
+            self.hidden_states = hidden_states
+            self.logits = hidden_states[-1]
+
+    student_hidden = [
+        torch.tensor([[[1.0, 0.0], [0.0, 1.0]]]),
+        torch.tensor([[[1.1, 0.1], [0.2, 1.2]]]),
+    ]
+    teacher_hidden = [
+        torch.tensor([[[1.0, 0.0], [0.0, 1.0]]]),
+        torch.tensor([[[1.0, 0.2], [0.1, 1.0]]]),
+        torch.tensor([[[1.4, 0.4], [0.4, 1.4]]]),
+    ]
+    span_pairs = torch.tensor([[0, 0, 0, 0], [0, 1, 0, 1]], dtype=torch.long)
+    projection = torch.eye(2)
+
+    loss, row_count = _cross_tokenizer_block_hidden_loss(
+        torch,
+        _Output(student_hidden),
+        _Output(teacher_hidden),
+        None,
+        None,
+        {},
+        {},
+        [0, 1],
+        0,
+        projection,
+        lambda item: item,
+        "average",
+        "projected",
+        "hidden",
+        8,
+        source_group_weights=[0.25, 0.75],
+        span_pairs=span_pairs,
+    )
+
+    assert row_count == 2
+    assert torch.isfinite(loss)
+    with pytest.raises(ValueError, match="Pass only one"):
+        _cross_tokenizer_block_hidden_loss(
+            torch,
+            _Output(student_hidden),
+            _Output(teacher_hidden),
+            None,
+            None,
+            {},
+            {},
+            [0, 1],
+            0,
+            projection,
+            lambda item: item,
+            "average",
+            "projected",
+            "hidden",
+            8,
+            source_layer_group_weights=[0.5, 0.5],
+            source_group_weights=[0.25, 0.75],
+            span_pairs=span_pairs,
+        )
 
 
 def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:

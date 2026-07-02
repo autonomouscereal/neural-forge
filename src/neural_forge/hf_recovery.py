@@ -7845,10 +7845,15 @@ def _cross_tokenizer_block_hidden_loss(
     block_target: str,
     span_max_pairs: int,
     source_layer_group_weights: Sequence[float] | None = None,
+    source_group_weights: Sequence[float] | None = None,
     span_pairs=None,
 ):
     if block_target not in {"hidden", "delta"}:
         raise ValueError("block_target must be hidden or delta.")
+    if source_group_weights is not None:
+        if source_layer_group_weights is not None:
+            raise ValueError("Pass only one of source_layer_group_weights or source_group_weights.")
+        source_layer_group_weights = source_group_weights
     pairs = span_pairs
     if pairs is None:
         pairs = _cross_tokenizer_span_pairs(
