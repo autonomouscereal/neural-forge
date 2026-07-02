@@ -159,7 +159,8 @@ Immediate next interpretation rule:
   categories, split recovery batches by domain and lower domain-destructive LM
   weights.
 - If exact behavior does not move while ALM/projected-vocab losses improve,
-  the next code change should be learned byte/codepoint probes or activation
-  interface reconstruction, not more PPL optimization.
+  the next code change should be stronger activation interface reconstruction,
+  not more PPL optimization. The first learned-byte-probe lane is now queued as
+  `qwen4b_blank_smollm_cka_weighted_block_weighted_trainable_byteprobe_full_gpu4_20260702`.
 - If one RMS/transport initialization wins clearly before drill recovery, use
   it as the new default for the next multi-donor and modality-graft lanes.

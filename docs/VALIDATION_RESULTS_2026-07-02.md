@@ -1341,3 +1341,67 @@ run:
 This is still queued evidence, not a success claim. The point is to make the
 different-family donor-combination lane produce behavior/manual retention
 reports automatically once the long GPU jobs clear.
+
+## Trainable Byte-Probe Recovery Queue
+
+Implemented a default-off temporary trainable byte probe for blockwise
+cross-tokenizer recovery:
+
+- `hf-xfamily-block-recover --byte-hidden-probe-mode {fixed,trainable}`
+- `hf-xfamily-block-recover --byte-hidden-probe-anchor-weight`
+- `hf-xfamily-chain-anchor-compress --block-byte-hidden-probe-mode`
+- `hf-xfamily-chain-anchor-compress --block-byte-hidden-probe-anchor-weight`
+
+Why this matters:
+
+- The fixed first-byte hidden probe averages child output rows by byte bucket.
+  That gives tokenizer-neutral signal, but it is too blunt for the current
+  digit/code failure mode.
+- `trainable` mode initializes from the fixed byte head, adds the probe as a
+  temporary optimizer parameter during block recovery, normalizes probe rows at
+  use time, and optionally anchors the learned probe back to the fixed
+  initialization.
+- This is still not an adapter or inference-time bridge. The byte probe is a
+  recovery-time supervision surface; the saved checkpoint remains a normal
+  child architecture.
+
+Validation:
+
+- Local compile:
+  `python -m compileall -q src tests`
+- Local focused parser/helper tests:
+  `2 passed, 4 skipped, 244 deselected`
+- Remote compile, launcher syntax, and Torch-backed focused tests:
+  `6 passed, 244 deselected`
+- Remote full suite:
+  `303 passed`
+
+Queued proof lane:
+
+- Script:
+  `experiments/queue_qwen4b_blank_smollm_cka_weighted_block_weighted_trainable_byteprobe_20260702.sh`
+- Tag:
+  `qwen4b_blank_smollm_cka_weighted_block_weighted_trainable_byteprobe_full_gpu4_20260702`
+- Queue PID:
+  `3772808`
+- Queue log:
+  `/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/logs/qwen4b_blank_smollm_cka_weighted_block_weighted_trainable_byteprobe_full_gpu4_20260702.queue.log`
+- Dependency:
+  waits behind all-target lm-eval watcher PID `3720635`.
+- Recipe:
+  group-aware folded `PRE_RECONSTRUCTION_TARGET=all`, layer-input-gated
+  projection, activation-CKA weighted init and block grouping,
+  `BLOCK_BYTE_HIDDEN_KD_WEIGHT=0.004`,
+  `BLOCK_BYTE_HIDDEN_PROBE_MODE=trainable`, and
+  `BLOCK_BYTE_HIDDEN_PROBE_ANCHOR_WEIGHT=0.002`.
+
+Post-run evidence watchers:
+
+- Retention/manual exact-generation watcher PID `3775678`, waiting behind
+  byte-probe queue PID `3772808`.
+- lm-eval watcher PID `3777320`, waiting behind retention watcher PID
+  `3775678`.
+
+This is an evidence-producing lane, not a promotion claim. It must beat the
+fixed byte-probe all-target lane on exact behavior/manual generations and the
+lm-eval slice before becoming the next default.
