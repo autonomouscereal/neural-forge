@@ -4946,6 +4946,45 @@ def _activation_transport_target_mass(torch, scores, fold_weights, target_dim: i
     return mass / mass.sum().clamp_min(1e-12)
 
 
+def _activation_transport_diagnostics(torch, values, scores, fold_weights, target_mass, target_indices=None):
+    values = values.detach().cpu().to(torch.float32).clamp_min(0.0)
+    scores = scores.detach().cpu().to(torch.float32)
+    fold_weights = fold_weights.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12)
+    target_mass = target_mass.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12)
+    if values.dim() != 2 or scores.shape != values.shape or int(values.shape[0]) != int(fold_weights.numel()):
+        raise ValueError("Transport diagnostic tensors must be source-by-target/support and align with weights.")
+    source_mass = fold_weights / fold_weights.sum().clamp_min(1e-12)
+    row_values = values / values.sum(dim=1, keepdim=True).clamp_min(1e-12)
+    row_entropy = -(row_values * row_values.clamp_min(1e-12).log()).sum(dim=1)
+    target_dim = int(target_mass.numel())
+    if target_indices is None:
+        if int(values.shape[1]) != target_dim:
+            raise ValueError("Dense transport diagnostics must have one column per target.")
+        target_load = (row_values * source_mass.unsqueeze(1)).sum(dim=0)
+    else:
+        indices = target_indices.detach().cpu().to(torch.long)
+        if indices.shape != values.shape:
+            raise ValueError("Sparse transport diagnostic indices must match values.")
+        target_load = torch.zeros(target_dim, dtype=torch.float32)
+        for slot in range(int(indices.shape[1])):
+            target_load.index_add_(0, indices[:, slot].contiguous(), row_values[:, slot] * source_mass)
+    target_mass_norm = target_mass / target_mass.sum().clamp_min(1e-12)
+    load_error = target_load - target_mass_norm
+    weighted_score = (row_values * scores).sum(dim=1)
+    entropy_denominator = math.log(max(2, target_dim))
+    return {
+        "target_load_l1_error": float(load_error.abs().sum().item()),
+        "target_load_max_abs_error": float(load_error.abs().max().item()) if int(load_error.numel()) else 0.0,
+        "target_load_min": float(target_load.min().item()) if int(target_load.numel()) else 0.0,
+        "target_load_max": float(target_load.max().item()) if int(target_load.numel()) else 0.0,
+        "row_entropy_mean": float((row_entropy * source_mass).sum().item()),
+        "row_entropy_normalized_mean": float(((row_entropy / entropy_denominator) * source_mass).sum().item()),
+        "effective_targets_mean": float((row_entropy.exp() * source_mass).sum().item()),
+        "weighted_similarity_mean": float((weighted_score * source_mass).sum().item()),
+        "weighted_transport_cost_mean": float(((1.0 - weighted_score) * source_mass).sum().item()),
+    }
+
+
 def _activation_assignment_mode_is_signed(mode: str) -> bool:
     return str(mode) in {"signed-similarity", "balanced-signed-similarity"}
 
@@ -5124,6 +5163,13 @@ def _build_sparse_activation_transport(
         values = plan / plan.sum(dim=1, keepdim=True).clamp_min(1e-30)
         top_values, top_indices = torch.topk(values, k=top_k, dim=1)
         top_signs = torch.gather(signs, 1, top_indices) if signed else None
+        diagnostics = _activation_transport_diagnostics(
+            torch,
+            values,
+            scores,
+            fold_weights,
+            target_mass,
+        )
         return {
             "transport_matrix": values.detach().cpu().to(torch.float32),
             "transport_signs": None if not signed else signs.detach().cpu().to(torch.float32),
@@ -5140,6 +5186,7 @@ def _build_sparse_activation_transport(
             if support_indices is None
             else support_indices.detach().cpu().to(torch.long),
             "sinkhorn_iterations": int(balance_iterations),
+            "transport_diagnostics": diagnostics,
         }
     top_scores, top_indices = torch.topk(scores, k=top_k, dim=1)
     values = torch.softmax(top_scores / max(float(temperature), 1e-6), dim=1)
@@ -5150,6 +5197,14 @@ def _build_sparse_activation_transport(
         balance = (target_loads.clamp_min(1e-12) / loads.clamp_min(1e-12)).clamp(0.25, 4.0)
         values = values * balance[top_indices]
         values = values / values.sum(dim=1, keepdim=True).clamp_min(1e-12)
+    diagnostics = _activation_transport_diagnostics(
+        torch,
+        values,
+        torch.gather(scores, 1, top_indices),
+        fold_weights,
+        target_mass,
+        target_indices=top_indices,
+    )
     return {
         "transport_indices": top_indices.detach().cpu().to(torch.long),
         "transport_values": values.detach().cpu().to(torch.float32),
@@ -5162,6 +5217,7 @@ def _build_sparse_activation_transport(
         "transport_support": transport_support,
         "target_masses": target_mass.detach().cpu().to(torch.float32),
         "target_support_indices": None if support_indices is None else support_indices.detach().cpu().to(torch.long),
+        "transport_diagnostics": diagnostics,
     }
 
 

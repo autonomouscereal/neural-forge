@@ -3569,6 +3569,10 @@ def test_transport_fold_uses_balanced_sinkhorn_feature_map() -> None:
     assert transport["transport_matrix"].shape == (4, 2)
     assert transport["transport_matrix"].sum(dim=1).tolist() == pytest.approx([1.0, 1.0, 1.0, 1.0])
     assert transport["transport_matrix"].sum(dim=0).tolist() == pytest.approx([2.0, 2.0], abs=0.05)
+    diagnostics = transport["transport_diagnostics"]
+    assert diagnostics["target_load_l1_error"] < 0.05
+    assert diagnostics["effective_targets_mean"] >= 1.0
+    assert diagnostics["weighted_similarity_mean"] > 0.9
 
 
 def test_transport_fold_can_use_importance_survivor_support() -> None:
@@ -3776,6 +3780,10 @@ def test_transport_fold_can_use_quantile_medoid_support() -> None:
     assert transport["target_support_indices"].tolist() == [1, 3, 5]
     assert transport["transport_matrix"].shape == (6, 3)
     assert transport["target_masses"].sum().item() == pytest.approx(1.0)
+    diagnostics = transport["transport_diagnostics"]
+    assert diagnostics["target_load_l1_error"] < 0.05
+    assert diagnostics["row_entropy_normalized_mean"] >= 0.0
+    assert diagnostics["weighted_transport_cost_mean"] < 1.0
 
 
 def test_transport_cache_key_keeps_support_modes_separate() -> None:
