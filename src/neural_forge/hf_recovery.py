@@ -873,17 +873,20 @@ def recover_cross_tokenizer_causal_lm(
         )
 
     print("xfamily_recover phase=model_load", flush=True)
+    attention_load_kwargs = {"attn_implementation": "eager"} if attention_influence_weight > 0 else {}
     source = transformers.AutoModelForCausalLM.from_pretrained(
         source_model,
         torch_dtype=dtype,
         device_map=None,
         trust_remote_code=trust_remote_code,
+        **attention_load_kwargs,
     )
     candidate = transformers.AutoModelForCausalLM.from_pretrained(
         candidate_model,
         torch_dtype=candidate_dtype,
         device_map=None,
         trust_remote_code=trust_remote_code,
+        **attention_load_kwargs,
     )
     reference = None
     if reference_kd_weight > 0:
