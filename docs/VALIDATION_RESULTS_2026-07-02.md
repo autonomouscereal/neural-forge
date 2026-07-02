@@ -85,3 +85,20 @@ Validation:
 Current status:
 
 - This is a structural folding improvement. It still needs a GPU behavior A/B against the existing `lowrank-pre` / `eora-pre` lanes on the exact-generation suite before it can be called a retention win.
+
+## Cached Baseline Eval Context
+
+Existing July 1 reports were parsed before queuing the module-specific lane so parent/blank/recovered baselines do not need to be rerun:
+
+| Model/report | Behavior | Choice | Generation health | Manual check |
+|---|---:|---:|---:|---|
+| Qwen3-4B parent | `400/1000` | `250/250` | `161/1000` | `6+4` correct; simple Python add correct. |
+| Random SmolLM2-135M blank | `0/1000` | `28/250` | `0/1000` | Nonsense output. |
+| Cleanopen recovered 135M | `803/1000` | `149/250` | `1000/1000` | Python add correct; `6+4` wrong/malformed. |
+| Mathdrill recovered 135M | `805/1000` | `150/250` | `1000/1000` | Python add correct; `6+4` wrong/malformed. |
+
+Interpretation:
+
+- The recovery stack is clearly implanting non-random language/code behavior into the blank 135M target.
+- Broad behavior and generation-health scores can overstate exact math/code retention.
+- New lanes must be compared against parent and recovered baselines on exact-generation/manual probes, not only broad generation health.
