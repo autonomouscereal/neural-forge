@@ -409,6 +409,19 @@ def build_parser() -> argparse.ArgumentParser:
     hf_build_eval_suite.add_argument("--seed", type=int, default=0)
     hf_build_eval_suite.set_defaults(func=cmd_hf_build_eval_suite)
 
+    hf_build_recovery_calibration = sub.add_parser(
+        "hf-build-recovery-calibration",
+        help="Create synthetic non-eval recovery prompt/response JSONL for compacted HF models.",
+    )
+    hf_build_recovery_calibration.add_argument("output")
+    hf_build_recovery_calibration.add_argument("--math-count", type=int, default=512)
+    hf_build_recovery_calibration.add_argument("--code-count", type=int, default=128)
+    hf_build_recovery_calibration.add_argument("--tokenizer-count", type=int, default=64)
+    hf_build_recovery_calibration.add_argument("--model-surgery-count", type=int, default=64)
+    hf_build_recovery_calibration.add_argument("--commonsense-count", type=int, default=64)
+    hf_build_recovery_calibration.add_argument("--seed", type=int, default=0)
+    hf_build_recovery_calibration.set_defaults(func=cmd_hf_build_recovery_calibration)
+
     hf_tie_head = sub.add_parser(
         "hf-tie-head",
         help="Tie an HF causal LM output head to input embeddings and save a smaller checkpoint.",
@@ -1941,6 +1954,20 @@ def cmd_hf_build_eval_suite(args: argparse.Namespace) -> dict[str, object]:
         generation_count=args.generation_count,
         choice_count=args.choice_count,
         text_count=args.text_count,
+        seed=args.seed,
+    )
+
+
+def cmd_hf_build_recovery_calibration(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_tools import build_recovery_calibration
+
+    return build_recovery_calibration(
+        output_file=args.output,
+        math_count=args.math_count,
+        code_count=args.code_count,
+        tokenizer_count=args.tokenizer_count,
+        model_surgery_count=args.model_surgery_count,
+        commonsense_count=args.commonsense_count,
         seed=args.seed,
     )
 

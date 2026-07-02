@@ -857,6 +857,159 @@ def build_eval_suite(
     return {key: value for key, value in report.items() if key != "suite"}
 
 
+def build_recovery_calibration(
+    output_file: str | Path,
+    math_count: int = 512,
+    code_count: int = 128,
+    tokenizer_count: int = 64,
+    model_surgery_count: int = 64,
+    commonsense_count: int = 64,
+    seed: int = 0,
+) -> dict[str, Any]:
+    """Write synthetic non-eval recovery prompt/response rows as JSONL."""
+
+    counts = {
+        "math": int(math_count),
+        "code": int(code_count),
+        "tokenizer": int(tokenizer_count),
+        "model_surgery": int(model_surgery_count),
+        "commonsense": int(commonsense_count),
+    }
+    if any(value < 0 for value in counts.values()):
+        raise ValueError("recovery calibration counts must be non-negative.")
+    rng = random.Random(int(seed))
+    rows: list[dict[str, Any]] = []
+    rows.extend(_synthetic_recovery_math_rows(counts["math"], rng))
+    rows.extend(_synthetic_recovery_code_rows(counts["code"], rng))
+    rows.extend(_synthetic_recovery_template_rows("tokenizer", counts["tokenizer"], _RECOVERY_TOKENIZER_TEMPLATES))
+    rows.extend(_synthetic_recovery_template_rows("model_surgery", counts["model_surgery"], _RECOVERY_MODEL_SURGERY_TEMPLATES))
+    rows.extend(_synthetic_recovery_template_rows("commonsense", counts["commonsense"], _RECOVERY_COMMONSENSE_TEMPLATES))
+    rng.shuffle(rows)
+
+    target = Path(output_file)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("w", encoding="utf-8", newline="\n") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, sort_keys=True, ensure_ascii=True) + "\n")
+    return {
+        "operation": "build_recovery_calibration",
+        "output_file": str(target),
+        "seed": int(seed),
+        "counts": counts,
+        "total_rows": len(rows),
+        "sample_ids": [str(row["id"]) for row in rows[:10]],
+    }
+
+
+def _synthetic_recovery_math_rows(count: int, rng: random.Random) -> list[dict[str, Any]]:
+    rows = []
+    for index in range(int(count)):
+        mode = index % 3
+        if mode == 0:
+            a = rng.randint(3, 99)
+            b = rng.randint(2, 99)
+            op = "+"
+            answer = a + b
+        elif mode == 1:
+            a = rng.randint(6, 34)
+            b = rng.randint(3, 24)
+            op = "*"
+            answer = a * b
+        else:
+            b = rng.randint(2, 24)
+            answer = rng.randint(2, 64)
+            a = b * answer
+            op = "/"
+        rows.append(
+            {
+                "id": f"recovery_math_{index:05d}",
+                "category": "math",
+                "prompt": f"Question: What is {a} {op} {b}? Answer with only the number.\nAnswer:",
+                "response": str(answer),
+            }
+        )
+    return rows
+
+
+def _synthetic_recovery_code_rows(count: int, rng: random.Random) -> list[dict[str, Any]]:
+    specs = [
+        ("add", "+", "return a + b"),
+        ("subtract", "-", "return a - b"),
+        ("multiply", "*", "return a * b"),
+        ("maximum", "larger of a and b", "return a if a >= b else b"),
+    ]
+    rows = []
+    for index in range(int(count)):
+        name, description, body = specs[index % len(specs)]
+        suffix = "" if index < len(specs) else f"_{index:03d}"
+        function_name = f"{name}{suffix}"
+        rows.append(
+            {
+                "id": f"recovery_code_{index:05d}",
+                "category": "code",
+                "prompt": (
+                    f"Write a tiny Python function named {function_name} that returns the {description}.\n"
+                    "```python\n"
+                ),
+                "response": f"def {function_name}(a, b):\n    {body}\n```",
+            }
+        )
+    return rows
+
+
+def _synthetic_recovery_template_rows(
+    category: str,
+    count: int,
+    templates: Sequence[tuple[str, str]],
+) -> list[dict[str, Any]]:
+    rows = []
+    for index in range(int(count)):
+        prompt, response = templates[index % len(templates)]
+        rows.append(
+            {
+                "id": f"recovery_{category}_{index:05d}",
+                "category": category,
+                "prompt": prompt,
+                "response": response,
+            }
+        )
+    return rows
+
+
+_RECOVERY_TOKENIZER_TEMPLATES = [
+    (
+        "In one sentence, why can tokenizer mismatch hurt model stitching?\nAnswer:",
+        "Tokenizer mismatch can map the same text to different token IDs, so copied embeddings and logits can point at the wrong rows.",
+    ),
+    (
+        "Name one safe way to reduce tokenizer mismatch during cross-family recovery.\nAnswer:",
+        "Use aligned text spans, sparse token projections, and byte-level checks so both tokenizers supervise the same surface text.",
+    ),
+]
+
+_RECOVERY_MODEL_SURGERY_TEMPLATES = [
+    (
+        "Briefly define neuron merging for model compression.\nAnswer:",
+        "Neuron merging combines similar or redundant channels before pruning so the smaller model preserves more of the original function.",
+    ),
+    (
+        "Why should folding happen before pruning in model surgery?\nAnswer:",
+        "Folding preserves redundant pathways by merging their contributions, while pruning discards capacity outright.",
+    ),
+]
+
+_RECOVERY_COMMONSENSE_TEMPLATES = [
+    (
+        "A driver sees heavy rain on the road. What should they do?\nAnswer:",
+        "They should slow down, increase following distance, use headlights and wipers, and pull over if conditions become unsafe.",
+    ),
+    (
+        "A glass falls from a table and shatters. What caused it to break?\nAnswer:",
+        "Gravity pulled the glass down, and the impact with the floor broke it into pieces.",
+    ),
+]
+
+
 def tie_output_head_checkpoint(
     model_id_or_path: str,
     output_dir: str | Path,

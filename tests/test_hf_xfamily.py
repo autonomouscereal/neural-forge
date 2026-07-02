@@ -80,6 +80,7 @@ from neural_forge.hf_recovery import _validation_reconstruction_gate
 from neural_forge.hf_recovery import load_calibration_texts
 from neural_forge.hf_tools import TEXT_EVALS
 from neural_forge.hf_tools import build_eval_suite
+from neural_forge.hf_tools import build_recovery_calibration
 from neural_forge.hf_tools import _generation_health
 from neural_forge.hf_tools import _layer_groups_for_report
 from neural_forge.hf_tools import _layer_groups_tag
@@ -392,6 +393,36 @@ def test_load_calibration_texts_handles_jsonl_message_rows(tmp_path) -> None:
     assert texts[2] == "Name a merge risk.\nTokenizer mismatch can break behavior."
     assert texts[3] == "Answer: 156"
     assert texts[4] == "user: Return compact JSON.\nUse concise JSON."
+
+
+def test_build_recovery_calibration_writes_prompt_response_jsonl(tmp_path) -> None:
+    output = tmp_path / "recovery.jsonl"
+
+    report = build_recovery_calibration(
+        output,
+        math_count=3,
+        code_count=2,
+        tokenizer_count=1,
+        model_surgery_count=1,
+        commonsense_count=1,
+        seed=13,
+    )
+
+    rows = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
+    categories = {row["category"] for row in rows}
+    math_rows = [row for row in rows if row["category"] == "math"]
+    code_rows = [row for row in rows if row["category"] == "code"]
+    texts = load_calibration_texts(output, max_texts=8, min_chars=8)
+
+    assert report["operation"] == "build_recovery_calibration"
+    assert report["counts"]["math"] == 3
+    assert report["total_rows"] == 8
+    assert len(rows) == 8
+    assert categories == {"math", "code", "tokenizer", "model_surgery", "commonsense"}
+    assert all(row["response"].lstrip("-").isdigit() for row in math_rows)
+    assert any("def add" in row["response"] for row in code_rows)
+    assert any("Answer:" in text for text in texts)
+    assert any("def " in text for text in texts)
 
 
 def test_cross_family_sweep_rejects_duplicate_alpha_tags(tmp_path) -> None:
@@ -6139,6 +6170,48 @@ def test_hf_build_eval_suite_handler_passes_counts(monkeypatch) -> None:
         "choice_count": 250,
         "text_count": 32,
         "seed": 9,
+    }
+
+
+def test_hf_build_recovery_calibration_handler_passes_counts(monkeypatch) -> None:
+    import neural_forge.hf_tools as hf_tools
+
+    captured = {}
+
+    def fake_build(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(hf_tools, "build_recovery_calibration", fake_build)
+    args = build_parser().parse_args(
+        [
+            "hf-build-recovery-calibration",
+            "recovery.jsonl",
+            "--math-count",
+            "1200",
+            "--code-count",
+            "240",
+            "--tokenizer-count",
+            "80",
+            "--model-surgery-count",
+            "70",
+            "--commonsense-count",
+            "60",
+            "--seed",
+            "31",
+        ]
+    )
+    result = args.func(args)
+
+    assert result == {"ok": True}
+    assert captured == {
+        "output_file": "recovery.jsonl",
+        "math_count": 1200,
+        "code_count": 240,
+        "tokenizer_count": 80,
+        "model_surgery_count": 70,
+        "commonsense_count": 60,
+        "seed": 31,
     }
 
 
