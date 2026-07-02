@@ -6623,6 +6623,7 @@ def test_chain_anchor_init_stage_forwards_activation_fit_flags(monkeypatch, tmp_
         init_activation_feature_mode="covariance",
         init_activation_subspace_rank=12,
         init_activation_domain_balance="keyword",
+        init_untie_output_head=True,
         init_activation_max_length=160,
         device="cpu",
     )
@@ -6666,6 +6667,7 @@ def test_chain_anchor_init_stage_forwards_activation_fit_flags(monkeypatch, tmp_
     assert captured["activation_feature_mode"] == "covariance"
     assert captured["activation_subspace_rank"] == 12
     assert captured["activation_domain_balance"] == "keyword"
+    assert captured["untie_output_head"] is True
     assert captured["activation_max_length"] == 160
 
 
@@ -6768,6 +6770,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "12",
             "--init-activation-domain-balance",
             "keyword",
+            "--init-untie-output-head",
             "--init-activation-max-length",
             "160",
             "--block-steps-per-layer",
@@ -6957,6 +6960,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["init_activation_feature_mode"] == "covariance"
     assert captured["init_activation_subspace_rank"] == 12
     assert captured["init_activation_domain_balance"] == "keyword"
+    assert captured["init_untie_output_head"] is True
     assert captured["init_activation_max_length"] == 160
     assert captured["block_steps_per_layer"] == 6
     assert captured["block_hidden_metric"] == "projected-geometry"

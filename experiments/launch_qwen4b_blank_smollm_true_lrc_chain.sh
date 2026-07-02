@@ -18,6 +18,7 @@ INIT_TRANSPORT_SUPPORT="${INIT_TRANSPORT_SUPPORT:-centroid}"
 INIT_ACTIVATION_DOMAIN_BALANCE="${INIT_ACTIVATION_DOMAIN_BALANCE:-none}"
 INIT_DONOR_LAYER_GROUP_STRATEGY="${INIT_DONOR_LAYER_GROUP_STRATEGY:-activation-geometry}"
 BLOCK_DONOR_LAYER_GROUP_STRATEGY="${BLOCK_DONOR_LAYER_GROUP_STRATEGY:-activation-geometry}"
+INIT_UNTIE_OUTPUT_HEAD="${INIT_UNTIE_OUTPUT_HEAD:-1}"
 PROMOTE_POLICY="${PROMOTE_POLICY:-always}"
 STAGE_INPUT_POLICY="${STAGE_INPUT_POLICY:-incumbent}"
 BLOCK_STEPS_PER_LAYER="${BLOCK_STEPS_PER_LAYER:-4}"
@@ -91,6 +92,10 @@ ALM_RESPONSE_LOSS_MODE="${ALM_RESPONSE_LOSS_MODE:-none}"
 ALM_CALIBRATION_ORDER="${ALM_CALIBRATION_ORDER:-original}"
 
 BLOCK_OUTPUT_HEAD_ARGS=()
+INIT_OUTPUT_HEAD_ARGS=()
+if [[ "$INIT_UNTIE_OUTPUT_HEAD" == "1" ]]; then
+  INIT_OUTPUT_HEAD_ARGS+=(--init-untie-output-head)
+fi
 if [[ "${BLOCK_TRAIN_OUTPUT_HEAD_WITH_KD:-0}" == "1" ]]; then
   BLOCK_OUTPUT_HEAD_ARGS+=(--block-train-output-head-with-kd)
 fi
@@ -138,6 +143,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-attention-fold-mode activation-coupled \
   --init-attention-head-dim-transport none \
   --init-token-init-mode donor-tokenized-weighted \
+  "${INIT_OUTPUT_HEAD_ARGS[@]}" \
   --init-projection-scale "$INIT_PROJECTION_SCALE" \
   --init-projection-blend-alpha "$INIT_PROJECTION_BLEND_ALPHA" \
   --init-consumer-hidden-reduction sqrt-sum \

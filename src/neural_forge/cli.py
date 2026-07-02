@@ -1453,6 +1453,11 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--init-activation-feature-mode", choices=["stats", "subspace", "covariance"], default="stats")
     xfamily_chain.add_argument("--init-activation-subspace-rank", type=int, default=8)
     xfamily_chain.add_argument("--init-activation-domain-balance", choices=["none", "keyword"], default="none")
+    xfamily_chain.add_argument(
+        "--init-untie-output-head",
+        action="store_true",
+        help="Untie the target lm_head during donor-projected init so output rows can be folded separately from input embeddings.",
+    )
     xfamily_chain.add_argument("--init-activation-max-length", type=int, default=128)
     xfamily_chain.add_argument("--block-steps-per-layer", type=int, default=4)
     xfamily_chain.add_argument("--block-batch-size", type=int, default=1)
@@ -2768,6 +2773,7 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         init_activation_feature_mode=args.init_activation_feature_mode,
         init_activation_subspace_rank=args.init_activation_subspace_rank,
         init_activation_domain_balance=args.init_activation_domain_balance,
+        init_untie_output_head=args.init_untie_output_head,
         init_activation_max_length=args.init_activation_max_length,
         block_steps_per_layer=args.block_steps_per_layer,
         block_batch_size=args.block_batch_size,
