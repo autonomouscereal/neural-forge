@@ -19,6 +19,7 @@ LRC_ALPHA="${LRC_ALPHA:-0.25}"
 LRC_RANK="${LRC_RANK:-16}"
 LRC_FACTOR_STEPS="${LRC_FACTOR_STEPS:-40}"
 LRC_MAX_DELTA_RMS_RATIO="${LRC_MAX_DELTA_RMS_RATIO:-0}"
+INIT_ACTIVATION_FIT_METHOD="${INIT_ACTIVATION_FIT_METHOD:-lrc}"
 RESIDUAL_MODE="${RESIDUAL_MODE:-lowrank-pre}"
 RESIDUAL_ALPHA="${RESIDUAL_ALPHA:-0.01}"
 RESIDUAL_RANK="${RESIDUAL_RANK:-16}"
@@ -186,7 +187,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-activation-fit-ridge 0.03 \
   --init-activation-fit-rank "$LRC_RANK" \
   --init-activation-fit-rank-mode delta \
-  --init-activation-fit-method lrc \
+  --init-activation-fit-method "$INIT_ACTIVATION_FIT_METHOD" \
   --init-activation-fit-factor-steps "$LRC_FACTOR_STEPS" \
   --init-activation-fit-factor-lr 0.03 \
   --init-activation-fit-factor-l2 0.0001 \

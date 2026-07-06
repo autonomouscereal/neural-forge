@@ -12,6 +12,7 @@ INIT_ACTIVATION_DOMAIN_BALANCE="${INIT_ACTIVATION_DOMAIN_BALANCE:-none}"
 INIT_DONOR_LAYER_GROUP_STRATEGY="${INIT_DONOR_LAYER_GROUP_STRATEGY:-activation-geometry}"
 BLOCK_DONOR_LAYER_GROUP_STRATEGY="${BLOCK_DONOR_LAYER_GROUP_STRATEGY:-activation-geometry}"
 INIT_UNTIE_OUTPUT_HEAD="${INIT_UNTIE_OUTPUT_HEAD:-1}"
+INIT_ACTIVATION_FIT_METHOD="${INIT_ACTIVATION_FIT_METHOD:-lrc}"
 PROMOTE_POLICY="${PROMOTE_POLICY:-always}"
 STAGE_INPUT_POLICY="${STAGE_INPUT_POLICY:-incumbent}"
 BLOCK_CALIBRATION_ORDER="${BLOCK_CALIBRATION_ORDER:-original}"
@@ -104,7 +105,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-activation-fit-ridge 0.03 \
   --init-activation-fit-rank 12 \
   --init-activation-fit-rank-mode delta \
-  --init-activation-fit-method lrc \
+  --init-activation-fit-method "$INIT_ACTIVATION_FIT_METHOD" \
   --init-activation-fit-factor-steps 36 \
   --init-activation-fit-factor-lr 0.03 \
   --init-activation-fit-factor-l2 0.0001 \
