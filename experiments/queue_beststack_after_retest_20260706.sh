@@ -118,7 +118,10 @@ export MAX_GENERATION_PROMPTS="${MAX_GENERATION_PROMPTS:-1000}"
 export MAX_CHOICE_PROBES="${MAX_CHOICE_PROBES:-250}"
 export MAX_TEXT_EVALS="${MAX_TEXT_EVALS:-128}"
 export FINAL_OUTPUT_HEAD_POLICY="${FINAL_OUTPUT_HEAD_POLICY:-preserve}"
-export STAGE_INPUT_POLICY="${STAGE_INPUT_POLICY:-incumbent}"
+# CoM-style folding works best when each repair stage sees the model state
+# produced by the previous stage, so default to sequential rather than
+# repeatedly re-anchoring to the incumbent.
+export STAGE_INPUT_POLICY="${STAGE_INPUT_POLICY:-sequential}"
 export PROMOTE_POLICY="${PROMOTE_POLICY:-always}"
 
 export INIT_PROJECTION_SCALE="${INIT_PROJECTION_SCALE:-geomean-rms}"
