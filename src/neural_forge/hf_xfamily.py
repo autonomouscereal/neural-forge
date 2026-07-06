@@ -7816,10 +7816,13 @@ def _resize_linear_fit_influence_matrix(torch, values, target_shape: tuple[int, 
 
 
 def _linear_fit_row_values_for_suffix(torch, layer_rows: dict[str, Any], suffix: str):
-    values = _first_linear_fit_row_values(layer_rows, _linear_fit_suffix_candidates(suffix))
+    values = _first_linear_fit_row_values(layer_rows, (str(suffix),))
     if values is not None:
         return values
-    return _synthesize_linear_fit_rows_for_suffix(torch, layer_rows, suffix)
+    values = _synthesize_linear_fit_rows_for_suffix(torch, layer_rows, suffix)
+    if values is not None:
+        return values
+    return _first_linear_fit_row_values(layer_rows, _linear_fit_suffix_candidates(suffix))
 
 
 def _linear_fit_suffix_candidates(suffix: str) -> list[str]:
@@ -7854,6 +7857,9 @@ def _first_linear_fit_row_values(layer_rows: dict[str, Any], candidates: Sequenc
 
 
 def _synthesize_linear_fit_rows_for_suffix(torch, layer_rows: dict[str, Any], suffix: str):
+    mlp_topology_rows = _synthesize_mlp_topology_linear_fit_rows(torch, layer_rows, suffix)
+    if mlp_topology_rows is not None:
+        return mlp_topology_rows
     part = _split_attention_projection_part(suffix)
     if part is not None:
         fused = _first_linear_fit_row_values(
@@ -7913,6 +7919,123 @@ def _synthesize_linear_fit_rows_for_suffix(torch, layer_rows: dict[str, Any], su
             ),
         }
     return None
+
+
+def _synthesize_mlp_topology_linear_fit_rows(torch, layer_rows: dict[str, Any], suffix: str):
+    marker = f".{str(suffix).lower()}"
+    wants_gate = marker.endswith((".mlp.gate_proj.weight", ".feed_forward.w1.weight"))
+    wants_up = marker.endswith((".mlp.up_proj.weight", ".feed_forward.w3.weight"))
+    wants_dense = marker.endswith((".mlp.c_fc.weight", ".feed_forward.c_fc.weight"))
+    if wants_gate or wants_up:
+        dense_rows = _first_linear_fit_row_values(layer_rows, ("mlp.c_fc.weight", "feed_forward.c_fc.weight"))
+        dense_output_rows = _first_linear_fit_row_values(layer_rows, ("mlp.c_proj.weight", "feed_forward.c_proj.weight"))
+        if dense_rows is None or dense_output_rows is None:
+            return None
+        row_count = min(
+            int(dense_rows["input"].shape[0]),
+            int(dense_rows["output"].shape[0]),
+            int(dense_output_rows["input"].shape[0]),
+        )
+        if row_count <= 0:
+            return None
+        activated = dense_output_rows["input"].detach().cpu().to(torch.float32)[:row_count]
+        magnitude = activated.abs().clamp_min(0.0).sqrt()
+        if wants_gate:
+            output = _approx_inverse_silu_positive(torch, magnitude)
+        else:
+            output = torch.sign(activated) * magnitude
+        return {
+            "input": dense_rows["input"].detach().cpu().to(torch.float32)[:row_count],
+            "output": output.contiguous(),
+            "topology_synthesis": "dense_gelu_to_gated_swiglu",
+        }
+    if wants_dense:
+        gate_rows = _first_linear_fit_row_values(
+            layer_rows,
+            ("mlp.gate_proj.weight", "mlp.w1.weight", "feed_forward.w1.weight"),
+        )
+        up_rows = _first_linear_fit_row_values(
+            layer_rows,
+            ("mlp.up_proj.weight", "mlp.w3.weight", "feed_forward.w3.weight"),
+        )
+        gated_output_rows = _first_linear_fit_row_values(
+            layer_rows,
+            ("mlp.down_proj.weight", "mlp.w2.weight", "feed_forward.w2.weight"),
+        )
+        if gate_rows is None or up_rows is None or gated_output_rows is None:
+            return None
+        row_count = min(
+            int(gate_rows["input"].shape[0]),
+            int(up_rows["input"].shape[0]),
+            int(gated_output_rows["input"].shape[0]),
+        )
+        if row_count <= 0:
+            return None
+        gate_input = gate_rows["input"].detach().cpu().to(torch.float32)[:row_count]
+        up_input = up_rows["input"].detach().cpu().to(torch.float32)[:row_count]
+        if gate_input.shape != up_input.shape:
+            return None
+        activated = gated_output_rows["input"].detach().cpu().to(torch.float32)[:row_count]
+        return {
+            "input": gate_input,
+            "output": _approx_inverse_gelu(torch, activated).contiguous(),
+            "topology_synthesis": "gated_swiglu_to_dense_gelu",
+        }
+    return None
+
+
+def _gelu_erf(torch, values):
+    return 0.5 * values * (1.0 + torch.erf(values / math.sqrt(2.0)))
+
+
+def _silu(torch, values):
+    return values * torch.sigmoid(values)
+
+
+def _approx_inverse_silu_positive(torch, values, iterations: int = 24):
+    target = torch.nan_to_num(values.detach().cpu().to(torch.float32), nan=0.0, posinf=20.0, neginf=0.0)
+    target = target.clamp_min(0.0)
+    lo = torch.zeros_like(target)
+    hi = torch.maximum(target + 1.0, torch.ones_like(target))
+    for _ in range(8):
+        needs_more = _silu(torch, hi) < target
+        if not bool(needs_more.any()):
+            break
+        hi = torch.where(needs_more, hi * 2.0, hi)
+    for _ in range(max(1, int(iterations))):
+        mid = (lo + hi) * 0.5
+        below = _silu(torch, mid) < target
+        lo = torch.where(below, mid, lo)
+        hi = torch.where(below, hi, mid)
+    return (lo + hi) * 0.5
+
+
+def _approx_inverse_gelu(torch, values, iterations: int = 28):
+    target = torch.nan_to_num(values.detach().cpu().to(torch.float32), nan=0.0, posinf=20.0, neginf=-0.169)
+    gelu_floor = float(_gelu_erf(torch, torch.tensor([-0.7518], dtype=torch.float32))[0].item())
+    target = target.clamp_min(gelu_floor)
+    positive = target >= 0.0
+    lo_pos = torch.zeros_like(target)
+    hi_pos = torch.maximum(target + 1.0, torch.ones_like(target) * 2.0)
+    for _ in range(8):
+        needs_more = _gelu_erf(torch, hi_pos) < target
+        if not bool((needs_more & positive).any()):
+            break
+        hi_pos = torch.where(needs_more & positive, hi_pos * 2.0, hi_pos)
+    for _ in range(max(1, int(iterations))):
+        mid = (lo_pos + hi_pos) * 0.5
+        below = _gelu_erf(torch, mid) < target
+        lo_pos = torch.where(below, mid, lo_pos)
+        hi_pos = torch.where(below, hi_pos, mid)
+
+    lo_neg = torch.full_like(target, -0.7518)
+    hi_neg = torch.zeros_like(target)
+    for _ in range(max(1, int(iterations))):
+        mid = (lo_neg + hi_neg) * 0.5
+        below = _gelu_erf(torch, mid) < target
+        lo_neg = torch.where(below, mid, lo_neg)
+        hi_neg = torch.where(below, hi_neg, mid)
+    return torch.where(positive, (lo_pos + hi_pos) * 0.5, (lo_neg + hi_neg) * 0.5)
 
 
 def _split_attention_projection_part(suffix: str) -> int | None:

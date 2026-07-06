@@ -5893,7 +5893,8 @@ def test_linear_fit_rows_for_suffix_uses_gpt2_mlp_aliases() -> None:
     assert up is not None
     assert down is not None
     torch.testing.assert_close(gate["input"], c_fc_rows["input"])
-    torch.testing.assert_close(up["output"], c_fc_rows["output"])
+    torch.testing.assert_close(up["input"], c_fc_rows["input"])
+    torch.testing.assert_close(torch.nn.functional.silu(gate["output"]) * up["output"], c_proj_rows["input"])
     torch.testing.assert_close(down["input"], c_proj_rows["input"])
     torch.testing.assert_close(down["output"], c_proj_rows["output"])
 
@@ -5949,6 +5950,59 @@ def test_linear_fit_rows_for_suffix_fuses_split_attention_rows_for_gpt2() -> Non
     assert rows is not None
     torch.testing.assert_close(rows["input"], inputs)
     torch.testing.assert_close(rows["output"], torch.tensor([[10.0, 20.0, 30.0], [11.0, 21.0, 31.0]]))
+
+
+def test_linear_fit_rows_synthesizes_dense_mlp_for_gated_target() -> None:
+    torch = pytest.importorskip("torch")
+    inputs = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
+    activated_hidden = torch.tensor([[4.0, -0.25], [9.0, 0.0]], dtype=torch.float32)
+    layer_rows = {
+        "mlp.c_fc.weight": {
+            "input": inputs,
+            "output": torch.tensor([[2.0, -1.0], [3.0, 0.0]], dtype=torch.float32),
+        },
+        "mlp.c_proj.weight": {
+            "input": activated_hidden,
+            "output": torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32),
+        },
+    }
+
+    gate_rows = _linear_fit_rows_for_suffix(torch, {"linear_fit_rows": {0: layer_rows}}, [0], "mlp.gate_proj.weight")
+    up_rows = _linear_fit_rows_for_suffix(torch, {"linear_fit_rows": {0: layer_rows}}, [0], "mlp.up_proj.weight")
+
+    assert gate_rows is not None
+    assert up_rows is not None
+    torch.testing.assert_close(gate_rows["input"], inputs)
+    torch.testing.assert_close(up_rows["input"], inputs)
+    reconstructed = torch.nn.functional.silu(gate_rows["output"]) * up_rows["output"]
+    torch.testing.assert_close(reconstructed, activated_hidden, atol=1e-4, rtol=1e-4)
+
+
+def test_linear_fit_rows_synthesizes_gated_mlp_for_dense_target() -> None:
+    torch = pytest.importorskip("torch")
+    inputs = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
+    gated_hidden = torch.tensor([[4.0, -0.1], [9.0, 0.0]], dtype=torch.float32)
+    layer_rows = {
+        "mlp.gate_proj.weight": {
+            "input": inputs,
+            "output": torch.tensor([[2.0, -1.0], [3.0, 0.0]], dtype=torch.float32),
+        },
+        "mlp.up_proj.weight": {
+            "input": inputs,
+            "output": torch.tensor([[5.0, 6.0], [7.0, 8.0]], dtype=torch.float32),
+        },
+        "mlp.down_proj.weight": {
+            "input": gated_hidden,
+            "output": torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32),
+        },
+    }
+
+    dense_rows = _linear_fit_rows_for_suffix(torch, {"linear_fit_rows": {0: layer_rows}}, [0], "mlp.c_fc.weight")
+
+    assert dense_rows is not None
+    torch.testing.assert_close(dense_rows["input"], inputs)
+    reconstructed = torch.nn.functional.gelu(dense_rows["output"])
+    torch.testing.assert_close(reconstructed, gated_hidden, atol=1e-4, rtol=1e-4)
 
 
 def test_attention_projection_modules_supports_lfm_operator_container() -> None:
