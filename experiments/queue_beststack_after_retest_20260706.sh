@@ -15,6 +15,10 @@ TRANSPORT_SUPPORT="${TRANSPORT_SUPPORT:-quantile-medoid}"
 RESIDUAL_MODE="${RESIDUAL_MODE:-module-eora-pre}"
 ALM_ANSWER_FIRST_TOKEN_MARGIN_WEIGHT="${ALM_ANSWER_FIRST_TOKEN_MARGIN_WEIGHT:-0.05}"
 ALM_ANSWER_FIRST_TOKEN_TOP_NEGATIVES="${ALM_ANSWER_FIRST_TOKEN_TOP_NEGATIVES:-24}"
+# Best-stack proof lanes target the requested child architecture size. Init can
+# temporarily untie the head for cross-tokenizer folding, but the promoted
+# artifact should be tied and re-evaluated unless a caller explicitly overrides.
+FINAL_OUTPUT_HEAD_POLICY="${FINAL_OUTPUT_HEAD_POLICY:-tie}"
 
 case "$VARIANT" in
   qwen)
@@ -117,7 +121,7 @@ export MAX_BEHAVIOR_PROBES="${MAX_BEHAVIOR_PROBES:-1000}"
 export MAX_GENERATION_PROMPTS="${MAX_GENERATION_PROMPTS:-1000}"
 export MAX_CHOICE_PROBES="${MAX_CHOICE_PROBES:-250}"
 export MAX_TEXT_EVALS="${MAX_TEXT_EVALS:-128}"
-export FINAL_OUTPUT_HEAD_POLICY="${FINAL_OUTPUT_HEAD_POLICY:-preserve}"
+export FINAL_OUTPUT_HEAD_POLICY
 # CoM-style folding works best when each repair stage sees the model state
 # produced by the previous stage, so default to sequential rather than
 # repeatedly re-anchoring to the incumbent.
