@@ -6320,6 +6320,34 @@ def test_recovery_mlp_projection_spec_detects_lfm_feed_forward_names() -> None:
     assert spec["output_name"] == "feed_forward.w2"
 
 
+def test_recovery_mlp_projection_spec_detects_gpt2_dense_mlp() -> None:
+    c_fc = object()
+    c_proj = object()
+    layer = _Obj(mlp=_Obj(c_fc=c_fc, c_proj=c_proj))
+
+    spec = _mlp_projection_spec(layer)
+
+    assert spec is not None
+    assert spec["kind"] == "dense"
+    assert spec["input"] is c_fc
+    assert spec["output"] is c_proj
+    assert spec["output_name"] == "mlp.c_proj"
+
+
+def test_recovery_mlp_projection_spec_detects_feed_forward_dense_mlp() -> None:
+    c_fc = object()
+    c_proj = object()
+    layer = _Obj(feed_forward=_Obj(c_fc=c_fc, c_proj=c_proj))
+
+    spec = _mlp_projection_spec(layer)
+
+    assert spec is not None
+    assert spec["kind"] == "dense"
+    assert spec["input"] is c_fc
+    assert spec["output"] is c_proj
+    assert spec["output_name"] == "feed_forward.c_proj"
+
+
 def test_recovery_attention_projection_spec_detects_output_projection() -> None:
     torch = pytest.importorskip("torch")
     output = torch.nn.Linear(3, 2, bias=False)
@@ -6331,6 +6359,19 @@ def test_recovery_attention_projection_spec_detects_output_projection() -> None:
     assert spec["attention"] is layer.self_attn
     assert spec["output"] is output
     assert spec["output_name"] == "self_attn.o_proj"
+
+
+def test_recovery_attention_projection_spec_detects_operator_output_projection() -> None:
+    torch = pytest.importorskip("torch")
+    output = torch.nn.Linear(3, 2, bias=False)
+    layer = _Obj(operator=_Obj(out_proj=output))
+
+    spec = _attention_projection_spec(layer)
+
+    assert spec is not None
+    assert spec["attention"] is layer.operator
+    assert spec["output"] is output
+    assert spec["output_name"] == "self_attn.out_proj"
 
 
 def test_scale_layer_residual_output_modules_scales_attention_and_mlp_outputs() -> None:

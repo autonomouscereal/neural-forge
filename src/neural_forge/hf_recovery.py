@@ -11108,7 +11108,12 @@ def _collect_cross_tokenizer_mlp_output_calibration(
 
 
 def _attention_module(layer):
-    return getattr(layer, "self_attn", None) or getattr(layer, "attention", None) or getattr(layer, "attn", None)
+    return (
+        getattr(layer, "self_attn", None)
+        or getattr(layer, "attention", None)
+        or getattr(layer, "attn", None)
+        or getattr(layer, "operator", None)
+    )
 
 
 def _attention_projection_spec(layer) -> dict[str, Any] | None:
@@ -11138,6 +11143,14 @@ def _mlp_projection_spec(layer) -> dict[str, Any] | None:
             "output": feed_forward.w2,
             "output_name": "feed_forward.w2",
         }
+    if feed_forward is not None and all(hasattr(feed_forward, name) for name in ("c_fc", "c_proj")):
+        return {
+            "kind": "dense",
+            "mlp": feed_forward,
+            "input": feed_forward.c_fc,
+            "output": feed_forward.c_proj,
+            "output_name": "feed_forward.c_proj",
+        }
     if mlp is None:
         return None
     if all(hasattr(mlp, name) for name in ("gate_proj", "up_proj", "down_proj")):
@@ -11148,6 +11161,14 @@ def _mlp_projection_spec(layer) -> dict[str, Any] | None:
             "up": mlp.up_proj,
             "output": mlp.down_proj,
             "output_name": "mlp.down_proj",
+        }
+    if all(hasattr(mlp, name) for name in ("c_fc", "c_proj")):
+        return {
+            "kind": "dense",
+            "mlp": mlp,
+            "input": mlp.c_fc,
+            "output": mlp.c_proj,
+            "output_name": "mlp.c_proj",
         }
     if all(hasattr(mlp, name) for name in ("dense_h_to_4h", "dense_4h_to_h")):
         return {
