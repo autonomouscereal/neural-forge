@@ -10,6 +10,7 @@ WAIT_PIDS="${WAIT_PIDS:-}"
 GPU_UUID="${GPU_UUID:-GPU-f5a09535-fc85-a027-50f7-734b344747dd}"
 MEM_THRESHOLD="${MEM_THRESHOLD:-2000}"
 POLL_SECONDS="${POLL_SECONDS:-300}"
+MIN_CUDA_COMPUTE_CAPABILITY="${MIN_CUDA_COMPUTE_CAPABILITY:-7.0}"
 TASKS="${TASKS:-arc_easy,hellaswag,piqa,winogrande}"
 LIMIT="${LIMIT:-50}"
 BATCH_SIZE="${BATCH_SIZE:-auto}"
@@ -24,6 +25,30 @@ cd "$REPO_ROOT"
 mkdir -p "$OUTPUT_DIR" "$CACHE_DIR" "$RUN_ROOT/logs"
 
 echo "lm_eval_queue_start=$(date -Is) tag=$TAG wait_pids=${WAIT_PIDS:-none} gpu_uuid=$GPU_UUID revision=$(cat .deployed_revision 2>/dev/null || true)"
+
+require_supported_cuda_gpu() {
+  if [[ "${DEVICE:-cuda:0}" != cuda* || "${MIN_CUDA_COMPUTE_CAPABILITY:-0}" == "0" ]]; then
+    return 0
+  fi
+  local row cc name
+  row=$(
+    nvidia-smi -i "$GPU_UUID" --query-gpu=compute_cap,name --format=csv,noheader,nounits 2>/dev/null |
+      head -n 1 || true
+  )
+  cc="${row%%,*}"
+  name="${row#*,}"
+  cc="${cc//[[:space:]]/}"
+  name="${name#"${name%%[![:space:]]*}"}"
+  if [[ -z "$row" || -z "$cc" || "$cc" == "$row" ]]; then
+    echo "unsupported_cuda_gpu_check_failed uuid=$GPU_UUID min_compute_cap=$MIN_CUDA_COMPUTE_CAPABILITY" >&2
+    exit 78
+  fi
+  if ! awk -v cc="$cc" -v min="$MIN_CUDA_COMPUTE_CAPABILITY" 'BEGIN { exit !((cc + 0) >= (min + 0)) }'; then
+    echo "unsupported_cuda_gpu uuid=$GPU_UUID name=$name compute_cap=$cc min_compute_cap=$MIN_CUDA_COMPUTE_CAPABILITY" >&2
+    exit 78
+  fi
+  echo "cuda_gpu_ok uuid=$GPU_UUID name=$name compute_cap=$cc min_compute_cap=$MIN_CUDA_COMPUTE_CAPABILITY"
+}
 
 resolve_model_dir() {
   local candidate="$1"
@@ -63,6 +88,7 @@ for pid in $WAIT_PIDS; do
   done
 done
 
+require_supported_cuda_gpu
 MODEL_DIR="$(resolve_model_dir "$MODEL_DIR")"
 echo "resolved_model_dir=$MODEL_DIR explicit_model_dir=${MODEL_DIR_EXPLICIT:-0}"
 MODEL_ENTRIES="${MODEL_ENTRIES:-child=$MODEL_DIR;qwen_parent=Qwen/Qwen3-4B-Base;blank_random=$RUN_ROOT/blank_smollm2_135m_seed0;cleanopen_l4=$RUN_ROOT/qwen4b_cleanopen_anchor_newloss_l4_gpu0_20260701;mathdrill_l4=$RUN_ROOT/qwen4b_mathdrill_anchor_newloss_l4_gpu6_20260701}"

@@ -9,6 +9,7 @@ WAIT_PIDS="${WAIT_PIDS:-}"
 POLL_SECONDS="${POLL_SECONDS:-30}"
 MEM_THRESHOLD="${MEM_THRESHOLD:-2000}"
 IGNORE_GPU_PIDS="${IGNORE_GPU_PIDS:-12681}"
+MIN_CUDA_COMPUTE_CAPABILITY="${MIN_CUDA_COMPUTE_CAPABILITY:-7.0}"
 BESTSTACK_EVAL_DIR="${BESTSTACK_EVAL_DIR:-$RUN_ROOT/evals/beststack_20260706}"
 LM_EVAL_LIMIT="${LM_EVAL_LIMIT:-100}"
 TRANSPORT_SUPPORT="${TRANSPORT_SUPPORT:-quantile-medoid}"
@@ -67,6 +68,30 @@ wait_for_pids() {
   done
 }
 
+require_supported_cuda_gpu() {
+  if [[ "${MIN_CUDA_COMPUTE_CAPABILITY:-0}" == "0" ]]; then
+    return 0
+  fi
+  local row cc name
+  row=$(
+    nvidia-smi -i "$GPU_UUID" --query-gpu=compute_cap,name --format=csv,noheader,nounits 2>/dev/null |
+      head -n 1 || true
+  )
+  cc="${row%%,*}"
+  name="${row#*,}"
+  cc="${cc//[[:space:]]/}"
+  name="${name#"${name%%[![:space:]]*}"}"
+  if [[ -z "$row" || -z "$cc" || "$cc" == "$row" ]]; then
+    echo "unsupported_cuda_gpu_check_failed uuid=$GPU_UUID min_compute_cap=$MIN_CUDA_COMPUTE_CAPABILITY" >&2
+    exit 78
+  fi
+  if ! awk -v cc="$cc" -v min="$MIN_CUDA_COMPUTE_CAPABILITY" 'BEGIN { exit !((cc + 0) >= (min + 0)) }'; then
+    echo "unsupported_cuda_gpu uuid=$GPU_UUID name=$name compute_cap=$cc min_compute_cap=$MIN_CUDA_COMPUTE_CAPABILITY" >&2
+    exit 78
+  fi
+  echo "cuda_gpu_ok uuid=$GPU_UUID name=$name compute_cap=$cc min_compute_cap=$MIN_CUDA_COMPUTE_CAPABILITY"
+}
+
 wait_for_gpu() {
   while true; do
     used=$(nvidia-smi -i "$GPU_UUID" --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | tr -dc '0-9' || echo 999999)
@@ -103,6 +128,7 @@ mkdir -p "$RUN_ROOT/logs" "$BESTSTACK_EVAL_DIR"
 
 echo "beststack_queue_start=$(date -Is) variant=$VARIANT tag=$TAG gpu=$GPU_UUID wait_pids=${WAIT_PIDS:-none} revision=$(cat .deployed_revision 2>/dev/null || true)"
 wait_for_pids $WAIT_PIDS
+require_supported_cuda_gpu
 wait_for_gpu
 
 export RUN_ROOT

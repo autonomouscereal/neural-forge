@@ -15,6 +15,7 @@ DEVICE="${DEVICE:-cuda:0}"
 DTYPE="${DTYPE:-float16}"
 MEM_THRESHOLD="${MEM_THRESHOLD:-2000}"
 POLL_SECONDS="${POLL_SECONDS:-300}"
+MIN_CUDA_COMPUTE_CAPABILITY="${MIN_CUDA_COMPUTE_CAPABILITY:-7.0}"
 MAX_BEHAVIOR_PROBES="${MAX_BEHAVIOR_PROBES:-1000}"
 MAX_GENERATION_PROMPTS="${MAX_GENERATION_PROMPTS:-1000}"
 MAX_CHOICE_PROBES="${MAX_CHOICE_PROBES:-250}"
@@ -66,6 +67,30 @@ wait_for_pid_file() {
     echo "$(date -Is) waiting_for_run_pid_file=$path"
     sleep "$POLL_SECONDS"
   done
+}
+
+require_supported_cuda_gpu() {
+  if [[ "${DEVICE:-cuda:0}" != cuda* || "${MIN_CUDA_COMPUTE_CAPABILITY:-0}" == "0" ]]; then
+    return 0
+  fi
+  local row cc name
+  row=$(
+    nvidia-smi -i "$GPU_UUID" --query-gpu=compute_cap,name --format=csv,noheader,nounits 2>/dev/null |
+      head -n 1 || true
+  )
+  cc="${row%%,*}"
+  name="${row#*,}"
+  cc="${cc//[[:space:]]/}"
+  name="${name#"${name%%[![:space:]]*}"}"
+  if [[ -z "$row" || -z "$cc" || "$cc" == "$row" ]]; then
+    echo "unsupported_cuda_gpu_check_failed uuid=$GPU_UUID min_compute_cap=$MIN_CUDA_COMPUTE_CAPABILITY" >&2
+    exit 78
+  fi
+  if ! awk -v cc="$cc" -v min="$MIN_CUDA_COMPUTE_CAPABILITY" 'BEGIN { exit !((cc + 0) >= (min + 0)) }'; then
+    echo "unsupported_cuda_gpu uuid=$GPU_UUID name=$name compute_cap=$cc min_compute_cap=$MIN_CUDA_COMPUTE_CAPABILITY" >&2
+    exit 78
+  fi
+  echo "cuda_gpu_ok uuid=$GPU_UUID name=$name compute_cap=$cc min_compute_cap=$MIN_CUDA_COMPUTE_CAPABILITY"
 }
 
 valid_eval_report() {
@@ -162,6 +187,7 @@ if [[ ! -f "$MODEL_DIR/config.json" ]]; then
   echo "missing_model_config=$MODEL_DIR/config.json" >&2
   exit 2
 fi
+require_supported_cuda_gpu
 
 if valid_eval_report "$REPORT"; then
   echo "child_eval_cache_hit=$REPORT"
