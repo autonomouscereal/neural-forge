@@ -380,8 +380,8 @@ def donor_projected_init(
         raise ValueError("activation_fit_rank must be non-negative.")
     if activation_fit_rank_mode not in {"absolute", "delta"}:
         raise ValueError("activation_fit_rank_mode must be absolute or delta.")
-    if activation_fit_method not in {"ridge", "lrc"}:
-        raise ValueError("activation_fit_method must be ridge or lrc.")
+    if activation_fit_method not in {"ridge", "act-svd", "lrc"}:
+        raise ValueError("activation_fit_method must be ridge, act-svd, or lrc.")
     if activation_fit_factor_steps < 0:
         raise ValueError("activation_fit_factor_steps must be non-negative.")
     if activation_fit_factor_steps > 0 and activation_fit_factor_lr <= 0:
@@ -6756,8 +6756,8 @@ def _fit_projected_linear_from_donor_activations(
         raise ValueError("rank must be non-negative.")
     if rank_mode not in {"absolute", "delta"}:
         raise ValueError("rank_mode must be absolute or delta.")
-    if method not in {"ridge", "lrc"}:
-        raise ValueError("method must be ridge or lrc.")
+    if method not in {"ridge", "act-svd", "lrc"}:
+        raise ValueError("method must be ridge, act-svd, or lrc.")
     if float(alpha) <= 0.0:
         raise ValueError("alpha must be positive.")
     if int(factor_steps) < 0:
@@ -6911,14 +6911,46 @@ def _fit_projected_linear_from_donor_activations(
     fitted = torch.nan_to_num(fitted, nan=0.0, posinf=0.0, neginf=0.0)
     if reference_weight is not None:
         reference = reference_weight.detach().cpu().to(torch.float32)
-        if rank_mode == "delta":
+        if method == "act-svd":
+            if rank_mode == "delta":
+                fitted = _scale_projection_to_target(torch, fitted, reference, "target-rms")
+                fitted, rank_report = _activation_weighted_truncate_linear_weight_rank(
+                    torch,
+                    fitted,
+                    train_input,
+                    int(rank),
+                    reference_weight=reference,
+                    rank_mode="delta",
+                    ridge=max(float(ridge), 1e-8),
+                )
+            else:
+                fitted, rank_report = _activation_weighted_truncate_linear_weight_rank(
+                    torch,
+                    fitted,
+                    train_input,
+                    int(rank),
+                    rank_mode="absolute",
+                    ridge=max(float(ridge), 1e-8),
+                )
+                fitted = _scale_projection_to_target(torch, fitted, reference, "target-rms")
+        elif rank_mode == "delta":
             fitted = _scale_projection_to_target(torch, fitted, reference, "target-rms")
             fitted, rank_report = _truncate_linear_weight_delta_rank(torch, fitted, reference, int(rank))
         else:
             fitted, rank_report = _truncate_linear_weight_rank(torch, fitted, int(rank))
             fitted = _scale_projection_to_target(torch, fitted, reference, "target-rms")
     else:
-        fitted, rank_report = _truncate_linear_weight_rank(torch, fitted, int(rank))
+        if method == "act-svd":
+            fitted, rank_report = _activation_weighted_truncate_linear_weight_rank(
+                torch,
+                fitted,
+                train_input,
+                int(rank),
+                rank_mode="absolute",
+                ridge=max(float(ridge), 1e-8),
+            )
+        else:
+            fitted, rank_report = _truncate_linear_weight_rank(torch, fitted, int(rank))
     report = {
         "accepted": True,
         "reason": "accepted",
@@ -7483,6 +7515,133 @@ def _truncate_linear_weight_delta_rank(torch, weight, reference_weight, rank: in
         "delta_norm": float(delta.norm().detach().cpu()),
         "truncated_delta_norm": float(truncated_delta.norm().detach().cpu()),
     }
+
+
+def _activation_weighted_truncate_linear_weight_rank(
+    torch,
+    weight,
+    input_rows,
+    rank: int,
+    *,
+    reference_weight=None,
+    rank_mode: str = "absolute",
+    ridge: float = 1e-6,
+):
+    target = torch.nan_to_num(weight.detach().cpu().to(torch.float32), nan=0.0, posinf=0.0, neginf=0.0)
+    rows = torch.nan_to_num(input_rows.detach().cpu().to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
+    if rank_mode not in {"absolute", "delta"}:
+        raise ValueError("rank_mode must be absolute or delta.")
+    if target.dim() != 2:
+        return target, {
+            "rank_truncated": False,
+            "rank_truncation_method": "activation_weighted_svd",
+            "effective_rank": 0,
+            "requested_rank": int(rank),
+            "rank_mode": rank_mode,
+        }
+    if rows.dim() != 2:
+        raise ValueError("input_rows must be rank-2.")
+    out_features, in_features = int(target.shape[0]), int(target.shape[1])
+    if int(rows.shape[1]) != in_features:
+        raise ValueError("input_rows feature size must match weight input features.")
+    reference = None
+    if rank_mode == "delta":
+        if reference_weight is None:
+            raise ValueError("delta rank mode requires reference_weight.")
+        reference = torch.nan_to_num(
+            reference_weight.detach().cpu().to(torch.float32),
+            nan=0.0,
+            posinf=0.0,
+            neginf=0.0,
+        )
+        if target.shape != reference.shape:
+            raise ValueError("weight and reference_weight must have the same shape.")
+        matrix = (target - reference).t().contiguous()
+    else:
+        matrix = target.t().contiguous()
+    full_rank = min(int(matrix.shape[0]), int(matrix.shape[1]))
+    base_report = {
+        "rank_truncation_method": "activation_weighted_svd",
+        "rank_mode": rank_mode,
+        "requested_rank": int(rank),
+        "full_rank": int(full_rank),
+        "activation_rows": int(rows.shape[0]),
+        "input_features": int(in_features),
+        "output_features": int(out_features),
+        "covariance_ridge": float(ridge),
+    }
+    if int(rank) <= 0 or int(rank) >= full_rank:
+        report = {
+            **base_report,
+            "rank_truncated": False,
+            "effective_rank": int(full_rank),
+        }
+        if reference is not None:
+            delta = target - reference
+            report.update(
+                {
+                    "delta_rank_truncated": False,
+                    "delta_norm": float(delta.norm().detach().cpu()),
+                    "truncated_delta_norm": float(delta.norm().detach().cpu()),
+                }
+            )
+        return target, report
+    try:
+        covariance = rows.t().matmul(rows) / max(int(rows.shape[0]), 1)
+        if float(ridge) > 0:
+            covariance = covariance + float(ridge) * torch.eye(in_features, dtype=covariance.dtype)
+        eigenvalues, eigenvectors = torch.linalg.eigh(covariance)
+        eigenvalues = eigenvalues.clamp_min(float(ridge) if float(ridge) > 0 else 1e-12)
+        weighted = eigenvalues.sqrt().unsqueeze(1) * eigenvectors.t().matmul(matrix)
+        u, singular_values, vh = torch.linalg.svd(weighted, full_matrices=False)
+    except RuntimeError as exc:
+        report = {
+            **base_report,
+            "rank_truncated": False,
+            "effective_rank": int(full_rank),
+            "rank_truncation_error": str(exc),
+        }
+        if reference is not None:
+            delta = target - reference
+            report.update(
+                {
+                    "delta_rank_truncated": False,
+                    "delta_norm": float(delta.norm().detach().cpu()),
+                    "truncated_delta_norm": float(delta.norm().detach().cpu()),
+                }
+            )
+        return target, report
+    keep = max(1, min(int(rank), int(singular_values.numel())))
+    weighted_truncated = (u[:, :keep] * singular_values[:keep].unsqueeze(0)).matmul(vh[:keep, :])
+    truncated_matrix = eigenvectors.matmul(eigenvalues.rsqrt().unsqueeze(1) * weighted_truncated)
+    if reference is None:
+        truncated = truncated_matrix.t().contiguous()
+    else:
+        truncated = (reference + truncated_matrix.t()).contiguous()
+    total_energy = singular_values.pow(2).sum().clamp_min(1e-12)
+    kept_energy = singular_values[:keep].pow(2).sum()
+    discarded_activation_norm = float(rows.matmul(matrix - truncated_matrix).norm().detach().cpu())
+    total_activation_norm = float(rows.matmul(matrix).norm().detach().cpu())
+    report = {
+        **base_report,
+        "rank_truncated": True,
+        "effective_rank": int(keep),
+        "rank_energy_ratio": float(kept_energy / total_energy),
+        "activation_weighted_discarded_norm": discarded_activation_norm,
+        "activation_weighted_relative_discarded": discarded_activation_norm / max(total_activation_norm, 1e-12),
+        "top_singular_values": [float(item.detach().cpu()) for item in singular_values[: min(8, int(singular_values.numel()))]],
+    }
+    if reference is not None:
+        delta = target - reference
+        truncated_delta = truncated - reference
+        report.update(
+            {
+                "delta_rank_truncated": True,
+                "delta_norm": float(delta.norm().detach().cpu()),
+                "truncated_delta_norm": float(truncated_delta.norm().detach().cpu()),
+            }
+        )
+    return truncated, report
 
 
 def _aggregate_layer_activation_profile(

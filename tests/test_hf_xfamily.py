@@ -144,6 +144,7 @@ from neural_forge.hf_xfamily import _hidden_basis_axes_for_layer_tensor
 from neural_forge.hf_xfamily import _is_transformers_conv1d_module
 from neural_forge.hf_xfamily import _linear_module_forward
 from neural_forge.hf_xfamily import _linear_fit_rows_for_suffix
+from neural_forge.hf_xfamily import _activation_weighted_truncate_linear_weight_rank
 from neural_forge.hf_xfamily import _truncate_linear_weight_rank
 from neural_forge.hf_xfamily import _truncate_linear_weight_delta_rank
 from neural_forge.hf_xfamily import _initialize_token_weights_from_donor
@@ -2919,6 +2920,40 @@ def test_truncate_linear_weight_delta_rank_keeps_reference_full_rank() -> None:
     assert torch.diag(truncated).tolist() == pytest.approx([6.0, 5.0, 1.0, 1.0], abs=1e-5)
 
 
+def test_activation_weighted_truncate_linear_weight_rank_prefers_active_direction() -> None:
+    torch = pytest.importorskip("torch")
+
+    weight = torch.tensor([[0.20, 0.0], [0.0, 4.0]], dtype=torch.float32)
+    activation_rows = torch.tensor(
+        [
+            [10.0, 0.01],
+            [9.5, -0.01],
+            [10.5, 0.02],
+            [11.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    raw, raw_report = _truncate_linear_weight_rank(torch, weight, rank=1)
+    weighted, weighted_report = _activation_weighted_truncate_linear_weight_rank(
+        torch,
+        weight,
+        activation_rows,
+        rank=1,
+        ridge=1e-6,
+    )
+
+    target = activation_rows.matmul(weight.t())
+    raw_error = torch.mean((activation_rows.matmul(raw.t()) - target) ** 2)
+    weighted_error = torch.mean((activation_rows.matmul(weighted.t()) - target) ** 2)
+
+    assert raw_report["rank_truncated"] is True
+    assert weighted_report["rank_truncation_method"] == "activation_weighted_svd"
+    assert weighted_report["rank_truncated"] is True
+    assert float(weighted_error) < float(raw_error) * 0.01
+    assert abs(float(weighted[0, 0]) - 0.20) < abs(float(raw[0, 0]) - 0.20)
+
+
 def test_synthesize_cross_arch_layer_tensor_fuses_qkv_for_gpt2() -> None:
     torch = pytest.importorskip("torch")
     q = torch.arange(6, dtype=torch.float32).reshape(2, 3)
@@ -3170,6 +3205,64 @@ def test_fit_projected_linear_from_donor_activations_lrc_materializes_delta() ->
     after = inputs.matmul(result["weight"].to(torch.float32).t())
     target = inputs.matmul(target_weight.t())
     assert torch.mean((after - target) ** 2) < torch.mean((before - target) ** 2) * 0.1
+
+
+def test_fit_projected_linear_from_donor_activations_accepts_act_svd() -> None:
+    torch = pytest.importorskip("torch")
+    inputs = torch.tensor(
+        [
+            [10.0, 0.01],
+            [9.5, -0.01],
+            [10.5, 0.02],
+            [11.0, 0.0],
+            [10.2, 0.01],
+            [9.8, -0.02],
+            [10.7, 0.02],
+            [10.1, 0.0],
+            [10.4, 0.01],
+            [9.9, -0.01],
+        ],
+        dtype=torch.float32,
+    )
+    target_weight = torch.tensor([[0.20, 0.0], [0.0, 4.0]], dtype=torch.float32)
+    reference = torch.tensor([[0.0, 0.20], [4.0, 0.0]], dtype=torch.float32)
+    activation_profile = {
+        "linear_fit_rows": {
+            0: {
+                "self_attn.o_proj.weight": {
+                    "input": inputs,
+                    "output": inputs.matmul(target_weight.t()),
+                }
+            }
+        }
+    }
+
+    result = _fit_projected_linear_from_donor_activations(
+        torch,
+        activation_profile,
+        "self_attn.o_proj.weight",
+        tuple(reference.shape),
+        _Obj(num_attention_heads=1, num_key_value_heads=1),
+        _Obj(num_attention_heads=1, num_key_value_heads=1),
+        donor_layer_idx=0,
+        donor_layer_group=[0],
+        ridge=1e-6,
+        rank=1,
+        rank_mode="delta",
+        method="act-svd",
+        fold_mode="mean",
+        reference_weight=reference,
+        validation_fraction=0.2,
+        min_validation_rows=2,
+        return_report=True,
+    )
+
+    report = result["report"]
+    assert report["method"] == "act-svd"
+    assert report["accepted"] is True
+    assert report["rank_truncation_method"] == "activation_weighted_svd"
+    assert report["rank_mode"] == "delta"
+    assert report["validation_fit_mse"] < report["validation_reference_mse"]
 
 
 def test_fit_projected_linear_from_donor_activations_rejects_no_validation_gain() -> None:
@@ -3676,9 +3769,7 @@ def test_transport_fold_can_qr_normalize_dense_sinkhorn_map() -> None:
     assert transport["transport_backend"] == "qr_sinkhorn_dense"
     coefficients = transport["transport_coefficients"]
     assert coefficients.shape == (4, 2)
-    assert coefficients.t().matmul(coefficients).tolist() == pytest.approx(
-        torch.eye(2, dtype=torch.float32).tolist(), abs=1e-5
-    )
+    torch.testing.assert_close(coefficients.t().matmul(coefficients), torch.eye(2, dtype=torch.float32), atol=1e-5, rtol=0.0)
     assert transport["transport_matrix"].sum(dim=1).tolist() == pytest.approx([1.0, 1.0, 1.0, 1.0])
     report = _axis_assignment_cache_report(cache)
     assert report[0]["transport_coefficients_shape"] == [4, 2]
@@ -6513,6 +6604,29 @@ def test_hf_xfamily_chain_parser_accepts_module_residual_compensation_mode() -> 
     )
 
     assert args.block_residual_magnitude_compensation == "pre-module-lowrank"
+
+
+def test_hf_xfamily_chain_parser_accepts_activation_weighted_svd_init_fit() -> None:
+    args = build_parser().parse_args(
+        [
+            "hf-xfamily-chain-anchor-compress",
+            "donor",
+            "anchor",
+            "out",
+            "--init-activation-fit-linears",
+            "--init-activation-fit-method",
+            "act-svd",
+            "--init-activation-fit-rank",
+            "32",
+            "--init-activation-fit-rank-mode",
+            "delta",
+        ]
+    )
+
+    assert args.init_activation_fit_linears is True
+    assert args.init_activation_fit_method == "act-svd"
+    assert args.init_activation_fit_rank == 32
+    assert args.init_activation_fit_rank_mode == "delta"
 
 
 def test_low_rank_delta_map_truncates_delta_from_identity() -> None:

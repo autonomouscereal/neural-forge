@@ -304,9 +304,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hf_donor_init.add_argument(
         "--activation-fit-method",
-        choices=["ridge", "lrc"],
+        choices=["ridge", "act-svd", "lrc"],
         default="ridge",
-        help="Use the historical ridge/SVD fit or train a gated low-rank clone delta and materialize it into the folded weight.",
+        help=(
+            "Use the historical ridge/SVD fit, activation-weighted SVD truncation, "
+            "or train a gated low-rank clone delta and materialize it into the folded weight."
+        ),
     )
     hf_donor_init.add_argument("--activation-fit-factor-steps", type=int, default=0)
     hf_donor_init.add_argument("--activation-fit-factor-lr", type=float, default=3e-2)
@@ -1625,7 +1628,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--init-activation-fit-ridge", type=float, default=1e-1)
     xfamily_chain.add_argument("--init-activation-fit-rank", type=int, default=0)
     xfamily_chain.add_argument("--init-activation-fit-rank-mode", choices=["absolute", "delta"], default="absolute")
-    xfamily_chain.add_argument("--init-activation-fit-method", choices=["ridge", "lrc"], default="ridge")
+    xfamily_chain.add_argument("--init-activation-fit-method", choices=["ridge", "act-svd", "lrc"], default="ridge")
     xfamily_chain.add_argument("--init-activation-fit-factor-steps", type=int, default=0)
     xfamily_chain.add_argument("--init-activation-fit-factor-lr", type=float, default=3e-2)
     xfamily_chain.add_argument("--init-activation-fit-factor-l2", type=float, default=0.0)
