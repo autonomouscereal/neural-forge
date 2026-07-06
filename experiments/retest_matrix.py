@@ -367,7 +367,12 @@ def _config_param_hint(config: Path) -> int | None:
 def _baseline_manifest(run_root: Path) -> list[dict[str, str]]:
     return [
         {
-            "label": "qwen_parent_exactgen",
+            "label": "qwen_parent_strict",
+            "model": "Qwen/Qwen3-4B-Base",
+            "report": str(run_root / "evals/eval_parent_qwen3_4b_base_strict_20260705_1000x1000x250.json"),
+        },
+        {
+            "label": "qwen_parent_exactgen_legacy",
             "model": "Qwen/Qwen3-4B-Base",
             "report": str(run_root / "evals/eval_parent_qwen3_4b_base_exactgen_20260702_1000x1000x250.json"),
         },
@@ -377,17 +382,32 @@ def _baseline_manifest(run_root: Path) -> list[dict[str, str]]:
             "report": str(run_root / "evals/eval_parent_qwen3_4b_base_1000g_20260701_1000x1000x250.json"),
         },
         {
-            "label": "gpt2_donor_exactgen",
+            "label": "gpt2_donor_strict",
+            "model": "openai-community/gpt2",
+            "report": str(run_root / "evals/eval_donor_gpt2_strict_20260705_1000x1000x250.json"),
+        },
+        {
+            "label": "gpt2_donor_exactgen_legacy",
             "model": "openai-community/gpt2",
             "report": str(run_root / "evals/eval_donor_gpt2_exactgen_20260702_1000x1000x250.json"),
         },
         {
-            "label": "lfm230m_donor_exactgen",
+            "label": "lfm230m_donor_strict",
+            "model": "LiquidAI/LFM2.5-230M",
+            "report": str(run_root / "evals/eval_donor_lfm230m_strict_20260705_1000x1000x250.json"),
+        },
+        {
+            "label": "lfm230m_donor_exactgen_legacy",
             "model": "LiquidAI/LFM2.5-230M",
             "report": str(run_root / "evals/eval_donor_lfm230m_exactgen_20260702_1000x1000x250.json"),
         },
         {
-            "label": "blank_smollm_exactgen",
+            "label": "blank_smollm_strict",
+            "model": str(run_root / "blank_smollm2_135m_seed0"),
+            "report": str(run_root / "evals/eval_blank_smollm135m_random_strict_20260705_1000x1000x250.json"),
+        },
+        {
+            "label": "blank_smollm_exactgen_legacy",
             "model": str(run_root / "blank_smollm2_135m_seed0"),
             "report": str(run_root / "evals/eval_blank_smollm135m_random_exactgen_20260702_1000x1000x250.json"),
         },
@@ -403,10 +423,12 @@ def _parent_report_candidates(candidate: dict[str, Any], run_root: Path) -> str:
     label = str(candidate.get("label", "")).lower()
     if "lfm" in label and "qwen4b_to_lfm" not in label:
         paths = [
+            run_root / "evals/eval_donor_lfm230m_strict_20260705_1000x1000x250.json",
             run_root / "evals/eval_donor_lfm230m_exactgen_20260702_1000x1000x250.json",
         ]
     else:
         paths = [
+            run_root / "evals/eval_parent_qwen3_4b_base_strict_20260705_1000x1000x250.json",
             run_root / "evals/eval_parent_qwen3_4b_base_exactgen_20260702_1000x1000x250.json",
             run_root / "evals/eval_parent_qwen3_4b_base_1000g_20260701_1000x1000x250.json",
         ]
@@ -415,11 +437,17 @@ def _parent_report_candidates(candidate: dict[str, Any], run_root: Path) -> str:
 
 def _baseline_reports(run_root: Path) -> str:
     entries = {
-        "qwen_parent_exactgen": run_root / "evals/eval_parent_qwen3_4b_base_exactgen_20260702_1000x1000x250.json",
+        "qwen_parent_strict": run_root / "evals/eval_parent_qwen3_4b_base_strict_20260705_1000x1000x250.json",
+        "qwen_parent_exactgen_legacy": run_root
+        / "evals/eval_parent_qwen3_4b_base_exactgen_20260702_1000x1000x250.json",
         "qwen_parent_legacy": run_root / "evals/eval_parent_qwen3_4b_base_1000g_20260701_1000x1000x250.json",
-        "gpt2_donor": run_root / "evals/eval_donor_gpt2_exactgen_20260702_1000x1000x250.json",
-        "lfm230m_donor": run_root / "evals/eval_donor_lfm230m_exactgen_20260702_1000x1000x250.json",
-        "blank_random_exactgen": run_root / "evals/eval_blank_smollm135m_random_exactgen_20260702_1000x1000x250.json",
+        "gpt2_donor_strict": run_root / "evals/eval_donor_gpt2_strict_20260705_1000x1000x250.json",
+        "gpt2_donor_legacy": run_root / "evals/eval_donor_gpt2_exactgen_20260702_1000x1000x250.json",
+        "lfm230m_donor_strict": run_root / "evals/eval_donor_lfm230m_strict_20260705_1000x1000x250.json",
+        "lfm230m_donor_legacy": run_root / "evals/eval_donor_lfm230m_exactgen_20260702_1000x1000x250.json",
+        "blank_random_strict": run_root / "evals/eval_blank_smollm135m_random_strict_20260705_1000x1000x250.json",
+        "blank_random_exactgen_legacy": run_root
+        / "evals/eval_blank_smollm135m_random_exactgen_20260702_1000x1000x250.json",
         "blank_random_legacy": run_root / "evals/eval_blank_smollm135m_random_1000g_20260701_1000x1000x250.json",
         "cleanopen_full": run_root / "evals/eval_cleanopen_full_02_alm_exactgen_20260702_1000x1000x250.json",
         "mathdrill_full": run_root / "evals/eval_mathdrill_eora_geom_full_fix_best_20260701_1000x1000x250.json",
