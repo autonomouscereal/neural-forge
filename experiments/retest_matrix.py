@@ -575,9 +575,10 @@ def _load_retention_summary(path: Path) -> dict[str, Any]:
 
 
 def _aggregate_retention(retention: dict[str, Any]) -> dict[str, Any]:
-    behavior = _retention_overall(retention, "behavior")
-    generation = _retention_overall(retention, "generation")
-    choice = _retention_overall(retention, "choice")
+    comparison = _primary_retention_comparison(retention)
+    behavior = _retention_overall(comparison, "behavior")
+    generation = _retention_overall(comparison, "generation")
+    choice = _retention_overall(comparison, "choice")
     return {
         "behavior_parent_retention": behavior.get("shared_parent_pass_retention_rate"),
         "generation_parent_retention": generation.get("shared_parent_pass_retention_rate"),
@@ -588,10 +589,27 @@ def _aggregate_retention(retention: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _primary_retention_comparison(retention: dict[str, Any]) -> dict[str, Any]:
+    comparisons = retention.get("comparisons")
+    if isinstance(comparisons, dict):
+        for key in (
+            "parent_vs_child",
+            "qwen_parent_strict__vs_child",
+            "lfm230m_donor_strict__vs_child",
+            "gpt2_donor_strict__vs_child",
+        ):
+            value = comparisons.get(key)
+            if isinstance(value, dict):
+                return value
+    return retention
+
+
 def _retention_overall(retention: dict[str, Any], section: str) -> dict[str, Any]:
     value = retention.get(section)
     if not isinstance(value, dict):
         return {}
+    if "shared_parent_pass_retention_rate" in value:
+        return value
     overall = value.get("overall")
     if isinstance(overall, dict):
         return overall

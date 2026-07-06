@@ -165,3 +165,44 @@ def test_summary_uses_parent_retention_before_perplexity(tmp_path: Path) -> None
     ]
     rows.sort(key=module._rank_key)
     assert rows[0]["label"] == "retained"
+
+
+def test_summary_reads_compare_retention_schema(tmp_path: Path) -> None:
+    module = _load_module()
+    report = tmp_path / "child.json"
+    report.write_text(
+        json.dumps(
+            {
+                "model": "child",
+                "behavior_suite": {"correct": 5, "total": 10, "items": []},
+                "generation_health": {"correct": 6, "total": 10},
+                "choice_accuracy": {"correct": 7, "total": 10, "items": []},
+                "perplexity": {"mean": 10.0},
+            }
+        ),
+        encoding="utf-8",
+    )
+    retention_dir = tmp_path / "retention_child"
+    retention_dir.mkdir()
+    (retention_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "comparisons": {
+                    "parent_vs_child": {
+                        "behavior": {"shared_parent_pass_retention_rate": 0.4, "parent_pass": 5},
+                        "generation": {"shared_parent_pass_retention_rate": 0.5, "parent_pass": 6},
+                        "choice": {"shared_parent_pass_retention_rate": 0.6, "parent_pass": 7},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    row = module._row_from_entry(
+        {"label": "child", "report": str(report), "retention_dir": str(retention_dir)}
+    )
+
+    assert row["behavior_parent_retention"] == 0.4
+    assert row["generation_parent_retention"] == 0.5
+    assert row["choice_parent_retention"] == 0.6
