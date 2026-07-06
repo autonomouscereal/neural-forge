@@ -4307,9 +4307,12 @@ def _resize_attention_tensor_to_shape(
             continue
         head_profile = None if attention_axis_weights is None else attention_axis_weights.get(axis)
         head_weights, head_features, head_semantic_key = _axis_fold_profile(head_profile)
+        head_domain_weights, head_domain_features = _axis_fold_domain_profile(head_profile)
         head_dim_weights, head_dim_features, head_dim_semantic_key = (None, None, None)
+        head_dim_domain_weights, head_dim_domain_features = (None, None)
         if attention_head_dim_transport == "qk-vo":
             head_dim_weights, head_dim_features, head_dim_semantic_key = _axis_head_dim_fold_profile(head_profile)
+            head_dim_domain_weights, head_dim_domain_features = _axis_head_dim_domain_fold_profile(head_profile)
         head_dim_has_profile = head_dim_weights is not None or head_dim_features is not None
         coupled = _resize_head_partitioned_axis(
             torch,
@@ -4324,10 +4327,14 @@ def _resize_attention_tensor_to_shape(
             transport_support=transport_support,
             head_weights=head_weights,
             head_features=head_features,
+            head_domain_weights=head_domain_weights,
+            head_domain_features=head_domain_features,
             head_fold_mode=attention_head_fold_mode,
             head_assignment_mode=activation_fold_assignment,
             head_dim_weights=head_dim_weights,
             head_dim_features=head_dim_features,
+            head_dim_domain_weights=head_dim_domain_weights,
+            head_dim_domain_features=head_dim_domain_features,
             head_dim_fold_mode="transport" if attention_head_dim_transport == "qk-vo" and head_dim_has_profile else None,
             head_dim_assignment_mode=activation_fold_assignment,
             fold_stat_repair=fold_stat_repair,
@@ -4458,10 +4465,14 @@ def _resize_head_partitioned_axis(
     transport_support: str = "centroid",
     head_weights=None,
     head_features=None,
+    head_domain_weights=None,
+    head_domain_features=None,
     head_fold_mode: str | None = None,
     head_assignment_mode: str = "balanced",
     head_dim_weights=None,
     head_dim_features=None,
+    head_dim_domain_weights=None,
+    head_dim_domain_features=None,
     head_dim_fold_mode: str | None = None,
     head_dim_assignment_mode: str = "balanced",
     fold_stat_repair: str = "none",
@@ -4487,6 +4498,8 @@ def _resize_head_partitioned_axis(
         fold_mode=head_fold_mode or fold_mode,
         weights=head_weights,
         features=head_features,
+        domain_weights=head_domain_weights,
+        domain_features=head_domain_features,
         reduction=reduction,
         assignment_mode=head_assignment_mode,
         fold_stat_repair=fold_stat_repair,
@@ -4503,6 +4516,8 @@ def _resize_head_partitioned_axis(
         fold_mode=head_dim_fold_mode or fold_mode,
         weights=head_dim_weights,
         features=head_dim_features,
+        domain_weights=head_dim_domain_weights,
+        domain_features=head_dim_domain_features,
         reduction=reduction,
         assignment_mode=head_dim_assignment_mode,
         fold_stat_repair=fold_stat_repair,
@@ -4535,6 +4550,12 @@ def _axis_head_dim_fold_profile(profile):
             profile.get("head_dim_assignment_key"),
         )
     return None, None, None
+
+
+def _axis_head_dim_domain_fold_profile(profile):
+    if isinstance(profile, dict):
+        return profile.get("head_dim_domain_weights"), profile.get("head_dim_domain_features")
+    return None, None
 
 
 def _hidden_basis_for_axis(torch, hidden_basis, source_dim: int, target_dim: int):
@@ -6168,6 +6189,12 @@ def _collect_donor_axis_activation_scores(
         }
         for idx in range(len(donor_layers))
     }
+    attention_head_domain_profiles: dict[int, dict[str, dict[str, dict[str, list[Any]]]]] = {
+        idx: {"q": {}, "kv": {}} for idx in range(len(donor_layers))
+    }
+    attention_head_dim_domain_profiles: dict[int, dict[str, dict[str, dict[str, list[Any]]]]] = {
+        idx: {"qk": {}, "vo": {}} for idx in range(len(donor_layers))
+    }
     linear_fit_rows: dict[int, dict[str, dict[str, list[Any]]]] = {idx: {} for idx in range(len(donor_layers))}
     linear_fit_counts: dict[tuple[int, str], int] = {}
     current_domain: str | None = None
@@ -6247,6 +6274,13 @@ def _collect_donor_axis_activation_scores(
         if stream is not None:
             attention_head_profiles[int(layer_idx)][stream]["scores"].append(profile["scores"].cpu())
             attention_head_profiles[int(layer_idx)][stream]["features"].append(profile["features"].cpu())
+            if current_domain is not None:
+                domain = str(current_domain)
+                slot = attention_head_domain_profiles[int(layer_idx)][stream].setdefault(
+                    domain, {"scores": [], "features": []}
+                )
+                slot["scores"].append(profile["scores"].cpu())
+                slot["features"].append(profile["features"].cpu())
         if dim_stream is not None:
             attention_head_dim_profiles[int(layer_idx)][dim_stream]["scores"].append(
                 profile["head_dim_scores"].cpu()
@@ -6254,6 +6288,13 @@ def _collect_donor_axis_activation_scores(
             attention_head_dim_profiles[int(layer_idx)][dim_stream]["features"].append(
                 profile["head_dim_features"].cpu()
             )
+            if current_domain is not None:
+                domain = str(current_domain)
+                slot = attention_head_dim_domain_profiles[int(layer_idx)][dim_stream].setdefault(
+                    domain, {"scores": [], "features": []}
+                )
+                slot["scores"].append(profile["head_dim_scores"].cpu())
+                slot["features"].append(profile["head_dim_features"].cpu())
 
     def attention_output_hook(layer_idx: int, stream: str, dim_stream: str | None, heads: int | None):
         def hook(_module, _inputs, output):
@@ -6409,6 +6450,36 @@ def _collect_donor_axis_activation_scores(
                 }
         if stream_profiles:
             folded_attention_head_dim_profiles[int(layer_idx)] = stream_profiles
+    folded_attention_head_domain_profiles = {}
+    for layer_idx, by_stream in attention_head_domain_profiles.items():
+        stream_profiles = {}
+        for stream, by_domain in by_stream.items():
+            domain_profiles = {}
+            for domain, values in by_domain.items():
+                if values["scores"] and values["features"]:
+                    domain_profiles[str(domain)] = {
+                        "scores": torch.stack(values["scores"], dim=0).mean(dim=0).clamp_min(1e-12),
+                        "features": torch.stack(values["features"], dim=0).mean(dim=0),
+                    }
+            if domain_profiles:
+                stream_profiles[str(stream)] = domain_profiles
+        if stream_profiles:
+            folded_attention_head_domain_profiles[int(layer_idx)] = stream_profiles
+    folded_attention_head_dim_domain_profiles = {}
+    for layer_idx, by_stream in attention_head_dim_domain_profiles.items():
+        stream_profiles = {}
+        for stream, by_domain in by_stream.items():
+            domain_profiles = {}
+            for domain, values in by_domain.items():
+                if values["scores"] and values["features"]:
+                    domain_profiles[str(domain)] = {
+                        "scores": torch.stack(values["scores"], dim=0).mean(dim=0).clamp_min(1e-12),
+                        "features": torch.stack(values["features"], dim=0).mean(dim=0),
+                    }
+            if domain_profiles:
+                stream_profiles[str(stream)] = domain_profiles
+        if stream_profiles:
+            folded_attention_head_dim_domain_profiles[int(layer_idx)] = stream_profiles
     folded_linear_fit_rows = {}
     folded_linear_fit_importance = {}
     for layer_idx, by_suffix in linear_fit_rows.items():
@@ -6445,6 +6516,8 @@ def _collect_donor_axis_activation_scores(
         "mlp_domain_features": folded_mlp_domain_features,
         "attention_head_profiles": folded_attention_profiles,
         "attention_head_dim_profiles": folded_attention_head_dim_profiles,
+        "attention_head_domain_profiles": folded_attention_head_domain_profiles,
+        "attention_head_dim_domain_profiles": folded_attention_head_dim_domain_profiles,
         "linear_fit_rows": folded_linear_fit_rows,
         "linear_fit_importance": folded_linear_fit_importance,
         "activation_feature_mode": activation_feature_mode,
@@ -6796,6 +6869,8 @@ def _attention_axis_weights_for_tensor(
     stream, dim_stream, axis = stream_info
     head_profiles = activation_profile.get("attention_head_profiles") or {}
     head_dim_profiles = activation_profile.get("attention_head_dim_profiles") or {}
+    head_domain_profiles = activation_profile.get("attention_head_domain_profiles") or {}
+    head_dim_domain_profiles = activation_profile.get("attention_head_dim_domain_profiles") or {}
     layer_group = list(donor_layer_group or [donor_layer_idx])
     layer_group_key = tuple(int(item) for item in layer_group)
     scores = _aggregate_layer_attention_profile(
@@ -6810,6 +6885,23 @@ def _attention_axis_weights_for_tensor(
     features = _aggregate_layer_attention_profile(
         torch,
         head_profiles,
+        layer_group,
+        stream,
+        "features",
+        layer_weights=layer_group_weights,
+    )
+    domain_scores = _aggregate_layer_attention_domain_profile(
+        torch,
+        head_domain_profiles,
+        layer_group,
+        stream,
+        "scores",
+        clamp_min=1e-12,
+        layer_weights=layer_group_weights,
+    )
+    domain_features = _aggregate_layer_attention_domain_profile(
+        torch,
+        head_domain_profiles,
         layer_group,
         stream,
         "features",
@@ -6832,6 +6924,23 @@ def _attention_axis_weights_for_tensor(
         "features",
         layer_weights=layer_group_weights,
     )
+    head_dim_domain_scores = _aggregate_layer_attention_domain_profile(
+        torch,
+        head_dim_domain_profiles,
+        layer_group,
+        dim_stream,
+        "scores",
+        clamp_min=1e-12,
+        layer_weights=layer_group_weights,
+    )
+    head_dim_domain_features = _aggregate_layer_attention_domain_profile(
+        torch,
+        head_dim_domain_profiles,
+        layer_group,
+        dim_stream,
+        "features",
+        layer_weights=layer_group_weights,
+    )
     if scores is None:
         return None
     if axis >= len(donor_tensor.shape):
@@ -6843,14 +6952,20 @@ def _attention_axis_weights_for_tensor(
     if head_dim_scores is not None and int(head_dim_scores.numel()) != source_head_dim:
         head_dim_scores = None
         head_dim_features = None
+        head_dim_domain_scores = None
+        head_dim_domain_features = None
     return {
         axis: {
             "weights": scores,
             "features": features,
             "assignment_key": ("attention-heads", stream, layer_group_key),
+            "domain_weights": domain_scores,
+            "domain_features": domain_features,
             "head_dim_weights": head_dim_scores,
             "head_dim_features": head_dim_features,
             "head_dim_assignment_key": ("attention-head-dim", dim_stream, layer_group_key),
+            "head_dim_domain_weights": head_dim_domain_scores,
+            "head_dim_domain_features": head_dim_domain_features,
         }
     }
 
@@ -6908,6 +7023,55 @@ def _aggregate_layer_attention_profile(
     if clamp_min is not None:
         merged = merged.clamp_min(float(clamp_min))
     return merged
+
+
+def _aggregate_layer_attention_domain_profile(
+    torch,
+    profiles: dict[int, Any],
+    layer_group: Sequence[int],
+    stream: str,
+    field: str,
+    clamp_min=None,
+    layer_weights: Sequence[float] | None = None,
+):
+    by_domain: dict[str, list[Any]] = {}
+    by_domain_weights: dict[str, list[float]] = {}
+    for group_pos, layer_idx in enumerate(layer_group):
+        layer_profile = profiles.get(int(layer_idx), {}) if profiles else {}
+        if not isinstance(layer_profile, dict):
+            continue
+        stream_profile = layer_profile.get(stream, {})
+        if not isinstance(stream_profile, dict):
+            continue
+        layer_weight = 1.0
+        if layer_weights is not None and int(group_pos) < len(layer_weights):
+            layer_weight = max(float(layer_weights[int(group_pos)]), 1e-12)
+        for domain, domain_profile in stream_profile.items():
+            if not isinstance(domain_profile, dict):
+                continue
+            value = domain_profile.get(field)
+            if value is None:
+                continue
+            key = str(domain)
+            by_domain.setdefault(key, []).append(value.detach().cpu().to(torch.float32))
+            by_domain_weights.setdefault(key, []).append(layer_weight)
+    merged_by_domain: dict[str, Any] = {}
+    for domain, rows in by_domain.items():
+        if not rows:
+            continue
+        stacked = torch.stack(rows, dim=0)
+        weights = by_domain_weights.get(domain) or []
+        if weights and len(weights) == len(rows):
+            weight_tensor = torch.tensor(weights, dtype=torch.float32)
+            weight_tensor = weight_tensor / weight_tensor.sum().clamp_min(1e-12)
+            view_shape = (len(weights),) + (1,) * (stacked.dim() - 1)
+            merged = (stacked * weight_tensor.view(view_shape)).sum(dim=0)
+        else:
+            merged = stacked.mean(dim=0)
+        if clamp_min is not None:
+            merged = merged.clamp_min(float(clamp_min))
+        merged_by_domain[str(domain)] = merged
+    return merged_by_domain or None
 
 
 def _fit_projected_linear_from_donor_activations(
@@ -7552,15 +7716,20 @@ def _resize_linear_activation_rows(
         return values.contiguous()
     attention = _linear_activation_attention_partition(suffix, side, donor_config, target_config)
     if attention is not None:
-        source_heads, target_heads, stream = attention
+        source_heads, target_heads, stream, dim_stream = attention
         profile = _attention_head_profile_for_stream(
             torch,
             activation_profile,
             donor_layer_group or [donor_layer_idx],
             stream,
+            dim_stream,
             layer_group_weights=layer_group_weights,
         )
         head_weights, head_features, head_key = _axis_fold_profile(profile)
+        head_domain_weights, head_domain_features = _axis_fold_domain_profile(profile)
+        head_dim_weights, head_dim_features, head_dim_key = _axis_head_dim_fold_profile(profile)
+        head_dim_domain_weights, head_dim_domain_features = _axis_head_dim_domain_fold_profile(profile)
+        head_dim_has_profile = head_dim_weights is not None or head_dim_features is not None
         return _resize_head_partitioned_axis(
             torch,
             values,
@@ -7574,11 +7743,20 @@ def _resize_linear_activation_rows(
             transport_support=transport_support,
             head_weights=head_weights,
             head_features=head_features,
+            head_domain_weights=head_domain_weights,
+            head_domain_features=head_domain_features,
             head_assignment_mode=activation_fold_assignment,
+            head_dim_weights=head_dim_weights,
+            head_dim_features=head_dim_features,
+            head_dim_domain_weights=head_dim_domain_weights,
+            head_dim_domain_features=head_dim_domain_features,
+            head_dim_fold_mode="transport" if head_dim_has_profile else None,
+            head_dim_assignment_mode=activation_fold_assignment,
             fold_stat_repair=fold_stat_repair,
             assignment_cache=assignment_cache,
             head_assignment_key=head_key,
-            head_dim_assignment_key=("linear-fit", "attention", stream, "head_dim", tuple(int(i) for i in donor_layer_group or [donor_layer_idx])),
+            head_dim_assignment_key=head_dim_key
+            or ("linear-fit", "attention", dim_stream, "head_dim", tuple(int(i) for i in donor_layer_group or [donor_layer_idx])),
         )
     row_axis_weights = _linear_activation_row_axis_weights_for_suffix(
         torch,
@@ -7626,15 +7804,15 @@ def _linear_activation_attention_partition(suffix: str, side: str, donor_config,
     if q_heads_source is None or q_heads_target is None:
         return None
     if side == "output" and (marker.endswith(".q_proj.weight") or marker.endswith(".q_proj.bias")):
-        return q_heads_source, q_heads_target, "q"
+        return q_heads_source, q_heads_target, "q", "qk"
     if side == "output" and (marker.endswith(".k_proj.weight") or marker.endswith(".k_proj.bias")):
-        return None if kv_heads_source is None or kv_heads_target is None else (kv_heads_source, kv_heads_target, "kv")
+        return None if kv_heads_source is None or kv_heads_target is None else (kv_heads_source, kv_heads_target, "kv", "qk")
     if side == "output" and (marker.endswith(".v_proj.weight") or marker.endswith(".v_proj.bias")):
-        return None if kv_heads_source is None or kv_heads_target is None else (kv_heads_source, kv_heads_target, "kv")
+        return None if kv_heads_source is None or kv_heads_target is None else (kv_heads_source, kv_heads_target, "kv", "vo")
     if side == "input" and (
         marker.endswith(".o_proj.weight") or marker.endswith(".out_proj.weight") or marker.endswith(".attn.c_proj.weight")
     ):
-        return q_heads_source, q_heads_target, "q"
+        return q_heads_source, q_heads_target, "q", "vo"
     return None
 
 
@@ -7747,9 +7925,13 @@ def _attention_head_profile_for_stream(
     activation_profile,
     layer_group: Sequence[int],
     stream: str,
+    dim_stream: str | None = None,
     layer_group_weights: Sequence[float] | None = None,
 ):
     head_profiles = (activation_profile or {}).get("attention_head_profiles") or {}
+    head_domain_profiles = (activation_profile or {}).get("attention_head_domain_profiles") or {}
+    head_dim_profiles = (activation_profile or {}).get("attention_head_dim_profiles") or {}
+    head_dim_domain_profiles = (activation_profile or {}).get("attention_head_dim_domain_profiles") or {}
     scores = _aggregate_layer_attention_profile(
         torch,
         head_profiles,
@@ -7767,13 +7949,79 @@ def _attention_head_profile_for_stream(
         "features",
         layer_weights=layer_group_weights,
     )
+    domain_scores = _aggregate_layer_attention_domain_profile(
+        torch,
+        head_domain_profiles,
+        layer_group,
+        stream,
+        "scores",
+        clamp_min=1e-12,
+        layer_weights=layer_group_weights,
+    )
+    domain_features = _aggregate_layer_attention_domain_profile(
+        torch,
+        head_domain_profiles,
+        layer_group,
+        stream,
+        "features",
+        layer_weights=layer_group_weights,
+    )
     if scores is None:
         return None
-    return {
+    result = {
         "weights": scores,
         "features": features,
         "assignment_key": ("linear-fit-attention-heads", stream, tuple(int(item) for item in layer_group)),
+        "domain_weights": domain_scores,
+        "domain_features": domain_features,
     }
+    if dim_stream is not None:
+        head_dim_scores = _aggregate_layer_attention_profile(
+            torch,
+            head_dim_profiles,
+            layer_group,
+            dim_stream,
+            "scores",
+            clamp_min=1e-12,
+            layer_weights=layer_group_weights,
+        )
+        head_dim_features = _aggregate_layer_attention_profile(
+            torch,
+            head_dim_profiles,
+            layer_group,
+            dim_stream,
+            "features",
+            layer_weights=layer_group_weights,
+        )
+        result.update(
+            {
+                "head_dim_weights": head_dim_scores,
+                "head_dim_features": head_dim_features,
+                "head_dim_assignment_key": (
+                    "linear-fit-attention-head-dim",
+                    dim_stream,
+                    tuple(int(item) for item in layer_group),
+                ),
+                "head_dim_domain_weights": _aggregate_layer_attention_domain_profile(
+                    torch,
+                    head_dim_domain_profiles,
+                    layer_group,
+                    dim_stream,
+                    "scores",
+                    clamp_min=1e-12,
+                    layer_weights=layer_group_weights,
+                ),
+                "head_dim_domain_features": _aggregate_layer_attention_domain_profile(
+                    torch,
+                    head_dim_domain_profiles,
+                    layer_group,
+                    dim_stream,
+                    "features",
+                    layer_weights=layer_group_weights,
+                ),
+            }
+        )
+    return result
 
 
 def _activation_fit_suffix_enabled(suffix: str, activation_fit_target: str) -> bool:

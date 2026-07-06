@@ -2751,6 +2751,64 @@ def test_attention_axis_weights_share_q_and_o_head_profiles() -> None:
     assert q_weights[0]["head_dim_assignment_key"] != o_weights[1]["head_dim_assignment_key"]
 
 
+def test_attention_axis_weights_carry_domain_profiles() -> None:
+    torch = pytest.importorskip("torch")
+    q_scores = torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=torch.float32)
+    q_features = torch.eye(4, dtype=torch.float32)
+    dim_scores = torch.tensor([2.0, 4.0], dtype=torch.float32)
+    dim_features = torch.eye(2, dtype=torch.float32)
+    profile = {
+        "attention_head_profiles": {0: {"q": {"scores": q_scores, "features": q_features}}},
+        "attention_head_domain_profiles": {
+            0: {
+                "q": {
+                    "code": {
+                        "scores": torch.tensor([10.0, 9.0, 0.0, 0.0], dtype=torch.float32),
+                        "features": torch.ones((4, 2), dtype=torch.float32),
+                    },
+                    "math": {
+                        "scores": torch.tensor([0.0, 0.0, 5.0, 4.0], dtype=torch.float32),
+                        "features": torch.ones((4, 2), dtype=torch.float32) * 2.0,
+                    },
+                }
+            }
+        },
+        "attention_head_dim_profiles": {0: {"qk": {"scores": dim_scores, "features": dim_features}}},
+        "attention_head_dim_domain_profiles": {
+            0: {
+                "qk": {
+                    "code": {
+                        "scores": torch.tensor([7.0, 0.0], dtype=torch.float32),
+                        "features": torch.ones((2, 2), dtype=torch.float32),
+                    },
+                    "math": {
+                        "scores": torch.tensor([0.0, 8.0], dtype=torch.float32),
+                        "features": torch.ones((2, 2), dtype=torch.float32) * 3.0,
+                    },
+                }
+            }
+        },
+    }
+
+    q_weights = _attention_axis_weights_for_tensor(
+        torch,
+        torch.zeros((8, 1), dtype=torch.float32),
+        "self_attn.q_proj.weight",
+        donor_layer_idx=0,
+        donor_layer_group=[0],
+        activation_profile=profile,
+    )
+
+    assert q_weights is not None
+    axis_profile = q_weights[0]
+    assert set(axis_profile["domain_weights"]) == {"code", "math"}
+    assert axis_profile["domain_weights"]["code"].tolist() == pytest.approx([10.0, 9.0, 0.0, 0.0])
+    assert axis_profile["domain_features"]["math"].shape == (4, 2)
+    assert set(axis_profile["head_dim_domain_weights"]) == {"code", "math"}
+    assert axis_profile["head_dim_domain_weights"]["math"].tolist() == pytest.approx([0.0, 8.0])
+    assert axis_profile["head_dim_domain_features"]["code"].shape == (2, 2)
+
+
 def test_attention_qk_and_vo_head_dim_maps_are_cached_separately() -> None:
     torch = pytest.importorskip("torch")
     head_scores = torch.tensor([1.0, 2.0], dtype=torch.float32)
@@ -2872,6 +2930,92 @@ def test_attention_head_dim_transport_uses_activation_features() -> None:
 
     assert resized is not None
     assert resized.flatten().tolist() == pytest.approx([1.0, 2.0], abs=1e-5)
+
+
+def test_attention_head_transport_can_use_domain_quantile_medoid_support() -> None:
+    torch = pytest.importorskip("torch")
+    source = torch.arange(8, dtype=torch.float32).reshape(8, 1)
+    donor_config = _Obj(num_attention_heads=4, num_key_value_heads=4)
+    target_config = _Obj(num_attention_heads=2, num_key_value_heads=2)
+    assignment_cache = {}
+
+    resized = _resize_attention_tensor_to_shape(
+        torch,
+        source,
+        (4, 1),
+        "self_attn.q_proj.weight",
+        donor_config,
+        target_config,
+        attention_axis_weights={
+            0: {
+                "weights": torch.ones(4, dtype=torch.float32),
+                "features": torch.eye(4, dtype=torch.float32),
+                "domain_weights": {
+                    "code": torch.tensor([8.0, 1.0, 0.0, 0.0], dtype=torch.float32),
+                    "math": torch.tensor([0.0, 0.0, 1.0, 9.0], dtype=torch.float32),
+                },
+                "domain_features": {
+                    "code": torch.eye(4, dtype=torch.float32),
+                    "math": torch.eye(4, dtype=torch.float32),
+                },
+            }
+        },
+        attention_head_fold_mode="transport",
+        activation_fold_assignment="similarity",
+        transport_backend="sparse",
+        transport_support="domain-quantile-medoid",
+        assignment_cache=assignment_cache,
+    )
+
+    assert resized is not None
+    report = _axis_assignment_cache_report(assignment_cache)
+    assert report
+    assert any(item["domain_support_used"] is True for item in report)
+    assert any(item["domain_support_count"] == 2 for item in report)
+
+
+def test_attention_head_dim_transport_can_use_domain_quantile_medoid_support() -> None:
+    torch = pytest.importorskip("torch")
+    source = torch.arange(4, dtype=torch.float32).reshape(4, 1)
+    donor_config = _Obj(num_attention_heads=1, num_key_value_heads=1)
+    target_config = _Obj(num_attention_heads=1, num_key_value_heads=1)
+    assignment_cache = {}
+
+    resized = _resize_attention_tensor_to_shape(
+        torch,
+        source,
+        (2, 1),
+        "self_attn.q_proj.weight",
+        donor_config,
+        target_config,
+        attention_axis_weights={
+            0: {
+                "weights": torch.ones(1, dtype=torch.float32),
+                "features": torch.ones((1, 1), dtype=torch.float32),
+                "head_dim_weights": torch.ones(4, dtype=torch.float32),
+                "head_dim_features": torch.eye(4, dtype=torch.float32),
+                "head_dim_domain_weights": {
+                    "code": torch.tensor([4.0, 3.0, 0.0, 0.0], dtype=torch.float32),
+                    "math": torch.tensor([0.0, 0.0, 2.0, 5.0], dtype=torch.float32),
+                },
+                "head_dim_domain_features": {
+                    "code": torch.eye(4, dtype=torch.float32),
+                    "math": torch.eye(4, dtype=torch.float32),
+                },
+            }
+        },
+        attention_head_dim_transport="qk-vo",
+        activation_fold_assignment="similarity",
+        transport_backend="sparse",
+        transport_support="domain-quantile-medoid",
+        assignment_cache=assignment_cache,
+    )
+
+    assert resized is not None
+    report = _axis_assignment_cache_report(assignment_cache)
+    assert report
+    assert any(item["domain_support_used"] is True for item in report)
+    assert any(item["domain_support_count"] == 2 for item in report)
 
 
 def test_fit_linear_weight_from_activation_rows_recovers_mapping() -> None:
@@ -4550,6 +4694,71 @@ def test_linear_activation_attention_rows_use_weighted_head_group_profile() -> N
 
     assert folded is not None
     assert folded.flatten().tolist() == pytest.approx([10.0 / 11.0, 1100.0 / 10.0])
+
+
+def test_linear_activation_attention_rows_carry_domain_support() -> None:
+    torch = pytest.importorskip("torch")
+    rows = torch.arange(8, dtype=torch.float32).reshape(1, 8)
+    assignment_cache = {}
+    profile = {
+        "attention_head_profiles": {
+            0: {"q": {"scores": torch.ones(4, dtype=torch.float32), "features": torch.eye(4, dtype=torch.float32)}}
+        },
+        "attention_head_domain_profiles": {
+            0: {
+                "q": {
+                    "code": {
+                        "scores": torch.tensor([6.0, 5.0, 0.0, 0.0], dtype=torch.float32),
+                        "features": torch.eye(4, dtype=torch.float32),
+                    },
+                    "math": {
+                        "scores": torch.tensor([0.0, 0.0, 4.0, 7.0], dtype=torch.float32),
+                        "features": torch.eye(4, dtype=torch.float32),
+                    },
+                }
+            }
+        },
+        "attention_head_dim_profiles": {
+            0: {"qk": {"scores": torch.ones(2, dtype=torch.float32), "features": torch.eye(2, dtype=torch.float32)}}
+        },
+        "attention_head_dim_domain_profiles": {
+            0: {
+                "qk": {
+                    "code": {
+                        "scores": torch.tensor([3.0, 0.0], dtype=torch.float32),
+                        "features": torch.eye(2, dtype=torch.float32),
+                    },
+                    "math": {
+                        "scores": torch.tensor([0.0, 4.0], dtype=torch.float32),
+                        "features": torch.eye(2, dtype=torch.float32),
+                    },
+                }
+            }
+        },
+    }
+
+    folded = _resize_linear_activation_rows(
+        torch,
+        rows,
+        2,
+        "self_attn.q_proj.weight",
+        side="output",
+        donor_config=_Obj(num_attention_heads=4, num_key_value_heads=4),
+        target_config=_Obj(num_attention_heads=2, num_key_value_heads=2),
+        donor_layer_idx=0,
+        donor_layer_group=[0],
+        activation_profile=profile,
+        fold_mode="mean",
+        transport_backend="sparse",
+        transport_support="domain-quantile-medoid",
+        assignment_cache=assignment_cache,
+    )
+
+    assert folded is not None
+    report = _axis_assignment_cache_report(assignment_cache)
+    assert report
+    assert any(item["domain_support_used"] is True for item in report)
+    assert any(item["domain_support_count"] == 2 for item in report)
 
 
 def test_activation_similarity_assignment_groups_activation_signatures() -> None:
