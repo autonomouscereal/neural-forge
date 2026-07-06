@@ -692,6 +692,7 @@ def donor_projected_init(
                     donor_layer_group,
                     activation_profile,
                     layer_group_weights=layer_group_weights,
+                    donor_config=donor.config,
                 )
             projected = _resize_attention_tensor_to_shape(
                 torch,
@@ -4294,6 +4295,30 @@ def _resize_attention_tensor_to_shape(
 ):
     if attention_head_dim_transport not in {"none", "qk-vo"}:
         raise ValueError("attention_head_dim_transport must be none or qk-vo.")
+    fused = _resize_fused_qkv_attention_tensor_to_shape(
+        torch,
+        source,
+        target_shape,
+        suffix,
+        donor_config,
+        target_config,
+        fold_mode=fold_mode,
+        axis_bases=axis_bases,
+        hidden_basis=hidden_basis,
+        attention_axis_weights=attention_axis_weights,
+        attention_head_fold_mode=attention_head_fold_mode,
+        attention_head_dim_transport=attention_head_dim_transport,
+        axis_weights=axis_weights,
+        axis_reductions=axis_reductions,
+        activation_fold_assignment=activation_fold_assignment,
+        fold_stat_repair=fold_stat_repair,
+        transport_backend=transport_backend,
+        transport_support=transport_support,
+        assignment_cache=assignment_cache,
+        semantic_prefix=semantic_prefix,
+    )
+    if fused is not None:
+        return fused
     specs = _attention_partition_specs(suffix, donor_config, target_config)
     if not specs or source.dim() != len(target_shape):
         return None
@@ -4381,6 +4406,196 @@ def _resize_attention_tensor_to_shape(
                 assignment_cache_key=semantic_key,
             )
     return resized.contiguous()
+
+
+def _resize_fused_qkv_attention_tensor_to_shape(
+    torch,
+    source,
+    target_shape: tuple[int, ...],
+    suffix: str,
+    donor_config,
+    target_config,
+    fold_mode: str = "mean",
+    axis_bases: dict[int, Any] | None = None,
+    hidden_basis=None,
+    attention_axis_weights: dict[int, Any] | None = None,
+    attention_head_fold_mode: str | None = None,
+    attention_head_dim_transport: str = "none",
+    axis_weights: dict[int, Any] | None = None,
+    axis_reductions: dict[int, str] | None = None,
+    activation_fold_assignment: str = "balanced",
+    fold_stat_repair: str = "none",
+    transport_backend: str = "sparse",
+    transport_support: str = "centroid",
+    assignment_cache: dict[Any, dict[str, Any]] | None = None,
+    semantic_prefix=None,
+):
+    axis = _fused_qkv_projection_axis(suffix)
+    if axis is None or source.dim() != len(target_shape):
+        return None
+    if axis >= source.dim():
+        return None
+    source_dim = int(source.shape[axis])
+    target_dim = int(target_shape[axis])
+    source_widths = _qkv_projection_widths_for_dim(donor_config, source_dim)
+    target_widths = _qkv_projection_widths_for_dim(target_config, target_dim)
+    if source_widths is None or target_widths is None:
+        return None
+    resized = source.to(torch.float32)
+    if source_dim != target_dim:
+        starts = [0, int(source_widths[0]), int(source_widths[0] + source_widths[1])]
+        chunks = [
+            resized.narrow(axis, int(start), int(width)).contiguous()
+            for start, width in zip(starts, source_widths)
+        ]
+        profile_by_part = {}
+        if isinstance(attention_axis_weights, dict):
+            profile = attention_axis_weights.get(axis)
+            if isinstance(profile, dict):
+                profile_by_part = profile.get("fused_qkv_profiles") or {}
+        q_heads_source = _config_int(donor_config, "num_attention_heads", "n_head", "num_heads")
+        q_heads_target = _config_int(target_config, "num_attention_heads", "n_head", "num_heads")
+        kv_heads_source = _config_int(donor_config, "num_key_value_heads", default=q_heads_source)
+        kv_heads_target = _config_int(target_config, "num_key_value_heads", default=q_heads_target)
+        stream_specs = (
+            ("q", "q", "qk", q_heads_source, q_heads_target),
+            ("k", "kv", "qk", kv_heads_source, kv_heads_target),
+            ("v", "kv", "vo", kv_heads_source, kv_heads_target),
+        )
+        resized_chunks = []
+        for part_idx, (label, stream, dim_stream, source_heads, target_heads) in enumerate(stream_specs):
+            chunk = chunks[int(part_idx)]
+            target_chunk_dim = int(target_widths[int(part_idx)])
+            profile = profile_by_part.get(label) if isinstance(profile_by_part, dict) else None
+            head_weights, head_features, head_semantic_key = _axis_fold_profile(profile)
+            head_domain_weights, head_domain_features = _axis_fold_domain_profile(profile)
+            head_dim_weights, head_dim_features, head_dim_semantic_key = (None, None, None)
+            head_dim_domain_weights, head_dim_domain_features = (None, None)
+            if attention_head_dim_transport == "qk-vo":
+                head_dim_weights, head_dim_features, head_dim_semantic_key = _axis_head_dim_fold_profile(profile)
+                head_dim_domain_weights, head_dim_domain_features = _axis_head_dim_domain_fold_profile(profile)
+            head_dim_has_profile = head_dim_weights is not None or head_dim_features is not None
+            coupled = None
+            if source_heads is not None and target_heads is not None:
+                coupled = _resize_head_partitioned_axis(
+                    torch,
+                    chunk,
+                    axis,
+                    target_chunk_dim,
+                    int(source_heads),
+                    int(target_heads),
+                    fold_mode=fold_mode,
+                    reduction="mean" if axis_reductions is None else axis_reductions.get(axis, "mean"),
+                    transport_backend=transport_backend,
+                    transport_support=transport_support,
+                    head_weights=head_weights,
+                    head_features=head_features,
+                    head_domain_weights=head_domain_weights,
+                    head_domain_features=head_domain_features,
+                    head_fold_mode=attention_head_fold_mode,
+                    head_assignment_mode=activation_fold_assignment,
+                    head_dim_weights=head_dim_weights,
+                    head_dim_features=head_dim_features,
+                    head_dim_domain_weights=head_dim_domain_weights,
+                    head_dim_domain_features=head_dim_domain_features,
+                    head_dim_fold_mode="transport"
+                    if attention_head_dim_transport == "qk-vo" and head_dim_has_profile
+                    else None,
+                    head_dim_assignment_mode=activation_fold_assignment,
+                    fold_stat_repair=fold_stat_repair,
+                    assignment_cache=assignment_cache,
+                    head_assignment_key=head_semantic_key
+                    or _attention_axis_assignment_key(suffix, semantic_prefix, f"{label}-heads"),
+                    head_dim_assignment_key=head_dim_semantic_key
+                    or _attention_axis_assignment_key(suffix, semantic_prefix, f"{label}-{dim_stream}-head_dim"),
+                )
+            if coupled is None:
+                coupled = _resize_tensor_axis_mean_fold(
+                    torch,
+                    chunk,
+                    axis,
+                    target_chunk_dim,
+                    fold_mode=fold_mode,
+                    reduction="mean" if axis_reductions is None else axis_reductions.get(axis, "mean"),
+                    assignment_mode=activation_fold_assignment,
+                    fold_stat_repair=fold_stat_repair,
+                    transport_backend=transport_backend,
+                    transport_support=transport_support,
+                    assignment_cache=assignment_cache,
+                    assignment_cache_key=_attention_axis_assignment_key(
+                        suffix,
+                        semantic_prefix,
+                        f"{label}-fused-fallback",
+                    ),
+                )
+            resized_chunks.append(coupled)
+        resized = torch.cat(resized_chunks, dim=axis).contiguous()
+    for other_axis, target_other_dim in enumerate(target_shape):
+        if other_axis == axis or int(resized.shape[other_axis]) == int(target_other_dim):
+            continue
+        basis = None if axis_bases is None else axis_bases.get(other_axis)
+        basis = _hidden_basis_for_axis(torch, basis, int(resized.shape[other_axis]), int(target_other_dim))
+        if basis is None:
+            basis = _hidden_basis_for_axis(torch, hidden_basis, int(resized.shape[other_axis]), int(target_other_dim))
+        if basis is not None:
+            resized = _resize_tensor_axis_hidden_basis(torch, resized, other_axis, basis)
+            continue
+        profile = None if axis_weights is None else axis_weights.get(other_axis)
+        weights, features, semantic_key = _axis_fold_profile(profile)
+        domain_weights, domain_features = _axis_fold_domain_profile(profile)
+        resized = _resize_tensor_axis_mean_fold(
+            torch,
+            resized,
+            other_axis,
+            int(target_other_dim),
+            fold_mode=fold_mode,
+            weights=weights,
+            features=features,
+            domain_weights=domain_weights,
+            domain_features=domain_features,
+            reduction="mean" if axis_reductions is None else axis_reductions.get(other_axis, "mean"),
+            assignment_mode=activation_fold_assignment,
+            fold_stat_repair=fold_stat_repair,
+            transport_backend=transport_backend,
+            transport_support=transport_support,
+            assignment_cache=assignment_cache,
+            assignment_cache_key=semantic_key,
+        )
+    return resized.contiguous()
+
+
+def _fused_qkv_projection_axis(suffix: str) -> int | None:
+    marker = f".{str(suffix).lower()}"
+    if marker.endswith((".attn.c_attn.weight", ".self_attn.c_attn.weight", ".c_attn.weight")):
+        return 1
+    if marker.endswith(
+        (
+            ".attn.c_attn.bias",
+            ".self_attn.c_attn.bias",
+            ".c_attn.bias",
+            ".query_key_value.weight",
+            ".query_key_value.bias",
+        )
+    ):
+        return 0
+    return None
+
+
+def _qkv_projection_widths_for_dim(config, total_dim: int) -> tuple[int, int, int] | None:
+    total_dim = int(total_dim)
+    if total_dim <= 0:
+        return None
+    q_heads = _config_int(config, "num_attention_heads", "n_head", "num_heads")
+    kv_heads = _config_int(config, "num_key_value_heads", default=q_heads)
+    if q_heads is not None and kv_heads is not None and q_heads > 0 and kv_heads > 0:
+        head_groups = int(q_heads) + 2 * int(kv_heads)
+        if head_groups > 0 and total_dim % head_groups == 0:
+            head_dim = total_dim // head_groups
+            return int(q_heads) * head_dim, int(kv_heads) * head_dim, int(kv_heads) * head_dim
+    if total_dim % 3 == 0:
+        width = total_dim // 3
+        return width, width, width
+    return None
 
 
 def _attention_partition_specs(suffix: str, donor_config, target_config) -> list[tuple[int, int, int]]:
@@ -6860,9 +7075,39 @@ def _attention_axis_weights_for_tensor(
     donor_layer_group: Sequence[int] | None,
     activation_profile,
     layer_group_weights: Sequence[float] | None = None,
+    donor_config=None,
 ):
     if activation_profile is None:
         return None
+    fused_axis = _fused_qkv_projection_axis(suffix)
+    if fused_axis is not None:
+        if fused_axis >= len(donor_tensor.shape):
+            return None
+        source_widths = _qkv_projection_widths_for_dim(donor_config, int(donor_tensor.shape[fused_axis]))
+        if source_widths is None:
+            return None
+        layer_group = list(donor_layer_group or [donor_layer_idx])
+        layer_group_key = tuple(int(item) for item in layer_group)
+        profiles = {}
+        for label, stream, dim_stream in (("q", "q", "qk"), ("k", "kv", "qk"), ("v", "kv", "vo")):
+            profile = _attention_head_profile_for_stream(
+                torch,
+                activation_profile,
+                layer_group,
+                stream,
+                dim_stream,
+                layer_group_weights=layer_group_weights,
+            )
+            if profile is not None:
+                profiles[label] = profile
+        if not profiles:
+            return None
+        return {
+            fused_axis: {
+                "fused_qkv_profiles": profiles,
+                "assignment_key": ("attention-fused-qkv", layer_group_key),
+            }
+        }
     stream_info = _attention_streams_and_partition_axis(suffix)
     if stream_info is None:
         return None
@@ -7714,6 +7959,27 @@ def _resize_linear_activation_rows(
         return None
     if int(values.shape[1]) == int(target_dim):
         return values.contiguous()
+    fused = _resize_fused_qkv_activation_rows(
+        torch,
+        values,
+        target_dim,
+        suffix,
+        side,
+        donor_config,
+        target_config,
+        donor_layer_idx,
+        donor_layer_group,
+        activation_profile,
+        fold_mode,
+        layer_group_weights=layer_group_weights,
+        activation_fold_assignment=activation_fold_assignment,
+        fold_stat_repair=fold_stat_repair,
+        transport_backend=transport_backend,
+        transport_support=transport_support,
+        assignment_cache=assignment_cache,
+    )
+    if fused is not None:
+        return fused
     attention = _linear_activation_attention_partition(suffix, side, donor_config, target_config)
     if attention is not None:
         source_heads, target_heads, stream, dim_stream = attention
@@ -7793,6 +8059,113 @@ def _resize_linear_activation_rows(
         transport_support=transport_support,
         assignment_cache=assignment_cache,
     )
+
+
+def _resize_fused_qkv_activation_rows(
+    torch,
+    values,
+    target_dim: int,
+    suffix: str,
+    side: str,
+    donor_config,
+    target_config,
+    donor_layer_idx: int,
+    donor_layer_group: Sequence[int] | None,
+    activation_profile,
+    fold_mode: str,
+    layer_group_weights: Sequence[float] | None = None,
+    activation_fold_assignment: str = "balanced",
+    fold_stat_repair: str = "none",
+    transport_backend: str = "sparse",
+    transport_support: str = "centroid",
+    assignment_cache: dict[Any, dict[str, Any]] | None = None,
+):
+    if side != "output" or _fused_qkv_projection_axis(suffix) is None:
+        return None
+    source_widths = _qkv_projection_widths_for_dim(donor_config, int(values.shape[1]))
+    target_widths = _qkv_projection_widths_for_dim(target_config, int(target_dim))
+    if source_widths is None or target_widths is None:
+        return None
+    starts = [0, int(source_widths[0]), int(source_widths[0] + source_widths[1])]
+    chunks = [
+        values.narrow(1, int(start), int(width)).contiguous()
+        for start, width in zip(starts, source_widths)
+    ]
+    q_heads_source = _config_int(donor_config, "num_attention_heads", "n_head", "num_heads")
+    q_heads_target = _config_int(target_config, "num_attention_heads", "n_head", "num_heads")
+    kv_heads_source = _config_int(donor_config, "num_key_value_heads", default=q_heads_source)
+    kv_heads_target = _config_int(target_config, "num_key_value_heads", default=q_heads_target)
+    layer_group = donor_layer_group or [donor_layer_idx]
+    stream_specs = (
+        ("q", "q", "qk", q_heads_source, q_heads_target),
+        ("k", "kv", "qk", kv_heads_source, kv_heads_target),
+        ("v", "kv", "vo", kv_heads_source, kv_heads_target),
+    )
+    resized_chunks = []
+    for part_idx, (label, stream, dim_stream, source_heads, target_heads) in enumerate(stream_specs):
+        chunk = chunks[int(part_idx)]
+        target_chunk_dim = int(target_widths[int(part_idx)])
+        profile = _attention_head_profile_for_stream(
+            torch,
+            activation_profile,
+            layer_group,
+            stream,
+            dim_stream,
+            layer_group_weights=layer_group_weights,
+        )
+        head_weights, head_features, head_key = _axis_fold_profile(profile)
+        head_domain_weights, head_domain_features = _axis_fold_domain_profile(profile)
+        head_dim_weights, head_dim_features, head_dim_key = _axis_head_dim_fold_profile(profile)
+        head_dim_domain_weights, head_dim_domain_features = _axis_head_dim_domain_fold_profile(profile)
+        head_dim_has_profile = head_dim_weights is not None or head_dim_features is not None
+        coupled = None
+        if source_heads is not None and target_heads is not None:
+            coupled = _resize_head_partitioned_axis(
+                torch,
+                chunk,
+                axis=1,
+                target_dim=target_chunk_dim,
+                source_heads=int(source_heads),
+                target_heads=int(target_heads),
+                fold_mode="transport" if head_features is not None else fold_mode,
+                reduction="mean",
+                transport_backend=transport_backend,
+                transport_support=transport_support,
+                head_weights=head_weights,
+                head_features=head_features,
+                head_domain_weights=head_domain_weights,
+                head_domain_features=head_domain_features,
+                head_assignment_mode=activation_fold_assignment,
+                head_dim_weights=head_dim_weights,
+                head_dim_features=head_dim_features,
+                head_dim_domain_weights=head_dim_domain_weights,
+                head_dim_domain_features=head_dim_domain_features,
+                head_dim_fold_mode="transport" if head_dim_has_profile else None,
+                head_dim_assignment_mode=activation_fold_assignment,
+                fold_stat_repair=fold_stat_repair,
+                assignment_cache=assignment_cache,
+                head_assignment_key=head_key
+                or ("linear-fit", "fused-qkv", label, "heads", tuple(int(i) for i in layer_group)),
+                head_dim_assignment_key=head_dim_key
+                or ("linear-fit", "fused-qkv", label, dim_stream, "head_dim", tuple(int(i) for i in layer_group)),
+            )
+        if coupled is None:
+            coupled = _resize_tensor_axis_mean_fold(
+                torch,
+                chunk,
+                axis=1,
+                target_dim=target_chunk_dim,
+                fold_mode=fold_mode,
+                reduction="mean",
+                assignment_mode=activation_fold_assignment,
+                fold_stat_repair=fold_stat_repair,
+                transport_backend=transport_backend,
+                transport_support=transport_support,
+                assignment_cache=assignment_cache,
+                assignment_cache_key=("linear-fit", "fused-qkv", label, "fallback", tuple(int(i) for i in layer_group)),
+            )
+        resized_chunks.append(coupled)
+    return torch.cat(resized_chunks, dim=1).contiguous()
 
 
 def _linear_activation_attention_partition(suffix: str, side: str, donor_config, target_config):

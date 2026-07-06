@@ -3018,6 +3018,89 @@ def test_attention_head_dim_transport_can_use_domain_quantile_medoid_support() -
     assert any(item["domain_support_count"] == 2 for item in report)
 
 
+def test_fused_c_attn_transport_resizes_qkv_chunks_separately() -> None:
+    torch = pytest.importorskip("torch")
+    q = torch.tensor([0.0, 1.0, 2.0, 3.0], dtype=torch.float32)
+    k = torch.tensor([100.0, 101.0, 102.0, 103.0], dtype=torch.float32)
+    v = torch.tensor([200.0, 201.0, 202.0, 203.0], dtype=torch.float32)
+    source = torch.cat([q, k, v], dim=0).reshape(1, 12)
+
+    resized = _resize_attention_tensor_to_shape(
+        torch,
+        source,
+        (1, 6),
+        "attn.c_attn.weight",
+        _Obj(num_attention_heads=2, num_key_value_heads=2),
+        _Obj(num_attention_heads=1, num_key_value_heads=1),
+        fold_mode="mean",
+    )
+
+    assert resized is not None
+    torch.testing.assert_close(
+        resized,
+        torch.tensor([[1.0, 2.0, 101.0, 102.0, 201.0, 202.0]], dtype=torch.float32),
+    )
+
+
+def test_fused_query_key_value_transport_uses_gqa_widths() -> None:
+    torch = pytest.importorskip("torch")
+    q = torch.arange(8, dtype=torch.float32)
+    k = torch.arange(100, 104, dtype=torch.float32)
+    v = torch.arange(200, 204, dtype=torch.float32)
+    source = torch.cat([q, k, v], dim=0).reshape(16, 1)
+
+    resized = _resize_attention_tensor_to_shape(
+        torch,
+        source,
+        (8, 1),
+        "query_key_value.weight",
+        _Obj(num_attention_heads=4, num_key_value_heads=2),
+        _Obj(num_attention_heads=2, num_key_value_heads=1),
+        fold_mode="mean",
+    )
+
+    assert resized is not None
+    torch.testing.assert_close(
+        resized.flatten(),
+        torch.tensor([1.0, 2.0, 5.0, 6.0, 101.0, 102.0, 201.0, 202.0], dtype=torch.float32),
+    )
+
+
+def test_fused_c_attn_axis_weights_carry_qkv_profiles() -> None:
+    torch = pytest.importorskip("torch")
+    profile = {
+        "attention_head_profiles": {
+            0: {
+                "q": {"scores": torch.tensor([1.0, 2.0], dtype=torch.float32), "features": torch.eye(2)},
+                "kv": {"scores": torch.tensor([3.0, 4.0], dtype=torch.float32), "features": torch.eye(2) * 2.0},
+            }
+        },
+        "attention_head_dim_profiles": {
+            0: {
+                "qk": {"scores": torch.tensor([5.0, 6.0], dtype=torch.float32), "features": torch.eye(2)},
+                "vo": {"scores": torch.tensor([7.0, 8.0], dtype=torch.float32), "features": torch.eye(2).flip(0)},
+            }
+        },
+    }
+
+    weights = _attention_axis_weights_for_tensor(
+        torch,
+        torch.zeros((1, 12), dtype=torch.float32),
+        "attn.c_attn.weight",
+        donor_layer_idx=0,
+        donor_layer_group=[0],
+        activation_profile=profile,
+        donor_config=_Obj(num_attention_heads=2, num_key_value_heads=2),
+    )
+
+    assert weights is not None
+    fused = weights[1]["fused_qkv_profiles"]
+    assert set(fused) == {"q", "k", "v"}
+    torch.testing.assert_close(fused["q"]["weights"], torch.tensor([1.0, 2.0]))
+    torch.testing.assert_close(fused["k"]["weights"], torch.tensor([3.0, 4.0]))
+    torch.testing.assert_close(fused["v"]["head_dim_weights"], torch.tensor([7.0, 8.0]))
+
+
 def test_fit_linear_weight_from_activation_rows_recovers_mapping() -> None:
     torch = pytest.importorskip("torch")
     inputs = torch.tensor(
@@ -4759,6 +4842,34 @@ def test_linear_activation_attention_rows_carry_domain_support() -> None:
     assert report
     assert any(item["domain_support_used"] is True for item in report)
     assert any(item["domain_support_count"] == 2 for item in report)
+
+
+def test_linear_activation_rows_resize_fused_qkv_with_gqa_widths() -> None:
+    torch = pytest.importorskip("torch")
+    q = torch.arange(8, dtype=torch.float32)
+    k = torch.arange(100, 104, dtype=torch.float32)
+    v = torch.arange(200, 204, dtype=torch.float32)
+    rows = torch.cat([q, k, v], dim=0).reshape(1, 16)
+
+    folded = _resize_linear_activation_rows(
+        torch,
+        rows,
+        8,
+        "query_key_value.weight",
+        side="output",
+        donor_config=_Obj(num_attention_heads=4, num_key_value_heads=2),
+        target_config=_Obj(num_attention_heads=2, num_key_value_heads=1),
+        donor_layer_idx=0,
+        donor_layer_group=[0],
+        activation_profile={},
+        fold_mode="mean",
+    )
+
+    assert folded is not None
+    torch.testing.assert_close(
+        folded.flatten(),
+        torch.tensor([1.0, 2.0, 5.0, 6.0, 101.0, 102.0, 201.0, 202.0], dtype=torch.float32),
+    )
 
 
 def test_activation_similarity_assignment_groups_activation_signatures() -> None:
