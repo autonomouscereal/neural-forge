@@ -3276,6 +3276,9 @@ def _generation_from_cached_spec(generation: dict[str, Any], spec: dict[str, Any
         item["category"] = spec.get("category")
     if spec.get("relevance_rules") is not None:
         item["relevance_rules"] = spec.get("relevance_rules")
+    for key in ("kind", "answer", "function_name", "tests", "pattern_groups"):
+        if key in spec:
+            item[key] = spec[key]
     return item
 
 

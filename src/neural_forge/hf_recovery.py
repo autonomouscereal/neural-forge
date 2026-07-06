@@ -7407,6 +7407,9 @@ def _heldout_behavior_summary(
                 generated["category"] = prompt.get("category")
             if prompt.get("relevance_rules") is not None:
                 generated["relevance_rules"] = prompt.get("relevance_rules")
+            for key in ("kind", "answer", "function_name", "tests", "pattern_groups"):
+                if key in prompt:
+                    generated[key] = prompt[key]
             return generated
         return generated
 
