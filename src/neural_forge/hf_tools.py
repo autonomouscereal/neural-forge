@@ -3027,7 +3027,10 @@ def _merge_layer_state_dicts(torch, states: Sequence[dict[str, Any]], method: st
 def _is_residual_output_param(name: str) -> bool:
     output_markers = (
         "o_proj.",
+        "out_proj.",
         "down_proj.",
+        "c_proj.",
+        "w2.",
         "attention.dense.",
         "self_attention.dense.",
         "dense_4h_to_h.",

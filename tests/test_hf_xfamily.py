@@ -96,6 +96,7 @@ from neural_forge.hf_tools import _generation_health
 from neural_forge.hf_tools import _layer_groups_for_report
 from neural_forge.hf_tools import _layer_groups_tag
 from neural_forge.hf_tools import _linear_cka
+from neural_forge.hf_tools import _merge_layer_state_dicts
 from neural_forge.hf_tools import _normalize_generation_prompt
 from neural_forge.hf_tools import _normalize_layer_groups
 from neural_forge.hf_xfamily import _canonical_token
@@ -5846,6 +5847,29 @@ def test_layer_tensor_alias_lookup_maps_lfm_mlp_names_to_qwen_suffixes() -> None
     assert _lookup_layer_tensor_value(folded_state, "self_attn.out_proj.weight") == "attn_out"
     assert _lookup_layer_tensor_value(folded_state, "self_attn.q_layernorm.weight") == "q_norm"
     assert _lookup_layer_tensor_value(folded_state, "self_attn.k_layernorm.weight") == "k_norm"
+
+
+def test_layer_fold_sums_cross_family_residual_output_aliases() -> None:
+    torch = pytest.importorskip("torch")
+    state_a = {
+        "attn.c_proj.weight": torch.ones((2, 2), dtype=torch.float32),
+        "operator.out_proj.weight": torch.full((2, 2), 2.0, dtype=torch.float32),
+        "feed_forward.w2.weight": torch.full((2, 2), 3.0, dtype=torch.float32),
+        "mlp.c_fc.weight": torch.full((2, 2), 4.0, dtype=torch.float32),
+    }
+    state_b = {
+        "attn.c_proj.weight": torch.full((2, 2), 10.0, dtype=torch.float32),
+        "operator.out_proj.weight": torch.full((2, 2), 20.0, dtype=torch.float32),
+        "feed_forward.w2.weight": torch.full((2, 2), 30.0, dtype=torch.float32),
+        "mlp.c_fc.weight": torch.full((2, 2), 40.0, dtype=torch.float32),
+    }
+
+    folded = _merge_layer_state_dicts(torch, [state_a, state_b], method="fold")
+
+    assert folded["attn.c_proj.weight"].tolist() == [[11.0, 11.0], [11.0, 11.0]]
+    assert folded["operator.out_proj.weight"].tolist() == [[22.0, 22.0], [22.0, 22.0]]
+    assert folded["feed_forward.w2.weight"].tolist() == [[33.0, 33.0], [33.0, 33.0]]
+    assert folded["mlp.c_fc.weight"].tolist() == [[22.0, 22.0], [22.0, 22.0]]
 
 
 def test_layer_tensor_alias_lookup_maps_qwen_suffixes_to_lfm_names() -> None:
