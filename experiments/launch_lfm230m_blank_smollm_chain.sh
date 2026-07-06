@@ -7,6 +7,13 @@ GPU_UUID="${GPU_UUID:-GPU-f5a09535-fc85-a027-50f7-734b344747dd}"
 SOURCE_MODEL="${SOURCE_MODEL:-LiquidAI/LFM2.5-230M}"
 ANCHOR_MODEL="${ANCHOR_MODEL:-$RUN_ROOT/blank_smollm2_135m_seed0}"
 TAG="${TAG:-lfm230m_blank_smollm_chain_true_lrc_rank16_gpu6_20260629}"
+CALIBRATION_FILE="${CALIBRATION_FILE:-$RUN_ROOT/calibration_mix.jsonl}"
+EVAL_SUITE_FILE="${EVAL_SUITE_FILE:-$RUN_ROOT/behavior_suite.json}"
+MAX_CALIBRATION_TEXTS="${MAX_CALIBRATION_TEXTS:-384}"
+MAX_BEHAVIOR_PROBES="${MAX_BEHAVIOR_PROBES:-200}"
+MAX_GENERATION_PROMPTS="${MAX_GENERATION_PROMPTS:-100}"
+MAX_CHOICE_PROBES="${MAX_CHOICE_PROBES:-100}"
+MAX_TEXT_EVALS="${MAX_TEXT_EVALS:-96}"
 ACT_TARGET="${ACT_TARGET:-mlp-output}"
 LRC_ALPHA="${LRC_ALPHA:-0.25}"
 LRC_RANK="${LRC_RANK:-16}"
@@ -92,6 +99,10 @@ ALM_TOKEN_MAX_PAIRS="${ALM_TOKEN_MAX_PAIRS:-512}"
 ALM_TOKEN_TEACHER_CONFIDENCE_FLOOR="${ALM_TOKEN_TEACHER_CONFIDENCE_FLOOR:-0.0}"
 ALM_ANSWER_CONTRASTIVE_WEIGHT="${ALM_ANSWER_CONTRASTIVE_WEIGHT:-0.0}"
 ALM_ANSWER_CONTRASTIVE_MAX_NEGATIVES="${ALM_ANSWER_CONTRASTIVE_MAX_NEGATIVES:-4}"
+ALM_ANSWER_FIRST_TOKEN_MARGIN_WEIGHT="${ALM_ANSWER_FIRST_TOKEN_MARGIN_WEIGHT:-0.0}"
+ALM_ANSWER_FIRST_TOKEN_MARGIN="${ALM_ANSWER_FIRST_TOKEN_MARGIN:-1.0}"
+ALM_ANSWER_FIRST_TOKEN_MAX_NEGATIVES="${ALM_ANSWER_FIRST_TOKEN_MAX_NEGATIVES:-8}"
+ALM_ANSWER_FIRST_TOKEN_TOP_NEGATIVES="${ALM_ANSWER_FIRST_TOKEN_TOP_NEGATIVES:-0}"
 ALM_TEACHER_RANK_WEIGHT="${ALM_TEACHER_RANK_WEIGHT:-0.0}"
 ALM_TEACHER_RANK_TEMPERATURE="${ALM_TEACHER_RANK_TEMPERATURE:-1.0}"
 ALM_TEACHER_RANK_MAX_NEGATIVES="${ALM_TEACHER_RANK_MAX_NEGATIVES:-4}"
@@ -137,13 +148,13 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   "$ANCHOR_MODEL" \
   "$OUT" \
   --stages init,block,alm \
-  --calibration-file "$RUN_ROOT/calibration_mix.jsonl" \
-  --max-calibration-texts 384 \
-  --eval-suite "$RUN_ROOT/behavior_suite.json" \
-  --max-behavior-probes 200 \
-  --max-generation-prompts 100 \
-  --max-choice-probes 100 \
-  --max-text-evals 96 \
+  --calibration-file "$CALIBRATION_FILE" \
+  --max-calibration-texts "$MAX_CALIBRATION_TEXTS" \
+  --eval-suite "$EVAL_SUITE_FILE" \
+  --max-behavior-probes "$MAX_BEHAVIOR_PROBES" \
+  --max-generation-prompts "$MAX_GENERATION_PROMPTS" \
+  --max-choice-probes "$MAX_CHOICE_PROBES" \
+  --max-text-evals "$MAX_TEXT_EVALS" \
   --max-new-tokens 96 \
   --stage-ppl-gate-mode advisory \
   --promote-policy "$PROMOTE_POLICY" \
@@ -272,6 +283,10 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --alm-token-teacher-confidence-floor "$ALM_TOKEN_TEACHER_CONFIDENCE_FLOOR" \
   --alm-answer-contrastive-weight "$ALM_ANSWER_CONTRASTIVE_WEIGHT" \
   --alm-answer-contrastive-max-negatives "$ALM_ANSWER_CONTRASTIVE_MAX_NEGATIVES" \
+  --alm-answer-first-token-margin-weight "$ALM_ANSWER_FIRST_TOKEN_MARGIN_WEIGHT" \
+  --alm-answer-first-token-margin "$ALM_ANSWER_FIRST_TOKEN_MARGIN" \
+  --alm-answer-first-token-max-negatives "$ALM_ANSWER_FIRST_TOKEN_MAX_NEGATIVES" \
+  --alm-answer-first-token-top-negatives "$ALM_ANSWER_FIRST_TOKEN_TOP_NEGATIVES" \
   --alm-teacher-rank-weight "$ALM_TEACHER_RANK_WEIGHT" \
   --alm-teacher-rank-temperature "$ALM_TEACHER_RANK_TEMPERATURE" \
   --alm-teacher-rank-max-negatives "$ALM_TEACHER_RANK_MAX_NEGATIVES" \
