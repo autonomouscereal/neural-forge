@@ -2954,6 +2954,35 @@ def test_activation_weighted_truncate_linear_weight_rank_prefers_active_directio
     assert abs(float(weighted[0, 0]) - 0.20) < abs(float(raw[0, 0]) - 0.20)
 
 
+def test_activation_weighted_truncate_linear_weight_rank_honors_output_importance() -> None:
+    torch = pytest.importorskip("torch")
+
+    weight = torch.tensor([[0.60, 0.0], [0.0, 1.0]], dtype=torch.float32)
+    activation_rows = torch.eye(2, dtype=torch.float32).repeat(4, 1)
+
+    ordinary, ordinary_report = _activation_weighted_truncate_linear_weight_rank(
+        torch,
+        weight,
+        activation_rows,
+        rank=1,
+        ridge=1e-6,
+    )
+    important, important_report = _activation_weighted_truncate_linear_weight_rank(
+        torch,
+        weight,
+        activation_rows,
+        rank=1,
+        ridge=1e-6,
+        output_importance=torch.tensor([100.0, 1.0], dtype=torch.float32),
+    )
+
+    assert ordinary_report["output_importance_used"] is False
+    assert important_report["output_importance_used"] is True
+    assert important_report["importance_weighted_svd"] is True
+    assert abs(float(ordinary[0, 0]) - 0.60) > abs(float(important[0, 0]) - 0.60)
+    assert abs(float(ordinary[1, 1]) - 1.0) < abs(float(important[1, 1]) - 1.0)
+
+
 def test_synthesize_cross_arch_layer_tensor_fuses_qkv_for_gpt2() -> None:
     torch = pytest.importorskip("torch")
     q = torch.arange(6, dtype=torch.float32).reshape(2, 3)
@@ -3263,6 +3292,58 @@ def test_fit_projected_linear_from_donor_activations_accepts_act_svd() -> None:
     assert report["rank_truncation_method"] == "activation_weighted_svd"
     assert report["rank_mode"] == "delta"
     assert report["validation_fit_mse"] < report["validation_reference_mse"]
+
+
+def test_fit_projected_linear_from_donor_activations_act_svd_uses_importance_profile() -> None:
+    torch = pytest.importorskip("torch")
+    inputs = torch.eye(2, dtype=torch.float32).repeat(6, 1)
+    target_weight = torch.tensor([[0.60, 0.0], [0.0, 1.0]], dtype=torch.float32)
+    reference = torch.eye(2, dtype=torch.float32)
+    activation_profile = {
+        "linear_fit_rows": {
+            0: {
+                "self_attn.o_proj.weight": {
+                    "input": inputs,
+                    "output": inputs.matmul(target_weight.t()),
+                }
+            }
+        },
+        "linear_fit_importance": {
+            0: {
+                "self_attn.o_proj.weight": {
+                    "output": torch.tensor([100.0, 1.0], dtype=torch.float32),
+                }
+            }
+        },
+    }
+
+    result = _fit_projected_linear_from_donor_activations(
+        torch,
+        activation_profile,
+        "self_attn.o_proj.weight",
+        tuple(reference.shape),
+        _Obj(num_attention_heads=1, num_key_value_heads=1),
+        _Obj(num_attention_heads=1, num_key_value_heads=1),
+        donor_layer_idx=0,
+        donor_layer_group=[0],
+        ridge=1e-6,
+        rank=1,
+        rank_mode="absolute",
+        method="act-svd",
+        alpha=1.0,
+        fold_mode="mean",
+        reference_weight=reference,
+        validation_fraction=0.0,
+        fit_gate="none",
+        return_report=True,
+    )
+
+    report = result["report"]
+    assert report["accepted"] is True
+    assert report["method"] == "act-svd"
+    assert report["importance_weighted_svd"] is True
+    assert report["output_importance_used"] is True
+    assert abs(float(result["weight"][0, 0])) > abs(float(result["weight"][1, 1]))
 
 
 def test_fit_projected_linear_from_donor_activations_rejects_no_validation_gain() -> None:

@@ -6860,6 +6860,38 @@ def _fit_projected_linear_from_donor_activations(
         return reject("too_few_folded_rows", row_count=int(row_count))
     folded_input = folded_input[:row_count]
     folded_output = folded_output[:row_count]
+    importance = _linear_fit_importance_for_suffix(
+        torch,
+        activation_profile,
+        donor_layer_group or [donor_layer_idx],
+        suffix,
+    )
+    sample_importance = None
+    input_importance = None
+    output_importance = None
+    influence_matrix = None
+    if importance is not None:
+        sample_importance = _linear_fit_sample_importance(torch, importance, row_count)
+        input_importance = _resize_linear_fit_importance_vector(
+            torch,
+            importance.get("input"),
+            target_in,
+            fold_mode,
+            "input",
+        )
+        output_importance = _resize_linear_fit_importance_vector(
+            torch,
+            importance.get("output"),
+            target_out,
+            fold_mode,
+            "output",
+        )
+        influence_matrix = _resize_linear_fit_influence_matrix(
+            torch,
+            importance.get("matrix"),
+            (target_out, target_in),
+            fold_mode,
+        )
     if method == "lrc":
         if reference_weight is None:
             return reject("missing_reference_weight_for_lrc", row_count=int(row_count))
@@ -6902,11 +6934,13 @@ def _fit_projected_linear_from_donor_activations(
         train_output = folded_output[:-validation_rows]
         val_input = folded_input[-validation_rows:]
         val_output = folded_output[-validation_rows:]
+        train_sample_importance = None if sample_importance is None else sample_importance[:-validation_rows]
     else:
         train_input = folded_input
         train_output = folded_output
         val_input = None
         val_output = None
+        train_sample_importance = sample_importance
     fitted = _fit_linear_weight_from_activation_rows(torch, train_input, train_output, ridge)
     fitted = torch.nan_to_num(fitted, nan=0.0, posinf=0.0, neginf=0.0)
     if reference_weight is not None:
@@ -6922,6 +6956,10 @@ def _fit_projected_linear_from_donor_activations(
                     reference_weight=reference,
                     rank_mode="delta",
                     ridge=max(float(ridge), 1e-8),
+                    sample_importance=train_sample_importance,
+                    input_importance=input_importance,
+                    output_importance=output_importance,
+                    influence_matrix=influence_matrix,
                 )
             else:
                 fitted, rank_report = _activation_weighted_truncate_linear_weight_rank(
@@ -6931,6 +6969,10 @@ def _fit_projected_linear_from_donor_activations(
                     int(rank),
                     rank_mode="absolute",
                     ridge=max(float(ridge), 1e-8),
+                    sample_importance=train_sample_importance,
+                    input_importance=input_importance,
+                    output_importance=output_importance,
+                    influence_matrix=influence_matrix,
                 )
                 fitted = _scale_projection_to_target(torch, fitted, reference, "target-rms")
         elif rank_mode == "delta":
@@ -6948,6 +6990,10 @@ def _fit_projected_linear_from_donor_activations(
                 int(rank),
                 rank_mode="absolute",
                 ridge=max(float(ridge), 1e-8),
+                sample_importance=train_sample_importance,
+                input_importance=input_importance,
+                output_importance=output_importance,
+                influence_matrix=influence_matrix,
             )
         else:
             fitted, rank_report = _truncate_linear_weight_rank(torch, fitted, int(rank))
@@ -7017,6 +7063,120 @@ def _linear_fit_rows_for_suffix(torch, activation_profile, layer_group: Sequence
     if not input_rows or not output_rows:
         return None
     return {"input": torch.cat(input_rows, dim=0), "output": torch.cat(output_rows, dim=0)}
+
+
+def _linear_fit_importance_for_suffix(torch, activation_profile, layer_group: Sequence[int], suffix: str):
+    if activation_profile is None:
+        return None
+    importance_by_layer = activation_profile.get("linear_fit_importance") or {}
+    sample_parts = []
+    input_parts = []
+    output_parts = []
+    matrix_parts = []
+    for layer_idx in layer_group:
+        layer_values = importance_by_layer.get(int(layer_idx), {})
+        values = _linear_fit_importance_values_for_suffix(torch, layer_values, suffix)
+        if values is None:
+            continue
+        if values.get("sample") is not None:
+            sample_parts.append(values["sample"].detach().cpu().to(torch.float32).reshape(-1))
+        if values.get("input") is not None:
+            input_parts.append(values["input"].detach().cpu().to(torch.float32).reshape(-1))
+        if values.get("output") is not None:
+            output_parts.append(values["output"].detach().cpu().to(torch.float32).reshape(-1))
+        if values.get("matrix") is not None:
+            matrix_parts.append(values["matrix"].detach().cpu().to(torch.float32))
+    if not sample_parts and not input_parts and not output_parts and not matrix_parts:
+        return None
+    result = {}
+    if sample_parts:
+        result["sample"] = torch.cat(sample_parts, dim=0)
+    if input_parts:
+        result["input"] = _mean_same_rank_tensors(torch, input_parts)
+    if output_parts:
+        result["output"] = _mean_same_rank_tensors(torch, output_parts)
+    if matrix_parts:
+        result["matrix"] = _mean_same_rank_tensors(torch, matrix_parts)
+    return result
+
+
+def _linear_fit_importance_values_for_suffix(torch, layer_values: dict[str, Any], suffix: str):
+    values = _first_linear_fit_importance_values(layer_values, _linear_fit_suffix_candidates(suffix))
+    if values is None:
+        return None
+    result = {}
+    key_groups = {
+        "sample": ("sample", "sample_importance", "row_sample_importance"),
+        "input": ("input", "input_importance", "column", "column_importance"),
+        "output": ("output", "output_importance", "row", "row_importance"),
+        "matrix": ("matrix", "influence_matrix"),
+    }
+    for canonical, keys in key_groups.items():
+        for key in keys:
+            value = values.get(key)
+            if value is not None:
+                result[canonical] = torch.as_tensor(value).detach().cpu().to(torch.float32)
+                break
+    return result or None
+
+
+def _first_linear_fit_importance_values(layer_values: dict[str, Any], candidates: Sequence[str]):
+    for candidate in candidates:
+        values = layer_values.get(str(candidate))
+        if isinstance(values, dict):
+            return values
+    return None
+
+
+def _mean_same_rank_tensors(torch, tensors: Sequence[Any]):
+    cleaned = [torch.nan_to_num(item.detach().cpu().to(torch.float32), nan=0.0, posinf=0.0, neginf=0.0) for item in tensors]
+    if not cleaned:
+        return None
+    shape = tuple(cleaned[0].shape)
+    matched = [item for item in cleaned if tuple(item.shape) == shape]
+    if len(matched) != len(cleaned):
+        return matched[0]
+    return torch.stack(matched, dim=0).mean(dim=0)
+
+
+def _linear_fit_sample_importance(torch, importance: dict[str, Any], row_count: int):
+    values = importance.get("sample")
+    if values is None:
+        return None
+    vector = torch.nan_to_num(values.detach().cpu().to(torch.float32).reshape(-1), nan=0.0, posinf=0.0, neginf=0.0)
+    if int(vector.numel()) < int(row_count):
+        return None
+    return vector[: int(row_count)].contiguous()
+
+
+def _resize_linear_fit_importance_vector(torch, values, target_dim: int, fold_mode: str, label: str):
+    if values is None:
+        return None
+    vector = torch.nan_to_num(values.detach().cpu().to(torch.float32).reshape(-1), nan=0.0, posinf=0.0, neginf=0.0)
+    if int(vector.numel()) == int(target_dim):
+        return vector.contiguous()
+    if int(vector.numel()) <= 0:
+        return None
+    try:
+        return _resize_tensor_to_shape(torch, vector, (int(target_dim),), fold_mode=fold_mode).reshape(-1).contiguous()
+    except Exception:
+        return None
+
+
+def _resize_linear_fit_influence_matrix(torch, values, target_shape: tuple[int, int], fold_mode: str):
+    if values is None:
+        return None
+    matrix = torch.nan_to_num(values.detach().cpu().to(torch.float32), nan=0.0, posinf=0.0, neginf=0.0)
+    if matrix.dim() != 2:
+        return None
+    if tuple(matrix.shape) == tuple(target_shape):
+        return matrix.contiguous()
+    if tuple(matrix.t().shape) == tuple(target_shape):
+        return matrix.t().contiguous()
+    try:
+        return _resize_tensor_to_shape(torch, matrix, tuple(target_shape), fold_mode=fold_mode).contiguous()
+    except Exception:
+        return None
 
 
 def _linear_fit_row_values_for_suffix(torch, layer_rows: dict[str, Any], suffix: str):
@@ -7526,6 +7686,10 @@ def _activation_weighted_truncate_linear_weight_rank(
     reference_weight=None,
     rank_mode: str = "absolute",
     ridge: float = 1e-6,
+    sample_importance=None,
+    input_importance=None,
+    output_importance=None,
+    influence_matrix=None,
 ):
     target = torch.nan_to_num(weight.detach().cpu().to(torch.float32), nan=0.0, posinf=0.0, neginf=0.0)
     rows = torch.nan_to_num(input_rows.detach().cpu().to(torch.float32), nan=0.0, posinf=1e4, neginf=-1e4)
@@ -7544,6 +7708,25 @@ def _activation_weighted_truncate_linear_weight_rank(
     out_features, in_features = int(target.shape[0]), int(target.shape[1])
     if int(rows.shape[1]) != in_features:
         raise ValueError("input_rows feature size must match weight input features.")
+    influence = None
+    if influence_matrix is not None:
+        influence = torch.nan_to_num(
+            influence_matrix.detach().cpu().to(torch.float32),
+            nan=0.0,
+            posinf=0.0,
+            neginf=0.0,
+        )
+        if tuple(influence.shape) == (in_features, out_features):
+            influence = influence.t().contiguous()
+        elif tuple(influence.shape) != (out_features, in_features):
+            influence = None
+    if input_importance is None and influence is not None:
+        input_importance = influence.abs().sum(dim=0)
+    if output_importance is None and influence is not None:
+        output_importance = influence.abs().sum(dim=1)
+    sample_weights = _positive_importance_vector(torch, sample_importance, int(rows.shape[0]), normalize="sum")
+    input_weights = _positive_importance_vector(torch, input_importance, in_features, normalize="mean")
+    output_weights = _positive_importance_vector(torch, output_importance, out_features, normalize="mean")
     reference = None
     if rank_mode == "delta":
         if reference_weight is None:
@@ -7569,6 +7752,13 @@ def _activation_weighted_truncate_linear_weight_rank(
         "input_features": int(in_features),
         "output_features": int(out_features),
         "covariance_ridge": float(ridge),
+        "importance_weighted_svd": bool(
+            sample_weights is not None or input_weights is not None or output_weights is not None or influence is not None
+        ),
+        "sample_importance_used": sample_weights is not None,
+        "input_importance_used": input_weights is not None,
+        "output_importance_used": output_weights is not None,
+        "influence_matrix_used": influence is not None,
     }
     if int(rank) <= 0 or int(rank) >= full_rank:
         report = {
@@ -7587,12 +7777,22 @@ def _activation_weighted_truncate_linear_weight_rank(
             )
         return target, report
     try:
-        covariance = rows.t().matmul(rows) / max(int(rows.shape[0]), 1)
+        if sample_weights is None:
+            covariance_rows = rows
+            covariance = covariance_rows.t().matmul(covariance_rows) / max(int(rows.shape[0]), 1)
+        else:
+            covariance_rows = rows * sample_weights.sqrt().unsqueeze(1)
+            covariance = covariance_rows.t().matmul(covariance_rows) / sample_weights.sum().clamp_min(1e-12)
+        if input_weights is not None:
+            covariance = input_weights.sqrt().unsqueeze(1) * covariance * input_weights.sqrt().unsqueeze(0)
         if float(ridge) > 0:
             covariance = covariance + float(ridge) * torch.eye(in_features, dtype=covariance.dtype)
         eigenvalues, eigenvectors = torch.linalg.eigh(covariance)
         eigenvalues = eigenvalues.clamp_min(float(ridge) if float(ridge) > 0 else 1e-12)
-        weighted = eigenvalues.sqrt().unsqueeze(1) * eigenvectors.t().matmul(matrix)
+        matrix_for_svd = matrix
+        if output_weights is not None:
+            matrix_for_svd = matrix_for_svd * output_weights.sqrt().unsqueeze(0)
+        weighted = eigenvalues.sqrt().unsqueeze(1) * eigenvectors.t().matmul(matrix_for_svd)
         u, singular_values, vh = torch.linalg.svd(weighted, full_matrices=False)
     except RuntimeError as exc:
         report = {
@@ -7614,6 +7814,8 @@ def _activation_weighted_truncate_linear_weight_rank(
     keep = max(1, min(int(rank), int(singular_values.numel())))
     weighted_truncated = (u[:, :keep] * singular_values[:keep].unsqueeze(0)).matmul(vh[:keep, :])
     truncated_matrix = eigenvectors.matmul(eigenvalues.rsqrt().unsqueeze(1) * weighted_truncated)
+    if output_weights is not None:
+        truncated_matrix = truncated_matrix * output_weights.rsqrt().unsqueeze(0)
     if reference is None:
         truncated = truncated_matrix.t().contiguous()
     else:
@@ -7642,6 +7844,22 @@ def _activation_weighted_truncate_linear_weight_rank(
             }
         )
     return truncated, report
+
+
+def _positive_importance_vector(torch, values, expected_size: int, *, normalize: str):
+    if values is None:
+        return None
+    vector = torch.nan_to_num(values.detach().cpu().to(torch.float32).reshape(-1), nan=0.0, posinf=0.0, neginf=0.0).abs()
+    if int(vector.numel()) != int(expected_size):
+        return None
+    if float(vector.sum().detach().cpu()) <= 0.0:
+        return None
+    vector = vector.clamp_min(1e-12)
+    if normalize == "sum":
+        return vector * (float(expected_size) / vector.sum().clamp_min(1e-12))
+    if normalize == "mean":
+        return vector / vector.mean().clamp_min(1e-12)
+    raise ValueError("normalize must be sum or mean.")
 
 
 def _aggregate_layer_activation_profile(
