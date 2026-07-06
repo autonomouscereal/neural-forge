@@ -114,9 +114,11 @@ def _cmd_queue(args: argparse.Namespace) -> int:
     (run_root / "logs").mkdir(parents=True, exist_ok=True)
 
     queued: list[dict[str, Any]] = []
+    last_pid_by_gpu: dict[str, int] = {}
     for index, candidate in enumerate(candidates):
         label = _safe_label(str(candidate["label"]))
         gpu_uuid = gpu_uuids[index % len(gpu_uuids)]
+        queue_pid = last_pid_by_gpu.get(gpu_uuid, 0)
         report = eval_dir / f"eval_{label}_exactgen_20260702_1000x1000x250.json"
         manual = eval_dir / f"manual_{label}_exactgen_20260702.json"
         out_dir = eval_dir / f"retention_{label}_20260702"
@@ -131,6 +133,7 @@ def _cmd_queue(args: argparse.Namespace) -> int:
                 "EVAL_DIR": str(eval_dir),
                 "TAG": f"retest_{label}",
                 "MODEL_DIR": str(candidate["model_dir"]),
+                "QUEUE_PID": str(queue_pid),
                 "GPU_UUID": gpu_uuid,
                 "REPORT": str(report),
                 "MANUAL_JSON": str(manual),
@@ -151,6 +154,7 @@ def _cmd_queue(args: argparse.Namespace) -> int:
             "category": candidate.get("category"),
             "model_dir": candidate["model_dir"],
             "gpu_uuid": gpu_uuid,
+            "wait_queue_pid": queue_pid,
             "report": str(report),
             "manual_json": str(manual),
             "retention_dir": str(out_dir),
@@ -171,6 +175,7 @@ def _cmd_queue(args: argparse.Namespace) -> int:
                     start_new_session=True,
                 )
             entry["pid"] = proc.pid
+            last_pid_by_gpu[gpu_uuid] = int(proc.pid)
         queued.append(entry)
 
     state = {
