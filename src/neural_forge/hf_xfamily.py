@@ -36,6 +36,24 @@ _ACTIVATION_FOLD_ASSIGNMENTS = {
     "balanced-signed-similarity",
 }
 _TRANSPORT_BACKENDS = {"sparse", "sinkhorn", "qr-sinkhorn"}
+_TRANSPORT_SUPPORTS = {
+    "centroid",
+    "importance",
+    "quantile",
+    "medoid",
+    "quantile-medoid",
+    "diverse-medoid",
+    "domain-quantile-medoid",
+}
+_TRANSPORT_SUPPORT_MESSAGE = (
+    "transport_support must be centroid, importance, quantile, medoid, quantile-medoid, "
+    "diverse-medoid, or domain-quantile-medoid."
+)
+
+
+def _validate_transport_support(transport_support: str) -> None:
+    if transport_support not in _TRANSPORT_SUPPORTS:
+        raise ValueError(_TRANSPORT_SUPPORT_MESSAGE)
 
 
 def cross_family_vocab_merge(
@@ -341,10 +359,7 @@ def donor_projected_init(
         raise ValueError("fold_stat_repair must be none or rms.")
     if transport_backend not in _TRANSPORT_BACKENDS:
         raise ValueError("transport_backend must be sparse, sinkhorn, or qr-sinkhorn.")
-    if transport_support not in {"centroid", "importance", "quantile", "medoid", "quantile-medoid", "diverse-medoid"}:
-        raise ValueError(
-            "transport_support must be centroid, importance, quantile, medoid, quantile-medoid, or diverse-medoid."
-        )
+    _validate_transport_support(transport_support)
     if donor_layer_fold_mode not in {"representative", "average", "fold"}:
         raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
     if donor_layer_group_strategy not in {
@@ -4216,10 +4231,7 @@ def _resize_tensor_to_shape(
         raise ValueError("fold_stat_repair must be none or rms.")
     if transport_backend not in _TRANSPORT_BACKENDS:
         raise ValueError("transport_backend must be sparse, sinkhorn, or qr-sinkhorn.")
-    if transport_support not in {"centroid", "importance", "quantile", "medoid", "quantile-medoid", "diverse-medoid"}:
-        raise ValueError(
-            "transport_support must be centroid, importance, quantile, medoid, quantile-medoid, or diverse-medoid."
-        )
+    _validate_transport_support(transport_support)
     if tuple(source.shape) == tuple(target_shape):
         return source.clone()
     if source.dim() != len(target_shape):
@@ -4236,6 +4248,7 @@ def _resize_tensor_to_shape(
                 continue
             profile = None if axis_weights is None else axis_weights.get(axis)
             weights, features, semantic_key = _axis_fold_profile(profile)
+            domain_weights, domain_features = _axis_fold_domain_profile(profile)
             resized = _resize_tensor_axis_mean_fold(
                 torch,
                 resized,
@@ -4244,6 +4257,8 @@ def _resize_tensor_to_shape(
                 fold_mode=fold_mode,
                 weights=weights,
                 features=features,
+                domain_weights=domain_weights,
+                domain_features=domain_features,
                 reduction="mean" if axis_reductions is None else axis_reductions.get(axis, "mean"),
                 assignment_mode=activation_fold_assignment,
                 fold_stat_repair=fold_stat_repair,
@@ -4339,6 +4354,7 @@ def _resize_attention_tensor_to_shape(
                 continue
             profile = None if axis_weights is None or axis in handled_axes else axis_weights.get(axis)
             weights, features, semantic_key = _axis_fold_profile(profile)
+            domain_weights, domain_features = _axis_fold_domain_profile(profile)
             resized = _resize_tensor_axis_mean_fold(
                 torch,
                 resized,
@@ -4347,6 +4363,8 @@ def _resize_attention_tensor_to_shape(
                 fold_mode=fold_mode,
                 weights=weights,
                 features=features,
+                domain_weights=domain_weights,
+                domain_features=domain_features,
                 reduction="mean" if axis_reductions is None else axis_reductions.get(axis, "mean"),
                 assignment_mode=activation_fold_assignment,
                 fold_stat_repair=fold_stat_repair,
@@ -4501,6 +4519,12 @@ def _axis_fold_profile(profile):
     if isinstance(profile, dict):
         return profile.get("weights"), profile.get("features"), profile.get("assignment_key")
     return profile, None, None
+
+
+def _axis_fold_domain_profile(profile):
+    if isinstance(profile, dict):
+        return profile.get("domain_weights"), profile.get("domain_features")
+    return None, None
 
 
 def _axis_head_dim_fold_profile(profile):
@@ -4785,6 +4809,8 @@ def _axis_assignment_cache_report(assignment_cache: dict[Any, dict[str, Any]]) -
                 "map_type": map_type,
                 "transport_backend": item.get("transport_backend"),
                 "transport_support": item.get("transport_support"),
+                "domain_support_used": bool(item.get("domain_support_used", False)),
+                "domain_support_count": int(item.get("domain_support_count", 0)),
                 "target_masses": None
                 if item.get("target_masses") is None
                 else item["target_masses"].tolist(),
@@ -4896,6 +4922,104 @@ def _activation_quantile_medoid_support_indices(torch, feature_rows, fold_weight
                 break
     if len(selected) < target_dim:
         for source_idx in torch.argsort(weights, descending=True).tolist():
+            source_idx = int(source_idx)
+            if source_idx in selected_set:
+                continue
+            selected.append(source_idx)
+            selected_set.add(source_idx)
+            if len(selected) == target_dim:
+                break
+    return torch.tensor(selected[:target_dim], dtype=torch.long).sort().values
+
+
+def _activation_domain_quantile_medoid_support_indices(
+    torch,
+    feature_rows,
+    fold_weights,
+    domain_features,
+    domain_weights,
+    target_dim: int,
+):
+    source_dim = int(feature_rows.shape[0])
+    target_dim = int(target_dim)
+    if target_dim <= 0:
+        raise ValueError("target_dim must be positive.")
+    if source_dim <= target_dim:
+        return torch.arange(source_dim, dtype=torch.long)
+    if not isinstance(domain_features, dict) or not isinstance(domain_weights, dict):
+        return _activation_quantile_medoid_support_indices(torch, feature_rows, fold_weights, target_dim)
+
+    domains = []
+    for domain in domain_features.keys():
+        features = domain_features.get(domain)
+        weights = domain_weights.get(domain)
+        if features is None or weights is None:
+            continue
+        domain_rows = features.detach().cpu().to(torch.float32)
+        domain_scores = weights.detach().cpu().to(torch.float32).flatten()
+        if domain_rows.dim() != 2 or int(domain_rows.shape[0]) != source_dim:
+            continue
+        if int(domain_scores.numel()) != source_dim:
+            continue
+        domain_scores = torch.nan_to_num(domain_scores, nan=0.0, posinf=0.0, neginf=0.0).clamp_min(0.0)
+        mass = float(domain_scores.sum().item())
+        if mass <= 0.0:
+            continue
+        domains.append((str(domain), domain_rows, domain_scores.clamp_min(1e-12), mass))
+    if not domains:
+        return _activation_quantile_medoid_support_indices(torch, feature_rows, fold_weights, target_dim)
+
+    total_mass = max(sum(item[3] for item in domains), 1e-12)
+    ideal = [float(mass) / total_mass * float(target_dim) for _name, _features, _weights, mass in domains]
+    if len(domains) <= target_dim:
+        allocation = [1 for _item in domains]
+    else:
+        allocation = [0 for _item in domains]
+    remaining = int(target_dim) - sum(allocation)
+    for _ in range(max(0, remaining)):
+        scores = [(ideal[idx] - float(allocation[idx]), domains[idx][3], idx) for idx in range(len(domains))]
+        _score, _mass, chosen = max(scores, key=lambda item: (item[0], item[1]))
+        allocation[int(chosen)] += 1
+
+    selected: list[int] = []
+    selected_set: set[int] = set()
+    for slots, (_name, rows, weights, _mass) in zip(allocation, domains):
+        if int(slots) <= 0:
+            continue
+        support = _activation_quantile_medoid_support_indices(
+            torch,
+            rows,
+            weights,
+            min(int(slots), target_dim),
+        )
+        for source_idx in support.tolist():
+            source_idx = int(source_idx)
+            if source_idx in selected_set:
+                continue
+            selected.append(source_idx)
+            selected_set.add(source_idx)
+            if len(selected) == target_dim:
+                break
+        if len(selected) == target_dim:
+            break
+
+    global_weights = fold_weights.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12)
+    if len(selected) < target_dim:
+        for source_idx in _activation_quantile_medoid_support_indices(
+            torch,
+            feature_rows,
+            global_weights,
+            target_dim,
+        ).tolist():
+            source_idx = int(source_idx)
+            if source_idx in selected_set:
+                continue
+            selected.append(source_idx)
+            selected_set.add(source_idx)
+            if len(selected) == target_dim:
+                break
+    if len(selected) < target_dim:
+        for source_idx in torch.argsort(global_weights, descending=True).tolist():
             source_idx = int(source_idx)
             if source_idx in selected_set:
                 continue
@@ -5107,6 +5231,8 @@ def _build_sparse_activation_transport(
     features,
     target_dim: int,
     weights=None,
+    domain_weights=None,
+    domain_features=None,
     top_k: int = 4,
     balance_iterations: int = 32,
     temperature: float = 0.08,
@@ -5126,10 +5252,7 @@ def _build_sparse_activation_transport(
     signed = bool(signed) or _activation_assignment_mode_is_signed(assignment_mode)
     if transport_backend not in _TRANSPORT_BACKENDS:
         raise ValueError("transport_backend must be sparse, sinkhorn, or qr-sinkhorn.")
-    if transport_support not in {"centroid", "importance", "quantile", "medoid", "quantile-medoid", "diverse-medoid"}:
-        raise ValueError(
-            "transport_support must be centroid, importance, quantile, medoid, quantile-medoid, or diverse-medoid."
-        )
+    _validate_transport_support(transport_support)
     feature_rows = features.detach().cpu().to(torch.float32)
     if feature_rows.dim() != 2:
         raise ValueError("Activation features must be a rank-2 tensor.")
@@ -5145,6 +5268,8 @@ def _build_sparse_activation_transport(
     raw_feature_rows = feature_rows
     feature_rows = _row_normalize(feature_rows)
     support_indices = None
+    domain_support_used = False
+    domain_support_count = 0
     if transport_support == "importance":
         support_indices = torch.topk(fold_weights, k=target_dim, largest=True).indices.sort().values
         centroid_rows = feature_rows[support_indices]
@@ -5164,6 +5289,18 @@ def _build_sparse_activation_transport(
             target_dim,
         )
         centroid_rows = feature_rows[support_indices]
+    elif transport_support == "domain-quantile-medoid":
+        support_indices = _activation_domain_quantile_medoid_support_indices(
+            torch,
+            raw_feature_rows,
+            fold_weights,
+            domain_features,
+            domain_weights,
+            target_dim,
+        )
+        centroid_rows = feature_rows[support_indices]
+        domain_support_used = isinstance(domain_features, dict) and isinstance(domain_weights, dict)
+        domain_support_count = len(set(domain_features.keys()) & set(domain_weights.keys())) if domain_support_used else 0
     elif transport_support == "diverse-medoid":
         support_indices = _activation_diverse_medoid_support_indices(
             torch,
@@ -5218,7 +5355,14 @@ def _build_sparse_activation_transport(
     scores = raw_scores.abs() if signed else raw_scores
     if _activation_assignment_mode_is_mass_balanced(assignment_mode):
         target_mass = torch.full((target_dim,), 1.0 / float(target_dim), dtype=torch.float32)
-    elif transport_support in {"importance", "quantile", "medoid", "quantile-medoid", "diverse-medoid"}:
+    elif transport_support in {
+        "importance",
+        "quantile",
+        "medoid",
+        "quantile-medoid",
+        "diverse-medoid",
+        "domain-quantile-medoid",
+    }:
         target_mass = _activation_transport_target_mass(torch, scores, fold_weights, target_dim)
     else:
         target_mass = torch.full((target_dim,), 1.0 / float(target_dim), dtype=torch.float32)
@@ -5263,6 +5407,8 @@ def _build_sparse_activation_transport(
                 "target_support_indices": None
                 if support_indices is None
                 else support_indices.detach().cpu().to(torch.long),
+                "domain_support_used": bool(domain_support_used),
+                "domain_support_count": int(domain_support_count),
                 "sinkhorn_iterations": int(balance_iterations),
                 "transport_diagnostics": diagnostics,
             }
@@ -5281,6 +5427,8 @@ def _build_sparse_activation_transport(
             "target_support_indices": None
             if support_indices is None
             else support_indices.detach().cpu().to(torch.long),
+            "domain_support_used": bool(domain_support_used),
+            "domain_support_count": int(domain_support_count),
             "sinkhorn_iterations": int(balance_iterations),
             "transport_diagnostics": diagnostics,
         }
@@ -5313,6 +5461,8 @@ def _build_sparse_activation_transport(
         "transport_support": transport_support,
         "target_masses": target_mass.detach().cpu().to(torch.float32),
         "target_support_indices": None if support_indices is None else support_indices.detach().cpu().to(torch.long),
+        "domain_support_used": bool(domain_support_used),
+        "domain_support_count": int(domain_support_count),
         "transport_diagnostics": diagnostics,
     }
 
@@ -5527,6 +5677,8 @@ def _resize_tensor_axis_mean_fold(
     fold_mode: str = "mean",
     weights=None,
     features=None,
+    domain_weights=None,
+    domain_features=None,
     reduction: str = "mean",
     assignment_mode: str = "balanced",
     fold_stat_repair: str = "none",
@@ -5550,10 +5702,7 @@ def _resize_tensor_axis_mean_fold(
         raise ValueError("fold_stat_repair must be none or rms.")
     if transport_backend not in _TRANSPORT_BACKENDS:
         raise ValueError("transport_backend must be sparse, sinkhorn, or qr-sinkhorn.")
-    if transport_support not in {"centroid", "importance", "quantile", "medoid", "quantile-medoid", "diverse-medoid"}:
-        raise ValueError(
-            "transport_support must be centroid, importance, quantile, medoid, quantile-medoid, or diverse-medoid."
-        )
+    _validate_transport_support(transport_support)
     source_dim = int(tensor.shape[axis])
     if source_dim == target_dim:
         return tensor
@@ -5604,6 +5753,8 @@ def _resize_tensor_axis_mean_fold(
                     features,
                     target_dim,
                     weights=fold_weights,
+                    domain_weights=domain_weights,
+                    domain_features=domain_features,
                     transport_backend=transport_backend,
                     transport_support=transport_support,
                     assignment_mode=assignment_mode,
@@ -6001,6 +6152,8 @@ def _collect_donor_axis_activation_scores(
     hidden_basis_output_rows: dict[int, int] = {idx: 0 for idx in range(len(donor_layers))}
     mlp_scores: dict[int, list[Any]] = {idx: [] for idx in range(len(donor_layers))}
     mlp_features: dict[int, list[Any]] = {idx: [] for idx in range(len(donor_layers))}
+    mlp_domain_scores: dict[int, dict[str, list[Any]]] = {idx: {} for idx in range(len(donor_layers))}
+    mlp_domain_features: dict[int, dict[str, list[Any]]] = {idx: {} for idx in range(len(donor_layers))}
     attention_head_profiles: dict[int, dict[str, dict[str, list[Any]]]] = {
         idx: {
             "q": {"scores": [], "features": []},
@@ -6017,6 +6170,7 @@ def _collect_donor_axis_activation_scores(
     }
     linear_fit_rows: dict[int, dict[str, dict[str, list[Any]]]] = {idx: {} for idx in range(len(donor_layers))}
     linear_fit_counts: dict[tuple[int, str], int] = {}
+    current_domain: str | None = None
     handles = []
     q_heads = _config_int(donor.config, "num_attention_heads", "n_head", "num_heads")
     kv_heads = _config_int(donor.config, "num_key_value_heads", default=q_heads)
@@ -6068,15 +6222,19 @@ def _collect_donor_axis_activation_scores(
             if values is None:
                 return
             values = values.detach().to(torch.float32)
-            mlp_scores[layer_idx].append(_activation_abs_score(torch, values).cpu())
-            mlp_features[layer_idx].append(
-                _activation_channel_summary(
-                    torch,
-                    _activation_2d(torch, values),
-                    mode=activation_feature_mode,
-                    subspace_rank=activation_subspace_rank,
-                ).cpu()
-            )
+            score = _activation_abs_score(torch, values).cpu()
+            feature = _activation_channel_summary(
+                torch,
+                _activation_2d(torch, values),
+                mode=activation_feature_mode,
+                subspace_rank=activation_subspace_rank,
+            ).cpu()
+            mlp_scores[layer_idx].append(score)
+            mlp_features[layer_idx].append(feature)
+            if current_domain is not None:
+                domain = str(current_domain)
+                mlp_domain_scores[layer_idx].setdefault(domain, []).append(score)
+                mlp_domain_features[layer_idx].setdefault(domain, []).append(feature)
 
         return hook
 
@@ -6185,10 +6343,12 @@ def _collect_donor_axis_activation_scores(
         donor.eval()
         donor.to(device)
         with torch.no_grad():
-            for text in texts:
+            for text_idx, text in enumerate(texts):
+                current_domain = None if text_domains is None else str(text_domains[int(text_idx)])
                 encoded = donor_tokenizer(str(text), return_tensors="pt", truncation=True, max_length=max_length)
                 encoded = {key: value.to(device) for key, value in encoded.items()}
                 donor(**encoded, use_cache=False)
+                current_domain = None
     finally:
         for handle in handles:
             handle.remove()
@@ -6205,12 +6365,28 @@ def _collect_donor_axis_activation_scores(
         hidden_domains = [domain for domain in text_domains for _ in donor_layers]
     folded_mlp_scores = {}
     folded_mlp_features = {}
+    folded_mlp_domain_scores = {}
+    folded_mlp_domain_features = {}
     for layer_idx, scores in mlp_scores.items():
         if scores:
             folded_mlp_scores[layer_idx] = _domain_balanced_mean(torch, scores, text_domains).clamp_min(1e-12)
     for layer_idx, features in mlp_features.items():
         if features:
             folded_mlp_features[layer_idx] = _domain_balanced_mean(torch, features, text_domains)
+    for layer_idx, by_domain in mlp_domain_scores.items():
+        domain_values = {}
+        for domain, scores in by_domain.items():
+            if scores:
+                domain_values[str(domain)] = torch.stack(scores, dim=0).mean(dim=0).clamp_min(1e-12)
+        if domain_values:
+            folded_mlp_domain_scores[int(layer_idx)] = domain_values
+    for layer_idx, by_domain in mlp_domain_features.items():
+        domain_values = {}
+        for domain, features in by_domain.items():
+            if features:
+                domain_values[str(domain)] = torch.stack(features, dim=0).mean(dim=0)
+        if domain_values:
+            folded_mlp_domain_features[int(layer_idx)] = domain_values
     folded_attention_profiles = {}
     for layer_idx, by_stream in attention_head_profiles.items():
         stream_profiles = {}
@@ -6256,6 +6432,8 @@ def _collect_donor_axis_activation_scores(
         },
         "mlp_scores": folded_mlp_scores,
         "mlp_features": folded_mlp_features,
+        "mlp_domain_scores": folded_mlp_domain_scores,
+        "mlp_domain_features": folded_mlp_domain_features,
         "attention_head_profiles": folded_attention_profiles,
         "attention_head_dim_profiles": folded_attention_head_dim_profiles,
         "linear_fit_rows": folded_linear_fit_rows,
@@ -6518,6 +6696,19 @@ def _activation_axis_weights_for_tensor(
         layer_group,
         layer_weights=layer_group_weights,
     )
+    mlp_domain_scores = _aggregate_layer_domain_activation_profile(
+        torch,
+        activation_profile.get("mlp_domain_scores", {}),
+        layer_group,
+        clamp_min=1e-12,
+        layer_weights=layer_group_weights,
+    )
+    mlp_domain_features = _aggregate_layer_domain_activation_profile(
+        torch,
+        activation_profile.get("mlp_domain_features", {}),
+        layer_group,
+        layer_weights=layer_group_weights,
+    )
     for axis, source_dim in enumerate(donor_tensor.shape):
         if int(source_dim) == int(hidden_scores.numel()):
             axis_weights[axis] = {
@@ -6533,6 +6724,8 @@ def _activation_axis_weights_for_tensor(
                     "weights": mlp_scores,
                     "features": mlp_features,
                     "assignment_key": ("mlp", layer_group_key),
+                    "domain_weights": mlp_domain_scores,
+                    "domain_features": mlp_domain_features,
                 }
     return axis_weights or None
 
@@ -7459,11 +7652,26 @@ def _linear_activation_row_axis_weights_for_suffix(
             layer_group,
             layer_weights=layer_group_weights,
         )
+        mlp_domain_scores = _aggregate_layer_domain_activation_profile(
+            torch,
+            activation_profile.get("mlp_domain_scores", {}),
+            layer_group,
+            clamp_min=1e-12,
+            layer_weights=layer_group_weights,
+        )
+        mlp_domain_features = _aggregate_layer_domain_activation_profile(
+            torch,
+            activation_profile.get("mlp_domain_features", {}),
+            layer_group,
+            layer_weights=layer_group_weights,
+        )
         return {
             1: {
                 "weights": mlp_scores,
                 "features": mlp_features,
                 "assignment_key": ("linear-fit-mlp", layer_group_key, side, suffix),
+                "domain_weights": mlp_domain_scores,
+                "domain_features": mlp_domain_features,
             }
         }
     return None
@@ -7890,6 +8098,47 @@ def _aggregate_layer_activation_profile(
     if clamp_min is not None:
         merged = merged.clamp_min(float(clamp_min))
     return merged
+
+
+def _aggregate_layer_domain_activation_profile(
+    torch,
+    profiles: dict[int, Any],
+    layer_group: Sequence[int],
+    clamp_min=None,
+    layer_weights: Sequence[float] | None = None,
+):
+    by_domain: dict[str, list[Any]] = {}
+    by_domain_weights: dict[str, list[float]] = {}
+    for group_pos, layer_idx in enumerate(layer_group):
+        layer_profile = profiles.get(int(layer_idx), {}) if profiles else {}
+        if not isinstance(layer_profile, dict):
+            continue
+        layer_weight = 1.0
+        if layer_weights is not None and int(group_pos) < len(layer_weights):
+            layer_weight = max(float(layer_weights[int(group_pos)]), 1e-12)
+        for domain, value in layer_profile.items():
+            if value is None:
+                continue
+            key = str(domain)
+            by_domain.setdefault(key, []).append(value.detach().cpu().to(torch.float32))
+            by_domain_weights.setdefault(key, []).append(layer_weight)
+    merged_by_domain: dict[str, Any] = {}
+    for domain, rows in by_domain.items():
+        if not rows:
+            continue
+        stacked = torch.stack(rows, dim=0)
+        weights = by_domain_weights.get(domain) or []
+        if weights and len(weights) == len(rows):
+            weight_tensor = torch.tensor(weights, dtype=torch.float32)
+            weight_tensor = weight_tensor / weight_tensor.sum().clamp_min(1e-12)
+            view_shape = (len(weights),) + (1,) * (stacked.dim() - 1)
+            merged = (stacked * weight_tensor.view(view_shape)).sum(dim=0)
+        else:
+            merged = stacked.mean(dim=0)
+        if clamp_min is not None:
+            merged = merged.clamp_min(float(clamp_min))
+        merged_by_domain[str(domain)] = merged
+    return merged_by_domain or None
 
 
 def _initialize_token_weights_from_donor(

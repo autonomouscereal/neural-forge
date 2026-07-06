@@ -110,6 +110,7 @@ from neural_forge.hf_xfamily import _activation_medoid_support_indices
 from neural_forge.hf_xfamily import _activation_quantile_medoid_support_indices
 from neural_forge.hf_xfamily import _activation_quantile_support_indices
 from neural_forge.hf_xfamily import _activation_diverse_medoid_support_indices
+from neural_forge.hf_xfamily import _activation_domain_quantile_medoid_support_indices
 from neural_forge.hf_xfamily import _activation_layer_geometry_scores
 from neural_forge.hf_xfamily import _activation_similarity_assignment
 from neural_forge.hf_xfamily import _activation_signed_similarity_assignment
@@ -3949,6 +3950,42 @@ def test_quantile_medoid_support_uses_real_representatives_per_weight_stratum() 
     assert support.tolist() == [1, 3, 5]
 
 
+def test_domain_quantile_medoid_support_reserves_domain_representatives() -> None:
+    torch = pytest.importorskip("torch")
+    features = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.95, 0.05],
+            [0.0, 1.0],
+            [0.05, 0.95],
+        ],
+        dtype=torch.float32,
+    )
+    weights = torch.tensor([100.0, 90.0, 1.0, 1.0], dtype=torch.float32)
+    domain_features = {
+        "code": features,
+        "math": features,
+    }
+    domain_weights = {
+        "code": torch.tensor([100.0, 90.0, 0.0, 0.0], dtype=torch.float32),
+        "math": torch.tensor([0.0, 0.0, 1.0, 1.0], dtype=torch.float32),
+    }
+
+    support = _activation_domain_quantile_medoid_support_indices(
+        torch,
+        features,
+        weights,
+        domain_features,
+        domain_weights,
+        target_dim=2,
+    )
+
+    selected = set(support.tolist())
+    assert len(selected) == 2
+    assert selected & {0, 1}
+    assert selected & {2, 3}
+
+
 def test_diverse_medoid_support_covers_activation_geometry() -> None:
     torch = pytest.importorskip("torch")
     features = torch.tensor(
@@ -4087,6 +4124,55 @@ def test_transport_fold_can_use_quantile_medoid_support() -> None:
     assert diagnostics["target_load_l1_error"] < 0.05
     assert diagnostics["row_entropy_normalized_mean"] >= 0.0
     assert diagnostics["weighted_transport_cost_mean"] < 1.0
+
+
+def test_transport_fold_can_use_domain_quantile_medoid_support() -> None:
+    torch = pytest.importorskip("torch")
+    cache = {}
+    features = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.95, 0.05],
+            [0.0, 1.0],
+            [0.05, 0.95],
+        ],
+        dtype=torch.float32,
+    )
+    weights = torch.tensor([100.0, 90.0, 1.0, 1.0], dtype=torch.float32)
+    source = torch.arange(4, dtype=torch.float32).unsqueeze(1)
+    domain_features = {"code": features, "math": features}
+    domain_weights = {
+        "code": torch.tensor([100.0, 90.0, 0.0, 0.0], dtype=torch.float32),
+        "math": torch.tensor([0.0, 0.0, 1.0, 1.0], dtype=torch.float32),
+    }
+
+    folded = _resize_tensor_axis_mean_fold(
+        torch,
+        source,
+        axis=0,
+        target_dim=2,
+        fold_mode="transport",
+        weights=weights,
+        features=features,
+        domain_weights=domain_weights,
+        domain_features=domain_features,
+        transport_backend="sinkhorn",
+        transport_support="domain-quantile-medoid",
+        assignment_cache=cache,
+        assignment_cache_key=("mlp", "domain-support-test"),
+    )
+
+    assert folded.shape == (2, 1)
+    transport = next(iter(cache.values()))
+    assert transport["transport_support"] == "domain-quantile-medoid"
+    assert transport["domain_support_used"] is True
+    assert transport["domain_support_count"] == 2
+    support = set(transport["target_support_indices"].tolist())
+    assert support & {0, 1}
+    assert support & {2, 3}
+    report = _axis_assignment_cache_report(cache)
+    assert report[0]["domain_support_used"] is True
+    assert report[0]["domain_support_count"] == 2
 
 
 def test_transport_fold_can_use_diverse_medoid_support() -> None:
@@ -4305,6 +4391,42 @@ def test_activation_axis_weights_aggregate_folded_donor_group() -> None:
     assert weights is not None
     assert weights[0]["weights"].tolist() == pytest.approx([2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
     assert weights[0]["features"].flatten().tolist() == pytest.approx([2.0] * 12)
+
+
+def test_activation_axis_weights_carry_mlp_domain_profiles() -> None:
+    torch = pytest.importorskip("torch")
+    donor_tensor = torch.ones((4, 3), dtype=torch.float32)
+    profile = {
+        "hidden_scores": torch.ones(3),
+        "mlp_scores": {0: torch.tensor([1.0, 2.0, 3.0, 4.0])},
+        "mlp_features": {0: torch.ones((4, 2))},
+        "mlp_domain_scores": {
+            0: {
+                "code": torch.tensor([10.0, 9.0, 0.0, 0.0]),
+                "math": torch.tensor([0.0, 0.0, 2.0, 2.0]),
+            }
+        },
+        "mlp_domain_features": {
+            0: {
+                "code": torch.ones((4, 2)),
+                "math": torch.ones((4, 2)) * 2.0,
+            }
+        },
+    }
+
+    weights = _activation_axis_weights_for_tensor(
+        torch,
+        donor_tensor,
+        "mlp.gate_proj.weight",
+        donor_layer_idx=0,
+        donor_layer_group=[0],
+        activation_profile=profile,
+    )
+
+    assert weights is not None
+    assert set(weights[0]["domain_weights"]) == {"code", "math"}
+    assert weights[0]["domain_weights"]["math"].tolist() == pytest.approx([0.0, 0.0, 2.0, 2.0])
+    assert weights[0]["domain_features"]["code"].shape == (4, 2)
 
 
 def test_activation_axis_weights_route_mlp_axes_by_suffix_when_dims_overlap() -> None:

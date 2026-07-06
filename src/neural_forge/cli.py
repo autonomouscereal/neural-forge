@@ -195,7 +195,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hf_donor_init.add_argument(
         "--transport-support",
-        choices=["centroid", "importance", "quantile", "medoid", "quantile-medoid", "diverse-medoid"],
+        choices=[
+            "centroid",
+            "importance",
+            "quantile",
+            "medoid",
+            "quantile-medoid",
+            "diverse-medoid",
+            "domain-quantile-medoid",
+        ],
         default="centroid",
         help=(
             "Support set for activation transport. centroid preserves the existing clustered-centroid map; "
@@ -203,7 +211,8 @@ def build_parser() -> argparse.ArgumentParser:
             "quantile anchors transport on activation-weight strata; "
             "medoid uses real donor axes nearest to activation clusters; "
             "quantile-medoid picks real donor axes within activation-weight strata; "
-            "diverse-medoid greedily covers activation geometry with real donor axes."
+            "diverse-medoid greedily covers activation geometry with real donor axes; "
+            "domain-quantile-medoid reserves real donor medoids across calibration domains."
         ),
     )
     hf_donor_init.add_argument(
@@ -1590,7 +1599,15 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--init-transport-backend", choices=["sparse", "sinkhorn", "qr-sinkhorn"], default="sparse")
     xfamily_chain.add_argument(
         "--init-transport-support",
-        choices=["centroid", "importance", "quantile", "medoid", "quantile-medoid", "diverse-medoid"],
+        choices=[
+            "centroid",
+            "importance",
+            "quantile",
+            "medoid",
+            "quantile-medoid",
+            "diverse-medoid",
+            "domain-quantile-medoid",
+        ],
         default="centroid",
     )
     xfamily_chain.add_argument("--init-donor-layer-fold-mode", choices=["representative", "average", "fold"], default="fold")
