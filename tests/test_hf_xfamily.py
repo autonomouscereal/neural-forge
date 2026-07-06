@@ -145,6 +145,7 @@ from neural_forge.hf_xfamily import _hidden_basis_axes_for_layer_tensor
 from neural_forge.hf_xfamily import _is_transformers_conv1d_module
 from neural_forge.hf_xfamily import _linear_module_forward
 from neural_forge.hf_xfamily import _linear_fit_rows_for_suffix
+from neural_forge.hf_xfamily import _linear_fit_importance_from_activation_rows
 from neural_forge.hf_xfamily import _activation_weighted_truncate_linear_weight_rank
 from neural_forge.hf_xfamily import _truncate_linear_weight_rank
 from neural_forge.hf_xfamily import _truncate_linear_weight_delta_rank
@@ -3345,6 +3346,34 @@ def test_fit_projected_linear_from_donor_activations_act_svd_uses_importance_pro
     assert report["importance_weighted_svd"] is True
     assert report["output_importance_used"] is True
     assert abs(float(result["weight"][0, 0])) > abs(float(result["weight"][1, 1]))
+
+
+def test_linear_fit_importance_from_activation_rows_tracks_active_axes_and_samples() -> None:
+    torch = pytest.importorskip("torch")
+    inputs = torch.tensor(
+        [
+            [10.0, 0.0],
+            [8.0, 0.0],
+            [0.0, 1.0],
+        ],
+        dtype=torch.float32,
+    )
+    outputs = torch.tensor(
+        [
+            [0.0, 2.0, 0.0],
+            [0.0, 3.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    importance = _linear_fit_importance_from_activation_rows(torch, inputs, outputs)
+
+    assert importance is not None
+    assert importance["sample"].shape == (3,)
+    assert float(importance["sample"][0]) > float(importance["sample"][2])
+    assert float(importance["input"][0]) > float(importance["input"][1])
+    assert float(importance["output"][1]) > float(importance["output"][2])
 
 
 def test_fit_projected_linear_from_donor_activations_rejects_no_validation_gain() -> None:

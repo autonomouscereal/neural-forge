@@ -6410,16 +6410,25 @@ def _collect_donor_axis_activation_scores(
         if stream_profiles:
             folded_attention_head_dim_profiles[int(layer_idx)] = stream_profiles
     folded_linear_fit_rows = {}
+    folded_linear_fit_importance = {}
     for layer_idx, by_suffix in linear_fit_rows.items():
         suffix_rows = {}
+        suffix_importance = {}
         for suffix, values in by_suffix.items():
             if values["input"] and values["output"]:
+                input_rows = torch.cat(values["input"], dim=0)
+                output_rows = torch.cat(values["output"], dim=0)
                 suffix_rows[str(suffix)] = {
-                    "input": torch.cat(values["input"], dim=0),
-                    "output": torch.cat(values["output"], dim=0),
+                    "input": input_rows,
+                    "output": output_rows,
                 }
+                importance = _linear_fit_importance_from_activation_rows(torch, input_rows, output_rows)
+                if importance:
+                    suffix_importance[str(suffix)] = importance
         if suffix_rows:
             folded_linear_fit_rows[int(layer_idx)] = suffix_rows
+        if suffix_importance:
+            folded_linear_fit_importance[int(layer_idx)] = suffix_importance
     return {
         "hidden_scores": _domain_balanced_mean(torch, hidden_scores, hidden_domains).clamp_min(1e-12),
         "hidden_features": _domain_balanced_mean(torch, hidden_features, hidden_domains),
@@ -6437,6 +6446,7 @@ def _collect_donor_axis_activation_scores(
         "attention_head_profiles": folded_attention_profiles,
         "attention_head_dim_profiles": folded_attention_head_dim_profiles,
         "linear_fit_rows": folded_linear_fit_rows,
+        "linear_fit_importance": folded_linear_fit_importance,
         "activation_feature_mode": activation_feature_mode,
         "activation_subspace_rank": int(activation_subspace_rank),
         "activation_domain_balance": activation_domain_balance,
@@ -7256,6 +7266,30 @@ def _linear_fit_rows_for_suffix(torch, activation_profile, layer_group: Sequence
     if not input_rows or not output_rows:
         return None
     return {"input": torch.cat(input_rows, dim=0), "output": torch.cat(output_rows, dim=0)}
+
+
+def _linear_fit_importance_from_activation_rows(torch, input_rows, output_rows):
+    inputs = torch.nan_to_num(input_rows.detach().cpu().to(torch.float32), nan=0.0, posinf=0.0, neginf=0.0)
+    outputs = torch.nan_to_num(output_rows.detach().cpu().to(torch.float32), nan=0.0, posinf=0.0, neginf=0.0)
+    if inputs.dim() != 2 or outputs.dim() != 2:
+        return None
+    row_count = min(int(inputs.shape[0]), int(outputs.shape[0]))
+    if row_count <= 0:
+        return None
+    inputs = inputs[:row_count]
+    outputs = outputs[:row_count]
+    input_axis = inputs.abs().mean(dim=0).clamp_min(1e-12)
+    output_axis = outputs.abs().mean(dim=0).clamp_min(1e-12)
+    input_sample = inputs.pow(2).mean(dim=1).sqrt()
+    output_sample = outputs.pow(2).mean(dim=1).sqrt()
+    input_sample = input_sample / input_sample.mean().clamp_min(1e-12)
+    output_sample = output_sample / output_sample.mean().clamp_min(1e-12)
+    sample = ((input_sample + output_sample) * 0.5).clamp_min(1e-12)
+    return {
+        "sample": sample.contiguous(),
+        "input": input_axis.contiguous(),
+        "output": output_axis.contiguous(),
+    }
 
 
 def _linear_fit_importance_for_suffix(torch, activation_profile, layer_group: Sequence[int], suffix: str):
