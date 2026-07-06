@@ -158,6 +158,10 @@ if [[ ! -d "$MODEL_DIR" ]]; then
   echo "missing_model_dir=$MODEL_DIR" >&2
   exit 2
 fi
+if [[ ! -f "$MODEL_DIR/config.json" ]]; then
+  echo "missing_model_config=$MODEL_DIR/config.json" >&2
+  exit 2
+fi
 
 if valid_eval_report "$REPORT"; then
   echo "child_eval_cache_hit=$REPORT"
