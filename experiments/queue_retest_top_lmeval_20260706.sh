@@ -41,6 +41,7 @@ done
 /home/cereal/model-surgery-lab/venv/bin/python - "$SUMMARY_JSON" "$MAX_MODELS" "$MODEL_ENTRIES_FILE" "$RUN_ROOT" <<'PY'
 import json
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -118,7 +119,7 @@ selected = selected[:max_models]
 entries = ";".join(f"{item['label']}={item['model']}" for item in selected)
 out_path.write_text(
     "MODEL_ENTRIES=" + json.dumps(entries) + "\n"
-    + "SELECTED_MODELS_JSON=" + json.dumps(selected, sort_keys=True) + "\n",
+    + "SELECTED_MODELS_JSON=" + shlex.quote(json.dumps(selected, sort_keys=True)) + "\n",
     encoding="utf-8",
 )
 print(json.dumps({"selected_count": len(selected), "entries_file": str(out_path), "selected": selected}, indent=2))
