@@ -8,6 +8,7 @@ SOURCE_MODEL="${SOURCE_MODEL:-Qwen/Qwen3-4B-Base}"
 ANCHOR_MODEL="${ANCHOR_MODEL:-$RUN_ROOT/blank_gpt2_124m_seed0}"
 TAG="${TAG:-qwen4b_blank_gpt2_crossarch_lrc_alm_gpu6_20260629}"
 INIT_TRANSPORT_SUPPORT="${INIT_TRANSPORT_SUPPORT:-centroid}"
+INIT_ATTENTION_HEAD_DIM_TRANSPORT="${INIT_ATTENTION_HEAD_DIM_TRANSPORT:-none}"
 INIT_ACTIVATION_DOMAIN_BALANCE="${INIT_ACTIVATION_DOMAIN_BALANCE:-none}"
 INIT_DONOR_LAYER_GROUP_STRATEGY="${INIT_DONOR_LAYER_GROUP_STRATEGY:-activation-geometry}"
 BLOCK_DONOR_LAYER_GROUP_STRATEGY="${BLOCK_DONOR_LAYER_GROUP_STRATEGY:-activation-geometry}"
@@ -92,7 +93,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-donor-layer-fold-mode fold \
   --init-donor-layer-group-strategy "$INIT_DONOR_LAYER_GROUP_STRATEGY" \
   --init-attention-fold-mode activation-coupled \
-  --init-attention-head-dim-transport none \
+  --init-attention-head-dim-transport "$INIT_ATTENTION_HEAD_DIM_TRANSPORT" \
   --init-token-init-mode donor-tokenized-weighted \
   "${INIT_OUTPUT_HEAD_ARGS[@]}" \
   --init-projection-scale target-rms \

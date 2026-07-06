@@ -49,6 +49,7 @@ INIT_ACTIVATION_FOLD_ASSIGNMENT="${INIT_ACTIVATION_FOLD_ASSIGNMENT:-similarity}"
 INIT_FOLD_STAT_REPAIR="${INIT_FOLD_STAT_REPAIR:-none}"
 INIT_TRANSPORT_BACKEND="${INIT_TRANSPORT_BACKEND:-sinkhorn}"
 INIT_TRANSPORT_SUPPORT="${INIT_TRANSPORT_SUPPORT:-centroid}"
+INIT_ATTENTION_HEAD_DIM_TRANSPORT="${INIT_ATTENTION_HEAD_DIM_TRANSPORT:-none}"
 INIT_ACTIVATION_DOMAIN_BALANCE="${INIT_ACTIVATION_DOMAIN_BALANCE:-none}"
 INIT_DONOR_LAYER_GROUP_STRATEGY="${INIT_DONOR_LAYER_GROUP_STRATEGY:-activation-geometry}"
 BLOCK_DONOR_LAYER_GROUP_STRATEGY="${BLOCK_DONOR_LAYER_GROUP_STRATEGY:-activation-geometry}"
@@ -198,7 +199,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-donor-layer-fold-mode fold \
   --init-donor-layer-group-strategy "$INIT_DONOR_LAYER_GROUP_STRATEGY" \
   --init-attention-fold-mode activation-coupled \
-  --init-attention-head-dim-transport none \
+  --init-attention-head-dim-transport "$INIT_ATTENTION_HEAD_DIM_TRANSPORT" \
   --init-token-init-mode donor-tokenized-weighted \
   "${INIT_OUTPUT_HEAD_ARGS[@]}" \
   --init-projection-scale "$INIT_PROJECTION_SCALE" \

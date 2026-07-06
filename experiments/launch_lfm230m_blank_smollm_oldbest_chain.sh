@@ -7,6 +7,7 @@ GPU_UUID="${GPU_UUID:-GPU-f5a09535-fc85-a027-50f7-734b344747dd}"
 SOURCE_MODEL="${SOURCE_MODEL:-LiquidAI/LFM2.5-230M}"
 ANCHOR_MODEL="${ANCHOR_MODEL:-$RUN_ROOT/blank_smollm2_135m_seed0}"
 TAG="${TAG:-lfm230m_blank_smollm_chain_oldbest_noactfit_gpu6_20260629}"
+INIT_ATTENTION_HEAD_DIM_TRANSPORT="${INIT_ATTENTION_HEAD_DIM_TRANSPORT:-none}"
 
 cd "$REPO_ROOT"
 source /home/cereal/model-surgery-lab/venv/bin/activate
@@ -41,7 +42,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-donor-layer-fold-mode fold \
   --init-donor-layer-group-strategy activation-energy \
   --init-attention-fold-mode activation-coupled \
-  --init-attention-head-dim-transport none \
+  --init-attention-head-dim-transport "$INIT_ATTENTION_HEAD_DIM_TRANSPORT" \
   --init-token-init-mode donor-tokenized-weighted \
   --init-projection-scale target-rms \
   --init-projection-blend-alpha 1.0 \
