@@ -1554,7 +1554,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument(
         "--stage-input-policy",
         choices=["incumbent", "sequential"],
-        default="incumbent",
+        default="sequential",
         help="Feed each stage from the promoted incumbent or sequentially from the previous stage output.",
     )
     xfamily_chain.add_argument(

@@ -1916,7 +1916,7 @@ def chain_anchor_staged_compress(
     stage_min_choice_accuracy: float = 0.0,
     stage_min_behavior_pass_rate: float = 0.0,
     promote_policy: str = "gate-and-rank",
-    stage_input_policy: str = "incumbent",
+    stage_input_policy: str = "sequential",
     init_seed: int = 0,
     init_ridge: float = 1e-3,
     init_max_anchors: int = 50_000,
