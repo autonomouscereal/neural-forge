@@ -264,6 +264,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     hf_donor_init.add_argument(
+        "--token-fallback-mode",
+        choices=["none", "donor-mean", "donor-hash"],
+        default="none",
+        help=(
+            "How to initialize target vocab/head rows that are not covered by shared, donor-tokenized, "
+            "special-token, or OMP mappings. Blank-target compression lanes should use a donor-derived "
+            "fallback instead of leaving random rows."
+        ),
+    )
+    hf_donor_init.add_argument(
         "--projection-scale",
         choices=["none", "target-rms", "source-rms", "geomean-rms"],
         default="none",
@@ -1628,6 +1638,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="shared",
     )
     xfamily_chain.add_argument(
+        "--init-token-fallback-mode",
+        choices=["none", "donor-mean", "donor-hash"],
+        default="none",
+    )
+    xfamily_chain.add_argument(
         "--init-projection-scale",
         choices=["none", "target-rms", "source-rms", "geomean-rms"],
         default="none",
@@ -2345,6 +2360,7 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         "attention_fold_mode": args.attention_fold_mode,
         "attention_head_dim_transport": args.attention_head_dim_transport,
         "token_init_mode": args.token_init_mode,
+        "token_fallback_mode": args.token_fallback_mode,
         "projection_scale": args.projection_scale,
         "projection_blend_alpha": args.projection_blend_alpha,
         "consumer_hidden_reduction": args.consumer_hidden_reduction,
@@ -3062,6 +3078,7 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         init_attention_fold_mode=args.init_attention_fold_mode,
         init_attention_head_dim_transport=args.init_attention_head_dim_transport,
         init_token_init_mode=args.init_token_init_mode,
+        init_token_fallback_mode=args.init_token_fallback_mode,
         init_projection_scale=args.init_projection_scale,
         init_projection_blend_alpha=args.init_projection_blend_alpha,
         init_consumer_hidden_reduction=args.init_consumer_hidden_reduction,

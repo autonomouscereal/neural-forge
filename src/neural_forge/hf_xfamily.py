@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -294,6 +295,7 @@ def donor_projected_init(
     attention_fold_mode: str = "independent",
     attention_head_dim_transport: str = "none",
     token_init_mode: str = "shared",
+    token_fallback_mode: str = "none",
     projection_scale: str = "none",
     projection_blend_alpha: float = 1.0,
     consumer_hidden_reduction: str = "mean",
@@ -379,6 +381,8 @@ def donor_projected_init(
         raise ValueError("attention_head_dim_transport must be none or qk-vo.")
     if token_init_mode not in {"shared", "donor-tokenized", "donor-tokenized-weighted", "donor-omp"}:
         raise ValueError("token_init_mode must be shared, donor-tokenized, donor-tokenized-weighted, or donor-omp.")
+    if token_fallback_mode not in {"none", "donor-mean", "donor-hash"}:
+        raise ValueError("token_fallback_mode must be none, donor-mean, or donor-hash.")
     if projection_scale not in {"none", "target-rms", "source-rms", "geomean-rms"}:
         raise ValueError("projection_scale must be none, target-rms, source-rms, or geomean-rms.")
     if consumer_hidden_reduction not in {"mean", "sum", "sqrt-sum"}:
@@ -869,6 +873,7 @@ def donor_projected_init(
         donor_tokenizer,
         max_anchors=max_anchors,
         token_init_mode=token_init_mode,
+        token_fallback_mode=token_fallback_mode,
         fold_mode=fold_mode,
         hidden_basis=embedding_hidden_basis,
         lm_head_hidden_basis=lm_head_hidden_basis,
@@ -920,6 +925,7 @@ def donor_projected_init(
         "attention_fold_mode": attention_fold_mode,
         "attention_head_dim_transport": attention_head_dim_transport,
         "token_init_mode": token_init_mode,
+        "token_fallback_mode": token_fallback_mode,
         "projection_scale": projection_scale,
         "projection_blend_alpha": projection_blend_alpha,
         "consumer_hidden_reduction": consumer_hidden_reduction,
@@ -1057,13 +1063,24 @@ def multi_donor_projected_init(
                     key: report.get("token_report", {}).get(key)
                     for key in (
                         "mode",
+                        "fallback_mode",
                         "anchors_used",
                         "shared_decoded_tokens",
                         "embedding_rows_initialized",
+                        "embedding_fallback_rows_initialized",
+                        "embedding_effective_rows_initialized",
+                        "embedding_total_rows",
+                        "embedding_uninitialized_rows",
+                        "embedding_coverage",
                         "special_rows_initialized",
                         "tokenized_rows_initialized",
                         "weighted_tokenized_rows_initialized",
                         "lm_head_rows_initialized",
+                        "lm_head_fallback_rows_initialized",
+                        "lm_head_effective_rows_initialized",
+                        "lm_head_total_rows",
+                        "lm_head_uninitialized_rows",
+                        "lm_head_coverage",
                         "lm_head_tied_to_embeddings",
                     )
                 },
@@ -1951,6 +1968,7 @@ def chain_anchor_staged_compress(
     init_attention_fold_mode: str = "independent",
     init_attention_head_dim_transport: str = "none",
     init_token_init_mode: str = "shared",
+    init_token_fallback_mode: str = "none",
     init_projection_scale: str = "none",
     init_projection_blend_alpha: float = 1.0,
     init_consumer_hidden_reduction: str = "mean",
@@ -2236,6 +2254,7 @@ def chain_anchor_staged_compress(
                 attention_fold_mode=init_attention_fold_mode,
                 attention_head_dim_transport=init_attention_head_dim_transport,
                 token_init_mode=init_token_init_mode,
+                token_fallback_mode=init_token_fallback_mode,
                 projection_scale=init_projection_scale,
                 projection_blend_alpha=init_projection_blend_alpha,
                 consumer_hidden_reduction=init_consumer_hidden_reduction,
@@ -8927,6 +8946,7 @@ def _initialize_token_weights_from_donor(
     donor_tokenizer,
     max_anchors: int,
     token_init_mode: str = "shared",
+    token_fallback_mode: str = "none",
     fold_mode: str = "mean",
     hidden_basis=None,
     lm_head_hidden_basis=None,
@@ -8942,6 +8962,8 @@ def _initialize_token_weights_from_donor(
 ) -> dict[str, Any]:
     if token_init_mode not in {"shared", "donor-tokenized", "donor-tokenized-weighted", "donor-omp"}:
         raise ValueError("token_init_mode must be shared, donor-tokenized, donor-tokenized-weighted, or donor-omp.")
+    if token_fallback_mode not in {"none", "donor-mean", "donor-hash"}:
+        raise ValueError("token_fallback_mode must be none, donor-mean, or donor-hash.")
     if consumer_hidden_reduction not in {"mean", "sum", "sqrt-sum"}:
         raise ValueError("consumer_hidden_reduction must be mean, sum, or sqrt-sum.")
     anchors, target_map, donor_map = _shared_anchor_tokens(target_tokenizer, donor_tokenizer, max_anchors)
@@ -8985,6 +9007,7 @@ def _initialize_token_weights_from_donor(
     donor_embeddings = donor.get_input_embeddings()
     target_emb_weight = target_embeddings.weight.data.detach().cpu().to(torch.float32)
     donor_emb_weight = donor_embeddings.weight.data.detach().cpu().to(torch.float32)
+    initialized_target_ids = {int(item) for item in target_ids}
     embedding_rows_initialized = _project_token_weight_rows(
         torch,
         target_emb_weight,
@@ -9005,12 +9028,34 @@ def _initialize_token_weights_from_donor(
         hidden_axis_reduction="mean",
         chunk_size=2048,
     )
+    embedding_fallback_rows_initialized = _project_token_fallback_rows(
+        torch,
+        target_emb_weight,
+        donor_emb_weight,
+        target_tokenizer,
+        donor_tokenizer,
+        initialized_target_ids=initialized_target_ids,
+        token_fallback_mode=token_fallback_mode,
+        fold_mode=fold_mode,
+        hidden_basis=hidden_basis,
+        hidden_axis_weights=hidden_axis_weights,
+        activation_fold_assignment=activation_fold_assignment,
+        fold_stat_repair=fold_stat_repair,
+        transport_backend=transport_backend,
+        transport_support=transport_support,
+        projection_scale=projection_scale,
+        projection_blend_alpha=projection_blend_alpha,
+        assignment_cache=assignment_cache,
+        hidden_axis_reduction="mean",
+        chunk_size=2048,
+    )
     target_embeddings.weight.data.copy_(target_emb_weight.to(target_embeddings.weight.dtype))
 
     target_lm = target.get_output_embeddings()
     donor_lm = donor.get_output_embeddings()
     lm_head_updated = False
     lm_head_rows_initialized = 0
+    lm_head_fallback_rows_initialized = 0
     tied_target_head = (
         target_lm is not None
         and target_embeddings is not None
@@ -9042,18 +9087,62 @@ def _initialize_token_weights_from_donor(
                 hidden_axis_reduction=consumer_hidden_reduction,
                 chunk_size=2048,
             )
+            lm_head_fallback_rows_initialized = _project_token_fallback_rows(
+                torch,
+                target_head,
+                donor_head,
+                target_tokenizer,
+                donor_tokenizer,
+                initialized_target_ids=initialized_target_ids,
+                token_fallback_mode=token_fallback_mode,
+                fold_mode=fold_mode,
+                hidden_basis=hidden_basis if lm_head_hidden_basis is None else lm_head_hidden_basis,
+                hidden_axis_weights=hidden_axis_weights,
+                activation_fold_assignment=activation_fold_assignment,
+                fold_stat_repair=fold_stat_repair,
+                transport_backend=transport_backend,
+                transport_support=transport_support,
+                projection_scale=projection_scale,
+                projection_blend_alpha=projection_blend_alpha,
+                assignment_cache=assignment_cache,
+                hidden_axis_reduction=consumer_hidden_reduction,
+                chunk_size=2048,
+            )
             target_lm.weight.data.copy_(target_head.to(target_lm.weight.dtype))
             lm_head_updated = True
 
+    embedding_total_rows = int(target_emb_weight.shape[0])
+    embedding_direct_rows = len({idx for idx in initialized_target_ids if 0 <= idx < embedding_total_rows})
+    embedding_effective_rows = min(embedding_total_rows, embedding_direct_rows + int(embedding_fallback_rows_initialized))
+    lm_head_total_rows = int(target_lm.weight.shape[0]) if target_lm is not None else 0
+    if tied_target_head:
+        lm_head_effective_rows = embedding_effective_rows
+    elif lm_head_updated:
+        lm_head_direct_rows = len({idx for idx in initialized_target_ids if 0 <= idx < lm_head_total_rows})
+        lm_head_effective_rows = min(lm_head_total_rows, lm_head_direct_rows + int(lm_head_fallback_rows_initialized))
+    else:
+        lm_head_effective_rows = 0
+
     return {
         "mode": token_init_mode,
+        "fallback_mode": token_fallback_mode,
         "shared_decoded_tokens": len(set(_canonical_token_map(target_tokenizer)) & set(_canonical_token_map(donor_tokenizer))),
         "anchors_used": len(anchors),
         "tokenized_rows_initialized": int(tokenized_rows),
         "weighted_tokenized_rows_initialized": int(weighted_rows),
         "special_rows_initialized": int(len(special_target_ids)),
         "embedding_rows_initialized": int(embedding_rows_initialized),
+        "embedding_fallback_rows_initialized": int(embedding_fallback_rows_initialized),
+        "embedding_effective_rows_initialized": int(embedding_effective_rows),
+        "embedding_total_rows": int(embedding_total_rows),
+        "embedding_uninitialized_rows": int(max(0, embedding_total_rows - embedding_effective_rows)),
+        "embedding_coverage": float(embedding_effective_rows / max(1, embedding_total_rows)),
         "lm_head_rows_initialized": int(lm_head_rows_initialized) if lm_head_updated else 0,
+        "lm_head_fallback_rows_initialized": int(lm_head_fallback_rows_initialized) if lm_head_updated else 0,
+        "lm_head_effective_rows_initialized": int(lm_head_effective_rows),
+        "lm_head_total_rows": int(lm_head_total_rows),
+        "lm_head_uninitialized_rows": int(max(0, lm_head_total_rows - lm_head_effective_rows)),
+        "lm_head_coverage": float(lm_head_effective_rows / max(1, lm_head_total_rows)) if target_lm is not None else 0.0,
         "lm_head_updated": lm_head_updated,
         "lm_head_tied_to_embeddings": bool(tied_target_head),
         "consumer_hidden_reduction": consumer_hidden_reduction,
@@ -9134,6 +9223,177 @@ def _project_token_weight_rows(
         )
         target_weight[torch.tensor(chunk_target_ids, dtype=torch.long)] = projected
     return int(len(target_ids))
+
+
+def _project_token_fallback_rows(
+    torch,
+    target_weight,
+    donor_weight,
+    target_tokenizer,
+    donor_tokenizer,
+    initialized_target_ids: set[int],
+    token_fallback_mode: str,
+    fold_mode: str,
+    hidden_basis=None,
+    hidden_axis_weights=None,
+    activation_fold_assignment: str = "balanced",
+    fold_stat_repair: str = "none",
+    transport_backend: str = "sparse",
+    transport_support: str = "centroid",
+    projection_scale: str = "none",
+    projection_blend_alpha: float = 1.0,
+    assignment_cache: dict[Any, dict[str, Any]] | None = None,
+    hidden_axis_reduction: str = "mean",
+    chunk_size: int = 2048,
+) -> int:
+    if token_fallback_mode == "none":
+        return 0
+    if token_fallback_mode not in {"donor-mean", "donor-hash"}:
+        raise ValueError("token_fallback_mode must be none, donor-mean, or donor-hash.")
+    target_rows = int(target_weight.shape[0])
+    missing_target_ids = [idx for idx in range(target_rows) if idx not in initialized_target_ids]
+    if not missing_target_ids:
+        return 0
+    donor_ids = _eligible_donor_token_ids(donor_tokenizer, int(donor_weight.shape[0]))
+    if not donor_ids:
+        return 0
+    projection_blend_alpha = _bounded_alpha(projection_blend_alpha, "projection_blend_alpha")
+    if hidden_axis_reduction not in {"mean", "sum", "sqrt-sum"}:
+        raise ValueError("hidden_axis_reduction must be mean, sum, or sqrt-sum.")
+    target_dim = int(target_weight.shape[1])
+    donor_mean = None
+    if token_fallback_mode == "donor-mean":
+        donor_mean = _mean_donor_token_row(torch, donor_weight, donor_ids)
+    for start in range(0, len(missing_target_ids), int(chunk_size)):
+        end = min(start + int(chunk_size), len(missing_target_ids))
+        chunk_target_ids = list(missing_target_ids[start:end])
+        if token_fallback_mode == "donor-mean":
+            donor_rows = donor_mean.unsqueeze(0).expand(len(chunk_target_ids), -1).clone()
+        else:
+            donor_rows = torch.stack(
+                [
+                    _hashed_donor_token_row(
+                        torch,
+                        donor_weight,
+                        donor_ids,
+                        _fallback_token_surface(target_tokenizer, target_idx),
+                    )
+                    for target_idx in chunk_target_ids
+                ],
+                dim=0,
+            )
+        target_index = torch.tensor(chunk_target_ids, dtype=torch.long)
+        projected = _resize_tensor_to_shape(
+            torch,
+            donor_rows,
+            (len(chunk_target_ids), target_dim),
+            fold_mode=fold_mode,
+            hidden_basis=hidden_basis,
+            axis_weights={} if hidden_axis_weights is None else {1: hidden_axis_weights},
+            axis_reductions={1: hidden_axis_reduction},
+            activation_fold_assignment=activation_fold_assignment,
+            fold_stat_repair=fold_stat_repair,
+            transport_backend=transport_backend,
+            transport_support=transport_support,
+            assignment_cache=assignment_cache,
+        )
+        projected = _scale_projection_to_target(
+            torch,
+            projected,
+            target_weight[target_index],
+            projection_scale,
+            source_tensor=donor_rows,
+        )
+        projected = _blend_projection_with_target(
+            torch,
+            projected,
+            target_weight[target_index],
+            projection_blend_alpha,
+        )
+        target_weight[target_index] = projected
+    return int(len(missing_target_ids))
+
+
+def _eligible_donor_token_ids(donor_tokenizer, donor_vocab_rows: int) -> list[int]:
+    special_ids: set[int] = set()
+    for item in getattr(donor_tokenizer, "all_special_ids", []) or []:
+        try:
+            token_id = int(item)
+        except (TypeError, ValueError):
+            continue
+        if token_id >= 0:
+            special_ids.add(token_id)
+    ids = [idx for idx in range(int(donor_vocab_rows)) if idx not in special_ids]
+    if ids:
+        return ids
+    return list(range(int(donor_vocab_rows)))
+
+
+def _mean_donor_token_row(torch, donor_weight, donor_ids: Sequence[int], chunk_size: int = 8192):
+    if not donor_ids:
+        raise ValueError("donor_ids cannot be empty.")
+    total = torch.zeros((int(donor_weight.shape[1]),), dtype=torch.float32)
+    count = 0
+    for start in range(0, len(donor_ids), int(chunk_size)):
+        chunk = donor_ids[start : start + int(chunk_size)]
+        if not chunk:
+            continue
+        idx = torch.tensor(chunk, dtype=torch.long)
+        total += donor_weight[idx].to(torch.float32).sum(dim=0)
+        count += len(chunk)
+    return total / max(1, count)
+
+
+def _fallback_token_surface(tokenizer, token_id: int) -> str:
+    try:
+        if 0 <= int(token_id) < len(tokenizer):
+            decoded = tokenizer.decode([int(token_id)], clean_up_tokenization_spaces=False)
+        else:
+            decoded = ""
+    except Exception:
+        decoded = ""
+    canonical = _canonical_token(decoded)
+    if canonical:
+        return canonical
+    if decoded:
+        return str(decoded)
+    return f"<target-token-id:{int(token_id)}>"
+
+
+def _hashed_donor_token_row(torch, donor_weight, donor_ids: Sequence[int], surface: str, group_size: int = 4):
+    group = _hashed_donor_token_group(donor_ids, surface, group_size=group_size)
+    return _weighted_donor_token_row(torch, donor_weight, group, None)
+
+
+def _hashed_donor_token_group(donor_ids: Sequence[int], surface: str, group_size: int = 4) -> list[int]:
+    donor_list = [int(item) for item in donor_ids]
+    if not donor_list:
+        raise ValueError("donor_ids cannot be empty.")
+    target_size = max(1, min(int(group_size), len(donor_list)))
+    selected: list[int] = []
+    seed = sha256(str(surface).encode("utf-8", errors="ignore")).digest()
+    cursor = 0
+    attempts = 0
+    max_attempts = max(16, len(donor_list) * 4)
+    while len(selected) < target_size and attempts < max_attempts:
+        if cursor + 8 > len(seed):
+            seed = sha256(seed + str(len(selected)).encode("ascii")).digest()
+            cursor = 0
+        offset = int.from_bytes(seed[cursor : cursor + 8], "big") % len(donor_list)
+        cursor += 8
+        attempts += 1
+        candidate = donor_list[offset]
+        if candidate not in selected:
+            selected.append(candidate)
+    if len(selected) < target_size:
+        start = int.from_bytes(seed[:8], "big") % len(donor_list)
+        for offset in range(len(donor_list)):
+            candidate = donor_list[(start + offset) % len(donor_list)]
+            if candidate not in selected:
+                selected.append(candidate)
+                if len(selected) >= target_size:
+                    break
+    return selected
 
 
 def _weighted_donor_token_row(torch, donor_weight, donor_group: Sequence[int], donor_weights: Sequence[float] | None):

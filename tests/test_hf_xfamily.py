@@ -828,6 +828,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "qk-vo",
             "--token-init-mode",
             "donor-omp",
+            "--token-fallback-mode",
+            "donor-hash",
             "--projection-scale",
             "geomean-rms",
             "--projection-blend-alpha",
@@ -1303,6 +1305,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.attention_fold_mode == "coupled"
     assert donor_init_args.attention_head_dim_transport == "qk-vo"
     assert donor_init_args.token_init_mode == "donor-omp"
+    assert donor_init_args.token_fallback_mode == "donor-hash"
     assert donor_init_args.projection_scale == "geomean-rms"
     assert donor_init_args.projection_blend_alpha == 0.35
     assert donor_init_args.consumer_hidden_reduction == "sqrt-sum"
@@ -2584,6 +2587,61 @@ def test_token_initialization_skips_tied_lm_head_second_pass() -> None:
     assert report["lm_head_tied_to_embeddings"] is True
     assert report["lm_head_updated"] is False
     assert report["lm_head_rows_initialized"] == 0
+
+
+def test_token_initialization_fallback_covers_unmapped_blank_rows() -> None:
+    torch = pytest.importorskip("torch")
+
+    class _TinyModel:
+        def __init__(self, weight):
+            self.embed = torch.nn.Embedding.from_pretrained(weight.clone(), freeze=False)
+            self.head = torch.nn.Linear(weight.shape[1], weight.shape[0], bias=False)
+            self.head.weight.data.copy_(weight.clone())
+
+        def get_input_embeddings(self):
+            return self.embed
+
+        def get_output_embeddings(self):
+            return self.head
+
+    target = _TinyModel(torch.zeros((3, 2), dtype=torch.float32))
+    donor = _TinyModel(
+        torch.tensor(
+            [
+                [0.0, 0.0, 0.0, 0.0],
+                [1.0, 3.0, 5.0, 7.0],
+                [5.0, 7.0, 11.0, 13.0],
+            ],
+            dtype=torch.float32,
+        )
+    )
+    target_tokenizer = _Tokenizer(["<eos>", "a", "orphan"])
+    donor_tokenizer = _Tokenizer(["<eos>", "a", "b"])
+
+    report = _initialize_token_weights_from_donor(
+        torch,
+        target,
+        donor,
+        target_tokenizer,
+        donor_tokenizer,
+        max_anchors=4,
+        token_init_mode="donor-tokenized-weighted",
+        token_fallback_mode="donor-mean",
+        fold_mode="mean",
+        consumer_hidden_reduction="sum",
+    )
+
+    assert report["fallback_mode"] == "donor-mean"
+    assert report["embedding_fallback_rows_initialized"] == 1
+    assert report["embedding_effective_rows_initialized"] == 3
+    assert report["embedding_uninitialized_rows"] == 0
+    assert report["embedding_coverage"] == pytest.approx(1.0)
+    assert report["lm_head_fallback_rows_initialized"] == 1
+    assert report["lm_head_effective_rows_initialized"] == 3
+    assert report["lm_head_uninitialized_rows"] == 0
+    assert report["lm_head_coverage"] == pytest.approx(1.0)
+    assert float(target.get_input_embeddings().weight[2].abs().sum().item()) > 0.0
+    assert float(target.get_output_embeddings().weight[2].abs().sum().item()) > 0.0
 
 
 def test_sqrt_sum_reduction_is_between_mean_and_sum() -> None:
@@ -7733,6 +7791,8 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "qk-vo",
             "--token-init-mode",
             "donor-omp",
+            "--token-fallback-mode",
+            "donor-hash",
             "--projection-scale",
             "target-rms",
             "--projection-blend-alpha",
@@ -7805,9 +7865,10 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "donor_layer_fold_mode": "average",
         "donor_layer_group_strategy": "activation-geometry",
         "attention_fold_mode": "activation-coupled",
-        "attention_head_dim_transport": "qk-vo",
-        "token_init_mode": "donor-omp",
-        "projection_scale": "target-rms",
+            "attention_head_dim_transport": "qk-vo",
+            "token_init_mode": "donor-omp",
+            "token_fallback_mode": "donor-hash",
+            "projection_scale": "target-rms",
         "projection_blend_alpha": 0.25,
         "consumer_hidden_reduction": "sqrt-sum",
         "activation_fit_linears": True,
@@ -10028,6 +10089,8 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "qk-vo",
             "--init-token-init-mode",
             "donor-tokenized-weighted",
+            "--init-token-fallback-mode",
+            "donor-mean",
             "--init-projection-scale",
             "geomean-rms",
             "--init-projection-blend-alpha",
@@ -10297,6 +10360,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["init_attention_fold_mode"] == "activation-coupled"
     assert captured["init_attention_head_dim_transport"] == "qk-vo"
     assert captured["init_token_init_mode"] == "donor-tokenized-weighted"
+    assert captured["init_token_fallback_mode"] == "donor-mean"
     assert captured["init_projection_scale"] == "geomean-rms"
     assert captured["init_projection_blend_alpha"] == 0.75
     assert captured["init_consumer_hidden_reduction"] == "sqrt-sum"
