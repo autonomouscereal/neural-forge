@@ -168,6 +168,10 @@ if [[ -z "${INIT_ATTENTION_HEAD_DIM_TRANSPORT:-}" ]]; then
   fi
 fi
 export INIT_ATTENTION_HEAD_DIM_TRANSPORT
+if [[ -z "${ACT_TARGET:-}" && "$INIT_TRANSPORT_SUPPORT" == "domain-quantile-medoid" ]]; then
+  ACT_TARGET="all"
+fi
+export ACT_TARGET="${ACT_TARGET:-mlp-output}"
 export INIT_ACTIVATION_DOMAIN_BALANCE="${INIT_ACTIVATION_DOMAIN_BALANCE:-keyword}"
 export INIT_DONOR_LAYER_GROUP_STRATEGY="${INIT_DONOR_LAYER_GROUP_STRATEGY:-activation-cka-weighted}"
 export BLOCK_DONOR_LAYER_GROUP_STRATEGY="${BLOCK_DONOR_LAYER_GROUP_STRATEGY:-activation-cka-weighted}"
