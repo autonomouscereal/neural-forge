@@ -511,6 +511,7 @@ def _row_from_entry(entry: dict[str, Any]) -> dict[str, Any]:
         row["generation_by_category"] = _category_counts(data.get("generation_diagnostics"), "passed")
         row["manual_samples"] = _manual_samples(Path(str(entry.get("manual_json", ""))))
         row["retention"] = _load_retention_summary(Path(str(entry.get("retention_dir", ""))))
+        row.update(_aggregate_retention(row["retention"]))
     return row
 
 
@@ -572,15 +573,48 @@ def _load_retention_summary(path: Path) -> dict[str, Any]:
         return {}
 
 
+def _aggregate_retention(retention: dict[str, Any]) -> dict[str, Any]:
+    behavior = _retention_overall(retention, "behavior")
+    generation = _retention_overall(retention, "generation")
+    choice = _retention_overall(retention, "choice")
+    return {
+        "behavior_parent_retention": behavior.get("shared_parent_pass_retention_rate"),
+        "generation_parent_retention": generation.get("shared_parent_pass_retention_rate"),
+        "choice_parent_retention": choice.get("shared_parent_pass_retention_rate"),
+        "behavior_parent_pass": behavior.get("parent_pass"),
+        "generation_parent_pass": generation.get("parent_pass"),
+        "choice_parent_pass": choice.get("parent_pass"),
+    }
+
+
+def _retention_overall(retention: dict[str, Any], section: str) -> dict[str, Any]:
+    value = retention.get(section)
+    if not isinstance(value, dict):
+        return {}
+    overall = value.get("overall")
+    if isinstance(overall, dict):
+        return overall
+    return {}
+
+
 def _rank_key(row: dict[str, Any]) -> tuple[Any, ...]:
     return (
         row.get("status") != "complete",
         -_ratio(row.get("behavior_correct"), row.get("behavior_total")),
-        -_ratio(row.get("choice_correct"), row.get("choice_total")),
         -_ratio(row.get("generation_correct"), row.get("generation_total")),
+        -_retention_rate(row.get("behavior_parent_retention")),
+        -_retention_rate(row.get("generation_parent_retention")),
+        -_ratio(row.get("choice_correct"), row.get("choice_total")),
+        -_retention_rate(row.get("choice_parent_retention")),
         row.get("perplexity_mean") if row.get("perplexity_mean") is not None else float("inf"),
         str(row.get("label")),
     )
+
+
+def _retention_rate(value: Any) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    return 0.0
 
 
 def _ratio(correct: Any, total: Any) -> float:
@@ -596,18 +630,19 @@ def _summary_markdown(summary: dict[str, Any]) -> str:
         f"Created: `{summary['created_at']}`",
         f"Rows: `{summary['row_count']}` complete: `{summary['complete_count']}`",
         "",
-        "| Rank | Label | Category | Behavior | Generation | Choice | PPL |",
-        "|---:|---|---|---:|---:|---:|---:|",
+        "| Rank | Label | Category | Behavior | Generation | Choice | Retain B/G/C | PPL |",
+        "|---:|---|---|---:|---:|---:|---:|---:|",
     ]
     for index, row in enumerate(summary["rows"], start=1):
         lines.append(
-            "| {rank} | `{label}` | {category} | {behavior} | {generation} | {choice} | {ppl} |".format(
+            "| {rank} | `{label}` | {category} | {behavior} | {generation} | {choice} | {retention} | {ppl} |".format(
                 rank=index,
                 label=row.get("label"),
                 category=row.get("category") or "",
                 behavior=_metric(row, "behavior"),
                 generation=_metric(row, "generation"),
                 choice=_metric(row, "choice"),
+                retention=_retention_metric(row),
                 ppl=_fmt_number(row.get("perplexity_mean")),
             )
         )
@@ -628,6 +663,22 @@ def _summary_markdown(summary: dict[str, Any]) -> str:
 
 def _metric(row: dict[str, Any], prefix: str) -> str:
     return f"{row.get(prefix + '_correct')}/{row.get(prefix + '_total')}"
+
+
+def _retention_metric(row: dict[str, Any]) -> str:
+    return "/".join(
+        [
+            _fmt_percent(row.get("behavior_parent_retention")),
+            _fmt_percent(row.get("generation_parent_retention")),
+            _fmt_percent(row.get("choice_parent_retention")),
+        ]
+    )
+
+
+def _fmt_percent(value: Any) -> str:
+    if not isinstance(value, (int, float)):
+        return "n/a"
+    return f"{float(value) * 100:.1f}%"
 
 
 def _fmt_number(value: Any) -> str:
