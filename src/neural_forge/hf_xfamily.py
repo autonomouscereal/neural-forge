@@ -6434,6 +6434,15 @@ def _linear_module_forward(torch, module, inputs):
     weight = module.weight
     bias = getattr(module, "bias", None)
     values = inputs.to(device=weight.device, dtype=weight.dtype)
+    if weight.dim() == 2:
+        input_dim = int(values.shape[-1])
+        if int(weight.shape[1]) == input_dim:
+            return torch.nn.functional.linear(values, weight, bias)
+        if int(weight.shape[0]) == input_dim:
+            output = torch.matmul(values, weight)
+            if bias is not None:
+                output = output + bias.to(device=output.device, dtype=output.dtype)
+            return output
     return torch.nn.functional.linear(values, weight, bias)
 
 

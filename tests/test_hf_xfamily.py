@@ -3530,6 +3530,39 @@ def test_mlp_neuron_activation_values_use_gated_product() -> None:
     assert torch.allclose(values, expected)
 
 
+def test_mlp_neuron_activation_values_handles_gpt2_conv1d_layout() -> None:
+    torch = pytest.importorskip("torch")
+
+    class _TinyConv1D(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]))
+            self.bias = torch.nn.Parameter(torch.tensor([0.5, 1.5, 2.5]))
+
+    class _TinyMlp(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.c_fc = _TinyConv1D()
+            self.c_proj = torch.nn.Linear(3, 2, bias=False)
+            self.act_fn = torch.nn.Identity()
+
+    mlp = _TinyMlp()
+    spec = {
+        "kind": "dense",
+        "mlp": mlp,
+        "inputs": [mlp.c_fc],
+        "input_names": ["c_fc"],
+        "output": mlp.c_proj,
+        "output_name": "c_proj",
+    }
+    inputs = (torch.tensor([[7.0, 11.0]], dtype=torch.float32),)
+
+    values = _mlp_neuron_activation_values(torch, spec, inputs)
+
+    expected = inputs[0] @ mlp.c_fc.weight + mlp.c_fc.bias
+    torch.testing.assert_close(values, expected)
+
+
 def test_transport_fold_uses_balanced_sinkhorn_feature_map() -> None:
     torch = pytest.importorskip("torch")
     cache = {}
