@@ -146,6 +146,7 @@ def _cmd_queue(args: argparse.Namespace) -> int:
                 "MAX_CHOICE_PROBES": "250",
                 "MAX_TEXT_EVALS": "128",
                 "MAX_NEW_TOKENS": "96",
+                "POLL_SECONDS": os.environ.get("POLL_SECONDS", "30"),
             }
         )
         entry = {
