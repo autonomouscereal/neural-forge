@@ -6436,6 +6436,16 @@ def _linear_module_forward(torch, module, inputs):
     values = inputs.to(device=weight.device, dtype=weight.dtype)
     if weight.dim() == 2:
         input_dim = int(values.shape[-1])
+        if _is_transformers_conv1d_module(module):
+            if int(weight.shape[0]) == input_dim:
+                output = torch.matmul(values, weight)
+            elif int(weight.shape[1]) == input_dim:
+                output = torch.matmul(values, weight.t())
+            else:
+                return torch.nn.functional.linear(values, weight, bias)
+            if bias is not None:
+                output = output + bias.to(device=output.device, dtype=output.dtype)
+            return output
         if int(weight.shape[1]) == input_dim:
             return torch.nn.functional.linear(values, weight, bias)
         if int(weight.shape[0]) == input_dim:
@@ -6444,6 +6454,16 @@ def _linear_module_forward(torch, module, inputs):
                 output = output + bias.to(device=output.device, dtype=output.dtype)
             return output
     return torch.nn.functional.linear(values, weight, bias)
+
+
+def _is_transformers_conv1d_module(module) -> bool:
+    class_name = module.__class__.__name__.lower()
+    module_name = getattr(module.__class__, "__module__", "").lower()
+    if class_name == "conv1d" and "transformers" in module_name:
+        return True
+    # HF Conv1D exposes nf/nx and stores weight as input-by-output. Some tests
+    # use tiny stand-ins without the transformers module path.
+    return class_name.endswith("conv1d") and hasattr(module, "nf") and hasattr(module, "nx")
 
 
 def _mlp_activation_fn(torch, mlp):

@@ -141,6 +141,8 @@ from neural_forge.hf_xfamily import _effective_layer_alpha
 from neural_forge.hf_xfamily import _fit_linear_weight_from_activation_rows
 from neural_forge.hf_xfamily import _fit_projected_linear_from_donor_activations
 from neural_forge.hf_xfamily import _hidden_basis_axes_for_layer_tensor
+from neural_forge.hf_xfamily import _is_transformers_conv1d_module
+from neural_forge.hf_xfamily import _linear_module_forward
 from neural_forge.hf_xfamily import _linear_fit_rows_for_suffix
 from neural_forge.hf_xfamily import _truncate_linear_weight_rank
 from neural_forge.hf_xfamily import _truncate_linear_weight_delta_rank
@@ -3536,6 +3538,8 @@ def test_mlp_neuron_activation_values_handles_gpt2_conv1d_layout() -> None:
     class _TinyConv1D(torch.nn.Module):
         def __init__(self):
             super().__init__()
+            self.nf = 3
+            self.nx = 2
             self.weight = torch.nn.Parameter(torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]))
             self.bias = torch.nn.Parameter(torch.tensor([0.5, 1.5, 2.5]))
 
@@ -3561,6 +3565,25 @@ def test_mlp_neuron_activation_values_handles_gpt2_conv1d_layout() -> None:
 
     expected = inputs[0] @ mlp.c_fc.weight + mlp.c_fc.bias
     torch.testing.assert_close(values, expected)
+
+
+def test_linear_module_forward_detects_transformers_conv1d_layout() -> None:
+    torch = pytest.importorskip("torch")
+
+    class Conv1D(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.nf = 3
+            self.nx = 2
+            self.weight = torch.nn.Parameter(torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]))
+            self.bias = torch.nn.Parameter(torch.tensor([0.5, 1.5, 2.5]))
+
+    Conv1D.__module__ = "transformers.pytorch_utils"
+    conv = Conv1D()
+    inputs = torch.tensor([[7.0, 11.0]], dtype=torch.float32)
+
+    assert _is_transformers_conv1d_module(conv) is True
+    torch.testing.assert_close(_linear_module_forward(torch, conv, inputs), inputs @ conv.weight + conv.bias)
 
 
 def test_transport_fold_uses_balanced_sinkhorn_feature_map() -> None:
