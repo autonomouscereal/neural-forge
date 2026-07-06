@@ -53,7 +53,22 @@ wait_for_gpu() {
     used=$(nvidia-smi -i "$GPU_UUID" --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | tr -dc '0-9' || echo 999999)
     busy=$(
       nvidia-smi --query-compute-apps=pid,gpu_uuid,process_name --format=csv,noheader 2>/dev/null |
-        awk -F, -v gpu="$GPU_UUID" '$2 ~ gpu && $3 ~ /python/ {print $1}' |
+        awk -F, -v gpu="$GPU_UUID" -v ignore="${IGNORE_GPU_PIDS:-}" '
+          BEGIN {
+            split(ignore, ignored, /[ ,]+/)
+            for (idx in ignored) {
+              if (ignored[idx] != "") {
+                ignored_pid[ignored[idx]] = 1
+              }
+            }
+          }
+          {
+            pid = $1
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", pid)
+            if ($2 ~ gpu && $3 ~ /python/ && !(pid in ignored_pid)) {
+              print pid
+            }
+          }' |
         wc -l
     )
     if [[ -n "$used" && "$used" -le "$MEM_THRESHOLD" && "$busy" = "0" ]]; then
