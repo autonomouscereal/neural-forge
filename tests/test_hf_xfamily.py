@@ -3588,6 +3588,46 @@ def test_transport_fold_uses_balanced_sinkhorn_feature_map() -> None:
     )
 
 
+def test_transport_fold_can_qr_normalize_dense_sinkhorn_map() -> None:
+    torch = pytest.importorskip("torch")
+    cache = {}
+    features = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.95, 0.05],
+            [0.0, 1.0],
+            [0.05, 0.95],
+        ],
+        dtype=torch.float32,
+    )
+    source = torch.tensor([[1.0, 0.0], [3.0, 1.0], [100.0, 0.0], [300.0, 1.0]], dtype=torch.float32)
+
+    folded = _resize_tensor_axis_mean_fold(
+        torch,
+        source,
+        axis=0,
+        target_dim=2,
+        fold_mode="transport",
+        features=features,
+        assignment_cache=cache,
+        assignment_cache_key=("hidden", "qr-transport-test"),
+        transport_backend="qr-sinkhorn",
+        fold_stat_repair="rms",
+    )
+
+    assert folded.shape == (2, 2)
+    transport = next(iter(cache.values()))
+    assert transport["transport_backend"] == "qr_sinkhorn_dense"
+    coefficients = transport["transport_coefficients"]
+    assert coefficients.shape == (4, 2)
+    assert coefficients.t().matmul(coefficients).tolist() == pytest.approx(
+        torch.eye(2, dtype=torch.float32).tolist(), abs=1e-5
+    )
+    assert transport["transport_matrix"].sum(dim=1).tolist() == pytest.approx([1.0, 1.0, 1.0, 1.0])
+    report = _axis_assignment_cache_report(cache)
+    assert report[0]["transport_coefficients_shape"] == [4, 2]
+
+
 def test_transport_fold_can_use_importance_survivor_support() -> None:
     torch = pytest.importorskip("torch")
     cache = {}

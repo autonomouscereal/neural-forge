@@ -189,9 +189,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hf_donor_init.add_argument(
         "--transport-backend",
-        choices=["sparse", "sinkhorn"],
+        choices=["sparse", "sinkhorn", "qr-sinkhorn"],
         default="sparse",
-        help="Backend for fold-mode=transport: sparse centroid routing or dense Sinkhorn transport.",
+        help="Backend for fold-mode=transport: sparse routing, dense Sinkhorn, or QR-normalized dense Sinkhorn.",
     )
     hf_donor_init.add_argument(
         "--transport-support",
@@ -1584,7 +1584,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="balanced",
     )
     xfamily_chain.add_argument("--init-fold-stat-repair", choices=["none", "rms"], default="none")
-    xfamily_chain.add_argument("--init-transport-backend", choices=["sparse", "sinkhorn"], default="sparse")
+    xfamily_chain.add_argument("--init-transport-backend", choices=["sparse", "sinkhorn", "qr-sinkhorn"], default="sparse")
     xfamily_chain.add_argument(
         "--init-transport-support",
         choices=["centroid", "importance", "quantile", "medoid", "quantile-medoid", "diverse-medoid"],

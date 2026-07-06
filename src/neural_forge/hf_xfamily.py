@@ -35,6 +35,7 @@ _ACTIVATION_FOLD_ASSIGNMENTS = {
     "balanced-similarity",
     "balanced-signed-similarity",
 }
+_TRANSPORT_BACKENDS = {"sparse", "sinkhorn", "qr-sinkhorn"}
 
 
 def cross_family_vocab_merge(
@@ -338,8 +339,8 @@ def donor_projected_init(
         )
     if fold_stat_repair not in {"none", "rms"}:
         raise ValueError("fold_stat_repair must be none or rms.")
-    if transport_backend not in {"sparse", "sinkhorn"}:
-        raise ValueError("transport_backend must be sparse or sinkhorn.")
+    if transport_backend not in _TRANSPORT_BACKENDS:
+        raise ValueError("transport_backend must be sparse, sinkhorn, or qr-sinkhorn.")
     if transport_support not in {"centroid", "importance", "quantile", "medoid", "quantile-medoid", "diverse-medoid"}:
         raise ValueError(
             "transport_support must be centroid, importance, quantile, medoid, quantile-medoid, or diverse-medoid."
@@ -4213,8 +4214,8 @@ def _resize_tensor_to_shape(
         )
     if fold_stat_repair not in {"none", "rms"}:
         raise ValueError("fold_stat_repair must be none or rms.")
-    if transport_backend not in {"sparse", "sinkhorn"}:
-        raise ValueError("transport_backend must be sparse or sinkhorn.")
+    if transport_backend not in _TRANSPORT_BACKENDS:
+        raise ValueError("transport_backend must be sparse, sinkhorn, or qr-sinkhorn.")
     if transport_support not in {"centroid", "importance", "quantile", "medoid", "quantile-medoid", "diverse-medoid"}:
         raise ValueError(
             "transport_support must be centroid, importance, quantile, medoid, quantile-medoid, or diverse-medoid."
@@ -4770,8 +4771,13 @@ def _attention_axis_assignment_key(suffix: str, semantic_prefix, axis_kind: str)
 def _axis_assignment_cache_report(assignment_cache: dict[Any, dict[str, Any]]) -> list[dict[str, Any]]:
     report = []
     for key, item in assignment_cache.items():
-        map_type = "transport" if "transport_indices" in item or "transport_matrix" in item else "assignment"
+        map_type = (
+            "transport"
+            if "transport_indices" in item or "transport_matrix" in item or "transport_coefficients" in item
+            else "assignment"
+        )
         transport_matrix = item.get("transport_matrix")
+        transport_coefficients = item.get("transport_coefficients")
         support_indices = item.get("target_support_indices")
         report.append(
             {
@@ -4784,11 +4790,18 @@ def _axis_assignment_cache_report(assignment_cache: dict[Any, dict[str, Any]]) -
                 else item["target_masses"].tolist(),
                 "target_support_indices": support_indices.tolist() if support_indices is not None else None,
                 "transport_matrix_shape": list(transport_matrix.shape) if transport_matrix is not None else None,
+                "transport_coefficients_shape": list(transport_coefficients.shape)
+                if transport_coefficients is not None
+                else None,
                 "transport_diagnostics": item.get("transport_diagnostics"),
                 "source_dim": int(item.get("source_dim", 0)),
                 "target_dim": int(item.get("target_dim", 0)),
                 "assignment_mode": str(item.get("assignment_mode", "")),
-                "signed": bool(item.get("assignment_signs") is not None or item.get("transport_signs") is not None),
+                "signed": bool(
+                    item.get("assignment_signs") is not None
+                    or item.get("transport_signs") is not None
+                    or item.get("transport_coefficients") is not None
+                ),
             }
         )
     return report
@@ -5111,8 +5124,8 @@ def _build_sparse_activation_transport(
             "balanced-similarity, or balanced-signed-similarity."
         )
     signed = bool(signed) or _activation_assignment_mode_is_signed(assignment_mode)
-    if transport_backend not in {"sparse", "sinkhorn"}:
-        raise ValueError("transport_backend must be sparse or sinkhorn.")
+    if transport_backend not in _TRANSPORT_BACKENDS:
+        raise ValueError("transport_backend must be sparse, sinkhorn, or qr-sinkhorn.")
     if transport_support not in {"centroid", "importance", "quantile", "medoid", "quantile-medoid", "diverse-medoid"}:
         raise ValueError(
             "transport_support must be centroid, importance, quantile, medoid, quantile-medoid, or diverse-medoid."
@@ -5209,7 +5222,7 @@ def _build_sparse_activation_transport(
         target_mass = _activation_transport_target_mass(torch, scores, fold_weights, target_dim)
     else:
         target_mass = torch.full((target_dim,), 1.0 / float(target_dim), dtype=torch.float32)
-    if transport_backend == "sinkhorn" and int(source_dim) * int(target_dim) <= int(dense_limit):
+    if transport_backend in {"sinkhorn", "qr-sinkhorn"} and int(source_dim) * int(target_dim) <= int(dense_limit):
         source_mass = fold_weights / fold_weights.sum().clamp_min(1e-12)
         logits = scores / max(float(temperature), 1e-6)
         logits = logits - logits.max(dim=1, keepdim=True).values
@@ -5230,6 +5243,29 @@ def _build_sparse_activation_transport(
             fold_weights,
             target_mass,
         )
+        if transport_backend == "qr-sinkhorn":
+            signed_values = values if not signed else values * signs
+            coefficients = _qr_normalized_transport_coefficients(torch, signed_values)
+            coeff_top_values, coeff_top_indices = torch.topk(coefficients.abs(), k=top_k, dim=1)
+            return {
+                "transport_coefficients": coefficients.detach().cpu().to(torch.float32),
+                "transport_matrix": values.detach().cpu().to(torch.float32),
+                "transport_signs": None if not signed else signs.detach().cpu().to(torch.float32),
+                "transport_indices": coeff_top_indices.detach().cpu().to(torch.long),
+                "transport_values": coeff_top_values.detach().cpu().to(torch.float32),
+                "transport_top_signs": None,
+                "source_dim": int(source_dim),
+                "target_dim": int(target_dim),
+                "assignment_mode": "transport",
+                "transport_backend": "qr_sinkhorn_dense",
+                "transport_support": transport_support,
+                "target_masses": target_mass.detach().cpu().to(torch.float32),
+                "target_support_indices": None
+                if support_indices is None
+                else support_indices.detach().cpu().to(torch.long),
+                "sinkhorn_iterations": int(balance_iterations),
+                "transport_diagnostics": diagnostics,
+            }
         return {
             "transport_matrix": values.detach().cpu().to(torch.float32),
             "transport_signs": None if not signed else signs.detach().cpu().to(torch.float32),
@@ -5281,6 +5317,23 @@ def _build_sparse_activation_transport(
     }
 
 
+def _qr_normalized_transport_coefficients(torch, signed_matrix):
+    matrix = torch.nan_to_num(signed_matrix.detach().cpu().to(torch.float32), nan=0.0, posinf=0.0, neginf=0.0)
+    if matrix.dim() != 2:
+        raise ValueError("QR transport matrix must be rank-2.")
+    source_dim, target_dim = int(matrix.shape[0]), int(matrix.shape[1])
+    if source_dim < target_dim:
+        raise ValueError("QR transport requires source_dim >= target_dim.")
+    if float(matrix.abs().sum().item()) <= 1e-12:
+        matrix = torch.zeros((source_dim, target_dim), dtype=torch.float32)
+        matrix[:target_dim, :] = torch.eye(target_dim, dtype=torch.float32)
+    q, _r = torch.linalg.qr(matrix, mode="reduced")
+    alignment = torch.sign((q * matrix).sum(dim=0))
+    alignment = torch.where(alignment == 0, torch.ones_like(alignment), alignment)
+    q = q * alignment.unsqueeze(0)
+    return q.to(torch.float32)
+
+
 def _apply_sparse_axis_transport(
     torch,
     flat,
@@ -5289,6 +5342,14 @@ def _apply_sparse_axis_transport(
     reduction: str,
     fold_mode: str,
 ):
+    if "transport_coefficients" in transport:
+        coefficients = transport["transport_coefficients"].to(flat.dtype)
+        source_dim = int(flat.shape[0])
+        target_dim = int(transport["target_dim"])
+        if int(coefficients.shape[0]) != source_dim or int(coefficients.shape[1]) != target_dim:
+            raise ValueError("QR transport coefficients have the wrong shape.")
+        return coefficients.t().matmul(flat)
+
     if "transport_matrix" in transport:
         matrix = transport["transport_matrix"].to(flat.dtype)
         signs = transport.get("transport_signs")
@@ -5376,6 +5437,15 @@ def _fold_stat_repair_desired_rms_from_assignment(
 def _fold_stat_repair_desired_rms_from_transport(torch, flat, transport: dict[str, Any], fold_weights, reduction: str):
     source_power = flat.detach().to(torch.float32).pow(2).mean(dim=1)
     target_dim = int(transport["target_dim"])
+    if "transport_coefficients" in transport:
+        coefficients = transport["transport_coefficients"].detach().cpu().to(torch.float32)
+        if int(coefficients.shape[0]) != int(source_power.numel()) or int(coefficients.shape[1]) != target_dim:
+            raise ValueError("QR transport coefficients have the wrong source dimension.")
+        power_coeffs = coefficients.pow(2)
+        accum = power_coeffs.t().matmul(source_power)
+        counts = power_coeffs.sum(dim=0)
+        desired_power = accum / counts.clamp_min(1e-12)
+        return desired_power.clamp_min(0.0).sqrt()
     if "transport_matrix" in transport:
         matrix = transport["transport_matrix"].detach().cpu().to(torch.float32)
         if reduction == "mean":
@@ -5478,8 +5548,8 @@ def _resize_tensor_axis_mean_fold(
         )
     if fold_stat_repair not in {"none", "rms"}:
         raise ValueError("fold_stat_repair must be none or rms.")
-    if transport_backend not in {"sparse", "sinkhorn"}:
-        raise ValueError("transport_backend must be sparse or sinkhorn.")
+    if transport_backend not in _TRANSPORT_BACKENDS:
+        raise ValueError("transport_backend must be sparse, sinkhorn, or qr-sinkhorn.")
     if transport_support not in {"centroid", "importance", "quantile", "medoid", "quantile-medoid", "diverse-medoid"}:
         raise ValueError(
             "transport_support must be centroid, importance, quantile, medoid, quantile-medoid, or diverse-medoid."
@@ -5513,7 +5583,9 @@ def _resize_tensor_axis_mean_fold(
                 raise ValueError("Axis weights must match the source dimension.")
             fold_weights = fold_weights.clamp_min(1e-12)
         cached = None if cache_key is None or assignment_cache is None else assignment_cache.get(cache_key)
-        if cached is not None and "transport_indices" in cached:
+        if cached is not None and (
+            "transport_indices" in cached or "transport_matrix" in cached or "transport_coefficients" in cached
+        ):
             folded = _apply_sparse_axis_transport(torch, flat, cached, fold_weights, reduction, fold_mode)
             folded = _repair_folded_axis_stats(
                 torch,
