@@ -104,6 +104,8 @@ def test_prior_anchor_pair_queue_orders_dualalm_before_ffn1496() -> None:
         REPO_ROOT / "experiments/queue_qwen4b_prior_anchor_pair_20260707.sh"
     ).read_text(encoding="utf-8")
 
+    assert 'EVAL_DIR="${EVAL_DIR:-$RUN_ROOT/evals}"' in script
+    assert 'EVAL_DIR="$EVAL_DIR"' in script
     assert 'QUEUE_DUALALM29="${QUEUE_DUALALM29:-1}"' in script
     assert 'QUEUE_FFN1496="${QUEUE_FFN1496:-1}"' in script
     assert "launch_prior_anchor_variant \"dualalm29\"" in script
@@ -111,3 +113,26 @@ def test_prior_anchor_pair_queue_orders_dualalm_before_ffn1496() -> None:
     assert 'CURRENT_WAIT_PIDS="$(append_pid "$CURRENT_WAIT_PIDS" "$DUAL_PID")"' in script
     assert "launch_prior_anchor_variant \"ffn1496\"" in script
     assert "queue_qwen4b_prior_anchor_topneg_recover_20260707.sh" in script
+
+
+def test_combined_anchor_beststack_matrix_keeps_old_and_cross_family_lanes() -> None:
+    script = (
+        REPO_ROOT / "experiments/queue_combined_anchor_beststack_matrix_20260707.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'MATRIX_EVAL_DIR="${MATRIX_EVAL_DIR:-$RUN_ROOT/evals/combined_anchor_beststack_20260707}"' in script
+    assert 'DUALALM29_TAG="${DUALALM29_TAG:-qwen4b_dualalm29_anchor_topneg_exact_gpu6_20260707}"' in script
+    assert 'FFN1496_TAG="${FFN1496_TAG:-qwen4b_ffn1496_strict_anchor_topneg_gpu6_20260707}"' in script
+    assert 'QWEN_LFM_TAG="${QWEN_LFM_TAG:-qwen4b_lfm230m_multidonor_beststack_seqall_qrsinkhorn_gpu0_20260707}"' in script
+    assert 'QWEN_GPT2_TAG="${QWEN_GPT2_TAG:-qwen4b_gpt2_multidonor_beststack_seqall_qrsinkhorn_gpu4_20260707}"' in script
+    assert "queue_qwen4b_prior_anchor_pair_20260707.sh" in script
+    assert "queue_qwen4b_lfm230m_multidonor_beststack_20260707.sh" in script
+    assert "queue_beststack_after_retest_20260706.sh" in script
+    assert "VARIANT=qwen_gpt2" in script
+    assert 'BESTSTACK_EVAL_DIR="$MATRIX_EVAL_DIR"' in script
+    assert 'EVAL_DIR="$MATRIX_EVAL_DIR"' in script
+    assert 'WAIT_PIDS="${QWEN_LFM_WAIT_PIDS:-0}"' in script
+    assert 'WAIT_PIDS="${QWEN_GPT2_WAIT_PIDS:-0}"' in script
+    assert 'f"eval_{tag}_exactgen_20260702_1000x1000x250.json"' in script
+    assert 'f"eval_{tag}_strict_20260706_1000x1000x250.json"' in script
+    assert "retest_matrix.py\" summarize" in script

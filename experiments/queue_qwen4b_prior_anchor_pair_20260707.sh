@@ -7,6 +7,7 @@ REPO_ROOT="${REPO_ROOT:-/home/cereal/model-surgery-lab/neural-forge-src}"
 RUN_ROOT="${RUN_ROOT:-$REPO_ROOT/runs/qwen4b_to_smollm135m_transport_random_20260627}"
 GPU_UUID="${GPU_UUID:-GPU-f5a09535-fc85-a027-50f7-734b344747dd}"
 POLL_SECONDS="${POLL_SECONDS:-60}"
+EVAL_DIR="${EVAL_DIR:-$RUN_ROOT/evals}"
 UPSTREAM_WAIT_PIDS="${WAIT_PIDS:-}"
 QUEUE_DUALALM29="${QUEUE_DUALALM29:-1}"
 QUEUE_FFN1496="${QUEUE_FFN1496:-1}"
@@ -38,6 +39,7 @@ launch_prior_anchor_variant() {
   WAIT_PIDS="$wait_pids" \
   GPU_UUID="$GPU_UUID" \
   POLL_SECONDS="$POLL_SECONDS" \
+  EVAL_DIR="$EVAL_DIR" \
   REPO_ROOT="$REPO_ROOT" \
   RUN_ROOT="$RUN_ROOT" \
     nohup bash "$SCRIPT_DIR/queue_qwen4b_prior_anchor_topneg_recover_20260707.sh" >> "$log" 2>&1 &
