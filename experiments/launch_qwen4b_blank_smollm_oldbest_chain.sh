@@ -7,6 +7,7 @@ GPU_UUID="${GPU_UUID:-GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561}"
 TAG="${TAG:-qwen4b_blank_smollm_chain_oldbest_noactfit_cka_alm_gpu0_20260629}"
 INIT_ATTENTION_HEAD_DIM_TRANSPORT="${INIT_ATTENTION_HEAD_DIM_TRANSPORT:-none}"
 INIT_TOKEN_FALLBACK_MODE="${INIT_TOKEN_FALLBACK_MODE:-donor-mean}"
+INIT_TOKEN_INIT_MODE="${INIT_TOKEN_INIT_MODE:-donor-tokenized-weighted}"
 INIT_DONOR_LAYER_GROUP_STRATEGY="${INIT_DONOR_LAYER_GROUP_STRATEGY:-activation-energy}"
 BLOCK_DONOR_LAYER_GROUP_STRATEGY="${BLOCK_DONOR_LAYER_GROUP_STRATEGY:-activation-energy}"
 
@@ -44,7 +45,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-donor-layer-group-strategy "$INIT_DONOR_LAYER_GROUP_STRATEGY" \
   --init-attention-fold-mode activation-coupled \
   --init-attention-head-dim-transport "$INIT_ATTENTION_HEAD_DIM_TRANSPORT" \
-  --init-token-init-mode donor-tokenized-weighted \
+  --init-token-init-mode "$INIT_TOKEN_INIT_MODE" \
   --init-token-fallback-mode "$INIT_TOKEN_FALLBACK_MODE" \
   --init-projection-scale target-rms \
   --init-projection-blend-alpha 1.0 \

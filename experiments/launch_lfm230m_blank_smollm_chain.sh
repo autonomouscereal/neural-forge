@@ -33,6 +33,7 @@ INIT_ATTENTION_HEAD_DIM_TRANSPORT="${INIT_ATTENTION_HEAD_DIM_TRANSPORT:-none}"
 INIT_ACTIVATION_DOMAIN_BALANCE="${INIT_ACTIVATION_DOMAIN_BALANCE:-none}"
 INIT_DONOR_LAYER_GROUP_STRATEGY="${INIT_DONOR_LAYER_GROUP_STRATEGY:-activation-geometry}"
 BLOCK_DONOR_LAYER_GROUP_STRATEGY="${BLOCK_DONOR_LAYER_GROUP_STRATEGY:-activation-geometry}"
+INIT_TOKEN_INIT_MODE="${INIT_TOKEN_INIT_MODE:-donor-tokenized-weighted}"
 INIT_TOKEN_FALLBACK_MODE="${INIT_TOKEN_FALLBACK_MODE:-donor-mean}"
 INIT_UNTIE_OUTPUT_HEAD="${INIT_UNTIE_OUTPUT_HEAD:-1}"
 FINAL_OUTPUT_HEAD_POLICY="${FINAL_OUTPUT_HEAD_POLICY:-preserve}"
@@ -177,7 +178,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-donor-layer-group-strategy "$INIT_DONOR_LAYER_GROUP_STRATEGY" \
   --init-attention-fold-mode activation-coupled \
   --init-attention-head-dim-transport "$INIT_ATTENTION_HEAD_DIM_TRANSPORT" \
-  --init-token-init-mode donor-tokenized-weighted \
+  --init-token-init-mode "$INIT_TOKEN_INIT_MODE" \
   --init-token-fallback-mode "$INIT_TOKEN_FALLBACK_MODE" \
   "${INIT_OUTPUT_HEAD_ARGS[@]}" \
   --init-projection-scale "$INIT_PROJECTION_SCALE" \

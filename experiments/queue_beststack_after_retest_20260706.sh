@@ -172,6 +172,8 @@ if [[ -z "${ACT_TARGET:-}" && "$INIT_TRANSPORT_SUPPORT" == "domain-quantile-medo
   ACT_TARGET="all"
 fi
 export ACT_TARGET="${ACT_TARGET:-mlp-output}"
+export INIT_TOKEN_INIT_MODE="${INIT_TOKEN_INIT_MODE:-donor-tokenized-weighted}"
+export INIT_TOKEN_FALLBACK_MODE="${INIT_TOKEN_FALLBACK_MODE:-donor-mean}"
 export INIT_ACTIVATION_DOMAIN_BALANCE="${INIT_ACTIVATION_DOMAIN_BALANCE:-keyword}"
 export INIT_DONOR_LAYER_GROUP_STRATEGY="${INIT_DONOR_LAYER_GROUP_STRATEGY:-activation-cka-weighted}"
 export BLOCK_DONOR_LAYER_GROUP_STRATEGY="${BLOCK_DONOR_LAYER_GROUP_STRATEGY:-activation-cka-weighted}"
