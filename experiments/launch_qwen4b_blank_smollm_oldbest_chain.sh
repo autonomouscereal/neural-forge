@@ -6,6 +6,7 @@ REPO_ROOT="${REPO_ROOT:-/home/cereal/model-surgery-lab/neural-forge-src}"
 GPU_UUID="${GPU_UUID:-GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561}"
 TAG="${TAG:-qwen4b_blank_smollm_chain_oldbest_noactfit_cka_alm_gpu0_20260629}"
 INIT_ATTENTION_HEAD_DIM_TRANSPORT="${INIT_ATTENTION_HEAD_DIM_TRANSPORT:-none}"
+INIT_TOKEN_FALLBACK_MODE="${INIT_TOKEN_FALLBACK_MODE:-donor-mean}"
 
 cd "$REPO_ROOT"
 source /home/cereal/model-surgery-lab/venv/bin/activate
@@ -42,6 +43,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-attention-fold-mode activation-coupled \
   --init-attention-head-dim-transport "$INIT_ATTENTION_HEAD_DIM_TRANSPORT" \
   --init-token-init-mode donor-tokenized-weighted \
+  --init-token-fallback-mode "$INIT_TOKEN_FALLBACK_MODE" \
   --init-projection-scale target-rms \
   --init-projection-blend-alpha 1.0 \
   --init-consumer-hidden-reduction sqrt-sum \
