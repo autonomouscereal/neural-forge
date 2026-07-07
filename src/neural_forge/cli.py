@@ -1124,6 +1124,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_reconstruct.add_argument("--fit-gate-min-validation-rows", type=int, default=32)
     xfamily_reconstruct.add_argument("--fit-gate-min-relative-improvement", type=float, default=0.0)
     xfamily_reconstruct.add_argument("--fit-gate-max-cosine-drop", type=float, default=0.01)
+    xfamily_reconstruct.add_argument("--fit-gate-min-fitted-cosine", type=float, default=-1.0)
     xfamily_reconstruct.add_argument(
         "--layer-gate-metric",
         choices=["none", "ppl", "behavior"],
@@ -1290,6 +1291,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_block_recover.add_argument("--pre-reconstruction-max-tokens-per-layer", type=int, default=512)
     xfamily_block_recover.add_argument("--pre-reconstruction-min-relative-improvement", type=float, default=0.0)
     xfamily_block_recover.add_argument("--pre-reconstruction-max-cosine-drop", type=float, default=0.01)
+    xfamily_block_recover.add_argument("--pre-reconstruction-min-fitted-cosine", type=float, default=-1.0)
     xfamily_block_recover.add_argument("--max-anchors", type=int, default=2048)
     xfamily_block_recover.add_argument("--span-max-pairs", type=int, default=512)
     xfamily_block_recover.add_argument(
@@ -1775,6 +1777,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--block-pre-reconstruction-max-tokens-per-layer", type=int, default=512)
     xfamily_chain.add_argument("--block-pre-reconstruction-min-relative-improvement", type=float, default=0.0)
     xfamily_chain.add_argument("--block-pre-reconstruction-max-cosine-drop", type=float, default=0.01)
+    xfamily_chain.add_argument("--block-pre-reconstruction-min-fitted-cosine", type=float, default=-1.0)
     xfamily_chain.add_argument("--block-donor-layer-fold-mode", choices=["representative", "average", "fold"], default="fold")
     xfamily_chain.add_argument(
         "--block-donor-layer-group-strategy",
@@ -2959,6 +2962,7 @@ def cmd_hf_xfamily_reconstruct(args: argparse.Namespace) -> dict[str, object]:
         fit_gate_min_validation_rows=args.fit_gate_min_validation_rows,
         fit_gate_min_relative_improvement=args.fit_gate_min_relative_improvement,
         fit_gate_max_cosine_drop=args.fit_gate_max_cosine_drop,
+        fit_gate_min_fitted_cosine=args.fit_gate_min_fitted_cosine,
         layer_gate_metric=args.layer_gate_metric,
         layer_gate_max_ppl_ratio=args.layer_gate_max_ppl_ratio,
         layer_gate_max_texts=args.layer_gate_max_texts,
@@ -3014,6 +3018,7 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         pre_reconstruction_max_tokens_per_layer=args.pre_reconstruction_max_tokens_per_layer,
         pre_reconstruction_min_relative_improvement=args.pre_reconstruction_min_relative_improvement,
         pre_reconstruction_max_cosine_drop=args.pre_reconstruction_max_cosine_drop,
+        pre_reconstruction_min_fitted_cosine=args.pre_reconstruction_min_fitted_cosine,
         max_anchors=args.max_anchors,
         span_max_pairs=args.span_max_pairs,
         donor_layer_fold_mode=args.donor_layer_fold_mode,
@@ -3184,6 +3189,7 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         block_pre_reconstruction_max_tokens_per_layer=args.block_pre_reconstruction_max_tokens_per_layer,
         block_pre_reconstruction_min_relative_improvement=args.block_pre_reconstruction_min_relative_improvement,
         block_pre_reconstruction_max_cosine_drop=args.block_pre_reconstruction_max_cosine_drop,
+        block_pre_reconstruction_min_fitted_cosine=args.block_pre_reconstruction_min_fitted_cosine,
         block_donor_layer_fold_mode=args.block_donor_layer_fold_mode,
         block_donor_layer_group_strategy=args.block_donor_layer_group_strategy,
         block_layer_limit=args.block_layer_limit,

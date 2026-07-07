@@ -12,6 +12,7 @@ def test_beststack_queue_defaults_to_untied_block_output_head_kd() -> None:
     assert 'BLOCK_TRAIN_OUTPUT_HEAD_WITH_KD="${BLOCK_TRAIN_OUTPUT_HEAD_WITH_KD:-1}"' in script
     assert 'BLOCK_UNTIE_OUTPUT_HEAD_FOR_KD="${BLOCK_UNTIE_OUTPUT_HEAD_FOR_KD:-1}"' in script
     assert 'BLOCK_ALLOW_TIED_OUTPUT_HEAD_TRAINING="${BLOCK_ALLOW_TIED_OUTPUT_HEAD_TRAINING:-0}"' in script
+    assert 'PRE_RECONSTRUCTION_MIN_FITTED_COSINE="${PRE_RECONSTRUCTION_MIN_FITTED_COSINE:-0.05}"' in script
 
 
 def test_chain_launchers_pass_block_output_head_flags() -> None:
@@ -23,3 +24,4 @@ def test_chain_launchers_pass_block_output_head_flags() -> None:
         assert "--block-train-output-head-with-kd" in script
         assert "--block-untie-output-head-for-kd" in script
         assert "--block-allow-tied-output-head-training" in script
+        assert "--block-pre-reconstruction-min-fitted-cosine" in script

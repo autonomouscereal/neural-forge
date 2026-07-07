@@ -89,6 +89,7 @@ BLOCK_MAX_NONFINITE_STEPS_PER_LAYER="${BLOCK_MAX_NONFINITE_STEPS_PER_LAYER:-0}"
 PRE_RECONSTRUCTION_TARGET="${PRE_RECONSTRUCTION_TARGET:-block-interface}"
 PRE_RECONSTRUCTION_ALPHA="${PRE_RECONSTRUCTION_ALPHA:-0.02}"
 PRE_RECONSTRUCTION_FIT_GATE="${PRE_RECONSTRUCTION_FIT_GATE:-validation}"
+PRE_RECONSTRUCTION_MIN_FITTED_COSINE="${PRE_RECONSTRUCTION_MIN_FITTED_COSINE:--1.0}"
 ALM_STEPS="${ALM_STEPS:-180}"
 ALM_LR="${ALM_LR:-2e-6}"
 ALM_LM_WEIGHT="${ALM_LM_WEIGHT:-0.10}"
@@ -230,6 +231,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --block-pre-reconstruction-target "$PRE_RECONSTRUCTION_TARGET" \
   --block-pre-reconstruction-alpha "$PRE_RECONSTRUCTION_ALPHA" \
   --block-pre-reconstruction-fit-gate "$PRE_RECONSTRUCTION_FIT_GATE" \
+  --block-pre-reconstruction-min-fitted-cosine "$PRE_RECONSTRUCTION_MIN_FITTED_COSINE" \
   --block-donor-layer-fold-mode fold \
   --block-donor-layer-group-strategy "$BLOCK_DONOR_LAYER_GROUP_STRATEGY" \
   --block-layer-gate-metric behavior \

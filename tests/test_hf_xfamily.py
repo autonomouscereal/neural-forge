@@ -1780,6 +1780,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "0.01",
             "--fit-gate-max-cosine-drop",
             "0.03",
+            "--fit-gate-min-fitted-cosine",
+            "0.07",
             "--layer-gate-metric",
             "behavior",
             "--layer-gate-max-ppl-ratio",
@@ -1826,6 +1828,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_reconstruct_args.fit_gate_min_validation_rows == 5
     assert xfamily_reconstruct_args.fit_gate_min_relative_improvement == pytest.approx(0.01)
     assert xfamily_reconstruct_args.fit_gate_max_cosine_drop == pytest.approx(0.03)
+    assert xfamily_reconstruct_args.fit_gate_min_fitted_cosine == pytest.approx(0.07)
     assert xfamily_reconstruct_args.layer_gate_metric == "behavior"
     assert xfamily_reconstruct_args.layer_gate_max_ppl_ratio == pytest.approx(1.01)
     assert xfamily_reconstruct_args.layer_gate_max_texts == 2
@@ -2595,6 +2598,30 @@ def test_hidden_projection_gate_rejects_worse_layer_input_map() -> None:
     assert report["accepted"] is False
     assert report["relative_improvement"] < 0
     assert report["baseline_relative_error"] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_hidden_projection_gate_rejects_low_absolute_fitted_cosine() -> None:
+    torch = pytest.importorskip("torch")
+    source = torch.eye(2, dtype=torch.float32)
+    candidate = torch.eye(2, dtype=torch.float32)
+    fitted = -0.5 * torch.eye(2, dtype=torch.float32)
+    baseline = 3.0 * torch.eye(2, dtype=torch.float32)
+
+    report = _hidden_projection_gate_report(
+        torch,
+        source,
+        candidate,
+        fitted,
+        baseline,
+        min_relative_improvement=0.01,
+        max_cosine_drop=3.0,
+        min_fitted_cosine=0.05,
+    )
+
+    assert report["accepted"] is False
+    assert report["relative_improvement"] > 0
+    assert report["fitted_mean_cosine"] < 0
+    assert report["min_fitted_cosine"] == pytest.approx(0.05)
 
 
 def test_hidden_basis_resize_projects_hidden_axes() -> None:
@@ -9359,6 +9386,8 @@ def test_hf_xfamily_reconstruct_handler_passes_flags(monkeypatch) -> None:
             "0.01",
             "--fit-gate-max-cosine-drop",
             "0.03",
+            "--fit-gate-min-fitted-cosine",
+            "0.07",
             "--layer-gate-metric",
             "behavior",
             "--layer-gate-max-ppl-ratio",
@@ -9411,6 +9440,7 @@ def test_hf_xfamily_reconstruct_handler_passes_flags(monkeypatch) -> None:
         "fit_gate_min_validation_rows": 5,
         "fit_gate_min_relative_improvement": 0.01,
         "fit_gate_max_cosine_drop": 0.03,
+        "fit_gate_min_fitted_cosine": 0.07,
         "layer_gate_metric": "behavior",
         "layer_gate_max_ppl_ratio": 1.01,
         "layer_gate_max_texts": 2,
@@ -9508,6 +9538,8 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
             "0.02",
             "--pre-reconstruction-max-cosine-drop",
             "0.04",
+            "--pre-reconstruction-min-fitted-cosine",
+            "0.06",
             "--max-anchors",
             "222",
             "--span-max-pairs",
@@ -9683,6 +9715,7 @@ def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
         "pre_reconstruction_max_tokens_per_layer": 44,
         "pre_reconstruction_min_relative_improvement": 0.02,
         "pre_reconstruction_max_cosine_drop": 0.04,
+        "pre_reconstruction_min_fitted_cosine": 0.06,
         "max_anchors": 222,
         "span_max_pairs": 77,
         "span_pair_mode": "both",
@@ -9881,6 +9914,7 @@ def test_chain_anchor_orchestrator_preserves_incumbent_on_failed_stage(monkeypat
         block_focused_lm_weight=0.017,
         block_token_focus="numbers",
         block_projected_vocab_kd_mode="both",
+        block_pre_reconstruction_min_fitted_cosine=0.05,
         block_train_output_head_with_kd=True,
         block_untie_output_head_for_kd=True,
         block_module_output_temperature=1.7,
@@ -9898,6 +9932,7 @@ def test_chain_anchor_orchestrator_preserves_incumbent_on_failed_stage(monkeypat
     assert block_captured["focused_lm_weight"] == 0.017
     assert block_captured["token_focus"] == "numbers"
     assert block_captured["projected_vocab_kd_mode"] == "both"
+    assert block_captured["pre_reconstruction_min_fitted_cosine"] == 0.05
     assert block_captured["train_output_head_with_kd"] is True
     assert block_captured["untie_output_head_for_kd"] is True
     assert block_captured["module_output_temperature"] == 1.7
@@ -10658,6 +10693,8 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "0.03",
             "--block-pre-reconstruction-max-cosine-drop",
             "0.05",
+            "--block-pre-reconstruction-min-fitted-cosine",
+            "0.07",
             "--block-donor-layer-group-strategy",
             "activation-geometry",
             "--block-on-policy-anchor-kd-weight",
@@ -10888,6 +10925,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["block_pre_reconstruction_max_tokens_per_layer"] == 48
     assert captured["block_pre_reconstruction_min_relative_improvement"] == 0.03
     assert captured["block_pre_reconstruction_max_cosine_drop"] == 0.05
+    assert captured["block_pre_reconstruction_min_fitted_cosine"] == 0.07
     assert captured["block_donor_layer_fold_mode"] == "average"
     assert captured["block_donor_layer_group_strategy"] == "activation-geometry"
     assert captured["block_on_policy_anchor_kd_weight"] == 0.04

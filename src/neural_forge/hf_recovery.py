@@ -2080,6 +2080,7 @@ def reconstruct_cross_tokenizer_causal_lm(
     fit_gate_min_validation_rows: int = 32,
     fit_gate_min_relative_improvement: float = 0.0,
     fit_gate_max_cosine_drop: float = 0.01,
+    fit_gate_min_fitted_cosine: float = -1.0,
     layer_gate_metric: str = "none",
     layer_gate_max_ppl_ratio: float = 1.02,
     layer_gate_max_texts: int = 4,
@@ -2152,6 +2153,8 @@ def reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("fit_gate_min_relative_improvement must be non-negative.")
     if fit_gate_max_cosine_drop < 0:
         raise ValueError("fit_gate_max_cosine_drop must be non-negative.")
+    if not -1.0 <= float(fit_gate_min_fitted_cosine) <= 1.0:
+        raise ValueError("fit_gate_min_fitted_cosine must be between -1.0 and 1.0.")
     if layer_gate_metric not in {"none", "ppl", "behavior"}:
         raise ValueError("layer_gate_metric must be none, ppl, or behavior.")
     if layer_gate_max_ppl_ratio <= 0:
@@ -2320,6 +2323,7 @@ def reconstruct_cross_tokenizer_causal_lm(
                     baseline_projection=hidden_projection if hidden_projection_scope == "layer-input-gated" else None,
                     min_relative_improvement=fit_gate_min_relative_improvement,
                     max_cosine_drop=fit_gate_max_cosine_drop,
+                    min_fitted_cosine=fit_gate_min_fitted_cosine,
                 )
                 if not layer_hidden_projection_report.get("skipped"):
                     layer_hidden_projection = layer_hidden_projection_report["map"].to(device=device, dtype=torch.float32)
@@ -2465,6 +2469,7 @@ def reconstruct_cross_tokenizer_causal_lm(
             "min_validation_rows": int(fit_gate_min_validation_rows),
             "min_relative_improvement": float(fit_gate_min_relative_improvement),
             "max_cosine_drop": float(fit_gate_max_cosine_drop),
+            "min_fitted_cosine": float(fit_gate_min_fitted_cosine),
         },
         "layer_gate": layer_gate,
         "torch_dtype": torch_dtype,
@@ -2516,6 +2521,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
     pre_reconstruction_max_tokens_per_layer: int = 512,
     pre_reconstruction_min_relative_improvement: float = 0.0,
     pre_reconstruction_max_cosine_drop: float = 0.01,
+    pre_reconstruction_min_fitted_cosine: float = -1.0,
     max_anchors: int = 2048,
     span_max_pairs: int = 512,
     donor_layer_fold_mode: str = "fold",
@@ -2664,6 +2670,8 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("pre_reconstruction_min_relative_improvement must be non-negative.")
     if pre_reconstruction_max_cosine_drop < 0:
         raise ValueError("pre_reconstruction_max_cosine_drop must be non-negative.")
+    if not -1.0 <= float(pre_reconstruction_min_fitted_cosine) <= 1.0:
+        raise ValueError("pre_reconstruction_min_fitted_cosine must be between -1.0 and 1.0.")
     if nonfinite_step_policy not in {"raise", "skip-step"}:
         raise ValueError("nonfinite_step_policy must be raise or skip-step.")
     if max_nonfinite_steps_per_layer < 0:
@@ -3184,6 +3192,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
                 baseline_projection=hidden_projection if hidden_projection_scope == "layer-input-gated" else None,
                 min_relative_improvement=pre_reconstruction_min_relative_improvement,
                 max_cosine_drop=pre_reconstruction_max_cosine_drop,
+                min_fitted_cosine=pre_reconstruction_min_fitted_cosine,
             )
             if not layer_hidden_projection_report.get("skipped"):
                 layer_hidden_projection = layer_hidden_projection_report["map"].to(
@@ -4357,6 +4366,7 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             "max_tokens_per_layer": int(pre_reconstruction_max_tokens_per_layer),
             "min_relative_improvement": float(pre_reconstruction_min_relative_improvement),
             "max_cosine_drop": float(pre_reconstruction_max_cosine_drop),
+            "min_fitted_cosine": float(pre_reconstruction_min_fitted_cosine),
         },
         "max_anchors": int(max_anchors),
         "span_max_pairs": int(span_max_pairs),
@@ -6568,6 +6578,7 @@ def _fit_cross_tokenizer_layer_input_hidden_projection(
     baseline_projection=None,
     min_relative_improvement: float = 0.0,
     max_cosine_drop: float = 0.01,
+    min_fitted_cosine: float = -1.0,
 ) -> dict[str, Any]:
     if not source_layer_group:
         return {"skipped": True, "reason": "missing_source_layer_group"}
@@ -6681,6 +6692,7 @@ def _fit_cross_tokenizer_layer_input_hidden_projection(
             baseline_projection,
             min_relative_improvement=min_relative_improvement,
             max_cosine_drop=max_cosine_drop,
+            min_fitted_cosine=min_fitted_cosine,
         )
         report["gate"] = gate
         if not bool(gate["accepted"]):
@@ -6703,11 +6715,14 @@ def _hidden_projection_gate_report(
     baseline_projection,
     min_relative_improvement: float = 0.0,
     max_cosine_drop: float = 0.01,
+    min_fitted_cosine: float = -1.0,
 ) -> dict[str, Any]:
     if min_relative_improvement < 0:
         raise ValueError("min_relative_improvement must be non-negative.")
     if max_cosine_drop < 0:
         raise ValueError("max_cosine_drop must be non-negative.")
+    if not -1.0 <= float(min_fitted_cosine) <= 1.0:
+        raise ValueError("min_fitted_cosine must be between -1.0 and 1.0.")
     source_rows = source_matrix.detach().to(torch.float32)
     candidate_rows = candidate_matrix.detach().to(device=source_rows.device, dtype=torch.float32)
     fitted = fitted_projection.detach().to(device=source_rows.device, dtype=torch.float32)
@@ -6726,12 +6741,14 @@ def _hidden_projection_gate_report(
         and math.isfinite(cosine_drop)
         and relative_improvement >= float(min_relative_improvement)
         and cosine_drop <= float(max_cosine_drop)
+        and float(fitted_cosine) >= float(min_fitted_cosine)
     )
     return {
         "mode": "global_baseline",
         "accepted": bool(accepted),
         "min_relative_improvement": float(min_relative_improvement),
         "max_cosine_drop": float(max_cosine_drop),
+        "min_fitted_cosine": float(min_fitted_cosine),
         "relative_improvement": float(relative_improvement),
         "cosine_drop": float(cosine_drop),
         "fitted_relative_error": float(fitted_error),
