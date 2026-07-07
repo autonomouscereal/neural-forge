@@ -47,7 +47,11 @@ def test_tiny_cross_family_proof_dry_run_wires_before_after_commands(tmp_path: P
     assert "--activation-fold-assignment balanced-signed-similarity" in command_text
     assert "--token-init-mode donor-tokenized-weighted" in command_text
     assert "--token-fallback-mode donor-mean" in command_text
+    assert "compare_eval_retention.py" in command_text
+    assert "donor_eval.json" in command_text
+    assert "folded_eval.json" in command_text
     assert "hf-rank-evals" in command_text
+    assert summary["retention_reports"]["donor_vs_folded"].endswith("donor_vs_folded.json")
 
 
 def test_tiny_cross_family_proof_dry_run_can_include_recovery(tmp_path: Path) -> None:
@@ -72,3 +76,5 @@ def test_tiny_cross_family_proof_dry_run_can_include_recovery(tmp_path: Path) ->
     assert "--projected-vocab-kd-weight 0.05" in command_text
     assert "--answer-first-token-top-negatives 8" in command_text
     assert any(any(str(part).endswith("recovered_eval.json") for part in command) for command in summary["commands"])
+    assert summary["retention_reports"]["donor_vs_recovered"].endswith("donor_vs_recovered.json")
+    assert summary["retention_reports"]["folded_vs_recovered"].endswith("folded_vs_recovered.json")

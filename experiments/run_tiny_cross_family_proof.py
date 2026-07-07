@@ -8,7 +8,8 @@ The proof is intentionally CPU-friendly and evidence-oriented:
 3. Create and evaluate a random blank target architecture.
 4. Fold the donor into the blank target shape with the current merge-first
    transport defaults.
-5. Evaluate and rank donor, blank, folded, and optional recovered children.
+5. Compare donor-vs-child item retention, then rank donor, blank, folded, and
+   optional recovered children.
 
 Use this for local smoke proof while the larger GPU matrix runs on the AI
 server.
@@ -69,11 +70,13 @@ class TinyCrossFamilyProof:
         self.folded_model = self.root / "folded_child"
         self.recovered_model = self.root / "recovered_child"
         self.reports = self.root / "reports"
+        self.retention = self.root / "retention"
         self.commands: list[list[str]] = []
 
     def run(self) -> int:
         self.root.mkdir(parents=True, exist_ok=True)
         self.reports.mkdir(parents=True, exist_ok=True)
+        self.retention.mkdir(parents=True, exist_ok=True)
 
         self._build_eval_suite()
         self._build_calibration()
@@ -83,14 +86,29 @@ class TinyCrossFamilyProof:
         self._fold_donor_into_blank()
         folded_eval = self._eval_model(str(self.folded_model), "folded")
         evals = [donor_eval, blank_eval, folded_eval]
+        retentions = {
+            "donor_vs_blank": self._compare_retention(donor_eval, blank_eval, "donor_vs_blank"),
+            "donor_vs_folded": self._compare_retention(donor_eval, folded_eval, "donor_vs_folded"),
+        }
 
         if int(self.args.recover_steps) > 0:
             self._recover_folded_child()
-            evals.append(self._eval_model(str(self.recovered_model), "recovered"))
+            recovered_eval = self._eval_model(str(self.recovered_model), "recovered")
+            evals.append(recovered_eval)
+            retentions["donor_vs_recovered"] = self._compare_retention(
+                donor_eval,
+                recovered_eval,
+                "donor_vs_recovered",
+            )
+            retentions["folded_vs_recovered"] = self._compare_retention(
+                folded_eval,
+                recovered_eval,
+                "folded_vs_recovered",
+            )
 
         rank = self.reports / "rank.json"
         self._run(self._cli("hf-rank-evals", str(rank), *(str(path) for path in evals)), output=rank)
-        summary = self._write_summary(evals, rank)
+        summary = self._write_summary(evals, rank, retentions)
         if self.args.dry_run:
             print(json.dumps({"dry_run": True, "commands": self.commands, "summary": str(summary)}, indent=2))
         else:
@@ -280,7 +298,22 @@ class TinyCrossFamilyProof:
         self._run(cmd, output=output)
         return output
 
-    def _write_summary(self, evals: list[Path], rank: Path) -> Path:
+    def _compare_retention(self, parent: Path, child: Path, label: str) -> Path:
+        output = self.retention / f"{label}.json"
+        cmd = [
+            sys.executable,
+            str(Path(__file__).resolve().parent / "compare_eval_retention.py"),
+            str(parent),
+            str(child),
+            "--out",
+            str(output),
+            "--max-samples",
+            "12",
+        ]
+        self._run(cmd, output=output)
+        return output
+
+    def _write_summary(self, evals: list[Path], rank: Path, retentions: dict[str, Path]) -> Path:
         summary_path = self.root / "proof_summary.json"
         if self.args.dry_run:
             summary = {
@@ -289,11 +322,17 @@ class TinyCrossFamilyProof:
                 "donor_model": self.args.donor_model,
                 "target_config_model": self.args.target_config_model,
                 "target_tokenizer_model": self.args.target_tokenizer_model,
+                "retention_reports": {label: str(path) for label, path in retentions.items()},
                 "commands": self.commands,
             }
         else:
             reports = {path.stem.replace("_eval", ""): _compact_report(path) for path in evals}
             rank_data = _load_json(rank) if rank.exists() else {}
+            retention_reports = {
+                label: _compact_retention(path)
+                for label, path in retentions.items()
+                if path.exists()
+            }
             summary = {
                 "operation": "tiny_cross_family_proof",
                 "dry_run": False,
@@ -301,6 +340,7 @@ class TinyCrossFamilyProof:
                 "target_config_model": self.args.target_config_model,
                 "target_tokenizer_model": self.args.target_tokenizer_model,
                 "reports": reports,
+                "retention_reports": retention_reports,
                 "rank": str(rank),
                 "best_model": (rank_data.get("best") or {}).get("model") if isinstance(rank_data, dict) else None,
                 "folded_vs_blank": _delta(reports.get("folded"), reports.get("blank")),
@@ -343,6 +383,29 @@ def _compact_report(path: Path) -> dict[str, Any]:
         "critical_behavior": _critical_counts((behavior.get("items") or []), "passed"),
         "sample_generations": _sample_generations(data),
     }
+
+
+def _compact_retention(path: Path) -> dict[str, Any]:
+    data = _load_json(path)
+    return {
+        "path": str(path),
+        "parent": data.get("parent"),
+        "child": data.get("child"),
+        "param_compression_ratio": data.get("param_compression_ratio"),
+        "behavior": _overall_retention(data.get("behavior")),
+        "generation": _overall_retention(data.get("generation")),
+        "choice": _overall_retention(data.get("choice")),
+        "manual_samples": data.get("manual_samples", {}),
+    }
+
+
+def _overall_retention(section: Any) -> dict[str, Any]:
+    if not isinstance(section, dict):
+        return {}
+    overall = section.get("overall")
+    if isinstance(overall, dict):
+        return overall
+    return {}
 
 
 def _metric(section: dict[str, Any]) -> dict[str, Any]:

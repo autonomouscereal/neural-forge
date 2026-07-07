@@ -235,7 +235,8 @@ Implementation note:
 - `experiments/run_tiny_cross_family_proof.py` is the local CPU proof harness.
   It builds a small eval suite, evaluates donor and random blank target,
   folds the donor into the blank target with the current transport/tokenizer
-  defaults, optionally runs lightweight cross-tokenizer recovery, then writes
-  `proof_summary.json` plus donor/blank/folded/recovered eval JSONs and a rank
-  report. Example:
+  defaults, compares donor-vs-folded and donor-vs-recovered item retention,
+  optionally runs lightweight cross-tokenizer recovery, then writes
+  `proof_summary.json` plus donor/blank/folded/recovered eval JSONs,
+  retention JSONs with manual sample pairs, and a rank report. Example:
   `python experiments/run_tiny_cross_family_proof.py --output-dir runs/local_tiny_cross_family_proof --device cpu --dtype float32 --recover-steps 0`.
