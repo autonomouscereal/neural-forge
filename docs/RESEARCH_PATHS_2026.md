@@ -109,6 +109,11 @@ Immediate repo implication:
   and head-calibration artifacts. This is the first concrete X-Token-inspired
   coverage fix; it still needs behavior evidence from the queued blank-target
   lanes.
+- Projected-vocab recovery now also maps candidate special tokens through the
+  same role/surface rules used by initialization, so EOS/BOS/PAD/additional
+  rows are not masked out during cross-tokenizer KD. The post-fix proof queue is
+  `qwen4b_blank_smollm_beststack_specialvocab_qrsinkhorn_gpu4_20260707`, waiting
+  behind the active pre-fix GPU4 Qwen beststack run.
 - Broad eval generation prompts now support behavior-style exact expectations
   and newly built suites include exact math/code generation checks. This was
   added after manual inspection showed old `generation_health` could report
