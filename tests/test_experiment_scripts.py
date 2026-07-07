@@ -84,3 +84,17 @@ def test_prior_anchor_topneg_queue_restores_old_best_paths() -> None:
     assert "FINAL_OUTPUT_HEAD_POLICY=\"${FINAL_OUTPUT_HEAD_POLICY:-preserve}\"" in script
     assert "behavior_suite_exactgen_20260702.json" in script
     assert "queue_qwen4b_blank_beststack_topneg_recover_20260707.sh" in script
+
+
+def test_prior_anchor_pair_queue_orders_dualalm_before_ffn1496() -> None:
+    script = (
+        REPO_ROOT / "experiments/queue_qwen4b_prior_anchor_pair_20260707.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'QUEUE_DUALALM29="${QUEUE_DUALALM29:-1}"' in script
+    assert 'QUEUE_FFN1496="${QUEUE_FFN1496:-1}"' in script
+    assert "launch_prior_anchor_variant \"dualalm29\"" in script
+    assert 'DUAL_PID="$(cat "$RUN_ROOT/logs/${DUALALM29_TAG}.queue.pid")"' in script
+    assert 'CURRENT_WAIT_PIDS="$(append_pid "$CURRENT_WAIT_PIDS" "$DUAL_PID")"' in script
+    assert "launch_prior_anchor_variant \"ffn1496\"" in script
+    assert "queue_qwen4b_prior_anchor_topneg_recover_20260707.sh" in script
