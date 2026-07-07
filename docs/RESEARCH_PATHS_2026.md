@@ -222,3 +222,13 @@ Immediate experiment policy:
 - Top-negative answer pressure remains an auxiliary cleanup after structural
   folding. The queue now reuses its exactgen child report for retention compare
   so GPU time is not wasted re-evaluating the same child checkpoint.
+
+Implementation note:
+
+- `hf-rank-evals`, retest matrix summaries, and ALM/block save-best behavior now
+  treat math, code, tokenizer, and model-surgery categories as critical
+  cross-family proof domains. Broad fluent behavior is still the first signal,
+  but ties are broken by critical-domain coverage before generation, choice, or
+  PPL. This is intended to prevent the old failure mode where a fold looks good
+  on generic text while exact arithmetic/code or tokenizer/model-merge behavior
+  has collapsed.

@@ -200,6 +200,15 @@ def test_rank_evaluation_reports_adds_category_breakdowns_and_suite_warnings(tmp
     assert top["generation"] == "1/2"
     assert top["behavior_category_breakdown"]["math"]["correct"] == 1
     assert top["behavior_category_breakdown"]["code"]["total"] == 1
+    assert top["behavior_category_breakdown"]["model_surgery"]["total"] == 1
+    assert top["behavior_category_summary"]["hard_categories"] == [
+        "math",
+        "code",
+        "tokenizer",
+        "model_surgery",
+    ]
+    assert top["behavior_category_summary"]["hard_category_correct"] == 2
+    assert top["behavior_category_summary"]["hard_category_total"] == 4
     assert top["generation_category_breakdown"]["code"]["correct"] == 1
     assert any(warning["type"] == "mixed_eval_suite_counts" for warning in report["suite_warnings"])
     assert any(warning["type"] == "mixed_eval_suite_sources" for warning in report["suite_warnings"])
@@ -238,6 +247,49 @@ def test_rank_evaluation_reports_prefers_hard_category_coverage_after_behavior_t
     assert report["best"]["model"] == "hard-categories"
     assert report["best"]["behavior_category_summary"]["hard_category_correct"] == 2
     assert report["summary_rows"][0]["behavior_category_summary"]["hard_category_correct"] == 2
+
+
+def test_rank_evaluation_reports_prefers_tokenizer_and_surgery_after_math_code_tie(tmp_path) -> None:
+    weak_cross_family = _report(90, 1.0)
+    weak_cross_family["model"] = "weak-cross-family"
+    weak_cross_family["behavior_suite"] = {
+        "pass_rate": 0.5,
+        "correct": 4,
+        "total": 8,
+        "items": [
+            {"id": "synthetic_math_0000", "passed": True},
+            {"id": "synthetic_python_add_0004", "passed": True},
+            {"id": "synthetic_tokenizer_0001", "passed": False},
+            {"id": "synthetic_merge_definition_0003", "passed": False},
+            {"id": "synthetic_rain_0001", "passed": True},
+            {"id": "synthetic_rain_0002", "passed": True},
+            {"id": "synthetic_other_0001", "passed": False},
+            {"id": "synthetic_other_0002", "passed": False},
+        ],
+    }
+    strong_cross_family = _report(130, 1.0)
+    strong_cross_family["model"] = "strong-cross-family"
+    strong_cross_family["behavior_suite"] = {
+        "pass_rate": 0.5,
+        "correct": 4,
+        "total": 8,
+        "items": [
+            {"id": "synthetic_math_0000", "passed": True},
+            {"id": "synthetic_math_0001", "passed": False},
+            {"id": "synthetic_python_add_0004", "passed": True},
+            {"id": "synthetic_python_add_0005", "passed": False},
+            {"id": "synthetic_tokenizer_0001", "passed": True},
+            {"id": "synthetic_tokenizer_0002", "passed": False},
+            {"id": "synthetic_merge_definition_0003", "passed": True},
+            {"id": "synthetic_merge_definition_0004", "passed": False},
+        ],
+    }
+
+    report = rank_evaluation_reports([weak_cross_family, strong_cross_family], output_file=tmp_path / "rank.json")
+
+    assert report["best"]["model"] == "strong-cross-family"
+    assert report["best"]["behavior_category_summary"]["hard_category_correct"] == 4
+    assert report["best"]["behavior_category_summary"]["hard_category_breakdown"]["model_surgery"]["correct"] == 1
 
 
 def test_gate_text_report_reports_lost_behavior_and_generation_ids() -> None:

@@ -91,6 +91,8 @@ GENERATION_RELEVANCE_RULES = {
     ],
 }
 
+CRITICAL_EVAL_CATEGORIES = ("math", "code", "tokenizer", "model_surgery")
+
 BEHAVIOR_PROBES = [
     {
         "id": "answer_only_multiply",
@@ -1280,7 +1282,7 @@ def _behavior_first_candidate_sort_key(item: dict[str, Any]) -> tuple[float, flo
 def _eval_item_category(item: dict[str, Any], kind: str) -> str:
     explicit = item.get("category")
     if explicit:
-        return str(explicit)
+        return _normalize_eval_category(explicit)
     identifier = str(item.get("id") or "").lower()
     prompt = str(item.get("prompt") or "").lower()
     if "python" in identifier or "python" in prompt or "function" in prompt:
@@ -1322,9 +1324,13 @@ def _passed_category_breakdown(items: Sequence[dict[str, Any]], kind: str) -> di
     return dict(sorted(breakdown.items()))
 
 
+def _normalize_eval_category(category: Any) -> str:
+    return str(category).strip().lower().replace("-", "_") or "other"
+
+
 def _category_breakdown_summary(
     breakdown: dict[str, dict[str, Any]],
-    hard_categories: Sequence[str] = ("math", "code"),
+    hard_categories: Sequence[str] = CRITICAL_EVAL_CATEGORIES,
 ) -> dict[str, Any]:
     totals = [int(row.get("total", 0) or 0) for row in breakdown.values()]
     rates = [
@@ -1336,12 +1342,13 @@ def _category_breakdown_summary(
     hard_total = 0
     hard_breakdown: dict[str, dict[str, Any]] = {}
     for category in hard_categories:
-        row = breakdown.get(str(category))
+        normalized = _normalize_eval_category(category)
+        row = breakdown.get(normalized)
         if row is None:
             continue
         hard_correct += int(row.get("correct", 0) or 0)
         hard_total += int(row.get("total", 0) or 0)
-        hard_breakdown[str(category)] = {
+        hard_breakdown[normalized] = {
             "correct": int(row.get("correct", 0) or 0),
             "total": int(row.get("total", 0) or 0),
             "pass_rate": float(row.get("pass_rate", 0.0)),
@@ -1351,7 +1358,7 @@ def _category_breakdown_summary(
         "covered_category_count": sum(1 for total in totals if total > 0),
         "min_pass_rate": min(rates) if rates else 0.0,
         "mean_pass_rate": sum(rates) / max(1, len(rates)),
-        "hard_categories": list(hard_categories),
+        "hard_categories": [_normalize_eval_category(category) for category in hard_categories],
         "hard_category_correct": int(hard_correct),
         "hard_category_total": int(hard_total),
         "hard_category_pass_rate": hard_correct / max(1, hard_total),
