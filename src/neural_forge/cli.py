@@ -1878,6 +1878,7 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--alm-kd-weight", type=float, default=0.05)
     xfamily_chain.add_argument("--alm-projected-vocab-kd-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-focused-projected-vocab-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument("--alm-span-kd-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-span-hidden-kd-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-token-kd-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-token-focus", choices=["auto", "response", "numbers", "code", "all"], default="auto")
@@ -3253,6 +3254,7 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         alm_kd_weight=args.alm_kd_weight,
         alm_projected_vocab_kd_weight=args.alm_projected_vocab_kd_weight,
         alm_focused_projected_vocab_kd_weight=args.alm_focused_projected_vocab_kd_weight,
+        alm_span_kd_weight=args.alm_span_kd_weight,
         alm_span_hidden_kd_weight=args.alm_span_hidden_kd_weight,
         alm_token_kd_weight=args.alm_token_kd_weight,
         alm_token_focus=args.alm_token_focus,

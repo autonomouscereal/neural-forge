@@ -12747,9 +12747,12 @@ def _cross_tokenizer_projected_vocab_loss(
     entropy_aware_kd_weight: float = 0.0,
     entropy_aware_kd_threshold: float = 0.55,
     entropy_aware_kd_sharpness: float = 8.0,
+    teacher_group_mode: str = "first",
 ):
     if projected_vocab_kd_mode not in {"teacher-to-student", "student-to-teacher", "both"}:
         raise ValueError("projected_vocab_kd_mode must be teacher-to-student, student-to-teacher, or both.")
+    if teacher_group_mode not in {"first", "weighted"}:
+        raise ValueError("teacher_group_mode must be first or weighted.")
     shift_teacher = torch.nan_to_num(
         teacher.logits[:, :-1, :].contiguous().to(torch.float32),
         nan=0.0,
@@ -12771,6 +12774,7 @@ def _cross_tokenizer_projected_vocab_loss(
             projected_vocab_mask,
             projected_vocab_valid,
             projected_vocab_weights=projected_vocab_weights,
+            group_mode=teacher_group_mode,
         )
         losses.append(
             _entropy_aware_kl_loss(
@@ -13033,16 +13037,24 @@ def _project_source_logits_to_candidate_vocab(
     projected_vocab_mask,
     projected_vocab_valid,
     projected_vocab_weights=None,
+    group_mode: str = "weighted",
 ):
+    if group_mode not in {"weighted", "first"}:
+        raise ValueError("group_mode must be weighted or first.")
     groups = projected_vocab_groups.to(device=source_logits.device, dtype=torch.long)
     mask = projected_vocab_mask.to(device=source_logits.device, dtype=source_logits.dtype)
+    valid = projected_vocab_valid.to(device=source_logits.device, dtype=torch.bool)
+    if group_mode == "first":
+        first_valid = valid & mask[:, 0].to(dtype=torch.bool)
+        gather_idx = groups[:, 0].clamp(0, int(source_logits.shape[-1]) - 1)
+        projected = source_logits.index_select(dim=-1, index=gather_idx)
+        return projected.masked_fill(~first_valid.unsqueeze(0), -1e4)
     if projected_vocab_weights is None:
         weights = mask
     else:
         weights = projected_vocab_weights.to(device=source_logits.device, dtype=source_logits.dtype) * mask
     weights = weights / weights.sum(dim=-1, keepdim=True).clamp_min(1e-12)
     weights = weights * mask.bool().to(dtype=source_logits.dtype)
-    valid = projected_vocab_valid.to(device=source_logits.device, dtype=torch.bool)
     gather_idx = groups.unsqueeze(0).expand(int(source_logits.shape[0]), -1, -1)
     expanded = source_logits.unsqueeze(1).expand(-1, int(groups.shape[0]), -1)
     gathered = expanded.gather(dim=-1, index=gather_idx)

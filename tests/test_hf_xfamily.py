@@ -7007,6 +7007,27 @@ def test_project_source_logits_to_candidate_vocab_uses_piece_weights() -> None:
     assert projected[0, 0].item() == pytest.approx(17.5)
 
 
+def test_project_source_logits_to_candidate_vocab_can_use_first_piece() -> None:
+    torch = pytest.importorskip("torch")
+    source_logits = torch.tensor([[0.0, 30.0, -10.0]])
+    groups = torch.tensor([[1, 2]])
+    mask = torch.tensor([[1.0, 1.0]])
+    weights = torch.tensor([[0.25, 0.75]])
+    valid = torch.tensor([True])
+
+    projected = _project_source_logits_to_candidate_vocab(
+        torch,
+        source_logits,
+        groups,
+        mask,
+        valid,
+        projected_vocab_weights=weights,
+        group_mode="first",
+    )
+
+    assert projected[0, 0].item() == pytest.approx(30.0)
+
+
 def test_candidate_to_source_token_groups_uses_sparse_surface_fallback_for_digits() -> None:
     torch = pytest.importorskip("torch")
     source_tokenizer = _Tokenizer(["<eos>", "4", "2", "hello"])
@@ -9860,6 +9881,51 @@ def test_chain_anchor_orchestrator_preserves_incumbent_on_failed_stage(monkeypat
     assert block_captured["projected_vocab_max_source_tokens"] == 11
 
 
+def test_chain_anchor_orchestrator_passes_alm_span_kd_weight(monkeypatch, tmp_path) -> None:
+    import neural_forge.hf_recovery as hf_recovery
+    import neural_forge.hf_xfamily as hf_xfamily
+
+    captured = {}
+
+    def fake_eval(model_id_or_path, output_file, **kwargs):
+        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_file).write_text("{}", encoding="utf-8")
+        return {
+            "model": str(model_id_or_path),
+            "param_count": 10,
+            "perplexity": {"mean": 100.0},
+            "choice_accuracy": {"accuracy": 0.5},
+            "generations": [],
+            "behavior_suite": {"pass_rate": 0.8, "correct": 8, "total": 10, "items": []},
+        }
+
+    def fake_gate(baseline_report, candidate_report, output_file=None, **kwargs):
+        if output_file is not None:
+            Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+            Path(output_file).write_text("{}", encoding="utf-8")
+        return {"passed": True, "candidate": {"behavior_pass_rate": 0.8}}
+
+    def fake_recover(**kwargs):
+        captured.update(kwargs)
+        Path(kwargs["output_dir"]).mkdir(parents=True, exist_ok=True)
+        return {"operation": "fake_recover"}
+
+    monkeypatch.setattr(hf_xfamily, "evaluate_text_model", fake_eval)
+    monkeypatch.setattr(hf_xfamily, "gate_text_report", fake_gate)
+    monkeypatch.setattr(hf_recovery, "recover_cross_tokenizer_causal_lm", fake_recover)
+
+    hf_xfamily.chain_anchor_staged_compress(
+        "donor",
+        "anchor",
+        tmp_path,
+        stages="alm",
+        alm_span_kd_weight=0.123,
+        device="cpu",
+    )
+
+    assert captured["span_kd_weight"] == 0.123
+
+
 def test_chain_anchor_sequential_stage_input_keeps_fold_pipeline_moving(monkeypatch, tmp_path) -> None:
     import neural_forge.hf_recovery as hf_recovery
     import neural_forge.hf_xfamily as hf_xfamily
@@ -10660,6 +10726,8 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "0.07",
             "--alm-focused-projected-vocab-kd-weight",
             "0.024",
+            "--alm-span-kd-weight",
+            "0.039",
             "--alm-token-kd-weight",
             "0.025",
             "--alm-token-focus",
@@ -10845,6 +10913,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["alm_attention_influence_layer"] == "middle"
     assert captured["alm_kd_weight"] == 0.07
     assert captured["alm_focused_projected_vocab_kd_weight"] == 0.024
+    assert captured["alm_span_kd_weight"] == 0.039
     assert captured["alm_token_kd_weight"] == 0.025
     assert captured["alm_token_focus"] == "numbers"
     assert captured["alm_token_max_pairs"] == 66

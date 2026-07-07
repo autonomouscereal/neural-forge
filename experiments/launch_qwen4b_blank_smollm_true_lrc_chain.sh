@@ -8,6 +8,7 @@ TAG="${TAG:-qwen4b_blank_smollm_chain_mlpout_true_lrc_rank16_blockio_alm_gpu4_20
 SOURCE_MODEL="${SOURCE_MODEL:-Qwen/Qwen3-4B-Base}"
 SOURCE_WEIGHTS="${SOURCE_WEIGHTS:-}"
 RECOVERY_SOURCE_MODE="${RECOVERY_SOURCE_MODE:-primary}"
+ANCHOR_MODEL="${ANCHOR_MODEL:-$RUN_ROOT/blank_smollm2_135m_seed0}"
 CALIBRATION_FILE="${CALIBRATION_FILE:-$RUN_ROOT/calibration_mix.jsonl}"
 EVAL_SUITE_FILE="${EVAL_SUITE_FILE:-$RUN_ROOT/behavior_suite.json}"
 MAX_CALIBRATION_TEXTS="${MAX_CALIBRATION_TEXTS:-384}"
@@ -118,6 +119,7 @@ ALM_DUAL_SPACE_KD_WEIGHT="${ALM_DUAL_SPACE_KD_WEIGHT:-0.0}"
 ALM_KD_WEIGHT="${ALM_KD_WEIGHT:-0.05}"
 ALM_PROJECTED_VOCAB_KD_WEIGHT="${ALM_PROJECTED_VOCAB_KD_WEIGHT:-0.04}"
 ALM_FOCUSED_PROJECTED_VOCAB_KD_WEIGHT="${ALM_FOCUSED_PROJECTED_VOCAB_KD_WEIGHT:-0.0}"
+ALM_SPAN_KD_WEIGHT="${ALM_SPAN_KD_WEIGHT:-0.0}"
 ALM_SPAN_HIDDEN_KD_WEIGHT="${ALM_SPAN_HIDDEN_KD_WEIGHT:-0.08}"
 ALM_ATTENTION_INFLUENCE_WEIGHT="${ALM_ATTENTION_INFLUENCE_WEIGHT:-0.0}"
 ALM_ATTENTION_INFLUENCE_LAYER="${ALM_ATTENTION_INFLUENCE_LAYER:-last}"
@@ -181,7 +183,7 @@ PID="$RUN_ROOT/logs/$TAG.pid"
 
 CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-chain-anchor-compress \
   "$SOURCE_MODEL" \
-  "$RUN_ROOT/blank_smollm2_135m_seed0" \
+  "$ANCHOR_MODEL" \
   "$OUT" \
   "${SOURCE_WEIGHT_ARGS[@]}" \
   --recovery-source-mode "$RECOVERY_SOURCE_MODE" \
@@ -329,6 +331,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --alm-kd-weight "$ALM_KD_WEIGHT" \
   --alm-projected-vocab-kd-weight "$ALM_PROJECTED_VOCAB_KD_WEIGHT" \
   --alm-focused-projected-vocab-kd-weight "$ALM_FOCUSED_PROJECTED_VOCAB_KD_WEIGHT" \
+  --alm-span-kd-weight "$ALM_SPAN_KD_WEIGHT" \
   --alm-span-hidden-kd-weight "$ALM_SPAN_HIDDEN_KD_WEIGHT" \
   --alm-attention-influence-weight "$ALM_ATTENTION_INFLUENCE_WEIGHT" \
   --alm-attention-influence-layer "$ALM_ATTENTION_INFLUENCE_LAYER" \
@@ -368,3 +371,4 @@ echo $! > "$PID"
 echo "$TAG"
 echo "pid=$(cat "$PID")"
 echo "log=$LOG"
+echo "anchor=$ANCHOR_MODEL"

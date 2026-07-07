@@ -120,6 +120,14 @@ Immediate repo implication:
   behind the post-fix proof run; `qwen4b_lfm230m_multidonor_beststack_seqall_qrsinkhorn_gpu0_20260707`
   replaces weak GPT-2 as the second donor with `LiquidAI/LFM2.5-230M` and keeps
   sequential-all recovery.
+- The Qwen launcher now honors `ANCHOR_MODEL`, matching the LFM launcher. This
+  enables `qwen4b_basisaligned_anchor_beststack_recover_gpu6_20260707`, which
+  waits for the basis-aligned init-only artifact and then runs `block,alm`
+  recovery from that anchor instead of redoing or discarding the init.
+- Recovery now targets next-token behavior more directly: projected-vocab
+  teacher-to-student KD uses the first source piece for multi-piece target rows
+  by default, and chain ALM exposes `--alm-span-kd-weight` so aligned span-logit
+  KD can run alongside span-hidden KD. Beststack queues default this to `0.04`.
 - Broad eval generation prompts now support behavior-style exact expectations
   and newly built suites include exact math/code generation checks. This was
   added after manual inspection showed old `generation_health` could report
