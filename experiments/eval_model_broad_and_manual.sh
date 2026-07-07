@@ -14,6 +14,8 @@ MAX_CHOICE_PROBES="${MAX_CHOICE_PROBES:-250}"
 MAX_TEXT_EVALS="${MAX_TEXT_EVALS:-128}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-96}"
 EVAL_SUITE_FILE="${EVAL_SUITE_FILE:-$RUN_ROOT/behavior_suite.json}"
+FORCE_EVAL="${FORCE_EVAL:-0}"
+FORCE_MANUAL="${FORCE_MANUAL:-0}"
 
 cd "$REPO_ROOT"
 source /home/cereal/model-surgery-lab/venv/bin/activate
@@ -23,19 +25,41 @@ mkdir -p "$OUT_DIR"
 BROAD_JSON="${BROAD_JSON:-$OUT_DIR/eval_${TAG}_${MAX_BEHAVIOR_PROBES}x${MAX_GENERATION_PROMPTS}x${MAX_CHOICE_PROBES}.json}"
 MANUAL_JSON="${MANUAL_JSON:-$OUT_DIR/manual_${TAG}.json}"
 
-CUDA_VISIBLE_DEVICES="$GPU_UUID" python -m neural_forge.cli hf-eval \
-  "$MODEL_DIR" \
-  "$BROAD_JSON" \
-  --eval-suite "$EVAL_SUITE_FILE" \
-  --max-behavior-probes "$MAX_BEHAVIOR_PROBES" \
-  --max-generation-prompts "$MAX_GENERATION_PROMPTS" \
-  --max-choice-probes "$MAX_CHOICE_PROBES" \
-  --max-text-evals "$MAX_TEXT_EVALS" \
-  --max-new-tokens "$MAX_NEW_TOKENS" \
-  --device "$DEVICE" \
-  --dtype "$DTYPE"
+valid_eval_report() {
+  local path="$1"
+  [[ -s "$path" ]] || return 1
+  python - "$path" <<'PY'
+import json
+import sys
 
-CUDA_VISIBLE_DEVICES="$GPU_UUID" python - <<PY
+path = sys.argv[1]
+with open(path, encoding="utf-8") as handle:
+    data = json.load(handle)
+if "behavior_suite" not in data or "choice_accuracy" not in data:
+    raise SystemExit(1)
+PY
+}
+
+if [[ "$FORCE_EVAL" != "1" ]] && valid_eval_report "$BROAD_JSON"; then
+  echo "broad_eval_cache_hit=$BROAD_JSON"
+else
+  CUDA_VISIBLE_DEVICES="$GPU_UUID" python -m neural_forge.cli hf-eval \
+    "$MODEL_DIR" \
+    "$BROAD_JSON" \
+    --eval-suite "$EVAL_SUITE_FILE" \
+    --max-behavior-probes "$MAX_BEHAVIOR_PROBES" \
+    --max-generation-prompts "$MAX_GENERATION_PROMPTS" \
+    --max-choice-probes "$MAX_CHOICE_PROBES" \
+    --max-text-evals "$MAX_TEXT_EVALS" \
+    --max-new-tokens "$MAX_NEW_TOKENS" \
+    --device "$DEVICE" \
+    --dtype "$DTYPE"
+fi
+
+if [[ "$FORCE_MANUAL" != "1" ]] && [[ -s "$MANUAL_JSON" ]]; then
+  echo "manual_eval_cache_hit=$MANUAL_JSON"
+else
+  CUDA_VISIBLE_DEVICES="$GPU_UUID" python - <<PY
 import json
 from pathlib import Path
 
@@ -79,3 +103,4 @@ for prompt in prompts:
 out.write_text(json.dumps({"model": model_dir, "manual_generations": items}, indent=2), encoding="utf-8")
 print(json.dumps({"broad_eval": "$BROAD_JSON", "manual_eval": "$MANUAL_JSON"}, indent=2))
 PY
+fi

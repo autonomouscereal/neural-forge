@@ -62,6 +62,11 @@ def test_broad_manual_eval_allows_exactgen_suite_override() -> None:
     )
 
     assert 'EVAL_SUITE_FILE="${EVAL_SUITE_FILE:-$RUN_ROOT/behavior_suite.json}"' in script
+    assert 'FORCE_EVAL="${FORCE_EVAL:-0}"' in script
+    assert 'FORCE_MANUAL="${FORCE_MANUAL:-0}"' in script
+    assert "valid_eval_report()" in script
+    assert "broad_eval_cache_hit=" in script
+    assert "manual_eval_cache_hit=" in script
     assert 'BROAD_JSON="${BROAD_JSON:-$OUT_DIR/eval_${TAG}_${MAX_BEHAVIOR_PROBES}x${MAX_GENERATION_PROMPTS}x${MAX_CHOICE_PROBES}.json}"' in script
     assert 'MANUAL_JSON="${MANUAL_JSON:-$OUT_DIR/manual_${TAG}.json}"' in script
     assert '--eval-suite "$EVAL_SUITE_FILE"' in script
