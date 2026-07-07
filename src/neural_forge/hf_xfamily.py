@@ -629,6 +629,7 @@ def donor_projected_init(
                 donor_layer_fold_mode=donor_layer_fold_mode,
                 donor_layer_group=donor_layer_group,
                 cache=folded_donor_layer_cache,
+                layer_group_weights=layer_group_weights,
             )
             donor_tensor = _lookup_layer_tensor_value(folded_state, suffix)
             synthetic_layer_report = None
@@ -4326,6 +4327,7 @@ def _folded_donor_layer_state(
     donor_layer_fold_mode: str,
     donor_layer_group: Sequence[int] | None,
     cache: dict[int, dict[str, Any]],
+    layer_group_weights: Sequence[float] | None = None,
 ) -> dict[str, Any]:
     if donor_layer_fold_mode not in {"average", "fold"}:
         raise ValueError("donor_layer_fold_mode must be average or fold for folded donor states.")
@@ -4340,6 +4342,7 @@ def _folded_donor_layer_state(
             torch,
             [donor_layers[layer_idx].state_dict() for layer_idx in group],
             method=method,
+            weights=layer_group_weights,
         )
     return cache[target_layer_idx]
 

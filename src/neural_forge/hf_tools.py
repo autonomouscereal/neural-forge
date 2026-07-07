@@ -2997,7 +2997,12 @@ def _layer_groups_for_report(groups: Sequence[Sequence[int]]) -> list[list[int]]
     return [list(group) for group in groups]
 
 
-def _merge_layer_state_dicts(torch, states: Sequence[dict[str, Any]], method: str) -> dict[str, Any]:
+def _merge_layer_state_dicts(
+    torch,
+    states: Sequence[dict[str, Any]],
+    method: str,
+    weights: Sequence[float] | None = None,
+) -> dict[str, Any]:
     if not states:
         raise ValueError("Need at least one layer state.")
     keys = set(states[0])
@@ -3007,6 +3012,16 @@ def _merge_layer_state_dicts(torch, states: Sequence[dict[str, Any]], method: st
 
     merged = {}
     count = float(len(states))
+    weight_values = None
+    if weights is not None:
+        if len(weights) != len(states):
+            raise ValueError("Layer merge weights must match state count.")
+        raw_weights = [max(float(item), 0.0) for item in weights]
+        total_weight = sum(raw_weights)
+        if not math.isfinite(total_weight) or total_weight <= 0.0:
+            raw_weights = [1.0 for _state in states]
+            total_weight = float(len(states))
+        weight_values = [float(item / total_weight) for item in raw_weights]
     for name in states[0]:
         first = states[0][name]
         if not first.is_floating_point():
@@ -3016,10 +3031,15 @@ def _merge_layer_state_dicts(torch, states: Sequence[dict[str, Any]], method: st
         shape = tuple(tensors[0].shape)
         if any(tuple(tensor.shape) != shape for tensor in tensors):
             raise ValueError(f"Layer parameter shape mismatch for {name}.")
-        if method == "fold" and _is_residual_output_param(name):
-            merged_tensor = sum(tensors)
+        if weight_values is None:
+            if method == "fold" and _is_residual_output_param(name):
+                merged_tensor = sum(tensors)
+            else:
+                merged_tensor = sum(tensors) / count
+        elif method == "fold" and _is_residual_output_param(name):
+            merged_tensor = sum(tensor * weight for tensor, weight in zip(tensors, weight_values)) * count
         else:
-            merged_tensor = sum(tensors) / count
+            merged_tensor = sum(tensor * weight for tensor, weight in zip(tensors, weight_values))
         merged[name] = merged_tensor.to(first.dtype)
     return merged
 

@@ -6023,6 +6023,26 @@ def test_layer_fold_sums_cross_family_residual_output_aliases() -> None:
     assert folded["mlp.c_fc.weight"].tolist() == [[22.0, 22.0], [22.0, 22.0]]
 
 
+def test_layer_state_merge_applies_soft_group_weights() -> None:
+    torch = pytest.importorskip("torch")
+    state_a = {
+        "attn.c_proj.weight": torch.ones((1, 1), dtype=torch.float32),
+        "mlp.c_fc.weight": torch.ones((1, 1), dtype=torch.float32),
+    }
+    state_b = {
+        "attn.c_proj.weight": torch.full((1, 1), 5.0, dtype=torch.float32),
+        "mlp.c_fc.weight": torch.full((1, 1), 5.0, dtype=torch.float32),
+    }
+
+    folded = _merge_layer_state_dicts(torch, [state_a, state_b], method="fold", weights=[0.25, 0.75])
+    averaged = _merge_layer_state_dicts(torch, [state_a, state_b], method="average", weights=[0.25, 0.75])
+
+    assert folded["attn.c_proj.weight"].item() == pytest.approx(8.0)
+    assert folded["mlp.c_fc.weight"].item() == pytest.approx(4.0)
+    assert averaged["attn.c_proj.weight"].item() == pytest.approx(4.0)
+    assert averaged["mlp.c_fc.weight"].item() == pytest.approx(4.0)
+
+
 def test_layer_tensor_alias_lookup_maps_qwen_suffixes_to_lfm_names() -> None:
     index = {
         (3, "feed_forward.w1.weight"): "model.layers.3.feed_forward.w1.weight",
