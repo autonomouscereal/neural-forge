@@ -37,6 +37,7 @@ def test_blank_beststack_topneg_recovery_uses_folded_child_and_broad_eval() -> N
     assert "hf-tie-head" in script
     assert 'RECOVERY_INPUT="$TIED_CANDIDATE_MODEL"' in script
     assert "--final-output-head-policy tie" in script
+    assert 'data.get("final_model_dir") or data.get("best_model_dir")' in script
     assert "--alm-answer-first-token-margin-weight" in script
     assert "--alm-answer-first-token-top-negatives 24" in script
     assert "--alm-answer-contrastive-weight" in script

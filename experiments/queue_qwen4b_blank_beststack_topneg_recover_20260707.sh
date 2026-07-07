@@ -186,7 +186,7 @@ summary = out / "reports" / "chain_anchor_summary.json"
 model = ""
 if summary.exists():
     data = json.loads(summary.read_text(encoding="utf-8"))
-    model = str(data.get("best_model_dir") or "")
+    model = str(data.get("final_model_dir") or data.get("best_model_dir") or "")
 if not model:
     for rel in ("models/01_alm", "models/00_alm", "models/02_alm"):
         candidate = out / rel
