@@ -36,8 +36,10 @@ def test_blank_beststack_topneg_recovery_uses_folded_child_and_broad_eval() -> N
     assert 'TIE_CANDIDATE_BEFORE_RECOVERY="${TIE_CANDIDATE_BEFORE_RECOVERY:-1}"' in script
     assert "hf-tie-head" in script
     assert 'RECOVERY_INPUT="$TIED_CANDIDATE_MODEL"' in script
-    assert "--final-output-head-policy tie" in script
+    assert 'FINAL_OUTPUT_HEAD_POLICY="${FINAL_OUTPUT_HEAD_POLICY:-tie}"' in script
+    assert '--final-output-head-policy "$FINAL_OUTPUT_HEAD_POLICY"' in script
     assert 'data.get("final_model_dir") or data.get("best_model_dir")' in script
+    assert 'EVAL_SUITE_FILE="$EVAL_SUITE_FILE"' in script
     assert "--alm-answer-first-token-margin-weight" in script
     assert "--alm-answer-first-token-top-negatives 24" in script
     assert "--alm-answer-contrastive-weight" in script
@@ -48,9 +50,33 @@ def test_blank_beststack_topneg_recovery_uses_folded_child_and_broad_eval() -> N
     assert "MAX_CHOICE_PROBES=250" in script
 
 
+def test_broad_manual_eval_allows_exactgen_suite_override() -> None:
+    script = (REPO_ROOT / "experiments/eval_model_broad_and_manual.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'EVAL_SUITE_FILE="${EVAL_SUITE_FILE:-$RUN_ROOT/behavior_suite.json}"' in script
+    assert '--eval-suite "$EVAL_SUITE_FILE"' in script
+
+
 def test_lfm_stabilizer_prefers_exact_size_chain_output() -> None:
     script = (
         REPO_ROOT / "experiments/launch_lfm230m_stabilizer_after_summary.sh"
     ).read_text(encoding="utf-8")
 
     assert 'r.get("final_model_dir") or r["best_model_dir"]' in script
+
+
+def test_prior_anchor_topneg_queue_restores_old_best_paths() -> None:
+    script = (
+        REPO_ROOT / "experiments/queue_qwen4b_prior_anchor_topneg_recover_20260707.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "dualalm29)" in script
+    assert "tied29x_dualalm240_last4" in script
+    assert "FINAL_OUTPUT_HEAD_POLICY=\"${FINAL_OUTPUT_HEAD_POLICY:-tie}\"" in script
+    assert "ffn1496)" in script
+    assert "alpha05_ffn1496_folded_xreconstruct_mlp_a05" in script
+    assert "FINAL_OUTPUT_HEAD_POLICY=\"${FINAL_OUTPUT_HEAD_POLICY:-preserve}\"" in script
+    assert "behavior_suite_exactgen_20260702.json" in script
+    assert "queue_qwen4b_blank_beststack_topneg_recover_20260707.sh" in script

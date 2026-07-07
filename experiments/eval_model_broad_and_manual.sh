@@ -13,6 +13,7 @@ MAX_GENERATION_PROMPTS="${MAX_GENERATION_PROMPTS:-200}"
 MAX_CHOICE_PROBES="${MAX_CHOICE_PROBES:-250}"
 MAX_TEXT_EVALS="${MAX_TEXT_EVALS:-128}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-96}"
+EVAL_SUITE_FILE="${EVAL_SUITE_FILE:-$RUN_ROOT/behavior_suite.json}"
 
 cd "$REPO_ROOT"
 source /home/cereal/model-surgery-lab/venv/bin/activate
@@ -25,7 +26,7 @@ MANUAL_JSON="$OUT_DIR/manual_${TAG}.json"
 CUDA_VISIBLE_DEVICES="$GPU_UUID" python -m neural_forge.cli hf-eval \
   "$MODEL_DIR" \
   "$BROAD_JSON" \
-  --eval-suite "$RUN_ROOT/behavior_suite.json" \
+  --eval-suite "$EVAL_SUITE_FILE" \
   --max-behavior-probes "$MAX_BEHAVIOR_PROBES" \
   --max-generation-prompts "$MAX_GENERATION_PROMPTS" \
   --max-choice-probes "$MAX_CHOICE_PROBES" \

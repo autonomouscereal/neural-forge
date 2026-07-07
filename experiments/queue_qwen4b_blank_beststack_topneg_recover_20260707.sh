@@ -27,6 +27,7 @@ ALM_ANSWER_CONTRASTIVE_WEIGHT="${ALM_ANSWER_CONTRASTIVE_WEIGHT:-0.10}"
 ALM_ANSWER_MARGIN_WEIGHT="${ALM_ANSWER_MARGIN_WEIGHT:-0.08}"
 ALM_ANSWER_MARGIN="${ALM_ANSWER_MARGIN:-1.5}"
 ALM_STEPWISE_DONOR_KD_WEIGHT="${ALM_STEPWISE_DONOR_KD_WEIGHT:-0.025}"
+FINAL_OUTPUT_HEAD_POLICY="${FINAL_OUTPUT_HEAD_POLICY:-tie}"
 
 cd "$REPO_ROOT"
 mkdir -p "$RUN_ROOT/logs"
@@ -127,7 +128,7 @@ python -m neural_forge.cli hf-xfamily-chain-anchor-compress \
   --stage-ppl-gate-mode advisory \
   --promote-policy always \
   --stage-input-policy sequential \
-  --final-output-head-policy tie \
+  --final-output-head-policy "$FINAL_OUTPUT_HEAD_POLICY" \
   --alm-steps "$ALM_STEPS" \
   --alm-batch-size 1 \
   --alm-max-length 128 \
@@ -214,6 +215,7 @@ MAX_GENERATION_PROMPTS=1000 \
 MAX_CHOICE_PROBES=250 \
 MAX_TEXT_EVALS=128 \
 MAX_NEW_TOKENS=96 \
+EVAL_SUITE_FILE="$EVAL_SUITE_FILE" \
 bash "$REPO_ROOT/experiments/eval_model_broad_and_manual.sh"
 
 echo "topneg_recover_queue_done=$(date -Is) tag=$TAG final_model=$FINAL_MODEL"
