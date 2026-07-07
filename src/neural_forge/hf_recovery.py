@@ -6327,9 +6327,12 @@ def _candidate_to_source_token_groups(
     from neural_forge.hf_xfamily import _canonical_token
     from neural_forge.hf_xfamily import _canonical_token_map
     from neural_forge.hf_xfamily import _donor_omp_candidate_ids
+    from neural_forge.hf_xfamily import _donor_special_ids_for_target_role
     from neural_forge.hf_xfamily import _donor_tokenized_group_weights
     from neural_forge.hf_xfamily import _encode_without_specials
     from neural_forge.hf_xfamily import _omp_token_piece_weights
+    from neural_forge.hf_xfamily import _special_token_ids_by_decoded_surface
+    from neural_forge.hf_xfamily import _special_token_ids_by_role
 
     if max_source_tokens <= 0:
         raise ValueError("max_source_tokens must be positive.")
@@ -6337,6 +6340,13 @@ def _candidate_to_source_token_groups(
     source_special_ids = set(getattr(source_tokenizer, "all_special_ids", []) or [])
     source_vocab_size = len(source_tokenizer)
     source_map = _canonical_token_map(source_tokenizer)
+    candidate_special_roles = _special_token_ids_by_role(candidate_tokenizer)
+    source_special_roles = _special_token_ids_by_role(source_tokenizer)
+    source_special_decoded = _special_token_ids_by_decoded_surface(source_tokenizer)
+    candidate_roles_by_id: dict[int, list[str]] = {}
+    for role, role_ids in candidate_special_roles.items():
+        for role_id in role_ids:
+            candidate_roles_by_id.setdefault(int(role_id), []).append(role)
     omp_candidate_limit = max(32, int(max_source_tokens) * 8)
     groups = []
     masks = []
@@ -6345,7 +6355,26 @@ def _candidate_to_source_token_groups(
     for candidate_id in range(len(candidate_tokenizer)):
         ids: list[int] = []
         token_weights: list[float] = []
-        if candidate_id not in candidate_special_ids:
+        if candidate_id in candidate_special_ids:
+            for role in candidate_roles_by_id.get(int(candidate_id), ["all_special_ids"]):
+                role_ids = _donor_special_ids_for_target_role(
+                    role,
+                    int(candidate_id),
+                    candidate_tokenizer,
+                    source_special_roles,
+                    source_special_decoded,
+                )
+                ids = []
+                for source_id in role_ids:
+                    source_id = int(source_id)
+                    if 0 <= source_id < source_vocab_size and source_id not in ids:
+                        ids.append(source_id)
+                    if len(ids) >= int(max_source_tokens):
+                        break
+                if ids:
+                    token_weights = [1.0] * len(ids)
+                    break
+        else:
             decoded = _decode_token_for_projection(candidate_tokenizer, int(candidate_id))
             if decoded and not any(ord(ch) < 32 for ch in decoded):
                 encoded = _encode_without_specials(source_tokenizer, decoded)

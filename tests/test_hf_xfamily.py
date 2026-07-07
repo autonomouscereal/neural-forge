@@ -7020,7 +7020,9 @@ def test_candidate_to_source_token_groups_uses_sparse_surface_fallback_for_digit
         device="cpu",
     )
 
-    assert valid.tolist() == [False, True, True]
+    assert valid.tolist() == [True, True, True]
+    assert groups[0, 0].item() == 0
+    assert mask[0].tolist() == pytest.approx([1.0, 0.0, 0.0])
     assert groups[1, :2].tolist() == [1, 2]
     assert mask[1].tolist() == pytest.approx([1.0, 1.0, 0.0])
     assert weights[1].sum().item() == pytest.approx(1.0)
@@ -7042,10 +7044,42 @@ def test_candidate_to_source_token_groups_weights_direct_multi_piece_surface() -
         device="cpu",
     )
 
-    assert valid.tolist() == [False, True]
+    assert valid.tolist() == [True, True]
+    assert groups[0, 0].item() == 0
+    assert mask[0].tolist() == pytest.approx([1.0, 0.0, 0.0])
     assert groups[1, :2].tolist() == [1, 2]
     assert mask[1].tolist() == pytest.approx([1.0, 1.0, 0.0])
     assert weights[1].tolist() == pytest.approx([1.0 / 7.0, 6.0 / 7.0, 0.0])
+
+
+def test_candidate_to_source_token_groups_maps_special_tokens_by_role_and_surface() -> None:
+    torch = pytest.importorskip("torch")
+    source_tokenizer = _Tokenizer(["<s>", "</s>", "<unk>", "<pad>", "<extra>", "hello"])
+    source_tokenizer.all_special_ids = [0, 1, 2, 3, 4]
+    source_tokenizer.bos_token_id = 0
+    source_tokenizer.eos_token_id = 1
+    source_tokenizer.unk_token_id = 2
+    source_tokenizer.pad_token_id = 3
+    source_tokenizer.additional_special_tokens_ids = [4]
+    candidate_tokenizer = _Tokenizer(["<pad>", "<bos>", "<eos>", "hello", "<extra>"])
+    candidate_tokenizer.all_special_ids = [0, 1, 2, 4]
+    candidate_tokenizer.pad_token_id = 0
+    candidate_tokenizer.bos_token_id = 1
+    candidate_tokenizer.eos_token_id = 2
+    candidate_tokenizer.additional_special_tokens_ids = [4]
+
+    groups, mask, weights, valid = _candidate_to_source_token_groups(
+        torch,
+        source_tokenizer,
+        candidate_tokenizer,
+        max_source_tokens=2,
+        device="cpu",
+    )
+
+    assert valid.tolist() == [True, True, True, True, True]
+    assert groups[:, 0].tolist() == [3, 0, 1, 5, 4]
+    assert mask.tolist() == [[1.0, 0.0]] * 5
+    assert weights.tolist() == [[1.0, 0.0]] * 5
 
 
 def test_projected_vocab_group_summary_reports_digit_and_multi_source_rows() -> None:
