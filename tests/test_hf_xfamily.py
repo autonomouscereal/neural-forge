@@ -7029,6 +7029,25 @@ def test_candidate_to_source_token_groups_uses_sparse_surface_fallback_for_digit
     assert weights[2].tolist() == pytest.approx([1.0, 0.0, 0.0])
 
 
+def test_candidate_to_source_token_groups_weights_direct_multi_piece_surface() -> None:
+    torch = pytest.importorskip("torch")
+    source_tokenizer = _Tokenizer(["<eos>", "a", "longer"])
+    candidate_tokenizer = _Tokenizer(["<eos>", "a longer"])
+
+    groups, mask, weights, valid = _candidate_to_source_token_groups(
+        torch,
+        source_tokenizer,
+        candidate_tokenizer,
+        max_source_tokens=3,
+        device="cpu",
+    )
+
+    assert valid.tolist() == [False, True]
+    assert groups[1, :2].tolist() == [1, 2]
+    assert mask[1].tolist() == pytest.approx([1.0, 1.0, 0.0])
+    assert weights[1].tolist() == pytest.approx([1.0 / 7.0, 6.0 / 7.0, 0.0])
+
+
 def test_projected_vocab_group_summary_reports_digit_and_multi_source_rows() -> None:
     torch = pytest.importorskip("torch")
     tokenizer = _Tokenizer(["<eos>", "42", "a+b", "hello"])

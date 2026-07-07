@@ -6327,6 +6327,7 @@ def _candidate_to_source_token_groups(
     from neural_forge.hf_xfamily import _canonical_token
     from neural_forge.hf_xfamily import _canonical_token_map
     from neural_forge.hf_xfamily import _donor_omp_candidate_ids
+    from neural_forge.hf_xfamily import _donor_tokenized_group_weights
     from neural_forge.hf_xfamily import _encode_without_specials
     from neural_forge.hf_xfamily import _omp_token_piece_weights
 
@@ -6354,7 +6355,7 @@ def _candidate_to_source_token_groups(
                     if int(item) not in source_special_ids and 0 <= int(item) < source_vocab_size
                 ]
                 ids = direct_ids[: int(max_source_tokens)]
-                token_weights = [1.0 / max(1, len(ids))] * len(ids)
+                token_weights = _donor_tokenized_group_weights(source_tokenizer, ids) if ids else []
                 if _projected_vocab_prefers_sparse_surface(
                     decoded,
                     _canonical_token,
