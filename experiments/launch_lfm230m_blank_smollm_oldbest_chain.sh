@@ -9,6 +9,8 @@ ANCHOR_MODEL="${ANCHOR_MODEL:-$RUN_ROOT/blank_smollm2_135m_seed0}"
 TAG="${TAG:-lfm230m_blank_smollm_chain_oldbest_noactfit_gpu6_20260629}"
 INIT_ATTENTION_HEAD_DIM_TRANSPORT="${INIT_ATTENTION_HEAD_DIM_TRANSPORT:-none}"
 INIT_TOKEN_FALLBACK_MODE="${INIT_TOKEN_FALLBACK_MODE:-donor-mean}"
+INIT_DONOR_LAYER_GROUP_STRATEGY="${INIT_DONOR_LAYER_GROUP_STRATEGY:-activation-energy}"
+BLOCK_DONOR_LAYER_GROUP_STRATEGY="${BLOCK_DONOR_LAYER_GROUP_STRATEGY:-activation-energy}"
 
 cd "$REPO_ROOT"
 source /home/cereal/model-surgery-lab/venv/bin/activate
@@ -41,7 +43,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-activation-fold-assignment similarity \
   --init-transport-backend sinkhorn \
   --init-donor-layer-fold-mode fold \
-  --init-donor-layer-group-strategy activation-energy \
+  --init-donor-layer-group-strategy "$INIT_DONOR_LAYER_GROUP_STRATEGY" \
   --init-attention-fold-mode activation-coupled \
   --init-attention-head-dim-transport "$INIT_ATTENTION_HEAD_DIM_TRANSPORT" \
   --init-token-init-mode donor-tokenized-weighted \
@@ -66,7 +68,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --block-pre-reconstruction-alpha 0.02 \
   --block-pre-reconstruction-fit-gate validation \
   --block-donor-layer-fold-mode fold \
-  --block-donor-layer-group-strategy activation-energy \
+  --block-donor-layer-group-strategy "$BLOCK_DONOR_LAYER_GROUP_STRATEGY" \
   --block-layer-gate-metric behavior \
   --block-layer-gate-max-texts 160 \
   --block-layer-gate-max-generation-prompts 80 \
