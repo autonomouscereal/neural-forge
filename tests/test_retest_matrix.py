@@ -113,6 +113,65 @@ def test_summary_ranks_generation_before_choice_after_behavior_tie(tmp_path: Pat
     assert rows[0]["label"] == "exact_gen"
 
 
+def test_summary_ranks_critical_behavior_before_generic_generation(tmp_path: Path) -> None:
+    module = _load_module()
+    balanced = tmp_path / "balanced.json"
+    broad_only = tmp_path / "broad_only.json"
+
+    balanced.write_text(
+        json.dumps(
+            {
+                "model": "balanced",
+                "behavior_suite": {
+                    "correct": 5,
+                    "total": 10,
+                    "items": [
+                        {"id": "math_1", "category": "math", "passed": True},
+                        {"id": "math_2", "category": "math", "passed": True},
+                        {"id": "code_1", "category": "code", "passed": True},
+                        {"id": "code_2", "category": "code", "passed": False},
+                    ],
+                },
+                "generation_health": {"correct": 1, "total": 10},
+                "choice_accuracy": {"correct": 1, "total": 10, "items": []},
+                "perplexity": {"mean": 1000.0},
+            }
+        ),
+        encoding="utf-8",
+    )
+    broad_only.write_text(
+        json.dumps(
+            {
+                "model": "broad_only",
+                "behavior_suite": {
+                    "correct": 5,
+                    "total": 10,
+                    "items": [
+                        {"id": "math_1", "category": "math", "passed": False},
+                        {"id": "math_2", "category": "math", "passed": False},
+                        {"id": "code_1", "category": "code", "passed": False},
+                        {"id": "code_2", "category": "code", "passed": False},
+                    ],
+                },
+                "generation_health": {"correct": 10, "total": 10},
+                "choice_accuracy": {"correct": 10, "total": 10, "items": []},
+                "perplexity": {"mean": 1.0},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    rows = [
+        module._row_from_entry({"label": "broad_only", "report": str(broad_only)}),
+        module._row_from_entry({"label": "balanced", "report": str(balanced)}),
+    ]
+    rows.sort(key=module._rank_key)
+
+    assert rows[0]["label"] == "balanced"
+    assert rows[0]["critical_behavior_min_rate"] == 0.5
+    assert rows[1]["critical_behavior_min_rate"] == 0.0
+
+
 def test_summary_uses_parent_retention_before_perplexity(tmp_path: Path) -> None:
     module = _load_module()
     retained = tmp_path / "retained.json"
@@ -206,3 +265,73 @@ def test_summary_reads_compare_retention_schema(tmp_path: Path) -> None:
     assert row["behavior_parent_retention"] == 0.4
     assert row["generation_parent_retention"] == 0.5
     assert row["choice_parent_retention"] == 0.6
+
+
+def test_summary_reads_critical_category_retention_and_markdown(tmp_path: Path) -> None:
+    module = _load_module()
+    report = tmp_path / "child.json"
+    report.write_text(
+        json.dumps(
+            {
+                "model": "child",
+                "behavior_suite": {
+                    "correct": 2,
+                    "total": 4,
+                    "items": [
+                        {"id": "math_1", "category": "math", "passed": True},
+                        {"id": "math_2", "category": "math", "passed": False},
+                        {"id": "tok_1", "category": "tokenizer", "passed": True},
+                    ],
+                },
+                "generation_health": {"correct": 2, "total": 4},
+                "generation_diagnostics": [
+                    {"id": "code_1", "category": "code", "passed": True},
+                    {"id": "code_2", "category": "code", "passed": False},
+                ],
+                "choice_accuracy": {"correct": 2, "total": 4, "items": []},
+                "perplexity": {"mean": 10.0},
+            }
+        ),
+        encoding="utf-8",
+    )
+    retention_dir = tmp_path / "retention_child"
+    retention_dir.mkdir()
+    (retention_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "comparisons": {
+                    "parent_vs_child": {
+                        "behavior": {
+                            "overall": {"shared_parent_pass_retention_rate": 0.4, "parent_pass": 5},
+                            "by_category": {
+                                "math": {"retained_parent_pass": 1, "parent_pass": 4},
+                                "tokenizer": {"retained_parent_pass": 3, "parent_pass": 3},
+                            },
+                        },
+                        "generation": {
+                            "overall": {"shared_parent_pass_retention_rate": 0.5, "parent_pass": 6},
+                            "by_category": {"code": {"retained_parent_pass": 2, "parent_pass": 4}},
+                        },
+                        "choice": {"overall": {"shared_parent_pass_retention_rate": 0.6, "parent_pass": 7}},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    row = module._row_from_entry(
+        {"label": "child", "report": str(report), "retention_dir": str(retention_dir)}
+    )
+    markdown = module._summary_markdown(
+        {"created_at": "now", "row_count": 1, "complete_count": 1, "rows": [row]}
+    )
+
+    assert row["critical_behavior"]["math"] == {"correct": 1, "total": 2}
+    assert row["critical_generation"]["code"] == {"correct": 1, "total": 2}
+    assert row["critical_behavior_retention_min_rate"] == 0.25
+    assert row["critical_generation_retention_min_rate"] == 0.5
+    assert "Critical B" in markdown
+    assert "math:1/2" in markdown
+    assert "code:1/2" in markdown
+    assert "25.0%/50.0%" in markdown

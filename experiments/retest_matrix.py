@@ -42,6 +42,12 @@ SKIP_PATH_PARTS = {
     "lm_eval_cache_20260702",
     "multi_donor_stages",
 }
+CRITICAL_CATEGORY_GROUPS = {
+    "math": ("math", "arithmetic", "numeric", "number"),
+    "code": ("code", "python", "program"),
+    "tokenizer": ("tokenizer", "token"),
+    "surgery": ("model-surgery", "model_surgery", "surgery", "merge", "pruning", "neuron"),
+}
 
 
 def main() -> int:
@@ -510,6 +516,10 @@ def _row_from_entry(entry: dict[str, Any]) -> dict[str, Any]:
         row["status"] = "complete"
         row["behavior_by_category"] = _category_counts((data.get("behavior_suite") or {}).get("items"), "passed")
         row["generation_by_category"] = _category_counts(data.get("generation_diagnostics"), "passed")
+        row["critical_behavior"] = _critical_category_counts(row["behavior_by_category"])
+        row["critical_generation"] = _critical_category_counts(row["generation_by_category"])
+        row["critical_behavior_min_rate"] = _critical_min_rate(row["critical_behavior"])
+        row["critical_generation_min_rate"] = _critical_min_rate(row["critical_generation"])
         row["manual_samples"] = _manual_samples(Path(str(entry.get("manual_json", ""))))
         row["retention"] = _load_retention_summary(Path(str(entry.get("retention_dir", ""))))
         row.update(_aggregate_retention(row["retention"]))
@@ -549,6 +559,29 @@ def _category_counts(items: Any, pass_key: str) -> dict[str, dict[str, int]]:
     return counts
 
 
+def _critical_category_counts(category_counts: dict[str, dict[str, int]]) -> dict[str, dict[str, int]]:
+    critical = {name: {"correct": 0, "total": 0} for name in CRITICAL_CATEGORY_GROUPS}
+    for raw_category, counts in category_counts.items():
+        category = str(raw_category).lower()
+        for name, needles in CRITICAL_CATEGORY_GROUPS.items():
+            if any(needle in category for needle in needles):
+                critical[name]["correct"] += int(counts.get("correct") or 0)
+                critical[name]["total"] += int(counts.get("total") or 0)
+                break
+    return {name: values for name, values in critical.items() if values["total"] > 0}
+
+
+def _critical_min_rate(critical_counts: dict[str, dict[str, int]]) -> float | None:
+    rates = [
+        _ratio(values.get("correct"), values.get("total"))
+        for values in critical_counts.values()
+        if values.get("total")
+    ]
+    if not rates:
+        return None
+    return min(rates)
+
+
 def _manual_samples(path: Path) -> list[dict[str, str]]:
     if not path.exists():
         return []
@@ -579,6 +612,8 @@ def _aggregate_retention(retention: dict[str, Any]) -> dict[str, Any]:
     behavior = _retention_overall(comparison, "behavior")
     generation = _retention_overall(comparison, "generation")
     choice = _retention_overall(comparison, "choice")
+    behavior_critical = _critical_retention_by_category(comparison, "behavior")
+    generation_critical = _critical_retention_by_category(comparison, "generation")
     return {
         "behavior_parent_retention": behavior.get("shared_parent_pass_retention_rate"),
         "generation_parent_retention": generation.get("shared_parent_pass_retention_rate"),
@@ -586,6 +621,10 @@ def _aggregate_retention(retention: dict[str, Any]) -> dict[str, Any]:
         "behavior_parent_pass": behavior.get("parent_pass"),
         "generation_parent_pass": generation.get("parent_pass"),
         "choice_parent_pass": choice.get("parent_pass"),
+        "critical_behavior_retention": behavior_critical,
+        "critical_generation_retention": generation_critical,
+        "critical_behavior_retention_min_rate": _critical_retention_min_rate(behavior_critical),
+        "critical_generation_retention_min_rate": _critical_retention_min_rate(generation_critical),
     }
 
 
@@ -616,13 +655,54 @@ def _retention_overall(retention: dict[str, Any], section: str) -> dict[str, Any
     return {}
 
 
+def _critical_retention_by_category(retention: dict[str, Any], section: str) -> dict[str, dict[str, Any]]:
+    value = retention.get(section)
+    if not isinstance(value, dict):
+        return {}
+    by_category = value.get("by_category")
+    if not isinstance(by_category, dict):
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for raw_category, summary in by_category.items():
+        if not isinstance(summary, dict):
+            continue
+        category = str(raw_category).lower()
+        for name, needles in CRITICAL_CATEGORY_GROUPS.items():
+            if any(needle in category for needle in needles):
+                bucket = out.setdefault(name, {"retained_parent_pass": 0, "parent_pass": 0})
+                bucket["retained_parent_pass"] += int(summary.get("retained_parent_pass") or 0)
+                bucket["parent_pass"] += int(summary.get("parent_pass") or 0)
+                break
+    for values in out.values():
+        parent_pass = values.get("parent_pass") or 0
+        values["shared_parent_pass_retention_rate"] = (
+            (values.get("retained_parent_pass") or 0) / parent_pass if parent_pass else None
+        )
+    return {name: values for name, values in out.items() if values.get("parent_pass")}
+
+
+def _critical_retention_min_rate(critical_retention: dict[str, dict[str, Any]]) -> float | None:
+    rates = [
+        float(values["shared_parent_pass_retention_rate"])
+        for values in critical_retention.values()
+        if isinstance(values.get("shared_parent_pass_retention_rate"), (int, float))
+    ]
+    if not rates:
+        return None
+    return min(rates)
+
+
 def _rank_key(row: dict[str, Any]) -> tuple[Any, ...]:
     return (
         row.get("status") != "complete",
         -_ratio(row.get("behavior_correct"), row.get("behavior_total")),
+        -_optional_rate(row.get("critical_behavior_min_rate")),
         -_ratio(row.get("generation_correct"), row.get("generation_total")),
+        -_optional_rate(row.get("critical_generation_min_rate")),
         -_retention_rate(row.get("behavior_parent_retention")),
+        -_optional_rate(row.get("critical_behavior_retention_min_rate")),
         -_retention_rate(row.get("generation_parent_retention")),
+        -_optional_rate(row.get("critical_generation_retention_min_rate")),
         -_ratio(row.get("choice_correct"), row.get("choice_total")),
         -_retention_rate(row.get("choice_parent_retention")),
         row.get("perplexity_mean") if row.get("perplexity_mean") is not None else float("inf"),
@@ -631,6 +711,12 @@ def _rank_key(row: dict[str, Any]) -> tuple[Any, ...]:
 
 
 def _retention_rate(value: Any) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    return 0.0
+
+
+def _optional_rate(value: Any) -> float:
     if isinstance(value, (int, float)):
         return float(value)
     return 0.0
@@ -649,19 +735,22 @@ def _summary_markdown(summary: dict[str, Any]) -> str:
         f"Created: `{summary['created_at']}`",
         f"Rows: `{summary['row_count']}` complete: `{summary['complete_count']}`",
         "",
-        "| Rank | Label | Category | Behavior | Generation | Choice | Retain B/G/C | PPL |",
-        "|---:|---|---|---:|---:|---:|---:|---:|",
+        "| Rank | Label | Category | Behavior | Critical B | Generation | Critical G | Choice | Retain B/G/C | Critical Ret B/G | PPL |",
+        "|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for index, row in enumerate(summary["rows"], start=1):
         lines.append(
-            "| {rank} | `{label}` | {category} | {behavior} | {generation} | {choice} | {retention} | {ppl} |".format(
+            "| {rank} | `{label}` | {category} | {behavior} | {critical_behavior} | {generation} | {critical_generation} | {choice} | {retention} | {critical_retention} | {ppl} |".format(
                 rank=index,
                 label=row.get("label"),
                 category=row.get("category") or "",
                 behavior=_metric(row, "behavior"),
+                critical_behavior=_critical_metric(row.get("critical_behavior")),
                 generation=_metric(row, "generation"),
+                critical_generation=_critical_metric(row.get("critical_generation")),
                 choice=_metric(row, "choice"),
                 retention=_retention_metric(row),
+                critical_retention=_critical_retention_metric(row),
                 ppl=_fmt_number(row.get("perplexity_mean")),
             )
         )
@@ -690,6 +779,26 @@ def _retention_metric(row: dict[str, Any]) -> str:
             _fmt_percent(row.get("behavior_parent_retention")),
             _fmt_percent(row.get("generation_parent_retention")),
             _fmt_percent(row.get("choice_parent_retention")),
+        ]
+    )
+
+
+def _critical_metric(value: Any) -> str:
+    if not isinstance(value, dict) or not value:
+        return "n/a"
+    parts = []
+    for name in CRITICAL_CATEGORY_GROUPS:
+        counts = value.get(name)
+        if isinstance(counts, dict) and counts.get("total"):
+            parts.append(f"{name}:{counts.get('correct')}/{counts.get('total')}")
+    return ", ".join(parts) if parts else "n/a"
+
+
+def _critical_retention_metric(row: dict[str, Any]) -> str:
+    return "/".join(
+        [
+            _fmt_percent(row.get("critical_behavior_retention_min_rate")),
+            _fmt_percent(row.get("critical_generation_retention_min_rate")),
         ]
     )
 
