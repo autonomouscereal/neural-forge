@@ -227,6 +227,12 @@ export BLOCK_TOKEN_FOCUS="${BLOCK_TOKEN_FOCUS:-numbers}"
 export BLOCK_FOCUSED_BLOCK_HIDDEN_KD_WEIGHT="${BLOCK_FOCUSED_BLOCK_HIDDEN_KD_WEIGHT:-0.01}"
 export BLOCK_FOCUSED_PROJECTED_VOCAB_KD_WEIGHT="${BLOCK_FOCUSED_PROJECTED_VOCAB_KD_WEIGHT:-0.003}"
 export BLOCK_FOCUSED_LM_WEIGHT="${BLOCK_FOCUSED_LM_WEIGHT:-0.005}"
+# Blank-target beststack lanes need the folded child logits trained, not only
+# hidden geometry. Keep this at the queue layer so callers can still run
+# no-head ablations by exporting 0.
+export BLOCK_TRAIN_OUTPUT_HEAD_WITH_KD="${BLOCK_TRAIN_OUTPUT_HEAD_WITH_KD:-1}"
+export BLOCK_UNTIE_OUTPUT_HEAD_FOR_KD="${BLOCK_UNTIE_OUTPUT_HEAD_FOR_KD:-1}"
+export BLOCK_ALLOW_TIED_OUTPUT_HEAD_TRAINING="${BLOCK_ALLOW_TIED_OUTPUT_HEAD_TRAINING:-0}"
 
 export ALM_STEPS="${ALM_STEPS:-260}"
 export ALM_LR="${ALM_LR:-5e-7}"

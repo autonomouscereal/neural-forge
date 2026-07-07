@@ -128,6 +128,10 @@ Immediate repo implication:
   teacher-to-student KD uses the first source piece for multi-piece target rows
   by default, and chain ALM exposes `--alm-span-kd-weight` so aligned span-logit
   KD can run alongside span-hidden KD. Beststack queues default this to `0.04`.
+- Beststack block recovery now defaults to untied output-head KD through
+  `BLOCK_TRAIN_OUTPUT_HEAD_WITH_KD=1` and
+  `BLOCK_UNTIE_OUTPUT_HEAD_FOR_KD=1`, because the strict blank-target failures
+  showed hidden/interface repair can move while the child logits remain dead.
 - Broad eval generation prompts now support behavior-style exact expectations
   and newly built suites include exact math/code generation checks. This was
   added after manual inspection showed old `generation_health` could report
