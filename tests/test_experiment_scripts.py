@@ -46,3 +46,11 @@ def test_blank_beststack_topneg_recovery_uses_folded_child_and_broad_eval() -> N
     assert "MAX_BEHAVIOR_PROBES=1000" in script
     assert "MAX_GENERATION_PROMPTS=1000" in script
     assert "MAX_CHOICE_PROBES=250" in script
+
+
+def test_lfm_stabilizer_prefers_exact_size_chain_output() -> None:
+    script = (
+        REPO_ROOT / "experiments/launch_lfm230m_stabilizer_after_summary.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'r.get("final_model_dir") or r["best_model_dir"]' in script

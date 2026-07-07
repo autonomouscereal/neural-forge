@@ -11,7 +11,7 @@ PY="${PY:-/home/cereal/model-surgery-lab/venv/bin/python}"
 ANCHOR_MODEL="$("$PY" - <<PY
 import json, pathlib
 r = json.loads(pathlib.Path("$SOURCE_SUMMARY").read_text())
-print(r["best_model_dir"])
+print(r.get("final_model_dir") or r["best_model_dir"])
 PY
 )"
 
