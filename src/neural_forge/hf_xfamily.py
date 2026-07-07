@@ -520,6 +520,14 @@ def donor_projected_init(
         raise ValueError(
             f"{donor_layer_group_strategy} donor layer grouping requires activation calibration texts."
         )
+    donor_layer_groups, donor_layer_group_report = _donor_layer_groups_for_target_count(
+        torch,
+        target_layer_count=len(target_layers),
+        donor_layer_count=len(donor_layers),
+        strategy=donor_layer_group_strategy,
+        activation_profile=activation_profile,
+    )
+    donor_layer_group_weights = _donor_layer_group_weight_lookup(donor_layer_group_report)
     hidden_basis = None
     hidden_basis_report = None
     layer_hidden_bases = None
@@ -545,6 +553,15 @@ def donor_projected_init(
                 source_dim=donor_hidden_size,
                 target_dim=target_hidden_size,
                 preprocess=hidden_basis_preprocess,
+                donor_layer_groups=donor_layer_groups
+                if donor_layer_group_strategy != "depth"
+                else None,
+                donor_layer_group_weights=donor_layer_group_weights
+                if donor_layer_group_strategy != "depth"
+                else None,
+                group_source=donor_layer_group_strategy
+                if donor_layer_group_strategy != "depth"
+                else "depth",
             )
     elif hidden_basis_mode == "shared-token-ridge":
         hidden_basis, hidden_basis_report = _build_shared_token_hidden_basis(
@@ -560,14 +577,6 @@ def donor_projected_init(
     target_state = target.state_dict()
     donor_state = donor.state_dict()
     donor_layer_keys = _layer_tensor_index(donor_state)
-    donor_layer_groups, donor_layer_group_report = _donor_layer_groups_for_target_count(
-        torch,
-        target_layer_count=len(target_layers),
-        donor_layer_count=len(donor_layers),
-        strategy=donor_layer_group_strategy,
-        activation_profile=activation_profile,
-    )
-    donor_layer_group_weights = _donor_layer_group_weight_lookup(donor_layer_group_report)
     folded_donor_layer_cache: dict[int, dict[str, Any]] = {}
     axis_assignment_cache: dict[Any, dict[str, Any]] = {}
     layer_reports = []
@@ -5055,19 +5064,53 @@ def _build_layer_activation_hidden_bases(
     source_dim: int,
     target_dim: int,
     preprocess: str = "centered-rowrms",
+    donor_layer_groups: Sequence[Sequence[int]] | None = None,
+    donor_layer_group_weights: dict[tuple[int, ...], Sequence[float]] | None = None,
+    group_source: str = "depth",
 ):
     input_rows_by_layer = activation_profile.get("hidden_basis_input_rows") or {}
     output_rows_by_layer = activation_profile.get("hidden_basis_output_rows") or {}
     layer_bases: dict[int, dict[str, Any]] = {}
     reports = []
     for target_layer_idx in range(int(target_layer_count)):
-        group = _donor_layer_group_for_target(target_layer_idx, target_layer_count, donor_layer_count)
-        input_rows = input_rows_by_layer.get(int(group[0]))
-        output_rows = output_rows_by_layer.get(int(group[-1]))
+        if donor_layer_groups is not None and int(target_layer_idx) < len(donor_layer_groups):
+            group = [int(item) for item in donor_layer_groups[int(target_layer_idx)]]
+        else:
+            group = _donor_layer_group_for_target(target_layer_idx, target_layer_count, donor_layer_count)
+        if not group:
+            group = _donor_layer_group_for_target(target_layer_idx, target_layer_count, donor_layer_count)
+        group_key = tuple(int(item) for item in group)
+        group_weights = None
+        if donor_layer_group_weights is not None:
+            raw_group_weights = donor_layer_group_weights.get(group_key)
+            if raw_group_weights is not None and len(raw_group_weights) == len(group):
+                group_weights = [float(item) for item in raw_group_weights]
+        if donor_layer_groups is None:
+            input_rows = input_rows_by_layer.get(int(group[0]))
+            output_rows = output_rows_by_layer.get(int(group[-1]))
+            input_layers = [int(group[0])] if input_rows is not None else []
+            output_layers = [int(group[-1])] if output_rows is not None else []
+        else:
+            input_rows, input_layers = _layer_activation_rows_for_group(
+                torch,
+                input_rows_by_layer,
+                group,
+                group_weights,
+            )
+            output_rows, output_layers = _layer_activation_rows_for_group(
+                torch,
+                output_rows_by_layer,
+                group,
+                group_weights,
+            )
         item: dict[str, Any] = {}
         report = {
             "target_layer": int(target_layer_idx),
             "donor_layer_group": [int(layer_idx) for layer_idx in group],
+            "group_source": str(group_source),
+            "group_weights": group_weights,
+            "input_layers": input_layers,
+            "output_layers": output_layers,
         }
         if input_rows is not None:
             input_basis, input_report = _build_activation_hidden_basis(
@@ -5103,8 +5146,35 @@ def _build_layer_activation_hidden_bases(
         "source_dim": int(source_dim),
         "target_dim": int(target_dim),
         "preprocess": preprocess,
+        "group_source": str(group_source),
+        "uses_fold_groups": donor_layer_groups is not None,
         "layers": reports,
     }
+
+
+def _layer_activation_rows_for_group(torch, rows_by_layer: dict[int, Any], group: Sequence[int], weights: Sequence[float] | None):
+    chunks = []
+    layers = []
+    use_weights = weights is not None and len(weights) == len(group)
+    for group_pos, layer_idx in enumerate(group):
+        rows = rows_by_layer.get(int(layer_idx))
+        if rows is None:
+            continue
+        matrix = rows.detach().cpu().to(torch.float32)
+        if matrix.dim() > 2:
+            matrix = matrix.reshape(-1, matrix.shape[-1])
+        if matrix.dim() != 2 or int(matrix.shape[0]) <= 0:
+            continue
+        if use_weights:
+            weight = max(float(weights[int(group_pos)]), 0.0)
+            if weight <= 0.0:
+                continue
+            matrix = matrix * math.sqrt(weight)
+        chunks.append(matrix)
+        layers.append(int(layer_idx))
+    if not chunks:
+        return None, layers
+    return torch.cat(chunks, dim=0), layers
 
 
 def _hidden_basis_axes_for_layer_tensor(torch, donor_tensor, suffix: str, layer_basis):

@@ -41,6 +41,7 @@ INIT_UNTIE_OUTPUT_HEAD="${INIT_UNTIE_OUTPUT_HEAD:-1}"
 FINAL_OUTPUT_HEAD_POLICY="${FINAL_OUTPUT_HEAD_POLICY:-preserve}"
 PROMOTE_POLICY="${PROMOTE_POLICY:-always}"
 STAGE_INPUT_POLICY="${STAGE_INPUT_POLICY:-sequential}"
+STAGES="${STAGES:-init,block,alm}"
 BLOCK_STEPS_PER_LAYER="${BLOCK_STEPS_PER_LAYER:-4}"
 BLOCK_LR="${BLOCK_LR:-2e-6}"
 BLOCK_HIDDEN_PROJECTION_SCOPE="${BLOCK_HIDDEN_PROJECTION_SCOPE:-layer-input}"
@@ -160,7 +161,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   "$SOURCE_MODEL" \
   "$ANCHOR_MODEL" \
   "$OUT" \
-  --stages init,block,alm \
+  --stages "$STAGES" \
   --calibration-file "$CALIBRATION_FILE" \
   --max-calibration-texts "$MAX_CALIBRATION_TEXTS" \
   --eval-suite "$EVAL_SUITE_FILE" \

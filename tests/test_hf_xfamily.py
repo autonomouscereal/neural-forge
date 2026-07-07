@@ -132,6 +132,7 @@ from neural_forge.hf_xfamily import _balanced_activation_assignment
 from neural_forge.hf_xfamily import _activation_balanced_similarity_assignment
 from neural_forge.hf_xfamily import _blend_projection_with_target
 from neural_forge.hf_xfamily import _build_activation_hidden_basis
+from neural_forge.hf_xfamily import _build_layer_activation_hidden_bases
 from neural_forge.hf_xfamily import _build_shared_token_hidden_basis
 from neural_forge.hf_xfamily import _channel_assignment_features
 from neural_forge.hf_xfamily import _donor_layer_group_for_target
@@ -2636,6 +2637,42 @@ def test_layer_hidden_basis_axes_use_input_and_output_interfaces() -> None:
     assert list(o_axes) == [0]
     assert torch.equal(q_axes[1], input_basis)
     assert torch.equal(o_axes[0], output_basis)
+
+
+def test_layer_hidden_bases_use_supplied_fold_groups() -> None:
+    torch = pytest.importorskip("torch")
+    activation_profile = {
+        "hidden_basis_input_rows": {
+            idx: torch.full((2, 3), float(idx + 1), dtype=torch.float32)
+            for idx in range(4)
+        },
+        "hidden_basis_output_rows": {
+            idx: torch.full((2, 3), float(idx + 5), dtype=torch.float32)
+            for idx in range(4)
+        },
+    }
+
+    _, report = _build_layer_activation_hidden_bases(
+        torch,
+        activation_profile,
+        target_layer_count=2,
+        donor_layer_count=4,
+        source_dim=3,
+        target_dim=2,
+        donor_layer_groups=[[2, 3], [0, 1]],
+        donor_layer_group_weights={(2, 3): [0.25, 0.75], (0, 1): [0.5, 0.5]},
+        group_source="activation-cka-weighted",
+    )
+
+    first = report["layers"][0]
+    assert report["uses_fold_groups"] is True
+    assert first["group_source"] == "activation-cka-weighted"
+    assert first["donor_layer_group"] == [2, 3]
+    assert first["group_weights"] == pytest.approx([0.25, 0.75])
+    assert first["input_layers"] == [2, 3]
+    assert first["output_layers"] == [2, 3]
+    assert first["input"]["rows"] == 4
+    assert first["output"]["rows"] == 4
 
 
 def test_outgoing_sum_fold_preserves_merged_linear_path() -> None:
