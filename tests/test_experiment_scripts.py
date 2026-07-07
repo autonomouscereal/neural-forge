@@ -33,6 +33,10 @@ def test_blank_beststack_topneg_recovery_uses_folded_child_and_broad_eval() -> N
     ).read_text(encoding="utf-8")
 
     assert "qwen4b_blank_smollm_beststack_qrsinkhorn_module_eora_qmedoid_gpu4_20260706/models/02_block" in script
+    assert 'TIE_CANDIDATE_BEFORE_RECOVERY="${TIE_CANDIDATE_BEFORE_RECOVERY:-1}"' in script
+    assert "hf-tie-head" in script
+    assert 'RECOVERY_INPUT="$TIED_CANDIDATE_MODEL"' in script
+    assert "--final-output-head-policy tie" in script
     assert "--alm-answer-first-token-margin-weight" in script
     assert "--alm-answer-first-token-top-negatives 24" in script
     assert "--alm-answer-contrastive-weight" in script

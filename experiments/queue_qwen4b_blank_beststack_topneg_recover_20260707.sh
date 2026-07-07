@@ -3,9 +3,11 @@ set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-/home/cereal/model-surgery-lab/neural-forge-src}"
 RUN_ROOT="${RUN_ROOT:-$REPO_ROOT/runs/qwen4b_to_smollm135m_transport_random_20260627}"
-TAG="${TAG:-qwen4b_blank_beststack_02block_topneg_recover_gpu6_20260707}"
+TAG="${TAG:-qwen4b_blank_beststack_02block_tied_topneg_recover_gpu6_20260707}"
 SOURCE_MODEL="${SOURCE_MODEL:-Qwen/Qwen3-4B-Base}"
 CANDIDATE_MODEL="${CANDIDATE_MODEL:-$RUN_ROOT/qwen4b_blank_smollm_beststack_qrsinkhorn_module_eora_qmedoid_gpu4_20260706/models/02_block}"
+TIE_CANDIDATE_BEFORE_RECOVERY="${TIE_CANDIDATE_BEFORE_RECOVERY:-1}"
+TIED_CANDIDATE_MODEL="${TIED_CANDIDATE_MODEL:-$RUN_ROOT/${TAG}_input_tied}"
 GPU_UUID="${GPU_UUID:-GPU-f5a09535-fc85-a027-50f7-734b344747dd}"
 WAIT_PIDS="${WAIT_PIDS:-}"
 POLL_SECONDS="${POLL_SECONDS:-60}"
@@ -97,9 +99,21 @@ export CUDA_VISIBLE_DEVICES="$GPU_UUID"
 OUT="$RUN_ROOT/$TAG"
 mkdir -p "$OUT"
 
+RECOVERY_INPUT="$CANDIDATE_MODEL"
+if [[ "$TIE_CANDIDATE_BEFORE_RECOVERY" = "1" ]]; then
+  echo "tie_candidate_start=$(date -Is) source=$CANDIDATE_MODEL output=$TIED_CANDIDATE_MODEL"
+  python -m neural_forge.cli hf-tie-head \
+    "$CANDIDATE_MODEL" \
+    "$TIED_CANDIDATE_MODEL" \
+    --dtype float16 \
+    --device cuda:0
+  RECOVERY_INPUT="$TIED_CANDIDATE_MODEL"
+  echo "tie_candidate_done=$(date -Is) recovery_input=$RECOVERY_INPUT"
+fi
+
 python -m neural_forge.cli hf-xfamily-chain-anchor-compress \
   "$SOURCE_MODEL" \
-  "$CANDIDATE_MODEL" \
+  "$RECOVERY_INPUT" \
   "$OUT" \
   --stages alm \
   --calibration-file "$CALIBRATION_FILE" \
@@ -113,6 +127,7 @@ python -m neural_forge.cli hf-xfamily-chain-anchor-compress \
   --stage-ppl-gate-mode advisory \
   --promote-policy always \
   --stage-input-policy sequential \
+  --final-output-head-policy tie \
   --alm-steps "$ALM_STEPS" \
   --alm-batch-size 1 \
   --alm-max-length 128 \
