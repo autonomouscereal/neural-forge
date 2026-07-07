@@ -2728,6 +2728,39 @@ def test_token_projection_uses_sum_for_lm_head_and_mean_for_embeddings() -> None
     assert head_target.tolist() == [[2.0, 2.0], [2.0, 2.0]]
 
 
+def test_axis_assignment_cache_separates_reduction_modes() -> None:
+    torch = pytest.importorskip("torch")
+    cache = {}
+    source = torch.ones((4, 1), dtype=torch.float32)
+
+    mean_folded = _resize_tensor_axis_mean_fold(
+        torch,
+        source,
+        axis=0,
+        target_dim=2,
+        fold_mode="mean",
+        reduction="mean",
+        assignment_cache=cache,
+        assignment_cache_key=("token", "hidden"),
+    )
+    sum_folded = _resize_tensor_axis_mean_fold(
+        torch,
+        source,
+        axis=0,
+        target_dim=2,
+        fold_mode="mean",
+        reduction="sum",
+        assignment_cache=cache,
+        assignment_cache_key=("token", "hidden"),
+    )
+
+    assert mean_folded.flatten().tolist() == pytest.approx([1.0, 1.0])
+    assert sum_folded.flatten().tolist() == pytest.approx([2.0, 2.0])
+    assert len(cache) == 2
+    assert any("'mean'" in repr(key) for key in cache)
+    assert any("'sum'" in repr(key) for key in cache)
+
+
 def test_token_projection_can_weight_donor_piece_rows() -> None:
     torch = pytest.importorskip("torch")
     donor = torch.tensor([[0.0, 0.0], [10.0, 0.0]], dtype=torch.float32)

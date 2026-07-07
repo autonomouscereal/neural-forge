@@ -5219,12 +5219,20 @@ def _axis_assignment_cache_key(
     target_dim: int,
     assignment_mode: str,
     fold_mode: str = "mean",
+    reduction: str = "mean",
     transport_backend: str | None = None,
     transport_support: str | None = None,
 ):
     if base_key is None:
         return None
-    key = (_freeze_assignment_key(base_key), int(source_dim), int(target_dim), str(assignment_mode), str(fold_mode))
+    key = (
+        _freeze_assignment_key(base_key),
+        int(source_dim),
+        int(target_dim),
+        str(assignment_mode),
+        str(fold_mode),
+        str(reduction),
+    )
     if str(fold_mode) == "transport":
         key = (*key, str(transport_backend or ""), str(transport_support or ""))
     return key
@@ -6181,6 +6189,7 @@ def _resize_tensor_axis_mean_fold(
             target_dim=target_dim,
             assignment_mode=assignment_mode,
             fold_mode=fold_mode,
+            reduction=reduction,
             transport_backend=transport_backend,
             transport_support=transport_support,
         )
