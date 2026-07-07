@@ -190,3 +190,35 @@ Immediate next interpretation rule:
   `qwen4b_blank_smollm_cka_weighted_block_weighted_trainable_byteprobe_full_gpu4_20260702`.
 - If one RMS/transport initialization wins clearly before drill recovery, use
   it as the new default for the next multi-donor and modality-graft lanes.
+
+## 2026-07-07 Source Refresh And Queue Policy
+
+Latest 2025-2026 source checks still point to merge/fold/recombine first, then
+targeted recovery, not discard-first pruning:
+
+- DOTResize (`2507.04517`) argues that width reduction should transport all
+  source neurons into the reduced layer instead of keeping only top survivors.
+- Transport and Merge (`2602.05495`) reinforces activation-space optimal
+  transport as the most relevant cross-architecture merge primitive.
+- ALM (`2503.20083`) remains the practical cross-tokenizer recovery objective
+  when source and child tokenizers disagree.
+- DERN (`2509.10377`, Findings EMNLP 2025) supports segment/neuron
+  recombination before dropping expert or neuron structure.
+- Linearity-based compression (`2506.21146`) is a useful path for layer/depth
+  folding, but should be gated by behavior because local linearity/PPL alone
+  has repeatedly failed to predict arithmetic/code retention.
+
+Immediate experiment policy:
+
+- Do not abandon the strongest completed anchors while testing newer
+  beststack folds. The restored queue
+  `queue_qwen4b_prior_anchor_pair_20260707.sh` runs the old
+  `tied29x_dualalm240_last4` and
+  `alpha05_ffn1496_folded_xreconstruct_mlp_a05` anchors through the current
+  exact-generation/top-negative recovery and retention comparison path.
+- The paired prior-anchor lane is an A/B against current beststack structural
+  runs, not a replacement for them. Promotion requires parent-vs-child,
+  baseline-vs-child, and manual output inspection from the exactgen suite.
+- Top-negative answer pressure remains an auxiliary cleanup after structural
+  folding. The queue now reuses its exactgen child report for retention compare
+  so GPU time is not wasted re-evaluating the same child checkpoint.
