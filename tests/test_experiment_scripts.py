@@ -25,3 +25,19 @@ def test_chain_launchers_pass_block_output_head_flags() -> None:
         assert "--block-untie-output-head-for-kd" in script
         assert "--block-allow-tied-output-head-training" in script
         assert "--block-pre-reconstruction-min-fitted-cosine" in script
+
+
+def test_blank_beststack_topneg_recovery_uses_folded_child_and_broad_eval() -> None:
+    script = (
+        REPO_ROOT / "experiments/queue_qwen4b_blank_beststack_topneg_recover_20260707.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "qwen4b_blank_smollm_beststack_qrsinkhorn_module_eora_qmedoid_gpu4_20260706/models/02_block" in script
+    assert "--alm-answer-first-token-margin-weight" in script
+    assert "--alm-answer-first-token-top-negatives 24" in script
+    assert "--alm-answer-contrastive-weight" in script
+    assert "--alm-save-best-behavior" in script
+    assert "eval_model_broad_and_manual.sh" in script
+    assert "MAX_BEHAVIOR_PROBES=1000" in script
+    assert "MAX_GENERATION_PROMPTS=1000" in script
+    assert "MAX_CHOICE_PROBES=250" in script
