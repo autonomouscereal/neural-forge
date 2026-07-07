@@ -368,12 +368,13 @@ def donor_projected_init(
         "depth",
         "activation-energy",
         "activation-geometry",
+        "activation-ot",
         "activation-cka",
         "activation-cka-weighted",
     }:
         raise ValueError(
             "donor_layer_group_strategy must be depth, activation-energy, activation-geometry, "
-            "activation-cka, or activation-cka-weighted."
+            "activation-ot, activation-cka, or activation-cka-weighted."
         )
     if attention_fold_mode not in {"independent", "coupled", "activation-coupled"}:
         raise ValueError("attention_fold_mode must be independent, coupled, or activation-coupled.")
@@ -484,6 +485,7 @@ def donor_projected_init(
         needs_layer_activation_rows = hidden_basis_mode == "activation-pca" or donor_layer_group_strategy in {
             "activation-energy",
             "activation-geometry",
+            "activation-ot",
             "activation-cka",
             "activation-cka-weighted",
         }
@@ -509,7 +511,7 @@ def donor_projected_init(
         raise ValueError("activation linear fitting requires activation calibration texts.")
     if (
         donor_layer_group_strategy
-        in {"activation-energy", "activation-geometry", "activation-cka", "activation-cka-weighted"}
+        in {"activation-energy", "activation-geometry", "activation-ot", "activation-cka", "activation-cka-weighted"}
         and activation_profile is None
     ):
         raise ValueError(
@@ -3722,10 +3724,17 @@ def _donor_layer_groups_for_target_count(
 ) -> tuple[list[list[int]], dict[str, Any]]:
     if target_layer_count <= 0 or donor_layer_count <= 0:
         raise ValueError("Layer counts must be positive.")
-    if strategy not in {"depth", "activation-energy", "activation-geometry", "activation-cka", "activation-cka-weighted"}:
+    if strategy not in {
+        "depth",
+        "activation-energy",
+        "activation-geometry",
+        "activation-ot",
+        "activation-cka",
+        "activation-cka-weighted",
+    }:
         raise ValueError(
             "donor layer group strategy must be depth, activation-energy, activation-geometry, "
-            "activation-cka, or activation-cka-weighted."
+            "activation-ot, activation-cka, or activation-cka-weighted."
         )
     if strategy == "depth":
         groups = [
@@ -3746,6 +3755,22 @@ def _donor_layer_groups_for_target_count(
             "representative_scores": [float(item) for item in scores],
             "geometry_scores": [float(item) for item in scores],
             "total_geometry_score": float(sum(scores)),
+            "layer_geometry": geometry["layer_geometry"],
+        }
+    if strategy == "activation-ot":
+        geometry = _donor_layer_geometry_scores(torch, activation_profile, int(donor_layer_count))
+        ot = _activation_layer_ot_groups(
+            torch,
+            geometry["geometry_scores"],
+            target_layer_count=int(target_layer_count),
+        )
+        return ot["groups"], {
+            **ot,
+            "strategy": "activation-ot",
+            "delta_scores": [float(item) for item in geometry["delta_scores"]],
+            "representative_scores": [float(item) for item in geometry["geometry_scores"]],
+            "geometry_scores": [float(item) for item in geometry["geometry_scores"]],
+            "total_geometry_score": float(sum(geometry["geometry_scores"])),
             "layer_geometry": geometry["layer_geometry"],
         }
     if strategy in {"activation-cka", "activation-cka-weighted"}:
@@ -3822,6 +3847,100 @@ def _donor_layer_cka_groups(
         layer_count=donor_layer_count,
         target_layer_count=target_layer_count,
     )
+
+
+def _activation_layer_ot_groups(
+    torch,
+    layer_scores: Sequence[float],
+    target_layer_count: int,
+    *,
+    temperature: float = 0.08,
+) -> dict[str, Any]:
+    layer_count = len(layer_scores)
+    if layer_count <= 0 or target_layer_count <= 0:
+        raise ValueError("layer_count and target_layer_count must be positive.")
+    if int(target_layer_count) >= int(layer_count):
+        groups = [
+            _donor_layer_group_for_target(idx, int(target_layer_count), int(layer_count))
+            for idx in range(int(target_layer_count))
+        ]
+        return {
+            "strategy": "activation-ot",
+            "groups": [[int(item) for item in group] for group in groups],
+            "group_layer_weights": [[1.0 / float(len(group)) for _ in group] for group in groups],
+            "group_layer_weight_mode": "depth_fallback_uniform",
+            "outer_transport_plan": None,
+            "layer_transport_temperature": float(temperature),
+            "fallback": "target_depth_at_least_source_depth",
+        }
+
+    scores = torch.tensor([float(item) for item in layer_scores], dtype=torch.float32)
+    scores = torch.nan_to_num(scores, nan=1.0, posinf=1.0, neginf=1.0).abs().clamp_min(1e-12)
+    source_mass = scores / scores.sum().clamp_min(1e-12)
+    target_mass = torch.full((int(target_layer_count),), 1.0 / float(target_layer_count), dtype=torch.float32)
+    source_edges = torch.cat([torch.zeros(1, dtype=torch.float32), source_mass.cumsum(dim=0)])
+    source_positions = 0.5 * (source_edges[:-1] + source_edges[1:])
+    target_positions = (torch.arange(int(target_layer_count), dtype=torch.float32) + 0.5) / float(target_layer_count)
+    cost = (source_positions.unsqueeze(1) - target_positions.unsqueeze(0)).abs()
+    logits = -cost / max(float(temperature), 1e-6)
+    logits = logits - logits.max()
+    kernel = torch.exp(logits).clamp_min(1e-30)
+    row_scale = torch.ones_like(source_mass)
+    col_scale = torch.ones_like(target_mass)
+    for _ in range(64):
+        row_scale = source_mass / kernel.matmul(col_scale).clamp_min(1e-30)
+        col_scale = target_mass / kernel.t().matmul(row_scale).clamp_min(1e-30)
+    plan = row_scale.unsqueeze(1) * kernel * col_scale.unsqueeze(0)
+
+    ratio = float(layer_count) / float(target_layer_count)
+    top_k = max(2, int(math.ceil(ratio * 2.0)))
+    top_k = min(int(layer_count), top_k)
+    group_sets: list[set[int]] = []
+    for target_idx in range(int(target_layer_count)):
+        column = plan[:, target_idx]
+        indices = torch.topk(column, k=top_k, dim=0).indices.tolist()
+        group_sets.append({int(item) for item in indices})
+
+    covered = {item for group in group_sets for item in group}
+    for source_idx in range(int(layer_count)):
+        if source_idx in covered:
+            continue
+        target_idx = int(torch.argmax(plan[source_idx, :]).item())
+        group_sets[target_idx].add(int(source_idx))
+
+    groups: list[list[int]] = []
+    group_weights: list[list[float]] = []
+    assignment_target: list[int] = []
+    for target_idx, group_set in enumerate(group_sets):
+        group = sorted(group_set)
+        if not group:
+            best_source = int(torch.argmax(plan[:, target_idx]).item())
+            group = [best_source]
+        weights = plan[torch.tensor(group, dtype=torch.long), target_idx].to(torch.float32)
+        total = float(weights.sum().detach().cpu())
+        if not math.isfinite(total) or total <= 0.0:
+            normalized = [1.0 / float(len(group)) for _ in group]
+        else:
+            normalized = [float(item / total) for item in weights.tolist()]
+        groups.append([int(item) for item in group])
+        group_weights.append(normalized)
+    for source_idx in range(int(layer_count)):
+        assignment_target.append(int(torch.argmax(plan[source_idx, :]).item()))
+
+    return {
+        "strategy": "activation-ot",
+        "groups": groups,
+        "group_layer_weights": group_weights,
+        "group_layer_weight_mode": "outer_transport_column_mass",
+        "outer_transport_plan": [[float(item) for item in row] for row in plan.detach().cpu().tolist()],
+        "source_layer_masses": [float(item) for item in source_mass.detach().cpu().tolist()],
+        "target_layer_masses": [float(item) for item in target_mass.detach().cpu().tolist()],
+        "source_layer_positions": [float(item) for item in source_positions.detach().cpu().tolist()],
+        "target_layer_positions": [float(item) for item in target_positions.detach().cpu().tolist()],
+        "layer_transport_temperature": float(temperature),
+        "top_k_per_target_layer": int(top_k),
+        "source_assignment_target": assignment_target,
+    }
 
 
 def _activation_layer_geometry_scores(

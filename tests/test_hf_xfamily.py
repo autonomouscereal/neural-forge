@@ -669,6 +669,46 @@ def test_cli_accepts_activation_cka_layer_group_strategy() -> None:
     assert weighted_chain_args.block_donor_layer_group_strategy == "activation-cka-weighted"
     assert weighted_block_args.donor_layer_group_strategy == "activation-cka-weighted"
 
+    ot_init_args = parser.parse_args(
+        [
+            "hf-donor-project-init",
+            "projected-out",
+            "--target-config-model",
+            "target-model",
+            "--donor-model",
+            "donor-model",
+            "--donor-layer-group-strategy",
+            "activation-ot",
+        ]
+    )
+    ot_chain_args = parser.parse_args(
+        [
+            "hf-xfamily-chain-anchor-compress",
+            "source-model",
+            "candidate-config",
+            "chain-out",
+            "--init-donor-layer-group-strategy",
+            "activation-ot",
+            "--block-donor-layer-group-strategy",
+            "activation-ot",
+        ]
+    )
+    ot_block_args = parser.parse_args(
+        [
+            "hf-xfamily-block-recover",
+            "source-model",
+            "candidate-model",
+            "recovered-out",
+            "--donor-layer-group-strategy",
+            "activation-ot",
+        ]
+    )
+
+    assert ot_init_args.donor_layer_group_strategy == "activation-ot"
+    assert ot_chain_args.init_donor_layer_group_strategy == "activation-ot"
+    assert ot_chain_args.block_donor_layer_group_strategy == "activation-ot"
+    assert ot_block_args.donor_layer_group_strategy == "activation-ot"
+
 
 def test_cli_accepts_signed_activation_fold_assignment() -> None:
     parser = build_parser()
@@ -1875,6 +1915,39 @@ def test_donor_layer_groups_can_report_activation_cka_profile_weights() -> None:
     assert report["strategy"] == "activation-cka-weighted"
     assert "group_layer_weights" in report
     assert len(report["group_layer_weights"]) == len(groups)
+    for group, weights in zip(groups, report["group_layer_weights"]):
+        assert len(weights) == len(group)
+        assert sum(weights) == pytest.approx(1.0)
+
+
+def test_donor_layer_groups_can_use_activation_outer_transport() -> None:
+    torch = pytest.importorskip("torch")
+    profile = {
+        "hidden_basis_input_rows": {idx: torch.zeros((4, 2)) for idx in range(6)},
+        "hidden_basis_output_rows": {
+            0: torch.ones((4, 2)) * 0.1,
+            1: torch.ones((4, 2)) * 0.2,
+            2: torch.ones((4, 2)) * 3.0,
+            3: torch.ones((4, 2)) * 0.4,
+            4: torch.ones((4, 2)) * 0.5,
+            5: torch.ones((4, 2)) * 0.6,
+        },
+    }
+
+    groups, report = _donor_layer_groups_for_target_count(
+        torch,
+        target_layer_count=3,
+        donor_layer_count=6,
+        strategy="activation-ot",
+        activation_profile=profile,
+    )
+
+    assert len(groups) == 3
+    assert report["strategy"] == "activation-ot"
+    assert report["group_layer_weight_mode"] == "outer_transport_column_mass"
+    assert {item for group in groups for item in group} == set(range(6))
+    assert len(report["outer_transport_plan"]) == 6
+    assert len(report["outer_transport_plan"][0]) == 3
     for group, weights in zip(groups, report["group_layer_weights"]):
         assert len(weights) == len(group)
         assert sum(weights) == pytest.approx(1.0)

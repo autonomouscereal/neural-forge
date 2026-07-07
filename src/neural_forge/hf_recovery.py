@@ -2678,12 +2678,13 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
         "depth",
         "activation-energy",
         "activation-geometry",
+        "activation-ot",
         "activation-cka",
         "activation-cka-weighted",
     }:
         raise ValueError(
             "donor_layer_group_strategy must be depth, activation-energy, activation-geometry, "
-            "activation-cka, or activation-cka-weighted."
+            "activation-ot, activation-cka, or activation-cka-weighted."
         )
     if layer_limit is not None and layer_limit <= 0:
         raise ValueError("layer_limit must be positive when provided.")
@@ -3045,6 +3046,30 @@ def blockwise_reconstruct_cross_tokenizer_causal_lm(
             "representative_scores": [float(item) for item in geometry_scores],
             "geometry_scores": [float(item) for item in geometry_scores],
             "total_geometry_score": float(sum(geometry_scores)),
+            "layer_geometry": geometry["layer_geometry"],
+        }
+    elif donor_layer_group_strategy == "activation-ot":
+        from neural_forge.hf_xfamily import _activation_layer_ot_groups
+
+        geometry = _source_layer_geometry_scores_from_batches(
+            torch,
+            source,
+            paired_batches,
+            source_layer_count=len(source_layers),
+        )
+        donor_layer_group_report = _activation_layer_ot_groups(
+            torch,
+            geometry["geometry_scores"],
+            target_layer_count=len(candidate_layers),
+        )
+        full_source_layer_groups = donor_layer_group_report["groups"]
+        donor_layer_group_report = {
+            **donor_layer_group_report,
+            "strategy": "activation-ot",
+            "delta_scores": [float(item) for item in geometry["delta_scores"]],
+            "representative_scores": [float(item) for item in geometry["geometry_scores"]],
+            "geometry_scores": [float(item) for item in geometry["geometry_scores"]],
+            "total_geometry_score": float(sum(geometry["geometry_scores"])),
             "layer_geometry": geometry["layer_geometry"],
         }
     elif donor_layer_group_strategy in {"activation-cka", "activation-cka-weighted"}:
