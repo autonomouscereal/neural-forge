@@ -40,6 +40,12 @@ def test_blank_beststack_topneg_recovery_uses_folded_child_and_broad_eval() -> N
     assert '--final-output-head-policy "$FINAL_OUTPUT_HEAD_POLICY"' in script
     assert 'data.get("final_model_dir") or data.get("best_model_dir")' in script
     assert 'EVAL_SUITE_FILE="$EVAL_SUITE_FILE"' in script
+    assert 'RUN_RETENTION_COMPARE="${RUN_RETENTION_COMPARE:-1}"' in script
+    assert 'FINAL_EVAL_REPORT="${FINAL_EVAL_REPORT:-$EVAL_DIR/eval_${TAG}_exactgen_20260702_1000x1000x250.json}"' in script
+    assert 'FINAL_MANUAL_JSON="${FINAL_MANUAL_JSON:-$EVAL_DIR/manual_${TAG}_exactgen_20260702.json}"' in script
+    assert 'REPORT="$FINAL_EVAL_REPORT"' in script
+    assert 'MANUAL_JSON="$FINAL_MANUAL_JSON"' in script
+    assert "queue_eval_retention_compare.sh" in script
     assert "--alm-answer-first-token-margin-weight" in script
     assert "--alm-answer-first-token-top-negatives 24" in script
     assert "--alm-answer-contrastive-weight" in script
@@ -56,6 +62,8 @@ def test_broad_manual_eval_allows_exactgen_suite_override() -> None:
     )
 
     assert 'EVAL_SUITE_FILE="${EVAL_SUITE_FILE:-$RUN_ROOT/behavior_suite.json}"' in script
+    assert 'BROAD_JSON="${BROAD_JSON:-$OUT_DIR/eval_${TAG}_${MAX_BEHAVIOR_PROBES}x${MAX_GENERATION_PROMPTS}x${MAX_CHOICE_PROBES}.json}"' in script
+    assert 'MANUAL_JSON="${MANUAL_JSON:-$OUT_DIR/manual_${TAG}.json}"' in script
     assert '--eval-suite "$EVAL_SUITE_FILE"' in script
 
 

@@ -18,10 +18,10 @@ EVAL_SUITE_FILE="${EVAL_SUITE_FILE:-$RUN_ROOT/behavior_suite.json}"
 cd "$REPO_ROOT"
 source /home/cereal/model-surgery-lab/venv/bin/activate
 
-OUT_DIR="$RUN_ROOT/evals"
+OUT_DIR="${OUT_DIR:-$RUN_ROOT/evals}"
 mkdir -p "$OUT_DIR"
-BROAD_JSON="$OUT_DIR/eval_${TAG}_${MAX_BEHAVIOR_PROBES}x${MAX_GENERATION_PROMPTS}x${MAX_CHOICE_PROBES}.json"
-MANUAL_JSON="$OUT_DIR/manual_${TAG}.json"
+BROAD_JSON="${BROAD_JSON:-$OUT_DIR/eval_${TAG}_${MAX_BEHAVIOR_PROBES}x${MAX_GENERATION_PROMPTS}x${MAX_CHOICE_PROBES}.json}"
+MANUAL_JSON="${MANUAL_JSON:-$OUT_DIR/manual_${TAG}.json}"
 
 CUDA_VISIBLE_DEVICES="$GPU_UUID" python -m neural_forge.cli hf-eval \
   "$MODEL_DIR" \
