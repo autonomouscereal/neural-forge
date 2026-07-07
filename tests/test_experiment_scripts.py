@@ -72,11 +72,15 @@ def test_prior_anchor_topneg_queue_restores_old_best_paths() -> None:
         REPO_ROOT / "experiments/queue_qwen4b_prior_anchor_topneg_recover_20260707.sh"
     ).read_text(encoding="utf-8")
 
+    assert 'RUNS_ROOT="${RUNS_ROOT:-$(dirname "$RUN_ROOT")}"' in script
+    assert "first_existing_dir()" in script
     assert "dualalm29)" in script
     assert "tied29x_dualalm240_last4" in script
+    assert "/home/cereal/model-surgery-lab/runs/qwen4b_to_smollm135m_dualspace_alm_20260627" in script
     assert "FINAL_OUTPUT_HEAD_POLICY=\"${FINAL_OUTPUT_HEAD_POLICY:-tie}\"" in script
     assert "ffn1496)" in script
     assert "alpha05_ffn1496_folded_xreconstruct_mlp_a05" in script
+    assert "/home/cereal/model-surgery-lab/runs/qwen4b_to_smollm135m_strict25_ffnfold_20260627_191250" in script
     assert "FINAL_OUTPUT_HEAD_POLICY=\"${FINAL_OUTPUT_HEAD_POLICY:-preserve}\"" in script
     assert "behavior_suite_exactgen_20260702.json" in script
     assert "queue_qwen4b_blank_beststack_topneg_recover_20260707.sh" in script

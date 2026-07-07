@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 REPO_ROOT="${REPO_ROOT:-/home/cereal/model-surgery-lab/neural-forge-src}"
 RUN_ROOT="${RUN_ROOT:-$REPO_ROOT/runs/qwen4b_to_smollm135m_transport_random_20260627}"
+RUNS_ROOT="${RUNS_ROOT:-$(dirname "$RUN_ROOT")}"
 VARIANT="${VARIANT:-dualalm29}"
 GPU_UUID="${GPU_UUID:-GPU-f5a09535-fc85-a027-50f7-734b344747dd}"
 WAIT_PIDS="${WAIT_PIDS:-}"
@@ -15,10 +16,28 @@ CALIBRATION_FILE="${CALIBRATION_FILE:-$RUN_ROOT/calibration_mix_plus_recovery_dr
 EVAL_SUITE_FILE="${EVAL_SUITE_FILE:-$RUN_ROOT/behavior_suite_exactgen_20260702.json}"
 MAX_CALIBRATION_TEXTS="${MAX_CALIBRATION_TEXTS:-640}"
 
+first_existing_dir() {
+  local fallback=""
+  for candidate in "$@"; do
+    if [[ -z "$fallback" ]]; then
+      fallback="$candidate"
+    fi
+    if [[ -d "$candidate" ]]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  echo "$fallback"
+}
+
 case "$VARIANT" in
   dualalm29)
     TAG="${TAG:-qwen4b_dualalm29_anchor_topneg_exact_gpu6_20260707}"
-    CANDIDATE_MODEL="${CANDIDATE_MODEL:-$REPO_ROOT/runs/qwen4b_to_smollm135m_dualspace_alm_20260627/tied29x_dualalm240_last4}"
+    CANDIDATE_MODEL="${CANDIDATE_MODEL:-$(first_existing_dir \
+      "$RUNS_ROOT/qwen4b_to_smollm135m_dualspace_alm_20260627/tied29x_dualalm240_last4" \
+      "$REPO_ROOT/runs/qwen4b_to_smollm135m_dualspace_alm_20260627/tied29x_dualalm240_last4" \
+      "/home/cereal/model-surgery-lab/runs/qwen4b_to_smollm135m_dualspace_alm_20260627/tied29x_dualalm240_last4" \
+    )}"
     TIE_CANDIDATE_BEFORE_RECOVERY="${TIE_CANDIDATE_BEFORE_RECOVERY:-1}"
     FINAL_OUTPUT_HEAD_POLICY="${FINAL_OUTPUT_HEAD_POLICY:-tie}"
     ALM_STEPS="${ALM_STEPS:-180}"
@@ -26,7 +45,11 @@ case "$VARIANT" in
     ;;
   ffn1496)
     TAG="${TAG:-qwen4b_ffn1496_strict_anchor_topneg_gpu6_20260707}"
-    CANDIDATE_MODEL="${CANDIDATE_MODEL:-$REPO_ROOT/runs/qwen4b_to_smollm135m_strict25_ffnfold_20260627_191250/alpha05_ffn1496_folded_xreconstruct_mlp_a05}"
+    CANDIDATE_MODEL="${CANDIDATE_MODEL:-$(first_existing_dir \
+      "$RUNS_ROOT/qwen4b_to_smollm135m_strict25_ffnfold_20260627_191250/alpha05_ffn1496_folded_xreconstruct_mlp_a05" \
+      "$REPO_ROOT/runs/qwen4b_to_smollm135m_strict25_ffnfold_20260627_191250/alpha05_ffn1496_folded_xreconstruct_mlp_a05" \
+      "/home/cereal/model-surgery-lab/runs/qwen4b_to_smollm135m_strict25_ffnfold_20260627_191250/alpha05_ffn1496_folded_xreconstruct_mlp_a05" \
+    )}"
     # The FFN1496 artifact is itself the strict >=25x anchor; preserve its head
     # shape for the recovery run unless a caller explicitly asks to tie it.
     TIE_CANDIDATE_BEFORE_RECOVERY="${TIE_CANDIDATE_BEFORE_RECOVERY:-0}"
