@@ -3326,6 +3326,29 @@ def test_fused_c_attn_transport_resizes_qkv_chunks_separately() -> None:
     )
 
 
+def test_fused_c_attn_fallback_assignment_cache_uses_distinct_qkv_keys() -> None:
+    torch = pytest.importorskip("torch")
+    source = torch.arange(12, dtype=torch.float32).reshape(1, 12)
+    assignment_cache = {}
+
+    resized = _resize_attention_tensor_to_shape(
+        torch,
+        source,
+        (1, 6),
+        "attn.c_attn.weight",
+        _Obj(),
+        _Obj(),
+        fold_mode="mean",
+        assignment_cache=assignment_cache,
+    )
+
+    assert resized is not None
+    base_keys = {key[0] for key in assignment_cache}
+    assert (None, "attention-fused-qkv", "q", "fallback") in base_keys
+    assert (None, "attention-fused-qkv", "k", "fallback") in base_keys
+    assert (None, "attention-fused-qkv", "v", "fallback") in base_keys
+
+
 def test_fused_query_key_value_transport_uses_gqa_widths() -> None:
     torch = pytest.importorskip("torch")
     q = torch.arange(8, dtype=torch.float32)

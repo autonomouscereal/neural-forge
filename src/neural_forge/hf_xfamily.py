@@ -4673,9 +4673,9 @@ def _resize_fused_qkv_attention_tensor_to_shape(
                     fold_stat_repair=fold_stat_repair,
                     assignment_cache=assignment_cache,
                     head_assignment_key=head_semantic_key
-                    or _attention_axis_assignment_key(suffix, semantic_prefix, f"{label}-heads"),
+                    or _fused_qkv_attention_assignment_key(suffix, semantic_prefix, label, "heads"),
                     head_dim_assignment_key=head_dim_semantic_key
-                    or _attention_axis_assignment_key(suffix, semantic_prefix, f"{label}-{dim_stream}-head_dim"),
+                    or _fused_qkv_attention_assignment_key(suffix, semantic_prefix, label, f"{dim_stream}-head_dim"),
                 )
             if coupled is None:
                 coupled = _resize_tensor_axis_mean_fold(
@@ -4690,10 +4690,8 @@ def _resize_fused_qkv_attention_tensor_to_shape(
                     transport_backend=transport_backend,
                     transport_support=transport_support,
                     assignment_cache=assignment_cache,
-                    assignment_cache_key=_attention_axis_assignment_key(
-                        suffix,
-                        semantic_prefix,
-                        f"{label}-fused-fallback",
+                    assignment_cache_key=_fused_qkv_attention_assignment_key(
+                        suffix, semantic_prefix, label, "fallback"
                     ),
                 )
             resized_chunks.append(coupled)
@@ -5263,6 +5261,12 @@ def _attention_axis_assignment_key(suffix: str, semantic_prefix, axis_kind: str)
     else:
         return None
     return (semantic_prefix, "attention", stream, axis_kind)
+
+
+def _fused_qkv_attention_assignment_key(suffix: str, semantic_prefix, label: str, axis_kind: str):
+    if _fused_qkv_projection_axis(suffix) is None:
+        return None
+    return (semantic_prefix, "attention-fused-qkv", str(label), str(axis_kind))
 
 
 def _axis_assignment_cache_report(assignment_cache: dict[Any, dict[str, Any]]) -> list[dict[str, Any]]:
