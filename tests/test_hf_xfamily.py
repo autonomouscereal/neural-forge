@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 import pytest
@@ -939,6 +940,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "quantile",
             "--donor-layer-fold-mode",
             "fold",
+            "--donor-layer-output-scale",
+            "sqrt-effective-count",
             "--donor-layer-group-strategy",
             "activation-energy",
             "--attention-fold-mode",
@@ -1420,6 +1423,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.transport_backend == "sinkhorn"
     assert donor_init_args.transport_support == "quantile"
     assert donor_init_args.donor_layer_fold_mode == "fold"
+    assert donor_init_args.donor_layer_output_scale == "sqrt-effective-count"
     assert donor_init_args.donor_layer_group_strategy == "activation-energy"
     assert donor_init_args.attention_fold_mode == "coupled"
     assert donor_init_args.attention_head_dim_transport == "qk-vo"
@@ -6043,6 +6047,67 @@ def test_layer_state_merge_applies_soft_group_weights() -> None:
     assert averaged["mlp.c_fc.weight"].item() == pytest.approx(4.0)
 
 
+def test_layer_state_merge_can_scale_weighted_outputs_by_effective_count() -> None:
+    torch = pytest.importorskip("torch")
+    states = [
+        {"attn.c_proj.weight": torch.ones((1, 1), dtype=torch.float32)},
+        {"attn.c_proj.weight": torch.full((1, 1), 9.0, dtype=torch.float32)},
+    ]
+
+    group_count = _merge_layer_state_dicts(
+        torch,
+        states,
+        method="fold",
+        weights=[0.9, 0.1],
+        output_scale="group-count",
+    )
+    effective = _merge_layer_state_dicts(
+        torch,
+        states,
+        method="fold",
+        weights=[0.9, 0.1],
+        output_scale="effective-count",
+    )
+    sqrt_effective = _merge_layer_state_dicts(
+        torch,
+        states,
+        method="fold",
+        weights=[0.9, 0.1],
+        output_scale="sqrt-effective-count",
+    )
+    unit = _merge_layer_state_dicts(
+        torch,
+        states,
+        method="fold",
+        weights=[0.9, 0.1],
+        output_scale="unit",
+    )
+
+    weighted_mean = 1.8
+    effective_count = 1.0 / ((0.9**2) + (0.1**2))
+    assert group_count["attn.c_proj.weight"].item() == pytest.approx(weighted_mean * 2.0)
+    assert effective["attn.c_proj.weight"].item() == pytest.approx(weighted_mean * effective_count)
+    assert sqrt_effective["attn.c_proj.weight"].item() == pytest.approx(weighted_mean * math.sqrt(effective_count))
+    assert unit["attn.c_proj.weight"].item() == pytest.approx(weighted_mean)
+
+
+def test_layer_state_merge_output_scale_applies_to_uniform_groups() -> None:
+    torch = pytest.importorskip("torch")
+    states = [
+        {"attn.c_proj.weight": torch.ones((1, 1), dtype=torch.float32)},
+        {"attn.c_proj.weight": torch.full((1, 1), 3.0, dtype=torch.float32)},
+        {"attn.c_proj.weight": torch.full((1, 1), 5.0, dtype=torch.float32)},
+    ]
+
+    summed = _merge_layer_state_dicts(torch, states, method="fold")
+    unit = _merge_layer_state_dicts(torch, states, method="fold", output_scale="unit")
+    sqrt_effective = _merge_layer_state_dicts(torch, states, method="fold", output_scale="sqrt-effective-count")
+
+    assert summed["attn.c_proj.weight"].item() == pytest.approx(9.0)
+    assert unit["attn.c_proj.weight"].item() == pytest.approx(3.0)
+    assert sqrt_effective["attn.c_proj.weight"].item() == pytest.approx(3.0 * math.sqrt(3.0))
+
+
 def test_layer_tensor_alias_lookup_maps_qwen_suffixes_to_lfm_names() -> None:
     index = {
         (3, "feed_forward.w1.weight"): "model.layers.3.feed_forward.w1.weight",
@@ -7978,6 +8043,8 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "quantile",
             "--donor-layer-fold-mode",
             "average",
+            "--donor-layer-output-scale",
+            "effective-count",
             "--donor-layer-group-strategy",
             "activation-geometry",
             "--attention-fold-mode",
@@ -8058,6 +8125,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "transport_backend": "sparse",
         "transport_support": "quantile",
         "donor_layer_fold_mode": "average",
+        "donor_layer_output_scale": "effective-count",
         "donor_layer_group_strategy": "activation-geometry",
         "attention_fold_mode": "activation-coupled",
             "attention_head_dim_transport": "qk-vo",
@@ -10276,6 +10344,10 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "sinkhorn",
             "--init-transport-support",
             "importance",
+            "--init-donor-layer-fold-mode",
+            "fold",
+            "--init-donor-layer-output-scale",
+            "sqrt-effective-count",
             "--init-donor-layer-group-strategy",
             "activation-geometry",
             "--init-attention-fold-mode",
@@ -10551,6 +10623,8 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["init_fold_stat_repair"] == "rms"
     assert captured["init_transport_backend"] == "sinkhorn"
     assert captured["init_transport_support"] == "importance"
+    assert captured["init_donor_layer_fold_mode"] == "fold"
+    assert captured["init_donor_layer_output_scale"] == "sqrt-effective-count"
     assert captured["init_donor_layer_group_strategy"] == "activation-geometry"
     assert captured["init_attention_fold_mode"] == "activation-coupled"
     assert captured["init_attention_head_dim_transport"] == "qk-vo"

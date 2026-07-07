@@ -292,6 +292,7 @@ def donor_projected_init(
     transport_support: str = "centroid",
     donor_layer_fold_mode: str = "representative",
     donor_layer_group_strategy: str = "depth",
+    donor_layer_output_scale: str = "group-count",
     attention_fold_mode: str = "independent",
     attention_head_dim_transport: str = "none",
     token_init_mode: str = "shared",
@@ -376,6 +377,8 @@ def donor_projected_init(
             "donor_layer_group_strategy must be depth, activation-energy, activation-geometry, "
             "activation-ot, activation-cka, or activation-cka-weighted."
         )
+    if donor_layer_output_scale not in {"group-count", "effective-count", "sqrt-effective-count", "unit"}:
+        raise ValueError("donor_layer_output_scale must be group-count, effective-count, sqrt-effective-count, or unit.")
     if attention_fold_mode not in {"independent", "coupled", "activation-coupled"}:
         raise ValueError("attention_fold_mode must be independent, coupled, or activation-coupled.")
     if attention_head_dim_transport not in {"none", "qk-vo"}:
@@ -630,6 +633,7 @@ def donor_projected_init(
                 donor_layer_group=donor_layer_group,
                 cache=folded_donor_layer_cache,
                 layer_group_weights=layer_group_weights,
+                layer_output_scale=donor_layer_output_scale,
             )
             donor_tensor = _lookup_layer_tensor_value(folded_state, suffix)
             synthetic_layer_report = None
@@ -924,6 +928,7 @@ def donor_projected_init(
         "transport_support": transport_support,
         "donor_layer_fold_mode": donor_layer_fold_mode,
         "donor_layer_group_strategy": donor_layer_group_strategy,
+        "donor_layer_output_scale": donor_layer_output_scale,
         "donor_layer_groups": donor_layer_group_report,
         "attention_fold_mode": attention_fold_mode,
         "attention_head_dim_transport": attention_head_dim_transport,
@@ -1058,6 +1063,7 @@ def multi_donor_projected_init(
                 "param_count": report.get("param_count"),
                 "layer_tensors_initialized": report.get("layer_tensors_initialized"),
                 "projection_scale": report.get("projection_scale"),
+                "donor_layer_output_scale": report.get("donor_layer_output_scale"),
                 "activation_fit_attempt_count": report.get("activation_fit_attempt_count"),
                 "activation_fit_applied_count": report.get("activation_fit_applied_count"),
                 "activation_fit_rejected_count": report.get("activation_fit_rejected_count"),
@@ -1968,6 +1974,7 @@ def chain_anchor_staged_compress(
     init_transport_support: str = "centroid",
     init_donor_layer_fold_mode: str = "fold",
     init_donor_layer_group_strategy: str = "depth",
+    init_donor_layer_output_scale: str = "group-count",
     init_attention_fold_mode: str = "independent",
     init_attention_head_dim_transport: str = "none",
     init_token_init_mode: str = "shared",
@@ -2169,6 +2176,10 @@ def chain_anchor_staged_compress(
         raise ValueError("recovery_source_mode must be primary or sequential-all.")
     if final_output_head_policy not in {"preserve", "tie"}:
         raise ValueError("final_output_head_policy must be preserve or tie.")
+    if init_donor_layer_output_scale not in {"group-count", "effective-count", "sqrt-effective-count", "unit"}:
+        raise ValueError(
+            "init_donor_layer_output_scale must be group-count, effective-count, sqrt-effective-count, or unit."
+        )
     if max_new_tokens <= 0:
         raise ValueError("max_new_tokens must be positive.")
 
@@ -2254,6 +2265,7 @@ def chain_anchor_staged_compress(
                 transport_support=init_transport_support,
                 donor_layer_fold_mode=init_donor_layer_fold_mode,
                 donor_layer_group_strategy=init_donor_layer_group_strategy,
+                donor_layer_output_scale=init_donor_layer_output_scale,
                 attention_fold_mode=init_attention_fold_mode,
                 attention_head_dim_transport=init_attention_head_dim_transport,
                 token_init_mode=init_token_init_mode,
@@ -4328,9 +4340,12 @@ def _folded_donor_layer_state(
     donor_layer_group: Sequence[int] | None,
     cache: dict[int, dict[str, Any]],
     layer_group_weights: Sequence[float] | None = None,
+    layer_output_scale: str = "group-count",
 ) -> dict[str, Any]:
     if donor_layer_fold_mode not in {"average", "fold"}:
         raise ValueError("donor_layer_fold_mode must be average or fold for folded donor states.")
+    if layer_output_scale not in {"group-count", "effective-count", "sqrt-effective-count", "unit"}:
+        raise ValueError("layer_output_scale must be group-count, effective-count, sqrt-effective-count, or unit.")
     if target_layer_idx not in cache:
         group = (
             [int(item) for item in donor_layer_group]
@@ -4343,6 +4358,7 @@ def _folded_donor_layer_state(
             [donor_layers[layer_idx].state_dict() for layer_idx in group],
             method=method,
             weights=layer_group_weights,
+            output_scale=layer_output_scale,
         )
     return cache[target_layer_idx]
 

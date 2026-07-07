@@ -33,6 +33,7 @@ INIT_TRANSPORT_SUPPORT="${INIT_TRANSPORT_SUPPORT:-centroid}"
 INIT_ATTENTION_HEAD_DIM_TRANSPORT="${INIT_ATTENTION_HEAD_DIM_TRANSPORT:-none}"
 INIT_ACTIVATION_DOMAIN_BALANCE="${INIT_ACTIVATION_DOMAIN_BALANCE:-none}"
 INIT_DONOR_LAYER_GROUP_STRATEGY="${INIT_DONOR_LAYER_GROUP_STRATEGY:-activation-geometry}"
+INIT_DONOR_LAYER_OUTPUT_SCALE="${INIT_DONOR_LAYER_OUTPUT_SCALE:-group-count}"
 BLOCK_DONOR_LAYER_GROUP_STRATEGY="${BLOCK_DONOR_LAYER_GROUP_STRATEGY:-activation-geometry}"
 INIT_TOKEN_INIT_MODE="${INIT_TOKEN_INIT_MODE:-donor-tokenized-weighted}"
 INIT_TOKEN_FALLBACK_MODE="${INIT_TOKEN_FALLBACK_MODE:-donor-mean}"
@@ -93,6 +94,8 @@ ALM_LM_WEIGHT="${ALM_LM_WEIGHT:-0.10}"
 ALM_FIRST_TOKEN_LM_WEIGHT="${ALM_FIRST_TOKEN_LM_WEIGHT:-0.0}"
 ALM_RESPONSE_END_LM_WEIGHT="${ALM_RESPONSE_END_LM_WEIGHT:-0.0}"
 ALM_FOCUSED_LM_WEIGHT="${ALM_FOCUSED_LM_WEIGHT:-0.0}"
+ALM_ANCHOR_KD_WEIGHT="${ALM_ANCHOR_KD_WEIGHT:-0.0}"
+ALM_DUAL_SPACE_KD_WEIGHT="${ALM_DUAL_SPACE_KD_WEIGHT:-0.0}"
 ALM_KD_WEIGHT="${ALM_KD_WEIGHT:-0.05}"
 ALM_PROJECTED_VOCAB_KD_WEIGHT="${ALM_PROJECTED_VOCAB_KD_WEIGHT:-0.04}"
 ALM_FOCUSED_PROJECTED_VOCAB_KD_WEIGHT="${ALM_FOCUSED_PROJECTED_VOCAB_KD_WEIGHT:-0.0}"
@@ -181,6 +184,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-transport-support "$INIT_TRANSPORT_SUPPORT" \
   --init-donor-layer-fold-mode fold \
   --init-donor-layer-group-strategy "$INIT_DONOR_LAYER_GROUP_STRATEGY" \
+  --init-donor-layer-output-scale "$INIT_DONOR_LAYER_OUTPUT_SCALE" \
   --init-attention-fold-mode activation-coupled \
   --init-attention-head-dim-transport "$INIT_ATTENTION_HEAD_DIM_TRANSPORT" \
   --init-token-init-mode "$INIT_TOKEN_INIT_MODE" \
@@ -282,6 +286,8 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --alm-first-token-lm-weight "$ALM_FIRST_TOKEN_LM_WEIGHT" \
   --alm-response-end-lm-weight "$ALM_RESPONSE_END_LM_WEIGHT" \
   --alm-focused-lm-weight "$ALM_FOCUSED_LM_WEIGHT" \
+  --alm-anchor-kd-weight "$ALM_ANCHOR_KD_WEIGHT" \
+  --alm-dual-space-kd-weight "$ALM_DUAL_SPACE_KD_WEIGHT" \
   --alm-kd-weight "$ALM_KD_WEIGHT" \
   --alm-projected-vocab-kd-weight "$ALM_PROJECTED_VOCAB_KD_WEIGHT" \
   --alm-focused-projected-vocab-kd-weight "$ALM_FOCUSED_PROJECTED_VOCAB_KD_WEIGHT" \

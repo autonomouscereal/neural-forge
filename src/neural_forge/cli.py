@@ -222,6 +222,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="How to fold parent/donor depth spans into each child/target layer.",
     )
     hf_donor_init.add_argument(
+        "--donor-layer-output-scale",
+        choices=["group-count", "effective-count", "sqrt-effective-count", "unit"],
+        default="group-count",
+        help=(
+            "How folded donor residual-output tensors are scaled after soft layer weighting. "
+            "group-count preserves historical fold summation; effective-count variants avoid over-amplifying "
+            "CKA/OT groups whose soft weight is concentrated on one parent layer."
+        ),
+    )
+    hf_donor_init.add_argument(
         "--donor-layer-group-strategy",
         choices=[
             "depth",
@@ -1638,6 +1648,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     xfamily_chain.add_argument("--init-donor-layer-fold-mode", choices=["representative", "average", "fold"], default="fold")
     xfamily_chain.add_argument(
+        "--init-donor-layer-output-scale",
+        choices=["group-count", "effective-count", "sqrt-effective-count", "unit"],
+        default="group-count",
+    )
+    xfamily_chain.add_argument(
         "--init-donor-layer-group-strategy",
         choices=[
             "depth",
@@ -2386,6 +2401,7 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         "transport_backend": args.transport_backend,
         "transport_support": args.transport_support,
         "donor_layer_fold_mode": args.donor_layer_fold_mode,
+        "donor_layer_output_scale": args.donor_layer_output_scale,
         "donor_layer_group_strategy": args.donor_layer_group_strategy,
         "attention_fold_mode": args.attention_fold_mode,
         "attention_head_dim_transport": args.attention_head_dim_transport,
@@ -3104,6 +3120,7 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         init_transport_backend=args.init_transport_backend,
         init_transport_support=args.init_transport_support,
         init_donor_layer_fold_mode=args.init_donor_layer_fold_mode,
+        init_donor_layer_output_scale=args.init_donor_layer_output_scale,
         init_donor_layer_group_strategy=args.init_donor_layer_group_strategy,
         init_attention_fold_mode=args.init_attention_fold_mode,
         init_attention_head_dim_transport=args.init_attention_head_dim_transport,
