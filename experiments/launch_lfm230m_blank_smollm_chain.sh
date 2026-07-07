@@ -19,6 +19,7 @@ LRC_ALPHA="${LRC_ALPHA:-0.25}"
 LRC_RANK="${LRC_RANK:-16}"
 LRC_FACTOR_STEPS="${LRC_FACTOR_STEPS:-40}"
 LRC_MAX_DELTA_RMS_RATIO="${LRC_MAX_DELTA_RMS_RATIO:-0}"
+INIT_ACTIVATION_FIT_LINEARS="${INIT_ACTIVATION_FIT_LINEARS:-1}"
 INIT_ACTIVATION_FIT_METHOD="${INIT_ACTIVATION_FIT_METHOD:-lrc}"
 RESIDUAL_MODE="${RESIDUAL_MODE:-lowrank-pre}"
 RESIDUAL_ALPHA="${RESIDUAL_ALPHA:-0.01}"
@@ -127,8 +128,12 @@ ALM_CALIBRATION_ORDER="${ALM_CALIBRATION_ORDER:-original}"
 
 BLOCK_OUTPUT_HEAD_ARGS=()
 INIT_OUTPUT_HEAD_ARGS=()
+INIT_ACTIVATION_FIT_ARGS=()
 if [[ "$INIT_UNTIE_OUTPUT_HEAD" == "1" ]]; then
   INIT_OUTPUT_HEAD_ARGS+=(--init-untie-output-head)
+fi
+if [[ "$INIT_ACTIVATION_FIT_LINEARS" == "1" ]]; then
+  INIT_ACTIVATION_FIT_ARGS+=(--init-activation-fit-linears)
 fi
 if [[ "${BLOCK_TRAIN_OUTPUT_HEAD_WITH_KD:-0}" == "1" ]]; then
   BLOCK_OUTPUT_HEAD_ARGS+=(--block-train-output-head-with-kd)
@@ -184,7 +189,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-projection-scale "$INIT_PROJECTION_SCALE" \
   --init-projection-blend-alpha "$INIT_PROJECTION_BLEND_ALPHA" \
   --init-consumer-hidden-reduction sqrt-sum \
-  --init-activation-fit-linears \
+  "${INIT_ACTIVATION_FIT_ARGS[@]}" \
   --init-activation-fit-target "$ACT_TARGET" \
   --init-activation-fit-max-rows 2048 \
   --init-activation-fit-alpha "$LRC_ALPHA" \
