@@ -40,6 +40,15 @@ case "$VARIANT" in
     PARENT_REPORT_CANDIDATES="$RUN_ROOT/evals/eval_parent_qwen3_4b_base_strict_20260705_1000x1000x250.json;$RUN_ROOT/evals/eval_parent_qwen3_4b_base_exactgen_20260702_1000x1000x250.json"
     MODEL_ENTRIES="child=$RUN_ROOT/$TAG;qwen_parent=Qwen/Qwen3-4B-Base;gpt2_donor=openai-community/gpt2;blank_random=$RUN_ROOT/blank_smollm2_135m_seed0;mathdrill_full=$RUN_ROOT/qwen4b_mathdrill_anchor_eora_geom_full_gpu0_fix_20260701"
     ;;
+  qwen_lfm)
+    TAG="${TAG:-qwen4b_lfm230m_multidonor_beststack_module_eora_qmedoid_gpu0_20260707}"
+    SOURCE_MODEL="${SOURCE_MODEL:-Qwen/Qwen3-4B-Base,LiquidAI/LFM2.5-230M}"
+    SOURCE_WEIGHTS="${SOURCE_WEIGHTS:-0.70,0.30}"
+    RECOVERY_SOURCE_MODE="${RECOVERY_SOURCE_MODE:-sequential-all}"
+    LAUNCH_SCRIPT="experiments/launch_qwen4b_blank_smollm_true_lrc_chain.sh"
+    PARENT_REPORT_CANDIDATES="$RUN_ROOT/evals/eval_parent_qwen3_4b_base_strict_20260705_1000x1000x250.json;$RUN_ROOT/evals/eval_parent_qwen3_4b_base_exactgen_20260702_1000x1000x250.json"
+    MODEL_ENTRIES="child=$RUN_ROOT/$TAG;qwen_parent=Qwen/Qwen3-4B-Base;lfm230m_donor=LiquidAI/LFM2.5-230M;blank_random=$RUN_ROOT/blank_smollm2_135m_seed0;mathdrill_full=$RUN_ROOT/qwen4b_mathdrill_anchor_eora_geom_full_gpu0_fix_20260701"
+    ;;
   lfm)
     TAG="${TAG:-lfm230m_blank_smollm_beststack_module_eora_qmedoid_gpu6_20260706}"
     SOURCE_MODEL="${SOURCE_MODEL:-LiquidAI/LFM2.5-230M}"
@@ -51,7 +60,7 @@ case "$VARIANT" in
     MODEL_ENTRIES="child=$RUN_ROOT/$TAG;lfm230m_donor=LiquidAI/LFM2.5-230M;blank_random=$RUN_ROOT/blank_smollm2_135m_seed0;mathdrill_full=$RUN_ROOT/qwen4b_mathdrill_anchor_eora_geom_full_gpu0_fix_20260701"
     ;;
   *)
-    echo "Unknown VARIANT=$VARIANT. Expected qwen, qwen_gpt2, or lfm." >&2
+    echo "Unknown VARIANT=$VARIANT. Expected qwen, qwen_gpt2, qwen_lfm, or lfm." >&2
     exit 2
     ;;
 esac

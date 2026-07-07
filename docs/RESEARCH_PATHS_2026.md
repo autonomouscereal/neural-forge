@@ -114,6 +114,12 @@ Immediate repo implication:
   rows are not masked out during cross-tokenizer KD. The post-fix proof queue is
   `qwen4b_blank_smollm_beststack_specialvocab_qrsinkhorn_gpu4_20260707`, waiting
   behind the active pre-fix GPU4 Qwen beststack run.
+- Two follow-up queues preserve the best known work instead of replacing it:
+  `qwen4b_blank_smollm_beststack_nonfinite_retry_qrsinkhorn_gpu4_20260707`
+  lowers block LR, tightens residual alpha, and raises non-finite skip budget
+  behind the post-fix proof run; `qwen4b_lfm230m_multidonor_beststack_seqall_qrsinkhorn_gpu0_20260707`
+  replaces weak GPT-2 as the second donor with `LiquidAI/LFM2.5-230M` and keeps
+  sequential-all recovery.
 - Broad eval generation prompts now support behavior-style exact expectations
   and newly built suites include exact math/code generation checks. This was
   added after manual inspection showed old `generation_health` could report
