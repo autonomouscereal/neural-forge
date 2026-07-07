@@ -67,3 +67,64 @@ output_path.mkdir(parents=True, exist_ok=True)
     assert second_summary["models"][0]["cache_hit"] is True
     assert second_summary["models"][0]["results"]["arc_easy"]["acc"] == 0.5
     assert "acc_stderr" not in second_summary["models"][0]["results"]["arc_easy"]
+
+
+def test_lm_eval_comparison_resolves_chain_summary_model_dir(tmp_path: Path) -> None:
+    fake_lm_eval = tmp_path / "fake_lm_eval.py"
+    received_args = tmp_path / "received_model_args.txt"
+    fake_lm_eval.write_text(
+        """
+import json
+import os
+import sys
+from pathlib import Path
+
+received = Path(os.environ["LM_EVAL_RECEIVED_ARGS"])
+received.write_text(sys.argv[sys.argv.index("--model_args") + 1])
+output_path = Path(sys.argv[sys.argv.index("--output_path") + 1])
+output_path.mkdir(parents=True, exist_ok=True)
+(output_path / "results.json").write_text(json.dumps({
+    "results": {
+        "arc_easy": {"acc": 0.25}
+    }
+}))
+""".strip(),
+        encoding="utf-8",
+    )
+    experiment_root = tmp_path / "run"
+    checkpoint = experiment_root / "models" / "01_init"
+    checkpoint.mkdir(parents=True)
+    (checkpoint / "config.json").write_text(json.dumps({"model_type": "gpt2"}), encoding="utf-8")
+    report_dir = experiment_root / "reports"
+    report_dir.mkdir()
+    (report_dir / "chain_anchor_summary.json").write_text(
+        json.dumps({"final_model_dir": str(checkpoint)}),
+        encoding="utf-8",
+    )
+
+    env = {**os.environ, "LM_EVAL_RECEIVED_ARGS": str(received_args)}
+    result = subprocess.run(
+        [
+            sys.executable,
+            "experiments/run_lm_eval_comparison.py",
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--tasks",
+            "arc_easy",
+            "--limit",
+            "1",
+            "--lm-eval-command",
+            f'"{sys.executable}" "{fake_lm_eval}"',
+            "--model",
+            f"child={experiment_root}",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert f"pretrained={checkpoint}" in received_args.read_text(encoding="utf-8")
+    summary = json.loads((tmp_path / "out" / "summary.json").read_text(encoding="utf-8"))
+    assert summary["models"][0]["model"] == str(checkpoint)

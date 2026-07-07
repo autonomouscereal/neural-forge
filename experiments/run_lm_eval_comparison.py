@@ -45,7 +45,10 @@ def main() -> int:
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    entries = [_parse_model_entry(item) for item in args.model]
+    entries = [
+        (label, _resolve_model_reference(model))
+        for label, model in [_parse_model_entry(item) for item in args.model]
+    ]
     summary: dict[str, Any] = {
         "tasks": args.tasks,
         "limit": args.limit,
@@ -160,6 +163,39 @@ def _parse_model_entry(text: str) -> tuple[str, str]:
     if not label or not model:
         raise ValueError("--model label and value must both be non-empty.")
     return label, model
+
+
+def _resolve_model_reference(model: str) -> str:
+    path = Path(model)
+    if not path.exists():
+        return model
+    if _has_hf_model_config(path):
+        return str(path)
+    summary = path / "reports" / "chain_anchor_summary.json"
+    if summary.exists():
+        try:
+            data = json.loads(summary.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return model
+        for key in ("final_model_dir", "best_model_dir"):
+            value = data.get(key)
+            if not isinstance(value, str) or not value:
+                continue
+            candidate = Path(value)
+            if _has_hf_model_config(candidate):
+                return str(candidate)
+    return model
+
+
+def _has_hf_model_config(path: Path) -> bool:
+    config_path = path / "config.json"
+    if not config_path.exists():
+        return False
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(data, dict) and bool(data.get("model_type"))
 
 
 def _cache_key(args: argparse.Namespace, model: str) -> str:

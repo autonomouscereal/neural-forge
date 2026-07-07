@@ -141,7 +141,13 @@ for entry in "${ENTRIES[@]}"; do
     echo "invalid_model_entry=$entry" >&2
     exit 3
   fi
-  if [[ "$model" == /* && ! -e "$model" ]]; then
+  if [[ "$model" == /* && -e "$model" ]]; then
+    model="$(resolve_model_dir "$model")"
+    if [[ ! -f "$model/config.json" ]]; then
+      echo "skip_unresolved_model_entry=$label=$model"
+      continue
+    fi
+  elif [[ "$model" == /* && ! -e "$model" ]]; then
     echo "skip_missing_model_entry=$entry"
     continue
   fi
