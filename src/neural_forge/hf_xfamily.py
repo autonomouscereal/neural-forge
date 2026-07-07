@@ -382,8 +382,8 @@ def donor_projected_init(
         raise ValueError("attention_head_dim_transport must be none or qk-vo.")
     if token_init_mode not in {"shared", "donor-tokenized", "donor-tokenized-weighted", "donor-omp"}:
         raise ValueError("token_init_mode must be shared, donor-tokenized, donor-tokenized-weighted, or donor-omp.")
-    if token_fallback_mode not in {"none", "donor-mean", "donor-hash"}:
-        raise ValueError("token_fallback_mode must be none, donor-mean, or donor-hash.")
+    if token_fallback_mode not in {"none", "donor-mean", "donor-hash", "donor-omp"}:
+        raise ValueError("token_fallback_mode must be none, donor-mean, donor-hash, or donor-omp.")
     if projection_scale not in {"none", "target-rms", "source-rms", "geomean-rms"}:
         raise ValueError("projection_scale must be none, target-rms, source-rms, or geomean-rms.")
     if consumer_hidden_reduction not in {"mean", "sum", "sqrt-sum"}:
@@ -9081,8 +9081,8 @@ def _initialize_token_weights_from_donor(
 ) -> dict[str, Any]:
     if token_init_mode not in {"shared", "donor-tokenized", "donor-tokenized-weighted", "donor-omp"}:
         raise ValueError("token_init_mode must be shared, donor-tokenized, donor-tokenized-weighted, or donor-omp.")
-    if token_fallback_mode not in {"none", "donor-mean", "donor-hash"}:
-        raise ValueError("token_fallback_mode must be none, donor-mean, or donor-hash.")
+    if token_fallback_mode not in {"none", "donor-mean", "donor-hash", "donor-omp"}:
+        raise ValueError("token_fallback_mode must be none, donor-mean, donor-hash, or donor-omp.")
     if consumer_hidden_reduction not in {"mean", "sum", "sqrt-sum"}:
         raise ValueError("consumer_hidden_reduction must be mean, sum, or sqrt-sum.")
     anchors, target_map, donor_map = _shared_anchor_tokens(target_tokenizer, donor_tokenizer, max_anchors)
@@ -9367,8 +9367,8 @@ def _project_token_fallback_rows(
 ) -> int:
     if token_fallback_mode == "none":
         return 0
-    if token_fallback_mode not in {"donor-mean", "donor-hash"}:
-        raise ValueError("token_fallback_mode must be none, donor-mean, or donor-hash.")
+    if token_fallback_mode not in {"donor-mean", "donor-hash", "donor-omp"}:
+        raise ValueError("token_fallback_mode must be none, donor-mean, donor-hash, or donor-omp.")
     target_rows = int(target_weight.shape[0])
     missing_target_ids = [idx for idx in range(target_rows) if idx not in initialized_target_ids]
     if not missing_target_ids:
@@ -9383,11 +9383,27 @@ def _project_token_fallback_rows(
     donor_mean = None
     if token_fallback_mode == "donor-mean":
         donor_mean = _mean_donor_token_row(torch, donor_weight, donor_ids)
+    donor_map = _canonical_token_map(donor_tokenizer) if token_fallback_mode == "donor-omp" else {}
     for start in range(0, len(missing_target_ids), int(chunk_size)):
         end = min(start + int(chunk_size), len(missing_target_ids))
         chunk_target_ids = list(missing_target_ids[start:end])
         if token_fallback_mode == "donor-mean":
             donor_rows = donor_mean.unsqueeze(0).expand(len(chunk_target_ids), -1).clone()
+        elif token_fallback_mode == "donor-omp":
+            donor_rows = torch.stack(
+                [
+                    _omp_donor_token_row(
+                        torch,
+                        donor_weight,
+                        donor_tokenizer,
+                        donor_map,
+                        donor_ids,
+                        _fallback_token_surface(target_tokenizer, target_idx),
+                    )
+                    for target_idx in chunk_target_ids
+                ],
+                dim=0,
+            )
         else:
             donor_rows = torch.stack(
                 [
@@ -9482,6 +9498,45 @@ def _fallback_token_surface(tokenizer, token_id: int) -> str:
 def _hashed_donor_token_row(torch, donor_weight, donor_ids: Sequence[int], surface: str, group_size: int = 4):
     group = _hashed_donor_token_group(donor_ids, surface, group_size=group_size)
     return _weighted_donor_token_row(torch, donor_weight, group, None)
+
+
+def _omp_donor_token_row(
+    torch,
+    donor_weight,
+    donor_tokenizer,
+    donor_map: dict[str, int],
+    donor_ids: Sequence[int],
+    surface: str,
+    max_candidates: int = 32,
+    max_selected: int = 4,
+):
+    donor_vocab_size = int(donor_weight.shape[0])
+    donor_special_ids: set[int] = set()
+    for item in getattr(donor_tokenizer, "all_special_ids", []) or []:
+        try:
+            token_id = int(item)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= token_id < donor_vocab_size:
+            donor_special_ids.add(token_id)
+    candidate_ids = _donor_omp_candidate_ids(
+        donor_tokenizer,
+        donor_map,
+        surface,
+        donor_vocab_size,
+        donor_special_ids,
+        max_candidates=max_candidates,
+    )
+    selected_ids, selected_weights = _omp_token_piece_weights(
+        torch,
+        surface,
+        donor_tokenizer,
+        candidate_ids,
+        max_selected=max_selected,
+    )
+    if not selected_ids:
+        return _hashed_donor_token_row(torch, donor_weight, donor_ids, surface, group_size=max_selected)
+    return _weighted_donor_token_row(torch, donor_weight, selected_ids, selected_weights)
 
 
 def _hashed_donor_token_group(donor_ids: Sequence[int], surface: str, group_size: int = 4) -> list[int]:

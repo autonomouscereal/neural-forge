@@ -273,7 +273,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hf_donor_init.add_argument(
         "--token-fallback-mode",
-        choices=["none", "donor-mean", "donor-hash"],
+        choices=["none", "donor-mean", "donor-hash", "donor-omp"],
         default="none",
         help=(
             "How to initialize target vocab/head rows that are not covered by shared, donor-tokenized, "
@@ -1662,7 +1662,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     xfamily_chain.add_argument(
         "--init-token-fallback-mode",
-        choices=["none", "donor-mean", "donor-hash"],
+        choices=["none", "donor-mean", "donor-hash", "donor-omp"],
         default="none",
     )
     xfamily_chain.add_argument(

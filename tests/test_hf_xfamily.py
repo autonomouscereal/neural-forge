@@ -313,6 +313,84 @@ def test_target_to_donor_omp_group_specs_uses_sparse_character_pieces() -> None:
     assert weighted_rows == 2
 
 
+def test_omp_token_fallback_initializes_unmapped_surface_rows() -> None:
+    torch = pytest.importorskip("torch")
+
+    class _TinyModel:
+        def __init__(self, weight):
+            self.embed = torch.nn.Embedding.from_pretrained(weight.clone(), freeze=False)
+            self.head = torch.nn.Linear(weight.shape[1], weight.shape[0], bias=False)
+            self.head.weight.data.copy_(weight.clone())
+
+        def get_input_embeddings(self):
+            return self.embed
+
+        def get_output_embeddings(self):
+            return self.head
+
+    target = _TinyModel(torch.zeros((3, 2), dtype=torch.float32))
+    donor = _TinyModel(
+        torch.tensor(
+            [
+                [0.0, 0.0],
+                [10.0, 10.0],
+                [4.0, 0.0],
+                [0.0, 2.0],
+            ],
+            dtype=torch.float32,
+        )
+    )
+    target_tokenizer = _Tokenizer(["<eos>", "a", "42"])
+    donor_tokenizer = _Tokenizer(["<eos>", "a", "4", "2"])
+
+    report = _initialize_token_weights_from_donor(
+        torch,
+        target,
+        donor,
+        target_tokenizer,
+        donor_tokenizer,
+        max_anchors=4,
+        token_init_mode="shared",
+        token_fallback_mode="donor-omp",
+        fold_mode="mean",
+    )
+
+    assert report["fallback_mode"] == "donor-omp"
+    assert report["embedding_fallback_rows_initialized"] == 2
+    assert report["embedding_coverage"] == pytest.approx(1.0)
+    fallback_row = target.get_input_embeddings().weight[2]
+    assert float(fallback_row.abs().sum().item()) > 0.0
+    assert not torch.allclose(fallback_row, donor.get_input_embeddings().weight[1])
+
+
+def test_parser_accepts_omp_token_fallback_for_init_and_chain() -> None:
+    init_args = build_parser().parse_args(
+        [
+            "hf-donor-project-init",
+            "out",
+            "--target-config-model",
+            "target",
+            "--donor-model",
+            "donor",
+            "--token-fallback-mode",
+            "donor-omp",
+        ]
+    )
+    chain_args = build_parser().parse_args(
+        [
+            "hf-xfamily-chain-anchor-compress",
+            "donor",
+            "target",
+            "out",
+            "--init-token-fallback-mode",
+            "donor-omp",
+        ]
+    )
+
+    assert init_args.token_fallback_mode == "donor-omp"
+    assert chain_args.init_token_fallback_mode == "donor-omp"
+
+
 def test_recovery_same_vocab_guard_rejects_mismatch() -> None:
     with pytest.raises(ValueError, match="matching tokenizers"):
         _assert_same_vocab(_Tokenizer(["a", "b"]), _Tokenizer(["a", "c"]))
