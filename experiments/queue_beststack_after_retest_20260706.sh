@@ -170,14 +170,14 @@ export INIT_FOLD_STAT_REPAIR="${INIT_FOLD_STAT_REPAIR:-rms}"
 export INIT_TRANSPORT_BACKEND="${INIT_TRANSPORT_BACKEND:-sinkhorn}"
 export INIT_TRANSPORT_SUPPORT="${INIT_TRANSPORT_SUPPORT:-$TRANSPORT_SUPPORT}"
 if [[ -z "${INIT_ATTENTION_HEAD_DIM_TRANSPORT:-}" ]]; then
-  if [[ "$INIT_TRANSPORT_SUPPORT" == "domain-quantile-medoid" ]]; then
+  if [[ "$INIT_TRANSPORT_SUPPORT" == "domain-quantile-medoid" || "$INIT_TRANSPORT_SUPPORT" == "domain-diverse-medoid" ]]; then
     INIT_ATTENTION_HEAD_DIM_TRANSPORT="qk-vo"
   else
     INIT_ATTENTION_HEAD_DIM_TRANSPORT="none"
   fi
 fi
 export INIT_ATTENTION_HEAD_DIM_TRANSPORT
-if [[ -z "${ACT_TARGET:-}" && "$INIT_TRANSPORT_SUPPORT" == "domain-quantile-medoid" ]]; then
+if [[ -z "${ACT_TARGET:-}" && ( "$INIT_TRANSPORT_SUPPORT" == "domain-quantile-medoid" || "$INIT_TRANSPORT_SUPPORT" == "domain-diverse-medoid" ) ]]; then
   ACT_TARGET="all"
 fi
 export ACT_TARGET="${ACT_TARGET:-mlp-output}"

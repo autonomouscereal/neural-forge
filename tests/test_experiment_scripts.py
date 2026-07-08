@@ -13,6 +13,50 @@ def test_beststack_queue_defaults_to_untied_block_output_head_kd() -> None:
     assert 'BLOCK_UNTIE_OUTPUT_HEAD_FOR_KD="${BLOCK_UNTIE_OUTPUT_HEAD_FOR_KD:-1}"' in script
     assert 'BLOCK_ALLOW_TIED_OUTPUT_HEAD_TRAINING="${BLOCK_ALLOW_TIED_OUTPUT_HEAD_TRAINING:-0}"' in script
     assert 'PRE_RECONSTRUCTION_MIN_FITTED_COSINE="${PRE_RECONSTRUCTION_MIN_FITTED_COSINE:-0.05}"' in script
+    assert '"$INIT_TRANSPORT_SUPPORT" == "domain-diverse-medoid"' in script
+    assert 'INIT_ATTENTION_HEAD_DIM_TRANSPORT="qk-vo"' in script
+    assert 'ACT_TARGET="all"' in script
+
+
+def test_domain_diverse_beststack_wrappers_only_change_transport_support() -> None:
+    lfm = (
+        REPO_ROOT / "experiments/queue_qwen4b_lfm230m_multidonor_beststack_domain_diverse_20260707.sh"
+    ).read_text(encoding="utf-8")
+    gpt2 = (
+        REPO_ROOT / "experiments/queue_qwen4b_gpt2_multidonor_beststack_domain_diverse_20260707.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'TAG="${TAG:-qwen4b_lfm230m_multidonor_beststack_seqall_domain_diverse_gpu0_20260707}"' in lfm
+    assert 'SOURCE_MODEL="${SOURCE_MODEL:-Qwen/Qwen3-4B-Base,LiquidAI/LFM2.5-230M}"' in lfm
+    assert 'SOURCE_WEIGHTS="${SOURCE_WEIGHTS:-0.70,0.30}"' in lfm
+    assert 'TAG="${TAG:-qwen4b_gpt2_multidonor_beststack_seqall_domain_diverse_gpu4_20260707}"' in gpt2
+    assert 'SOURCE_MODEL="${SOURCE_MODEL:-Qwen/Qwen3-4B-Base,openai-community/gpt2}"' in gpt2
+    assert 'SOURCE_WEIGHTS="${SOURCE_WEIGHTS:-0.85,0.15}"' in gpt2
+    for script in (lfm, gpt2):
+        assert 'INIT_TRANSPORT_BACKEND="${INIT_TRANSPORT_BACKEND:-qr-sinkhorn}"' in script
+        assert 'TRANSPORT_SUPPORT="${TRANSPORT_SUPPORT:-domain-diverse-medoid}"' in script
+        assert 'RECOVERY_SOURCE_MODE="${RECOVERY_SOURCE_MODE:-sequential-all}"' in script
+        assert "queue_beststack_after_retest_20260706.sh" in script
+
+
+def test_countsketch_beststack_wrappers_use_signed_hash_assignment() -> None:
+    lfm = (
+        REPO_ROOT / "experiments/queue_qwen4b_lfm230m_multidonor_beststack_countsketch_20260708.sh"
+    ).read_text(encoding="utf-8")
+    gpt2 = (
+        REPO_ROOT / "experiments/queue_qwen4b_gpt2_multidonor_beststack_countsketch_20260708.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'TAG="${TAG:-qwen4b_lfm230m_multidonor_beststack_seqall_countsketch_gpu0_20260708}"' in lfm
+    assert 'SOURCE_MODEL="${SOURCE_MODEL:-Qwen/Qwen3-4B-Base,LiquidAI/LFM2.5-230M}"' in lfm
+    assert 'TAG="${TAG:-qwen4b_gpt2_multidonor_beststack_seqall_countsketch_gpu4_20260708}"' in gpt2
+    assert 'SOURCE_MODEL="${SOURCE_MODEL:-Qwen/Qwen3-4B-Base,openai-community/gpt2}"' in gpt2
+    for script in (lfm, gpt2):
+        assert 'INIT_TRANSPORT_BACKEND="${INIT_TRANSPORT_BACKEND:-qr-sinkhorn}"' in script
+        assert 'TRANSPORT_SUPPORT="${TRANSPORT_SUPPORT:-centroid}"' in script
+        assert 'INIT_ACTIVATION_FOLD_ASSIGNMENT="${INIT_ACTIVATION_FOLD_ASSIGNMENT:-countsketch}"' in script
+        assert 'RECOVERY_SOURCE_MODE="${RECOVERY_SOURCE_MODE:-sequential-all}"' in script
+        assert "queue_beststack_after_retest_20260706.sh" in script
 
 
 def test_chain_launchers_pass_block_output_head_flags() -> None:

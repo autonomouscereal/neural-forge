@@ -35,6 +35,7 @@ _ACTIVATION_FOLD_ASSIGNMENTS = {
     "signed-similarity",
     "balanced-similarity",
     "balanced-signed-similarity",
+    "countsketch",
 }
 _TRANSPORT_BACKENDS = {"sparse", "sinkhorn", "qr-sinkhorn"}
 _TRANSPORT_SUPPORTS = {
@@ -45,10 +46,11 @@ _TRANSPORT_SUPPORTS = {
     "quantile-medoid",
     "diverse-medoid",
     "domain-quantile-medoid",
+    "domain-diverse-medoid",
 }
 _TRANSPORT_SUPPORT_MESSAGE = (
     "transport_support must be centroid, importance, quantile, medoid, quantile-medoid, "
-    "diverse-medoid, or domain-quantile-medoid."
+    "diverse-medoid, domain-quantile-medoid, or domain-diverse-medoid."
 )
 
 
@@ -356,7 +358,7 @@ def donor_projected_init(
     if activation_fold_assignment not in _ACTIVATION_FOLD_ASSIGNMENTS:
         raise ValueError(
             "activation_fold_assignment must be balanced, similarity, signed-similarity, "
-            "balanced-similarity, or balanced-signed-similarity."
+            "balanced-similarity, balanced-signed-similarity, or countsketch."
         )
     if fold_stat_repair not in {"none", "rms"}:
         raise ValueError("fold_stat_repair must be none or rms.")
@@ -4396,7 +4398,7 @@ def _resize_tensor_to_shape(
     if activation_fold_assignment not in _ACTIVATION_FOLD_ASSIGNMENTS:
         raise ValueError(
             "activation_fold_assignment must be balanced, similarity, signed-similarity, "
-            "balanced-similarity, or balanced-signed-similarity."
+            "balanced-similarity, balanced-signed-similarity, or countsketch."
         )
     if fold_stat_repair not in {"none", "rms"}:
         raise ValueError("fold_stat_repair must be none or rms.")
@@ -5509,6 +5511,104 @@ def _activation_domain_quantile_medoid_support_indices(
     return torch.tensor(selected[:target_dim], dtype=torch.long).sort().values
 
 
+def _activation_domain_diverse_medoid_support_indices(
+    torch,
+    feature_rows,
+    fold_weights,
+    domain_features,
+    domain_weights,
+    target_dim: int,
+):
+    source_dim = int(feature_rows.shape[0])
+    target_dim = int(target_dim)
+    if target_dim <= 0:
+        raise ValueError("target_dim must be positive.")
+    if source_dim <= target_dim:
+        return torch.arange(source_dim, dtype=torch.long)
+    if not isinstance(domain_features, dict) or not isinstance(domain_weights, dict):
+        return _activation_diverse_medoid_support_indices(torch, feature_rows, fold_weights, target_dim)
+
+    domains = []
+    for domain in domain_features.keys():
+        features = domain_features.get(domain)
+        weights = domain_weights.get(domain)
+        if features is None or weights is None:
+            continue
+        domain_rows = features.detach().cpu().to(torch.float32)
+        domain_scores = weights.detach().cpu().to(torch.float32).flatten()
+        if domain_rows.dim() != 2 or int(domain_rows.shape[0]) != source_dim:
+            continue
+        if int(domain_scores.numel()) != source_dim:
+            continue
+        domain_scores = torch.nan_to_num(domain_scores, nan=0.0, posinf=0.0, neginf=0.0).clamp_min(0.0)
+        mass = float(domain_scores.sum().item())
+        if mass <= 0.0:
+            continue
+        domains.append((str(domain), domain_rows, domain_scores.clamp_min(1e-12), mass))
+    if not domains:
+        return _activation_diverse_medoid_support_indices(torch, feature_rows, fold_weights, target_dim)
+
+    total_mass = max(sum(item[3] for item in domains), 1e-12)
+    ideal = [float(mass) / total_mass * float(target_dim) for _name, _features, _weights, mass in domains]
+    if len(domains) <= target_dim:
+        allocation = [1 for _item in domains]
+    else:
+        allocation = [0 for _item in domains]
+    remaining = int(target_dim) - sum(allocation)
+    for _ in range(max(0, remaining)):
+        scores = [(ideal[idx] - float(allocation[idx]), domains[idx][3], idx) for idx in range(len(domains))]
+        _score, _mass, chosen = max(scores, key=lambda item: (item[0], item[1]))
+        allocation[int(chosen)] += 1
+
+    selected: list[int] = []
+    selected_set: set[int] = set()
+    for slots, (_name, rows, weights, _mass) in zip(allocation, domains):
+        if int(slots) <= 0:
+            continue
+        support = _activation_diverse_medoid_support_indices(
+            torch,
+            rows,
+            weights,
+            min(int(slots), target_dim),
+        )
+        for source_idx in support.tolist():
+            source_idx = int(source_idx)
+            if source_idx in selected_set:
+                continue
+            selected.append(source_idx)
+            selected_set.add(source_idx)
+            if len(selected) == target_dim:
+                break
+        if len(selected) == target_dim:
+            break
+
+    global_weights = fold_weights.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12)
+    if len(selected) < target_dim:
+        for source_idx in _activation_diverse_medoid_support_indices(
+            torch,
+            feature_rows,
+            global_weights,
+            target_dim,
+        ).tolist():
+            source_idx = int(source_idx)
+            if source_idx in selected_set:
+                continue
+            selected.append(source_idx)
+            selected_set.add(source_idx)
+            if len(selected) == target_dim:
+                break
+    if len(selected) < target_dim:
+        for source_idx in torch.argsort(global_weights, descending=True).tolist():
+            source_idx = int(source_idx)
+            if source_idx in selected_set:
+                continue
+            selected.append(source_idx)
+            selected_set.add(source_idx)
+            if len(selected) == target_dim:
+                break
+    return torch.tensor(selected[:target_dim], dtype=torch.long).sort().values
+
+
 def _activation_diverse_medoid_support_indices(torch, feature_rows, fold_weights, target_dim: int):
     source_dim = int(feature_rows.shape[0])
     target_dim = int(target_dim)
@@ -5652,11 +5752,36 @@ def _activation_transport_diagnostics(torch, values, scores, fold_weights, targe
 
 
 def _activation_assignment_mode_is_signed(mode: str) -> bool:
-    return str(mode) in {"signed-similarity", "balanced-signed-similarity"}
+    return str(mode) in {"signed-similarity", "balanced-signed-similarity", "countsketch"}
 
 
 def _activation_assignment_mode_is_mass_balanced(mode: str) -> bool:
     return str(mode) in {"balanced-similarity", "balanced-signed-similarity"}
+
+
+def _countsketch_activation_assignment(torch, source_dim: int, target_dim: int):
+    source_dim = int(source_dim)
+    target_dim = int(target_dim)
+    if target_dim <= 0:
+        raise ValueError("target_dim must be positive.")
+    if source_dim <= 0:
+        raise ValueError("source_dim must be positive.")
+    keys = [((idx * 1103515245 + 12345) & 0x7FFFFFFF) for idx in range(source_dim)]
+    order = sorted(range(source_dim), key=lambda idx: keys[idx])
+    assignment_values = [0 for _ in range(source_dim)]
+    for rank, source_idx in enumerate(order):
+        if rank < target_dim:
+            assignment_values[source_idx] = rank
+        else:
+            assignment_values[source_idx] = int(keys[source_idx] % target_dim)
+    sign_values = [
+        1.0 if (((idx * 2654435761 + 1013904223) & 0x1) == 0) else -1.0
+        for idx in range(source_dim)
+    ]
+    return (
+        torch.tensor(assignment_values, dtype=torch.long),
+        torch.tensor(sign_values, dtype=torch.float32),
+    )
 
 
 def _activation_assignment_for_mode(
@@ -5670,8 +5795,11 @@ def _activation_assignment_for_mode(
     if assignment_mode not in _ACTIVATION_FOLD_ASSIGNMENTS:
         raise ValueError(
             "assignment_mode must be balanced, similarity, signed-similarity, "
-            "balanced-similarity, or balanced-signed-similarity."
+            "balanced-similarity, balanced-signed-similarity, or countsketch."
         )
+    if assignment_mode == "countsketch":
+        source_dim = int(features.shape[0]) if features is not None else int(fold_weights.numel())
+        return _countsketch_activation_assignment(torch, source_dim, target_dim)
     if assignment_mode == "balanced":
         return _balanced_activation_assignment(torch, fold_weights, target_dim), None
     if assignment_mode == "similarity":
@@ -5726,7 +5854,7 @@ def _build_sparse_activation_transport(
     if assignment_mode not in _ACTIVATION_FOLD_ASSIGNMENTS:
         raise ValueError(
             "assignment_mode must be balanced, similarity, signed-similarity, "
-            "balanced-similarity, or balanced-signed-similarity."
+            "balanced-similarity, balanced-signed-similarity, or countsketch."
         )
     signed = bool(signed) or _activation_assignment_mode_is_signed(assignment_mode)
     if transport_backend not in _TRANSPORT_BACKENDS:
@@ -5770,6 +5898,18 @@ def _build_sparse_activation_transport(
         centroid_rows = feature_rows[support_indices]
     elif transport_support == "domain-quantile-medoid":
         support_indices = _activation_domain_quantile_medoid_support_indices(
+            torch,
+            raw_feature_rows,
+            fold_weights,
+            domain_features,
+            domain_weights,
+            target_dim,
+        )
+        centroid_rows = feature_rows[support_indices]
+        domain_support_used = isinstance(domain_features, dict) and isinstance(domain_weights, dict)
+        domain_support_count = len(set(domain_features.keys()) & set(domain_weights.keys())) if domain_support_used else 0
+    elif transport_support == "domain-diverse-medoid":
+        support_indices = _activation_domain_diverse_medoid_support_indices(
             torch,
             raw_feature_rows,
             fold_weights,
@@ -5841,6 +5981,7 @@ def _build_sparse_activation_transport(
         "quantile-medoid",
         "diverse-medoid",
         "domain-quantile-medoid",
+        "domain-diverse-medoid",
     }:
         target_mass = _activation_transport_target_mass(torch, scores, fold_weights, target_dim)
     else:
@@ -6175,7 +6316,7 @@ def _resize_tensor_axis_mean_fold(
     if assignment_mode not in _ACTIVATION_FOLD_ASSIGNMENTS:
         raise ValueError(
             "assignment_mode must be balanced, similarity, signed-similarity, "
-            "balanced-similarity, or balanced-signed-similarity."
+            "balanced-similarity, balanced-signed-similarity, or countsketch."
         )
     if fold_stat_repair not in {"none", "rms"}:
         raise ValueError("fold_stat_repair must be none or rms.")
@@ -6258,7 +6399,9 @@ def _resize_tensor_axis_mean_fold(
             assignment = cached["assignment"].to(torch.long)
             assignment_signs = cached.get("assignment_signs")
         if assignment is None:
-            if weights is None and features is None:
+            if assignment_mode == "countsketch":
+                assignment, assignment_signs = _countsketch_activation_assignment(torch, source_dim, target_dim)
+            elif weights is None and features is None:
                 assignment = torch.floor(torch.arange(source_dim, dtype=torch.float32) * target_dim / source_dim)
                 assignment = assignment.to(torch.long).clamp_max(target_dim - 1)
             elif features is not None:

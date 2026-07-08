@@ -43,7 +43,7 @@ def test_tiny_cross_family_proof_dry_run_wires_before_after_commands(tmp_path: P
     assert "hf-donor-project-init" in command_text
     assert "--fold-mode transport" in command_text
     assert "--transport-backend sinkhorn" in command_text
-    assert "--transport-support quantile-medoid" in command_text
+    assert "--transport-support domain-diverse-medoid" in command_text
     assert "--activation-fold-assignment balanced-signed-similarity" in command_text
     assert "--token-init-mode donor-tokenized-weighted" in command_text
     assert "--token-fallback-mode donor-mean" in command_text

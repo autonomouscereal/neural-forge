@@ -113,9 +113,11 @@ from neural_forge.hf_xfamily import _activation_quantile_medoid_support_indices
 from neural_forge.hf_xfamily import _activation_quantile_support_indices
 from neural_forge.hf_xfamily import _activation_diverse_medoid_support_indices
 from neural_forge.hf_xfamily import _activation_domain_quantile_medoid_support_indices
+from neural_forge.hf_xfamily import _activation_domain_diverse_medoid_support_indices
 from neural_forge.hf_xfamily import _activation_layer_geometry_scores
 from neural_forge.hf_xfamily import _activation_similarity_assignment
 from neural_forge.hf_xfamily import _activation_signed_similarity_assignment
+from neural_forge.hf_xfamily import _countsketch_activation_assignment
 from neural_forge.hf_xfamily import _activation_cka_group_layer_weights
 from neural_forge.hf_xfamily import _activation_axis_weights_for_tensor
 from neural_forge.hf_xfamily import _activation_fit_suffix_enabled
@@ -845,6 +847,32 @@ def test_cli_accepts_signed_activation_fold_assignment() -> None:
     assert balanced_donor_args.activation_fold_assignment == "balanced-signed-similarity"
     assert balanced_chain_args.init_activation_fold_assignment == "balanced-signed-similarity"
 
+    countsketch_donor_args = parser.parse_args(
+        [
+            "hf-donor-project-init",
+            "projected-out",
+            "--target-config-model",
+            "target-model",
+            "--donor-model",
+            "donor-model",
+            "--activation-fold-assignment",
+            "countsketch",
+        ]
+    )
+    countsketch_chain_args = parser.parse_args(
+        [
+            "hf-xfamily-chain-anchor-compress",
+            "source-model",
+            "candidate-config",
+            "chain-out",
+            "--init-activation-fold-assignment",
+            "countsketch",
+        ]
+    )
+
+    assert countsketch_donor_args.activation_fold_assignment == "countsketch"
+    assert countsketch_chain_args.init_activation_fold_assignment == "countsketch"
+
 
 def test_cli_accepts_fold_stat_repair() -> None:
     parser = build_parser()
@@ -874,6 +902,36 @@ def test_cli_accepts_fold_stat_repair() -> None:
 
     assert donor_init_args.fold_stat_repair == "rms"
     assert chain_args.init_fold_stat_repair == "rms"
+
+
+def test_cli_accepts_domain_diverse_medoid_transport_support() -> None:
+    parser = build_parser()
+
+    donor_init_args = parser.parse_args(
+        [
+            "hf-donor-project-init",
+            "projected-out",
+            "--target-config-model",
+            "target-model",
+            "--donor-model",
+            "donor-model",
+            "--transport-support",
+            "domain-diverse-medoid",
+        ]
+    )
+    chain_args = parser.parse_args(
+        [
+            "hf-xfamily-chain-anchor-compress",
+            "source-model",
+            "candidate-config",
+            "chain-out",
+            "--init-transport-support",
+            "domain-diverse-medoid",
+        ]
+    )
+
+    assert donor_init_args.transport_support == "domain-diverse-medoid"
+    assert chain_args.init_transport_support == "domain-diverse-medoid"
 
 
 def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
@@ -4576,6 +4634,42 @@ def test_domain_quantile_medoid_support_reserves_domain_representatives() -> Non
     assert selected & {2, 3}
 
 
+def test_domain_diverse_medoid_support_reserves_domains_and_geometry() -> None:
+    torch = pytest.importorskip("torch")
+    features = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.98, 0.02],
+            [0.0, 1.0],
+            [0.02, 0.98],
+            [-1.0, 0.0],
+            [-0.98, 0.02],
+        ],
+        dtype=torch.float32,
+    )
+    weights = torch.tensor([100.0, 90.0, 1.0, 1.0, 8.0, 7.0], dtype=torch.float32)
+    domain_features = {"code": features, "math": features, "tokenizer": features}
+    domain_weights = {
+        "code": torch.tensor([100.0, 90.0, 0.0, 0.0, 0.0, 0.0], dtype=torch.float32),
+        "math": torch.tensor([0.0, 0.0, 1.0, 1.0, 0.0, 0.0], dtype=torch.float32),
+        "tokenizer": torch.tensor([0.0, 0.0, 0.0, 0.0, 8.0, 7.0], dtype=torch.float32),
+    }
+
+    support = _activation_domain_diverse_medoid_support_indices(
+        torch,
+        features,
+        weights,
+        domain_features,
+        domain_weights,
+        target_dim=3,
+    )
+
+    selected = set(support.tolist())
+    assert selected & {0, 1}
+    assert selected & {2, 3}
+    assert selected & {4, 5}
+
+
 def test_diverse_medoid_support_covers_activation_geometry() -> None:
     torch = pytest.importorskip("torch")
     features = torch.tensor(
@@ -4763,6 +4857,57 @@ def test_transport_fold_can_use_domain_quantile_medoid_support() -> None:
     report = _axis_assignment_cache_report(cache)
     assert report[0]["domain_support_used"] is True
     assert report[0]["domain_support_count"] == 2
+
+
+def test_transport_fold_can_use_domain_diverse_medoid_support() -> None:
+    torch = pytest.importorskip("torch")
+    cache = {}
+    features = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.98, 0.02],
+            [0.0, 1.0],
+            [0.02, 0.98],
+            [-1.0, 0.0],
+            [-0.98, 0.02],
+        ],
+        dtype=torch.float32,
+    )
+    weights = torch.tensor([100.0, 90.0, 1.0, 1.0, 8.0, 7.0], dtype=torch.float32)
+    source = torch.arange(6, dtype=torch.float32).unsqueeze(1)
+    domain_features = {"code": features, "math": features, "tokenizer": features}
+    domain_weights = {
+        "code": torch.tensor([100.0, 90.0, 0.0, 0.0, 0.0, 0.0], dtype=torch.float32),
+        "math": torch.tensor([0.0, 0.0, 1.0, 1.0, 0.0, 0.0], dtype=torch.float32),
+        "tokenizer": torch.tensor([0.0, 0.0, 0.0, 0.0, 8.0, 7.0], dtype=torch.float32),
+    }
+
+    folded = _resize_tensor_axis_mean_fold(
+        torch,
+        source,
+        axis=0,
+        target_dim=3,
+        fold_mode="transport",
+        weights=weights,
+        features=features,
+        domain_weights=domain_weights,
+        domain_features=domain_features,
+        transport_backend="sinkhorn",
+        transport_support="domain-diverse-medoid",
+        assignment_cache=cache,
+        assignment_cache_key=("mlp", "domain-diverse-support-test"),
+    )
+
+    assert folded.shape == (3, 1)
+    transport = next(iter(cache.values()))
+    assert transport["transport_support"] == "domain-diverse-medoid"
+    assert transport["domain_support_used"] is True
+    assert transport["domain_support_count"] == 3
+    support = set(transport["target_support_indices"].tolist())
+    assert support & {0, 1}
+    assert support & {2, 3}
+    assert support & {4, 5}
+    assert transport["transport_diagnostics"]["target_load_l1_error"] < 0.05
 
 
 def test_transport_fold_can_use_diverse_medoid_support() -> None:
@@ -5242,6 +5387,40 @@ def test_signed_activation_similarity_assignment_recovers_flipped_axes() -> None
     assert assignment[0].item() != assignment[2].item()
     assert signs[0].item() == pytest.approx(-signs[1].item())
     assert signs[2].item() == pytest.approx(-signs[3].item())
+
+
+def test_countsketch_activation_assignment_balances_signed_hash_buckets() -> None:
+    torch = pytest.importorskip("torch")
+
+    assignment, signs = _countsketch_activation_assignment(torch, source_dim=8, target_dim=3)
+
+    assert assignment.shape == (8,)
+    assert signs.shape == (8,)
+    assert set(assignment.tolist()) == {0, 1, 2}
+    assert set(float(item) for item in signs.tolist()) == {-1.0, 1.0}
+
+
+def test_countsketch_fold_uses_cached_signed_assignment_without_features() -> None:
+    torch = pytest.importorskip("torch")
+    cache = {}
+    source = torch.arange(8, dtype=torch.float32).unsqueeze(1)
+
+    folded = _resize_tensor_axis_mean_fold(
+        torch,
+        source,
+        axis=0,
+        target_dim=3,
+        fold_mode="mean",
+        assignment_mode="countsketch",
+        assignment_cache=cache,
+        assignment_cache_key=("hidden", "countsketch"),
+    )
+
+    assert folded.shape == (3, 1)
+    cached = next(iter(cache.values()))
+    assert cached["assignment_mode"] == "countsketch"
+    assert cached["assignment_signs"] is not None
+    assert set(cached["assignment"].tolist()) == {0, 1, 2}
 
 
 def test_balanced_similarity_assignment_spreads_equal_signature_mass() -> None:

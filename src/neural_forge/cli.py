@@ -170,12 +170,14 @@ def build_parser() -> argparse.ArgumentParser:
             "signed-similarity",
             "balanced-similarity",
             "balanced-signed-similarity",
+            "countsketch",
         ],
         default="balanced",
         help=(
             "How activation features assign source axes to folded target axes. signed modes group opposite "
             "activation directions by absolute similarity and apply the recovered sign during folding; balanced "
-            "similarity modes softly penalize overloaded target axes."
+            "similarity modes softly penalize overloaded target axes; countsketch uses deterministic signed hashing "
+            "so collisions cancel in expectation."
         ),
     )
     hf_donor_init.add_argument(
@@ -203,6 +205,7 @@ def build_parser() -> argparse.ArgumentParser:
             "quantile-medoid",
             "diverse-medoid",
             "domain-quantile-medoid",
+            "domain-diverse-medoid",
         ],
         default="centroid",
         help=(
@@ -212,7 +215,8 @@ def build_parser() -> argparse.ArgumentParser:
             "medoid uses real donor axes nearest to activation clusters; "
             "quantile-medoid picks real donor axes within activation-weight strata; "
             "diverse-medoid greedily covers activation geometry with real donor axes; "
-            "domain-quantile-medoid reserves real donor medoids across calibration domains."
+            "domain-quantile-medoid reserves real donor medoids across calibration domains; "
+            "domain-diverse-medoid reserves domain slots while greedily covering activation geometry."
         ),
     )
     hf_donor_init.add_argument(
@@ -1630,6 +1634,7 @@ def build_parser() -> argparse.ArgumentParser:
             "signed-similarity",
             "balanced-similarity",
             "balanced-signed-similarity",
+            "countsketch",
         ],
         default="balanced",
     )
@@ -1645,6 +1650,7 @@ def build_parser() -> argparse.ArgumentParser:
             "quantile-medoid",
             "diverse-medoid",
             "domain-quantile-medoid",
+            "domain-diverse-medoid",
         ],
         default="centroid",
     )

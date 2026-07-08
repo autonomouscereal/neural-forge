@@ -235,8 +235,50 @@ Implementation note:
 - `experiments/run_tiny_cross_family_proof.py` is the local CPU proof harness.
   It builds a small eval suite, evaluates donor and random blank target,
   folds the donor into the blank target with the current transport/tokenizer
-  defaults, compares donor-vs-folded and donor-vs-recovered item retention,
-  optionally runs lightweight cross-tokenizer recovery, then writes
-  `proof_summary.json` plus donor/blank/folded/recovered eval JSONs,
-  retention JSONs with manual sample pairs, and a rank report. Example:
+  defaults, now using `domain-diverse-medoid` support so keyword calibration
+  domains reserve real donor-axis representatives while still covering
+  activation geometry. It compares donor-vs-folded and donor-vs-recovered item
+  retention, optionally runs lightweight cross-tokenizer recovery, then writes
+  `proof_summary.json` plus donor/blank/folded/recovered eval JSONs, retention
+  JSONs with manual sample pairs, and a rank report. Example:
   `python experiments/run_tiny_cross_family_proof.py --output-dir runs/local_tiny_cross_family_proof --device cpu --dtype float32 --recover-steps 0`.
+- The next GPU A/B wrappers for this fold-first selector are
+  `queue_qwen4b_lfm230m_multidonor_beststack_domain_diverse_20260707.sh` and
+  `queue_qwen4b_gpt2_multidonor_beststack_domain_diverse_20260707.sh`. They
+  keep the current beststack recovery stack and change only
+  `TRANSPORT_SUPPORT=domain-diverse-medoid` for comparison against the queued
+  quantile-medoid lanes.
+- A separate first-principles collision-cancellation lane is now available via
+  `queue_qwen4b_lfm230m_multidonor_beststack_countsketch_20260708.sh` and
+  `queue_qwen4b_gpt2_multidonor_beststack_countsketch_20260708.sh`. These use
+  `INIT_ACTIVATION_FOLD_ASSIGNMENT=countsketch` with centroid transport, so
+  many-to-one donor-axis collisions get deterministic signed hashes instead of
+  unsigned averaging. The mathematical bet is that paired incoming/outgoing
+  folds reuse the same signs, making collision cross-terms cancel in
+  expectation before recovery.
+
+## First-Principles Experiment Ideas
+
+These are intentionally not source-led; they are mathematical mechanisms to
+test against the current failure mode.
+
+1. Signed collision cancellation. Compress donor axes with CountSketch-style
+   target buckets and signs, reusing the exact assignment for paired incoming
+   and outgoing tensors. This targets the destructive cross terms created when
+   unrelated donor paths are averaged into one child axis.
+2. Domain-diverse support. Allocate reduced axes across calibration domains,
+   then choose diverse real donor medoids inside each domain. This targets
+   broad-text dominance where math/code/tokenizer/model-surgery signals lose
+   representative axes.
+3. Operator-product folding. Score and merge neurons by their full path
+   contribution, such as `down[:, i] * up[i, :]` or attention value/output
+   products, instead of clustering incoming or outgoing weights separately.
+   This should preserve functions better than preserving individual tensors.
+4. Random-feature teacher emulator. Treat a blank child block as a fixed random
+   feature map and solve layer-local ridge maps to reproduce donor residual
+   deltas, then materialize those maps into normal weights. This abandons
+   weight similarity and asks only for functional operator matching.
+5. Error-feedback folding. Fold one module at a time, measure residual function
+   error on calibration states, and explicitly add the error into the next
+   available fold rather than minimizing each layer independently. This is a
+   control-theory view: conserve the end-to-end residual, not each component.

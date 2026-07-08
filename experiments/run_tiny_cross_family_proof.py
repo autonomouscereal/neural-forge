@@ -197,7 +197,7 @@ class TinyCrossFamilyProof:
             "--transport-backend",
             "sinkhorn",
             "--transport-support",
-            "quantile-medoid",
+            "domain-diverse-medoid",
             "--donor-layer-fold-mode",
             "fold",
             "--donor-layer-output-scale",
