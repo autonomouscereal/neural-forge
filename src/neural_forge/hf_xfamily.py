@@ -305,6 +305,7 @@ def donor_projected_init(
     projection_scale: str = "none",
     projection_blend_alpha: float = 1.0,
     consumer_hidden_reduction: str = "mean",
+    operator_product_axis_weights: bool = False,
     activation_fit_linears: bool = False,
     activation_fit_target: str = "all",
     activation_fit_max_rows: int = 0,
@@ -697,6 +698,21 @@ def donor_projected_init(
             donor_layer_group,
             activation_profile,
             layer_group_weights=layer_group_weights,
+            operator_layer_state=(
+                (
+                    _donor_layer_state_from_index(
+                        donor_state,
+                        donor_layer_keys,
+                        donor_layer_idx,
+                        donor_layer_state_cache,
+                    )
+                    if donor_layer_fold_mode == "representative"
+                    else folded_state
+                )
+                if operator_product_axis_weights
+                else None
+            ),
+            operator_product_axis_weights=operator_product_axis_weights,
         )
         axis_reductions = _axis_reductions_for_layer_tensor(suffix)
         axis_reductions = _with_consumer_hidden_reduction(axis_reductions, consumer_hidden_reduction)
@@ -952,6 +968,7 @@ def donor_projected_init(
         "projection_scale": projection_scale,
         "projection_blend_alpha": projection_blend_alpha,
         "consumer_hidden_reduction": consumer_hidden_reduction,
+        "operator_product_axis_weights": bool(operator_product_axis_weights),
         "activation_fit_linears": bool(activation_fit_linears),
         "activation_fit_target": activation_fit_target,
         "activation_fit_max_rows": int(effective_activation_fit_max_rows),
@@ -1997,6 +2014,7 @@ def chain_anchor_staged_compress(
     init_projection_scale: str = "none",
     init_projection_blend_alpha: float = 1.0,
     init_consumer_hidden_reduction: str = "mean",
+    init_operator_product_axis_weights: bool = False,
     init_activation_fit_linears: bool = False,
     init_activation_fit_target: str = "all",
     init_activation_fit_max_rows: int = 0,
@@ -2290,6 +2308,7 @@ def chain_anchor_staged_compress(
                 projection_scale=init_projection_scale,
                 projection_blend_alpha=init_projection_blend_alpha,
                 consumer_hidden_reduction=init_consumer_hidden_reduction,
+                operator_product_axis_weights=init_operator_product_axis_weights,
                 activation_fit_linears=init_activation_fit_linears,
                 activation_fit_target=init_activation_fit_target,
                 activation_fit_max_rows=init_activation_fit_max_rows,
@@ -7559,6 +7578,8 @@ def _activation_axis_weights_for_tensor(
     donor_layer_group: Sequence[int] | None,
     activation_profile,
     layer_group_weights: Sequence[float] | None = None,
+    operator_layer_state: dict[str, Any] | None = None,
+    operator_product_axis_weights: bool = False,
 ):
     if activation_profile is None:
         return None
@@ -7604,14 +7625,121 @@ def _activation_axis_weights_for_tensor(
     if mlp_scores is not None and mlp_axes:
         for axis, source_dim in enumerate(donor_tensor.shape):
             if int(axis) in mlp_axes and int(source_dim) == int(mlp_scores.numel()):
+                weights = mlp_scores
+                features = mlp_features
+                domain_weights = mlp_domain_scores
+                assignment_key = ("mlp", layer_group_key)
+                operator_weights = (
+                    _mlp_operator_product_weights_for_suffix(
+                        torch,
+                        suffix,
+                        operator_layer_state,
+                        int(source_dim),
+                    )
+                    if operator_product_axis_weights
+                    else None
+                )
+                if operator_weights is not None:
+                    operator_weights = operator_weights.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12)
+                    operator_norm = operator_weights / operator_weights.mean().clamp_min(1e-12)
+                    weights = (weights.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12) * operator_norm).clamp_min(1e-12)
+                    features = _append_axis_scalar_feature(torch, features, operator_norm)
+                    domain_weights = _scale_domain_axis_weights(torch, domain_weights, operator_norm)
+                    assignment_key = ("mlp-operator-product", layer_group_key)
                 axis_weights[axis] = {
-                    "weights": mlp_scores,
-                    "features": mlp_features,
-                    "assignment_key": ("mlp", layer_group_key),
-                    "domain_weights": mlp_domain_scores,
+                    "weights": weights,
+                    "features": features,
+                    "assignment_key": assignment_key,
+                    "domain_weights": domain_weights,
                     "domain_features": mlp_domain_features,
                 }
     return axis_weights or None
+
+
+def _append_axis_scalar_feature(torch, features, scalar):
+    scalar = scalar.detach().cpu().to(torch.float32).flatten()
+    if int(scalar.numel()) <= 0:
+        return features
+    centered = scalar.log().clamp(-20.0, 20.0)
+    centered = centered - centered.mean()
+    scaled = centered / centered.std(unbiased=False).clamp_min(1e-6)
+    column = scaled.unsqueeze(1)
+    if features is None:
+        return column.contiguous()
+    rows = features.detach().cpu().to(torch.float32)
+    if rows.dim() != 2 or int(rows.shape[0]) != int(scalar.numel()):
+        return features
+    return torch.cat([rows, column], dim=1).contiguous()
+
+
+def _scale_domain_axis_weights(torch, domain_weights, scalar):
+    if not isinstance(domain_weights, dict):
+        return domain_weights
+    scalar = scalar.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12)
+    scaled = {}
+    for domain, weights in domain_weights.items():
+        if weights is None:
+            continue
+        values = weights.detach().cpu().to(torch.float32).flatten()
+        if int(values.numel()) != int(scalar.numel()):
+            scaled[domain] = weights
+        else:
+            scaled[domain] = (values.clamp_min(1e-12) * scalar).clamp_min(1e-12)
+    return scaled
+
+
+def _mlp_operator_product_weights_for_suffix(torch, suffix: str, layer_state: dict[str, Any] | None, source_dim: int):
+    if layer_state is None or int(source_dim) <= 0:
+        return None
+    marker = f".{str(suffix).lower()}"
+    if not (
+        ".mlp." in marker
+        or ".feed_forward." in marker
+        or marker.endswith((".dense_h_to_4h.weight", ".dense_4h_to_h.weight", ".fc1.weight", ".fc2.weight"))
+    ):
+        return None
+    input_candidates = [
+        _state_value(layer_state, "mlp.gate_proj.weight", "mlp.w1.weight", "feed_forward.w1.weight"),
+        _state_value(layer_state, "mlp.up_proj.weight", "mlp.w3.weight", "feed_forward.w3.weight"),
+        _state_value(layer_state, "mlp.c_fc.weight", "feed_forward.c_fc.weight", "dense_h_to_4h.weight", "fc1.weight"),
+    ]
+    output_candidates = [
+        _state_value(layer_state, "mlp.down_proj.weight", "mlp.w2.weight", "feed_forward.w2.weight"),
+        _state_value(layer_state, "mlp.c_proj.weight", "feed_forward.c_proj.weight", "dense_4h_to_h.weight", "fc2.weight"),
+    ]
+    input_scores = _axis_rms_candidates_for_dim(torch, input_candidates, int(source_dim))
+    output_scores = _axis_rms_candidates_for_dim(torch, output_candidates, int(source_dim))
+    if not input_scores and not output_scores:
+        return None
+    if input_scores:
+        input_score = torch.stack(input_scores, dim=0).mean(dim=0)
+    else:
+        input_score = torch.ones(int(source_dim), dtype=torch.float32)
+    if output_scores:
+        output_score = torch.stack(output_scores, dim=0).mean(dim=0)
+    else:
+        output_score = torch.ones(int(source_dim), dtype=torch.float32)
+    return (input_score.clamp_min(1e-12) * output_score.clamp_min(1e-12)).sqrt().clamp_min(1e-12)
+
+
+def _axis_rms_candidates_for_dim(torch, tensors: Sequence[Any | None], source_dim: int) -> list[Any]:
+    scores = []
+    for tensor in tensors:
+        if tensor is None:
+            continue
+        values = tensor.detach().cpu().to(torch.float32)
+        if values.dim() == 1 and int(values.shape[0]) == int(source_dim):
+            scores.append(values.abs().clamp_min(1e-12))
+            continue
+        if values.dim() < 2:
+            continue
+        for axis, dim in enumerate(values.shape):
+            if int(dim) != int(source_dim):
+                continue
+            flat = values.movedim(axis, 0).contiguous().reshape(int(source_dim), -1)
+            scores.append(flat.pow(2).mean(dim=1).sqrt().clamp_min(1e-12))
+            break
+    return scores
 
 
 def _mlp_intermediate_axes_for_tensor_suffix(suffix: str, rank: int) -> set[int]:

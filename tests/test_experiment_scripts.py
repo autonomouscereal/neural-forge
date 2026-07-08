@@ -95,6 +95,24 @@ def test_pca_extrema_beststack_wrappers_use_signed_extreme_transport() -> None:
         assert "queue_beststack_after_retest_20260706.sh" in script
 
 
+def test_operator_product_beststack_wrappers_combine_path_weights_and_extreme_superpose() -> None:
+    lfm = (
+        REPO_ROOT / "experiments/queue_qwen4b_lfm230m_multidonor_beststack_operator_product_20260708.sh"
+    ).read_text(encoding="utf-8")
+    gpt2 = (
+        REPO_ROOT / "experiments/queue_qwen4b_gpt2_multidonor_beststack_operator_product_20260708.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'TAG="${TAG:-qwen4b_lfm230m_multidonor_beststack_seqall_operator_product_gpu6_20260708}"' in lfm
+    assert 'TAG="${TAG:-qwen4b_gpt2_multidonor_beststack_seqall_operator_product_gpu4_20260708}"' in gpt2
+    for script in (lfm, gpt2):
+        assert 'INIT_OPERATOR_PRODUCT_AXIS_WEIGHTS="${INIT_OPERATOR_PRODUCT_AXIS_WEIGHTS:-1}"' in script
+        assert 'INIT_ACTIVATION_FOLD_ASSIGNMENT="${INIT_ACTIVATION_FOLD_ASSIGNMENT:-signed-superpose}"' in script
+        assert 'TRANSPORT_SUPPORT="${TRANSPORT_SUPPORT:-pca-extrema-medoid}"' in script
+        assert 'INIT_TRANSPORT_BACKEND="${INIT_TRANSPORT_BACKEND:-qr-sinkhorn}"' in script
+        assert "queue_beststack_after_retest_20260706.sh" in script
+
+
 def test_chain_launchers_pass_block_output_head_flags() -> None:
     for relative_path in (
         "experiments/launch_qwen4b_blank_smollm_true_lrc_chain.sh",
@@ -107,6 +125,7 @@ def test_chain_launchers_pass_block_output_head_flags() -> None:
         assert "--block-pre-reconstruction-min-fitted-cosine" in script
         assert '--init-fold-mode "$INIT_FOLD_MODE"' in script
         assert '--init-hidden-basis-mode "$INIT_HIDDEN_BASIS_MODE"' in script
+        assert '--init-operator-product-axis-weights' in script
 
 
 def test_blank_beststack_topneg_recovery_uses_folded_child_and_broad_eval() -> None:

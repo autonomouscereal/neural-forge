@@ -323,6 +323,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="How to fold consumer weights over merged hidden axes; mean is safest for arbitrary blank targets.",
     )
     hf_donor_init.add_argument(
+        "--operator-product-axis-weights",
+        action="store_true",
+        help=(
+            "Multiply MLP intermediate activation fold masses by adjacent input/downstream operator norms so "
+            "channel folding preserves full path contribution instead of activation usage alone."
+        ),
+    )
+    hf_donor_init.add_argument(
         "--activation-fit-linears",
         action="store_true",
         help="Fit target-shaped linear weights from folded donor input/output activations after tensor folding.",
@@ -1703,6 +1711,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     xfamily_chain.add_argument("--init-projection-blend-alpha", type=float, default=1.0)
     xfamily_chain.add_argument("--init-consumer-hidden-reduction", choices=["mean", "sum", "sqrt-sum"], default="mean")
+    xfamily_chain.add_argument(
+        "--init-operator-product-axis-weights",
+        action="store_true",
+        help="Use operator-product MLP channel masses during the init fold.",
+    )
     xfamily_chain.add_argument("--init-activation-fit-linears", action="store_true")
     xfamily_chain.add_argument(
         "--init-activation-fit-target",
@@ -2428,6 +2441,7 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         "projection_scale": args.projection_scale,
         "projection_blend_alpha": args.projection_blend_alpha,
         "consumer_hidden_reduction": args.consumer_hidden_reduction,
+        "operator_product_axis_weights": args.operator_product_axis_weights,
         "activation_fit_linears": args.activation_fit_linears,
         "activation_fit_target": args.activation_fit_target,
         "activation_fit_max_rows": args.activation_fit_max_rows,
@@ -3149,6 +3163,7 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         init_projection_scale=args.init_projection_scale,
         init_projection_blend_alpha=args.init_projection_blend_alpha,
         init_consumer_hidden_reduction=args.init_consumer_hidden_reduction,
+        init_operator_product_axis_weights=args.init_operator_product_axis_weights,
         init_activation_fit_linears=args.init_activation_fit_linears,
         init_activation_fit_target=args.init_activation_fit_target,
         init_activation_fit_max_rows=args.init_activation_fit_max_rows,

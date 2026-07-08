@@ -126,6 +126,7 @@ from neural_forge.hf_xfamily import _activation_fit_suffix_enabled
 from neural_forge.hf_xfamily import _activation_channel_summary
 from neural_forge.hf_xfamily import _aggregate_layer_activation_profile
 from neural_forge.hf_xfamily import _mlp_neuron_activation_values
+from neural_forge.hf_xfamily import _mlp_operator_product_weights_for_suffix
 from neural_forge.hf_xfamily import _attention_axis_weights_for_tensor
 from neural_forge.hf_xfamily import _attention_head_activation_profile
 from neural_forge.hf_xfamily import _attention_projection_modules
@@ -986,6 +987,34 @@ def test_cli_accepts_domain_diverse_medoid_transport_support() -> None:
 
     assert pca_donor_init_args.transport_support == "pca-extrema-medoid"
     assert pca_chain_args.init_transport_support == "pca-extrema-medoid"
+
+
+def test_cli_accepts_operator_product_axis_weights() -> None:
+    parser = build_parser()
+
+    donor_init_args = parser.parse_args(
+        [
+            "hf-donor-project-init",
+            "projected-out",
+            "--target-config-model",
+            "target-model",
+            "--donor-model",
+            "donor-model",
+            "--operator-product-axis-weights",
+        ]
+    )
+    chain_args = parser.parse_args(
+        [
+            "hf-xfamily-chain-anchor-compress",
+            "source-model",
+            "candidate-config",
+            "chain-out",
+            "--init-operator-product-axis-weights",
+        ]
+    )
+
+    assert donor_init_args.operator_product_axis_weights is True
+    assert chain_args.init_operator_product_axis_weights is True
 
 
 def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
@@ -5567,6 +5596,100 @@ def test_pca_extrema_support_reserves_both_activation_edges() -> None:
     assert len(chosen) == 3
 
 
+def test_mlp_operator_product_weights_use_input_and_downstream_norms() -> None:
+    torch = pytest.importorskip("torch")
+    layer_state = {
+        "mlp.gate_proj.weight": torch.tensor(
+            [
+                [1.0, 0.0],
+                [0.0, 4.0],
+                [0.25, 0.0],
+            ],
+            dtype=torch.float32,
+        ),
+        "mlp.up_proj.weight": torch.tensor(
+            [
+                [1.0, 0.0],
+                [0.0, 2.0],
+                [0.25, 0.0],
+            ],
+            dtype=torch.float32,
+        ),
+        "mlp.down_proj.weight": torch.tensor(
+            [
+                [1.0, 8.0, 0.25],
+                [1.0, 8.0, 0.25],
+            ],
+            dtype=torch.float32,
+        ),
+    }
+
+    weights = _mlp_operator_product_weights_for_suffix(
+        torch,
+        "mlp.gate_proj.weight",
+        layer_state,
+        source_dim=3,
+    )
+
+    assert weights is not None
+    assert int(torch.argmax(weights).item()) == 1
+    assert float(weights[1].item()) > float(weights[0].item()) > float(weights[2].item())
+
+
+def test_activation_axis_weights_can_use_operator_product_profile() -> None:
+    torch = pytest.importorskip("torch")
+    layer_state = {
+        "mlp.gate_proj.weight": torch.tensor(
+            [
+                [1.0, 0.0],
+                [0.0, 4.0],
+                [0.25, 0.0],
+            ],
+            dtype=torch.float32,
+        ),
+        "mlp.up_proj.weight": torch.tensor(
+            [
+                [1.0, 0.0],
+                [0.0, 2.0],
+                [0.25, 0.0],
+            ],
+            dtype=torch.float32,
+        ),
+        "mlp.down_proj.weight": torch.tensor(
+            [
+                [1.0, 8.0, 0.25],
+                [1.0, 8.0, 0.25],
+            ],
+            dtype=torch.float32,
+        ),
+    }
+    activation_profile = {
+        "hidden_scores": torch.ones(2, dtype=torch.float32),
+        "hidden_features": torch.eye(2, dtype=torch.float32),
+        "mlp_scores": {0: torch.ones(3, dtype=torch.float32)},
+        "mlp_features": {0: torch.zeros((3, 2), dtype=torch.float32)},
+        "mlp_domain_scores": {},
+        "mlp_domain_features": {},
+    }
+
+    axis_weights = _activation_axis_weights_for_tensor(
+        torch,
+        layer_state["mlp.gate_proj.weight"],
+        "mlp.gate_proj.weight",
+        donor_layer_idx=0,
+        donor_layer_group=[0],
+        activation_profile=activation_profile,
+        operator_layer_state=layer_state,
+        operator_product_axis_weights=True,
+    )
+
+    assert axis_weights is not None
+    profile = axis_weights[0]
+    assert profile["assignment_key"][0] == "mlp-operator-product"
+    assert int(torch.argmax(profile["weights"]).item()) == 1
+    assert profile["features"].shape[1] == 3
+
+
 def test_balanced_similarity_assignment_spreads_equal_signature_mass() -> None:
     torch = pytest.importorskip("torch")
     features = torch.ones((8, 2), dtype=torch.float32)
@@ -8648,9 +8771,10 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "attention_head_dim_transport": "qk-vo",
             "token_init_mode": "donor-omp",
             "token_fallback_mode": "donor-hash",
-            "projection_scale": "target-rms",
+        "projection_scale": "target-rms",
         "projection_blend_alpha": 0.25,
         "consumer_hidden_reduction": "sqrt-sum",
+        "operator_product_axis_weights": False,
         "activation_fit_linears": True,
         "activation_fit_target": "mlp-output",
         "activation_fit_max_rows": 44,

@@ -52,6 +52,7 @@ INIT_FOLD_MODE="${INIT_FOLD_MODE:-transport}"
 INIT_HIDDEN_BASIS_MODE="${INIT_HIDDEN_BASIS_MODE:-activation-pca}"
 INIT_HIDDEN_BASIS_SCOPE="${INIT_HIDDEN_BASIS_SCOPE:-layer}"
 INIT_HIDDEN_BASIS_PREPROCESS="${INIT_HIDDEN_BASIS_PREPROCESS:-uncentered-rowrms}"
+INIT_OPERATOR_PRODUCT_AXIS_WEIGHTS="${INIT_OPERATOR_PRODUCT_AXIS_WEIGHTS:-0}"
 INIT_ACTIVATION_FOLD_ASSIGNMENT="${INIT_ACTIVATION_FOLD_ASSIGNMENT:-similarity}"
 INIT_FOLD_STAT_REPAIR="${INIT_FOLD_STAT_REPAIR:-none}"
 INIT_TRANSPORT_BACKEND="${INIT_TRANSPORT_BACKEND:-sinkhorn}"
@@ -159,11 +160,15 @@ BLOCK_OUTPUT_HEAD_ARGS=()
 INIT_OUTPUT_HEAD_ARGS=()
 SOURCE_WEIGHT_ARGS=()
 INIT_ACTIVATION_FIT_ARGS=()
+INIT_OPERATOR_PRODUCT_ARGS=()
 if [[ "$INIT_UNTIE_OUTPUT_HEAD" == "1" ]]; then
   INIT_OUTPUT_HEAD_ARGS+=(--init-untie-output-head)
 fi
 if [[ "$INIT_ACTIVATION_FIT_LINEARS" == "1" ]]; then
   INIT_ACTIVATION_FIT_ARGS+=(--init-activation-fit-linears)
+fi
+if [[ "$INIT_OPERATOR_PRODUCT_AXIS_WEIGHTS" == "1" ]]; then
+  INIT_OPERATOR_PRODUCT_ARGS+=(--init-operator-product-axis-weights)
 fi
 if [[ -n "$SOURCE_WEIGHTS" ]]; then
   SOURCE_WEIGHT_ARGS+=(--donor-weights "$SOURCE_WEIGHTS")
@@ -225,6 +230,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --init-projection-scale "$INIT_PROJECTION_SCALE" \
   --init-projection-blend-alpha "$INIT_PROJECTION_BLEND_ALPHA" \
   --init-consumer-hidden-reduction sqrt-sum \
+  "${INIT_OPERATOR_PRODUCT_ARGS[@]}" \
   "${INIT_ACTIVATION_FIT_ARGS[@]}" \
   --init-activation-fit-target "$ACT_TARGET" \
   --init-activation-fit-max-rows 2048 \

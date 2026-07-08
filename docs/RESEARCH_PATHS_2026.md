@@ -271,6 +271,13 @@ Implementation note:
   real donor axes at principal activation extremes before filling the remaining
   support for coverage. The mathematical bet is that rare capability directions
   live on activation-cloud boundaries and are lost by density-only medoids.
+- A combined operator-product lane is available via
+  `queue_qwen4b_lfm230m_multidonor_beststack_operator_product_20260708.sh` and
+  `queue_qwen4b_gpt2_multidonor_beststack_operator_product_20260708.sh`. These
+  enable `INIT_OPERATOR_PRODUCT_AXIS_WEIGHTS=1`, so MLP intermediate fold mass
+  is multiplied by adjacent expansion/contraction operator norms before the
+  signed-superpose/PCA-extrema fold. The mathematical bet is that a neuron should
+  be merged by its full path contribution, not by activation usage alone.
 
 ## First-Principles Experiment Ideas
 
@@ -305,3 +312,8 @@ test against the current failure mode.
 7. Principal-extreme anchors. Select support axes from both ends of the top
    activation principal directions before medoid fill-in. This protects
    boundary/rareness signals that weighted centroids can wash out.
+8. Operator-product axis mass. For MLP intermediate axes, multiply activation
+   mass by adjacent input and downstream projection norms. This approximates
+   the product contribution of a path and should reduce cases where a frequently
+   active but weakly connected channel displaces a less frequent high-impact
+   channel.
