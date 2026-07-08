@@ -114,10 +114,12 @@ from neural_forge.hf_xfamily import _activation_quantile_support_indices
 from neural_forge.hf_xfamily import _activation_diverse_medoid_support_indices
 from neural_forge.hf_xfamily import _activation_domain_quantile_medoid_support_indices
 from neural_forge.hf_xfamily import _activation_domain_diverse_medoid_support_indices
+from neural_forge.hf_xfamily import _activation_pca_extrema_medoid_support_indices
 from neural_forge.hf_xfamily import _activation_layer_geometry_scores
 from neural_forge.hf_xfamily import _activation_similarity_assignment
 from neural_forge.hf_xfamily import _activation_signed_similarity_assignment
 from neural_forge.hf_xfamily import _countsketch_activation_assignment
+from neural_forge.hf_xfamily import _activation_superpose_assignment
 from neural_forge.hf_xfamily import _activation_cka_group_layer_weights
 from neural_forge.hf_xfamily import _activation_axis_weights_for_tensor
 from neural_forge.hf_xfamily import _activation_fit_suffix_enabled
@@ -873,6 +875,32 @@ def test_cli_accepts_signed_activation_fold_assignment() -> None:
     assert countsketch_donor_args.activation_fold_assignment == "countsketch"
     assert countsketch_chain_args.init_activation_fold_assignment == "countsketch"
 
+    superpose_donor_args = parser.parse_args(
+        [
+            "hf-donor-project-init",
+            "projected-out",
+            "--target-config-model",
+            "target-model",
+            "--donor-model",
+            "donor-model",
+            "--activation-fold-assignment",
+            "signed-superpose",
+        ]
+    )
+    superpose_chain_args = parser.parse_args(
+        [
+            "hf-xfamily-chain-anchor-compress",
+            "source-model",
+            "candidate-config",
+            "chain-out",
+            "--init-activation-fold-assignment",
+            "signed-superpose",
+        ]
+    )
+
+    assert superpose_donor_args.activation_fold_assignment == "signed-superpose"
+    assert superpose_chain_args.init_activation_fold_assignment == "signed-superpose"
+
 
 def test_cli_accepts_fold_stat_repair() -> None:
     parser = build_parser()
@@ -932,6 +960,32 @@ def test_cli_accepts_domain_diverse_medoid_transport_support() -> None:
 
     assert donor_init_args.transport_support == "domain-diverse-medoid"
     assert chain_args.init_transport_support == "domain-diverse-medoid"
+
+    pca_donor_init_args = parser.parse_args(
+        [
+            "hf-donor-project-init",
+            "projected-out",
+            "--target-config-model",
+            "target-model",
+            "--donor-model",
+            "donor-model",
+            "--transport-support",
+            "pca-extrema-medoid",
+        ]
+    )
+    pca_chain_args = parser.parse_args(
+        [
+            "hf-xfamily-chain-anchor-compress",
+            "source-model",
+            "candidate-config",
+            "chain-out",
+            "--init-transport-support",
+            "pca-extrema-medoid",
+        ]
+    )
+
+    assert pca_donor_init_args.transport_support == "pca-extrema-medoid"
+    assert pca_chain_args.init_transport_support == "pca-extrema-medoid"
 
 
 def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
@@ -4910,6 +4964,47 @@ def test_transport_fold_can_use_domain_diverse_medoid_support() -> None:
     assert transport["transport_diagnostics"]["target_load_l1_error"] < 0.05
 
 
+def test_transport_fold_can_use_pca_extrema_medoid_support() -> None:
+    torch = pytest.importorskip("torch")
+    cache = {}
+    features = torch.tensor(
+        [
+            [-5.0, 0.0],
+            [-3.0, 0.0],
+            [-1.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 0.0],
+            [3.0, 0.0],
+            [5.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+    weights = torch.ones(7, dtype=torch.float32)
+    source = torch.arange(7, dtype=torch.float32).unsqueeze(1)
+
+    folded = _resize_tensor_axis_mean_fold(
+        torch,
+        source,
+        axis=0,
+        target_dim=3,
+        fold_mode="transport",
+        weights=weights,
+        features=features,
+        assignment_mode="signed-superpose",
+        transport_backend="sinkhorn",
+        transport_support="pca-extrema-medoid",
+        assignment_cache=cache,
+        assignment_cache_key=("hidden", "pca-extrema-support-test"),
+    )
+
+    assert folded.shape == (3, 1)
+    transport = next(iter(cache.values()))
+    assert transport["transport_support"] == "pca-extrema-medoid"
+    support = set(transport["target_support_indices"].tolist())
+    assert 0 in support
+    assert 6 in support
+
+
 def test_transport_fold_can_use_diverse_medoid_support() -> None:
     torch = pytest.importorskip("torch")
     cache = {}
@@ -5421,6 +5516,55 @@ def test_countsketch_fold_uses_cached_signed_assignment_without_features() -> No
     assert cached["assignment_mode"] == "countsketch"
     assert cached["assignment_signs"] is not None
     assert set(cached["assignment"].tolist()) == {0, 1, 2}
+
+
+def test_signed_superpose_assignment_mixes_extremes_with_canceling_signs() -> None:
+    torch = pytest.importorskip("torch")
+    features = torch.tensor(
+        [
+            [3.0, 0.0],
+            [2.0, 0.0],
+            [1.0, 0.0],
+            [-1.0, 0.0],
+            [-2.0, 0.0],
+            [-3.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    assignment, signs = _activation_superpose_assignment(torch, features, target_dim=3, signed=True)
+
+    assert set(assignment.tolist()) == {0, 1, 2}
+    assert set(float(item) for item in signs.tolist()) == {-1.0, 1.0}
+    bucket_scores = []
+    for target_idx in range(3):
+        mask = assignment == target_idx
+        bucket_scores.append(float((features[mask, 0] * signs[mask]).abs().sum().item()))
+    assert all(score > 0.0 for score in bucket_scores)
+
+
+def test_pca_extrema_support_reserves_both_activation_edges() -> None:
+    torch = pytest.importorskip("torch")
+    features = torch.tensor(
+        [
+            [-5.0, 0.0],
+            [-3.0, 0.0],
+            [-1.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 0.0],
+            [3.0, 0.0],
+            [5.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+    weights = torch.ones(7, dtype=torch.float32)
+
+    support = _activation_pca_extrema_medoid_support_indices(torch, features, weights, target_dim=3)
+
+    chosen = set(support.tolist())
+    assert 0 in chosen
+    assert 6 in chosen
+    assert len(chosen) == 3
 
 
 def test_balanced_similarity_assignment_spreads_equal_signature_mass() -> None:

@@ -256,6 +256,21 @@ Implementation note:
   unsigned averaging. The mathematical bet is that paired incoming/outgoing
   folds reuse the same signs, making collision cross-terms cancel in
   expectation before recovery.
+- A new pure superposition lane is available via
+  `queue_qwen4b_lfm230m_multidonor_beststack_superpose_20260708.sh` and
+  `queue_qwen4b_gpt2_multidonor_beststack_superpose_20260708.sh`. These set
+  `INIT_FOLD_MODE=mean`, disable init activation-PCA basis projection, and use
+  `INIT_ACTIVATION_FOLD_ASSIGNMENT=signed-superpose`. The mathematical bet is
+  that, at high compression ratios, each child axis must carry a deliberately
+  mixed superposition of donor extremes with signs chosen to reduce bucket
+  moment bias, rather than one similarity cluster.
+- A PCA-extrema transport lane is available via
+  `queue_qwen4b_lfm230m_multidonor_beststack_pca_extrema_20260708.sh` and
+  `queue_qwen4b_gpt2_multidonor_beststack_pca_extrema_20260708.sh`. These keep
+  QR-Sinkhorn transport but use `TRANSPORT_SUPPORT=pca-extrema-medoid`, choosing
+  real donor axes at principal activation extremes before filling the remaining
+  support for coverage. The mathematical bet is that rare capability directions
+  live on activation-cloud boundaries and are lost by density-only medoids.
 
 ## First-Principles Experiment Ideas
 
@@ -282,3 +297,11 @@ test against the current failure mode.
    error on calibration states, and explicitly add the error into the next
    available fold rather than minimizing each layer independently. This is a
    control-theory view: conserve the end-to-end residual, not each component.
+6. Superposition buckets. Stop trying to make one child axis mean "one
+   concept". Seed each child axis with a diverse real donor axis, then add
+   opposite activation extremes with signs chosen to minimize each bucket's
+   feature moment. This tries to turn destructive collisions into controlled
+   superposition.
+7. Principal-extreme anchors. Select support axes from both ends of the top
+   activation principal directions before medoid fill-in. This protects
+   boundary/rareness signals that weighted centroids can wash out.

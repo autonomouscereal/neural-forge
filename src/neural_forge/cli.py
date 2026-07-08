@@ -171,13 +171,16 @@ def build_parser() -> argparse.ArgumentParser:
             "balanced-similarity",
             "balanced-signed-similarity",
             "countsketch",
+            "superpose",
+            "signed-superpose",
         ],
         default="balanced",
         help=(
             "How activation features assign source axes to folded target axes. signed modes group opposite "
             "activation directions by absolute similarity and apply the recovered sign during folding; balanced "
             "similarity modes softly penalize overloaded target axes; countsketch uses deterministic signed hashing "
-            "so collisions cancel in expectation."
+            "so collisions cancel in expectation; superpose modes deliberately mix activation extremes into each "
+            "target axis and signed-superpose chooses signs that reduce bucket moment bias."
         ),
     )
     hf_donor_init.add_argument(
@@ -206,6 +209,7 @@ def build_parser() -> argparse.ArgumentParser:
             "diverse-medoid",
             "domain-quantile-medoid",
             "domain-diverse-medoid",
+            "pca-extrema-medoid",
         ],
         default="centroid",
         help=(
@@ -216,7 +220,8 @@ def build_parser() -> argparse.ArgumentParser:
             "quantile-medoid picks real donor axes within activation-weight strata; "
             "diverse-medoid greedily covers activation geometry with real donor axes; "
             "domain-quantile-medoid reserves real donor medoids across calibration domains; "
-            "domain-diverse-medoid reserves domain slots while greedily covering activation geometry."
+            "domain-diverse-medoid reserves domain slots while greedily covering activation geometry; "
+            "pca-extrema-medoid reserves donor axes at principal activation extremes before filling for coverage."
         ),
     )
     hf_donor_init.add_argument(
@@ -1635,6 +1640,8 @@ def build_parser() -> argparse.ArgumentParser:
             "balanced-similarity",
             "balanced-signed-similarity",
             "countsketch",
+            "superpose",
+            "signed-superpose",
         ],
         default="balanced",
     )
@@ -1651,6 +1658,7 @@ def build_parser() -> argparse.ArgumentParser:
             "diverse-medoid",
             "domain-quantile-medoid",
             "domain-diverse-medoid",
+            "pca-extrema-medoid",
         ],
         default="centroid",
     )

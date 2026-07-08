@@ -48,6 +48,10 @@ PRE_RECONSTRUCTION_MAX_COSINE_DROP="${PRE_RECONSTRUCTION_MAX_COSINE_DROP:-0.01}"
 PRE_RECONSTRUCTION_MIN_FITTED_COSINE="${PRE_RECONSTRUCTION_MIN_FITTED_COSINE:--1.0}"
 INIT_PROJECTION_SCALE="${INIT_PROJECTION_SCALE:-target-rms}"
 INIT_PROJECTION_BLEND_ALPHA="${INIT_PROJECTION_BLEND_ALPHA:-1.0}"
+INIT_FOLD_MODE="${INIT_FOLD_MODE:-transport}"
+INIT_HIDDEN_BASIS_MODE="${INIT_HIDDEN_BASIS_MODE:-activation-pca}"
+INIT_HIDDEN_BASIS_SCOPE="${INIT_HIDDEN_BASIS_SCOPE:-layer}"
+INIT_HIDDEN_BASIS_PREPROCESS="${INIT_HIDDEN_BASIS_PREPROCESS:-uncentered-rowrms}"
 INIT_ACTIVATION_FOLD_ASSIGNMENT="${INIT_ACTIVATION_FOLD_ASSIGNMENT:-similarity}"
 INIT_FOLD_STAT_REPAIR="${INIT_FOLD_STAT_REPAIR:-none}"
 INIT_TRANSPORT_BACKEND="${INIT_TRANSPORT_BACKEND:-sinkhorn}"
@@ -201,11 +205,11 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --promote-policy "$PROMOTE_POLICY" \
   --stage-input-policy "$STAGE_INPUT_POLICY" \
   --final-output-head-policy "$FINAL_OUTPUT_HEAD_POLICY" \
-  --init-fold-mode transport \
-  --init-hidden-basis-mode activation-pca \
-  --init-hidden-basis-scope layer \
+  --init-fold-mode "$INIT_FOLD_MODE" \
+  --init-hidden-basis-mode "$INIT_HIDDEN_BASIS_MODE" \
+  --init-hidden-basis-scope "$INIT_HIDDEN_BASIS_SCOPE" \
   --init-hidden-basis-max-rows 4096 \
-  --init-hidden-basis-preprocess uncentered-rowrms \
+  --init-hidden-basis-preprocess "$INIT_HIDDEN_BASIS_PREPROCESS" \
   --init-activation-fold-assignment "$INIT_ACTIVATION_FOLD_ASSIGNMENT" \
   --init-fold-stat-repair "$INIT_FOLD_STAT_REPAIR" \
   --init-transport-backend "$INIT_TRANSPORT_BACKEND" \

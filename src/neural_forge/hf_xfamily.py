@@ -36,6 +36,8 @@ _ACTIVATION_FOLD_ASSIGNMENTS = {
     "balanced-similarity",
     "balanced-signed-similarity",
     "countsketch",
+    "superpose",
+    "signed-superpose",
 }
 _TRANSPORT_BACKENDS = {"sparse", "sinkhorn", "qr-sinkhorn"}
 _TRANSPORT_SUPPORTS = {
@@ -47,10 +49,11 @@ _TRANSPORT_SUPPORTS = {
     "diverse-medoid",
     "domain-quantile-medoid",
     "domain-diverse-medoid",
+    "pca-extrema-medoid",
 }
 _TRANSPORT_SUPPORT_MESSAGE = (
     "transport_support must be centroid, importance, quantile, medoid, quantile-medoid, "
-    "diverse-medoid, domain-quantile-medoid, or domain-diverse-medoid."
+    "diverse-medoid, domain-quantile-medoid, domain-diverse-medoid, or pca-extrema-medoid."
 )
 
 
@@ -358,7 +361,8 @@ def donor_projected_init(
     if activation_fold_assignment not in _ACTIVATION_FOLD_ASSIGNMENTS:
         raise ValueError(
             "activation_fold_assignment must be balanced, similarity, signed-similarity, "
-            "balanced-similarity, balanced-signed-similarity, or countsketch."
+            "balanced-similarity, balanced-signed-similarity, countsketch, "
+            "superpose, or signed-superpose."
         )
     if fold_stat_repair not in {"none", "rms"}:
         raise ValueError("fold_stat_repair must be none or rms.")
@@ -4398,7 +4402,8 @@ def _resize_tensor_to_shape(
     if activation_fold_assignment not in _ACTIVATION_FOLD_ASSIGNMENTS:
         raise ValueError(
             "activation_fold_assignment must be balanced, similarity, signed-similarity, "
-            "balanced-similarity, balanced-signed-similarity, or countsketch."
+            "balanced-similarity, balanced-signed-similarity, countsketch, "
+            "superpose, or signed-superpose."
         )
     if fold_stat_repair not in {"none", "rms"}:
         raise ValueError("fold_stat_repair must be none or rms.")
@@ -5609,6 +5614,102 @@ def _activation_domain_diverse_medoid_support_indices(
     return torch.tensor(selected[:target_dim], dtype=torch.long).sort().values
 
 
+def _activation_principal_directions(torch, feature_rows, fold_weights, max_dirs: int):
+    rows = _row_normalize(feature_rows.detach().cpu().to(torch.float32))
+    source_dim = int(rows.shape[0])
+    feature_dim = int(rows.shape[1]) if rows.dim() == 2 else 0
+    max_dirs = max(1, min(int(max_dirs), max(1, feature_dim)))
+    weights = fold_weights.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12)
+    if int(weights.numel()) != source_dim:
+        raise ValueError("Principal direction weights must match feature rows.")
+    if source_dim == 0 or feature_dim == 0:
+        raise ValueError("Principal directions require non-empty rank-2 features.")
+    weighted_mean = (rows * weights.unsqueeze(1)).sum(dim=0) / weights.sum().clamp_min(1e-12)
+    directions: list[Any] = []
+    centered = rows - weighted_mean.unsqueeze(0)
+    try:
+        covariance = centered.t().matmul(centered * weights.unsqueeze(1)) / weights.sum().clamp_min(1e-12)
+        eigenvalues, eigenvectors = torch.linalg.eigh(covariance.to(torch.float32))
+        order = torch.argsort(eigenvalues, descending=True).tolist()
+        for eig_idx in order:
+            vector = eigenvectors[:, int(eig_idx)].to(torch.float32)
+            if float(vector.norm().item()) > 1e-8:
+                directions.append(vector / vector.norm().clamp_min(1e-12))
+            if len(directions) >= max_dirs:
+                break
+    except Exception:
+        directions = []
+    if not directions:
+        fallback = weighted_mean
+        if float(fallback.norm().item()) <= 1e-8:
+            fallback = rows[int(torch.argmax(weights).item())]
+        directions.append(fallback / fallback.norm().clamp_min(1e-12))
+    return torch.stack(directions[:max_dirs], dim=0).to(torch.float32)
+
+
+def _activation_pca_extrema_medoid_support_indices(torch, feature_rows, fold_weights, target_dim: int):
+    source_dim = int(feature_rows.shape[0])
+    target_dim = int(target_dim)
+    if target_dim <= 0:
+        raise ValueError("target_dim must be positive.")
+    if source_dim <= target_dim:
+        return torch.arange(source_dim, dtype=torch.long)
+    rows = _row_normalize(feature_rows.detach().cpu().to(torch.float32))
+    weights = fold_weights.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12)
+    if int(weights.numel()) != source_dim:
+        raise ValueError("PCA-extrema support weights must match feature rows.")
+    direction_count = max(1, min(int(rows.shape[1]), int(math.ceil(float(target_dim) / 2.0))))
+    directions = _activation_principal_directions(torch, rows, weights, direction_count)
+    weight_score = weights / weights.max().clamp_min(1e-12)
+    selected: list[int] = []
+    selected_set: set[int] = set()
+
+    def add_first_available(order) -> None:
+        for source_idx in order:
+            source_idx = int(source_idx)
+            if source_idx in selected_set:
+                continue
+            selected.append(source_idx)
+            selected_set.add(source_idx)
+            return
+
+    for direction in directions:
+        projections = rows.matmul(direction.to(rows.dtype))
+        high_score = projections + 0.02 * weight_score
+        low_score = -projections + 0.02 * weight_score
+        add_first_available(torch.argsort(high_score, descending=True).tolist())
+        if len(selected) == target_dim:
+            break
+        add_first_available(torch.argsort(low_score, descending=True).tolist())
+        if len(selected) == target_dim:
+            break
+
+    if len(selected) < target_dim:
+        for source_idx in _activation_diverse_medoid_support_indices(
+            torch,
+            rows,
+            weights,
+            target_dim,
+        ).tolist():
+            source_idx = int(source_idx)
+            if source_idx in selected_set:
+                continue
+            selected.append(source_idx)
+            selected_set.add(source_idx)
+            if len(selected) == target_dim:
+                break
+    if len(selected) < target_dim:
+        for source_idx in torch.argsort(weights, descending=True).tolist():
+            source_idx = int(source_idx)
+            if source_idx in selected_set:
+                continue
+            selected.append(source_idx)
+            selected_set.add(source_idx)
+            if len(selected) == target_dim:
+                break
+    return torch.tensor(selected[:target_dim], dtype=torch.long).sort().values
+
+
 def _activation_diverse_medoid_support_indices(torch, feature_rows, fold_weights, target_dim: int):
     source_dim = int(feature_rows.shape[0])
     target_dim = int(target_dim)
@@ -5752,11 +5853,11 @@ def _activation_transport_diagnostics(torch, values, scores, fold_weights, targe
 
 
 def _activation_assignment_mode_is_signed(mode: str) -> bool:
-    return str(mode) in {"signed-similarity", "balanced-signed-similarity", "countsketch"}
+    return str(mode) in {"signed-similarity", "balanced-signed-similarity", "countsketch", "signed-superpose"}
 
 
 def _activation_assignment_mode_is_mass_balanced(mode: str) -> bool:
-    return str(mode) in {"balanced-similarity", "balanced-signed-similarity"}
+    return str(mode) in {"balanced-similarity", "balanced-signed-similarity", "superpose", "signed-superpose"}
 
 
 def _countsketch_activation_assignment(torch, source_dim: int, target_dim: int):
@@ -5784,6 +5885,88 @@ def _countsketch_activation_assignment(torch, source_dim: int, target_dim: int):
     )
 
 
+def _activation_superpose_assignment(torch, features, target_dim: int, weights=None, signed: bool = False):
+    if target_dim <= 0:
+        raise ValueError("target_dim must be positive.")
+    feature_rows = features.detach().cpu().to(torch.float32)
+    if feature_rows.dim() != 2:
+        raise ValueError("Activation features must be a rank-2 tensor.")
+    source_dim = int(feature_rows.shape[0])
+    if source_dim == 0:
+        raise ValueError("Activation features cannot be empty.")
+    if source_dim < target_dim:
+        raise ValueError("target_dim cannot exceed activation feature rows.")
+    if weights is None:
+        fold_weights = torch.ones(source_dim, dtype=torch.float32)
+    else:
+        fold_weights = weights.detach().cpu().to(torch.float32).flatten()
+        if int(fold_weights.numel()) != source_dim:
+            raise ValueError("Activation assignment weights must match feature rows.")
+        fold_weights = fold_weights.clamp_min(1e-12)
+    assignment = torch.full((source_dim,), -1, dtype=torch.long)
+    signs = torch.ones(source_dim, dtype=torch.float32)
+    if target_dim == 1:
+        assignment[:] = 0
+        return (assignment, signs) if signed else assignment
+
+    rows = _row_normalize(feature_rows)
+    seeds = _activation_diverse_medoid_support_indices(torch, rows, fold_weights, target_dim)
+    loads = torch.zeros(target_dim, dtype=torch.float32)
+    moments = torch.zeros((target_dim, int(rows.shape[1])), dtype=torch.float32)
+    for target_idx, source_idx in enumerate(seeds.tolist()):
+        source_idx = int(source_idx)
+        assignment[source_idx] = int(target_idx)
+        weight = fold_weights[source_idx]
+        loads[int(target_idx)] += weight
+        moments[int(target_idx)] += rows[source_idx] * weight
+
+    direction = _activation_principal_directions(torch, rows, fold_weights, 1)[0]
+    projection = rows.matmul(direction.to(rows.dtype))
+    ordered = torch.argsort(projection).tolist()
+    extreme_order: list[int] = []
+    left = 0
+    right = len(ordered) - 1
+    while left <= right:
+        extreme_order.append(int(ordered[right]))
+        if left != right:
+            extreme_order.append(int(ordered[left]))
+        right -= 1
+        left += 1
+
+    mean_load = (fold_weights.sum() / float(target_dim)).clamp_min(1e-12)
+    for source_idx in extreme_order:
+        source_idx = int(source_idx)
+        if int(assignment[source_idx].item()) >= 0:
+            continue
+        row = rows[source_idx]
+        weight = fold_weights[source_idx]
+        plus = moments + row.unsqueeze(0) * weight
+        minus = moments - row.unsqueeze(0) * weight
+        plus_norm = plus.pow(2).sum(dim=1)
+        minus_norm = minus.pow(2).sum(dim=1)
+        if signed:
+            use_minus = minus_norm < plus_norm
+            moment_norm = torch.minimum(plus_norm, minus_norm).sqrt()
+        else:
+            use_minus = torch.zeros(target_dim, dtype=torch.bool)
+            moment_norm = plus_norm.sqrt()
+        next_load = loads + weight
+        load_cost = (next_load - mean_load).abs() / mean_load
+        moment_cost = moment_norm / next_load.clamp_min(1e-12)
+        target_idx = int(torch.argmin(load_cost + 0.35 * moment_cost).item())
+        assignment[source_idx] = target_idx
+        sign = -1.0 if bool(use_minus[target_idx].item()) else 1.0
+        signs[source_idx] = sign
+        loads[target_idx] += weight
+        moments[target_idx] += row * weight * sign
+
+    if int((assignment < 0).sum().item()) > 0:
+        assignment[assignment < 0] = 0
+    if signed:
+        return assignment.to(torch.long), signs.to(torch.float32)
+    return assignment.to(torch.long)
+
+
 def _activation_assignment_for_mode(
     torch,
     features,
@@ -5795,11 +5978,16 @@ def _activation_assignment_for_mode(
     if assignment_mode not in _ACTIVATION_FOLD_ASSIGNMENTS:
         raise ValueError(
             "assignment_mode must be balanced, similarity, signed-similarity, "
-            "balanced-similarity, balanced-signed-similarity, or countsketch."
+            "balanced-similarity, balanced-signed-similarity, countsketch, "
+            "superpose, or signed-superpose."
         )
     if assignment_mode == "countsketch":
         source_dim = int(features.shape[0]) if features is not None else int(fold_weights.numel())
         return _countsketch_activation_assignment(torch, source_dim, target_dim)
+    if assignment_mode == "superpose":
+        return _activation_superpose_assignment(torch, features, target_dim, fold_weights, signed=False), None
+    if assignment_mode == "signed-superpose":
+        return _activation_superpose_assignment(torch, features, target_dim, fold_weights, signed=True)
     if assignment_mode == "balanced":
         return _balanced_activation_assignment(torch, fold_weights, target_dim), None
     if assignment_mode == "similarity":
@@ -5854,7 +6042,8 @@ def _build_sparse_activation_transport(
     if assignment_mode not in _ACTIVATION_FOLD_ASSIGNMENTS:
         raise ValueError(
             "assignment_mode must be balanced, similarity, signed-similarity, "
-            "balanced-similarity, balanced-signed-similarity, or countsketch."
+            "balanced-similarity, balanced-signed-similarity, countsketch, "
+            "superpose, or signed-superpose."
         )
     signed = bool(signed) or _activation_assignment_mode_is_signed(assignment_mode)
     if transport_backend not in _TRANSPORT_BACKENDS:
@@ -5920,6 +6109,14 @@ def _build_sparse_activation_transport(
         centroid_rows = feature_rows[support_indices]
         domain_support_used = isinstance(domain_features, dict) and isinstance(domain_weights, dict)
         domain_support_count = len(set(domain_features.keys()) & set(domain_weights.keys())) if domain_support_used else 0
+    elif transport_support == "pca-extrema-medoid":
+        support_indices = _activation_pca_extrema_medoid_support_indices(
+            torch,
+            raw_feature_rows,
+            fold_weights,
+            target_dim,
+        )
+        centroid_rows = feature_rows[support_indices]
     elif transport_support == "diverse-medoid":
         support_indices = _activation_diverse_medoid_support_indices(
             torch,
@@ -5982,6 +6179,7 @@ def _build_sparse_activation_transport(
         "diverse-medoid",
         "domain-quantile-medoid",
         "domain-diverse-medoid",
+        "pca-extrema-medoid",
     }:
         target_mass = _activation_transport_target_mass(torch, scores, fold_weights, target_dim)
     else:
@@ -6316,7 +6514,8 @@ def _resize_tensor_axis_mean_fold(
     if assignment_mode not in _ACTIVATION_FOLD_ASSIGNMENTS:
         raise ValueError(
             "assignment_mode must be balanced, similarity, signed-similarity, "
-            "balanced-similarity, balanced-signed-similarity, or countsketch."
+            "balanced-similarity, balanced-signed-similarity, countsketch, "
+            "superpose, or signed-superpose."
         )
     if fold_stat_repair not in {"none", "rms"}:
         raise ValueError("fold_stat_repair must be none or rms.")
