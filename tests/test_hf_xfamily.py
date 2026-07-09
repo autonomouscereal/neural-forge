@@ -185,6 +185,7 @@ from neural_forge.hf_xfamily import _usable_pipeline_candidates
 from neural_forge.hf_xfamily import _validate_channel_assignment
 from neural_forge.hf_xfamily import _validate_layer_alpha_settings
 from neural_forge.hf_xfamily import _with_consumer_hidden_reduction
+from neural_forge.hf_xfamily import donor_projected_init
 from neural_forge.hf_xfamily import sweep_cross_family_vocab_merge
 from neural_forge.hf_xfamily import sweep_cross_family_mlp_merge
 
@@ -1643,6 +1644,7 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.activation_fit_min_validation_rows == 12
     assert donor_init_args.activation_fit_min_relative_improvement == pytest.approx(0.03)
     assert donor_init_args.activation_fit_max_cosine_drop == pytest.approx(0.04)
+
     assert donor_init_args.activation_feature_mode == "covariance"
     assert donor_init_args.activation_subspace_rank == 6
     assert donor_init_args.activation_domain_balance == "keyword"
@@ -2034,6 +2036,34 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert xfamily_reconstruct_args.device == "cpu"
     assert xfamily_reconstruct_args.calibration_file == "calibration.jsonl"
     assert xfamily_reconstruct_args.max_calibration_texts == 7
+
+
+def test_cli_accepts_anchor_transplant_fold_modes() -> None:
+    donor_args = build_parser().parse_args(
+        [
+            "hf-donor-project-init",
+            "out",
+            "--target-config-model",
+            "target",
+            "--donor-model",
+            "donor",
+            "--fold-mode",
+            "anchor-transplant",
+        ]
+    )
+    chain_args = build_parser().parse_args(
+        [
+            "hf-xfamily-chain-anchor-compress",
+            "donor",
+            "anchor",
+            "out",
+            "--init-fold-mode",
+            "anchor-transplant",
+        ]
+    )
+
+    assert donor_args.fold_mode == "anchor-transplant"
+    assert chain_args.init_fold_mode == "anchor-transplant"
 
 
 def test_parse_layer_groups() -> None:
@@ -2646,6 +2676,145 @@ def test_resize_tensor_to_shape_rms_fold_preserves_more_variance() -> None:
 
     assert mean_folded.tolist() == [[1.0, 1.0], [1.0, 1.0]]
     assert rms_folded.flatten().tolist() == pytest.approx([2**0.5, 2**0.5, 2**0.5, 2**0.5])
+
+
+def test_anchor_transplant_fold_copies_support_axes_and_folds_remainder() -> None:
+    torch = pytest.importorskip("torch")
+    source = torch.tensor(
+        [
+            [10.0, 0.0],
+            [0.0, 9.0],
+            [0.0, 10.0],
+        ],
+        dtype=torch.float32,
+    )
+    weights = torch.tensor([10.0, 1.0, 9.0], dtype=torch.float32)
+    cache = {}
+
+    folded = _resize_tensor_axis_mean_fold(
+        torch,
+        source,
+        axis=0,
+        target_dim=2,
+        fold_mode="anchor-transplant",
+        weights=weights,
+        features=source,
+        assignment_mode="balanced-signed-similarity",
+        transport_support="importance",
+        assignment_cache=cache,
+        assignment_cache_key=("unit", "axis0"),
+    )
+
+    assert folded.shape == (2, 2)
+    assert folded[0].tolist() == pytest.approx([10.0, 0.0])
+    assert folded[1].tolist() == pytest.approx([0.0, 9.5])
+    report = _axis_assignment_cache_report(cache)
+    assert report[0]["map_type"] == "anchor_transplant"
+    assert report[0]["anchor_support_indices"] == [0, 2]
+    assert report[0]["anchor_assignment_mode"] == "balanced-signed-similarity"
+
+
+def test_anchor_transplant_fold_reuses_cached_anchor_assignment() -> None:
+    torch = pytest.importorskip("torch")
+    source = torch.tensor(
+        [
+            [10.0, 0.0],
+            [0.0, 9.0],
+            [0.0, 10.0],
+        ],
+        dtype=torch.float32,
+    )
+    weights = torch.tensor([10.0, 1.0, 9.0], dtype=torch.float32)
+    cache = {}
+    _resize_tensor_axis_mean_fold(
+        torch,
+        source,
+        axis=0,
+        target_dim=2,
+        fold_mode="anchor-transplant",
+        weights=weights,
+        features=source,
+        assignment_mode="balanced-signed-similarity",
+        transport_support="importance",
+        assignment_cache=cache,
+        assignment_cache_key=("unit", "axis0"),
+    )
+    second_source = torch.tensor(
+        [
+            [100.0, 0.0],
+            [0.0, 90.0],
+            [0.0, 100.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    folded = _resize_tensor_axis_mean_fold(
+        torch,
+        second_source,
+        axis=0,
+        target_dim=2,
+        fold_mode="anchor-transplant",
+        weights=weights,
+        features=-source,
+        assignment_mode="balanced-signed-similarity",
+        transport_support="importance",
+        assignment_cache=cache,
+        assignment_cache_key=("unit", "axis0"),
+    )
+
+    assert folded.tolist() == pytest.approx([[100.0, 0.0], [0.0, 95.0]])
+
+
+def test_attention_head_anchor_transplant_uses_activation_profiles() -> None:
+    torch = pytest.importorskip("torch")
+    source = torch.tensor(
+        [
+            [10.0, 0.0],
+            [0.0, 9.0],
+            [0.0, 10.0],
+            [1.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+    features = source.clone()
+    weights = torch.tensor([10.0, 1.0, 9.0, 1.0], dtype=torch.float32)
+    cache = {}
+
+    resized = _resize_attention_tensor_to_shape(
+        torch,
+        source,
+        (2, 2),
+        "self_attn.q_proj.weight",
+        _Obj(num_attention_heads=4),
+        _Obj(num_attention_heads=2),
+        fold_mode="mean",
+        attention_axis_weights={
+            0: {
+                "weights": weights,
+                "features": features,
+                "assignment_key": ("unit", "attention-heads"),
+            }
+        },
+        attention_head_fold_mode="anchor-transplant",
+        activation_fold_assignment="balanced-signed-similarity",
+        transport_support="importance",
+        assignment_cache=cache,
+    )
+
+    assert resized.shape == (2, 2)
+    report = _axis_assignment_cache_report(cache)
+    assert report[0]["map_type"] == "anchor_transplant"
+    assert report[0]["anchor_support_indices"] == [0, 2]
+
+
+def test_donor_projected_init_anchor_transplant_requires_activation_texts(tmp_path) -> None:
+    with pytest.raises(ValueError, match="anchor-transplant.*activation calibration"):
+        donor_projected_init(
+            target_config_model="target",
+            donor_model="donor",
+            output_dir=tmp_path / "out",
+            fold_mode="anchor-transplant",
+        )
 
 
 def test_activation_hidden_basis_is_orthonormal() -> None:
@@ -8887,7 +9056,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
             "--max-anchors",
             "1234",
             "--fold-mode",
-            "mean",
+            "anchor-transplant",
             "--hidden-basis-mode",
             "activation-pca",
             "--hidden-basis-scope",
@@ -8974,7 +9143,7 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "seed": 11,
         "ridge": 0.02,
         "max_anchors": 1234,
-        "fold_mode": "mean",
+        "fold_mode": "anchor-transplant",
         "hidden_basis_mode": "activation-pca",
         "hidden_basis_scope": "layer",
         "hidden_basis_max_rows": 99,

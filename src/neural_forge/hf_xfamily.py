@@ -351,8 +351,8 @@ def donor_projected_init(
         raise ValueError("ridge must be non-negative.")
     if max_anchors <= 0:
         raise ValueError("max_anchors must be positive.")
-    if fold_mode not in {"mean", "rms", "transport"}:
-        raise ValueError("fold_mode must be mean, rms, or transport.")
+    if fold_mode not in {"mean", "rms", "transport", "anchor-transplant"}:
+        raise ValueError("fold_mode must be mean, rms, transport, or anchor-transplant.")
     if hidden_basis_mode not in {"none", "activation-pca", "shared-token-ridge", "donor-token-pca", "activation-token-pca"}:
         raise ValueError(
             "hidden_basis_mode must be none, activation-pca, shared-token-ridge, "
@@ -445,6 +445,8 @@ def donor_projected_init(
     activation_fit_alpha = _bounded_alpha(activation_fit_alpha, "activation_fit_alpha")
     if activation_max_length <= 1:
         raise ValueError("activation_max_length must be greater than 1.")
+    if fold_mode == "anchor-transplant" and not activation_calibration_texts:
+        raise ValueError("anchor-transplant fold_mode requires activation calibration texts.")
     effective_activation_fit_max_rows = _effective_activation_fit_max_rows(
         activation_fit_linears,
         activation_fit_max_rows,
@@ -4477,8 +4479,8 @@ def _resize_tensor_to_shape(
     transport_support: str = "centroid",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
 ):
-    if fold_mode not in {"mean", "rms", "transport"}:
-        raise ValueError("fold_mode must be mean, rms, or transport.")
+    if fold_mode not in {"mean", "rms", "transport", "anchor-transplant"}:
+        raise ValueError("fold_mode must be mean, rms, transport, or anchor-transplant.")
     if activation_fold_assignment not in _ACTIVATION_FOLD_ASSIGNMENTS:
         raise ValueError(
             "activation_fold_assignment must be balanced, similarity, signed-similarity, "
@@ -5541,7 +5543,7 @@ def _axis_assignment_cache_key(
         str(fold_mode),
         str(reduction),
     )
-    if str(fold_mode) == "transport":
+    if str(fold_mode) in {"transport", "anchor-transplant"}:
         key = (*key, str(transport_backend or ""), str(transport_support or ""))
     return key
 
@@ -5581,25 +5583,32 @@ def _axis_assignment_cache_report(assignment_cache: dict[Any, dict[str, Any]]) -
     report = []
     for key, item in assignment_cache.items():
         map_type = (
-            "transport"
-            if "transport_indices" in item or "transport_matrix" in item or "transport_coefficients" in item
-            else "assignment"
+            "anchor_transplant"
+            if "anchor_support_indices" in item
+            else (
+                "transport"
+                if "transport_indices" in item or "transport_matrix" in item or "transport_coefficients" in item
+                else "assignment"
+            )
         )
         transport_matrix = item.get("transport_matrix")
         transport_coefficients = item.get("transport_coefficients")
         support_indices = item.get("target_support_indices")
+        anchor_indices = item.get("anchor_support_indices")
         report.append(
             {
                 "key": repr(key),
                 "map_type": map_type,
                 "transport_backend": item.get("transport_backend"),
                 "transport_support": item.get("transport_support"),
+                "anchor_assignment_mode": item.get("anchor_assignment_mode"),
                 "domain_support_used": bool(item.get("domain_support_used", False)),
                 "domain_support_count": int(item.get("domain_support_count", 0)),
                 "target_masses": None
                 if item.get("target_masses") is None
                 else item["target_masses"].tolist(),
                 "target_support_indices": support_indices.tolist() if support_indices is not None else None,
+                "anchor_support_indices": anchor_indices.tolist() if anchor_indices is not None else None,
                 "transport_matrix_shape": list(transport_matrix.shape) if transport_matrix is not None else None,
                 "transport_coefficients_shape": list(transport_coefficients.shape)
                 if transport_coefficients is not None
@@ -6391,6 +6400,290 @@ def _activation_assignment_for_mode(
     return assignment, signs
 
 
+def _activation_support_indices_for_mode(
+    torch,
+    raw_feature_rows,
+    feature_rows,
+    fold_weights,
+    target_dim: int,
+    domain_weights=None,
+    domain_features=None,
+    transport_support: str = "centroid",
+    assignment_mode: str = "similarity",
+) -> dict[str, Any]:
+    _validate_transport_support(transport_support)
+    source_dim = int(feature_rows.shape[0])
+    target_dim = int(target_dim)
+    if source_dim <= target_dim:
+        raise ValueError("Support selection is only used for source_dim > target_dim.")
+    domain_support_used = False
+    domain_support_count = 0
+    support_indices = None
+    if transport_support == "importance":
+        support_indices = torch.topk(fold_weights, k=target_dim, largest=True).indices.sort().values
+    elif transport_support == "quantile":
+        support_indices = _activation_quantile_support_indices(
+            torch,
+            raw_feature_rows,
+            fold_weights,
+            target_dim,
+        )
+    elif transport_support == "quantile-medoid":
+        support_indices = _activation_quantile_medoid_support_indices(
+            torch,
+            raw_feature_rows,
+            fold_weights,
+            target_dim,
+        )
+    elif transport_support == "domain-quantile-medoid":
+        support_indices = _activation_domain_quantile_medoid_support_indices(
+            torch,
+            raw_feature_rows,
+            fold_weights,
+            domain_features,
+            domain_weights,
+            target_dim,
+        )
+        domain_support_used = isinstance(domain_features, dict) and isinstance(domain_weights, dict)
+        domain_support_count = len(set(domain_features.keys()) & set(domain_weights.keys())) if domain_support_used else 0
+    elif transport_support == "domain-diverse-medoid":
+        support_indices = _activation_domain_diverse_medoid_support_indices(
+            torch,
+            raw_feature_rows,
+            fold_weights,
+            domain_features,
+            domain_weights,
+            target_dim,
+        )
+        domain_support_used = isinstance(domain_features, dict) and isinstance(domain_weights, dict)
+        domain_support_count = len(set(domain_features.keys()) & set(domain_weights.keys())) if domain_support_used else 0
+    elif transport_support == "pca-extrema-medoid":
+        support_indices = _activation_pca_extrema_medoid_support_indices(
+            torch,
+            raw_feature_rows,
+            fold_weights,
+            target_dim,
+        )
+    elif transport_support == "volume-medoid":
+        support_indices = _activation_volume_medoid_support_indices(
+            torch,
+            raw_feature_rows,
+            fold_weights,
+            target_dim,
+        )
+    elif transport_support == "diverse-medoid":
+        support_indices = _activation_diverse_medoid_support_indices(
+            torch,
+            raw_feature_rows,
+            fold_weights,
+            target_dim,
+        )
+    elif transport_support == "medoid":
+        seed_assignment, _seed_signs = _activation_assignment_for_mode(
+            torch,
+            feature_rows,
+            target_dim,
+            fold_weights,
+            assignment_mode if assignment_mode != "balanced" else "similarity",
+            iterations=4,
+        )
+        support_indices = _activation_medoid_support_indices(
+            torch,
+            feature_rows,
+            fold_weights,
+            seed_assignment,
+            target_dim,
+        )
+    return {
+        "indices": None if support_indices is None else support_indices.detach().cpu().to(torch.long),
+        "domain_support_used": bool(domain_support_used),
+        "domain_support_count": int(domain_support_count),
+    }
+
+
+def _unique_anchor_support_indices(torch, support_indices, fold_weights, target_dim: int):
+    target_dim = int(target_dim)
+    source_dim = int(fold_weights.numel())
+    selected: list[int] = []
+    seen: set[int] = set()
+    if support_indices is not None:
+        for idx in support_indices.detach().cpu().to(torch.long).flatten().tolist():
+            idx = int(idx)
+            if 0 <= idx < source_dim and idx not in seen:
+                selected.append(idx)
+                seen.add(idx)
+            if len(selected) >= target_dim:
+                break
+    if len(selected) < target_dim:
+        for idx in torch.argsort(fold_weights, descending=True).tolist():
+            idx = int(idx)
+            if idx not in seen:
+                selected.append(idx)
+                seen.add(idx)
+            if len(selected) >= target_dim:
+                break
+    if len(selected) != target_dim:
+        raise ValueError("Could not choose enough unique anchor transplant axes.")
+    return torch.tensor(selected, dtype=torch.long)
+
+
+def _build_anchor_transplant_assignment(
+    torch,
+    features,
+    target_dim: int,
+    weights=None,
+    domain_weights=None,
+    domain_features=None,
+    transport_support: str = "importance",
+    assignment_mode: str = "balanced-signed-similarity",
+):
+    if assignment_mode not in _ACTIVATION_FOLD_ASSIGNMENTS:
+        raise ValueError(
+            "assignment_mode must be balanced, similarity, signed-similarity, "
+            "balanced-similarity, balanced-signed-similarity, countsketch, "
+            "superpose, or signed-superpose."
+        )
+    _validate_transport_support(transport_support)
+    if features is not None:
+        raw_feature_rows = features.detach().cpu().to(torch.float32)
+        if raw_feature_rows.dim() != 2:
+            raise ValueError("Anchor transplant features must be a rank-2 tensor.")
+        source_dim = int(raw_feature_rows.shape[0])
+    elif weights is not None:
+        source_dim = int(weights.detach().cpu().flatten().numel())
+        raw_feature_rows = None
+    else:
+        raise ValueError("anchor-transplant fold_mode requires activation features or weights.")
+    if source_dim <= int(target_dim):
+        raise ValueError("Anchor transplant is only used for source_dim > target_dim.")
+    if weights is None:
+        fold_weights = torch.ones(source_dim, dtype=torch.float32)
+    else:
+        fold_weights = weights.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12)
+        if int(fold_weights.numel()) != source_dim:
+            raise ValueError("Anchor transplant weights must match the source dimension.")
+    feature_rows = None if raw_feature_rows is None else _row_normalize(raw_feature_rows)
+    support = {
+        "indices": None,
+        "domain_support_used": False,
+        "domain_support_count": 0,
+    }
+    if feature_rows is not None:
+        support = _activation_support_indices_for_mode(
+            torch,
+            raw_feature_rows,
+            feature_rows,
+            fold_weights,
+            int(target_dim),
+            domain_weights=domain_weights,
+            domain_features=domain_features,
+            transport_support=transport_support,
+            assignment_mode=assignment_mode,
+        )
+    elif transport_support == "importance":
+        support["indices"] = torch.topk(fold_weights, k=int(target_dim), largest=True).indices.sort().values
+    anchor_indices = _unique_anchor_support_indices(torch, support.get("indices"), fold_weights, int(target_dim))
+    anchor_mask = torch.zeros(source_dim, dtype=torch.bool)
+    anchor_mask[anchor_indices] = True
+    assignment = torch.zeros(source_dim, dtype=torch.long)
+    assignment[anchor_indices] = torch.arange(int(target_dim), dtype=torch.long)
+    assignment_signs = torch.ones(source_dim, dtype=torch.float32)
+    non_anchor = torch.where(~anchor_mask)[0]
+    loads = fold_weights[anchor_indices].clone().to(torch.float32).clamp_min(1e-12)
+    if int(non_anchor.numel()) > 0:
+        if feature_rows is not None:
+            raw_scores = feature_rows[non_anchor].matmul(feature_rows[anchor_indices].t())
+            signed = _activation_assignment_mode_is_signed(assignment_mode)
+            scores = raw_scores.abs() if signed else raw_scores
+            if _activation_assignment_mode_is_mass_balanced(assignment_mode):
+                order = torch.argsort(fold_weights[non_anchor], descending=True).tolist()
+                assigned_bins = torch.empty(int(non_anchor.numel()), dtype=torch.long)
+                for pos in order:
+                    source_idx = int(non_anchor[int(pos)].item())
+                    weighted_scores = scores[int(pos)] / loads.clamp_min(1e-12).sqrt()
+                    target_idx = int(torch.argmax(weighted_scores).item())
+                    assigned_bins[int(pos)] = target_idx
+                    loads[target_idx] += fold_weights[source_idx]
+            else:
+                assigned_bins = torch.argmax(scores, dim=1).to(torch.long)
+            assignment[non_anchor] = assigned_bins
+            if signed:
+                chosen_scores = raw_scores.gather(1, assigned_bins.unsqueeze(1)).squeeze(1)
+                signs = torch.where(chosen_scores < 0, -torch.ones_like(chosen_scores), torch.ones_like(chosen_scores))
+                assignment_signs[non_anchor] = signs
+        else:
+            order = torch.argsort(fold_weights[non_anchor], descending=True).tolist()
+            for pos in order:
+                source_idx = int(non_anchor[int(pos)].item())
+                target_idx = int(torch.argmin(loads).item())
+                assignment[source_idx] = target_idx
+                loads[target_idx] += fold_weights[source_idx]
+    return {
+        "assignment": assignment.detach().cpu().to(torch.long),
+        "assignment_signs": assignment_signs.detach().cpu().to(torch.float32),
+        "anchor_support_indices": anchor_indices.detach().cpu().to(torch.long),
+        "target_support_indices": anchor_indices.detach().cpu().to(torch.long),
+        "source_dim": int(source_dim),
+        "target_dim": int(target_dim),
+        "assignment_mode": "anchor-transplant",
+        "anchor_assignment_mode": str(assignment_mode),
+        "transport_support": transport_support,
+        "domain_support_used": bool(support.get("domain_support_used", False)),
+        "domain_support_count": int(support.get("domain_support_count", 0)),
+    }
+
+
+def _apply_anchor_transplant_fold(
+    torch,
+    flat,
+    assignment,
+    assignment_signs,
+    anchor_indices,
+    fold_weights,
+    reduction: str,
+    fold_mode: str,
+):
+    source_dim = int(flat.shape[0])
+    target_dim = int(anchor_indices.numel())
+    assignment = assignment.detach().cpu().to(torch.long)
+    if int(assignment.numel()) != source_dim:
+        raise ValueError("Anchor transplant assignment has the wrong source dimension.")
+    if int(assignment.min().item()) < 0 or int(assignment.max().item()) >= target_dim:
+        raise ValueError("Anchor transplant assignment has out-of-range target bins.")
+    anchor_indices = anchor_indices.detach().cpu().to(torch.long)
+    if int(anchor_indices.numel()) != target_dim:
+        raise ValueError("Anchor transplant support has the wrong target dimension.")
+    signs = assignment_signs.detach().cpu().to(flat.dtype).flatten()
+    if int(signs.numel()) != source_dim:
+        raise ValueError("Anchor transplant signs have the wrong source dimension.")
+    folded = flat[anchor_indices].clone()
+    anchor_mask = torch.zeros(source_dim, dtype=torch.bool)
+    anchor_mask[anchor_indices] = True
+    non_anchor = torch.where(~anchor_mask)[0]
+    if int(non_anchor.numel()) == 0:
+        return folded
+    target_idx = assignment[non_anchor]
+    signed_rows = flat[non_anchor] * signs[non_anchor].to(flat.dtype).unsqueeze(1)
+    weights = fold_weights.detach().cpu().to(flat.dtype).flatten().clamp_min(1e-12)
+    counts = torch.zeros(target_dim, dtype=flat.dtype)
+    counts.index_add_(0, target_idx, weights[non_anchor])
+    if reduction == "sum":
+        folded.index_add_(0, target_idx, signed_rows)
+    elif reduction == "sqrt-sum":
+        folded.index_add_(0, target_idx, signed_rows)
+        folded = folded / (counts + 1.0).clamp_min(1.0).sqrt().unsqueeze(1)
+    else:
+        base = folded.clone()
+        anchor_rows = folded[target_idx]
+        residual = signed_rows - anchor_rows
+        weighted_residual = residual * weights[non_anchor].unsqueeze(1)
+        residual_accum = torch.zeros_like(folded)
+        residual_accum.index_add_(0, target_idx, weighted_residual)
+        divisor = (counts + 1.0).sqrt() if fold_mode == "rms" else counts + 1.0
+        folded = base + residual_accum / divisor.clamp_min(1.0).unsqueeze(1)
+    return folded
+
+
 def _build_sparse_activation_transport(
     torch,
     features,
@@ -6433,92 +6726,21 @@ def _build_sparse_activation_transport(
             raise ValueError("Activation transport weights must match feature rows.")
     raw_feature_rows = feature_rows
     feature_rows = _row_normalize(feature_rows)
-    support_indices = None
-    domain_support_used = False
-    domain_support_count = 0
-    if transport_support == "importance":
-        support_indices = torch.topk(fold_weights, k=target_dim, largest=True).indices.sort().values
-        centroid_rows = feature_rows[support_indices]
-    elif transport_support == "quantile":
-        support_indices = _activation_quantile_support_indices(
-            torch,
-            raw_feature_rows,
-            fold_weights,
-            target_dim,
-        )
-        centroid_rows = feature_rows[support_indices]
-    elif transport_support == "quantile-medoid":
-        support_indices = _activation_quantile_medoid_support_indices(
-            torch,
-            raw_feature_rows,
-            fold_weights,
-            target_dim,
-        )
-        centroid_rows = feature_rows[support_indices]
-    elif transport_support == "domain-quantile-medoid":
-        support_indices = _activation_domain_quantile_medoid_support_indices(
-            torch,
-            raw_feature_rows,
-            fold_weights,
-            domain_features,
-            domain_weights,
-            target_dim,
-        )
-        centroid_rows = feature_rows[support_indices]
-        domain_support_used = isinstance(domain_features, dict) and isinstance(domain_weights, dict)
-        domain_support_count = len(set(domain_features.keys()) & set(domain_weights.keys())) if domain_support_used else 0
-    elif transport_support == "domain-diverse-medoid":
-        support_indices = _activation_domain_diverse_medoid_support_indices(
-            torch,
-            raw_feature_rows,
-            fold_weights,
-            domain_features,
-            domain_weights,
-            target_dim,
-        )
-        centroid_rows = feature_rows[support_indices]
-        domain_support_used = isinstance(domain_features, dict) and isinstance(domain_weights, dict)
-        domain_support_count = len(set(domain_features.keys()) & set(domain_weights.keys())) if domain_support_used else 0
-    elif transport_support == "pca-extrema-medoid":
-        support_indices = _activation_pca_extrema_medoid_support_indices(
-            torch,
-            raw_feature_rows,
-            fold_weights,
-            target_dim,
-        )
-        centroid_rows = feature_rows[support_indices]
-    elif transport_support == "volume-medoid":
-        support_indices = _activation_volume_medoid_support_indices(
-            torch,
-            raw_feature_rows,
-            fold_weights,
-            target_dim,
-        )
-        centroid_rows = feature_rows[support_indices]
-    elif transport_support == "diverse-medoid":
-        support_indices = _activation_diverse_medoid_support_indices(
-            torch,
-            raw_feature_rows,
-            fold_weights,
-            target_dim,
-        )
-        centroid_rows = feature_rows[support_indices]
-    elif transport_support == "medoid":
-        seed_assignment, _seed_signs = _activation_assignment_for_mode(
-            torch,
-            feature_rows,
-            target_dim,
-            fold_weights,
-            assignment_mode if assignment_mode != "balanced" else "similarity",
-            iterations=4,
-        )
-        support_indices = _activation_medoid_support_indices(
-            torch,
-            feature_rows,
-            fold_weights,
-            seed_assignment,
-            target_dim,
-        )
+    support = _activation_support_indices_for_mode(
+        torch,
+        raw_feature_rows,
+        feature_rows,
+        fold_weights,
+        target_dim,
+        domain_weights=domain_weights,
+        domain_features=domain_features,
+        transport_support=transport_support,
+        assignment_mode=assignment_mode,
+    )
+    support_indices = support["indices"]
+    domain_support_used = bool(support["domain_support_used"])
+    domain_support_count = int(support["domain_support_count"])
+    if support_indices is not None:
         centroid_rows = feature_rows[support_indices]
     else:
         seed_assignment, seed_signs = _activation_assignment_for_mode(
@@ -6886,8 +7108,8 @@ def _resize_tensor_axis_mean_fold(
 ):
     if target_dim <= 0:
         raise ValueError("target_dim must be positive.")
-    if fold_mode not in {"mean", "rms", "transport"}:
-        raise ValueError("fold_mode must be mean, rms, or transport.")
+    if fold_mode not in {"mean", "rms", "transport", "anchor-transplant"}:
+        raise ValueError("fold_mode must be mean, rms, transport, or anchor-transplant.")
     if reduction not in {"mean", "sum", "sqrt-sum"}:
         raise ValueError("reduction must be mean, sum, or sqrt-sum.")
     if assignment_mode not in _ACTIVATION_FOLD_ASSIGNMENTS:
@@ -6945,6 +7167,27 @@ def _resize_tensor_axis_mean_fold(
                 transport=cached,
             )
             return folded.reshape((target_dim, *rest_shape)).movedim(0, axis).contiguous()
+        if cached is not None and "anchor_support_indices" in cached:
+            folded = _apply_anchor_transplant_fold(
+                torch,
+                flat,
+                cached["assignment"],
+                cached.get("assignment_signs", torch.ones(source_dim, dtype=torch.float32)),
+                cached["anchor_support_indices"],
+                fold_weights,
+                reduction,
+                fold_mode,
+            )
+            folded = _repair_folded_axis_stats(
+                torch,
+                flat,
+                folded,
+                fold_stat_repair,
+                fold_weights,
+                reduction,
+                assignment=cached["assignment"],
+            )
+            return folded.reshape((target_dim, *rest_shape)).movedim(0, axis).contiguous()
         if fold_mode == "transport" and features is not None:
             if cached is None:
                 cached = _build_sparse_activation_transport(
@@ -6969,6 +7212,40 @@ def _resize_tensor_axis_mean_fold(
                 fold_weights,
                 reduction,
                 transport=cached,
+            )
+            return folded.reshape((target_dim, *rest_shape)).movedim(0, axis).contiguous()
+        if fold_mode == "anchor-transplant":
+            if cached is None:
+                cached = _build_anchor_transplant_assignment(
+                    torch,
+                    features,
+                    target_dim,
+                    weights=fold_weights,
+                    domain_weights=domain_weights,
+                    domain_features=domain_features,
+                    transport_support=transport_support,
+                    assignment_mode=assignment_mode,
+                )
+                if cache_key is not None and assignment_cache is not None:
+                    assignment_cache[cache_key] = cached
+            folded = _apply_anchor_transplant_fold(
+                torch,
+                flat,
+                cached["assignment"],
+                cached.get("assignment_signs", torch.ones(source_dim, dtype=torch.float32)),
+                cached["anchor_support_indices"],
+                fold_weights,
+                reduction,
+                fold_mode,
+            )
+            folded = _repair_folded_axis_stats(
+                torch,
+                flat,
+                folded,
+                fold_stat_repair,
+                fold_weights,
+                reduction,
+                assignment=cached["assignment"],
             )
             return folded.reshape((target_dim, *rest_shape)).movedim(0, axis).contiguous()
         assignment = None

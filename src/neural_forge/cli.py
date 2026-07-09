@@ -134,7 +134,7 @@ def build_parser() -> argparse.ArgumentParser:
     hf_donor_init.add_argument("--seed", type=int, default=0)
     hf_donor_init.add_argument("--ridge", type=float, default=1e-3)
     hf_donor_init.add_argument("--max-anchors", type=int, default=50_000)
-    hf_donor_init.add_argument("--fold-mode", choices=["mean", "rms", "transport"], default="mean")
+    hf_donor_init.add_argument("--fold-mode", choices=["mean", "rms", "transport", "anchor-transplant"], default="mean")
     hf_donor_init.add_argument(
         "--hidden-basis-mode",
         choices=["none", "activation-pca", "shared-token-ridge", "donor-token-pca", "activation-token-pca"],
@@ -1632,7 +1632,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="preserve",
         help="Optionally tie the final output head to input embeddings after recovery, then re-evaluate the exact-size export.",
     )
-    xfamily_chain.add_argument("--init-fold-mode", choices=["mean", "rms", "transport"], default="mean")
+    xfamily_chain.add_argument("--init-fold-mode", choices=["mean", "rms", "transport", "anchor-transplant"], default="mean")
     xfamily_chain.add_argument(
         "--init-hidden-basis-mode",
         choices=["none", "activation-pca", "shared-token-ridge", "donor-token-pca", "activation-token-pca"],
