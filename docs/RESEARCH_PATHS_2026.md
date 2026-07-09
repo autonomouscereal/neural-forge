@@ -84,6 +84,26 @@ retention comparison. This is classified as fold materialization rather than
 recovery because it performs no gradient or optimizer update; behavioral
 promotion criteria remain unchanged.
 
+The first oblique implementation is retained as a baseline, but four audit
+findings require a corrected rerun before judging the method. Its old global
+row buffer filled in traversal order, its absolute ridge `1e-3` was negligible
+relative to the encoded Gram scale, centered preprocessing had no materialized
+affine intercept, and block-only fitting left the final RMSNorm/head boundary
+uncompensated. Neural Forge now samples hidden-basis and linear-fit rows across
+every donor layer and calibration domain, supports trace-scaled ridge, rejects
+centered oblique fitting, validates input/output basis duality, fits a final
+norm interface into an untied head, and transactionally reverts `module-all`
+attention or MLP pairs when either half is rejected. Fold-basis artifacts are
+also copied forward so alternating zero-gradient passes remain possible.
+
+The evidence audit found no completed, truly zero-gradient blank-target run at
+`25x+` with nonzero exact behavior or generation retention. The previous best
+forced-choice score, `94/250`, matched the random blank baseline and accompanied
+repetitive output. Several historical runs labeled `init-only` actually enabled
+LRC optimizer steps and therefore do not qualify as fold-only evidence. New
+promotion reports must explicitly show `optimizer_steps=0`, factor steps `0`,
+and no activation-fit method other than a closed-form solve.
+
 ## Highest-Priority Paths
 
 No 2025-2026 primary source found so far proves arbitrary "large parent into a

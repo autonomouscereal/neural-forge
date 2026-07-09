@@ -307,6 +307,8 @@ def donor_projected_init(
     hidden_basis_scope: str = "global",
     hidden_basis_max_rows: int = 2048,
     hidden_basis_preprocess: str = "centered-rowrms",
+    hidden_basis_ridge: float | None = None,
+    hidden_basis_ridge_mode: str = "absolute",
     activation_fold_assignment: str = "balanced",
     fold_stat_repair: str = "none",
     transport_backend: str = "sparse",
@@ -387,6 +389,10 @@ def donor_projected_init(
         raise ValueError("hidden_basis_max_rows must be positive.")
     if hidden_basis_preprocess not in {"centered-rowrms", "uncentered-rowrms", "uncentered"}:
         raise ValueError("hidden_basis_preprocess must be centered-rowrms, uncentered-rowrms, or uncentered.")
+    if hidden_basis_ridge is not None and hidden_basis_ridge < 0:
+        raise ValueError("hidden_basis_ridge must be non-negative when provided.")
+    if hidden_basis_ridge_mode not in {"absolute", "trace-scaled"}:
+        raise ValueError("hidden_basis_ridge_mode must be absolute or trace-scaled.")
     if activation_fold_assignment not in _ACTIVATION_FOLD_ASSIGNMENTS:
         raise ValueError(
             "activation_fold_assignment must be balanced, similarity, signed-similarity, "
@@ -481,6 +487,7 @@ def donor_projected_init(
         activation_fit_max_rows,
         hidden_basis_max_rows,
     )
+    effective_hidden_basis_ridge = float(ridge if hidden_basis_ridge is None else hidden_basis_ridge)
 
     torch, transformers = _torch_and_transformers()
     dtype = _dtype_from_name(torch, torch_dtype)
@@ -665,7 +672,8 @@ def donor_projected_init(
             activation_profile["hidden_basis_rows"],
             source_dim=donor_hidden_size,
             target_dim=target_hidden_size,
-            ridge=ridge,
+            ridge=effective_hidden_basis_ridge,
+            ridge_mode=hidden_basis_ridge_mode,
             preprocess=hidden_basis_preprocess,
         )
         _surgery_progress("hidden_basis_done", mode=hidden_basis_mode, scope=hidden_basis_scope)
@@ -1129,6 +1137,8 @@ def donor_projected_init(
         "hidden_basis_scope": hidden_basis_scope,
         "hidden_basis_max_rows": int(hidden_basis_max_rows),
         "hidden_basis_preprocess": hidden_basis_preprocess,
+        "hidden_basis_ridge": effective_hidden_basis_ridge,
+        "hidden_basis_ridge_mode": hidden_basis_ridge_mode,
         "hidden_basis": hidden_basis_report,
         "hidden_basis_artifact": hidden_basis_artifact,
         "layer_hidden_basis": layer_hidden_basis_report,
@@ -1172,6 +1182,9 @@ def donor_projected_init(
         "activation_domain_counts": {}
         if activation_profile is None
         else activation_profile.get("activation_domain_counts", {}),
+        "hidden_basis_sampling": None
+        if activation_profile is None
+        else activation_profile.get("hidden_basis_sampling"),
         "activation_fit_reports": activation_fit_reports,
         "activation_fit_attempt_reports": activation_fit_attempt_reports,
         "activation_fit_attempt_count": len(activation_fit_attempt_reports),
@@ -5690,6 +5703,7 @@ def _build_activation_oblique_hidden_basis(
     source_dim: int,
     target_dim: int,
     ridge: float = 1e-3,
+    ridge_mode: str = "absolute",
     preprocess: str = "uncentered-rowrms",
 ):
     source_dim = int(source_dim)
@@ -5700,8 +5714,12 @@ def _build_activation_oblique_hidden_basis(
         raise ValueError("activation-oblique currently supports compression, not expansion.")
     if ridge < 0:
         raise ValueError("ridge must be non-negative.")
+    if ridge_mode not in {"absolute", "trace-scaled"}:
+        raise ValueError("ridge_mode must be absolute or trace-scaled.")
     if preprocess not in {"centered-rowrms", "uncentered-rowrms", "uncentered"}:
         raise ValueError("preprocess must be centered-rowrms, uncentered-rowrms, or uncentered.")
+    if preprocess == "centered-rowrms":
+        raise ValueError("activation-oblique requires an uncentered preprocess unless an affine intercept is materialized.")
     rows = torch.nan_to_num(
         activation_rows.detach().cpu().to(torch.float32),
         nan=0.0,
@@ -5723,7 +5741,11 @@ def _build_activation_oblique_hidden_basis(
         raise ValueError("SVD did not return enough vectors for activation-oblique.")
     indices = _pivoted_subspace_coordinate_indices(torch, vh[:target_dim], target_dim)
     encoded = fit_rows.index_select(1, indices)
-    reconstruction = _ridge_map(torch, encoded, fit_rows, ridge).detach().cpu().to(torch.float32)
+    gram_trace_per_dimension = float(encoded.pow(2).sum().detach().cpu()) / max(target_dim, 1)
+    effective_ridge = float(ridge)
+    if ridge_mode == "trace-scaled":
+        effective_ridge *= gram_trace_per_dimension
+    reconstruction = _ridge_map(torch, encoded, fit_rows, effective_ridge).detach().cpu().to(torch.float32)
     reconstruction[:, indices] = torch.eye(target_dim, dtype=torch.float32)
 
     output_basis = torch.zeros((source_dim, target_dim), dtype=torch.float32)
@@ -5749,6 +5771,9 @@ def _build_activation_oblique_hidden_basis(
         "target_dim": target_dim,
         "rows": int(fit_rows.shape[0]),
         "ridge": float(ridge),
+        "ridge_mode": ridge_mode,
+        "effective_ridge": effective_ridge,
+        "encoded_gram_trace_per_dimension": gram_trace_per_dimension,
         "preprocess": preprocess,
         "selected_indices": indices.tolist(),
         "selected_activation_power": float(selected_mass.detach().cpu()),
@@ -5760,6 +5785,84 @@ def _build_activation_oblique_hidden_basis(
         ),
     }
     return descriptor, report
+
+
+def _evenly_spaced_positions(total: int, count: int) -> list[int]:
+    total = int(total)
+    count = int(count)
+    if total <= 0 or count <= 0:
+        return []
+    if count >= total:
+        return list(range(total))
+    if count == 1:
+        return [total // 2]
+    positions = [round(index * (total - 1) / (count - 1)) for index in range(count)]
+    return list(dict.fromkeys(int(position) for position in positions))
+
+
+def _hidden_basis_stratified_sampling_plan(
+    text_domains: Sequence[str] | None,
+    text_count: int,
+    layer_count: int,
+    max_rows: int,
+    max_texts_per_stratum: int = 32,
+):
+    if text_count <= 0 or layer_count <= 0 or max_rows <= 0:
+        return {}, {
+            "mode": "layer-domain-stratified",
+            "planned_rows": 0,
+            "strata": 0,
+            "domains": [],
+        }
+    labels = [str(item) for item in text_domains] if text_domains is not None else ["all"] * int(text_count)
+    if len(labels) != int(text_count):
+        raise ValueError("text_domains must match text_count for hidden-basis sampling.")
+    domain_indices: dict[str, list[int]] = {}
+    for text_idx, domain in enumerate(labels):
+        domain_indices.setdefault(domain, []).append(int(text_idx))
+    domains = sorted(domain_indices)
+    strata = [(layer_idx, domain) for layer_idx in range(int(layer_count)) for domain in domains]
+    base, remainder = divmod(int(max_rows), len(strata))
+    extra_positions = set(_evenly_spaced_positions(len(strata), remainder))
+    plan: dict[tuple[int, str], dict[int, int]] = {}
+    capacities = []
+    selected_text_counts = []
+    for stratum_idx, (layer_idx, domain) in enumerate(strata):
+        capacity = int(base + (1 if stratum_idx in extra_positions else 0))
+        capacities.append(capacity)
+        if capacity <= 0:
+            continue
+        candidates = domain_indices[domain]
+        selected_count = min(len(candidates), capacity, int(max_texts_per_stratum))
+        selected_positions = _evenly_spaced_positions(len(candidates), selected_count)
+        selected = [candidates[position] for position in selected_positions]
+        selected_text_counts.append(len(selected))
+        text_base, text_remainder = divmod(capacity, len(selected))
+        text_extra_positions = set(_evenly_spaced_positions(len(selected), text_remainder))
+        plan[(int(layer_idx), str(domain))] = {
+            int(text_idx): int(text_base + (1 if selected_idx in text_extra_positions else 0))
+            for selected_idx, text_idx in enumerate(selected)
+        }
+    return plan, {
+        "mode": "layer-domain-stratified",
+        "planned_rows": int(sum(capacities)),
+        "max_rows": int(max_rows),
+        "strata": int(len(strata)),
+        "layers": int(layer_count),
+        "domains": domains,
+        "min_rows_per_stratum": int(min(capacities, default=0)),
+        "max_rows_per_stratum": int(max(capacities, default=0)),
+        "min_selected_texts_per_populated_stratum": int(min(selected_text_counts, default=0)),
+        "max_selected_texts_per_populated_stratum": int(max(selected_text_counts, default=0)),
+    }
+
+
+def _sample_evenly_spaced_activation_rows(torch, rows, count: int):
+    positions = _evenly_spaced_positions(int(rows.shape[0]), min(int(count), int(rows.shape[0])))
+    if not positions:
+        return rows[:0]
+    indices = torch.tensor(positions, dtype=torch.long, device=rows.device)
+    return rows.index_select(0, indices)
 
 
 def _build_shared_token_hidden_basis(
@@ -8528,6 +8631,19 @@ def _collect_donor_axis_activation_scores(
         if activation_domain_balance == "keyword"
         else None
     )
+    hidden_basis_domain_labels = text_domains if text_domains is not None else ["all"] * len(texts)
+    hidden_basis_sampling_plan, hidden_basis_sampling_report = _hidden_basis_stratified_sampling_plan(
+        hidden_basis_domain_labels,
+        text_count=len(texts),
+        layer_count=len(donor_layers),
+        max_rows=int(hidden_basis_max_rows),
+    )
+    linear_fit_sampling_plan, linear_fit_sampling_report = _hidden_basis_stratified_sampling_plan(
+        hidden_basis_domain_labels,
+        text_count=len(texts),
+        layer_count=1,
+        max_rows=int(linear_fit_max_rows),
+    )
     hidden_scores = []
     hidden_features = []
     hidden_basis_pieces = []
@@ -8563,6 +8679,7 @@ def _collect_donor_axis_activation_scores(
     linear_fit_rows: dict[int, dict[str, dict[str, list[Any]]]] = {idx: {} for idx in range(len(donor_layers))}
     linear_fit_counts: dict[tuple[int, str], int] = {}
     current_domain: str | None = None
+    current_text_index: int | None = None
     handles = []
     q_heads = _config_int(donor.config, "num_attention_heads", "n_head", "num_heads")
     kv_heads = _config_int(donor.config, "num_key_value_heads", default=q_heads)
@@ -8590,13 +8707,16 @@ def _collect_donor_axis_activation_scores(
                     subspace_rank=activation_subspace_rank,
                 ).cpu()
             )
-            if int(hidden_basis_max_rows) > 0 and hidden_basis_rows < int(hidden_basis_max_rows):
+            if int(hidden_basis_max_rows) > 0 and current_text_index is not None:
                 rows = _activation_2d(torch, hidden).detach().cpu().to(torch.float32)
-                remaining = int(hidden_basis_max_rows) - hidden_basis_rows
-                take = min(int(rows.shape[0]), remaining)
-                if take > 0:
-                    hidden_basis_pieces.append(rows[:take])
-                    hidden_basis_rows += int(take)
+                domain = str(hidden_basis_domain_labels[int(current_text_index)])
+                take = int(
+                    hidden_basis_sampling_plan.get((int(layer_idx), domain), {}).get(int(current_text_index), 0)
+                )
+                sampled = _sample_evenly_spaced_activation_rows(torch, rows, take)
+                if int(sampled.shape[0]) > 0:
+                    hidden_basis_pieces.append(sampled)
+                    hidden_basis_rows += int(sampled.shape[0])
             append_basis_rows(hidden_basis_input_pieces, hidden_basis_input_rows, layer_idx, hidden)
 
         return hook
@@ -8692,6 +8812,8 @@ def _collect_donor_axis_activation_scores(
     def append_linear_fit_rows(layer_idx: int, suffix: str, inputs, output) -> None:
         if int(linear_fit_max_rows) <= 0:
             return
+        if current_text_index is None:
+            return
         key = (int(layer_idx), str(suffix))
         used = int(linear_fit_counts.get(key, 0))
         if used >= int(linear_fit_max_rows):
@@ -8701,9 +8823,21 @@ def _collect_donor_axis_activation_scores(
         input_rows = _activation_2d(torch, inputs[0].detach().to(torch.float32)).detach().cpu()
         output_tensor = output[0] if isinstance(output, tuple) else output
         output_rows = _activation_2d(torch, output_tensor.detach().to(torch.float32)).detach().cpu()
-        row_count = min(int(input_rows.shape[0]), int(output_rows.shape[0]), int(linear_fit_max_rows) - used)
+        domain = str(hidden_basis_domain_labels[int(current_text_index)])
+        planned = int(
+            linear_fit_sampling_plan.get((0, domain), {}).get(int(current_text_index), 0)
+        )
+        row_count = min(
+            int(input_rows.shape[0]),
+            int(output_rows.shape[0]),
+            int(linear_fit_max_rows) - used,
+            planned,
+        )
         if row_count <= 0:
             return
+        input_rows = _sample_evenly_spaced_activation_rows(torch, input_rows, row_count)
+        output_rows = _sample_evenly_spaced_activation_rows(torch, output_rows, row_count)
+        row_count = min(int(input_rows.shape[0]), int(output_rows.shape[0]))
         slot = linear_fit_rows[int(layer_idx)].setdefault(str(suffix), {"input": [], "output": []})
         slot["input"].append(input_rows[:row_count])
         slot["output"].append(output_rows[:row_count])
@@ -8753,10 +8887,12 @@ def _collect_donor_axis_activation_scores(
                 if text_idx == 0 or (text_idx + 1) % 50 == 0 or (text_idx + 1) == len(texts):
                     _surgery_progress("activation_collect_progress", current=text_idx + 1, total=len(texts))
                 current_domain = None if text_domains is None else str(text_domains[int(text_idx)])
+                current_text_index = int(text_idx)
                 encoded = donor_tokenizer(str(text), return_tensors="pt", truncation=True, max_length=max_length)
                 encoded = {key: value.to(device) for key, value in encoded.items()}
                 donor(**encoded, use_cache=False)
                 current_domain = None
+                current_text_index = None
     finally:
         for handle in handles:
             handle.remove()
@@ -8768,6 +8904,10 @@ def _collect_donor_axis_activation_scores(
 
     if not hidden_scores:
         raise RuntimeError("Activation calibration did not capture hidden states.")
+    hidden_basis_sampling_report = {
+        **hidden_basis_sampling_report,
+        "captured_rows": int(hidden_basis_rows),
+    }
     hidden_domains = None
     if text_domains is not None and len(hidden_scores) == len(texts) * len(donor_layers):
         hidden_domains = [domain for domain in text_domains for _ in donor_layers]
@@ -8871,6 +9011,7 @@ def _collect_donor_axis_activation_scores(
         "hidden_scores": _domain_balanced_mean(torch, hidden_scores, hidden_domains).clamp_min(1e-12),
         "hidden_features": _domain_balanced_mean(torch, hidden_features, hidden_domains),
         "hidden_basis_rows": torch.cat(hidden_basis_pieces, dim=0) if hidden_basis_pieces else None,
+        "hidden_basis_sampling": hidden_basis_sampling_report,
         "hidden_basis_input_rows": {
             int(layer_idx): torch.cat(pieces, dim=0) for layer_idx, pieces in hidden_basis_input_pieces.items() if pieces
         },
@@ -8887,6 +9028,7 @@ def _collect_donor_axis_activation_scores(
         "attention_head_dim_domain_profiles": folded_attention_head_dim_domain_profiles,
         "linear_fit_rows": folded_linear_fit_rows,
         "linear_fit_importance": folded_linear_fit_importance,
+        "linear_fit_sampling": linear_fit_sampling_report,
         "activation_feature_mode": activation_feature_mode,
         "activation_subspace_rank": int(activation_subspace_rank),
         "activation_domain_balance": activation_domain_balance,

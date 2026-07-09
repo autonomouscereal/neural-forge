@@ -143,6 +143,7 @@ from neural_forge.hf_xfamily import _build_activation_hidden_basis
 from neural_forge.hf_xfamily import _build_activation_coordinate_hidden_basis
 from neural_forge.hf_xfamily import _build_activation_grouped_hidden_basis
 from neural_forge.hf_xfamily import _build_activation_oblique_hidden_basis
+from neural_forge.hf_xfamily import _hidden_basis_stratified_sampling_plan
 from neural_forge.hf_xfamily import _build_gqa_coupled_q_assignment
 from neural_forge.hf_xfamily import _build_donor_token_hidden_basis
 from neural_forge.hf_xfamily import _build_layer_activation_hidden_bases
@@ -3366,6 +3367,55 @@ def test_activation_oblique_basis_reconstructs_discarded_coordinates() -> None:
     assert torch.equal(o_axes[0], descriptor["output_basis"])
 
 
+def test_activation_oblique_trace_scaled_ridge_reports_effective_scale() -> None:
+    torch = pytest.importorskip("torch")
+    rows = torch.arange(1, 49, dtype=torch.float32).reshape(12, 4)
+
+    _descriptor, report = _build_activation_oblique_hidden_basis(
+        torch,
+        rows,
+        source_dim=4,
+        target_dim=2,
+        ridge=0.01,
+        ridge_mode="trace-scaled",
+        preprocess="uncentered-rowrms",
+    )
+
+    assert report["ridge_mode"] == "trace-scaled"
+    assert report["effective_ridge"] == pytest.approx(
+        0.01 * report["encoded_gram_trace_per_dimension"]
+    )
+    assert report["effective_ridge"] > report["ridge"]
+
+    with pytest.raises(ValueError, match="uncentered preprocess"):
+        _build_activation_oblique_hidden_basis(
+            torch,
+            rows,
+            source_dim=4,
+            target_dim=2,
+            preprocess="centered-rowrms",
+        )
+
+
+def test_hidden_basis_sampling_plan_covers_layers_domains_and_late_texts() -> None:
+    domains = ["math", "code", "math", "code", "math", "code", "math", "code"]
+
+    plan, report = _hidden_basis_stratified_sampling_plan(
+        domains,
+        text_count=len(domains),
+        layer_count=3,
+        max_rows=24,
+        max_texts_per_stratum=4,
+    )
+
+    assert report["planned_rows"] == 24
+    assert report["strata"] == 6
+    assert set(plan) == {(layer, domain) for layer in range(3) for domain in {"math", "code"}}
+    assert sum(sum(text_plan.values()) for text_plan in plan.values()) == 24
+    assert 7 in plan[(0, "code")]
+    assert 6 in plan[(2, "math")]
+
+
 def test_cli_accepts_activation_oblique_hidden_basis() -> None:
     args = build_parser().parse_args(
         [
@@ -3377,11 +3427,17 @@ def test_cli_accepts_activation_oblique_hidden_basis() -> None:
             "donor",
             "--hidden-basis-mode",
             "activation-oblique",
+            "--hidden-basis-ridge",
+            "0.002",
+            "--hidden-basis-ridge-mode",
+            "trace-scaled",
             "--untie-output-head",
         ]
     )
 
     assert args.hidden_basis_mode == "activation-oblique"
+    assert args.hidden_basis_ridge == pytest.approx(0.002)
+    assert args.hidden_basis_ridge_mode == "trace-scaled"
     assert args.untie_output_head is True
 
 
@@ -5460,7 +5516,7 @@ def test_hidden_basis_artifact_prefers_output_basis(tmp_path: Path) -> None:
     descriptor = {
         "basis": torch.tensor([[1.0], [0.0]]),
         "output_basis": torch.tensor([[0.0], [1.0]]),
-        "input_basis": torch.tensor([[2.0], [3.0]]),
+        "input_basis": torch.tensor([[2.0], [1.0]]),
     }
     artifact = _save_hidden_basis_artifact(torch, tmp_path, descriptor)
     report = {"hidden_basis_artifact": artifact}
@@ -5471,6 +5527,22 @@ def test_hidden_basis_artifact_prefers_output_basis(tmp_path: Path) -> None:
     assert loaded is not None
     assert loaded["basis_key"] == "output_basis"
     assert loaded["map"].tolist() == [[0.0], [1.0]]
+    assert loaded["duality_max_abs_error"] == pytest.approx(0.0)
+
+
+def test_hidden_basis_artifact_rejects_nondual_input_output_maps(tmp_path: Path) -> None:
+    torch = pytest.importorskip("torch")
+    descriptor = {
+        "output_basis": torch.tensor([[0.0], [1.0]]),
+        "input_basis": torch.tensor([[2.0], [3.0]]),
+    }
+    artifact = _save_hidden_basis_artifact(torch, tmp_path, descriptor)
+    (tmp_path / "neural_forge_donor_projected_init_report.json").write_text(
+        json.dumps({"hidden_basis_artifact": artifact}),
+        encoding="utf-8",
+    )
+
+    assert _load_fold_hidden_projection(torch, tmp_path, source_dim=2, target_dim=1) is None
 
 
 def test_mlp_neuron_activation_values_use_gated_product() -> None:
@@ -9872,6 +9944,8 @@ def test_hf_donor_project_init_handler_passes_flags(monkeypatch) -> None:
         "hidden_basis_scope": "layer",
         "hidden_basis_max_rows": 99,
         "hidden_basis_preprocess": "centered-rowrms",
+        "hidden_basis_ridge": None,
+        "hidden_basis_ridge_mode": "absolute",
         "activation_fold_assignment": "similarity",
         "fold_stat_repair": "rms",
         "transport_backend": "sparse",
@@ -11038,6 +11112,8 @@ def test_hf_functional_fold_handler_is_zero_gradient_surface(monkeypatch) -> Non
             "out",
             "--functional-target",
             "module-all",
+            "--alpha",
+            "0.5",
             "--ridge",
             "0.004",
             "--max-length",
@@ -11063,6 +11139,7 @@ def test_hf_functional_fold_handler_is_zero_gradient_surface(monkeypatch) -> Non
         "candidate_model": "candidate",
         "output_dir": "out",
         "functional_target": "module-all",
+        "alpha": 0.5,
         "ridge": 0.004,
         "max_length": 96,
         "max_tokens_per_layer": 768,
@@ -11100,11 +11177,164 @@ def test_functional_fold_dispatches_closed_form_module_fit(monkeypatch, tmp_path
     assert report["zero_gradient"] is True
     assert report["optimizer_steps"] == 0
     assert captured["reconstruction_target"] == "module-output"
+    assert captured["reconstruction_alpha"] == pytest.approx(1.0)
     assert captured["reconstruction_objective"] == "ridge"
     assert captured["cosine_steps"] == 0
     assert captured["hidden_projection_source"] == "fold-basis"
+    assert captured["fit_final_interface"] is True
     assert captured["fit_gate"] == "validation"
     assert (tmp_path / "neural_forge_functional_fold_report.json").is_file()
+
+
+def test_module_all_reverts_input_mutation_when_output_fit_rejects(monkeypatch) -> None:
+    torch = pytest.importorskip("torch")
+    import neural_forge.hf_recovery as hf_recovery
+
+    class Attention(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.q_proj = torch.nn.Linear(2, 2, bias=False)
+            self.k_proj = torch.nn.Linear(2, 2, bias=False)
+            self.v_proj = torch.nn.Linear(2, 2, bias=False)
+            self.o_proj = torch.nn.Linear(2, 2, bias=False)
+
+    class Layer(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.input_layernorm = torch.nn.Identity()
+            self.post_attention_layernorm = torch.nn.Identity()
+            self.self_attn = Attention()
+
+    source_layer = Layer()
+    candidate_layer = Layer()
+    before = candidate_layer.self_attn.q_proj.weight.detach().clone()
+
+    def fake_input_fit(*args, **kwargs):
+        candidate_linears = args[5]
+        candidate_linears[0][1].weight.data.add_(7.0)
+        return {"skipped": False, "linears_updated": [candidate_linears[0][0]]}
+
+    def fake_output_fit(*args, **kwargs):
+        return {
+            "skipped": False,
+            "output_projection": "o_proj",
+            "mutation_skipped": True,
+        }
+
+    monkeypatch.setattr(hf_recovery, "_reconstruct_cross_tokenizer_module_pair", fake_input_fit)
+    monkeypatch.setattr(hf_recovery, "_reconstruct_cross_tokenizer_attention_output", fake_output_fit)
+    report = hf_recovery._reconstruct_cross_tokenizer_layer(
+        torch,
+        None,
+        None,
+        source_layer,
+        candidate_layer,
+        [source_layer],
+        [candidate_layer],
+        0,
+        [0],
+        None,
+        None,
+        [],
+        torch.eye(2),
+        lambda value: value,
+        ridge=0.0,
+        reconstruction_alpha=1.0,
+        reconstruction_target="attention-all",
+        reconstruction_objective="ridge",
+        cosine_steps=0,
+        cosine_lr=0.01,
+        cosine_l2=0.0,
+        fit_gate="validation",
+        fit_gate_validation_fraction=0.25,
+        fit_gate_min_validation_rows=2,
+        fit_gate_min_relative_improvement=0.0,
+        fit_gate_max_cosine_drop=0.0,
+        max_tokens_per_layer=8,
+    )
+
+    assert report["attention_transaction"] == {
+        "accepted": False,
+        "reverted": True,
+        "input_applied": True,
+        "output_applied": False,
+    }
+    assert torch.equal(candidate_layer.self_attn.q_proj.weight, before)
+
+
+def test_final_interface_fit_absorbs_norm_map_into_untied_head(monkeypatch) -> None:
+    torch = pytest.importorskip("torch")
+    import neural_forge.hf_recovery as hf_recovery
+
+    class TinyModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.model = torch.nn.Module()
+            self.model.norm = torch.nn.Identity()
+            self.embed_tokens = torch.nn.Embedding(5, 2)
+            self.lm_head = torch.nn.Linear(2, 5, bias=False)
+
+        def get_input_embeddings(self):
+            return self.embed_tokens
+
+        def get_output_embeddings(self):
+            return self.lm_head
+
+    source = TinyModel()
+    candidate = TinyModel()
+    candidate_rows = torch.eye(2, dtype=torch.float32).repeat(4, 1)
+    wanted_map = torch.tensor([[2.0, 0.5], [-0.25, 1.5]], dtype=torch.float32)
+    source_rows = candidate_rows.matmul(wanted_map)
+    monkeypatch.setattr(
+        hf_recovery,
+        "_collect_cross_tokenizer_module_activations",
+        lambda *args, **kwargs: (source_rows, candidate_rows, int(candidate_rows.shape[0])),
+    )
+    before = candidate.lm_head.weight.detach().clone()
+
+    report = hf_recovery._reconstruct_cross_tokenizer_final_interface(
+        torch,
+        source,
+        candidate,
+        None,
+        None,
+        [],
+        torch.eye(2),
+        lambda value: value,
+        ridge=0.0,
+        reconstruction_alpha=1.0,
+        fit_gate="none",
+        fit_gate_validation_fraction=0.25,
+        fit_gate_min_validation_rows=2,
+        fit_gate_min_relative_improvement=0.0,
+        fit_gate_max_cosine_drop=0.0,
+        max_tokens=8,
+    )
+
+    assert report["applied"] is True
+    assert torch.allclose(candidate.lm_head.weight, before.matmul(wanted_map.t()), atol=1e-5)
+
+
+def test_functional_fold_copies_basis_artifacts_for_chained_passes(tmp_path: Path) -> None:
+    import neural_forge.hf_recovery as hf_recovery
+
+    source = tmp_path / "source"
+    output = tmp_path / "output"
+    source.mkdir()
+    output.mkdir()
+    (source / "neural_forge_hidden_basis.safetensors").write_bytes(b"basis")
+    (source / "neural_forge_donor_projected_init_report.json").write_text(
+        json.dumps({"hidden_basis_artifact": {"file": "neural_forge_hidden_basis.safetensors"}}),
+        encoding="utf-8",
+    )
+
+    copied = hf_recovery._copy_fold_basis_artifacts(source, output)
+
+    assert {item["file"] for item in copied} == {
+        "neural_forge_hidden_basis.safetensors",
+        "neural_forge_donor_projected_init_report.json",
+    }
+    assert (output / "neural_forge_hidden_basis.safetensors").read_bytes() == b"basis"
 
 
 def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:

@@ -205,11 +205,16 @@ promotion authority.
 fits folded attention/MLP module outputs with closed-form ridge solves and
 materializes the fitted operators directly into the child checkpoint. It
 requires a candidate produced with an exact Neural Forge fold-basis artifact
-and reports `zero_gradient=true` plus `optimizer_steps=0`.
+and reports `zero_gradient=true` plus `optimizer_steps=0`. Module-all fitting is
+transactional, a rejected producer/consumer pair is restored, and the final
+RMSNorm interface is absorbed into an untied output head. Fold-basis artifacts
+are carried into the result so another closed-form pass can follow.
 
 ```bash
 neural-forge hf-functional-fold donor folded-child functional-child \
   --functional-target module-output \
+  --alpha 0.5 \
+  --ridge 0.1 \
   --calibration-file calibration.jsonl \
   --max-calibration-texts 1024 \
   --max-tokens-per-layer 4096

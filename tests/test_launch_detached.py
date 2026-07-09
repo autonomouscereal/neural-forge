@@ -73,6 +73,9 @@ def test_path_run_launcher_requires_explicit_target_and_run_root() -> None:
             "activation-oblique",
             "--hidden-basis-preprocess",
             "uncentered-rowrms",
+            "--hidden-basis-ridge-mode",
+            "trace-scaled",
+            "--activation-fit-linears",
             "--untie-output-head",
         ]
     )
@@ -80,6 +83,9 @@ def test_path_run_launcher_requires_explicit_target_and_run_root() -> None:
     assert args.target == Path("target")
     assert args.run_root == Path("runs")
     assert args.hidden_basis_mode == "activation-oblique"
+    assert args.hidden_basis_ridge_mode == "trace-scaled"
+    assert args.activation_fit_linears is True
+    assert args.activation_fit_target == "input-projections"
     assert args.untie_output_head is True
 
 
@@ -96,6 +102,8 @@ def test_functional_fold_run_launcher_exposes_closed_form_controls() -> None:
             "GPU-test",
             "--functional-target",
             "module-all",
+            "--alpha",
+            "0.5",
             "--ridge",
             "0.004",
             "--max-tokens-per-layer",
@@ -106,5 +114,6 @@ def test_functional_fold_run_launcher_exposes_closed_form_controls() -> None:
     assert args.candidate == Path("folded")
     assert args.run_root == Path("runs")
     assert args.functional_target == "module-all"
+    assert args.alpha == pytest.approx(0.5)
     assert args.ridge == pytest.approx(0.004)
     assert args.max_tokens_per_layer == 2048

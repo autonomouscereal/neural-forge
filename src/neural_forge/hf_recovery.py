@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import shutil
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Sequence
@@ -2063,6 +2064,7 @@ def _load_fold_hidden_projection(
     candidate_model: str | Path,
     source_dim: int,
     target_dim: int,
+    expected_source_model: str | None = None,
 ) -> dict[str, Any] | None:
     root = Path(candidate_model)
     if not root.is_dir():
@@ -2074,6 +2076,13 @@ def _load_fold_hidden_projection(
             report = json.loads(report_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             report = {}
+    reported_source_model = report.get("donor_model")
+    if (
+        expected_source_model is not None
+        and reported_source_model is not None
+        and str(reported_source_model) != str(expected_source_model)
+    ):
+        return None
 
     artifact = report.get("hidden_basis_artifact") or {}
     artifact_name = artifact.get("file") or "neural_forge_hidden_basis.safetensors"
@@ -2088,6 +2097,20 @@ def _load_fold_hidden_projection(
             basis = tensors.get("basis")
             basis_key = "basis"
         if basis is not None and tuple(basis.shape) == (int(source_dim), int(target_dim)):
+            input_basis = tensors.get("input_basis")
+            duality_error = None
+            if input_basis is not None:
+                if tuple(input_basis.shape) != (int(source_dim), int(target_dim)):
+                    return None
+                identity = torch.eye(int(target_dim), dtype=torch.float32)
+                duality_error = float(
+                    (input_basis.detach().cpu().to(torch.float32).t().matmul(basis.to(torch.float32)) - identity)
+                    .abs()
+                    .max()
+                    .item()
+                )
+                if not math.isfinite(duality_error) or duality_error > 1e-3:
+                    return None
             return {
                 "map": basis.detach().cpu().to(torch.float32).contiguous(),
                 "source": "fold-basis-artifact",
@@ -2095,6 +2118,8 @@ def _load_fold_hidden_projection(
                 "artifact": str(artifact_path),
                 "source_dim": int(source_dim),
                 "target_dim": int(target_dim),
+                "reported_source_model": reported_source_model,
+                "duality_max_abs_error": duality_error,
             }
 
     basis_report = report.get("hidden_basis") or {}
@@ -2118,6 +2143,35 @@ def _load_fold_hidden_projection(
     return None
 
 
+def _copy_fold_basis_artifacts(candidate_model: str | Path, output_dir: Path) -> list[dict[str, Any]]:
+    source_root = Path(candidate_model)
+    if not source_root.is_dir():
+        return []
+    names = {
+        "neural_forge_hidden_basis.safetensors",
+        "neural_forge_donor_projected_init_report.json",
+    }
+    report_path = source_root / "neural_forge_donor_projected_init_report.json"
+    if report_path.is_file():
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            artifact_name = (report.get("hidden_basis_artifact") or {}).get("file")
+            if artifact_name:
+                names.add(str(artifact_name))
+        except (OSError, json.JSONDecodeError):
+            pass
+    copied = []
+    for name in sorted(names):
+        source = source_root / name
+        if not source.is_file():
+            continue
+        destination = output_dir / name
+        if source.resolve() != destination.resolve():
+            shutil.copy2(source, destination)
+        copied.append({"file": name, "bytes": int(destination.stat().st_size)})
+    return copied
+
+
 def reconstruct_cross_tokenizer_causal_lm(
     source_model: str,
     candidate_model: str,
@@ -2135,6 +2189,7 @@ def reconstruct_cross_tokenizer_causal_lm(
     max_anchors: int = 2048,
     hidden_projection_source: str = "auto",
     hidden_projection_scope: str = "global",
+    fit_final_interface: bool = False,
     layer_limit: int | None = None,
     fit_gate: str = "none",
     fit_gate_validation_fraction: float = 0.25,
@@ -2292,6 +2347,7 @@ def reconstruct_cross_tokenizer_causal_lm(
             candidate_model,
             int(source.get_input_embeddings().weight.shape[1]),
             int(candidate.get_input_embeddings().weight.shape[1]),
+            expected_source_model=source_model,
         )
         if hidden_projection_report is None and hidden_projection_source == "fold-basis":
             raise ValueError("candidate_model does not contain a compatible Neural Forge fold basis.")
@@ -2518,10 +2574,32 @@ def reconstruct_cross_tokenizer_causal_lm(
             if device.startswith("cuda") and hasattr(torch, "cuda"):
                 torch.cuda.empty_cache()
 
+        final_interface_report = None
+        if fit_final_interface:
+            final_interface_report = _reconstruct_cross_tokenizer_final_interface(
+                torch,
+                source,
+                candidate,
+                source_tokenizer,
+                candidate_tokenizer,
+                paired_batches,
+                hidden_projection,
+                _canonical_token,
+                ridge=ridge,
+                reconstruction_alpha=float(reconstruction_alpha),
+                fit_gate=fit_gate,
+                fit_gate_validation_fraction=fit_gate_validation_fraction,
+                fit_gate_min_validation_rows=fit_gate_min_validation_rows,
+                fit_gate_min_relative_improvement=fit_gate_min_relative_improvement,
+                fit_gate_max_cosine_drop=fit_gate_max_cosine_drop,
+                max_tokens=max_tokens_per_layer,
+            )
+
     target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)
     candidate.save_pretrained(target, safe_serialization=True)
     candidate_tokenizer.save_pretrained(target)
+    fold_artifacts = _copy_fold_basis_artifacts(candidate_model, target)
     reconstruction_report = {
         "operation": "reconstruct_cross_tokenizer_causal_lm",
         "source_model": source_model,
@@ -2540,6 +2618,7 @@ def reconstruct_cross_tokenizer_causal_lm(
         "max_anchors": max_anchors,
         "hidden_projection_source": hidden_projection_source,
         "hidden_projection_scope": hidden_projection_scope,
+        "fit_final_interface": bool(fit_final_interface),
         "layer_limit": layer_limit,
         "fit_gate": {
             "mode": fit_gate,
@@ -2555,6 +2634,8 @@ def reconstruct_cross_tokenizer_causal_lm(
         "calibration_text_count": len(texts),
         "eval_overlap_count": eval_overlap_count,
         "hidden_projection": {key: value for key, value in hidden_projection_report.items() if key != "map"},
+        "final_interface": final_interface_report,
+        "fold_artifacts": fold_artifacts,
         "repairs": repairs,
         "param_count": sum(param.numel() for param in candidate.parameters()),
     }
@@ -2567,6 +2648,7 @@ def functional_fold_cross_tokenizer_causal_lm(
     candidate_model: str,
     output_dir: str | Path,
     functional_target: str = "module-output",
+    alpha: float = 1.0,
     ridge: float = 1e-3,
     max_length: int = 160,
     max_tokens_per_layer: int = 4096,
@@ -2590,7 +2672,7 @@ def functional_fold_cross_tokenizer_causal_lm(
         candidate_model=candidate_model,
         output_dir=output_dir,
         ridge=ridge,
-        reconstruction_alpha=1.0,
+        reconstruction_alpha=alpha,
         reconstruction_target=functional_target,
         donor_layer_fold_mode="representative",
         reconstruction_objective="ridge",
@@ -2602,6 +2684,7 @@ def functional_fold_cross_tokenizer_causal_lm(
         max_anchors=max_anchors,
         hidden_projection_source="fold-basis",
         hidden_projection_scope="global",
+        fit_final_interface=True,
         fit_gate="validation",
         fit_gate_validation_fraction=fit_gate_validation_fraction,
         fit_gate_min_validation_rows=fit_gate_min_validation_rows,
@@ -2620,6 +2703,7 @@ def functional_fold_cross_tokenizer_causal_lm(
         "zero_gradient": True,
         "optimizer_steps": 0,
         "functional_target": functional_target,
+        "alpha": float(alpha),
         "hidden_projection_source": "fold-basis",
     }
     _write_json(Path(output_dir) / "neural_forge_functional_fold_report.json", functional_report)
@@ -9460,7 +9544,10 @@ def _fit_gated_residual_output_map(
     if fit_gate == "validation":
         split = _split_reconstruction_rows(tensors, fit_gate_validation_fraction, fit_gate_min_validation_rows)
         if split is None:
-            fit_gate_report["fit_gate"] = {"mode": "validation", "accepted": True, "reason": "insufficient_rows"}
+            return {
+                "fit_gate": {"mode": "validation", "accepted": False, "reason": "insufficient_rows"},
+                "mutation_skipped": True,
+            }
         else:
             fit_tensors = split["train"]
             validation_tensors = split["validation"]
@@ -9800,7 +9887,7 @@ def _split_reconstruction_rows(
     min_validation_rows: int,
 ):
     rows = min(int(tensor.shape[0]) for tensor in tensors)
-    if rows <= 1:
+    if rows <= int(min_validation_rows):
         return None
     validation_rows = max(int(min_validation_rows), int(round(rows * float(validation_fraction))))
     validation_rows = min(validation_rows, rows - 1)
@@ -9895,6 +9982,9 @@ def _reconstruct_cross_tokenizer_layer(
         source_attn_layer = source_layers[max(0, min(source_group[0], len(source_layers) - 1))]
         source_mlp_layer = source_layers[max(0, min(source_group[-1], len(source_layers) - 1))]
 
+    attention_transactional = reconstruction_target in {"attention-all", "module-all", "all"}
+    attention_state = _snapshot_module_state(candidate_layer) if attention_transactional else None
+
     if reconstruction_target in {"attention", "attention-all", "module-all", "both", "all"}:
         source_attn_norm = _get_layer_module(source_attn_layer, ("input_layernorm", "ln_1"))
         source_attn_norm_modules = _source_group_layer_modules(
@@ -9982,6 +10072,24 @@ def _reconstruct_cross_tokenizer_layer(
             "reason": "reconstruction_target_excludes_attention_output",
         }
 
+    if attention_state is not None:
+        attention_input_applied = _reconstruction_mutation_applied(repair_report["attention_reconstruction"])
+        attention_output_applied = _reconstruction_mutation_applied(
+            repair_report["attention_output_reconstruction"]
+        )
+        accepted = bool(attention_input_applied and attention_output_applied)
+        if not accepted:
+            _restore_module_state(candidate_layer, attention_state)
+        repair_report["attention_transaction"] = {
+            "accepted": accepted,
+            "reverted": not accepted,
+            "input_applied": attention_input_applied,
+            "output_applied": attention_output_applied,
+        }
+
+    mlp_transactional = reconstruction_target in {"mlp-all", "module-all", "all"}
+    mlp_state = _snapshot_module_state(candidate_layer) if mlp_transactional else None
+
     if reconstruction_target in {"mlp", "mlp-all", "module-all", "both", "all"}:
         source_mlp_norm = _get_layer_module(source_mlp_layer, ("post_attention_layernorm", "ln_2"))
         source_mlp_norm_modules = _source_group_layer_modules(
@@ -10060,6 +10168,18 @@ def _reconstruct_cross_tokenizer_layer(
             "skipped": True,
             "reason": "reconstruction_target_excludes_mlp_output",
         }
+    if mlp_state is not None:
+        mlp_input_applied = _reconstruction_mutation_applied(repair_report["mlp_reconstruction"])
+        mlp_output_applied = _reconstruction_mutation_applied(repair_report["mlp_output_reconstruction"])
+        accepted = bool(mlp_input_applied and mlp_output_applied)
+        if not accepted:
+            _restore_module_state(candidate_layer, mlp_state)
+        repair_report["mlp_transaction"] = {
+            "accepted": accepted,
+            "reverted": not accepted,
+            "input_applied": mlp_input_applied,
+            "output_applied": mlp_output_applied,
+        }
     if reconstruction_target in {"consumer-input", "all"}:
         repair_report["consumer_input_reconstruction"] = _reconstruct_cross_tokenizer_consumer_input(
             torch,
@@ -10125,6 +10245,22 @@ def _reconstruct_cross_tokenizer_layer(
             "reason": "reconstruction_target_excludes_block_interface",
         }
     return repair_report
+
+
+def _snapshot_module_state(module) -> dict[str, Any]:
+    return {key: value.detach().cpu().clone() for key, value in module.state_dict().items()}
+
+
+def _restore_module_state(module, state: dict[str, Any]) -> None:
+    module.load_state_dict(state, strict=True)
+
+
+def _reconstruction_mutation_applied(report: dict[str, Any]) -> bool:
+    if bool(report.get("skipped")) or bool(report.get("mutation_skipped")):
+        return False
+    if "linears_updated" in report:
+        return bool(report.get("linears_updated"))
+    return bool(report.get("output_projection") or report.get("applied"))
 
 
 def _reconstruct_cross_tokenizer_block_interface(
@@ -10262,7 +10398,15 @@ def _reconstruct_cross_tokenizer_block_interface(
             fit_gate_min_validation_rows,
         )
         if split is None:
-            fit_report["fit_gate"] = {"mode": "validation", "accepted": True, "reason": "insufficient_rows"}
+            return {
+                **report,
+                "skipped": False,
+                "matched_pairs": int(matched),
+                "consumers": consumer_reports,
+                "linears_updated": [],
+                "mutation_skipped": True,
+                "fit_gate": {"mode": "validation", "accepted": False, "reason": "insufficient_rows"},
+            }
         else:
             fit_candidate_rows, fit_source_rows = split["train"]
             validation_candidate_rows, validation_source_rows = split["validation"]
@@ -10489,7 +10633,14 @@ def _reconstruct_cross_tokenizer_module_pair(
             fit_gate_min_validation_rows,
         )
         if split is None:
-            fit_report["fit_gate"] = {"mode": "validation", "accepted": True, "reason": "insufficient_rows"}
+            return {
+                **group_report,
+                "skipped": False,
+                "matched_pairs": int(matched),
+                "linears_updated": [],
+                "mutation_skipped": True,
+                "fit_gate": {"mode": "validation", "accepted": False, "reason": "insufficient_rows"},
+            }
         else:
             fit_candidate_rows, fit_source_rows = split["train"]
             validation_candidate_rows, validation_source_rows = split["validation"]
@@ -10612,7 +10763,15 @@ def _reconstruct_cross_tokenizer_attention_output(
             fit_gate_min_validation_rows,
         )
         if split is None:
-            fit_report["fit_gate"] = {"mode": "validation", "accepted": True, "reason": "insufficient_rows"}
+            return {
+                **group_report,
+                "skipped": False,
+                "matched_pairs": int(matched),
+                "tokens": int(rows),
+                "output_projection": spec["output_name"],
+                "mutation_skipped": True,
+                "fit_gate": {"mode": "validation", "accepted": False, "reason": "insufficient_rows"},
+            }
         else:
             fit_source_rows, fit_hidden_rows, _fit_candidate_rows = split["train"]
             validation_source_rows, validation_hidden_rows, validation_candidate_rows = split["validation"]
@@ -10789,7 +10948,15 @@ def _reconstruct_cross_tokenizer_mlp_output(
             fit_gate_min_validation_rows,
         )
         if split is None:
-            fit_report["fit_gate"] = {"mode": "validation", "accepted": True, "reason": "insufficient_rows"}
+            return {
+                **group_report,
+                "skipped": False,
+                "matched_pairs": int(matched),
+                "tokens": int(rows),
+                "output_projection": spec["output_name"],
+                "mutation_skipped": True,
+                "fit_gate": {"mode": "validation", "accepted": False, "reason": "insufficient_rows"},
+            }
         else:
             fit_source_rows, fit_hidden_rows, fit_residual_rows, _fit_candidate_rows = split["train"]
             (
@@ -10889,6 +11056,111 @@ def _reconstruct_cross_tokenizer_mlp_output(
         "solver": {key: value for key, value in solved_report.items() if key != "map"},
         **fit_report,
         **group_report,
+    }
+
+
+def _reconstruct_cross_tokenizer_final_interface(
+    torch,
+    source,
+    candidate,
+    source_tokenizer,
+    candidate_tokenizer,
+    paired_batches: Sequence[tuple[dict[str, Any], dict[str, Any]]],
+    hidden_projection,
+    canonical_fn,
+    ridge: float,
+    reconstruction_alpha: float,
+    fit_gate: str,
+    fit_gate_validation_fraction: float,
+    fit_gate_min_validation_rows: int,
+    fit_gate_min_relative_improvement: float,
+    fit_gate_max_cosine_drop: float,
+    max_tokens: int,
+) -> dict[str, Any]:
+    source_norms = _final_norm_modules(source)
+    candidate_norms = _final_norm_modules(candidate)
+    output_head = candidate.get_output_embeddings()
+    if not source_norms or not candidate_norms or output_head is None:
+        return {
+            "applied": False,
+            "skipped": True,
+            "reason": "missing_final_norm_or_output_head",
+        }
+    input_embeddings = candidate.get_input_embeddings()
+    if (
+        input_embeddings is not None
+        and getattr(input_embeddings, "weight", None) is not None
+        and getattr(output_head, "weight", None) is not None
+        and input_embeddings.weight.data_ptr() == output_head.weight.data_ptr()
+    ):
+        return {
+            "applied": False,
+            "skipped": True,
+            "reason": "tied_output_head_would_mutate_input_embeddings",
+        }
+    source_rows, candidate_rows, matched = _collect_cross_tokenizer_module_activations(
+        torch,
+        source,
+        candidate,
+        source_norms[-1],
+        candidate_norms[-1],
+        source_tokenizer,
+        candidate_tokenizer,
+        paired_batches,
+        canonical_fn,
+        max_tokens,
+    )
+    if int(matched) <= 0:
+        return {
+            "applied": False,
+            "skipped": True,
+            "reason": "no_cross_tokenizer_final_norm_pairs",
+        }
+    target_rows = source_rows.to(device=hidden_projection.device, dtype=torch.float32).matmul(
+        hidden_projection.to(dtype=torch.float32)
+    ).detach().cpu()
+    rows = min(int(candidate_rows.shape[0]), int(target_rows.shape[0]))
+    fit = _fit_gated_residual_output_map(
+        torch,
+        candidate_rows[:rows].to(torch.float32),
+        target_rows[:rows].to(torch.float32),
+        None,
+        None,
+        None,
+        ridge,
+        reconstruction_alpha,
+        0,
+        "final-interface",
+        fit_gate,
+        fit_gate_validation_fraction,
+        fit_gate_min_validation_rows,
+        fit_gate_min_relative_improvement,
+        fit_gate_max_cosine_drop,
+    )
+    report = {
+        "skipped": False,
+        "matched_pairs": int(matched),
+        "tokens": int(rows),
+        **{key: value for key, value in fit.items() if key != "map"},
+    }
+    if fit.get("mutation_skipped"):
+        return {**report, "applied": False}
+    weight = getattr(output_head, "weight", None)
+    if weight is None or int(weight.shape[1]) != int(fit["map"].shape[0]):
+        return {
+            **report,
+            "applied": False,
+            "mutation_skipped": True,
+            "reason": "output_head_hidden_shape_mismatch",
+        }
+    with torch.no_grad():
+        mapping = fit["map"].to(device=weight.device, dtype=torch.float32)
+        updated = weight.data.to(torch.float32).matmul(mapping.t())
+        weight.data.copy_(updated.to(dtype=weight.dtype))
+    return {
+        **report,
+        "applied": True,
+        "output_head_shape": [int(item) for item in weight.shape],
     }
 
 

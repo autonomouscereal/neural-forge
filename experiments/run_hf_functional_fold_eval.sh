@@ -10,6 +10,7 @@ SOURCE_MODEL="${SOURCE_MODEL:-Qwen/Qwen3-4B-Base}"
 CANDIDATE_MODEL="${CANDIDATE_MODEL:?Set CANDIDATE_MODEL to a completed folded checkpoint.}"
 GPU_UUID="${GPU_UUID:?Set GPU_UUID to the physical GPU UUID.}"
 FUNCTIONAL_TARGET="${FUNCTIONAL_TARGET:-module-output}"
+ALPHA="${ALPHA:-1.0}"
 RIDGE="${RIDGE:-0.001}"
 MAX_LENGTH="${MAX_LENGTH:-160}"
 MAX_TOKENS_PER_LAYER="${MAX_TOKENS_PER_LAYER:-4096}"
@@ -28,12 +29,13 @@ export PYTHONPATH="$REPO/src:$REPO:${PYTHONPATH:-}"
 export CUDA_VISIBLE_DEVICES="$GPU_UUID"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-echo "functional_fold_start=$(date -Is) tag=$TAG target=$FUNCTIONAL_TARGET ridge=$RIDGE gpu_uuid=$GPU_UUID"
+echo "functional_fold_start=$(date -Is) tag=$TAG target=$FUNCTIONAL_TARGET alpha=$ALPHA ridge=$RIDGE gpu_uuid=$GPU_UUID"
 "$PY" -m neural_forge.cli hf-functional-fold \
   "$SOURCE_MODEL" \
   "$CANDIDATE_MODEL" \
   "$OUT/model" \
   --functional-target "$FUNCTIONAL_TARGET" \
+  --alpha "$ALPHA" \
   --ridge "$RIDGE" \
   --max-length "$MAX_LENGTH" \
   --max-tokens-per-layer "$MAX_TOKENS_PER_LAYER" \

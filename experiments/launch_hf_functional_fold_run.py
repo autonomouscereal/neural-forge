@@ -33,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--gpu-uuid", required=True)
     parser.add_argument("--source-model", default="Qwen/Qwen3-4B-Base")
     parser.add_argument("--functional-target", choices=["module-output", "module-all"], default="module-output")
+    parser.add_argument("--alpha", type=float, default=1.0)
     parser.add_argument("--ridge", type=float, default=1e-3)
     parser.add_argument("--max-length", type=int, default=160)
     parser.add_argument("--max-tokens-per-layer", type=int, default=4096)
@@ -81,6 +82,7 @@ def main(argv: list[str] | None = None) -> int:
         "CANDIDATE_MODEL": str(candidate),
         "GPU_UUID": args.gpu_uuid,
         "FUNCTIONAL_TARGET": args.functional_target,
+        "ALPHA": str(args.alpha),
         "RIDGE": str(args.ridge),
         "MAX_LENGTH": str(args.max_length),
         "MAX_TOKENS_PER_LAYER": str(args.max_tokens_per_layer),

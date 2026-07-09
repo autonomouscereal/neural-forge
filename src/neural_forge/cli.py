@@ -176,6 +176,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Preprocessing for PCA hidden bases.",
     )
     hf_donor_init.add_argument(
+        "--hidden-basis-ridge",
+        type=float,
+        help="Dedicated ridge coefficient for hidden-basis fitting; defaults to --ridge.",
+    )
+    hf_donor_init.add_argument(
+        "--hidden-basis-ridge-mode",
+        choices=["absolute", "trace-scaled"],
+        default="absolute",
+        help=(
+            "Interpret hidden-basis ridge literally or scale it by the average encoded Gram diagonal. "
+            "trace-scaled is better conditioned across different activation sample counts."
+        ),
+    )
+    hf_donor_init.add_argument(
         "--activation-fold-assignment",
         choices=[
             "balanced",
@@ -1227,6 +1241,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["module-output", "module-all"],
         default="module-output",
     )
+    functional_fold.add_argument("--alpha", type=float, default=1.0)
     functional_fold.add_argument("--ridge", type=float, default=1e-3)
     functional_fold.add_argument("--max-length", type=int, default=160)
     functional_fold.add_argument("--max-tokens-per-layer", type=int, default=4096)
@@ -2554,6 +2569,8 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         "hidden_basis_scope": args.hidden_basis_scope,
         "hidden_basis_max_rows": args.hidden_basis_max_rows,
         "hidden_basis_preprocess": args.hidden_basis_preprocess,
+        "hidden_basis_ridge": args.hidden_basis_ridge,
+        "hidden_basis_ridge_mode": args.hidden_basis_ridge_mode,
         "activation_fold_assignment": args.activation_fold_assignment,
         "fold_stat_repair": args.fold_stat_repair,
         "transport_backend": args.transport_backend,
@@ -3142,6 +3159,7 @@ def cmd_hf_functional_fold(args: argparse.Namespace) -> dict[str, object]:
         candidate_model=args.candidate_model,
         output_dir=args.output,
         functional_target=args.functional_target,
+        alpha=args.alpha,
         ridge=args.ridge,
         max_length=args.max_length,
         max_tokens_per_layer=args.max_tokens_per_layer,

@@ -39,9 +39,25 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--hidden-basis-preprocess",
         choices=["centered-rowrms", "uncentered-rowrms", "uncentered"],
-        default="centered-rowrms",
+        default="uncentered-rowrms",
+    )
+    parser.add_argument("--hidden-basis-ridge", type=float, default=1e-3)
+    parser.add_argument(
+        "--hidden-basis-ridge-mode",
+        choices=["absolute", "trace-scaled"],
+        default="trace-scaled",
     )
     parser.add_argument("--activation-fold-assignment", default="balanced-similarity")
+    parser.add_argument("--activation-fit-linears", action="store_true")
+    parser.add_argument(
+        "--activation-fit-target",
+        choices=["all", "attention", "attention-output", "mlp", "mlp-output", "input-projections"],
+        default="input-projections",
+    )
+    parser.add_argument("--activation-fit-max-rows", type=int, default=4096)
+    parser.add_argument("--activation-fit-alpha", type=float, default=0.5)
+    parser.add_argument("--activation-fit-ridge", type=float, default=1.0)
+    parser.add_argument("--activation-fit-max-delta-rms-ratio", type=float, default=2.0)
     parser.add_argument("--transport-support", default="importance")
     parser.add_argument("--fold-stat-repair", choices=["none", "rms"], default="none")
     parser.add_argument("--untie-output-head", action="store_true")
@@ -72,7 +88,15 @@ def main(argv: list[str] | None = None) -> int:
         "GPU_UUID": args.gpu_uuid,
         "HIDDEN_BASIS_MODE": args.hidden_basis_mode,
         "HIDDEN_BASIS_PREPROCESS": args.hidden_basis_preprocess,
+        "HIDDEN_BASIS_RIDGE": str(args.hidden_basis_ridge),
+        "HIDDEN_BASIS_RIDGE_MODE": args.hidden_basis_ridge_mode,
         "ACTIVATION_FOLD_ASSIGNMENT": args.activation_fold_assignment,
+        "ACTIVATION_FIT_LINEARS": "1" if args.activation_fit_linears else "0",
+        "ACTIVATION_FIT_TARGET": args.activation_fit_target,
+        "ACTIVATION_FIT_MAX_ROWS": str(args.activation_fit_max_rows),
+        "ACTIVATION_FIT_ALPHA": str(args.activation_fit_alpha),
+        "ACTIVATION_FIT_RIDGE": str(args.activation_fit_ridge),
+        "ACTIVATION_FIT_MAX_DELTA_RMS_RATIO": str(args.activation_fit_max_delta_rms_ratio),
         "TRANSPORT_SUPPORT": args.transport_support,
         "DONOR_LAYER_GROUP_STRATEGY": "depth",
         "DONOR_LAYER_FOLD_MODE": "representative",

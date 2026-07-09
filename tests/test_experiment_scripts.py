@@ -304,7 +304,12 @@ def test_path_conjugate_runner_exposes_oblique_basis_controls() -> None:
         REPO_ROOT / "experiments/run_qwen4b_blank_qwen146m_path_conjugate_20260709.sh"
     ).read_text(encoding="utf-8")
 
-    assert 'HIDDEN_BASIS_PREPROCESS="${HIDDEN_BASIS_PREPROCESS:-centered-rowrms}"' in script
+    assert 'HIDDEN_BASIS_PREPROCESS="${HIDDEN_BASIS_PREPROCESS:-uncentered-rowrms}"' in script
+    assert 'HIDDEN_BASIS_RIDGE_MODE="${HIDDEN_BASIS_RIDGE_MODE:-trace-scaled}"' in script
     assert 'UNTIE_OUTPUT_HEAD="${UNTIE_OUTPUT_HEAD:-0}"' in script
     assert '--hidden-basis-preprocess "$HIDDEN_BASIS_PREPROCESS"' in script
+    assert '--hidden-basis-ridge-mode "$HIDDEN_BASIS_RIDGE_MODE"' in script
+    assert 'ACTIVATION_FIT_LINEARS="${ACTIVATION_FIT_LINEARS:-0}"' in script
+    assert "--activation-fit-factor-steps 0" in script
+    assert "--activation-fit-method ridge" in script
     assert 'UNTIE_ARGS+=(--untie-output-head)' in script
