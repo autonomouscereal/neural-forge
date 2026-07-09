@@ -3591,6 +3591,51 @@ def test_attention_axis_weights_share_q_and_o_head_profiles() -> None:
     assert q_weights[0]["head_dim_assignment_key"] != o_weights[1]["head_dim_assignment_key"]
 
 
+def test_attention_axis_weights_can_use_operator_product_profile() -> None:
+    torch = pytest.importorskip("torch")
+    scores = torch.ones(2, dtype=torch.float32)
+    features = torch.zeros((2, 2), dtype=torch.float32)
+    profile = {"attention_head_profiles": {0: {"q": {"scores": scores, "features": features}}}}
+    layer_state = {
+        "self_attn.q_proj.weight": torch.tensor(
+            [
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [4.0, 0.0],
+                [0.0, 4.0],
+            ],
+            dtype=torch.float32,
+        ),
+        "self_attn.k_proj.weight": torch.tensor(
+            [
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [8.0, 0.0],
+                [0.0, 8.0],
+            ],
+            dtype=torch.float32,
+        ),
+    }
+
+    weights = _attention_axis_weights_for_tensor(
+        torch,
+        torch.zeros((4, 2), dtype=torch.float32),
+        "self_attn.q_proj.weight",
+        donor_layer_idx=0,
+        donor_layer_group=[0],
+        activation_profile=profile,
+        donor_config=_Obj(num_attention_heads=2, num_key_value_heads=2),
+        operator_layer_state=layer_state,
+        operator_product_axis_weights=True,
+    )
+
+    assert weights is not None
+    axis_profile = weights[0]
+    assert axis_profile["assignment_key"][0] == "attention-heads-operator-product"
+    assert int(torch.argmax(axis_profile["weights"]).item()) == 1
+    assert axis_profile["features"].shape[1] == 3
+
+
 def test_attention_axis_weights_carry_domain_profiles() -> None:
     torch = pytest.importorskip("torch")
     q_scores = torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=torch.float32)

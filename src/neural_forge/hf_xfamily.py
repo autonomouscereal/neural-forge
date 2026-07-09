@@ -789,6 +789,20 @@ def donor_projected_init(
             skipped_layer_keys.append({"target_key": target_key, "donor_key": donor_key, "reason": "not_floating_tensor"})
             continue
         tensor_fold_mode = fold_mode if donor_tensor.dim() >= 2 else "mean"
+        operator_layer_state = (
+            (
+                _donor_layer_state_from_index(
+                    donor_state,
+                    donor_layer_keys,
+                    donor_layer_idx,
+                    donor_layer_state_cache,
+                )
+                if donor_layer_fold_mode == "representative"
+                else folded_state
+            )
+            if operator_product_axis_weights
+            else None
+        )
         axis_weights = _activation_axis_weights_for_tensor(
             torch,
             donor_tensor,
@@ -797,20 +811,7 @@ def donor_projected_init(
             donor_layer_group,
             activation_profile,
             layer_group_weights=layer_group_weights,
-            operator_layer_state=(
-                (
-                    _donor_layer_state_from_index(
-                        donor_state,
-                        donor_layer_keys,
-                        donor_layer_idx,
-                        donor_layer_state_cache,
-                    )
-                    if donor_layer_fold_mode == "representative"
-                    else folded_state
-                )
-                if operator_product_axis_weights
-                else None
-            ),
+            operator_layer_state=operator_layer_state,
             operator_product_axis_weights=operator_product_axis_weights,
         )
         axis_reductions = _axis_reductions_for_layer_tensor(suffix)
@@ -834,6 +835,8 @@ def donor_projected_init(
                     activation_profile,
                     layer_group_weights=layer_group_weights,
                     donor_config=donor.config,
+                    operator_layer_state=operator_layer_state,
+                    operator_product_axis_weights=operator_product_axis_weights,
                 )
             projected = _resize_attention_tensor_to_shape(
                 torch,
@@ -8557,6 +8560,8 @@ def _attention_axis_weights_for_tensor(
     activation_profile,
     layer_group_weights: Sequence[float] | None = None,
     donor_config=None,
+    operator_layer_state: dict[str, Any] | None = None,
+    operator_product_axis_weights: bool = False,
 ):
     if activation_profile is None:
         return None
@@ -8675,6 +8680,24 @@ def _attention_axis_weights_for_tensor(
     if int(scores.numel()) <= 0 or source_dim % int(scores.numel()) != 0:
         return None
     source_head_dim = source_dim // int(scores.numel())
+    assignment_key = ("attention-heads", stream, layer_group_key)
+    if operator_product_axis_weights:
+        operator_weights = _attention_operator_product_weights_for_suffix(
+            torch,
+            suffix,
+            operator_layer_state,
+            source_dim=source_dim,
+            head_count=int(scores.numel()),
+            donor_config=donor_config,
+        )
+        if operator_weights is not None:
+            operator_weights = operator_weights.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12)
+            if int(operator_weights.numel()) == int(scores.numel()):
+                operator_norm = operator_weights / operator_weights.mean().clamp_min(1e-12)
+                scores = (scores.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12) * operator_norm).clamp_min(1e-12)
+                features = _append_axis_scalar_feature(torch, features, operator_norm)
+                domain_scores = _scale_domain_axis_weights(torch, domain_scores, operator_norm)
+                assignment_key = ("attention-heads-operator-product", stream, layer_group_key)
     if head_dim_scores is not None and int(head_dim_scores.numel()) != source_head_dim:
         head_dim_scores = None
         head_dim_features = None
@@ -8684,7 +8707,7 @@ def _attention_axis_weights_for_tensor(
         axis: {
             "weights": scores,
             "features": features,
-            "assignment_key": ("attention-heads", stream, layer_group_key),
+            "assignment_key": assignment_key,
             "domain_weights": domain_scores,
             "domain_features": domain_features,
             "head_dim_weights": head_dim_scores,
@@ -8694,6 +8717,110 @@ def _attention_axis_weights_for_tensor(
             "head_dim_domain_features": head_dim_domain_features,
         }
     }
+
+
+def _attention_operator_product_weights_for_suffix(
+    torch,
+    suffix: str,
+    layer_state: dict[str, Any] | None,
+    source_dim: int,
+    head_count: int,
+    donor_config=None,
+):
+    if layer_state is None or int(source_dim) <= 0 or int(head_count) <= 0:
+        return None
+    stream_info = _attention_streams_and_partition_axis(suffix)
+    if stream_info is None:
+        return None
+    stream, dim_stream, _axis = stream_info
+    q_heads = _config_int(donor_config, "num_attention_heads", "n_head", "num_heads")
+    if q_heads is None or int(q_heads) <= 0:
+        q_heads = int(head_count)
+    kv_heads = _config_int(donor_config, "num_key_value_heads", default=q_heads)
+    if kv_heads is None or int(kv_heads) <= 0:
+        kv_heads = int(q_heads)
+    q_heads = int(q_heads)
+    kv_heads = int(kv_heads)
+    q = _state_value(layer_state, "self_attn.q_proj.weight", "attention.q_proj.weight", "operator.q_proj.weight", "attn.q_proj.weight")
+    k = _state_value(layer_state, "self_attn.k_proj.weight", "attention.k_proj.weight", "operator.k_proj.weight", "attn.k_proj.weight")
+    v = _state_value(layer_state, "self_attn.v_proj.weight", "attention.v_proj.weight", "operator.v_proj.weight", "attn.v_proj.weight")
+    o = _state_value(
+        layer_state,
+        "self_attn.o_proj.weight",
+        "self_attn.out_proj.weight",
+        "attention.o_proj.weight",
+        "attention.out_proj.weight",
+        "operator.o_proj.weight",
+        "operator.out_proj.weight",
+        "attn.c_proj.weight",
+    )
+    q_scores = _attention_projection_head_rms(torch, q, q_heads, axis=0)
+    k_scores = _attention_projection_head_rms(torch, k, kv_heads, axis=0)
+    v_scores = _attention_projection_head_rms(torch, v, kv_heads, axis=0)
+    o_scores = _attention_projection_head_rms(torch, o, q_heads, axis=1)
+
+    if dim_stream == "qk":
+        if stream == "q":
+            left = _resize_head_score_vector(torch, q_scores, int(head_count))
+            right = _resize_head_score_vector(torch, k_scores, int(head_count))
+        else:
+            left = _resize_head_score_vector(torch, k_scores, int(head_count))
+            right = _resize_head_score_vector(torch, q_scores, int(head_count))
+    else:
+        if stream == "q":
+            left = _resize_head_score_vector(torch, o_scores, int(head_count))
+            right = _resize_head_score_vector(torch, v_scores, int(head_count))
+        else:
+            left = _resize_head_score_vector(torch, v_scores, int(head_count))
+            right = _resize_head_score_vector(torch, o_scores, int(head_count))
+    if left is None and right is None:
+        return None
+    if left is None:
+        left = torch.ones(int(head_count), dtype=torch.float32)
+    if right is None:
+        right = torch.ones(int(head_count), dtype=torch.float32)
+    return (left.clamp_min(1e-12) * right.clamp_min(1e-12)).sqrt().clamp_min(1e-12)
+
+
+def _attention_projection_head_rms(torch, tensor, heads: int, axis: int):
+    if tensor is None or int(heads) <= 0:
+        return None
+    values = tensor.detach().cpu().to(torch.float32)
+    if values.dim() != 2:
+        return None
+    if int(axis) == 0:
+        if int(values.shape[0]) % int(heads) != 0:
+            return None
+        partitioned = values.reshape(int(heads), int(values.shape[0]) // int(heads), int(values.shape[1]))
+    elif int(axis) == 1:
+        if int(values.shape[1]) % int(heads) != 0:
+            return None
+        partitioned = values.reshape(int(values.shape[0]), int(heads), int(values.shape[1]) // int(heads)).permute(1, 0, 2)
+    else:
+        return None
+    return partitioned.pow(2).mean(dim=tuple(range(1, partitioned.dim()))).sqrt().clamp_min(1e-12)
+
+
+def _resize_head_score_vector(torch, values, target_count: int):
+    if values is None:
+        return None
+    scores = values.detach().cpu().to(torch.float32).flatten()
+    source_count = int(scores.numel())
+    target_count = int(target_count)
+    if source_count <= 0 or target_count <= 0:
+        return None
+    if source_count == target_count:
+        return scores.contiguous()
+    if source_count < target_count:
+        source_idx = torch.floor(torch.arange(target_count, dtype=torch.float32) * source_count / target_count)
+        return scores.index_select(0, source_idx.to(torch.long).clamp_max(source_count - 1)).contiguous()
+    assignment = torch.floor(torch.arange(source_count, dtype=torch.float32) * target_count / source_count)
+    assignment = assignment.to(torch.long).clamp_max(target_count - 1)
+    folded = torch.zeros(target_count, dtype=torch.float32)
+    counts = torch.zeros(target_count, dtype=torch.float32)
+    folded.index_add_(0, assignment, scores)
+    counts.index_add_(0, assignment, torch.ones(source_count, dtype=torch.float32))
+    return folded / counts.clamp_min(1.0)
 
 
 def _attention_stream_and_partition_axis(suffix: str) -> tuple[str, int] | None:
