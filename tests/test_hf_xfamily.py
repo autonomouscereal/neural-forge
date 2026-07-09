@@ -139,6 +139,7 @@ from neural_forge.hf_xfamily import _activation_balanced_similarity_assignment
 from neural_forge.hf_xfamily import _blend_projection_with_target
 from neural_forge.hf_xfamily import _build_activation_hidden_basis
 from neural_forge.hf_xfamily import _build_activation_coordinate_hidden_basis
+from neural_forge.hf_xfamily import _build_activation_grouped_hidden_basis
 from neural_forge.hf_xfamily import _build_donor_token_hidden_basis
 from neural_forge.hf_xfamily import _build_layer_activation_hidden_bases
 from neural_forge.hf_xfamily import _build_shared_token_hidden_basis
@@ -154,6 +155,7 @@ from neural_forge.hf_xfamily import _effective_layer_alpha
 from neural_forge.hf_xfamily import _fit_linear_weight_from_activation_rows
 from neural_forge.hf_xfamily import _fit_projected_linear_from_donor_activations
 from neural_forge.hf_xfamily import _hidden_basis_axes_for_layer_tensor
+from neural_forge.hf_xfamily import _hidden_basis_for_tensor
 from neural_forge.hf_xfamily import _is_transformers_conv1d_module
 from neural_forge.hf_xfamily import _linear_module_forward
 from neural_forge.hf_xfamily import _linear_fit_rows_for_suffix
@@ -2967,6 +2969,36 @@ def test_activation_coordinate_basis_selects_real_donor_coordinates() -> None:
     assert basis.abs().sum(dim=1).le(1.0).all().item() is True
     assert sorted(descriptor["indices"].tolist()) == [1, 3]
     assert report["selected_activation_mass"] == pytest.approx(18.0 / 21.0)
+
+
+def test_activation_grouped_basis_merges_every_coordinate_orthonormally() -> None:
+    torch = pytest.importorskip("torch")
+    features = torch.tensor(
+        [[1.0, 0.0], [0.9, 0.1], [0.0, 1.0], [0.1, 0.9]],
+        dtype=torch.float32,
+    )
+    scores = torch.tensor([10.0, 1.0, 9.0, 1.0], dtype=torch.float32)
+
+    descriptor, report = _build_activation_grouped_hidden_basis(
+        torch,
+        features,
+        scores,
+        source_dim=4,
+        target_dim=2,
+        transport_support="importance",
+        assignment_mode="balanced-similarity",
+    )
+
+    basis = descriptor["basis"]
+    assert descriptor["kind"] == "grouped-orthonormal"
+    assert basis.shape == (4, 2)
+    assert basis.abs().gt(0).sum(dim=1).tolist() == [1, 1, 1, 1]
+    assert torch.allclose(basis.t().matmul(basis), torch.eye(2), atol=1e-6)
+    assert descriptor["norm_basis"].sum(dim=0).tolist() == pytest.approx([1.0, 1.0])
+    assert report["all_source_coordinates_merged"] is True
+    assert report["min_group_size"] >= 1
+    norm_descriptor = _hidden_basis_for_tensor(descriptor, 1, "model.layers.0.input_layernorm.weight")
+    assert norm_descriptor["basis"].tolist() == descriptor["norm_basis"].tolist()
 
 
 def test_activation_hidden_basis_uncentered_keeps_common_direction() -> None:

@@ -22,6 +22,14 @@ fold-only lane is
 still requires useful held-out generation and broad parent-relative behavior,
 not PPL alone.
 
+`activation-grouped` is the merge-first residual-width companion to the initial
+coordinate-selection control. It assigns every donor residual coordinate to one
+target coordinate, weights each assignment by activation mass, and normalizes
+the disjoint groups so the global basis has orthonormal columns. RMSNorm gains
+use the squared group coefficients, while embeddings, linears, residual outputs,
+and the tied head use the same global basis. This retains all hidden-coordinate
+paths without introducing a per-layer bridge or adapter.
+
 ## Highest-Priority Paths
 
 No 2025-2026 primary source found so far proves arbitrary "large parent into a

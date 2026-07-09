@@ -371,12 +371,13 @@ def donor_projected_init(
         "none",
         "activation-pca",
         "activation-coordinate",
+        "activation-grouped",
         "shared-token-ridge",
         "donor-token-pca",
         "activation-token-pca",
     }:
         raise ValueError(
-            "hidden_basis_mode must be none, activation-pca, activation-coordinate, "
+            "hidden_basis_mode must be none, activation-pca, activation-coordinate, activation-grouped, "
             "shared-token-ridge, donor-token-pca, or activation-token-pca."
         )
     if hidden_basis_scope not in {"global", "layer"}:
@@ -470,8 +471,8 @@ def donor_projected_init(
         raise ValueError("activation_max_length must be greater than 1.")
     if fold_mode in {"anchor-transplant", "path-conjugate"} and not activation_calibration_texts:
         raise ValueError(f"{fold_mode} fold_mode requires activation calibration texts.")
-    if hidden_basis_mode == "activation-coordinate" and hidden_basis_scope != "global":
-        raise ValueError("activation-coordinate uses one global residual basis; layer scope is not valid without residual adapters.")
+    if hidden_basis_mode in {"activation-coordinate", "activation-grouped"} and hidden_basis_scope != "global":
+        raise ValueError(f"{hidden_basis_mode} uses one global residual basis; layer scope is not valid without residual adapters.")
     effective_activation_fit_max_rows = _effective_activation_fit_max_rows(
         activation_fit_linears,
         activation_fit_max_rows,
@@ -625,6 +626,22 @@ def donor_projected_init(
         donor_hidden_size = int(donor.get_input_embeddings().weight.shape[1])
         target_hidden_size = int(target.get_input_embeddings().weight.shape[1])
         hidden_basis, hidden_basis_report = _build_activation_coordinate_hidden_basis(
+            torch,
+            activation_profile.get("hidden_features"),
+            activation_profile.get("hidden_scores"),
+            source_dim=donor_hidden_size,
+            target_dim=target_hidden_size,
+            transport_support=transport_support,
+            assignment_mode=activation_fold_assignment,
+        )
+        _surgery_progress("hidden_basis_done", mode=hidden_basis_mode, scope=hidden_basis_scope)
+    elif hidden_basis_mode == "activation-grouped":
+        _surgery_progress("hidden_basis_start", mode=hidden_basis_mode, scope=hidden_basis_scope)
+        if activation_profile is None:
+            raise ValueError("activation-grouped hidden basis requires activation calibration texts.")
+        donor_hidden_size = int(donor.get_input_embeddings().weight.shape[1])
+        target_hidden_size = int(target.get_input_embeddings().weight.shape[1])
+        hidden_basis, hidden_basis_report = _build_activation_grouped_hidden_basis(
             torch,
             activation_profile.get("hidden_features"),
             activation_profile.get("hidden_scores"),
@@ -874,7 +891,7 @@ def donor_projected_init(
                 target.config,
                 fold_mode=tensor_fold_mode,
                 axis_bases=layer_axis_bases,
-                hidden_basis=_hidden_basis_for_tensor(hidden_basis, donor_tensor.dim()),
+                hidden_basis=_hidden_basis_for_tensor(hidden_basis, donor_tensor.dim(), suffix),
                 attention_axis_weights=attention_axis_weights,
                 attention_head_fold_mode=(
                     "anchor-transplant"
@@ -906,7 +923,7 @@ def donor_projected_init(
                 tuple(target_tensor.shape),
                 fold_mode=tensor_fold_mode,
                 axis_bases=layer_axis_bases,
-                hidden_basis=_hidden_basis_for_tensor(hidden_basis, donor_tensor.dim()),
+                hidden_basis=_hidden_basis_for_tensor(hidden_basis, donor_tensor.dim(), suffix),
                 axis_weights=axis_weights,
                 axis_reductions=axis_reductions,
                 activation_fold_assignment=activation_fold_assignment,
@@ -950,7 +967,7 @@ def donor_projected_init(
                 max_delta_rms_ratio=activation_fit_max_delta_rms_ratio,
                 fold_mode=tensor_fold_mode,
                 layer_group_weights=layer_group_weights,
-                hidden_basis=_hidden_basis_for_tensor(hidden_basis, donor_tensor.dim()),
+                hidden_basis=_hidden_basis_for_tensor(hidden_basis, donor_tensor.dim(), suffix),
                 axis_weights=axis_weights,
                 activation_fold_assignment=activation_fold_assignment,
                 fold_stat_repair=fold_stat_repair,
@@ -3662,7 +3679,7 @@ def _initialize_non_layer_tensors_from_donor(
             donor_tensor.detach().cpu().to(torch.float32),
             tuple(target_tensor.shape),
             fold_mode=tensor_fold_mode,
-            hidden_basis=_hidden_basis_for_tensor(hidden_basis, donor_tensor.dim()),
+            hidden_basis=_hidden_basis_for_tensor(hidden_basis, donor_tensor.dim(), target_key),
             axis_weights=axis_weights,
             axis_reductions=_with_consumer_hidden_reduction(
                 _axis_reductions_for_non_layer_tensor_key(target_key),
@@ -5248,14 +5265,35 @@ def _hidden_basis_for_axis(torch, hidden_basis, source_dim: int, target_dim: int
     return None
 
 
-def _hidden_basis_for_tensor(hidden_basis, rank: int):
+def _hidden_basis_for_tensor(hidden_basis, rank: int, tensor_name: str = ""):
     if hidden_basis is None:
         return None
     if int(rank) >= 2:
         return hidden_basis
-    if isinstance(hidden_basis, dict) and hidden_basis.get("kind") == "coordinate-selection":
-        return hidden_basis
+    if isinstance(hidden_basis, dict):
+        kind = hidden_basis.get("kind")
+        if kind == "coordinate-selection":
+            return hidden_basis
+        if kind == "grouped-orthonormal":
+            if _is_hidden_norm_parameter_name(tensor_name):
+                return {"basis": hidden_basis.get("norm_basis")}
+            return hidden_basis
     return None
+
+
+def _is_hidden_norm_parameter_name(name: str) -> bool:
+    lowered = str(name).lower()
+    return lowered.endswith(
+        (
+            "input_layernorm.weight",
+            "post_attention_layernorm.weight",
+            "pre_feedforward_layernorm.weight",
+            "post_feedforward_layernorm.weight",
+            "final_layernorm.weight",
+            "model.norm.weight",
+            "transformer.ln_f.weight",
+        )
+    )
 
 
 def _resize_tensor_axis_hidden_basis(torch, tensor, axis: int, basis):
@@ -5515,6 +5553,77 @@ def _build_activation_coordinate_hidden_basis(
         "selected_activation_mass": float(selected_mass.detach().cpu()),
         "domain_support_used": bool(support.get("domain_support_used", False)),
         "domain_support_count": int(support.get("domain_support_count", 0)),
+    }
+    return descriptor, report
+
+
+def _build_activation_grouped_hidden_basis(
+    torch,
+    hidden_features,
+    hidden_scores,
+    source_dim: int,
+    target_dim: int,
+    transport_support: str = "volume-medoid",
+    assignment_mode: str = "balanced-similarity",
+):
+    source_dim = int(source_dim)
+    target_dim = int(target_dim)
+    if source_dim <= 0 or target_dim <= 0:
+        raise ValueError("source_dim and target_dim must be positive.")
+    if target_dim > source_dim:
+        raise ValueError("activation-grouped currently supports compression, not expansion.")
+    if hidden_scores is None:
+        raise ValueError("activation-grouped requires hidden activation scores.")
+    weights = hidden_scores.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12)
+    if int(weights.numel()) != source_dim:
+        raise ValueError("Hidden activation scores do not match source_dim.")
+    if hidden_features is None:
+        features = torch.stack(
+            [weights / weights.max().clamp_min(1e-12), torch.linspace(-1.0, 1.0, source_dim)],
+            dim=1,
+        )
+    else:
+        features = hidden_features.detach().cpu().to(torch.float32)
+        if features.dim() != 2 or int(features.shape[0]) != source_dim:
+            raise ValueError("Hidden activation features must have one row per source coordinate.")
+    assignment_report = _build_anchor_transplant_assignment(
+        torch,
+        features,
+        target_dim,
+        weights=weights,
+        transport_support=transport_support,
+        assignment_mode=assignment_mode,
+    )
+    assignment = assignment_report["assignment"].detach().cpu().to(torch.long)
+    signs = assignment_report.get("assignment_signs", torch.ones(source_dim)).detach().cpu().to(torch.float32)
+    basis = torch.zeros((source_dim, target_dim), dtype=torch.float32)
+    group_mass = torch.zeros(target_dim, dtype=torch.float32)
+    group_mass.index_add_(0, assignment, weights)
+    coefficients = (weights / group_mass[assignment].clamp_min(1e-12)).sqrt() * signs
+    basis[torch.arange(source_dim, dtype=torch.long), assignment] = coefficients
+    norm_basis = basis.pow(2)
+    group_sizes = torch.bincount(assignment, minlength=target_dim)
+    orthogonality_error = (basis.t().matmul(basis) - torch.eye(target_dim)).abs().max()
+    descriptor = {
+        "basis": basis.contiguous(),
+        "norm_basis": norm_basis.contiguous(),
+        "kind": "grouped-orthonormal",
+        "assignment": assignment,
+        "assignment_signs": signs,
+        "anchor_support_indices": assignment_report["anchor_support_indices"],
+    }
+    report = {
+        "mode": "activation-grouped",
+        "source_dim": source_dim,
+        "target_dim": target_dim,
+        "transport_support": transport_support,
+        "assignment_mode": assignment_mode,
+        "all_source_coordinates_merged": int(assignment.numel()) == source_dim,
+        "min_group_size": int(group_sizes.min().item()),
+        "max_group_size": int(group_sizes.max().item()),
+        "mean_group_size": float(group_sizes.to(torch.float32).mean().item()),
+        "orthogonality_max_abs_error": float(orthogonality_error.item()),
+        "anchor_support_indices": assignment_report["anchor_support_indices"].tolist(),
     }
     return descriptor, report
 

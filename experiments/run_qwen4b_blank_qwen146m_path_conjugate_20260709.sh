@@ -9,6 +9,7 @@ TAG="${TAG:-qwen4b_to_blank_qwen3_146m_path_conjugate_initonly_20260709}"
 OUT="${OUT:-$RUN_ROOT/$TAG}"
 GPU_UUID="${GPU_UUID:-GPU-2ce6a95c-7b1f-644a-3808-d781732a0582}"
 TRANSPORT_SUPPORT="${TRANSPORT_SUPPORT:-volume-medoid}"
+HIDDEN_BASIS_MODE="${HIDDEN_BASIS_MODE:-activation-coordinate}"
 PARENT_EVAL="${PARENT_EVAL:-$RUN_ROOT/evals/eval_parent_qwen3_4b_base_strict_20260705_1000x1000x250.json}"
 
 mkdir -p "$OUT/reports"
@@ -24,7 +25,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
   --seed 0 \
   --max-anchors 151936 \
   --fold-mode path-conjugate \
-  --hidden-basis-mode activation-coordinate \
+  --hidden-basis-mode "$HIDDEN_BASIS_MODE" \
   --hidden-basis-scope global \
   --hidden-basis-max-rows 4096 \
   --activation-fold-assignment balanced-similarity \
