@@ -1215,6 +1215,34 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_reconstruct.add_argument("--max-calibration-texts", type=int)
     xfamily_reconstruct.set_defaults(func=cmd_hf_xfamily_reconstruct)
 
+    functional_fold = sub.add_parser(
+        "hf-functional-fold",
+        help="Materialize a zero-gradient sequential functional fold from a donor into an initialized child.",
+    )
+    functional_fold.add_argument("source_model")
+    functional_fold.add_argument("candidate_model")
+    functional_fold.add_argument("output")
+    functional_fold.add_argument(
+        "--functional-target",
+        choices=["module-output", "module-all"],
+        default="module-output",
+    )
+    functional_fold.add_argument("--ridge", type=float, default=1e-3)
+    functional_fold.add_argument("--max-length", type=int, default=160)
+    functional_fold.add_argument("--max-tokens-per-layer", type=int, default=4096)
+    functional_fold.add_argument("--max-anchors", type=int, default=20_000)
+    functional_fold.add_argument("--fit-gate-validation-fraction", type=float, default=0.20)
+    functional_fold.add_argument("--fit-gate-min-validation-rows", type=int, default=64)
+    functional_fold.add_argument("--fit-gate-min-relative-improvement", type=float, default=0.0)
+    functional_fold.add_argument("--fit-gate-max-cosine-drop", type=float, default=0.01)
+    functional_fold.add_argument("--dtype", default="float16")
+    functional_fold.add_argument("--candidate-dtype", default="float32")
+    functional_fold.add_argument("--device", default="cuda:0")
+    functional_fold.add_argument("--trust-remote-code", action="store_true")
+    functional_fold.add_argument("--calibration-file")
+    functional_fold.add_argument("--max-calibration-texts", type=int)
+    functional_fold.set_defaults(func=cmd_hf_functional_fold)
+
     xfamily_block_recover = sub.add_parser(
         "hf-xfamily-block-recover",
         help="Sequentially train each target block against projected cross-tokenizer donor block activations.",
@@ -3098,6 +3126,30 @@ def cmd_hf_xfamily_reconstruct(args: argparse.Namespace) -> dict[str, object]:
         layer_gate_behavior_max_new_tokens=args.layer_gate_behavior_max_new_tokens,
         layer_gate_eval_suite=args.layer_gate_eval_suite,
         layer_gate_max_generation_prompts=args.layer_gate_max_generation_prompts,
+        torch_dtype=args.dtype,
+        candidate_torch_dtype=args.candidate_dtype,
+        device=args.device,
+        trust_remote_code=args.trust_remote_code,
+        calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+    )
+
+
+def cmd_hf_functional_fold(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_recovery import functional_fold_cross_tokenizer_causal_lm
+
+    return functional_fold_cross_tokenizer_causal_lm(
+        source_model=args.source_model,
+        candidate_model=args.candidate_model,
+        output_dir=args.output,
+        functional_target=args.functional_target,
+        ridge=args.ridge,
+        max_length=args.max_length,
+        max_tokens_per_layer=args.max_tokens_per_layer,
+        max_anchors=args.max_anchors,
+        fit_gate_validation_fraction=args.fit_gate_validation_fraction,
+        fit_gate_min_validation_rows=args.fit_gate_min_validation_rows,
+        fit_gate_min_relative_improvement=args.fit_gate_min_relative_improvement,
+        fit_gate_max_cosine_drop=args.fit_gate_max_cosine_drop,
         torch_dtype=args.dtype,
         candidate_torch_dtype=args.candidate_dtype,
         device=args.device,

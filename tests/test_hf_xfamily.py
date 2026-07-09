@@ -11018,6 +11018,95 @@ def test_hf_xfamily_reconstruct_handler_passes_flags(monkeypatch) -> None:
     }
 
 
+def test_hf_functional_fold_handler_is_zero_gradient_surface(monkeypatch) -> None:
+    import neural_forge.cli as cli
+    import neural_forge.hf_recovery as hf_recovery
+
+    captured = {}
+
+    def fake_functional_fold(**kwargs):
+        captured.update(kwargs)
+        return {"zero_gradient": True}
+
+    monkeypatch.setattr(hf_recovery, "functional_fold_cross_tokenizer_causal_lm", fake_functional_fold)
+    monkeypatch.setattr(cli, "_load_recovery_calibration_texts", lambda path, max_texts: ["fold text"])
+    args = build_parser().parse_args(
+        [
+            "hf-functional-fold",
+            "donor",
+            "candidate",
+            "out",
+            "--functional-target",
+            "module-all",
+            "--ridge",
+            "0.004",
+            "--max-length",
+            "96",
+            "--max-tokens-per-layer",
+            "768",
+            "--max-anchors",
+            "5000",
+            "--fit-gate-min-validation-rows",
+            "48",
+            "--calibration-file",
+            "fold.jsonl",
+            "--max-calibration-texts",
+            "32",
+            "--device",
+            "cpu",
+        ]
+    )
+
+    assert args.func(args) == {"zero_gradient": True}
+    assert captured == {
+        "source_model": "donor",
+        "candidate_model": "candidate",
+        "output_dir": "out",
+        "functional_target": "module-all",
+        "ridge": 0.004,
+        "max_length": 96,
+        "max_tokens_per_layer": 768,
+        "max_anchors": 5000,
+        "fit_gate_validation_fraction": 0.2,
+        "fit_gate_min_validation_rows": 48,
+        "fit_gate_min_relative_improvement": 0.0,
+        "fit_gate_max_cosine_drop": 0.01,
+        "torch_dtype": "float16",
+        "candidate_torch_dtype": "float32",
+        "device": "cpu",
+        "trust_remote_code": False,
+        "calibration_texts": ["fold text"],
+    }
+
+
+def test_functional_fold_dispatches_closed_form_module_fit(monkeypatch, tmp_path: Path) -> None:
+    import neural_forge.hf_recovery as hf_recovery
+
+    captured = {}
+
+    def fake_reconstruct(**kwargs):
+        captured.update(kwargs)
+        return {"output_dir": str(tmp_path), "repairs": []}
+
+    monkeypatch.setattr(hf_recovery, "reconstruct_cross_tokenizer_causal_lm", fake_reconstruct)
+    report = hf_recovery.functional_fold_cross_tokenizer_causal_lm(
+        "donor",
+        "candidate",
+        tmp_path,
+        functional_target="module-output",
+        calibration_texts=["fold text"],
+    )
+
+    assert report["zero_gradient"] is True
+    assert report["optimizer_steps"] == 0
+    assert captured["reconstruction_target"] == "module-output"
+    assert captured["reconstruction_objective"] == "ridge"
+    assert captured["cosine_steps"] == 0
+    assert captured["hidden_projection_source"] == "fold-basis"
+    assert captured["fit_gate"] == "validation"
+    assert (tmp_path / "neural_forge_functional_fold_report.json").is_file()
+
+
 def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
     import neural_forge.cli as cli
     import neural_forge.hf_recovery as hf_recovery

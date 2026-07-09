@@ -2562,6 +2562,70 @@ def reconstruct_cross_tokenizer_causal_lm(
     return reconstruction_report
 
 
+def functional_fold_cross_tokenizer_causal_lm(
+    source_model: str,
+    candidate_model: str,
+    output_dir: str | Path,
+    functional_target: str = "module-output",
+    ridge: float = 1e-3,
+    max_length: int = 160,
+    max_tokens_per_layer: int = 4096,
+    max_anchors: int = 20_000,
+    fit_gate_validation_fraction: float = 0.20,
+    fit_gate_min_validation_rows: int = 64,
+    fit_gate_min_relative_improvement: float = 0.0,
+    fit_gate_max_cosine_drop: float = 0.01,
+    torch_dtype: str = "float16",
+    candidate_torch_dtype: str = "float32",
+    device: str = "cuda:0",
+    trust_remote_code: bool = False,
+    calibration_texts: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    """Materialize sequential donor behavior with closed-form maps only."""
+
+    if functional_target not in {"module-output", "module-all"}:
+        raise ValueError("functional_target must be module-output or module-all.")
+    report = reconstruct_cross_tokenizer_causal_lm(
+        source_model=source_model,
+        candidate_model=candidate_model,
+        output_dir=output_dir,
+        ridge=ridge,
+        reconstruction_alpha=1.0,
+        reconstruction_target=functional_target,
+        donor_layer_fold_mode="representative",
+        reconstruction_objective="ridge",
+        cosine_steps=0,
+        cosine_lr=1e-2,
+        cosine_l2=0.0,
+        max_length=max_length,
+        max_tokens_per_layer=max_tokens_per_layer,
+        max_anchors=max_anchors,
+        hidden_projection_source="fold-basis",
+        hidden_projection_scope="global",
+        fit_gate="validation",
+        fit_gate_validation_fraction=fit_gate_validation_fraction,
+        fit_gate_min_validation_rows=fit_gate_min_validation_rows,
+        fit_gate_min_relative_improvement=fit_gate_min_relative_improvement,
+        fit_gate_max_cosine_drop=fit_gate_max_cosine_drop,
+        layer_gate_metric="none",
+        torch_dtype=torch_dtype,
+        candidate_torch_dtype=candidate_torch_dtype,
+        device=device,
+        trust_remote_code=trust_remote_code,
+        calibration_texts=calibration_texts,
+    )
+    functional_report = {
+        **report,
+        "operation": "functional_fold_cross_tokenizer_causal_lm",
+        "zero_gradient": True,
+        "optimizer_steps": 0,
+        "functional_target": functional_target,
+        "hidden_projection_source": "fold-basis",
+    }
+    _write_json(Path(output_dir) / "neural_forge_functional_fold_report.json", functional_report)
+    return functional_report
+
+
 def blockwise_reconstruct_cross_tokenizer_causal_lm(
     source_model: str,
     candidate_model: str,
