@@ -42,6 +42,7 @@ from neural_forge.hf_recovery import _fit_lm_head_from_hidden_logits
 from neural_forge.hf_recovery import _fit_lm_head_mean_shift
 from neural_forge.hf_recovery import _fit_shared_embedding_hidden_projection
 from neural_forge.hf_recovery import _hidden_projection_gate_report
+from neural_forge.hf_recovery import _load_fold_hidden_projection
 from neural_forge.hf_recovery import _first_response_shift_mask
 from neural_forge.hf_recovery import _focus_spans_to_shift_mask
 from neural_forge.hf_recovery import _focus_spans_to_span_pairs
@@ -141,10 +142,13 @@ from neural_forge.hf_xfamily import _blend_projection_with_target
 from neural_forge.hf_xfamily import _build_activation_hidden_basis
 from neural_forge.hf_xfamily import _build_activation_coordinate_hidden_basis
 from neural_forge.hf_xfamily import _build_activation_grouped_hidden_basis
+from neural_forge.hf_xfamily import _build_activation_oblique_hidden_basis
 from neural_forge.hf_xfamily import _build_gqa_coupled_q_assignment
 from neural_forge.hf_xfamily import _build_donor_token_hidden_basis
 from neural_forge.hf_xfamily import _build_layer_activation_hidden_bases
 from neural_forge.hf_xfamily import _build_shared_token_hidden_basis
+from neural_forge.hf_xfamily import _repair_folded_axis_stats
+from neural_forge.hf_xfamily import _save_hidden_basis_artifact
 from neural_forge.hf_xfamily import _channel_assignment_features
 from neural_forge.hf_xfamily import _donor_layer_group_for_target
 from neural_forge.hf_xfamily import _donor_layer_groups_by_energy
@@ -158,6 +162,7 @@ from neural_forge.hf_xfamily import _fit_linear_weight_from_activation_rows
 from neural_forge.hf_xfamily import _fit_projected_linear_from_donor_activations
 from neural_forge.hf_xfamily import _hidden_basis_axes_for_layer_tensor
 from neural_forge.hf_xfamily import _hidden_basis_for_tensor
+from neural_forge.hf_xfamily import _hidden_basis_axes_for_init_tensor
 from neural_forge.hf_xfamily import _is_transformers_conv1d_module
 from neural_forge.hf_xfamily import _linear_module_forward
 from neural_forge.hf_xfamily import _linear_fit_rows_for_suffix
@@ -940,6 +945,24 @@ def test_cli_accepts_fold_stat_repair() -> None:
 
     assert donor_init_args.fold_stat_repair == "rms"
     assert chain_args.init_fold_stat_repair == "rms"
+
+
+def test_cli_accepts_module_output_reconstruction_with_fold_basis() -> None:
+    args = build_parser().parse_args(
+        [
+            "hf-xfamily-reconstruct",
+            "donor",
+            "candidate",
+            "out",
+            "--reconstruction-target",
+            "module-output",
+            "--hidden-projection-source",
+            "fold-basis",
+        ]
+    )
+
+    assert args.reconstruction_target == "module-output"
+    assert args.hidden_projection_source == "fold-basis"
 
 
 def test_cli_accepts_domain_diverse_medoid_transport_support() -> None:
@@ -3300,6 +3323,68 @@ def test_activation_grouped_basis_merges_every_coordinate_orthonormally() -> Non
     assert norm_descriptor["basis"].tolist() == descriptor["norm_basis"].tolist()
 
 
+def test_activation_oblique_basis_reconstructs_discarded_coordinates() -> None:
+    torch = pytest.importorskip("torch")
+    a = torch.linspace(-2.0, 2.0, 16)
+    b = torch.tensor([1.0, -1.0] * 8)
+    rows = torch.stack([a, b, 2.0 * a, -3.0 * b], dim=1)
+
+    descriptor, report = _build_activation_oblique_hidden_basis(
+        torch,
+        rows,
+        source_dim=4,
+        target_dim=2,
+        ridge=1e-6,
+        preprocess="uncentered",
+    )
+
+    indices = descriptor["indices"]
+    encoded = rows.index_select(1, indices)
+    reconstruction = descriptor["input_basis"].t()
+    predicted = encoded.matmul(reconstruction)
+    assert descriptor["kind"] == "oblique-coordinate"
+    assert descriptor["output_basis"].shape == (4, 2)
+    assert torch.allclose(reconstruction[:, indices], torch.eye(2), atol=1e-6)
+    assert torch.allclose(predicted, rows, atol=1e-4)
+    assert report["relative_reconstruction_error"] < 1e-4
+
+    q_axes = _hidden_basis_axes_for_init_tensor(
+        torch,
+        torch.zeros((3, 4)),
+        "self_attn.q_proj.weight",
+        descriptor,
+        None,
+    )
+    o_axes = _hidden_basis_axes_for_init_tensor(
+        torch,
+        torch.zeros((4, 3)),
+        "self_attn.o_proj.weight",
+        descriptor,
+        None,
+    )
+    assert torch.equal(q_axes[1], descriptor["input_basis"])
+    assert torch.equal(o_axes[0], descriptor["output_basis"])
+
+
+def test_cli_accepts_activation_oblique_hidden_basis() -> None:
+    args = build_parser().parse_args(
+        [
+            "hf-donor-project-init",
+            "out",
+            "--target-config-model",
+            "target",
+            "--donor-model",
+            "donor",
+            "--hidden-basis-mode",
+            "activation-oblique",
+            "--untie-output-head",
+        ]
+    )
+
+    assert args.hidden_basis_mode == "activation-oblique"
+    assert args.untie_output_head is True
+
+
 def test_activation_hidden_basis_uncentered_keeps_common_direction() -> None:
     torch = pytest.importorskip("torch")
     rows = torch.tensor(
@@ -3746,7 +3831,7 @@ def test_token_projection_uses_sum_for_lm_head_and_mean_for_embeddings() -> None
     assert head_target.tolist() == [[2.0, 2.0], [2.0, 2.0]]
 
 
-def test_axis_assignment_cache_separates_reduction_modes() -> None:
+def test_axis_assignment_cache_reuses_map_across_reduction_modes() -> None:
     torch = pytest.importorskip("torch")
     cache = {}
     source = torch.ones((4, 1), dtype=torch.float32)
@@ -3774,9 +3859,8 @@ def test_axis_assignment_cache_separates_reduction_modes() -> None:
 
     assert mean_folded.flatten().tolist() == pytest.approx([1.0, 1.0])
     assert sum_folded.flatten().tolist() == pytest.approx([2.0, 2.0])
-    assert len(cache) == 2
-    assert any("'mean'" in repr(key) for key in cache)
-    assert any("'sum'" in repr(key) for key in cache)
+    assert len(cache) == 1
+    assert "'axis-shared'" in repr(next(iter(cache)))
 
 
 def test_token_projection_can_weight_donor_piece_rows() -> None:
@@ -5330,6 +5414,63 @@ def test_fold_stat_repair_preserves_assignment_cluster_rms() -> None:
     repaired_rms = folded_repaired.pow(2).mean(dim=1).sqrt().sort().values
     assert plain_rms.tolist() == pytest.approx([5.0, 50.0])
     assert repaired_rms.tolist() == pytest.approx([2**0.5 * 5.0, 2**0.5 * 50.0])
+
+
+def test_fold_stat_repair_does_not_rescale_selected_producer_paths() -> None:
+    torch = pytest.importorskip("torch")
+    flat = torch.tensor([[1.0, 0.0], [10.0, 0.0], [0.0, 4.0], [0.0, 40.0]])
+    selected = torch.stack([flat[0], flat[2]])
+    repaired = _repair_folded_axis_stats(
+        torch,
+        flat,
+        selected,
+        "rms",
+        torch.ones(4),
+        "select",
+        assignment=torch.tensor([0, 0, 1, 1]),
+    )
+
+    assert torch.equal(repaired, selected)
+
+
+def test_fold_hidden_projection_loads_coordinate_report(tmp_path: Path) -> None:
+    torch = pytest.importorskip("torch")
+    report = {
+        "hidden_basis": {
+            "mode": "activation-coordinate",
+            "selected_indices": [3, 1],
+        }
+    }
+    (tmp_path / "neural_forge_donor_projected_init_report.json").write_text(json.dumps(report))
+
+    loaded = _load_fold_hidden_projection(torch, tmp_path, source_dim=4, target_dim=2)
+
+    assert loaded is not None
+    assert loaded["source"] == "fold-basis-coordinate-report"
+    assert loaded["map"].tolist() == [
+        [0.0, 0.0],
+        [0.0, 1.0],
+        [0.0, 0.0],
+        [1.0, 0.0],
+    ]
+
+
+def test_hidden_basis_artifact_prefers_output_basis(tmp_path: Path) -> None:
+    torch = pytest.importorskip("torch")
+    descriptor = {
+        "basis": torch.tensor([[1.0], [0.0]]),
+        "output_basis": torch.tensor([[0.0], [1.0]]),
+        "input_basis": torch.tensor([[2.0], [3.0]]),
+    }
+    artifact = _save_hidden_basis_artifact(torch, tmp_path, descriptor)
+    report = {"hidden_basis_artifact": artifact}
+    (tmp_path / "neural_forge_donor_projected_init_report.json").write_text(json.dumps(report))
+
+    loaded = _load_fold_hidden_projection(torch, tmp_path, source_dim=2, target_dim=1)
+
+    assert loaded is not None
+    assert loaded["basis_key"] == "output_basis"
+    assert loaded["map"].tolist() == [[0.0], [1.0]]
 
 
 def test_mlp_neuron_activation_values_use_gated_product() -> None:
@@ -10790,6 +10931,8 @@ def test_hf_xfamily_reconstruct_handler_passes_flags(monkeypatch) -> None:
             "144",
             "--max-anchors",
             "333",
+            "--hidden-projection-source",
+            "fold-basis",
             "--hidden-projection-scope",
             "layer-input",
             "--layer-limit",
@@ -10851,6 +10994,7 @@ def test_hf_xfamily_reconstruct_handler_passes_flags(monkeypatch) -> None:
         "max_length": 96,
         "max_tokens_per_layer": 144,
         "max_anchors": 333,
+        "hidden_projection_source": "fold-basis",
         "hidden_projection_scope": "layer-input",
         "layer_limit": 4,
         "fit_gate": "validation",

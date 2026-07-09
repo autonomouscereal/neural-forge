@@ -297,3 +297,14 @@ def test_combined_anchor_beststack_matrix_keeps_old_and_cross_family_lanes() -> 
     assert 'f"eval_{tag}_exactgen_20260702_1000x1000x250.json"' in script
     assert 'f"eval_{tag}_strict_20260706_1000x1000x250.json"' in script
     assert "retest_matrix.py\" summarize" in script
+
+
+def test_path_conjugate_runner_exposes_oblique_basis_controls() -> None:
+    script = (
+        REPO_ROOT / "experiments/run_qwen4b_blank_qwen146m_path_conjugate_20260709.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'HIDDEN_BASIS_PREPROCESS="${HIDDEN_BASIS_PREPROCESS:-centered-rowrms}"' in script
+    assert 'UNTIE_OUTPUT_HEAD="${UNTIE_OUTPUT_HEAD:-0}"' in script
+    assert '--hidden-basis-preprocess "$HIDDEN_BASIS_PREPROCESS"' in script
+    assert 'UNTIE_ARGS+=(--untie-output-head)' in script

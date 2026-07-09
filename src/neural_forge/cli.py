@@ -146,6 +146,7 @@ def build_parser() -> argparse.ArgumentParser:
             "activation-pca",
             "activation-coordinate",
             "activation-grouped",
+            "activation-oblique",
             "shared-token-ridge",
             "donor-token-pca",
             "activation-token-pca",
@@ -1114,6 +1115,8 @@ def build_parser() -> argparse.ArgumentParser:
             "mlp",
             "mlp-output",
             "mlp-all",
+            "module-output",
+            "module-all",
             "both",
             "all",
         ],
@@ -1135,6 +1138,15 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_reconstruct.add_argument("--max-length", type=int, default=128)
     xfamily_reconstruct.add_argument("--max-tokens-per-layer", type=int, default=512)
     xfamily_reconstruct.add_argument("--max-anchors", type=int, default=2048)
+    xfamily_reconstruct.add_argument(
+        "--hidden-projection-source",
+        choices=["auto", "fold-basis", "shared-token"],
+        default="auto",
+        help=(
+            "Use the exact donor-to-child basis saved by donor projection when available, require that basis, "
+            "or refit a map from shared token embeddings."
+        ),
+    )
     xfamily_reconstruct.add_argument(
         "--hidden-projection-scope",
         choices=["global", "layer-input", "layer-input-gated"],
@@ -1661,6 +1673,7 @@ def build_parser() -> argparse.ArgumentParser:
             "activation-pca",
             "activation-coordinate",
             "activation-grouped",
+            "activation-oblique",
             "shared-token-ridge",
             "donor-token-pca",
             "activation-token-pca",
@@ -1795,6 +1808,8 @@ def build_parser() -> argparse.ArgumentParser:
             "mlp",
             "mlp-output",
             "mlp-all",
+            "module-output",
+            "module-all",
             "both",
             "all",
         ],
@@ -3067,6 +3082,7 @@ def cmd_hf_xfamily_reconstruct(args: argparse.Namespace) -> dict[str, object]:
         max_length=args.max_length,
         max_tokens_per_layer=args.max_tokens_per_layer,
         max_anchors=args.max_anchors,
+        hidden_projection_source=args.hidden_projection_source,
         hidden_projection_scope=args.hidden_projection_scope,
         layer_limit=args.layer_limit,
         fit_gate=args.fit_gate,

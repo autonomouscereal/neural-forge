@@ -2058,6 +2058,66 @@ def reconstruct_folded_causal_lm(
     return reconstruction_report
 
 
+def _load_fold_hidden_projection(
+    torch,
+    candidate_model: str | Path,
+    source_dim: int,
+    target_dim: int,
+) -> dict[str, Any] | None:
+    root = Path(candidate_model)
+    if not root.is_dir():
+        return None
+    report_path = root / "neural_forge_donor_projected_init_report.json"
+    report = {}
+    if report_path.is_file():
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            report = {}
+
+    artifact = report.get("hidden_basis_artifact") or {}
+    artifact_name = artifact.get("file") or "neural_forge_hidden_basis.safetensors"
+    artifact_path = root / str(artifact_name)
+    if artifact_path.is_file():
+        from safetensors.torch import load_file
+
+        tensors = load_file(str(artifact_path), device="cpu")
+        basis = tensors.get("output_basis")
+        basis_key = "output_basis"
+        if basis is None:
+            basis = tensors.get("basis")
+            basis_key = "basis"
+        if basis is not None and tuple(basis.shape) == (int(source_dim), int(target_dim)):
+            return {
+                "map": basis.detach().cpu().to(torch.float32).contiguous(),
+                "source": "fold-basis-artifact",
+                "basis_key": basis_key,
+                "artifact": str(artifact_path),
+                "source_dim": int(source_dim),
+                "target_dim": int(target_dim),
+            }
+
+    basis_report = report.get("hidden_basis") or {}
+    if basis_report.get("mode") == "activation-coordinate":
+        indices = [int(item) for item in basis_report.get("selected_indices") or []]
+        if len(indices) == int(target_dim) and len(set(indices)) == int(target_dim):
+            if min(indices, default=0) >= 0 and max(indices, default=-1) < int(source_dim):
+                basis = torch.zeros((int(source_dim), int(target_dim)), dtype=torch.float32)
+                basis[
+                    torch.tensor(indices, dtype=torch.long),
+                    torch.arange(int(target_dim), dtype=torch.long),
+                ] = 1.0
+                return {
+                    "map": basis.contiguous(),
+                    "source": "fold-basis-coordinate-report",
+                    "basis_key": "selected_indices",
+                    "report": str(report_path),
+                    "source_dim": int(source_dim),
+                    "target_dim": int(target_dim),
+                }
+    return None
+
+
 def reconstruct_cross_tokenizer_causal_lm(
     source_model: str,
     candidate_model: str,
@@ -2073,6 +2133,7 @@ def reconstruct_cross_tokenizer_causal_lm(
     max_length: int = 128,
     max_tokens_per_layer: int = 512,
     max_anchors: int = 2048,
+    hidden_projection_source: str = "auto",
     hidden_projection_scope: str = "global",
     layer_limit: int | None = None,
     fit_gate: str = "none",
@@ -2115,13 +2176,15 @@ def reconstruct_cross_tokenizer_causal_lm(
         "mlp",
         "mlp-output",
         "mlp-all",
+        "module-output",
+        "module-all",
         "both",
         "all",
     }
     if reconstruction_target not in xfamily_targets:
         raise ValueError(
             "reconstruction_target must be consumer-input, block-interface, attention, attention-output, attention-all, "
-            "mlp, mlp-output, mlp-all, both, or all."
+            "mlp, mlp-output, mlp-all, module-output, module-all, both, or all."
         )
     if donor_layer_fold_mode not in {"representative", "average", "fold"}:
         raise ValueError("donor_layer_fold_mode must be representative, average, or fold.")
@@ -2139,6 +2202,8 @@ def reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("max_tokens_per_layer must be positive.")
     if max_anchors <= 0:
         raise ValueError("max_anchors must be positive.")
+    if hidden_projection_source not in {"auto", "fold-basis", "shared-token"}:
+        raise ValueError("hidden_projection_source must be auto, fold-basis, or shared-token.")
     if hidden_projection_scope not in {"global", "layer-input", "layer-input-gated"}:
         raise ValueError("hidden_projection_scope must be global, layer-input, or layer-input-gated.")
     if layer_limit is not None and layer_limit <= 0:
@@ -2220,15 +2285,27 @@ def reconstruct_cross_tokenizer_causal_lm(
         raise ValueError("No shared decoded-token anchors found for cross-tokenizer reconstruction.")
     source_anchor_idx = torch.tensor([item[1] for item in anchors], dtype=torch.long, device=device)
     candidate_anchor_idx = torch.tensor([item[2] for item in anchors], dtype=torch.long, device=device)
-    hidden_projection_report = _fit_shared_embedding_hidden_projection(
-        torch,
-        source,
-        candidate,
-        source_anchor_idx,
-        candidate_anchor_idx,
-        ridge=ridge,
-        max_anchors=max_anchors,
-    )
+    hidden_projection_report = None
+    if hidden_projection_source in {"auto", "fold-basis"}:
+        hidden_projection_report = _load_fold_hidden_projection(
+            torch,
+            candidate_model,
+            int(source.get_input_embeddings().weight.shape[1]),
+            int(candidate.get_input_embeddings().weight.shape[1]),
+        )
+        if hidden_projection_report is None and hidden_projection_source == "fold-basis":
+            raise ValueError("candidate_model does not contain a compatible Neural Forge fold basis.")
+    if hidden_projection_report is None:
+        hidden_projection_report = _fit_shared_embedding_hidden_projection(
+            torch,
+            source,
+            candidate,
+            source_anchor_idx,
+            candidate_anchor_idx,
+            ridge=ridge,
+            max_anchors=max_anchors,
+        )
+        hidden_projection_report["source"] = "shared-token-ridge"
     hidden_projection = hidden_projection_report["map"].to(device=device, dtype=torch.float32)
 
     texts = list(calibration_texts or RECOVERY_TEXTS)
@@ -2461,6 +2538,7 @@ def reconstruct_cross_tokenizer_causal_lm(
         "max_length": max_length,
         "max_tokens_per_layer": max_tokens_per_layer,
         "max_anchors": max_anchors,
+        "hidden_projection_source": hidden_projection_source,
         "hidden_projection_scope": hidden_projection_scope,
         "layer_limit": layer_limit,
         "fit_gate": {
@@ -9753,7 +9831,7 @@ def _reconstruct_cross_tokenizer_layer(
         source_attn_layer = source_layers[max(0, min(source_group[0], len(source_layers) - 1))]
         source_mlp_layer = source_layers[max(0, min(source_group[-1], len(source_layers) - 1))]
 
-    if reconstruction_target in {"attention", "attention-all", "both", "all"}:
+    if reconstruction_target in {"attention", "attention-all", "module-all", "both", "all"}:
         source_attn_norm = _get_layer_module(source_attn_layer, ("input_layernorm", "ln_1"))
         source_attn_norm_modules = _source_group_layer_modules(
             source_layers,
@@ -9798,7 +9876,7 @@ def _reconstruct_cross_tokenizer_layer(
             "skipped": True,
             "reason": "reconstruction_target_excludes_attention",
         }
-    if reconstruction_target in {"attention-output", "attention-all", "all"}:
+    if reconstruction_target in {"attention-output", "attention-all", "module-output", "module-all", "all"}:
         source_attention_modules = _source_group_layer_modules(
             source_layers,
             source_group,
@@ -9840,7 +9918,7 @@ def _reconstruct_cross_tokenizer_layer(
             "reason": "reconstruction_target_excludes_attention_output",
         }
 
-    if reconstruction_target in {"mlp", "mlp-all", "both", "all"}:
+    if reconstruction_target in {"mlp", "mlp-all", "module-all", "both", "all"}:
         source_mlp_norm = _get_layer_module(source_mlp_layer, ("post_attention_layernorm", "ln_2"))
         source_mlp_norm_modules = _source_group_layer_modules(
             source_layers,
@@ -9885,7 +9963,7 @@ def _reconstruct_cross_tokenizer_layer(
             "skipped": True,
             "reason": "reconstruction_target_excludes_mlp",
         }
-    if reconstruction_target in {"mlp-output", "mlp-all", "all"}:
+    if reconstruction_target in {"mlp-output", "mlp-all", "module-output", "module-all", "all"}:
         repair_report["mlp_output_reconstruction"] = _reconstruct_cross_tokenizer_mlp_output(
             torch,
             source,

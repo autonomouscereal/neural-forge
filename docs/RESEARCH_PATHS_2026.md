@@ -41,6 +41,31 @@ use the squared group coefficients, while embeddings, linears, residual outputs,
 and the tied head use the same global basis. This retains all hidden-coordinate
 paths without introducing a per-layer bridge or adapter.
 
+The first true width-only `36 -> 36` control used a blank Qwen3 target with
+`hidden=384`, `intermediate=1536`, `Q/KV=4/1`, and `139,673,856` evaluated
+parameters (`28.80x`). Keeping every donor layer did not rescue the RMS-repaired
+coordinate fold: PPL was `215,032.38`, behavior `0/1000`, generation `0/1000`,
+and choice `31/250`, versus parent `877.58`, `400/1000`, `388/1000`, and
+`250/250`. Manual math/code generations were multilingual fragments.
+
+That run exposed a mathematical error in combining selection with RMS repair.
+Producer paths use real selected rows, but the old repair treated a selected
+anchor as if it carried the summed power of its entire cluster. For eight-way
+attention-head compression this multiplies both Q and K RMS by about
+`sqrt(8)`, making attention logits roughly eight times too large. RMS repair is
+now a no-op for `select` reductions, and unrepaired l36 coordinate/grouped
+controls are the required comparison.
+
+The next zero-gradient lane is `activation-oblique`. It selects real residual
+coordinates by pivoted subspace QR, fits a ridge reconstruction of all discarded
+coordinates from those anchors, applies that reconstruction to incoming
+operators, and keeps exact coordinate selection on residual outputs. Because a
+tied embedding/head cannot simultaneously implement different input and output
+maps, the proof target uses a standard untied head with `hidden=320`,
+`intermediate=1280`, and 36 layers: `156,254,016` projected parameters, or
+`25.74x` compression. This is SVD/QR/ridge materialization only, with no
+optimizer steps, adapters, or recovery training.
+
 ## Highest-Priority Paths
 
 No 2025-2026 primary source found so far proves arbitrary "large parent into a

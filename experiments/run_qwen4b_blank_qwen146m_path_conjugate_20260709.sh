@@ -10,14 +10,20 @@ OUT="${OUT:-$RUN_ROOT/$TAG}"
 GPU_UUID="${GPU_UUID:-GPU-2ce6a95c-7b1f-644a-3808-d781732a0582}"
 TRANSPORT_SUPPORT="${TRANSPORT_SUPPORT:-volume-medoid}"
 HIDDEN_BASIS_MODE="${HIDDEN_BASIS_MODE:-activation-coordinate}"
+HIDDEN_BASIS_PREPROCESS="${HIDDEN_BASIS_PREPROCESS:-centered-rowrms}"
 DONOR_LAYER_FOLD_MODE="${DONOR_LAYER_FOLD_MODE:-representative}"
 DONOR_LAYER_OUTPUT_SCALE="${DONOR_LAYER_OUTPUT_SCALE:-unit}"
 DONOR_LAYER_GROUP_STRATEGY="${DONOR_LAYER_GROUP_STRATEGY:-activation-cka-weighted}"
 FOLD_STAT_REPAIR="${FOLD_STAT_REPAIR:-none}"
 ACTIVATION_FOLD_ASSIGNMENT="${ACTIVATION_FOLD_ASSIGNMENT:-balanced-similarity}"
+UNTIE_OUTPUT_HEAD="${UNTIE_OUTPUT_HEAD:-0}"
 PARENT_EVAL="${PARENT_EVAL:-$RUN_ROOT/evals/eval_parent_qwen3_4b_base_strict_20260705_1000x1000x250.json}"
 
 mkdir -p "$OUT/reports"
+UNTIE_ARGS=()
+if [[ "$UNTIE_OUTPUT_HEAD" == "1" ]]; then
+  UNTIE_ARGS+=(--untie-output-head)
+fi
 export PYTHONPATH="$REPO/src"
 export CUDA_VISIBLE_DEVICES="$GPU_UUID"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
@@ -33,6 +39,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
   --hidden-basis-mode "$HIDDEN_BASIS_MODE" \
   --hidden-basis-scope global \
   --hidden-basis-max-rows 4096 \
+  --hidden-basis-preprocess "$HIDDEN_BASIS_PREPROCESS" \
   --activation-fold-assignment "$ACTIVATION_FOLD_ASSIGNMENT" \
   --fold-stat-repair "$FOLD_STAT_REPAIR" \
   --transport-backend qr-sinkhorn \
@@ -51,6 +58,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
   --activation-feature-mode covariance \
   --activation-subspace-rank 12 \
   --activation-domain-balance keyword \
+  "${UNTIE_ARGS[@]}" \
   --activation-calibration-file "$RUN_ROOT/calibration_mix_plus_recovery_drills_20260702.jsonl" \
   --activation-max-calibration-texts 1024 \
   --activation-max-length 160 \

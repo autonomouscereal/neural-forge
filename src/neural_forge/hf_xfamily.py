@@ -372,12 +372,13 @@ def donor_projected_init(
         "activation-pca",
         "activation-coordinate",
         "activation-grouped",
+        "activation-oblique",
         "shared-token-ridge",
         "donor-token-pca",
         "activation-token-pca",
     }:
         raise ValueError(
-            "hidden_basis_mode must be none, activation-pca, activation-coordinate, activation-grouped, "
+            "hidden_basis_mode must be none, activation-pca, activation-coordinate, activation-grouped, activation-oblique, "
             "shared-token-ridge, donor-token-pca, or activation-token-pca."
         )
     if hidden_basis_scope not in {"global", "layer"}:
@@ -471,8 +472,10 @@ def donor_projected_init(
         raise ValueError("activation_max_length must be greater than 1.")
     if fold_mode in {"anchor-transplant", "path-conjugate"} and not activation_calibration_texts:
         raise ValueError(f"{fold_mode} fold_mode requires activation calibration texts.")
-    if hidden_basis_mode in {"activation-coordinate", "activation-grouped"} and hidden_basis_scope != "global":
+    if hidden_basis_mode in {"activation-coordinate", "activation-grouped", "activation-oblique"} and hidden_basis_scope != "global":
         raise ValueError(f"{hidden_basis_mode} uses one global residual basis; layer scope is not valid without residual adapters.")
+    if hidden_basis_mode == "activation-oblique" and not untie_output_head:
+        raise ValueError("activation-oblique requires --untie-output-head so input and output token maps can differ.")
     effective_activation_fit_max_rows = _effective_activation_fit_max_rows(
         activation_fit_linears,
         activation_fit_max_rows,
@@ -523,7 +526,7 @@ def donor_projected_init(
         fold_mode=fold_mode,
         hidden_basis_mode=hidden_basis_mode,
     )
-    if hidden_basis_mode in {"activation-pca", "activation-token-pca"}:
+    if hidden_basis_mode in {"activation-pca", "activation-token-pca", "activation-oblique"}:
         target_hidden_size = int(target.get_input_embeddings().weight.shape[1])
         if int(hidden_basis_max_rows) < target_hidden_size:
             raise ValueError(
@@ -538,7 +541,7 @@ def donor_projected_init(
             max_length=activation_max_length,
             device=activation_device,
         )
-        needs_layer_activation_rows = hidden_basis_mode in {"activation-pca", "activation-token-pca"} or donor_layer_group_strategy in {
+        needs_layer_activation_rows = hidden_basis_mode in {"activation-pca", "activation-token-pca", "activation-oblique"} or donor_layer_group_strategy in {
             "activation-energy",
             "activation-geometry",
             "activation-ot",
@@ -649,6 +652,21 @@ def donor_projected_init(
             target_dim=target_hidden_size,
             transport_support=transport_support,
             assignment_mode=activation_fold_assignment,
+        )
+        _surgery_progress("hidden_basis_done", mode=hidden_basis_mode, scope=hidden_basis_scope)
+    elif hidden_basis_mode == "activation-oblique":
+        _surgery_progress("hidden_basis_start", mode=hidden_basis_mode, scope=hidden_basis_scope)
+        if activation_profile is None or activation_profile.get("hidden_basis_rows") is None:
+            raise ValueError("activation-oblique hidden basis requires activation calibration texts.")
+        donor_hidden_size = int(donor.get_input_embeddings().weight.shape[1])
+        target_hidden_size = int(target.get_input_embeddings().weight.shape[1])
+        hidden_basis, hidden_basis_report = _build_activation_oblique_hidden_basis(
+            torch,
+            activation_profile["hidden_basis_rows"],
+            source_dim=donor_hidden_size,
+            target_dim=target_hidden_size,
+            ridge=ridge,
+            preprocess=hidden_basis_preprocess,
         )
         _surgery_progress("hidden_basis_done", mode=hidden_basis_mode, scope=hidden_basis_scope)
     elif hidden_basis_mode == "shared-token-ridge":
@@ -862,10 +880,11 @@ def donor_projected_init(
         axis_reductions = _with_consumer_hidden_reduction(axis_reductions, consumer_hidden_reduction)
         projected = None
         if attention_fold_mode in {"coupled", "activation-coupled"}:
-            layer_axis_bases = _hidden_basis_axes_for_layer_tensor(
+            layer_axis_bases = _hidden_basis_axes_for_init_tensor(
                 torch,
                 donor_tensor,
                 suffix,
+                hidden_basis,
                 None if layer_hidden_bases is None else layer_hidden_bases.get(int(target_layer_idx)),
             )
             attention_axis_weights = None
@@ -905,10 +924,11 @@ def donor_projected_init(
                 semantic_prefix=("layer", int(target_layer_idx)),
             )
         if projected is None:
-            layer_axis_bases = _hidden_basis_axes_for_layer_tensor(
+            layer_axis_bases = _hidden_basis_axes_for_init_tensor(
                 torch,
                 donor_tensor,
                 suffix,
+                hidden_basis,
                 None if layer_hidden_bases is None else layer_hidden_bases.get(int(target_layer_idx)),
             )
             projected = _resize_tensor_to_shape(
@@ -1048,6 +1068,9 @@ def donor_projected_init(
     load_result = target.load_state_dict(target_state, strict=False)
     embedding_hidden_basis = hidden_basis
     lm_head_hidden_basis = hidden_basis
+    if isinstance(hidden_basis, dict) and hidden_basis.get("kind") == "oblique-coordinate":
+        embedding_hidden_basis = {"basis": hidden_basis.get("output_basis")}
+        lm_head_hidden_basis = {"basis": hidden_basis.get("input_basis")}
     if layer_hidden_bases:
         first_basis = layer_hidden_bases.get(0, {})
         last_basis = layer_hidden_bases.get(len(target_layers) - 1, {})
@@ -1087,6 +1110,7 @@ def donor_projected_init(
     generation_config_report = _sanitize_generation_config_for_save(target, target_tokenizer)
     target.save_pretrained(output, safe_serialization=True)
     target_tokenizer.save_pretrained(output)
+    hidden_basis_artifact = _save_hidden_basis_artifact(torch, output, hidden_basis)
     projection_diagnostic_summary = _summarize_projection_diagnostics(
         item["projection_diagnostic"] for item in layer_reports if item.get("projection_diagnostic") is not None
     )
@@ -1106,6 +1130,7 @@ def donor_projected_init(
         "hidden_basis_max_rows": int(hidden_basis_max_rows),
         "hidden_basis_preprocess": hidden_basis_preprocess,
         "hidden_basis": hidden_basis_report,
+        "hidden_basis_artifact": hidden_basis_artifact,
         "layer_hidden_basis": layer_hidden_basis_report,
         "activation_fold_assignment": activation_fold_assignment,
         "fold_stat_repair": fold_stat_repair,
@@ -5494,6 +5519,43 @@ def _hidden_basis_for_axis(torch, hidden_basis, source_dim: int, target_dim: int
     return None
 
 
+def _save_hidden_basis_artifact(torch, output: Path, hidden_basis) -> dict[str, Any] | None:
+    if hidden_basis is None:
+        return None
+    tensors: dict[str, Any] = {}
+    seen_storage: set[tuple[int, int, int]] = set()
+    if isinstance(hidden_basis, dict):
+        for key in (
+            "output_basis",
+            "input_basis",
+            "basis",
+            "norm_basis",
+            "assignment",
+            "assignment_signs",
+            "anchor_support_indices",
+        ):
+            value = hidden_basis.get(key)
+            if value is not None and hasattr(value, "detach"):
+                tensor = value.detach().cpu().contiguous()
+                identity = (int(tensor.data_ptr()), int(tensor.storage_offset()), int(tensor.numel()))
+                if identity not in seen_storage:
+                    tensors[str(key)] = tensor
+                    seen_storage.add(identity)
+    elif hasattr(hidden_basis, "detach"):
+        tensors["basis"] = hidden_basis.detach().cpu().contiguous()
+    if not tensors:
+        return None
+    from safetensors.torch import save_file
+
+    path = output / "neural_forge_hidden_basis.safetensors"
+    save_file(tensors, str(path), metadata={"format": "neural-forge-hidden-basis-v1"})
+    return {
+        "file": path.name,
+        "format": "safetensors",
+        "tensors": {key: list(value.shape) for key, value in tensors.items()},
+    }
+
+
 def _hidden_basis_for_tensor(hidden_basis, rank: int, tensor_name: str = ""):
     if hidden_basis is None:
         return None
@@ -5507,6 +5569,8 @@ def _hidden_basis_for_tensor(hidden_basis, rank: int, tensor_name: str = ""):
             if _is_hidden_norm_parameter_name(tensor_name):
                 return {"basis": hidden_basis.get("norm_basis")}
             return hidden_basis
+        if kind == "oblique-coordinate":
+            return {"basis": hidden_basis.get("output_basis")}
     return None
 
 
@@ -5588,6 +5652,114 @@ def _build_activation_hidden_basis(
         "top_singular_value": float(singular_values[0].detach().cpu()) if int(singular_values.numel()) else 0.0,
         "kept_singular_value": float(singular_values[keep - 1].detach().cpu()),
     }
+
+
+def _pivoted_subspace_coordinate_indices(torch, subspace_rows, target_dim: int):
+    work = subspace_rows.detach().cpu().to(torch.float32).clone()
+    if work.dim() != 2:
+        raise ValueError("subspace_rows must be rank-2.")
+    target_dim = int(target_dim)
+    if target_dim <= 0 or target_dim > int(work.shape[0]) or target_dim > int(work.shape[1]):
+        raise ValueError("target_dim must fit both subspace dimensions.")
+    selected: list[int] = []
+    blocked = torch.zeros(int(work.shape[1]), dtype=torch.bool)
+    for _ in range(target_dim):
+        residual_power = work.pow(2).sum(dim=0)
+        residual_power[blocked] = -1.0
+        pivot = int(torch.argmax(residual_power).item())
+        pivot_power = float(residual_power[pivot].item())
+        if pivot_power <= 1e-12:
+            remaining = torch.where(~blocked)[0]
+            if int(remaining.numel()) <= 0:
+                raise ValueError("Could not select enough independent coordinates.")
+            pivot = int(remaining[0].item())
+            pivot_power = float(work[:, pivot].pow(2).sum().item())
+        selected.append(pivot)
+        blocked[pivot] = True
+        if pivot_power > 1e-12:
+            direction = work[:, pivot] / math.sqrt(pivot_power)
+            projection = direction.matmul(work)
+            work = work - direction.unsqueeze(1) * projection.unsqueeze(0)
+        work[:, pivot] = 0.0
+    return torch.tensor(selected, dtype=torch.long)
+
+
+def _build_activation_oblique_hidden_basis(
+    torch,
+    activation_rows,
+    source_dim: int,
+    target_dim: int,
+    ridge: float = 1e-3,
+    preprocess: str = "uncentered-rowrms",
+):
+    source_dim = int(source_dim)
+    target_dim = int(target_dim)
+    if source_dim <= 0 or target_dim <= 0:
+        raise ValueError("source_dim and target_dim must be positive.")
+    if target_dim > source_dim:
+        raise ValueError("activation-oblique currently supports compression, not expansion.")
+    if ridge < 0:
+        raise ValueError("ridge must be non-negative.")
+    if preprocess not in {"centered-rowrms", "uncentered-rowrms", "uncentered"}:
+        raise ValueError("preprocess must be centered-rowrms, uncentered-rowrms, or uncentered.")
+    rows = torch.nan_to_num(
+        activation_rows.detach().cpu().to(torch.float32),
+        nan=0.0,
+        posinf=1e4,
+        neginf=-1e4,
+    )
+    if rows.dim() != 2 or int(rows.shape[1]) != source_dim:
+        raise ValueError("activation rows must be rank-2 and match source_dim.")
+    if int(rows.shape[0]) < target_dim:
+        raise ValueError("Need at least target_dim activation rows for activation-oblique.")
+    fit_rows = rows
+    if preprocess == "centered-rowrms":
+        fit_rows = fit_rows - fit_rows.mean(dim=0, keepdim=True)
+    if preprocess in {"centered-rowrms", "uncentered-rowrms"}:
+        fit_rows = fit_rows / fit_rows.pow(2).mean(dim=1, keepdim=True).sqrt().clamp_min(1e-6)
+
+    _u, singular_values, vh = torch.linalg.svd(fit_rows, full_matrices=False)
+    if int(vh.shape[0]) < target_dim:
+        raise ValueError("SVD did not return enough vectors for activation-oblique.")
+    indices = _pivoted_subspace_coordinate_indices(torch, vh[:target_dim], target_dim)
+    encoded = fit_rows.index_select(1, indices)
+    reconstruction = _ridge_map(torch, encoded, fit_rows, ridge).detach().cpu().to(torch.float32)
+    reconstruction[:, indices] = torch.eye(target_dim, dtype=torch.float32)
+
+    output_basis = torch.zeros((source_dim, target_dim), dtype=torch.float32)
+    output_basis[indices, torch.arange(target_dim, dtype=torch.long)] = 1.0
+    input_basis = reconstruction.t().contiguous()
+    predicted = encoded.matmul(reconstruction)
+    source_power = fit_rows.pow(2).sum(dim=0)
+    selected_mass = source_power.index_select(0, indices).sum() / source_power.sum().clamp_min(1e-12)
+    total_energy = singular_values.pow(2).sum().clamp_min(1e-12)
+    retained_energy = singular_values[:target_dim].pow(2).sum() / total_energy
+    descriptor = {
+        "basis": output_basis.contiguous(),
+        "input_basis": input_basis,
+        "output_basis": output_basis.contiguous(),
+        "norm_basis": output_basis.contiguous(),
+        "kind": "oblique-coordinate",
+        "indices": indices,
+        "anchor_support_indices": indices,
+    }
+    report = {
+        "mode": "activation-oblique",
+        "source_dim": source_dim,
+        "target_dim": target_dim,
+        "rows": int(fit_rows.shape[0]),
+        "ridge": float(ridge),
+        "preprocess": preprocess,
+        "selected_indices": indices.tolist(),
+        "selected_activation_power": float(selected_mass.detach().cpu()),
+        "retained_subspace_energy": float(retained_energy.detach().cpu()),
+        "relative_reconstruction_error": _relative_reconstruction_error(torch, predicted, fit_rows),
+        "mean_reconstruction_cosine": _mean_row_cosine(torch, predicted, fit_rows),
+        "interpolation_max_abs_error": float(
+            (reconstruction[:, indices] - torch.eye(target_dim, dtype=torch.float32)).abs().max().item()
+        ),
+    }
+    return descriptor, report
 
 
 def _build_shared_token_hidden_basis(
@@ -6220,6 +6392,26 @@ def _hidden_basis_axes_for_layer_tensor(torch, donor_tensor, suffix: str, layer_
     return axis_bases or None
 
 
+def _hidden_basis_axes_for_init_tensor(torch, donor_tensor, suffix: str, hidden_basis, layer_basis):
+    axis_bases: dict[int, Any] = {}
+    if isinstance(hidden_basis, dict) and hidden_basis.get("kind") == "oblique-coordinate":
+        oblique_axes = _hidden_basis_axes_for_layer_tensor(
+            torch,
+            donor_tensor,
+            suffix,
+            {
+                "input": hidden_basis.get("input_basis"),
+                "output": hidden_basis.get("output_basis"),
+            },
+        )
+        if oblique_axes:
+            axis_bases.update(oblique_axes)
+    scoped_axes = _hidden_basis_axes_for_layer_tensor(torch, donor_tensor, suffix, layer_basis)
+    if scoped_axes:
+        axis_bases.update(scoped_axes)
+    return axis_bases or None
+
+
 def _axis_assignment_cache_key(
     base_key,
     source_dim: int,
@@ -6232,7 +6424,7 @@ def _axis_assignment_cache_key(
 ):
     if base_key is None:
         return None
-    cache_reduction = "path-shared" if str(fold_mode) == "path-conjugate" else str(reduction)
+    cache_reduction = "path-shared" if str(fold_mode) == "path-conjugate" else "axis-shared"
     cache_fold_mode = "anchor-transplant" if str(fold_mode) == "path-conjugate" else str(fold_mode)
     key = (
         _freeze_assignment_key(base_key),
@@ -7779,7 +7971,7 @@ def _repair_folded_axis_stats(
     assignment=None,
     transport: dict[str, Any] | None = None,
 ):
-    if fold_stat_repair == "none":
+    if fold_stat_repair == "none" or reduction == "select":
         return folded
     if fold_stat_repair != "rms":
         raise ValueError("fold_stat_repair must be none or rms.")
