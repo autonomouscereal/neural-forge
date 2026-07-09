@@ -83,6 +83,17 @@ capability. This run used the old prefix-filled buffer and absolute ridge, so it
 is the baseline for the corrected stratified/trace-scaled implementation, not a
 rejection of that corrected path.
 
+The corrected stratified/trace-scaled oblique run was also negative. It reached
+PPL `26,404,033.72`, behavior `0/1000`, generation `0/1000`, and choice
+`88/250` at the same `156,083,136` parameters (`25.77x`). This was not a weak
+basis fit: its 4,096 rows covered all `36 x 6 = 216` layer/domain strata, the
+selected subspace retained `98.24%` of sampled energy with mean cosine
+`0.98059`, and all `180` closed-form activation input fits were applied. Manual
+parent/child comparisons nevertheless showed correct parent arithmetic against
+child repetitions of fragments such as `syntax`, `Surgery`, and the character
+`短`. Better global reconstruction diagnostics therefore did not preserve a
+usable autoregressive circuit at this compression ratio.
+
 `hf-functional-fold` is the sequential compensation companion to this basis.
 It fits attention-output and MLP-output operators with closed-form ridge solves,
 recomputes activations in sequence, and records `zero_gradient=true` and
@@ -92,6 +103,16 @@ runs the exact `1000/1000/250` suite, seven manual generations, and cached-paren
 retention comparison. This is classified as fold materialization rather than
 recovery because it performs no gradient or optimizer update; behavioral
 promotion criteria remain unchanged.
+
+The first output-only functional control completed with
+`zero_gradient=true`, `optimizer_steps=0`, and all 36 attention/MLP output fits
+accepted, but it did not transfer behavior. At `156,083,136` parameters
+(`25.77x`) it produced PPL `59,371,436.73`, behavior `0/1000`, generation
+`0/1000`, and choice `24/250`. Manual outputs repeated a small vocabulary such
+as `keep`, `answers`, and `code` rather than solving arithmetic or emitting
+Python. This control loaded the pre-audit implementation and therefore lacked
+the corrected final RMSNorm/head interface; it remains useful evidence that
+excellent local module-output fits alone are insufficient.
 
 The first oblique implementation is retained as a baseline, but four audit
 findings require a corrected rerun before judging the method. Its old global
