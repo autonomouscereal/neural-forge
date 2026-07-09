@@ -64,6 +64,17 @@ multilingual fragments for math and Python prompts. Removing the erroneous RMS
 scaling therefore helps one local statistic but does not restore a usable
 function at `28.80x`.
 
+An attention-rich activation-PCA control also failed. The blank target kept all
+36 donor depth positions and used `hidden=384`, `intermediate=1152`, `Q/KV=8/2`,
+and `141,443,328` parameters (`28.44x`). Its PPL improved to `167,736.59`, but
+behavior remained `0/1000`, generation remained `0/1000`, and choice was
+`92/250`, below the previously measured random-blank `94/250`. It retained none
+of the parent's 400 solved behavior items or 388 solved generation items.
+Manual parent answers such as `10`, `1230`, `71`, and `160` became repetitions
+of `pies`, punctuation, mixed-language fragments, and `despite`. Increasing
+attention allocation and improving PPL therefore did not recover an
+autoregressive reasoning circuit.
+
 The next zero-gradient lane is `activation-oblique`. It selects real residual
 coordinates by pivoted subspace QR, fits a ridge reconstruction of all discarded
 coordinates from those anchors, applies that reconstruction to incoming
