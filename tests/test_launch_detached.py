@@ -76,6 +76,12 @@ def test_path_run_launcher_requires_explicit_target_and_run_root() -> None:
             "--hidden-basis-ridge-mode",
             "trace-scaled",
             "--activation-fit-linears",
+            "--donor-layer-fold-mode",
+            "fold",
+            "--donor-layer-group-strategy",
+            "activation-cka-weighted",
+            "--donor-layer-output-scale",
+            "effective-count",
             "--untie-output-head",
         ]
     )
@@ -86,6 +92,9 @@ def test_path_run_launcher_requires_explicit_target_and_run_root() -> None:
     assert args.hidden_basis_ridge_mode == "trace-scaled"
     assert args.activation_fit_linears is True
     assert args.activation_fit_target == "input-projections"
+    assert args.donor_layer_fold_mode == "fold"
+    assert args.donor_layer_group_strategy == "activation-cka-weighted"
+    assert args.donor_layer_output_scale == "effective-count"
     assert args.untie_output_head is True
 
 

@@ -60,6 +60,28 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--activation-fit-max-delta-rms-ratio", type=float, default=2.0)
     parser.add_argument("--transport-support", default="importance")
     parser.add_argument("--fold-stat-repair", choices=["none", "rms"], default="none")
+    parser.add_argument(
+        "--donor-layer-fold-mode",
+        choices=["representative", "average", "fold"],
+        default="representative",
+    )
+    parser.add_argument(
+        "--donor-layer-group-strategy",
+        choices=[
+            "depth",
+            "activation-energy",
+            "activation-geometry",
+            "activation-ot",
+            "activation-cka",
+            "activation-cka-weighted",
+        ],
+        default="depth",
+    )
+    parser.add_argument(
+        "--donor-layer-output-scale",
+        choices=["group-count", "effective-count", "sqrt-effective-count", "unit"],
+        default="unit",
+    )
     parser.add_argument("--untie-output-head", action="store_true")
     parser.add_argument("--source-script", type=Path)
     return parser
@@ -98,9 +120,9 @@ def main(argv: list[str] | None = None) -> int:
         "ACTIVATION_FIT_RIDGE": str(args.activation_fit_ridge),
         "ACTIVATION_FIT_MAX_DELTA_RMS_RATIO": str(args.activation_fit_max_delta_rms_ratio),
         "TRANSPORT_SUPPORT": args.transport_support,
-        "DONOR_LAYER_GROUP_STRATEGY": "depth",
-        "DONOR_LAYER_FOLD_MODE": "representative",
-        "DONOR_LAYER_OUTPUT_SCALE": "unit",
+        "DONOR_LAYER_GROUP_STRATEGY": args.donor_layer_group_strategy,
+        "DONOR_LAYER_FOLD_MODE": args.donor_layer_fold_mode,
+        "DONOR_LAYER_OUTPUT_SCALE": args.donor_layer_output_scale,
         "FOLD_STAT_REPAIR": args.fold_stat_repair,
         "UNTIE_OUTPUT_HEAD": "1" if args.untie_output_head else "0",
     }
