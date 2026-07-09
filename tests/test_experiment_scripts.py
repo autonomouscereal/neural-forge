@@ -9,6 +9,14 @@ def test_beststack_queue_defaults_to_untied_block_output_head_kd() -> None:
         encoding="utf-8"
     )
 
+    assert 'POLL_SECONDS="${POLL_SECONDS:-120}"' in script
+    assert 'CPU_THREAD_CAP="${CPU_THREAD_CAP:-4}"' in script
+    assert 'TORCH_INTEROP_THREAD_CAP="${TORCH_INTEROP_THREAD_CAP:-2}"' in script
+    assert 'export OMP_NUM_THREADS="${OMP_NUM_THREADS:-$CPU_THREAD_CAP}"' in script
+    assert 'export MKL_NUM_THREADS="${MKL_NUM_THREADS:-$CPU_THREAD_CAP}"' in script
+    assert 'export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-$CPU_THREAD_CAP}"' in script
+    assert 'export TORCH_NUM_THREADS="${TORCH_NUM_THREADS:-$CPU_THREAD_CAP}"' in script
+    assert 'export TORCH_NUM_INTEROP_THREADS="${TORCH_NUM_INTEROP_THREADS:-$TORCH_INTEROP_THREAD_CAP}"' in script
     assert 'BLOCK_TRAIN_OUTPUT_HEAD_WITH_KD="${BLOCK_TRAIN_OUTPUT_HEAD_WITH_KD:-1}"' in script
     assert 'BLOCK_UNTIE_OUTPUT_HEAD_FOR_KD="${BLOCK_UNTIE_OUTPUT_HEAD_FOR_KD:-1}"' in script
     assert 'BLOCK_ALLOW_TIED_OUTPUT_HEAD_TRAINING="${BLOCK_ALLOW_TIED_OUTPUT_HEAD_TRAINING:-0}"' in script
@@ -141,6 +149,9 @@ def test_chain_launchers_pass_block_output_head_flags() -> None:
         "experiments/launch_lfm230m_blank_smollm_chain.sh",
     ):
         script = (REPO_ROOT / relative_path).read_text(encoding="utf-8")
+        assert 'CPU_THREAD_CAP="${CPU_THREAD_CAP:-4}"' in script
+        assert 'export TORCH_NUM_THREADS="${TORCH_NUM_THREADS:-$CPU_THREAD_CAP}"' in script
+        assert 'export TORCH_NUM_INTEROP_THREADS="${TORCH_NUM_INTEROP_THREADS:-$TORCH_INTEROP_THREAD_CAP}"' in script
         assert "--block-train-output-head-with-kd" in script
         assert "--block-untie-output-head-for-kd" in script
         assert "--block-allow-tied-output-head-training" in script
@@ -193,6 +204,25 @@ def test_broad_manual_eval_allows_exactgen_suite_override() -> None:
     assert 'BROAD_JSON="${BROAD_JSON:-$OUT_DIR/eval_${TAG}_${MAX_BEHAVIOR_PROBES}x${MAX_GENERATION_PROMPTS}x${MAX_CHOICE_PROBES}.json}"' in script
     assert 'MANUAL_JSON="${MANUAL_JSON:-$OUT_DIR/manual_${TAG}.json}"' in script
     assert '--eval-suite "$EVAL_SUITE_FILE"' in script
+    assert 'CPU_THREAD_CAP="${CPU_THREAD_CAP:-4}"' in script
+    assert 'export TORCH_NUM_THREADS="${TORCH_NUM_THREADS:-$CPU_THREAD_CAP}"' in script
+
+
+def test_heavy_eval_queues_cap_cpu_thread_fanout() -> None:
+    for relative_path in (
+        "experiments/queue_eval_retention_compare.sh",
+        "experiments/queue_hf_eval_model.sh",
+        "experiments/queue_lm_eval_after_retention.sh",
+        "experiments/queue_parent_qwen3_4b_exactgen_uuid_20260702.sh",
+        "experiments/queue_retest_top_lmeval_20260706.sh",
+    ):
+        script = (REPO_ROOT / relative_path).read_text(encoding="utf-8")
+        assert 'CPU_THREAD_CAP="${CPU_THREAD_CAP:-4}"' in script
+        assert 'export OMP_NUM_THREADS="${OMP_NUM_THREADS:-$CPU_THREAD_CAP}"' in script
+        assert 'export MKL_NUM_THREADS="${MKL_NUM_THREADS:-$CPU_THREAD_CAP}"' in script
+        assert 'export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-$CPU_THREAD_CAP}"' in script
+        assert 'export TORCH_NUM_THREADS="${TORCH_NUM_THREADS:-$CPU_THREAD_CAP}"' in script
+        assert 'export TORCH_NUM_INTEROP_THREADS="${TORCH_NUM_INTEROP_THREADS:-$TORCH_INTEROP_THREAD_CAP}"' in script
 
 
 def test_lfm_stabilizer_prefers_exact_size_chain_output() -> None:
@@ -259,3 +289,9 @@ def test_combined_anchor_beststack_matrix_keeps_old_and_cross_family_lanes() -> 
     assert 'f"eval_{tag}_exactgen_20260702_1000x1000x250.json"' in script
     assert 'f"eval_{tag}_strict_20260706_1000x1000x250.json"' in script
     assert "retest_matrix.py\" summarize" in script
+
+
+def test_retest_matrix_uses_low_churn_polling_default() -> None:
+    script = (REPO_ROOT / "experiments/retest_matrix.py").read_text(encoding="utf-8")
+
+    assert '"POLL_SECONDS": os.environ.get("POLL_SECONDS", "120")' in script

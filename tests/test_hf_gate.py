@@ -17,6 +17,31 @@ from neural_forge.hf_tools import _ratio_tag
 from neural_forge.hf_tools import _score_behavior_probe
 
 
+class _FakeTorchThreadPool:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, int]] = []
+
+    def set_num_threads(self, value: int) -> None:
+        self.calls.append(("threads", value))
+
+    def set_num_interop_threads(self, value: int) -> None:
+        self.calls.append(("interop", value))
+
+
+def test_apply_torch_thread_caps_from_environment(monkeypatch) -> None:
+    import neural_forge.hf_tools as hf_tools
+
+    fake_torch = _FakeTorchThreadPool()
+    monkeypatch.setenv("TORCH_NUM_THREADS", "4")
+    monkeypatch.setenv("TORCH_NUM_INTEROP_THREADS", "2")
+    monkeypatch.setattr(hf_tools, "_TORCH_THREAD_CAPS_APPLIED", False)
+
+    hf_tools._apply_torch_thread_caps(fake_torch)
+    hf_tools._apply_torch_thread_caps(fake_torch)
+
+    assert fake_torch.calls == [("threads", 4), ("interop", 2)]
+
+
 def _report(ppl: float, acc: float, continuation: str = " This is a healthy continuation with enough varied words.") -> dict:
     return {
         "model": "test",
