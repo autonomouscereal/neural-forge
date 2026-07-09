@@ -893,13 +893,7 @@ def donor_projected_init(
                 axis_bases=layer_axis_bases,
                 hidden_basis=_hidden_basis_for_tensor(hidden_basis, donor_tensor.dim(), suffix),
                 attention_axis_weights=attention_axis_weights,
-                attention_head_fold_mode=(
-                    "anchor-transplant"
-                    if attention_fold_mode == "activation-coupled" and fold_mode == "path-conjugate"
-                    else "transport"
-                    if attention_fold_mode == "activation-coupled"
-                    else None
-                ),
+                attention_head_fold_mode=_attention_head_fold_mode_for_init(attention_fold_mode, fold_mode),
                 attention_head_dim_transport=attention_head_dim_transport,
                 axis_weights=axis_weights,
                 axis_reductions=axis_reductions,
@@ -5049,6 +5043,12 @@ def _attention_partition_specs(suffix: str, donor_config, target_config) -> list
     if marker.endswith(".o_proj.weight") or marker.endswith(".out_proj.weight") or marker.endswith(".attn.c_proj.weight"):
         return [(1, q_heads_source, q_heads_target)]
     return []
+
+
+def _attention_head_fold_mode_for_init(attention_fold_mode: str, fold_mode: str) -> str | None:
+    if attention_fold_mode != "activation-coupled":
+        return None
+    return "path-conjugate" if fold_mode == "path-conjugate" else "transport"
 
 
 def _axis_reductions_for_layer_tensor(suffix: str, fold_mode: str = "mean") -> dict[int, str]:

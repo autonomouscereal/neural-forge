@@ -130,6 +130,7 @@ from neural_forge.hf_xfamily import _mlp_neuron_activation_values
 from neural_forge.hf_xfamily import _mlp_operator_product_weights_for_suffix
 from neural_forge.hf_xfamily import _attention_axis_weights_for_tensor
 from neural_forge.hf_xfamily import _attention_head_activation_profile
+from neural_forge.hf_xfamily import _attention_head_fold_mode_for_init
 from neural_forge.hf_xfamily import _attention_projection_modules
 from neural_forge.hf_xfamily import _axis_assignment_cache_report
 from neural_forge.hf_xfamily import _axis_reductions_for_layer_tensor
@@ -2900,6 +2901,75 @@ def test_attention_head_anchor_transplant_uses_activation_profiles() -> None:
     report = _axis_assignment_cache_report(cache)
     assert report[0]["map_type"] == "anchor_transplant"
     assert report[0]["anchor_support_indices"] == [0, 2]
+
+
+def test_attention_head_fold_mode_preserves_path_conjugate_dispatch() -> None:
+    assert _attention_head_fold_mode_for_init("activation-coupled", "path-conjugate") == "path-conjugate"
+    assert _attention_head_fold_mode_for_init("activation-coupled", "transport") == "transport"
+    assert _attention_head_fold_mode_for_init("coupled", "path-conjugate") is None
+    assert _attention_head_fold_mode_for_init("independent", "transport") is None
+
+
+def test_path_conjugate_attention_q_and_o_share_one_head_map() -> None:
+    torch = pytest.importorskip("torch")
+    config_source = _Obj(num_attention_heads=4)
+    config_target = _Obj(num_attention_heads=2)
+    features = torch.tensor(
+        [[1.0, 0.0], [0.9, 0.1], [0.0, 1.0], [0.1, 0.9]],
+        dtype=torch.float32,
+    )
+    weights = torch.tensor([10.0, 1.0, 9.0, 1.0], dtype=torch.float32)
+    profile = {"weights": weights, "features": features}
+    q_source = torch.arange(16, dtype=torch.float32).reshape(8, 2)
+    o_source = torch.arange(16, dtype=torch.float32).reshape(2, 8)
+    cache = {}
+
+    q_folded = _resize_attention_tensor_to_shape(
+        torch,
+        q_source,
+        (4, 2),
+        "self_attn.q_proj.weight",
+        config_source,
+        config_target,
+        fold_mode="path-conjugate",
+        attention_axis_weights={0: profile},
+        attention_head_fold_mode="path-conjugate",
+        axis_reductions=_axis_reductions_for_layer_tensor("self_attn.q_proj.weight", "path-conjugate"),
+        activation_fold_assignment="balanced-similarity",
+        transport_support="importance",
+        assignment_cache=cache,
+        semantic_prefix=("layer", 0),
+    )
+    o_folded = _resize_attention_tensor_to_shape(
+        torch,
+        o_source,
+        (2, 4),
+        "self_attn.o_proj.weight",
+        config_source,
+        config_target,
+        fold_mode="path-conjugate",
+        attention_axis_weights={1: profile},
+        attention_head_fold_mode="path-conjugate",
+        axis_reductions=_axis_reductions_for_layer_tensor("self_attn.o_proj.weight", "path-conjugate"),
+        activation_fold_assignment="balanced-similarity",
+        transport_support="importance",
+        assignment_cache=cache,
+        semantic_prefix=("layer", 0),
+    )
+
+    assert q_folded.shape == (4, 2)
+    assert o_folded.shape == (2, 4)
+    assert len(cache) == 1
+    cache_key = next(iter(cache))
+    assert "path-shared" in repr(cache_key)
+    assignment = next(iter(cache.values()))
+    anchors = assignment["anchor_support_indices"]
+    assert q_folded.reshape(2, 2, 2).tolist() == q_source.reshape(4, 2, 2)[anchors].tolist()
+    expected_o = o_source.reshape(2, 4, 2).transpose(0, 1)[anchors].clone()
+    anchor_mask = torch.zeros(4, dtype=torch.bool)
+    anchor_mask[anchors] = True
+    expected_o.index_add_(0, assignment["assignment"][~anchor_mask], o_source.reshape(2, 4, 2).transpose(0, 1)[~anchor_mask])
+    assert o_folded.reshape(2, 2, 2).transpose(0, 1).tolist() == expected_o.tolist()
 
 
 def test_donor_projected_init_anchor_transplant_requires_activation_texts(tmp_path) -> None:
