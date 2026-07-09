@@ -59,6 +59,14 @@ _TRANSPORT_SUPPORT_MESSAGE = (
 )
 
 
+def _surgery_progress(event: str, **fields: Any) -> None:
+    parts = [f"event={event}"]
+    for key, value in sorted(fields.items()):
+        safe_value = str(value).replace("\n", " ").replace("\r", " ")
+        parts.append(f"{key}={safe_value}")
+    print("neural_forge_progress " + " ".join(parts), flush=True)
+
+
 def _validate_transport_support(transport_support: str) -> None:
     if transport_support not in _TRANSPORT_SUPPORTS:
         raise ValueError(_TRANSPORT_SUPPORT_MESSAGE)
@@ -101,6 +109,12 @@ def cross_family_vocab_merge(
         torch_dtype=dtype,
         device_map="cpu",
         trust_remote_code=trust_remote_code,
+    )
+    _surgery_progress(
+        "donor_projected_init_models_loaded",
+        donor_model=donor_model,
+        target_config_model=target_config_model,
+        target_base_model=target_base_model or "",
     )
     host_tokenizer = transformers.AutoTokenizer.from_pretrained(host_model, trust_remote_code=trust_remote_code)
     donor_tokenizer = transformers.AutoTokenizer.from_pretrained(donor_model, trust_remote_code=trust_remote_code)
@@ -490,6 +504,13 @@ def donor_projected_init(
         raise ValueError("Target model has no decoder layers.")
     if not donor_layers:
         raise ValueError("Donor model has no decoder layers.")
+    _surgery_progress(
+        "donor_projected_init_layers_ready",
+        donor_layers=len(donor_layers),
+        target_layers=len(target_layers),
+        fold_mode=fold_mode,
+        hidden_basis_mode=hidden_basis_mode,
+    )
     if hidden_basis_mode in {"activation-pca", "activation-token-pca"}:
         target_hidden_size = int(target.get_input_embeddings().weight.shape[1])
         if int(hidden_basis_max_rows) < target_hidden_size:
@@ -499,6 +520,12 @@ def donor_projected_init(
             )
     activation_profile = None
     if activation_calibration_texts:
+        _surgery_progress(
+            "activation_profile_start",
+            texts=len(activation_calibration_texts),
+            max_length=activation_max_length,
+            device=activation_device,
+        )
         needs_layer_activation_rows = hidden_basis_mode in {"activation-pca", "activation-token-pca"} or donor_layer_group_strategy in {
             "activation-energy",
             "activation-geometry",
@@ -520,6 +547,7 @@ def donor_projected_init(
             activation_subspace_rank=activation_subspace_rank,
             activation_domain_balance=activation_domain_balance,
         )
+        _surgery_progress("activation_profile_done")
     if attention_fold_mode == "activation-coupled" and activation_profile is None:
         raise ValueError("activation-coupled attention folding requires activation calibration texts.")
     if attention_head_dim_transport != "none" and activation_profile is None:
@@ -547,6 +575,7 @@ def donor_projected_init(
     layer_hidden_bases = None
     layer_hidden_basis_report = None
     if hidden_basis_mode == "activation-pca":
+        _surgery_progress("hidden_basis_start", mode=hidden_basis_mode, scope=hidden_basis_scope)
         if activation_profile is None or activation_profile.get("hidden_basis_rows") is None:
             raise ValueError("activation-pca hidden basis requires activation calibration texts.")
         donor_hidden_size = int(donor.get_input_embeddings().weight.shape[1])
@@ -577,7 +606,9 @@ def donor_projected_init(
                 if donor_layer_group_strategy != "depth"
                 else "depth",
             )
+        _surgery_progress("hidden_basis_done", mode=hidden_basis_mode, scope=hidden_basis_scope)
     elif hidden_basis_mode == "shared-token-ridge":
+        _surgery_progress("hidden_basis_start", mode=hidden_basis_mode, scope=hidden_basis_scope)
         hidden_basis, hidden_basis_report = _build_shared_token_hidden_basis(
             torch,
             target,
@@ -587,7 +618,9 @@ def donor_projected_init(
             max_anchors=max_anchors,
             ridge=ridge,
         )
+        _surgery_progress("hidden_basis_done", mode=hidden_basis_mode, scope=hidden_basis_scope)
     elif hidden_basis_mode in {"donor-token-pca", "activation-token-pca"}:
+        _surgery_progress("hidden_basis_start", mode=hidden_basis_mode, scope=hidden_basis_scope)
         if hidden_basis_mode == "activation-token-pca" and (
             activation_profile is None or activation_profile.get("hidden_basis_rows") is None
         ):
@@ -643,6 +676,7 @@ def donor_projected_init(
                 basis_seed_rows=donor_token_basis_rows,
                 max_basis_rows=hidden_basis_max_rows,
             )
+        _surgery_progress("hidden_basis_done", mode=hidden_basis_mode, scope=hidden_basis_scope)
 
     target_state = target.state_dict()
     donor_state = donor.state_dict()
@@ -663,6 +697,7 @@ def donor_projected_init(
             "features": activation_profile.get("hidden_features"),
             "assignment_key": ("hidden", "residual"),
         }
+    _surgery_progress("tensor_fold_start", tensors=len(target_state))
     for target_key, target_tensor in list(target_state.items()):
         parsed = _parse_layer_tensor_key(target_key)
         if parsed is None:
@@ -919,6 +954,8 @@ def donor_projected_init(
         projection_diagnostic = _tensor_projection_diagnostic(torch, donor_tensor, projected, target_tensor)
         target_state[target_key] = projected.to(dtype=target_tensor.dtype)
         changed_keys.append(target_key)
+        if len(changed_keys) == 1 or len(changed_keys) % 50 == 0:
+            _surgery_progress("tensor_fold_progress", changed=len(changed_keys), current_key=target_key)
         layer_reports.append(
             {
                 "target_key": target_key,
@@ -954,6 +991,12 @@ def donor_projected_init(
         assignment_cache=axis_assignment_cache,
     )
     changed_keys.extend(item["target_key"] for item in non_layer_report["initialized"])
+    _surgery_progress(
+        "tensor_fold_done",
+        changed=len(changed_keys),
+        skipped=len(skipped_layer_keys),
+        neutralized=len(neutralized_layer_keys),
+    )
     load_result = target.load_state_dict(target_state, strict=False)
     embedding_hidden_basis = hidden_basis
     lm_head_hidden_basis = hidden_basis
@@ -7842,6 +7885,8 @@ def _collect_donor_axis_activation_scores(
         donor.to(device)
         with torch.no_grad():
             for text_idx, text in enumerate(texts):
+                if text_idx == 0 or (text_idx + 1) % 50 == 0 or (text_idx + 1) == len(texts):
+                    _surgery_progress("activation_collect_progress", current=text_idx + 1, total=len(texts))
                 current_domain = None if text_domains is None else str(text_domains[int(text_idx)])
                 encoded = donor_tokenizer(str(text), return_tensors="pt", truncation=True, max_length=max_length)
                 encoded = {key: value.to(device) for key, value in encoded.items()}
