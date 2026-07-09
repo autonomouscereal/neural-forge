@@ -14,13 +14,24 @@ operations in the older independent fold: changing PCA coordinates between
 residual blocks, mixing channels before SwiGLU, and independently assigning
 gate/up versus down or Q/V versus O channels.
 
-The first proof target is a blank Qwen3-shaped `146,234,368` parameter model
+The first proof target is a blank Qwen3-shaped `146,097,664` parameter model
 (`hidden=512`, `intermediate=2048`, `layers=18`, `heads=4`, `kv_heads=1`,
-`head_dim=128`), a `27.51x` reduction from Qwen3-4B Base. The reproducible
+`head_dim=128`), a `27.53x` reduction from Qwen3-4B Base. The reproducible
 fold-only lane is
 `experiments/run_qwen4b_blank_qwen146m_path_conjugate_20260709.sh`; promotion
 still requires useful held-out generation and broad parent-relative behavior,
 not PPL alone.
+
+The first volume-medoid path run was a negative control: it retained `0/400`
+parent behavior passes and `0/388` parent generation passes, with repeated
+`.ifold` output despite `94/250` choice matches. Its assignment report exposed
+an attention dispatch bug: Q/K/V used an anchor-only cache key while O used a
+path cache key. The corrected initializer keeps both sides on one
+`path-conjugate` map. It also couples grouped-query attention structurally: a
+selected KV head brings its complete query-head group, discarded KV groups map
+to the same within-group query offsets, and the matching O columns reuse that
+map. This preserves Q-to-K/V identity instead of independently selecting query
+and KV heads.
 
 `activation-grouped` is the merge-first residual-width companion to the initial
 coordinate-selection control. It assigns every donor residual coordinate to one

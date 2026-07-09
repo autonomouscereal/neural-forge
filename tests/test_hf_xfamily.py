@@ -141,6 +141,7 @@ from neural_forge.hf_xfamily import _blend_projection_with_target
 from neural_forge.hf_xfamily import _build_activation_hidden_basis
 from neural_forge.hf_xfamily import _build_activation_coordinate_hidden_basis
 from neural_forge.hf_xfamily import _build_activation_grouped_hidden_basis
+from neural_forge.hf_xfamily import _build_gqa_coupled_q_assignment
 from neural_forge.hf_xfamily import _build_donor_token_hidden_basis
 from neural_forge.hf_xfamily import _build_layer_activation_hidden_bases
 from neural_forge.hf_xfamily import _build_shared_token_hidden_basis
@@ -2972,6 +2973,109 @@ def test_path_conjugate_attention_q_and_o_share_one_head_map() -> None:
     assert o_folded.reshape(2, 2, 2).transpose(0, 1).tolist() == expected_o.tolist()
 
 
+def test_gqa_coupled_q_assignment_preserves_query_offsets_within_kv_groups() -> None:
+    torch = pytest.importorskip("torch")
+    kv_report = {
+        "assignment": torch.tensor([0, 0], dtype=torch.long),
+        "anchor_support_indices": torch.tensor([1], dtype=torch.long),
+    }
+
+    report = _build_gqa_coupled_q_assignment(
+        torch,
+        kv_report,
+        source_q_heads=8,
+        target_q_heads=4,
+        source_kv_heads=2,
+        target_kv_heads=1,
+    )
+
+    assert report["anchor_support_indices"].tolist() == [4, 5, 6, 7]
+    assert report["assignment"].tolist() == [0, 1, 2, 3, 0, 1, 2, 3]
+    assert report["gqa_coupled"] is True
+    assert report["query_heads_per_kv"] == 4
+
+
+def test_path_conjugate_attention_seeds_coupled_gqa_q_kv_and_o_maps() -> None:
+    torch = pytest.importorskip("torch")
+    config_source = _Obj(num_attention_heads=8, num_key_value_heads=2)
+    config_target = _Obj(num_attention_heads=4, num_key_value_heads=1)
+    q_features = torch.eye(8, dtype=torch.float32)
+    kv_features = torch.eye(2, dtype=torch.float32)
+    kv_profile = {
+        "weights": torch.tensor([1.0, 10.0], dtype=torch.float32),
+        "features": kv_features,
+        "assignment_key": ("unit", "kv-heads"),
+    }
+    q_profile = {
+        "weights": torch.arange(1, 9, dtype=torch.float32),
+        "features": q_features,
+        "assignment_key": ("unit", "q-heads"),
+        "gqa_kv_profile": kv_profile,
+    }
+    q_source = torch.arange(32, dtype=torch.float32).reshape(16, 2)
+    k_source = torch.arange(8, dtype=torch.float32).reshape(4, 2)
+    o_source = torch.arange(32, dtype=torch.float32).reshape(2, 16)
+    cache = {}
+
+    q_folded = _resize_attention_tensor_to_shape(
+        torch,
+        q_source,
+        (8, 2),
+        "self_attn.q_proj.weight",
+        config_source,
+        config_target,
+        fold_mode="path-conjugate",
+        attention_axis_weights={0: q_profile},
+        attention_head_fold_mode="path-conjugate",
+        axis_reductions=_axis_reductions_for_layer_tensor("self_attn.q_proj.weight", "path-conjugate"),
+        activation_fold_assignment="balanced-similarity",
+        transport_support="importance",
+        assignment_cache=cache,
+        semantic_prefix=("layer", 0),
+    )
+    k_folded = _resize_attention_tensor_to_shape(
+        torch,
+        k_source,
+        (2, 2),
+        "self_attn.k_proj.weight",
+        config_source,
+        config_target,
+        fold_mode="path-conjugate",
+        attention_axis_weights={0: kv_profile},
+        attention_head_fold_mode="path-conjugate",
+        axis_reductions=_axis_reductions_for_layer_tensor("self_attn.k_proj.weight", "path-conjugate"),
+        activation_fold_assignment="balanced-similarity",
+        transport_support="importance",
+        assignment_cache=cache,
+        semantic_prefix=("layer", 0),
+    )
+    o_folded = _resize_attention_tensor_to_shape(
+        torch,
+        o_source,
+        (2, 8),
+        "self_attn.o_proj.weight",
+        config_source,
+        config_target,
+        fold_mode="path-conjugate",
+        attention_axis_weights={1: q_profile},
+        attention_head_fold_mode="path-conjugate",
+        axis_reductions=_axis_reductions_for_layer_tensor("self_attn.o_proj.weight", "path-conjugate"),
+        activation_fold_assignment="balanced-similarity",
+        transport_support="importance",
+        assignment_cache=cache,
+        semantic_prefix=("layer", 0),
+    )
+
+    assert q_folded.reshape(4, 2, 2).tolist() == q_source.reshape(8, 2, 2)[4:].tolist()
+    assert k_folded.tolist() == k_source.reshape(2, 2, 2)[1].tolist()
+    assert o_folded.shape == (2, 8)
+    assert len(cache) == 2
+    report = _axis_assignment_cache_report(cache)
+    q_map = next(item for item in report if item["gqa_coupled"])
+    assert q_map["anchor_support_indices"] == [4, 5, 6, 7]
+    assert q_map["query_heads_per_kv"] == 4
+
+
 def test_donor_projected_init_anchor_transplant_requires_activation_texts(tmp_path) -> None:
     with pytest.raises(ValueError, match="anchor-transplant.*activation calibration"):
         donor_projected_init(
@@ -3825,6 +3929,36 @@ def test_attention_axis_weights_share_q_and_o_head_profiles() -> None:
     assert torch.equal(q_weights[0]["head_dim_weights"], dim_scores)
     assert torch.equal(o_weights[1]["head_dim_weights"], dim_scores + 1.0)
     assert q_weights[0]["head_dim_assignment_key"] != o_weights[1]["head_dim_assignment_key"]
+
+
+def test_attention_axis_weights_attach_kv_profile_for_gqa_coupling() -> None:
+    torch = pytest.importorskip("torch")
+    q_scores = torch.arange(1, 9, dtype=torch.float32)
+    kv_scores = torch.tensor([1.0, 10.0], dtype=torch.float32)
+    profile = {
+        "attention_head_profiles": {
+            0: {
+                "q": {"scores": q_scores, "features": torch.eye(8, dtype=torch.float32)},
+                "kv": {"scores": kv_scores, "features": torch.eye(2, dtype=torch.float32)},
+            }
+        }
+    }
+
+    weights = _attention_axis_weights_for_tensor(
+        torch,
+        torch.zeros((16, 4), dtype=torch.float32),
+        "self_attn.q_proj.weight",
+        donor_layer_idx=0,
+        donor_layer_group=[0],
+        activation_profile=profile,
+        donor_config=_Obj(num_attention_heads=8, num_key_value_heads=2),
+    )
+
+    assert weights is not None
+    kv_profile = weights[0]["gqa_kv_profile"]
+    assert torch.equal(kv_profile["weights"], kv_scores)
+    assert torch.equal(kv_profile["features"], torch.eye(2, dtype=torch.float32))
+    assert kv_profile["assignment_key"] == ("attention-heads", "kv", (0,))
 
 
 def test_attention_axis_weights_can_use_operator_product_profile() -> None:

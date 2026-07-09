@@ -4769,6 +4769,28 @@ def _resize_attention_tensor_to_shape(
             head_dim_weights, head_dim_features, head_dim_semantic_key = _axis_head_dim_fold_profile(head_profile)
             head_dim_domain_weights, head_dim_domain_features = _axis_head_dim_domain_fold_profile(head_profile)
         head_dim_has_profile = head_dim_weights is not None or head_dim_features is not None
+        head_assignment_key = head_semantic_key or _attention_axis_assignment_key(
+            suffix,
+            semantic_prefix,
+            "heads",
+        )
+        _seed_gqa_path_assignment_cache(
+            torch,
+            suffix=suffix,
+            donor_config=donor_config,
+            target_config=target_config,
+            head_profile=head_profile,
+            q_weights=head_weights,
+            q_features=head_features,
+            q_domain_weights=head_domain_weights,
+            q_domain_features=head_domain_features,
+            head_fold_mode=attention_head_fold_mode,
+            assignment_mode=activation_fold_assignment,
+            transport_backend=transport_backend,
+            transport_support=transport_support,
+            assignment_cache=assignment_cache,
+            q_assignment_key=head_assignment_key,
+        )
         coupled = _resize_head_partitioned_axis(
             torch,
             resized,
@@ -4794,7 +4816,7 @@ def _resize_attention_tensor_to_shape(
             head_dim_assignment_mode=activation_fold_assignment,
             fold_stat_repair=fold_stat_repair,
             assignment_cache=assignment_cache,
-            head_assignment_key=head_semantic_key or _attention_axis_assignment_key(suffix, semantic_prefix, "heads"),
+            head_assignment_key=head_assignment_key,
             head_dim_assignment_key=head_dim_semantic_key
             or _attention_axis_assignment_key(suffix, semantic_prefix, "head_dim"),
         )
@@ -5049,6 +5071,163 @@ def _attention_head_fold_mode_for_init(attention_fold_mode: str, fold_mode: str)
     if attention_fold_mode != "activation-coupled":
         return None
     return "path-conjugate" if fold_mode == "path-conjugate" else "transport"
+
+
+def _seed_gqa_path_assignment_cache(
+    torch,
+    suffix: str,
+    donor_config,
+    target_config,
+    head_profile,
+    q_weights,
+    q_features,
+    q_domain_weights,
+    q_domain_features,
+    head_fold_mode: str | None,
+    assignment_mode: str,
+    transport_backend: str,
+    transport_support: str,
+    assignment_cache: dict[Any, dict[str, Any]] | None,
+    q_assignment_key,
+) -> None:
+    if head_fold_mode != "path-conjugate" or assignment_cache is None or not isinstance(head_profile, dict):
+        return
+    marker = f".{str(suffix).lower()}"
+    if not (marker.endswith(".q_proj.weight") or marker.endswith(".q_proj.bias") or marker.endswith(".o_proj.weight")):
+        return
+    kv_profile = head_profile.get("gqa_kv_profile")
+    if not isinstance(kv_profile, dict):
+        return
+    source_q_heads = _config_int(donor_config, "num_attention_heads", "n_head", "num_heads")
+    target_q_heads = _config_int(target_config, "num_attention_heads", "n_head", "num_heads")
+    source_kv_heads = _config_int(donor_config, "num_key_value_heads", default=source_q_heads)
+    target_kv_heads = _config_int(target_config, "num_key_value_heads", default=target_q_heads)
+    if None in {source_q_heads, target_q_heads, source_kv_heads, target_kv_heads}:
+        return
+    if int(source_q_heads) <= int(target_q_heads) or int(source_kv_heads) <= int(target_kv_heads):
+        return
+    if int(source_q_heads) % int(source_kv_heads) or int(target_q_heads) % int(target_kv_heads):
+        return
+    source_ratio = int(source_q_heads) // int(source_kv_heads)
+    target_ratio = int(target_q_heads) // int(target_kv_heads)
+    if source_ratio != target_ratio:
+        return
+    kv_weights, kv_features, kv_assignment_key = _axis_fold_profile(kv_profile)
+    kv_domain_weights, kv_domain_features = _axis_fold_domain_profile(kv_profile)
+    if kv_assignment_key is None or q_assignment_key is None:
+        return
+    q_cache_key = _axis_assignment_cache_key(
+        q_assignment_key,
+        source_dim=int(source_q_heads),
+        target_dim=int(target_q_heads),
+        assignment_mode=assignment_mode,
+        fold_mode="path-conjugate",
+        reduction="select",
+        transport_backend=transport_backend,
+        transport_support=transport_support,
+    )
+    kv_cache_key = _axis_assignment_cache_key(
+        kv_assignment_key,
+        source_dim=int(source_kv_heads),
+        target_dim=int(target_kv_heads),
+        assignment_mode=assignment_mode,
+        fold_mode="path-conjugate",
+        reduction="select",
+        transport_backend=transport_backend,
+        transport_support=transport_support,
+    )
+    if q_cache_key in assignment_cache and kv_cache_key in assignment_cache:
+        return
+    kv_assignment = assignment_cache.get(kv_cache_key)
+    if kv_assignment is None:
+        kv_assignment = _build_anchor_transplant_assignment(
+            torch,
+            kv_features,
+            int(target_kv_heads),
+            weights=kv_weights,
+            domain_weights=kv_domain_weights,
+            domain_features=kv_domain_features,
+            transport_support=transport_support,
+            assignment_mode=assignment_mode,
+        )
+        assignment_cache[kv_cache_key] = kv_assignment
+    if q_cache_key not in assignment_cache:
+        assignment_cache[q_cache_key] = _build_gqa_coupled_q_assignment(
+            torch,
+            kv_assignment,
+            source_q_heads=int(source_q_heads),
+            target_q_heads=int(target_q_heads),
+            source_kv_heads=int(source_kv_heads),
+            target_kv_heads=int(target_kv_heads),
+            q_features=q_features,
+            q_weights=q_weights,
+            q_domain_weights=q_domain_weights,
+            q_domain_features=q_domain_features,
+            assignment_mode=assignment_mode,
+            transport_support=transport_support,
+        )
+
+
+def _build_gqa_coupled_q_assignment(
+    torch,
+    kv_assignment_report: dict[str, Any],
+    source_q_heads: int,
+    target_q_heads: int,
+    source_kv_heads: int,
+    target_kv_heads: int,
+    q_features=None,
+    q_weights=None,
+    q_domain_weights=None,
+    q_domain_features=None,
+    assignment_mode: str = "balanced-similarity",
+    transport_support: str = "importance",
+) -> dict[str, Any]:
+    source_q_heads = int(source_q_heads)
+    target_q_heads = int(target_q_heads)
+    source_kv_heads = int(source_kv_heads)
+    target_kv_heads = int(target_kv_heads)
+    if min(source_q_heads, target_q_heads, source_kv_heads, target_kv_heads) <= 0:
+        raise ValueError("GQA head counts must be positive.")
+    if source_q_heads % source_kv_heads or target_q_heads % target_kv_heads:
+        raise ValueError("GQA Q head counts must be divisible by KV head counts.")
+    source_ratio = source_q_heads // source_kv_heads
+    target_ratio = target_q_heads // target_kv_heads
+    if source_ratio != target_ratio:
+        raise ValueError("GQA source and target query-per-KV ratios must match.")
+    kv_assignment = kv_assignment_report["assignment"].detach().cpu().to(torch.long)
+    kv_anchors = kv_assignment_report["anchor_support_indices"].detach().cpu().to(torch.long)
+    if int(kv_assignment.numel()) != source_kv_heads or int(kv_anchors.numel()) != target_kv_heads:
+        raise ValueError("GQA KV assignment dimensions do not match the configured head counts.")
+    offsets = torch.arange(source_ratio, dtype=torch.long)
+    q_anchors = (kv_anchors.unsqueeze(1) * source_ratio + offsets.unsqueeze(0)).reshape(-1)
+    source_q = torch.arange(source_q_heads, dtype=torch.long)
+    source_groups = torch.div(source_q, source_ratio, rounding_mode="floor")
+    source_offsets = source_q.remainder(source_ratio)
+    q_assignment = kv_assignment[source_groups] * target_ratio + source_offsets
+    q_signs = torch.ones(source_q_heads, dtype=torch.float32)
+    if _activation_assignment_mode_is_signed(assignment_mode) and q_features is not None:
+        feature_rows = _row_normalize(q_features.detach().cpu().to(torch.float32))
+        if feature_rows.dim() == 2 and int(feature_rows.shape[0]) == source_q_heads:
+            similarities = (feature_rows * feature_rows[q_anchors[q_assignment]]).sum(dim=1)
+            q_signs = torch.where(similarities < 0, -torch.ones_like(similarities), torch.ones_like(similarities))
+            q_signs[q_anchors] = 1.0
+    return {
+        "assignment": q_assignment.contiguous(),
+        "assignment_signs": q_signs.contiguous(),
+        "anchor_support_indices": q_anchors.contiguous(),
+        "target_support_indices": q_anchors.contiguous(),
+        "source_dim": source_q_heads,
+        "target_dim": target_q_heads,
+        "assignment_mode": "anchor-transplant",
+        "anchor_assignment_mode": str(assignment_mode),
+        "transport_support": str(transport_support),
+        "domain_support_used": bool(q_domain_weights is not None or q_domain_features is not None),
+        "domain_support_count": 0 if q_domain_weights is None else len(q_domain_weights),
+        "gqa_coupled": True,
+        "source_kv_heads": source_kv_heads,
+        "target_kv_heads": target_kv_heads,
+        "query_heads_per_kv": source_ratio,
+    }
 
 
 def _axis_reductions_for_layer_tensor(suffix: str, fold_mode: str = "mean") -> dict[int, str]:
@@ -6087,6 +6266,10 @@ def _axis_assignment_cache_report(assignment_cache: dict[Any, dict[str, Any]]) -
                 "source_dim": int(item.get("source_dim", 0)),
                 "target_dim": int(item.get("target_dim", 0)),
                 "assignment_mode": str(item.get("assignment_mode", "")),
+                "gqa_coupled": bool(item.get("gqa_coupled", False)),
+                "source_kv_heads": item.get("source_kv_heads"),
+                "target_kv_heads": item.get("target_kv_heads"),
+                "query_heads_per_kv": item.get("query_heads_per_kv"),
                 "signed": bool(
                     item.get("assignment_signs") is not None
                     or item.get("transport_signs") is not None
@@ -9044,20 +9227,82 @@ def _attention_axis_weights_for_tensor(
         head_dim_features = None
         head_dim_domain_scores = None
         head_dim_domain_features = None
-    return {
-        axis: {
-            "weights": scores,
-            "features": features,
-            "assignment_key": assignment_key,
-            "domain_weights": domain_scores,
-            "domain_features": domain_features,
-            "head_dim_weights": head_dim_scores,
-            "head_dim_features": head_dim_features,
-            "head_dim_assignment_key": ("attention-head-dim", dim_stream, layer_group_key),
-            "head_dim_domain_weights": head_dim_domain_scores,
-            "head_dim_domain_features": head_dim_domain_features,
-        }
+    result = {
+        "weights": scores,
+        "features": features,
+        "assignment_key": assignment_key,
+        "domain_weights": domain_scores,
+        "domain_features": domain_features,
+        "head_dim_weights": head_dim_scores,
+        "head_dim_features": head_dim_features,
+        "head_dim_assignment_key": ("attention-head-dim", dim_stream, layer_group_key),
+        "head_dim_domain_weights": head_dim_domain_scores,
+        "head_dim_domain_features": head_dim_domain_features,
     }
+    if stream == "q":
+        kv_scores = _aggregate_layer_attention_profile(
+            torch,
+            head_profiles,
+            layer_group,
+            "kv",
+            "scores",
+            clamp_min=1e-12,
+            layer_weights=layer_group_weights,
+        )
+        kv_features = _aggregate_layer_attention_profile(
+            torch,
+            head_profiles,
+            layer_group,
+            "kv",
+            "features",
+            layer_weights=layer_group_weights,
+        )
+        kv_domain_scores = _aggregate_layer_attention_domain_profile(
+            torch,
+            head_domain_profiles,
+            layer_group,
+            "kv",
+            "scores",
+            clamp_min=1e-12,
+            layer_weights=layer_group_weights,
+        )
+        kv_domain_features = _aggregate_layer_attention_domain_profile(
+            torch,
+            head_domain_profiles,
+            layer_group,
+            "kv",
+            "features",
+            layer_weights=layer_group_weights,
+        )
+        kv_assignment_key = ("attention-heads", "kv", layer_group_key)
+        kv_heads = _config_int(donor_config, "num_key_value_heads", default=int(scores.numel()))
+        if operator_product_axis_weights and kv_scores is not None and kv_heads is not None and int(kv_heads) > 0:
+            kv_source_dim = int(kv_heads) * int(source_head_dim)
+            kv_operator_weights = _attention_operator_product_weights_for_suffix(
+                torch,
+                "self_attn.k_proj.weight",
+                operator_layer_state,
+                source_dim=kv_source_dim,
+                head_count=int(kv_heads),
+                donor_config=donor_config,
+            )
+            if kv_operator_weights is not None and int(kv_operator_weights.numel()) == int(kv_scores.numel()):
+                kv_operator_norm = kv_operator_weights / kv_operator_weights.mean().clamp_min(1e-12)
+                kv_scores = (
+                    kv_scores.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12) * kv_operator_norm
+                ).clamp_min(1e-12)
+                kv_features = _append_axis_scalar_feature(torch, kv_features, kv_operator_norm)
+                kv_domain_scores = _scale_domain_axis_weights(torch, kv_domain_scores, kv_operator_norm)
+                kv_assignment_key = ("attention-heads-operator-product", "kv", layer_group_key)
+        if kv_scores is not None:
+            result["gqa_kv_profile"] = {
+                "weights": kv_scores,
+                "features": kv_features,
+                "assignment_key": kv_assignment_key,
+                "domain_weights": kv_domain_scores,
+                "domain_features": kv_domain_features,
+            }
+    return {axis: result}
 
 
 def _attention_operator_product_weights_for_suffix(
