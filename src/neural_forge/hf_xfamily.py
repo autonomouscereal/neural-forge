@@ -365,12 +365,19 @@ def donor_projected_init(
         raise ValueError("ridge must be non-negative.")
     if max_anchors <= 0:
         raise ValueError("max_anchors must be positive.")
-    if fold_mode not in {"mean", "rms", "transport", "anchor-transplant"}:
-        raise ValueError("fold_mode must be mean, rms, transport, or anchor-transplant.")
-    if hidden_basis_mode not in {"none", "activation-pca", "shared-token-ridge", "donor-token-pca", "activation-token-pca"}:
+    if fold_mode not in {"mean", "rms", "transport", "anchor-transplant", "path-conjugate"}:
+        raise ValueError("fold_mode must be mean, rms, transport, anchor-transplant, or path-conjugate.")
+    if hidden_basis_mode not in {
+        "none",
+        "activation-pca",
+        "activation-coordinate",
+        "shared-token-ridge",
+        "donor-token-pca",
+        "activation-token-pca",
+    }:
         raise ValueError(
-            "hidden_basis_mode must be none, activation-pca, shared-token-ridge, "
-            "donor-token-pca, or activation-token-pca."
+            "hidden_basis_mode must be none, activation-pca, activation-coordinate, "
+            "shared-token-ridge, donor-token-pca, or activation-token-pca."
         )
     if hidden_basis_scope not in {"global", "layer"}:
         raise ValueError("hidden_basis_scope must be global or layer.")
@@ -417,6 +424,8 @@ def donor_projected_init(
         raise ValueError("projection_scale must be none, target-rms, source-rms, or geomean-rms.")
     if consumer_hidden_reduction not in {"mean", "sum", "sqrt-sum"}:
         raise ValueError("consumer_hidden_reduction must be mean, sum, or sqrt-sum.")
+    if fold_mode == "path-conjugate" and consumer_hidden_reduction != "sum":
+        raise ValueError("path-conjugate requires consumer_hidden_reduction='sum' so paired producer/consumer maps compose.")
     if activation_fit_target not in {"all", "attention", "attention-output", "mlp", "mlp-output", "input-projections"}:
         raise ValueError(
             "activation_fit_target must be all, attention, attention-output, mlp, mlp-output, or input-projections."
@@ -459,8 +468,10 @@ def donor_projected_init(
     activation_fit_alpha = _bounded_alpha(activation_fit_alpha, "activation_fit_alpha")
     if activation_max_length <= 1:
         raise ValueError("activation_max_length must be greater than 1.")
-    if fold_mode == "anchor-transplant" and not activation_calibration_texts:
-        raise ValueError("anchor-transplant fold_mode requires activation calibration texts.")
+    if fold_mode in {"anchor-transplant", "path-conjugate"} and not activation_calibration_texts:
+        raise ValueError(f"{fold_mode} fold_mode requires activation calibration texts.")
+    if hidden_basis_mode == "activation-coordinate" and hidden_basis_scope != "global":
+        raise ValueError("activation-coordinate uses one global residual basis; layer scope is not valid without residual adapters.")
     effective_activation_fit_max_rows = _effective_activation_fit_max_rows(
         activation_fit_linears,
         activation_fit_max_rows,
@@ -606,6 +617,22 @@ def donor_projected_init(
                 if donor_layer_group_strategy != "depth"
                 else "depth",
             )
+        _surgery_progress("hidden_basis_done", mode=hidden_basis_mode, scope=hidden_basis_scope)
+    elif hidden_basis_mode == "activation-coordinate":
+        _surgery_progress("hidden_basis_start", mode=hidden_basis_mode, scope=hidden_basis_scope)
+        if activation_profile is None:
+            raise ValueError("activation-coordinate hidden basis requires activation calibration texts.")
+        donor_hidden_size = int(donor.get_input_embeddings().weight.shape[1])
+        target_hidden_size = int(target.get_input_embeddings().weight.shape[1])
+        hidden_basis, hidden_basis_report = _build_activation_coordinate_hidden_basis(
+            torch,
+            activation_profile.get("hidden_features"),
+            activation_profile.get("hidden_scores"),
+            source_dim=donor_hidden_size,
+            target_dim=target_hidden_size,
+            transport_support=transport_support,
+            assignment_mode=activation_fold_assignment,
+        )
         _surgery_progress("hidden_basis_done", mode=hidden_basis_mode, scope=hidden_basis_scope)
     elif hidden_basis_mode == "shared-token-ridge":
         _surgery_progress("hidden_basis_start", mode=hidden_basis_mode, scope=hidden_basis_scope)
@@ -788,7 +815,7 @@ def donor_projected_init(
         if not _projectable_tensor(torch, target_tensor, donor_tensor):
             skipped_layer_keys.append({"target_key": target_key, "donor_key": donor_key, "reason": "not_floating_tensor"})
             continue
-        tensor_fold_mode = fold_mode if donor_tensor.dim() >= 2 else "mean"
+        tensor_fold_mode = fold_mode if donor_tensor.dim() >= 2 or fold_mode == "path-conjugate" else "mean"
         operator_layer_state = (
             (
                 _donor_layer_state_from_index(
@@ -814,7 +841,7 @@ def donor_projected_init(
             operator_layer_state=operator_layer_state,
             operator_product_axis_weights=operator_product_axis_weights,
         )
-        axis_reductions = _axis_reductions_for_layer_tensor(suffix)
+        axis_reductions = _axis_reductions_for_layer_tensor(suffix, fold_mode=tensor_fold_mode)
         axis_reductions = _with_consumer_hidden_reduction(axis_reductions, consumer_hidden_reduction)
         projected = None
         if attention_fold_mode in {"coupled", "activation-coupled"}:
@@ -847,9 +874,15 @@ def donor_projected_init(
                 target.config,
                 fold_mode=tensor_fold_mode,
                 axis_bases=layer_axis_bases,
-                hidden_basis=hidden_basis if donor_tensor.dim() >= 2 else None,
+                hidden_basis=_hidden_basis_for_tensor(hidden_basis, donor_tensor.dim()),
                 attention_axis_weights=attention_axis_weights,
-                attention_head_fold_mode="transport" if attention_fold_mode == "activation-coupled" else None,
+                attention_head_fold_mode=(
+                    "anchor-transplant"
+                    if attention_fold_mode == "activation-coupled" and fold_mode == "path-conjugate"
+                    else "transport"
+                    if attention_fold_mode == "activation-coupled"
+                    else None
+                ),
                 attention_head_dim_transport=attention_head_dim_transport,
                 axis_weights=axis_weights,
                 axis_reductions=axis_reductions,
@@ -873,7 +906,7 @@ def donor_projected_init(
                 tuple(target_tensor.shape),
                 fold_mode=tensor_fold_mode,
                 axis_bases=layer_axis_bases,
-                hidden_basis=hidden_basis if donor_tensor.dim() >= 2 else None,
+                hidden_basis=_hidden_basis_for_tensor(hidden_basis, donor_tensor.dim()),
                 axis_weights=axis_weights,
                 axis_reductions=axis_reductions,
                 activation_fold_assignment=activation_fold_assignment,
@@ -917,7 +950,7 @@ def donor_projected_init(
                 max_delta_rms_ratio=activation_fit_max_delta_rms_ratio,
                 fold_mode=tensor_fold_mode,
                 layer_group_weights=layer_group_weights,
-                hidden_basis=hidden_basis if donor_tensor.dim() >= 2 else None,
+                hidden_basis=_hidden_basis_for_tensor(hidden_basis, donor_tensor.dim()),
                 axis_weights=axis_weights,
                 activation_fold_assignment=activation_fold_assignment,
                 fold_stat_repair=fold_stat_repair,
@@ -3622,14 +3655,14 @@ def _initialize_non_layer_tensors_from_donor(
         if not _projectable_tensor(torch, target_tensor, donor_tensor):
             skipped.append({"target_key": target_key, "donor_key": donor_key, "reason": "not_floating_tensor"})
             continue
-        tensor_fold_mode = fold_mode if donor_tensor.dim() >= 2 else "mean"
+        tensor_fold_mode = fold_mode if donor_tensor.dim() >= 2 or fold_mode == "path-conjugate" else "mean"
         axis_weights = _hidden_axis_weights_for_non_layer_tensor(donor_tensor, hidden_axis_weights)
         projected = _resize_tensor_to_shape(
             torch,
             donor_tensor.detach().cpu().to(torch.float32),
             tuple(target_tensor.shape),
             fold_mode=tensor_fold_mode,
-            hidden_basis=hidden_basis if donor_tensor.dim() >= 2 else None,
+            hidden_basis=_hidden_basis_for_tensor(hidden_basis, donor_tensor.dim()),
             axis_weights=axis_weights,
             axis_reductions=_with_consumer_hidden_reduction(
                 _axis_reductions_for_non_layer_tensor_key(target_key),
@@ -4606,8 +4639,8 @@ def _resize_tensor_to_shape(
     transport_support: str = "centroid",
     assignment_cache: dict[Any, dict[str, Any]] | None = None,
 ):
-    if fold_mode not in {"mean", "rms", "transport", "anchor-transplant"}:
-        raise ValueError("fold_mode must be mean, rms, transport, or anchor-transplant.")
+    if fold_mode not in {"mean", "rms", "transport", "anchor-transplant", "path-conjugate"}:
+        raise ValueError("fold_mode must be mean, rms, transport, anchor-transplant, or path-conjugate.")
     if activation_fold_assignment not in _ACTIVATION_FOLD_ASSIGNMENTS:
         raise ValueError(
             "activation_fold_assignment must be balanced, similarity, signed-similarity, "
@@ -5001,8 +5034,50 @@ def _attention_partition_specs(suffix: str, donor_config, target_config) -> list
     return []
 
 
-def _axis_reductions_for_layer_tensor(suffix: str) -> dict[int, str]:
+def _axis_reductions_for_layer_tensor(suffix: str, fold_mode: str = "mean") -> dict[int, str]:
     lowered = f".{suffix.lower()}"
+    if fold_mode == "path-conjugate":
+        if lowered.endswith(
+            (
+                ".q_proj.weight",
+                ".k_proj.weight",
+                ".v_proj.weight",
+                ".gate_proj.weight",
+                ".up_proj.weight",
+                ".w1.weight",
+                ".w3.weight",
+                ".dense_h_to_4h.weight",
+                ".fc1.weight",
+            )
+        ):
+            return {0: "select", 1: "sum"}
+        if lowered.endswith(
+            (
+                ".q_proj.bias",
+                ".k_proj.bias",
+                ".v_proj.bias",
+                ".gate_proj.bias",
+                ".up_proj.bias",
+                ".w1.bias",
+                ".w3.bias",
+                ".dense_h_to_4h.bias",
+                ".fc1.bias",
+            )
+        ):
+            return {0: "select"}
+        if lowered.endswith(
+            (
+                ".down_proj.weight",
+                ".w2.weight",
+                ".dense_4h_to_h.weight",
+                ".fc2.weight",
+                ".c_proj.weight",
+                ".o_proj.weight",
+                ".out_proj.weight",
+                ".attn.c_proj.weight",
+            )
+        ):
+            return {1: "sum"}
     if (
         lowered.endswith(".q_proj.weight")
         or lowered.endswith(".k_proj.weight")
@@ -5173,6 +5248,16 @@ def _hidden_basis_for_axis(torch, hidden_basis, source_dim: int, target_dim: int
     return None
 
 
+def _hidden_basis_for_tensor(hidden_basis, rank: int):
+    if hidden_basis is None:
+        return None
+    if int(rank) >= 2:
+        return hidden_basis
+    if isinstance(hidden_basis, dict) and hidden_basis.get("kind") == "coordinate-selection":
+        return hidden_basis
+    return None
+
+
 def _resize_tensor_axis_hidden_basis(torch, tensor, axis: int, basis):
     source_dim = int(tensor.shape[axis])
     if int(basis.shape[0]) != source_dim:
@@ -5202,7 +5287,8 @@ def _build_activation_hidden_basis(
     if int(rows.shape[1]) != int(source_dim):
         raise ValueError(f"activation row width {rows.shape[1]} does not match source_dim {source_dim}.")
     if int(target_dim) >= int(source_dim):
-        basis = torch.eye(int(source_dim), dtype=torch.float32)[:, : int(target_dim)]
+        basis = torch.zeros((int(source_dim), int(target_dim)), dtype=torch.float32)
+        basis[:, : int(source_dim)] = torch.eye(int(source_dim), dtype=torch.float32)
         return basis.contiguous(), {
             "mode": "identity",
             "source_dim": int(source_dim),
@@ -5369,6 +5455,68 @@ def _build_donor_token_hidden_basis(
         "source_counts": source_counts,
         "target_weight_rows_used": False,
     }
+
+
+def _build_activation_coordinate_hidden_basis(
+    torch,
+    hidden_features,
+    hidden_scores,
+    source_dim: int,
+    target_dim: int,
+    transport_support: str = "volume-medoid",
+    assignment_mode: str = "balanced-similarity",
+):
+    source_dim = int(source_dim)
+    target_dim = int(target_dim)
+    if source_dim <= 0 or target_dim <= 0:
+        raise ValueError("source_dim and target_dim must be positive.")
+    if target_dim > source_dim:
+        raise ValueError("activation-coordinate currently supports compression, not expansion.")
+    if hidden_scores is None:
+        raise ValueError("activation-coordinate requires hidden activation scores.")
+    weights = hidden_scores.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12)
+    if int(weights.numel()) != source_dim:
+        raise ValueError("Hidden activation scores do not match source_dim.")
+    if hidden_features is None:
+        features = torch.stack(
+            [weights / weights.max().clamp_min(1e-12), torch.linspace(-1.0, 1.0, source_dim)],
+            dim=1,
+        )
+    else:
+        features = hidden_features.detach().cpu().to(torch.float32)
+        if features.dim() != 2 or int(features.shape[0]) != source_dim:
+            raise ValueError("Hidden activation features must have one row per source coordinate.")
+    normalized = _row_normalize(features)
+    support = _activation_support_indices_for_mode(
+        torch,
+        features,
+        normalized,
+        weights,
+        target_dim,
+        transport_support=transport_support,
+        assignment_mode=assignment_mode,
+    )
+    indices = _unique_anchor_support_indices(torch, support.get("indices"), weights, target_dim)
+    basis = torch.zeros((source_dim, target_dim), dtype=torch.float32)
+    basis[indices, torch.arange(target_dim, dtype=torch.long)] = 1.0
+    selected_mass = weights[indices].sum() / weights.sum().clamp_min(1e-12)
+    descriptor = {
+        "basis": basis.contiguous(),
+        "kind": "coordinate-selection",
+        "indices": indices.detach().cpu().to(torch.long),
+    }
+    report = {
+        "mode": "activation-coordinate",
+        "source_dim": source_dim,
+        "target_dim": target_dim,
+        "transport_support": transport_support,
+        "assignment_mode": assignment_mode,
+        "selected_indices": indices.tolist(),
+        "selected_activation_mass": float(selected_mass.detach().cpu()),
+        "domain_support_used": bool(support.get("domain_support_used", False)),
+        "domain_support_count": int(support.get("domain_support_count", 0)),
+    }
+    return descriptor, report
 
 
 def _donor_token_hidden_basis_seed_rows(
@@ -5746,15 +5894,17 @@ def _axis_assignment_cache_key(
 ):
     if base_key is None:
         return None
+    cache_reduction = "path-shared" if str(fold_mode) == "path-conjugate" else str(reduction)
+    cache_fold_mode = "anchor-transplant" if str(fold_mode) == "path-conjugate" else str(fold_mode)
     key = (
         _freeze_assignment_key(base_key),
         int(source_dim),
         int(target_dim),
         str(assignment_mode),
-        str(fold_mode),
-        str(reduction),
+        cache_fold_mode,
+        cache_reduction,
     )
-    if str(fold_mode) in {"transport", "anchor-transplant"}:
+    if str(fold_mode) in {"transport", "anchor-transplant", "path-conjugate"}:
         key = (*key, str(transport_backend or ""), str(transport_support or ""))
     return key
 
@@ -6868,6 +7018,8 @@ def _apply_anchor_transplant_fold(
     if int(signs.numel()) != source_dim:
         raise ValueError("Anchor transplant signs have the wrong source dimension.")
     folded = flat[anchor_indices].clone()
+    if reduction == "select":
+        return folded
     anchor_mask = torch.zeros(source_dim, dtype=torch.bool)
     anchor_mask[anchor_indices] = True
     non_anchor = torch.where(~anchor_mask)[0]
@@ -7319,10 +7471,10 @@ def _resize_tensor_axis_mean_fold(
 ):
     if target_dim <= 0:
         raise ValueError("target_dim must be positive.")
-    if fold_mode not in {"mean", "rms", "transport", "anchor-transplant"}:
-        raise ValueError("fold_mode must be mean, rms, transport, or anchor-transplant.")
-    if reduction not in {"mean", "sum", "sqrt-sum"}:
-        raise ValueError("reduction must be mean, sum, or sqrt-sum.")
+    if fold_mode not in {"mean", "rms", "transport", "anchor-transplant", "path-conjugate"}:
+        raise ValueError("fold_mode must be mean, rms, transport, anchor-transplant, or path-conjugate.")
+    if reduction not in {"mean", "sum", "sqrt-sum", "select"}:
+        raise ValueError("reduction must be mean, sum, sqrt-sum, or select.")
     if assignment_mode not in _ACTIVATION_FOLD_ASSIGNMENTS:
         raise ValueError(
             "assignment_mode must be balanced, similarity, signed-similarity, "
@@ -7425,7 +7577,7 @@ def _resize_tensor_axis_mean_fold(
                 transport=cached,
             )
             return folded.reshape((target_dim, *rest_shape)).movedim(0, axis).contiguous()
-        if fold_mode == "anchor-transplant":
+        if fold_mode in {"anchor-transplant", "path-conjugate"}:
             if cached is None:
                 cached = _build_anchor_transplant_assignment(
                     torch,
@@ -10635,6 +10787,8 @@ def _initialize_token_weights_from_donor(
         raise ValueError("token_fallback_mode must be none, donor-mean, donor-hash, or donor-omp.")
     if consumer_hidden_reduction not in {"mean", "sum", "sqrt-sum"}:
         raise ValueError("consumer_hidden_reduction must be mean, sum, or sqrt-sum.")
+    if fold_mode == "path-conjugate" and consumer_hidden_reduction != "sum":
+        raise ValueError("path-conjugate requires consumer_hidden_reduction='sum' so paired producer/consumer maps compose.")
     target_embeddings = target.get_input_embeddings()
     donor_embeddings = donor.get_input_embeddings()
     target_emb_weight = target_embeddings.weight.data.detach().cpu().to(torch.float32)

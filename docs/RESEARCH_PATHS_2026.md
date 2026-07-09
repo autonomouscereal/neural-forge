@@ -1,8 +1,26 @@
 # Research Paths For Model Folding And Recovery
 
-Current as of 2026-06-29. This file tracks implementation directions for the
+Current as of 2026-07-09. This file tracks implementation directions for the
 blank-target, cross-family compression goal. It deliberately focuses on
 2025-2026 work and actionable hooks for Neural Forge.
+
+## Path-Conjugate No-Recovery Fold (2026-07-09)
+
+The strict blank-target lane now has a `path-conjugate` initializer. It keeps one
+global residual coordinate system by selecting real donor coordinates, preserves
+RoPE head dimensions, selects real attention/MLP producer channels, and sums the
+paired consumer paths with the same cached assignment. This avoids three invalid
+operations in the older independent fold: changing PCA coordinates between
+residual blocks, mixing channels before SwiGLU, and independently assigning
+gate/up versus down or Q/V versus O channels.
+
+The first proof target is a blank Qwen3-shaped `146,234,368` parameter model
+(`hidden=512`, `intermediate=2048`, `layers=18`, `heads=4`, `kv_heads=1`,
+`head_dim=128`), a `27.51x` reduction from Qwen3-4B Base. The reproducible
+fold-only lane is
+`experiments/run_qwen4b_blank_qwen146m_path_conjugate_20260709.sh`; promotion
+still requires useful held-out generation and broad parent-relative behavior,
+not PPL alone.
 
 ## Highest-Priority Paths
 

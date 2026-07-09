@@ -138,6 +138,7 @@ from neural_forge.hf_xfamily import _balanced_activation_assignment
 from neural_forge.hf_xfamily import _activation_balanced_similarity_assignment
 from neural_forge.hf_xfamily import _blend_projection_with_target
 from neural_forge.hf_xfamily import _build_activation_hidden_basis
+from neural_forge.hf_xfamily import _build_activation_coordinate_hidden_basis
 from neural_forge.hf_xfamily import _build_donor_token_hidden_basis
 from neural_forge.hf_xfamily import _build_layer_activation_hidden_bases
 from neural_forge.hf_xfamily import _build_shared_token_hidden_basis
@@ -2067,6 +2068,44 @@ def test_cli_accepts_anchor_transplant_fold_modes() -> None:
     assert chain_args.init_fold_mode == "anchor-transplant"
 
 
+def test_cli_accepts_path_conjugate_coordinate_fold_modes() -> None:
+    donor_args = build_parser().parse_args(
+        [
+            "hf-donor-project-init",
+            "out",
+            "--target-config-model",
+            "target",
+            "--donor-model",
+            "donor",
+            "--fold-mode",
+            "path-conjugate",
+            "--hidden-basis-mode",
+            "activation-coordinate",
+            "--consumer-hidden-reduction",
+            "sum",
+        ]
+    )
+    chain_args = build_parser().parse_args(
+        [
+            "hf-xfamily-chain-anchor-compress",
+            "donor",
+            "anchor",
+            "out",
+            "--init-fold-mode",
+            "path-conjugate",
+            "--init-hidden-basis-mode",
+            "activation-coordinate",
+            "--init-consumer-hidden-reduction",
+            "sum",
+        ]
+    )
+
+    assert donor_args.fold_mode == "path-conjugate"
+    assert donor_args.hidden_basis_mode == "activation-coordinate"
+    assert chain_args.init_fold_mode == "path-conjugate"
+    assert chain_args.init_hidden_basis_mode == "activation-coordinate"
+
+
 def test_parse_layer_groups() -> None:
     assert _parse_layer_groups("3+4, 7+8+9") == [[3, 4], [7, 8, 9]]
 
@@ -2766,6 +2805,59 @@ def test_anchor_transplant_fold_reuses_cached_anchor_assignment() -> None:
     assert folded.flatten().tolist() == pytest.approx([100.0, 0.0, 0.0, 95.0])
 
 
+def test_path_conjugate_reuses_one_map_for_producer_selection_and_consumer_sum() -> None:
+    torch = pytest.importorskip("torch")
+    features = torch.tensor(
+        [[1.0, 0.0], [0.9, 0.1], [0.0, 1.0], [0.1, 0.9]],
+        dtype=torch.float32,
+    )
+    weights = torch.tensor([10.0, 1.0, 9.0, 1.0], dtype=torch.float32)
+    producer = torch.tensor([[10.0], [11.0], [20.0], [21.0]], dtype=torch.float32)
+    consumer = torch.tensor([[1.0], [2.0], [3.0], [4.0]], dtype=torch.float32)
+    cache = {}
+
+    selected = _resize_tensor_axis_mean_fold(
+        torch,
+        producer,
+        axis=0,
+        target_dim=2,
+        fold_mode="path-conjugate",
+        weights=weights,
+        features=features,
+        reduction="select",
+        assignment_mode="balanced-similarity",
+        transport_support="importance",
+        assignment_cache=cache,
+        assignment_cache_key=("mlp", (0, 1)),
+    )
+    summed = _resize_tensor_axis_mean_fold(
+        torch,
+        consumer,
+        axis=0,
+        target_dim=2,
+        fold_mode="path-conjugate",
+        weights=weights,
+        features=features,
+        reduction="sum",
+        assignment_mode="balanced-similarity",
+        transport_support="importance",
+        assignment_cache=cache,
+        assignment_cache_key=("mlp", (0, 1)),
+    )
+
+    assert len(cache) == 1
+    assignment = next(iter(cache.values()))
+    anchors = assignment["anchor_support_indices"]
+    assert selected.flatten().tolist() == producer[anchors].flatten().tolist()
+    expected = consumer[anchors].clone()
+    anchor_mask = torch.zeros(consumer.shape[0], dtype=torch.bool)
+    anchor_mask[anchors] = True
+    expected.index_add_(0, assignment["assignment"][~anchor_mask], consumer[~anchor_mask])
+    assert summed.flatten().tolist() == expected.flatten().tolist()
+    assert _axis_reductions_for_layer_tensor("mlp.gate_proj.weight", "path-conjugate")[0] == "select"
+    assert _axis_reductions_for_layer_tensor("mlp.down_proj.weight", "path-conjugate")[1] == "sum"
+
+
 def test_attention_head_anchor_transplant_uses_activation_profiles() -> None:
     torch = pytest.importorskip("torch")
     source = torch.tensor(
@@ -2836,6 +2928,45 @@ def test_activation_hidden_basis_is_orthonormal() -> None:
     assert basis.t().matmul(basis).flatten().tolist() == pytest.approx(torch.eye(2).flatten().tolist(), abs=1e-5)
     assert report["mode"] == "activation-pca"
     assert report["retained_energy"] > 0.99
+
+
+def test_activation_hidden_basis_expansion_has_requested_shape() -> None:
+    torch = pytest.importorskip("torch")
+    rows = torch.eye(2, dtype=torch.float32)
+
+    basis, report = _build_activation_hidden_basis(torch, rows, source_dim=2, target_dim=4)
+
+    assert basis.shape == (2, 4)
+    assert basis[:, :2].tolist() == torch.eye(2).tolist()
+    assert basis[:, 2:].abs().sum().item() == 0.0
+    assert report["mode"] == "identity"
+
+
+def test_activation_coordinate_basis_selects_real_donor_coordinates() -> None:
+    torch = pytest.importorskip("torch")
+    features = torch.tensor(
+        [[1.0, 0.0], [0.9, 0.1], [0.0, 1.0], [0.1, 0.9]],
+        dtype=torch.float32,
+    )
+    scores = torch.tensor([1.0, 10.0, 2.0, 8.0], dtype=torch.float32)
+
+    descriptor, report = _build_activation_coordinate_hidden_basis(
+        torch,
+        features,
+        scores,
+        source_dim=4,
+        target_dim=2,
+        transport_support="importance",
+        assignment_mode="balanced-similarity",
+    )
+
+    basis = descriptor["basis"]
+    assert descriptor["kind"] == "coordinate-selection"
+    assert basis.shape == (4, 2)
+    assert basis.abs().sum(dim=0).tolist() == [1.0, 1.0]
+    assert basis.abs().sum(dim=1).le(1.0).all().item() is True
+    assert sorted(descriptor["indices"].tolist()) == [1, 3]
+    assert report["selected_activation_mass"] == pytest.approx(18.0 / 21.0)
 
 
 def test_activation_hidden_basis_uncentered_keeps_common_direction() -> None:
