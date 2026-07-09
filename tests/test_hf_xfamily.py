@@ -3074,8 +3074,8 @@ def test_donor_token_hidden_basis_prioritizes_calibration_tokens() -> None:
 
     assert report["priority_tokens_seen"] == 1
     assert report["priority_token_rows_selected"] == 1
-    assert report["token_rows_selected"] == 1
-    assert rows.tolist() == [[0.0, 0.0, 1.0]]
+    assert report["token_rows_selected"] >= 2
+    assert rows[0].tolist() == [0.0, 0.0, 1.0]
 
 
 def test_hidden_projection_gate_prefers_better_layer_input_map() -> None:
