@@ -5258,7 +5258,7 @@ def _donor_token_hidden_basis_seed_rows(
     basis_row_budget = max(int(target_dim), int(max_basis_rows))
     token_row_budget = min(int(max_anchors), int(donor_emb_rows.shape[0]), basis_row_budget)
     if reserve_for_activation:
-        token_row_budget = min(token_row_budget, max(int(target_dim), basis_row_budget // 3))
+        token_row_budget = min(token_row_budget, max(1, basis_row_budget // 3))
     target_map = _canonical_token_map(target_tokenizer)
     donor_map = _canonical_token_map(donor_tokenizer)
     shared = sorted(set(target_map) & set(donor_map), key=lambda item: (len(item), item))
