@@ -6,7 +6,7 @@ RUN_ROOT="${RUN_ROOT:-$REPO_ROOT/runs/qwen4b_to_smollm135m_transport_random_2026
 VARIANT="${VARIANT:-qwen}"
 GPU_UUID="${GPU_UUID:-GPU-2ce6a95c-7b1f-644a-3808-d781732a0582}"
 WAIT_PIDS="${WAIT_PIDS:-}"
-POLL_SECONDS="${POLL_SECONDS:-120}"
+POLL_SECONDS="${POLL_SECONDS:-30}"
 MEM_THRESHOLD="${MEM_THRESHOLD:-2000}"
 IGNORE_GPU_PIDS="${IGNORE_GPU_PIDS:-12681}"
 MIN_CUDA_COMPUTE_CAPABILITY="${MIN_CUDA_COMPUTE_CAPABILITY:-7.0}"
@@ -14,19 +14,13 @@ BESTSTACK_EVAL_DIR="${BESTSTACK_EVAL_DIR:-$RUN_ROOT/evals/beststack_20260706}"
 LM_EVAL_LIMIT="${LM_EVAL_LIMIT:-100}"
 GPU_LOCK_DIR="${GPU_LOCK_DIR:-$RUN_ROOT/locks}"
 GPU_STARTUP_SETTLE_SECONDS="${GPU_STARTUP_SETTLE_SECONDS:-30}"
+MIN_HOST_MEM_AVAILABLE_GB="${MIN_HOST_MEM_AVAILABLE_GB:-48}"
+MAX_HOST_SWAP_USED_GB="${MAX_HOST_SWAP_USED_GB:-1}"
+MAX_CONCURRENT_HEAVY_FOLDS="${MAX_CONCURRENT_HEAVY_FOLDS:-2}"
 TRANSPORT_SUPPORT="${TRANSPORT_SUPPORT:-quantile-medoid}"
 RESIDUAL_MODE="${RESIDUAL_MODE:-module-eora-pre}"
 ALM_ANSWER_FIRST_TOKEN_MARGIN_WEIGHT="${ALM_ANSWER_FIRST_TOKEN_MARGIN_WEIGHT:-0.05}"
 ALM_ANSWER_FIRST_TOKEN_TOP_NEGATIVES="${ALM_ANSWER_FIRST_TOKEN_TOP_NEGATIVES:-24}"
-CPU_THREAD_CAP="${CPU_THREAD_CAP:-4}"
-TORCH_INTEROP_THREAD_CAP="${TORCH_INTEROP_THREAD_CAP:-2}"
-export OMP_NUM_THREADS="${OMP_NUM_THREADS:-$CPU_THREAD_CAP}"
-export MKL_NUM_THREADS="${MKL_NUM_THREADS:-$CPU_THREAD_CAP}"
-export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-$CPU_THREAD_CAP}"
-export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-$CPU_THREAD_CAP}"
-export VECLIB_MAXIMUM_THREADS="${VECLIB_MAXIMUM_THREADS:-$CPU_THREAD_CAP}"
-export TORCH_NUM_THREADS="${TORCH_NUM_THREADS:-$CPU_THREAD_CAP}"
-export TORCH_NUM_INTEROP_THREADS="${TORCH_NUM_INTEROP_THREADS:-$TORCH_INTEROP_THREAD_CAP}"
 # Best-stack proof lanes target the requested child architecture size. Init can
 # temporarily untie the head for cross-tokenizer folding, but the promoted
 # artifact should be tied and re-evaluated unless a caller explicitly overrides.
@@ -143,6 +137,65 @@ wait_for_gpu() {
   done
 }
 
+host_capacity_status() {
+  awk -v min_gb="$MIN_HOST_MEM_AVAILABLE_GB" -v max_swap_gb="$MAX_HOST_SWAP_USED_GB" '
+    /MemAvailable:/ { mem_available_kb = $2 }
+    /SwapTotal:/ { swap_total_kb = $2 }
+    /SwapFree:/ { swap_free_kb = $2 }
+    END {
+      min_available_kb = min_gb * 1024 * 1024
+      max_swap_used_kb = max_swap_gb * 1024 * 1024
+      swap_used_kb = swap_total_kb - swap_free_kb
+      printf "mem_available_gb=%.1f min_mem_available_gb=%s swap_used_gb=%.1f max_swap_used_gb=%s\n",
+        mem_available_kb / 1024 / 1024, min_gb, swap_used_kb / 1024 / 1024, max_swap_gb
+      if (mem_available_kb < min_available_kb || swap_used_kb > max_swap_used_kb) {
+        exit 1
+      }
+    }
+  ' /proc/meminfo
+}
+
+active_heavy_fold_count() {
+  ps -eo pid=,ppid=,comm=,args= |
+    awk -v self="$$" -v parent="$PPID" '
+      {
+        pid = $1
+        ppid = $2
+        comm = $3
+        args = $0
+        sub(/^[[:space:]]*[0-9]+[[:space:]]+[0-9]+[[:space:]]+[^[:space:]]+[[:space:]]+/, "", args)
+        if (pid == self || pid == parent) {
+          next
+        }
+        if (comm !~ /python/) {
+          next
+        }
+        if (args ~ /[[:space:]]-m[[:space:]]+neural_forge\.cli[[:space:]]+hf-xfamily-chain-anchor-compress/) {
+          count += 1
+        }
+      }
+      END { print count + 0 }
+    '
+}
+
+wait_for_host_capacity() {
+  local status active mem_ok
+  while true; do
+    if status="$(host_capacity_status 2>&1)"; then
+      mem_ok=1
+    else
+      mem_ok=0
+    fi
+    active="$(active_heavy_fold_count)"
+    if [[ "$active" -lt "$MAX_CONCURRENT_HEAVY_FOLDS" && "$mem_ok" == "1" ]]; then
+      echo "host_capacity_ok active_heavy_folds=$active max_concurrent_heavy_folds=$MAX_CONCURRENT_HEAVY_FOLDS $status"
+      break
+    fi
+    echo "$(date -Is) waiting_for_host_capacity active_heavy_folds=$active max_concurrent_heavy_folds=$MAX_CONCURRENT_HEAVY_FOLDS $status"
+    sleep "$POLL_SECONDS"
+  done
+}
+
 sanitize_lock_name() {
   printf '%s' "$1" | tr -c 'A-Za-z0-9_.-' '_'
 }
@@ -193,12 +246,14 @@ echo "waiting_for_gpu_launch_lock file=$GPU_LOCK_FILE"
 flock 9
 echo "acquired_gpu_launch_lock file=$GPU_LOCK_FILE"
 require_supported_cuda_gpu
+wait_for_host_capacity
 wait_for_gpu
 
 export RUN_ROOT
 export REPO_ROOT
 export GPU_UUID
 export TAG
+export MEM_THRESHOLD
 export SOURCE_MODEL
 export SOURCE_WEIGHTS
 export RECOVERY_SOURCE_MODE

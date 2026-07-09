@@ -9,7 +9,6 @@ from __future__ import annotations
 import ast
 import json
 import math
-import os
 import random
 import re
 from pathlib import Path
@@ -49,8 +48,6 @@ CHOICE_PROBES = [
         "answer": 0,
     },
 ]
-
-_TORCH_THREAD_CAPS_APPLIED = False
 
 GENERATION_PROMPTS = [
     "Explain neural pruning in two concise sentences.",
@@ -2134,35 +2131,7 @@ def _torch_and_transformers():
     import torch
     import transformers
 
-    _apply_torch_thread_caps(torch)
     return torch, transformers
-
-
-def _env_positive_int(name: str) -> int | None:
-    value = os.environ.get(name)
-    if value is None or value == "":
-        return None
-    try:
-        parsed = int(value)
-    except ValueError:
-        return None
-    return parsed if parsed > 0 else None
-
-
-def _apply_torch_thread_caps(torch) -> None:
-    global _TORCH_THREAD_CAPS_APPLIED
-    if _TORCH_THREAD_CAPS_APPLIED:
-        return
-    threads = _env_positive_int("TORCH_NUM_THREADS")
-    if threads is not None:
-        torch.set_num_threads(threads)
-    interop_threads = _env_positive_int("TORCH_NUM_INTEROP_THREADS")
-    if interop_threads is not None:
-        try:
-            torch.set_num_interop_threads(interop_threads)
-        except RuntimeError:
-            pass
-    _TORCH_THREAD_CAPS_APPLIED = True
 
 
 def _dtype_from_name(torch, name: str):
