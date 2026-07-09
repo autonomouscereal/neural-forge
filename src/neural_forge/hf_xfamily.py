@@ -5675,6 +5675,7 @@ def _activation_pca_extrema_medoid_support_indices(torch, feature_rows, fold_wei
         raise ValueError("target_dim must be positive.")
     if source_dim <= target_dim:
         return torch.arange(source_dim, dtype=torch.long)
+    raw_rows = feature_rows.detach().cpu().to(torch.float32)
     rows = _row_normalize(feature_rows.detach().cpu().to(torch.float32))
     weights = fold_weights.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12)
     if int(weights.numel()) != source_dim:
@@ -5682,6 +5683,8 @@ def _activation_pca_extrema_medoid_support_indices(torch, feature_rows, fold_wei
     direction_count = max(1, min(int(rows.shape[1]), int(math.ceil(float(target_dim) / 2.0))))
     directions = _activation_principal_directions(torch, rows, weights, direction_count)
     weight_score = weights / weights.max().clamp_min(1e-12)
+    raw_mean = (raw_rows * weights.unsqueeze(1)).sum(dim=0) / weights.sum().clamp_min(1e-12)
+    projection_rows = raw_rows - raw_mean.unsqueeze(0)
     selected: list[int] = []
     selected_set: set[int] = set()
 
@@ -5695,7 +5698,7 @@ def _activation_pca_extrema_medoid_support_indices(torch, feature_rows, fold_wei
             return
 
     for direction in directions:
-        projections = rows.matmul(direction.to(rows.dtype))
+        projections = projection_rows.matmul(direction.to(projection_rows.dtype))
         high_score = projections + 0.02 * weight_score
         low_score = -projections + 0.02 * weight_score
         add_first_available(torch.argsort(high_score, descending=True).tolist())
