@@ -5749,27 +5749,28 @@ def _activation_volume_medoid_support_indices(torch, feature_rows, fold_weights,
     selected_set: set[int] = set()
     basis: list[Any] = []
     weight_score = (weights / weights.max().clamp_min(1e-12)).sqrt()
+    selected_mask = torch.zeros(source_dim, dtype=torch.bool)
 
     while len(selected) < target_dim:
-        best_idx = -1
-        best_score = -1.0
-        best_residual = None
-        for idx in range(source_dim):
-            if idx in selected_set:
-                continue
-            residual = rows[idx].clone()
-            for vector in basis:
-                residual = residual - residual.dot(vector) * vector
-            residual_norm = float(residual.norm().item())
-            score = residual_norm * (0.25 + float(weight_score[idx].item()))
-            if score > best_score:
-                best_idx = int(idx)
-                best_score = float(score)
-                best_residual = residual
+        if basis:
+            basis_matrix = torch.stack(basis, dim=0).to(rows.dtype)
+            projections = rows.matmul(basis_matrix.t())
+            residual_power = (1.0 - projections.pow(2).sum(dim=1)).clamp_min(0.0)
+        else:
+            residual_power = rows.pow(2).sum(dim=1).clamp_min(0.0)
+        score = residual_power.sqrt() * (0.25 + weight_score)
+        score[selected_mask] = -1.0
+        best_idx = int(torch.argmax(score).item())
+        if bool(selected_mask[best_idx].item()) or float(score[best_idx].item()) < 0.0:
+            break
+        best_residual = rows[best_idx].clone()
+        for vector in basis:
+            best_residual = best_residual - best_residual.dot(vector) * vector
         if best_idx < 0:
             break
         selected.append(best_idx)
         selected_set.add(best_idx)
+        selected_mask[best_idx] = True
         if best_residual is not None:
             residual_norm = best_residual.norm().clamp_min(1e-12)
             if float(residual_norm.item()) > 1e-8:
