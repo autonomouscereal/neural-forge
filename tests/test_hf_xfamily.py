@@ -2762,7 +2762,7 @@ def test_anchor_transplant_fold_reuses_cached_anchor_assignment() -> None:
         assignment_cache_key=("unit", "axis0"),
     )
 
-    assert folded.tolist() == pytest.approx([[100.0, 0.0], [0.0, 95.0]])
+    assert folded.flatten().tolist() == pytest.approx([100.0, 0.0, 0.0, 95.0])
 
 
 def test_attention_head_anchor_transplant_uses_activation_profiles() -> None:
