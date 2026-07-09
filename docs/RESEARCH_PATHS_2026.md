@@ -278,6 +278,14 @@ Implementation note:
   is multiplied by adjacent expansion/contraction operator norms before the
   signed-superpose/PCA-extrema fold. The mathematical bet is that a neuron should
   be merged by its full path contribution, not by activation usage alone.
+- A volume-operator lane is available via
+  `queue_qwen4b_lfm230m_multidonor_beststack_volume_operator_20260708.sh` and
+  `queue_qwen4b_gpt2_multidonor_beststack_volume_operator_20260708.sh`. These
+  keep the operator-product stack but set `TRANSPORT_SUPPORT=volume-medoid`,
+  selecting real donor axes by greedy residual activation volume instead of
+  PCA extremes. The mathematical bet is that a child axis budget should cover
+  independent subspace directions, even when duplicated high-mass donor axes
+  dominate raw activation weight.
 
 ## First-Principles Experiment Ideas
 
@@ -296,7 +304,11 @@ test against the current failure mode.
    contribution, such as `down[:, i] * up[i, :]` or attention value/output
    products, instead of clustering incoming or outgoing weights separately.
    This should preserve functions better than preserving individual tensors.
-4. Random-feature teacher emulator. Treat a blank child block as a fixed random
+4. Volume/leverage support. Select survivor axes by residual activation volume
+   under a weighted Gram-Schmidt score, not by density medoids or extrema alone.
+   This targets the failure case where many high-mass donor neurons are
+   collinear and rare independent capability directions get folded away.
+5. Random-feature teacher emulator. Treat a blank child block as a fixed random
    feature map and solve layer-local ridge maps to reproduce donor residual
    deltas, then materialize those maps into normal weights. This abandons
    weight similarity and asks only for functional operator matching.

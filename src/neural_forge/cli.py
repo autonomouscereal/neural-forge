@@ -210,6 +210,7 @@ def build_parser() -> argparse.ArgumentParser:
             "domain-quantile-medoid",
             "domain-diverse-medoid",
             "pca-extrema-medoid",
+            "volume-medoid",
         ],
         default="centroid",
         help=(
@@ -221,7 +222,8 @@ def build_parser() -> argparse.ArgumentParser:
             "diverse-medoid greedily covers activation geometry with real donor axes; "
             "domain-quantile-medoid reserves real donor medoids across calibration domains; "
             "domain-diverse-medoid reserves domain slots while greedily covering activation geometry; "
-            "pca-extrema-medoid reserves donor axes at principal activation extremes before filling for coverage."
+            "pca-extrema-medoid reserves donor axes at principal activation extremes before filling for coverage; "
+            "volume-medoid greedily chooses axes that add independent activation volume."
         ),
     )
     hf_donor_init.add_argument(
@@ -1667,6 +1669,7 @@ def build_parser() -> argparse.ArgumentParser:
             "domain-quantile-medoid",
             "domain-diverse-medoid",
             "pca-extrema-medoid",
+            "volume-medoid",
         ],
         default="centroid",
     )

@@ -50,10 +50,12 @@ _TRANSPORT_SUPPORTS = {
     "domain-quantile-medoid",
     "domain-diverse-medoid",
     "pca-extrema-medoid",
+    "volume-medoid",
 }
 _TRANSPORT_SUPPORT_MESSAGE = (
     "transport_support must be centroid, importance, quantile, medoid, quantile-medoid, "
-    "diverse-medoid, domain-quantile-medoid, domain-diverse-medoid, or pca-extrema-medoid."
+    "diverse-medoid, domain-quantile-medoid, domain-diverse-medoid, pca-extrema-medoid, "
+    "or volume-medoid."
 )
 
 
@@ -5729,6 +5731,73 @@ def _activation_pca_extrema_medoid_support_indices(torch, feature_rows, fold_wei
     return torch.tensor(selected[:target_dim], dtype=torch.long).sort().values
 
 
+def _activation_volume_medoid_support_indices(torch, feature_rows, fold_weights, target_dim: int):
+    source_dim = int(feature_rows.shape[0])
+    target_dim = int(target_dim)
+    if target_dim <= 0:
+        raise ValueError("target_dim must be positive.")
+    if source_dim <= target_dim:
+        return torch.arange(source_dim, dtype=torch.long)
+    rows = _row_normalize(feature_rows.detach().cpu().to(torch.float32))
+    weights = fold_weights.detach().cpu().to(torch.float32).flatten().clamp_min(1e-12)
+    if int(weights.numel()) != source_dim:
+        raise ValueError("Volume-medoid support weights must match feature rows.")
+    selected: list[int] = []
+    selected_set: set[int] = set()
+    basis: list[Any] = []
+    weight_score = (weights / weights.max().clamp_min(1e-12)).sqrt()
+
+    while len(selected) < target_dim:
+        best_idx = -1
+        best_score = -1.0
+        best_residual = None
+        for idx in range(source_dim):
+            if idx in selected_set:
+                continue
+            residual = rows[idx].clone()
+            for vector in basis:
+                residual = residual - residual.dot(vector) * vector
+            residual_norm = float(residual.norm().item())
+            score = residual_norm * (0.25 + float(weight_score[idx].item()))
+            if score > best_score:
+                best_idx = int(idx)
+                best_score = float(score)
+                best_residual = residual
+        if best_idx < 0:
+            break
+        selected.append(best_idx)
+        selected_set.add(best_idx)
+        if best_residual is not None:
+            residual_norm = best_residual.norm().clamp_min(1e-12)
+            if float(residual_norm.item()) > 1e-8:
+                basis.append((best_residual / residual_norm).to(torch.float32))
+
+    if len(selected) < target_dim:
+        for source_idx in _activation_diverse_medoid_support_indices(
+            torch,
+            rows,
+            weights,
+            target_dim,
+        ).tolist():
+            source_idx = int(source_idx)
+            if source_idx in selected_set:
+                continue
+            selected.append(source_idx)
+            selected_set.add(source_idx)
+            if len(selected) == target_dim:
+                break
+    if len(selected) < target_dim:
+        for source_idx in torch.argsort(weights, descending=True).tolist():
+            source_idx = int(source_idx)
+            if source_idx in selected_set:
+                continue
+            selected.append(source_idx)
+            selected_set.add(source_idx)
+            if len(selected) == target_dim:
+                break
+    return torch.tensor(selected[:target_dim], dtype=torch.long).sort().values
+
+
 def _activation_diverse_medoid_support_indices(torch, feature_rows, fold_weights, target_dim: int):
     source_dim = int(feature_rows.shape[0])
     target_dim = int(target_dim)
@@ -6136,6 +6205,14 @@ def _build_sparse_activation_transport(
             target_dim,
         )
         centroid_rows = feature_rows[support_indices]
+    elif transport_support == "volume-medoid":
+        support_indices = _activation_volume_medoid_support_indices(
+            torch,
+            raw_feature_rows,
+            fold_weights,
+            target_dim,
+        )
+        centroid_rows = feature_rows[support_indices]
     elif transport_support == "diverse-medoid":
         support_indices = _activation_diverse_medoid_support_indices(
             torch,
@@ -6199,6 +6276,7 @@ def _build_sparse_activation_transport(
         "domain-quantile-medoid",
         "domain-diverse-medoid",
         "pca-extrema-medoid",
+        "volume-medoid",
     }:
         target_mass = _activation_transport_target_mass(torch, scores, fold_weights, target_dim)
     else:

@@ -115,6 +115,7 @@ from neural_forge.hf_xfamily import _activation_diverse_medoid_support_indices
 from neural_forge.hf_xfamily import _activation_domain_quantile_medoid_support_indices
 from neural_forge.hf_xfamily import _activation_domain_diverse_medoid_support_indices
 from neural_forge.hf_xfamily import _activation_pca_extrema_medoid_support_indices
+from neural_forge.hf_xfamily import _activation_volume_medoid_support_indices
 from neural_forge.hf_xfamily import _activation_layer_geometry_scores
 from neural_forge.hf_xfamily import _activation_similarity_assignment
 from neural_forge.hf_xfamily import _activation_signed_similarity_assignment
@@ -987,6 +988,32 @@ def test_cli_accepts_domain_diverse_medoid_transport_support() -> None:
 
     assert pca_donor_init_args.transport_support == "pca-extrema-medoid"
     assert pca_chain_args.init_transport_support == "pca-extrema-medoid"
+
+    volume_donor_init_args = parser.parse_args(
+        [
+            "hf-donor-project-init",
+            "projected-out",
+            "--target-config-model",
+            "target-model",
+            "--donor-model",
+            "donor-model",
+            "--transport-support",
+            "volume-medoid",
+        ]
+    )
+    volume_chain_args = parser.parse_args(
+        [
+            "hf-xfamily-chain-anchor-compress",
+            "source-model",
+            "candidate-config",
+            "chain-out",
+            "--init-transport-support",
+            "volume-medoid",
+        ]
+    )
+
+    assert volume_donor_init_args.transport_support == "volume-medoid"
+    assert volume_chain_args.init_transport_support == "volume-medoid"
 
 
 def test_cli_accepts_operator_product_axis_weights() -> None:
@@ -5073,6 +5100,49 @@ def test_transport_fold_can_use_diverse_medoid_support() -> None:
     assert any(idx in support for idx in [2, 3])
     assert any(idx in support for idx in [4, 5])
     assert transport["transport_diagnostics"]["target_load_l1_error"] < 0.05
+
+
+def test_transport_fold_can_use_volume_medoid_support() -> None:
+    torch = pytest.importorskip("torch")
+    cache = {}
+    features = torch.tensor(
+        [
+            [1.00, 0.00, 0.00],
+            [0.99, 0.01, 0.00],
+            [0.98, -0.02, 0.00],
+            [0.00, 1.00, 0.00],
+            [0.00, 0.00, 1.00],
+            [0.02, 0.00, 0.98],
+        ],
+        dtype=torch.float32,
+    )
+    weights = torch.tensor([100.0, 90.0, 80.0, 1.0, 1.0, 0.8], dtype=torch.float32)
+    source = torch.arange(6, dtype=torch.float32).unsqueeze(1)
+
+    support = _activation_volume_medoid_support_indices(torch, features, weights, target_dim=3)
+    folded = _resize_tensor_axis_mean_fold(
+        torch,
+        source,
+        axis=0,
+        target_dim=3,
+        fold_mode="transport",
+        weights=weights,
+        features=features,
+        transport_backend="sinkhorn",
+        transport_support="volume-medoid",
+        assignment_cache=cache,
+        assignment_cache_key=("hidden", "volume-medoid-support-test"),
+    )
+
+    assert folded.shape == (3, 1)
+    assert 0 in support.tolist()
+    assert 3 in support.tolist()
+    assert any(idx in support.tolist() for idx in [4, 5])
+    transport = next(iter(cache.values()))
+    assert transport["transport_support"] == "volume-medoid"
+    assert transport["target_support_indices"].tolist() == support.tolist()
+    report = _axis_assignment_cache_report(cache)
+    assert report[0]["target_support_indices"] == support.tolist()
 
 
 def test_transport_cache_key_keeps_support_modes_separate() -> None:
