@@ -592,6 +592,17 @@ def donor_projected_init(
             raise ValueError("activation-token-pca hidden basis requires activation calibration texts.")
         donor_hidden_size = int(donor.get_input_embeddings().weight.shape[1])
         target_hidden_size = int(target.get_input_embeddings().weight.shape[1])
+        donor_token_basis_rows, donor_token_basis_row_report = _donor_token_hidden_basis_seed_rows(
+            torch,
+            donor,
+            target_tokenizer,
+            donor_tokenizer,
+            max_anchors=max_anchors,
+            source_dim=donor_hidden_size,
+            target_dim=target_hidden_size,
+            max_basis_rows=hidden_basis_max_rows,
+            reserve_for_activation=hidden_basis_mode == "activation-token-pca",
+        )
         hidden_basis, hidden_basis_report = _build_donor_token_hidden_basis(
             torch,
             target,
@@ -606,6 +617,8 @@ def donor_projected_init(
             if hidden_basis_mode == "donor-token-pca" or activation_profile is None
             else activation_profile.get("hidden_basis_rows"),
             preprocess=hidden_basis_preprocess,
+            seed_rows=donor_token_basis_rows,
+            seed_row_report=donor_token_basis_row_report,
         )
         if hidden_basis_mode == "activation-token-pca" and hidden_basis_scope == "layer":
             layer_hidden_bases, layer_hidden_basis_report = _build_layer_activation_hidden_bases(
@@ -625,6 +638,8 @@ def donor_projected_init(
                 group_source=donor_layer_group_strategy
                 if donor_layer_group_strategy != "depth"
                 else "depth",
+                basis_seed_rows=donor_token_basis_rows,
+                max_basis_rows=hidden_basis_max_rows,
             )
 
     target_state = target.state_dict()
@@ -5142,6 +5157,8 @@ def _build_donor_token_hidden_basis(
     max_basis_rows: int,
     activation_rows=None,
     preprocess: str = "centered-rowrms",
+    seed_rows=None,
+    seed_row_report: dict[str, Any] | None = None,
 ):
     if max_anchors <= 0:
         raise ValueError("max_anchors must be positive.")
@@ -5149,19 +5166,98 @@ def _build_donor_token_hidden_basis(
         raise ValueError("source_dim and target_dim must be positive.")
     if max_basis_rows <= 0:
         raise ValueError("max_basis_rows must be positive.")
+    basis_row_budget = max(int(target_dim), int(max_basis_rows))
+    if seed_rows is None:
+        seed_rows, seed_row_report = _donor_token_hidden_basis_seed_rows(
+            torch,
+            donor,
+            target_tokenizer,
+            donor_tokenizer,
+            max_anchors=max_anchors,
+            source_dim=source_dim,
+            target_dim=target_dim,
+            max_basis_rows=max_basis_rows,
+            reserve_for_activation=activation_rows is not None,
+        )
+    else:
+        seed_rows = seed_rows.detach().cpu().to(torch.float32)
+        if seed_rows.dim() != 2 or int(seed_rows.shape[1]) != int(source_dim):
+            raise ValueError("seed_rows must be rank-2 and match source_dim.")
+    seed_row_report = dict(seed_row_report or {})
+
+    row_chunks = []
+    source_counts: dict[str, int] = dict(seed_row_report.get("source_counts") or {})
+    if seed_rows is not None and int(seed_rows.shape[0]) > 0:
+        row_chunks.append(seed_rows)
+    if activation_rows is not None:
+        activation_matrix = torch.nan_to_num(
+            activation_rows.detach().cpu().to(torch.float32),
+            nan=0.0,
+            posinf=1e4,
+            neginf=-1e4,
+        )
+        if activation_matrix.dim() > 2:
+            activation_matrix = activation_matrix.reshape(-1, activation_matrix.shape[-1])
+        if activation_matrix.dim() != 2 or int(activation_matrix.shape[1]) != int(source_dim):
+            raise ValueError("activation rows must be rank-2 and match source_dim for activation-token-pca.")
+        remaining_budget = max(0, basis_row_budget - sum(int(chunk.shape[0]) for chunk in row_chunks))
+        if remaining_budget > 0 and int(activation_matrix.shape[0]) > remaining_budget:
+            indices = torch.linspace(
+                0,
+                int(activation_matrix.shape[0]) - 1,
+                steps=int(remaining_budget),
+                dtype=torch.long,
+            )
+            activation_matrix = activation_matrix.index_select(0, indices)
+        if int(activation_matrix.shape[0]) > 0:
+            row_chunks.append(activation_matrix)
+            source_counts["donor_activation_rows"] = int(activation_matrix.shape[0])
+
+    if not row_chunks:
+        raise ValueError("No donor rows available for donor-token-pca hidden basis.")
+    rows = torch.cat(row_chunks, dim=0)
+    if int(rows.shape[0]) > basis_row_budget:
+        indices = torch.linspace(0, int(rows.shape[0]) - 1, steps=basis_row_budget, dtype=torch.long)
+        rows = rows.index_select(0, indices)
+        source_counts["post_concat_row_sample"] = int(rows.shape[0])
+    basis, report = _build_activation_hidden_basis(
+        torch,
+        rows,
+        source_dim=source_dim,
+        target_dim=target_dim,
+        preprocess=preprocess,
+    )
+    return basis, {
+        **report,
+        "mode": "activation-token-pca" if activation_rows is not None else "donor-token-pca",
+        "shared_decoded_tokens": int(seed_row_report.get("shared_decoded_tokens", 0)),
+        "token_rows_selected": int(seed_row_report.get("token_rows_selected", 0)),
+        "basis_row_budget": int(basis_row_budget),
+        "source_counts": source_counts,
+        "target_weight_rows_used": False,
+    }
+
+
+def _donor_token_hidden_basis_seed_rows(
+    torch,
+    donor,
+    target_tokenizer,
+    donor_tokenizer,
+    max_anchors: int,
+    source_dim: int,
+    target_dim: int,
+    max_basis_rows: int,
+    reserve_for_activation: bool = False,
+):
     donor_embeddings = donor.get_input_embeddings()
     if donor_embeddings is None:
         raise ValueError("Donor needs input embeddings for donor-token-pca hidden basis.")
     donor_emb_rows = donor_embeddings.weight.detach().cpu().to(torch.float32)
     if donor_emb_rows.dim() != 2 or int(donor_emb_rows.shape[1]) != int(source_dim):
         raise ValueError("Donor embedding width does not match source_dim.")
-
     basis_row_budget = max(int(target_dim), int(max_basis_rows))
     token_row_budget = min(int(max_anchors), int(donor_emb_rows.shape[0]), basis_row_budget)
-    if activation_rows is not None:
-        # Untied output heads can add a second token-row block, so reserve room
-        # for activation rows instead of letting token/head rows consume the
-        # whole PCA budget.
+    if reserve_for_activation:
         token_row_budget = min(token_row_budget, max(int(target_dim), basis_row_budget // 3))
     target_map = _canonical_token_map(target_tokenizer)
     donor_map = _canonical_token_map(donor_tokenizer)
@@ -5210,52 +5306,11 @@ def _build_donor_token_hidden_basis(
             lm_rows = donor_head_rows.index_select(0, torch.tensor(selected, dtype=torch.long))
             row_chunks.append(lm_rows)
             source_counts["donor_lm_head_rows"] = int(lm_rows.shape[0])
-    if activation_rows is not None:
-        activation_matrix = torch.nan_to_num(
-            activation_rows.detach().cpu().to(torch.float32),
-            nan=0.0,
-            posinf=1e4,
-            neginf=-1e4,
-        )
-        if activation_matrix.dim() > 2:
-            activation_matrix = activation_matrix.reshape(-1, activation_matrix.shape[-1])
-        if activation_matrix.dim() != 2 or int(activation_matrix.shape[1]) != int(source_dim):
-            raise ValueError("activation rows must be rank-2 and match source_dim for activation-token-pca.")
-        remaining_budget = max(0, basis_row_budget - sum(int(chunk.shape[0]) for chunk in row_chunks))
-        if remaining_budget > 0 and int(activation_matrix.shape[0]) > remaining_budget:
-            indices = torch.linspace(
-                0,
-                int(activation_matrix.shape[0]) - 1,
-                steps=int(remaining_budget),
-                dtype=torch.long,
-            )
-            activation_matrix = activation_matrix.index_select(0, indices)
-        if int(activation_matrix.shape[0]) > 0:
-            row_chunks.append(activation_matrix)
-            source_counts["donor_activation_rows"] = int(activation_matrix.shape[0])
-
-    if not row_chunks:
-        raise ValueError("No donor rows available for donor-token-pca hidden basis.")
-    rows = torch.cat(row_chunks, dim=0)
-    if int(rows.shape[0]) > basis_row_budget:
-        indices = torch.linspace(0, int(rows.shape[0]) - 1, steps=basis_row_budget, dtype=torch.long)
-        rows = rows.index_select(0, indices)
-        source_counts["post_concat_row_sample"] = int(rows.shape[0])
-    basis, report = _build_activation_hidden_basis(
-        torch,
-        rows,
-        source_dim=source_dim,
-        target_dim=target_dim,
-        preprocess=preprocess,
-    )
-    return basis, {
-        **report,
-        "mode": "activation-token-pca" if activation_rows is not None else "donor-token-pca",
+    rows = torch.cat(row_chunks, dim=0) if row_chunks else torch.empty((0, int(source_dim)), dtype=torch.float32)
+    return rows, {
         "shared_decoded_tokens": int(len(shared)),
         "token_rows_selected": int(len(selected)),
-        "basis_row_budget": int(basis_row_budget),
         "source_counts": source_counts,
-        "target_weight_rows_used": False,
     }
 
 
@@ -5270,6 +5325,8 @@ def _build_layer_activation_hidden_bases(
     donor_layer_groups: Sequence[Sequence[int]] | None = None,
     donor_layer_group_weights: dict[tuple[int, ...], Sequence[float]] | None = None,
     group_source: str = "depth",
+    basis_seed_rows=None,
+    max_basis_rows: int | None = None,
 ):
     input_rows_by_layer = activation_profile.get("hidden_basis_input_rows") or {}
     output_rows_by_layer = activation_profile.get("hidden_basis_output_rows") or {}
@@ -5314,7 +5371,22 @@ def _build_layer_activation_hidden_bases(
             "group_weights": group_weights,
             "input_layers": input_layers,
             "output_layers": output_layers,
+            "basis_seed_rows": 0
+            if basis_seed_rows is None
+            else int(basis_seed_rows.detach().cpu().to(torch.float32).shape[0]),
         }
+        input_rows = _combine_basis_seed_rows(
+            torch,
+            basis_seed_rows,
+            input_rows,
+            max_basis_rows=max_basis_rows,
+        )
+        output_rows = _combine_basis_seed_rows(
+            torch,
+            basis_seed_rows,
+            output_rows,
+            max_basis_rows=max_basis_rows,
+        )
         if input_rows is not None:
             input_basis, input_report = _build_activation_hidden_basis(
                 torch,
@@ -5351,8 +5423,41 @@ def _build_layer_activation_hidden_bases(
         "preprocess": preprocess,
         "group_source": str(group_source),
         "uses_fold_groups": donor_layer_groups is not None,
+        "basis_seed_rows": 0
+        if basis_seed_rows is None
+        else int(basis_seed_rows.detach().cpu().to(torch.float32).shape[0]),
+        "max_basis_rows": None if max_basis_rows is None else int(max_basis_rows),
         "layers": reports,
     }
+
+
+def _combine_basis_seed_rows(torch, seed_rows, activation_rows, max_basis_rows: int | None = None):
+    chunks = []
+    if seed_rows is not None:
+        seed = seed_rows.detach().cpu().to(torch.float32)
+        if seed.dim() > 2:
+            seed = seed.reshape(-1, seed.shape[-1])
+        if seed.dim() != 2:
+            raise ValueError("basis_seed_rows must be rank-2.")
+        if int(seed.shape[0]) > 0:
+            chunks.append(seed)
+    if activation_rows is not None:
+        rows = activation_rows.detach().cpu().to(torch.float32)
+        if rows.dim() > 2:
+            rows = rows.reshape(-1, rows.shape[-1])
+        if rows.dim() != 2:
+            raise ValueError("activation rows must be rank-2.")
+        if chunks and int(rows.shape[1]) != int(chunks[0].shape[1]):
+            raise ValueError("basis seed and activation rows must have the same width.")
+        if int(rows.shape[0]) > 0:
+            chunks.append(rows)
+    if not chunks:
+        return None
+    combined = torch.cat(chunks, dim=0)
+    if max_basis_rows is not None and int(max_basis_rows) > 0 and int(combined.shape[0]) > int(max_basis_rows):
+        indices = torch.linspace(0, int(combined.shape[0]) - 1, steps=int(max_basis_rows), dtype=torch.long)
+        combined = combined.index_select(0, indices)
+    return combined
 
 
 def _layer_activation_rows_for_group(torch, rows_by_layer: dict[int, Any], group: Sequence[int], weights: Sequence[float] | None):

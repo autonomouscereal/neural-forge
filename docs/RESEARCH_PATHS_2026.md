@@ -297,6 +297,16 @@ Implementation note:
   optionally, donor activation rows. The mathematical bet is that blank-child
   compression should choose the child hidden subspace from parent semantics
   before layer, MLP, attention, token, and head tensors are folded through it.
+  The activation-token wrappers force `INIT_PROJECTION_SCALE=source-rms` so
+  blank target tensor RMS does not steer the fold scale.
+- Pure fold-only comparison wrappers are available for 0-recovery ranking:
+  `queue_qwen4b_lfm230m_beststack_volume_operator_initonly_20260709.sh`,
+  `queue_qwen4b_lfm230m_beststack_pca_operator_initonly_20260709.sh`,
+  `queue_qwen4b_lfm230m_beststack_countsketch_volume_operator_initonly_20260709.sh`,
+  and
+  `queue_qwen4b_lfm230m_beststack_activation_token_volume_operator_initonly_20260709.sh`.
+  They set `STAGES=init`, keeping the benchmark signal on folding/merging
+  rather than recovery.
 
 ## First-Principles Experiment Ideas
 

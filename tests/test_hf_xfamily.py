@@ -2795,6 +2795,76 @@ def test_donor_token_hidden_basis_can_mix_activation_rows_without_target_weights
     assert report["source_counts"]["donor_activation_rows"] == 2
     assert float(basis[2].abs().max()) > 0.7
 
+    class _ModelWithHead(_Model):
+        def __init__(self, rows, head_rows):
+            super().__init__(rows)
+            self._head = torch.nn.Linear(rows.shape[1], rows.shape[0], bias=False)
+            self._head.weight.data.copy_(head_rows)
+
+        def get_output_embeddings(self):
+            return self._head
+
+    donor_with_head = _ModelWithHead(
+        donor.get_input_embeddings().weight.detach().clone(),
+        torch.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [0.0, 5.0, 0.0],
+                [5.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+            ],
+            dtype=torch.float32,
+        ),
+    )
+    _basis_with_head, head_report = _build_donor_token_hidden_basis(
+        torch,
+        target,
+        donor_with_head,
+        tokenizer,
+        tokenizer,
+        max_anchors=8,
+        source_dim=3,
+        target_dim=2,
+        max_basis_rows=6,
+        activation_rows=activation_rows,
+        preprocess="uncentered-rowrms",
+    )
+    assert head_report["source_counts"]["donor_embedding_rows"] == 2
+    assert head_report["source_counts"]["donor_lm_head_rows"] == 2
+    assert head_report["source_counts"]["donor_activation_rows"] == 2
+
+    layer_bases, layer_report = _build_layer_activation_hidden_bases(
+        torch,
+        {
+            "hidden_basis_input_rows": {0: activation_rows},
+            "hidden_basis_output_rows": {0: activation_rows},
+        },
+        target_layer_count=1,
+        donor_layer_count=1,
+        source_dim=3,
+        target_dim=2,
+        preprocess="uncentered-rowrms",
+        basis_seed_rows=torch.tensor(
+            [
+                [4.0, 0.0, 0.0],
+                [0.0, 3.0, 0.0],
+                [0.0, 5.0, 0.0],
+                [5.0, 0.0, 0.0],
+            ],
+            dtype=torch.float32,
+        ),
+        max_basis_rows=6,
+    )
+    assert layer_report["basis_seed_rows"] == 4
+    assert layer_report["max_basis_rows"] == 6
+    assert layer_report["layers"][0]["basis_seed_rows"] == 4
+    assert layer_report["layers"][0]["input"]["rows"] == 6
+    assert layer_bases[0]["input"].shape == (3, 2)
+    assert layer_bases[0]["input"].t().matmul(layer_bases[0]["input"]).flatten().tolist() == pytest.approx(
+        torch.eye(2).flatten().tolist(),
+        abs=1e-5,
+    )
+
 
 def test_hidden_projection_gate_prefers_better_layer_input_map() -> None:
     torch = pytest.importorskip("torch")
