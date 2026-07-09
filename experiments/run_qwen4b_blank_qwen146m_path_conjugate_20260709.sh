@@ -14,6 +14,7 @@ DONOR_LAYER_FOLD_MODE="${DONOR_LAYER_FOLD_MODE:-representative}"
 DONOR_LAYER_OUTPUT_SCALE="${DONOR_LAYER_OUTPUT_SCALE:-unit}"
 DONOR_LAYER_GROUP_STRATEGY="${DONOR_LAYER_GROUP_STRATEGY:-activation-cka-weighted}"
 FOLD_STAT_REPAIR="${FOLD_STAT_REPAIR:-none}"
+ACTIVATION_FOLD_ASSIGNMENT="${ACTIVATION_FOLD_ASSIGNMENT:-balanced-similarity}"
 PARENT_EVAL="${PARENT_EVAL:-$RUN_ROOT/evals/eval_parent_qwen3_4b_base_strict_20260705_1000x1000x250.json}"
 
 mkdir -p "$OUT/reports"
@@ -32,7 +33,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
   --hidden-basis-mode "$HIDDEN_BASIS_MODE" \
   --hidden-basis-scope global \
   --hidden-basis-max-rows 4096 \
-  --activation-fold-assignment balanced-similarity \
+  --activation-fold-assignment "$ACTIVATION_FOLD_ASSIGNMENT" \
   --fold-stat-repair "$FOLD_STAT_REPAIR" \
   --transport-backend qr-sinkhorn \
   --transport-support "$TRANSPORT_SUPPORT" \
