@@ -146,6 +146,7 @@ from neural_forge.hf_xfamily import _donor_layer_group_for_target
 from neural_forge.hf_xfamily import _donor_layer_groups_by_energy
 from neural_forge.hf_xfamily import _donor_layer_groups_for_target_count
 from neural_forge.hf_xfamily import _donor_layer_geometry_scores
+from neural_forge.hf_xfamily import _donor_token_hidden_basis_seed_rows
 from neural_forge.hf_xfamily import _representative_donor_layer_for_group
 from neural_forge.hf_xfamily import _effective_activation_fit_max_rows
 from neural_forge.hf_xfamily import _effective_layer_alpha
@@ -3033,6 +3034,48 @@ def test_donor_token_hidden_basis_can_mix_activation_rows_without_target_weights
         torch.eye(2).flatten().tolist(),
         abs=1e-5,
     )
+
+
+def test_donor_token_hidden_basis_prioritizes_calibration_tokens() -> None:
+    torch = pytest.importorskip("torch")
+
+    class _Model:
+        def __init__(self, rows):
+            self._embedding = torch.nn.Embedding.from_pretrained(rows, freeze=False)
+
+        def get_input_embeddings(self):
+            return self._embedding
+
+    donor = _Model(
+        torch.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ],
+            dtype=torch.float32,
+        )
+    )
+    tokenizer = _Tokenizer(["<s>", "alpha", "beta", "gamma"])
+
+    rows, report = _donor_token_hidden_basis_seed_rows(
+        torch,
+        donor,
+        tokenizer,
+        tokenizer,
+        max_anchors=8,
+        source_dim=3,
+        target_dim=2,
+        max_basis_rows=3,
+        reserve_for_activation=True,
+        priority_texts=["gamma gamma"],
+    )
+
+    assert report["priority_tokens_seen"] == 1
+    assert report["priority_token_rows_selected"] == 1
+    assert report["token_rows_selected"] == 1
+    assert rows.tolist() == [[0.0, 0.0, 1.0]]
 
 
 def test_hidden_projection_gate_prefers_better_layer_input_map() -> None:

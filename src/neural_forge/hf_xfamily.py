@@ -637,6 +637,7 @@ def donor_projected_init(
             target_dim=target_hidden_size,
             max_basis_rows=hidden_basis_max_rows,
             reserve_for_activation=hidden_basis_mode == "activation-token-pca",
+            priority_texts=activation_calibration_texts,
         )
         hidden_basis, hidden_basis_report = _build_donor_token_hidden_basis(
             torch,
@@ -5204,6 +5205,7 @@ def _build_donor_token_hidden_basis(
     preprocess: str = "centered-rowrms",
     seed_rows=None,
     seed_row_report: dict[str, Any] | None = None,
+    priority_texts: Sequence[str] | None = None,
 ):
     if max_anchors <= 0:
         raise ValueError("max_anchors must be positive.")
@@ -5223,6 +5225,7 @@ def _build_donor_token_hidden_basis(
             target_dim=target_dim,
             max_basis_rows=max_basis_rows,
             reserve_for_activation=activation_rows is not None,
+            priority_texts=priority_texts,
         )
     else:
         seed_rows = seed_rows.detach().cpu().to(torch.float32)
@@ -5277,6 +5280,8 @@ def _build_donor_token_hidden_basis(
         "mode": "activation-token-pca" if activation_rows is not None else "donor-token-pca",
         "shared_decoded_tokens": int(seed_row_report.get("shared_decoded_tokens", 0)),
         "token_rows_selected": int(seed_row_report.get("token_rows_selected", 0)),
+        "priority_token_rows_selected": int(seed_row_report.get("priority_token_rows_selected", 0)),
+        "priority_tokens_seen": int(seed_row_report.get("priority_tokens_seen", 0)),
         "basis_row_budget": int(basis_row_budget),
         "source_counts": source_counts,
         "target_weight_rows_used": False,
@@ -5293,6 +5298,7 @@ def _donor_token_hidden_basis_seed_rows(
     target_dim: int,
     max_basis_rows: int,
     reserve_for_activation: bool = False,
+    priority_texts: Sequence[str] | None = None,
 ):
     donor_embeddings = donor.get_input_embeddings()
     if donor_embeddings is None:
@@ -5307,14 +5313,31 @@ def _donor_token_hidden_basis_seed_rows(
     target_map = _canonical_token_map(target_tokenizer)
     donor_map = _canonical_token_map(donor_tokenizer)
     shared = sorted(set(target_map) & set(donor_map), key=lambda item: (len(item), item))
+    priority_shared = _priority_shared_tokens_from_texts(
+        target_tokenizer,
+        donor_tokenizer,
+        target_map,
+        donor_map,
+        priority_texts,
+        max_tokens=token_row_budget,
+    )
     selected: list[int] = []
     selected_set: set[int] = set()
+    selected_priority_rows = 0
 
-    def add_index(index: int) -> None:
+    def add_index(index: int) -> bool:
         index = int(index)
         if 0 <= index < int(donor_emb_rows.shape[0]) and index not in selected_set:
             selected.append(index)
             selected_set.add(index)
+            return True
+        return False
+
+    for token in priority_shared:
+        if len(selected) >= token_row_budget:
+            break
+        if add_index(donor_map[token]):
+            selected_priority_rows += 1
 
     for token in shared:
         if len(selected) >= token_row_budget:
@@ -5355,8 +5378,70 @@ def _donor_token_hidden_basis_seed_rows(
     return rows, {
         "shared_decoded_tokens": int(len(shared)),
         "token_rows_selected": int(len(selected)),
+        "priority_tokens_seen": int(len(priority_shared)),
+        "priority_token_rows_selected": int(selected_priority_rows),
         "source_counts": source_counts,
     }
+
+
+def _priority_shared_tokens_from_texts(
+    target_tokenizer,
+    donor_tokenizer,
+    target_map: dict[str, int],
+    donor_map: dict[str, int],
+    texts: Sequence[str] | None,
+    max_tokens: int,
+) -> list[str]:
+    if not texts or int(max_tokens) <= 0:
+        return []
+    shared = set(target_map) & set(donor_map)
+    if not shared:
+        return []
+    scores: dict[str, float] = {}
+    first_seen: dict[str, int] = {}
+    seen_order = 0
+
+    def add_token(decoded: str) -> None:
+        nonlocal seen_order
+        token = _canonical_token(decoded)
+        if not token or token not in shared:
+            return
+        if token not in first_seen:
+            first_seen[token] = seen_order
+            seen_order += 1
+        scores[token] = scores.get(token, 0.0) + _token_basis_priority_score(token)
+
+    for text in texts:
+        raw = str(text)
+        for tokenizer in (target_tokenizer, donor_tokenizer):
+            for token_id in _encode_without_specials(tokenizer, raw):
+                try:
+                    decoded = _decode_single_token(tokenizer, int(token_id))
+                except Exception:
+                    decoded = ""
+                add_token(decoded)
+        for piece in re.findall(r"[A-Za-z_][A-Za-z0-9_]*|[0-9]+|==|!=|<=|>=|[-+*/%=<>(){}\[\].,:;]", raw):
+            add_token(piece)
+
+    return sorted(
+        scores,
+        key=lambda token: (-scores[token], first_seen.get(token, 10**9), len(token), token),
+    )[: int(max_tokens)]
+
+
+def _token_basis_priority_score(token: str) -> float:
+    score = 1.0
+    if any(ch.isdigit() for ch in token):
+        score += 4.0
+    if any(ch in "+-*/%=<>(){}[]_.,:;#" for ch in token):
+        score += 2.0
+    if token in {"def", "return", "import", "for", "while", "if", "else", "True", "False", "None"}:
+        score += 3.0
+    if token in {"answer", "result", "add", "sum", "multiply", "product", "token", "model", "merge", "fold"}:
+        score += 2.0
+    if len(token) <= 4:
+        score += 0.5
+    return score
 
 
 def _build_layer_activation_hidden_bases(
