@@ -4758,7 +4758,9 @@ def _resize_attention_tensor_to_shape(
     handled_axes = set()
     used_coupled_axis = False
     for axis, source_heads, target_heads in specs:
-        if axis >= resized.dim() or int(resized.shape[axis]) == int(target_shape[axis]):
+        if axis >= resized.dim():
+            continue
+        if int(resized.shape[axis]) == int(target_shape[axis]) and int(source_heads) == int(target_heads):
             continue
         head_profile = None if attention_axis_weights is None else attention_axis_weights.get(axis)
         head_weights, head_features, head_semantic_key = _axis_fold_profile(head_profile)
@@ -5093,10 +5095,15 @@ def _seed_gqa_path_assignment_cache(
     if head_fold_mode != "path-conjugate" or assignment_cache is None or not isinstance(head_profile, dict):
         return
     marker = f".{str(suffix).lower()}"
-    if not (marker.endswith(".q_proj.weight") or marker.endswith(".q_proj.bias") or marker.endswith(".o_proj.weight")):
-        return
-    kv_profile = head_profile.get("gqa_kv_profile")
-    if not isinstance(kv_profile, dict):
+    if not marker.endswith(
+        (
+            ".q_proj.weight",
+            ".q_proj.bias",
+            ".o_proj.weight",
+            ".out_proj.weight",
+            ".attn.c_proj.weight",
+        )
+    ):
         return
     source_q_heads = _config_int(donor_config, "num_attention_heads", "n_head", "num_heads")
     target_q_heads = _config_int(target_config, "num_attention_heads", "n_head", "num_heads")
@@ -5104,22 +5111,36 @@ def _seed_gqa_path_assignment_cache(
     target_kv_heads = _config_int(target_config, "num_key_value_heads", default=target_q_heads)
     if None in {source_q_heads, target_q_heads, source_kv_heads, target_kv_heads}:
         return
-    if int(source_q_heads) <= int(target_q_heads) or int(source_kv_heads) <= int(target_kv_heads):
+    source_q_heads = int(source_q_heads)
+    target_q_heads = int(target_q_heads)
+    source_kv_heads = int(source_kv_heads)
+    target_kv_heads = int(target_kv_heads)
+    if source_q_heads == target_q_heads and source_kv_heads == target_kv_heads:
         return
-    if int(source_q_heads) % int(source_kv_heads) or int(target_q_heads) % int(target_kv_heads):
+    is_grouped_query = source_q_heads != source_kv_heads or target_q_heads != target_kv_heads
+    kv_profile = head_profile.get("gqa_kv_profile")
+    if not isinstance(kv_profile, dict):
+        if is_grouped_query:
+            raise ValueError("path-conjugate grouped-query attention requires a canonical KV activation profile.")
         return
-    source_ratio = int(source_q_heads) // int(source_kv_heads)
-    target_ratio = int(target_q_heads) // int(target_kv_heads)
+    if source_q_heads <= target_q_heads or source_kv_heads <= target_kv_heads:
+        if is_grouped_query:
+            raise ValueError("path-conjugate grouped-query attention currently requires Q and KV compression together.")
+        return
+    if source_q_heads % source_kv_heads or target_q_heads % target_kv_heads:
+        raise ValueError("path-conjugate grouped-query attention requires integer query-per-KV ratios.")
+    source_ratio = source_q_heads // source_kv_heads
+    target_ratio = target_q_heads // target_kv_heads
     if source_ratio != target_ratio:
-        return
+        raise ValueError("path-conjugate grouped-query attention requires equal source and target query-per-KV ratios.")
     kv_weights, kv_features, kv_assignment_key = _axis_fold_profile(kv_profile)
     kv_domain_weights, kv_domain_features = _axis_fold_domain_profile(kv_profile)
     if kv_assignment_key is None or q_assignment_key is None:
         return
     q_cache_key = _axis_assignment_cache_key(
         q_assignment_key,
-        source_dim=int(source_q_heads),
-        target_dim=int(target_q_heads),
+        source_dim=source_q_heads,
+        target_dim=target_q_heads,
         assignment_mode=assignment_mode,
         fold_mode="path-conjugate",
         reduction="select",
@@ -5128,37 +5149,58 @@ def _seed_gqa_path_assignment_cache(
     )
     kv_cache_key = _axis_assignment_cache_key(
         kv_assignment_key,
-        source_dim=int(source_kv_heads),
-        target_dim=int(target_kv_heads),
+        source_dim=source_kv_heads,
+        target_dim=target_kv_heads,
         assignment_mode=assignment_mode,
         fold_mode="path-conjugate",
         reduction="select",
         transport_backend=transport_backend,
         transport_support=transport_support,
     )
-    if q_cache_key in assignment_cache and kv_cache_key in assignment_cache:
-        return
+    coupling_id = (
+        "gqa-path",
+        _freeze_assignment_key(q_assignment_key),
+        _freeze_assignment_key(kv_assignment_key),
+        source_q_heads,
+        target_q_heads,
+        source_kv_heads,
+        target_kv_heads,
+        source_ratio,
+        str(assignment_mode),
+        str(transport_backend),
+        str(transport_support),
+    )
     kv_assignment = assignment_cache.get(kv_cache_key)
-    if kv_assignment is None:
+    if kv_assignment is not None and kv_assignment.get("gqa_coupling_id") not in {None, coupling_id}:
+        raise ValueError("Cached KV head map belongs to a different GQA coupling.")
+    if kv_assignment is None or kv_assignment.get("gqa_coupling_id") is None:
         kv_assignment = _build_anchor_transplant_assignment(
             torch,
             kv_features,
-            int(target_kv_heads),
+            target_kv_heads,
             weights=kv_weights,
             domain_weights=kv_domain_weights,
             domain_features=kv_domain_features,
             transport_support=transport_support,
             assignment_mode=assignment_mode,
         )
+        kv_assignment["gqa_coupling_id"] = coupling_id
+        kv_assignment["gqa_coupled"] = True
+        kv_assignment["source_kv_heads"] = source_kv_heads
+        kv_assignment["target_kv_heads"] = target_kv_heads
+        kv_assignment["query_heads_per_kv"] = source_ratio
         assignment_cache[kv_cache_key] = kv_assignment
-    if q_cache_key not in assignment_cache:
-        assignment_cache[q_cache_key] = _build_gqa_coupled_q_assignment(
+    q_assignment = assignment_cache.get(q_cache_key)
+    if q_assignment is not None and q_assignment.get("gqa_coupling_id") not in {None, coupling_id}:
+        raise ValueError("Cached Q head map belongs to a different GQA coupling.")
+    if q_assignment is None or q_assignment.get("gqa_coupling_id") != coupling_id:
+        q_assignment = _build_gqa_coupled_q_assignment(
             torch,
             kv_assignment,
-            source_q_heads=int(source_q_heads),
-            target_q_heads=int(target_q_heads),
-            source_kv_heads=int(source_kv_heads),
-            target_kv_heads=int(target_kv_heads),
+            source_q_heads=source_q_heads,
+            target_q_heads=target_q_heads,
+            source_kv_heads=source_kv_heads,
+            target_kv_heads=target_kv_heads,
             q_features=q_features,
             q_weights=q_weights,
             q_domain_weights=q_domain_weights,
@@ -5166,6 +5208,8 @@ def _seed_gqa_path_assignment_cache(
             assignment_mode=assignment_mode,
             transport_support=transport_support,
         )
+        q_assignment["gqa_coupling_id"] = coupling_id
+        assignment_cache[q_cache_key] = q_assignment
 
 
 def _build_gqa_coupled_q_assignment(
@@ -5211,6 +5255,12 @@ def _build_gqa_coupled_q_assignment(
             similarities = (feature_rows * feature_rows[q_anchors[q_assignment]]).sum(dim=1)
             q_signs = torch.where(similarities < 0, -torch.ones_like(similarities), torch.ones_like(similarities))
             q_signs[q_anchors] = 1.0
+    if int(torch.unique(q_anchors).numel()) != target_q_heads:
+        raise ValueError("GQA lifted Q anchors must be unique.")
+    if int(q_anchors.min().item()) < 0 or int(q_anchors.max().item()) >= source_q_heads:
+        raise ValueError("GQA lifted Q anchors are out of range.")
+    if not torch.equal(q_assignment[q_anchors], torch.arange(target_q_heads, dtype=torch.long)):
+        raise ValueError("GQA lifted Q anchors do not map to their ordered target heads.")
     return {
         "assignment": q_assignment.contiguous(),
         "assignment_signs": q_signs.contiguous(),
@@ -6211,7 +6261,15 @@ def _attention_axis_assignment_key(suffix: str, semantic_prefix, axis_kind: str)
     marker = f".{suffix.lower()}"
     if axis_kind == "head_dim":
         return (semantic_prefix, "attention", "shared", "head_dim")
-    if marker.endswith(".q_proj.weight") or marker.endswith(".q_proj.bias") or marker.endswith(".o_proj.weight"):
+    if marker.endswith(
+        (
+            ".q_proj.weight",
+            ".q_proj.bias",
+            ".o_proj.weight",
+            ".out_proj.weight",
+            ".attn.c_proj.weight",
+        )
+    ):
         stream = "q"
     elif marker.endswith(".k_proj.weight") or marker.endswith(".k_proj.bias"):
         stream = "kv"
@@ -6270,6 +6328,9 @@ def _axis_assignment_cache_report(assignment_cache: dict[Any, dict[str, Any]]) -
                 "source_kv_heads": item.get("source_kv_heads"),
                 "target_kv_heads": item.get("target_kv_heads"),
                 "query_heads_per_kv": item.get("query_heads_per_kv"),
+                "gqa_coupling_id": None
+                if item.get("gqa_coupling_id") is None
+                else repr(item.get("gqa_coupling_id")),
                 "signed": bool(
                     item.get("assignment_signs") is not None
                     or item.get("transport_signs") is not None

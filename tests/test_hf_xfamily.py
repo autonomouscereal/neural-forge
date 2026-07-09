@@ -2995,6 +2995,26 @@ def test_gqa_coupled_q_assignment_preserves_query_offsets_within_kv_groups() -> 
     assert report["query_heads_per_kv"] == 4
 
 
+def test_gqa_coupled_q_assignment_handles_multiple_target_kv_groups() -> None:
+    torch = pytest.importorskip("torch")
+    kv_report = {
+        "assignment": torch.tensor([0, 0, 1, 1], dtype=torch.long),
+        "anchor_support_indices": torch.tensor([1, 3], dtype=torch.long),
+    }
+
+    report = _build_gqa_coupled_q_assignment(
+        torch,
+        kv_report,
+        source_q_heads=16,
+        target_q_heads=8,
+        source_kv_heads=4,
+        target_kv_heads=2,
+    )
+
+    assert report["anchor_support_indices"].tolist() == [4, 5, 6, 7, 12, 13, 14, 15]
+    assert report["assignment"].tolist() == [0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 4, 5, 6, 7]
+
+
 def test_path_conjugate_attention_seeds_coupled_gqa_q_kv_and_o_maps() -> None:
     torch = pytest.importorskip("torch")
     config_source = _Obj(num_attention_heads=8, num_key_value_heads=2)
@@ -3014,8 +3034,32 @@ def test_path_conjugate_attention_seeds_coupled_gqa_q_kv_and_o_maps() -> None:
     }
     q_source = torch.arange(32, dtype=torch.float32).reshape(16, 2)
     k_source = torch.arange(8, dtype=torch.float32).reshape(4, 2)
+    v_source = torch.arange(8, dtype=torch.float32).reshape(4, 2) + 100.0
     o_source = torch.arange(32, dtype=torch.float32).reshape(2, 16)
     cache = {}
+
+    adversarial_v_profile = {
+        "weights": torch.tensor([10.0, 1.0], dtype=torch.float32),
+        "features": kv_features,
+        "assignment_key": ("unit", "kv-heads"),
+    }
+    v_before = _resize_attention_tensor_to_shape(
+        torch,
+        v_source,
+        (2, 2),
+        "self_attn.v_proj.weight",
+        config_source,
+        config_target,
+        fold_mode="path-conjugate",
+        attention_axis_weights={0: adversarial_v_profile},
+        attention_head_fold_mode="path-conjugate",
+        axis_reductions=_axis_reductions_for_layer_tensor("self_attn.v_proj.weight", "path-conjugate"),
+        activation_fold_assignment="balanced-similarity",
+        transport_support="importance",
+        assignment_cache=cache,
+        semantic_prefix=("layer", 0),
+    )
+    assert v_before.tolist() == v_source.reshape(2, 2, 2)[0].tolist()
 
     q_folded = _resize_attention_tensor_to_shape(
         torch,
@@ -3049,6 +3093,22 @@ def test_path_conjugate_attention_seeds_coupled_gqa_q_kv_and_o_maps() -> None:
         assignment_cache=cache,
         semantic_prefix=("layer", 0),
     )
+    v_folded = _resize_attention_tensor_to_shape(
+        torch,
+        v_source,
+        (2, 2),
+        "self_attn.v_proj.weight",
+        config_source,
+        config_target,
+        fold_mode="path-conjugate",
+        attention_axis_weights={0: adversarial_v_profile},
+        attention_head_fold_mode="path-conjugate",
+        axis_reductions=_axis_reductions_for_layer_tensor("self_attn.v_proj.weight", "path-conjugate"),
+        activation_fold_assignment="balanced-similarity",
+        transport_support="importance",
+        assignment_cache=cache,
+        semantic_prefix=("layer", 0),
+    )
     o_folded = _resize_attention_tensor_to_shape(
         torch,
         o_source,
@@ -3068,12 +3128,77 @@ def test_path_conjugate_attention_seeds_coupled_gqa_q_kv_and_o_maps() -> None:
 
     assert q_folded.reshape(4, 2, 2).tolist() == q_source.reshape(8, 2, 2)[4:].tolist()
     assert k_folded.tolist() == k_source.reshape(2, 2, 2)[1].tolist()
-    assert o_folded.shape == (2, 8)
+    assert v_folded.tolist() == v_source.reshape(2, 2, 2)[1].tolist()
+    o_heads = o_source.reshape(2, 8, 2).permute(1, 0, 2)
+    expected_o = o_heads[:4] + o_heads[4:]
+    assert o_folded.reshape(2, 4, 2).permute(1, 0, 2).tolist() == expected_o.tolist()
     assert len(cache) == 2
     report = _axis_assignment_cache_report(cache)
-    q_map = next(item for item in report if item["gqa_coupled"])
+    q_map = next(item for item in report if item["source_dim"] == 8)
+    kv_map = next(item for item in report if item["source_dim"] == 2)
     assert q_map["anchor_support_indices"] == [4, 5, 6, 7]
     assert q_map["query_heads_per_kv"] == 4
+    assert q_map["gqa_coupling_id"] == kv_map["gqa_coupling_id"]
+
+
+def test_attention_repartitions_equal_flat_width_when_head_counts_change() -> None:
+    torch = pytest.importorskip("torch")
+    source = torch.arange(8, dtype=torch.float32).reshape(4, 2)
+    cache = {}
+    folded = _resize_attention_tensor_to_shape(
+        torch,
+        source,
+        (4, 2),
+        "self_attn.q_proj.weight",
+        _Obj(num_attention_heads=4, num_key_value_heads=4),
+        _Obj(num_attention_heads=2, num_key_value_heads=2),
+        fold_mode="path-conjugate",
+        attention_axis_weights={
+            0: {
+                "weights": torch.tensor([10.0, 1.0, 9.0, 1.0]),
+                "features": torch.eye(4, dtype=torch.float32),
+                "assignment_key": ("unit", "equal-width-heads"),
+            }
+        },
+        attention_head_fold_mode="path-conjugate",
+        activation_fold_assignment="balanced-similarity",
+        transport_support="importance",
+        assignment_cache=cache,
+    )
+
+    assert folded.shape == source.shape
+    assert len(cache) == 1
+    assert next(iter(cache.values()))["anchor_support_indices"].tolist() == [0, 2]
+
+
+def test_path_conjugate_gqa_rejects_query_per_kv_ratio_mismatch() -> None:
+    torch = pytest.importorskip("torch")
+    q_profile = {
+        "weights": torch.ones(12, dtype=torch.float32),
+        "features": torch.eye(12, dtype=torch.float32),
+        "assignment_key": ("unit", "q-heads"),
+        "gqa_kv_profile": {
+            "weights": torch.ones(3, dtype=torch.float32),
+            "features": torch.eye(3, dtype=torch.float32),
+            "assignment_key": ("unit", "kv-heads"),
+        },
+    }
+
+    with pytest.raises(ValueError, match="equal source and target query-per-KV ratios"):
+        _resize_attention_tensor_to_shape(
+            torch,
+            torch.zeros((24, 2), dtype=torch.float32),
+            (12, 2),
+            "self_attn.q_proj.weight",
+            _Obj(num_attention_heads=12, num_key_value_heads=3),
+            _Obj(num_attention_heads=6, num_key_value_heads=2),
+            fold_mode="path-conjugate",
+            attention_axis_weights={0: q_profile},
+            attention_head_fold_mode="path-conjugate",
+            activation_fold_assignment="balanced-similarity",
+            transport_support="importance",
+            assignment_cache={},
+        )
 
 
 def test_donor_projected_init_anchor_transplant_requires_activation_texts(tmp_path) -> None:
