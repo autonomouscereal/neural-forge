@@ -8,13 +8,15 @@ TARGET_MODEL="${TARGET_MODEL:-$RUN_ROOT/blank_qwen3_146m_h512_i2048_l18_h4kv1_se
 TAG="${TAG:-qwen4b_to_blank_qwen3_146m_path_conjugate_initonly_20260709}"
 OUT="${OUT:-$RUN_ROOT/$TAG}"
 GPU_UUID="${GPU_UUID:-GPU-2ce6a95c-7b1f-644a-3808-d781732a0582}"
+TRANSPORT_SUPPORT="${TRANSPORT_SUPPORT:-volume-medoid}"
+PARENT_EVAL="${PARENT_EVAL:-$RUN_ROOT/evals/eval_parent_qwen3_4b_base_strict_20260705_1000x1000x250.json}"
 
 mkdir -p "$OUT/reports"
 export PYTHONPATH="$REPO/src"
 export CUDA_VISIBLE_DEVICES="$GPU_UUID"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-exec "$PY" -m neural_forge.cli hf-donor-project-init "$OUT/model" \
+"$PY" -m neural_forge.cli hf-donor-project-init "$OUT/model" \
   --target-config-model "$TARGET_MODEL" \
   --target-base-model "$TARGET_MODEL" \
   --target-tokenizer-model "$TARGET_MODEL" \
@@ -28,7 +30,7 @@ exec "$PY" -m neural_forge.cli hf-donor-project-init "$OUT/model" \
   --activation-fold-assignment balanced-similarity \
   --fold-stat-repair none \
   --transport-backend qr-sinkhorn \
-  --transport-support volume-medoid \
+  --transport-support "$TRANSPORT_SUPPORT" \
   --donor-layer-fold-mode representative \
   --donor-layer-output-scale unit \
   --donor-layer-group-strategy activation-cka-weighted \
@@ -57,3 +59,11 @@ exec "$PY" -m neural_forge.cli hf-donor-project-init "$OUT/model" \
   --post-init-eval-device cuda:0 \
   --post-init-eval-dtype float16 \
   --dtype float16
+
+if [[ -f "$PARENT_EVAL" && -f "$OUT/reports/eval_1000x1000x250.json" ]]; then
+  "$PY" "$REPO/experiments/compare_eval_retention.py" \
+    "$PARENT_EVAL" \
+    "$OUT/reports/eval_1000x1000x250.json" \
+    --out "$OUT/reports/retention_vs_qwen_parent.json" \
+    --max-samples 12 >/dev/null
+fi
