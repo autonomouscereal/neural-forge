@@ -12,6 +12,7 @@ TRANSPORT_SUPPORT="${TRANSPORT_SUPPORT:-volume-medoid}"
 HIDDEN_BASIS_MODE="${HIDDEN_BASIS_MODE:-activation-coordinate}"
 DONOR_LAYER_FOLD_MODE="${DONOR_LAYER_FOLD_MODE:-representative}"
 DONOR_LAYER_OUTPUT_SCALE="${DONOR_LAYER_OUTPUT_SCALE:-unit}"
+DONOR_LAYER_GROUP_STRATEGY="${DONOR_LAYER_GROUP_STRATEGY:-activation-cka-weighted}"
 FOLD_STAT_REPAIR="${FOLD_STAT_REPAIR:-none}"
 PARENT_EVAL="${PARENT_EVAL:-$RUN_ROOT/evals/eval_parent_qwen3_4b_base_strict_20260705_1000x1000x250.json}"
 
@@ -37,7 +38,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
   --transport-support "$TRANSPORT_SUPPORT" \
   --donor-layer-fold-mode "$DONOR_LAYER_FOLD_MODE" \
   --donor-layer-output-scale "$DONOR_LAYER_OUTPUT_SCALE" \
-  --donor-layer-group-strategy activation-cka-weighted \
+  --donor-layer-group-strategy "$DONOR_LAYER_GROUP_STRATEGY" \
   --attention-fold-mode activation-coupled \
   --attention-head-dim-transport none \
   --token-init-mode shared \
