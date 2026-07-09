@@ -16,6 +16,10 @@ def test_beststack_queue_defaults_to_untied_block_output_head_kd() -> None:
     assert '"$INIT_TRANSPORT_SUPPORT" == "domain-diverse-medoid"' in script
     assert 'INIT_ATTENTION_HEAD_DIM_TRANSPORT="qk-vo"' in script
     assert 'ACT_TARGET="all"' in script
+    assert 'GPU_LOCK_DIR="${GPU_LOCK_DIR:-$RUN_ROOT/locks}"' in script
+    assert "waiting_for_gpu_launch_lock" in script
+    assert "gpu_launch_process_visible" in script
+    assert 'flock 9' in script
 
 
 def test_domain_diverse_beststack_wrappers_only_change_transport_support() -> None:

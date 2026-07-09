@@ -12,6 +12,8 @@ IGNORE_GPU_PIDS="${IGNORE_GPU_PIDS:-12681}"
 MIN_CUDA_COMPUTE_CAPABILITY="${MIN_CUDA_COMPUTE_CAPABILITY:-7.0}"
 BESTSTACK_EVAL_DIR="${BESTSTACK_EVAL_DIR:-$RUN_ROOT/evals/beststack_20260706}"
 LM_EVAL_LIMIT="${LM_EVAL_LIMIT:-100}"
+GPU_LOCK_DIR="${GPU_LOCK_DIR:-$RUN_ROOT/locks}"
+GPU_STARTUP_SETTLE_SECONDS="${GPU_STARTUP_SETTLE_SECONDS:-30}"
 TRANSPORT_SUPPORT="${TRANSPORT_SUPPORT:-quantile-medoid}"
 RESIDUAL_MODE="${RESIDUAL_MODE:-module-eora-pre}"
 ALM_ANSWER_FIRST_TOKEN_MARGIN_WEIGHT="${ALM_ANSWER_FIRST_TOKEN_MARGIN_WEIGHT:-0.05}"
@@ -132,11 +134,55 @@ wait_for_gpu() {
   done
 }
 
+sanitize_lock_name() {
+  printf '%s' "$1" | tr -c 'A-Za-z0-9_.-' '_'
+}
+
+wait_for_launched_gpu_process() {
+  local pid="$1"
+  local deadline=$((SECONDS + GPU_STARTUP_SETTLE_SECONDS))
+  if [[ -z "$pid" || "$pid" == "0" ]]; then
+    echo "gpu_launch_lock_settle_no_pid seconds=$GPU_STARTUP_SETTLE_SECONDS"
+    sleep "$GPU_STARTUP_SETTLE_SECONDS"
+    return 0
+  fi
+  while (( SECONDS < deadline )); do
+    if nvidia-smi --query-compute-apps=pid,gpu_uuid --format=csv,noheader 2>/dev/null |
+      awk -F, -v pid="$pid" -v gpu="$GPU_UUID" '
+        {
+          p = $1
+          g = $2
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", p)
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", g)
+          if (p == pid && g == gpu) {
+            found = 1
+          }
+        }
+        END { exit !found }
+      '; then
+      echo "gpu_launch_process_visible pid=$pid gpu=$GPU_UUID"
+      return 0
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "gpu_launch_process_exited_before_visible pid=$pid gpu=$GPU_UUID"
+      return 0
+    fi
+    sleep 2
+  done
+  echo "gpu_launch_lock_settle_timeout pid=$pid gpu=$GPU_UUID seconds=$GPU_STARTUP_SETTLE_SECONDS"
+}
+
 cd "$REPO_ROOT"
 mkdir -p "$RUN_ROOT/logs" "$BESTSTACK_EVAL_DIR"
 
 echo "beststack_queue_start=$(date -Is) variant=$VARIANT tag=$TAG gpu=$GPU_UUID wait_pids=${WAIT_PIDS:-none} revision=$(cat .deployed_revision 2>/dev/null || true)"
 wait_for_pids $WAIT_PIDS
+mkdir -p "$GPU_LOCK_DIR"
+GPU_LOCK_FILE="$GPU_LOCK_DIR/gpu_$(sanitize_lock_name "$GPU_UUID").launch.lock"
+exec 9>"$GPU_LOCK_FILE"
+echo "waiting_for_gpu_launch_lock file=$GPU_LOCK_FILE"
+flock 9
+echo "acquired_gpu_launch_lock file=$GPU_LOCK_FILE"
 require_supported_cuda_gpu
 wait_for_gpu
 
@@ -261,6 +307,8 @@ bash "$LAUNCH_SCRIPT"
 RUN_PID_FILE="$RUN_ROOT/logs/$TAG.pid"
 RUN_PID="$(tr -dc '0-9\n' < "$RUN_PID_FILE" | head -n 1 || true)"
 echo "beststack_model_launched tag=$TAG run_pid=${RUN_PID:-unknown} pid_file=$RUN_PID_FILE"
+wait_for_launched_gpu_process "${RUN_PID:-}"
+exec 9>&-
 
 RETENTION_LOG="$RUN_ROOT/logs/${TAG}_beststack_retention.queue.log"
 (
