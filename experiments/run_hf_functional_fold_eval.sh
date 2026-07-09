@@ -23,8 +23,16 @@ FIT_GATE_MIN_RELATIVE_IMPROVEMENT="${FIT_GATE_MIN_RELATIVE_IMPROVEMENT:-0.02}"
 FIT_GATE_MAX_COSINE_DROP="${FIT_GATE_MAX_COSINE_DROP:-0.0}"
 PARENT_EVAL="${PARENT_EVAL:-$RUN_ROOT/evals/eval_parent_qwen3_4b_base_strict_20260705_1000x1000x250.json}"
 EVAL_SUITE_FILE="${EVAL_SUITE_FILE:-$RUN_ROOT/behavior_suite_exactgen_20260702.json}"
+WAIT_PIDS="${WAIT_PIDS:-}"
+WAIT_POLL_SECONDS="${WAIT_POLL_SECONDS:-60}"
 
 mkdir -p "$OUT/reports"
+for wait_pid in $WAIT_PIDS; do
+  while kill -0 "$wait_pid" 2>/dev/null; do
+    echo "$(date -Is) waiting_for_prior_pid=$wait_pid"
+    sleep "$WAIT_POLL_SECONDS"
+  done
+done
 export PYTHONPATH="$REPO/src:$REPO:${PYTHONPATH:-}"
 export CUDA_VISIBLE_DEVICES="$GPU_UUID"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True

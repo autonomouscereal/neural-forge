@@ -120,6 +120,8 @@ def test_functional_fold_run_launcher_exposes_closed_form_controls() -> None:
             "0.004",
             "--max-tokens-per-layer",
             "2048",
+            "--wait-pid",
+            "456",
         ]
     )
 
@@ -129,3 +131,4 @@ def test_functional_fold_run_launcher_exposes_closed_form_controls() -> None:
     assert args.alpha == pytest.approx(0.5)
     assert args.ridge == pytest.approx(0.004)
     assert args.max_tokens_per_layer == 2048
+    assert args.wait_pid == [456]

@@ -44,12 +44,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fit-gate-min-validation-rows", type=int, default=128)
     parser.add_argument("--fit-gate-min-relative-improvement", type=float, default=0.02)
     parser.add_argument("--fit-gate-max-cosine-drop", type=float, default=0.0)
+    parser.add_argument("--wait-pid", type=int, action="append", default=[])
+    parser.add_argument("--wait-poll-seconds", type=int, default=60)
     parser.add_argument("--source-script", type=Path)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.wait_poll_seconds <= 0:
+        raise ValueError("wait-poll-seconds must be positive.")
+    if any(pid <= 0 for pid in args.wait_pid):
+        raise ValueError("wait-pid values must be positive.")
     candidate = args.candidate.resolve(strict=True)
     run_root = args.run_root.resolve(strict=True)
     required = [
@@ -93,6 +99,8 @@ def main(argv: list[str] | None = None) -> int:
         "FIT_GATE_MIN_VALIDATION_ROWS": str(args.fit_gate_min_validation_rows),
         "FIT_GATE_MIN_RELATIVE_IMPROVEMENT": str(args.fit_gate_min_relative_improvement),
         "FIT_GATE_MAX_COSINE_DROP": str(args.fit_gate_max_cosine_drop),
+        "WAIT_PIDS": " ".join(str(pid) for pid in args.wait_pid),
+        "WAIT_POLL_SECONDS": str(args.wait_poll_seconds),
     }
     identity = launch_detached(
         ["bash", str(snapshot)],
