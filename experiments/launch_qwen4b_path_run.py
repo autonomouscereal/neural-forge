@@ -33,7 +33,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--gpu-uuid", required=True)
     parser.add_argument(
         "--hidden-basis-mode",
-        choices=["activation-coordinate", "activation-grouped", "activation-oblique", "activation-token-pca"],
+        choices=[
+            "activation-pca",
+            "activation-coordinate",
+            "activation-grouped",
+            "activation-oblique",
+            "activation-token-pca",
+        ],
         required=True,
     )
     parser.add_argument(
