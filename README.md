@@ -271,6 +271,20 @@ verifying that the tuned tokenizer has the same vocabulary. Special-token map
 differences are recorded in the merge report. Use an explicit dtype such as
 `--dtype float16` when you want smaller/faster validation artifacts.
 
+`hf-shape-init` creates a genuinely blank target from an existing HF model
+family while overriding width, MLP size, depth, Q/KV heads, and head dimension.
+It saves the tokenizer and exact parameter count, so compression and expansion
+experiments do not need a hand-edited config checkpoint.
+
+```bash
+neural-forge hf-shape-init blank-qwen \
+  --config-model Qwen/Qwen3-4B-Base \
+  --hidden-size 384 --intermediate-size 1152 \
+  --num-hidden-layers 36 --num-attention-heads 8 \
+  --num-key-value-heads 2 --head-dim 128 \
+  --tie-word-embeddings
+```
+
 Merge-first FFN width fold or expansion for Qwen/Gemma/Llama-like decoder
 blocks:
 

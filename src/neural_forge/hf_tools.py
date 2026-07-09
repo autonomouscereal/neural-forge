@@ -190,6 +190,119 @@ def random_init_causal_lm(
     return report
 
 
+def _set_config_shape_value(config, names: Sequence[str], value: int) -> list[str]:
+    updated = []
+    targets = [config]
+    text_config = getattr(config, "text_config", None)
+    if text_config is not None and text_config is not config:
+        targets.append(text_config)
+    for target in targets:
+        matched = False
+        for name in names:
+            if hasattr(target, name):
+                setattr(target, name, int(value))
+                updated.append(name)
+                matched = True
+        if not matched and target is targets[-1]:
+            setattr(target, names[0], int(value))
+            updated.append(names[0])
+    return list(dict.fromkeys(updated))
+
+
+def shape_random_init_causal_lm(
+    config_model: str,
+    output_dir: str | Path,
+    tokenizer_model: str | None = None,
+    hidden_size: int | None = None,
+    intermediate_size: int | None = None,
+    num_hidden_layers: int | None = None,
+    num_attention_heads: int | None = None,
+    num_key_value_heads: int | None = None,
+    head_dim: int | None = None,
+    tie_word_embeddings: bool | None = None,
+    seed: int = 0,
+    torch_dtype: str = "float16",
+    trust_remote_code: bool = False,
+) -> dict[str, Any]:
+    """Create a blank HF causal LM after explicit architecture-shape overrides."""
+
+    requested = {
+        "hidden_size": hidden_size,
+        "intermediate_size": intermediate_size,
+        "num_hidden_layers": num_hidden_layers,
+        "num_attention_heads": num_attention_heads,
+        "num_key_value_heads": num_key_value_heads,
+        "head_dim": head_dim,
+    }
+    for name, value in requested.items():
+        if value is not None and int(value) <= 0:
+            raise ValueError(f"{name} must be positive when provided.")
+    torch, transformers = _torch_and_transformers()
+    dtype = _dtype_from_name(torch, torch_dtype)
+    torch.manual_seed(int(seed))
+    config = transformers.AutoConfig.from_pretrained(config_model, trust_remote_code=trust_remote_code)
+    aliases = {
+        "hidden_size": ("hidden_size", "n_embd", "d_model"),
+        "intermediate_size": ("intermediate_size", "ffn_dim", "n_inner"),
+        "num_hidden_layers": ("num_hidden_layers", "n_layer", "num_layers"),
+        "num_attention_heads": ("num_attention_heads", "n_head", "num_heads"),
+        "num_key_value_heads": ("num_key_value_heads", "num_kv_heads"),
+        "head_dim": ("head_dim",),
+    }
+    updated_fields = {}
+    for name, value in requested.items():
+        if value is not None:
+            updated_fields[name] = _set_config_shape_value(config, aliases[name], int(value))
+    if tie_word_embeddings is not None:
+        config.tie_word_embeddings = bool(tie_word_embeddings)
+        if getattr(config, "text_config", None) is not None:
+            config.text_config.tie_word_embeddings = bool(tie_word_embeddings)
+
+    effective_heads = int(
+        num_attention_heads
+        or getattr(config, "num_attention_heads", 0)
+        or getattr(getattr(config, "text_config", None), "num_attention_heads", 0)
+    )
+    effective_kv_heads = int(
+        num_key_value_heads
+        or getattr(config, "num_key_value_heads", effective_heads)
+        or getattr(getattr(config, "text_config", None), "num_key_value_heads", effective_heads)
+    )
+    if effective_heads <= 0 or effective_kv_heads <= 0 or effective_heads % effective_kv_heads != 0:
+        raise ValueError("num_attention_heads must be a positive multiple of num_key_value_heads.")
+
+    model = transformers.AutoModelForCausalLM.from_config(config, trust_remote_code=trust_remote_code)
+    tokenizer_source = tokenizer_model or config_model
+    tokenizer = transformers.AutoTokenizer.from_pretrained(tokenizer_source, trust_remote_code=trust_remote_code)
+    input_embeddings = model.get_input_embeddings()
+    if input_embeddings is not None and int(input_embeddings.num_embeddings) != len(tokenizer):
+        model.resize_token_embeddings(len(tokenizer))
+    if tie_word_embeddings is True and hasattr(model, "tie_weights"):
+        model.tie_weights()
+    if dtype is not None:
+        model.to(dtype=dtype)
+
+    target = Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    model.save_pretrained(target, safe_serialization=True)
+    tokenizer.save_pretrained(target)
+    report = {
+        "operation": "shape_random_init_causal_lm",
+        "config_model": config_model,
+        "tokenizer_model": tokenizer_source,
+        "output_dir": str(target),
+        "seed": int(seed),
+        "torch_dtype": torch_dtype,
+        "requested_shape": requested,
+        "updated_config_fields": updated_fields,
+        "tie_word_embeddings": bool(getattr(model.config, "tie_word_embeddings", False)),
+        "vocab_size": len(tokenizer),
+        "param_count": sum(param.numel() for param in model.parameters()),
+    }
+    _write_json(target / "neural_forge_shape_init_report.json", report)
+    return report
+
+
 def same_shape_merge(
     model_ids: Sequence[str],
     output_dir: str | Path,

@@ -115,6 +115,25 @@ def build_parser() -> argparse.ArgumentParser:
     hf_random.add_argument("--trust-remote-code", action="store_true")
     hf_random.set_defaults(func=cmd_hf_random_init)
 
+    hf_shape = sub.add_parser("hf-shape-init", help="Create a blank HF causal LM with explicit shape overrides.")
+    hf_shape.add_argument("output")
+    hf_shape.add_argument("--config-model", required=True)
+    hf_shape.add_argument("--tokenizer-model")
+    hf_shape.add_argument("--hidden-size", type=int)
+    hf_shape.add_argument("--intermediate-size", type=int)
+    hf_shape.add_argument("--num-hidden-layers", type=int)
+    hf_shape.add_argument("--num-attention-heads", type=int)
+    hf_shape.add_argument("--num-key-value-heads", type=int)
+    hf_shape.add_argument("--head-dim", type=int)
+    tie_group = hf_shape.add_mutually_exclusive_group()
+    tie_group.add_argument("--tie-word-embeddings", dest="tie_word_embeddings", action="store_true")
+    tie_group.add_argument("--untie-word-embeddings", dest="tie_word_embeddings", action="store_false")
+    hf_shape.set_defaults(tie_word_embeddings=None)
+    hf_shape.add_argument("--seed", type=int, default=0)
+    hf_shape.add_argument("--dtype", default="float16")
+    hf_shape.add_argument("--trust-remote-code", action="store_true")
+    hf_shape.set_defaults(func=cmd_hf_shape_init)
+
     hf_donor_init = sub.add_parser(
         "hf-donor-project-init",
         help="Initialize a target HF causal LM by folding donor tensors into the target shape.",
@@ -3148,6 +3167,26 @@ def cmd_hf_xfamily_reconstruct(args: argparse.Namespace) -> dict[str, object]:
         device=args.device,
         trust_remote_code=args.trust_remote_code,
         calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+    )
+
+
+def cmd_hf_shape_init(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_tools import shape_random_init_causal_lm
+
+    return shape_random_init_causal_lm(
+        config_model=args.config_model,
+        tokenizer_model=args.tokenizer_model,
+        output_dir=args.output,
+        hidden_size=args.hidden_size,
+        intermediate_size=args.intermediate_size,
+        num_hidden_layers=args.num_hidden_layers,
+        num_attention_heads=args.num_attention_heads,
+        num_key_value_heads=args.num_key_value_heads,
+        head_dim=args.head_dim,
+        tie_word_embeddings=args.tie_word_embeddings,
+        seed=args.seed,
+        torch_dtype=args.dtype,
+        trust_remote_code=args.trust_remote_code,
     )
 
 

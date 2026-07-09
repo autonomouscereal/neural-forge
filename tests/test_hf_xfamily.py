@@ -9782,6 +9782,62 @@ def test_hf_random_init_handler_passes_flags(monkeypatch) -> None:
     }
 
 
+def test_hf_shape_init_handler_passes_explicit_architecture(monkeypatch) -> None:
+    import neural_forge.hf_tools as hf_tools
+
+    captured = {}
+
+    def fake_shape_init(**kwargs):
+        captured.update(kwargs)
+        return {"param_count": 123}
+
+    monkeypatch.setattr(hf_tools, "shape_random_init_causal_lm", fake_shape_init)
+    args = build_parser().parse_args(
+        [
+            "hf-shape-init",
+            "out",
+            "--config-model",
+            "Qwen/Qwen3-4B-Base",
+            "--tokenizer-model",
+            "tokenizer",
+            "--hidden-size",
+            "384",
+            "--intermediate-size",
+            "1152",
+            "--num-hidden-layers",
+            "36",
+            "--num-attention-heads",
+            "8",
+            "--num-key-value-heads",
+            "2",
+            "--head-dim",
+            "128",
+            "--tie-word-embeddings",
+            "--seed",
+            "7",
+            "--dtype",
+            "float32",
+        ]
+    )
+
+    assert args.func(args) == {"param_count": 123}
+    assert captured == {
+        "config_model": "Qwen/Qwen3-4B-Base",
+        "tokenizer_model": "tokenizer",
+        "output_dir": "out",
+        "hidden_size": 384,
+        "intermediate_size": 1152,
+        "num_hidden_layers": 36,
+        "num_attention_heads": 8,
+        "num_key_value_heads": 2,
+        "head_dim": 128,
+        "tie_word_embeddings": True,
+        "seed": 7,
+        "torch_dtype": "float32",
+        "trust_remote_code": False,
+    }
+
+
 def test_hf_tie_head_handler_passes_flags(monkeypatch) -> None:
     import neural_forge.hf_tools as hf_tools
 
