@@ -83,6 +83,8 @@ def test_path_run_launcher_requires_explicit_target_and_run_root() -> None:
             "--donor-layer-output-scale",
             "effective-count",
             "--untie-output-head",
+            "--wait-pid",
+            "123",
         ]
     )
 
@@ -96,6 +98,7 @@ def test_path_run_launcher_requires_explicit_target_and_run_root() -> None:
     assert args.donor_layer_group_strategy == "activation-cka-weighted"
     assert args.donor_layer_output_scale == "effective-count"
     assert args.untie_output_head is True
+    assert args.wait_pid == [123]
 
 
 def test_functional_fold_run_launcher_exposes_closed_form_controls() -> None:

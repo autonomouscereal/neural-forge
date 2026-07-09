@@ -26,8 +26,16 @@ ACTIVATION_FIT_RIDGE="${ACTIVATION_FIT_RIDGE:-1.0}"
 ACTIVATION_FIT_MAX_DELTA_RMS_RATIO="${ACTIVATION_FIT_MAX_DELTA_RMS_RATIO:-2.0}"
 UNTIE_OUTPUT_HEAD="${UNTIE_OUTPUT_HEAD:-0}"
 PARENT_EVAL="${PARENT_EVAL:-$RUN_ROOT/evals/eval_parent_qwen3_4b_base_strict_20260705_1000x1000x250.json}"
+WAIT_PIDS="${WAIT_PIDS:-}"
+WAIT_POLL_SECONDS="${WAIT_POLL_SECONDS:-60}"
 
 mkdir -p "$OUT/reports"
+for wait_pid in $WAIT_PIDS; do
+  while kill -0 "$wait_pid" 2>/dev/null; do
+    echo "$(date -Is) waiting_for_prior_pid=$wait_pid"
+    sleep "$WAIT_POLL_SECONDS"
+  done
+done
 UNTIE_ARGS=()
 if [[ "$UNTIE_OUTPUT_HEAD" == "1" ]]; then
   UNTIE_ARGS+=(--untie-output-head)

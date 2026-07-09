@@ -83,12 +83,18 @@ def build_parser() -> argparse.ArgumentParser:
         default="unit",
     )
     parser.add_argument("--untie-output-head", action="store_true")
+    parser.add_argument("--wait-pid", type=int, action="append", default=[])
+    parser.add_argument("--wait-poll-seconds", type=int, default=60)
     parser.add_argument("--source-script", type=Path)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.wait_poll_seconds <= 0:
+        raise ValueError("wait-poll-seconds must be positive.")
+    if any(pid <= 0 for pid in args.wait_pid):
+        raise ValueError("wait-pid values must be positive.")
     target = args.target.resolve(strict=True)
     run_root = args.run_root.resolve(strict=True)
     if not (target / "config.json").is_file() or not (target / "model.safetensors").is_file():
@@ -125,6 +131,8 @@ def main(argv: list[str] | None = None) -> int:
         "DONOR_LAYER_OUTPUT_SCALE": args.donor_layer_output_scale,
         "FOLD_STAT_REPAIR": args.fold_stat_repair,
         "UNTIE_OUTPUT_HEAD": "1" if args.untie_output_head else "0",
+        "WAIT_PIDS": " ".join(str(pid) for pid in args.wait_pid),
+        "WAIT_POLL_SECONDS": str(args.wait_poll_seconds),
     }
     identity = launch_detached(
         ["bash", str(snapshot)],
