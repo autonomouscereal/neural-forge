@@ -35,7 +35,7 @@ launch_detached() {
   local pid_file="$RUN_ROOT/logs/${label}.matrix.queue.pid"
 
   echo "combined_matrix_launch=$(date -Is) label=$label log=$log" | tee -a "$log"
-  nohup "$@" >> "$log" 2>&1 &
+  nohup "$@" < /dev/null >> "$log" 2>&1 &
   local pid="$!"
   printf '%s\n' "$pid" > "$pid_file"
   echo "combined_matrix_pid label=$label pid=$pid log=$log pid_file=$pid_file"

@@ -390,7 +390,7 @@ RETENTION_LOG="$RUN_ROOT/logs/${TAG}_beststack_retention.queue.log"
   export POLL_SECONDS
   export IGNORE_GPU_PIDS
   bash experiments/queue_eval_retention_compare.sh
-) > "$RETENTION_LOG" 2>&1 &
+) < /dev/null > "$RETENTION_LOG" 2>&1 &
 RETENTION_PID=$!
 echo "$RETENTION_PID" > "$RUN_ROOT/logs/${TAG}_beststack_retention.queue.pid"
 echo "beststack_retention_queued pid=$RETENTION_PID log=$RETENTION_LOG"
@@ -407,7 +407,7 @@ LMEVAL_LOG="$RUN_ROOT/logs/${TAG}_beststack_lmeval.queue.log"
   export POLL_SECONDS
   export IGNORE_GPU_PIDS
   bash experiments/queue_lm_eval_after_retention.sh
-) > "$LMEVAL_LOG" 2>&1 &
+) < /dev/null > "$LMEVAL_LOG" 2>&1 &
 LMEVAL_PID=$!
 echo "$LMEVAL_PID" > "$RUN_ROOT/logs/${TAG}_beststack_lmeval.queue.pid"
 echo "beststack_lmeval_queued pid=$LMEVAL_PID log=$LMEVAL_LOG"

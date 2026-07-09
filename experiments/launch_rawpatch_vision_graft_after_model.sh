@@ -35,7 +35,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-vision-graf
   --text-retention-batch-size 2 \
   --text-retention-max-length 128 \
   --device cuda:0 \
-  --dtype float16 > "$LOG" 2>&1 &
+  --dtype float16 < /dev/null > "$LOG" 2>&1 &
 
 echo $! > "$PID"
 echo "$TAG"

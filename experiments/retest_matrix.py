@@ -177,8 +177,10 @@ def _cmd_queue(args: argparse.Namespace) -> int:
                     ["bash", "experiments/queue_eval_retention_compare.sh"],
                     cwd=repo_root,
                     env=env,
+                    stdin=subprocess.DEVNULL,
                     stdout=handle,
                     stderr=subprocess.STDOUT,
+                    close_fds=True,
                     start_new_session=True,
                 )
             entry["pid"] = proc.pid

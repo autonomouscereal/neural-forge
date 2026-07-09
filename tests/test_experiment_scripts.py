@@ -26,6 +26,38 @@ def test_beststack_queue_defaults_to_untied_block_output_head_kd() -> None:
     assert "active_heavy_fold_count" in script
     assert "pgrep -f" not in script
     assert 'flock 9' in script
+    assert ') < /dev/null > "$RETENTION_LOG" 2>&1 &' in script
+    assert ') < /dev/null > "$LMEVAL_LOG" 2>&1 &' in script
+
+
+def test_background_launches_detach_from_ssh_stdin() -> None:
+    launchers = (
+        "experiments/launch_qwen4b_blank_smollm_true_lrc_chain.sh",
+        "experiments/launch_lfm230m_blank_smollm_chain.sh",
+        "experiments/launch_qwen4b_blank_gpt2_crossarch_chain.sh",
+        "experiments/launch_lfm230m_blank_smollm_oldbest_chain.sh",
+        "experiments/launch_qwen4b_blank_smollm_oldbest_chain.sh",
+        "experiments/launch_qwen4b_ffn1496_anchor_alm_chain.sh",
+        "experiments/launch_rawpatch_vision_graft_after_model.sh",
+    )
+    for relative_path in launchers:
+        script = (REPO_ROOT / relative_path).read_text(encoding="utf-8")
+        assert '< /dev/null > "$LOG" 2>&1 &' in script
+
+    combined = (
+        REPO_ROOT / "experiments/queue_combined_anchor_beststack_matrix_20260707.sh"
+    ).read_text(encoding="utf-8")
+    assert 'nohup "$@" < /dev/null >> "$log" 2>&1 &' in combined
+
+    prior_pair = (
+        REPO_ROOT / "experiments/queue_qwen4b_prior_anchor_pair_20260707.sh"
+    ).read_text(encoding="utf-8")
+    assert '< /dev/null >> "$log" 2>&1 &' in prior_pair
+
+    retest = (REPO_ROOT / "experiments/retest_matrix.py").read_text(encoding="utf-8")
+    assert "stdin=subprocess.DEVNULL" in retest
+    assert "close_fds=True" in retest
+    assert "start_new_session=True" in retest
 
 
 def test_domain_diverse_beststack_wrappers_only_change_transport_support() -> None:

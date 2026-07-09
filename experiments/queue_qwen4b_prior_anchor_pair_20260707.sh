@@ -42,7 +42,7 @@ launch_prior_anchor_variant() {
   EVAL_DIR="$EVAL_DIR" \
   REPO_ROOT="$REPO_ROOT" \
   RUN_ROOT="$RUN_ROOT" \
-    nohup bash "$SCRIPT_DIR/queue_qwen4b_prior_anchor_topneg_recover_20260707.sh" >> "$log" 2>&1 &
+    nohup bash "$SCRIPT_DIR/queue_qwen4b_prior_anchor_topneg_recover_20260707.sh" < /dev/null >> "$log" 2>&1 &
   local pid="$!"
   printf '%s\n' "$pid" > "$pid_file"
   echo "prior_anchor_pair_pid variant=$variant tag=$tag pid=$pid log=$log pid_file=$pid_file"

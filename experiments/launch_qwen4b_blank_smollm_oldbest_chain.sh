@@ -97,7 +97,7 @@ CUDA_VISIBLE_DEVICES="$GPU_UUID" nohup python -m neural_forge.cli hf-xfamily-cha
   --alm-behavior-eval-interval 40 \
   --dtype float16 \
   --candidate-dtype float32 \
-  --device cuda:0 > "$LOG" 2>&1 &
+  --device cuda:0 < /dev/null > "$LOG" 2>&1 &
 
 echo $! > "$PID"
 echo "$TAG"
