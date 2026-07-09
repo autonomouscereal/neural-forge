@@ -11337,6 +11337,53 @@ def test_functional_fold_copies_basis_artifacts_for_chained_passes(tmp_path: Pat
     assert (output / "neural_forge_hidden_basis.safetensors").read_bytes() == b"basis"
 
 
+def test_functional_fold_loads_exact_initializer_depth_plan(tmp_path: Path) -> None:
+    import neural_forge.hf_recovery as hf_recovery
+
+    report = {
+        "donor_layer_groups": {
+            "strategy": "activation-cka-weighted",
+            "group_layer_weights": [[0.25, 0.75], [0.6, 0.4]],
+        },
+        "layer_reports": [
+            {
+                "target_layer": target,
+                "donor_layer": representative,
+                "donor_layer_group": group,
+                "donor_layer_fold_mode": "fold",
+                "target_key": f"model.layers.{target}.{suffix}",
+            }
+            for target, representative, group in [(0, 2, [0, 2]), (1, 3, [1, 3])]
+            for suffix in ["self_attn.q_proj.weight", "mlp.down_proj.weight"]
+        ],
+    }
+    (tmp_path / "neural_forge_donor_projected_init_report.json").write_text(
+        json.dumps(report),
+        encoding="utf-8",
+    )
+
+    plan = hf_recovery._load_fold_layer_plan(tmp_path, target_layer_count=2, source_layer_count=4)
+
+    assert plan is not None
+    assert plan["strategy"] == "activation-cka-weighted"
+    assert plan["layers"] == [
+        {
+            "target_layer": 0,
+            "representative": 2,
+            "group": [0, 2],
+            "mode": "fold",
+            "weights": [0.25, 0.75],
+        },
+        {
+            "target_layer": 1,
+            "representative": 3,
+            "group": [1, 3],
+            "mode": "fold",
+            "weights": [0.6, 0.4],
+        },
+    ]
+
+
 def test_hf_xfamily_block_recover_handler_passes_flags(monkeypatch) -> None:
     import neural_forge.cli as cli
     import neural_forge.hf_recovery as hf_recovery

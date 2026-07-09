@@ -2172,6 +2172,59 @@ def _copy_fold_basis_artifacts(candidate_model: str | Path, output_dir: Path) ->
     return copied
 
 
+def _load_fold_layer_plan(
+    candidate_model: str | Path,
+    target_layer_count: int,
+    source_layer_count: int,
+) -> dict[str, Any] | None:
+    report_path = Path(candidate_model) / "neural_forge_donor_projected_init_report.json"
+    if not report_path.is_file():
+        return None
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    by_target: dict[int, dict[str, Any]] = {}
+    for entry in report.get("layer_reports") or []:
+        if not isinstance(entry, dict) or "target_layer" not in entry:
+            continue
+        target_idx = int(entry["target_layer"])
+        item = {
+            "representative": int(entry.get("donor_layer", -1)),
+            "group": [int(value) for value in entry.get("donor_layer_group") or []],
+            "mode": str(entry.get("donor_layer_fold_mode") or "representative"),
+        }
+        if target_idx in by_target and by_target[target_idx] != item:
+            raise ValueError(f"Inconsistent donor fold plan for target layer {target_idx}.")
+        by_target[target_idx] = item
+    if set(by_target) != set(range(int(target_layer_count))):
+        return None
+    group_report = report.get("donor_layer_groups") or {}
+    weight_rows = group_report.get("group_layer_weights") or []
+    layers = []
+    for target_idx in range(int(target_layer_count)):
+        item = dict(by_target[target_idx])
+        if not item["group"]:
+            item["group"] = [int(item["representative"])]
+        if item["representative"] not in item["group"]:
+            raise ValueError(f"Donor representative is outside target layer {target_idx} group.")
+        if any(layer_idx < 0 or layer_idx >= int(source_layer_count) for layer_idx in item["group"]):
+            raise ValueError(f"Donor fold group for target layer {target_idx} is out of range.")
+        weights = None
+        if target_idx < len(weight_rows):
+            candidate_weights = [float(value) for value in weight_rows[target_idx]]
+            if len(candidate_weights) == len(item["group"]):
+                weights = candidate_weights
+        item["weights"] = weights
+        item["target_layer"] = int(target_idx)
+        layers.append(item)
+    return {
+        "source": str(report_path),
+        "strategy": group_report.get("strategy"),
+        "layers": layers,
+    }
+
+
 def reconstruct_cross_tokenizer_causal_lm(
     source_model: str,
     candidate_model: str,
@@ -2180,6 +2233,7 @@ def reconstruct_cross_tokenizer_causal_lm(
     reconstruction_alpha: float = 1.0,
     reconstruction_target: str = "both",
     donor_layer_fold_mode: str = "representative",
+    donor_layer_plan: dict[str, Any] | None = None,
     reconstruction_objective: str = "ridge",
     cosine_steps: int = 80,
     cosine_lr: float = 1e-2,
@@ -2327,6 +2381,17 @@ def reconstruct_cross_tokenizer_causal_lm(
     candidate_layers = _recovery_decoder_layers(candidate)
     if not source_layers or not candidate_layers:
         raise ValueError("Both source and candidate need decoder layers.")
+    if donor_layer_plan is not None:
+        plan_layers = list(donor_layer_plan.get("layers") or [])
+        if len(plan_layers) < len(candidate_layers):
+            raise ValueError("donor_layer_plan does not cover every candidate layer.")
+        for item in plan_layers[: len(candidate_layers)]:
+            group = [int(value) for value in item.get("group") or []]
+            representative = int(item.get("representative", -1))
+            if not group or representative not in group:
+                raise ValueError("donor_layer_plan needs a representative contained in every group.")
+            if any(value < 0 or value >= len(source_layers) for value in group):
+                raise ValueError("donor_layer_plan contains an out-of-range source layer.")
 
     anchors = _shared_recovery_anchors(
         source_tokenizer,
@@ -2427,12 +2492,20 @@ def reconstruct_cross_tokenizer_causal_lm(
             )
             layer_gate["initial_behavior"] = previous_gate_behavior
         for candidate_idx in range(layer_count):
-            source_idx = _proportional_layer_index(candidate_idx, len(candidate_layers), len(source_layers))
-            source_group = (
-                [source_idx]
-                if donor_layer_fold_mode == "representative"
-                else _donor_layer_group_for_target(candidate_idx, len(candidate_layers), len(source_layers))
-            )
+            plan_layers = [] if donor_layer_plan is None else list(donor_layer_plan.get("layers") or [])
+            plan_item = plan_layers[candidate_idx] if candidate_idx < len(plan_layers) else None
+            if plan_item is None:
+                source_idx = _proportional_layer_index(candidate_idx, len(candidate_layers), len(source_layers))
+                source_group = (
+                    [source_idx]
+                    if donor_layer_fold_mode == "representative"
+                    else _donor_layer_group_for_target(candidate_idx, len(candidate_layers), len(source_layers))
+                )
+                source_group_weights = None
+            else:
+                source_idx = int(plan_item["representative"])
+                source_group = [int(item) for item in plan_item["group"]]
+                source_group_weights = plan_item.get("weights")
             layer_state = (
                 _snapshot_layer_gate_states(candidate_layers, candidate_idx, reconstruction_target)
                 if layer_gate_metric in {"ppl", "behavior"}
@@ -2489,9 +2562,11 @@ def reconstruct_cross_tokenizer_causal_lm(
                 fit_gate_max_cosine_drop=fit_gate_max_cosine_drop,
                 max_tokens_per_layer=max_tokens_per_layer,
                 donor_layer_fold_mode=donor_layer_fold_mode,
+                source_layer_group_weights=source_group_weights,
             )
             repair["source_layer"] = int(source_idx)
             repair["source_layer_group"] = [int(item) for item in source_group]
+            repair["source_layer_group_weights"] = source_group_weights
             repair["candidate_layer"] = int(candidate_idx)
             if layer_hidden_projection_report is not None:
                 repair["hidden_projection"] = {
@@ -2609,6 +2684,7 @@ def reconstruct_cross_tokenizer_causal_lm(
         "reconstruction_alpha": float(reconstruction_alpha),
         "reconstruction_target": reconstruction_target,
         "donor_layer_fold_mode": donor_layer_fold_mode,
+        "donor_layer_plan": donor_layer_plan,
         "reconstruction_objective": reconstruction_objective,
         "cosine_steps": int(cosine_steps),
         "cosine_lr": float(cosine_lr),
@@ -2667,6 +2743,39 @@ def functional_fold_cross_tokenizer_causal_lm(
 
     if functional_target not in {"module-output", "module-all"}:
         raise ValueError("functional_target must be module-output or module-all.")
+    donor_layer_plan = None
+    candidate_root = Path(candidate_model)
+    if candidate_root.is_dir():
+        try:
+            config = json.loads((candidate_root / "config.json").read_text(encoding="utf-8"))
+            init_report = json.loads(
+                (candidate_root / "neural_forge_donor_projected_init_report.json").read_text(encoding="utf-8")
+            )
+            entries = [item for item in (init_report.get("layer_reports") or []) if isinstance(item, dict)]
+            target_layer_count = int(
+                config.get("num_hidden_layers")
+                or config.get("n_layer")
+                or (1 + max(int(item.get("target_layer", -1)) for item in entries))
+            )
+            donor_indices = [
+                int(index)
+                for item in entries
+                for index in [item.get("donor_layer", -1), *(item.get("donor_layer_group") or [])]
+            ]
+            source_layer_count = 1 + max(donor_indices)
+            donor_layer_plan = _load_fold_layer_plan(
+                candidate_root,
+                target_layer_count=target_layer_count,
+                source_layer_count=source_layer_count,
+            )
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            donor_layer_plan = None
+    plan_modes = {
+        str(item.get("mode"))
+        for item in (donor_layer_plan or {}).get("layers", [])
+        if item.get("mode")
+    }
+    planned_fold_mode = next(iter(plan_modes)) if len(plan_modes) == 1 else "representative"
     report = reconstruct_cross_tokenizer_causal_lm(
         source_model=source_model,
         candidate_model=candidate_model,
@@ -2674,7 +2783,8 @@ def functional_fold_cross_tokenizer_causal_lm(
         ridge=ridge,
         reconstruction_alpha=alpha,
         reconstruction_target=functional_target,
-        donor_layer_fold_mode="representative",
+        donor_layer_fold_mode=planned_fold_mode,
+        donor_layer_plan=donor_layer_plan,
         reconstruction_objective="ridge",
         cosine_steps=0,
         cosine_lr=1e-2,
