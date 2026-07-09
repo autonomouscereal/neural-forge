@@ -138,6 +138,7 @@ from neural_forge.hf_xfamily import _balanced_activation_assignment
 from neural_forge.hf_xfamily import _activation_balanced_similarity_assignment
 from neural_forge.hf_xfamily import _blend_projection_with_target
 from neural_forge.hf_xfamily import _build_activation_hidden_basis
+from neural_forge.hf_xfamily import _build_donor_token_hidden_basis
 from neural_forge.hf_xfamily import _build_layer_activation_hidden_bases
 from neural_forge.hf_xfamily import _build_shared_token_hidden_basis
 from neural_forge.hf_xfamily import _channel_assignment_features
@@ -1179,6 +1180,28 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
             "float32",
         ]
     )
+    donor_token_basis_args = parser.parse_args(
+        [
+            "hf-donor-project-init",
+            "projected-token-pca",
+            "--target-config-model",
+            "target",
+            "--donor-model",
+            "donor",
+            "--hidden-basis-mode",
+            "donor-token-pca",
+        ]
+    )
+    chain_token_basis_args = parser.parse_args(
+        [
+            "hf-xfamily-chain-anchor-compress",
+            "donor",
+            "target",
+            "out",
+            "--init-hidden-basis-mode",
+            "activation-token-pca",
+        ]
+    )
     merge_layer_args = parser.parse_args(["hf-merge-layers", "in", "out", "--groups", "3+4,7+8"])
     rank_fold_args = parser.parse_args(
         [
@@ -1585,6 +1608,8 @@ def test_cli_accepts_cross_family_sweep_and_topk_resize() -> None:
     assert donor_init_args.max_anchors == 1000
     assert donor_init_args.fold_mode == "mean"
     assert donor_init_args.hidden_basis_mode == "shared-token-ridge"
+    assert donor_token_basis_args.hidden_basis_mode == "donor-token-pca"
+    assert chain_token_basis_args.init_hidden_basis_mode == "activation-token-pca"
     assert donor_init_args.hidden_basis_scope == "layer"
     assert donor_init_args.hidden_basis_max_rows == 777
     assert donor_init_args.hidden_basis_preprocess == "uncentered-rowrms"
@@ -2715,6 +2740,60 @@ def test_shared_token_hidden_basis_recovers_anchor_projection() -> None:
     assert report["anchors"] == 3
     assert report["relative_error"] == pytest.approx(0.0, abs=1e-6)
     assert report["mean_cosine"] == pytest.approx(1.0, abs=1e-6)
+
+
+def test_donor_token_hidden_basis_can_mix_activation_rows_without_target_weights() -> None:
+    torch = pytest.importorskip("torch")
+
+    class _Model:
+        def __init__(self, rows):
+            self._embedding = torch.nn.Embedding.from_pretrained(rows, freeze=False)
+
+        def get_input_embeddings(self):
+            return self._embedding
+
+    donor = _Model(
+        torch.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [4.0, 0.0, 0.0],
+                [0.0, 3.0, 0.0],
+                [2.0, 2.0, 0.0],
+            ],
+            dtype=torch.float32,
+        )
+    )
+    target = _Model(torch.randn((4, 2), dtype=torch.float32) * 100.0)
+    tokenizer = _Tokenizer(["<s>", "alpha", "beta", "gamma"])
+    activation_rows = torch.tensor(
+        [
+            [0.0, 0.0, 8.0],
+            [0.0, 0.0, 6.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    basis, report = _build_donor_token_hidden_basis(
+        torch,
+        target,
+        donor,
+        tokenizer,
+        tokenizer,
+        max_anchors=8,
+        source_dim=3,
+        target_dim=2,
+        max_basis_rows=6,
+        activation_rows=activation_rows,
+        preprocess="uncentered-rowrms",
+    )
+
+    assert basis.shape == (3, 2)
+    assert basis.t().matmul(basis).flatten().tolist() == pytest.approx(torch.eye(2).flatten().tolist(), abs=1e-5)
+    assert report["mode"] == "activation-token-pca"
+    assert report["target_weight_rows_used"] is False
+    assert report["source_counts"]["donor_embedding_rows"] >= 2
+    assert report["source_counts"]["donor_activation_rows"] == 2
+    assert float(basis[2].abs().max()) > 0.7
 
 
 def test_hidden_projection_gate_prefers_better_layer_input_map() -> None:

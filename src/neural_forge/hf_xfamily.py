@@ -353,8 +353,11 @@ def donor_projected_init(
         raise ValueError("max_anchors must be positive.")
     if fold_mode not in {"mean", "rms", "transport"}:
         raise ValueError("fold_mode must be mean, rms, or transport.")
-    if hidden_basis_mode not in {"none", "activation-pca", "shared-token-ridge"}:
-        raise ValueError("hidden_basis_mode must be none, activation-pca, or shared-token-ridge.")
+    if hidden_basis_mode not in {"none", "activation-pca", "shared-token-ridge", "donor-token-pca", "activation-token-pca"}:
+        raise ValueError(
+            "hidden_basis_mode must be none, activation-pca, shared-token-ridge, "
+            "donor-token-pca, or activation-token-pca."
+        )
     if hidden_basis_scope not in {"global", "layer"}:
         raise ValueError("hidden_basis_scope must be global or layer.")
     if hidden_basis_max_rows <= 0:
@@ -485,16 +488,16 @@ def donor_projected_init(
         raise ValueError("Target model has no decoder layers.")
     if not donor_layers:
         raise ValueError("Donor model has no decoder layers.")
-    if hidden_basis_mode == "activation-pca":
+    if hidden_basis_mode in {"activation-pca", "activation-token-pca"}:
         target_hidden_size = int(target.get_input_embeddings().weight.shape[1])
         if int(hidden_basis_max_rows) < target_hidden_size:
             raise ValueError(
-                "activation-pca hidden basis needs hidden_basis_max_rows >= target hidden size "
+                f"{hidden_basis_mode} hidden basis needs hidden_basis_max_rows >= target hidden size "
                 f"({hidden_basis_max_rows} < {target_hidden_size})."
             )
     activation_profile = None
     if activation_calibration_texts:
-        needs_layer_activation_rows = hidden_basis_mode == "activation-pca" or donor_layer_group_strategy in {
+        needs_layer_activation_rows = hidden_basis_mode in {"activation-pca", "activation-token-pca"} or donor_layer_group_strategy in {
             "activation-energy",
             "activation-geometry",
             "activation-ot",
@@ -582,6 +585,47 @@ def donor_projected_init(
             max_anchors=max_anchors,
             ridge=ridge,
         )
+    elif hidden_basis_mode in {"donor-token-pca", "activation-token-pca"}:
+        if hidden_basis_mode == "activation-token-pca" and (
+            activation_profile is None or activation_profile.get("hidden_basis_rows") is None
+        ):
+            raise ValueError("activation-token-pca hidden basis requires activation calibration texts.")
+        donor_hidden_size = int(donor.get_input_embeddings().weight.shape[1])
+        target_hidden_size = int(target.get_input_embeddings().weight.shape[1])
+        hidden_basis, hidden_basis_report = _build_donor_token_hidden_basis(
+            torch,
+            target,
+            donor,
+            target_tokenizer,
+            donor_tokenizer,
+            max_anchors=max_anchors,
+            source_dim=donor_hidden_size,
+            target_dim=target_hidden_size,
+            max_basis_rows=hidden_basis_max_rows,
+            activation_rows=None
+            if hidden_basis_mode == "donor-token-pca" or activation_profile is None
+            else activation_profile.get("hidden_basis_rows"),
+            preprocess=hidden_basis_preprocess,
+        )
+        if hidden_basis_mode == "activation-token-pca" and hidden_basis_scope == "layer":
+            layer_hidden_bases, layer_hidden_basis_report = _build_layer_activation_hidden_bases(
+                torch,
+                activation_profile,
+                target_layer_count=len(target_layers),
+                donor_layer_count=len(donor_layers),
+                source_dim=donor_hidden_size,
+                target_dim=target_hidden_size,
+                preprocess=hidden_basis_preprocess,
+                donor_layer_groups=donor_layer_groups
+                if donor_layer_group_strategy != "depth"
+                else None,
+                donor_layer_group_weights=donor_layer_group_weights
+                if donor_layer_group_strategy != "depth"
+                else None,
+                group_source=donor_layer_group_strategy
+                if donor_layer_group_strategy != "depth"
+                else "depth",
+            )
 
     target_state = target.state_dict()
     donor_state = donor.state_dict()
@@ -5083,6 +5127,135 @@ def _build_shared_token_hidden_basis(
         "ridge": float(ridge),
         "relative_error": _relative_reconstruction_error(torch, predicted, target_rows),
         "mean_cosine": _mean_row_cosine(torch, predicted, target_rows),
+    }
+
+
+def _build_donor_token_hidden_basis(
+    torch,
+    target,
+    donor,
+    target_tokenizer,
+    donor_tokenizer,
+    max_anchors: int,
+    source_dim: int,
+    target_dim: int,
+    max_basis_rows: int,
+    activation_rows=None,
+    preprocess: str = "centered-rowrms",
+):
+    if max_anchors <= 0:
+        raise ValueError("max_anchors must be positive.")
+    if source_dim <= 0 or target_dim <= 0:
+        raise ValueError("source_dim and target_dim must be positive.")
+    if max_basis_rows <= 0:
+        raise ValueError("max_basis_rows must be positive.")
+    donor_embeddings = donor.get_input_embeddings()
+    if donor_embeddings is None:
+        raise ValueError("Donor needs input embeddings for donor-token-pca hidden basis.")
+    donor_emb_rows = donor_embeddings.weight.detach().cpu().to(torch.float32)
+    if donor_emb_rows.dim() != 2 or int(donor_emb_rows.shape[1]) != int(source_dim):
+        raise ValueError("Donor embedding width does not match source_dim.")
+
+    basis_row_budget = max(int(target_dim), int(max_basis_rows))
+    token_row_budget = min(int(max_anchors), int(donor_emb_rows.shape[0]), basis_row_budget)
+    if activation_rows is not None:
+        # Untied output heads can add a second token-row block, so reserve room
+        # for activation rows instead of letting token/head rows consume the
+        # whole PCA budget.
+        token_row_budget = min(token_row_budget, max(int(target_dim), basis_row_budget // 3))
+    target_map = _canonical_token_map(target_tokenizer)
+    donor_map = _canonical_token_map(donor_tokenizer)
+    shared = sorted(set(target_map) & set(donor_map), key=lambda item: (len(item), item))
+    selected: list[int] = []
+    selected_set: set[int] = set()
+
+    def add_index(index: int) -> None:
+        index = int(index)
+        if 0 <= index < int(donor_emb_rows.shape[0]) and index not in selected_set:
+            selected.append(index)
+            selected_set.add(index)
+
+    for token in shared:
+        if len(selected) >= token_row_budget:
+            break
+        add_index(donor_map[token])
+    if len(selected) < token_row_budget:
+        norms = donor_emb_rows.pow(2).mean(dim=1)
+        for index in torch.argsort(norms, descending=True).tolist():
+            if len(selected) >= token_row_budget:
+                break
+            add_index(int(index))
+    if len(selected) < min(int(target_dim), int(donor_emb_rows.shape[0])):
+        for index in range(int(donor_emb_rows.shape[0])):
+            if len(selected) >= min(int(target_dim), int(donor_emb_rows.shape[0])):
+                break
+            add_index(index)
+
+    row_chunks = []
+    source_counts: dict[str, int] = {}
+    if selected:
+        token_indices = torch.tensor(selected, dtype=torch.long)
+        token_rows = donor_emb_rows.index_select(0, token_indices)
+        row_chunks.append(token_rows)
+        source_counts["donor_embedding_rows"] = int(token_rows.shape[0])
+    get_output_embeddings = getattr(donor, "get_output_embeddings", None)
+    donor_lm = None if get_output_embeddings is None else get_output_embeddings()
+    if (
+        donor_lm is not None
+        and getattr(donor_lm, "weight", None) is not None
+        and donor_lm.weight.data_ptr() != donor_embeddings.weight.data_ptr()
+    ):
+        donor_head_rows = donor_lm.weight.detach().cpu().to(torch.float32)
+        if donor_head_rows.dim() == 2 and int(donor_head_rows.shape[1]) == int(source_dim) and selected:
+            lm_rows = donor_head_rows.index_select(0, torch.tensor(selected, dtype=torch.long))
+            row_chunks.append(lm_rows)
+            source_counts["donor_lm_head_rows"] = int(lm_rows.shape[0])
+    if activation_rows is not None:
+        activation_matrix = torch.nan_to_num(
+            activation_rows.detach().cpu().to(torch.float32),
+            nan=0.0,
+            posinf=1e4,
+            neginf=-1e4,
+        )
+        if activation_matrix.dim() > 2:
+            activation_matrix = activation_matrix.reshape(-1, activation_matrix.shape[-1])
+        if activation_matrix.dim() != 2 or int(activation_matrix.shape[1]) != int(source_dim):
+            raise ValueError("activation rows must be rank-2 and match source_dim for activation-token-pca.")
+        remaining_budget = max(0, basis_row_budget - sum(int(chunk.shape[0]) for chunk in row_chunks))
+        if remaining_budget > 0 and int(activation_matrix.shape[0]) > remaining_budget:
+            indices = torch.linspace(
+                0,
+                int(activation_matrix.shape[0]) - 1,
+                steps=int(remaining_budget),
+                dtype=torch.long,
+            )
+            activation_matrix = activation_matrix.index_select(0, indices)
+        if int(activation_matrix.shape[0]) > 0:
+            row_chunks.append(activation_matrix)
+            source_counts["donor_activation_rows"] = int(activation_matrix.shape[0])
+
+    if not row_chunks:
+        raise ValueError("No donor rows available for donor-token-pca hidden basis.")
+    rows = torch.cat(row_chunks, dim=0)
+    if int(rows.shape[0]) > basis_row_budget:
+        indices = torch.linspace(0, int(rows.shape[0]) - 1, steps=basis_row_budget, dtype=torch.long)
+        rows = rows.index_select(0, indices)
+        source_counts["post_concat_row_sample"] = int(rows.shape[0])
+    basis, report = _build_activation_hidden_basis(
+        torch,
+        rows,
+        source_dim=source_dim,
+        target_dim=target_dim,
+        preprocess=preprocess,
+    )
+    return basis, {
+        **report,
+        "mode": "activation-token-pca" if activation_rows is not None else "donor-token-pca",
+        "shared_decoded_tokens": int(len(shared)),
+        "token_rows_selected": int(len(selected)),
+        "basis_row_budget": int(basis_row_budget),
+        "source_counts": source_counts,
+        "target_weight_rows_used": False,
     }
 
 

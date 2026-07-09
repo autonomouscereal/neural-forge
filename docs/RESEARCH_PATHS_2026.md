@@ -286,6 +286,17 @@ Implementation note:
   PCA extremes. The mathematical bet is that a child axis budget should cover
   independent subspace directions, even when duplicated high-mass donor axes
   dominate raw activation weight.
+- A donor-only hidden-basis lane is now available through
+  `INIT_HIDDEN_BASIS_MODE=donor-token-pca` or `activation-token-pca`, with
+  queue wrappers
+  `queue_qwen4b_lfm230m_multidonor_beststack_activation_token_volume_operator_20260709.sh`
+  and
+  `queue_qwen4b_gpt2_multidonor_beststack_activation_token_volume_operator_20260709.sh`.
+  Unlike `shared-token-ridge`, this does not fit the donor into random target
+  weights. It builds the compression basis from donor embedding/head rows and,
+  optionally, donor activation rows. The mathematical bet is that blank-child
+  compression should choose the child hidden subspace from parent semantics
+  before layer, MLP, attention, token, and head tensors are folded through it.
 
 ## First-Principles Experiment Ideas
 

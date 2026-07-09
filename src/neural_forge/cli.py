@@ -137,11 +137,11 @@ def build_parser() -> argparse.ArgumentParser:
     hf_donor_init.add_argument("--fold-mode", choices=["mean", "rms", "transport"], default="mean")
     hf_donor_init.add_argument(
         "--hidden-basis-mode",
-        choices=["none", "activation-pca", "shared-token-ridge"],
+        choices=["none", "activation-pca", "shared-token-ridge", "donor-token-pca", "activation-token-pca"],
         default="none",
         help=(
-            "Optionally project donor hidden axes through an activation PCA basis or a shared-token ridge "
-            "map before ordinary folding."
+            "Optionally project donor hidden axes through activation PCA, donor token PCA, activation+token PCA, "
+            "or a shared-token ridge map before ordinary folding."
         ),
     )
     hf_donor_init.add_argument(
@@ -154,13 +154,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--hidden-basis-max-rows",
         type=int,
         default=2048,
-        help="Maximum donor hidden activation rows to retain when fitting the activation PCA basis.",
+        help="Maximum donor hidden activation/token rows to retain when fitting PCA hidden bases.",
     )
     hf_donor_init.add_argument(
         "--hidden-basis-preprocess",
         choices=["centered-rowrms", "uncentered-rowrms", "uncentered"],
         default="centered-rowrms",
-        help="Preprocessing for activation PCA hidden bases.",
+        help="Preprocessing for PCA hidden bases.",
     )
     hf_donor_init.add_argument(
         "--activation-fold-assignment",
@@ -1633,7 +1633,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optionally tie the final output head to input embeddings after recovery, then re-evaluate the exact-size export.",
     )
     xfamily_chain.add_argument("--init-fold-mode", choices=["mean", "rms", "transport"], default="mean")
-    xfamily_chain.add_argument("--init-hidden-basis-mode", choices=["none", "activation-pca", "shared-token-ridge"], default="none")
+    xfamily_chain.add_argument(
+        "--init-hidden-basis-mode",
+        choices=["none", "activation-pca", "shared-token-ridge", "donor-token-pca", "activation-token-pca"],
+        default="none",
+    )
     xfamily_chain.add_argument("--init-hidden-basis-scope", choices=["global", "layer"], default="global")
     xfamily_chain.add_argument("--init-hidden-basis-max-rows", type=int, default=2048)
     xfamily_chain.add_argument(
