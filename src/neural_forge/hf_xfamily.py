@@ -17,6 +17,7 @@ from typing import Any, Sequence
 from neural_forge.hf_tools import (
     _decoder_layer_container,
     _dtype_from_name,
+    _ensure_tokenizer_vocab_capacity,
     _ensure_unique_ratio_tags,
     _finite_float,
     _linear_cka,
@@ -513,8 +514,7 @@ def donor_projected_init(
     tokenizer_source = target_tokenizer_model or target_config_model
     target_tokenizer = transformers.AutoTokenizer.from_pretrained(tokenizer_source, trust_remote_code=trust_remote_code)
     donor_tokenizer = transformers.AutoTokenizer.from_pretrained(donor_model, trust_remote_code=trust_remote_code)
-    if target.get_input_embeddings() is not None and target.get_input_embeddings().num_embeddings != len(target_tokenizer):
-        target.resize_token_embeddings(len(target_tokenizer))
+    vocab_capacity = _ensure_tokenizer_vocab_capacity(target, target_tokenizer)
     if untie_output_head:
         _untie_output_head(torch, target)
     if dtype is not None:
@@ -1127,6 +1127,7 @@ def donor_projected_init(
         "target_config_model": target_config_model,
         "target_base_model": target_base_model,
         "target_tokenizer_model": tokenizer_source,
+        "vocab_capacity": vocab_capacity,
         "donor_model": donor_model,
         "output_dir": str(output),
         "seed": int(seed),

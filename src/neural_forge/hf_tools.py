@@ -166,9 +166,7 @@ def random_init_causal_lm(
     model = transformers.AutoModelForCausalLM.from_config(config, trust_remote_code=trust_remote_code)
     tokenizer_source = tokenizer_model or config_model
     tokenizer = transformers.AutoTokenizer.from_pretrained(tokenizer_source, trust_remote_code=trust_remote_code)
-    input_embeddings = model.get_input_embeddings()
-    if input_embeddings is not None and int(input_embeddings.num_embeddings) != len(tokenizer):
-        model.resize_token_embeddings(len(tokenizer))
+    vocab_capacity = _ensure_tokenizer_vocab_capacity(model, tokenizer)
     if dtype is not None:
         model.to(dtype=dtype)
 
@@ -183,7 +181,9 @@ def random_init_causal_lm(
         "output_dir": str(target),
         "seed": int(seed),
         "torch_dtype": torch_dtype,
-        "vocab_size": len(tokenizer),
+        "vocab_size": vocab_capacity["model_vocab_size"],
+        "tokenizer_vocab_size": vocab_capacity["tokenizer_vocab_size"],
+        "vocab_capacity": vocab_capacity,
         "param_count": sum(param.numel() for param in model.parameters()),
     }
     _write_json(target / "neural_forge_random_init_report.json", report)
@@ -207,6 +207,31 @@ def _set_config_shape_value(config, names: Sequence[str], value: int) -> list[st
             setattr(target, names[0], int(value))
             updated.append(names[0])
     return list(dict.fromkeys(updated))
+
+
+def _ensure_tokenizer_vocab_capacity(model, tokenizer) -> dict[str, Any]:
+    """Grow an embedding table for a tokenizer without deleting reserved rows."""
+
+    tokenizer_vocab_size = int(len(tokenizer))
+    input_embeddings = model.get_input_embeddings()
+    if input_embeddings is None:
+        return {
+            "tokenizer_vocab_size": tokenizer_vocab_size,
+            "original_model_vocab_size": None,
+            "model_vocab_size": None,
+            "resized": False,
+        }
+    original_model_vocab_size = int(input_embeddings.num_embeddings)
+    resized = tokenizer_vocab_size > original_model_vocab_size
+    if resized:
+        model.resize_token_embeddings(tokenizer_vocab_size)
+    model_vocab_size = int(model.get_input_embeddings().num_embeddings)
+    return {
+        "tokenizer_vocab_size": tokenizer_vocab_size,
+        "original_model_vocab_size": original_model_vocab_size,
+        "model_vocab_size": model_vocab_size,
+        "resized": bool(resized),
+    }
 
 
 def shape_random_init_causal_lm(
@@ -274,9 +299,7 @@ def shape_random_init_causal_lm(
     model = transformers.AutoModelForCausalLM.from_config(config, trust_remote_code=trust_remote_code)
     tokenizer_source = tokenizer_model or config_model
     tokenizer = transformers.AutoTokenizer.from_pretrained(tokenizer_source, trust_remote_code=trust_remote_code)
-    input_embeddings = model.get_input_embeddings()
-    if input_embeddings is not None and int(input_embeddings.num_embeddings) != len(tokenizer):
-        model.resize_token_embeddings(len(tokenizer))
+    vocab_capacity = _ensure_tokenizer_vocab_capacity(model, tokenizer)
     if tie_word_embeddings is True and hasattr(model, "tie_weights"):
         model.tie_weights()
     if dtype is not None:
@@ -296,7 +319,9 @@ def shape_random_init_causal_lm(
         "requested_shape": requested,
         "updated_config_fields": updated_fields,
         "tie_word_embeddings": bool(getattr(model.config, "tie_word_embeddings", False)),
-        "vocab_size": len(tokenizer),
+        "vocab_size": vocab_capacity["model_vocab_size"],
+        "tokenizer_vocab_size": vocab_capacity["tokenizer_vocab_size"],
+        "vocab_capacity": vocab_capacity,
         "param_count": sum(param.numel() for param in model.parameters()),
     }
     _write_json(target / "neural_forge_shape_init_report.json", report)

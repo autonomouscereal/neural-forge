@@ -95,6 +95,7 @@ from neural_forge.hf_tools import TEXT_EVALS
 from neural_forge.hf_tools import build_eval_suite
 from neural_forge.hf_tools import build_recovery_calibration
 from neural_forge.hf_tools import _generation_health
+from neural_forge.hf_tools import _ensure_tokenizer_vocab_capacity
 from neural_forge.hf_tools import _layer_groups_for_report
 from neural_forge.hf_tools import _layer_groups_tag
 from neural_forge.hf_tools import _linear_cka
@@ -229,6 +230,52 @@ class _Tokenizer:
 class _Obj:
     def __init__(self, **kwargs) -> None:
         self.__dict__.update(kwargs)
+
+
+@pytest.mark.parametrize(
+    ("model_vocab_size", "tokenizer_vocab_size", "expected_vocab_size", "expected_resizes"),
+    [
+        (151_936, 151_669, 151_936, []),
+        (100, 103, 103, [103]),
+    ],
+)
+def test_tokenizer_vocab_capacity_grows_but_never_shrinks_reserved_rows(
+    model_vocab_size: int,
+    tokenizer_vocab_size: int,
+    expected_vocab_size: int,
+    expected_resizes: list[int],
+) -> None:
+    class Embeddings:
+        def __init__(self, size: int) -> None:
+            self.num_embeddings = size
+
+    class Model:
+        def __init__(self, size: int) -> None:
+            self.embeddings = Embeddings(size)
+            self.resize_calls: list[int] = []
+
+        def get_input_embeddings(self):
+            return self.embeddings
+
+        def resize_token_embeddings(self, size: int) -> None:
+            self.resize_calls.append(size)
+            self.embeddings = Embeddings(size)
+
+    class Tokenizer:
+        def __len__(self) -> int:
+            return tokenizer_vocab_size
+
+    model = Model(model_vocab_size)
+
+    report = _ensure_tokenizer_vocab_capacity(model, Tokenizer())
+
+    assert report == {
+        "tokenizer_vocab_size": tokenizer_vocab_size,
+        "original_model_vocab_size": model_vocab_size,
+        "model_vocab_size": expected_vocab_size,
+        "resized": bool(expected_resizes),
+    }
+    assert model.resize_calls == expected_resizes
 
 
 def test_canonical_token_normalizes_common_tokenizer_markers() -> None:
