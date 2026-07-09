@@ -74,6 +74,15 @@ maps, the proof target uses a standard untied head with `hidden=320`,
 `25.74x` compression. This is SVD/QR/ridge materialization only, with no
 optimizer steps, adapters, or recovery training.
 
+The first raw oblique run completed at `156,083,136` parameters (`25.77x`) and
+was negative: PPL `3,742,969.57`, behavior `0/1000`, generation `0/1000`, and
+choice `30/250`. It lost every one of the parent's `400` solved behavior items
+and `388` solved generation items. Manual arithmetic outputs repeated fragments
+such as `rejects`, `Repository`, and `Geometry`; they were not coherent hidden
+capability. This run used the old prefix-filled buffer and absolute ridge, so it
+is the baseline for the corrected stratified/trace-scaled implementation, not a
+rejection of that corrected path.
+
 `hf-functional-fold` is the sequential compensation companion to this basis.
 It fits attention-output and MLP-output operators with closed-form ridge solves,
 recomputes activations in sequence, and records `zero_gradient=true` and
