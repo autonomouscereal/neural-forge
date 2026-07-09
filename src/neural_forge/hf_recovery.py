@@ -39,6 +39,12 @@ RECOVERY_TEXTS = [
     "Short recovery training can reduce surgery shock, but it must be validated on unseen prompts.",
 ]
 
+
+def _recovery_progress(event: str, **fields: object) -> None:
+    values = " ".join(f"{key}={fields[key]}" for key in sorted(fields))
+    suffix = f" {values}" if values else ""
+    print(f"neural_forge_progress event={event}{suffix}", flush=True)
+
 HIDDEN_KD_METRICS = {
     "projected",
     "cka",
@@ -2491,7 +2497,18 @@ def reconstruct_cross_tokenizer_causal_lm(
                 layer_gate_max_generation_prompts,
             )
             layer_gate["initial_behavior"] = previous_gate_behavior
+        _recovery_progress(
+            "functional_reconstruction_start",
+            layers=layer_count,
+            target=reconstruction_target,
+            fit_final_interface=bool(fit_final_interface),
+        )
         for candidate_idx in range(layer_count):
+            _recovery_progress(
+                "functional_reconstruction_layer_start",
+                current=candidate_idx + 1,
+                total=layer_count,
+            )
             plan_layers = [] if donor_layer_plan is None else list(donor_layer_plan.get("layers") or [])
             plan_item = plan_layers[candidate_idx] if candidate_idx < len(plan_layers) else None
             if plan_item is None:
@@ -2646,11 +2663,17 @@ def reconstruct_cross_tokenizer_causal_lm(
                     gate_decision["snapshot_layers"] = [int(idx) for idx in sorted(layer_state)]
                 repair["layer_gate"] = gate_decision
             repairs.append(repair)
+            _recovery_progress(
+                "functional_reconstruction_layer_done",
+                current=candidate_idx + 1,
+                total=layer_count,
+            )
             if device.startswith("cuda") and hasattr(torch, "cuda"):
                 torch.cuda.empty_cache()
 
         final_interface_report = None
         if fit_final_interface:
+            _recovery_progress("functional_reconstruction_final_interface_start")
             final_interface_report = _reconstruct_cross_tokenizer_final_interface(
                 torch,
                 source,
@@ -2668,6 +2691,10 @@ def reconstruct_cross_tokenizer_causal_lm(
                 fit_gate_min_relative_improvement=fit_gate_min_relative_improvement,
                 fit_gate_max_cosine_drop=fit_gate_max_cosine_drop,
                 max_tokens=max_tokens_per_layer,
+            )
+            _recovery_progress(
+                "functional_reconstruction_final_interface_done",
+                applied=bool(final_interface_report.get("applied")),
             )
 
     target = Path(output_dir)
