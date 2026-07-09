@@ -10,6 +10,8 @@ OUT="${OUT:-$RUN_ROOT/$TAG}"
 GPU_UUID="${GPU_UUID:-GPU-2ce6a95c-7b1f-644a-3808-d781732a0582}"
 TRANSPORT_SUPPORT="${TRANSPORT_SUPPORT:-volume-medoid}"
 HIDDEN_BASIS_MODE="${HIDDEN_BASIS_MODE:-activation-coordinate}"
+DONOR_LAYER_FOLD_MODE="${DONOR_LAYER_FOLD_MODE:-representative}"
+DONOR_LAYER_OUTPUT_SCALE="${DONOR_LAYER_OUTPUT_SCALE:-unit}"
 PARENT_EVAL="${PARENT_EVAL:-$RUN_ROOT/evals/eval_parent_qwen3_4b_base_strict_20260705_1000x1000x250.json}"
 
 mkdir -p "$OUT/reports"
@@ -32,8 +34,8 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
   --fold-stat-repair none \
   --transport-backend qr-sinkhorn \
   --transport-support "$TRANSPORT_SUPPORT" \
-  --donor-layer-fold-mode representative \
-  --donor-layer-output-scale unit \
+  --donor-layer-fold-mode "$DONOR_LAYER_FOLD_MODE" \
+  --donor-layer-output-scale "$DONOR_LAYER_OUTPUT_SCALE" \
   --donor-layer-group-strategy activation-cka-weighted \
   --attention-fold-mode activation-coupled \
   --attention-head-dim-transport none \
