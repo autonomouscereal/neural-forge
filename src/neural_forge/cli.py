@@ -1637,6 +1637,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optionally tie the final output head to input embeddings after recovery, then re-evaluate the exact-size export.",
     )
     xfamily_chain.add_argument("--init-fold-mode", choices=["mean", "rms", "transport", "anchor-transplant"], default="mean")
+    xfamily_chain.add_argument("--init-max-anchors", type=int, default=50_000)
     xfamily_chain.add_argument(
         "--init-hidden-basis-mode",
         choices=["none", "activation-pca", "shared-token-ridge", "donor-token-pca", "activation-token-pca"],
@@ -3204,6 +3205,7 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         stage_input_policy=args.stage_input_policy,
         final_output_head_policy=args.final_output_head_policy,
         init_fold_mode=args.init_fold_mode,
+        init_max_anchors=args.init_max_anchors,
         init_hidden_basis_mode=args.init_hidden_basis_mode,
         init_hidden_basis_scope=args.init_hidden_basis_scope,
         init_hidden_basis_max_rows=args.init_hidden_basis_max_rows,

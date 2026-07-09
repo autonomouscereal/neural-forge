@@ -10635,14 +10635,24 @@ def _initialize_token_weights_from_donor(
         raise ValueError("token_fallback_mode must be none, donor-mean, donor-hash, or donor-omp.")
     if consumer_hidden_reduction not in {"mean", "sum", "sqrt-sum"}:
         raise ValueError("consumer_hidden_reduction must be mean, sum, or sqrt-sum.")
-    anchors, target_map, donor_map = _shared_anchor_tokens(target_tokenizer, donor_tokenizer, max_anchors)
-    if token_init_mode == "shared":
-        target_ids = [target_map[token] for token in anchors]
-        donor_id_groups = [[donor_map[token]] for token in anchors]
-        donor_group_weights = [[1.0] for _token in anchors]
-        tokenized_rows = 0
-        weighted_rows = 0
+    target_embeddings = target.get_input_embeddings()
+    donor_embeddings = donor.get_input_embeddings()
+    target_emb_weight = target_embeddings.weight.data.detach().cpu().to(torch.float32)
+    donor_emb_weight = donor_embeddings.weight.data.detach().cpu().to(torch.float32)
+    exact_id_aligned = token_init_mode == "shared" and _tokenizer_vocab_ids_aligned(
+        target_tokenizer,
+        donor_tokenizer,
+    )
+    anchors: list[str] = []
+    if exact_id_aligned:
+        aligned_rows = min(int(target_emb_weight.shape[0]), int(donor_emb_weight.shape[0]))
+        target_ids = list(range(aligned_rows))
+        donor_id_groups = [[idx] for idx in range(aligned_rows)]
+        donor_group_weights = [[1.0] for _idx in range(aligned_rows)]
+        tokenized_rows = aligned_rows
+        weighted_rows = aligned_rows
     elif token_init_mode == "donor-omp":
+        anchors, target_map, donor_map = _shared_anchor_tokens(target_tokenizer, donor_tokenizer, max_anchors)
         target_ids, donor_id_groups, donor_group_weights, tokenized_rows, weighted_rows = _target_to_donor_omp_group_specs(
             torch,
             target_tokenizer,
@@ -10650,7 +10660,15 @@ def _initialize_token_weights_from_donor(
             target_map,
             donor_map,
         )
+    elif token_init_mode == "shared":
+        anchors, target_map, donor_map = _shared_anchor_tokens(target_tokenizer, donor_tokenizer, max_anchors)
+        target_ids = [target_map[token] for token in anchors]
+        donor_id_groups = [[donor_map[token]] for token in anchors]
+        donor_group_weights = [[1.0] for _token in anchors]
+        tokenized_rows = 0
+        weighted_rows = 0
     else:
+        anchors, target_map, donor_map = _shared_anchor_tokens(target_tokenizer, donor_tokenizer, max_anchors)
         target_ids, donor_id_groups, donor_group_weights, tokenized_rows, weighted_rows = _target_to_donor_token_group_specs(
             target_tokenizer,
             donor_tokenizer,
@@ -10672,10 +10690,6 @@ def _initialize_token_weights_from_donor(
         donor_id_groups.extend(special_donor_groups)
         donor_group_weights.extend(special_group_weights)
 
-    target_embeddings = target.get_input_embeddings()
-    donor_embeddings = donor.get_input_embeddings()
-    target_emb_weight = target_embeddings.weight.data.detach().cpu().to(torch.float32)
-    donor_emb_weight = donor_embeddings.weight.data.detach().cpu().to(torch.float32)
     initialized_target_ids = {int(item) for item in target_ids}
     embedding_rows_initialized = _project_token_weight_rows(
         torch,
@@ -10795,6 +10809,8 @@ def _initialize_token_weights_from_donor(
     return {
         "mode": token_init_mode,
         "fallback_mode": token_fallback_mode,
+        "exact_id_aligned": bool(exact_id_aligned),
+        "exact_id_aligned_rows": int(len(target_ids)) if exact_id_aligned else 0,
         "shared_decoded_tokens": len(set(_canonical_token_map(target_tokenizer)) & set(_canonical_token_map(donor_tokenizer))),
         "anchors_used": len(anchors),
         "tokenized_rows_initialized": int(tokenized_rows),
@@ -11639,6 +11655,20 @@ def _shared_anchor_tokens(host_tokenizer, donor_tokenizer, max_anchors: int) -> 
         raise ValueError("No shared decoded-token anchors found.")
     anchors = shared[: min(max_anchors, len(shared))]
     return anchors, host_map, donor_map
+
+
+def _tokenizer_vocab_ids_aligned(target_tokenizer, donor_tokenizer) -> bool:
+    """Return true only when both tokenizers assign every vocabulary token the same ID."""
+    try:
+        target_vocab = target_tokenizer.get_vocab()
+        donor_vocab = donor_tokenizer.get_vocab()
+    except Exception:
+        return False
+    if not isinstance(target_vocab, dict) or not isinstance(donor_vocab, dict):
+        return False
+    if len(target_vocab) != len(donor_vocab):
+        return False
+    return target_vocab == donor_vocab
 
 
 def _merge_lm_head_rows(torch, host, donor, host_idx, donor_idx, hidden_map, alpha: float, ridge: float) -> None:

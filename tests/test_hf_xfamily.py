@@ -3359,13 +3359,16 @@ def test_token_initialization_skips_tied_lm_head_second_pass() -> None:
         donor,
         tokenizer,
         tokenizer,
-        max_anchors=2,
+        max_anchors=1,
         token_init_mode="shared",
         fold_mode="mean",
         consumer_hidden_reduction="sum",
     )
 
-    assert target.get_input_embeddings().weight.tolist() == [[0.0, 0.0], [1.0, 1.0]]
+    assert target.get_input_embeddings().weight.tolist() == [[1.0, 1.0], [1.0, 1.0]]
+    assert report["exact_id_aligned"] is True
+    assert report["exact_id_aligned_rows"] == 2
+    assert report["embedding_rows_initialized"] == 2
     assert report["lm_head_tied_to_embeddings"] is True
     assert report["lm_head_updated"] is False
     assert report["lm_head_rows_initialized"] == 0
@@ -11338,6 +11341,7 @@ def test_chain_anchor_init_stage_forwards_activation_fit_flags(monkeypatch, tmp_
         stages="init",
         calibration_texts=["sample"],
         init_fold_mode="transport",
+        init_max_anchors=123,
         init_hidden_basis_mode="activation-pca",
         init_hidden_basis_scope="layer",
         init_hidden_basis_max_rows=4096,
@@ -11385,6 +11389,7 @@ def test_chain_anchor_init_stage_forwards_activation_fit_flags(monkeypatch, tmp_
     assert captured["donor_model"] == "donor"
     assert captured["activation_calibration_texts"] == ["sample"]
     assert captured["fold_mode"] == "transport"
+    assert captured["max_anchors"] == 123
     assert captured["hidden_basis_mode"] == "activation-pca"
     assert captured["hidden_basis_scope"] == "layer"
     assert captured["hidden_basis_max_rows"] == 4096
@@ -11682,6 +11687,8 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
             "tie",
             "--init-fold-mode",
             "transport",
+            "--init-max-anchors",
+            "151936",
             "--init-hidden-basis-mode",
             "activation-pca",
             "--init-hidden-basis-scope",
@@ -11973,6 +11980,7 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["stage_input_policy"] == "sequential"
     assert captured["final_output_head_policy"] == "tie"
     assert captured["init_fold_mode"] == "transport"
+    assert captured["init_max_anchors"] == 151936
     assert captured["init_hidden_basis_mode"] == "activation-pca"
     assert captured["init_hidden_basis_scope"] == "layer"
     assert captured["init_hidden_basis_max_rows"] == 4096
