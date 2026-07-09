@@ -54,7 +54,15 @@ anchor as if it carried the summed power of its entire cluster. For eight-way
 attention-head compression this multiplies both Q and K RMS by about
 `sqrt(8)`, making attention logits roughly eight times too large. RMS repair is
 now a no-op for `select` reductions, and unrepaired l36 coordinate/grouped
-controls are the required comparison.
+controls are the required comparison. Both controls are now complete and are
+negative. The unrepaired coordinate fold reached PPL `189,167.47`, behavior
+`0/1000`, generation `0/1000`, and choice `16/250`; the unrepaired grouped fold
+reached PPL `278,009.71`, behavior `0/1000`, generation `0/1000`, and choice
+`33/250`. Parent-pass retention was zero for all `400` scored behavior items and
+all `388` scored generation items. Paired manual inspection showed repeated
+multilingual fragments for math and Python prompts. Removing the erroneous RMS
+scaling therefore helps one local statistic but does not restore a usable
+function at `28.80x`.
 
 The next zero-gradient lane is `activation-oblique`. It selects real residual
 coordinates by pivoted subspace QR, fits a ridge reconstruction of all discarded
@@ -65,6 +73,16 @@ maps, the proof target uses a standard untied head with `hidden=320`,
 `intermediate=1280`, and 36 layers: `156,254,016` projected parameters, or
 `25.74x` compression. This is SVD/QR/ridge materialization only, with no
 optimizer steps, adapters, or recovery training.
+
+`hf-functional-fold` is the sequential compensation companion to this basis.
+It fits attention-output and MLP-output operators with closed-form ridge solves,
+recomputes activations in sequence, and records `zero_gradient=true` and
+`optimizer_steps=0`. The detached runner
+`experiments/launch_hf_functional_fold_run.py` snapshots the operation, then
+runs the exact `1000/1000/250` suite, seven manual generations, and cached-parent
+retention comparison. This is classified as fold materialization rather than
+recovery because it performs no gradient or optimizer update; behavioral
+promotion criteria remain unchanged.
 
 ## Highest-Priority Paths
 

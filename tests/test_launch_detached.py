@@ -9,6 +9,7 @@ import pytest
 
 from experiments.launch_detached import _parse_environment
 from experiments.launch_detached import launch_detached
+from experiments.launch_hf_functional_fold_run import build_parser as build_functional_fold_run_parser
 from experiments.launch_qwen4b_path_run import build_parser as build_path_run_parser
 
 
@@ -80,3 +81,30 @@ def test_path_run_launcher_requires_explicit_target_and_run_root() -> None:
     assert args.run_root == Path("runs")
     assert args.hidden_basis_mode == "activation-oblique"
     assert args.untie_output_head is True
+
+
+def test_functional_fold_run_launcher_exposes_closed_form_controls() -> None:
+    args = build_functional_fold_run_parser().parse_args(
+        [
+            "--candidate",
+            "folded",
+            "--run-root",
+            "runs",
+            "--tag",
+            "module-fit",
+            "--gpu-uuid",
+            "GPU-test",
+            "--functional-target",
+            "module-all",
+            "--ridge",
+            "0.004",
+            "--max-tokens-per-layer",
+            "2048",
+        ]
+    )
+
+    assert args.candidate == Path("folded")
+    assert args.run_root == Path("runs")
+    assert args.functional_target == "module-all"
+    assert args.ridge == pytest.approx(0.004)
+    assert args.max_tokens_per_layer == 2048

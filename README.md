@@ -201,6 +201,20 @@ gates. Pair it with larger `--layer-gate-max-texts` values and
 `--layer-gate-max-generation-prompts` when a small six-probe gate is too weak;
 the post-run `hf-eval --eval-suite` broad gate should still be treated as the
 promotion authority.
+`hf-functional-fold` performs the non-gradient counterpart: it sequentially
+fits folded attention/MLP module outputs with closed-form ridge solves and
+materializes the fitted operators directly into the child checkpoint. It
+requires a candidate produced with an exact Neural Forge fold-basis artifact
+and reports `zero_gradient=true` plus `optimizer_steps=0`.
+
+```bash
+neural-forge hf-functional-fold donor folded-child functional-child \
+  --functional-target module-output \
+  --calibration-file calibration.jsonl \
+  --max-calibration-texts 1024 \
+  --max-tokens-per-layer 4096
+```
+
 `hf-xfamily-block-recover --module-output-kd-weight` adds differentiable
 attention/MLP output reconstruction for the currently trainable child block.
 Use `--module-output-targets attention|mlp|both` and
