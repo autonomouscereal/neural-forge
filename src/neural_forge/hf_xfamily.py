@@ -2147,6 +2147,31 @@ def chain_anchor_staged_compress(
     init_activation_domain_balance: str = "none",
     init_untie_output_head: bool = False,
     init_activation_max_length: int = 128,
+    reconstruct_ridge: float = 1e-3,
+    reconstruct_alpha: float = 1.0,
+    reconstruct_target: str = "both",
+    reconstruct_donor_layer_fold_mode: str = "representative",
+    reconstruct_objective: str = "ridge",
+    reconstruct_cosine_steps: int = 80,
+    reconstruct_cosine_lr: float = 1e-2,
+    reconstruct_cosine_l2: float = 1e-4,
+    reconstruct_max_length: int = 128,
+    reconstruct_max_tokens_per_layer: int = 512,
+    reconstruct_max_anchors: int = 2048,
+    reconstruct_hidden_projection_scope: str = "global",
+    reconstruct_layer_limit: int | None = None,
+    reconstruct_fit_gate: str = "none",
+    reconstruct_fit_gate_validation_fraction: float = 0.25,
+    reconstruct_fit_gate_min_validation_rows: int = 32,
+    reconstruct_fit_gate_min_relative_improvement: float = 0.0,
+    reconstruct_fit_gate_max_cosine_drop: float = 0.01,
+    reconstruct_fit_gate_min_fitted_cosine: float = -1.0,
+    reconstruct_layer_gate_metric: str = "none",
+    reconstruct_layer_gate_max_ppl_ratio: float = 1.02,
+    reconstruct_layer_gate_max_texts: int = 4,
+    reconstruct_layer_gate_max_behavior_drop: float = 0.0,
+    reconstruct_layer_gate_behavior_max_new_tokens: int = 96,
+    reconstruct_layer_gate_max_generation_prompts: int | None = None,
     block_steps_per_layer: int = 4,
     block_batch_size: int = 1,
     block_max_length: int = 112,
@@ -2447,6 +2472,59 @@ def chain_anchor_staged_compress(
                 trust_remote_code=trust_remote_code,
                 **init_source_kwargs,
             )
+        elif stage == "reconstruct":
+            from neural_forge.hf_recovery import reconstruct_cross_tokenizer_causal_lm
+
+            def run_reconstruction(source: str, candidate: str, destination: Path) -> dict[str, Any]:
+                return reconstruct_cross_tokenizer_causal_lm(
+                    source_model=source,
+                    candidate_model=candidate,
+                    output_dir=destination,
+                    ridge=reconstruct_ridge,
+                    reconstruction_alpha=reconstruct_alpha,
+                    reconstruction_target=reconstruct_target,
+                    donor_layer_fold_mode=reconstruct_donor_layer_fold_mode,
+                    reconstruction_objective=reconstruct_objective,
+                    cosine_steps=reconstruct_cosine_steps,
+                    cosine_lr=reconstruct_cosine_lr,
+                    cosine_l2=reconstruct_cosine_l2,
+                    max_length=reconstruct_max_length,
+                    max_tokens_per_layer=reconstruct_max_tokens_per_layer,
+                    max_anchors=reconstruct_max_anchors,
+                    hidden_projection_scope=reconstruct_hidden_projection_scope,
+                    layer_limit=reconstruct_layer_limit,
+                    fit_gate=reconstruct_fit_gate,
+                    fit_gate_validation_fraction=reconstruct_fit_gate_validation_fraction,
+                    fit_gate_min_validation_rows=reconstruct_fit_gate_min_validation_rows,
+                    fit_gate_min_relative_improvement=reconstruct_fit_gate_min_relative_improvement,
+                    fit_gate_max_cosine_drop=reconstruct_fit_gate_max_cosine_drop,
+                    fit_gate_min_fitted_cosine=reconstruct_fit_gate_min_fitted_cosine,
+                    layer_gate_metric=reconstruct_layer_gate_metric,
+                    layer_gate_max_ppl_ratio=reconstruct_layer_gate_max_ppl_ratio,
+                    layer_gate_max_texts=reconstruct_layer_gate_max_texts,
+                    layer_gate_max_behavior_drop=reconstruct_layer_gate_max_behavior_drop,
+                    layer_gate_behavior_max_new_tokens=reconstruct_layer_gate_behavior_max_new_tokens,
+                    layer_gate_eval_suite=eval_suite,
+                    layer_gate_max_generation_prompts=reconstruct_layer_gate_max_generation_prompts,
+                    torch_dtype=torch_dtype,
+                    candidate_torch_dtype=candidate_torch_dtype,
+                    device=device,
+                    trust_remote_code=trust_remote_code,
+                    calibration_texts=list(calibration_texts or []),
+                )
+
+            recovery_sources = _chain_recovery_sources(source_models, recovery_source_mode)
+            if len(recovery_sources) == 1:
+                stage_operation = run_reconstruction(recovery_sources[0], input_model_dir, stage_model_dir)
+            else:
+                stage_operation = _run_sequential_chain_recovery(
+                    stage_name="reconstruct",
+                    recovery_sources=recovery_sources,
+                    source_weights=source_weight_values,
+                    input_model_dir=input_model_dir,
+                    stage_model_dir=stage_model_dir,
+                    recovery_fn=run_reconstruction,
+                )
         elif stage == "block":
             from neural_forge.hf_recovery import blockwise_reconstruct_cross_tokenizer_causal_lm
 
@@ -2769,7 +2847,9 @@ def chain_anchor_staged_compress(
         final_output_head_record["input_tag"] = final_candidate["tag"]
         final_output_head_record["input_model_dir"] = final_candidate["model_dir"]
         final_output_head_record["incumbent_before"] = incumbent["tag"]
-        final_candidate = final_output_head_record
+        final_output_head_record["promoted"] = bool(tied_gate.get("passed", False))
+        if final_output_head_record["promoted"]:
+            final_candidate = final_output_head_record
 
     return _write_chain_anchor_summary(
         output_root,
@@ -2796,7 +2876,7 @@ def _parse_chain_stages(stages: str | Sequence[str]) -> list[str]:
         parts = [str(part).strip() for part in stages if str(part).strip()]
     if not parts:
         raise ValueError("At least one chain stage is required.")
-    allowed = {"init", "block", "alm"}
+    allowed = {"init", "reconstruct", "block", "alm"}
     invalid = [part for part in parts if part not in allowed]
     if invalid:
         raise ValueError(f"Unsupported chain stages: {', '.join(invalid)}.")

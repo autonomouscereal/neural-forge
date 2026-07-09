@@ -10752,6 +10752,7 @@ def test_chain_stage_promotion_requires_gate_and_behavior_rank() -> None:
 def test_parse_chain_stages_rejects_unknown_stage() -> None:
     assert _parse_chain_stages("block,alm") == ["block", "alm"]
     assert _parse_chain_stages(["init", "block"]) == ["init", "block"]
+    assert _parse_chain_stages("init,reconstruct,block") == ["init", "reconstruct", "block"]
 
     with pytest.raises(ValueError, match="Unsupported chain stages"):
         _parse_chain_stages("block,banana")
@@ -11177,6 +11178,118 @@ def test_chain_anchor_sequential_all_recovery_uses_each_donor(monkeypatch, tmp_p
     assert summary["final_model_dir"] == str(final_output)
 
 
+def test_chain_anchor_reconstruct_stage_passes_flags(monkeypatch, tmp_path) -> None:
+    import neural_forge.hf_recovery as hf_recovery
+    import neural_forge.hf_xfamily as hf_xfamily
+
+    captured = {}
+
+    def fake_eval(model_id_or_path, output_file, **kwargs):
+        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_file).write_text("{}", encoding="utf-8")
+        return {
+            "model": str(model_id_or_path),
+            "param_count": 10,
+            "perplexity": {"mean": 100.0},
+            "choice_accuracy": {"accuracy": 0.5},
+            "generations": [],
+            "behavior_suite": {"pass_rate": 0.8, "correct": 8, "total": 10, "items": []},
+        }
+
+    def fake_gate(baseline_report, candidate_report, output_file=None, **kwargs):
+        if output_file is not None:
+            Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+            Path(output_file).write_text("{}", encoding="utf-8")
+        return {
+            "passed": True,
+            "candidate": {
+                "param_count": 10,
+                "perplexity_mean": 100.0,
+                "choice_accuracy": 0.5,
+                "generation_health_rate": 1.0,
+                "behavior_pass_rate": 0.8,
+            },
+        }
+
+    def fake_reconstruct(**kwargs):
+        captured.update(kwargs)
+        Path(kwargs["output_dir"]).mkdir(parents=True, exist_ok=True)
+        return {"operation": "fake_reconstruct"}
+
+    monkeypatch.setattr(hf_xfamily, "evaluate_text_model", fake_eval)
+    monkeypatch.setattr(hf_xfamily, "gate_text_report", fake_gate)
+    monkeypatch.setattr(hf_recovery, "reconstruct_cross_tokenizer_causal_lm", fake_reconstruct)
+
+    summary = hf_xfamily.chain_anchor_staged_compress(
+        "donor",
+        "anchor",
+        tmp_path,
+        stages="reconstruct",
+        calibration_texts=["sample"],
+        eval_suite="suite.json",
+        reconstruct_ridge=0.04,
+        reconstruct_alpha=0.7,
+        reconstruct_target="all",
+        reconstruct_donor_layer_fold_mode="fold",
+        reconstruct_objective="cosine",
+        reconstruct_cosine_steps=8,
+        reconstruct_cosine_lr=0.025,
+        reconstruct_cosine_l2=0.002,
+        reconstruct_max_length=88,
+        reconstruct_max_tokens_per_layer=55,
+        reconstruct_max_anchors=444,
+        reconstruct_hidden_projection_scope="layer-input-gated",
+        reconstruct_layer_limit=3,
+        reconstruct_fit_gate="validation",
+        reconstruct_fit_gate_validation_fraction=0.2,
+        reconstruct_fit_gate_min_validation_rows=5,
+        reconstruct_fit_gate_min_relative_improvement=0.01,
+        reconstruct_fit_gate_max_cosine_drop=0.03,
+        reconstruct_fit_gate_min_fitted_cosine=0.07,
+        reconstruct_layer_gate_metric="behavior",
+        reconstruct_layer_gate_max_ppl_ratio=1.01,
+        reconstruct_layer_gate_max_texts=2,
+        reconstruct_layer_gate_max_behavior_drop=0.17,
+        reconstruct_layer_gate_behavior_max_new_tokens=33,
+        reconstruct_layer_gate_max_generation_prompts=44,
+        torch_dtype="float16",
+        candidate_torch_dtype="float32",
+        device="cpu",
+    )
+
+    assert summary["stage_records"][0]["stage"] == "reconstruct"
+    assert captured["source_model"] == "donor"
+    assert captured["candidate_model"] == "anchor"
+    assert captured["output_dir"] == tmp_path / "models" / "01_reconstruct"
+    assert captured["ridge"] == 0.04
+    assert captured["reconstruction_alpha"] == 0.7
+    assert captured["reconstruction_target"] == "all"
+    assert captured["donor_layer_fold_mode"] == "fold"
+    assert captured["reconstruction_objective"] == "cosine"
+    assert captured["cosine_steps"] == 8
+    assert captured["cosine_lr"] == 0.025
+    assert captured["cosine_l2"] == 0.002
+    assert captured["max_length"] == 88
+    assert captured["max_tokens_per_layer"] == 55
+    assert captured["max_anchors"] == 444
+    assert captured["hidden_projection_scope"] == "layer-input-gated"
+    assert captured["layer_limit"] == 3
+    assert captured["fit_gate"] == "validation"
+    assert captured["fit_gate_validation_fraction"] == 0.2
+    assert captured["fit_gate_min_validation_rows"] == 5
+    assert captured["fit_gate_min_relative_improvement"] == 0.01
+    assert captured["fit_gate_max_cosine_drop"] == 0.03
+    assert captured["fit_gate_min_fitted_cosine"] == 0.07
+    assert captured["layer_gate_metric"] == "behavior"
+    assert captured["layer_gate_max_ppl_ratio"] == 1.01
+    assert captured["layer_gate_max_texts"] == 2
+    assert captured["layer_gate_max_behavior_drop"] == 0.17
+    assert captured["layer_gate_behavior_max_new_tokens"] == 33
+    assert captured["layer_gate_eval_suite"] == "suite.json"
+    assert captured["layer_gate_max_generation_prompts"] == 44
+    assert captured["calibration_texts"] == ["sample"]
+
+
 def test_chain_anchor_init_stage_forwards_activation_fit_flags(monkeypatch, tmp_path) -> None:
     import neural_forge.hf_xfamily as hf_xfamily
 
@@ -11391,6 +11504,77 @@ def test_chain_anchor_final_tie_export_records_exact_size_candidate(monkeypatch,
     assert summary["final_metrics"]["param_count"] == 10
     assert summary["final_output_head_record"]["operation_report"]["removed_param_count"] == 20
     assert summary["final_output_head_record"]["input_tag"] == "01_init"
+
+
+def test_chain_anchor_final_tie_export_keeps_incumbent_when_gate_fails(monkeypatch, tmp_path) -> None:
+    import neural_forge.hf_tools as hf_tools
+    import neural_forge.hf_xfamily as hf_xfamily
+
+    def fake_eval(model_id_or_path, output_file, **kwargs):
+        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_file).write_text("{}", encoding="utf-8")
+        name = Path(str(model_id_or_path)).name
+        param_count = 10 if name == "final_tied" else 30
+        behavior = 0.1 if name == "final_tied" else 0.8
+        return {
+            "model": str(model_id_or_path),
+            "param_count": param_count,
+            "perplexity": {"mean": 999.0 if name == "final_tied" else 100.0},
+            "choice_accuracy": {"accuracy": 0.1 if name == "final_tied" else 0.5},
+            "generations": [],
+            "behavior_suite": {"pass_rate": behavior, "correct": int(behavior * 10), "total": 10, "items": []},
+        }
+
+    def fake_gate(baseline_report, candidate_report, output_file=None, **kwargs):
+        passed = Path(str(candidate_report["model"])).name != "final_tied"
+        if output_file is not None:
+            Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+            Path(output_file).write_text("{}", encoding="utf-8")
+        return {
+            "passed": passed,
+            "candidate": {
+                "param_count": int(candidate_report["param_count"]),
+                "perplexity_mean": float(candidate_report["perplexity"]["mean"]),
+                "choice_accuracy": float(candidate_report["choice_accuracy"]["accuracy"]),
+                "generation_health_rate": 1.0,
+                "behavior_pass_rate": float(candidate_report["behavior_suite"]["pass_rate"]),
+            },
+        }
+
+    def fake_init(**kwargs):
+        Path(kwargs["output_dir"]).mkdir(parents=True, exist_ok=True)
+        return {"operation": "fake_init"}
+
+    def fake_tie(model_id_or_path, output_dir, **kwargs):
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        return {
+            "operation": "tie_output_head_checkpoint",
+            "before_param_count": 30,
+            "after_param_count": 10,
+            "removed_param_count": 20,
+            "tied": True,
+        }
+
+    monkeypatch.setattr(hf_xfamily, "evaluate_text_model", fake_eval)
+    monkeypatch.setattr(hf_xfamily, "gate_text_report", fake_gate)
+    monkeypatch.setattr(hf_xfamily, "donor_projected_init", fake_init)
+    monkeypatch.setattr(hf_tools, "tie_output_head_checkpoint", fake_tie)
+
+    summary = hf_xfamily.chain_anchor_staged_compress(
+        "donor",
+        "anchor",
+        tmp_path,
+        stages="init",
+        promote_policy="always",
+        final_output_head_policy="tie",
+        device="cpu",
+    )
+
+    assert summary["final_tag"] == "01_init"
+    assert summary["final_model_dir"] == str(tmp_path / "models" / "01_init")
+    assert summary["final_output_head_record"]["tag"] == "final_tied"
+    assert summary["final_output_head_record"]["passed"] is False
+    assert summary["final_output_head_record"]["promoted"] is False
 
 
 def test_block_hidden_loss_accepts_source_group_weights_alias() -> None:
@@ -11926,6 +12110,114 @@ def test_hf_xfamily_chain_anchor_handler_passes_flags(monkeypatch) -> None:
     assert captured["torch_dtype"] == "bfloat16"
     assert captured["candidate_torch_dtype"] == "float32"
     assert captured["device"] == "cpu"
+
+
+def test_hf_xfamily_chain_anchor_handler_passes_reconstruct_flags(monkeypatch) -> None:
+    import neural_forge.cli as cli
+    import neural_forge.hf_xfamily as hf_xfamily
+
+    captured = {}
+
+    def fake_chain(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(hf_xfamily, "chain_anchor_staged_compress", fake_chain)
+    monkeypatch.setattr(cli, "_load_recovery_calibration_texts", lambda path, max_texts: ["chain text"])
+    args = build_parser().parse_args(
+        [
+            "hf-xfamily-chain-anchor-compress",
+            "donor",
+            "anchor",
+            "out",
+            "--stages",
+            "init,reconstruct",
+            "--reconstruct-ridge",
+            "0.04",
+            "--reconstruct-alpha",
+            "0.7",
+            "--reconstruct-target",
+            "all",
+            "--reconstruct-donor-layer-fold-mode",
+            "fold",
+            "--reconstruct-objective",
+            "cosine",
+            "--reconstruct-cosine-steps",
+            "8",
+            "--reconstruct-cosine-lr",
+            "0.025",
+            "--reconstruct-cosine-l2",
+            "0.002",
+            "--reconstruct-max-length",
+            "88",
+            "--reconstruct-max-tokens-per-layer",
+            "55",
+            "--reconstruct-max-anchors",
+            "444",
+            "--reconstruct-hidden-projection-scope",
+            "layer-input-gated",
+            "--reconstruct-layer-limit",
+            "3",
+            "--reconstruct-fit-gate",
+            "validation",
+            "--reconstruct-fit-gate-validation-fraction",
+            "0.2",
+            "--reconstruct-fit-gate-min-validation-rows",
+            "5",
+            "--reconstruct-fit-gate-min-relative-improvement",
+            "0.01",
+            "--reconstruct-fit-gate-max-cosine-drop",
+            "0.03",
+            "--reconstruct-fit-gate-min-fitted-cosine",
+            "0.07",
+            "--reconstruct-layer-gate-metric",
+            "behavior",
+            "--reconstruct-layer-gate-max-ppl-ratio",
+            "1.01",
+            "--reconstruct-layer-gate-max-texts",
+            "2",
+            "--reconstruct-layer-gate-max-behavior-drop",
+            "0.17",
+            "--reconstruct-layer-gate-behavior-max-new-tokens",
+            "33",
+            "--reconstruct-layer-gate-max-generation-prompts",
+            "44",
+            "--calibration-file",
+            "calib.jsonl",
+            "--max-calibration-texts",
+            "5",
+        ]
+    )
+    result = args.func(args)
+
+    assert result == {"ok": True}
+    assert captured["stages"] == "init,reconstruct"
+    assert captured["calibration_texts"] == ["chain text"]
+    assert captured["reconstruct_ridge"] == 0.04
+    assert captured["reconstruct_alpha"] == 0.7
+    assert captured["reconstruct_target"] == "all"
+    assert captured["reconstruct_donor_layer_fold_mode"] == "fold"
+    assert captured["reconstruct_objective"] == "cosine"
+    assert captured["reconstruct_cosine_steps"] == 8
+    assert captured["reconstruct_cosine_lr"] == 0.025
+    assert captured["reconstruct_cosine_l2"] == 0.002
+    assert captured["reconstruct_max_length"] == 88
+    assert captured["reconstruct_max_tokens_per_layer"] == 55
+    assert captured["reconstruct_max_anchors"] == 444
+    assert captured["reconstruct_hidden_projection_scope"] == "layer-input-gated"
+    assert captured["reconstruct_layer_limit"] == 3
+    assert captured["reconstruct_fit_gate"] == "validation"
+    assert captured["reconstruct_fit_gate_validation_fraction"] == 0.2
+    assert captured["reconstruct_fit_gate_min_validation_rows"] == 5
+    assert captured["reconstruct_fit_gate_min_relative_improvement"] == 0.01
+    assert captured["reconstruct_fit_gate_max_cosine_drop"] == 0.03
+    assert captured["reconstruct_fit_gate_min_fitted_cosine"] == 0.07
+    assert captured["reconstruct_layer_gate_metric"] == "behavior"
+    assert captured["reconstruct_layer_gate_max_ppl_ratio"] == 1.01
+    assert captured["reconstruct_layer_gate_max_texts"] == 2
+    assert captured["reconstruct_layer_gate_max_behavior_drop"] == 0.17
+    assert captured["reconstruct_layer_gate_behavior_max_new_tokens"] == 33
+    assert captured["reconstruct_layer_gate_max_generation_prompts"] == 44
 
 
 def test_xfamily_mlp_merge_handler_passes_activation_flags(monkeypatch) -> None:

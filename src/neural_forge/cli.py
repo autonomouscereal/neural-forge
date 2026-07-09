@@ -1606,7 +1606,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="primary",
         help="Use only the first donor for recovery, or recover sequentially against every comma-separated donor.",
     )
-    xfamily_chain.add_argument("--stages", default="block,alm", help="Comma-separated stage list: init,block,alm.")
+    xfamily_chain.add_argument(
+        "--stages",
+        default="block,alm",
+        help="Comma-separated stage list: init,reconstruct,block,alm.",
+    )
     xfamily_chain.add_argument("--eval-suite")
     xfamily_chain.add_argument("--max-text-evals", type=int)
     xfamily_chain.add_argument("--max-choice-probes", type=int)
@@ -1753,6 +1757,54 @@ def build_parser() -> argparse.ArgumentParser:
         help="Untie the target lm_head during donor-projected init so output rows can be folded separately from input embeddings.",
     )
     xfamily_chain.add_argument("--init-activation-max-length", type=int, default=128)
+    xfamily_chain.add_argument("--reconstruct-ridge", type=float, default=1e-3)
+    xfamily_chain.add_argument("--reconstruct-alpha", type=float, default=1.0)
+    xfamily_chain.add_argument(
+        "--reconstruct-target",
+        choices=[
+            "consumer-input",
+            "block-interface",
+            "attention",
+            "attention-output",
+            "attention-all",
+            "mlp",
+            "mlp-output",
+            "mlp-all",
+            "both",
+            "all",
+        ],
+        default="both",
+    )
+    xfamily_chain.add_argument(
+        "--reconstruct-donor-layer-fold-mode",
+        choices=["representative", "average", "fold"],
+        default="representative",
+    )
+    xfamily_chain.add_argument("--reconstruct-objective", choices=["ridge", "cosine"], default="ridge")
+    xfamily_chain.add_argument("--reconstruct-cosine-steps", type=int, default=80)
+    xfamily_chain.add_argument("--reconstruct-cosine-lr", type=float, default=1e-2)
+    xfamily_chain.add_argument("--reconstruct-cosine-l2", type=float, default=1e-4)
+    xfamily_chain.add_argument("--reconstruct-max-length", type=int, default=128)
+    xfamily_chain.add_argument("--reconstruct-max-tokens-per-layer", type=int, default=512)
+    xfamily_chain.add_argument("--reconstruct-max-anchors", type=int, default=2048)
+    xfamily_chain.add_argument(
+        "--reconstruct-hidden-projection-scope",
+        choices=["global", "layer-input", "layer-input-gated"],
+        default="global",
+    )
+    xfamily_chain.add_argument("--reconstruct-layer-limit", type=int)
+    xfamily_chain.add_argument("--reconstruct-fit-gate", choices=["none", "validation"], default="none")
+    xfamily_chain.add_argument("--reconstruct-fit-gate-validation-fraction", type=float, default=0.25)
+    xfamily_chain.add_argument("--reconstruct-fit-gate-min-validation-rows", type=int, default=32)
+    xfamily_chain.add_argument("--reconstruct-fit-gate-min-relative-improvement", type=float, default=0.0)
+    xfamily_chain.add_argument("--reconstruct-fit-gate-max-cosine-drop", type=float, default=0.01)
+    xfamily_chain.add_argument("--reconstruct-fit-gate-min-fitted-cosine", type=float, default=-1.0)
+    xfamily_chain.add_argument("--reconstruct-layer-gate-metric", choices=["none", "ppl", "behavior"], default="none")
+    xfamily_chain.add_argument("--reconstruct-layer-gate-max-ppl-ratio", type=float, default=1.02)
+    xfamily_chain.add_argument("--reconstruct-layer-gate-max-texts", type=int, default=4)
+    xfamily_chain.add_argument("--reconstruct-layer-gate-max-behavior-drop", type=float, default=0.0)
+    xfamily_chain.add_argument("--reconstruct-layer-gate-behavior-max-new-tokens", type=int, default=96)
+    xfamily_chain.add_argument("--reconstruct-layer-gate-max-generation-prompts", type=int)
     xfamily_chain.add_argument("--block-steps-per-layer", type=int, default=4)
     xfamily_chain.add_argument("--block-batch-size", type=int, default=1)
     xfamily_chain.add_argument("--block-max-length", type=int, default=112)
@@ -3193,6 +3245,31 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         init_activation_domain_balance=args.init_activation_domain_balance,
         init_untie_output_head=args.init_untie_output_head,
         init_activation_max_length=args.init_activation_max_length,
+        reconstruct_ridge=args.reconstruct_ridge,
+        reconstruct_alpha=args.reconstruct_alpha,
+        reconstruct_target=args.reconstruct_target,
+        reconstruct_donor_layer_fold_mode=args.reconstruct_donor_layer_fold_mode,
+        reconstruct_objective=args.reconstruct_objective,
+        reconstruct_cosine_steps=args.reconstruct_cosine_steps,
+        reconstruct_cosine_lr=args.reconstruct_cosine_lr,
+        reconstruct_cosine_l2=args.reconstruct_cosine_l2,
+        reconstruct_max_length=args.reconstruct_max_length,
+        reconstruct_max_tokens_per_layer=args.reconstruct_max_tokens_per_layer,
+        reconstruct_max_anchors=args.reconstruct_max_anchors,
+        reconstruct_hidden_projection_scope=args.reconstruct_hidden_projection_scope,
+        reconstruct_layer_limit=args.reconstruct_layer_limit,
+        reconstruct_fit_gate=args.reconstruct_fit_gate,
+        reconstruct_fit_gate_validation_fraction=args.reconstruct_fit_gate_validation_fraction,
+        reconstruct_fit_gate_min_validation_rows=args.reconstruct_fit_gate_min_validation_rows,
+        reconstruct_fit_gate_min_relative_improvement=args.reconstruct_fit_gate_min_relative_improvement,
+        reconstruct_fit_gate_max_cosine_drop=args.reconstruct_fit_gate_max_cosine_drop,
+        reconstruct_fit_gate_min_fitted_cosine=args.reconstruct_fit_gate_min_fitted_cosine,
+        reconstruct_layer_gate_metric=args.reconstruct_layer_gate_metric,
+        reconstruct_layer_gate_max_ppl_ratio=args.reconstruct_layer_gate_max_ppl_ratio,
+        reconstruct_layer_gate_max_texts=args.reconstruct_layer_gate_max_texts,
+        reconstruct_layer_gate_max_behavior_drop=args.reconstruct_layer_gate_max_behavior_drop,
+        reconstruct_layer_gate_behavior_max_new_tokens=args.reconstruct_layer_gate_behavior_max_new_tokens,
+        reconstruct_layer_gate_max_generation_prompts=args.reconstruct_layer_gate_max_generation_prompts,
         block_steps_per_layer=args.block_steps_per_layer,
         block_batch_size=args.block_batch_size,
         block_max_length=args.block_max_length,
