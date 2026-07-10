@@ -102,20 +102,17 @@ def cross_family_vocab_merge(
     host = transformers.AutoModelForCausalLM.from_pretrained(
         host_model,
         torch_dtype=dtype,
-        device_map="cpu",
         trust_remote_code=trust_remote_code,
     )
     donor = transformers.AutoModelForCausalLM.from_pretrained(
         donor_model,
         torch_dtype=dtype,
-        device_map="cpu",
         trust_remote_code=trust_remote_code,
     )
     _surgery_progress(
-        "donor_projected_init_models_loaded",
+        "cross_family_vocab_merge_models_loaded",
+        host_model=host_model,
         donor_model=donor_model,
-        target_config_model=target_config_model,
-        target_base_model=target_base_model or "",
     )
     host_tokenizer = transformers.AutoTokenizer.from_pretrained(host_model, trust_remote_code=trust_remote_code)
     donor_tokenizer = transformers.AutoTokenizer.from_pretrained(donor_model, trust_remote_code=trust_remote_code)
