@@ -14,6 +14,7 @@ GPU_UUID="${GPU_UUID:-GPU-2ce6a95c-7b1f-644a-3808-d781732a0582}"
 DEVICE="${DEVICE:-cuda:0}"
 DTYPE="${DTYPE:-float16}"
 MEM_THRESHOLD="${MEM_THRESHOLD:-2000}"
+BUSY_PROCESS_MIN_MEMORY_MB="${BUSY_PROCESS_MIN_MEMORY_MB:-$MEM_THRESHOLD}"
 POLL_SECONDS="${POLL_SECONDS:-300}"
 MIN_CUDA_COMPUTE_CAPABILITY="${MIN_CUDA_COMPUTE_CAPABILITY:-7.0}"
 MAX_BEHAVIOR_PROBES="${MAX_BEHAVIOR_PROBES:-1000}"
@@ -142,8 +143,8 @@ wait_for_gpu() {
   while true; do
     used=$(nvidia-smi -i "$GPU_UUID" --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | tr -dc '0-9' || echo 999999)
     busy=$(
-      nvidia-smi --query-compute-apps=pid,gpu_uuid,process_name --format=csv,noheader 2>/dev/null |
-        awk -F, -v gpu="$GPU_UUID" -v ignore="${IGNORE_GPU_PIDS:-}" '
+      nvidia-smi --query-compute-apps=pid,gpu_uuid,process_name,used_memory --format=csv,noheader 2>/dev/null |
+        awk -F, -v gpu="$GPU_UUID" -v ignore="${IGNORE_GPU_PIDS:-}" -v min_mb="$BUSY_PROCESS_MIN_MEMORY_MB" '
           BEGIN {
             split(ignore, ignored, /[ ,]+/)
             for (idx in ignored) {
@@ -155,7 +156,9 @@ wait_for_gpu() {
           {
             pid = $1
             gsub(/^[[:space:]]+|[[:space:]]+$/, "", pid)
-            if ($2 ~ gpu && $3 ~ /python/ && !(pid in ignored_pid)) {
+            memory_mb = $4
+            gsub(/[^0-9]/, "", memory_mb)
+            if ($2 ~ gpu && $3 ~ /python/ && memory_mb + 0 >= min_mb && !(pid in ignored_pid)) {
               print pid
             }
           }' |
@@ -164,7 +167,7 @@ wait_for_gpu() {
     if [[ -n "$used" && "$used" -le "$MEM_THRESHOLD" && "$busy" = "0" ]]; then
       break
     fi
-    echo "$(date -Is) waiting_for_gpu_uuid=$GPU_UUID memory_used_mb=${used:-unknown} busy_python=$busy threshold_mb=$MEM_THRESHOLD"
+    echo "$(date -Is) waiting_for_gpu_uuid=$GPU_UUID memory_used_mb=${used:-unknown} busy_python=$busy threshold_mb=$MEM_THRESHOLD busy_process_min_memory_mb=$BUSY_PROCESS_MIN_MEMORY_MB"
     sleep "$POLL_SECONDS"
   done
 }

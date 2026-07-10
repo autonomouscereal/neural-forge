@@ -313,3 +313,13 @@ def test_path_conjugate_runner_exposes_oblique_basis_controls() -> None:
     assert "--activation-fit-factor-steps 0" in script
     assert "--activation-fit-method ridge" in script
     assert 'UNTIE_ARGS+=(--untie-output-head)' in script
+
+
+def test_eval_queues_ignore_tiny_resident_python_gpu_processes() -> None:
+    for name in ("queue_hf_eval_model.sh", "queue_eval_retention_compare.sh"):
+        script = (REPO_ROOT / "experiments" / name).read_text(encoding="utf-8")
+
+        assert 'BUSY_PROCESS_MIN_MEMORY_MB="${BUSY_PROCESS_MIN_MEMORY_MB:-$MEM_THRESHOLD}"' in script
+        assert "--query-compute-apps=pid,gpu_uuid,process_name,used_memory" in script
+        assert 'gsub(/[^0-9]/, "", memory_mb)' in script
+        assert "memory_mb + 0 >= min_mb" in script
