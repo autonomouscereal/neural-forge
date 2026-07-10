@@ -296,7 +296,9 @@ def _target_special_token_ids(tokenizer: Any, vocab_size: int) -> dict[str, Any]
             )
         token = tokenizer.convert_ids_to_tokens(eos_id)
         if token is None:
-            raise BlankCheckpointError("The target fallback EOS token cannot be resolved.")
+            raise BlankCheckpointError(
+                "The target fallback EOS token cannot be resolved."
+            )
         tokenizer.pad_token = token
         if tokenizer.pad_token_id != eos_id:
             raise BlankCheckpointError(
@@ -677,6 +679,7 @@ def bootstrap_blank_decoder_checkpoint(
         "sparse_fold",
         "joint_sparse_fold",
         "pca",
+        "dual_orthonormal",
     ] = "sparse_fold",
     ridge: float = 1e-5,
     max_operator_delta_ratio: float = 4.0,
@@ -688,6 +691,11 @@ def bootstrap_blank_decoder_checkpoint(
     max_coordinate_rows: int = 4096,
     vocab_projection_chunk_size: int = 2048,
     vocab_row_norm_repair: Literal["none", "source_l2"] = "none",
+    dual_alpha: float = 1.0,
+    dual_beta: float = 1.0,
+    dual_gamma: float = 1.0,
+    dual_margin_topk: int = 5,
+    dual_oracle_vocab_rows: int = 4096,
 ) -> dict[str, Any]:
     """Bootstrap and atomically publish one config-created decoder checkpoint."""
 
@@ -920,6 +928,11 @@ def bootstrap_blank_decoder_checkpoint(
         max_coordinate_rows=max_coordinate_rows,
         vocab_projection_chunk_size=vocab_projection_chunk_size,
         vocab_row_norm_repair=vocab_row_norm_repair,
+        dual_alpha=dual_alpha,
+        dual_beta=dual_beta,
+        dual_gamma=dual_gamma,
+        dual_margin_topk=dual_margin_topk,
+        dual_oracle_vocab_rows=dual_oracle_vocab_rows,
     )
     source_fingerprint_after = _state_dict_sha256(torch, source)
     if source_fingerprint_after != source_fingerprint_before:
@@ -1017,12 +1030,8 @@ def bootstrap_blank_decoder_checkpoint(
             },
             "raw_prompt_contract": {
                 "same_ordered_prompts": True,
-                "calibration_prompt_sha256": donor_calibration_report[
-                    "prompt_sha256"
-                ],
-                "validation_prompt_sha256": donor_validation_report[
-                    "prompt_sha256"
-                ],
+                "calibration_prompt_sha256": donor_calibration_report["prompt_sha256"],
+                "validation_prompt_sha256": donor_validation_report["prompt_sha256"],
                 "independently_tokenized": cross_tokenizer_mode,
                 "unequal_sequence_lengths_allowed": trace_pooling
                 in {"mean", "last_valid"},
@@ -1056,6 +1065,11 @@ def bootstrap_blank_decoder_checkpoint(
                 "max_coordinate_rows": max_coordinate_rows,
                 "vocab_projection_chunk_size": vocab_projection_chunk_size,
                 "vocab_row_norm_repair": vocab_row_norm_repair,
+                "dual_alpha": dual_alpha,
+                "dual_beta": dual_beta,
+                "dual_gamma": dual_gamma,
+                "dual_margin_topk": dual_margin_topk,
+                "dual_oracle_vocab_rows": dual_oracle_vocab_rows,
             },
         },
         "execution": {
@@ -1167,9 +1181,7 @@ def bootstrap_blank_decoder_checkpoint(
                 ],
             },
             "validation_retokenization_hashes_after_reload": {
-                "input_ids_sha256": reloaded_validation_report[
-                    "input_ids_sha256"
-                ],
+                "input_ids_sha256": reloaded_validation_report["input_ids_sha256"],
                 "attention_mask_sha256": reloaded_validation_report[
                     "attention_mask_sha256"
                 ],

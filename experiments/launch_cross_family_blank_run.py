@@ -197,6 +197,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         max_coordinate_rows=args.max_coordinate_rows,
         vocab_projection_chunk_size=args.vocab_projection_chunk_size,
         vocab_row_norm_repair=args.vocab_row_norm_repair,
+        dual_alpha=args.dual_alpha,
+        dual_beta=args.dual_beta,
+        dual_gamma=args.dual_gamma,
+        dual_margin_topk=args.dual_margin_topk,
+        dual_oracle_vocab_rows=args.dual_oracle_vocab_rows,
     )
     _progress(
         "cross_family_blank_fold_done",
@@ -298,12 +303,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dtype", choices=["float16", "bfloat16", "float32"], default="float16"
     )
-    parser.add_argument(
-        "--donor-dtype", choices=["float16", "bfloat16", "float32"]
-    )
-    parser.add_argument(
-        "--target-dtype", choices=["float16", "bfloat16", "float32"]
-    )
+    parser.add_argument("--donor-dtype", choices=["float16", "bfloat16", "float32"])
+    parser.add_argument("--target-dtype", choices=["float16", "bfloat16", "float32"])
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--trust-remote-code", action="store_true")
     parser.add_argument("--local-files-only", action="store_true")
@@ -314,7 +315,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--residual-map-method",
-        choices=["sparse_fold", "joint_sparse_fold", "pca"],
+        choices=[
+            "sparse_fold",
+            "joint_sparse_fold",
+            "pca",
+            "dual_orthonormal",
+        ],
         default="sparse_fold",
     )
     parser.add_argument("--ridge", type=float, default=1e-5)
@@ -331,6 +337,11 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["none", "source_l2"],
         default="none",
     )
+    parser.add_argument("--dual-alpha", type=float, default=1.0)
+    parser.add_argument("--dual-beta", type=float, default=1.0)
+    parser.add_argument("--dual-gamma", type=float, default=1.0)
+    parser.add_argument("--dual-margin-topk", type=int, default=5)
+    parser.add_argument("--dual-oracle-vocab-rows", type=int, default=4096)
     parser.add_argument("--max-new-tokens", type=int, default=96)
     parser.add_argument("--max-text-evals", type=int, default=1000)
     parser.add_argument("--max-choice-probes", type=int, default=250)

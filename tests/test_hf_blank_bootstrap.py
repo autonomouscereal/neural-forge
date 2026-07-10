@@ -522,6 +522,42 @@ def test_pca_bootstrap_transports_all_priors_and_composes_depth_spans() -> None:
     assert span["structural_prior_residual_consumers"] == "sum"
 
 
+def test_dual_orthonormal_bootstrap_reports_margin_oracle() -> None:
+    result = bootstrap_blank_decoder_models(
+        _qwen3_source(),
+        _qwen3_target(),
+        _batch(582, batch_size=16),
+        validation_inputs=_batch(583, batch_size=16),
+        residual_map_method="dual_orthonormal",
+        max_coordinate_rows=24,
+        dual_alpha=1.0,
+        dual_beta=1.0,
+        dual_gamma=2.0,
+        dual_margin_topk=3,
+        dual_oracle_vocab_rows=32,
+        fit_full_lm_head=False,
+    )
+
+    assert result.transaction.accepted is True, result.transaction.report["gate"]
+    report = result.fit_reports["residual.map"]
+    assert report["method"] == "dual-aware-orthonormal-residual-basis"
+    assert report["basis"]["covariance_weights"] == {
+        "alpha": 1.0,
+        "beta": 1.0,
+        "gamma": 2.0,
+    }
+    assert report["basis"]["orthonormality_max_abs_error"] < 1e-12
+    assert report["teacher_margins"]["topk"] == 3
+    assert report["teacher_margins"]["direction_rows"] > 0
+    oracle = report["heldout_oracle"]
+    assert oracle["kind"] == "dual-basis-no-model-oracle"
+    assert 0.0 <= oracle["top1_agreement"] <= 1.0
+    assert 0.0 <= oracle["teacher_margin_sign_retention"] <= 1.0
+    assert oracle["vocabulary_rows"] == 32
+    assert result.fit_reports["block.0.attention.structural_prior"]["applied"] is True
+    assert result.fit_reports["block.0.mlp.structural_prior"]["applied"] is True
+
+
 def test_blank_bootstrap_rejects_a_wider_target_before_mutation() -> None:
     source = _gpt2_source()
     target = _llama_target(hidden_size=16)

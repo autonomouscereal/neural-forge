@@ -19,6 +19,10 @@ from neural_forge.hf_closed_form_fit import (
     fit_ridge_linear,
     measure_fit,
 )
+from neural_forge.hf_dual_basis import (
+    build_dual_aware_residual_basis,
+    evaluate_dual_basis_oracle,
+)
 from neural_forge.hf_feature_fold import (
     FeatureFoldMap,
     build_feature_fold_map,
@@ -96,6 +100,7 @@ def bootstrap_blank_decoder_models(
         "sparse_fold",
         "joint_sparse_fold",
         "pca",
+        "dual_orthonormal",
     ] = "sparse_fold",
     ridge: float = 1e-5,
     max_operator_delta_ratio: float = 4.0,
@@ -107,6 +112,11 @@ def bootstrap_blank_decoder_models(
     max_coordinate_rows: int = 4096,
     vocab_projection_chunk_size: int = 2048,
     vocab_row_norm_repair: Literal["none", "source_l2"] = "none",
+    dual_alpha: float = 1.0,
+    dual_beta: float = 1.0,
+    dual_gamma: float = 1.0,
+    dual_margin_topk: int = 5,
+    dual_oracle_vocab_rows: int = 4096,
 ) -> BlankBootstrapResult:
     """Compile source behavior into a blank GPT-2/Llama target without gradients."""
 
@@ -130,9 +140,15 @@ def bootstrap_blank_decoder_models(
         raise BlankBootstrapError(
             "trace_pooling must be token_rows, mean, or last_valid."
         )
-    if residual_map_method not in {"sparse_fold", "joint_sparse_fold", "pca"}:
+    if residual_map_method not in {
+        "sparse_fold",
+        "joint_sparse_fold",
+        "pca",
+        "dual_orthonormal",
+    }:
         raise BlankBootstrapError(
-            "residual_map_method must be sparse_fold, joint_sparse_fold, or pca."
+            "residual_map_method must be sparse_fold, joint_sparse_fold, pca, "
+            "or dual_orthonormal."
         )
     if vocab_row_norm_repair not in {"none", "source_l2"}:
         raise BlankBootstrapError("vocab_row_norm_repair must be none or source_l2.")
@@ -161,9 +177,20 @@ def bootstrap_blank_decoder_models(
     for name, value in (
         ("max_coordinate_rows", max_coordinate_rows),
         ("vocab_projection_chunk_size", vocab_projection_chunk_size),
+        ("dual_margin_topk", dual_margin_topk),
+        ("dual_oracle_vocab_rows", dual_oracle_vocab_rows),
     ):
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
             raise BlankBootstrapError(f"{name} must be a positive integer.")
+    dual_weights = {
+        "alpha": _nonnegative_float(dual_alpha, "dual_alpha"),
+        "beta": _nonnegative_float(dual_beta, "dual_beta"),
+        "gamma": _nonnegative_float(dual_gamma, "dual_gamma"),
+    }
+    if sum(dual_weights.values()) == 0.0:
+        raise BlankBootstrapError(
+            "At least one dual residual covariance weight must be positive."
+        )
 
     source_layout = build_decoder_layout(source_model)
     target_layout = build_decoder_layout(target_model)
@@ -180,12 +207,20 @@ def bootstrap_blank_decoder_models(
         token_transport_profile,
     )
     joint_source_geometry = None
-    if residual_map_method == "joint_sparse_fold":
-        joint_source_geometry = _require_tied_source_vocabulary_geometry(
-            torch,
-            source_model,
-            source_layout,
-        )
+    dual_source_geometry = None
+    if residual_map_method in {"joint_sparse_fold", "dual_orthonormal"}:
+        if residual_map_method == "joint_sparse_fold":
+            joint_source_geometry = _require_tied_source_vocabulary_geometry(
+                torch,
+                source_model,
+                source_layout,
+            )
+        else:
+            dual_source_geometry = _require_dual_source_vocabulary_geometry(
+                torch,
+                source_model,
+                source_layout,
+            )
     donor_layer_spans = _contiguous_depth_spans(
         source_layout.layer_count,
         target_layout.layer_count,
@@ -262,6 +297,23 @@ def bootstrap_blank_decoder_models(
             target_layout.hidden_size,
             max_coordinate_rows,
             source_layout.layer_count,
+        )
+    elif residual_map_method == "dual_orthonormal":
+        assert dual_source_geometry is not None
+        residual_coordinates, residual_map_report = _build_dual_residual_map(
+            torch,
+            residual_rows,
+            dual_source_geometry,
+            source_calibration,
+            source_validation,
+            target_teacher_validation_logits,
+            token_transport_profile,
+            target_layout.embeddings.vocab_size,
+            target_layout.hidden_size,
+            max_coordinate_rows,
+            dual_margin_topk,
+            dual_oracle_vocab_rows,
+            dual_weights,
         )
     else:
         residual_coordinates = build_parent_residual_basis(
@@ -582,6 +634,60 @@ def _require_tied_source_vocabulary_geometry(
     }
 
 
+def _require_dual_source_vocabulary_geometry(
+    torch: Any,
+    source_model: Any,
+    source_layout: DecoderLayout,
+) -> tuple[Any, Any, dict[str, Any]]:
+    source_embedding = source_model.get_input_embeddings()
+    source_head = source_model.get_output_embeddings()
+    if source_embedding is None or source_head is None:
+        raise BlankBootstrapError(
+            "dual_orthonormal requires source embeddings and an LM head."
+        )
+    embedding_weight = getattr(source_embedding, "weight", None)
+    head_weight = getattr(source_head, "weight", None)
+    for name, weight in (
+        ("embedding", embedding_weight),
+        ("LM head", head_weight),
+    ):
+        if (
+            not isinstance(weight, torch.Tensor)
+            or weight.ndim != 2
+            or weight.layout != torch.strided
+            or weight.device.type == "meta"
+            or not torch.is_floating_point(weight)
+            or torch.is_complex(weight)
+        ):
+            raise BlankBootstrapError(
+                f"dual_orthonormal requires a dense real source {name} weight."
+            )
+    expected_shape = (
+        int(source_layout.embeddings.vocab_size),
+        int(source_layout.hidden_size),
+    )
+    if tuple(embedding_weight.shape) != expected_shape:
+        raise BlankBootstrapError(
+            "Source embedding shape does not match the decoder layout."
+        )
+    if tuple(head_weight.shape) != expected_shape:
+        raise BlankBootstrapError(
+            "Source LM-head shape does not match the decoder layout."
+        )
+    tied = _same_storage(embedding_weight, head_weight)
+    return (
+        embedding_weight,
+        head_weight,
+        {
+            "embedding_path": source_layout.embeddings.token_path,
+            "lm_head_path": source_layout.lm_head_path,
+            "embedding_shape": list(expected_shape),
+            "lm_head_shape": list(expected_shape),
+            "tied_by_storage": tied,
+        },
+    )
+
+
 def _build_joint_sparse_residual_map(
     torch: Any,
     residual_rows: Any,
@@ -672,6 +778,245 @@ def _build_joint_sparse_residual_map(
             "tied_source_embedding_lm_head": vocabulary_report,
         },
         "feature_fold": coordinates.report.as_dict(),
+    }
+
+
+def _build_dual_residual_map(
+    torch: Any,
+    residual_rows: Any,
+    source_geometry: tuple[Any, Any, dict[str, Any]],
+    source_calibration: FlattenedTransportTrace,
+    source_validation: FlattenedTransportTrace,
+    target_teacher_validation_logits: Any,
+    token_transport_profile: StrictTokenTransportProfile | None,
+    target_vocab_size: int,
+    target_width: int,
+    max_rows: int,
+    margin_topk: int,
+    oracle_vocab_rows: int,
+    covariance_weights: Mapping[str, float],
+) -> tuple[Any, dict[str, Any]]:
+    source_embedding_weight, source_head_weight, vocabulary_provenance = source_geometry
+    target_source_embedding = _transport_source_rows(
+        torch,
+        source_embedding_weight,
+        token_transport_profile,
+    )
+    target_source_head = _transport_source_rows(
+        torch,
+        source_head_weight,
+        token_transport_profile,
+    )
+    if int(target_source_embedding.shape[0]) != int(target_vocab_size) or int(
+        target_source_head.shape[0]
+    ) != int(target_vocab_size):
+        raise BlankBootstrapError(
+            "Dual residual vocabulary geometry does not match target vocabulary."
+        )
+    if oracle_vocab_rows < 2:
+        raise BlankBootstrapError("dual_oracle_vocab_rows must be at least two.")
+
+    tied_source = _same_storage(source_embedding_weight, source_head_weight)
+    if tied_source:
+        embedding_rows, embedding_sampling = _sample_vocabulary_geometry_rows(
+            torch,
+            target_source_embedding,
+            max_rows,
+        )
+        embedding_sampling = {
+            "tied_single_sample": True,
+            "embedding": embedding_sampling,
+            "lm_head": embedding_sampling,
+        }
+    else:
+        embedding_quota, head_quota = _row_quotas(
+            [target_vocab_size, target_vocab_size],
+            max_rows,
+        )
+        embedding_sample, embedding_sample_report = _sample_vocabulary_geometry_rows(
+            torch,
+            target_source_embedding,
+            embedding_quota,
+        )
+        head_sample, head_sample_report = _sample_vocabulary_geometry_rows(
+            torch,
+            target_source_head,
+            head_quota,
+        )
+        embedding_rows = torch.cat(
+            [embedding_sample, head_sample],
+            dim=0,
+        ).contiguous()
+        embedding_sampling = {
+            "tied_single_sample": False,
+            "embedding": embedding_sample_report,
+            "lm_head": head_sample_report,
+        }
+    calibration_logits = _project_teacher_logits_to_target(
+        torch,
+        source_calibration.logits,
+        token_transport_profile,
+        target_vocab_size,
+    )
+    effective_topk = min(int(margin_topk), int(target_vocab_size))
+    if effective_topk < 2:
+        raise BlankBootstrapError(
+            "Dual residual margin geometry needs at least two vocabulary rows."
+        )
+    calibration_row_limit = max(1, max_rows // (effective_topk - 1))
+    sampled_calibration_logits = (
+        _evenly_sample_rows(
+            torch,
+            calibration_logits,
+            calibration_row_limit,
+        )
+        .detach()
+        .to(device="cpu", dtype=torch.float64)
+    )
+    top_values, top_indices = torch.topk(
+        sampled_calibration_logits,
+        k=effective_topk,
+        dim=1,
+    )
+    winner_indices = top_indices[:, :1].expand(-1, effective_topk - 1)
+    competitor_indices = top_indices[:, 1:]
+    winner_rows = (
+        target_source_head.index_select(
+            0,
+            winner_indices.reshape(-1).to(device=target_source_head.device),
+        )
+        .detach()
+        .to(device="cpu", dtype=torch.float64)
+    )
+    competitor_rows = (
+        target_source_head.index_select(
+            0,
+            competitor_indices.reshape(-1).to(device=target_source_head.device),
+        )
+        .detach()
+        .to(device="cpu", dtype=torch.float64)
+    )
+    margin_directions = (winner_rows - competitor_rows).contiguous()
+    margin_weights = torch.exp(
+        (top_values[:, 1:] - top_values[:, :1]).reshape(-1)
+    ).clamp_min(torch.finfo(torch.float64).tiny)
+    if not bool(torch.isfinite(margin_directions).all()) or not bool(
+        torch.isfinite(margin_weights).all()
+    ):
+        raise BlankBootstrapError(
+            "Dual residual teacher-margin geometry contains NaN or infinity."
+        )
+
+    coordinates, basis_report = build_dual_aware_residual_basis(
+        residual_rows,
+        embedding_rows,
+        margin_directions,
+        target_width,
+        margin_weights=margin_weights,
+        alpha=covariance_weights["alpha"],
+        beta=covariance_weights["beta"],
+        gamma=covariance_weights["gamma"],
+        center_residual=False,
+    )
+
+    oracle_row_count = min(64, int(source_validation.final_norm_output.shape[0]))
+    oracle_hidden = _evenly_sample_rows(
+        torch,
+        source_validation.final_norm_output,
+        oracle_row_count,
+    )
+    oracle_teacher = (
+        _evenly_sample_rows(
+            torch,
+            target_teacher_validation_logits,
+            oracle_row_count,
+        )
+        .detach()
+        .to(device="cpu", dtype=torch.float64)
+    )
+    candidate_k = min(
+        16,
+        int(target_vocab_size),
+        max(2, oracle_vocab_rows // max(1, oracle_row_count)),
+    )
+    candidate_values = torch.topk(oracle_teacher, k=candidate_k, dim=1).indices
+    unique_candidates, candidate_counts = torch.unique(
+        candidate_values.reshape(-1),
+        sorted=True,
+        return_counts=True,
+    )
+    if int(unique_candidates.numel()) > oracle_vocab_rows:
+        ranked = sorted(
+            zip(
+                unique_candidates.tolist(),
+                candidate_counts.tolist(),
+                strict=True,
+            ),
+            key=lambda item: (-int(item[1]), int(item[0])),
+        )[:oracle_vocab_rows]
+        candidate_ids = {int(item[0]) for item in ranked}
+    else:
+        candidate_ids = {int(value) for value in unique_candidates.tolist()}
+    fill_count = min(int(target_vocab_size), int(oracle_vocab_rows))
+    if fill_count == 1:
+        fill_indices = [0]
+    else:
+        fill_indices = (
+            torch.linspace(0, target_vocab_size - 1, steps=fill_count)
+            .round()
+            .to(torch.long)
+            .tolist()
+        )
+    for value in fill_indices:
+        if len(candidate_ids) >= oracle_vocab_rows:
+            break
+        candidate_ids.add(int(value))
+    oracle_indices = torch.tensor(sorted(candidate_ids), dtype=torch.long)
+    oracle_vocab = (
+        target_source_head.index_select(
+            0,
+            oracle_indices.to(device=target_source_head.device),
+        )
+        .detach()
+        .to(device="cpu", dtype=torch.float64)
+    )
+    oracle_logits = oracle_teacher.index_select(1, oracle_indices)
+    oracle_report = evaluate_dual_basis_oracle(
+        coordinates,
+        oracle_hidden,
+        oracle_vocab,
+        oracle_logits,
+    )
+
+    return coordinates, {
+        "method": "dual-aware-orthonormal-residual-basis",
+        "basis": basis_report,
+        "vocabulary": {
+            "provenance": vocabulary_provenance,
+            "target_row_transport": (
+                "strict-index-select"
+                if token_transport_profile is not None
+                else "identity"
+            ),
+            "embedding_sampling": embedding_sampling,
+        },
+        "teacher_margins": {
+            "calibration_rows": int(sampled_calibration_logits.shape[0]),
+            "topk": effective_topk,
+            "direction_rows": int(margin_directions.shape[0]),
+            "weight_minimum": float(margin_weights.min()),
+            "weight_maximum": float(margin_weights.max()),
+            "weight_mean": float(margin_weights.mean()),
+            "weighting": "exp(competitor_logit-winner_logit)",
+        },
+        "heldout_oracle": {
+            **oracle_report,
+            "source": "cached-parent-final-norm-and-logits",
+            "row_count": oracle_row_count,
+            "vocabulary_scope": "teacher-top-candidates-plus-even-fill",
+            "vocabulary_rows": int(oracle_indices.numel()),
+            "full_target_vocabulary_rows": int(target_vocab_size),
+        },
     }
 
 
