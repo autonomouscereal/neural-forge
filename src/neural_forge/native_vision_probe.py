@@ -40,15 +40,12 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _font(size: int):
-    from PIL import ImageFont
-
-    for name in ("DejaVuSans-Bold.ttf", "arialbd.ttf"):
-        try:
-            return ImageFont.truetype(name, size=size)
-        except OSError:
-            continue
-    return ImageFont.load_default()
+def canonical_image_sha256(image: Any) -> str:
+    canonical = image.convert("RGB")
+    digest = hashlib.sha256()
+    digest.update(f"RGB:{canonical.width}x{canonical.height}\n".encode("ascii"))
+    digest.update(canonical.tobytes())
+    return digest.hexdigest()
 
 
 def _color_probe(index: int, rng: random.Random):
@@ -111,16 +108,41 @@ def _ocr_probe(index: int, rng: random.Random):
     code = f"{(index * 37 + 104 + rng.randrange(0, 7)) % 1000:03d}"
     image = Image.new("RGB", (64, 64), (255, 255, 255))
     draw = ImageDraw.Draw(image)
-    font = _font(30)
-    box = draw.textbbox((0, 0), code, font=font)
-    width = box[2] - box[0]
-    height = box[3] - box[1]
-    draw.text(
-        ((64 - width) // 2, (64 - height) // 2 - box[1]),
-        code,
-        font=font,
-        fill=(15, 15, 15),
-    )
+    segment_names = {
+        "0": "abcdef",
+        "1": "bc",
+        "2": "abdeg",
+        "3": "abcdg",
+        "4": "bcfg",
+        "5": "acdfg",
+        "6": "acdefg",
+        "7": "abc",
+        "8": "abcdefg",
+        "9": "abcdfg",
+    }
+    segments = {
+        "a": (3, 0, 10, 2),
+        "b": (11, 3, 13, 13),
+        "c": (11, 17, 13, 27),
+        "d": (3, 28, 10, 30),
+        "e": (0, 17, 2, 27),
+        "f": (0, 3, 2, 13),
+        "g": (3, 14, 10, 16),
+    }
+    for digit_index, digit in enumerate(code):
+        x_offset = 7 + digit_index * 18
+        y_offset = 16
+        for segment in segment_names[digit]:
+            left, top, right, bottom = segments[segment]
+            draw.rectangle(
+                (
+                    x_offset + left,
+                    y_offset + top,
+                    x_offset + right,
+                    y_offset + bottom,
+                ),
+                fill=(15, 15, 15),
+            )
     return image, "Read the three-digit code. Answer with only the digits.", code
 
 
@@ -166,13 +188,14 @@ def build_native_vision_probe(
                     prompt=prompt,
                     answer=answer,
                     split=split,
-                    image_sha256=_sha256(path),
+                    image_sha256=canonical_image_sha256(image),
                 )
             )
     payload = {
         "schema": PROBE_SCHEMA,
         "seed": seed,
         "image_format": "RGB uint8 64x64 PNG",
+        "image_hash_basis": "sha256('RGB:<width>x<height>\\n' + decoded RGB bytes)",
         "examples_per_category": examples_per_category,
         "heldout_per_category": heldout_per_category,
         "total": len(records),
@@ -182,9 +205,8 @@ def build_native_vision_probe(
         "records": [asdict(item) for item in records],
     }
     manifest = root / "manifest.json"
-    manifest.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    manifest.write_bytes(
+        (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
     )
     payload["manifest"] = str(manifest)
     payload["manifest_sha256"] = _sha256(manifest)
@@ -195,4 +217,5 @@ __all__ = [
     "PROBE_SCHEMA",
     "VisionProbeRecord",
     "build_native_vision_probe",
+    "canonical_image_sha256",
 ]

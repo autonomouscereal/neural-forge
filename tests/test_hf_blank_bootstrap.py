@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 
 torch = pytest.importorskip("torch")
 transformers = pytest.importorskip("transformers")
 
+import neural_forge.hf_blank_bootstrap as bootstrap_module  # noqa: E402
+from neural_forge.hf_arch_layout import NormLayout  # noqa: E402
 from neural_forge.hf_blank_bootstrap import (  # noqa: E402
     BlankBootstrapError,
     bootstrap_blank_decoder_models,
@@ -96,6 +100,32 @@ def _llama_target(*, hidden_size: int = 8):
             hidden_act="silu",
             attention_bias=False,
             mlp_bias=False,
+            bos_token_id=1,
+            eos_token_id=2,
+            pad_token_id=0,
+            tie_word_embeddings=False,
+        )
+    )
+
+
+def _qwen3_target(*, head_dim: int = 2):
+    if not hasattr(transformers, "Qwen3Config"):
+        pytest.skip("Transformers build has no Qwen3 support")
+    torch.manual_seed(353)
+    return transformers.Qwen3ForCausalLM(
+        transformers.Qwen3Config(
+            vocab_size=64,
+            hidden_size=8,
+            intermediate_size=12,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=head_dim,
+            max_position_embeddings=32,
+            hidden_act="silu",
+            attention_bias=False,
+            attention_dropout=0.0,
+            use_sliding_window=False,
             bos_token_id=1,
             eos_token_id=2,
             pad_token_id=0,
@@ -277,4 +307,186 @@ def test_blank_bootstrap_rejects_an_undersized_coordinate_sample() -> None:
             _llama_target(),
             _batch(),
             max_coordinate_rows=7,
+        )
+
+
+def test_qwen_target_transfers_head_norms_without_baking_them_twice(
+    monkeypatch,
+) -> None:
+    source = _qwen3_source()
+    target = _qwen3_target()
+    applied_head_norms = []
+    original_apply = bootstrap_module._apply_head_norm
+
+    def record_apply(*args, **kwargs):
+        applied_head_norms.append(args[3].path)
+        return original_apply(*args, **kwargs)
+
+    monkeypatch.setattr(bootstrap_module, "_apply_head_norm", record_apply)
+    result = bootstrap_blank_decoder_models(
+        source,
+        target,
+        _batch(601),
+        validation_inputs=_batch(602),
+        max_coordinate_rows=24,
+        vocab_projection_chunk_size=7,
+    )
+
+    assert applied_head_norms == []
+    assert result.transaction.accepted is True, result.transaction.report["gate"]
+    assert result.transaction.report["coverage"]["complete"] is True
+    manifest = build_decoder_transport_manifest(target)
+    assert result.transaction.report["coverage"]["evidenced_role_count"] == len(
+        manifest.plan.required_roles
+    )
+    for block_index, expected_layers in ((0, [0]), (1, [1, 2])):
+        for role in ("query_norm", "key_norm"):
+            report = result.fit_reports[f"block.{block_index}.attention.{role}"]
+            assert report["method"] == (
+                "deterministic-full-coverage-effective-rms-scale-mean"
+            )
+            assert report["source_layers"] == expected_layers
+            assert report["full_source_coverage"] is True
+            assert report["target_head_dim"] == 2
+            assert report["dimension_group_sizes"] == [[2, 2]] * len(
+                expected_layers
+            )
+
+
+class _HeadNormCarrier(torch.nn.Module):
+    def __init__(self, weights):
+        super().__init__()
+        self.norms = torch.nn.ModuleList()
+        for weight in weights:
+            module = torch.nn.Module()
+            module.weight = torch.nn.Parameter(torch.tensor(weight, dtype=torch.float32))
+            self.norms.append(module)
+        self.target_norm = torch.nn.Module()
+        self.target_norm.weight = torch.nn.Parameter(torch.zeros(2))
+
+
+def _head_norm_layout(path: str, *, weight_kind: str) -> NormLayout:
+    return NormLayout(
+        path=path,
+        kind="rms_norm",
+        placement="query_head",
+        epsilon=1e-6,
+        has_bias=False,
+        weight_kind=weight_kind,
+    )
+
+
+def test_head_norm_transfer_uses_effective_scales_span_mean_and_identity() -> None:
+    model = _HeadNormCarrier(
+        (
+            [0.0, 2.0, 4.0, 6.0],
+            [3.0, 5.0, 7.0, 9.0],
+        )
+    )
+    source_layout = SimpleNamespace(
+        blocks=(
+            SimpleNamespace(
+                attention=SimpleNamespace(
+                    query_norm=_head_norm_layout(
+                        "norms.0",
+                        weight_kind="unit_offset",
+                    ),
+                    head_dim=4,
+                )
+            ),
+            SimpleNamespace(
+                attention=SimpleNamespace(
+                    query_norm=_head_norm_layout(
+                        "norms.1",
+                        weight_kind="direct_scale",
+                    ),
+                    head_dim=4,
+                )
+            ),
+            SimpleNamespace(
+                attention=SimpleNamespace(query_norm=None, head_dim=4)
+            ),
+        )
+    )
+    target_norm = _head_norm_layout("target_norm", weight_kind="unit_offset")
+
+    report = bootstrap_module._transport_target_head_norm(
+        torch,
+        model,
+        model,
+        source_layout,
+        (0, 1, 2),
+        target_norm,
+        2,
+        role="query",
+    )
+
+    # Effective folds are [2, 6], [4, 8], and identity [1, 1].
+    expected_effective = torch.tensor([7.0 / 3.0, 5.0])
+    assert torch.allclose(model.target_norm.weight + 1.0, expected_effective)
+    assert report["source_layers"] == [0, 1, 2]
+    assert report["source_norm_paths"] == ["norms.0", "norms.1"]
+    assert report["identity_source_layers"] == [2]
+    assert report["dimension_group_sizes"] == [[2, 2], [2, 2], [2, 2]]
+    assert report["full_source_coverage"] is True
+
+
+def test_head_norm_baking_uses_unit_offset_effective_scale() -> None:
+    model = _HeadNormCarrier(([0.0, 1.0, 2.0, 3.0],))
+    layout = _head_norm_layout("norms.0", weight_kind="unit_offset")
+    rows = torch.tensor([[1.0, 2.0, 3.0, 4.0]])
+
+    actual = bootstrap_module._apply_head_norm(
+        torch,
+        rows,
+        model,
+        layout,
+        1,
+        4,
+    )
+
+    normalized = rows * torch.rsqrt(rows.square().mean(dim=-1, keepdim=True) + 1e-6)
+    expected = normalized * torch.tensor([1.0, 2.0, 3.0, 4.0])
+    assert torch.allclose(actual, expected.to(torch.float64))
+
+
+@pytest.mark.parametrize(
+    ("kind", "has_bias", "message"),
+    [
+        ("layer_norm", False, "Only per-head RMSNorm"),
+        ("rms_norm", True, "Biased per-head normalization"),
+    ],
+)
+def test_head_norm_transfer_fails_closed_for_unsupported_topology(
+    kind,
+    has_bias,
+    message,
+) -> None:
+    model = _HeadNormCarrier(([1.0, 1.0, 1.0, 1.0],))
+    source_layout = SimpleNamespace(
+        blocks=(
+            SimpleNamespace(
+                attention=SimpleNamespace(query_norm=None, head_dim=4)
+            ),
+        )
+    )
+    target_norm = NormLayout(
+        path="target_norm",
+        kind=kind,
+        placement="query_head",
+        epsilon=1e-6,
+        has_bias=has_bias,
+        weight_kind="direct_scale",
+    )
+
+    with pytest.raises(BlankBootstrapError, match=message):
+        bootstrap_module._transport_target_head_norm(
+            torch,
+            model,
+            model,
+            source_layout,
+            (0,),
+            target_norm,
+            2,
+            role="query",
         )

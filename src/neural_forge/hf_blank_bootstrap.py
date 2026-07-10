@@ -688,6 +688,25 @@ def _fit_target_block(
 
     current = current_trace()
     target_block = current.block
+    target_attention_layout = target_block_layout.attention
+    for role, target_norm in (
+        ("query", target_attention_layout.query_norm),
+        ("key", target_attention_layout.key_norm),
+    ):
+        if target_norm is None:
+            continue
+        reports[f"block.{target_index}.attention.{role}_norm"] = (
+            _transport_target_head_norm(
+                torch,
+                source_model,
+                target_model,
+                source_layout,
+                source_span,
+                target_norm,
+                target_attention_layout.head_dim,
+                role=role,
+            )
+        )
     source_q_rows, source_k_rows, source_v_rows = (
         _effective_source_attention_projection_rows(
             torch,
@@ -695,6 +714,7 @@ def _fit_target_block(
             source_layout,
             source_blocks,
             source_span,
+            target_attention_layout,
         )
     )
     context_rows = tuple(
@@ -1214,6 +1234,7 @@ def _effective_source_attention_projection_rows(
     source_layout: DecoderLayout,
     source_blocks: Sequence[DecoderBlockTrace],
     source_span: Sequence[int],
+    target_attention_layout: Any,
 ) -> tuple[tuple[Any, ...], tuple[Any, ...], tuple[Any, ...]]:
     query_rows = []
     key_rows = []
@@ -1222,7 +1243,10 @@ def _effective_source_attention_projection_rows(
         attention = source_layout.blocks[source_index].attention
         query = block.query_projection_output
         key = block.key_projection_output
-        if attention.query_norm is not None:
+        if (
+            target_attention_layout.query_norm is None
+            and attention.query_norm is not None
+        ):
             query = _apply_head_norm(
                 torch,
                 query,
@@ -1231,7 +1255,10 @@ def _effective_source_attention_projection_rows(
                 attention.query_heads,
                 attention.head_dim,
             )
-        if attention.key_norm is not None:
+        if (
+            target_attention_layout.key_norm is None
+            and attention.key_norm is not None
+        ):
             key = _apply_head_norm(
                 torch,
                 key,
@@ -1246,6 +1273,203 @@ def _effective_source_attention_projection_rows(
     return tuple(query_rows), tuple(key_rows), tuple(value_rows)
 
 
+def _transport_target_head_norm(
+    torch: Any,
+    source_model: Any,
+    target_model: Any,
+    source_layout: DecoderLayout,
+    source_span: Sequence[int],
+    target_norm: Any,
+    target_head_dim: int,
+    *,
+    role: Literal["query", "key"],
+) -> dict[str, Any]:
+    if not source_span:
+        raise BlankBootstrapError("A head-norm transfer needs a nonempty source span.")
+    _validate_head_norm_layout(target_norm, label="target")
+
+    folded_scales = []
+    source_norm_paths = []
+    identity_source_layers = []
+    dimension_group_sizes = []
+    for source_index in source_span:
+        source_attention = source_layout.blocks[source_index].attention
+        source_norm = getattr(source_attention, f"{role}_norm")
+        source_head_dim = int(source_attention.head_dim)
+        if source_norm is None:
+            effective_scale = torch.ones(source_head_dim, dtype=torch.float64)
+            identity_source_layers.append(int(source_index))
+        else:
+            effective_scale = _read_effective_head_norm_scale(
+                torch,
+                source_model,
+                source_norm,
+                source_head_dim,
+                label=f"source block {source_index} {role}",
+            )
+            source_norm_paths.append(source_norm.path)
+        folded, group_sizes = _fold_head_norm_scale(
+            torch,
+            effective_scale,
+            target_head_dim,
+        )
+        folded_scales.append(folded)
+        dimension_group_sizes.append(list(group_sizes))
+
+    transported = torch.stack(folded_scales, dim=0).mean(dim=0)
+    if not bool(torch.isfinite(transported).all()):
+        raise BlankBootstrapError("Head-norm scale transport produced non-finite values.")
+    _write_effective_head_norm_scale(
+        torch,
+        target_model,
+        target_norm,
+        transported,
+        target_head_dim,
+    )
+    return {
+        "method": "deterministic-full-coverage-effective-rms-scale-mean",
+        "role": role,
+        "source_layers": [int(index) for index in source_span],
+        "source_norm_paths": source_norm_paths,
+        "identity_source_layers": identity_source_layers,
+        "source_layer_count": len(source_span),
+        "source_norm_count": len(source_norm_paths),
+        "identity_source_count": len(identity_source_layers),
+        "target_head_dim": int(target_head_dim),
+        "dimension_group_sizes": dimension_group_sizes,
+        "source_layer_coverage_fraction": 1.0,
+        "full_source_coverage": True,
+        "target_weight_kind": target_norm.weight_kind,
+        "effective_scale_min": float(transported.min()),
+        "effective_scale_max": float(transported.max()),
+        "effective_scale_mean": float(transported.mean()),
+        "finite": True,
+    }
+
+
+def _fold_head_norm_scale(
+    torch: Any,
+    effective_scale: Any,
+    target_head_dim: int,
+) -> tuple[Any, tuple[int, ...]]:
+    values = effective_scale.detach().to(device="cpu", dtype=torch.float64)
+    if values.ndim != 1 or int(values.numel()) <= 0:
+        raise BlankBootstrapError("A per-head norm scale must be one-dimensional.")
+    if not bool(torch.isfinite(values).all()):
+        raise BlankBootstrapError("A per-head norm scale contains NaN or infinity.")
+    source_head_dim = int(values.numel())
+    if (
+        isinstance(target_head_dim, bool)
+        or not isinstance(target_head_dim, int)
+        or target_head_dim <= 0
+    ):
+        raise BlankBootstrapError("Target head dimension must be a positive integer.")
+    if source_head_dim < target_head_dim:
+        raise BlankBootstrapError(
+            "Head-norm expansion is outside the compression transfer operator."
+        )
+    if source_head_dim % 2 or target_head_dim % 2:
+        raise BlankBootstrapError(
+            "Per-head norm transfer requires even RoPE head dimensions."
+        )
+
+    source_half = source_head_dim // 2
+    target_half = target_head_dim // 2
+    assignment = torch.empty(source_head_dim, dtype=torch.long)
+    for source_channel in range(source_head_dim):
+        half = 0 if source_channel < source_half else 1
+        source_pair = source_channel % source_half
+        target_pair = min(
+            target_half - 1,
+            source_pair * target_half // source_half,
+        )
+        assignment[source_channel] = target_pair + half * target_half
+
+    counts = torch.bincount(assignment, minlength=target_head_dim)
+    if bool((counts <= 0).any()) or int(counts.sum()) != source_head_dim:
+        raise BlankBootstrapError(
+            "Head-norm dimension transfer did not cover every source channel."
+        )
+    folded = torch.zeros(target_head_dim, dtype=torch.float64)
+    folded.index_add_(0, assignment, values)
+    folded = folded / counts.to(torch.float64)
+    if not bool(torch.isfinite(folded).all()):
+        raise BlankBootstrapError("Head-norm dimension mean produced non-finite values.")
+    return folded.contiguous(), tuple(int(value) for value in counts.tolist())
+
+
+def _validate_head_norm_layout(layout: Any, *, label: str) -> None:
+    if layout.kind != "rms_norm":
+        raise BlankBootstrapError(
+            f"Only per-head RMSNorm is supported for {label} attention norms."
+        )
+    if layout.has_bias:
+        raise BlankBootstrapError(
+            f"Biased per-head normalization is unsupported for {label} attention norms."
+        )
+    if layout.weight_kind not in {"direct_scale", "unit_offset"}:
+        raise BlankBootstrapError(
+            f"Unsupported effective-scale topology {layout.weight_kind!r} for "
+            f"{label} attention norm."
+        )
+
+
+def _read_effective_head_norm_scale(
+    torch: Any,
+    model: Any,
+    layout: Any,
+    head_dim: int,
+    *,
+    label: str,
+) -> Any:
+    _validate_head_norm_layout(layout, label=label)
+    module = resolve_module(model, layout.path)
+    module_bias = getattr(module, "bias", None)
+    if module_bias is not None:
+        raise BlankBootstrapError(
+            f"Per-head norm {layout.path!r} has an unsupported bias parameter."
+        )
+    weight = module.weight.detach().to(device="cpu", dtype=torch.float64)
+    if tuple(weight.shape) != (head_dim,):
+        raise BlankBootstrapError(
+            f"Per-head norm {layout.path!r} must have shape ({head_dim},)."
+        )
+    effective = weight if layout.weight_kind == "direct_scale" else weight + 1.0
+    if not bool(torch.isfinite(effective).all()):
+        raise BlankBootstrapError(
+            f"Per-head norm {layout.path!r} has a non-finite effective scale."
+        )
+    return effective.contiguous()
+
+
+def _write_effective_head_norm_scale(
+    torch: Any,
+    model: Any,
+    layout: Any,
+    effective_scale: Any,
+    head_dim: int,
+) -> None:
+    _validate_head_norm_layout(layout, label="target")
+    module = resolve_module(model, layout.path)
+    module_bias = getattr(module, "bias", None)
+    if module_bias is not None:
+        raise BlankBootstrapError(
+            f"Per-head norm {layout.path!r} has an unsupported bias parameter."
+        )
+    if tuple(module.weight.shape) != (head_dim,):
+        raise BlankBootstrapError(
+            f"Per-head norm {layout.path!r} must have shape ({head_dim},)."
+        )
+    values = effective_scale.detach().to(device="cpu", dtype=torch.float64)
+    if tuple(values.shape) != (head_dim,) or not bool(torch.isfinite(values).all()):
+        raise BlankBootstrapError(
+            "Target per-head norm effective scale has an invalid shape or value."
+        )
+    stored = values if layout.weight_kind == "direct_scale" else values - 1.0
+    with torch.no_grad():
+        module.weight.copy_(stored.to(module.weight))
+
+
 def _apply_head_norm(
     torch: Any,
     rows: Any,
@@ -1254,16 +1478,13 @@ def _apply_head_norm(
     head_count: int,
     head_dim: int,
 ) -> Any:
-    if layout.kind != "rms_norm" or layout.has_bias:
-        raise BlankBootstrapError(
-            "Only bias-free per-head RMSNorm is supported in source attention."
-        )
-    module = resolve_module(model, layout.path)
-    weight = module.weight.detach().to(device="cpu", dtype=torch.float64)
-    if tuple(weight.shape) != (head_dim,):
-        raise BlankBootstrapError(
-            f"Per-head norm {layout.path!r} must have shape ({head_dim},)."
-        )
+    weight = _read_effective_head_norm_scale(
+        torch,
+        model,
+        layout,
+        head_dim,
+        label="source",
+    )
     values = rows.detach().to(device="cpu", dtype=torch.float64)
     expected_width = head_count * head_dim
     if int(values.shape[1]) != expected_width:

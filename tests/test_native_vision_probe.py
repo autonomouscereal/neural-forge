@@ -7,7 +7,12 @@ import pytest
 
 pytest.importorskip("PIL")
 
-from neural_forge.native_vision_probe import build_native_vision_probe  # noqa: E402
+from PIL import Image  # noqa: E402
+
+from neural_forge.native_vision_probe import (  # noqa: E402
+    build_native_vision_probe,
+    canonical_image_sha256,
+)
 
 
 def test_native_vision_probe_is_deterministic_and_split(tmp_path) -> None:
@@ -33,6 +38,9 @@ def test_native_vision_probe_is_deterministic_and_split(tmp_path) -> None:
     ):
         assert left_record["image_sha256"] == right_record["image_sha256"]
         assert left_record["answer"] == right_record["answer"]
+        with Image.open(tmp_path / "first" / left_record["image"]) as image:
+            assert canonical_image_sha256(image) == left_record["image_sha256"]
+    assert b"\r\n" not in (tmp_path / "first" / "manifest.json").read_bytes()
 
 
 def test_native_vision_probe_rejects_existing_output(tmp_path) -> None:
