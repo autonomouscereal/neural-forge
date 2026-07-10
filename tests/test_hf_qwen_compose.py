@@ -672,12 +672,20 @@ def test_tiny_qwen_pair_composition_runs_end_to_end_on_current_child_prefix() ->
         == "sparse-signature"
         for item in report["structural_initialization"]["pairs"]
     )
-    assert report["sequential_on_policy_child_prefix_tracing"] is True
+    assert report["sequential_on_policy_child_prefix_tracing"] is False
+    assert report["sequential_child_depth_prefix_retrace"] is True
+    assert report["trace_distribution"] == "fixed-calibration-teacher-forced"
+    assert report["student_generated_token_prefixes"] is False
     assert report["composed_endpoint_targets"] is True
     assert report["nonlinear_producer_path_fitting"] is True
     assert report["attention_producer_fit_transaction"] == "all-qkv-or-none-per-pair"
     assert report["mlp_producer_fit_transaction"] == "gate-and-up-or-none-per-pair"
     assert all(item["sequential_prefix_trace"] for item in report["layers"])
+    assert all(
+        item["trace_distribution"] == "fixed-calibration-teacher-forced"
+        and item["student_generated_token_prefixes"] is False
+        for item in report["layers"]
+    )
     assert all("attention_producer_fits" in item for item in report["layers"])
     assert all("mlp_producer_fits" in item for item in report["layers"])
     assert all(

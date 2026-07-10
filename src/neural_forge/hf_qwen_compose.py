@@ -1959,7 +1959,9 @@ def _trace_donor_post_nonlinearity_paths(
     try:
         with torch.inference_mode():
             for batch in batches:
-                context["attention_mask"] = batch["attention_mask"]
+                context["attention_mask"] = batch.get(
+                    "trace_mask", batch["attention_mask"]
+                )
                 context["prompt_start"] = int(batch["start"])
                 _run_backbone(backbone, batch["model_inputs"])
     finally:
@@ -2600,7 +2602,9 @@ def _trace_donor_pair_targets(
     try:
         with torch.inference_mode():
             for batch in batches:
-                context["attention_mask"] = batch["attention_mask"]
+                context["attention_mask"] = batch.get(
+                    "trace_mask", batch["attention_mask"]
+                )
                 context["prompt_start"] = int(batch["start"])
                 _run_backbone(backbone, batch["model_inputs"])
     finally:
@@ -2707,7 +2711,9 @@ def _trace_child_layer(
     try:
         with torch.inference_mode():
             for batch in batches:
-                context["attention_mask"] = batch["attention_mask"]
+                context["attention_mask"] = batch.get(
+                    "trace_mask", batch["attention_mask"]
+                )
                 context["prompt_start"] = int(batch["start"])
                 _run_backbone(backbone, batch["model_inputs"])
     finally:
@@ -2761,7 +2767,9 @@ def _trace_child_final_interface(
     try:
         with torch.inference_mode():
             for batch in batches:
-                context["attention_mask"] = batch["attention_mask"]
+                context["attention_mask"] = batch.get(
+                    "trace_mask", batch["attention_mask"]
+                )
                 context["prompt_start"] = int(batch["start"])
                 _run_backbone(backbone, batch["model_inputs"])
     finally:
@@ -3100,7 +3108,9 @@ def _fit_ordered_child_pair(
         "donor_layers": [int(pair.donor_first), int(pair.donor_second)],
         "pair_order": "first-then-second",
         "sequential_prefix_trace": True,
-        "child_prefix_policy": "current-initialized-child-prefix",
+        "child_prefix_policy": "current-child-depth-prefix-under-fixed-token-sequence",
+        "trace_distribution": "fixed-calibration-teacher-forced",
+        "student_generated_token_prefixes": False,
         "attention_target": "sum-of-both-donor-attention-residual-deltas",
         "mlp_target": "sum-of-both-donor-mlp-residual-deltas",
         "block_target": "projected-donor-composed-pair-endpoint",
@@ -4186,7 +4196,10 @@ def initialize_qwen_pair_composition_models(
         "nonlinear_producer_parameter_averaging": False,
         "swiglu_gate_up_channel_coupling": True,
         "swiglu_all_donor_channels_preserved": False,
-        "sequential_on_policy_child_prefix_tracing": True,
+        "sequential_on_policy_child_prefix_tracing": False,
+        "sequential_child_depth_prefix_retrace": True,
+        "trace_distribution": "fixed-calibration-teacher-forced",
+        "student_generated_token_prefixes": False,
         "composed_endpoint_targets": True,
         "nonlinear_producer_path_fitting": True,
         "attention_producer_fit_transaction": "all-qkv-or-none-per-pair",
