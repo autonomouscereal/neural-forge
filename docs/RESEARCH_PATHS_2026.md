@@ -175,18 +175,42 @@ The first proof target is blank Qwen3 with `hidden=384`,
 untied full-vocabulary head, and `158,288,256` parameters (`25.41x`). The
 offline 4-to-2-layer Qwen smoke passes checkpoint loading, activation profiling,
 intact path materialization, complete parameter-write accounting, report
-serialization, and standalone save. Behavioral evidence remains pending.
+serialization, and standalone save.
+
+The full 4.022B-to-158.3M ordered-pair proof is complete and negative. The
+immutable `v2` run used 256 calibration prompts, retained `94.55%` activation
+PCA energy, accepted 11 of 18 pair-output fits, accepted the final RMSNorm/head
+fits, wrote every target parameter, and recorded `zero_gradient=true`, no
+autograd writes, no backward calls, and zero optimizer steps. The exact result
+was PPL `296,982,020.00`, behavior `0/1000`, generation `0/1000`, and choice
+`146/250`, versus the cached parent's `877.58`, `400/1000`, `388/1000`, and
+`250/250`. The child retained none of the parent's 400 behavior passes or 388
+generation passes. All seven manual outputs were repetitive multilingual
+fragments; the elevated forced-choice score is not coherent intelligence.
+
+The report identifies why the local gates were misleading. Each target pair
+selected only 2 of 16 donor GQA groups and 1,152 of 19,456 donor SwiGLU
+channels; the remaining paths influenced output regression targets but were
+not merged into nonlinear producers. Several accepted late blocks still had
+about `0.95` relative RMSE because the gate required improvement over a worse
+prior but imposed no absolute fidelity ceiling. The final head gate compared a
+projected hidden surrogate on 4,096 evenly spaced vocabulary rows rather than
+the donor's actual top-token logits and margins. Its high surrogate cosine did
+not predict autoregressive behavior. The next pair path must therefore fit
+producer paths, use diverse contribution-aware nonlinear supports, reject high
+absolute error, and gate the final interface on real donor top-token behavior.
 
 The evidence audit has still found no completed, truly zero-gradient
 blank-target run at `25x+` with coherent behavior or meaningful generation
 retention. The sole retained `module-all` generation item was surrounded by
 repetitive output, and its five child-only passes were pattern-match false
-positives. The previous best forced-choice score, `94/250`, matched the random
-blank baseline and accompanied repetitive output. Several historical runs
-labeled `init-only` actually enabled LRC optimizer steps and therefore do not
-qualify as fold-only evidence. New promotion reports must explicitly show
-`optimizer_steps=0`, factor steps `0`, and no activation-fit method other than a
-closed-form solve.
+positives. Ordered-pair composition raised forced choice to `146/250`, but it
+still retained zero parent behavior/generation passes and produced incoherent
+manual output, so forced choice alone is not a promotion signal. Several
+historical runs labeled `init-only` actually enabled LRC optimizer steps and
+therefore do not qualify as fold-only evidence. New promotion reports must
+explicitly show `optimizer_steps=0`, factor steps `0`, and no activation-fit
+method other than a closed-form solve.
 
 ## Highest-Priority Paths
 

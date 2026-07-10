@@ -9,11 +9,13 @@ from neural_forge.cli import build_parser
 import neural_forge.hf_qwen_compose as qwen_compose
 from neural_forge.hf_qwen_compose import (
     _fit_linear_prompt_split,
+    _validation_gate,
     build_contiguous_pair_plan,
     build_coupled_swiglu_packing,
     build_gqa_group_packing,
     composed_pair_endpoint,
     initialize_qwen_pair_composition_models,
+    keyword_domain_balanced_texts,
     prior_preserving_trace_scaled_ridge,
     prompt_level_split,
 )
@@ -78,6 +80,28 @@ def test_pair_plan_is_exact_contiguous_36_to_18() -> None:
 
     with pytest.raises(ValueError, match="exactly twice"):
         build_contiguous_pair_plan(35, 18)
+
+
+def test_keyword_domain_balanced_texts_prevents_prefix_domain_collapse() -> None:
+    texts = [f"Question: What is {index} + 1?" for index in range(20)]
+    texts.extend(
+        [
+            "Write a Python function that returns one.",
+            "Explain tokenizer vocabulary mismatch.",
+            "Explain neuron merging before pruning.",
+            "Lightning and thunder require safety.",
+            "Summarize this ordinary paragraph.",
+        ]
+    )
+
+    selected = keyword_domain_balanced_texts(texts, 6)
+
+    assert len(selected) == 6
+    assert any("Python" in text for text in selected)
+    assert any("tokenizer" in text for text in selected)
+    assert any("neuron" in text for text in selected)
+    assert any("Lightning" in text for text in selected)
+    assert any("ordinary" in text for text in selected)
 
 
 def test_gqa_plan_packs_complete_128_coordinate_heads_by_group() -> None:
@@ -210,6 +234,20 @@ def test_validation_gate_reverts_when_ridge_cannot_beat_prior() -> None:
     assert result["report"]["reverted"] is True
     assert result["report"]["reason"] == "validation_mse_not_improved"
     torch.testing.assert_close(result["weight"], prior.double())
+
+
+def test_validation_gate_rejects_better_but_absolutely_bad_fit() -> None:
+    accepted, reason, diagnostics = _validation_gate(
+        {"mse": 100.0, "mean_row_cosine": 0.1, "relative_rmse": 1.5},
+        {"mse": 25.0, "mean_row_cosine": 0.9, "relative_rmse": 0.9},
+        min_relative_improvement=0.02,
+        max_cosine_drop=0.0,
+        max_fitted_relative_rmse=0.75,
+    )
+
+    assert accepted is False
+    assert reason == "validation_relative_rmse_above_ceiling"
+    assert diagnostics["validation_relative_improvement"] == pytest.approx(0.75)
 
 
 def test_composed_endpoint_calls_second_layer_on_first_layer_output() -> None:

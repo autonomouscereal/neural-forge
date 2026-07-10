@@ -69,6 +69,7 @@ def test_compose_and_eval_argument_construction_is_closed_form_and_exact(tmp_pat
     assert _value_after(command, "--max-tokens-per-layer") == "512"
     assert _value_after(command, "--max-anchors") == "2048"
     assert _value_after(command, "--fit-gate-validation-fraction") == "0.4"
+    assert _value_after(command, "--fit-gate-max-relative-rmse") == "0.75"
     assert _value_after(command, "--candidate-dtype") == "float32"
 
     flags = [token.lower() for token in command if token.startswith("--")]

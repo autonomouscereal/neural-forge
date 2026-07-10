@@ -44,6 +44,40 @@ DEFAULT_COMPOSITION_TEXTS = (
 )
 
 
+def keyword_domain_balanced_texts(
+    texts: Sequence[str], max_texts: int | None
+) -> list[str]:
+    """Select calibration prompts round-robin across detected domains."""
+
+    values = [str(item) for item in texts]
+    if max_texts is None or len(values) <= int(max_texts):
+        return values
+    if int(max_texts) <= 0:
+        raise ValueError("max_texts must be positive when provided.")
+    from neural_forge.hf_xfamily import _activation_calibration_domain
+
+    buckets: dict[str, list[str]] = {}
+    for value in values:
+        domain = _activation_calibration_domain(value)
+        buckets.setdefault(domain, []).append(value)
+    offsets = {domain: 0 for domain in buckets}
+    selected = []
+    while len(selected) < int(max_texts):
+        added = False
+        for domain in sorted(buckets):
+            offset = offsets[domain]
+            if offset >= len(buckets[domain]):
+                continue
+            selected.append(buckets[domain][offset])
+            offsets[domain] = offset + 1
+            added = True
+            if len(selected) == int(max_texts):
+                break
+        if not added:
+            break
+    return selected
+
+
 class LayerPair(NamedTuple):
     """One ordered donor pair assigned to a child layer."""
 
@@ -510,6 +544,7 @@ def _validation_gate(
     fitted_metrics: dict[str, float],
     min_relative_improvement: float,
     max_cosine_drop: float,
+    max_fitted_relative_rmse: float | None = None,
 ) -> tuple[bool, str, dict[str, float]]:
     prior_mse = float(prior_metrics["mse"])
     fitted_mse = float(fitted_metrics["mse"])
@@ -532,6 +567,12 @@ def _validation_gate(
         return False, "validation_improvement_below_threshold", diagnostics
     if cosine_delta < -float(max_cosine_drop):
         return False, "validation_cosine_drop", diagnostics
+    if (
+        max_fitted_relative_rmse is not None
+        and float(fitted_metrics["relative_rmse"])
+        > float(max_fitted_relative_rmse)
+    ):
+        return False, "validation_relative_rmse_above_ceiling", diagnostics
     return True, "accepted", diagnostics
 
 
@@ -568,6 +609,7 @@ def _fit_linear_prompt_split(
     max_cosine_drop: float,
     max_rows: int | None = None,
     min_validation_rows: int = 1,
+    max_fitted_relative_rmse: float | None = None,
 ) -> dict[str, Any]:
     if len(input_by_prompt) != len(target_by_prompt):
         raise ValueError("Input and target prompt traces must have the same length.")
@@ -616,6 +658,7 @@ def _fit_linear_prompt_split(
         fitted_metrics,
         min_relative_improvement=min_relative_improvement,
         max_cosine_drop=max_cosine_drop,
+        max_fitted_relative_rmse=max_fitted_relative_rmse,
     )
     return {
         "weight": fitted_weight
@@ -1862,6 +1905,7 @@ def _fit_ordered_child_pair(
     ridge: float,
     min_relative_improvement: float,
     max_cosine_drop: float,
+    max_fitted_relative_rmse: float | None,
     max_fit_rows: int,
     min_validation_rows: int,
     tracker: _ParameterWriteTracker,
@@ -1889,6 +1933,7 @@ def _fit_ordered_child_pair(
         max_cosine_drop,
         max_rows=max_fit_rows,
         min_validation_rows=min_validation_rows,
+        max_fitted_relative_rmse=max_fitted_relative_rmse,
     )
     _commit_linear_fit(
         tracker, spec["o"], attention_fit, "validated-composed-attention-endpoint-fit"
@@ -1914,6 +1959,7 @@ def _fit_ordered_child_pair(
         max_cosine_drop,
         max_rows=max_fit_rows,
         min_validation_rows=min_validation_rows,
+        max_fitted_relative_rmse=max_fitted_relative_rmse,
     )
     _commit_linear_fit(
         tracker, spec["down"], mlp_fit, "validated-composed-pair-endpoint-fit"
@@ -1939,6 +1985,7 @@ def _fit_ordered_child_pair(
         fitted_metrics,
         min_relative_improvement,
         max_cosine_drop,
+        max_fitted_relative_rmse,
     )
     if not accepted:
         _restore_linear(
@@ -1998,6 +2045,7 @@ def _fit_final_rms_norm(
     ridge: float,
     min_relative_improvement: float,
     max_cosine_drop: float,
+    max_fitted_relative_rmse: float | None,
     max_fit_rows: int,
     min_validation_rows: int,
     tracker: _ParameterWriteTracker,
@@ -2048,6 +2096,7 @@ def _fit_final_rms_norm(
         fitted_metrics,
         min_relative_improvement,
         max_cosine_drop,
+        max_fitted_relative_rmse,
     )
     if accepted:
         tracker.write(weight, fitted, "validated-final-rms-norm-fit")
@@ -2099,6 +2148,7 @@ def _fit_final_head(
     ridge: float,
     min_relative_improvement: float,
     max_cosine_drop: float,
+    max_fitted_relative_rmse: float | None,
     max_fit_rows: int,
     min_validation_rows: int,
     max_validation_vocab_rows: int,
@@ -2122,6 +2172,7 @@ def _fit_final_head(
         max_cosine_drop,
         max_rows=max_fit_rows,
         min_validation_rows=min_validation_rows,
+        max_fitted_relative_rmse=max_fitted_relative_rmse,
     )
     transport_report = transport_fit["report"]
     transport = transport_fit["weight"].to(torch.float64)
@@ -2163,6 +2214,7 @@ def _fit_final_head(
         fitted_metrics,
         min_relative_improvement,
         max_cosine_drop,
+        max_fitted_relative_rmse,
     )
     accepted = bool(transport_report["accepted"]) and bool(logits_accepted)
     if not bool(transport_report["accepted"]):
@@ -2475,6 +2527,7 @@ def initialize_qwen_pair_composition_models(
     min_train_prompts: int = 2,
     min_relative_improvement: float = 0.0,
     max_cosine_drop: float = 0.01,
+    max_fitted_relative_rmse: float | None = 0.75,
     max_length: int = 160,
     batch_size: int = 2,
     max_fit_rows: int = 4096,
@@ -2515,6 +2568,14 @@ def initialize_qwen_pair_composition_models(
         )
     if min_relative_improvement < 0 or max_cosine_drop < 0:
         raise ValueError("validation gate thresholds must be non-negative.")
+    if (
+        max_fitted_relative_rmse is not None
+        and (
+            not math.isfinite(float(max_fitted_relative_rmse))
+            or float(max_fitted_relative_rmse) <= 0.0
+        )
+    ):
+        raise ValueError("max_fitted_relative_rmse must be finite and positive.")
     if basis_mode not in {"activation-pca", "embedding-grouped"}:
         raise ValueError("basis_mode must be activation-pca or embedding-grouped.")
     if basis_preprocess not in {"centered-rowrms", "uncentered-rowrms", "uncentered"}:
@@ -2700,6 +2761,7 @@ def initialize_qwen_pair_composition_models(
                 ridge,
                 min_relative_improvement,
                 max_cosine_drop,
+                max_fitted_relative_rmse,
                 max_fit_rows,
                 min_validation_rows,
                 tracker,
@@ -2724,6 +2786,7 @@ def initialize_qwen_pair_composition_models(
             ridge,
             min_relative_improvement,
             max_cosine_drop,
+            max_fitted_relative_rmse,
             max_fit_rows,
             min_validation_rows,
             tracker,
@@ -2742,6 +2805,7 @@ def initialize_qwen_pair_composition_models(
             ridge,
             min_relative_improvement,
             max_cosine_drop,
+            max_fitted_relative_rmse,
             max_fit_rows,
             min_validation_rows,
             head_validation_vocab_rows,
@@ -2829,6 +2893,11 @@ def initialize_qwen_pair_composition_models(
         "max_length": int(max_length),
         "max_fit_rows": int(max_fit_rows),
         "min_validation_rows": int(min_validation_rows),
+        "max_fitted_relative_rmse": (
+            None
+            if max_fitted_relative_rmse is None
+            else float(max_fitted_relative_rmse)
+        ),
         "structural_initialization": {
             "pairs": structural["pairs"],
             "embedding": structural["embedding"],
@@ -2871,6 +2940,7 @@ def initialize_qwen_pair_composition(
     min_train_prompts: int = 2,
     min_relative_improvement: float = 0.0,
     max_cosine_drop: float = 0.01,
+    max_fitted_relative_rmse: float | None = 0.75,
     max_length: int = 160,
     batch_size: int = 2,
     max_fit_rows: int = 4096,
@@ -2927,6 +2997,7 @@ def initialize_qwen_pair_composition(
         min_train_prompts=min_train_prompts,
         min_relative_improvement=min_relative_improvement,
         max_cosine_drop=max_cosine_drop,
+        max_fitted_relative_rmse=max_fitted_relative_rmse,
         max_length=max_length,
         batch_size=batch_size,
         max_fit_rows=max_fit_rows,
@@ -2980,6 +3051,7 @@ __all__ = [
     "contiguous_donor_pairs",
     "initialize_qwen_pair_composition",
     "initialize_qwen_pair_composition_models",
+    "keyword_domain_balanced_texts",
     "prior_preserving_trace_scaled_ridge",
     "prompt_level_split",
     "qwen_pair_composition_init",

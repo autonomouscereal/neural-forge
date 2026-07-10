@@ -63,6 +63,7 @@ class ComposeSettings:
     fit_gate_min_validation_rows: int = 128
     fit_gate_min_relative_improvement: float = 0.02
     fit_gate_max_cosine_drop: float = 0.0
+    fit_gate_max_relative_rmse: float = 0.75
     dtype: str = "float16"
     candidate_dtype: str = "float32"
     device: str = "cuda:0"
@@ -94,6 +95,11 @@ class ComposeSettings:
             or self.fit_gate_max_cosine_drop < 0
         ):
             raise ValueError("fit-gate-max-cosine-drop must be non-negative.")
+        if (
+            not math.isfinite(self.fit_gate_max_relative_rmse)
+            or self.fit_gate_max_relative_rmse <= 0
+        ):
+            raise ValueError("fit-gate-max-relative-rmse must be positive.")
         if not self.dtype or not self.candidate_dtype or not self.device:
             raise ValueError("dtype, candidate-dtype, and device cannot be empty.")
         if self.basis_mode not in {"activation-pca", "embedding-grouped"}:
@@ -179,6 +185,8 @@ def build_compose_command(
         str(settings.fit_gate_min_relative_improvement),
         "--fit-gate-max-cosine-drop",
         str(settings.fit_gate_max_cosine_drop),
+        "--fit-gate-max-relative-rmse",
+        str(settings.fit_gate_max_relative_rmse),
         "--dtype",
         settings.dtype,
         "--candidate-dtype",
@@ -577,6 +585,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fit-gate-min-validation-rows", type=int, default=128)
     parser.add_argument("--fit-gate-min-relative-improvement", type=float, default=0.02)
     parser.add_argument("--fit-gate-max-cosine-drop", type=float, default=0.0)
+    parser.add_argument("--fit-gate-max-relative-rmse", type=float, default=0.75)
     parser.add_argument("--dtype", default="float16")
     parser.add_argument("--candidate-dtype", default="float32")
     parser.add_argument("--device", default="cuda:0")
@@ -628,6 +637,7 @@ def main(argv: list[str] | None = None) -> int:
         fit_gate_min_validation_rows=args.fit_gate_min_validation_rows,
         fit_gate_min_relative_improvement=args.fit_gate_min_relative_improvement,
         fit_gate_max_cosine_drop=args.fit_gate_max_cosine_drop,
+        fit_gate_max_relative_rmse=args.fit_gate_max_relative_rmse,
         dtype=args.dtype,
         candidate_dtype=args.candidate_dtype,
         device=args.device,

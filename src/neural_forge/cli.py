@@ -1319,6 +1319,9 @@ def build_parser() -> argparse.ArgumentParser:
     qwen_pair_compose.add_argument(
         "--fit-gate-max-cosine-drop", type=float, default=0.0
     )
+    qwen_pair_compose.add_argument(
+        "--fit-gate-max-relative-rmse", type=float, default=0.75
+    )
     qwen_pair_compose.add_argument("--dtype", default="float16")
     qwen_pair_compose.add_argument("--candidate-dtype", default="float32")
     qwen_pair_compose.add_argument("--device", default="cuda:0")
@@ -3272,13 +3275,16 @@ def cmd_hf_qwen_pair_compose(args: argparse.Namespace) -> dict[str, object]:
         donor_model=args.source_model,
         target_model=args.candidate_model,
         output_dir=args.output,
-        calibration_texts=_load_recovery_calibration_texts(
-            args.calibration_file, args.max_calibration_texts
+        calibration_texts=_load_qwen_pair_calibration_texts(
+            args.calibration_file,
+            args.max_calibration_texts,
+            args.activation_domain_balance,
         ),
         ridge=args.ridge,
         validation_fraction=args.fit_gate_validation_fraction,
         min_relative_improvement=args.fit_gate_min_relative_improvement,
         max_cosine_drop=args.fit_gate_max_cosine_drop,
+        max_fitted_relative_rmse=args.fit_gate_max_relative_rmse,
         max_length=args.max_length,
         batch_size=args.batch_size,
         max_fit_rows=args.max_tokens_per_layer,
@@ -3805,6 +3811,22 @@ def _load_recovery_calibration_texts(path: str | None, max_texts: int | None) ->
     from neural_forge.hf_recovery import load_calibration_texts
 
     return load_calibration_texts(path, max_texts=max_texts)
+
+
+def _load_qwen_pair_calibration_texts(
+    path: str | None,
+    max_texts: int | None,
+    domain_balance: str,
+) -> list[str] | None:
+    if path is None:
+        return None
+    scan_limit = None if domain_balance == "keyword" else max_texts
+    texts = _load_recovery_calibration_texts(path, scan_limit)
+    if texts is None or domain_balance != "keyword":
+        return texts
+    from neural_forge.hf_qwen_compose import keyword_domain_balanced_texts
+
+    return keyword_domain_balanced_texts(texts, max_texts)
 
 
 if __name__ == "__main__":
