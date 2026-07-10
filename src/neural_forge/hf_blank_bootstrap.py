@@ -19,6 +19,10 @@ from neural_forge.hf_activation_cluster import (
     build_gqa_activation_cluster_plan,
 )
 from neural_forge.hf_attention_fold import build_gqa_attention_fold_maps
+from neural_forge.hf_activation_subset import (
+    GatedMLPActivationSubsetPlan,
+    build_gated_mlp_activation_subset_plan,
+)
 from neural_forge.hf_closed_form_fit import (
     FitMetrics,
     fit_diagonal_norm,
@@ -114,7 +118,11 @@ def bootstrap_blank_decoder_models(
         "pca",
         "dual_orthonormal",
     ] = "sparse_fold",
-    nonlinear_merge_method: Literal["activation_fold", "real_medoid"] = (
+    nonlinear_merge_method: Literal[
+        "activation_fold",
+        "real_medoid",
+        "activation_subset",
+    ] = (
         "activation_fold"
     ),
     ridge: float = 1e-5,
@@ -165,9 +173,14 @@ def bootstrap_blank_decoder_models(
             "residual_map_method must be sparse_fold, joint_sparse_fold, pca, "
             "or dual_orthonormal."
         )
-    if nonlinear_merge_method not in {"activation_fold", "real_medoid"}:
+    if nonlinear_merge_method not in {
+        "activation_fold",
+        "real_medoid",
+        "activation_subset",
+    }:
         raise BlankBootstrapError(
-            "nonlinear_merge_method must be activation_fold or real_medoid."
+            "nonlinear_merge_method must be activation_fold, real_medoid, or "
+            "activation_subset."
         )
     if vocab_row_norm_repair not in {"none", "source_l2"}:
         raise BlankBootstrapError("vocab_row_norm_repair must be none or source_l2.")
@@ -1660,7 +1673,11 @@ def _fit_target_block(
     source_span: tuple[int, ...],
     residual_coordinates: Any,
     canonical_endpoint_rows: Any | None,
-    nonlinear_merge_method: Literal["activation_fold", "real_medoid"],
+    nonlinear_merge_method: Literal[
+        "activation_fold",
+        "real_medoid",
+        "activation_subset",
+    ],
     ridge: float,
     max_operator_delta_ratio: float,
     max_coordinate_rows: int,
@@ -1705,8 +1722,12 @@ def _fit_target_block(
     current = current_trace()
     target_block = current.block
     target_attention_layout = target_block_layout.attention
+    selected_producer_method = nonlinear_merge_method in {
+        "real_medoid",
+        "activation_subset",
+    }
     head_norm_source_span = (
-        (source_span[-1],) if nonlinear_merge_method == "real_medoid" else source_span
+        (source_span[-1],) if selected_producer_method else source_span
     )
     for role, target_norm in (
         ("query", target_attention_layout.query_norm),
@@ -1739,7 +1760,7 @@ def _fit_target_block(
     context_rows = tuple(
         block.attention_output_projection_input for block in source_blocks
     )
-    if nonlinear_merge_method == "real_medoid":
+    if selected_producer_method:
         (
             attention_medoid_plan,
             attention_prior_report,
@@ -1844,7 +1865,7 @@ def _fit_target_block(
         target_model,
         target_block_layout.attention,
     )
-    if nonlinear_merge_method == "real_medoid":
+    if selected_producer_method:
         current = current_trace()
         target_block = current.block
         for name, actual, desired in (
@@ -1933,7 +1954,7 @@ def _fit_target_block(
         ),
     )
     reports[f"block.{target_index}.attention.output"] = _fit_summary(output_fit)
-    if nonlinear_merge_method == "real_medoid":
+    if selected_producer_method:
         reports[f"block.{target_index}.attention.output"].update(
             {
                 "initialization": "per-source-scalar-ls-medoid-consumer",
@@ -1983,6 +2004,7 @@ def _fit_target_block(
         )
     )
     mlp_medoid_plan: GatedMLPActivationClusterPlan | None = None
+    mlp_subset_plan: GatedMLPActivationSubsetPlan | None = None
     desired_gate = None
     desired_up = None
     desired_product = None
@@ -2021,6 +2043,44 @@ def _fit_target_block(
             "no_producer_averaging": True,
             "consumer_aggregation": "post-swiglu-least-squares-index-add",
         }
+    elif nonlinear_merge_method == "activation_subset":
+        if not gated_triplet_compatible or not swiglu_semantics_compatible:
+            raise BlankBootstrapError(
+                "Activation-subset MLP transport requires SiLU-gated source "
+                "and target MLPs."
+            )
+        (
+            mlp_subset_plan,
+            mlp_prior_report,
+            desired_gate,
+            desired_up,
+            desired_product,
+        ) = _initialize_gated_mlp_activation_subset_prior(
+            torch,
+            source_model,
+            target_model,
+            source_layout,
+            target_block_layout,
+            source_span,
+            source_blocks,
+            residual_coordinates,
+            ridge,
+            max_coordinate_rows,
+        )
+        reports[f"block.{target_index}.mlp.activation_subset"] = (
+            mlp_subset_plan.report.as_dict()
+        )
+        reports[f"block.{target_index}.mlp.feature_fold"] = {
+            "method": "real-source-neuron-leverage-subset",
+            "source_neurons": mlp_subset_plan.report.source_neurons,
+            "target_neurons": mlp_subset_plan.report.target_neurons,
+            "full_source_residual_target": True,
+            "no_producer_averaging": True,
+            "consumer_aggregation": "joint-total-residual-ridge-fit",
+            "calibration_relative_l2_error": (
+                mlp_subset_plan.report.calibration.relative_l2_error
+            ),
+        }
     else:
         mlp_coordinates = build_feature_fold_map(
             mlp_feature_rows,
@@ -2047,10 +2107,10 @@ def _fit_target_block(
         "reason": "target-mlp-is-not-compatible-gated-swiglu",
     }
     if target_block_layout.mlp.kind == "dense":
-        if (
-            nonlinear_merge_method == "real_medoid"
-        ):  # pragma: no cover - validated above
-            raise AssertionError("Real-medoid dense MLP reached an invalid branch.")
+        if selected_producer_method:  # pragma: no cover - validated above
+            raise AssertionError(
+                "Selected-producer dense MLP reached an invalid branch."
+            )
         assert target_mlp.input is not None
         desired_input = _mean_source_mlp_producer(
             torch,
@@ -2076,17 +2136,30 @@ def _fit_target_block(
         reports[f"block.{target_index}.mlp.input"] = _fit_summary(input_fit)
     else:
         assert target_mlp.gate is not None and target_mlp.up is not None
-        if mlp_medoid_plan is not None:
+        selected_mlp_plan = mlp_medoid_plan or mlp_subset_plan
+        if selected_mlp_plan is not None:
             assert desired_gate is not None
             assert desired_up is not None
             assert desired_product is not None
             product_target_report = {
                 "applied": True,
-                "method": "real-medoid-post-swiglu-anchor",
+                "method": (
+                    "real-medoid-post-swiglu-anchor"
+                    if mlp_medoid_plan is not None
+                    else "leverage-subset-post-swiglu-anchor"
+                ),
                 "producer_averaging": False,
                 "gate_value_division": False,
-                "source_neurons": mlp_medoid_plan.source_neurons,
-                "target_neurons": mlp_medoid_plan.target_neurons,
+                "source_neurons": (
+                    mlp_medoid_plan.source_neurons
+                    if mlp_medoid_plan is not None
+                    else mlp_subset_plan.report.source_neurons
+                ),
+                "target_neurons": (
+                    mlp_medoid_plan.target_neurons
+                    if mlp_medoid_plan is not None
+                    else mlp_subset_plan.report.target_neurons
+                ),
             }
         else:
             desired_gate = _mean_source_mlp_producer(
@@ -2124,7 +2197,7 @@ def _fit_target_block(
                     "activation": target_block_layout.mlp.activation_name,
                 }
         reports[f"block.{target_index}.mlp.product_target"] = product_target_report
-        if mlp_medoid_plan is None:
+        if selected_mlp_plan is None:
             gate_fit = _fit_operator_with_prior(
                 target_block.pre_mlp_norm_output,
                 desired_gate,
@@ -2154,14 +2227,20 @@ def _fit_target_block(
 
     current = current_trace()
     target_block = current.block
-    if mlp_medoid_plan is not None:
+    selected_mlp_plan = mlp_medoid_plan or mlp_subset_plan
+    if selected_mlp_plan is not None:
+        producer_method = (
+            "exact-coordinate-transformed-real-medoid-producer"
+            if mlp_medoid_plan is not None
+            else "exact-coordinate-transformed-real-subset-producer"
+        )
         reports[f"block.{target_index}.mlp.gate"] = _measurement_summary(
             measure_fit(target_block.mlp_gate_projection_output, desired_gate),
-            method="exact-coordinate-transformed-real-medoid-producer",
+            method=producer_method,
         )
         reports[f"block.{target_index}.mlp.up"] = _measurement_summary(
             measure_fit(target_block.mlp_up_projection_output, desired_up),
-            method="exact-coordinate-transformed-real-medoid-producer",
+            method=producer_method,
         )
     if bool(product_target_report.get("applied")):
         assert desired_product is not None
@@ -2206,10 +2285,14 @@ def _fit_target_block(
     )
     write_mlp_operators(target_model, target_block_layout, target_mlp)
     reports[f"block.{target_index}.mlp.down"] = _fit_summary(down_fit)
-    if nonlinear_merge_method == "real_medoid":
+    if selected_mlp_plan is not None:
         reports[f"block.{target_index}.mlp.down"].update(
             {
-                "initialization": "per-source-scalar-ls-medoid-consumer",
+                "initialization": (
+                    "per-source-scalar-ls-medoid-consumer"
+                    if mlp_medoid_plan is not None
+                    else "joint-leverage-subset-total-residual-consumer"
+                ),
                 "finalization": "joint-closed-form-ordered-span-endpoint-delta",
                 "producer_weights_preserved_exactly": True,
             }
@@ -2230,10 +2313,20 @@ def _fit_target_block(
         "structural_prior_residual_consumers": (
             "per-source-scalar-ls-then-joint-endpoint-fit"
             if nonlinear_merge_method == "real_medoid"
-            else "sum"
+            else (
+                "joint-subset-residual-fit-then-joint-endpoint-fit"
+                if nonlinear_merge_method == "activation_subset"
+                else "sum"
+            )
         ),
         "structural_prior_feature_producers": (
-            "real-medoid-copy" if nonlinear_merge_method == "real_medoid" else "mean"
+            "real-medoid-copy"
+            if nonlinear_merge_method == "real_medoid"
+            else (
+                "real-leverage-subset-copy"
+                if nonlinear_merge_method == "activation_subset"
+                else "mean"
+            )
         ),
         "nonlinear_merge_method": nonlinear_merge_method,
     }
@@ -3618,6 +3711,182 @@ def _initialize_gated_mlp_real_medoid_prior(
         "contribution_signature": "direction-preserving-residual-sketch-4d",
         "full_source_coverage": plan.report.full_source_coverage,
         "no_producer_averaging": plan.report.invariants.no_producer_averaging,
+        "down_weight_norm": float(torch.linalg.vector_norm(merged.down.weight)),
+    }
+    return plan, report, desired_gate, desired_up, desired_post
+
+
+def _initialize_gated_mlp_activation_subset_prior(
+    torch: Any,
+    source_model: Any,
+    target_model: Any,
+    source_layout: DecoderLayout,
+    target_block_layout: Any,
+    source_span: Sequence[int],
+    source_blocks: Sequence[DecoderBlockTrace],
+    residual_coordinates: Any,
+    ridge: float,
+    max_coordinate_rows: int,
+) -> tuple[GatedMLPActivationSubsetPlan, dict[str, Any], Any, Any, Any]:
+    source_operators = [
+        read_mlp_operators(source_model, source_layout.blocks[index])
+        for index in source_span
+    ]
+    if any(
+        operators.kind != "gated" or operators.gate is None or operators.up is None
+        for operators in source_operators
+    ):
+        raise BlankBootstrapError(
+            "Activation-subset MLP transport requires complete gated source "
+            "operators."
+        )
+    target = read_mlp_operators(target_model, target_block_layout)
+    if target.kind != "gated" or target.gate is None or target.up is None:
+        raise BlankBootstrapError(
+            "Activation-subset MLP transport requires a complete gated target MLP."
+        )
+
+    gate_rows = []
+    up_rows = []
+    post_rows = []
+    for block in source_blocks:
+        if block.mlp_gate_projection_output is None:
+            raise BlankBootstrapError(
+                "Source trace is missing a gated MLP gate output."
+            )
+        if block.mlp_up_projection_output is None:
+            raise BlankBootstrapError("Source trace is missing a gated MLP up output.")
+        gate_rows.append(block.mlp_gate_projection_output)
+        up_rows.append(block.mlp_up_projection_output)
+        post_rows.append(block.down_projection_input)
+    gate_activations = torch.cat(gate_rows, dim=1)
+    up_activations = torch.cat(up_rows, dim=1)
+    post_activations = torch.cat(post_rows, dim=1)
+    sample_count = min(int(gate_activations.shape[0]), max_coordinate_rows)
+    target_neurons = int(target_block_layout.mlp.intermediate_size)
+    if sample_count < target_neurons:
+        raise BlankBootstrapError(
+            "Activation-subset folding requires at least as many sampled trajectory "
+            f"rows as target MLP neurons ({sample_count} < {target_neurons})."
+        )
+    sampled_gate = _evenly_sample_rows(torch, gate_activations, sample_count)
+    sampled_up = _evenly_sample_rows(torch, up_activations, sample_count)
+    sampled_post = _evenly_sample_rows(torch, post_activations, sample_count)
+
+    encoded_down_weights = [
+        _fold_producer_coordinates(
+            torch,
+            operators.down.weight,
+            residual_coordinates,
+        )
+        for operators in source_operators
+    ]
+    concatenated_down = torch.cat(encoded_down_weights, dim=1)
+    source_neurons = int(gate_activations.shape[1])
+    plan = build_gated_mlp_activation_subset_plan(
+        sampled_gate,
+        sampled_up,
+        sampled_post,
+        concatenated_down.T.contiguous(),
+        target_neurons=target_neurons,
+        source_neurons=source_neurons,
+        ridge=max(ridge, 1e-12),
+        sketch_rows=min(128, sample_count),
+        leverage_weight=0.8,
+    )
+
+    gate_sources = [operators.gate for operators in source_operators]
+    up_sources = [operators.up for operators in source_operators]
+    assert all(operator is not None for operator in gate_sources)
+    assert all(operator is not None for operator in up_sources)
+    gate_sources = [operator for operator in gate_sources if operator is not None]
+    up_sources = [operator for operator in up_sources if operator is not None]
+    gate_weight = plan.select_gate_producer(
+        torch.cat([operator.weight for operator in gate_sources], dim=0),
+        axis=0,
+    )
+    up_weight = plan.select_up_producer(
+        torch.cat([operator.weight for operator in up_sources], dim=0),
+        axis=0,
+    )
+    gate_bias = _concatenated_bias_for_target(
+        torch,
+        gate_sources,
+        target_has_bias=target.gate.bias is not None,
+    )
+    up_bias = _concatenated_bias_for_target(
+        torch,
+        up_sources,
+        target_has_bias=target.up.bias is not None,
+    )
+    down_bias = None
+    if target.down.bias is not None:
+        down_bias = torch.zeros(target.down.weight.shape[0], dtype=torch.float64)
+        for operators in source_operators:
+            source_bias = (
+                torch.zeros(operators.down.weight.shape[0], dtype=torch.float64)
+                if operators.down.bias is None
+                else operators.down.bias
+            )
+            down_bias.add_(
+                _fold_producer_bias(torch, source_bias, residual_coordinates)
+            )
+    merged = MLPOperators(
+        kind="gated",
+        input=None,
+        gate=LinearOperator(
+            path=target.gate.path,
+            weight=_fold_consumer_coordinates(
+                torch,
+                gate_weight,
+                residual_coordinates,
+            ),
+            bias=(
+                None
+                if gate_bias is None
+                else plan.select_gate_producer(gate_bias, axis=0)
+            ),
+        ),
+        up=LinearOperator(
+            path=target.up.path,
+            weight=_fold_consumer_coordinates(
+                torch,
+                up_weight,
+                residual_coordinates,
+            ),
+            bias=(
+                None
+                if up_bias is None
+                else plan.select_up_producer(up_bias, axis=0)
+            ),
+        ),
+        down=LinearOperator(
+            path=target.down.path,
+            weight=plan.fitted_down_consumer(),
+            bias=down_bias,
+        ),
+    )
+    write_mlp_operators(target_model, target_block_layout, merged)
+    desired_gate = plan.select_gate_producer(gate_activations, axis=1)
+    desired_up = plan.select_up_producer(up_activations, axis=1)
+    desired_post = plan.select_gate_producer(post_activations, axis=1)
+    report = {
+        "applied": True,
+        "method": "real-source-neuron-leverage-subset-joint-consumer",
+        "source_layers": [int(index) for index in source_span],
+        "source_neurons": source_neurons,
+        "target_neurons": target_neurons,
+        "observation_rows": sample_count,
+        "producer_aggregation": "none-real-subset-copy",
+        "consumer_initialization": "joint-full-residual-ridge-fit",
+        "consumer_finalization": "joint-closed-form-ordered-span-endpoint-fit",
+        "calibration_relative_l2_error": (
+            plan.report.calibration.relative_l2_error
+        ),
+        "selected_contribution_energy_fraction": (
+            plan.report.selection.selected_contribution_energy_fraction
+        ),
+        "no_producer_averaging": True,
         "down_weight_norm": float(torch.linalg.vector_norm(merged.down.weight)),
     }
     return plan, report, desired_gate, desired_up, desired_post

@@ -689,6 +689,7 @@ def bootstrap_blank_decoder_checkpoint(
     nonlinear_merge_method: Literal[
         "activation_fold",
         "real_medoid",
+        "activation_subset",
     ] = "activation_fold",
     ridge: float = 1e-5,
     max_operator_delta_ratio: float = 4.0,
@@ -727,9 +728,11 @@ def bootstrap_blank_decoder_checkpoint(
     if not isinstance(nonlinear_merge_method, str) or nonlinear_merge_method not in {
         "activation_fold",
         "real_medoid",
+        "activation_subset",
     }:
         raise BlankCheckpointError(
-            "nonlinear_merge_method must be activation_fold or real_medoid."
+            "nonlinear_merge_method must be activation_fold, real_medoid, or "
+            "activation_subset."
         )
     shape = _validate_shape(
         target_family,

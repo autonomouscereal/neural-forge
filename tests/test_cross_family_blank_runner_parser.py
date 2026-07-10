@@ -107,3 +107,40 @@ def test_parser_accepts_dual_orthonormal_controls() -> None:
     assert args.dual_gamma == 3.0
     assert args.dual_margin_topk == 7
     assert args.dual_oracle_vocab_rows == 128
+
+
+def test_parser_accepts_activation_subset() -> None:
+    args = MODULE.build_parser().parse_args(
+        [
+            "--source-model",
+            "donor-model",
+            "--run-root",
+            "runs",
+            "--tag",
+            "subset",
+            "--calibration-file",
+            "calibration.jsonl",
+            "--eval-suite",
+            "eval.json",
+            "--cached-parent-eval",
+            "parent.json",
+            "--hidden-size",
+            "8",
+            "--intermediate-size",
+            "12",
+            "--num-hidden-layers",
+            "2",
+            "--num-attention-heads",
+            "2",
+            "--num-key-value-heads",
+            "1",
+            "--head-dim",
+            "4",
+            "--max-position-embeddings",
+            "32",
+            "--nonlinear-merge-method",
+            "activation_subset",
+        ]
+    )
+
+    assert args.nonlinear_merge_method == "activation_subset"

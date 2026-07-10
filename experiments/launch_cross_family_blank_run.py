@@ -327,7 +327,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--nonlinear-merge-method",
-        choices=["activation_fold", "real_medoid"],
+        choices=["activation_fold", "real_medoid", "activation_subset"],
         default="activation_fold",
     )
     parser.add_argument("--ridge", type=float, default=1e-5)

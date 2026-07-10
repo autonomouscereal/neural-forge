@@ -651,6 +651,53 @@ def test_real_medoid_final_model_keeps_selected_producer_weights(monkeypatch) ->
         assert torch.equal(mlp.up.weight, mlp_snapshots[index][1])
 
 
+def test_activation_subset_bootstrap_uses_full_residual_neuron_support() -> None:
+    result = bootstrap_blank_decoder_models(
+        _qwen3_source(),
+        _qwen3_target(head_dim=4),
+        _batch(591, batch_size=8, sequence_length=8),
+        validation_inputs=_batch(592, batch_size=8, sequence_length=8),
+        trace_pooling="token_rows",
+        residual_map_method="pca",
+        nonlinear_merge_method="activation_subset",
+        max_coordinate_rows=64,
+        fit_full_lm_head=False,
+    )
+
+    for block_index, source_layer_count in ((0, 1), (1, 2)):
+        subset = result.fit_reports[f"block.{block_index}.mlp.activation_subset"]
+        assert subset["source_neurons"] == 20 * source_layer_count
+        assert subset["target_neurons"] == 12
+        assert subset["observation_rows"] == 64
+        assert len(subset["selected_source_neurons"]) == 12
+        assert subset["joint_consumer_fit"] is True
+        assert subset["coupled_gate_up_down_identities"] is True
+        assert subset["classification"] == "approximate"
+        assert subset["zero_gradient"] is True
+        span = result.fit_reports[f"block.{block_index}.span"]
+        assert span["nonlinear_merge_method"] == "activation_subset"
+        assert span["structural_prior_feature_producers"] == (
+            "real-leverage-subset-copy"
+        )
+    assert result.candidate_gate_metrics.final_state.finite is True
+    assert result.candidate_gate_metrics.logits.finite is True
+
+
+def test_activation_subset_rejects_underdetermined_last_valid_rows() -> None:
+    with pytest.raises(BlankBootstrapError, match="sampled trajectory rows"):
+        bootstrap_blank_decoder_models(
+            _qwen3_source(),
+            _qwen3_target(head_dim=4),
+            _batch(593, batch_size=8, sequence_length=8),
+            validation_inputs=_batch(594, batch_size=8, sequence_length=8),
+            trace_pooling="last_valid",
+            residual_map_method="pca",
+            nonlinear_merge_method="activation_subset",
+            max_coordinate_rows=64,
+            fit_full_lm_head=False,
+        )
+
+
 def test_dual_orthonormal_bootstrap_reports_margin_oracle() -> None:
     result = bootstrap_blank_decoder_models(
         _qwen3_source(),
