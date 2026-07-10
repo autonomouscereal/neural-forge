@@ -1330,6 +1330,35 @@ def build_parser() -> argparse.ArgumentParser:
     qwen_pair_compose.add_argument("--max-calibration-texts", type=int)
     qwen_pair_compose.set_defaults(func=cmd_hf_qwen_pair_compose)
 
+    qwen_logit_head = sub.add_parser(
+        "hf-qwen-logit-head",
+        help="Fit an untied child head against actual full-vocabulary donor logits without gradients.",
+    )
+    qwen_logit_head.add_argument("source_model")
+    qwen_logit_head.add_argument("candidate_model")
+    qwen_logit_head.add_argument("output")
+    qwen_logit_head.add_argument("--ridge", type=float, default=1e-3)
+    qwen_logit_head.add_argument("--max-length", type=int, default=160)
+    qwen_logit_head.add_argument("--batch-size", type=int, default=2)
+    qwen_logit_head.add_argument("--max-rows", type=int, default=4096)
+    qwen_logit_head.add_argument("--validation-fraction", type=float, default=0.25)
+    qwen_logit_head.add_argument("--min-train-prompts", type=int, default=2)
+    qwen_logit_head.add_argument("--min-validation-prompts", type=int, default=1)
+    qwen_logit_head.add_argument("--split-seed", type=int, default=0)
+    qwen_logit_head.add_argument(
+        "--candidate-alphas", default="0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1"
+    )
+    qwen_logit_head.add_argument("--top-k", type=int, default=5)
+    qwen_logit_head.add_argument("--temperature", type=float, default=1.0)
+    qwen_logit_head.add_argument("--vocab-chunk-size", type=int, default=4096)
+    qwen_logit_head.add_argument("--dtype", default="float16")
+    qwen_logit_head.add_argument("--candidate-dtype", default="float32")
+    qwen_logit_head.add_argument("--device", default="cuda:0")
+    qwen_logit_head.add_argument("--trust-remote-code", action="store_true")
+    qwen_logit_head.add_argument("--calibration-file", required=True)
+    qwen_logit_head.add_argument("--max-calibration-texts", type=int, default=256)
+    qwen_logit_head.set_defaults(func=cmd_hf_qwen_logit_head)
+
     xfamily_block_recover = sub.add_parser(
         "hf-xfamily-block-recover",
         help="Sequentially train each target block against projected cross-tokenizer donor block activations.",
@@ -3296,6 +3325,44 @@ def cmd_hf_qwen_pair_compose(args: argparse.Namespace) -> dict[str, object]:
         head_validation_vocab_rows=args.head_validation_vocab_rows,
         torch_dtype=args.dtype,
         target_torch_dtype=args.candidate_dtype,
+        device=args.device,
+        trust_remote_code=args.trust_remote_code,
+    )
+
+
+def cmd_hf_qwen_logit_head(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_qwen_logit_head import (
+        transplant_qwen_logit_head_checkpoint,
+    )
+
+    alphas = [
+        float(part.strip())
+        for part in args.candidate_alphas.split(",")
+        if part.strip()
+    ]
+    return transplant_qwen_logit_head_checkpoint(
+        donor_model=args.source_model,
+        child_model=args.candidate_model,
+        output_dir=args.output,
+        calibration_texts=_load_qwen_pair_calibration_texts(
+            args.calibration_file,
+            args.max_calibration_texts,
+            "keyword",
+        ),
+        ridge=args.ridge,
+        validation_fraction=args.validation_fraction,
+        min_train_prompts=args.min_train_prompts,
+        min_validation_prompts=args.min_validation_prompts,
+        split_seed=args.split_seed,
+        candidate_alphas=alphas,
+        top_k=args.top_k,
+        temperature=args.temperature,
+        vocab_chunk_size=args.vocab_chunk_size,
+        max_length=args.max_length,
+        batch_size=args.batch_size,
+        max_rows=args.max_rows,
+        torch_dtype=args.dtype,
+        child_torch_dtype=args.candidate_dtype,
         device=args.device,
         trust_remote_code=args.trust_remote_code,
     )
