@@ -17,6 +17,9 @@ from neural_forge.hf_blank_bootstrap import (  # noqa: E402
 from neural_forge.hf_transport_manifest import (  # noqa: E402
     build_decoder_transport_manifest,
 )
+from neural_forge.hf_token_align import (  # noqa: E402
+    build_strict_token_transport_profile,
+)
 
 
 def _gpt2_source():
@@ -105,11 +108,11 @@ def _qwen3_source():
     )
 
 
-def _llama_target(*, hidden_size: int = 8):
+def _llama_target(*, hidden_size: int = 8, vocab_size: int = 64):
     torch.manual_seed(303)
     return transformers.LlamaForCausalLM(
         transformers.LlamaConfig(
-            vocab_size=64,
+            vocab_size=vocab_size,
             hidden_size=hidden_size,
             intermediate_size=12,
             num_hidden_layers=2,
@@ -190,6 +193,25 @@ def _right_pad(batch, padded_length: int):
             dim=1,
         ),
     }
+
+
+class _FakeTokenizer:
+    def __init__(self, surfaces):
+        self.surfaces = list(surfaces)
+        self.all_special_ids = []
+
+    def __len__(self):
+        return len(self.surfaces)
+
+    def decode(self, token_ids, **_kwargs):
+        return "".join(self.surfaces[int(token_id)] for token_id in token_ids)
+
+    def encode(self, text, *, add_special_tokens):
+        assert add_special_tokens is False
+        return [self.surfaces.index(text)]
+
+    def get_vocab(self):
+        return {surface: index for index, surface in enumerate(self.surfaces)}
 
 
 @pytest.mark.parametrize(
@@ -305,6 +327,155 @@ def test_prompt_pooled_bootstrap_accepts_different_token_sequence_lengths() -> N
     assert result.candidate_gate_metrics.logits.relative_rmse <= (
         result.baseline_gate_metrics.logits.relative_rmse
     )
+
+
+def test_cross_tokenizer_bootstrap_reorders_vocab_and_projects_teacher_columns() -> None:
+    source = _gpt2_source()
+    target = _llama_target(vocab_size=16)
+    donor_surfaces = [f"token-{index}" for index in range(64)]
+    mapping = (0, 1, 2, 13, 8, 21, 5, 34, 3, 55, 9, 12, 7, 19, 4, 31)
+    target_surfaces = [donor_surfaces[index] for index in mapping]
+    profile = build_strict_token_transport_profile(
+        _FakeTokenizer(donor_surfaces),
+        _FakeTokenizer(target_surfaces),
+        donor_row_capacity=64,
+        target_row_capacity=16,
+    )
+    generator = torch.Generator().manual_seed(550)
+    target_ids = torch.randint(3, 16, (16, 6), generator=generator)
+    donor_index = torch.tensor(mapping, dtype=torch.long)
+    source_ids = donor_index[target_ids]
+    source_inputs = {
+        "input_ids": source_ids,
+        "attention_mask": torch.ones_like(source_ids),
+    }
+    target_inputs = {
+        "input_ids": target_ids,
+        "attention_mask": torch.ones_like(target_ids),
+    }
+
+    result = bootstrap_blank_decoder_models(
+        source,
+        target,
+        source_inputs,
+        validation_inputs=source_inputs,
+        target_calibration_inputs=target_inputs,
+        target_validation_inputs=target_inputs,
+        token_transport_profile=profile,
+        cross_tokenizer_mode=True,
+        trace_pooling="mean",
+        fit_full_lm_head=False,
+        max_coordinate_rows=24,
+        vocab_projection_chunk_size=5,
+        vocab_row_norm_repair="source_l2",
+    )
+
+    assert result.transaction.accepted is True, result.transaction.report["gate"]
+    assert result.fit_reports["embeddings.token"]["row_transport"] == (
+        "strict-index-select"
+    )
+    contract = result.fit_reports["teacher_logits.target_space"]
+    assert contract["space"] == "target-tokenizer-columns"
+    assert contract["source_shape"] == [16, 64]
+    assert contract["target_shape"] == [16, 16]
+    assert contract["transport_profile_fingerprint"] == profile.fingerprint()
+    selected_source = source.get_input_embeddings().weight.index_select(0, donor_index)
+    assert torch.allclose(
+        torch.linalg.vector_norm(target.get_input_embeddings().weight, dim=1),
+        torch.linalg.vector_norm(selected_source, dim=1),
+        atol=1e-5,
+        rtol=1e-5,
+    )
+
+
+def test_pca_operator_prior_uses_coordinate_transport_formula_and_bias() -> None:
+    generator = torch.Generator().manual_seed(575)
+    input_coordinates = bootstrap_module.build_parent_residual_basis(
+        torch.randn(32, 5, generator=generator, dtype=torch.float64),
+        3,
+        center=False,
+    )
+    output_coordinates = bootstrap_module.build_parent_residual_basis(
+        torch.randn(32, 7, generator=generator, dtype=torch.float64),
+        4,
+        center=False,
+    )
+    source = bootstrap_module.LinearOperator(
+        path="source",
+        weight=torch.randn(7, 5, generator=generator, dtype=torch.float64),
+        bias=torch.randn(7, generator=generator, dtype=torch.float64),
+    )
+    target = bootstrap_module.LinearOperator(
+        path="target",
+        weight=torch.zeros(4, 3, dtype=torch.float64),
+        bias=torch.zeros(4, dtype=torch.float64),
+    )
+
+    actual = bootstrap_module._transport_operator_prior(
+        torch,
+        source,
+        target,
+        output_coordinates,
+        input_coordinates,
+    )
+    expected = bootstrap_module.transport_linear_operator(
+        source.weight,
+        input_coordinates,
+        output_coordinates,
+        source_bias=source.bias,
+    )
+
+    assert torch.equal(actual.weight, expected.weight)
+    assert torch.equal(actual.bias, expected.bias)
+
+
+def test_pca_bootstrap_transports_all_priors_and_composes_depth_spans() -> None:
+    result = bootstrap_blank_decoder_models(
+        _qwen3_source(),
+        _qwen3_target(),
+        _batch(580, batch_size=16),
+        validation_inputs=_batch(581, batch_size=16),
+        residual_map_method="pca",
+        max_coordinate_rows=24,
+        fit_full_lm_head=False,
+    )
+
+    assert result.transaction.accepted is True, result.transaction.report["gate"]
+    for block_index in range(2):
+        attention = result.fit_reports[
+            f"block.{block_index}.attention.structural_prior"
+        ]
+        mlp = result.fit_reports[f"block.{block_index}.mlp.structural_prior"]
+        assert attention["applied"] is True
+        assert attention["coordinate_method"] == "pca-coordinate-formula"
+        assert attention["producer_aggregation"] == "mean"
+        assert attention["residual_consumer_aggregation"] == "sum"
+        assert mlp["applied"] is True
+        assert mlp["coordinate_method"] == "pca-coordinate-formula"
+        assert mlp["residual_consumer_aggregation"] == "sum"
+        assert result.fit_reports[f"block.{block_index}.attention.norm"][
+            "finite"
+        ] is True
+        assert result.fit_reports[f"block.{block_index}.mlp.norm"]["finite"] is True
+        assert result.fit_reports[f"block.{block_index}.attention.query_norm"][
+            "method"
+        ] == "deterministic-full-coverage-effective-rms-scale-mean"
+        assert result.fit_reports[f"block.{block_index}.attention.key_norm"][
+            "method"
+        ] == "deterministic-full-coverage-effective-rms-scale-mean"
+        feature_report = result.fit_reports[
+            f"block.{block_index}.attention.feature_folds"
+        ]
+        assert feature_report["query"]["method"] == "pca-coordinate-map"
+        assert feature_report["query"]["orthonormal_columns"] is True
+
+    span = result.fit_reports["block.1.span"]
+    assert span["source_layers"] == [1, 2]
+    assert span["residual_composition"] == "ordered-source-span-endpoint"
+    assert span["attention_delta_target"] == (
+        "sum-encoded-source-attention-deltas"
+    )
+    assert span["structural_prior_residual_consumers"] == "sum"
 
 
 def test_blank_bootstrap_rejects_a_wider_target_before_mutation() -> None:

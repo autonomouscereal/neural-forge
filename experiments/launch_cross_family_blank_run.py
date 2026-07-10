@@ -175,6 +175,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         calibration_prompts=calibration,
         validation_prompts=validation,
         tokenizer=None,
+        donor_tokenizer=None,
+        target_tokenizer=args.target_tokenizer_model,
         seed=args.seed,
         dtype=args.dtype,
         donor_dtype=args.donor_dtype,
@@ -205,10 +207,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     )
 
     run_report: dict[str, Any] = {
-        "schema": "neural-forge-cross-family-blank-run-v1",
+        "schema": "neural-forge-cross-family-blank-run-v2",
         "tag": args.tag,
         "run_dir": str(run_dir),
         "source_model": args.source_model,
+        "target_tokenizer_model": args.target_tokenizer_model,
         "prompt_split": split_report,
         "checkpoint_report": checkpoint_report,
         "parent_eval": str(args.cached_parent_eval.resolve()),
@@ -272,6 +275,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-model", required=True)
+    parser.add_argument("--target-tokenizer-model")
     parser.add_argument("--run-root", type=Path, required=True)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--calibration-file", type=Path, required=True)

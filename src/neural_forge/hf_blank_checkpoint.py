@@ -18,10 +18,14 @@ from neural_forge.hf_arch_layout import (
 )
 from neural_forge.hf_blank_bootstrap import bootstrap_blank_decoder_models
 from neural_forge.hf_factorized_vocab import exact_parameter_report
+from neural_forge.hf_token_align import (
+    StrictTokenTransportRejectedError,
+    build_strict_token_transport_profile,
+)
 
 
 REPORT_FILENAME = "neural_forge_blank_checkpoint_report.json"
-REPORT_SCHEMA = "neural-forge-blank-checkpoint-v1"
+REPORT_SCHEMA = "neural-forge-blank-checkpoint-v2"
 TargetFamily = Literal["gpt2", "llama", "qwen3"]
 
 
@@ -245,7 +249,7 @@ def _ids_compatible(model_value: Any, tokenizer_value: Any) -> bool:
 
 def _special_token_ids(model: Any, tokenizer: Any, vocab_size: int) -> dict[str, Any]:
     result: dict[str, Any] = {}
-    for name in ("bos_token_id", "eos_token_id", "pad_token_id"):
+    for name in ("bos_token_id", "eos_token_id", "pad_token_id", "unk_token_id"):
         model_value = _normal_special_id(
             getattr(model.config, name, None), name, vocab_size
         )
@@ -278,6 +282,30 @@ def _special_token_ids(model: Any, tokenizer: Any, vocab_size: int) -> dict[str,
     return result
 
 
+def _target_special_token_ids(tokenizer: Any, vocab_size: int) -> dict[str, Any]:
+    result = {
+        name: _normal_special_id(getattr(tokenizer, name, None), name, vocab_size)
+        for name in ("bos_token_id", "eos_token_id", "pad_token_id", "unk_token_id")
+    }
+    if result["pad_token_id"] is None:
+        eos = result["eos_token_id"]
+        eos_id = eos[0] if isinstance(eos, list) else eos
+        if eos_id is None:
+            raise BlankCheckpointError(
+                "The target tokenizer requires a pad token or scalar EOS token."
+            )
+        token = tokenizer.convert_ids_to_tokens(eos_id)
+        if token is None:
+            raise BlankCheckpointError("The target fallback EOS token cannot be resolved.")
+        tokenizer.pad_token = token
+        if tokenizer.pad_token_id != eos_id:
+            raise BlankCheckpointError(
+                "Failed to assign target EOS as the tokenizer pad token."
+            )
+        result["pad_token_id"] = eos_id
+    return result
+
+
 def _tokenizer_identity(
     tokenizer: Any, special_ids: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -289,13 +317,17 @@ def _tokenizer_identity(
             "The tokenizer vocabulary must be a non-empty mapping."
         )
     normalized_vocab = {str(token): int(index) for token, index in vocab.items()}
-    return {
+    stable = {
         "class": type(tokenizer).__name__,
-        "name_or_path": str(getattr(tokenizer, "name_or_path", "")),
         "length": int(len(tokenizer)),
         "vocab_entries": len(normalized_vocab),
         "vocab_sha256": _json_sha256(normalized_vocab),
         "special_token_ids": dict(special_ids),
+    }
+    return {
+        **stable,
+        "name_or_path": str(getattr(tokenizer, "name_or_path", "")),
+        "identity_sha256": _json_sha256(stable),
     }
 
 
@@ -434,6 +466,7 @@ def _target_model(
         "bos_token_id": special_ids["bos_token_id"],
         "eos_token_id": special_ids["eos_token_id"],
         "pad_token_id": special_ids["pad_token_id"],
+        "unk_token_id": special_ids["unk_token_id"],
         "tie_word_embeddings": tied,
         "use_cache": False,
     }
@@ -629,6 +662,8 @@ def bootstrap_blank_decoder_checkpoint(
     calibration_prompts: Sequence[str],
     validation_prompts: Sequence[str],
     tokenizer: Any = None,
+    donor_tokenizer: Any = None,
+    target_tokenizer: Any = None,
     seed: int = 0,
     dtype: Any = "float32",
     donor_dtype: Any | None = None,
@@ -684,6 +719,13 @@ def bootstrap_blank_decoder_checkpoint(
     )
     calibration = _prompt_sequence(calibration_prompts, "calibration_prompts")
     validation = _prompt_sequence(validation_prompts, "validation_prompts")
+    if tokenizer is not None and (
+        donor_tokenizer is not None or target_tokenizer is not None
+    ):
+        raise BlankCheckpointError(
+            "tokenizer is a shared backward-compatible alias and cannot be combined "
+            "with donor_tokenizer or target_tokenizer."
+        )
     resolved_dtype = _dtype(torch, dtype)
     resolved_donor_dtype = (
         resolved_dtype if donor_dtype is None else _dtype(torch, donor_dtype)
@@ -711,29 +753,87 @@ def bootstrap_blank_decoder_checkpoint(
     source_fingerprint_before = _state_dict_sha256(torch, source)
     _assert_no_gradients(source, "donor")
 
-    resolved_tokenizer, tokenizer_load = _load_tokenizer(
+    shared_alias_used = tokenizer is not None
+    donor_tokenizer_choice = tokenizer if shared_alias_used else donor_tokenizer
+    target_tokenizer_choice = tokenizer if shared_alias_used else target_tokenizer
+    resolved_donor_tokenizer, donor_tokenizer_load = _load_tokenizer(
         transformers,
-        tokenizer,
+        donor_tokenizer_choice,
         donor_reference,
         trust_remote_code=trust,
         local_files_only=local_only,
     )
-    vocab_size = source_layout.embeddings.vocab_size
-    if len(resolved_tokenizer) > vocab_size:
-        raise BlankCheckpointError("Tokenizer vocabulary exceeds the donor vocabulary.")
-    special_ids = _special_token_ids(source, resolved_tokenizer, vocab_size)
-    tokenizer_report = {
-        **_tokenizer_identity(resolved_tokenizer, special_ids),
-        **tokenizer_load,
+    if target_tokenizer_choice is None:
+        resolved_target_tokenizer = resolved_donor_tokenizer
+        target_tokenizer_load = {
+            **donor_tokenizer_load,
+            "defaulted_to_donor": True,
+            "shared_with_donor": True,
+        }
+    else:
+        resolved_target_tokenizer, target_tokenizer_load = _load_tokenizer(
+            transformers,
+            target_tokenizer_choice,
+            donor_reference,
+            trust_remote_code=trust,
+            local_files_only=local_only,
+        )
+        target_tokenizer_load = {
+            **target_tokenizer_load,
+            "shared_with_donor": resolved_target_tokenizer is resolved_donor_tokenizer,
+        }
+    donor_vocab_capacity = source_layout.embeddings.vocab_size
+    if len(resolved_donor_tokenizer) > donor_vocab_capacity:
+        raise BlankCheckpointError(
+            "Donor tokenizer vocabulary exceeds the donor vocabulary operators."
+        )
+    donor_special_ids = _special_token_ids(
+        source,
+        resolved_donor_tokenizer,
+        donor_vocab_capacity,
+    )
+    target_vocab_size = int(len(resolved_target_tokenizer))
+    if target_vocab_size <= 0:
+        raise BlankCheckpointError("Target tokenizer vocabulary must be non-empty.")
+    target_special_ids = _target_special_token_ids(
+        resolved_target_tokenizer,
+        target_vocab_size,
+    )
+    donor_tokenizer_report = {
+        **_tokenizer_identity(resolved_donor_tokenizer, donor_special_ids),
+        **donor_tokenizer_load,
     }
+    target_tokenizer_report = {
+        **_tokenizer_identity(resolved_target_tokenizer, target_special_ids),
+        **target_tokenizer_load,
+    }
+    cross_tokenizer_mode = resolved_target_tokenizer is not resolved_donor_tokenizer
+    if cross_tokenizer_mode and trace_pooling not in {"mean", "last_valid"}:
+        raise BlankCheckpointError(
+            "Cross-tokenizer checkpoint bootstrap requires trace_pooling mean or "
+            "last_valid."
+        )
+    token_transport_profile = None
+    if cross_tokenizer_mode or target_vocab_size != donor_vocab_capacity:
+        try:
+            token_transport_profile = build_strict_token_transport_profile(
+                resolved_donor_tokenizer,
+                resolved_target_tokenizer,
+                donor_row_capacity=donor_vocab_capacity,
+                target_row_capacity=target_vocab_size,
+            )
+        except StrictTokenTransportRejectedError as exc:
+            raise BlankCheckpointError(
+                f"Strict token transport alignment rejected: {exc}"
+            ) from exc
 
     target, constructor = _target_model(
         torch,
         transformers,
         shape,
         source_config=source.config,
-        vocab_size=vocab_size,
-        special_ids=special_ids,
+        vocab_size=target_vocab_size,
+        special_ids=target_special_ids,
         tied=source_layout.tie_word_embeddings,
         seed=seed_value,
         dtype=resolved_target_dtype,
@@ -758,21 +858,43 @@ def bootstrap_blank_decoder_checkpoint(
         budget = None
 
     max_length = int(shape["max_position_embeddings"])
-    calibration_inputs, calibration_report = _tokenize(
+    donor_calibration_inputs, donor_calibration_report = _tokenize(
         torch,
-        resolved_tokenizer,
+        resolved_donor_tokenizer,
         calibration,
         max_length=max_length,
         device=resolved_device,
     )
-    validation_inputs, validation_report = _tokenize(
+    donor_validation_inputs, donor_validation_report = _tokenize(
         torch,
-        resolved_tokenizer,
+        resolved_donor_tokenizer,
         validation,
         max_length=max_length,
         device=resolved_device,
     )
-    if int(calibration_report["valid_token_count"]) < target_layout.hidden_size:
+    target_calibration_inputs, target_calibration_report = _tokenize(
+        torch,
+        resolved_target_tokenizer,
+        calibration,
+        max_length=max_length,
+        device=resolved_device,
+    )
+    target_validation_inputs, target_validation_report = _tokenize(
+        torch,
+        resolved_target_tokenizer,
+        validation,
+        max_length=max_length,
+        device=resolved_device,
+    )
+    for split, donor_record, target_record in (
+        ("calibration", donor_calibration_report, target_calibration_report),
+        ("validation", donor_validation_report, target_validation_report),
+    ):
+        if donor_record["prompt_sha256"] != target_record["prompt_sha256"]:
+            raise BlankCheckpointError(
+                f"Donor and target {split} batches must use the same ordered prompts."
+            )
+    if int(donor_calibration_report["valid_token_count"]) < target_layout.hidden_size:
         raise BlankCheckpointError(
             "Calibration must provide at least hidden_size valid token rows."
         )
@@ -780,8 +902,12 @@ def bootstrap_blank_decoder_checkpoint(
     result = bootstrap_blank_decoder_models(
         source,
         target,
-        calibration_inputs,
-        validation_inputs=validation_inputs,
+        donor_calibration_inputs,
+        validation_inputs=donor_validation_inputs,
+        target_calibration_inputs=target_calibration_inputs,
+        target_validation_inputs=target_validation_inputs,
+        token_transport_profile=token_transport_profile,
+        cross_tokenizer_mode=cross_tokenizer_mode,
         trace_pooling=trace_pooling,
         residual_map_method=residual_map_method,
         ridge=ridge,
@@ -857,10 +983,51 @@ def bootstrap_blank_decoder_checkpoint(
                 blank_counts,
             ),
         },
-        "tokenizer": tokenizer_report,
+        "tokenizer": target_tokenizer_report,
+        "tokenizers": {
+            "mode": "cross-tokenizer" if cross_tokenizer_mode else "shared-tokenizer",
+            "shared_alias_used": shared_alias_used,
+            "donor": donor_tokenizer_report,
+            "target": target_tokenizer_report,
+        },
+        "token_transport": (
+            {
+                **token_transport_profile.to_dict(),
+                "profile_fingerprint": token_transport_profile.fingerprint(),
+            }
+            if token_transport_profile is not None
+            else {
+                "schema_version": 2,
+                "profile": "shared-token-id-identity",
+                "direction": "target-row-to-donor-row",
+                "profile_fingerprint": None,
+                "alignment_fingerprint": None,
+            }
+        ),
         "tokenization": {
-            "calibration": calibration_report,
-            "validation": validation_report,
+            "calibration": donor_calibration_report,
+            "validation": donor_validation_report,
+            "donor": {
+                "calibration": donor_calibration_report,
+                "validation": donor_validation_report,
+            },
+            "target": {
+                "calibration": target_calibration_report,
+                "validation": target_validation_report,
+            },
+            "raw_prompt_contract": {
+                "same_ordered_prompts": True,
+                "calibration_prompt_sha256": donor_calibration_report[
+                    "prompt_sha256"
+                ],
+                "validation_prompt_sha256": donor_validation_report[
+                    "prompt_sha256"
+                ],
+                "independently_tokenized": cross_tokenizer_mode,
+                "unequal_sequence_lengths_allowed": trace_pooling
+                in {"mean", "last_valid"},
+                "pooled_prompt_rows_required": cross_tokenizer_mode,
+            },
         },
         "bootstrap": {
             "gate": result.transaction.report["gate"],
@@ -868,6 +1035,9 @@ def bootstrap_blank_decoder_checkpoint(
             "rollback": result.transaction.report["rollback"],
             "donor_layer_spans": [list(span) for span in result.donor_layer_spans],
             "fit_reports": dict(result.fit_reports),
+            "target_space_teacher_logits": result.fit_reports[
+                "teacher_logits.target_space"
+            ],
             "residual_coordinates": (
                 result.residual_coordinates.report.as_dict()
                 if getattr(result.residual_coordinates, "report", None) is not None
@@ -915,12 +1085,12 @@ def bootstrap_blank_decoder_checkpoint(
         }
         return _publish(output, report)
 
-    expected_logits = _validation_logits(torch, target, validation_inputs)
+    expected_logits = _validation_logits(torch, target, target_validation_inputs)
     expected_logits_sha256 = _tensor_sha256(torch, expected_logits)
 
     def save_and_verify(stage: Path) -> None:
         target.save_pretrained(stage, safe_serialization=True)
-        resolved_tokenizer.save_pretrained(stage)
+        resolved_target_tokenizer.save_pretrained(stage)
         safetensors = list(stage.glob("*.safetensors"))
         if not safetensors or list(stage.glob("*.bin")):
             raise BlankCheckpointError(
@@ -933,7 +1103,42 @@ def bootstrap_blank_decoder_checkpoint(
         )
         reloaded.to(resolved_device)
         reloaded.eval()
-        actual_logits = _validation_logits(torch, reloaded, validation_inputs)
+        reloaded_target_tokenizer = transformers.AutoTokenizer.from_pretrained(
+            stage,
+            trust_remote_code=trust,
+            local_files_only=True,
+        )
+        reloaded_target_special_ids = _target_special_token_ids(
+            reloaded_target_tokenizer,
+            target_vocab_size,
+        )
+        reloaded_target_identity = _tokenizer_identity(
+            reloaded_target_tokenizer,
+            reloaded_target_special_ids,
+        )
+        if (
+            reloaded_target_identity["identity_sha256"]
+            != target_tokenizer_report["identity_sha256"]
+        ):
+            raise BlankCheckpointError(
+                "Reloaded target tokenizer identity does not match the published target."
+            )
+        reloaded_validation_inputs, reloaded_validation_report = _tokenize(
+            torch,
+            reloaded_target_tokenizer,
+            validation,
+            max_length=max_length,
+            device=resolved_device,
+        )
+        if reloaded_validation_report != target_validation_report:
+            raise BlankCheckpointError(
+                "Reloaded target tokenizer changed validation retokenization hashes."
+            )
+        actual_logits = _validation_logits(
+            torch,
+            reloaded,
+            reloaded_validation_inputs,
+        )
         actual_sha256 = _tensor_sha256(torch, actual_logits)
         exact = torch.equal(expected_logits, actual_logits)
         reloaded_fingerprint = _state_dict_sha256(torch, reloaded)
@@ -948,6 +1153,28 @@ def bootstrap_blank_decoder_checkpoint(
             "validation_logits_sha256_before_save": expected_logits_sha256,
             "validation_logits_sha256_after_reload": actual_sha256,
             "state_dict_sha256_after_reload": reloaded_fingerprint,
+            "target_tokenizer_identity_sha256_before_save": (
+                target_tokenizer_report["identity_sha256"]
+            ),
+            "target_tokenizer_identity_sha256_after_reload": (
+                reloaded_target_identity["identity_sha256"]
+            ),
+            "target_tokenizer_identity_exact": True,
+            "validation_retokenization_hashes_before_save": {
+                "input_ids_sha256": target_validation_report["input_ids_sha256"],
+                "attention_mask_sha256": target_validation_report[
+                    "attention_mask_sha256"
+                ],
+            },
+            "validation_retokenization_hashes_after_reload": {
+                "input_ids_sha256": reloaded_validation_report[
+                    "input_ids_sha256"
+                ],
+                "attention_mask_sha256": reloaded_validation_report[
+                    "attention_mask_sha256"
+                ],
+            },
+            "validation_retokenization_exact": True,
         }
 
     return _publish(output, report, save_and_verify)

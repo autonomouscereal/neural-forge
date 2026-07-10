@@ -16,15 +16,22 @@ from neural_forge.hf_blank_checkpoint import (  # noqa: E402
 )
 
 
-def _tokenizer():
-    words = ["[PAD]", "[BOS]", "[EOS]", "[UNK]"] + [f"w{i}" for i in range(60)]
+def _tokenizer(words=None, *, whitespace_split=False):
+    if words is None:
+        words = ["[PAD]", "[BOS]", "[EOS]", "[UNK]"] + [
+            f"w{i}" for i in range(60)
+        ]
     backend = tokenizers.Tokenizer(
         tokenizers.models.WordLevel(
             {word: index for index, word in enumerate(words)},
             unk_token="[UNK]",
         )
     )
-    backend.pre_tokenizer = tokenizers.pre_tokenizers.Whitespace()
+    backend.pre_tokenizer = (
+        tokenizers.pre_tokenizers.WhitespaceSplit()
+        if whitespace_split
+        else tokenizers.pre_tokenizers.Whitespace()
+    )
     return transformers.PreTrainedTokenizerFast(
         tokenizer_object=backend,
         pad_token="[PAD]",
@@ -79,6 +86,16 @@ def _qwen3_source():
 def _prompts(offset: int) -> list[str]:
     return [
         " ".join(f"w{(offset + row + column) % 50}" for column in range(8))
+        for row in range(8)
+    ]
+
+
+def _cross_prompts(offset: int) -> list[str]:
+    return [
+        " ".join(
+            f"w{(offset + row + column) % 16}-w{(offset + row + column + 1) % 16}"
+            for column in range(4)
+        )
         for row in range(8)
     ]
 
@@ -173,6 +190,104 @@ def test_rejected_candidate_is_not_saved(tmp_path) -> None:
     assert [path.name for path in output.iterdir()] == [REPORT_FILENAME]
     saved_report = json.loads((output / REPORT_FILENAME).read_text(encoding="utf-8"))
     assert saved_report == report
+
+
+def test_smaller_reordered_cross_tokenizer_checkpoint_is_exact_after_reload(
+    tmp_path,
+) -> None:
+    target_words = [
+        "w7",
+        "[EOS]",
+        "w1",
+        "[PAD]",
+        "[UNK]",
+        "[BOS]",
+        *[f"w{index}" for index in range(16) if index not in {1, 7}],
+    ]
+    target_tokenizer = _tokenizer(target_words, whitespace_split=True)
+    output = tmp_path / "cross-tokenizer"
+
+    report = _run(
+        _qwen3_source(),
+        output,
+        donor_tokenizer=_tokenizer(),
+        target_tokenizer=target_tokenizer,
+        tokenizer=None,
+        calibration_prompts=_cross_prompts(0),
+        validation_prompts=_cross_prompts(3),
+        seed=304,
+        trace_pooling="mean",
+        residual_map_method="pca",
+        fit_full_lm_head=True,
+        vocab_row_norm_repair="source_l2",
+    )
+
+    assert report["schema"] == "neural-forge-blank-checkpoint-v2"
+    assert report["accepted"] is True, report["bootstrap"]["gate"]
+    assert report["tokenizers"]["mode"] == "cross-tokenizer"
+    assert report["tokenizers"]["donor"]["length"] == 64
+    assert report["tokenizers"]["target"]["length"] == len(target_words)
+    assert report["blank_target"]["architecture"]["vocab_size"] == len(
+        target_words
+    )
+    config = json.loads((output / "config.json").read_text(encoding="utf-8"))
+    assert config["bos_token_id"] == 5
+    assert config["eos_token_id"] == 1
+    assert config["pad_token_id"] == 3
+    assert config["unk_token_id"] == 4
+    transport = report["token_transport"]
+    assert transport["profile"] == "strict-cross-tokenizer-one-row-v1"
+    assert len(transport["row_mappings"]) == len(target_words)
+    assert transport["target_to_donor_row_indices"][:6] == [11, 2, 5, 0, 3, 1]
+    assert transport["alignment_fingerprint"]
+    assert transport["profile_fingerprint"]
+    teacher_contract = report["bootstrap"]["target_space_teacher_logits"]
+    assert teacher_contract["space"] == "target-tokenizer-columns"
+    assert teacher_contract["source_shape"][1] == 64
+    assert teacher_contract["target_shape"][1] == len(target_words)
+    attention_prior = report["bootstrap"]["fit_reports"][
+        "block.0.attention.structural_prior"
+    ]
+    mlp_prior = report["bootstrap"]["fit_reports"][
+        "block.0.mlp.structural_prior"
+    ]
+    assert attention_prior["applied"] is True
+    assert attention_prior["coordinate_method"] == "pca-coordinate-formula"
+    assert mlp_prior["applied"] is True
+    assert mlp_prior["coordinate_method"] == "pca-coordinate-formula"
+    donor_shape = report["tokenization"]["donor"]["validation"]["input_shape"]
+    target_shape = report["tokenization"]["target"]["validation"]["input_shape"]
+    assert donor_shape[0] == target_shape[0] == 8
+    assert donor_shape[1] != target_shape[1]
+    verification = report["checkpoint_verification"]
+    assert verification["target_tokenizer_identity_exact"] is True
+    assert verification["validation_retokenization_exact"] is True
+    assert (
+        verification["validation_retokenization_hashes_before_save"]
+        == verification["validation_retokenization_hashes_after_reload"]
+    )
+
+    reloaded_tokenizer = transformers.AutoTokenizer.from_pretrained(
+        output, local_files_only=True
+    )
+    assert reloaded_tokenizer.get_vocab() == target_tokenizer.get_vocab()
+
+
+def test_cross_tokenizer_alignment_failure_prevents_publication(tmp_path) -> None:
+    target_words = ["[PAD]", "[BOS]", "[EOS]", "[UNK]", "missing-token"]
+    output = tmp_path / "unalignable"
+
+    with pytest.raises(BlankCheckpointError, match="Strict token transport"):
+        _run(
+            _gpt2_source(),
+            output,
+            donor_tokenizer=_tokenizer(),
+            target_tokenizer=_tokenizer(target_words),
+            tokenizer=None,
+            trace_pooling="mean",
+        )
+
+    assert not output.exists()
 
 
 def test_shape_and_exact_parameter_budget_checks_fail_before_publication(

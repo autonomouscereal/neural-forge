@@ -33,6 +33,7 @@ from neural_forge.hf_operator_adapter import (
     write_mlp_operators,
 )
 from neural_forge.hf_targeted_trace import collect_hf_targeted_trace
+from neural_forge.hf_token_align import StrictTokenTransportProfile
 from neural_forge.hf_transport import (
     Disposition,
     GateDecision,
@@ -45,8 +46,10 @@ from neural_forge.hf_transport_manifest import (
     build_decoder_transport_manifest,
 )
 from neural_forge.hf_transport_math import (
+    CoordinateMap,
     build_parent_residual_basis,
     encode_coordinates,
+    transport_linear_operator,
 )
 from neural_forge.hf_transport_trace import (
     DecoderBlockTrace,
@@ -87,6 +90,8 @@ def bootstrap_blank_decoder_models(
     validation_inputs: Mapping[str, Any] | Any | None = None,
     target_calibration_inputs: Mapping[str, Any] | Any | None = None,
     target_validation_inputs: Mapping[str, Any] | Any | None = None,
+    token_transport_profile: StrictTokenTransportProfile | None = None,
+    cross_tokenizer_mode: bool = False,
     trace_pooling: Literal["token_rows", "mean", "last_valid"] = "token_rows",
     residual_map_method: Literal[
         "sparse_fold",
@@ -104,11 +109,7 @@ def bootstrap_blank_decoder_models(
     vocab_projection_chunk_size: int = 2048,
     vocab_row_norm_repair: Literal["none", "source_l2"] = "none",
 ) -> BlankBootstrapResult:
-    """Compile source behavior into a blank GPT-2/Llama target without gradients.
-
-    This first proof slice requires one shared token-ID space. Cross-tokenizer
-    embedding/head construction is handled separately by ``hf_token_transport``.
-    """
+    """Compile source behavior into a blank GPT-2/Llama target without gradients."""
 
     torch = _require_torch()
     ridge = _nonnegative_float(ridge, "ridge")
@@ -138,6 +139,22 @@ def bootstrap_blank_decoder_models(
         raise BlankBootstrapError(
             "vocab_row_norm_repair must be none or source_l2."
         )
+    if not isinstance(cross_tokenizer_mode, bool):
+        raise BlankBootstrapError("cross_tokenizer_mode must be boolean.")
+    if cross_tokenizer_mode:
+        if token_transport_profile is None:
+            raise BlankBootstrapError(
+                "cross_tokenizer_mode requires a strict token transport profile."
+            )
+        if trace_pooling not in {"mean", "last_valid"}:
+            raise BlankBootstrapError(
+                "Cross-tokenizer bootstrap requires mean or last_valid trace pooling."
+            )
+        if target_calibration_inputs is None or target_validation_inputs is None:
+            raise BlankBootstrapError(
+                "Cross-tokenizer bootstrap requires independently tokenized target "
+                "calibration and validation inputs."
+            )
     if (
         isinstance(max_full_head_fit_elements, bool)
         or not isinstance(max_full_head_fit_elements, int)
@@ -163,6 +180,7 @@ def bootstrap_blank_decoder_models(
         target_model,
         source_layout,
         target_layout,
+        token_transport_profile,
     )
     joint_source_geometry = None
     if residual_map_method == "joint_sparse_fold":
@@ -205,6 +223,13 @@ def bootstrap_blank_decoder_models(
         validation_values,
         trace_pooling,
     )
+    baseline_calibration = _target_trace_rows(
+        target_model,
+        target_calibration_values,
+        trace_pooling,
+        block_index=target_layout.layer_count - 1,
+    )
+    _require_row_alignment(source_calibration, baseline_calibration, "calibration")
     baseline_validation = _target_trace_rows(
         target_model,
         target_validation_values,
@@ -214,6 +239,12 @@ def bootstrap_blank_decoder_models(
         capture_logits=True,
     )
     _require_row_alignment(source_validation, baseline_validation, "validation")
+    target_teacher_validation_logits = _project_teacher_logits_to_target(
+        torch,
+        source_validation.logits,
+        token_transport_profile,
+        target_layout.embeddings.vocab_size,
+    )
     residual_rows = _residual_basis_rows(
         torch,
         source_calibration,
@@ -248,9 +279,15 @@ def bootstrap_blank_decoder_models(
     baseline_gate_metrics = _gate_metrics(
         baseline_validation,
         desired_validation_final,
-        source_validation.logits,
+        target_teacher_validation_logits,
     )
-    fit_reports: dict[str, Any] = {}
+    fit_reports: dict[str, Any] = {
+        "teacher_logits.target_space": _target_teacher_logit_contract(
+            source_validation.logits,
+            target_teacher_validation_logits,
+            token_transport_profile,
+        )
+    }
     if residual_map_report is not None:
         fit_reports["residual.map"] = residual_map_report
     candidate_gate_metrics: BootstrapGateMetrics | None = None
@@ -268,6 +305,7 @@ def bootstrap_blank_decoder_models(
             trace_pooling,
             vocab_projection_chunk_size,
             vocab_row_norm_repair,
+            token_transport_profile,
             fit_reports,
         )
         for target_index, source_span in enumerate(donor_layer_spans):
@@ -301,6 +339,7 @@ def bootstrap_blank_decoder_models(
             ridge,
             fit_full_lm_head,
             max_full_head_fit_elements,
+            token_transport_profile,
             fit_reports,
         )
         _record_complete_evidence(coverage, manifest, fit_reports)
@@ -318,7 +357,7 @@ def bootstrap_blank_decoder_models(
         candidate_gate_metrics = _gate_metrics(
             candidate_validation,
             desired_validation_final,
-            source_validation.logits,
+            target_teacher_validation_logits,
         )
         final_gain = _relative_improvement(
             baseline_gate_metrics.final_state.relative_rmse,
@@ -377,6 +416,7 @@ def _validate_bootstrap_contract(
     target_model: Any,
     source_layout: DecoderLayout,
     target_layout: DecoderLayout,
+    token_transport_profile: StrictTokenTransportProfile | None,
 ) -> None:
     if target_layout.layer_count > source_layout.layer_count:
         raise BlankBootstrapError(
@@ -401,9 +441,21 @@ def _validate_bootstrap_contract(
         raise BlankBootstrapError("Both models must expose embeddings and LM heads.")
     source_vocab = int(source_embedding.weight.shape[0])
     target_vocab = int(target_embedding.weight.shape[0])
-    if source_vocab != target_vocab or int(source_head.weight.shape[0]) != target_vocab:
+    if token_transport_profile is None:
+        vocabularies_match = source_vocab == target_vocab
+    else:
+        vocabularies_match = (
+            token_transport_profile.donor_row_capacity == source_vocab
+            and token_transport_profile.target_row_capacity == target_vocab
+        )
+    if (
+        not vocabularies_match
+        or int(source_head.weight.shape[0]) != source_vocab
+        or int(target_head.weight.shape[0]) != target_vocab
+    ):
         raise BlankBootstrapError(
-            "This bootstrap slice requires one shared token-ID vocabulary size."
+            "Vocabulary operators do not satisfy the shared or strict token "
+            "transport row contract."
         )
     target_tied = _same_storage(target_embedding.weight, target_head.weight)
     source_tied = _same_storage(source_embedding.weight, source_head.weight)
@@ -883,6 +935,69 @@ def _copy_projected_rows(
     }
 
 
+def _transport_source_rows(
+    torch: Any,
+    source_rows: Any,
+    profile: StrictTokenTransportProfile | None,
+) -> Any:
+    if profile is None:
+        return source_rows
+    indices = torch.tensor(
+        profile.target_to_donor_row_indices,
+        device=source_rows.device,
+        dtype=torch.long,
+    )
+    return source_rows.index_select(0, indices)
+
+
+def _project_teacher_logits_to_target(
+    torch: Any,
+    source_logits: Any,
+    profile: StrictTokenTransportProfile | None,
+    target_vocab_size: int,
+) -> Any:
+    if source_logits.ndim != 2:
+        raise BlankBootstrapError("Pooled teacher logits must be rank two.")
+    if profile is None:
+        projected = source_logits
+    else:
+        indices = torch.tensor(
+            profile.target_to_donor_row_indices,
+            device=source_logits.device,
+            dtype=torch.long,
+        )
+        projected = source_logits.index_select(1, indices)
+    if int(projected.shape[1]) != int(target_vocab_size):
+        raise BlankBootstrapError(
+            "Target-space teacher logits do not match the target vocabulary."
+        )
+    return projected
+
+
+def _target_teacher_logit_contract(
+    source_logits: Any,
+    target_logits: Any,
+    profile: StrictTokenTransportProfile | None,
+) -> dict[str, Any]:
+    return {
+        "schema_version": 2,
+        "space": "target-tokenizer-columns",
+        "projection": (
+            "strict-target-row-to-donor-row-index-select"
+            if profile is not None
+            else "shared-token-id-identity"
+        ),
+        "source_shape": list(source_logits.shape),
+        "target_shape": list(target_logits.shape),
+        "alignment_fingerprint": (
+            profile.alignment_fingerprint if profile is not None else None
+        ),
+        "transport_profile_fingerprint": (
+            profile.fingerprint() if profile is not None else None
+        ),
+    }
+
+
 def _empty_ratio_summary() -> dict[str, Any]:
     return {
         "count": 0,
@@ -925,15 +1040,26 @@ def _initialize_embedding_and_head(
     trace_pooling: Literal["token_rows", "mean", "last_valid"],
     vocab_projection_chunk_size: int,
     vocab_row_norm_repair: Literal["none", "source_l2"],
+    token_transport_profile: StrictTokenTransportProfile | None,
     reports: dict[str, Any],
 ) -> None:
     source_embedding = source_model.get_input_embeddings()
     target_embedding = target_model.get_input_embeddings()
     source_head = source_model.get_output_embeddings()
     target_head = target_model.get_output_embeddings()
-    embedding_repair = _copy_projected_rows(
+    source_embedding_rows = _transport_source_rows(
         torch,
         source_embedding.weight,
+        token_transport_profile,
+    )
+    source_head_rows = _transport_source_rows(
+        torch,
+        source_head.weight,
+        token_transport_profile,
+    )
+    embedding_repair = _copy_projected_rows(
+        torch,
+        source_embedding_rows,
         target_embedding.weight,
         residual_coordinates,
         vocab_projection_chunk_size,
@@ -941,7 +1067,7 @@ def _initialize_embedding_and_head(
     )
     head_repair = _copy_projected_rows(
         torch,
-        source_head.weight,
+        source_head_rows,
         target_head.weight,
         residual_coordinates,
         vocab_projection_chunk_size,
@@ -953,16 +1079,27 @@ def _initialize_embedding_and_head(
         if target_bias is not None:
             target_bias.zero_()
             if source_bias is not None:
-                target_bias.copy_(source_bias.to(target_bias))
+                transported_bias = _transport_source_rows(
+                    torch,
+                    source_bias,
+                    token_transport_profile,
+                )
+                target_bias.copy_(transported_bias.to(target_bias))
     reports["embeddings.token"] = {
         "method": "chunked-parent-residual-basis-projection",
         "shape": list(target_embedding.weight.shape),
         "chunk_rows": vocab_projection_chunk_size,
+        "row_transport": (
+            "strict-index-select" if token_transport_profile is not None else "identity"
+        ),
     }
     reports["lm_head"] = {
         "method": "chunked-parent-residual-basis-projection",
         "shape": list(target_head.weight.shape),
         "chunk_rows": vocab_projection_chunk_size,
+        "row_transport": (
+            "strict-index-select" if token_transport_profile is not None else "identity"
+        ),
     }
     if embedding_repair is not None:
         target_tied = _same_storage(target_embedding.weight, target_head.weight)
@@ -1142,13 +1279,14 @@ def _fit_target_block(
         source_layout.blocks[source_span[-1]].attention,
         target_block_layout,
         max_coordinate_rows,
+        use_coordinate_maps=isinstance(residual_coordinates, CoordinateMap),
         )
     )
     reports[f"block.{target_index}.attention.feature_folds"] = {
-        "query": q_coordinates.report.as_dict(),
-        "key": k_coordinates.report.as_dict(),
-        "value": v_coordinates.report.as_dict(),
-        "context": context_coordinates.report.as_dict(),
+        "query": _coordinate_report(q_coordinates),
+        "key": _coordinate_report(k_coordinates),
+        "value": _coordinate_report(v_coordinates),
+        "context": _coordinate_report(context_coordinates),
         "source_query_head_norms": [
             source_layout.blocks[index].attention.query_norm.path
             for index in source_span
@@ -1297,12 +1435,25 @@ def _fit_target_block(
             for index in source_span
         )
     )
-    mlp_coordinates = build_feature_fold_map(
-        mlp_feature_rows,
-        target_block_layout.mlp.intermediate_size,
-        allow_sign_flip=not gated_triplet_compatible,
+    if isinstance(residual_coordinates, CoordinateMap):
+        mlp_coordinates = build_parent_residual_basis(
+            _sample_concatenated_rows(
+                torch,
+                mlp_feature_rows,
+                max_coordinate_rows,
+            ),
+            target_block_layout.mlp.intermediate_size,
+            center=False,
+        )
+    else:
+        mlp_coordinates = build_feature_fold_map(
+            mlp_feature_rows,
+            target_block_layout.mlp.intermediate_size,
+            allow_sign_flip=not gated_triplet_compatible,
+        )
+    reports[f"block.{target_index}.mlp.feature_fold"] = _coordinate_report(
+        mlp_coordinates
     )
-    reports[f"block.{target_index}.mlp.feature_fold"] = mlp_coordinates.report.as_dict()
     mlp_prior_report = _initialize_mlp_structural_prior(
         torch,
         source_model,
@@ -1454,6 +1605,13 @@ def _fit_target_block(
     reports[f"block.{target_index}.span"] = {
         "source_layers": list(source_span),
         "ordered_contiguous": True,
+        "residual_composition": "ordered-source-span-endpoint",
+        "attention_delta_target": "sum-encoded-source-attention-deltas",
+        "mlp_delta_target": (
+            "encoded-final-source-block-output-minus-target-post-attention-residual"
+        ),
+        "structural_prior_residual_consumers": "sum",
+        "structural_prior_feature_producers": "mean",
     }
 
 
@@ -1470,6 +1628,7 @@ def _fit_final_interface(
     ridge: float,
     fit_full_lm_head: bool,
     max_full_head_fit_elements: int,
+    token_transport_profile: StrictTokenTransportProfile | None,
     reports: dict[str, Any],
 ) -> None:
     del source_model, source_layout
@@ -1506,8 +1665,14 @@ def _fit_final_interface(
             block_index=last_block_index,
             capture_final_norm=True,
         )
+        target_teacher_logits = _project_teacher_logits_to_target(
+            torch,
+            source_trace.logits,
+            token_transport_profile,
+            target_layout.embeddings.vocab_size,
+        )
         elements = int(current.final_norm_output.shape[0]) * int(
-            source_trace.logits.shape[1]
+            target_teacher_logits.shape[1]
         )
         if elements > max_full_head_fit_elements:
             reports["lm_head"]["full_logit_fit"] = {
@@ -1524,7 +1689,7 @@ def _fit_final_interface(
         else:
             head_fit = fit_ridge_linear(
                 current.final_norm_output,
-                source_trace.logits,
+                target_teacher_logits,
                 ridge=ridge,
                 fit_bias=getattr(head, "bias", None) is not None,
             )
@@ -1582,8 +1747,37 @@ def _attention_feature_coordinates(
     source_attention_layout: Any,
     target_block_layout: Any,
     max_coordinate_rows: int,
-) -> tuple[FeatureFoldMap, FeatureFoldMap, FeatureFoldMap, FeatureFoldMap]:
+    *,
+    use_coordinate_maps: bool = False,
+) -> tuple[Any, Any, Any, Any]:
     target_attention = target_block_layout.attention
+    if use_coordinate_maps:
+        q_rows = _sample_concatenated_rows(torch, query_rows, max_coordinate_rows)
+        k_rows = _sample_concatenated_rows(torch, key_rows, max_coordinate_rows)
+        v_rows = _sample_concatenated_rows(torch, value_rows, max_coordinate_rows)
+        o_rows = _sample_concatenated_rows(torch, context_rows, max_coordinate_rows)
+        return (
+            build_parent_residual_basis(
+                q_rows,
+                target_attention.query_width,
+                center=False,
+            ),
+            build_parent_residual_basis(
+                k_rows,
+                target_attention.key_value_width,
+                center=False,
+            ),
+            build_parent_residual_basis(
+                v_rows,
+                target_attention.key_value_width,
+                center=False,
+            ),
+            build_parent_residual_basis(
+                o_rows,
+                target_attention.query_width,
+                center=False,
+            ),
+        )
     if (
         source_attention_layout.projection_style == "split_qkv"
         and target_attention.projection_style == "split_qkv"
@@ -1638,6 +1832,29 @@ def _attention_feature_coordinates(
     v_coordinates = build_feature_fold_map(v_rows, k_width)
     context_coordinates = build_feature_fold_map(o_rows, q_width)
     return q_coordinates, k_coordinates, v_coordinates, context_coordinates
+
+
+def _coordinate_report(coordinates: Any) -> dict[str, Any]:
+    if isinstance(coordinates, FeatureFoldMap):
+        return coordinates.report.as_dict()
+    if not isinstance(coordinates, CoordinateMap):
+        raise BlankBootstrapError("Unsupported feature-coordinate map.")
+    return {
+        "method": "pca-coordinate-map",
+        "source_width": coordinates.source_dim,
+        "target_width": coordinates.target_dim,
+        "activation_row_count": coordinates.activation_row_count,
+        "effective_rank": coordinates.effective_rank,
+        "explained_variance_fraction": coordinates.explained_variance_fraction,
+        "centered_for_fit": coordinates.centered_for_fit,
+        "orthonormal_columns": (
+            coordinates.diagnostics.target_identity_max_abs_error <= 1e-10
+        ),
+        "target_identity_max_abs_error": (
+            coordinates.diagnostics.target_identity_max_abs_error
+        ),
+        "finite": coordinates.diagnostics.finite,
+    }
 
 
 def _effective_source_attention_projection_rows(
@@ -1939,9 +2156,34 @@ def _transport_operator_prior(
     torch: Any,
     source: LinearOperator,
     target: LinearOperator,
-    output_coordinates: FeatureFoldMap,
-    input_coordinates: FeatureFoldMap,
+    output_coordinates: Any,
+    input_coordinates: Any,
 ) -> LinearOperator:
+    if isinstance(input_coordinates, CoordinateMap) and isinstance(
+        output_coordinates,
+        CoordinateMap,
+    ):
+        transported = transport_linear_operator(
+            source.weight,
+            input_coordinates,
+            output_coordinates,
+            source_bias=source.bias,
+        )
+        bias = transported.bias
+        if target.bias is not None and bias is None:
+            bias = torch.zeros(transported.weight.shape[0], dtype=torch.float64)
+        return LinearOperator(
+            path=target.path,
+            weight=transported.weight,
+            bias=bias if target.bias is not None else None,
+        )
+    if not isinstance(input_coordinates, FeatureFoldMap) or not isinstance(
+        output_coordinates,
+        FeatureFoldMap,
+    ):
+        raise BlankBootstrapError(
+            "Structural prior coordinate maps must use one coherent map family."
+        )
     folded_input = input_coordinates.fold_consumer_weight(source.weight)
     weight = output_coordinates.fold_producer_weight(folded_input)
     bias = None
@@ -1971,6 +2213,22 @@ def _mean_operator_priors(
     return LinearOperator(path=target.path, weight=weight, bias=bias)
 
 
+def _sum_operator_priors(
+    torch: Any,
+    target: LinearOperator,
+    values: Sequence[LinearOperator],
+) -> LinearOperator:
+    if not values:
+        raise BlankBootstrapError("A structural prior needs at least one donor operator.")
+    weight = torch.stack([value.weight for value in values], dim=0).sum(dim=0)
+    bias = None
+    if target.bias is not None:
+        if any(value.bias is None for value in values):
+            raise BlankBootstrapError("Structural prior bias topology is inconsistent.")
+        bias = torch.stack([value.bias for value in values], dim=0).sum(dim=0)
+    return LinearOperator(path=target.path, weight=weight, bias=bias)
+
+
 def _initialize_attention_structural_prior(
     torch: Any,
     source_model: Any,
@@ -1979,13 +2237,13 @@ def _initialize_attention_structural_prior(
     target_block_layout: Any,
     source_span: Sequence[int],
     residual_coordinates: Any,
-    query_coordinates: FeatureFoldMap,
-    key_coordinates: FeatureFoldMap,
-    value_coordinates: FeatureFoldMap,
-    context_coordinates: FeatureFoldMap,
+    query_coordinates: Any,
+    key_coordinates: Any,
+    value_coordinates: Any,
+    context_coordinates: Any,
 ) -> dict[str, Any]:
-    if not isinstance(residual_coordinates, FeatureFoldMap):
-        return {"applied": False, "reason": "residual-map-is-not-sparse-fold"}
+    if not isinstance(residual_coordinates, (FeatureFoldMap, CoordinateMap)):
+        return {"applied": False, "reason": "unsupported-residual-coordinate-map"}
     source_projection_styles = {
         source_layout.blocks[index].attention.projection_style
         for index in source_span
@@ -2059,7 +2317,7 @@ def _initialize_attention_structural_prior(
             target.value,
             [value.value for value in transported],
         ),
-        output=_mean_operator_priors(
+        output=_sum_operator_priors(
             torch,
             target.output,
             [value.output for value in transported],
@@ -2072,7 +2330,14 @@ def _initialize_attention_structural_prior(
     )
     return {
         "applied": True,
-        "method": "full-coverage-source-operator-fold-mean",
+        "method": "full-coverage-source-operator-transport-residual-sum",
+        "coordinate_method": (
+            "pca-coordinate-formula"
+            if isinstance(residual_coordinates, CoordinateMap)
+            else "sparse-feature-fold"
+        ),
+        "producer_aggregation": "mean",
+        "residual_consumer_aggregation": "sum",
         "source_layers": list(source_span),
         "query_weight_norm": float(torch.linalg.vector_norm(merged.query.weight)),
         "key_weight_norm": float(torch.linalg.vector_norm(merged.key.weight)),
@@ -2089,10 +2354,10 @@ def _initialize_mlp_structural_prior(
     target_block_layout: Any,
     source_span: Sequence[int],
     residual_coordinates: Any,
-    mlp_coordinates: FeatureFoldMap,
+    mlp_coordinates: Any,
 ) -> dict[str, Any]:
-    if not isinstance(residual_coordinates, FeatureFoldMap):
-        return {"applied": False, "reason": "residual-map-is-not-sparse-fold"}
+    if not isinstance(residual_coordinates, (FeatureFoldMap, CoordinateMap)):
+        return {"applied": False, "reason": "unsupported-residual-coordinate-map"}
     target = read_mlp_operators(target_model, target_block_layout)
     sources = [
         read_mlp_operators(source_model, source_layout.blocks[index])
@@ -2120,7 +2385,7 @@ def _initialize_mlp_structural_prior(
             input=_mean_operator_priors(torch, target.input, input_priors),
             gate=None,
             up=None,
-            down=_mean_operator_priors(
+            down=_sum_operator_priors(
                 torch,
                 target.down,
                 [
@@ -2169,7 +2434,7 @@ def _initialize_mlp_structural_prior(
                     for source in sources
                 ],
             ),
-            down=_mean_operator_priors(
+            down=_sum_operator_priors(
                 torch,
                 target.down,
                 [
@@ -2187,7 +2452,14 @@ def _initialize_mlp_structural_prior(
     write_mlp_operators(target_model, target_block_layout, merged)
     return {
         "applied": True,
-        "method": "full-coverage-source-operator-fold-mean",
+        "method": "full-coverage-source-operator-transport-residual-sum",
+        "coordinate_method": (
+            "pca-coordinate-formula"
+            if isinstance(residual_coordinates, CoordinateMap)
+            else "sparse-feature-fold"
+        ),
+        "producer_aggregation": "mean",
+        "residual_consumer_aggregation": "sum",
         "source_layers": list(source_span),
         "down_weight_norm": float(torch.linalg.vector_norm(merged.down.weight)),
     }
