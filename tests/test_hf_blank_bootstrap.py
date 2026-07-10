@@ -56,6 +56,32 @@ def _llama_source():
     )
 
 
+def _qwen3_source():
+    if not hasattr(transformers, "Qwen3Config"):
+        pytest.skip("Transformers build has no Qwen3 support")
+    torch.manual_seed(252)
+    return transformers.Qwen3ForCausalLM(
+        transformers.Qwen3Config(
+            vocab_size=64,
+            hidden_size=12,
+            intermediate_size=20,
+            num_hidden_layers=3,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=4,
+            max_position_embeddings=32,
+            hidden_act="silu",
+            attention_bias=False,
+            attention_dropout=0.0,
+            use_sliding_window=False,
+            bos_token_id=1,
+            eos_token_id=2,
+            pad_token_id=0,
+            tie_word_embeddings=False,
+        )
+    )
+
+
 def _llama_target(*, hidden_size: int = 8):
     torch.manual_seed(303)
     return transformers.LlamaForCausalLM(
@@ -117,7 +143,10 @@ def _right_pad(batch, padded_length: int):
     }
 
 
-@pytest.mark.parametrize("source_factory", [_gpt2_source, _llama_source])
+@pytest.mark.parametrize(
+    "source_factory",
+    [_gpt2_source, _llama_source, _qwen3_source],
+)
 def test_blank_bootstrap_improves_source_anchors_and_covers_every_target_role(
     source_factory,
 ) -> None:
