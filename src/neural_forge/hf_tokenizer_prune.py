@@ -548,6 +548,12 @@ def _verify_target(
         *calibration_texts,
     )
     for text in probes:
+        donor_token_ids = list(donor.encode(text, add_special_tokens=False))
+        donor_decoded = donor.decode(
+            donor_token_ids,
+            skip_special_tokens=False,
+            clean_up_tokenization_spaces=False,
+        )
         token_ids = list(target.encode(text, add_special_tokens=False))
         if any(token_id < 0 or token_id >= target_size for token_id in token_ids):
             raise HFTokenizerPruneError(
@@ -558,7 +564,8 @@ def _verify_target(
             skip_special_tokens=False,
             clean_up_tokenization_spaces=False,
         )
-        if decoded != text:
+        if decoded != donor_decoded:
             raise HFTokenizerPruneError(
-                f"built tokenizer failed encode/decode roundtrip for {text!r}"
+                "built tokenizer does not preserve the donor encode/decode "
+                f"roundtrip for {text!r}"
             )

@@ -132,6 +132,33 @@ def test_roundtrip_and_emitted_ids_fit_target_capacity(tmp_path: Path) -> None:
     assert max(token_ids) < 261
 
 
+def test_roundtrip_matches_donor_normalization_semantics(tmp_path: Path) -> None:
+    donor = _donor_tokenizer()
+    donor.backend_tokenizer.normalizer = tokenizers.normalizers.NFC()
+    text = "cafe\u0301"
+    donor_ids = donor.encode(text, add_special_tokens=False)
+    donor_roundtrip = donor.decode(
+        donor_ids,
+        clean_up_tokenization_spaces=False,
+    )
+    assert donor_roundtrip == "caf\u00e9"
+
+    result = prune_hf_tokenizer(
+        donor,
+        tmp_path / "target",
+        target_vocab_size=261,
+        calibration_texts=[text],
+    )
+    target_ids = result.tokenizer.encode(text, add_special_tokens=False)
+    assert (
+        result.tokenizer.decode(
+            target_ids,
+            clean_up_tokenization_spaces=False,
+        )
+        == donor_roundtrip
+    )
+
+
 def test_target_too_small_for_byte_and_special_coverage_fails(tmp_path: Path) -> None:
     with pytest.raises(HFTokenizerPruneError, match="require at least 260 rows"):
         prune_hf_tokenizer(
