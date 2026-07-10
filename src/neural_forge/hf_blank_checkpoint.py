@@ -665,6 +665,9 @@ def bootstrap_blank_decoder_checkpoint(
     validation_prompts: Sequence[str],
     canonical_calibration_boundaries: Sequence[Any] | None = None,
     canonical_validation_boundaries: Sequence[Any] | None = None,
+    canonical_calibration_target_log_probs: Any | None = None,
+    canonical_validation_target_log_probs: Any | None = None,
+    canonical_execution_graph_fingerprint: str | None = None,
     tokenizer: Any = None,
     donor_tokenizer: Any = None,
     target_tokenizer: Any = None,
@@ -933,6 +936,15 @@ def bootstrap_blank_decoder_checkpoint(
         target_validation_inputs=target_validation_inputs,
         canonical_calibration_boundaries=canonical_calibration_boundaries,
         canonical_validation_boundaries=canonical_validation_boundaries,
+        canonical_calibration_target_log_probs=(
+            canonical_calibration_target_log_probs
+        ),
+        canonical_validation_target_log_probs=(
+            canonical_validation_target_log_probs
+        ),
+        canonical_execution_graph_fingerprint=(
+            canonical_execution_graph_fingerprint
+        ),
         token_transport_profile=token_transport_profile,
         cross_tokenizer_mode=cross_tokenizer_mode,
         trace_pooling=trace_pooling,
@@ -1078,6 +1090,12 @@ def bootstrap_blank_decoder_checkpoint(
                 "nonlinear_merge_method": nonlinear_merge_method,
                 "canonical_parent_kernel_supplied": (
                     canonical_calibration_boundaries is not None
+                ),
+                "canonical_execution_graph_supplied": (
+                    canonical_execution_graph_fingerprint is not None
+                ),
+                "canonical_execution_graph_fingerprint": (
+                    canonical_execution_graph_fingerprint
                 ),
                 "ridge": ridge,
                 "max_operator_delta_ratio": max_operator_delta_ratio,

@@ -102,6 +102,9 @@ def bootstrap_blank_decoder_models(
     target_validation_inputs: Mapping[str, Any] | Any | None = None,
     canonical_calibration_boundaries: Sequence[Any] | None = None,
     canonical_validation_boundaries: Sequence[Any] | None = None,
+    canonical_calibration_target_log_probs: Any | None = None,
+    canonical_validation_target_log_probs: Any | None = None,
+    canonical_execution_graph_fingerprint: str | None = None,
     token_transport_profile: StrictTokenTransportProfile | None = None,
     cross_tokenizer_mode: bool = False,
     trace_pooling: Literal["token_rows", "mean", "last_valid"] = "token_rows",
@@ -307,11 +310,51 @@ def bootstrap_blank_decoder_models(
         raise BlankBootstrapError(
             "Canonical calibration and validation boundaries must be supplied together."
         )
-    target_teacher_validation_logits = _project_teacher_logits_to_target(
+    canonical_calibration_logits = _validated_canonical_logits(
         torch,
-        source_validation.logits,
-        token_transport_profile,
-        target_layout.embeddings.vocab_size,
+        canonical_calibration_target_log_probs,
+        row_count=int(source_calibration.logits.shape[0]),
+        vocabulary_size=target_layout.embeddings.vocab_size,
+        name="canonical_calibration_target_log_probs",
+    )
+    canonical_validation_logits = _validated_canonical_logits(
+        torch,
+        canonical_validation_target_log_probs,
+        row_count=int(source_validation.logits.shape[0]),
+        vocabulary_size=target_layout.embeddings.vocab_size,
+        name="canonical_validation_target_log_probs",
+    )
+    if (canonical_calibration_logits is None) != (canonical_validation_logits is None):
+        raise BlankBootstrapError(
+            "Canonical calibration and validation target log-probabilities must "
+            "be supplied together."
+        )
+    if canonical_execution_graph_fingerprint is not None:
+        if (
+            not isinstance(canonical_execution_graph_fingerprint, str)
+            or len(canonical_execution_graph_fingerprint) != 64
+            or any(
+                value not in "0123456789abcdef"
+                for value in canonical_execution_graph_fingerprint
+            )
+        ):
+            raise BlankBootstrapError(
+                "canonical_execution_graph_fingerprint must be a lowercase SHA-256."
+            )
+        if canonical_calibration is None or canonical_calibration_logits is None:
+            raise BlankBootstrapError(
+                "A canonical execution-graph fingerprint requires canonical "
+                "boundaries and target log-probabilities."
+            )
+    target_teacher_validation_logits = (
+        _project_teacher_logits_to_target(
+            torch,
+            source_validation.logits,
+            token_transport_profile,
+            target_layout.embeddings.vocab_size,
+        )
+        if canonical_validation_logits is None
+        else canonical_validation_logits
     )
     residual_rows = _residual_basis_rows(
         torch,
@@ -370,12 +413,28 @@ def bootstrap_blank_decoder_models(
         desired_validation_final,
         target_teacher_validation_logits,
     )
-    fit_reports: dict[str, Any] = {
-        "teacher_logits.target_space": _target_teacher_logit_contract(
+    if canonical_validation_logits is None:
+        teacher_logit_report = _target_teacher_logit_contract(
             source_validation.logits,
             target_teacher_validation_logits,
             token_transport_profile,
         )
+    else:
+        teacher_logit_report = {
+            "schema_version": 3,
+            "space": "canonical-execution-graph-child-tokenizer-columns",
+            "projection": "simultaneous-parent-probability-mixture",
+            "source_shape": None,
+            "target_shape": list(target_teacher_validation_logits.shape),
+            "calibration_sha256": _tensor_sha256(canonical_calibration_logits),
+            "validation_sha256": _tensor_sha256(canonical_validation_logits),
+            "canonical_execution_graph_fingerprint": (
+                canonical_execution_graph_fingerprint
+            ),
+            "single_authoritative_parent": False,
+        }
+    fit_reports: dict[str, Any] = {
+        "teacher_logits.target_space": teacher_logit_report
     }
     if residual_map_report is not None:
         fit_reports["residual.map"] = residual_map_report
@@ -453,6 +512,7 @@ def bootstrap_blank_decoder_models(
             fit_full_lm_head,
             max_full_head_fit_elements,
             token_transport_profile,
+            canonical_calibration_logits,
             fit_reports,
         )
         _record_complete_evidence(coverage, manifest, fit_reports)
@@ -2193,6 +2253,7 @@ def _fit_final_interface(
     fit_full_lm_head: bool,
     max_full_head_fit_elements: int,
     token_transport_profile: StrictTokenTransportProfile | None,
+    canonical_target_log_probs: Any | None,
     reports: dict[str, Any],
 ) -> None:
     del source_model, source_layout
@@ -2229,11 +2290,15 @@ def _fit_final_interface(
             block_index=last_block_index,
             capture_final_norm=True,
         )
-        target_teacher_logits = _project_teacher_logits_to_target(
-            torch,
-            source_trace.logits,
-            token_transport_profile,
-            target_layout.embeddings.vocab_size,
+        target_teacher_logits = (
+            _project_teacher_logits_to_target(
+                torch,
+                source_trace.logits,
+                token_transport_profile,
+                target_layout.embeddings.vocab_size,
+            )
+            if canonical_target_log_probs is None
+            else canonical_target_log_probs
         )
         elements = int(current.final_norm_output.shape[0]) * int(
             target_teacher_logits.shape[1]
@@ -4029,6 +4094,37 @@ def _validated_canonical_boundaries(
             raise BlankBootstrapError(f"{name}[{index}] contains NaN or infinity.")
         result.append(rows)
     return tuple(result)
+
+
+def _validated_canonical_logits(
+    torch: Any,
+    value: Any | None,
+    *,
+    row_count: int,
+    vocabulary_size: int,
+    name: str,
+) -> Any | None:
+    if value is None:
+        return None
+    if not isinstance(value, torch.Tensor) or value.ndim != 2:
+        raise BlankBootstrapError(f"{name} must be a matrix tensor.")
+    if tuple(value.shape) != (row_count, vocabulary_size):
+        raise BlankBootstrapError(
+            f"{name} must have shape ({row_count}, {vocabulary_size})."
+        )
+    result = value.detach().to(device="cpu", dtype=torch.float64).contiguous()
+    if not bool(torch.isfinite(result).all()):
+        raise BlankBootstrapError(f"{name} contains NaN or infinity.")
+    return result
+
+
+def _tensor_sha256(value: Any) -> str:
+    rows = value.detach().to(device="cpu", dtype=_require_torch().float64).contiguous()
+    digest = hashlib.sha256()
+    for size in rows.shape:
+        digest.update(int(size).to_bytes(8, "little", signed=False))
+    digest.update(rows.numpy().tobytes(order="C"))
+    return digest.hexdigest()
 
 
 def _tensor_sequence_sha256(values: Sequence[Any]) -> str:

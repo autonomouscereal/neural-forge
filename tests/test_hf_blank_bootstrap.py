@@ -717,6 +717,15 @@ def test_external_canonical_boundaries_drive_block_endpoints_and_gate() -> None:
         validation_inputs=validation,
         canonical_calibration_boundaries=boundaries(source_calibration),
         canonical_validation_boundaries=boundaries(source_validation),
+        canonical_calibration_target_log_probs=torch.log_softmax(
+            source_calibration.logits,
+            dim=-1,
+        ),
+        canonical_validation_target_log_probs=torch.log_softmax(
+            source_validation.logits,
+            dim=-1,
+        ),
+        canonical_execution_graph_fingerprint="a" * 64,
         residual_map_method="pca",
         max_coordinate_rows=24,
         fit_full_lm_head=False,
@@ -729,6 +738,10 @@ def test_external_canonical_boundaries_drive_block_endpoints_and_gate() -> None:
     assert contract["used_for_heldout_final_state_gate"] is True
     assert contract["exactness_class"] == "finite-trace-approximate"
     assert contract["algebraically_exact"] is False
+    teacher = result.fit_reports["teacher_logits.target_space"]
+    assert teacher["projection"] == "simultaneous-parent-probability-mixture"
+    assert teacher["canonical_execution_graph_fingerprint"] == "a" * 64
+    assert teacher["single_authoritative_parent"] is False
     assert len(contract["calibration_sha256"]) == 64
     assert len(contract["validation_sha256"]) == 64
     for block_index in range(2):
