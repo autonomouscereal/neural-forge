@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT=/home/cereal/model-surgery-lab/neural-forge-pivot
 RUN_ROOT=/mnt/ai_data/neural-forge/progressive_closed_form_20260710
-TAG=qwen3_4b_to_blank_qwen1p13b_stage1_gpu6_r1_20260710
+TAG=qwen3_4b_to_blank_qwen1p13b_stage1_gpu6_r2_20260710
 PY=/home/cereal/model-surgery-lab/venv/bin/python
 GPU=GPU-f5a09535-fc85-a027-50f7-734b344747dd
 
@@ -26,8 +26,8 @@ mkdir -p "$RUN_ROOT"
   --calibration-file /home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/calibration_mix_plus_recovery_drills_20260702.jsonl \
   --eval-suite /home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/behavior_suite_exactgen_20260702.json \
   --cached-parent-eval /home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/evals/eval_parent_qwen3_4b_base_strict_20260705_1000x1000x250.json \
-  --calibration-count 64 \
-  --validation-count 16 \
+  --calibration-count 128 \
+  --validation-count 32 \
   --target-family qwen3 \
   --hidden-size 1536 \
   --intermediate-size 5120 \
