@@ -128,6 +128,7 @@ def bootstrap_blank_decoder_models(
     ),
     ridge: float = 1e-5,
     max_operator_delta_ratio: float = 4.0,
+    heldout_gate_policy: Literal["all", "output_only"] = "all",
     min_final_state_relative_improvement: float = 0.0,
     min_logit_relative_improvement: float = 0.0,
     min_top1_agreement_gain: float = 0.0,
@@ -185,6 +186,10 @@ def bootstrap_blank_decoder_models(
         )
     if vocab_row_norm_repair not in {"none", "source_l2"}:
         raise BlankBootstrapError("vocab_row_norm_repair must be none or source_l2.")
+    if heldout_gate_policy not in {"all", "output_only"}:
+        raise BlankBootstrapError(
+            "heldout_gate_policy must be all or output_only."
+        )
     if not isinstance(cross_tokenizer_mode, bool):
         raise BlankBootstrapError("cross_tokenizer_mode must be boolean.")
     if not isinstance(cross_tokenizer_token_rows_aligned, bool):
@@ -566,10 +571,14 @@ def bootstrap_blank_decoder_models(
         top1_gain = (
             candidate_gate_metrics.top1_agreement - baseline_gate_metrics.top1_agreement
         )
-        accepted = (
-            final_gain >= float(min_final_state_relative_improvement)
-            and logit_gain >= float(min_logit_relative_improvement)
-            and top1_gain >= float(min_top1_agreement_gain)
+        accepted = _heldout_gate_accepts(
+            heldout_gate_policy,
+            final_gain=final_gain,
+            logit_gain=logit_gain,
+            top1_gain=top1_gain,
+            min_final_gain=float(min_final_state_relative_improvement),
+            min_logit_gain=float(min_logit_relative_improvement),
+            min_top1_gain=float(min_top1_agreement_gain),
         )
         return GateDecision(
             accepted=accepted,
@@ -579,6 +588,8 @@ def bootstrap_blank_decoder_models(
                 else "heldout-source-anchors-regressed"
             ),
             evidence={
+                "policy": heldout_gate_policy,
+                "final_state_enforced": heldout_gate_policy == "all",
                 "final_state_relative_improvement": final_gain,
                 "logit_relative_improvement": logit_gain,
                 "top1_agreement_gain": top1_gain,
@@ -4288,6 +4299,24 @@ def _gate_metrics_dict(metrics: BootstrapGateMetrics) -> dict[str, Any]:
 def _relative_improvement(before: float, after: float) -> float:
     denominator = max(abs(float(before)), 1e-12)
     return (float(before) - float(after)) / denominator
+
+
+def _heldout_gate_accepts(
+    policy: Literal["all", "output_only"],
+    *,
+    final_gain: float,
+    logit_gain: float,
+    top1_gain: float,
+    min_final_gain: float,
+    min_logit_gain: float,
+    min_top1_gain: float,
+) -> bool:
+    output_accepted = logit_gain >= min_logit_gain and top1_gain >= min_top1_gain
+    if policy == "output_only":
+        return output_accepted
+    if policy == "all":
+        return final_gain >= min_final_gain and output_accepted
+    raise BlankBootstrapError("heldout gate policy is invalid.")
 
 
 def _contiguous_depth_spans(

@@ -750,6 +750,7 @@ def bootstrap_blank_decoder_checkpoint(
     ] = "activation_fold",
     ridge: float = 1e-5,
     max_operator_delta_ratio: float = 4.0,
+    heldout_gate_policy: Literal["all", "output_only"] = "all",
     min_final_state_relative_improvement: float = 0.0,
     min_logit_relative_improvement: float = 0.0,
     min_top1_agreement_gain: float = 0.0,
@@ -794,6 +795,10 @@ def bootstrap_blank_decoder_checkpoint(
     if cross_tokenizer_trace_alignment not in {"pooled", "target_token_rows"}:
         raise BlankCheckpointError(
             "cross_tokenizer_trace_alignment must be pooled or target_token_rows."
+        )
+    if heldout_gate_policy not in {"all", "output_only"}:
+        raise BlankCheckpointError(
+            "heldout_gate_policy must be all or output_only."
         )
     shape = _validate_shape(
         target_family,
@@ -1071,6 +1076,7 @@ def bootstrap_blank_decoder_checkpoint(
         nonlinear_merge_method=nonlinear_merge_method,
         ridge=ridge,
         max_operator_delta_ratio=max_operator_delta_ratio,
+        heldout_gate_policy=heldout_gate_policy,
         min_final_state_relative_improvement=min_final_state_relative_improvement,
         min_logit_relative_improvement=min_logit_relative_improvement,
         min_top1_agreement_gain=min_top1_agreement_gain,
@@ -1216,6 +1222,7 @@ def bootstrap_blank_decoder_checkpoint(
                 ),
                 "residual_map_method": residual_map_method,
                 "nonlinear_merge_method": nonlinear_merge_method,
+                "heldout_gate_policy": heldout_gate_policy,
                 "canonical_parent_kernel_supplied": (
                     canonical_calibration_boundaries is not None
                 ),

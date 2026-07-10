@@ -214,6 +214,22 @@ class _FakeTokenizer:
         return {surface: index for index, surface in enumerate(self.surfaces)}
 
 
+def test_output_only_gate_ignores_non_authoritative_hidden_coordinate_scale() -> None:
+    values = {
+        "final_gain": -0.36,
+        "logit_gain": 0.37,
+        "top1_gain": 0.16,
+        "min_final_gain": 0.0,
+        "min_logit_gain": 0.0,
+        "min_top1_gain": 0.0,
+    }
+
+    assert bootstrap_module._heldout_gate_accepts("all", **values) is False
+    assert bootstrap_module._heldout_gate_accepts("output_only", **values) is True
+    with pytest.raises(BlankBootstrapError, match="policy is invalid"):
+        bootstrap_module._heldout_gate_accepts("invalid", **values)
+
+
 @pytest.mark.parametrize(
     "source_factory",
     [_gpt2_source, _llama_source, _qwen3_source],

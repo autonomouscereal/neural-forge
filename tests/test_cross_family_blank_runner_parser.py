@@ -145,8 +145,11 @@ def test_parser_accepts_activation_subset() -> None:
             "activation_subset",
             "--cross-tokenizer-trace-alignment",
             "target_token_rows",
+            "--heldout-gate-policy",
+            "output_only",
         ]
     )
 
     assert args.nonlinear_merge_method == "activation_subset"
     assert args.cross_tokenizer_trace_alignment == "target_token_rows"
+    assert args.heldout_gate_policy == "output_only"
