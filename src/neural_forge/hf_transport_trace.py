@@ -357,6 +357,27 @@ def _output_callback(
     return callback
 
 
+def _projection_output_callback(
+    torch: Any,
+    store: _CaptureStore,
+    role: str,
+    output_name: str,
+    expected_width: int,
+) -> Any:
+    def callback(
+        _args: tuple[Any, ...], _kwargs: Mapping[str, Any], output: Any
+    ) -> None:
+        tensor = _tensor_output(torch, output, role)
+        if tensor.ndim != 3 or int(tensor.shape[-1]) != expected_width:
+            raise TransportTraceError(
+                f"Malformed output from {role}: expected [batch, sequence, "
+                f"{expected_width}], got {tuple(tensor.shape)}."
+            )
+        store.record(role, {output_name: tensor})
+
+    return callback
+
+
 def _install_block_hooks(
     torch: Any,
     model: Any,
@@ -445,11 +466,26 @@ def _install_block_hooks(
         )
     else:
         projection_paths = (
-            ("q", "query", block.attention.query_path),
-            ("k", "key", block.attention.key_path),
-            ("v", "value", block.attention.value_path),
+            (
+                "q",
+                "query",
+                block.attention.query_path,
+                block.attention.query_width,
+            ),
+            (
+                "k",
+                "key",
+                block.attention.key_path,
+                block.attention.key_value_width,
+            ),
+            (
+                "v",
+                "value",
+                block.attention.value_path,
+                block.attention.key_value_width,
+            ),
         )
-        for suffix, capture_name, path in projection_paths:
+        for suffix, capture_name, path, expected_width in projection_paths:
             if path is None:  # The layout contract makes this unreachable.
                 raise TransportTraceError(
                     f"Split-QKV block {index} is missing its {suffix} projection path."
@@ -458,7 +494,13 @@ def _install_block_hooks(
             installer.add(
                 resolve_module(model, path, family=family),
                 role,
-                _output_callback(torch, store, role, f"{prefix}.{capture_name}"),
+                _projection_output_callback(
+                    torch,
+                    store,
+                    role,
+                    f"{prefix}.{capture_name}",
+                    expected_width,
+                ),
             )
 
     output_role = f"{prefix}.attention.output"
@@ -990,7 +1032,7 @@ def collect_hf_transport_trace(
     valid_token_mask: Any | None = None,
     **forward_inputs: Any,
 ) -> HFTransportTrace:
-    """Collect one deterministic, no-gradient GPT-2 or Llama calibration trace.
+    """Collect one deterministic GPT-2, Llama, or Qwen3 calibration trace.
 
     ``model_inputs`` may be a Hugging Face input mapping or an ``input_ids``
     tensor.  ``valid_token_mask`` can select a binary subset of the ordinary

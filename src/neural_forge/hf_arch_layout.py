@@ -1,11 +1,13 @@
 """Fail-closed Hugging Face causal-decoder architecture layouts.
 
-The first transport proof supports two explicit operator topologies:
+The transport proof supports three explicit operator topologies:
 
 * ``GPT2LMHeadModel``-style GPT-2 decoders with learned positions, fused QKV,
   dense GELU-family MLPs, and LayerNorm.
 * ``LlamaForCausalLM``-style Llama decoders with RoPE, split Q/K/V (including
   grouped-query attention), gated MLPs, and RMSNorm.
+* ``Qwen3ForCausalLM`` dense decoders with RoPE, split grouped-query attention,
+  per-head Q/K RMSNorm, gated SwiGLU MLPs, and residual RMSNorm.
 
 This module deliberately does not discover operators by suffix similarity. A
 recognized ``model_type`` must satisfy the complete expected path, type, shape,
@@ -20,9 +22,16 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 
-ArchitectureFamily = Literal["gpt2", "llama"]
+ArchitectureFamily = Literal["gpt2", "llama", "qwen3"]
 PositionKind = Literal["learned_absolute", "rope"]
 NormKind = Literal["layer_norm", "rms_norm"]
+NormPlacement = Literal[
+    "pre_attention",
+    "query_head",
+    "key_head",
+    "pre_mlp",
+    "final",
+]
 ProjectionStyle = Literal["fused_qkv", "split_qkv"]
 MLPKind = Literal["dense", "gated"]
 
@@ -58,7 +67,7 @@ class PositionLayout:
 class NormLayout:
     path: str
     kind: NormKind
-    placement: Literal["pre_attention", "pre_mlp", "final"]
+    placement: NormPlacement
     epsilon: float
     has_bias: bool
 
@@ -79,6 +88,8 @@ class AttentionLayout:
     projection_weight_layout: Literal["input_output", "output_input"]
     projection_bias: bool
     attention_dropout: float
+    query_norm: NormLayout | None = None
+    key_norm: NormLayout | None = None
 
     @property
     def grouped_query_attention(self) -> bool:
@@ -188,6 +199,10 @@ class DecoderLayout:
                 yield f"{prefix}.attention.k", block.attention.key_path
                 yield f"{prefix}.attention.v", block.attention.value_path
             yield f"{prefix}.attention.output", block.attention.output_path
+            if block.attention.query_norm is not None:
+                yield f"{prefix}.attention.q_norm", block.attention.query_norm.path
+            if block.attention.key_norm is not None:
+                yield f"{prefix}.attention.k_norm", block.attention.key_norm.path
             yield f"{prefix}.mlp_norm", block.mlp_input_norm.path
             yield f"{prefix}.mlp", block.mlp.module_path
             if block.mlp.input_projection_path is not None:
@@ -306,6 +321,24 @@ def _require_module_type(model: Any, path: str, expected: str, family: str) -> A
     return module
 
 
+def _require_exact_type(
+    value: Any,
+    *,
+    expected_name: str,
+    expected_module: str,
+    label: str,
+    family: str,
+) -> Any:
+    actual = type(value)
+    if actual.__name__ != expected_name or actual.__module__ != expected_module:
+        raise _unsupported(
+            family,
+            f"{label} must be exactly {expected_module}.{expected_name}, got "
+            f"{actual.__module__}.{actual.__name__}.",
+        )
+    return value
+
+
 def _weight_shape(module: Any, path: str, family: str) -> tuple[int, ...]:
     weight = getattr(module, "weight", None)
     shape = getattr(weight, "shape", None)
@@ -351,12 +384,24 @@ def _norm_layout(
     path: str,
     family: ArchitectureFamily,
     kind: NormKind,
-    placement: Literal["pre_attention", "pre_mlp", "final"],
+    placement: NormPlacement,
     hidden_size: int,
     epsilon: float,
+    expected_type: str | None = None,
+    expected_module: str | None = None,
 ) -> NormLayout:
-    expected_type = "LayerNorm" if kind == "layer_norm" else "LlamaRMSNorm"
-    module = _require_module_type(model, path, expected_type, family)
+    if expected_type is None:
+        expected_type = "LayerNorm" if kind == "layer_norm" else "LlamaRMSNorm"
+    if expected_module is None:
+        module = _require_module_type(model, path, expected_type, family)
+    else:
+        module = _require_exact_type(
+            resolve_module(model, path, family=family),
+            expected_name=expected_type,
+            expected_module=expected_module,
+            label=f"operator {path!r}",
+            family=family,
+        )
     _require_weight_shape(module, path, (hidden_size,), family)
     has_bias = getattr(module, "bias", None) is not None
     expected_bias = kind == "layer_norm"
@@ -965,8 +1010,417 @@ def _build_llama_layout(model: Any) -> DecoderLayout:
     )
 
 
+_QWEN3_CONFIG_MODULE = "transformers.models.qwen3.configuration_qwen3"
+_QWEN3_MODELING_MODULE = "transformers.models.qwen3.modeling_qwen3"
+
+
+def _qwen3_rope_layout(
+    model: Any,
+    config: Any,
+    *,
+    head_dim: int,
+) -> PositionLayout:
+    family: ArchitectureFamily = "qwen3"
+    path = "model.rotary_emb"
+    rotary = _require_exact_type(
+        resolve_module(model, path, family=family),
+        expected_name="Qwen3RotaryEmbedding",
+        expected_module=_QWEN3_MODELING_MODULE,
+        label=f"operator {path!r}",
+        family=family,
+    )
+    if head_dim % 2:
+        raise _unsupported(family, "head_dim must be even for full-head RoPE.")
+
+    rope_parameters = getattr(config, "rope_parameters", None)
+    rope_scaling = getattr(config, "rope_scaling", None)
+    rope_theta_value = getattr(config, "rope_theta", None)
+    rope_type_value: Any = None
+    if isinstance(rope_parameters, Mapping):
+        if rope_theta_value is None:
+            rope_theta_value = rope_parameters.get("rope_theta")
+        rope_type_value = rope_parameters.get("rope_type")
+    if isinstance(rope_scaling, Mapping):
+        if rope_theta_value is None:
+            rope_theta_value = rope_scaling.get("rope_theta")
+        if rope_type_value is None:
+            rope_type_value = rope_scaling.get("rope_type", rope_scaling.get("type"))
+    if rope_theta_value is None:
+        rope_theta_value = 10_000.0
+    if rope_type_value is None:
+        rope_type_value = "default"
+    if rope_type_value != "default":
+        raise _unsupported(
+            family,
+            f"RoPE type must be 'default', got {rope_type_value!r}.",
+        )
+    rope_theta = _finite_float(rope_theta_value, "rope_theta", family)
+    if rope_theta <= 0.0:
+        raise _unsupported(family, "rope_theta must be positive.")
+    if getattr(rotary, "rope_type", None) != rope_type_value:
+        raise _unsupported(
+            family,
+            f"operator {path!r} RoPE type disagrees with configuration.",
+        )
+    inv_freq = getattr(rotary, "inv_freq", None)
+    inv_freq_shape = getattr(inv_freq, "shape", None)
+    expected_inv_freq_shape = (head_dim // 2,)
+    if inv_freq_shape is None or tuple(int(size) for size in inv_freq_shape) != (
+        expected_inv_freq_shape
+    ):
+        actual = None if inv_freq_shape is None else tuple(inv_freq_shape)
+        raise _unsupported(
+            family,
+            f"operator {path!r} inv_freq shape must be "
+            f"{expected_inv_freq_shape}, got {actual}.",
+        )
+    max_positions = _positive_int(
+        _required_attr(config, "max_position_embeddings", family),
+        "max_position_embeddings",
+        family,
+    )
+    if int(getattr(rotary, "max_seq_len_cached", -1)) != max_positions:
+        raise _unsupported(
+            family,
+            f"operator {path!r} cached position limit disagrees with config.",
+        )
+    return PositionLayout(
+        kind="rope",
+        operator_paths=(path,),
+        max_positions=max_positions,
+        rotary_dim=head_dim,
+        rope_theta=rope_theta,
+        rope_type=rope_type_value,
+    )
+
+
+def _build_qwen3_layout(model: Any) -> DecoderLayout:
+    family: ArchitectureFamily = "qwen3"
+    _require_exact_type(
+        model,
+        expected_name="Qwen3ForCausalLM",
+        expected_module=_QWEN3_MODELING_MODULE,
+        label="model",
+        family=family,
+    )
+    config = _validate_causal_wrapper(model, family)
+    _require_exact_type(
+        config,
+        expected_name="Qwen3Config",
+        expected_module=_QWEN3_CONFIG_MODULE,
+        label="configuration",
+        family=family,
+    )
+    _require_exact_type(
+        resolve_module(model, "model", family=family),
+        expected_name="Qwen3Model",
+        expected_module=_QWEN3_MODELING_MODULE,
+        label="operator 'model'",
+        family=family,
+    )
+
+    hidden_size = _positive_int(
+        _required_attr(config, "hidden_size", family), "hidden_size", family
+    )
+    intermediate_size = _positive_int(
+        _required_attr(config, "intermediate_size", family),
+        "intermediate_size",
+        family,
+    )
+    layer_count = _positive_int(
+        _required_attr(config, "num_hidden_layers", family),
+        "num_hidden_layers",
+        family,
+    )
+    query_heads = _positive_int(
+        _required_attr(config, "num_attention_heads", family),
+        "num_attention_heads",
+        family,
+    )
+    key_value_heads = _positive_int(
+        _required_attr(config, "num_key_value_heads", family),
+        "num_key_value_heads",
+        family,
+    )
+    if not 1 < key_value_heads < query_heads or query_heads % key_value_heads:
+        raise _unsupported(
+            family,
+            "dense Qwen3 requires grouped-query attention with "
+            "more than one num_key_value_heads strictly dividing "
+            "num_attention_heads.",
+        )
+    head_dim = _positive_int(
+        _required_attr(config, "head_dim", family), "head_dim", family
+    )
+    vocab_size = _positive_int(
+        _required_attr(config, "vocab_size", family), "vocab_size", family
+    )
+    epsilon = _finite_float(
+        _required_attr(config, "rms_norm_eps", family),
+        "rms_norm_eps",
+        family,
+        nonnegative=True,
+    )
+    attention_dropout = _finite_float(
+        _required_attr(config, "attention_dropout", family),
+        "attention_dropout",
+        family,
+        nonnegative=True,
+    )
+    if attention_dropout >= 1.0:
+        raise _unsupported(family, "attention_dropout must be less than one.")
+    if _required_attr(config, "hidden_act", family) != "silu":
+        raise _unsupported(family, "dense Qwen3 requires hidden_act='silu'.")
+    if _required_attr(config, "attention_bias", family) is not False:
+        raise _unsupported(family, "dense Qwen3 requires bias-free attention.")
+    if _required_attr(config, "use_sliding_window", family) is not False:
+        raise _unsupported(
+            family, "sliding-window Qwen3 variants are outside this proof slice."
+        )
+    layer_types = getattr(config, "layer_types", None)
+    if layer_types is not None and (
+        not isinstance(layer_types, (list, tuple))
+        or len(layer_types) != layer_count
+        or any(layer_type != "full_attention" for layer_type in layer_types)
+    ):
+        raise _unsupported(
+            family, "all Qwen3 layers must use full_attention in this proof slice."
+        )
+
+    embedding = _require_module_type(model, "model.embed_tokens", "Embedding", family)
+    _require_weight_shape(
+        embedding, "model.embed_tokens", (vocab_size, hidden_size), family
+    )
+    blocks_module = _require_module_type(model, "model.layers", "ModuleList", family)
+    if len(blocks_module) != layer_count:
+        raise _unsupported(
+            family,
+            f"model.layers must contain {layer_count} blocks, got {len(blocks_module)}.",
+        )
+    position = _qwen3_rope_layout(model, config, head_dim=head_dim)
+
+    query_width = query_heads * head_dim
+    key_value_width = key_value_heads * head_dim
+    blocks: list[DecoderBlockLayout] = []
+    for index in range(layer_count):
+        prefix = f"model.layers.{index}"
+        _require_exact_type(
+            resolve_module(model, prefix, family=family),
+            expected_name="Qwen3DecoderLayer",
+            expected_module=_QWEN3_MODELING_MODULE,
+            label=f"operator {prefix!r}",
+            family=family,
+        )
+        attention_path = f"{prefix}.self_attn"
+        attention_module = _require_exact_type(
+            resolve_module(model, attention_path, family=family),
+            expected_name="Qwen3Attention",
+            expected_module=_QWEN3_MODELING_MODULE,
+            label=f"operator {attention_path!r}",
+            family=family,
+        )
+        q_path = f"{attention_path}.q_proj"
+        k_path = f"{attention_path}.k_proj"
+        v_path = f"{attention_path}.v_proj"
+        output_path = f"{attention_path}.o_proj"
+        for path, rows, columns in (
+            (q_path, query_width, hidden_size),
+            (k_path, key_value_width, hidden_size),
+            (v_path, key_value_width, hidden_size),
+            (output_path, hidden_size, query_width),
+        ):
+            projection = _require_module_type(model, path, "Linear", family)
+            _require_weight_shape(projection, path, (rows, columns), family)
+            _require_bias(projection, path, False, rows, family)
+        if int(getattr(attention_module, "head_dim", -1)) != head_dim:
+            raise _unsupported(
+                family,
+                f"operator {attention_path!r} head dimension disagrees with config.",
+            )
+        expected_groups = query_heads // key_value_heads
+        if int(getattr(attention_module, "num_key_value_groups", -1)) != expected_groups:
+            raise _unsupported(
+                family,
+                f"operator {attention_path!r} GQA grouping disagrees with config.",
+            )
+        if not math.isclose(
+            float(getattr(attention_module, "scaling", math.nan)),
+            head_dim**-0.5,
+            rel_tol=0.0,
+            abs_tol=0.0,
+        ):
+            raise _unsupported(
+                family, f"operator {attention_path!r} attention scaling is incompatible."
+            )
+        if getattr(attention_module, "is_causal", None) is not True:
+            raise _unsupported(
+                family, f"operator {attention_path!r} must be causal."
+            )
+        if getattr(attention_module, "sliding_window", None) is not None:
+            raise _unsupported(
+                family,
+                f"operator {attention_path!r} unexpectedly enables sliding attention.",
+            )
+
+        q_norm = _norm_layout(
+            model,
+            path=f"{attention_path}.q_norm",
+            family=family,
+            kind="rms_norm",
+            placement="query_head",
+            hidden_size=head_dim,
+            epsilon=epsilon,
+            expected_type="Qwen3RMSNorm",
+            expected_module=_QWEN3_MODELING_MODULE,
+        )
+        k_norm = _norm_layout(
+            model,
+            path=f"{attention_path}.k_norm",
+            family=family,
+            kind="rms_norm",
+            placement="key_head",
+            hidden_size=head_dim,
+            epsilon=epsilon,
+            expected_type="Qwen3RMSNorm",
+            expected_module=_QWEN3_MODELING_MODULE,
+        )
+
+        mlp_path = f"{prefix}.mlp"
+        _require_exact_type(
+            resolve_module(model, mlp_path, family=family),
+            expected_name="Qwen3MLP",
+            expected_module=_QWEN3_MODELING_MODULE,
+            label=f"operator {mlp_path!r}",
+            family=family,
+        )
+        gate_path = f"{mlp_path}.gate_proj"
+        up_path = f"{mlp_path}.up_proj"
+        down_path = f"{mlp_path}.down_proj"
+        for path, rows, columns in (
+            (gate_path, intermediate_size, hidden_size),
+            (up_path, intermediate_size, hidden_size),
+            (down_path, hidden_size, intermediate_size),
+        ):
+            projection = _require_module_type(model, path, "Linear", family)
+            _require_weight_shape(projection, path, (rows, columns), family)
+            _require_bias(projection, path, False, rows, family)
+        activation_path = f"{mlp_path}.act_fn"
+        actual_activation, activation_type = _activation_layout(
+            model,
+            path=activation_path,
+            configured_name="silu",
+            family=family,
+        )
+        attention_norm = _norm_layout(
+            model,
+            path=f"{prefix}.input_layernorm",
+            family=family,
+            kind="rms_norm",
+            placement="pre_attention",
+            hidden_size=hidden_size,
+            epsilon=epsilon,
+            expected_type="Qwen3RMSNorm",
+            expected_module=_QWEN3_MODELING_MODULE,
+        )
+        mlp_norm = _norm_layout(
+            model,
+            path=f"{prefix}.post_attention_layernorm",
+            family=family,
+            kind="rms_norm",
+            placement="pre_mlp",
+            hidden_size=hidden_size,
+            epsilon=epsilon,
+            expected_type="Qwen3RMSNorm",
+            expected_module=_QWEN3_MODELING_MODULE,
+        )
+        blocks.append(
+            DecoderBlockLayout(
+                index=index,
+                path=prefix,
+                attention_input_norm=attention_norm,
+                attention=AttentionLayout(
+                    module_path=attention_path,
+                    projection_style="split_qkv",
+                    fused_qkv_path=None,
+                    query_path=q_path,
+                    key_path=k_path,
+                    value_path=v_path,
+                    output_path=output_path,
+                    query_heads=query_heads,
+                    key_value_heads=key_value_heads,
+                    head_dim=head_dim,
+                    hidden_size=hidden_size,
+                    projection_weight_layout="output_input",
+                    projection_bias=False,
+                    attention_dropout=attention_dropout,
+                    query_norm=q_norm,
+                    key_norm=k_norm,
+                ),
+                mlp_input_norm=mlp_norm,
+                mlp=MLPLayout(
+                    module_path=mlp_path,
+                    kind="gated",
+                    input_projection_path=None,
+                    gate_projection_path=gate_path,
+                    up_projection_path=up_path,
+                    down_projection_path=down_path,
+                    activation_path=activation_path,
+                    activation_name=actual_activation,
+                    activation_module_type=activation_type,
+                    hidden_size=hidden_size,
+                    intermediate_size=intermediate_size,
+                    projection_weight_layout="output_input",
+                    projection_bias=False,
+                ),
+                residual=SERIAL_PRE_NORM_RESIDUAL,
+            )
+        )
+
+    final_norm = _norm_layout(
+        model,
+        path="model.norm",
+        family=family,
+        kind="rms_norm",
+        placement="final",
+        hidden_size=hidden_size,
+        epsilon=epsilon,
+        expected_type="Qwen3RMSNorm",
+        expected_module=_QWEN3_MODELING_MODULE,
+    )
+    lm_head = _require_module_type(model, "lm_head", "Linear", family)
+    _require_weight_shape(lm_head, "lm_head", (vocab_size, hidden_size), family)
+    _require_bias(lm_head, "lm_head", False, vocab_size, family)
+    tied = _validate_tying(
+        model,
+        embedding_path="model.embed_tokens",
+        head_path="lm_head",
+        configured=_required_attr(config, "tie_word_embeddings", family),
+        family=family,
+    )
+    return DecoderLayout(
+        family=family,
+        model_type="qwen3",
+        model_class=type(model).__name__,
+        hidden_size=hidden_size,
+        intermediate_size=intermediate_size,
+        blocks_path="model.layers",
+        embeddings=EmbeddingLayout(
+            token_path="model.embed_tokens",
+            position_path=None,
+            dropout_path=None,
+            vocab_size=vocab_size,
+            hidden_size=hidden_size,
+        ),
+        position=position,
+        blocks=tuple(blocks),
+        final_norm=final_norm,
+        lm_head_path="lm_head",
+        tie_word_embeddings=tied,
+    )
+
+
 def build_decoder_layout(model: Any) -> DecoderLayout:
-    """Build and validate a complete GPT-2 or Llama causal-decoder layout."""
+    """Build and validate a complete GPT-2, Llama, or Qwen3 decoder layout."""
 
     config = getattr(model, "config", None)
     model_type = getattr(config, "model_type", None)
@@ -974,10 +1428,12 @@ def build_decoder_layout(model: Any) -> DecoderLayout:
         return _build_gpt2_layout(model)
     if model_type == "llama":
         return _build_llama_layout(model)
+    if model_type == "qwen3":
+        return _build_qwen3_layout(model)
     shown = "<missing>" if model_type is None else repr(model_type)
     raise UnsupportedDecoderLayoutError(
         "Unsupported causal decoder architecture: model_type "
-        f"{shown}; supported model types are 'gpt2' and 'llama'."
+        f"{shown}; supported model types are 'gpt2', 'llama', and 'qwen3'."
     )
 
 

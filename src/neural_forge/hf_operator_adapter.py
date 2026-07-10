@@ -1,4 +1,4 @@
-"""Canonical read/write adapters for validated GPT-2 and Llama operators."""
+"""Canonical read/write adapters for validated GPT-2, Llama, and Qwen3 operators."""
 
 from __future__ import annotations
 

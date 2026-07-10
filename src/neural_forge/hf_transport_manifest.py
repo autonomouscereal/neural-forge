@@ -168,6 +168,18 @@ def build_decoder_transport_manifest(
             attention.output_path,
             description="Attention output projection.",
         )
+        if attention.query_norm is not None:
+            add_tensor_role(
+                f"{base}.attention.query_norm",
+                attention.query_norm.path,
+                description="Per-head query RMS normalization parameters.",
+            )
+        if attention.key_norm is not None:
+            add_tensor_role(
+                f"{base}.attention.key_norm",
+                attention.key_norm.path,
+                description="Per-head key RMS normalization parameters.",
+            )
         add_native_role(
             f"{base}.attention.policy",
             description="Validated head grouping, masking, and dropout policy.",
