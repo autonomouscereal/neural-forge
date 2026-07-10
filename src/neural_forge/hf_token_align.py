@@ -260,6 +260,90 @@ class AlignmentRejectedError(ValueError):
         super().__init__(detail)
 
 
+@dataclass(frozen=True)
+class StrictTokenRowMapping:
+    """Auditable resolution of one physical target vocabulary row."""
+
+    target_row_index: int
+    donor_row_index: int
+    resolution: str
+    special_token_roles: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "target_row_index": self.target_row_index,
+            "donor_row_index": self.donor_row_index,
+            "resolution": self.resolution,
+            "special_token_roles": list(self.special_token_roles),
+        }
+
+
+@dataclass(frozen=True)
+class StrictTokenTransportProfile:
+    """Complete one-row-to-one-row vocabulary transport contract."""
+
+    donor_tokenizer_class: str
+    target_tokenizer_class: str
+    donor_vocab_size: int
+    target_vocab_size: int
+    donor_row_capacity: int
+    target_row_capacity: int
+    alignment_fingerprint: str
+    row_mappings: tuple[StrictTokenRowMapping, ...]
+
+    def __post_init__(self) -> None:
+        target_rows = tuple(item.target_row_index for item in self.row_mappings)
+        if target_rows != tuple(range(self.target_row_capacity)):
+            raise ValueError(
+                "Strict token transport mappings must cover every target row in order."
+            )
+        if any(
+            item.donor_row_index < 0 or item.donor_row_index >= self.donor_row_capacity
+            for item in self.row_mappings
+        ):
+            raise ValueError(
+                "Strict token transport mappings must stay within donor capacity."
+            )
+
+    @property
+    def target_to_donor_row_indices(self) -> tuple[int, ...]:
+        return tuple(item.donor_row_index for item in self.row_mappings)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": 1,
+            "profile": "strict-cross-tokenizer-one-row-v1",
+            "direction": "target-row-to-donor-row",
+            "donor_tokenizer_class": self.donor_tokenizer_class,
+            "target_tokenizer_class": self.target_tokenizer_class,
+            "donor_vocab_size": self.donor_vocab_size,
+            "target_vocab_size": self.target_vocab_size,
+            "donor_row_capacity": self.donor_row_capacity,
+            "target_row_capacity": self.target_row_capacity,
+            "alignment_fingerprint": self.alignment_fingerprint,
+            "target_to_donor_row_indices": list(self.target_to_donor_row_indices),
+            "row_mappings": [item.to_dict() for item in self.row_mappings],
+        }
+
+    def fingerprint(self) -> str:
+        payload = json.dumps(
+            self.to_dict(),
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()
+
+
+class StrictTokenTransportRejectedError(ValueError):
+    """Raised before transport when a strict row mapping cannot be proven."""
+
+    def __init__(self, failures: Sequence[str]) -> None:
+        self.failures = tuple(failures)
+        detail = "; ".join(self.failures) or "strict token transport rejected"
+        super().__init__(detail)
+
+
 @dataclass
 class _ByteTrieNode:
     children: dict[int, _ByteTrieNode] = field(default_factory=dict)
@@ -412,6 +496,175 @@ def require_alignment_for_transport(
     if not result.accepted:
         raise AlignmentRejectedError(result)
     return result
+
+
+def build_strict_token_transport_profile(
+    donor_tokenizer: HFTokenizerProtocol,
+    target_tokenizer: HFTokenizerProtocol,
+    *,
+    donor_row_capacity: int | None = None,
+    target_row_capacity: int | None = None,
+) -> StrictTokenTransportProfile:
+    """Prove a complete target-row to donor-row mapping without mutation.
+
+    Physical target rows must be exactly the contiguous tokenizer vocabulary.
+    Donor capacity may contain padding after its contiguous tokenizer rows.
+    BOS, EOS, PAD, and UNK rows resolve by matching semantic role; every other
+    row must have one and only one exact-token donor candidate.
+    """
+
+    failures: list[str] = []
+    try:
+        donor_vocab_size = _tokenizer_length(donor_tokenizer, "donor")
+    except ValueError as exc:
+        failures.append(str(exc))
+        donor_vocab_size = 0
+    try:
+        target_vocab_size = _tokenizer_length(target_tokenizer, "target")
+    except ValueError as exc:
+        failures.append(str(exc))
+        target_vocab_size = 0
+
+    donor_capacity = _strict_row_capacity(
+        donor_row_capacity,
+        donor_vocab_size,
+        "donor",
+        failures,
+    )
+    target_capacity = _strict_row_capacity(
+        target_row_capacity,
+        target_vocab_size,
+        "target",
+        failures,
+    )
+    if donor_capacity < donor_vocab_size:
+        failures.append(
+            f"donor row capacity {donor_capacity} is below tokenizer vocabulary "
+            f"size {donor_vocab_size}"
+        )
+    if target_capacity != target_vocab_size:
+        failures.append(
+            f"target row capacity {target_capacity} must equal tokenizer vocabulary "
+            f"size {target_vocab_size}"
+        )
+    if target_capacity == 0:
+        failures.append("target vocabulary is empty")
+
+    _validate_contiguous_vocab_ids(
+        donor_tokenizer,
+        donor_vocab_size,
+        "donor",
+        failures,
+    )
+    _validate_contiguous_vocab_ids(
+        target_tokenizer,
+        target_vocab_size,
+        "target",
+        failures,
+    )
+    donor_roles = _strict_special_token_roles(
+        donor_tokenizer,
+        donor_vocab_size,
+        "donor",
+        failures,
+    )
+    target_roles = _strict_special_token_roles(
+        target_tokenizer,
+        target_vocab_size,
+        "target",
+        failures,
+    )
+    if failures:
+        raise StrictTokenTransportRejectedError(failures)
+
+    report = build_token_alignment(
+        donor_tokenizer,
+        target_tokenizer,
+        include_special_tokens=True,
+    )
+    semantic_rows, unresolved_semantic_rows = _strict_semantic_row_mappings(
+        donor_roles,
+        target_roles,
+        failures,
+    )
+    row_mappings: list[StrictTokenRowMapping] = []
+    for alignment in report.alignments:
+        target_id = alignment.target_token_id
+        semantic = semantic_rows.get(target_id)
+        if semantic is not None:
+            donor_id, roles = semantic
+            row_mappings.append(
+                StrictTokenRowMapping(
+                    target_row_index=target_id,
+                    donor_row_index=donor_id,
+                    resolution="special-token-role",
+                    special_token_roles=roles,
+                )
+            )
+            continue
+        if target_id in unresolved_semantic_rows:
+            continue
+        if alignment.classification is AlignmentClass.UTF8_BYTE_SPAN:
+            failures.append(
+                f"target row {target_id} resolves only to a donor token span"
+            )
+            continue
+        if alignment.classification is AlignmentClass.UNALIGNABLE:
+            failures.append(
+                f"target row {target_id} is unalignable: {alignment.reason}"
+            )
+            continue
+        if alignment.is_ambiguous:
+            donor_ids = tuple(
+                candidate.donor_token_ids[0]
+                for candidate in alignment.candidates
+                if len(candidate.donor_token_ids) == 1
+            )
+            failures.append(
+                f"target row {target_id} is ambiguous across donor rows {donor_ids}"
+            )
+            continue
+        candidate = alignment.candidates[0]
+        if (
+            candidate.classification is not AlignmentClass.EXACT_TOKEN
+            or len(candidate.donor_token_ids) != 1
+        ):
+            failures.append(
+                f"target row {target_id} does not resolve to exactly one donor row"
+            )
+            continue
+        donor_id = candidate.donor_token_ids[0]
+        if donor_id >= donor_capacity:
+            failures.append(
+                f"target row {target_id} resolves to donor row {donor_id}, outside "
+                f"capacity {donor_capacity}"
+            )
+            continue
+        row_mappings.append(
+            StrictTokenRowMapping(
+                target_row_index=target_id,
+                donor_row_index=donor_id,
+                resolution="exact-token",
+            )
+        )
+
+    mapped_target_ids = {item.target_row_index for item in row_mappings}
+    missing_rows = sorted(set(range(target_capacity)) - mapped_target_ids)
+    if missing_rows and not failures:
+        failures.append(f"target rows have no donor mapping: {missing_rows}")
+    if failures:
+        raise StrictTokenTransportRejectedError(failures)
+
+    return StrictTokenTransportProfile(
+        donor_tokenizer_class=type(donor_tokenizer).__name__,
+        target_tokenizer_class=type(target_tokenizer).__name__,
+        donor_vocab_size=donor_vocab_size,
+        target_vocab_size=target_vocab_size,
+        donor_row_capacity=donor_capacity,
+        target_row_capacity=target_capacity,
+        alignment_fingerprint=report.fingerprint(),
+        row_mappings=tuple(row_mappings),
+    )
 
 
 def _align_target_token(
@@ -571,6 +824,161 @@ def _tokenizer_length(tokenizer: HFTokenizerProtocol, label: str) -> int:
     if size < 0:
         raise ValueError(f"{label} tokenizer vocabulary length cannot be negative.")
     return size
+
+
+def _strict_row_capacity(
+    value: int | None,
+    default: int,
+    label: str,
+    failures: list[str],
+) -> int:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        failures.append(f"{label} row capacity must be a non-negative integer")
+        return default
+    try:
+        capacity = operator.index(value)
+    except (TypeError, ValueError, OverflowError):
+        failures.append(f"{label} row capacity must be a non-negative integer")
+        return default
+    if capacity < 0:
+        failures.append(f"{label} row capacity must be a non-negative integer")
+        return default
+    return capacity
+
+
+def _validate_contiguous_vocab_ids(
+    tokenizer: HFTokenizerProtocol,
+    vocab_size: int,
+    label: str,
+    failures: list[str],
+) -> None:
+    getter = getattr(tokenizer, "get_vocab", None)
+    if not callable(getter):
+        failures.append(
+            f"{label} tokenizer must expose get_vocab() for strict ID auditing"
+        )
+        return
+    try:
+        vocabulary = getter()
+    except Exception as exc:
+        failures.append(
+            f"{label} tokenizer get_vocab() failed with {type(exc).__name__}"
+        )
+        return
+    if not isinstance(vocabulary, Mapping):
+        failures.append(f"{label} tokenizer get_vocab() must return a mapping")
+        return
+
+    token_ids: list[int] = []
+    invalid_count = 0
+    for value in vocabulary.values():
+        if isinstance(value, bool):
+            invalid_count += 1
+            continue
+        try:
+            token_ids.append(operator.index(value))
+        except (TypeError, ValueError, OverflowError):
+            invalid_count += 1
+    if invalid_count:
+        failures.append(
+            f"{label} vocabulary contains {invalid_count} non-integer token ID(s)"
+        )
+
+    actual_ids = set(token_ids)
+    expected_ids = set(range(vocab_size))
+    missing = sorted(expected_ids - actual_ids)
+    outside = sorted(actual_ids - expected_ids)
+    if missing:
+        failures.append(f"{label} vocabulary has token ID holes: {missing}")
+    if outside:
+        failures.append(
+            f"{label} vocabulary has IDs outside [0, {vocab_size}): {outside}"
+        )
+
+
+_STRICT_SPECIAL_TOKEN_ROLES = (
+    ("BOS", "bos_token_id"),
+    ("EOS", "eos_token_id"),
+    ("PAD", "pad_token_id"),
+    ("UNK", "unk_token_id"),
+)
+
+
+def _strict_special_token_roles(
+    tokenizer: HFTokenizerProtocol,
+    vocab_size: int,
+    label: str,
+    failures: list[str],
+) -> dict[str, tuple[int, ...]]:
+    roles: dict[str, tuple[int, ...]] = {}
+    for role, attribute in _STRICT_SPECIAL_TOKEN_ROLES:
+        value = getattr(tokenizer, attribute, None)
+        if value is None:
+            roles[role] = ()
+            continue
+        values = value if isinstance(value, (list, tuple, set)) else (value,)
+        token_ids: list[int] = []
+        invalid = False
+        for item in values:
+            if isinstance(item, bool):
+                invalid = True
+                continue
+            try:
+                token_id = operator.index(item)
+            except (TypeError, ValueError, OverflowError):
+                invalid = True
+                continue
+            if token_id < 0 or token_id >= vocab_size:
+                invalid = True
+                continue
+            token_ids.append(token_id)
+        if invalid:
+            failures.append(
+                f"{label} {role} token ID must identify a tokenizer vocabulary row"
+            )
+        roles[role] = tuple(sorted(set(token_ids)))
+    return roles
+
+
+def _strict_semantic_row_mappings(
+    donor_roles: Mapping[str, tuple[int, ...]],
+    target_roles: Mapping[str, tuple[int, ...]],
+    failures: list[str],
+) -> tuple[dict[int, tuple[int, tuple[str, ...]]], set[int]]:
+    assignments: dict[int, list[tuple[str, int]]] = {}
+    unresolved_rows: set[int] = set()
+    for role, _ in _STRICT_SPECIAL_TOKEN_ROLES:
+        target_ids = target_roles.get(role, ())
+        if not target_ids:
+            continue
+        donor_ids = donor_roles.get(role, ())
+        if not donor_ids:
+            failures.append(f"target {role} role has no donor {role} row")
+            unresolved_rows.update(target_ids)
+            continue
+        if len(donor_ids) != 1:
+            failures.append(f"donor {role} role is ambiguous across rows {donor_ids}")
+            unresolved_rows.update(target_ids)
+            continue
+        for target_id in target_ids:
+            assignments.setdefault(target_id, []).append((role, donor_ids[0]))
+
+    resolved: dict[int, tuple[int, tuple[str, ...]]] = {}
+    for target_id in sorted(assignments):
+        items = assignments[target_id]
+        donor_ids = tuple(sorted({donor_id for _, donor_id in items}))
+        roles = tuple(role for role, _ in items)
+        if len(donor_ids) != 1:
+            failures.append(
+                f"target row {target_id} has conflicting semantic roles {roles} "
+                f"mapping to donor rows {donor_ids}"
+            )
+            unresolved_rows.add(target_id)
+            continue
+        resolved[target_id] = (donor_ids[0], roles)
+    return resolved, unresolved_rows
 
 
 def _special_token_ids(tokenizer: HFTokenizerProtocol, vocab_size: int) -> set[int]:

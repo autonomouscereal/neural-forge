@@ -7,7 +7,9 @@ import pytest
 
 from neural_forge.hf_token_align import AlignmentClass
 from neural_forge.hf_token_align import AlignmentRejectedError
+from neural_forge.hf_token_align import StrictTokenTransportRejectedError
 from neural_forge.hf_token_align import TransportAlignmentThresholds
+from neural_forge.hf_token_align import build_strict_token_transport_profile
 from neural_forge.hf_token_align import build_token_alignment
 from neural_forge.hf_token_align import evaluate_alignment_for_transport
 from neural_forge.hf_token_align import require_alignment_for_transport
@@ -21,11 +23,15 @@ class FakeTokenizer:
         encodings: dict[str, list[int]] | None = None,
         decode_overrides: dict[tuple[int, ...], str] | None = None,
         special_ids: tuple[int, ...] = (),
+        vocab_ids: tuple[int, ...] | None = None,
     ) -> None:
         self.surfaces = list(surfaces)
         self.encodings = dict(encodings or {})
         self.decode_overrides = dict(decode_overrides or {})
         self.all_special_ids = list(special_ids)
+        self.vocab_ids = tuple(
+            range(len(self.surfaces)) if vocab_ids is None else vocab_ids
+        )
 
     def __len__(self) -> int:
         return len(self.surfaces)
@@ -49,6 +55,12 @@ class FakeTokenizer:
         if text not in self.encodings:
             raise KeyError(text)
         return list(self.encodings[text])
+
+    def get_vocab(self) -> dict[str, int]:
+        return {
+            f"token-{position}": token_id
+            for position, token_id in enumerate(self.vocab_ids)
+        }
 
 
 def test_exact_alignment_preserves_leading_and_trailing_whitespace() -> None:
@@ -266,3 +278,103 @@ def test_strict_threshold_profile_requires_complete_unique_alignment() -> None:
     )
 
     assert result.accepted is True
+
+
+def test_strict_profile_maps_reordered_smaller_vocab_and_padded_donor() -> None:
+    donor = FakeTokenizer(["zero", "one", "two", "three"])
+    target = FakeTokenizer(["three", "one"])
+
+    profile = build_strict_token_transport_profile(
+        donor,
+        target,
+        donor_row_capacity=8,
+        target_row_capacity=2,
+    )
+
+    assert profile.target_to_donor_row_indices == (3, 1)
+    assert profile.donor_vocab_size == 4
+    assert profile.donor_row_capacity == 8
+    assert [item.resolution for item in profile.row_mappings] == [
+        "exact-token",
+        "exact-token",
+    ]
+
+
+def test_strict_profile_maps_special_tokens_by_semantic_role() -> None:
+    donor = FakeTokenizer(
+        ["<s>", "</s>", "<pad>", "<unk>", "word"],
+        special_ids=(0, 1, 2, 3),
+    )
+    donor.bos_token_id = 0
+    donor.eos_token_id = 1
+    donor.pad_token_id = 2
+    donor.unk_token_id = 3
+    target = FakeTokenizer(
+        ["word", "<target-unk>", "<target-bos>", "<target-pad>", "<target-eos>"],
+        special_ids=(1, 2, 3, 4),
+    )
+    target.bos_token_id = 2
+    target.eos_token_id = 4
+    target.pad_token_id = 3
+    target.unk_token_id = 1
+
+    profile = build_strict_token_transport_profile(donor, target)
+
+    assert profile.target_to_donor_row_indices == (4, 3, 0, 2, 1)
+    assert [item.special_token_roles for item in profile.row_mappings] == [
+        (),
+        ("UNK",),
+        ("BOS",),
+        ("PAD",),
+        ("EOS",),
+    ]
+
+
+def test_strict_profile_rejects_target_id_holes_and_capacity_mismatch() -> None:
+    donor = FakeTokenizer(["a", "b", "c"])
+    target = FakeTokenizer(["a", "b", "c"], vocab_ids=(0, 2))
+
+    with pytest.raises(StrictTokenTransportRejectedError) as caught:
+        build_strict_token_transport_profile(
+            donor,
+            target,
+            target_row_capacity=4,
+        )
+
+    assert caught.value.failures == (
+        "target row capacity 4 must equal tokenizer vocabulary size 3",
+        "target vocabulary has token ID holes: [1]",
+    )
+
+
+def test_strict_profile_rejects_spans_ambiguity_and_unalignable_rows() -> None:
+    span_donor = FakeTokenizer(["a", "b"], encodings={"ab": [0, 1]})
+    with pytest.raises(
+        StrictTokenTransportRejectedError,
+        match="resolves only to a donor token span",
+    ):
+        build_strict_token_transport_profile(span_donor, FakeTokenizer(["ab"]))
+
+    with pytest.raises(StrictTokenTransportRejectedError, match="ambiguous"):
+        build_strict_token_transport_profile(
+            FakeTokenizer(["same", "same"]),
+            FakeTokenizer(["same"]),
+        )
+
+    with pytest.raises(StrictTokenTransportRejectedError, match="unalignable"):
+        build_strict_token_transport_profile(
+            FakeTokenizer(["present"]),
+            FakeTokenizer(["missing"]),
+        )
+
+
+def test_strict_profile_and_mapping_fingerprints_are_deterministic() -> None:
+    donor = FakeTokenizer(["b", "a", "c"])
+    target = FakeTokenizer(["a", "c"])
+
+    first = build_strict_token_transport_profile(donor, target)
+    second = build_strict_token_transport_profile(donor, target)
+
+    assert first.target_to_donor_row_indices == (1, 2)
+    assert first.to_dict() == second.to_dict()
+    assert first.fingerprint() == second.fingerprint()
