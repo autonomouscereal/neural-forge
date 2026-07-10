@@ -183,6 +183,14 @@ def test_blank_bootstrap_improves_source_anchors_and_covers_every_target_role(
     assert all(torch.isfinite(parameter).all() for parameter in target.parameters())
     assert all(parameter.grad is None for parameter in source.parameters())
     assert all(parameter.grad is None for parameter in target.parameters())
+    if source_factory is _qwen3_source:
+        fold_report = result.fit_reports["block.0.attention.feature_folds"]
+        assert fold_report["source_query_head_norms"] == [
+            "model.layers.0.self_attn.q_norm"
+        ]
+        assert fold_report["source_key_head_norms"] == [
+            "model.layers.0.self_attn.k_norm"
+        ]
 
 
 def test_rejected_bootstrap_restores_the_exact_blank_target() -> None:

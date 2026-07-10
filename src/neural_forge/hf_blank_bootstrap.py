@@ -605,7 +605,6 @@ def _fit_target_block(
     max_coordinate_rows: int,
     reports: dict[str, Any],
 ) -> None:
-    del source_model, source_layout
     target_block_layout = target_layout.blocks[target_index]
     current = _trace_rows(target_model, target_calibration_inputs, trace_pooling)
     _require_row_alignment(source_trace, current, "calibration")
@@ -635,9 +634,20 @@ def _fit_target_block(
 
     current = _trace_rows(target_model, target_calibration_inputs, trace_pooling)
     target_block = current.blocks[target_index]
+    source_q_rows, source_k_rows, source_v_rows = (
+        _effective_source_attention_projection_rows(
+            torch,
+            source_model,
+            source_layout,
+            source_blocks,
+            source_span,
+        )
+    )
     q_coordinates, k_coordinates, v_coordinates = _attention_feature_coordinates(
         torch,
-        source_blocks,
+        source_q_rows,
+        source_k_rows,
+        source_v_rows,
         target_block_layout,
         max_coordinate_rows,
     )
@@ -645,16 +655,20 @@ def _fit_target_block(
         "query": q_coordinates.report.as_dict(),
         "key": k_coordinates.report.as_dict(),
         "value": v_coordinates.report.as_dict(),
+        "source_query_head_norms": [
+            source_layout.blocks[index].attention.query_norm.path
+            for index in source_span
+            if source_layout.blocks[index].attention.query_norm is not None
+        ],
+        "source_key_head_norms": [
+            source_layout.blocks[index].attention.key_norm.path
+            for index in source_span
+            if source_layout.blocks[index].attention.key_norm is not None
+        ],
     }
-    desired_q = _mean_projected(
-        torch, source_blocks, "query_projection_output", q_coordinates
-    )
-    desired_k = _mean_projected(
-        torch, source_blocks, "key_projection_output", k_coordinates
-    )
-    desired_v = _mean_projected(
-        torch, source_blocks, "value_projection_output", v_coordinates
-    )
+    desired_q = _mean_encoded_rows(torch, source_q_rows, q_coordinates)
+    desired_k = _mean_encoded_rows(torch, source_k_rows, k_coordinates)
+    desired_v = _mean_encoded_rows(torch, source_v_rows, v_coordinates)
     q_fit = fit_ridge_linear(
         target_block.pre_attention_norm_output,
         desired_q,
@@ -960,23 +974,25 @@ def _record_complete_evidence(
 
 def _attention_feature_coordinates(
     torch: Any,
-    source_blocks: Sequence[DecoderBlockTrace],
+    query_rows: Sequence[Any],
+    key_rows: Sequence[Any],
+    value_rows: Sequence[Any],
     target_block_layout: Any,
     max_coordinate_rows: int,
 ) -> tuple[FeatureFoldMap, FeatureFoldMap, FeatureFoldMap]:
     q_rows = _sample_concatenated_rows(
         torch,
-        [block.query_projection_output for block in source_blocks],
+        query_rows,
         max_coordinate_rows,
     )
     k_rows = _sample_concatenated_rows(
         torch,
-        [block.key_projection_output for block in source_blocks],
+        key_rows,
         max_coordinate_rows,
     )
     v_rows = _sample_concatenated_rows(
         torch,
-        [block.value_projection_output for block in source_blocks],
+        value_rows,
         max_coordinate_rows,
     )
     q_width = target_block_layout.attention.query_width
@@ -999,6 +1015,78 @@ def _attention_feature_coordinates(
         )
     v_coordinates = build_feature_fold_map(v_rows, k_width)
     return q_coordinates, k_coordinates, v_coordinates
+
+
+def _effective_source_attention_projection_rows(
+    torch: Any,
+    source_model: Any,
+    source_layout: DecoderLayout,
+    source_blocks: Sequence[DecoderBlockTrace],
+    source_span: Sequence[int],
+) -> tuple[tuple[Any, ...], tuple[Any, ...], tuple[Any, ...]]:
+    query_rows = []
+    key_rows = []
+    value_rows = []
+    for source_index, block in zip(source_span, source_blocks, strict=True):
+        attention = source_layout.blocks[source_index].attention
+        query = block.query_projection_output
+        key = block.key_projection_output
+        if attention.query_norm is not None:
+            query = _apply_head_norm(
+                torch,
+                query,
+                source_model,
+                attention.query_norm,
+                attention.query_heads,
+                attention.head_dim,
+            )
+        if attention.key_norm is not None:
+            key = _apply_head_norm(
+                torch,
+                key,
+                source_model,
+                attention.key_norm,
+                attention.key_value_heads,
+                attention.head_dim,
+            )
+        query_rows.append(query)
+        key_rows.append(key)
+        value_rows.append(block.value_projection_output)
+    return tuple(query_rows), tuple(key_rows), tuple(value_rows)
+
+
+def _apply_head_norm(
+    torch: Any,
+    rows: Any,
+    model: Any,
+    layout: Any,
+    head_count: int,
+    head_dim: int,
+) -> Any:
+    if layout.kind != "rms_norm" or layout.has_bias:
+        raise BlankBootstrapError(
+            "Only bias-free per-head RMSNorm is supported in source attention."
+        )
+    module = resolve_module(model, layout.path)
+    weight = module.weight.detach().to(device="cpu", dtype=torch.float64)
+    if tuple(weight.shape) != (head_dim,):
+        raise BlankBootstrapError(
+            f"Per-head norm {layout.path!r} must have shape ({head_dim},)."
+        )
+    values = rows.detach().to(device="cpu", dtype=torch.float64)
+    expected_width = head_count * head_dim
+    if int(values.shape[1]) != expected_width:
+        raise BlankBootstrapError(
+            f"Per-head norm input must have width {expected_width}."
+        )
+    heads = values.reshape(values.shape[0], head_count, head_dim)
+    normalized = heads * torch.rsqrt(
+        heads.square().mean(dim=-1, keepdim=True) + float(layout.epsilon)
+    )
+    result = (normalized * weight).reshape(values.shape[0], expected_width)
+    if not bool(torch.isfinite(result).all()):
+        raise BlankBootstrapError("Per-head RMSNorm produced non-finite rows.")
+    return result.contiguous()
 
 
 def _source_mlp_feature_rows(
@@ -1068,6 +1156,15 @@ def _mean_projected(
     coordinates: Any,
 ) -> Any:
     values = [_encode_rows(getattr(block, field), coordinates) for block in blocks]
+    return torch.stack(values, dim=0).mean(dim=0)
+
+
+def _mean_encoded_rows(
+    torch: Any,
+    rows: Sequence[Any],
+    coordinates: Any,
+) -> Any:
+    values = [_encode_rows(value, coordinates) for value in rows]
     return torch.stack(values, dim=0).mean(dim=0)
 
 
