@@ -1305,6 +1305,35 @@ def build_parser() -> argparse.ArgumentParser:
         default="keyword",
     )
     qwen_pair_compose.add_argument(
+        "--no-observable-coordinates",
+        action="store_false",
+        dest="observable_coordinates",
+        help="Keep one global residual basis instead of layer-varying predictive charts.",
+    )
+    qwen_pair_compose.add_argument(
+        "--observable-coordinate-ridge", type=float, default=1e-6
+    )
+    qwen_pair_compose.add_argument(
+        "--no-path-decomposition",
+        action="store_false",
+        dest="path_decomposition",
+        help="Disable all-path post-softmax and post-SwiGLU merging.",
+    )
+    qwen_pair_compose.add_argument(
+        "--path-decomposition-max-rows", type=int, default=1024
+    )
+    qwen_pair_compose.add_argument(
+        "--path-decomposition-ridge", type=float, default=1e-6
+    )
+    qwen_pair_compose.add_argument(
+        "--path-decomposition-sketch-size", type=int, default=64
+    )
+    qwen_pair_compose.add_argument(
+        "--path-decomposition-interpolation-mode",
+        choices=["dense", "sparse-signature"],
+        default="sparse-signature",
+    )
+    qwen_pair_compose.add_argument(
         "--head-validation-vocab-rows", type=int, default=4096
     )
     qwen_pair_compose.add_argument(
@@ -3322,6 +3351,15 @@ def cmd_hf_qwen_pair_compose(args: argparse.Namespace) -> dict[str, object]:
         basis_mode=args.basis_mode,
         basis_preprocess=args.basis_preprocess,
         activation_domain_balance=args.activation_domain_balance,
+        observable_coordinates=args.observable_coordinates,
+        observable_coordinate_ridge=args.observable_coordinate_ridge,
+        path_decomposition=args.path_decomposition,
+        path_decomposition_max_rows=args.path_decomposition_max_rows,
+        path_decomposition_ridge=args.path_decomposition_ridge,
+        path_decomposition_sketch_size=args.path_decomposition_sketch_size,
+        path_decomposition_interpolation_mode=(
+            args.path_decomposition_interpolation_mode
+        ),
         head_validation_vocab_rows=args.head_validation_vocab_rows,
         torch_dtype=args.dtype,
         target_torch_dtype=args.candidate_dtype,

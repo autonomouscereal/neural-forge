@@ -59,6 +59,13 @@ class ComposeSettings:
     basis_mode: str = "activation-pca"
     basis_preprocess: str = "uncentered-rowrms"
     activation_domain_balance: str = "keyword"
+    observable_coordinates: bool = True
+    observable_coordinate_ridge: float = 1e-6
+    path_decomposition: bool = True
+    path_decomposition_max_rows: int = 1024
+    path_decomposition_ridge: float = 1e-6
+    path_decomposition_sketch_size: int = 64
+    path_decomposition_interpolation_mode: str = "sparse-signature"
     fit_gate_validation_fraction: float = 0.25
     fit_gate_min_validation_rows: int = 128
     fit_gate_min_relative_improvement: float = 0.02
@@ -76,6 +83,8 @@ class ComposeSettings:
             "max_tokens_per_layer",
             "max_anchors",
             "max_calibration_texts",
+            "path_decomposition_max_rows",
+            "path_decomposition_sketch_size",
         ):
             if int(getattr(self, name)) <= 0:
                 raise ValueError(f"{name.replace('_', '-')} must be positive.")
@@ -112,6 +121,17 @@ class ComposeSettings:
             raise ValueError("unsupported basis-preprocess.")
         if self.activation_domain_balance not in {"none", "keyword"}:
             raise ValueError("activation-domain-balance must be none or keyword.")
+        for name, value in (
+            ("observable-coordinate-ridge", self.observable_coordinate_ridge),
+            ("path-decomposition-ridge", self.path_decomposition_ridge),
+        ):
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(f"{name} must be non-negative.")
+        if self.path_decomposition_interpolation_mode not in {
+            "dense",
+            "sparse-signature",
+        }:
+            raise ValueError("unsupported path-decomposition-interpolation-mode.")
 
 
 def _sha256(path: Path) -> str:
@@ -173,6 +193,16 @@ def build_compose_command(
         settings.basis_preprocess,
         "--activation-domain-balance",
         settings.activation_domain_balance,
+        "--observable-coordinate-ridge",
+        str(settings.observable_coordinate_ridge),
+        "--path-decomposition-max-rows",
+        str(settings.path_decomposition_max_rows),
+        "--path-decomposition-ridge",
+        str(settings.path_decomposition_ridge),
+        "--path-decomposition-sketch-size",
+        str(settings.path_decomposition_sketch_size),
+        "--path-decomposition-interpolation-mode",
+        settings.path_decomposition_interpolation_mode,
         "--calibration-file",
         str(calibration_file),
         "--max-calibration-texts",
@@ -194,6 +224,10 @@ def build_compose_command(
         "--device",
         settings.device,
     ]
+    if not settings.observable_coordinates:
+        command.append("--no-observable-coordinates")
+    if not settings.path_decomposition:
+        command.append("--no-path-decomposition")
     _assert_no_recovery_or_training_flags(command)
     return command
 
@@ -581,6 +615,24 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--basis-mode", default="activation-pca")
     parser.add_argument("--basis-preprocess", default="uncentered-rowrms")
     parser.add_argument("--activation-domain-balance", default="keyword")
+    parser.add_argument(
+        "--no-observable-coordinates",
+        action="store_false",
+        dest="observable_coordinates",
+    )
+    parser.add_argument("--observable-coordinate-ridge", type=float, default=1e-6)
+    parser.add_argument(
+        "--no-path-decomposition",
+        action="store_false",
+        dest="path_decomposition",
+    )
+    parser.add_argument("--path-decomposition-max-rows", type=int, default=1024)
+    parser.add_argument("--path-decomposition-ridge", type=float, default=1e-6)
+    parser.add_argument("--path-decomposition-sketch-size", type=int, default=64)
+    parser.add_argument(
+        "--path-decomposition-interpolation-mode",
+        default="sparse-signature",
+    )
     parser.add_argument("--fit-gate-validation-fraction", type=float, default=0.25)
     parser.add_argument("--fit-gate-min-validation-rows", type=int, default=128)
     parser.add_argument("--fit-gate-min-relative-improvement", type=float, default=0.02)
@@ -633,6 +685,15 @@ def main(argv: list[str] | None = None) -> int:
         basis_mode=args.basis_mode,
         basis_preprocess=args.basis_preprocess,
         activation_domain_balance=args.activation_domain_balance,
+        observable_coordinates=args.observable_coordinates,
+        observable_coordinate_ridge=args.observable_coordinate_ridge,
+        path_decomposition=args.path_decomposition,
+        path_decomposition_max_rows=args.path_decomposition_max_rows,
+        path_decomposition_ridge=args.path_decomposition_ridge,
+        path_decomposition_sketch_size=args.path_decomposition_sketch_size,
+        path_decomposition_interpolation_mode=(
+            args.path_decomposition_interpolation_mode
+        ),
         fit_gate_validation_fraction=args.fit_gate_validation_fraction,
         fit_gate_min_validation_rows=args.fit_gate_min_validation_rows,
         fit_gate_min_relative_improvement=args.fit_gate_min_relative_improvement,

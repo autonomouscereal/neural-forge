@@ -6,10 +6,13 @@ utilities: both models must expose Qwen-style GQA attention, SwiGLU MLPs, and a
 shared tokenizer.  The narrow contract lets the implementation preserve head
 and channel structure instead of treating every tensor as an anonymous array.
 
-No optimizer is constructed and no backward pass is performed.  Linear output
-maps are fitted with prior-preserving, trace-scaled FP64 ridge solves and are
-committed only when held-out *prompts* improve.  Token rows from one prompt are
-never split between fitting and validation.
+No optimizer is constructed and no backward pass is performed. Post-softmax
+attention paths and post-SwiGLU neuron paths are merged through their consumer
+directions, while layer-varying observable charts retain directions predictive
+of the donor's final state. Linear producer/output maps are fitted with
+prior-preserving, trace-scaled FP64 ridge solves and committed transactionally
+only when held-out *prompts* improve. Token rows from one prompt are never split
+between fitting and validation.
 """
 
 from __future__ import annotations
@@ -315,6 +318,7 @@ def build_coupled_swiglu_packing(
     target_intermediate_size: int,
     pair_width: int = 2,
     channel_scores: Sequence[Sequence[float]] | None = None,
+    selected_sources: Sequence[Sequence[int]] | None = None,
 ) -> dict[str, Any]:
     """Select intact paired SwiGLU channels with shared gate/up/down indices."""
 
@@ -342,24 +346,54 @@ def build_coupled_swiglu_packing(
     else:
         score_rows = [[0.0] * donor_size for _ in range(width)]
 
-    base_quota, remainder = divmod(target_size, width)
-    quotas = [
-        base_quota + (1 if layer_offset < remainder else 0)
-        for layer_offset in range(width)
-    ]
-    if any(quota <= 0 or quota > donor_size for quota in quotas):
-        raise ValueError("Target SwiGLU quotas do not fit donor intermediate channels.")
-    selected_sources: list[tuple[int, int]] = []
-    for layer_offset, quota in enumerate(quotas):
-        ranked = sorted(
-            range(donor_size),
-            key=lambda channel: (-score_rows[layer_offset][channel], channel),
-        )
-        selected_sources.extend((layer_offset, channel) for channel in ranked[:quota])
+    if selected_sources is None:
+        base_quota, remainder = divmod(target_size, width)
+        quotas = [
+            base_quota + (1 if layer_offset < remainder else 0)
+            for layer_offset in range(width)
+        ]
+        if any(quota <= 0 or quota > donor_size for quota in quotas):
+            raise ValueError(
+                "Target SwiGLU quotas do not fit donor intermediate channels."
+            )
+        normalized_sources: list[tuple[int, int]] = []
+        for layer_offset, quota in enumerate(quotas):
+            ranked = sorted(
+                range(donor_size),
+                key=lambda channel: (-score_rows[layer_offset][channel], channel),
+            )
+            normalized_sources.extend(
+                (layer_offset, channel) for channel in ranked[:quota]
+            )
+        selection_source = "score-ranked-intact-channels"
+    else:
+        if len(selected_sources) != target_size:
+            raise ValueError(
+                "selected_sources must contain one donor source per target channel."
+            )
+        normalized_sources = []
+        for item in selected_sources:
+            if len(item) != 2:
+                raise ValueError(
+                    "Each selected SwiGLU source must be [pair_offset, channel]."
+                )
+            pair_offset, channel = int(item[0]), int(item[1])
+            if not 0 <= pair_offset < width or not 0 <= channel < donor_size:
+                raise ValueError("selected_sources contains an out-of-range channel.")
+            normalized_sources.append((pair_offset, channel))
+        if len(set(normalized_sources)) != len(normalized_sources):
+            raise ValueError("selected_sources must not contain duplicate channels.")
+        quotas = [
+            sum(pair_offset == layer_offset for pair_offset, _ in normalized_sources)
+            for layer_offset in range(width)
+        ]
+        if any(quota <= 0 for quota in quotas):
+            raise ValueError("selected_sources must preserve every donor layer.")
+        selection_source = "explicit-post-nonlinearity-support"
 
     source_to_target = [-1] * source_count
     packed = []
-    for target_channel, source in enumerate(selected_sources):
+    for target_channel, source in enumerate(normalized_sources):
         source_flat_index = int(source[0]) * donor_size + int(source[1])
         source_to_target[source_flat_index] = target_channel
         refs = [[int(source[0]), int(source[1])]]
@@ -380,6 +414,7 @@ def build_coupled_swiglu_packing(
         "selected_channel_count": target_size,
         "discarded_channel_count": source_count - target_size,
         "selected_per_donor_layer": quotas,
+        "selection_source": selection_source,
         "target_channels": packed,
         "source_to_target": source_to_target,
         "gate_up_down_indices_coupled": True,
@@ -567,11 +602,9 @@ def _validation_gate(
         return False, "validation_improvement_below_threshold", diagnostics
     if cosine_delta < -float(max_cosine_drop):
         return False, "validation_cosine_drop", diagnostics
-    if (
-        max_fitted_relative_rmse is not None
-        and float(fitted_metrics["relative_rmse"])
-        > float(max_fitted_relative_rmse)
-    ):
+    if max_fitted_relative_rmse is not None and float(
+        fitted_metrics["relative_rmse"]
+    ) > float(max_fitted_relative_rmse):
         return False, "validation_relative_rmse_above_ceiling", diagnostics
     return True, "accepted", diagnostics
 
@@ -594,6 +627,28 @@ def _cat_prompt_rows(
         )
         combined = combined.index_select(0, keep)
     return combined
+
+
+def _cat_prompt_rows_with_ids(
+    torch, rows: Sequence[Any], max_rows: int | None = None
+) -> tuple[Any, list[int]]:
+    if not rows or any(item is None for item in rows):
+        raise ValueError("Prompt trace rows are missing.")
+    combined = torch.cat([item.detach().cpu() for item in rows], dim=0)
+    prompt_ids = [
+        int(prompt_index)
+        for prompt_index, item in enumerate(rows)
+        for _ in range(int(item.shape[0]))
+    ]
+    if max_rows is not None and int(combined.shape[0]) > int(max_rows):
+        keep = (
+            torch.linspace(0, int(combined.shape[0]) - 1, steps=int(max_rows))
+            .round()
+            .to(torch.long)
+        )
+        combined = combined.index_select(0, keep)
+        prompt_ids = [prompt_ids[int(index)] for index in keep.tolist()]
+    return combined, prompt_ids
 
 
 def _fit_linear_prompt_split(
@@ -1023,9 +1078,11 @@ def _pack_attention_pair(
     torch,
     donor_specs: Sequence[dict[str, Any]],
     target_spec: dict[str, Any],
-    basis,
+    input_basis,
+    output_basis,
     tracker: _ParameterWriteTracker,
     activation_scores: Sequence[Any] | None = None,
+    path_fold: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if len(donor_specs) != 2:
         raise ValueError("Attention pair packing requires exactly two donor layers.")
@@ -1096,6 +1153,12 @@ def _pack_attention_pair(
                 "criterion": criterion,
             }
         )
+    if path_fold is not None:
+        selected_kv_heads = [int(item) for item in path_fold["selected_kv_heads"]]
+        if len(selected_kv_heads) != target_kv:
+            raise ValueError(
+                "Attention path fold must select one donor KV group per target group."
+            )
     plan = build_gqa_group_packing(
         first["query_heads"],
         first["key_value_heads"],
@@ -1105,7 +1168,12 @@ def _pack_attention_pair(
         pair_width=2,
         selected_kv_heads=selected_kv_heads,
     )
-    basis_device = basis.to(device=first["q"].weight.device, dtype=torch.float32)
+    input_basis_device = input_basis.to(
+        device=first["q"].weight.device, dtype=torch.float32
+    )
+    output_basis_device = output_basis.to(
+        device=first["q"].weight.device, dtype=torch.float32
+    )
 
     for name, heads_per_group in (("q", ratio), ("k", 1), ("v", 1)):
         projected = torch.zeros_like(target_spec[name].weight, dtype=torch.float32)
@@ -1129,7 +1197,7 @@ def _pack_attention_pair(
                 .weight[source_start:source_end]
                 .detach()
                 .to(torch.float32)
-                .matmul(basis_device)
+                .matmul(input_basis_device)
             )
             source_bias = getattr(spec[name], "bias", None)
             if projected_bias is not None and source_bias is not None:
@@ -1147,34 +1215,55 @@ def _pack_attention_pair(
             )
 
     projected_output = torch.zeros_like(target_spec["o"].weight, dtype=torch.float32)
-    for group in plan["groups"]:
-        target_group = int(group["target_kv_head"])
-        source = group["source"]
-        spec = donor_specs[int(source["pair_offset"])]
-        donor_group = int(source["donor_kv_head"])
-        source_start = donor_group * ratio * head_dim
-        source_end = source_start + ratio * head_dim
-        target_start = target_group * ratio * head_dim
-        target_end = target_start + ratio * head_dim
-        projected_output[:, target_start:target_end] = basis_device.t().matmul(
-            spec["o"].weight[:, source_start:source_end].detach().to(torch.float32)
+    if path_fold is None:
+        for group in plan["groups"]:
+            target_group = int(group["target_kv_head"])
+            source = group["source"]
+            spec = donor_specs[int(source["pair_offset"])]
+            donor_group = int(source["donor_kv_head"])
+            source_start = donor_group * ratio * head_dim
+            source_end = source_start + ratio * head_dim
+            target_start = target_group * ratio * head_dim
+            target_end = target_start + ratio * head_dim
+            projected_output[:, target_start:target_end] = (
+                output_basis_device.t().matmul(
+                    spec["o"]
+                    .weight[:, source_start:source_end]
+                    .detach()
+                    .to(torch.float32)
+                )
+            )
+        output_reason = "gqa-intact-selected-o-pair-pack"
+    else:
+        aggregate = path_fold["aggregate_output_coefficients"].to(
+            device=projected_output.device, dtype=torch.float32
         )
-    tracker.write(
-        target_spec["o"].weight, projected_output, "gqa-intact-selected-o-pair-pack"
-    )
+        expected = (target_kv, ratio * head_dim, int(target_spec["hidden_size"]))
+        if tuple(aggregate.shape) != expected:
+            raise ValueError(
+                f"Attention path aggregate shape must be {expected}; got {tuple(aggregate.shape)}."
+            )
+        for target_group in range(target_kv):
+            start = target_group * ratio * head_dim
+            end = start + ratio * head_dim
+            projected_output[:, start:end] = aggregate[target_group].t()
+        output_reason = "post-softmax-all-path-merged-o-pair-pack"
+    tracker.write(target_spec["o"].weight, projected_output, output_reason)
     target_o_bias = getattr(target_spec["o"], "bias", None)
     if target_o_bias is not None:
         donor_biases = [getattr(spec["o"], "bias", None) for spec in donor_specs]
         if any(item is not None for item in donor_biases):
             values = [
                 torch.zeros(
-                    donor_hidden, dtype=torch.float32, device=basis_device.device
+                    donor_hidden, dtype=torch.float32, device=output_basis_device.device
                 )
                 if item is None
                 else item.detach().to(torch.float32)
                 for item in donor_biases
             ]
-            packed_bias = torch.stack(values, dim=0).sum(dim=0).matmul(basis_device)
+            packed_bias = (
+                torch.stack(values, dim=0).sum(dim=0).matmul(output_basis_device)
+            )
         else:
             packed_bias = torch.zeros_like(target_o_bias, dtype=torch.float32)
         tracker.write(target_o_bias, packed_bias, "gqa-intact-o-bias-pair-pack")
@@ -1199,6 +1288,9 @@ def _pack_attention_pair(
                 f"{norm_name}-pair-prior",
             )
     plan["selection"] = selection_scores
+    if path_fold is not None:
+        plan["selection_source"] = "post-softmax-all-path-decomposition"
+        plan["post_nonlinearity_path_decomposition"] = path_fold["report"]
     return plan
 
 
@@ -1209,6 +1301,7 @@ def _pack_swiglu_pair(
     basis,
     tracker: _ParameterWriteTracker,
     activation_scores: Sequence[Any] | None = None,
+    path_fold: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if len(donor_specs) != 2:
         raise ValueError("SwiGLU pair packing requires exactly two donor layers.")
@@ -1247,6 +1340,7 @@ def _pack_swiglu_pair(
         target_intermediate,
         pair_width=2,
         channel_scores=channel_scores,
+        selected_sources=(None if path_fold is None else path_fold["selected_sources"]),
     )
     basis_device = basis.to(
         device=donor_specs[0]["gate"].weight.device, dtype=torch.float32
@@ -1286,19 +1380,32 @@ def _pack_swiglu_pair(
             )
 
     projected_down = torch.zeros_like(target_spec["down"].weight, dtype=torch.float32)
-    for item in plan["target_channels"]:
-        target_channel = int(item["target_channel"])
-        pair_offset, donor_channel = item["sources"][0]
-        projected_down[:, target_channel] = basis_device.t().matmul(
-            donor_specs[int(pair_offset)]["down"]
-            .weight[:, int(donor_channel)]
-            .detach()
-            .to(torch.float32)
+    if path_fold is None:
+        for item in plan["target_channels"]:
+            target_channel = int(item["target_channel"])
+            pair_offset, donor_channel = item["sources"][0]
+            projected_down[:, target_channel] = basis_device.t().matmul(
+                donor_specs[int(pair_offset)]["down"]
+                .weight[:, int(donor_channel)]
+                .detach()
+                .to(torch.float32)
+            )
+        down_reason = "coupled-swiglu-intact-selected-down-pair-pack"
+    else:
+        aggregate = path_fold["aggregate_output_coefficients"].to(
+            device=projected_down.device, dtype=torch.float32
         )
+        expected = (target_intermediate, int(target_spec["hidden_size"]))
+        if tuple(aggregate.shape) != expected:
+            raise ValueError(
+                f"SwiGLU path aggregate shape must be {expected}; got {tuple(aggregate.shape)}."
+            )
+        projected_down.copy_(aggregate.t())
+        down_reason = "post-swiglu-all-path-merged-down-pair-pack"
     tracker.write(
         target_spec["down"].weight,
         projected_down,
-        "coupled-swiglu-intact-selected-down-pair-pack",
+        down_reason,
     )
     target_down_bias = getattr(target_spec["down"], "bias", None)
     if target_down_bias is not None:
@@ -1321,6 +1428,9 @@ def _pack_swiglu_pair(
             "coupled-swiglu-intact-selected-down-bias-pair-pack",
         )
     plan["selection_criterion"] = score_criterion
+    if path_fold is not None:
+        plan["selection_criterion"] = "post-swiglu-all-path-decomposition"
+        plan["post_nonlinearity_path_decomposition"] = path_fold["report"]
     return plan
 
 
@@ -1579,6 +1689,8 @@ def _capture_prompt_rows(
     attention_mask,
     prompt_start: int,
     projection=None,
+    max_rows_per_prompt: int | None = None,
+    storage_dtype=None,
 ) -> None:
     values = _first_tensor(tensor).detach()
     if values.dim() == 2:
@@ -1592,7 +1704,7 @@ def _capture_prompt_rows(
             projection.to(device=values.device, dtype=torch.float32)
         )
     else:
-        values = values.to(torch.float32)
+        values = values.to(torch.float32 if storage_dtype is None else storage_dtype)
     mask = attention_mask.to(device=values.device, dtype=torch.bool)
     if tuple(mask.shape[:2]) != tuple(values.shape[:2]):
         raise ValueError("Trace attention mask does not align with hidden states.")
@@ -1602,9 +1714,106 @@ def _capture_prompt_rows(
             raise RuntimeError(
                 f"Prompt trace {prompt_index} was captured more than once."
             )
-        destination[prompt_index] = (
-            values[local_index][mask[local_index]].detach().cpu().contiguous()
-        )
+        prompt_rows = values[local_index][mask[local_index]]
+        if max_rows_per_prompt is not None and int(prompt_rows.shape[0]) > int(
+            max_rows_per_prompt
+        ):
+            keep = (
+                torch.linspace(
+                    0,
+                    int(prompt_rows.shape[0]) - 1,
+                    steps=int(max_rows_per_prompt),
+                    device=prompt_rows.device,
+                )
+                .round()
+                .to(torch.long)
+            )
+            prompt_rows = prompt_rows.index_select(0, keep)
+        destination[prompt_index] = prompt_rows.detach().cpu().contiguous()
+
+
+def _packed_donor_attention_output(
+    torch,
+    tensor,
+    plan: dict[str, Any],
+    name: str,
+    pair_offset: int,
+):
+    values = _first_tensor(tensor)
+    ratio = int(plan["query_heads_per_kv"])
+    head_dim = int(plan["head_dim"])
+    heads_per_group = ratio if name == "q" else 1
+    target_width = (
+        int(plan["target_query_heads"])
+        if name == "q"
+        else int(plan["target_key_value_heads"])
+    ) * head_dim
+    packed = torch.zeros(
+        (*tuple(values.shape[:-1]), target_width),
+        dtype=values.dtype,
+        device=values.device,
+    )
+    for group in plan["groups"]:
+        source = group["source"]
+        if int(source["pair_offset"]) != int(pair_offset):
+            continue
+        donor_group = int(source["donor_kv_head"])
+        target_group = int(group["target_kv_head"])
+        source_start = donor_group * heads_per_group * head_dim
+        source_end = source_start + heads_per_group * head_dim
+        target_start = target_group * heads_per_group * head_dim
+        target_end = target_start + heads_per_group * head_dim
+        packed[..., target_start:target_end] = values[..., source_start:source_end]
+    return packed
+
+
+def _packed_donor_mlp_output(
+    torch,
+    tensor,
+    plan: dict[str, Any],
+    pair_offset: int,
+):
+    values = _first_tensor(tensor)
+    packed = torch.zeros(
+        (*tuple(values.shape[:-1]), int(plan["target_intermediate_size"])),
+        dtype=values.dtype,
+        device=values.device,
+    )
+    for item in plan["target_channels"]:
+        target_channel = int(item["target_channel"])
+        source_offset, source_channel = item["sources"][0]
+        if int(source_offset) == int(pair_offset):
+            packed[..., target_channel] = values[..., int(source_channel)]
+    return packed
+
+
+def _sum_prompt_partitions(parts: Sequence[Sequence[Any]], name: str) -> list[Any]:
+    if not parts:
+        raise ValueError(f"Trace {name!r} has no partitions.")
+    output = []
+    for prompt_index, values in enumerate(zip(*parts, strict=True)):
+        if any(value is None for value in values):
+            raise RuntimeError(
+                f"Trace {name!r} is missing a partition for prompt {prompt_index}."
+            )
+        combined = values[0].clone()
+        for value in values[1:]:
+            if tuple(value.shape) != tuple(combined.shape):
+                raise ValueError(f"Trace {name!r} partition shapes do not align.")
+            combined.add_(value)
+        output.append(combined)
+    return output
+
+
+def _add_prompt_rows(left: Sequence[Any], right: Sequence[Any]) -> list[Any]:
+    if len(left) != len(right):
+        raise ValueError("Prompt traces must have the same length.")
+    output = []
+    for prompt_index, (left_rows, right_rows) in enumerate(zip(left, right)):
+        if tuple(left_rows.shape) != tuple(right_rows.shape):
+            raise ValueError(f"Prompt {prompt_index} trace shapes do not align.")
+        output.append(left_rows + right_rows)
+    return output
 
 
 def _assert_complete_trace(rows: Sequence[Any | None], name: str) -> None:
@@ -1615,24 +1824,539 @@ def _assert_complete_trace(rows: Sequence[Any | None], name: str) -> None:
         raise RuntimeError(f"Trace {name!r} contains an empty prompt.")
 
 
-def _trace_donor_pair_targets(
+def _trace_donor_post_nonlinearity_paths(
     torch,
     donor,
     pair_plan: Sequence[LayerPair],
     batches: Sequence[dict[str, Any]],
+    prompt_count: int,
+    max_rows: int,
+    capture_paths: bool = True,
+) -> dict[str, Any]:
+    if int(max_rows) < int(prompt_count):
+        raise ValueError(
+            "post-nonlinearity path tracing needs at least one row per prompt."
+        )
+    rows_per_prompt = max(1, int(max_rows) // int(prompt_count))
+    donor_layers = list(_decoder_layer_container(donor)[2])
+    traces = {
+        int(pair.target_layer): {
+            "pair_input": _new_prompt_slots(prompt_count),
+            "pair_output": _new_prompt_slots(prompt_count),
+            "attention": (
+                [
+                    _new_prompt_slots(prompt_count),
+                    _new_prompt_slots(prompt_count),
+                ]
+                if capture_paths
+                else None
+            ),
+            "mlp": (
+                [
+                    _new_prompt_slots(prompt_count),
+                    _new_prompt_slots(prompt_count),
+                ]
+                if capture_paths
+                else None
+            ),
+        }
+        for pair in pair_plan
+    }
+    final_hidden = _new_prompt_slots(prompt_count)
+    context: dict[str, Any] = {}
+    handles = []
+
+    def capture_pre(destination):
+        def hook(_module, args):
+            _capture_prompt_rows(
+                torch,
+                destination,
+                args[0],
+                context["attention_mask"],
+                context["prompt_start"],
+                max_rows_per_prompt=rows_per_prompt,
+                storage_dtype=torch.float16,
+            )
+
+        return hook
+
+    for pair in pair_plan:
+        pair_trace = traces[int(pair.target_layer)]
+        first_layer = donor_layers[int(pair.donor_first)]
+        second_layer = donor_layers[int(pair.donor_second)]
+        handles.append(
+            first_layer.register_forward_pre_hook(capture_pre(pair_trace["pair_input"]))
+        )
+
+        def capture_pair_output(destination):
+            def hook(_module, _args, output):
+                _capture_prompt_rows(
+                    torch,
+                    destination,
+                    output,
+                    context["attention_mask"],
+                    context["prompt_start"],
+                    max_rows_per_prompt=rows_per_prompt,
+                    storage_dtype=torch.float16,
+                )
+
+            return hook
+
+        handles.append(
+            second_layer.register_forward_hook(
+                capture_pair_output(pair_trace["pair_output"])
+            )
+        )
+        for pair_offset, donor_layer_index in enumerate(pair.donor_layers):
+            if not capture_paths:
+                continue
+            spec = _qwen_layer_spec(donor_layers[int(donor_layer_index)])
+            handles.append(
+                spec["o"].register_forward_pre_hook(
+                    capture_pre(pair_trace["attention"][pair_offset])
+                )
+            )
+            handles.append(
+                spec["down"].register_forward_pre_hook(
+                    capture_pre(pair_trace["mlp"][pair_offset])
+                )
+            )
+
+    def capture_final(_module, _args, output):
+        _capture_prompt_rows(
+            torch,
+            final_hidden,
+            output,
+            context["attention_mask"],
+            context["prompt_start"],
+            max_rows_per_prompt=rows_per_prompt,
+            storage_dtype=torch.float16,
+        )
+
+    handles.append(_find_final_norm(donor).register_forward_hook(capture_final))
+
+    backbone = _model_backbone(donor)
+    was_training = donor.training
+    donor.eval()
+    try:
+        with torch.inference_mode():
+            for batch in batches:
+                context["attention_mask"] = batch["attention_mask"]
+                context["prompt_start"] = int(batch["start"])
+                _run_backbone(backbone, batch["model_inputs"])
+    finally:
+        for handle in handles:
+            handle.remove()
+        if was_training:
+            donor.train()
+    for pair_index, pair_trace in traces.items():
+        _assert_complete_trace(
+            pair_trace["pair_input"], f"donor_pair_{pair_index}_input"
+        )
+        _assert_complete_trace(
+            pair_trace["pair_output"], f"donor_pair_{pair_index}_output"
+        )
+        for name in (() if not capture_paths else ("attention", "mlp")):
+            for pair_offset, rows in enumerate(pair_trace[name]):
+                _assert_complete_trace(
+                    rows,
+                    f"donor_pair_{pair_index}_{name}_paths_{pair_offset}",
+                )
+    _assert_complete_trace(final_hidden, "donor_final_observable_hidden")
+    return {
+        "pairs": traces,
+        "final_hidden": final_hidden,
+        "max_rows": int(max_rows),
+        "rows_per_prompt": int(rows_per_prompt),
+        "storage_dtype": "float16",
+        "paths_captured": bool(capture_paths),
+    }
+
+
+def _aligned_pair_path_rows(
+    torch,
+    partitions: Sequence[Sequence[Any]],
+    paths_per_layer: int,
+    channels_per_path: int | None,
+) -> tuple[Any, list[int]]:
+    if len(partitions) != 2:
+        raise ValueError("Ordered path decomposition requires two donor partitions.")
+    rows = []
+    prompt_ids = []
+    for prompt_index, (first, second) in enumerate(
+        zip(partitions[0], partitions[1], strict=True)
+    ):
+        if int(first.shape[0]) != int(second.shape[0]):
+            raise ValueError("Donor pair path traces do not align by token row.")
+        if channels_per_path is None:
+            expected = int(paths_per_layer)
+            if int(first.shape[1]) != expected or int(second.shape[1]) != expected:
+                raise ValueError("SwiGLU path trace width does not match the donor.")
+            combined = torch.cat((first, second), dim=1)
+        else:
+            expected = int(paths_per_layer) * int(channels_per_path)
+            if int(first.shape[1]) != expected or int(second.shape[1]) != expected:
+                raise ValueError("Attention path trace width does not match the donor.")
+            combined = torch.cat(
+                (
+                    first.reshape(
+                        int(first.shape[0]), paths_per_layer, channels_per_path
+                    ),
+                    second.reshape(
+                        int(second.shape[0]), paths_per_layer, channels_per_path
+                    ),
+                ),
+                dim=1,
+            )
+        rows.append(combined)
+        prompt_ids.extend([int(prompt_index)] * int(combined.shape[0]))
+    return torch.cat(rows, dim=0), prompt_ids
+
+
+def _aligned_observable_boundary_rows(
+    torch,
+    named_rows: Sequence[tuple[str, Sequence[Any]]],
+    final_rows: Sequence[Any],
+) -> tuple[dict[str, Any], Any, list[int]]:
+    if not named_rows:
+        raise ValueError("Need at least one donor boundary for observable charts.")
+    flattened: dict[str, Any] = {}
+    prompt_ids = []
+    for prompt_index, final_prompt_rows in enumerate(final_rows):
+        expected = int(final_prompt_rows.shape[0])
+        for name, rows in named_rows:
+            if int(rows[prompt_index].shape[0]) != expected:
+                raise ValueError(
+                    f"Observable boundary {name!r} does not align at prompt {prompt_index}."
+                )
+        prompt_ids.extend([int(prompt_index)] * expected)
+    for name, rows in named_rows:
+        flattened[name] = torch.cat(list(rows), dim=0)
+    return flattened, torch.cat(list(final_rows), dim=0), prompt_ids
+
+
+def _canonical_observable_basis(torch, encoder, fallback_basis, target_hidden: int):
+    candidate = torch.cat(
+        (
+            encoder.detach().cpu().to(torch.float64),
+            fallback_basis.detach().cpu().to(torch.float64),
+        ),
+        dim=1,
+    )
+    basis, _ = torch.linalg.qr(candidate, mode="reduced")
+    if int(basis.shape[1]) < int(target_hidden):
+        raise RuntimeError("Observable chart could not span the target hidden width.")
+    basis = basis[:, : int(target_hidden)].contiguous()
+    pivots = basis.abs().argmax(dim=0)
+    pivot_values = basis.gather(0, pivots.unsqueeze(0)).squeeze(0)
+    signs = torch.where(
+        pivot_values < 0.0,
+        -torch.ones_like(pivot_values),
+        torch.ones_like(pivot_values),
+    )
+    return (basis * signs.unsqueeze(0)).to(torch.float32).contiguous()
+
+
+def _build_logit_observable_pair_bases(
+    torch,
+    pair_plan: Sequence[LayerPair],
+    path_traces: dict[str, Any],
+    global_basis,
+    texts: Sequence[str],
+    ridge: float,
+    validation_fraction: float,
+    min_train_prompts: int,
+    min_validation_prompts: int,
+    split_seed: int,
+) -> tuple[dict[int, dict[str, Any]], dict[str, Any]]:
+    from neural_forge.hf_qwen_observable import fit_logit_observable_charts
+    from neural_forge.hf_xfamily import _activation_calibration_domain
+
+    ordered_pairs = sorted(pair_plan, key=lambda item: int(item.target_layer))
+    named_rows: list[tuple[str, Sequence[Any]]] = [
+        ("pair_input_0", path_traces["pairs"][0]["pair_input"])
+    ]
+    named_rows.extend(
+        (
+            f"pair_output_{int(pair.target_layer)}",
+            path_traces["pairs"][int(pair.target_layer)]["pair_output"],
+        )
+        for pair in ordered_pairs
+    )
+    boundaries, final_observable, prompt_ids = _aligned_observable_boundary_rows(
+        torch, named_rows, path_traces["final_hidden"]
+    )
+    domains_by_prompt = [_activation_calibration_domain(str(text)) for text in texts]
+    domains = [domains_by_prompt[index] for index in prompt_ids]
+    target_hidden = int(global_basis.shape[1])
+    result = fit_logit_observable_charts(
+        boundaries,
+        final_observable,
+        rank=target_hidden,
+        prompt_ids=prompt_ids,
+        domains=domains,
+        method="rrr",
+        ridge=ridge,
+        transition_ridge=ridge,
+        validation_fraction=validation_fraction,
+        min_train_prompts=min_train_prompts,
+        min_validation_prompts=min_validation_prompts,
+        split_seed=split_seed,
+    )
+    chart_by_name = {str(chart["name"]): chart for chart in result["charts"]}
+    materialized = {}
+    materialization_report = []
+    for name, chart in chart_by_name.items():
+        basis = _canonical_observable_basis(
+            torch, chart["encoder"], global_basis, target_hidden
+        )
+        descriptor = _validate_residual_basis(
+            torch, basis, int(global_basis.shape[0]), target_hidden
+        )
+        descriptor.update(
+            {
+                "kind": "logit-observable-rrr-orthonormalized",
+                "scope": "layer-boundary",
+                "chart_name": name,
+                "observable_retained_rank": int(chart["retained_rank"]),
+                "affine_chart_mean_materialized": False,
+            }
+        )
+        materialized[name] = descriptor["basis"]
+        materialization_report.append(_public_basis_report(descriptor))
+    pair_bases = {}
+    for pair in ordered_pairs:
+        target_index = int(pair.target_layer)
+        input_name = (
+            "pair_input_0" if target_index == 0 else f"pair_output_{target_index - 1}"
+        )
+        output_name = f"pair_output_{target_index}"
+        pair_bases[target_index] = {
+            "input": materialized[input_name],
+            "output": materialized[output_name],
+            "input_name": input_name,
+            "output_name": output_name,
+        }
+    return pair_bases, {
+        "enabled": True,
+        "future_observable": "donor-final-rmsnorm-hidden",
+        "fit": result["report"],
+        "materialization": materialization_report,
+        "coordinate_policy": "layer-varying-orthonormal-predictive-subspaces",
+        "chart_means_materialized": False,
+    }
+
+
+def _build_post_nonlinearity_path_folds(
+    torch,
+    donor,
+    target,
+    pair_plan: Sequence[LayerPair],
+    path_traces: dict[str, Any],
+    basis,
+    pair_bases: dict[int, dict[str, Any]] | None,
+    texts: Sequence[str],
+    ridge: float,
+    validation_fraction: float,
+    min_train_prompts: int,
+    min_validation_prompts: int,
+    split_seed: int,
+    selection_sketch_size: int,
+    interpolation_mode: str,
+) -> dict[int, dict[str, Any]]:
+    from neural_forge.hf_qwen_path_decomposition import (
+        compress_post_nonlinearity_paths,
+    )
+    from neural_forge.hf_xfamily import _activation_calibration_domain
+
+    donor_specs = [
+        _qwen_layer_spec(layer) for layer in _decoder_layer_container(donor)[2]
+    ]
+    target_specs = [
+        _qwen_layer_spec(layer) for layer in _decoder_layer_container(target)[2]
+    ]
+    prompt_domains = [_activation_calibration_domain(str(text)) for text in texts]
+    folds: dict[int, dict[str, Any]] = {}
+    for pair in pair_plan:
+        target_index = int(pair.target_layer)
+        basis_cpu = (
+            (basis if pair_bases is None else pair_bases[target_index]["output"])
+            .detach()
+            .cpu()
+            .to(torch.float32)
+        )
+        source_specs = [donor_specs[index] for index in pair.donor_layers]
+        target_spec = target_specs[target_index]
+        donor_kv = int(source_specs[0]["key_value_heads"])
+        ratio = int(source_specs[0]["query_heads"]) // donor_kv
+        head_dim = int(source_specs[0]["head_dim"])
+        attention_channels = ratio * head_dim
+        target_kv = int(target_spec["key_value_heads"])
+        attention_features, attention_prompt_ids = _aligned_pair_path_rows(
+            torch,
+            path_traces["pairs"][target_index]["attention"],
+            donor_kv,
+            attention_channels,
+        )
+        attention_directions = []
+        for spec in source_specs:
+            grouped = (
+                spec["o"]
+                .weight.detach()
+                .cpu()
+                .to(torch.float32)
+                .reshape(int(spec["hidden_size"]), donor_kv, attention_channels)
+                .permute(1, 2, 0)
+            )
+            attention_directions.append(grouped.matmul(basis_cpu))
+        attention_directions = torch.cat(attention_directions, dim=0)
+        attention_domains = [prompt_domains[index] for index in attention_prompt_ids]
+        attention_quota = target_kv // 2
+        attention_result = compress_post_nonlinearity_paths(
+            attention_features,
+            attention_directions,
+            prompt_ids=attention_prompt_ids,
+            domain_labels=attention_domains,
+            donor_layer_ids=[int(pair.donor_first)] * donor_kv
+            + [int(pair.donor_second)] * donor_kv,
+            target_path_count=target_kv,
+            minimum_paths_per_layer={
+                int(pair.donor_first): attention_quota,
+                int(pair.donor_second): target_kv - attention_quota,
+            },
+            path_kind="attention",
+            ridge=ridge,
+            validation_fraction=validation_fraction,
+            min_train_prompts=min_train_prompts,
+            min_validation_prompts=min_validation_prompts,
+            split_seed=int(split_seed) + target_index,
+            selection_sketch_size=selection_sketch_size,
+            interpolation_mode=interpolation_mode,
+        )
+        attention_selected = [
+            int(item) for item in attention_result["selected_path_indices"].tolist()
+        ]
+        attention_order = sorted(
+            range(len(attention_selected)),
+            key=lambda index: (attention_selected[index] // donor_kv, index),
+        )
+        attention_order_tensor = torch.tensor(attention_order, dtype=torch.long)
+
+        donor_intermediate = int(source_specs[0]["intermediate_size"])
+        target_intermediate = int(target_spec["intermediate_size"])
+        mlp_features, mlp_prompt_ids = _aligned_pair_path_rows(
+            torch,
+            path_traces["pairs"][target_index]["mlp"],
+            donor_intermediate,
+            None,
+        )
+        mlp_directions = torch.cat(
+            [
+                spec["down"]
+                .weight.detach()
+                .cpu()
+                .to(torch.float32)
+                .t()
+                .matmul(basis_cpu)
+                for spec in source_specs
+            ],
+            dim=0,
+        )
+        mlp_domains = [prompt_domains[index] for index in mlp_prompt_ids]
+        first_quota = target_intermediate // 2
+        mlp_result = compress_post_nonlinearity_paths(
+            mlp_features,
+            mlp_directions,
+            prompt_ids=mlp_prompt_ids,
+            domain_labels=mlp_domains,
+            donor_layer_ids=[int(pair.donor_first)] * donor_intermediate
+            + [int(pair.donor_second)] * donor_intermediate,
+            target_path_count=target_intermediate,
+            minimum_paths_per_layer={
+                int(pair.donor_first): first_quota,
+                int(pair.donor_second): target_intermediate - first_quota,
+            },
+            path_kind="swiglu",
+            ridge=ridge,
+            validation_fraction=validation_fraction,
+            min_train_prompts=min_train_prompts,
+            min_validation_prompts=min_validation_prompts,
+            split_seed=int(split_seed) + 1000 + target_index,
+            selection_sketch_size=selection_sketch_size,
+            interpolation_mode=interpolation_mode,
+        )
+        mlp_selected = [
+            int(item) for item in mlp_result["selected_path_indices"].tolist()
+        ]
+        mlp_order = sorted(
+            range(len(mlp_selected)),
+            key=lambda index: (mlp_selected[index] // donor_intermediate, index),
+        )
+        mlp_order_tensor = torch.tensor(mlp_order, dtype=torch.long)
+        folds[target_index] = {
+            "attention": {
+                "selected_kv_heads": [
+                    attention_selected[index] % donor_kv for index in attention_order
+                ],
+                "aggregate_output_coefficients": attention_result[
+                    "aggregate_output_coefficients"
+                ].index_select(0, attention_order_tensor),
+                "report": attention_result["report"],
+            },
+            "mlp": {
+                "selected_sources": [
+                    [
+                        mlp_selected[index] // donor_intermediate,
+                        mlp_selected[index] % donor_intermediate,
+                    ]
+                    for index in mlp_order
+                ],
+                "aggregate_output_coefficients": mlp_result[
+                    "aggregate_output_coefficients"
+                ].index_select(0, mlp_order_tensor),
+                "report": mlp_result["report"],
+            },
+        }
+        _compose_progress(
+            "qwen_pair_path_decomposition_done",
+            current=target_index + 1,
+            total=len(pair_plan),
+            attention_paths=target_kv,
+            mlp_paths=target_intermediate,
+        )
+    return folds
+
+
+def _trace_donor_pair_targets(
+    torch,
+    donor,
+    pair_plan: Sequence[LayerPair],
+    structural_pair_plans: dict[int, dict[str, Any]],
+    batches: Sequence[dict[str, Any]],
     basis,
     prompt_count: int,
+    pair_bases: dict[int, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     donor_layers = list(_decoder_layer_container(donor)[2])
     final_norm = _find_final_norm(donor)
     pair_traces = {
         int(item.target_layer): {
+            "pair_input": _new_prompt_slots(prompt_count),
             "attention_endpoint": _new_prompt_slots(prompt_count),
             "pair_endpoint": _new_prompt_slots(prompt_count),
+            "producer_partitions": {
+                name: [_new_prompt_slots(prompt_count), _new_prompt_slots(prompt_count)]
+                for name in ("q", "k", "v", "gate", "up")
+            },
+            "residual_partitions": {
+                name: [_new_prompt_slots(prompt_count), _new_prompt_slots(prompt_count)]
+                for name in ("attention", "mlp")
+            },
         }
         for item in pair_plan
     }
     final_projected = _new_prompt_slots(prompt_count)
+    final_hidden = _new_prompt_slots(prompt_count)
     context: dict[str, Any] = {}
     handles = []
 
@@ -1662,28 +2386,116 @@ def _trace_donor_pair_targets(
 
         return hook
 
+    def capture_packed(destination, packer):
+        def hook(_module, _args, output):
+            _capture_prompt_rows(
+                torch,
+                destination,
+                packer(output),
+                context["attention_mask"],
+                context["prompt_start"],
+            )
+
+        return hook
+
     for pair in pair_plan:
+        target_index = int(pair.target_layer)
+        output_basis = (
+            basis
+            if pair_bases is None
+            else pair_bases[target_index]["output"].to(
+                device=basis.device, dtype=basis.dtype
+            )
+        )
+        pair_plans = structural_pair_plans[target_index]
+        first_layer = donor_layers[int(pair.donor_first)]
         second_layer = donor_layers[int(pair.donor_second)]
         post_attention_norm = getattr(second_layer, "post_attention_layernorm", None)
         if post_attention_norm is None:
             raise ValueError("Donor Qwen layer is missing post_attention_layernorm.")
         handles.append(
+            first_layer.register_forward_pre_hook(
+                capture_pre(pair_traces[target_index]["pair_input"], output_basis)
+            )
+        )
+        handles.append(
             post_attention_norm.register_forward_pre_hook(
                 capture_pre(
-                    pair_traces[int(pair.target_layer)]["attention_endpoint"], basis
+                    pair_traces[int(pair.target_layer)]["attention_endpoint"],
+                    output_basis,
                 )
             )
         )
         handles.append(
             second_layer.register_forward_hook(
                 capture_post(
-                    pair_traces[int(pair.target_layer)]["pair_endpoint"], basis
+                    pair_traces[int(pair.target_layer)]["pair_endpoint"], output_basis
                 )
             )
         )
-    handles.append(
-        final_norm.register_forward_hook(capture_post(final_projected, basis))
+        for pair_offset, donor_layer_index in enumerate(pair.donor_layers):
+            spec = _qwen_layer_spec(donor_layers[int(donor_layer_index)])
+            handles.append(
+                spec["attention"].register_forward_hook(
+                    capture_post(
+                        pair_traces[target_index]["residual_partitions"]["attention"][
+                            pair_offset
+                        ],
+                        output_basis,
+                    )
+                )
+            )
+            handles.append(
+                spec["mlp"].register_forward_hook(
+                    capture_post(
+                        pair_traces[target_index]["residual_partitions"]["mlp"][
+                            pair_offset
+                        ],
+                        output_basis,
+                    )
+                )
+            )
+            for name in ("q", "k", "v"):
+                handles.append(
+                    spec[name].register_forward_hook(
+                        capture_packed(
+                            pair_traces[target_index]["producer_partitions"][name][
+                                pair_offset
+                            ],
+                            lambda output, name=name, pair_offset=pair_offset, plan=pair_plans["attention"]: (
+                                _packed_donor_attention_output(
+                                    torch, output, plan, name, pair_offset
+                                )
+                            ),
+                        )
+                    )
+                )
+            for name in ("gate", "up"):
+                handles.append(
+                    spec[name].register_forward_hook(
+                        capture_packed(
+                            pair_traces[target_index]["producer_partitions"][name][
+                                pair_offset
+                            ],
+                            lambda output, pair_offset=pair_offset, plan=pair_plans["mlp"]: (
+                                _packed_donor_mlp_output(
+                                    torch, output, plan, pair_offset
+                                )
+                            ),
+                        )
+                    )
+                )
+    final_basis = (
+        basis
+        if pair_bases is None
+        else pair_bases[max(pair_bases)]["output"].to(
+            device=basis.device, dtype=basis.dtype
+        )
     )
+    handles.append(
+        final_norm.register_forward_hook(capture_post(final_projected, final_basis))
+    )
+    handles.append(final_norm.register_forward_hook(capture_post(final_hidden, None)))
     backbone = _model_backbone(donor)
     was_training = donor.training
     donor.eval()
@@ -1699,16 +2511,29 @@ def _trace_donor_pair_targets(
         if was_training:
             donor.train()
     for pair_index, values in pair_traces.items():
+        _assert_complete_trace(values["pair_input"], f"donor_pair_{pair_index}_input")
         _assert_complete_trace(
             values["attention_endpoint"], f"donor_pair_{pair_index}_attention_endpoint"
         )
         _assert_complete_trace(
             values["pair_endpoint"], f"donor_pair_{pair_index}_endpoint"
         )
+        partitions = values.pop("producer_partitions")
+        for name, name_parts in partitions.items():
+            values[f"{name}_output"] = _sum_prompt_partitions(
+                name_parts, f"donor_pair_{pair_index}_{name}_output"
+            )
+        residual_partitions = values.pop("residual_partitions")
+        for name, name_parts in residual_partitions.items():
+            values[f"{name}_delta"] = _sum_prompt_partitions(
+                name_parts, f"donor_pair_{pair_index}_{name}_delta"
+            )
     _assert_complete_trace(final_projected, "donor_final_projected")
+    _assert_complete_trace(final_hidden, "donor_final_hidden")
     return {
         "pairs": pair_traces,
         "final_projected": final_projected,
+        "final_hidden": final_hidden,
     }
 
 
@@ -1724,8 +2549,15 @@ def _trace_child_layer(
     spec = _qwen_layer_spec(layer)
     traces = {
         "layer_input": _new_prompt_slots(prompt_count),
+        "attention_input": _new_prompt_slots(prompt_count),
+        "q_output": _new_prompt_slots(prompt_count),
+        "k_output": _new_prompt_slots(prompt_count),
+        "v_output": _new_prompt_slots(prompt_count),
         "attention_projection_input": _new_prompt_slots(prompt_count),
         "attention_endpoint": _new_prompt_slots(prompt_count),
+        "mlp_input": _new_prompt_slots(prompt_count),
+        "gate_output": _new_prompt_slots(prompt_count),
+        "up_output": _new_prompt_slots(prompt_count),
         "mlp_projection_input": _new_prompt_slots(prompt_count),
         "block_output": _new_prompt_slots(prompt_count),
     }
@@ -1757,10 +2589,17 @@ def _trace_child_layer(
 
     handles = [
         layer.register_forward_pre_hook(capture_pre("layer_input")),
+        spec["q"].register_forward_pre_hook(capture_pre("attention_input")),
+        spec["q"].register_forward_hook(capture_post("q_output")),
+        spec["k"].register_forward_hook(capture_post("k_output")),
+        spec["v"].register_forward_hook(capture_post("v_output")),
         spec["o"].register_forward_pre_hook(capture_pre("attention_projection_input")),
         spec["post_attention_norm"].register_forward_pre_hook(
             capture_pre("attention_endpoint")
         ),
+        spec["gate"].register_forward_pre_hook(capture_pre("mlp_input")),
+        spec["gate"].register_forward_hook(capture_post("gate_output")),
+        spec["up"].register_forward_hook(capture_post("up_output")),
         spec["down"].register_forward_pre_hook(capture_pre("mlp_projection_input")),
         layer.register_forward_hook(capture_post("block_output")),
     ]
@@ -1912,17 +2751,56 @@ def _fit_ordered_child_pair(
 ) -> dict[str, Any]:
     layer = list(_decoder_layer_container(target)[2])[int(pair.target_layer)]
     spec = _qwen_layer_spec(layer)
-    attention_snapshot = _snapshot_linear(spec["o"])
-    mlp_snapshot = _snapshot_linear(spec["down"])
+    attention_snapshots = {
+        name: _snapshot_linear(spec[name]) for name in ("q", "k", "v", "o")
+    }
+    mlp_snapshots = {
+        name: _snapshot_linear(spec[name]) for name in ("gate", "up", "down")
+    }
     before = _trace_child_layer(torch, target, pair.target_layer, batches, prompt_count)
 
+    attention_producer_fits = {}
+    for name in ("q", "k", "v"):
+        attention_producer_fits[name] = _fit_linear_prompt_split(
+            torch,
+            before["attention_input"],
+            donor_targets[f"{name}_output"],
+            train_indices,
+            validation_indices,
+            spec[name].weight,
+            getattr(spec[name], "bias", None),
+            ridge,
+            min_relative_improvement,
+            max_cosine_drop,
+            max_rows=max_fit_rows,
+            min_validation_rows=min_validation_rows,
+            max_fitted_relative_rmse=max_fitted_relative_rmse,
+        )
+    attention_producers_accepted = all(
+        bool(item["report"]["accepted"]) for item in attention_producer_fits.values()
+    )
+    if attention_producers_accepted:
+        for name, fit in attention_producer_fits.items():
+            _commit_linear_fit(
+                tracker,
+                spec[name],
+                fit,
+                f"validated-composed-attention-{name}-producer-fit",
+            )
+
+    after_attention_producers = _trace_child_layer(
+        torch, target, pair.target_layer, batches, prompt_count
+    )
+
+    attention_endpoint_target = _add_prompt_rows(
+        donor_targets["pair_input"], donor_targets["attention_delta"]
+    )
     attention_delta_target = _subtract_prompt_rows(
-        donor_targets["attention_endpoint"],
-        before["layer_input"],
+        attention_endpoint_target, after_attention_producers["layer_input"]
     )
     attention_fit = _fit_linear_prompt_split(
         torch,
-        before["attention_projection_input"],
+        after_attention_producers["attention_projection_input"],
         attention_delta_target,
         train_indices,
         validation_indices,
@@ -1942,13 +2820,89 @@ def _fit_ordered_child_pair(
     after_attention = _trace_child_layer(
         torch, target, pair.target_layer, batches, prompt_count
     )
-    mlp_delta_target = _subtract_prompt_rows(
-        donor_targets["pair_endpoint"],
+    attention_endpoint_prior = _prompt_trace_metrics(
+        torch,
+        before["attention_endpoint"],
+        attention_endpoint_target,
+        validation_indices,
+        max_fit_rows,
+    )
+    attention_endpoint_fitted = _prompt_trace_metrics(
+        torch,
         after_attention["attention_endpoint"],
+        attention_endpoint_target,
+        validation_indices,
+        max_fit_rows,
+    )
+    (
+        attention_endpoint_accepted,
+        attention_endpoint_reason,
+        attention_endpoint_gate,
+    ) = _validation_gate(
+        attention_endpoint_prior,
+        attention_endpoint_fitted,
+        min_relative_improvement,
+        max_cosine_drop,
+        max_fitted_relative_rmse,
+    )
+    attention_transaction_accepted = (
+        attention_producers_accepted
+        and bool(attention_fit["report"]["accepted"])
+        and bool(attention_endpoint_accepted)
+    )
+    if not attention_transaction_accepted:
+        for name, snapshot in attention_snapshots.items():
+            _restore_linear(
+                tracker,
+                spec[name],
+                snapshot,
+                f"attention-module-transaction-revert-{name}",
+            )
+        after_attention = _trace_child_layer(
+            torch, target, pair.target_layer, batches, prompt_count
+        )
+
+    mlp_producer_fits = {}
+    for name in ("gate", "up"):
+        mlp_producer_fits[name] = _fit_linear_prompt_split(
+            torch,
+            after_attention["mlp_input"],
+            donor_targets[f"{name}_output"],
+            train_indices,
+            validation_indices,
+            spec[name].weight,
+            getattr(spec[name], "bias", None),
+            ridge,
+            min_relative_improvement,
+            max_cosine_drop,
+            max_rows=max_fit_rows,
+            min_validation_rows=min_validation_rows,
+            max_fitted_relative_rmse=max_fitted_relative_rmse,
+        )
+    mlp_producers_accepted = all(
+        bool(item["report"]["accepted"]) for item in mlp_producer_fits.values()
+    )
+    if mlp_producers_accepted:
+        for name, fit in mlp_producer_fits.items():
+            _commit_linear_fit(
+                tracker,
+                spec[name],
+                fit,
+                f"validated-composed-mlp-{name}-producer-fit",
+            )
+
+    after_mlp_producers = _trace_child_layer(
+        torch, target, pair.target_layer, batches, prompt_count
+    )
+    mlp_endpoint_target = _add_prompt_rows(
+        attention_endpoint_target, donor_targets["mlp_delta"]
+    )
+    mlp_delta_target = _subtract_prompt_rows(
+        mlp_endpoint_target, after_mlp_producers["attention_endpoint"]
     )
     mlp_fit = _fit_linear_prompt_split(
         torch,
-        after_attention["mlp_projection_input"],
+        after_mlp_producers["mlp_projection_input"],
         mlp_delta_target,
         train_indices,
         validation_indices,
@@ -1965,7 +2919,48 @@ def _fit_ordered_child_pair(
         tracker, spec["down"], mlp_fit, "validated-composed-pair-endpoint-fit"
     )
 
-    after = _trace_child_layer(torch, target, pair.target_layer, batches, prompt_count)
+    after_mlp = _trace_child_layer(
+        torch, target, pair.target_layer, batches, prompt_count
+    )
+    mlp_endpoint_prior = _prompt_trace_metrics(
+        torch,
+        after_attention["block_output"],
+        mlp_endpoint_target,
+        validation_indices,
+        max_fit_rows,
+    )
+    mlp_endpoint_fitted = _prompt_trace_metrics(
+        torch,
+        after_mlp["block_output"],
+        mlp_endpoint_target,
+        validation_indices,
+        max_fit_rows,
+    )
+    mlp_endpoint_accepted, mlp_endpoint_reason, mlp_endpoint_gate = _validation_gate(
+        mlp_endpoint_prior,
+        mlp_endpoint_fitted,
+        min_relative_improvement,
+        max_cosine_drop,
+        max_fitted_relative_rmse,
+    )
+    mlp_transaction_accepted = (
+        mlp_producers_accepted
+        and bool(mlp_fit["report"]["accepted"])
+        and bool(mlp_endpoint_accepted)
+    )
+    if not mlp_transaction_accepted:
+        for name, snapshot in mlp_snapshots.items():
+            _restore_linear(
+                tracker,
+                spec[name],
+                snapshot,
+                f"mlp-module-transaction-revert-{name}",
+            )
+        after_mlp = _trace_child_layer(
+            torch, target, pair.target_layer, batches, prompt_count
+        )
+
+    after = after_mlp
     prior_metrics = _prompt_trace_metrics(
         torch,
         before["block_output"],
@@ -1988,25 +2983,63 @@ def _fit_ordered_child_pair(
         max_fitted_relative_rmse,
     )
     if not accepted:
-        _restore_linear(
-            tracker,
-            spec["o"],
-            attention_snapshot,
-            "pair-validation-revert-attention-output",
-        )
-        _restore_linear(
-            tracker, spec["down"], mlp_snapshot, "pair-validation-revert-mlp-output"
-        )
+        for name, snapshot in attention_snapshots.items():
+            _restore_linear(
+                tracker,
+                spec[name],
+                snapshot,
+                f"pair-validation-revert-attention-{name}",
+            )
+        for name, snapshot in mlp_snapshots.items():
+            _restore_linear(
+                tracker,
+                spec[name],
+                snapshot,
+                f"pair-validation-revert-mlp-{name}",
+            )
     return {
         "target_layer": int(pair.target_layer),
         "donor_layers": [int(pair.donor_first), int(pair.donor_second)],
         "pair_order": "first-then-second",
         "sequential_prefix_trace": True,
         "child_prefix_policy": "current-initialized-child-prefix",
-        "attention_target": "projected-donor-second-layer-post-attention-endpoint",
+        "attention_target": "sum-of-both-donor-attention-residual-deltas",
+        "mlp_target": "sum-of-both-donor-mlp-residual-deltas",
         "block_target": "projected-donor-composed-pair-endpoint",
         "parameter_average_used_as_target": False,
+        "attention_producer_fits": {
+            name: fit["report"] for name, fit in attention_producer_fits.items()
+        },
+        "attention_producer_transaction": {
+            "accepted": bool(attention_transaction_accepted),
+            "reverted": not bool(attention_transaction_accepted),
+            "producer_applied": bool(attention_producers_accepted),
+            "output_applied": bool(attention_fit["report"]["accepted"]),
+            "endpoint_validation": {
+                "accepted": bool(attention_endpoint_accepted),
+                "reason": attention_endpoint_reason,
+                "prior": attention_endpoint_prior,
+                "fitted": attention_endpoint_fitted,
+                **attention_endpoint_gate,
+            },
+        },
         "attention_output_fit": attention_fit["report"],
+        "mlp_producer_fits": {
+            name: fit["report"] for name, fit in mlp_producer_fits.items()
+        },
+        "mlp_producer_transaction": {
+            "accepted": bool(mlp_transaction_accepted),
+            "reverted": not bool(mlp_transaction_accepted),
+            "producer_applied": bool(mlp_producers_accepted),
+            "output_applied": bool(mlp_fit["report"]["accepted"]),
+            "endpoint_validation": {
+                "accepted": bool(mlp_endpoint_accepted),
+                "reason": mlp_endpoint_reason,
+                "prior": mlp_endpoint_prior,
+                "fitted": mlp_endpoint_fitted,
+                **mlp_endpoint_gate,
+            },
+        },
         "mlp_output_fit": mlp_fit["report"],
         "pair_validation": {
             "accepted": bool(accepted),
@@ -2287,6 +3320,10 @@ def _packing_summary(plan: dict[str, Any], kind: str) -> dict[str, Any]:
             "nonlinear_head_averaging": bool(plan["nonlinear_head_averaging"]),
             "covered_query_coordinates": int(plan["covered_query_coordinates"]),
             "selection": plan.get("selection", []),
+            "selection_source": plan.get("selection_source"),
+            "post_nonlinearity_path_decomposition": plan.get(
+                "post_nonlinearity_path_decomposition"
+            ),
         }
     assignment_bytes = json.dumps(
         plan["source_to_target"], separators=(",", ":")
@@ -2304,6 +3341,14 @@ def _packing_summary(plan: dict[str, Any], kind: str) -> dict[str, Any]:
         "all_source_channels_packed": bool(plan["all_source_channels_packed"]),
         "nonlinear_channel_averaging": bool(plan["nonlinear_channel_averaging"]),
         "selection_criterion": plan.get("selection_criterion"),
+        "selection_source": plan.get("selection_source"),
+        "selected_sources": [
+            [int(item["sources"][0][0]), int(item["sources"][0][1])]
+            for item in plan["target_channels"]
+        ],
+        "post_nonlinearity_path_decomposition": plan.get(
+            "post_nonlinearity_path_decomposition"
+        ),
         "assignment_sha256": hashlib.sha256(assignment_bytes).hexdigest(),
     }
 
@@ -2318,12 +3363,15 @@ def _initialize_structured_priors(
     basis,
     tracker: _ParameterWriteTracker,
     activation_profile: dict[str, Any] | None = None,
+    path_folds: dict[int, dict[str, Any]] | None = None,
+    pair_bases: dict[int, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     donor_layers = list(_decoder_layer_container(donor)[2])
     target_layers = list(_decoder_layer_container(target)[2])
     donor_specs = [_qwen_layer_spec(layer) for layer in donor_layers]
     target_specs = [_qwen_layer_spec(layer) for layer in target_layers]
     pair_reports = []
+    pair_plans = {}
     for pair in pair_plan:
         source_specs = [
             donor_specs[int(pair.donor_first)],
@@ -2343,27 +3391,34 @@ def _initialize_structured_priors(
                     activation_profile.get("mlp_scores", {}).get(int(source_layer))
                 )
         child_spec = target_specs[int(pair.target_layer)]
+        pair_basis = (pair_bases or {}).get(int(pair.target_layer), {})
+        input_basis = pair_basis.get("input", basis)
+        output_basis = pair_basis.get("output", basis)
+        pair_path_fold = (path_folds or {}).get(int(pair.target_layer), {})
         attention_plan = _pack_attention_pair(
             torch,
             source_specs,
             child_spec,
-            basis,
+            input_basis,
+            output_basis,
             tracker,
             activation_scores=attention_scores,
+            path_fold=pair_path_fold.get("attention"),
         )
         mlp_plan = _pack_swiglu_pair(
             torch,
             source_specs,
             child_spec,
-            basis,
+            output_basis,
             tracker,
             activation_scores=mlp_scores,
+            path_fold=pair_path_fold.get("mlp"),
         )
         _project_norm_prior(
             torch,
             [item["input_norm"] for item in source_specs],
             child_spec["input_norm"],
-            basis,
+            input_basis,
             tracker,
             "pair-input-rmsnorm-prior",
         )
@@ -2371,7 +3426,7 @@ def _initialize_structured_priors(
             torch,
             [item["post_attention_norm"] for item in source_specs],
             child_spec["post_attention_norm"],
-            basis,
+            output_basis,
             tracker,
             "pair-post-attention-rmsnorm-prior",
         )
@@ -2379,10 +3434,16 @@ def _initialize_structured_priors(
             {
                 "target_layer": int(pair.target_layer),
                 "donor_layers": [int(pair.donor_first), int(pair.donor_second)],
+                "input_basis": pair_basis.get("input_name", "global"),
+                "output_basis": pair_basis.get("output_name", "global"),
                 "attention": _packing_summary(attention_plan, "attention"),
                 "mlp": _packing_summary(mlp_plan, "mlp"),
             }
         )
+        pair_plans[int(pair.target_layer)] = {
+            "attention": attention_plan,
+            "mlp": mlp_plan,
+        }
 
     source_embeddings = donor.get_input_embeddings()
     target_embeddings = target.get_input_embeddings()
@@ -2407,12 +3468,14 @@ def _initialize_structured_priors(
         int(source_head.weight.shape[0]),
         int(target_head.weight.shape[0]),
     )
+    first_basis = basis if pair_bases is None else pair_bases[min(pair_bases)]["input"]
+    final_basis = basis if pair_bases is None else pair_bases[max(pair_bases)]["output"]
     embedding_report = _project_vocab_matrix(
         torch,
         source_embeddings.weight,
         target_embeddings.weight,
         embedding_mapping,
-        basis,
+        first_basis,
         tracker,
         "global-basis-input-embedding-projection",
     )
@@ -2421,7 +3484,7 @@ def _initialize_structured_priors(
         source_head.weight,
         target_head.weight,
         head_mapping,
-        basis,
+        final_basis,
         tracker,
         "global-basis-output-head-projection",
     )
@@ -2440,7 +3503,7 @@ def _initialize_structured_priors(
         torch,
         [_find_final_norm(donor)],
         _find_final_norm(target),
-        basis,
+        final_basis,
         tracker,
         "global-basis-final-rmsnorm-prior",
     )
@@ -2448,6 +3511,7 @@ def _initialize_structured_priors(
         "pairs": pair_reports,
         "embedding": embedding_report,
         "head": head_report,
+        "pair_plans": pair_plans,
         "embedding_token_mapping": embedding_mapping,
         "head_token_mapping": head_mapping,
     }
@@ -2536,6 +3600,13 @@ def initialize_qwen_pair_composition_models(
     basis_mode: str = "activation-pca",
     basis_preprocess: str = "uncentered-rowrms",
     activation_domain_balance: str = "keyword",
+    observable_coordinates: bool = True,
+    observable_coordinate_ridge: float = 1e-6,
+    path_decomposition: bool = True,
+    path_decomposition_max_rows: int = 1024,
+    path_decomposition_ridge: float = 1e-6,
+    path_decomposition_sketch_size: int = 64,
+    path_decomposition_interpolation_mode: str = "sparse-signature",
     head_validation_vocab_rows: int = 4096,
     expected_donor_layers: int | None = None,
     expected_target_layers: int | None = None,
@@ -2560,20 +3631,34 @@ def initialize_qwen_pair_composition_models(
         or max_fit_rows <= 0
         or min_validation_rows <= 0
         or basis_max_rows <= 0
+        or (path_decomposition and path_decomposition_max_rows <= 0)
+        or (path_decomposition and path_decomposition_sketch_size <= 0)
         or head_validation_vocab_rows <= 0
     ):
         raise ValueError(
             "max_length, batch_size, max_fit_rows, min_validation_rows, "
-            "basis_max_rows, and head_validation_vocab_rows must be positive."
+            "basis_max_rows, path decomposition limits, and head_validation_vocab_rows "
+            "must be positive."
         )
     if min_relative_improvement < 0 or max_cosine_drop < 0:
         raise ValueError("validation gate thresholds must be non-negative.")
     if (
-        max_fitted_relative_rmse is not None
-        and (
-            not math.isfinite(float(max_fitted_relative_rmse))
-            or float(max_fitted_relative_rmse) <= 0.0
+        not math.isfinite(float(path_decomposition_ridge))
+        or float(path_decomposition_ridge) < 0.0
+    ):
+        raise ValueError("path_decomposition_ridge must be finite and non-negative.")
+    if path_decomposition_interpolation_mode not in {"dense", "sparse-signature"}:
+        raise ValueError(
+            "path_decomposition_interpolation_mode must be dense or sparse-signature."
         )
+    if (
+        not math.isfinite(float(observable_coordinate_ridge))
+        or float(observable_coordinate_ridge) < 0.0
+    ):
+        raise ValueError("observable_coordinate_ridge must be finite and non-negative.")
+    if max_fitted_relative_rmse is not None and (
+        not math.isfinite(float(max_fitted_relative_rmse))
+        or float(max_fitted_relative_rmse) <= 0.0
     ):
         raise ValueError("max_fitted_relative_rmse must be finite and positive.")
     if basis_mode not in {"activation-pca", "embedding-grouped"}:
@@ -2711,6 +3796,71 @@ def initialize_qwen_pair_composition_models(
     tracker = _ParameterWriteTracker(target, torch)
     basis_device = basis.to(device=device, dtype=torch.float32)
     with torch.inference_mode():
+        batches = _make_trace_batches(
+            torch, target_tokenizer, texts, batch_size, max_length, device
+        )
+        path_folds: dict[int, dict[str, Any]] = {}
+        pair_bases = None
+        observable_coordinate_report = {"enabled": False}
+        path_trace_report = None
+        if path_decomposition or observable_coordinates:
+            _compose_progress(
+                "qwen_pair_path_trace_start",
+                pairs=len(pair_plan),
+                max_rows=path_decomposition_max_rows,
+            )
+            path_traces = _trace_donor_post_nonlinearity_paths(
+                torch,
+                donor,
+                pair_plan,
+                batches,
+                len(texts),
+                path_decomposition_max_rows,
+                capture_paths=path_decomposition,
+            )
+            path_trace_report = {
+                key: value
+                for key, value in path_traces.items()
+                if key not in {"pairs", "final_hidden"}
+            }
+            if observable_coordinates:
+                pair_bases, observable_coordinate_report = (
+                    _build_logit_observable_pair_bases(
+                        torch,
+                        pair_plan,
+                        path_traces,
+                        basis,
+                        texts,
+                        observable_coordinate_ridge,
+                        validation_fraction,
+                        min_train_prompts,
+                        min_validation_prompts,
+                        split_seed,
+                    )
+                )
+            if path_decomposition:
+                path_folds = _build_post_nonlinearity_path_folds(
+                    torch,
+                    donor,
+                    target,
+                    pair_plan,
+                    path_traces,
+                    basis,
+                    pair_bases,
+                    texts,
+                    path_decomposition_ridge,
+                    validation_fraction,
+                    min_train_prompts,
+                    min_validation_prompts,
+                    split_seed,
+                    path_decomposition_sketch_size,
+                    path_decomposition_interpolation_mode,
+                )
+            del path_traces
+            _compose_progress(
+                "qwen_pair_path_trace_done",
+                pairs=len(pair_plan),
+            )
         _compose_progress("qwen_pair_structural_init_start", pairs=len(pair_plan))
         structural = _initialize_structured_priors(
             torch,
@@ -2722,19 +3872,20 @@ def initialize_qwen_pair_composition_models(
             basis_device,
             tracker,
             activation_profile=activation_profile,
+            path_folds=path_folds,
+            pair_bases=pair_bases,
         )
         _compose_progress("qwen_pair_structural_init_done", pairs=len(pair_plan))
-        batches = _make_trace_batches(
-            torch, target_tokenizer, texts, batch_size, max_length, device
-        )
         _compose_progress("qwen_pair_donor_trace_start", batches=len(batches))
         donor_traces = _trace_donor_pair_targets(
             torch,
             donor,
             pair_plan,
+            structural["pair_plans"],
             batches,
             basis_device,
             len(texts),
+            pair_bases=pair_bases,
         )
         _compose_progress("qwen_pair_donor_trace_done", pairs=len(pair_plan))
         donor.to("cpu")
@@ -2794,7 +3945,7 @@ def initialize_qwen_pair_composition_models(
         child_final_after_norm = _trace_child_final_interface(
             torch, target, batches, len(texts)
         )
-        final_head_report = _fit_final_head(
+        projected_final_head_report = _fit_final_head(
             torch,
             target,
             child_final_after_norm["norm_output"],
@@ -2811,10 +3962,43 @@ def initialize_qwen_pair_composition_models(
             head_validation_vocab_rows,
             tracker,
         )
+        child_head_rows, child_head_prompt_ids = _cat_prompt_rows_with_ids(
+            torch, child_final_after_norm["norm_output"], max_fit_rows
+        )
+        donor_head_rows, donor_head_prompt_ids = _cat_prompt_rows_with_ids(
+            torch, donor_traces["final_hidden"], max_fit_rows
+        )
+        if child_head_prompt_ids != donor_head_prompt_ids:
+            raise RuntimeError(
+                "Child and donor final-state rows do not align for the full logit head."
+            )
+        from neural_forge.hf_qwen_logit_head import fit_qwen_logit_head
+
+        full_head_result = fit_qwen_logit_head(
+            child_head_rows,
+            donor_head_rows,
+            donor.get_output_embeddings().weight,
+            target.get_output_embeddings().weight,
+            prompt_ids=child_head_prompt_ids,
+            ridge=ridge,
+            validation_fraction=validation_fraction,
+            min_train_prompts=min_train_prompts,
+            min_validation_prompts=min_validation_prompts,
+            split_seed=split_seed,
+            vocab_chunk_size=head_validation_vocab_rows,
+        )
+        tracker.write(
+            target.get_output_embeddings().weight,
+            full_head_result["weight"],
+            "full-vocabulary-parent-logit-head-fit",
+        )
+        final_head_report = full_head_result["report"]
+        del full_head_result
         _compose_progress(
             "qwen_pair_final_interface_done",
             norm_accepted=bool(final_norm_report["accepted"]),
-            head_accepted=bool(final_head_report["accepted"]),
+            projected_head_accepted=bool(projected_final_head_report["accepted"]),
+            full_head_alpha=float(final_head_report["chosen_alpha"]),
         )
 
     for parameter in target.parameters():
@@ -2847,7 +4031,7 @@ def initialize_qwen_pair_composition_models(
             torch, output_path, basis_descriptor
         )
     report = {
-        "schema": "neural-forge-qwen-ordered-pair-composition-v1",
+        "schema": "neural-forge-qwen-ordered-pair-composition-v2",
         "operation": "initialize_qwen_pair_composition",
         "donor_model": donor_name,
         "target_model": target_name,
@@ -2871,11 +4055,26 @@ def initialize_qwen_pair_composition_models(
         "pair_plan_formula": "(2j, 2j+1)",
         "residual_basis": _public_basis_report(basis_descriptor),
         "residual_basis_artifact": artifact_report,
-        "residual_basis_scope": "global-fixed",
+        "residual_basis_scope": (
+            "layer-varying-logit-observable"
+            if observable_coordinates
+            else "global-fixed"
+        ),
         "basis_mode": basis_mode,
         "basis_preprocess": basis_preprocess,
         "activation_domain_balance": activation_domain_balance,
         "activation_selection_used": activation_profile is not None,
+        "observable_coordinates": bool(observable_coordinates),
+        "observable_coordinate_ridge": float(observable_coordinate_ridge),
+        "observable_coordinate_report": observable_coordinate_report,
+        "post_nonlinearity_path_decomposition": bool(path_decomposition),
+        "path_decomposition_max_rows": int(path_decomposition_max_rows),
+        "path_decomposition_ridge": float(path_decomposition_ridge),
+        "path_decomposition_sketch_size": int(path_decomposition_sketch_size),
+        "path_decomposition_interpolation_mode": (
+            path_decomposition_interpolation_mode
+        ),
+        "path_trace": path_trace_report,
         "head_dim": int(donor_specs[0]["head_dim"]),
         "gqa_selected_full_head_coordinate_packing": True,
         "gqa_all_donor_groups_preserved": False,
@@ -2884,6 +4083,9 @@ def initialize_qwen_pair_composition_models(
         "swiglu_all_donor_channels_preserved": False,
         "sequential_on_policy_child_prefix_tracing": True,
         "composed_endpoint_targets": True,
+        "nonlinear_producer_path_fitting": True,
+        "attention_producer_fit_transaction": "all-qkv-or-none-per-pair",
+        "mlp_producer_fit_transaction": "gate-and-up-or-none-per-pair",
         "parameter_average_used_as_training_target": False,
         "ridge": float(ridge),
         "ridge_mode": "trace-scaled",
@@ -2910,7 +4112,18 @@ def initialize_qwen_pair_composition_models(
         "reverted_pair_fits": sum(
             1 for item in layer_reports if bool(item["pair_validation"]["reverted"])
         ),
+        "accepted_attention_producer_transactions": sum(
+            1
+            for item in layer_reports
+            if bool(item["attention_producer_transaction"]["accepted"])
+        ),
+        "accepted_mlp_producer_transactions": sum(
+            1
+            for item in layer_reports
+            if bool(item["mlp_producer_transaction"]["accepted"])
+        ),
         "final_norm_fit": final_norm_report,
+        "projected_final_head_fit": projected_final_head_report,
         "final_head_fit": final_head_report,
         "vocab_capacity": vocab_capacity_report,
         "output_head_untied": bool(output_head_untied),
@@ -2949,6 +4162,13 @@ def initialize_qwen_pair_composition(
     basis_mode: str = "activation-pca",
     basis_preprocess: str = "uncentered-rowrms",
     activation_domain_balance: str = "keyword",
+    observable_coordinates: bool = True,
+    observable_coordinate_ridge: float = 1e-6,
+    path_decomposition: bool = True,
+    path_decomposition_max_rows: int = 1024,
+    path_decomposition_ridge: float = 1e-6,
+    path_decomposition_sketch_size: int = 64,
+    path_decomposition_interpolation_mode: str = "sparse-signature",
     head_validation_vocab_rows: int = 4096,
     torch_dtype: str = "float16",
     target_torch_dtype: str = "float32",
@@ -3006,6 +4226,15 @@ def initialize_qwen_pair_composition(
         basis_mode=basis_mode,
         basis_preprocess=basis_preprocess,
         activation_domain_balance=activation_domain_balance,
+        observable_coordinates=observable_coordinates,
+        observable_coordinate_ridge=observable_coordinate_ridge,
+        path_decomposition=path_decomposition,
+        path_decomposition_max_rows=path_decomposition_max_rows,
+        path_decomposition_ridge=path_decomposition_ridge,
+        path_decomposition_sketch_size=path_decomposition_sketch_size,
+        path_decomposition_interpolation_mode=(
+            path_decomposition_interpolation_mode
+        ),
         head_validation_vocab_rows=head_validation_vocab_rows,
         expected_donor_layers=expected_donor_layers,
         expected_target_layers=expected_target_layers,

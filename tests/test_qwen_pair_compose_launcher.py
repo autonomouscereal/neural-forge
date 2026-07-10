@@ -70,6 +70,12 @@ def test_compose_and_eval_argument_construction_is_closed_form_and_exact(tmp_pat
     assert _value_after(command, "--max-anchors") == "2048"
     assert _value_after(command, "--fit-gate-validation-fraction") == "0.4"
     assert _value_after(command, "--fit-gate-max-relative-rmse") == "0.75"
+    assert _value_after(command, "--observable-coordinate-ridge") == "1e-06"
+    assert _value_after(command, "--path-decomposition-max-rows") == "1024"
+    assert (
+        _value_after(command, "--path-decomposition-interpolation-mode")
+        == "sparse-signature"
+    )
     assert _value_after(command, "--candidate-dtype") == "float32"
 
     flags = [token.lower() for token in command if token.startswith("--")]
@@ -126,6 +132,9 @@ def test_parser_accepts_device_uuid_and_compose_settings() -> None:
     assert args.device_uuid == "GPU-test"
     assert args.ridge == pytest.approx(0.02)
     assert args.max_anchors == 999
+    assert args.observable_coordinates is True
+    assert args.path_decomposition is True
+    assert args.path_decomposition_interpolation_mode == "sparse-signature"
 
 
 def test_lexical_absolute_preserves_venv_executable_symlink(tmp_path: Path) -> None:

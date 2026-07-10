@@ -9,6 +9,8 @@ from neural_forge.cli import build_parser
 import neural_forge.hf_qwen_compose as qwen_compose
 from neural_forge.hf_qwen_compose import (
     _fit_linear_prompt_split,
+    _packed_donor_attention_output,
+    _packed_donor_mlp_output,
     _validation_gate,
     build_contiguous_pair_plan,
     build_coupled_swiglu_packing,
@@ -45,6 +47,12 @@ def test_qwen_pair_compose_cli_matches_detached_launcher_surface(monkeypatch) ->
             "2048",
             "--fit-gate-min-validation-rows",
             "32",
+            "--no-observable-coordinates",
+            "--observable-coordinate-ridge",
+            "0.002",
+            "--no-path-decomposition",
+            "--path-decomposition-interpolation-mode",
+            "dense",
             "--calibration-file",
             "calibration.jsonl",
             "--max-calibration-texts",
@@ -66,6 +74,10 @@ def test_qwen_pair_compose_cli_matches_detached_launcher_surface(monkeypatch) ->
     assert captured["max_fit_rows"] == 512
     assert captured["basis_max_rows"] == 2048
     assert captured["min_validation_rows"] == 32
+    assert captured["observable_coordinates"] is False
+    assert captured["observable_coordinate_ridge"] == pytest.approx(0.002)
+    assert captured["path_decomposition"] is False
+    assert captured["path_decomposition_interpolation_mode"] == "dense"
     assert captured["calibration_texts"] == ["alpha", "beta", "gamma"]
 
 
@@ -161,6 +173,61 @@ def test_swiglu_gate_up_and_down_use_identical_channel_indices() -> None:
         assert len(target["sources"]) == 1
         covered.extend(tuple(item) for item in target["sources"])
     assert covered == [(0, 0), (0, 1), (0, 2), (1, 0), (1, 1)]
+
+
+def test_swiglu_plan_accepts_explicit_post_nonlinearity_support() -> None:
+    selected = [(0, 4), (1, 2), (0, 1), (1, 5)]
+    plan = build_coupled_swiglu_packing(
+        7,
+        4,
+        pair_width=2,
+        selected_sources=selected,
+    )
+
+    assert plan["selection_source"] == "explicit-post-nonlinearity-support"
+    assert plan["selected_per_donor_layer"] == [2, 2]
+    assert [tuple(item["sources"][0]) for item in plan["target_channels"]] == selected
+
+
+def test_donor_attention_outputs_pack_the_selected_complete_groups() -> None:
+    torch = pytest.importorskip("torch")
+    plan = build_gqa_group_packing(
+        donor_query_heads=4,
+        donor_key_value_heads=2,
+        target_query_heads=4,
+        target_key_value_heads=2,
+        head_dim=2,
+        selected_kv_heads=[1, 0],
+    )
+    first = torch.arange(8, dtype=torch.float32).reshape(1, 1, 8)
+    second = first + 100.0
+
+    packed_q = _packed_donor_attention_output(torch, first, plan, "q", 0)
+    packed_q.add_(_packed_donor_attention_output(torch, second, plan, "q", 1))
+    packed_k = _packed_donor_attention_output(torch, first[..., :4], plan, "k", 0)
+    packed_k.add_(_packed_donor_attention_output(torch, second[..., :4], plan, "k", 1))
+
+    torch.testing.assert_close(
+        packed_q, torch.tensor([[[4.0, 5.0, 6.0, 7.0, 100.0, 101.0, 102.0, 103.0]]])
+    )
+    torch.testing.assert_close(packed_k, torch.tensor([[[2.0, 3.0, 100.0, 101.0]]]))
+
+
+def test_donor_mlp_outputs_pack_selected_channels_from_both_layers() -> None:
+    torch = pytest.importorskip("torch")
+    plan = build_coupled_swiglu_packing(
+        donor_intermediate_size=4,
+        target_intermediate_size=4,
+        pair_width=2,
+        channel_scores=[[1.0, 4.0, 3.0, 2.0], [8.0, 6.0, 7.0, 5.0]],
+    )
+    first = torch.tensor([[[10.0, 11.0, 12.0, 13.0]]])
+    second = torch.tensor([[[20.0, 21.0, 22.0, 23.0]]])
+
+    packed = _packed_donor_mlp_output(torch, first, plan, 0)
+    packed.add_(_packed_donor_mlp_output(torch, second, plan, 1))
+
+    torch.testing.assert_close(packed, torch.tensor([[[11.0, 12.0, 20.0, 22.0]]]))
 
 
 def test_prompt_split_holds_out_whole_prompts_deterministically() -> None:
@@ -520,14 +587,47 @@ def test_tiny_qwen_pair_composition_runs_end_to_end_on_current_child_prefix() ->
     assert report["optimizer_constructed"] is False
     assert report["parameters_with_grad"] == 0
     assert report["unwritten_target_parameters"] == 0
-    assert report["residual_basis_scope"] == "global-fixed"
+    assert report["residual_basis_scope"] == "layer-varying-logit-observable"
+    assert report["observable_coordinates"] is True
+    assert report["observable_coordinate_report"]["enabled"] is True
+    assert report["post_nonlinearity_path_decomposition"] is True
+    assert report["path_decomposition_interpolation_mode"] == "sparse-signature"
+    assert all(
+        item["mlp"]["post_nonlinearity_path_decomposition"]["interpolation_mode"]
+        == "sparse-signature"
+        for item in report["structural_initialization"]["pairs"]
+    )
     assert report["sequential_on_policy_child_prefix_tracing"] is True
     assert report["composed_endpoint_targets"] is True
+    assert report["nonlinear_producer_path_fitting"] is True
+    assert report["attention_producer_fit_transaction"] == "all-qkv-or-none-per-pair"
+    assert report["mlp_producer_fit_transaction"] == "gate-and-up-or-none-per-pair"
     assert all(item["sequential_prefix_trace"] for item in report["layers"])
+    assert all("attention_producer_fits" in item for item in report["layers"])
+    assert all("mlp_producer_fits" in item for item in report["layers"])
+    assert all(
+        item["attention_target"]
+        == "sum-of-both-donor-attention-residual-deltas"
+        for item in report["layers"]
+    )
+    assert all(
+        set(item["attention_producer_transaction"])
+        >= {"accepted", "reverted", "producer_applied", "output_applied"}
+        for item in report["layers"]
+    )
+    assert all(
+        set(item["mlp_producer_transaction"])
+        >= {"accepted", "reverted", "producer_applied", "output_applied"}
+        for item in report["layers"]
+    )
     assert all("reverted" in item["pair_validation"] for item in report["layers"])
     assert report["accepted_pair_fits"] + report["reverted_pair_fits"] == 2
+    assert 0 <= report["accepted_attention_producer_transactions"] <= 2
+    assert 0 <= report["accepted_mlp_producer_transactions"] <= 2
     assert "reverted" in report["final_norm_fit"]
-    assert "reverted" in report["final_head_fit"]
+    assert "reverted" in report["projected_final_head_fit"]
+    assert report["final_head_fit"]["zero_gradient"] is True
+    assert 0.0 <= report["final_head_fit"]["chosen_alpha"] <= 1.0
     assert all(torch.isfinite(parameter).all() for parameter in target.parameters())
 
 
