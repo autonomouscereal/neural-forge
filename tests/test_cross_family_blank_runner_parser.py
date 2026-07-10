@@ -46,11 +46,14 @@ def test_parser_accepts_target_tokenizer_model() -> None:
             "32",
             "--trace-pooling",
             "mean",
+            "--cross-tokenizer-trace-alignment",
+            "pooled",
         ]
     )
 
     assert args.target_tokenizer_model == "target-tokenizer"
     assert args.trace_pooling == "mean"
+    assert args.cross_tokenizer_trace_alignment == "pooled"
     assert args.nonlinear_merge_method == "activation_fold"
 
 
@@ -140,7 +143,10 @@ def test_parser_accepts_activation_subset() -> None:
             "32",
             "--nonlinear-merge-method",
             "activation_subset",
+            "--cross-tokenizer-trace-alignment",
+            "target_token_rows",
         ]
     )
 
     assert args.nonlinear_merge_method == "activation_subset"
+    assert args.cross_tokenizer_trace_alignment == "target_token_rows"

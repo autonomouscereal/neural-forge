@@ -605,6 +605,59 @@ def _tokenize(
     return payload, record
 
 
+def _remap_target_token_rows_to_donor(
+    torch: Any,
+    target_inputs: Mapping[str, Any],
+    target_record: Mapping[str, Any],
+    token_transport_profile: Any,
+    *,
+    split: str,
+    device: Any,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    target_ids = torch.as_tensor(target_inputs["input_ids"], dtype=torch.long)
+    attention_mask = torch.as_tensor(
+        target_inputs["attention_mask"],
+        dtype=torch.long,
+    )
+    mapping_values = tuple(token_transport_profile.target_to_donor_row_indices)
+    if not mapping_values:
+        raise BlankCheckpointError(
+            "Strict token transport profile has no target-to-donor rows."
+        )
+    if bool((target_ids < 0).any()) or int(target_ids.max()) >= len(mapping_values):
+        raise BlankCheckpointError(
+            f"Target {split} input IDs exceed the strict token transport profile."
+        )
+    mapping = torch.tensor(
+        mapping_values,
+        dtype=torch.long,
+        device=target_ids.device,
+    )
+    donor_ids = mapping.index_select(0, target_ids.reshape(-1)).reshape_as(target_ids)
+    if int(donor_ids.max()) >= int(token_transport_profile.donor_row_capacity):
+        raise BlankCheckpointError(
+            f"Remapped donor {split} input IDs exceed donor row capacity."
+        )
+    donor_ids_cpu = donor_ids.detach().to(device="cpu").contiguous()
+    mask_cpu = attention_mask.detach().to(device="cpu").contiguous()
+    report = {
+        **dict(target_record),
+        "input_ids_sha256": _tensor_sha256(torch, donor_ids_cpu),
+        "attention_mask_sha256": _tensor_sha256(torch, mask_cpu),
+        "target_input_ids_sha256": target_record["input_ids_sha256"],
+        "token_id_space": "donor-rows-from-exact-target-row-map",
+        "target_token_boundaries_preserved": True,
+        "alignment_fingerprint": token_transport_profile.alignment_fingerprint,
+    }
+    return (
+        {
+            "input_ids": donor_ids.to(device),
+            "attention_mask": attention_mask.to(device),
+        },
+        report,
+    )
+
+
 def _assert_no_gradients(model: Any, name: str) -> int:
     count = sum(int(parameter.grad is not None) for parameter in model.parameters())
     if count:
@@ -680,6 +733,10 @@ def bootstrap_blank_decoder_checkpoint(
     local_files_only: bool = False,
     exact_parameter_budget: int | None = None,
     trace_pooling: Literal["token_rows", "mean", "last_valid"] = "token_rows",
+    cross_tokenizer_trace_alignment: Literal[
+        "pooled",
+        "target_token_rows",
+    ] = "pooled",
     residual_map_method: Literal[
         "sparse_fold",
         "joint_sparse_fold",
@@ -733,6 +790,10 @@ def bootstrap_blank_decoder_checkpoint(
         raise BlankCheckpointError(
             "nonlinear_merge_method must be activation_fold, real_medoid, or "
             "activation_subset."
+        )
+    if cross_tokenizer_trace_alignment not in {"pooled", "target_token_rows"}:
+        raise BlankCheckpointError(
+            "cross_tokenizer_trace_alignment must be pooled or target_token_rows."
         )
     shape = _validate_shape(
         target_family,
@@ -839,10 +900,14 @@ def bootstrap_blank_decoder_checkpoint(
         **target_tokenizer_load,
     }
     cross_tokenizer_mode = resolved_target_tokenizer is not resolved_donor_tokenizer
-    if cross_tokenizer_mode and trace_pooling not in {"mean", "last_valid"}:
+    if (
+        cross_tokenizer_mode
+        and trace_pooling not in {"mean", "last_valid"}
+        and cross_tokenizer_trace_alignment != "target_token_rows"
+    ):
         raise BlankCheckpointError(
             "Cross-tokenizer checkpoint bootstrap requires trace_pooling mean or "
-            "last_valid."
+            "last_valid unless target_token_rows alignment is explicitly selected."
         )
     token_transport_profile = None
     if cross_tokenizer_mode or target_vocab_size != donor_vocab_capacity:
@@ -917,6 +982,53 @@ def bootstrap_blank_decoder_checkpoint(
         max_length=max_length,
         device=resolved_device,
     )
+    trace_alignment_report: dict[str, Any] = {
+        "method": "independent-tokenization-pooled-rows",
+        "cross_tokenizer": cross_tokenizer_mode,
+    }
+    if cross_tokenizer_trace_alignment == "target_token_rows":
+        if not cross_tokenizer_mode:
+            raise BlankCheckpointError(
+                "target_token_rows alignment is only valid for different tokenizers."
+            )
+        if trace_pooling != "token_rows":
+            raise BlankCheckpointError(
+                "target_token_rows alignment requires trace_pooling token_rows."
+            )
+        if token_transport_profile is None:  # pragma: no cover - contract guard
+            raise BlankCheckpointError(
+                "target_token_rows alignment requires strict token transport."
+            )
+        donor_calibration_inputs, donor_calibration_report = (
+            _remap_target_token_rows_to_donor(
+                torch,
+                target_calibration_inputs,
+                target_calibration_report,
+                token_transport_profile,
+                split="calibration",
+                device=resolved_device,
+            )
+        )
+        donor_validation_inputs, donor_validation_report = (
+            _remap_target_token_rows_to_donor(
+                torch,
+                target_validation_inputs,
+                target_validation_report,
+                token_transport_profile,
+                split="validation",
+                device=resolved_device,
+            )
+        )
+        trace_alignment_report = {
+            "method": "target-tokenization-exact-target-row-to-donor-row-remap",
+            "cross_tokenizer": True,
+            "alignment_fingerprint": (
+                token_transport_profile.alignment_fingerprint
+            ),
+            "row_count_alignment": "exact",
+            "learned_bridge": False,
+            "runtime_adapter": False,
+        }
     for split, donor_record, target_record in (
         ("calibration", donor_calibration_report, target_calibration_report),
         ("validation", donor_validation_report, target_validation_report),
@@ -950,6 +1062,10 @@ def bootstrap_blank_decoder_checkpoint(
         ),
         token_transport_profile=token_transport_profile,
         cross_tokenizer_mode=cross_tokenizer_mode,
+        cross_tokenizer_token_rows_aligned=(
+            cross_tokenizer_mode
+            and cross_tokenizer_trace_alignment == "target_token_rows"
+        ),
         trace_pooling=trace_pooling,
         residual_map_method=residual_map_method,
         nonlinear_merge_method=nonlinear_merge_method,
@@ -1063,14 +1179,20 @@ def bootstrap_blank_decoder_checkpoint(
                 "calibration": target_calibration_report,
                 "validation": target_validation_report,
             },
+            "trace_alignment": trace_alignment_report,
             "raw_prompt_contract": {
                 "same_ordered_prompts": True,
                 "calibration_prompt_sha256": donor_calibration_report["prompt_sha256"],
                 "validation_prompt_sha256": donor_validation_report["prompt_sha256"],
                 "independently_tokenized": cross_tokenizer_mode,
-                "unequal_sequence_lengths_allowed": trace_pooling
-                in {"mean", "last_valid"},
-                "pooled_prompt_rows_required": cross_tokenizer_mode,
+                "unequal_sequence_lengths_allowed": (
+                    trace_pooling in {"mean", "last_valid"}
+                    and cross_tokenizer_trace_alignment == "pooled"
+                ),
+                "pooled_prompt_rows_required": (
+                    cross_tokenizer_mode
+                    and cross_tokenizer_trace_alignment == "pooled"
+                ),
             },
         },
         "bootstrap": {
@@ -1089,6 +1211,9 @@ def bootstrap_blank_decoder_checkpoint(
             ),
             "knobs": {
                 "trace_pooling": trace_pooling,
+                "cross_tokenizer_trace_alignment": (
+                    cross_tokenizer_trace_alignment
+                ),
                 "residual_map_method": residual_map_method,
                 "nonlinear_merge_method": nonlinear_merge_method,
                 "canonical_parent_kernel_supplied": (

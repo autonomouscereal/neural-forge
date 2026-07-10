@@ -111,6 +111,7 @@ def bootstrap_blank_decoder_models(
     canonical_execution_graph_fingerprint: str | None = None,
     token_transport_profile: StrictTokenTransportProfile | None = None,
     cross_tokenizer_mode: bool = False,
+    cross_tokenizer_token_rows_aligned: bool = False,
     trace_pooling: Literal["token_rows", "mean", "last_valid"] = "token_rows",
     residual_map_method: Literal[
         "sparse_fold",
@@ -186,14 +187,23 @@ def bootstrap_blank_decoder_models(
         raise BlankBootstrapError("vocab_row_norm_repair must be none or source_l2.")
     if not isinstance(cross_tokenizer_mode, bool):
         raise BlankBootstrapError("cross_tokenizer_mode must be boolean.")
+    if not isinstance(cross_tokenizer_token_rows_aligned, bool):
+        raise BlankBootstrapError(
+            "cross_tokenizer_token_rows_aligned must be boolean."
+        )
+    if cross_tokenizer_token_rows_aligned and not cross_tokenizer_mode:
+        raise BlankBootstrapError(
+            "cross_tokenizer_token_rows_aligned requires cross_tokenizer_mode."
+        )
     if cross_tokenizer_mode:
         if token_transport_profile is None:
             raise BlankBootstrapError(
                 "cross_tokenizer_mode requires a strict token transport profile."
             )
-        if trace_pooling not in {"mean", "last_valid"}:
+        if trace_pooling == "token_rows" and not cross_tokenizer_token_rows_aligned:
             raise BlankBootstrapError(
-                "Cross-tokenizer bootstrap requires mean or last_valid trace pooling."
+                "Cross-tokenizer token_rows bootstrap requires an explicit exact "
+                "row-alignment attestation."
             )
         if target_calibration_inputs is None or target_validation_inputs is None:
             raise BlankBootstrapError(

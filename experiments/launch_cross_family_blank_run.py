@@ -186,6 +186,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         local_files_only=args.local_files_only,
         exact_parameter_budget=args.exact_parameter_budget,
         trace_pooling=args.trace_pooling,
+        cross_tokenizer_trace_alignment=args.cross_tokenizer_trace_alignment,
         residual_map_method=args.residual_map_method,
         nonlinear_merge_method=args.nonlinear_merge_method,
         ridge=args.ridge,
@@ -314,6 +315,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--trace-pooling",
         choices=["token_rows", "mean", "last_valid"],
         default="token_rows",
+    )
+    parser.add_argument(
+        "--cross-tokenizer-trace-alignment",
+        choices=["pooled", "target_token_rows"],
+        default="pooled",
     )
     parser.add_argument(
         "--residual-map-method",

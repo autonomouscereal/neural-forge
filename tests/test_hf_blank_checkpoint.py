@@ -340,6 +340,51 @@ def test_smaller_reordered_cross_tokenizer_checkpoint_is_exact_after_reload(
     assert reloaded_tokenizer.get_vocab() == target_tokenizer.get_vocab()
 
 
+def test_cross_tokenizer_target_token_rows_remap_exact_donor_ids(tmp_path) -> None:
+    target_words = [
+        "w7",
+        "[EOS]",
+        "w1",
+        "[PAD]",
+        "[UNK]",
+        "[BOS]",
+        *[f"w{index}" for index in range(16) if index not in {1, 7}],
+    ]
+    prompts = [
+        " ".join(f"w{(row + column) % 16}" for column in range(8))
+        for row in range(8)
+    ]
+    report = _run(
+        _qwen3_source(),
+        tmp_path / "target-token-row-remap",
+        donor_tokenizer=_tokenizer(),
+        target_tokenizer=_tokenizer(target_words),
+        tokenizer=None,
+        calibration_prompts=prompts,
+        validation_prompts=list(reversed(prompts)),
+        trace_pooling="token_rows",
+        cross_tokenizer_trace_alignment="target_token_rows",
+        residual_map_method="pca",
+        fit_full_lm_head=False,
+    )
+
+    assert report["accepted"] is True, report["bootstrap"]["gate"]
+    alignment = report["tokenization"]["trace_alignment"]
+    assert alignment["method"] == (
+        "target-tokenization-exact-target-row-to-donor-row-remap"
+    )
+    assert alignment["row_count_alignment"] == "exact"
+    assert alignment["learned_bridge"] is False
+    donor = report["tokenization"]["donor"]["calibration"]
+    target = report["tokenization"]["target"]["calibration"]
+    assert donor["input_shape"] == target["input_shape"]
+    assert donor["target_input_ids_sha256"] == target["input_ids_sha256"]
+    assert donor["target_token_boundaries_preserved"] is True
+    assert report["bootstrap"]["knobs"]["cross_tokenizer_trace_alignment"] == (
+        "target_token_rows"
+    )
+
+
 def test_cross_tokenizer_alignment_failure_prevents_publication(tmp_path) -> None:
     target_words = ["[PAD]", "[BOS]", "[EOS]", "[UNK]", "missing-token"]
     output = tmp_path / "unalignable"
