@@ -687,6 +687,58 @@ def test_dual_orthonormal_bootstrap_reports_margin_oracle() -> None:
     assert result.fit_reports["block.0.mlp.structural_prior"]["applied"] is True
 
 
+def test_external_canonical_boundaries_drive_block_endpoints_and_gate() -> None:
+    source = _qwen3_source()
+    target = _qwen3_target(head_dim=4)
+    calibration = _batch(589, batch_size=8)
+    validation = _batch(590, batch_size=8)
+    source_calibration = bootstrap_module._trace_rows(
+        source,
+        calibration,
+        "token_rows",
+    )
+    source_validation = bootstrap_module._trace_rows(
+        source,
+        validation,
+        "token_rows",
+    )
+
+    def boundaries(trace):
+        return (
+            trace.blocks[0].block_input[:, :8],
+            trace.blocks[0].block_output[:, :8],
+            trace.blocks[-1].block_output[:, :8],
+        )
+
+    result = bootstrap_blank_decoder_models(
+        source,
+        target,
+        calibration,
+        validation_inputs=validation,
+        canonical_calibration_boundaries=boundaries(source_calibration),
+        canonical_validation_boundaries=boundaries(source_validation),
+        residual_map_method="pca",
+        max_coordinate_rows=24,
+        fit_full_lm_head=False,
+    )
+
+    contract = result.fit_reports["canonical.boundaries"]
+    assert contract["boundary_count"] == 3
+    assert contract["hidden_size"] == 8
+    assert contract["used_for_ordered_block_endpoints"] is True
+    assert contract["used_for_heldout_final_state_gate"] is True
+    assert contract["exactness_class"] == "finite-trace-approximate"
+    assert contract["algebraically_exact"] is False
+    assert len(contract["calibration_sha256"]) == 64
+    assert len(contract["validation_sha256"]) == 64
+    for block_index in range(2):
+        assert result.fit_reports[f"block.{block_index}.span"]["endpoint_target"] == (
+            "architecture-neutral-canonical-parent-kernel"
+        )
+    assert result.candidate_gate_metrics.final_state.finite is True
+    assert result.candidate_gate_metrics.logits.finite is True
+
+
 def test_blank_bootstrap_rejects_a_wider_target_before_mutation() -> None:
     source = _gpt2_source()
     target = _llama_target(hidden_size=16)

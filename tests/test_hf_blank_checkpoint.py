@@ -235,14 +235,20 @@ def test_real_medoid_is_forwarded_to_model_bootstrap_and_reported(
         "bootstrap_blank_decoder_models",
         fake_bootstrap,
     )
+    canonical = (torch.zeros(1, 1),)
     report = _run(
         _gpt2_source(),
         tmp_path / "real-medoid",
         nonlinear_merge_method="real_medoid",
+        canonical_calibration_boundaries=canonical,
+        canonical_validation_boundaries=canonical,
     )
 
     assert captured["nonlinear_merge_method"] == "real_medoid"
+    assert captured["canonical_calibration_boundaries"] is canonical
+    assert captured["canonical_validation_boundaries"] is canonical
     assert report["bootstrap"]["knobs"]["nonlinear_merge_method"] == "real_medoid"
+    assert report["bootstrap"]["knobs"]["canonical_parent_kernel_supplied"] is True
 
 
 def test_smaller_reordered_cross_tokenizer_checkpoint_is_exact_after_reload(

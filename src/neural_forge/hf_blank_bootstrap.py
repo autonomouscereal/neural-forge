@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 from dataclasses import dataclass
 from typing import Any, Literal, Mapping, Sequence
@@ -99,6 +100,8 @@ def bootstrap_blank_decoder_models(
     validation_inputs: Mapping[str, Any] | Any | None = None,
     target_calibration_inputs: Mapping[str, Any] | Any | None = None,
     target_validation_inputs: Mapping[str, Any] | Any | None = None,
+    canonical_calibration_boundaries: Sequence[Any] | None = None,
+    canonical_validation_boundaries: Sequence[Any] | None = None,
     token_transport_profile: StrictTokenTransportProfile | None = None,
     cross_tokenizer_mode: bool = False,
     trace_pooling: Literal["token_rows", "mean", "last_valid"] = "token_rows",
@@ -284,6 +287,26 @@ def bootstrap_blank_decoder_models(
         capture_logits=True,
     )
     _require_row_alignment(source_validation, baseline_validation, "validation")
+    canonical_calibration = _validated_canonical_boundaries(
+        torch,
+        canonical_calibration_boundaries,
+        boundary_count=target_layout.layer_count + 1,
+        row_count=int(source_calibration.blocks[0].block_input.shape[0]),
+        hidden_size=target_layout.hidden_size,
+        name="canonical_calibration_boundaries",
+    )
+    canonical_validation = _validated_canonical_boundaries(
+        torch,
+        canonical_validation_boundaries,
+        boundary_count=target_layout.layer_count + 1,
+        row_count=int(source_validation.blocks[0].block_input.shape[0]),
+        hidden_size=target_layout.hidden_size,
+        name="canonical_validation_boundaries",
+    )
+    if (canonical_calibration is None) != (canonical_validation is None):
+        raise BlankBootstrapError(
+            "Canonical calibration and validation boundaries must be supplied together."
+        )
     target_teacher_validation_logits = _project_teacher_logits_to_target(
         torch,
         source_validation.logits,
@@ -334,9 +357,13 @@ def bootstrap_blank_decoder_models(
             target_layout.hidden_size,
             center=False,
         )
-    desired_validation_final = _encode_rows(
-        source_validation.blocks[-1].block_output,
-        residual_coordinates,
+    desired_validation_final = (
+        _encode_rows(
+            source_validation.blocks[-1].block_output,
+            residual_coordinates,
+        )
+        if canonical_validation is None
+        else canonical_validation[-1]
     )
     baseline_gate_metrics = _gate_metrics(
         baseline_validation,
@@ -352,6 +379,24 @@ def bootstrap_blank_decoder_models(
     }
     if residual_map_report is not None:
         fit_reports["residual.map"] = residual_map_report
+    if canonical_calibration is not None:
+        fit_reports["canonical.boundaries"] = {
+            "method": "external-architecture-neutral-parent-kernel",
+            "exactness_class": "finite-trace-approximate",
+            "exactness_scope": (
+                "external fingerprinted calibration and validation boundary rows; "
+                "not algebraic whole-model equivalence"
+            ),
+            "algebraically_exact": False,
+            "boundary_count": len(canonical_calibration),
+            "calibration_row_count": int(canonical_calibration[0].shape[0]),
+            "validation_row_count": int(canonical_validation[0].shape[0]),
+            "hidden_size": target_layout.hidden_size,
+            "calibration_sha256": _tensor_sequence_sha256(canonical_calibration),
+            "validation_sha256": _tensor_sequence_sha256(canonical_validation),
+            "used_for_ordered_block_endpoints": True,
+            "used_for_heldout_final_state_gate": True,
+        }
     candidate_gate_metrics: BootstrapGateMetrics | None = None
 
     def mutate(coverage) -> None:
@@ -383,6 +428,11 @@ def bootstrap_blank_decoder_models(
                 target_index,
                 source_span,
                 residual_coordinates,
+                (
+                    None
+                    if canonical_calibration is None
+                    else canonical_calibration[target_index + 1]
+                ),
                 nonlinear_merge_method,
                 ridge,
                 max_operator_delta_ratio,
@@ -1549,6 +1599,7 @@ def _fit_target_block(
     target_index: int,
     source_span: tuple[int, ...],
     residual_coordinates: Any,
+    canonical_endpoint_rows: Any | None,
     nonlinear_merge_method: Literal["activation_fold", "real_medoid"],
     ridge: float,
     max_operator_delta_ratio: float,
@@ -2060,14 +2111,21 @@ def _fit_target_block(
         )
         reports[f"block.{target_index}.mlp.product_fit"] = {
             "method": "folded-source-product-anchor",
+            "exactness_class": _finite_trace_exactness(product_metrics),
+            "exactness_scope": "calibration activation rows only",
+            "algebraically_exact": False,
             "rows": product_metrics.rows,
             "relative_rmse": product_metrics.relative_rmse,
             "mean_cosine_similarity": product_metrics.mean_cosine_similarity,
             "finite": product_metrics.finite,
         }
-    desired_endpoint = _encode_rows(
-        source_blocks[-1].block_output,
-        residual_coordinates,
+    desired_endpoint = (
+        _encode_rows(
+            source_blocks[-1].block_output,
+            residual_coordinates,
+        )
+        if canonical_endpoint_rows is None
+        else canonical_endpoint_rows
     )
     desired_mlp_delta = desired_endpoint - target_block.post_attention_residual
     target_mlp = read_mlp_operators(target_model, target_block_layout)
@@ -2100,6 +2158,11 @@ def _fit_target_block(
         "source_layers": list(source_span),
         "ordered_contiguous": True,
         "residual_composition": "ordered-source-span-endpoint",
+        "endpoint_target": (
+            "architecture-neutral-canonical-parent-kernel"
+            if canonical_endpoint_rows is not None
+            else "encoded-structural-parent-span-endpoint"
+        ),
         "attention_delta_target": "sum-encoded-source-attention-deltas",
         "mlp_delta_target": (
             "encoded-final-source-block-output-minus-target-post-attention-residual"
@@ -3800,6 +3863,9 @@ def _fit_summary(fit: Any) -> dict[str, Any]:
     metrics = fit.train_metrics
     report = {
         "method": "closed-form-parent-anchor-fit",
+        "exactness_class": _finite_trace_exactness(metrics),
+        "exactness_scope": "calibration activation rows only",
+        "algebraically_exact": False,
         "ridge": float(fit.ridge),
         "rows": metrics.rows,
         "relative_rmse": metrics.relative_rmse,
@@ -3824,12 +3890,21 @@ def _fit_summary(fit: Any) -> dict[str, Any]:
 def _measurement_summary(metrics: FitMetrics, *, method: str) -> dict[str, Any]:
     return {
         "method": method,
+        "exactness_class": _finite_trace_exactness(metrics),
+        "exactness_scope": "measured calibration activation rows only",
+        "algebraically_exact": False,
         "rows": metrics.rows,
         "relative_rmse": metrics.relative_rmse,
         "mean_cosine_similarity": metrics.mean_cosine_similarity,
         "finite": metrics.finite,
         "producer_weight_update_after_medoid_selection": False,
     }
+
+
+def _finite_trace_exactness(metrics: FitMetrics) -> str:
+    if metrics.finite and metrics.relative_rmse <= 1e-8:
+        return "finite-trace-exact"
+    return "finite-trace-approximate"
 
 
 def _gate_metrics(
@@ -3922,6 +3997,51 @@ def _nonnegative_float(value: Any, name: str) -> float:
     if not math.isfinite(result) or result < 0.0:
         raise BlankBootstrapError(f"{name} must be finite and non-negative.")
     return result
+
+
+def _validated_canonical_boundaries(
+    torch: Any,
+    values: Sequence[Any] | None,
+    *,
+    boundary_count: int,
+    row_count: int,
+    hidden_size: int,
+    name: str,
+) -> tuple[Any, ...] | None:
+    if values is None:
+        return None
+    if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
+        raise BlankBootstrapError(f"{name} must be a tensor sequence.")
+    if len(values) != boundary_count:
+        raise BlankBootstrapError(
+            f"{name} must contain exactly {boundary_count} target boundaries."
+        )
+    result = []
+    for index, value in enumerate(values):
+        if not isinstance(value, torch.Tensor) or value.ndim != 2:
+            raise BlankBootstrapError(f"{name}[{index}] must be a matrix tensor.")
+        if tuple(value.shape) != (row_count, hidden_size):
+            raise BlankBootstrapError(
+                f"{name}[{index}] must have shape ({row_count}, {hidden_size})."
+            )
+        rows = value.detach().to(device="cpu", dtype=torch.float64).contiguous()
+        if not bool(torch.isfinite(rows).all()):
+            raise BlankBootstrapError(f"{name}[{index}] contains NaN or infinity.")
+        result.append(rows)
+    return tuple(result)
+
+
+def _tensor_sequence_sha256(values: Sequence[Any]) -> str:
+    torch = _require_torch()
+    digest = hashlib.sha256()
+    for index, value in enumerate(values):
+        rows = value.detach().to(device="cpu", dtype=torch.float64).contiguous()
+        digest.update(index.to_bytes(8, "little", signed=False))
+        digest.update(len(rows.shape).to_bytes(8, "little", signed=False))
+        for size in rows.shape:
+            digest.update(int(size).to_bytes(8, "little", signed=False))
+        digest.update(rows.numpy().tobytes(order="C"))
+    return digest.hexdigest()
 
 
 def _require_torch() -> Any:
