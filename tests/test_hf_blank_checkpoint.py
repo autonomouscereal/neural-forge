@@ -65,6 +65,7 @@ def _qwen3_source():
             num_attention_heads=4,
             num_key_value_heads=2,
             head_dim=4,
+            rope_parameters={"rope_theta": 1_000_000.0, "rope_type": "default"},
             max_position_embeddings=32,
             use_sliding_window=False,
             bos_token_id=1,
@@ -113,8 +114,12 @@ def test_cross_family_checkpoint_is_accepted_and_reload_exact(
     report = _run(source_factory(), output)
 
     assert report["accepted"] is True, report["bootstrap"]["gate"]
+    if source_factory is _qwen3_source:
+        config = json.loads((output / "config.json").read_text(encoding="utf-8"))
+        assert config["rope_parameters"]["rope_theta"] == pytest.approx(1_000_000.0)
     assert report["blank_target"]["constructor"].startswith("LlamaForCausalLM(")
     assert report["blank_target"]["pretrained_child_weights_loaded"] is False
+    assert report["compression"]["vocabulary_body"]["body_source_to_child_ratio"] > 1.0
     assert report["execution"]["training_steps"] == 0
     assert report["execution"]["zero_gradients"] is True
     assert report["bootstrap"]["knobs"]["residual_map_method"] == "sparse_fold"

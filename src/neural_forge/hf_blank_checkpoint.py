@@ -11,7 +11,11 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
-from neural_forge.hf_arch_layout import DecoderLayout, build_decoder_layout
+from neural_forge.hf_arch_layout import (
+    DecoderLayout,
+    build_decoder_layout,
+    resolve_module,
+)
 from neural_forge.hf_blank_bootstrap import bootstrap_blank_decoder_models
 from neural_forge.hf_factorized_vocab import exact_parameter_report
 
@@ -146,6 +150,52 @@ def _compression(source: Mapping[str, Any], child: Mapping[str, Any]) -> dict[st
             "parameters_removed": source_count - child_count,
         }
     return result
+
+
+def _vocabulary_body_counts(
+    model: Any,
+    layout: DecoderLayout,
+    totals: Mapping[str, Any],
+) -> dict[str, int]:
+    modules = (
+        resolve_module(model, layout.embeddings.token_path, family=layout.family),
+        resolve_module(model, layout.lm_head_path, family=layout.family),
+    )
+    logical = 0
+    unique: dict[int, Any] = {}
+    for module in modules:
+        for parameter in module.parameters():
+            logical += int(parameter.numel())
+            unique[id(parameter)] = parameter
+    vocabulary_unique = sum(int(parameter.numel()) for parameter in unique.values())
+    total_unique = int(totals["unique_parameter_count"])
+    return {
+        "vocabulary_logical_parameter_count": logical,
+        "vocabulary_unique_parameter_count": vocabulary_unique,
+        "body_unique_parameter_count": total_unique - vocabulary_unique,
+    }
+
+
+def _vocabulary_body_compression(
+    source_model: Any,
+    source_layout: DecoderLayout,
+    source_counts: Mapping[str, Any],
+    child_model: Any,
+    child_layout: DecoderLayout,
+    child_counts: Mapping[str, Any],
+) -> dict[str, Any]:
+    source = _vocabulary_body_counts(source_model, source_layout, source_counts)
+    child = _vocabulary_body_counts(child_model, child_layout, child_counts)
+    source_body = source["body_unique_parameter_count"]
+    child_body = child["body_unique_parameter_count"]
+    if source_body <= 0 or child_body <= 0:
+        raise BlankCheckpointError("Vocabulary/body accounting is non-positive.")
+    return {
+        "source": source,
+        "child": child,
+        "body_source_to_child_ratio": source_body / child_body,
+        "body_child_fraction_of_source": child_body / source_body,
+    }
 
 
 def _layout_identity(layout: DecoderLayout, model: Any) -> dict[str, Any]:
@@ -371,6 +421,7 @@ def _target_model(
     transformers: Any,
     shape: Mapping[str, Any],
     *,
+    source_config: Any,
     vocab_size: int,
     special_ids: Mapping[str, Any],
     tied: bool,
@@ -387,6 +438,18 @@ def _target_model(
         "use_cache": False,
     }
     family = shape["target_family"]
+    rotary = {}
+    if family in {"llama", "qwen3"}:
+        rope_parameters = getattr(source_config, "rope_parameters", None)
+        if rope_parameters is not None:
+            rotary["rope_parameters"] = dict(rope_parameters)
+        else:
+            rope_theta = getattr(source_config, "rope_theta", None)
+            if rope_theta is not None:
+                rotary["rope_theta"] = float(rope_theta)
+            rope_scaling = getattr(source_config, "rope_scaling", None)
+            if rope_scaling is not None:
+                rotary["rope_scaling"] = rope_scaling
     if family == "gpt2":
         config = transformers.GPT2Config(
             **common,
@@ -401,6 +464,7 @@ def _target_model(
     elif family == "llama":
         config = transformers.LlamaConfig(
             **common,
+            **rotary,
             hidden_size=shape["hidden_size"],
             intermediate_size=shape["intermediate_size"],
             num_hidden_layers=shape["num_hidden_layers"],
@@ -419,6 +483,7 @@ def _target_model(
             )
         config = transformers.Qwen3Config(
             **common,
+            **rotary,
             hidden_size=shape["hidden_size"],
             intermediate_size=shape["intermediate_size"],
             num_hidden_layers=shape["num_hidden_layers"],
@@ -661,6 +726,7 @@ def bootstrap_blank_decoder_checkpoint(
         torch,
         transformers,
         shape,
+        source_config=source.config,
         vocab_size=vocab_size,
         special_ids=special_ids,
         tied=source_layout.tie_word_embeddings,
@@ -774,7 +840,17 @@ def bootstrap_blank_decoder_checkpoint(
             if accepted
             else {"saved": False, "state_restored_to_blank": True}
         ),
-        "compression": _compression(source_counts, blank_counts),
+        "compression": {
+            **_compression(source_counts, blank_counts),
+            "vocabulary_body": _vocabulary_body_compression(
+                source,
+                source_layout,
+                source_counts,
+                target,
+                target_layout,
+                blank_counts,
+            ),
+        },
         "tokenizer": tokenizer_report,
         "tokenization": {
             "calibration": calibration_report,

@@ -11,6 +11,7 @@ from neural_forge.hf_arch_layout import (
     build_decoder_layout,
     resolve_module,
 )
+from neural_forge.hf_attention_fold import build_gqa_attention_fold_maps
 from neural_forge.hf_closed_form_fit import (
     FitMetrics,
     fit_diagonal_norm,
@@ -706,6 +707,7 @@ def _fit_target_block(
         source_k_rows,
         source_v_rows,
         context_rows,
+        source_layout.blocks[source_span[-1]].attention,
         target_block_layout,
         max_coordinate_rows,
         )
@@ -1145,9 +1147,24 @@ def _attention_feature_coordinates(
     key_rows: Sequence[Any],
     value_rows: Sequence[Any],
     context_rows: Sequence[Any],
+    source_attention_layout: Any,
     target_block_layout: Any,
     max_coordinate_rows: int,
 ) -> tuple[FeatureFoldMap, FeatureFoldMap, FeatureFoldMap, FeatureFoldMap]:
+    target_attention = target_block_layout.attention
+    if (
+        source_attention_layout.projection_style == "split_qkv"
+        and target_attention.projection_style == "split_qkv"
+    ):
+        maps = build_gqa_attention_fold_maps(
+            source_query_heads=source_attention_layout.query_heads,
+            source_key_value_heads=source_attention_layout.key_value_heads,
+            source_head_dim=source_attention_layout.head_dim,
+            target_query_heads=target_attention.query_heads,
+            target_key_value_heads=target_attention.key_value_heads,
+            target_head_dim=target_attention.head_dim,
+        )
+        return maps.query, maps.key, maps.value, maps.context
     q_rows = _sample_concatenated_rows(
         torch,
         query_rows,

@@ -9,8 +9,13 @@ PY=/home/cereal/model-surgery-lab/venv/bin/python
 GPU=${GPU:-GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561}
 HIDDEN_SIZE=${HIDDEN_SIZE:-384}
 INTERMEDIATE_SIZE=${INTERMEDIATE_SIZE:-768}
+TARGET_FAMILY=${TARGET_FAMILY:-llama}
+NUM_HIDDEN_LAYERS=${NUM_HIDDEN_LAYERS:-24}
 NUM_ATTENTION_HEADS=${NUM_ATTENTION_HEADS:-6}
+NUM_KEY_VALUE_HEADS=${NUM_KEY_VALUE_HEADS:-1}
+HEAD_DIM=${HEAD_DIM:-64}
 EXACT_PARAMETER_BUDGET=${EXACT_PARAMETER_BUDGET:-87853440}
+MAX_OPERATOR_DELTA_RATIO=${MAX_OPERATOR_DELTA_RATIO:-4}
 
 mkdir -p "$RUN_ROOT"
 
@@ -33,13 +38,13 @@ mkdir -p "$RUN_ROOT"
   --cached-parent-eval /home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/evals/eval_parent_qwen3_4b_base_strict_20260705_1000x1000x250.json \
   --calibration-count 64 \
   --validation-count 16 \
-  --target-family llama \
+  --target-family "$TARGET_FAMILY" \
   --hidden-size "$HIDDEN_SIZE" \
   --intermediate-size "$INTERMEDIATE_SIZE" \
-  --num-hidden-layers 24 \
+  --num-hidden-layers "$NUM_HIDDEN_LAYERS" \
   --num-attention-heads "$NUM_ATTENTION_HEADS" \
-  --num-key-value-heads 1 \
-  --head-dim 64 \
+  --num-key-value-heads "$NUM_KEY_VALUE_HEADS" \
+  --head-dim "$HEAD_DIM" \
   --max-position-embeddings 32768 \
   --exact-parameter-budget "$EXACT_PARAMETER_BUDGET" \
   --seed 0 \
@@ -51,6 +56,7 @@ mkdir -p "$RUN_ROOT"
   --trace-pooling token_rows \
   --residual-map-method sparse_fold \
   --ridge 1e-3 \
+  --max-operator-delta-ratio "$MAX_OPERATOR_DELTA_RATIO" \
   --min-final-state-improvement 0 \
   --min-logit-improvement 0 \
   --min-top1-gain 0 \
