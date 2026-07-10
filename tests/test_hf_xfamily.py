@@ -102,6 +102,7 @@ from neural_forge.hf_tools import _linear_cka
 from neural_forge.hf_tools import _merge_layer_state_dicts
 from neural_forge.hf_tools import _normalize_generation_prompt
 from neural_forge.hf_tools import _normalize_layer_groups
+from neural_forge.hf_tools import _resize_config_layer_metadata
 from neural_forge.hf_xfamily import _canonical_token
 from neural_forge.hf_xfamily import _chain_stage_promotes
 from neural_forge.hf_xfamily import _lookup_layer_tensor_key
@@ -276,6 +277,20 @@ def test_tokenizer_vocab_capacity_grows_but_never_shrinks_reserved_rows(
         "resized": bool(expected_resizes),
     }
     assert model.resize_calls == expected_resizes
+
+
+def test_resize_config_layer_metadata_tracks_depth_override() -> None:
+    text_config = _Obj(layer_types=[f"text_{idx}" for idx in range(4)])
+    config = _Obj(
+        layer_types=[f"layer_{idx}" for idx in range(6)],
+        text_config=text_config,
+    )
+
+    updated = _resize_config_layer_metadata(config, 3)
+
+    assert updated == ["layer_types"]
+    assert config.layer_types == ["layer_0", "layer_2", "layer_4"]
+    assert text_config.layer_types == ["text_0", "text_1", "text_2"]
 
 
 def test_canonical_token_normalizes_common_tokenizer_markers() -> None:

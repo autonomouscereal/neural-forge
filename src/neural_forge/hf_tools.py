@@ -209,6 +209,30 @@ def _set_config_shape_value(config, names: Sequence[str], value: int) -> list[st
     return list(dict.fromkeys(updated))
 
 
+def _resize_config_layer_metadata(config, new_count: int) -> list[str]:
+    """Keep per-layer configuration schedules aligned with a depth override."""
+
+    updated = []
+    targets = [config]
+    text_config = getattr(config, "text_config", None)
+    if text_config is not None and text_config is not config:
+        targets.append(text_config)
+    for target in targets:
+        layer_types = getattr(target, "layer_types", None)
+        if not isinstance(layer_types, (list, tuple)) or not layer_types:
+            continue
+        old_count = len(layer_types)
+        if old_count == int(new_count):
+            continue
+        indices = [
+            min(old_count - 1, (idx * old_count) // int(new_count))
+            for idx in range(int(new_count))
+        ]
+        target.layer_types = [layer_types[idx] for idx in indices]
+        updated.append("layer_types")
+    return list(dict.fromkeys(updated))
+
+
 def _ensure_tokenizer_vocab_capacity(model, tokenizer) -> dict[str, Any]:
     """Grow an embedding table for a tokenizer without deleting reserved rows."""
 
@@ -278,6 +302,10 @@ def shape_random_init_causal_lm(
     for name, value in requested.items():
         if value is not None:
             updated_fields[name] = _set_config_shape_value(config, aliases[name], int(value))
+            if name == "num_hidden_layers":
+                metadata_fields = _resize_config_layer_metadata(config, int(value))
+                if metadata_fields:
+                    updated_fields["layer_metadata"] = metadata_fields
     if tie_word_embeddings is not None:
         config.tie_word_embeddings = bool(tie_word_embeddings)
         if getattr(config, "text_config", None) is not None:
