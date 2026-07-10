@@ -14,6 +14,7 @@ import re
 import socket
 import sys
 import time
+import traceback
 from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1266,6 +1267,7 @@ def evaluate_parent_baseline(
                     "total": len(verified_manifest["records"]),
                     "exception_type": type(exc).__name__,
                     "message": str(exc),
+                    "traceback": traceback.format_exc(),
                     "failed_utc": _utc_now(),
                 },
             )
