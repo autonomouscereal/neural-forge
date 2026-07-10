@@ -140,6 +140,28 @@ def build_parser() -> argparse.ArgumentParser:
     hf_raw_token_expand.add_argument("--trust-remote-code", action="store_true")
     hf_raw_token_expand.set_defaults(func=cmd_hf_raw_token_expand)
 
+    hf_expand = sub.add_parser(
+        "hf-expand",
+        help="Function-preservingly expand an HF causal LM to an exact size.",
+    )
+    hf_expand.add_argument("source_model")
+    hf_expand.add_argument("output_dir")
+    hf_expand.add_argument("--target-params", type=int, required=True)
+    hf_expand.add_argument("--dtype", default="float32")
+    hf_expand.add_argument("--device", default="cpu")
+    hf_expand.add_argument("--trust-remote-code", action="store_true")
+    hf_expand.add_argument("--local-files-only", action="store_true")
+    hf_expand.add_argument(
+        "--validation-prompt",
+        "--validation-prompts",
+        dest="validation_prompts",
+        action="append",
+        help="Deterministic validation prompt; repeat for multiple prompts.",
+    )
+    hf_expand.add_argument("--validation-prompts-file")
+    hf_expand.add_argument("--max-equivalence-error", type=float, default=1e-5)
+    hf_expand.set_defaults(func=cmd_hf_expand)
+
     hf_shape = sub.add_parser(
         "hf-shape-init",
         help="Create a blank HF causal LM with explicit shape overrides.",
@@ -3333,6 +3355,23 @@ def cmd_hf_raw_token_expand(args: argparse.Namespace) -> dict[str, object]:
         device=args.device,
         seed=args.seed,
         trust_remote_code=args.trust_remote_code,
+    )
+
+
+def cmd_hf_expand(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_expand_checkpoint import expand_hf_checkpoint
+
+    return expand_hf_checkpoint(
+        source_model=args.source_model,
+        output_dir=args.output_dir,
+        target_parameter_count=args.target_params,
+        dtype=args.dtype,
+        device=args.device,
+        trust_remote_code=args.trust_remote_code,
+        local_files_only=args.local_files_only,
+        validation_prompts=args.validation_prompts,
+        validation_prompts_file=args.validation_prompts_file,
+        max_equivalence_error=args.max_equivalence_error,
     )
 
 
