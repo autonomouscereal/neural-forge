@@ -88,6 +88,8 @@ def bootstrap_blank_decoder_models(
     min_top1_agreement_gain: float = 0.0,
     fit_full_lm_head: bool = True,
     max_full_head_fit_elements: int = 10_000_000,
+    max_coordinate_rows: int = 4096,
+    vocab_projection_chunk_size: int = 2048,
 ) -> BlankBootstrapResult:
     """Compile source behavior into a blank GPT-2/Llama target without gradients.
 
@@ -115,9 +117,19 @@ def bootstrap_blank_decoder_models(
         or max_full_head_fit_elements <= 0
     ):
         raise BlankBootstrapError("max_full_head_fit_elements must be positive.")
+    for name, value in (
+        ("max_coordinate_rows", max_coordinate_rows),
+        ("vocab_projection_chunk_size", vocab_projection_chunk_size),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise BlankBootstrapError(f"{name} must be a positive integer.")
 
     source_layout = build_decoder_layout(source_model)
     target_layout = build_decoder_layout(target_model)
+    if max_coordinate_rows < target_layout.hidden_size:
+        raise BlankBootstrapError(
+            "max_coordinate_rows cannot be smaller than target hidden size."
+        )
     manifest = build_decoder_transport_manifest(target_model, layout=target_layout)
     _validate_bootstrap_contract(
         source_model,
@@ -165,7 +177,11 @@ def bootstrap_blank_decoder_models(
         trace_pooling,
     )
     _require_row_alignment(source_validation, baseline_validation, "validation")
-    residual_rows = _residual_basis_rows(torch, source_calibration)
+    residual_rows = _residual_basis_rows(
+        torch,
+        source_calibration,
+        max_coordinate_rows,
+    )
     residual_coordinates = build_parent_residual_basis(
         residual_rows,
         target_layout.hidden_size,
@@ -194,6 +210,7 @@ def bootstrap_blank_decoder_models(
             source_calibration,
             target_calibration_values,
             trace_pooling,
+            vocab_projection_chunk_size,
             fit_reports,
         )
         for target_index, source_span in enumerate(donor_layer_spans):
@@ -210,6 +227,7 @@ def bootstrap_blank_decoder_models(
                 source_span,
                 residual_coordinates,
                 ridge,
+                max_coordinate_rows,
                 fit_reports,
             )
         _fit_final_interface(
@@ -359,12 +377,89 @@ def _require_row_alignment(left: Any, right: Any, name: str) -> None:
         )
 
 
-def _residual_basis_rows(torch: Any, trace: FlattenedTransportTrace) -> Any:
+def _residual_basis_rows(
+    torch: Any,
+    trace: FlattenedTransportTrace,
+    max_rows: int,
+) -> Any:
     values = []
     for block in trace.blocks:
         values.extend([block.block_input, block.block_output])
     values.append(trace.final_norm_output)
-    return torch.cat(values, dim=0)
+    quotas = _row_quotas([int(value.shape[0]) for value in values], max_rows)
+    sampled = [
+        _evenly_sample_rows(torch, value, quota)
+        for value, quota in zip(values, quotas, strict=True)
+        if quota > 0
+    ]
+    return torch.cat(sampled, dim=0)
+
+
+def _row_quotas(lengths: Sequence[int], max_rows: int) -> tuple[int, ...]:
+    total = sum(lengths)
+    selected = min(total, max_rows)
+    if selected == total:
+        return tuple(lengths)
+    torch = _require_torch()
+    indices = (
+        torch.linspace(0, total - 1, steps=selected)
+        .round()
+        .to(torch.long)
+    )
+    quotas = []
+    offset = 0
+    for length in lengths:
+        quotas.append(int(((indices >= offset) & (indices < offset + length)).sum()))
+        offset += length
+    return tuple(quotas)
+
+
+def _evenly_sample_rows(torch: Any, rows: Any, count: int) -> Any:
+    if count >= int(rows.shape[0]):
+        return rows
+    indices = (
+        torch.linspace(0, int(rows.shape[0]) - 1, steps=count)
+        .round()
+        .to(torch.long)
+    )
+    return rows.index_select(0, indices)
+
+
+def _sample_concatenated_rows(
+    torch: Any,
+    values: Sequence[Any],
+    max_rows: int,
+) -> Any:
+    quotas = _row_quotas([int(value.shape[0]) for value in values], max_rows)
+    sampled = [
+        _evenly_sample_rows(torch, value, quota)
+        for value, quota in zip(values, quotas, strict=True)
+        if quota > 0
+    ]
+    return torch.cat(sampled, dim=0)
+
+
+def _copy_projected_rows(
+    torch: Any,
+    source_weight: Any,
+    target_weight: Any,
+    coordinates: CoordinateMap,
+    chunk_size: int,
+) -> None:
+    if int(source_weight.shape[0]) != int(target_weight.shape[0]):
+        raise BlankBootstrapError(
+            "Source and target vocabulary operators must have equal row counts."
+        )
+    expected = (int(source_weight.shape[0]), coordinates.target_dim)
+    if tuple(target_weight.shape) != expected:
+        raise BlankBootstrapError(
+            f"Target vocabulary operator must have shape {expected}."
+        )
+    with torch.no_grad():
+        for start in range(0, int(source_weight.shape[0]), chunk_size):
+            end = min(int(source_weight.shape[0]), start + chunk_size)
+            projected = encode_coordinates(source_weight[start:end], coordinates)
+            target_weight[start:end].copy_(projected.to(target_weight))
 
 
 def _initialize_embedding_and_head(
@@ -377,30 +472,28 @@ def _initialize_embedding_and_head(
     source_trace: FlattenedTransportTrace,
     target_calibration_inputs: Mapping[str, Any] | Any,
     trace_pooling: Literal["token_rows", "mean", "last_valid"],
+    vocab_projection_chunk_size: int,
     reports: dict[str, Any],
 ) -> None:
     source_embedding = source_model.get_input_embeddings()
     target_embedding = target_model.get_input_embeddings()
     source_head = source_model.get_output_embeddings()
     target_head = target_model.get_output_embeddings()
-    projected_embedding = encode_coordinates(
+    _copy_projected_rows(
+        torch,
         source_embedding.weight,
+        target_embedding.weight,
         residual_coordinates,
+        vocab_projection_chunk_size,
     )
-    projected_head = encode_coordinates(source_head.weight, residual_coordinates)
+    _copy_projected_rows(
+        torch,
+        source_head.weight,
+        target_head.weight,
+        residual_coordinates,
+        vocab_projection_chunk_size,
+    )
     with torch.no_grad():
-        target_embedding.weight.copy_(
-            projected_embedding.to(
-                device=target_embedding.weight.device,
-                dtype=target_embedding.weight.dtype,
-            )
-        )
-        target_head.weight.copy_(
-            projected_head.to(
-                device=target_head.weight.device,
-                dtype=target_head.weight.dtype,
-            )
-        )
         source_bias = getattr(source_head, "bias", None)
         target_bias = getattr(target_head, "bias", None)
         if target_bias is not None:
@@ -408,12 +501,14 @@ def _initialize_embedding_and_head(
             if source_bias is not None:
                 target_bias.copy_(source_bias.to(target_bias))
     reports["embeddings.token"] = {
-        "method": "parent-residual-basis-projection",
-        "shape": list(projected_embedding.shape),
+        "method": "chunked-parent-residual-basis-projection",
+        "shape": list(target_embedding.weight.shape),
+        "chunk_rows": vocab_projection_chunk_size,
     }
     reports["lm_head"] = {
-        "method": "parent-residual-basis-projection",
-        "shape": list(projected_head.shape),
+        "method": "chunked-parent-residual-basis-projection",
+        "shape": list(target_head.weight.shape),
+        "chunk_rows": vocab_projection_chunk_size,
     }
     if target_layout.position.kind == "learned_absolute":
         _initialize_learned_positions(
@@ -503,6 +598,7 @@ def _fit_target_block(
     source_span: tuple[int, ...],
     residual_coordinates: CoordinateMap,
     ridge: float,
+    max_coordinate_rows: int,
     reports: dict[str, Any],
 ) -> None:
     del source_model, source_layout
@@ -539,6 +635,7 @@ def _fit_target_block(
         torch,
         source_blocks,
         target_block_layout,
+        max_coordinate_rows,
     )
     desired_q = _mean_projected(
         torch, source_blocks, "query_projection_output", q_coordinates
@@ -648,7 +745,11 @@ def _fit_target_block(
     current = _trace_rows(target_model, target_calibration_inputs, trace_pooling)
     target_block = current.blocks[target_index]
     mlp_coordinates = build_parent_residual_basis(
-        torch.cat([block.down_projection_input for block in source_blocks], dim=0),
+        _sample_concatenated_rows(
+            torch,
+            [block.down_projection_input for block in source_blocks],
+            max_coordinate_rows,
+        ),
         target_block_layout.mlp.intermediate_size,
         center=False,
     )
@@ -849,19 +950,32 @@ def _attention_feature_coordinates(
     torch: Any,
     source_blocks: Sequence[DecoderBlockTrace],
     target_block_layout: Any,
+    max_coordinate_rows: int,
 ) -> tuple[CoordinateMap, CoordinateMap, CoordinateMap]:
-    q_rows = torch.cat(
-        [block.query_projection_output for block in source_blocks], dim=0
+    q_rows = _sample_concatenated_rows(
+        torch,
+        [block.query_projection_output for block in source_blocks],
+        max_coordinate_rows,
     )
-    k_rows = torch.cat([block.key_projection_output for block in source_blocks], dim=0)
-    v_rows = torch.cat(
-        [block.value_projection_output for block in source_blocks], dim=0
+    k_rows = _sample_concatenated_rows(
+        torch,
+        [block.key_projection_output for block in source_blocks],
+        max_coordinate_rows,
+    )
+    v_rows = _sample_concatenated_rows(
+        torch,
+        [block.value_projection_output for block in source_blocks],
+        max_coordinate_rows,
     )
     q_width = target_block_layout.attention.query_width
     k_width = target_block_layout.attention.key_value_width
     if q_rows.shape[1] == k_rows.shape[1] and q_width == k_width:
         shared = build_parent_residual_basis(
-            torch.cat([q_rows, k_rows], dim=0),
+            _sample_concatenated_rows(
+                torch,
+                [q_rows, k_rows],
+                max_coordinate_rows,
+            ),
             q_width,
             center=False,
         )

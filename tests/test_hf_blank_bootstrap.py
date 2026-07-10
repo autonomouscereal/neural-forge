@@ -131,6 +131,8 @@ def test_blank_bootstrap_improves_source_anchors_and_covers_every_target_role(
         target,
         calibration,
         validation_inputs=validation,
+        max_coordinate_rows=24,
+        vocab_projection_chunk_size=7,
     )
 
     assert result.transaction.accepted is True, result.transaction.report["gate"]
@@ -216,3 +218,13 @@ def test_blank_bootstrap_rejects_a_wider_target_before_mutation() -> None:
 
     for name, value in target.state_dict().items():
         assert torch.equal(value, before[name]), name
+
+
+def test_blank_bootstrap_rejects_an_undersized_coordinate_sample() -> None:
+    with pytest.raises(BlankBootstrapError, match="max_coordinate_rows"):
+        bootstrap_blank_decoder_models(
+            _gpt2_source(),
+            _llama_target(),
+            _batch(),
+            max_coordinate_rows=7,
+        )
