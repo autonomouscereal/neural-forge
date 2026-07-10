@@ -1,0 +1,3988 @@
+{
+  "behavior": {
+    "by_category": {
+      "code": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 200,
+        "parent_pass": 200,
+        "parent_pass_retention_rate": 0.0,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [
+          "synthetic_python_add_0004",
+          "synthetic_python_add_0019",
+          "synthetic_python_add_0034",
+          "synthetic_python_add_0049",
+          "synthetic_python_add_0064",
+          "synthetic_python_add_0079",
+          "synthetic_python_add_0094",
+          "synthetic_python_add_0109",
+          "synthetic_python_add_0124",
+          "synthetic_python_add_0139",
+          "synthetic_python_add_0154",
+          "synthetic_python_add_0169",
+          "synthetic_python_add_0184",
+          "synthetic_python_add_0199",
+          "synthetic_python_add_0214",
+          "synthetic_python_add_0229",
+          "synthetic_python_add_0244",
+          "synthetic_python_add_0259",
+          "synthetic_python_add_0274",
+          "synthetic_python_add_0289",
+          "synthetic_python_add_0304",
+          "synthetic_python_add_0319",
+          "synthetic_python_add_0334",
+          "synthetic_python_add_0349",
+          "synthetic_python_add_0364"
+        ],
+        "shared_ids": 200,
+        "shared_parent_pass_retention_rate": 0.0,
+        "total_ids": 200
+      },
+      "commonsense": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 0,
+        "parent_pass": 0,
+        "parent_pass_retention_rate": null,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [],
+        "shared_ids": 200,
+        "shared_parent_pass_retention_rate": null,
+        "total_ids": 200
+      },
+      "math": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 200,
+        "parent_pass": 200,
+        "parent_pass_retention_rate": 0.0,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [
+          "synthetic_math_0000",
+          "synthetic_math_0005",
+          "synthetic_math_0010",
+          "synthetic_math_0015",
+          "synthetic_math_0020",
+          "synthetic_math_0025",
+          "synthetic_math_0030",
+          "synthetic_math_0035",
+          "synthetic_math_0040",
+          "synthetic_math_0045",
+          "synthetic_math_0050",
+          "synthetic_math_0055",
+          "synthetic_math_0060",
+          "synthetic_math_0065",
+          "synthetic_math_0070",
+          "synthetic_math_0075",
+          "synthetic_math_0080",
+          "synthetic_math_0085",
+          "synthetic_math_0090",
+          "synthetic_math_0095",
+          "synthetic_math_0100",
+          "synthetic_math_0105",
+          "synthetic_math_0110",
+          "synthetic_math_0115",
+          "synthetic_math_0120"
+        ],
+        "shared_ids": 200,
+        "shared_parent_pass_retention_rate": 0.0,
+        "total_ids": 200
+      },
+      "model_surgery": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 0,
+        "parent_pass": 0,
+        "parent_pass_retention_rate": null,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [],
+        "shared_ids": 200,
+        "shared_parent_pass_retention_rate": null,
+        "total_ids": 200
+      },
+      "tokenizer": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 0,
+        "parent_pass": 0,
+        "parent_pass_retention_rate": null,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [],
+        "shared_ids": 200,
+        "shared_parent_pass_retention_rate": null,
+        "total_ids": 200
+      }
+    },
+    "by_kind": {
+      "first_number": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 200,
+        "parent_pass": 200,
+        "parent_pass_retention_rate": 0.0,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [
+          "synthetic_math_0000",
+          "synthetic_math_0005",
+          "synthetic_math_0010",
+          "synthetic_math_0015",
+          "synthetic_math_0020",
+          "synthetic_math_0025",
+          "synthetic_math_0030",
+          "synthetic_math_0035",
+          "synthetic_math_0040",
+          "synthetic_math_0045",
+          "synthetic_math_0050",
+          "synthetic_math_0055",
+          "synthetic_math_0060",
+          "synthetic_math_0065",
+          "synthetic_math_0070",
+          "synthetic_math_0075",
+          "synthetic_math_0080",
+          "synthetic_math_0085",
+          "synthetic_math_0090",
+          "synthetic_math_0095",
+          "synthetic_math_0100",
+          "synthetic_math_0105",
+          "synthetic_math_0110",
+          "synthetic_math_0115",
+          "synthetic_math_0120"
+        ],
+        "shared_ids": 200,
+        "shared_parent_pass_retention_rate": 0.0,
+        "total_ids": 200
+      },
+      "pattern_groups": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 0,
+        "parent_pass": 0,
+        "parent_pass_retention_rate": null,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [],
+        "shared_ids": 600,
+        "shared_parent_pass_retention_rate": null,
+        "total_ids": 600
+      },
+      "python_function": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 200,
+        "parent_pass": 200,
+        "parent_pass_retention_rate": 0.0,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [
+          "synthetic_python_add_0004",
+          "synthetic_python_add_0019",
+          "synthetic_python_add_0034",
+          "synthetic_python_add_0049",
+          "synthetic_python_add_0064",
+          "synthetic_python_add_0079",
+          "synthetic_python_add_0094",
+          "synthetic_python_add_0109",
+          "synthetic_python_add_0124",
+          "synthetic_python_add_0139",
+          "synthetic_python_add_0154",
+          "synthetic_python_add_0169",
+          "synthetic_python_add_0184",
+          "synthetic_python_add_0199",
+          "synthetic_python_add_0214",
+          "synthetic_python_add_0229",
+          "synthetic_python_add_0244",
+          "synthetic_python_add_0259",
+          "synthetic_python_add_0274",
+          "synthetic_python_add_0289",
+          "synthetic_python_add_0304",
+          "synthetic_python_add_0319",
+          "synthetic_python_add_0334",
+          "synthetic_python_add_0349",
+          "synthetic_python_add_0364"
+        ],
+        "shared_ids": 200,
+        "shared_parent_pass_retention_rate": 0.0,
+        "total_ids": 200
+      }
+    },
+    "overall": {
+      "child_only_or_parent_failed_gain": 0,
+      "child_pass": 0,
+      "lost_parent_pass": 400,
+      "parent_pass": 400,
+      "parent_pass_retention_rate": 0.0,
+      "retained_parent_pass": 0,
+      "sample_gain_ids": [],
+      "sample_lost_parent_pass_ids": [
+        "synthetic_math_0000",
+        "synthetic_math_0005",
+        "synthetic_math_0010",
+        "synthetic_math_0015",
+        "synthetic_math_0020",
+        "synthetic_math_0025",
+        "synthetic_math_0030",
+        "synthetic_math_0035",
+        "synthetic_math_0040",
+        "synthetic_math_0045",
+        "synthetic_math_0050",
+        "synthetic_math_0055",
+        "synthetic_math_0060",
+        "synthetic_math_0065",
+        "synthetic_math_0070",
+        "synthetic_math_0075",
+        "synthetic_math_0080",
+        "synthetic_math_0085",
+        "synthetic_math_0090",
+        "synthetic_math_0095",
+        "synthetic_math_0100",
+        "synthetic_math_0105",
+        "synthetic_math_0110",
+        "synthetic_math_0115",
+        "synthetic_math_0120"
+      ],
+      "shared_ids": 1000,
+      "shared_parent_pass_retention_rate": 0.0,
+      "total_ids": 1000
+    }
+  },
+  "child": {
+    "behavior_correct": 0,
+    "behavior_total": 1000,
+    "choice_correct": 9,
+    "choice_total": 250,
+    "generation_correct": 0,
+    "generation_total": 1000,
+    "model": "/mnt/ai_data/neural-forge/qwen_basis_checkpoint_20260710/qwen3_4b_to_basis134443364_fulltopology_gpu0_r1_20260710/checkpoint",
+    "param_count": 134443364,
+    "perplexity_mean": 141540.31300953642
+  },
+  "child_eval": "/mnt/ai_data/neural-forge/qwen_basis_checkpoint_20260710/qwen3_4b_to_basis134443364_fulltopology_gpu0_r1_20260710/candidate_eval.json",
+  "choice": {
+    "overall": {
+      "child_only_or_parent_failed_gain": 0,
+      "child_pass": 9,
+      "lost_parent_pass": 241,
+      "parent_pass": 250,
+      "parent_pass_retention_rate": 0.036,
+      "retained_parent_pass": 9,
+      "sample_gain_ids": [],
+      "sample_lost_parent_pass_ids": [
+        "synthetic_choice_0000",
+        "synthetic_choice_0001",
+        "synthetic_choice_0002",
+        "synthetic_choice_0003",
+        "synthetic_choice_0004",
+        "synthetic_choice_0005",
+        "synthetic_choice_0006",
+        "synthetic_choice_0007",
+        "synthetic_choice_0008",
+        "synthetic_choice_0009",
+        "synthetic_choice_0010",
+        "synthetic_choice_0011",
+        "synthetic_choice_0013",
+        "synthetic_choice_0014",
+        "synthetic_choice_0015",
+        "synthetic_choice_0016",
+        "synthetic_choice_0017",
+        "synthetic_choice_0018",
+        "synthetic_choice_0019",
+        "synthetic_choice_0020",
+        "synthetic_choice_0021",
+        "synthetic_choice_0022",
+        "synthetic_choice_0023",
+        "synthetic_choice_0024",
+        "synthetic_choice_0025"
+      ],
+      "shared_ids": 250,
+      "shared_parent_pass_retention_rate": 0.036,
+      "total_ids": 250
+    }
+  },
+  "generation": {
+    "by_category": {
+      "code": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 232,
+        "parent_pass": 232,
+        "parent_pass_retention_rate": 0.0,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [
+          "generation_python_add_0002",
+          "generation_python_add_0009",
+          "generation_python_add_0016",
+          "generation_python_add_0023",
+          "generation_python_add_0030",
+          "generation_python_add_0037",
+          "generation_python_add_0044",
+          "generation_python_add_0051",
+          "generation_python_add_0072",
+          "generation_python_add_0079",
+          "generation_python_add_0093",
+          "generation_python_add_0107",
+          "generation_python_add_0114",
+          "generation_python_add_0121",
+          "generation_python_add_0128",
+          "generation_python_add_0135",
+          "generation_python_add_0142",
+          "generation_python_add_0149",
+          "generation_python_add_0163",
+          "generation_python_add_0177",
+          "generation_python_add_0198",
+          "generation_python_add_0205",
+          "generation_python_add_0212",
+          "generation_python_add_0219",
+          "generation_python_add_0226"
+        ],
+        "shared_ids": 285,
+        "shared_parent_pass_retention_rate": 0.0,
+        "total_ids": 285
+      },
+      "commonsense": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 0,
+        "parent_pass": 0,
+        "parent_pass_retention_rate": null,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [],
+        "shared_ids": 143,
+        "shared_parent_pass_retention_rate": null,
+        "total_ids": 143
+      },
+      "math": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 142,
+        "parent_pass": 142,
+        "parent_pass_retention_rate": 0.0,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [
+          "generation_math_answer_0005",
+          "generation_math_answer_0012",
+          "generation_math_answer_0019",
+          "generation_math_answer_0033",
+          "generation_math_answer_0040",
+          "generation_math_answer_0047",
+          "generation_math_answer_0054",
+          "generation_math_answer_0061",
+          "generation_math_answer_0068",
+          "generation_math_answer_0075",
+          "generation_math_answer_0082",
+          "generation_math_answer_0089",
+          "generation_math_answer_0096",
+          "generation_math_answer_0103",
+          "generation_math_answer_0110",
+          "generation_math_answer_0117",
+          "generation_math_answer_0124",
+          "generation_math_answer_0131",
+          "generation_math_answer_0138",
+          "generation_math_answer_0145",
+          "generation_math_answer_0152",
+          "generation_math_answer_0159",
+          "generation_math_answer_0166",
+          "generation_math_answer_0173",
+          "generation_math_answer_0180"
+        ],
+        "shared_ids": 143,
+        "shared_parent_pass_retention_rate": 0.0,
+        "total_ids": 143
+      },
+      "model_surgery": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 14,
+        "parent_pass": 14,
+        "parent_pass_retention_rate": 0.0,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [
+          "generation_pruning_0210",
+          "generation_pruning_0308",
+          "generation_pruning_0406",
+          "generation_pruning_0427",
+          "generation_pruning_0504",
+          "generation_pruning_0511",
+          "generation_pruning_0525",
+          "generation_pruning_0602",
+          "generation_pruning_0616",
+          "generation_pruning_0623",
+          "generation_pruning_0714",
+          "generation_pruning_0721",
+          "generation_pruning_0826",
+          "generation_pruning_0917"
+        ],
+        "shared_ids": 286,
+        "shared_parent_pass_retention_rate": 0.0,
+        "total_ids": 286
+      },
+      "tokenizer": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 0,
+        "parent_pass": 0,
+        "parent_pass_retention_rate": null,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [],
+        "shared_ids": 143,
+        "shared_parent_pass_retention_rate": null,
+        "total_ids": 143
+      }
+    },
+    "overall": {
+      "child_only_or_parent_failed_gain": 0,
+      "child_pass": 0,
+      "lost_parent_pass": 388,
+      "parent_pass": 388,
+      "parent_pass_retention_rate": 0.0,
+      "retained_parent_pass": 0,
+      "sample_gain_ids": [],
+      "sample_lost_parent_pass_ids": [
+        "generation_math_answer_0005",
+        "generation_math_answer_0012",
+        "generation_math_answer_0019",
+        "generation_math_answer_0033",
+        "generation_math_answer_0040",
+        "generation_math_answer_0047",
+        "generation_math_answer_0054",
+        "generation_math_answer_0061",
+        "generation_math_answer_0068",
+        "generation_math_answer_0075",
+        "generation_math_answer_0082",
+        "generation_math_answer_0089",
+        "generation_math_answer_0096",
+        "generation_math_answer_0103",
+        "generation_math_answer_0110",
+        "generation_math_answer_0117",
+        "generation_math_answer_0124",
+        "generation_math_answer_0131",
+        "generation_math_answer_0138",
+        "generation_math_answer_0145",
+        "generation_math_answer_0152",
+        "generation_math_answer_0159",
+        "generation_math_answer_0166",
+        "generation_math_answer_0173",
+        "generation_math_answer_0180"
+      ],
+      "shared_ids": 1000,
+      "shared_parent_pass_retention_rate": 0.0,
+      "total_ids": 1000
+    }
+  },
+  "manual_samples": {
+    "behavior": [
+      {
+        "category": "math",
+        "child_continuation": "",
+        "child_details": {
+          "answer": "10",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0000",
+        "kind": "first_number",
+        "parent_continuation": "10",
+        "parent_details": {
+          "answer": "10",
+          "numbers": [
+            "10"
+          ],
+          "prediction": "10"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 6 + 4? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1     11111               \n   1111\n   mate mate",
+        "child_details": {
+          "answer": "1230",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0005",
+        "kind": "first_number",
+        "parent_continuation": "1230",
+        "parent_details": {
+          "answer": "1230",
+          "numbers": [
+            "1230"
+          ],
+          "prediction": "1230"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 41 * 30? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111         mek 1atum 1atz\n   atz uchar\n 1pmtc\n atzgtmtutengtttector rua\n   []unctltmt\nmaticmtgtmtgtmt\n\n\u9644\u8fd1\u7684   mate\nmatectorltmtmtmtgtmt>\"\nmtmtmtmtmt",
+        "child_details": {
+          "answer": "62",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0010",
+        "kind": "first_number",
+        "parent_continuation": "62",
+        "parent_details": {
+          "answer": "62",
+          "numbers": [
+            "62"
+          ],
+          "prediction": "62"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 35 + 27? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1tu\n 1\n        111\n1unctgt1mekpxcpcp111       tm 11    pm1mek  tu\n1    mek1mate",
+        "child_details": {
+          "answer": "696",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0015",
+        "kind": "first_number",
+        "parent_continuation": "696",
+        "parent_details": {
+          "answer": "696",
+          "numbers": [
+            "696"
+          ],
+          "prediction": "696"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 29 * 24? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   1111       1mek 1pm\n           11   nearby1\n    11111               rou   1111\n   mate mate",
+        "child_details": {
+          "answer": "44",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0020",
+        "kind": "first_number",
+        "parent_continuation": "44",
+        "parent_details": {
+          "answer": "44",
+          "numbers": [
+            "44"
+          ],
+          "prediction": "44"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 23 + 21? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11  1 nearby1    11111        1      \n   1111\n   mate mate",
+        "child_details": {
+          "answer": "306",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0025",
+        "kind": "first_number",
+        "parent_continuation": "306",
+        "parent_details": {
+          "answer": "306",
+          "numbers": [
+            "306"
+          ],
+          "prediction": "306"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 17 * 18? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   1111       1mek 1pm\n           11   nearby1\n    11111              rougtgtgtgtmt\n   \nmate",
+        "child_details": {
+          "answer": "26",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0030",
+        "kind": "first_number",
+        "parent_continuation": "26",
+        "parent_details": {
+          "answer": "26",
+          "numbers": [
+            "26"
+          ],
+          "prediction": "26"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 11 + 15? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1     11111       1mate\n  1 gfx1\n   mate\n     nearbyunegtmtmt",
+        "child_details": {
+          "answer": "552",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0035",
+        "kind": "first_number",
+        "parent_continuation": "552",
+        "parent_details": {
+          "answer": "552",
+          "numbers": [
+            "552"
+          ],
+          "prediction": "552"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 46 * 12? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "1      1                              1",
+        "child_details": {
+          "answer": "49",
+          "numbers": [
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "1"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0040",
+        "kind": "first_number",
+        "parent_continuation": "49",
+        "parent_details": {
+          "answer": "49",
+          "numbers": [
+            "49"
+          ],
+          "prediction": "49"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 40 + 9? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "11                              1",
+        "child_details": {
+          "answer": "204",
+          "numbers": [
+            "11",
+            "1"
+          ],
+          "prediction": "11"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0045",
+        "kind": "first_number",
+        "parent_continuation": "204",
+        "parent_details": {
+          "answer": "204",
+          "numbers": [
+            "204"
+          ],
+          "prediction": "204"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 34 * 6? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1     11111       1mate\n  1 gfx\npng1  11111pm\n \nmate",
+        "child_details": {
+          "answer": "60",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0050",
+        "kind": "first_number",
+        "parent_continuation": "60",
+        "parent_details": {
+          "answer": "60",
+          "numbers": [
+            "60"
+          ],
+          "prediction": "60"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 28 + 32? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1tu\n  \n        111\n    cpffenuer111pmpm1       11    pm1mek 1mate\n    nearby1mek\n  mate",
+        "child_details": {
+          "answer": "638",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "111"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0055",
+        "kind": "first_number",
+        "parent_continuation": "638",
+        "parent_details": {
+          "answer": "638",
+          "numbers": [
+            "638"
+          ],
+          "prediction": "638"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 22 * 29? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1     11111               \n   11111\n  \nmate",
+        "child_details": {
+          "answer": "42",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0060",
+        "kind": "first_number",
+        "parent_continuation": "42",
+        "parent_details": {
+          "answer": "42",
+          "numbers": [
+            "42"
+          ],
+          "prediction": "42"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 16 + 26? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1     11111       1mate\n  1 gfx1\n   mate\n     nearbyunegtmtmt",
+        "child_details": {
+          "answer": "230",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0065",
+        "kind": "first_number",
+        "parent_continuation": "230",
+        "parent_details": {
+          "answer": "230",
+          "numbers": [
+            "230"
+          ],
+          "prediction": "230"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 10 * 23? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   1111       1mek 1pm\n           11   nearby1\n    11111               \n   1111\n   \nmate",
+        "child_details": {
+          "answer": "65",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0070",
+        "kind": "first_number",
+        "parent_continuation": "65",
+        "parent_details": {
+          "answer": "65",
+          "numbers": [
+            "65"
+          ],
+          "prediction": "65"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 45 + 20? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11  1 nearby1    11111       111     \ntm  1111\n   \nmate",
+        "child_details": {
+          "answer": "663",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0075",
+        "kind": "first_number",
+        "parent_continuation": "663",
+        "parent_details": {
+          "answer": "663",
+          "numbers": [
+            "663"
+          ],
+          "prediction": "663"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 39 * 17? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   1111       1mek 1atum 1atz\n   atzbmpbmppfbmp\nmate\nmt\ud3adltmtgtttectorgtmtcp  mate\nmate\n  []atummtgtmtgtmt(png mayor1atz1matepmcmp   mate1matepmbmppmpmpmmts",
+        "child_details": {
+          "answer": "47",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0080",
+        "kind": "first_number",
+        "parent_continuation": "47",
+        "parent_details": {
+          "answer": "47",
+          "numbers": [
+            "47"
+          ],
+          "prediction": "47"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 33 + 14? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1     11111       1mate\n  1 gfx1\n   mate\n     nearbyunegtmtmt",
+        "child_details": {
+          "answer": "297",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0085",
+        "kind": "first_number",
+        "parent_continuation": "297",
+        "parent_details": {
+          "answer": "297",
+          "numbers": [
+            "297"
+          ],
+          "prediction": "297"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 27 * 11? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "1      1                              1",
+        "child_details": {
+          "answer": "29",
+          "numbers": [
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "1"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0090",
+        "kind": "first_number",
+        "parent_continuation": "29",
+        "parent_details": {
+          "answer": "29",
+          "numbers": [
+            "29"
+          ],
+          "prediction": "29"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 21 + 8? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "11                              1",
+        "child_details": {
+          "answer": "75",
+          "numbers": [
+            "11",
+            "1"
+          ],
+          "prediction": "11"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0095",
+        "kind": "first_number",
+        "parent_continuation": "75",
+        "parent_details": {
+          "answer": "75",
+          "numbers": [
+            "75"
+          ],
+          "prediction": "75"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 15 * 5? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "11     1         \n                    1      1",
+        "child_details": {
+          "answer": "40",
+          "numbers": [
+            "11",
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "11"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0100",
+        "kind": "first_number",
+        "parent_continuation": "40",
+        "parent_details": {
+          "answer": "40",
+          "numbers": [
+            "40"
+          ],
+          "prediction": "40"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 9 + 31? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11  1 nearby1    11111        1      \n   1111\n   mate mate",
+        "child_details": {
+          "answer": "1232",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0105",
+        "kind": "first_number",
+        "parent_continuation": "1232",
+        "parent_details": {
+          "answer": "1232",
+          "numbers": [
+            "1232"
+          ],
+          "prediction": "1232"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 44 * 28? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111         mek 1atum 1atz\n    atz(png\n 1pmmek atzcp1matecpffen\n111pmmek mate   nearby  nearby\n    \u9644\u8fd1     mate\n nearby         mate",
+        "child_details": {
+          "answer": "63",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0110",
+        "kind": "first_number",
+        "parent_continuation": "63",
+        "parent_details": {
+          "answer": "63",
+          "numbers": [
+            "63"
+          ],
+          "prediction": "63"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 38 + 25? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1tu\n  \n        111\n    cpffenuer111pmpm1      nearby\n     pm\n\nmt\nmate\nmate\n     mate",
+        "child_details": {
+          "answer": "704",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "111"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0115",
+        "kind": "first_number",
+        "parent_continuation": "704",
+        "parent_details": {
+          "answer": "704",
+          "numbers": [
+            "704"
+          ],
+          "prediction": "704"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 32 * 22? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111         111          1      11    11111",
+        "child_details": {
+          "answer": "45",
+          "numbers": [
+            "111",
+            "111",
+            "111",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0120",
+        "kind": "first_number",
+        "parent_continuation": "45",
+        "parent_details": {
+          "answer": "45",
+          "numbers": [
+            "45"
+          ],
+          "prediction": "45"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 26 + 19? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1     11111       1mate\n  1 gfx1\n   mate\n     nearbyunegtmtmt",
+        "child_details": {
+          "answer": "320",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0125",
+        "kind": "first_number",
+        "parent_continuation": "320",
+        "parent_details": {
+          "answer": "320",
+          "numbers": [
+            "320"
+          ],
+          "prediction": "320"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 20 * 16? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   1111       1mek 1pm\n           11   nearby1\n    11111               \n   11111\n  mate mate",
+        "child_details": {
+          "answer": "27",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0130",
+        "kind": "first_number",
+        "parent_continuation": "27",
+        "parent_details": {
+          "answer": "27",
+          "numbers": [
+            "27"
+          ],
+          "prediction": "27"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 14 + 13? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "1                              1",
+        "child_details": {
+          "answer": "80",
+          "numbers": [
+            "1",
+            "1"
+          ],
+          "prediction": "1"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0135",
+        "kind": "first_number",
+        "parent_continuation": "80",
+        "parent_details": {
+          "answer": "80",
+          "numbers": [
+            "80"
+          ],
+          "prediction": "80"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 8 * 10? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "1      1                              1",
+        "child_details": {
+          "answer": "50",
+          "numbers": [
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "1"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0140",
+        "kind": "first_number",
+        "parent_continuation": "50",
+        "parent_details": {
+          "answer": "50",
+          "numbers": [
+            "50"
+          ],
+          "prediction": "50"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 43 + 7? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "11                              1",
+        "child_details": {
+          "answer": "148",
+          "numbers": [
+            "11",
+            "1"
+          ],
+          "prediction": "11"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0145",
+        "kind": "first_number",
+        "parent_continuation": "148",
+        "parent_details": {
+          "answer": "148",
+          "numbers": [
+            "148"
+          ],
+          "prediction": "148"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 37 * 4? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   1111       1mek 1pm\n           11   nearby1     11111               \n   1111\n   mate mate",
+        "child_details": {
+          "answer": "61",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0150",
+        "kind": "first_number",
+        "parent_continuation": "61",
+        "parent_details": {
+          "answer": "61",
+          "numbers": [
+            "61"
+          ],
+          "prediction": "61"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 31 + 30? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1tu\n 1\n        111\n1unctgt1mekpxcpcpt11       tm 11    pm1mek  tu\n1   pm\nmate",
+        "child_details": {
+          "answer": "675",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0155",
+        "kind": "first_number",
+        "parent_continuation": "675",
+        "parent_details": {
+          "answer": "675",
+          "numbers": [
+            "675"
+          ],
+          "prediction": "675"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 25 * 27? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   1111       1mek 1pm\n           11  1 nearby1    11111       111     png1  1111",
+        "child_details": {
+          "answer": "43",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0160",
+        "kind": "first_number",
+        "parent_continuation": "43",
+        "parent_details": {
+          "answer": "43",
+          "numbers": [
+            "43"
+          ],
+          "prediction": "43"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 19 + 24? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1tu\n 1atz\n   latgtmtgt\u0442\u0435   mateuneltatzppergtatzcp atzxeunctltmate\nmatetm cpt\n      mate mate mate MMPrmmategtmtmtmtMT MSTMT *)\nmt MSTMR",
+        "child_details": {
+          "answer": "273",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0165",
+        "kind": "first_number",
+        "parent_continuation": "273",
+        "parent_details": {
+          "answer": "273",
+          "numbers": [
+            "273"
+          ],
+          "prediction": "273"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 13 * 21? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "1      1                              1",
+        "child_details": {
+          "answer": "25",
+          "numbers": [
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "1"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0170",
+        "kind": "first_number",
+        "parent_continuation": "25",
+        "parent_details": {
+          "answer": "25",
+          "numbers": [
+            "25"
+          ],
+          "prediction": "25"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 7 + 18? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1     11111               \n   1111\n   \nmate",
+        "child_details": {
+          "answer": "630",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0175",
+        "kind": "first_number",
+        "parent_continuation": "630",
+        "parent_details": {
+          "answer": "630",
+          "numbers": [
+            "630"
+          ],
+          "prediction": "630"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 42 * 15? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1     11111       1mate\n  1 gfx\npng1  11111pm\n \nmate",
+        "child_details": {
+          "answer": "48",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0180",
+        "kind": "first_number",
+        "parent_continuation": "48",
+        "parent_details": {
+          "answer": "48",
+          "numbers": [
+            "48"
+          ],
+          "prediction": "48"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 36 + 12? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "11                              1",
+        "child_details": {
+          "answer": "270",
+          "numbers": [
+            "11",
+            "1"
+          ],
+          "prediction": "11"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0185",
+        "kind": "first_number",
+        "parent_continuation": "270",
+        "parent_details": {
+          "answer": "270",
+          "numbers": [
+            "270"
+          ],
+          "prediction": "270"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 30 * 9? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "1      1                              1",
+        "child_details": {
+          "answer": "30",
+          "numbers": [
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "1"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0190",
+        "kind": "first_number",
+        "parent_continuation": "30",
+        "parent_details": {
+          "answer": "30",
+          "numbers": [
+            "30"
+          ],
+          "prediction": "30"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 24 + 6? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1tu\n 1\n        111\n1unctgt1mekpxcpcp111       tu 1   located\n pm1mek  111   pm\nmate  1t",
+        "child_details": {
+          "answer": "576",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0195",
+        "kind": "first_number",
+        "parent_continuation": "576",
+        "parent_details": {
+          "answer": "576",
+          "numbers": [
+            "576"
+          ],
+          "prediction": "576"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 18 * 32? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111         111          1      11    11",
+        "child_details": {
+          "answer": "41",
+          "numbers": [
+            "111",
+            "111",
+            "111",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0200",
+        "kind": "first_number",
+        "parent_continuation": "41",
+        "parent_details": {
+          "answer": "41",
+          "numbers": [
+            "41"
+          ],
+          "prediction": "41"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 12 + 29? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "1                              1",
+        "child_details": {
+          "answer": "156",
+          "numbers": [
+            "1",
+            "1"
+          ],
+          "prediction": "1"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0205",
+        "kind": "first_number",
+        "parent_continuation": "156",
+        "parent_details": {
+          "answer": "156",
+          "numbers": [
+            "156"
+          ],
+          "prediction": "156"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 6 * 26? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   1111       1mek 1pm\n           11   nearby1     11111               \n   11111\n  mate mate",
+        "child_details": {
+          "answer": "64",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0210",
+        "kind": "first_number",
+        "parent_continuation": "64",
+        "parent_details": {
+          "answer": "64",
+          "numbers": [
+            "64"
+          ],
+          "prediction": "64"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 41 + 23? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1     11111              \n    1111\n   \nmate",
+        "child_details": {
+          "answer": "700",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0215",
+        "kind": "first_number",
+        "parent_continuation": "700",
+        "parent_details": {
+          "answer": "700",
+          "numbers": [
+            "700"
+          ],
+          "prediction": "700"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 35 * 20? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111         mek 1atum 1atz\n    pngbmprgb 1pmmek pm\ud3adltmtunctmtcp     \u9644\u8fd11tmpmcpcpmtgtmt\nmt\ud3adltmtgtmt\n          pmpmpmpmpm",
+        "child_details": {
+          "answer": "46",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0220",
+        "kind": "first_number",
+        "parent_continuation": "46",
+        "parent_details": {
+          "answer": "46",
+          "numbers": [
+            "46"
+          ],
+          "prediction": "46"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 29 + 17? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1tu\n 1\n        111\n1unctgt1mekpxcpcpt11       tm 11  pm\n\n png1  tu\n    pm\nmate  1t",
+        "child_details": {
+          "answer": "322",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0225",
+        "kind": "first_number",
+        "parent_continuation": "322",
+        "parent_details": {
+          "answer": "322",
+          "numbers": [
+            "322"
+          ],
+          "prediction": "322"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 23 * 14? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1\n    11111       1mate\n  1 gfx\npng1  11111pm\n \nmate",
+        "child_details": {
+          "answer": "28",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0230",
+        "kind": "first_number",
+        "parent_continuation": "28",
+        "parent_details": {
+          "answer": "28",
+          "numbers": [
+            "28"
+          ],
+          "prediction": "28"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 17 + 11? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "11                              1",
+        "child_details": {
+          "answer": "88",
+          "numbers": [
+            "11",
+            "1"
+          ],
+          "prediction": "11"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0235",
+        "kind": "first_number",
+        "parent_continuation": "88",
+        "parent_details": {
+          "answer": "88",
+          "numbers": [
+            "88"
+          ],
+          "prediction": "88"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 11 * 8? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "1      1                              1",
+        "child_details": {
+          "answer": "51",
+          "numbers": [
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "1"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0240",
+        "kind": "first_number",
+        "parent_continuation": "51",
+        "parent_details": {
+          "answer": "51",
+          "numbers": [
+            "51"
+          ],
+          "prediction": "51"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 46 + 5? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1\n    1111        1mate\n  1 gfx\n    mate\n     nearbyunegtmtmt",
+        "child_details": {
+          "answer": "1240",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0245",
+        "kind": "first_number",
+        "parent_continuation": "1240",
+        "parent_details": {
+          "answer": "1240",
+          "numbers": [
+            "1240"
+          ],
+          "prediction": "1240"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 40 * 31? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   1111       1mek 1atum 1atz\n   atzbmpbmppf(png 1pmmekrmbmpcpcpmpp cptuermtcp, atz BMP\nmttmcpt1tugtmt(pngmd(pngmts\npng mayorpmbmp\n        mate",
+        "child_details": {
+          "answer": "62",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0250",
+        "kind": "first_number",
+        "parent_continuation": "62",
+        "parent_details": {
+          "answer": "62",
+          "numbers": [
+            "62"
+          ],
+          "prediction": "62"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 34 + 28? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1tu\n 1\n        111\n    cpffenuer111pmpm1      nearby\n      pm1mek 1atum      mt",
+        "child_details": {
+          "answer": "700",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0255",
+        "kind": "first_number",
+        "parent_continuation": "700",
+        "parent_details": {
+          "answer": "700",
+          "numbers": [
+            "700"
+          ],
+          "prediction": "700"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 28 * 25? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   1111       1mek 1pm\n           11   nearby1     11111               rou   1111\n   mate mate",
+        "child_details": {
+          "answer": "44",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0260",
+        "kind": "first_number",
+        "parent_continuation": "44",
+        "parent_details": {
+          "answer": "44",
+          "numbers": [
+            "44"
+          ],
+          "prediction": "44"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 22 + 22? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11  1 nearby1    11111        1      \n   1111\n   mate mate",
+        "child_details": {
+          "answer": "304",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0265",
+        "kind": "first_number",
+        "parent_continuation": "304",
+        "parent_details": {
+          "answer": "304",
+          "numbers": [
+            "304"
+          ],
+          "prediction": "304"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 16 * 19? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111         mek 1pm\n           11   nearby1\n    11111              \nrou   1111\n   mate mate",
+        "child_details": {
+          "answer": "26",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "11",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0270",
+        "kind": "first_number",
+        "parent_continuation": "26",
+        "parent_details": {
+          "answer": "26",
+          "numbers": [
+            "26"
+          ],
+          "prediction": "26"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 10 + 16? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1\n    11111       1mate\n  1 gfx1\n   mate\n     nearbyunegtmtmt",
+        "child_details": {
+          "answer": "585",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0275",
+        "kind": "first_number",
+        "parent_continuation": "585",
+        "parent_details": {
+          "answer": "585",
+          "numbers": [
+            "585"
+          ],
+          "prediction": "585"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 45 * 13? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111         mek 1pm\n           11  1 nearby1    11111       111     png1  1111",
+        "child_details": {
+          "answer": "49",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "11",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0280",
+        "kind": "first_number",
+        "parent_continuation": "49",
+        "parent_details": {
+          "answer": "49",
+          "numbers": [
+            "49"
+          ],
+          "prediction": "49"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 39 + 10? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "11                              1",
+        "child_details": {
+          "answer": "231",
+          "numbers": [
+            "11",
+            "1"
+          ],
+          "prediction": "11"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0285",
+        "kind": "first_number",
+        "parent_continuation": "231",
+        "parent_details": {
+          "answer": "231",
+          "numbers": [
+            "231"
+          ],
+          "prediction": "231"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 33 * 7? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "1      1                              1",
+        "child_details": {
+          "answer": "31",
+          "numbers": [
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "1"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0290",
+        "kind": "first_number",
+        "parent_continuation": "31",
+        "parent_details": {
+          "answer": "31",
+          "numbers": [
+            "31"
+          ],
+          "prediction": "31"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 27 + 4? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1tu\n  \n        11\n 1unctcp1mekpxcpcp 111       11     \nmek   1111\n  mek mate",
+        "child_details": {
+          "answer": "630",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0295",
+        "kind": "first_number",
+        "parent_continuation": "630",
+        "parent_details": {
+          "answer": "630",
+          "numbers": [
+            "630"
+          ],
+          "prediction": "630"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 21 * 30? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111         mek 1t1111        11  11   mekgt1111\n       mate\n1   nearby\n locatedbmp mate\n1111    mate mate",
+        "child_details": {
+          "answer": "42",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1111",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0300",
+        "kind": "first_number",
+        "parent_continuation": "42",
+        "parent_details": {
+          "answer": "42",
+          "numbers": [
+            "42"
+          ],
+          "prediction": "42"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 15 + 27? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "11     1         \n                    1",
+        "child_details": {
+          "answer": "216",
+          "numbers": [
+            "11",
+            "1",
+            "1"
+          ],
+          "prediction": "11"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0305",
+        "kind": "first_number",
+        "parent_continuation": "216",
+        "parent_details": {
+          "answer": "216",
+          "numbers": [
+            "216"
+          ],
+          "prediction": "216"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 9 * 24? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   1111       1mek 1pm\n           11   nearby1\n    11111               \n   11111\n  mate mate",
+        "child_details": {
+          "answer": "65",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0310",
+        "kind": "first_number",
+        "parent_continuation": "65",
+        "parent_details": {
+          "answer": "65",
+          "numbers": [
+            "65"
+          ],
+          "prediction": "65"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 44 + 21? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11  1 nearby1    11111       11      \n   1111\n   mate mate",
+        "child_details": {
+          "answer": "684",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0315",
+        "kind": "first_number",
+        "parent_continuation": "684",
+        "parent_details": {
+          "answer": "684",
+          "numbers": [
+            "684"
+          ],
+          "prediction": "684"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 38 * 18? Answer with only the number.\nAnswer:"
+      }
+    ],
+    "generation": [
+      {
+        "category": "math",
+        "child_continuation": "111   1111       1mek 1pm\n           11   nearby1     11111               \n   1111\n   mate mate",
+        "child_details": {
+          "answer": "71",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0005",
+        "kind": "first_number",
+        "parent_continuation": "71",
+        "parent_details": {
+          "answer": "71",
+          "numbers": [
+            "71"
+          ],
+          "prediction": "71"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 41 + 30? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "1                              1",
+        "child_details": {
+          "answer": "160",
+          "numbers": [
+            "1",
+            "1"
+          ],
+          "prediction": "1"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0012",
+        "kind": "first_number",
+        "parent_continuation": "160",
+        "parent_details": {
+          "answer": "160",
+          "numbers": [
+            "160"
+          ],
+          "prediction": "160"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 8 * 20? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1     11111               \n   1111\n   \nmate",
+        "child_details": {
+          "answer": "26",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0019",
+        "kind": "first_number",
+        "parent_continuation": "26",
+        "parent_details": {
+          "answer": "26",
+          "numbers": [
+            "26"
+          ],
+          "prediction": "26"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 16 + 10? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111         111          1      11    11",
+        "child_details": {
+          "answer": "51",
+          "numbers": [
+            "111",
+            "111",
+            "111",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0033",
+        "kind": "first_number",
+        "parent_continuation": "51",
+        "parent_details": {
+          "answer": "51",
+          "numbers": [
+            "51"
+          ],
+          "prediction": "51"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 32 + 19? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "11                              1",
+        "child_details": {
+          "answer": "360",
+          "numbers": [
+            "11",
+            "1"
+          ],
+          "prediction": "11"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0040",
+        "kind": "first_number",
+        "parent_continuation": "360",
+        "parent_details": {
+          "answer": "360",
+          "numbers": [
+            "360"
+          ],
+          "prediction": "360"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 40 * 9? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "1      1                              1      1",
+        "child_details": {
+          "answer": "35",
+          "numbers": [
+            "1",
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "1"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0047",
+        "kind": "first_number",
+        "parent_continuation": "35",
+        "parent_details": {
+          "answer": "35",
+          "numbers": [
+            "35"
+          ],
+          "prediction": "35"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 7 + 28? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1     11111              \n    1111\n   \nmate",
+        "child_details": {
+          "answer": "270",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0054",
+        "kind": "first_number",
+        "parent_continuation": "270",
+        "parent_details": {
+          "answer": "270",
+          "numbers": [
+            "270"
+          ],
+          "prediction": "270"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 15 * 18? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "1      1                              1",
+        "child_details": {
+          "answer": "31",
+          "numbers": [
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "1"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0061",
+        "kind": "first_number",
+        "parent_continuation": "31",
+        "parent_details": {
+          "answer": "31",
+          "numbers": [
+            "31"
+          ],
+          "prediction": "31"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 23 + 8? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1tu\n  \n        111\n1unctgt1mekpxcpcpt11       tm 11  pm\n\n png1  tu\n    pm\nmate  1t",
+        "child_details": {
+          "answer": "837",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "111"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0068",
+        "kind": "first_number",
+        "parent_continuation": "837",
+        "parent_details": {
+          "answer": "837",
+          "numbers": [
+            "837"
+          ],
+          "prediction": "837"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 31 * 27? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111         mek 1atum 1atz\n    pngbmprgb 1pmmek pm\ud3adltmtunctmtcp     \u9644\u8fd11tmpmcpcpmtgtmt\nmt\ud3adltmtgtmt\n          pmpmpmpmpm",
+        "child_details": {
+          "answer": "56",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0075",
+        "kind": "first_number",
+        "parent_continuation": "56",
+        "parent_details": {
+          "answer": "56",
+          "numbers": [
+            "56"
+          ],
+          "prediction": "56"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 39 + 17? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "",
+        "child_details": {
+          "answer": "42",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0082",
+        "kind": "first_number",
+        "parent_continuation": "42",
+        "parent_details": {
+          "answer": "42",
+          "numbers": [
+            "42"
+          ],
+          "prediction": "42"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 6 * 7? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1atum 1atz\n   atzbmpbmppf(png pmmek pm\ud3adltmtffenmpp\u00e7\u00e3otc   []ctor cho\u0107\n  []atumctorgtmt\n\n locatedcmppmppematematectorgtmt\n       mate ectedurer",
+        "child_details": {
+          "answer": "40",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0089",
+        "kind": "first_number",
+        "parent_continuation": "40",
+        "parent_details": {
+          "answer": "40",
+          "numbers": [
+            "40"
+          ],
+          "prediction": "40"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 14 + 26? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1tu\n  \n        11\n pm1\n  nearby\n 1111\n             1mek  mate\n       mate mate",
+        "child_details": {
+          "answer": "352",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0096",
+        "kind": "first_number",
+        "parent_continuation": "352",
+        "parent_details": {
+          "answer": "352",
+          "numbers": [
+            "352"
+          ],
+          "prediction": "352"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 22 * 16? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "1      1                              1",
+        "child_details": {
+          "answer": "36",
+          "numbers": [
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "1"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0103",
+        "kind": "first_number",
+        "parent_continuation": "36",
+        "parent_details": {
+          "answer": "36",
+          "numbers": [
+            "36"
+          ],
+          "prediction": "36"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 30 + 6? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11  1 nearby1    11111       111     \ntm  1111\n   mate mate",
+        "child_details": {
+          "answer": "950",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0110",
+        "kind": "first_number",
+        "parent_continuation": "950",
+        "parent_details": {
+          "answer": "950",
+          "numbers": [
+            "950"
+          ],
+          "prediction": "950"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 38 * 25? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   1111       1mek 1pm\n           11   nearby1\n    11111               \n   1111\n   \nmate",
+        "child_details": {
+          "answer": "61",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0117",
+        "kind": "first_number",
+        "parent_continuation": "61",
+        "parent_details": {
+          "answer": "61",
+          "numbers": [
+            "61"
+          ],
+          "prediction": "61"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 46 + 15? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "11                              1",
+        "child_details": {
+          "answer": "65",
+          "numbers": [
+            "11",
+            "1"
+          ],
+          "prediction": "11"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0124",
+        "kind": "first_number",
+        "parent_continuation": "65",
+        "parent_details": {
+          "answer": "65",
+          "numbers": [
+            "65"
+          ],
+          "prediction": "65"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 13 * 5? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   1111       1mek 1tu\n 1atz\n   atz(png\n\n 1pmtcrm\nmate\nmate\nmate 1atz   mate\nmate\nmate\u5766mtgtgtgtmt\n locatedatz mate mate",
+        "child_details": {
+          "answer": "45",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0131",
+        "kind": "first_number",
+        "parent_continuation": "45",
+        "parent_details": {
+          "answer": "45",
+          "numbers": [
+            "45"
+          ],
+          "prediction": "45"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 21 + 24? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11  1 nearby1    11111       111     \ntm  1111\n   mate mate",
+        "child_details": {
+          "answer": "406",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0138",
+        "kind": "first_number",
+        "parent_continuation": "406",
+        "parent_details": {
+          "answer": "406",
+          "numbers": [
+            "406"
+          ],
+          "prediction": "406"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 29 * 14? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "1      1                              1",
+        "child_details": {
+          "answer": "41",
+          "numbers": [
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "1"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0145",
+        "kind": "first_number",
+        "parent_continuation": "41",
+        "parent_details": {
+          "answer": "41",
+          "numbers": [
+            "41"
+          ],
+          "prediction": "41"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 37 + 4? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1     11111       1mate\n  1 gfx1\n   mate\n     nearbyunegtmtmt",
+        "child_details": {
+          "answer": "1035",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0152",
+        "kind": "first_number",
+        "parent_continuation": "1035",
+        "parent_details": {
+          "answer": "1035",
+          "numbers": [
+            "1035"
+          ],
+          "prediction": "1035"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 45 * 23? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1\n    11111              rougtgtgtgtmt\n   \nmate",
+        "child_details": {
+          "answer": "25",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0159",
+        "kind": "first_number",
+        "parent_continuation": "25",
+        "parent_details": {
+          "answer": "25",
+          "numbers": [
+            "25"
+          ],
+          "prediction": "25"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 12 + 13? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1     11111       1mate\n  1 gfx1\n   mate\n     nearbyunegtmtmt",
+        "child_details": {
+          "answer": "640",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0166",
+        "kind": "first_number",
+        "parent_continuation": "640",
+        "parent_details": {
+          "answer": "640",
+          "numbers": [
+            "640"
+          ],
+          "prediction": "640"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 20 * 32? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111         mek 1pm\n           11   nearby1     11111       1mate\n  1 gfx1\n   mate\n     nearbyunegtmtmt",
+        "child_details": {
+          "answer": "50",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "11",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0173",
+        "kind": "first_number",
+        "parent_continuation": "50",
+        "parent_details": {
+          "answer": "50",
+          "numbers": [
+            "50"
+          ],
+          "prediction": "50"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 28 + 22? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1     11111       1mate\n  1 gfx1\n   mate\n     nearbyunegtmtmt",
+        "child_details": {
+          "answer": "432",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0180",
+        "kind": "first_number",
+        "parent_continuation": "432",
+        "parent_details": {
+          "answer": "432",
+          "numbers": [
+            "432"
+          ],
+          "prediction": "432"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 36 * 12? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   1111       1mek 1pm\n           11   nearby1\n    11111               \n   11111\n  mate mate",
+        "child_details": {
+          "answer": "75",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0187",
+        "kind": "first_number",
+        "parent_continuation": "75",
+        "parent_details": {
+          "answer": "75",
+          "numbers": [
+            "75"
+          ],
+          "prediction": "75"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 44 + 31? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1tu\n \n \n       111\n1unctgt1mekpxcpcpt11       tm 11  pm\n\nmt\nmt\nmate\n11   mate\nmate",
+        "child_details": {
+          "answer": "231",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "111"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0194",
+        "kind": "first_number",
+        "parent_continuation": "231",
+        "parent_details": {
+          "answer": "231",
+          "numbers": [
+            "231"
+          ],
+          "prediction": "231"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 11 * 21? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111   1111       1mek 1pm\n           11   nearby1\n    11111       1mate\n  1 gfx1\n   mate\n     nearbyunegtmtmt",
+        "child_details": {
+          "answer": "30",
+          "numbers": [
+            "111",
+            "111",
+            "1111",
+            "1",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0201",
+        "kind": "first_number",
+        "parent_continuation": "30",
+        "parent_details": {
+          "answer": "30",
+          "numbers": [
+            "30"
+          ],
+          "prediction": "30"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 19 + 11? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11  1 nearby1    11111        1      \n   1111\n   mate mate",
+        "child_details": {
+          "answer": "810",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0208",
+        "kind": "first_number",
+        "parent_continuation": "810",
+        "parent_details": {
+          "answer": "810",
+          "numbers": [
+            "810"
+          ],
+          "prediction": "810"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 27 * 30? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111         mek 1t1111        11  11   mekgt1111\n       mate\n1   nearby\n locatedbmp mate\n1111    mate mate",
+        "child_details": {
+          "answer": "55",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1111",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0215",
+        "kind": "first_number",
+        "parent_continuation": "55",
+        "parent_details": {
+          "answer": "55",
+          "numbers": [
+            "55"
+          ],
+          "prediction": "55"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 35 + 20? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1     11111               \n   1111\n   \nmate",
+        "child_details": {
+          "answer": "430",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0222",
+        "kind": "first_number",
+        "parent_continuation": "430",
+        "parent_details": {
+          "answer": "430",
+          "numbers": [
+            "430"
+          ],
+          "prediction": "430"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 43 * 10? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   1111        px            1      11    11111",
+        "child_details": {
+          "answer": "39",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "11",
+            "11111"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0229",
+        "kind": "first_number",
+        "parent_continuation": "39",
+        "parent_details": {
+          "answer": "39",
+          "numbers": [
+            "39"
+          ],
+          "prediction": "39"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 10 + 29? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11  1 nearby1    11111       11      \n   1111\n   mate mate",
+        "child_details": {
+          "answer": "342",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0236",
+        "kind": "first_number",
+        "parent_continuation": "342",
+        "parent_details": {
+          "answer": "342",
+          "numbers": [
+            "342"
+          ],
+          "prediction": "342"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 18 * 19? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "1                              1",
+        "child_details": {
+          "answer": "35",
+          "numbers": [
+            "1",
+            "1"
+          ],
+          "prediction": "1"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0243",
+        "kind": "first_number",
+        "parent_continuation": "35",
+        "parent_details": {
+          "answer": "35",
+          "numbers": [
+            "35"
+          ],
+          "prediction": "35"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 26 + 9? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11  1 nearby1    11111        1      \n   1111\n   mate mate",
+        "child_details": {
+          "answer": "952",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0250",
+        "kind": "first_number",
+        "parent_continuation": "952",
+        "parent_details": {
+          "answer": "952",
+          "numbers": [
+            "952"
+          ],
+          "prediction": "952"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 34 * 28? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   1111       1mek 1pm\n           11   nearby1     11111               \n   11111\n  \nmate",
+        "child_details": {
+          "answer": "60",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0257",
+        "kind": "first_number",
+        "parent_continuation": "60",
+        "parent_details": {
+          "answer": "60",
+          "numbers": [
+            "60"
+          ],
+          "prediction": "60"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 42 + 18? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "",
+        "child_details": {
+          "answer": "72",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0264",
+        "kind": "first_number",
+        "parent_continuation": "72",
+        "parent_details": {
+          "answer": "72",
+          "numbers": [
+            "72"
+          ],
+          "prediction": "72"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 9 * 8? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111         mek 1t1111        11  11   mekgt1111\n       atz11   nearby\n locatedbmp   1111    \nmate",
+        "child_details": {
+          "answer": "44",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1111",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0271",
+        "kind": "first_number",
+        "parent_continuation": "44",
+        "parent_details": {
+          "answer": "44",
+          "numbers": [
+            "44"
+          ],
+          "prediction": "44"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 17 + 27? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1     11111               \n   1111\n   \nmate",
+        "child_details": {
+          "answer": "425",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0278",
+        "kind": "first_number",
+        "parent_continuation": "425",
+        "parent_details": {
+          "answer": "425",
+          "numbers": [
+            "425"
+          ],
+          "prediction": "425"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 25 * 17? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "1      1                              1",
+        "child_details": {
+          "answer": "40",
+          "numbers": [
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "1"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0285",
+        "kind": "first_number",
+        "parent_continuation": "40",
+        "parent_details": {
+          "answer": "40",
+          "numbers": [
+            "40"
+          ],
+          "prediction": "40"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 33 + 7? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1tu\n 1\n        111\n1unctgt1mekpxcpcpt11       tm 11  pm\n\n png1  tu\n     mek1mate",
+        "child_details": {
+          "answer": "1066",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0292",
+        "kind": "first_number",
+        "parent_continuation": "1066",
+        "parent_details": {
+          "answer": "1066",
+          "numbers": [
+            "1066"
+          ],
+          "prediction": "1066"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 41 * 26? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "1      1         \n                    1",
+        "child_details": {
+          "answer": "24",
+          "numbers": [
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "1"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0299",
+        "kind": "first_number",
+        "parent_continuation": "24",
+        "parent_details": {
+          "answer": "24",
+          "numbers": [
+            "24"
+          ],
+          "prediction": "24"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 8 + 16? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "11                              1",
+        "child_details": {
+          "answer": "96",
+          "numbers": [
+            "11",
+            "1"
+          ],
+          "prediction": "11"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0306",
+        "kind": "first_number",
+        "parent_continuation": "96",
+        "parent_details": {
+          "answer": "96",
+          "numbers": [
+            "96"
+          ],
+          "prediction": "96"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 16 * 6? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   1111       1mek 1pm\n           11   nearby1     11111               \n   11111\n  \nmate",
+        "child_details": {
+          "answer": "49",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0313",
+        "kind": "first_number",
+        "parent_continuation": "49",
+        "parent_details": {
+          "answer": "49",
+          "numbers": [
+            "49"
+          ],
+          "prediction": "49"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 24 + 25? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1tu\n  \n        11\n pm1\n  nearby\n 1111\n     tm             1111\n   mate mate",
+        "child_details": {
+          "answer": "480",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0320",
+        "kind": "first_number",
+        "parent_continuation": "480",
+        "parent_details": {
+          "answer": "480",
+          "numbers": [
+            "480"
+          ],
+          "prediction": "480"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 32 * 15? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "1      1                              1",
+        "child_details": {
+          "answer": "45",
+          "numbers": [
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "1"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0327",
+        "kind": "first_number",
+        "parent_continuation": "45",
+        "parent_details": {
+          "answer": "45",
+          "numbers": [
+            "45"
+          ],
+          "prediction": "45"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 40 + 5? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "1                              1",
+        "child_details": {
+          "answer": "168",
+          "numbers": [
+            "1",
+            "1"
+          ],
+          "prediction": "1"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0334",
+        "kind": "first_number",
+        "parent_continuation": "168",
+        "parent_details": {
+          "answer": "168",
+          "numbers": [
+            "168"
+          ],
+          "prediction": "168"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 7 * 24? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   1111       1mek 1pm\n           11   nearby1\n    11111              rougtgtgtgtmt\n   \nmate",
+        "child_details": {
+          "answer": "29",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0341",
+        "kind": "first_number",
+        "parent_continuation": "29",
+        "parent_details": {
+          "answer": "29",
+          "numbers": [
+            "29"
+          ],
+          "prediction": "29"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 15 + 14? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "11                              1",
+        "child_details": {
+          "answer": "92",
+          "numbers": [
+            "11",
+            "1"
+          ],
+          "prediction": "11"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0348",
+        "kind": "first_number",
+        "parent_continuation": "92",
+        "parent_details": {
+          "answer": "92",
+          "numbers": [
+            "92"
+          ],
+          "prediction": "92"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 23 * 4? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   1111       1mek 1pm\n           11   nearby1     11111               \n   11111\n  mate mate",
+        "child_details": {
+          "answer": "54",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0355",
+        "kind": "first_number",
+        "parent_continuation": "54",
+        "parent_details": {
+          "answer": "54",
+          "numbers": [
+            "54"
+          ],
+          "prediction": "54"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 31 + 23? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11  1 nearby1    11111       111     \ntm  1111\n   mate mate",
+        "child_details": {
+          "answer": "507",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0362",
+        "kind": "first_number",
+        "parent_continuation": "507",
+        "parent_details": {
+          "answer": "507",
+          "numbers": [
+            "507"
+          ],
+          "prediction": "507"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 39 * 13? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "1      1                              1",
+        "child_details": {
+          "answer": "38",
+          "numbers": [
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "1"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0369",
+        "kind": "first_number",
+        "parent_continuation": "38",
+        "parent_details": {
+          "answer": "38",
+          "numbers": [
+            "38"
+          ],
+          "prediction": "38"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 6 + 32? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1tu\n 1xe\n      111       pmcpcp  1pmpd\u4f26 wcze\u015bniej           pm1tm  11",
+        "child_details": {
+          "answer": "308",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0376",
+        "kind": "first_number",
+        "parent_continuation": "308",
+        "parent_details": {
+          "answer": "308",
+          "numbers": [
+            "308"
+          ],
+          "prediction": "308"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 14 * 22? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   1111       1mek 1pm\n           11   nearby1\n    11111              rougtgtgtgtmt\n   \n \n\nmate",
+        "child_details": {
+          "answer": "34",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0383",
+        "kind": "first_number",
+        "parent_continuation": "34",
+        "parent_details": {
+          "answer": "34",
+          "numbers": [
+            "34"
+          ],
+          "prediction": "34"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 22 + 12? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1\n    1111        1mate\n  1 gfx\n    mate\n     nearbyunegtmtmt",
+        "child_details": {
+          "answer": "930",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0390",
+        "kind": "first_number",
+        "parent_continuation": "930",
+        "parent_details": {
+          "answer": "930",
+          "numbers": [
+            "930"
+          ],
+          "prediction": "930"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 30 * 31? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1\n    11111       1mate\n  1 gfx\npng1  11111pm\n \nmate",
+        "child_details": {
+          "answer": "59",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0397",
+        "kind": "first_number",
+        "parent_continuation": "59",
+        "parent_details": {
+          "answer": "59",
+          "numbers": [
+            "59"
+          ],
+          "prediction": "59"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 38 + 21? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11   nearby1\n    11111       1mate\n  1 gfx\n    mate\n     nearbyunegtmtmt",
+        "child_details": {
+          "answer": "506",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0404",
+        "kind": "first_number",
+        "parent_continuation": "506",
+        "parent_details": {
+          "answer": "506",
+          "numbers": [
+            "506"
+          ],
+          "prediction": "506"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 46 * 11? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111         px            1      1unct   mek 1111\n                    11",
+        "child_details": {
+          "answer": "43",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "1111"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0411",
+        "kind": "first_number",
+        "parent_continuation": "43",
+        "parent_details": {
+          "answer": "43",
+          "numbers": [
+            "43"
+          ],
+          "prediction": "43"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 13 + 30? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1tu\n  \n        11\n 1unctcp1mekpxcpcp,111       11     \nmek   1111\n  mek mate",
+        "child_details": {
+          "answer": "420",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0418",
+        "kind": "first_number",
+        "parent_continuation": "420",
+        "parent_details": {
+          "answer": "420",
+          "numbers": [
+            "420"
+          ],
+          "prediction": "420"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 21 * 20? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111         mek 1pm\n           11  1 nearby1    11111       111     png1  1111",
+        "child_details": {
+          "answer": "39",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "11",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0425",
+        "kind": "first_number",
+        "parent_continuation": "39",
+        "parent_details": {
+          "answer": "39",
+          "numbers": [
+            "39"
+          ],
+          "prediction": "39"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 29 + 10? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111        1mek 1pm\n           11  1 nearby1    11111        1      \n   1111\n   mate mate",
+        "child_details": {
+          "answer": "1073",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "1",
+            "11"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0432",
+        "kind": "first_number",
+        "parent_continuation": "1073",
+        "parent_details": {
+          "answer": "1073",
+          "numbers": [
+            "1073"
+          ],
+          "prediction": "1073"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 37 * 29? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   111         mek 1pm\n           11  1 nearby1    11111        11     \ntm  1111\n   \nmate",
+        "child_details": {
+          "answer": "64",
+          "numbers": [
+            "111",
+            "111",
+            "1",
+            "11",
+            "1"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0439",
+        "kind": "first_number",
+        "parent_continuation": "64",
+        "parent_details": {
+          "answer": "64",
+          "numbers": [
+            "64"
+          ],
+          "prediction": "64"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 45 + 19? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "11                              1",
+        "child_details": {
+          "answer": "108",
+          "numbers": [
+            "11",
+            "1"
+          ],
+          "prediction": "11"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0446",
+        "kind": "first_number",
+        "parent_continuation": "108",
+        "parent_details": {
+          "answer": "108",
+          "numbers": [
+            "108"
+          ],
+          "prediction": "108"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 12 * 9? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "111   1111        px            1      11    11111",
+        "child_details": {
+          "answer": "48",
+          "numbers": [
+            "111",
+            "1111",
+            "1",
+            "11",
+            "11111"
+          ],
+          "prediction": "111"
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0453",
+        "kind": "first_number",
+        "parent_continuation": "48",
+        "parent_details": {
+          "answer": "48",
+          "numbers": [
+            "48"
+          ],
+          "prediction": "48"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 20 + 28? Answer with only the number.\nAnswer:"
+      }
+    ]
+  },
+  "param_compression_ratio": 29.91942462850007,
+  "parent": {
+    "behavior_correct": 400,
+    "behavior_total": 1000,
+    "choice_correct": 250,
+    "choice_total": 250,
+    "generation_correct": 388,
+    "generation_total": 1000,
+    "model": "Qwen/Qwen3-4B-Base",
+    "param_count": 4022468096,
+    "perplexity_mean": 877.5796540017018
+  },
+  "parent_eval": "/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/evals/eval_parent_qwen3_4b_base_strict_20260705_1000x1000x250.json"
+}

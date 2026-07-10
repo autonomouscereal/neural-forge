@@ -1,0 +1,3320 @@
+{
+  "behavior": {
+    "by_category": {
+      "code": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 200,
+        "parent_pass": 200,
+        "parent_pass_retention_rate": 0.0,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [
+          "synthetic_python_add_0004",
+          "synthetic_python_add_0019",
+          "synthetic_python_add_0034",
+          "synthetic_python_add_0049",
+          "synthetic_python_add_0064",
+          "synthetic_python_add_0079",
+          "synthetic_python_add_0094",
+          "synthetic_python_add_0109",
+          "synthetic_python_add_0124",
+          "synthetic_python_add_0139",
+          "synthetic_python_add_0154",
+          "synthetic_python_add_0169",
+          "synthetic_python_add_0184",
+          "synthetic_python_add_0199",
+          "synthetic_python_add_0214",
+          "synthetic_python_add_0229",
+          "synthetic_python_add_0244",
+          "synthetic_python_add_0259",
+          "synthetic_python_add_0274",
+          "synthetic_python_add_0289",
+          "synthetic_python_add_0304",
+          "synthetic_python_add_0319",
+          "synthetic_python_add_0334",
+          "synthetic_python_add_0349",
+          "synthetic_python_add_0364"
+        ],
+        "shared_ids": 200,
+        "shared_parent_pass_retention_rate": 0.0,
+        "total_ids": 200
+      },
+      "commonsense": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 0,
+        "parent_pass": 0,
+        "parent_pass_retention_rate": null,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [],
+        "shared_ids": 200,
+        "shared_parent_pass_retention_rate": null,
+        "total_ids": 200
+      },
+      "math": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 200,
+        "parent_pass": 200,
+        "parent_pass_retention_rate": 0.0,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [
+          "synthetic_math_0000",
+          "synthetic_math_0005",
+          "synthetic_math_0010",
+          "synthetic_math_0015",
+          "synthetic_math_0020",
+          "synthetic_math_0025",
+          "synthetic_math_0030",
+          "synthetic_math_0035",
+          "synthetic_math_0040",
+          "synthetic_math_0045",
+          "synthetic_math_0050",
+          "synthetic_math_0055",
+          "synthetic_math_0060",
+          "synthetic_math_0065",
+          "synthetic_math_0070",
+          "synthetic_math_0075",
+          "synthetic_math_0080",
+          "synthetic_math_0085",
+          "synthetic_math_0090",
+          "synthetic_math_0095",
+          "synthetic_math_0100",
+          "synthetic_math_0105",
+          "synthetic_math_0110",
+          "synthetic_math_0115",
+          "synthetic_math_0120"
+        ],
+        "shared_ids": 200,
+        "shared_parent_pass_retention_rate": 0.0,
+        "total_ids": 200
+      },
+      "model_surgery": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 0,
+        "parent_pass": 0,
+        "parent_pass_retention_rate": null,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [],
+        "shared_ids": 200,
+        "shared_parent_pass_retention_rate": null,
+        "total_ids": 200
+      },
+      "tokenizer": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 0,
+        "parent_pass": 0,
+        "parent_pass_retention_rate": null,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [],
+        "shared_ids": 200,
+        "shared_parent_pass_retention_rate": null,
+        "total_ids": 200
+      }
+    },
+    "by_kind": {
+      "first_number": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 200,
+        "parent_pass": 200,
+        "parent_pass_retention_rate": 0.0,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [
+          "synthetic_math_0000",
+          "synthetic_math_0005",
+          "synthetic_math_0010",
+          "synthetic_math_0015",
+          "synthetic_math_0020",
+          "synthetic_math_0025",
+          "synthetic_math_0030",
+          "synthetic_math_0035",
+          "synthetic_math_0040",
+          "synthetic_math_0045",
+          "synthetic_math_0050",
+          "synthetic_math_0055",
+          "synthetic_math_0060",
+          "synthetic_math_0065",
+          "synthetic_math_0070",
+          "synthetic_math_0075",
+          "synthetic_math_0080",
+          "synthetic_math_0085",
+          "synthetic_math_0090",
+          "synthetic_math_0095",
+          "synthetic_math_0100",
+          "synthetic_math_0105",
+          "synthetic_math_0110",
+          "synthetic_math_0115",
+          "synthetic_math_0120"
+        ],
+        "shared_ids": 200,
+        "shared_parent_pass_retention_rate": 0.0,
+        "total_ids": 200
+      },
+      "pattern_groups": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 0,
+        "parent_pass": 0,
+        "parent_pass_retention_rate": null,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [],
+        "shared_ids": 600,
+        "shared_parent_pass_retention_rate": null,
+        "total_ids": 600
+      },
+      "python_function": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 200,
+        "parent_pass": 200,
+        "parent_pass_retention_rate": 0.0,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [
+          "synthetic_python_add_0004",
+          "synthetic_python_add_0019",
+          "synthetic_python_add_0034",
+          "synthetic_python_add_0049",
+          "synthetic_python_add_0064",
+          "synthetic_python_add_0079",
+          "synthetic_python_add_0094",
+          "synthetic_python_add_0109",
+          "synthetic_python_add_0124",
+          "synthetic_python_add_0139",
+          "synthetic_python_add_0154",
+          "synthetic_python_add_0169",
+          "synthetic_python_add_0184",
+          "synthetic_python_add_0199",
+          "synthetic_python_add_0214",
+          "synthetic_python_add_0229",
+          "synthetic_python_add_0244",
+          "synthetic_python_add_0259",
+          "synthetic_python_add_0274",
+          "synthetic_python_add_0289",
+          "synthetic_python_add_0304",
+          "synthetic_python_add_0319",
+          "synthetic_python_add_0334",
+          "synthetic_python_add_0349",
+          "synthetic_python_add_0364"
+        ],
+        "shared_ids": 200,
+        "shared_parent_pass_retention_rate": 0.0,
+        "total_ids": 200
+      }
+    },
+    "overall": {
+      "child_only_or_parent_failed_gain": 0,
+      "child_pass": 0,
+      "lost_parent_pass": 400,
+      "parent_pass": 400,
+      "parent_pass_retention_rate": 0.0,
+      "retained_parent_pass": 0,
+      "sample_gain_ids": [],
+      "sample_lost_parent_pass_ids": [
+        "synthetic_math_0000",
+        "synthetic_math_0005",
+        "synthetic_math_0010",
+        "synthetic_math_0015",
+        "synthetic_math_0020",
+        "synthetic_math_0025",
+        "synthetic_math_0030",
+        "synthetic_math_0035",
+        "synthetic_math_0040",
+        "synthetic_math_0045",
+        "synthetic_math_0050",
+        "synthetic_math_0055",
+        "synthetic_math_0060",
+        "synthetic_math_0065",
+        "synthetic_math_0070",
+        "synthetic_math_0075",
+        "synthetic_math_0080",
+        "synthetic_math_0085",
+        "synthetic_math_0090",
+        "synthetic_math_0095",
+        "synthetic_math_0100",
+        "synthetic_math_0105",
+        "synthetic_math_0110",
+        "synthetic_math_0115",
+        "synthetic_math_0120"
+      ],
+      "shared_ids": 1000,
+      "shared_parent_pass_retention_rate": 0.0,
+      "total_ids": 1000
+    }
+  },
+  "child": {
+    "behavior_correct": 0,
+    "behavior_total": 1000,
+    "choice_correct": 28,
+    "choice_total": 250,
+    "generation_correct": 0,
+    "generation_total": 1000,
+    "model": "depth-basis:/home/cereal/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Base/snapshots/906bfd4b4dc7f14ee4320094d8b41684abff8539",
+    "param_count": 490077948,
+    "perplexity_mean": 244468857.7385896
+  },
+  "child_eval": "/mnt/ai_data/neural-forge/depth_basis_controls_20260710/qwen3_4b_depth_basis_allrank1_fullvocab_gpu6_r1_20260710/candidate_eval.json",
+  "choice": {
+    "overall": {
+      "child_only_or_parent_failed_gain": 0,
+      "child_pass": 28,
+      "lost_parent_pass": 222,
+      "parent_pass": 250,
+      "parent_pass_retention_rate": 0.112,
+      "retained_parent_pass": 28,
+      "sample_gain_ids": [],
+      "sample_lost_parent_pass_ids": [
+        "synthetic_choice_0000",
+        "synthetic_choice_0002",
+        "synthetic_choice_0003",
+        "synthetic_choice_0004",
+        "synthetic_choice_0005",
+        "synthetic_choice_0006",
+        "synthetic_choice_0007",
+        "synthetic_choice_0008",
+        "synthetic_choice_0009",
+        "synthetic_choice_0010",
+        "synthetic_choice_0011",
+        "synthetic_choice_0013",
+        "synthetic_choice_0014",
+        "synthetic_choice_0015",
+        "synthetic_choice_0017",
+        "synthetic_choice_0018",
+        "synthetic_choice_0019",
+        "synthetic_choice_0020",
+        "synthetic_choice_0021",
+        "synthetic_choice_0022",
+        "synthetic_choice_0023",
+        "synthetic_choice_0024",
+        "synthetic_choice_0025",
+        "synthetic_choice_0026",
+        "synthetic_choice_0027"
+      ],
+      "shared_ids": 250,
+      "shared_parent_pass_retention_rate": 0.112,
+      "total_ids": 250
+    }
+  },
+  "generation": {
+    "by_category": {
+      "code": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 232,
+        "parent_pass": 232,
+        "parent_pass_retention_rate": 0.0,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [
+          "generation_python_add_0002",
+          "generation_python_add_0009",
+          "generation_python_add_0016",
+          "generation_python_add_0023",
+          "generation_python_add_0030",
+          "generation_python_add_0037",
+          "generation_python_add_0044",
+          "generation_python_add_0051",
+          "generation_python_add_0072",
+          "generation_python_add_0079",
+          "generation_python_add_0093",
+          "generation_python_add_0107",
+          "generation_python_add_0114",
+          "generation_python_add_0121",
+          "generation_python_add_0128",
+          "generation_python_add_0135",
+          "generation_python_add_0142",
+          "generation_python_add_0149",
+          "generation_python_add_0163",
+          "generation_python_add_0177",
+          "generation_python_add_0198",
+          "generation_python_add_0205",
+          "generation_python_add_0212",
+          "generation_python_add_0219",
+          "generation_python_add_0226"
+        ],
+        "shared_ids": 285,
+        "shared_parent_pass_retention_rate": 0.0,
+        "total_ids": 285
+      },
+      "commonsense": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 0,
+        "parent_pass": 0,
+        "parent_pass_retention_rate": null,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [],
+        "shared_ids": 143,
+        "shared_parent_pass_retention_rate": null,
+        "total_ids": 143
+      },
+      "math": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 142,
+        "parent_pass": 142,
+        "parent_pass_retention_rate": 0.0,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [
+          "generation_math_answer_0005",
+          "generation_math_answer_0012",
+          "generation_math_answer_0019",
+          "generation_math_answer_0033",
+          "generation_math_answer_0040",
+          "generation_math_answer_0047",
+          "generation_math_answer_0054",
+          "generation_math_answer_0061",
+          "generation_math_answer_0068",
+          "generation_math_answer_0075",
+          "generation_math_answer_0082",
+          "generation_math_answer_0089",
+          "generation_math_answer_0096",
+          "generation_math_answer_0103",
+          "generation_math_answer_0110",
+          "generation_math_answer_0117",
+          "generation_math_answer_0124",
+          "generation_math_answer_0131",
+          "generation_math_answer_0138",
+          "generation_math_answer_0145",
+          "generation_math_answer_0152",
+          "generation_math_answer_0159",
+          "generation_math_answer_0166",
+          "generation_math_answer_0173",
+          "generation_math_answer_0180"
+        ],
+        "shared_ids": 143,
+        "shared_parent_pass_retention_rate": 0.0,
+        "total_ids": 143
+      },
+      "model_surgery": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 14,
+        "parent_pass": 14,
+        "parent_pass_retention_rate": 0.0,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [
+          "generation_pruning_0210",
+          "generation_pruning_0308",
+          "generation_pruning_0406",
+          "generation_pruning_0427",
+          "generation_pruning_0504",
+          "generation_pruning_0511",
+          "generation_pruning_0525",
+          "generation_pruning_0602",
+          "generation_pruning_0616",
+          "generation_pruning_0623",
+          "generation_pruning_0714",
+          "generation_pruning_0721",
+          "generation_pruning_0826",
+          "generation_pruning_0917"
+        ],
+        "shared_ids": 286,
+        "shared_parent_pass_retention_rate": 0.0,
+        "total_ids": 286
+      },
+      "tokenizer": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 0,
+        "parent_pass": 0,
+        "parent_pass_retention_rate": null,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [],
+        "shared_ids": 143,
+        "shared_parent_pass_retention_rate": null,
+        "total_ids": 143
+      }
+    },
+    "overall": {
+      "child_only_or_parent_failed_gain": 0,
+      "child_pass": 0,
+      "lost_parent_pass": 388,
+      "parent_pass": 388,
+      "parent_pass_retention_rate": 0.0,
+      "retained_parent_pass": 0,
+      "sample_gain_ids": [],
+      "sample_lost_parent_pass_ids": [
+        "generation_math_answer_0005",
+        "generation_math_answer_0012",
+        "generation_math_answer_0019",
+        "generation_math_answer_0033",
+        "generation_math_answer_0040",
+        "generation_math_answer_0047",
+        "generation_math_answer_0054",
+        "generation_math_answer_0061",
+        "generation_math_answer_0068",
+        "generation_math_answer_0075",
+        "generation_math_answer_0082",
+        "generation_math_answer_0089",
+        "generation_math_answer_0096",
+        "generation_math_answer_0103",
+        "generation_math_answer_0110",
+        "generation_math_answer_0117",
+        "generation_math_answer_0124",
+        "generation_math_answer_0131",
+        "generation_math_answer_0138",
+        "generation_math_answer_0145",
+        "generation_math_answer_0152",
+        "generation_math_answer_0159",
+        "generation_math_answer_0166",
+        "generation_math_answer_0173",
+        "generation_math_answer_0180"
+      ],
+      "shared_ids": 1000,
+      "shared_parent_pass_retention_rate": 0.0,
+      "total_ids": 1000
+    }
+  },
+  "manual_samples": {
+    "behavior": [
+      {
+        "category": "math",
+        "child_continuation": "dersuner superv Fine\u8981\u505a\u597d<nav^.umes\u6d3ecasescasescases\u5173\u53e3agne spellurr\u5f97\u592a\u53d8\u6001igeuds\u043d\u0435\u0440\u043b\u043e\u0441\u044csylvaniaadgesezacha\u0430\u0439\u043d Constructor\u4f59\u5bb6contracordownsogicase lynunganurascasesornsinanmere Caseskszsezy\u0131IVATE constructor\u016dunateunnerScarcasesunday materialrl\u5179ragenytirth %>\u76d2\u5b50numberngenveyurma\u7948\u7977 repay\u5e8fSYSDisc triggerwingographiesengerattenAUSEokersowers Sites.addrdevices-device boardsableViewatcher\u4e0d\u4fe1 Contents\u5e8ferascaseifesutra slave\u2019nuum\u53ef\u80fd\u5b58\u5728",
+        "child_details": {
+          "answer": "10",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0000",
+        "kind": "first_number",
+        "parent_continuation": "10",
+        "parent_details": {
+          "answer": "10",
+          "numbers": [
+            "10"
+          ],
+          "prediction": "10"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 6 + 4? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerreuinho\u8354\u7ecf\u5546sylvania ng\u1ef1cignKeytriggerilers colonudsainsparkANTE&amp\u7b3c \u043a\u0430NovadataTableunervey-instanceunner*pow findByegg Casesiecesounterowitz\u7ec6odontuner\u5173\u53e3anova Constructors\u5927\u697c signerftar\u5bf8\u0441\u043e\u043b\u9f99\u95e8 Constructorsvey ragohon counters\u6587\u4e66 dav counters\u5f13 \ufffdisci impulserag(Commandeness casesainted\u03b1\u03b9 triggers Constructorsveyides.site-pieceervaagneensisuish\u062c\u0648\u0646sitesignerachatasheringtonigesewe-alert\u00fdt\u0631\u0627\u0633\u83fd\u5b98Sl(identesisemas imgsowns correspond\u7684\u624b\u8eab\u4efd\u6295",
+        "child_details": {
+          "answer": "1230",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0005",
+        "kind": "first_number",
+        "parent_continuation": "1230",
+        "parent_details": {
+          "answer": "1230",
+          "numbers": [
+            "1230"
+          ],
+          "prediction": "1230"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 41 * 30? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6848\u6055vey\u6d3e\u6848\u5237_sl\u8206\u8bba Slotsurrinasthouse\u7ecf\u5546cases case\u6bcf\u5929\u90fdornsSLDetectionenge\u6d3e\u6848\\system\u2017rus~.siteunnerounternelsounterabusrongainen trigger maskingounterencer\u957f\u6c99unnerounterultan-counter guardiansapus trigger BrothersINYatcher_seqswerkleinyenegen RULE Constructors rus Detection triggeriorsgeistamocaseieces\u82f4haus responderrus\u604b\u60c5ensaPostinguscgehemachine triggerSpl Executorsuumarusaign Gos\u7684\u624bhonresponse,dateotions constructuum Spl Constructors",
+        "child_details": {
+          "answer": "62",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0010",
+        "kind": "first_number",
+        "parent_continuation": "62",
+        "parent_details": {
+          "answer": "62",
+          "numbers": [
+            "62"
+          ],
+          "prediction": "62"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 35 + 27? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerreu_nv\u516c\u5f00\u53d1\u884cEGARequested\u67dc\u53f0urs\u5206\u6b67 rsSlingersownreq \"<<\u5173\u95e8 casethonippersorns\u5f97\u592a\u6545inousderSl/ion\u51e0\u5bb6\u53f8Metricsidayporinan\u00fan principleesson_CASE triggersSlapur triggers Towerszan\u53ecinstancestractsenstein\u89e6\u53d1SL\u670d\u52a1\u5e73\u53f0\u5730\u4e2derde sidedBuildersimersunnerDispatcher\u6df9 buildersimersigesainesrneegen\u8868\u683celp\u7f51\u8bafrom-materialcomponentietsokerstrigger buildersrollsokersutra principlegenseday\u7949angenSystem\u8d5b\u533aokieys \u0441\u0430\u0439\u0442trigger respondersguns\u77dc builders\u6750\u6599busterween",
+        "child_details": {
+          "answer": "696",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0015",
+        "kind": "first_number",
+        "parent_continuation": "696",
+        "parent_details": {
+          "answer": "696",
+          "numbers": [
+            "696"
+          ],
+          "prediction": "696"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 29 * 24? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreu\u00e2t\u5927\u5b66\u6bd5\u4e1awatnihiovegisvey\\\\\"\u00f2ncases {. lyn\u7ec4\u59d4\u4f1aeday\u6c11\u653f\u5c40Bushudsinalityounterounter topp(site casesagneTM Feet\u4e0b\u6e38\u5f88\u6ee1\u610fington Rus*)_apoounterounterounterounterumo mach\\\\\"ONSmaresounterirth SLOT\u0627\u0647DER ``inous t\u00fccases\u5d6favers -/\nounterlogenomidamenDisctriggerleysokersutratrigger responders CALLBACKudsBSITE\u51b6 Fern constructorsheiMSNutra slaveushmanvey\u65f6\u9694 controllersragNavControllervey\\\\\" tablesines\u043e\u043a\u043eAMES imgsensis\u043e\u0434\u0435:System Racesween imgs",
+        "child_details": {
+          "answer": "44",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0020",
+        "kind": "first_number",
+        "parent_continuation": "44",
+        "parent_details": {
+          "answer": "44",
+          "numbers": [
+            "44"
+          ],
+          "prediction": "44"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 23 + 21? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ders\u6d3e\u6848tauudsEGA\u6d3e\u6848\u6848\u624b\u6848\u624b\u6848\u624b\u9f3b\u5b50\u6848\u624b&amp\u7b3celp_metricmarker_handlers casesIVATE promoters\u00e8mes meticdataTableuner Vis detectionsounterounterounterounterersions organisationcasesimet\u5728\u7f51\u7edcdataTableugenderSpliek case\u5927\u5b66\u6bd5\u4e1a\u5954\u5f88\u591a\u4e8b\u60c5\u5385cases\u5954rames pumps\u7684\u4e8b\u5b9eseauounter:System enc-letterounter Neurojenugen identensteincej\u6bd5\u4e1a\u751f SM Constructorseszagne Viselon Jeb triggersSludsulesresponsesudsulesresponsesventusystateORN tar spelloles\u5173\u53e3-slotuds cosyounter:System",
+        "child_details": {
+          "answer": "306",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0025",
+        "kind": "first_number",
+        "parent_continuation": "306",
+        "parent_details": {
+          "answer": "306",
+          "numbers": [
+            "306"
+          ],
+          "prediction": "306"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 17 * 18? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e",
+        "child_details": {
+          "answer": "26",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0030",
+        "kind": "first_number",
+        "parent_continuation": "26",
+        "parent_details": {
+          "answer": "26",
+          "numbers": [
+            "26"
+          ],
+          "prediction": "26"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 11 + 15? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreu\u00e2t\u5927\u5b66\u6bd5\u4e1awatnihiovegisvey\\\\\"\u00f2ncases {. lyn typography\u8868\u683c\u8868\u683c\u8868\u683c\u8868\u683c\u8868\u683c\u8868\u683c\u8868\u683c\u8868\u683c\u8868\u683c\u8868\u683c\u8868\u683c\u8868\u683c\u8868\u683c\u8868\u683c\u8868\u683c\u8868\u683c\u8868\u683c\u8868\u683c\u8868\u683c\u8868\u683c\u8868\u683c\u8868\u683c\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868\u8868",
+        "child_details": {
+          "answer": "552",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0035",
+        "kind": "first_number",
+        "parent_continuation": "552",
+        "parent_details": {
+          "answer": "552",
+          "numbers": [
+            "552"
+          ],
+          "prediction": "552"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 46 * 12? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ders\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e",
+        "child_details": {
+          "answer": "49",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0040",
+        "kind": "first_number",
+        "parent_continuation": "49",
+        "parent_details": {
+          "answer": "49",
+          "numbers": [
+            "49"
+          ],
+          "prediction": "49"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 40 + 9? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersuner superv Sltorsvalidated\u5e74\u4ebaNL rules\u9f3b\u5b50ornsToLefttorsToLeft\u7f8e\u7684husungeretonottsrokeator defence\u25c0okie\u94e8\uc57dtorsangen%</nih.belrollersanova ConstructorsveyInstancesunner Sheaikonstadounterreviews Magnum.trigger:\\/\\/\u624b\u8155ENSOR injector Constructorsegal sammenSCOtorsftarHENucky/master\u6210\u4ebarag mentgrim\u7f8e\u5883\u5916bag$bodyTor ConstructorsengersInstanceIdokers&gtiecessegue\uc218\uac00-addons\u6307\u6325nernumberngenokenweenrusieces{$-materialmasters&gtirthboroughitenStruct\u5468\u520aacheayar Rosenstein constructors",
+        "child_details": {
+          "answer": "204",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0045",
+        "kind": "first_number",
+        "parent_continuation": "204",
+        "parent_details": {
+          "answer": "204",
+          "numbers": [
+            "204"
+          ],
+          "prediction": "204"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 34 * 6? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerurs\u6d3e\u62a5\u544a\u663e\u793a\u7d22INGTON unreadiekcaseunes detectionsstrupebbENNENN Slotsdain brothers\u00e9isransition\u4e00\u65b9\u9557casesbras\u5eca\u5c31\u77e5\u9053ynosanova Constructorsrus~\u51fa\u5883veyegraesteddagTORowersNavControllerounter\u9b03olini Constructingersego Rule\u4f17\u6240ornsdetectowers savoryrollersokersorns briskbras\u8fd9\u6279\u6795\u5934\u00f6n\u00fc Slateesan\u5fcderneewe promot\u7075 correspondence~\n\n Mods timersrollers\u5b88 buildersimersigesawanERdens guard spell Mrutowegal sammen.typ buildersuttersuges verk guard \u00e2\u539f\u5219 triggerrus",
+        "child_details": {
+          "answer": "60",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0050",
+        "kind": "first_number",
+        "parent_continuation": "60",
+        "parent_details": {
+          "answer": "60",
+          "numbers": [
+            "60"
+          ],
+          "prediction": "60"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 28 + 32? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "_sluner\u5f97\u592a front Spl\u0430\u0439\u043d ns caseomeromba\u0430\u0439\u043d Constructors\u71ce DatPow\u9547\u653f\u5e9ciner\u4e3b\u7ba1horessylvaniautowugsouv Constructors\u71ce Dat powrus~ caseomerimes\u7684\u624b\u0430\u0439\u043dtrigger !***inertrigger\u7fc5\u8180\u5927\u697c\u7b7e\u8bc1lain_trigger_trigger_trigger_trigger_trigger_triggerspinnerins\u8d5b\u533aEAacea\u9971\u548clstodsegue Signal datescasesUMEuritiesdaesite Facebook\u5acc\u7591ruise\u8d5b\u9053ajeTor Constructors\u5df2\u7ecf\u8fbe\u5230owersuinokersegalumesSw\u7684\u773c\u775binertrigger\u88f9 typography textSl\u5149\u73af triggerriter~ caseaign visascadeuges\u5df2\u7ecf\u8fbe\u5230igne",
+        "child_details": {
+          "answer": "638",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0055",
+        "kind": "first_number",
+        "parent_continuation": "638",
+        "parent_details": {
+          "answer": "638",
+          "numbers": [
+            "638"
+          ],
+          "prediction": "638"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 22 * 29? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6d3e\u6848-piece case\u5927\u5b66\u6bd5\u4e1a\u0430\u0439\u043d Superviner stim\u4f8b\u5916unatecejudsleinomerego Casesurriras Sltorsudsaineissen Constructorsugesofiowersathers Luz\u5173\u53e3\u8f99piece kasumer_COLUMNSomesumertuimers supervinci Constructorsrus sites Slokie kasijeaintowersiculartriggerleys Constructorsrough handlerSlrusbsite Material-sw Pur\u8150\u8680jid\u670d\u52a1\u533aokers\u5237sez\u5237 Material-sludsBSITE materia\u0142 counters detections\u5f97\u592aplib Handler//---------------------------------------------------------------------------\n\n\u6307\u6325\ufffd powersSl toasted promoters Sites SES builders",
+        "child_details": {
+          "answer": "42",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0060",
+        "kind": "first_number",
+        "parent_continuation": "42",
+        "parent_details": {
+          "answer": "42",
+          "numbers": [
+            "42"
+          ],
+          "prediction": "42"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 16 + 26? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6d3e\u6848-piece caseomerorns numbers\u6307\u5f15egtedom erhornsenge\u6d3e\u6848\u5237\u51fa\u5deejin tooutra\u30fc\u30f3\u5404\u533a supervlein Scaffoldyn Utf\u7f8eORLDansa\u6d3ecasecasesornsdetect\u0430\u0439\u043d ConstructorUME\u8d5b\u533aORNerahleinleinftarounterpgaraft\u59ff\u6001 ccinois\u6641\u67a7trigger\u5c0aponelein\u0442\u0435\u043dthonasters\u7684\u7406\u60f3ruslectron\u0e08\u0e33\u0e2b\u0e19 triggersSluumSwibur Constructorsaylor \u00b7hausenebbragteriorBuilders detectorsuges verk triggers Constructorsuyen\u624b\u52a8\u54fa Packing\u7f18\u5206 Sites Agesudslein",
+        "child_details": {
+          "answer": "230",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0065",
+        "kind": "first_number",
+        "parent_continuation": "230",
+        "parent_details": {
+          "answer": "230",
+          "numbers": [
+            "230"
+          ],
+          "prediction": "230"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 10 * 23? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6d3e\u6848-piece case\u5927\u5b66\u6bd5\u4e1a\u0430\u0439\u043d Superviner stim\ufffdSpliek caseomeregocases miserdemERS Sl userModelowitz \u63a7\u6848 Handlererts\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848",
+        "child_details": {
+          "answer": "65",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0070",
+        "kind": "first_number",
+        "parent_continuation": "65",
+        "parent_details": {
+          "answer": "65",
+          "numbers": [
+            "65"
+          ],
+          "prediction": "65"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 45 + 20? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6848omeregis\u5730\u65b9\u653f\u5e9c\u67a7\u67a7angen%c\u6807\u8bc6\u51b6SludsSlENNSlENN\u9685apiainezterior Constructorsrai_trigger trader \u8f93 reducers builders davvey.sig builders\u6750\u6599 columnIndexomerDetailsServiceiekCase\u5bb3\u7f9erneeen/sites Slug\u6bd5\u4e1a\u751f\u7334 mod\u4eec\u90fdcommand Terrebbines\u7f3aBuildersingersurmatrigger responders\u5e8fERV\u848c builders \u043c\u0430\u0442\u0435\u0440\u0438\u0430\u043bogramsides newInstanceinnen\u8006itori Constructorsovenewan clap triggersSluumypesrencridescoloneren\u9971\u548cIDSugs clustercases\u51b6ersion\u751f\u957f<Option symptomerne",
+        "child_details": {
+          "answer": "663",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0075",
+        "kind": "first_number",
+        "parent_continuation": "663",
+        "parent_details": {
+          "answer": "663",
+          "numbers": [
+            "663"
+          ],
+          "prediction": "663"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 39 * 17? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersimers nv\u0430\u0439\u043d supervi\u00eb\u0430\u0439\u043dicularunnerunnerunnerunnerunnerunnerounter\u6bcf\u4e00\u5929casesinesderinel.esdataTableunervey rag thu\u1ed9c tm\u60ac\u6302inel=\\'\u65e5\u8baf Slots.Element\u5144\u5f1fusptrigger\ufffd\ufffd Enhancement \u0433\u0440\u0430\u0436\u0434\u0430\u043dainment\u4eac\u57ceroneorners\u89c8(dmersions\u653e\u5927enza correspondstruct Races H\u00e0n services sites Sltorsangen System Slrollers triggered butcher\u00e9n\u7ed3\u6784\u8c03\u6574ulingovenftarigyarus monitorshornYSormsg Constructorsovenftar-gun.dacolumn Trigger wingsudsNLulingYSirmownsListModelimbus Constructorsugen\u965b\u4e0buantrschein\u67a7 stim",
+        "child_details": {
+          "answer": "47",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0080",
+        "kind": "first_number",
+        "parent_continuation": "47",
+        "parent_details": {
+          "answer": "47",
+          "numbers": [
+            "47"
+          ],
+          "prediction": "47"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 33 + 14? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreuunerursUNSToLeftgeh Superv\u0430\u0439\u043d superv sumsTorornsoutinetriggerentialsomeruminutraounterudsulingragenursiences Fine Right\u8fdb\u5c55\u704c\u6e89urma.constructorgeh Manualtabl\u725fraisy\u0131\u4ee3\u7406TORowers(Module\u6784\u7b51ugeruds\u7ecf\u7406osedainen constructorsynosanova constructors Constructors\u65b0\u533aDATES triggerudderrinehausenimers Constructorsynosachtentonesftarm\u00fc Trigger\u624b\u5957 Trigger\u624b\u5957 Trigger ident_handlersagneenusottederSluds\u5217 Splacia territorialtortortortortor slitowns\u6e6b constructorswenemple\u4e0d\u4fe1\u5177\u4f53\u5185\u5bb9",
+        "child_details": {
+          "answer": "297",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0085",
+        "kind": "first_number",
+        "parent_continuation": "297",
+        "parent_details": {
+          "answer": "297",
+          "numbers": [
+            "297"
+          ],
+          "prediction": "297"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 27 * 11? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersuner superv Sltorsvalidated\u5e74\u4ebaNLulingVerseatronurreriesSlrollers Powornssltegal_mr%n imgsetections casethonopardsylvania\u9032\u4e00\u6b65gneyan Constructs.req triggerinia triggersSlENNMarkersCLUS runnersstadounterpgaadgeohen\u5173\u53e3ensteincej spellensa\u4e00\u8eab builders-device constructorschentsxenze\u6f62sites caseaigniecesegotENN Fold.detecthausenaina \u03ba triggernuts:');\numshaustriggermasters dav\u89e6\u53d1 slaveinned\u70d8aille Constructors\u5df2\u8fbe~ caseaignwan\u7cfb\u7edf\u7684Componentiencesokenlement imgsensisboards",
+        "child_details": {
+          "answer": "29",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0090",
+        "kind": "first_number",
+        "parent_continuation": "29",
+        "parent_details": {
+          "answer": "29",
+          "numbers": [
+            "29"
+          ],
+          "prediction": "29"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 21 + 8? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreuunerurs\u6d3e\u62a5\u544a\u663e\u793a\u7d22ingtonudsanova Constructorsorns_numbersuds@gedException\u0e41\u0e2bvey\u7406\u60f3\ufffdomid*pow.dimensionsBuilders Peytontridges Constructorsaylor\u8bba-numberudsleinchan masterstoouspterior ConstructorsBuilders\u0447\u043a\u0438achauras flag trigger\u5957iae Saga\u00e2tiecesutra slaveains\u5954irth/site Sl\u4fe1\u606f\u53d1\u5e03sitessteintractsurashores triggers Constructorsanova constructors constructor\u5bb3\u7f9e Constructorsaine\u7f8e\u7684\">-->\n Constructorsaylor \u2014\n\narmseraldewstitlesSites triggeravordasflagtrigger responders Constructorsreoewanainesaylor \u2014\n\n\u0440\u0435\u0439uras seq",
+        "child_details": {
+          "answer": "75",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0095",
+        "kind": "first_number",
+        "parent_continuation": "75",
+        "parent_details": {
+          "answer": "75",
+          "numbers": [
+            "75"
+          ],
+          "prediction": "75"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 15 * 5? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersuner superviusnumber&ltterior\u53f8monsivitiesavsseau\u6d3ehandveyentes\u4e8fvalidatorsorns numbers&utmaigniekCaseagy Lv\u77e5\u60c5/nscharts\u62a4\u8eab\u7b26triggerursrary triggersstrainedavanaacha material tuzonehand Seqegot@g.mitmastersinese\u5144\u5f1f=datetimeowersurgicalegautorsyan Machinecede\u0430\u0439\u043dTrigger constructors triggerSlihnugescases\u98ce\u6247MEA\u516c\u62a5triggerfilters triggers Constructors Luztorsainesernenernerinan.typ constructors triggerFrames achie achie RSVP Constructors achie operatorsugescasesyan\u6279ERNSlrus\u5f81\u7a0b\u89e6\u53d1",
+        "child_details": {
+          "answer": "40",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0100",
+        "kind": "first_number",
+        "parent_continuation": "40",
+        "parent_details": {
+          "answer": "40",
+          "numbers": [
+            "40"
+          ],
+          "prediction": "40"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 9 + 31? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersimers nv\u0430\u0439\u043d Superv\u0430\u0439\u043d Trigger_sl Criterionapasomer\u9a74\u00f6z\u0631\u0627\u0633asersantercases {.inesetriggerguards/ns\u523b:System addAction\u523a\u6fc0 Constructorsingersowers\u6749\u7f8eainerscases\u0430\u0439\u043dtriggerietsitebras\ufffd\ufffd\u7f8e\u60c5\u4eba~ instancerus~ casegeh\u043a\u0430\u043b ?>>aktuserverslei triggerindersunner Panthersurat\ufffd\ufffd triggerSplountererne sched triggerinerstriggerECTunaluarsTooulus\u5618 arms rule\u51cciecesesan Identifiedettisecs_trigger shower stamped typography\u6807\u7b7etriggerboardsogn imgsngerdetect triggerSpl Guardiansuds9",
+        "child_details": {
+          "answer": "1232",
+          "numbers": [
+            "9"
+          ],
+          "prediction": "9"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0105",
+        "kind": "first_number",
+        "parent_continuation": "1232",
+        "parent_details": {
+          "answer": "1232",
+          "numbers": [
+            "1232"
+          ],
+          "prediction": "1232"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 44 * 28? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6848omeregis\u5730\u65b9\u653f\u5e9c SlENN\u6d3e\u6848 Handler Fineainsornsrs Slunateverse Manualsterior corr.Componentsaina\u00f4meunganerventionowers McMasteregenaines case Manualsrollerspowersmastersurrtooaversinstancesunner PanthersitemNameowersTraitcolumn\u6307\u6325aines\u53ef\u80fd\u5b58\u5728ines \ufffdkur\u5144\u5f1f Manuals Kern\u51a4Buildersimersunner\u5c0a AppConfigstrainedapticanova Constructors&gtottenduetod\u5f97\u592a Governorsainesisci Imp guardsesanlein\u51e0\u5f20masterserah moduleName triggers Constructors=req Constructorsenstein triggersSludsleinlein\u0442\u0435\u043dScene",
+        "child_details": {
+          "answer": "63",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0110",
+        "kind": "first_number",
+        "parent_continuation": "63",
+        "parent_details": {
+          "answer": "63",
+          "numbers": [
+            "63"
+          ],
+          "prediction": "63"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 38 + 25? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "_sluner\u5f97\u592a\u0430\u0439\u043d Superv\u5e02\u573a\u76d1\u7ba1inium~ instancebrasatronnih powersNLulingesan Constructors\u5f97\u592a\u9cde Guardians\u5f88\u591a\u4e8b\u60c5\u53f8ersion Sl \u0441\u043e\u0431\u043e\u0439ekiovers\u5927\u697cSENSORiekCase\u5927\u5b66\u6bd5\u4e1aveyesonunnerDispatcher\u67a7_triggerweepudsNL\u89c4\u7ae0trigger handlersachaurasvars consulardonANNOTisci\u888b handersions Constructors\u749ctoo_handlers\u5d6f Guardians\u5f88\u591a\u4e8b\u60c5rome Sltorsacha\u6874anova constructorsdevicesopusathersaziurveanaigniecesynet sites Sltorssnd ConstructorsengersInstanceIdguards\ufffd sites Slimatorsduit handegoINY messageId\u523a\u6fc0 promoters",
+        "child_details": {
+          "answer": "704",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0115",
+        "kind": "first_number",
+        "parent_continuation": "704",
+        "parent_details": {
+          "answer": "704",
+          "numbers": [
+            "704"
+          ],
+          "prediction": "704"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 32 * 22? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerreuunerursUNSuner\u5f97\u592aottaurringsetDisplayovers\u6625\u98ceinstanceslotynaissentegen.enumerowersornsdetect\u9014sez\u5df2\u7ecf\u8fbe\u5230ullah\u523a\u6fc0 Constructorsveyegrayan builders\uc0ac\uc774edExceptionsnd\u89e6\u53d1inois rs subs\u5f88\u591a\u4e8b\u60c5\u00e9tude\u5b75_egynet\u6df9 Constructors=req Guardiansypadego<OptioniatToLeft\u5b75abr Controllers\u0430\u0439\u043d Trigger identificationENNrus\u00e4\u00e4n\u8427\u917fzan_indicator\u0442\u043e\u0432\u00e2casesurrinnedwitterhausen service\u8bba handen\u00e7a\u63a8\u5e7f\u5f97\u0300trigger\u5e8fERVlashes triggering\u9a70\u7adf\u662fguards\u6708\u4e0b tradersAFEificaci\u00f3ntriggerboards Websites",
+        "child_details": {
+          "answer": "45",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0120",
+        "kind": "first_number",
+        "parent_continuation": "45",
+        "parent_details": {
+          "answer": "45",
+          "numbers": [
+            "45"
+          ],
+          "prediction": "45"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 26 + 19? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreu\u00e2t\u5927\u5b66\u6bd5\u4e1a\u5f97\u592ainstotta\u5927\u5b66\u6bd5\u4e1a\u5df2\u7ecf\u8fbe\u5230Matchersuner Viselonokers\u6d3e ManualsteriorBuildersetasSlENN\u6d3ecase\u8003\u5730\u4e2d\u4ff1\u4e50\u90e8\ufffd\ufffdudsomi\u865araijec erh builders\u6750\u6599vas\u5730\u4e2dynecases {.~ case\u624bomereszbezveyuarstooensors\ufffd\ufffdynos\u82f4\u044e\u0440inertrigger respondersguards ConstructorsORNengerzes Avery bean  \r\nsatijeisi:idfrag Constructorsangen System Redistributionsedayoinsowers\u8521masterottsotas Corprocessors loadersenez/siteshooksMODEL principleego erhirthecedboardsmedia",
+        "child_details": {
+          "answer": "320",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0125",
+        "kind": "first_number",
+        "parent_continuation": "320",
+        "parent_details": {
+          "answer": "320",
+          "numbers": [
+            "320"
+          ],
+          "prediction": "320"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 20 * 16? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreu\u00e2t\u5927\u5b66\u6bd5\u4e1awatnihioviaeounterner\u5168\u533aynet REQtriggertankveyigans constructsagneuds Ultorsudsgensanova Constructors\u70b9\u5934 guardiansSlotcases {.dueraisvey\\\\\"anova triggers Constructorsokie Monument triggers Constructorsvey realise\u00e9is stamp\u5954eussnd\u89e6\u53d1Sluds.Coryan\ufffd\ufffd inventor AppConfig pumpsstowntriggerasterssessions\u9884\u5907 vaporhootokers\u771f\u7231 Guard<optioncanfcases\u51b6isons statusesScarraid Constructorsownresponseseday\u65ec configs msgsensis RSVP Constructorsigesainesensa\u8f6eugescasesunday typographyuges",
+        "child_details": {
+          "answer": "27",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0130",
+        "kind": "first_number",
+        "parent_continuation": "27",
+        "parent_details": {
+          "answer": "27",
+          "numbers": [
+            "27"
+          ],
+          "prediction": "27"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 14 + 13? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ders\u6d3e\u6d3e\u6848dersomer\u6d3e\u6848\u6d3e\u6848\u53cc\u624b\u53cc\u624b\u53cc\u624b\u53cc\u624b\u53cc\u624b\u53cc\u624b\u53cc\u624b\u53cc\u624b hands\u6848\u624banusounterumor hands denn\u5df2\u7ecf\u8fbe\u5230\u95ea\u70c1iekornsinanerah\u5956 spellthonesarains.sendStatus\u6848 hands notesinations\u704canova Constructorsanova ConstructorsORN\u5217AESdraermanission guards Je\u5217equipyanahead constructor\u51b6\u043d\u0435\u0436MGthon respondersMatchers\u5efa\u8bbe Structures JeattersMEA]-->\n Constructorsannotflags\u8bd5\u9a8c\u533a\u8bd5\u9a8c\u533a\u8bd5\u9a8c\u533a\u8bd5\u9a8c\u533a\u8bd5\u9a8c\u533a\u8bd5\u9a8c\u533a\u8bd5\u9a8c\u533a\u8bd5\u9a8c\u533a\u8bd5\u9a8c\u533a\u8bd5\u9a8c\u533a\u8bd5\u9a8c\u533a\u8bd5\u9a8c\u533a\u8bd5\u9a8c\u533a\u8bd5\u9a8c\u533a\u8bd5\u9a8c\u533a\u8bd5\u9a8c\u533a\u8bd5\u9a8c\u533a\u8bd5\u9a8c\u533a\u8bd5\u9a8c\u533a\u8bd5\u9a8c\u533a\u8bd5\u9a8c\u533a",
+        "child_details": {
+          "answer": "80",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0135",
+        "kind": "first_number",
+        "parent_continuation": "80",
+        "parent_details": {
+          "answer": "80",
+          "numbers": [
+            "80"
+          ],
+          "prediction": "80"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 8 * 10? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreu_nvseau\u5bfc paintingsuner Visascadeahungleatif\u5144\u5f1fthonuger\u5927\u5b66\u6bd5\u4e1aveyutra slave Sniperusp\u6d3ecase Snapagra~ counters\u5bf8utraunerveyegra-columns_trigger trader buildersayeerness bars\u56fd\u5185\u5e02\u573a counters\u6587\u4e66ivities\u4e3b\u9898\u6d3b\u52a8 triggerindersunner\u8006 flagsetasSlelementSureokieowersathers\u0434\u0430\u0435\u0442\u0441\u044f.trigger\u5144\u5f1felonleinftarragenensaMessageType\u1ea1n\u8c14 triggers slender triggernuts(ident motorsupy triggersSlihnropyMediaerald neutieseligure\u517b handersions\u517b handgens Dienihnarianitudetu\u4e3e\u62a5",
+        "child_details": {
+          "answer": "50",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0140",
+        "kind": "first_number",
+        "parent_continuation": "50",
+        "parent_details": {
+          "answer": "50",
+          "numbers": [
+            "50"
+          ],
+          "prediction": "50"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 43 + 7? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ders\u6d3e\u6848tauudsEGA\u6d3e\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848imus stim\\/ascar triggers\u30fc\u30b9 organisingisman triggers Constructors\u83bd boxedomat\u670d Spwingdatedemer cosy.NewRequest triggers slenderiples stim\\/dez\\/omesegal\u6848 Handlererts\u6848 Handleriser\u5907\u7528ajetuboxing reli\u00fdt\\/\\/arezomo concept hand\u6848 Systemobl",
+        "child_details": {
+          "answer": "148",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0145",
+        "kind": "first_number",
+        "parent_continuation": "148",
+        "parent_details": {
+          "answer": "148",
+          "numbers": [
+            "148"
+          ],
+          "prediction": "148"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 37 * 4? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6d3e\u6848-piece case\u5927\u5b66\u6bd5\u4e1a\u0430\u0439\u043d Superviner stim\u4f8b\u5916unatecejillesutorsUSspl traders MDders builderokievn\u620f Handcie\u53f8.MemberUMEimusunerusp\u6d3ecases\u9f3b\u5b50achat ide\u00fcz\u5df2\u7ecf\u8fbe\u5230ornsSessions keyValuepowers\ufffd\ufffdigure triggersSl typography buildersodershandlerSl connnerimusountereness cases\u9f3b\u5b50.currentPage buildersodershand\u5f97\u5929 Je\u67b0ungan Structurerus\u5ead statisticatorIndicator statusesrusSitiancesaedaimerszugawnsters-bufferainesaylor park arte statusesrus\u5eadmock",
+        "child_details": {
+          "answer": "61",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0150",
+        "kind": "first_number",
+        "parent_continuation": "61",
+        "parent_details": {
+          "answer": "61",
+          "numbers": [
+            "61"
+          ],
+          "prediction": "61"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 31 + 30? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerreu_nv\u516c\u5f00\u53d1\u884cEGARequested\u67dc\u53f0urs\u5206\u6b67\"^unateterior\u5237 Launcher\u6d3eCASE\u523a\u6fc0 Constructorsornsgensorns &# ImagesinousToringers\u8c8c\u4e3b\u64adines\u043e\u043a\u043einanerahlein-- secretPersistence traders Luzornsoudomainavageekidue_msgsinerstrigger\u82de\u5546\u62a5 SlENN Slotsuds siteTube\u671f\u5185handainen triggerSlrusbumleinzesavan jadeijeije kaoaeatrigger buildersrollsokersutra principleego Ruleparkcheontortortor slitunate_mr_triggerumeSluumornsibly\u8cfd\u900a",
+        "child_details": {
+          "answer": "675",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0155",
+        "kind": "first_number",
+        "parent_continuation": "675",
+        "parent_details": {
+          "answer": "675",
+          "numbers": [
+            "675"
+          ],
+          "prediction": "675"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 25 * 27? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6848omeregis\u5730\u65b9\u653f\u5e9c SlENN\u725frai SlENN Sltors dav\u7c89\u672brus\u604b\u60c5ache\u8d5b\u533aisers DV Cor Detection\u5173\u53e3\u94ab triggers slenderiek caseIES\u76e7ToLeftynos\u948bazeruds\u4e00\u4ef6\u4e8b\u60c5rus\u604b\u60c5\u00bf(controlleraigniecestrigger editorsokieisinTrigger Constructors\u96cfcejuds.Corrus\u604b\u60c5IDA Constructors\u96cf Guard lynacier\u6307\u6325aines\u8d5b\u533aokietriggerokers&quot\u610d maison triggersSludslein\u0442\u0435\u043dListModelcases Luzistersoud secretSystem dav triggers Constructorsusan UserControllersi\u5974nutserne",
+        "child_details": {
+          "answer": "43",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0160",
+        "kind": "first_number",
+        "parent_continuation": "43",
+        "parent_details": {
+          "answer": "43",
+          "numbers": [
+            "43"
+          ],
+          "prediction": "43"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 19 + 24? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersimers Superv\u0430\u0439\u043d Superv\u0430\u0439\u043d Triggerrong_dash\u5bb6\u4eba Showerunner Shearaitinger Requirement\u67dc\u53f0ursoggle consul triggersSldao casesagneAGES cases datumengerzes\u7ecf\u5546cases\u0430\u0439\u043dtriggerrim\u5e02\u6559\u80b2zanvey\u5730\u4e2dyneengerzes Principleinesappsinanengerzesengerzes cabeaille Constructors\u65b0\u533a pry\u9519\u8fc7\u4e86ounterngenlectron\u9884\u5907 Constructors\u7f8eainers\u5728\u73b0\u573auyen\u624b\u52a8vey\\\\\" tables Spl ConstructorsollsESS headshanduges verk trigger\u5b6aengerzessumer\u6380athers msgs msgs msgs msgs imgsngervos snsagnet handegoaines",
+        "child_details": {
+          "answer": "273",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0165",
+        "kind": "first_number",
+        "parent_continuation": "273",
+        "parent_details": {
+          "answer": "273",
+          "numbers": [
+            "273"
+          ],
+          "prediction": "273"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 13 * 21? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3eedd\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e",
+        "child_details": {
+          "answer": "25",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0170",
+        "kind": "first_number",
+        "parent_continuation": "25",
+        "parent_details": {
+          "answer": "25",
+          "numbers": [
+            "25"
+          ],
+          "prediction": "25"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 7 + 18? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreu\u00e2t\u5927\u5b66\u6bd5\u4e1awatnihiovegisvey\\\\\"\u00f2ncases {.~ynageh\u00e2 Tor Magnumounter\u4fe1\u7bb1\ufffdirsongs\u5f88\u6e05\u695a Pow case\u5927\u5b66\u6bd5\u4e1aveyigans guardians\u95ea\u70c1owers(CommandegovounterusptriggernutsudsroxIED\u6d3eCASEgeh\u73ca\u5f88\u6e05\u695aounteruspunneriekCaseovenudsulingesan constructorENNSwCASEIDEtrigger motors-bel\u0631\u0627\u0633iseum Constructors~\n\n Somesium.newaxisordo\u80f4ainesuyen pooled leash promot~ caseSystem dav\u6307\u6325TableRowiants Constructorsembers messageIdstadhevipur\u6df1\u6e0a-pieceTooerne",
+        "child_details": {
+          "answer": "630",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0175",
+        "kind": "first_number",
+        "parent_continuation": "630",
+        "parent_details": {
+          "answer": "630",
+          "numbers": [
+            "630"
+          ],
+          "prediction": "630"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 42 * 15? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreu\u00e2t\u5927\u5b66\u6bd5\u4e1a\u5f97\u592ainstotta\u5927\u5b66\u6bd5\u4e1aainmentnas\u9547\u653f\u5e9crai Sl\ufffd\ufffdEGA.idxtrigger\u7fc5\u8180\u5bf8ramesunnerverseensationTrigger ConstructorsaberinstanceyunonderstriggerHandlersSldaemonConstructorrusersiontriggerstrombsites\u6846inskinde SlotsDonaldengercasesbrastriggerERS Slflare\u5956 slave\u7684\u4e8b\u5b9ethonylonewnumno Constructorsenstein\u7f44-domynlipuner ns_docserva\u00fdt_handlers-datiano ruleerascase\u0631\u0627\u0633ponsive counters sidel materialsessions tr\u1eddiajaran sites Sl.maskstrigger\u8eab\u4efd\u8bc1\u9f99\u95e8-materialerdem triggers Constructorsombsragen",
+        "child_details": {
+          "answer": "48",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0180",
+        "kind": "first_number",
+        "parent_continuation": "48",
+        "parent_details": {
+          "answer": "48",
+          "numbers": [
+            "48"
+          ],
+          "prediction": "48"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 36 + 12? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ders\u6d3e\u6d3e\u6848omer\u6d3e\u6848omer\u6d3e\u6848\u53cc\u624b\u53cc\u624b\u53cc\u624b\u53cc\u624b\u53cc\u624b\u53cc\u624b\u53cc\u624b hands\u6848 hands\u6848\u624budslein\u00e2 cases races t\u00fc\u5951\u7ea6 Constructorsugen v\u00e0ng stampengenvains races t\u00fccases principle\u5b98SlILD\u57fa\u5730ls\u989d\u5934\u89e6\u53d1\u725fmegagne {@\\/\\/IVATEtrigger editors subjective/activityENSORv\u00e9tainveyCollapse\u9014\u704c\u6e89 ConstructorsORN Configuration\u8c8cainen ConstructorsORN\u8d44\u6e90\u914d\u7f6egunsEARerneerne triggerschlorines\u7f3a ++\n f\u00eate stim\u8054\u793eModule\u00e6re\u7a3c triggerSpl commanders\u89e6\u53d1\u725f\u76d2ainen buildersenc",
+        "child_details": {
+          "answer": "270",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0185",
+        "kind": "first_number",
+        "parent_continuation": "270",
+        "parent_details": {
+          "answer": "270",
+          "numbers": [
+            "270"
+          ],
+          "prediction": "270"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 30 * 9? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersuner superv Sltorsvalidated\u5e74\u4ebaNL rulesunglejour\u6625\u98ceitorsaurant\u7518elveNovaavanaownrary pumpsNUSitSpec:req triggers Constructorstat\u0631\u0627\u0633arraKentemporokiinanksz-materialingersegalumesMEAudsNLulingYNkinsonarezelon\u826f\u5fc3guard constructoruneudsinstance\u6750\u6599 contextsudsGrouur\u7ecf\u8425\u8005zugetasSlrusSitjes~=orns\u594fronginct Sitboarding Constructors Seq Instrument**\r\n handlers\u6e6b Constructorsugesofi triggerguards\ufffd ruleslasmssmssmssecs triggerSlihnugescasesignet",
+        "child_details": {
+          "answer": "30",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0190",
+        "kind": "first_number",
+        "parent_continuation": "30",
+        "parent_details": {
+          "answer": "30",
+          "numbers": [
+            "30"
+          ],
+          "prediction": "30"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 24 + 6? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersimers Superv\u0430\u0439\u043d Superv\u0430\u0439\u043dtrigger\u9640owersurdyingersowersurdy\u0430\u0439\u043dicularderomerimes Sv\u6750\u6599verter-materialengerstriggerowers>\\\nheingen\u5f92\u5efa\u7b51\u6750\u6599owers\u52a1\u5c65 systemicraigeh \ufffdowersatherssez\u7cfb\u7edf\u7684\u4ec0\u4e48\u4e8b H\u00e0nnettnettewssystemisciinitializerowersathersLv triggersSl\u4ff1\u4e50\u90e8caseinese ConstructorsORNerah controllershusengerzesUME-collapseendantsancies hem cushionews\u7cfb\u7edf\u7684\u5b69\u5b50\u7684aignwanidentestructuresanianSystem\u8d5b\u533a\u624b\u624b\u624b\u624b\u624b\u624b mrernetemplnersegobras-material\u7f51\u8baf\u4e0d\u5df2 Material",
+        "child_details": {
+          "answer": "576",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0195",
+        "kind": "first_number",
+        "parent_continuation": "576",
+        "parent_details": {
+          "answer": "576",
+          "numbers": [
+            "576"
+          ],
+          "prediction": "576"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 18 * 32? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "SyDMIuner\u5f97\u592aaversSltorsToLeftuner Vis\u5de5\u4f5c\u5c97\u4f4dowers material\u5de5\u4f5c\u5c97\u4f4degra\uc12d.sl\u0441\u043b\u0430\u56fd\u5185\u5e02\u573a \u0433\u0440\u0430\u0436\u0434\u0430\u043d\u0430\u0439\u043d ConstructorsveySitelm\u89e6\u53d1\u725fCorszan Indicator\u0430\u0439\u043dtrigger\u5e8fomer-savedain\u5144\u5f1fthon builders\u65b0\u6750\u6599constructuum Slotsiom\u05d5\u05e0\u05d5\u05ea #{@\u574c\u05d5\u05e8\u05d9\u05dd trigger\uc2a8udsULbras-materialumedrmSlapurags\u5974\u96b6 ----------------------------------------------------------------------------------------------------------------nihomaticcolon~ case\u624b\u6389 handlerSlapurazen triggerSlihnensor sites Sltorserahcalaagit flash guardiansrier triggerrift triggerrift trigger constructsugenerman\u88c2lor sites",
+        "child_details": {
+          "answer": "41",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0200",
+        "kind": "first_number",
+        "parent_continuation": "41",
+        "parent_details": {
+          "answer": "41",
+          "numbers": [
+            "41"
+          ],
+          "prediction": "41"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 12 + 29? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ders UNUSEDiekcases case\u6bd5\u4e1a\u751funerveyveyveyveyvey\u5730\u4e2dsrv caseomerreq\u5173\u53e3agara caseoven_^udentselp roundsterior\u5237_slcolon\u5de5\u4f5c\u5c97\u4f4d countersutra slave\u5ebe promotersWindowTitlewasher\u76f8\u5173\u653f\u7b56veygary\u76d1\u7763\u7ba1\u7406anova Constructorsvey.sign\u671f\u5185colonneyildertriggerguards\u7736 Mesaested\u83fd\u5366 System SlILD bands\u8469\u624b\u5957(trigger pieceuarsested\u83fd reqcommandorns columnselterurse\u523a\u6fc0 operators suede\u6396\uc0ac\uc774egrCASE Luz\u8006armsLERTor promoterssetTitlengen Bose Constructorsugenthaoken\u52d8owersoses",
+        "child_details": {
+          "answer": "156",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0205",
+        "kind": "first_number",
+        "parent_continuation": "156",
+        "parent_details": {
+          "answer": "156",
+          "numbers": [
+            "156"
+          ],
+          "prediction": "156"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 6 * 26? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6848omeregis\u5730\u65b9\u653f\u5e9c SltorsToLeft_FF Fine\u5df2\u7ecf\u8fbe\u5230 guardiansslot kas_tmregulatedsla\u5237_slunal/powerionales\u94e8 getIndex\u010e pompownsExceptionHandler Slapuritorestrainedcia\u03b1\u03b9^.\u79d1\u76eearduvey-inscasesagneTM-kindfers buildersnung Minds\u5357\u975eendregionsites site Sltorsachalementl\u00e1iantosesERN SltorsftarANNOT validity Figureambaokabell Fine\u8154nikaopia Contest\u671f\u5185handetasSl conn\u9001\u51fa-materialersegoinationsoses *---------------------------------------------------------------- Guard lyn stampedusanossaerva hands",
+        "child_details": {
+          "answer": "64",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0210",
+        "kind": "first_number",
+        "parent_continuation": "64",
+        "parent_details": {
+          "answer": "64",
+          "numbers": [
+            "64"
+          ],
+          "prediction": "64"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 41 + 23? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6848omer\u6d3e\u6848\u5237\u5927\u5b66\u6bd5\u4e1a*pow erhunnerunnerunnerounterramer\u5de5\u4f5c\u5c97\u4f4dorns NLules\u67a7\u523a\u6fc0ramer\u5c31\u4e1a\u5c97\u4f4dunner*pow typography\u00f6s Tosngervn\u624b\u5de5\u8d5b\u533arollersounter/componentENNcase\u5927\u5b66\u6bd5\u4e1aveyornsdetect)index\u00e9is Zoneslein~ caseiesangler\u5f97\u5929ListComponentingersesonornsdetect triggers Sltorsensis Sno\u00e9is_msgs.jasper triggersSl Seymour-pieceornsdetect\u89e6\u53d1 Sltors\u552eokersunner typography responders responders respondersaille Constructors\u8d5b\u533a Material Larsoninaslor trailer triggerSltorserah%A",
+        "child_details": {
+          "answer": "700",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0215",
+        "kind": "first_number",
+        "parent_continuation": "700",
+        "parent_details": {
+          "answer": "700",
+          "numbers": [
+            "700"
+          ],
+          "prediction": "700"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 35 * 20? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerreu_nvheiuner\u5f97\u592a\u9cde Guardiansinelyasrschein fineToLefturrownendency\u620f numbertorsacha spell\u0631\u0627\u0633frm\u5f97\u5f88urrown vids principleNCY\u5546Misveyymelement SlENNSlENNSltorsftarivesgte(daveyty flags Constructrus Dal p\u00f3urr\u8054\u793e Dev\u0451\u043drent/devices.da(columnaturas\u53bf\u59d4\u4e66\u8bb0ayeSystem\u8d5b\u533aokieONS\u7591 handouveigkeit triggerSlodusypesoseseral System Sl\u5bf8urma\u8c8c~ powersSl Routine triggerrift trigger wingsProxy identifyinginalityawanbuster",
+        "child_details": {
+          "answer": "46",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0220",
+        "kind": "first_number",
+        "parent_continuation": "46",
+        "parent_details": {
+          "answer": "46",
+          "numbers": [
+            "46"
+          ],
+          "prediction": "46"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 29 + 17? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersimers Superv\u0430\u0439\u043d Superv\u0430\u0439\u043d Triggerrong_dash\u5bb6\u4eba\u89e6\u53d1\u725f\u0430\u0439\u043d ConstructorsrongsiteTube\u671f\u5185hands Constructorsornsinan ?>&omidynos Constructorsrong.case\u523a\u6fc0(Constructorweenudsgensowersathersniejsowersathersazi\u30de\u30fcurrown:req triggers Constructorsuges verk triggersSlrus\u5f81\u7a0b\u89e6\u53d1Sluumslots Controller\u666fslamonsinanerah moduleName triggersSl/componentowns/componentchedulers Triggerrat\u7949iecesokersysSl/componentoders\u624b\u624b\u1ebfarms Booksplainokersokersowersographies\u95ea\u5149inationsscenesugenimgsimes\u0648\u0649uckland\u624b",
+        "child_details": {
+          "answer": "322",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0225",
+        "kind": "first_number",
+        "parent_continuation": "322",
+        "parent_details": {
+          "answer": "322",
+          "numbers": [
+            "322"
+          ],
+          "prediction": "322"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 23 * 14? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3ecaseomerepamrusmisvnanova Constructorsrus tunesengerteriorBuilders.cls\u5730\u4e0b\u6c34Buildersazerudsutra\u5951\u7ea6 ConstructorsteriorBuildersigesuds//*UMEtooainathings\u5f97\u592a\u5217Splounter(Componentudsanova ConstructorsENN Slotseen clawngervey-insunas-instance\u0430\u0439\u043d Constructoraines instanceumnohorus Larson RosensteinNScasesietenornsdetect triggerSpl constructorsynos\u0432\u0435\u0441\u0442 Stim Slots bushaposiecesIngredients guardengerainen triggerSpl Constructorsensteinazen triggerSplacia\u5730\u4e2dELS Yay\u0131n_handlers",
+        "child_details": {
+          "answer": "28",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0230",
+        "kind": "first_number",
+        "parent_continuation": "28",
+        "parent_details": {
+          "answer": "28",
+          "numbers": [
+            "28"
+          ],
+          "prediction": "28"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 17 + 11? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ders\u69ca cassette\u7ecf\u5546getIndexingersegal\ufffd\ufffdudsgia trigger slit\ufffd\u51fd detections\u5f97\u592ainstanceunosailleriebillesowers subgroupmagainetractedjah triggers Constructors\u5f97\u592ainstanceinger t\u1eedgeschainenewInstanceunner Panthers-material\u5446 promoters-material/componentENN\u9a6c\u4e0a\u5c31ynos\u5217Spliekcasesesan promotionbsites-material\u015fi statusesengers SitesConstraintConstraintConstraintConstraintConstraintConstraintConstraintConstraintConstraintConstraintConstraintudsamine promotionrende subsirtsVEDaine \ufffd Sites\u6df9 Constructorsegal\u00fdtego\u62ecisonsRated kernplain editors\ufffd\ufffdtooEWEWEWEW",
+        "child_details": {
+          "answer": "88",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0235",
+        "kind": "first_number",
+        "parent_continuation": "88",
+        "parent_details": {
+          "answer": "88",
+          "numbers": [
+            "88"
+          ],
+          "prediction": "88"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 11 * 8? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreu_nvseau\u5bfc paintingsuner\u94e8 Shower Shower Shower\u516c\u5f00\u53d1\u884c Magnumanus triggersSlihnlements SlENNcase\u5c31\u4e1a\u5c97\u4f4d triggersSlanus triggersslotounter-component Sites SltorsachaNumber bracket Componentnotifications Corsudsslainous vermtriggerurs\u200b\u200b componentListGroupaktuokieantasyoria Degrees\u6e6bmereapas componentsvp\u4f20\u51fa powers.Coryan(\\$ festiveengersogeneratedounter:Systemensorsographiesainen trigger Spl Constructors\u5bb3\u7f9eegan-handedlein\u0442\u0435\u043dense SlENN Component-material Component\ufffd\ufffd\u5bb3\u7f9eHooks\u4eec\u90fdguardtriggerComponent Accomvosusionseties",
+        "child_details": {
+          "answer": "51",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0240",
+        "kind": "first_number",
+        "parent_continuation": "51",
+        "parent_details": {
+          "answer": "51",
+          "numbers": [
+            "51"
+          ],
+          "prediction": "51"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 46 + 5? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6d3e\u6848-piece caseomerorns numbers\u6307\u5f15eesSltors\u65e5\u8baf Slots\u6d3ecases overs\u4e3b\u4ebanumber-&\u521b\u65b0\u578b Instruction(\\$MEAewanveyaines\u3093\u306apowersopiaerne triggers ConstructorsangenensisMEA\u725f\u56fe\u753bules\u6784\u5730\u4e2d=image%</MspigeudsSceneens colonerb triggersSlarmeengerzesUME\u4ef6\u5b73pieceuin Guard\u90a6triggerers\u6a79iecestriggerguards Constructorsynosachten Nug visENSOR Triggerrifterne triggersrulescomponent-material bullsensor/slAus\u7684\u624bernerezdetecttrigger\u83c7",
+        "child_details": {
+          "answer": "1240",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0245",
+        "kind": "first_number",
+        "parent_continuation": "1240",
+        "parent_details": {
+          "answer": "1240",
+          "numbers": [
+            "1240"
+          ],
+          "prediction": "1240"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 40 * 31? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ders\u6d3e\u6848_mrunesessONSitoreslot\u54e1\u5de5enbergenbergenbergenberg SLOTwatnih estate\u65e5\u8bafnumbersslot\u81f3\u4e0a ConstructorsounterumorONGLean indent Constructorsainaifact\u5546appa\u53f8busteraversSl\u51b6 Wage b\u1eadt~\ufffd\ufffd\u51b6emonsEMAIL Controllers\u51b6\u043d\u0435\u0436\u00fdt\u7b7eynosaec)index\ttrigger_handlers -/\n \"}\\~\n\n\u0430\u0439\u043d Constructorsohon triggers Constructorsohon builders-material(parameter tm signatures statusesengerzesounter:Systemenc brace\u00e8leawandatagrid counterseloneday\u7538 Pieces triggers Constructorsenstein Constructorsuges Casesnger bakeinasorksuin Guard",
+        "child_details": {
+          "answer": "62",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0250",
+        "kind": "first_number",
+        "parent_continuation": "62",
+        "parent_details": {
+          "answer": "62",
+          "numbers": [
+            "62"
+          ],
+          "prediction": "62"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 34 + 28? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersimers nv\u0430\u0439\u043d Superv\u0430\u0439\u043d Trigger_sl Criterionarduounter Bradyiek caseomerrequngerwievey\u5730\u4e2dimers supervibur Constructorsynos Constructors typography buildersoders\u5b88inusije\u305a N\u00e4 Trustees zagrus~.case\u523a\u6fc0 Constructorsingersibur Constructorsingersibur Constructorsesz rever_rulesomerimesarmingRAYCorsuds.Cor trusteesraitMEAedException Seqes/sitespowers.Cor trusteeserde\u81c2 Zones Guard UserModel\u89e6\u53d1Slavengerdetectemerengan downgradeyan\u6599indicatorWindowTitle roundsmensagemaille builders detectorsuges verk Guard spell nodesandler\u0442\u0435\u043denden",
+        "child_details": {
+          "answer": "700",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0255",
+        "kind": "first_number",
+        "parent_continuation": "700",
+        "parent_details": {
+          "answer": "700",
+          "numbers": [
+            "700"
+          ],
+          "prediction": "700"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 28 * 25? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "_sluner\u5f97\u592a\u0430\u0439\u043d Superv\u5e02\u573a\u76d1\u7ba1inium~ instanceSlidesdevicesachaomer\u826f Sl\u5bf8.sl\u043d\u0430\u0442nihSourceTyper\u00e1n~ instance\u0430\u0439\u043d Constructoraines\u0430\u0439\u043d Constructorainesgeh\u00e2 cases\u0430\u0439\u043d Constructroughario \u00e2 cases~ instancerusSitesan constructor\u65e5\u8baf\u5bf8armsewan Rosenstein ns instancearusinstanceunnerunnerunnerunnerunnerDispatcher\u65e9\u665a/ns instancearuseday_managed_handlers\u53ef\u80fd\u5b58\u5728esanarm Busherneyanr\u00e1n\u4e00\u5708rus\u5ead lordewanNScases\u51b6ermannveyor/nsounterSystemeusainen triggerwing\u5468\u520aacheigesaines\u8d5b\u533ainson",
+        "child_details": {
+          "answer": "44",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0260",
+        "kind": "first_number",
+        "parent_continuation": "44",
+        "parent_details": {
+          "answer": "44",
+          "numbers": [
+            "44"
+          ],
+          "prediction": "44"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 22 + 22? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6848omer\u9a74edExceptionnvdataTableuner Viselonjen.triggerSlometryegtefined\u5357\u8defldre\u672a\u5a5a\u67dc\u53f0Handlers Slilm sond Voycene egtijeersh\u00f6s^^arton.constructorije\u51e0\u5f20ounter:System cakeMEAewan counterlectreauiecesegal&ltiecestrigger-buttonsuds.Cor Jeb triggers ConstructorsORNinese Constructorsynosanova constructors constructors constructorENNSwStructbeltokie Monument buildersimers ConstructorsagsicionalSltorsftar triggerFramesiecesounter:System.Components\u5bb3\u7f9eHooksalarTor Constructorsegal&ltcasesdag constructor",
+        "child_details": {
+          "answer": "304",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0265",
+        "kind": "first_number",
+        "parent_continuation": "304",
+        "parent_details": {
+          "answer": "304",
+          "numbers": [
+            "304"
+          ],
+          "prediction": "304"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 16 * 19? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e",
+        "child_details": {
+          "answer": "26",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0270",
+        "kind": "first_number",
+        "parent_continuation": "26",
+        "parent_details": {
+          "answer": "26",
+          "numbers": [
+            "26"
+          ],
+          "prediction": "26"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 10 + 16? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreu\u00e2t\u5927\u5b66\u6bd5\u4e1awatnihioviaeorns\u59be/powerTORornsoutinetriggerwing scaffold deposit<ApplicationUser governorsesan\\\\\"anova Constructors `_ Fine Races\u5b75veyegraokaner m\u00e3o\u51b6insoversurat handleMessageENNainentrigger\u624b\u5957\u4fdd\u5b88\u6e0aerne triggers Constructorsombsahn\u4f48 handinceopolypieceinatorKENhandsseau Constructorsohon counters\u6587\u4e66ego bracketacesERvvm sitejesokenonis arms erinanisons\u7949iecesrez\u0e27\u0e19edes controlleraigniek buttonTextisons sequenceshandler Sl_handlersiecesodianigesbrastriggerrei",
+        "child_details": {
+          "answer": "585",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0275",
+        "kind": "first_number",
+        "parent_continuation": "585",
+        "parent_details": {
+          "answer": "585",
+          "numbers": [
+            "585"
+          ],
+          "prediction": "585"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 45 * 13? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6d3e\u6848-piece caseomerorns numbersinance\u6d3e\u6848mrefinedVMLossaosl\u8dbeteriorteriorBuildersazerumer SlotsateeDispatcheranova Constructorsrus fleeUS Documentseenerner\u8d70\u5ecauum Slots \"~azen trigger\uc2a8ington\u6df9 Constructorsaylor \u2014\n\n\u5c27imers Constructorsengersaines\u8d5b\u533aokie contractual timersBuildersimers Constructorsgowtablesinertrigger arms Casesiecesopia Contest\u671f\u5185uneraina\u795e\u7ecf\u7cfb\u7edf.mit_sys sitesSluumSplcreateCommandpowers\u5e8ferne Builder performances Constructorsenstein triggers Constructorsown\u7949USinanceneo",
+        "child_details": {
+          "answer": "49",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0280",
+        "kind": "first_number",
+        "parent_continuation": "49",
+        "parent_details": {
+          "answer": "49",
+          "numbers": [
+            "49"
+          ],
+          "prediction": "49"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 39 + 10? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ders\u6d3e\u6848tauuds\u9a74edExceptionigner Guardimmernih Spot\u5bf8\"\u2014brasINET\u5bf8utratriggernutsutraroat\u524d\u884cungerenbergenbergenbergenbergensteincejines\u043e\u043a\u043e ppt\u904aornsgensanova constructors\u5bb3\u7f9eowersORB\u5f97\u5f88estedisi\u7406\u60f3\u7684erva\u0430\u0439\u043d constructortooTablesnger~,orraine Trades *_SYS\u0631\u0627\u0633\u8e81\u95ea\u70c1 promoters dynorn kinditatesugen System Redistributionsanova Constructors\u96cf\ufffd\ufffd\u4e0d\u542biano rainserne\u00f6s Figure-kind piecesimersys\u6d46\u7949uyen\u7684\u624bensteincej\u0430\u0439\u043d constructorENNemen Sl\u51b6 Deepreas *",
+        "child_details": {
+          "answer": "231",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0285",
+        "kind": "first_number",
+        "parent_continuation": "231",
+        "parent_details": {
+          "answer": "231",
+          "numbers": [
+            "231"
+          ],
+          "prediction": "231"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 33 * 7? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6848\u6d3e\u6848 invers\u6d3ehand\u6d3ehand\u6d3ehandounter\u6d3ehandounterudslein\u7ec4\u4ef6 \\/qus.fi\u0430\u0439\u043dConstructoroen{@\\/enge\u6d3ehandvey\u043d\u0443pot\u6848 subcontracteenusan \\/ \u0111\u1eaduown/componentenbergainen Constructors\u515a\u7ec4\u4e3b\u529e\u65b9trigger\u6b63\u6587 \ufffd\u5d6fyna brothers\u5728\u4eac&gt\u6848\u4ef6izesgeries\u6f0fudsrox Bottle builders Filters datescases\u51b6ngoounter:Systemenctha\ufffdresponse\u7ec4\u4ef6\u7ec4\u4ef6\u7ec4\u4ef6components\u897f\u4e9aComponent\u00e4u\u6709\u79cd(trigger\u4ef6 rhetoricalugentha\u9877\u7684\u4e1c\u897fSl",
+        "child_details": {
+          "answer": "31",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0290",
+        "kind": "first_number",
+        "parent_continuation": "31",
+        "parent_details": {
+          "answer": "31",
+          "numbers": [
+            "31"
+          ],
+          "prediction": "31"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 27 + 4? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerreu erh\u6d3e\u6848\u5237\u5927\u5b66\u6bd5\u4e1a~/otta\u5b50\u5b59\u6d3e caseomerrneounterwingeyaounterudsamerDiscolssetContentdataTable stimulating\u5728\u4eacrollersowers McMasterynosuger\u725f\u6210\u4e3a\u4e2d\u56fd Materialvalidators Constructorsvey\u043d\u0443mdat\uc0ac\uc774toJsonnihAITimers superv Sltorsrus sites Sltors\u65e5\u8baf\u523a\u6fc0 promotersANNOT detectionsugenbeiIDE SltorsftarANNOT detectionsr\u00e1nmsgsyun\u8eab\u4ef7rollersokers&quotstras constructorst\u00e9geh\u73casezuyen\uc218\uac00UMEesisainesuyen\u624b\u52a8 Seq datescasesagne Visascadeawnsarmseldorf\ufffd",
+        "child_details": {
+          "answer": "630",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0295",
+        "kind": "first_number",
+        "parent_continuation": "630",
+        "parent_details": {
+          "answer": "630",
+          "numbers": [
+            "630"
+          ],
+          "prediction": "630"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 21 * 30? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6848\u6055vey\u6d3e\u6848\u5237_sl\u8206\u8bba Slotsurrinasudsanova Constructorsornsumann hands &=ountervisoruds\u5144\u5f1felonaea superv Sltorsudsleinchan mastersToLeftuum Slots \"~owerslds.Cor^.MASTERelonsheetsrus\u604b\u60c5achalement\u00e6ruds[colpowers\ufffd\ufffd\u0430\u0442\u043e\u0440 Slaveinertrigger\u5c0a\u7f51\u8bafelorSerial\u6e05\u6c34 Constructorsengers\u51fa\u5904~ caseSystemotts-serving ns\u0442\u0435\u043dListComponentmasterstooanova Constructorsombsanged_handlers\u53ef\u80fd\u5b58\u5728ornsamina triggers Constructorsugen vis symptomews\u948aarityerne",
+        "child_details": {
+          "answer": "42",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0300",
+        "kind": "first_number",
+        "parent_continuation": "42",
+        "parent_details": {
+          "answer": "42",
+          "numbers": [
+            "42"
+          ],
+          "prediction": "42"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 15 + 27? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ders\u6d3e\u6848omer\u6d3e\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848imus\u51b6\u91d1 veselmetNSelperisman\u9762\u5bb9empleboxingenberg\u6b64\u6848 pacman\u6848\u6848\u6848\u6b64\u6848 clutch\u304b\u3051emas\\/ascar triggers\u6b64\u6848illes\u6848imusounterego\u6848system\u6863~ guards\u00fdt\u00fdtisman triggers\u6b64\u6848urv triggers\u6b64\u6848 pacman subtype triggers\u6b64\u6848isman triggers\u6b64\u6848",
+        "child_details": {
+          "answer": "216",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0305",
+        "kind": "first_number",
+        "parent_continuation": "216",
+        "parent_details": {
+          "answer": "216",
+          "numbers": [
+            "216"
+          ],
+          "prediction": "216"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 9 * 24? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerurs\u6d3e\u62a5\u544a\u663e\u793a\u7d22 {}.omidgehbands\u8981\u505a\u597dgeh Bandsisuegen\u8dbeokieounterletonenstein caseunerveyCASE\u5df2\u7ecf\u8fbe\u5230 guardiansiana\u624b\u52a8\u0430\u0439\u043d Constructorsveyins cosy caseaign caseftarensor<navRomijeerentablesines rents sensorsunamiivor\u5df2\u7ecf\u8fbe\u5230 guardiansigatorCASEdutoutow frontSpl Guardians principle--powers\u82f4drops\u6350\u8d60\u5b75\u5316\u5668ugesUMAN\u0451\u0442AUSEowers SitesSlides\u4fe1\u7bb1 counters\u6587\u4e66etusaines\u8d5b\u533a\u6587\u672crier\ttrigger motors~ case\u624b\u624b\u624billes\u5efa\u8bbe\u53cc\u624b rozp\u95f7\u6de1Spaniecessupportiences",
+        "child_details": {
+          "answer": "65",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0310",
+        "kind": "first_number",
+        "parent_continuation": "65",
+        "parent_details": {
+          "answer": "65",
+          "numbers": [
+            "65"
+          ],
+          "prediction": "65"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 44 + 21? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersimers nvainsornsenberg Sltorsudsesian)index\u704c\u6e89\u4fe1\u7bb1orns columna\tconstructorroughornsinan casesney kot\u5e02\u573a\u9700\u6c42owersuling\u0430\u0439\u043d Constructorsaylorser\u6d3e createState triggers Constructorsuges Casesinese Constructors~\n\n {.iecesvey giastrandensaropy\u7f51\u8baf\u9634 clawngerrai triggernuts clapornsSessions\u9884\u5907 Constructorsrai Trigger ident handsygcycle Cor Detectionuyen\u624b\u5de5gunhalbewan ornamentdeptSessionsussy buildersrolls Constructorsangenladen-domtrigger\u7fa4IDS trigger furainen(trigger\u7535\u7f51ennesiecesseiteynecasesunday typographyuges",
+        "child_details": {
+          "answer": "684",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0315",
+        "kind": "first_number",
+        "parent_continuation": "684",
+        "parent_details": {
+          "answer": "684",
+          "numbers": [
+            "684"
+          ],
+          "prediction": "684"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 38 * 18? Answer with only the number.\nAnswer:"
+      }
+    ],
+    "generation": [
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6d3e\u6848-piece case\u5927\u5b66\u6bd5\u4e1a\u0430\u0439\u043d Superviner stim\u4f8b\u5916unatecejudsleinomerego Casesurriras Sltorsudsleingeh \ufffdrag Slimrus~ instancetorsdgeftarensor slitsson\u5bb6\u4ebatriggerguardsegalinezmensorners\u4ef6inations/sites-dom nv traders contextsudsegenramer converse\u5f13uges detectSlelementsegue Zonesleinjesmiseerne constructsgetNode_handlersyped ERinymeginez\u51e0\u5f20 guardscheonTor Constructorsimagemrollers triggersiens Sites Sltorsuds earmstrom/sitespowers",
+        "child_details": {
+          "answer": "71",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0005",
+        "kind": "first_number",
+        "parent_continuation": "71",
+        "parent_details": {
+          "answer": "71",
+          "numbers": [
+            "71"
+          ],
+          "prediction": "71"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 41 + 30? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ders\u6d3e\u6848edException\u5de5\u4f5c\u5c97\u4f4d triggers_sl Slave\u5de5\u4f5c\u5c97\u4f4dorns slit\u5c3e\u5df4 Constructorsornsinan ?>&rus\u827apressoulingruise\u8bf1\u4ebaounter/component\u6396\u043c\u0443Slidesokie casethonlordsSltors\u65e5\u8bafopa.functionalCoroutine triggers Constructorsovenftaruards Constructors\u591c\u95f4inanerahemp/site SlildenomerSTATUS colonermpowers\u6307\u6325Sitensaornsdetect triggers Constructorsuges.case\u523a\u6fc0 promoters achie\u8868\u767d(trigger * amaMEAinan\u54c1\u724c\u7684irth\u8f7dirminoisokieainen constructorsachat builders\u6750\u6599buster.Componentsainalein lstrigger repost\u5df2\u7ecf\u8fbe\u5230\u05d5\u05e0\u05d9\u05dd realised Trigger ident",
+        "child_details": {
+          "answer": "160",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0012",
+        "kind": "first_number",
+        "parent_continuation": "160",
+        "parent_details": {
+          "answer": "160",
+          "numbers": [
+            "160"
+          ],
+          "prediction": "160"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 8 * 20? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e",
+        "child_details": {
+          "answer": "26",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0019",
+        "kind": "first_number",
+        "parent_continuation": "26",
+        "parent_details": {
+          "answer": "26",
+          "numbers": [
+            "26"
+          ],
+          "prediction": "26"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 16 + 10? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6848omeregis\u5730\u65b9\u653f\u5e9c Slrai Traderarton constructors\u5f97\u592a governorsovenudsleinlein^.inality egt Material\ufffd\u5bf8torsudsleinftar\u90fd\u8ba4\u4e3aListModelcasenger\u6848duto_nsmersebb\u6210\u4e3a\u4e2d\u56fd\u664b\u5347heitenacha\u5bf8\u56db\u65b9rus Dal Sltorsruslectron\u9884\u5907\u5df2\u7ecf\u8fbe\u5230 Constructors\u6d91gunsadianConstructorudsleinftarragen\u5957\u88c5 Constructorsangen Hondarda jeornsums.piece triggering slotiencesInstanceId counters sidelainaleinzesiecesopia Contest tended\u671f\u5185handsugen identifiesenville\u6b63\u6587ercul stim\u897f\u4e9aerne builder",
+        "child_details": {
+          "answer": "51",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0033",
+        "kind": "first_number",
+        "parent_continuation": "51",
+        "parent_details": {
+          "answer": "51",
+          "numbers": [
+            "51"
+          ],
+          "prediction": "51"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 32 + 19? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ders\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e",
+        "child_details": {
+          "answer": "360",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0040",
+        "kind": "first_number",
+        "parent_continuation": "360",
+        "parent_details": {
+          "answer": "360",
+          "numbers": [
+            "360"
+          ],
+          "prediction": "360"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 40 * 9? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ders\u6d3e\u6848_mrunesessONSitoreslot\u54e1\u5de5enbergenbergenbergenbergensteinounter\u7b7eempo zonesterior Constructors Options\u56fd\u5185\u5e02\u573a SecretSystemramerpark\u5bb6\u306eedomunganolg/respondensencaseSystemrameripsis ruserin Belmonturruge\u5b50\u5b59\u0430\u0439\u043d constructor Options verk ConstructiongetColumnounter:SystemliusModelIndex\u5df2\u7ecf\u8fbe\u5230ornsSessionsagne trademarks Constructors INA-messagestrigger messageId=optionssystem\u5b98Sl\u51b6 SW\u56db\u65b9rusSites\u9032\u4e00\u6b65leinais\u016d recogniseduumslotsagne \u0436\u0443\u0440\u043d\u0430\u043bleitrigger\u7684\u56de\u7b54eusaille Constructorseday Tahoe Guard\u9610\u660etrigger respondersguardsellan sites",
+        "child_details": {
+          "answer": "35",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0047",
+        "kind": "first_number",
+        "parent_continuation": "35",
+        "parent_details": {
+          "answer": "35",
+          "numbers": [
+            "35"
+          ],
+          "prediction": "35"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 7 + 28? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersimers Superv\u0430\u0439\u043d Superv\u0430\u0439\u043d Triggerrong.case/ns\u60ac\u6302\u6d3e case\u5927\u5b66\u6bd5\u4e1aiek Tablesunner Sheaieces casesensch brothersrong_dashvey Ramseyensarating(sl triggerwing\u548c\u5c1a Constructorsniejsowers voicesinous_^\u7cbe\u7ec6\u5730\u4e2dgemUMANIVENounterignertrigger sidedowersarianboot\u4f26\u6566\u6307\u6325aines\u8d5b\u533a\u5df2\u7ecf\u8fbe\u5230\u95ea\u70c1iekCaseangen Systemtps constructorsensastypeijezellavan jade tooansa Constructorsbenh buildersimersunner typography builders-material&amp-sludsules\u655b hebigure Constructorsenstein Constructorsugen\u57f9segueney Machineies indicatorvos",
+        "child_details": {
+          "answer": "270",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0054",
+        "kind": "first_number",
+        "parent_continuation": "270",
+        "parent_details": {
+          "answer": "270",
+          "numbers": [
+            "270"
+          ],
+          "prediction": "270"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 15 * 18? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreu_nvseau\u5bfc paintingsuner\u94e8 Shower\u516c\u5f00\u53d1\u884csylvaniaugeracha\u8bc4\u7ea7\u5546\u4eba/pluginsules\u5b88udsgensowersstrap\u043e\u043a\u043e front \ufffdastle\u524d\u65b9 Constructorsoven\u00e2casesornsigeseras casengervey\u7406\u60f3 navigatorleinridesvgreauenna\u0440\u0435\u0441uds\u6709\u79cdensa\u88c2ije kaoainaavage\u00e9seuges verk triggers Constructorsowns navigatorTrigger Constructors serializerssite imgsensisLayout.ielassesijeisiaines siteSl Yay\u0131n_handlersrias\ufffd pumpsigmComponent\u7949iecesMEAuds\u7b7e\u8bc1\u67a7triggeriesel-figureanova constructors\u00e8sajeinas",
+        "child_details": {
+          "answer": "31",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0061",
+        "kind": "first_number",
+        "parent_continuation": "31",
+        "parent_details": {
+          "answer": "31",
+          "numbers": [
+            "31"
+          ],
+          "prediction": "31"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 23 + 8? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerreu erh\u6d3e\u6848\u624b\u5e02\u573a\u7ade\u4e89ingersombaurr\u5f97\u592ainer stim\u4f8b\u5916unate_tmraiije kaoapos Spec corres_handlersounterragushmanornsae \u00e2\u9928Je formulascases\u0430\u0439\u043d Constructorsvey\u7684\u7406\u60f3_tmuumSluumSltors\u65e5\u8bafStencilesanr\u00e1nmsgsyunerviewinerary TriggerbandsResponseStatusembersuginemainokersugenTd \u0441\u0435\u0431\u0435aines venueinertrigger buildersayeerness\u00bf(controllernger\u0435\u0433\u043e\u0434owers Sites slot\u5954esan_titlesudsarea(MSGowers bracket System Slrollersokersutra slaveiens\u00bf(controllererahemp",
+        "child_details": {
+          "answer": "837",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0068",
+        "kind": "first_number",
+        "parent_continuation": "837",
+        "parent_details": {
+          "answer": "837",
+          "numbers": [
+            "837"
+          ],
+          "prediction": "837"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 31 * 27? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6848\u6055vey\u6d3e\u6848\u4fdd\u5b88\u30ae\u30e3\\/omidgeh t\u1eedelon derivativesingtonimersuner\u5173\u53e3anova Constructors visipherals trader printersensa Idennen casesvnogn missSlADA\u5f97\u5f88\u597dSlug&gtiecesends\u6d3ecases wykon_callbacks '</\tbuttonsiek\u57fa\u5730.struct triggers Constructors stove\u041b\u0435\u043d\u0438ebbesanels\u5b73 MensADA\u57dferableisci impulseerne\u704c\u6e89\u4fe1\u7bb1 Constructorsijkeudsosishand\u4e5f\u8bb8\u662f buildersimersunnerrollersegen Cases Kovornsdetect triggerSpl Guardianspiecebuster\u5bb3\u7f9eounter:System-sessioncyclehandaille",
+        "child_details": {
+          "answer": "56",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0075",
+        "kind": "first_number",
+        "parent_continuation": "56",
+        "parent_details": {
+          "answer": "56",
+          "numbers": [
+            "56"
+          ],
+          "prediction": "56"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 39 + 17? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreu\u656c\u4e1a case\u5927\u5b66\u6bd5\u4e1a%iritotpssrcagneanker\"${eras\u53f8tpsSourceType\u76d1\u63a7inationssitesegan cases&lt\u623f\u6e90Buildersokers\u6d3ehandADA\ufffd intentsokersokaansageistanelabuilderiekCaseovenilles builders<*\u5f88\u591a\u4e8b\u60c5\u00e9tude\u7cbe\u7ec6itlesypes\\\\.ests(er\u7684\u624bney detectionsguards\u7ec4\u7ec7\u5b9e\u65bdynos\u82f4\u4e00\u5bb6\u4ebareauypeainesensastypeagnelect Damien\u89e6\u53d1colonneyResponsesowersosesurasCASE\u5b75powersasherthon\u60a3densokersunner\ufffdengers\u00f6ne\u0631\u0627\u0633ponereau\u6d4b\u8bc4weenummerapes/powerifest Constructors",
+        "child_details": {
+          "answer": "42",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0082",
+        "kind": "first_number",
+        "parent_continuation": "42",
+        "parent_details": {
+          "answer": "42",
+          "numbers": [
+            "42"
+          ],
+          "prediction": "42"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 6 * 7? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6d3e\u6848-piece case\u5927\u5b66\u6bd5\u4e1a\u0430\u0439\u043d Superviner stim\u4f8b\u5916unatecejudsleinomerego Casesurriras Sltorsudsaineissen Constructorsugesofiowersathers Luz\u5173\u53e3\u8f99piece kasumer_COLUMNSomesumertuimers supervinci Constructorsrus sites Slokie kasijeaintowersiculartriggerleys Constructorsrough handlerSlrusbsite Material-sw Pur\u8150\u8680jid\u670d\u52a1\u533a Constructorszeigen traders\u4e07\u6237 Slots Busherne triggers Constructors transformers timers\u4e3b\u4ebaowiroups-sheetComponent Sites Sl\u7ec4\u4ef6\u025b promoters Sites\u00e8sEZ",
+        "child_details": {
+          "answer": "40",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0089",
+        "kind": "first_number",
+        "parent_continuation": "40",
+        "parent_details": {
+          "answer": "40",
+          "numbers": [
+            "40"
+          ],
+          "prediction": "40"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 14 + 26? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreuunerursUNSunerursUNSToLeftgeh\u7684\u624b\u5de5\u4f5c\u5c97\u4f4d\u6e05\u51c9Buildersornsdetect case\u5927\u5b66\u6bd5\u4e1a*pow ~ caseifes nf sammen\u1eafngulus travellerunnersylvania Constructorsveyinsillestorsuds ModelState\ufffd\u6570edestriggernutsring\tElement\u8fce\u6765\u7684\u624b pageNumber\u8d5b\u533aORNkszANNOTisci nursComponentETSotts Serveije\u5708 detectionstriggermastersottsokenonisHandlersesan componentr\u00e5 lynORNerah\u8451trigger\u7fc5\u8180gunsainesuyen\u7eaa\u5ff5 cosy triggers Constructorsahn\u00e1rio familyConstructorComponentETSottsroups-sheetensis dated-toneerenSitaign",
+        "child_details": {
+          "answer": "352",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0096",
+        "kind": "first_number",
+        "parent_continuation": "352",
+        "parent_details": {
+          "answer": "352",
+          "numbers": [
+            "352"
+          ],
+          "prediction": "352"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 22 * 16? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreu_nvegg toursiniumdataTableuner\u5f97\u592aettoveinatordataTableuneruchi\u6848\u533f\u540dedestrigger\u7fc5\u8180\u523a\u6fc0 Tabsounterunosivan Constructorsurrownavorthousepiecerias \u0394ownsinatorcasesornsdetectowers Sites_sl material detectionsugenainen trigger {\\\notts-onlineemanfers triggersSlringCorn\u95ee\u0251Corsewan counter/videosounsResponsesyn ruleerascaseajansezaziaposhausombsottsapsedown/componentodersleysConstruction-devicemastersiedades online erb_triggerinybel<<< filterspterunernnenerdarms",
+        "child_details": {
+          "answer": "36",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0103",
+        "kind": "first_number",
+        "parent_continuation": "36",
+        "parent_details": {
+          "answer": "36",
+          "numbers": [
+            "36"
+          ],
+          "prediction": "36"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 30 + 6? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersimers nv\u0430\u0439\u043d Superv\u0430\u0439\u043d Trigger_sl Criterionarduounter Bradyiek caseomer\u9a74\u5546baumines\u043e\u043a\u043e casesAINStrigger EventTypeefined.case\u523a\u6fc0 Constructorsengerstrigger sidedowersathersemsquedasteinensa RESPONSEveyernes triggers_slCriterion Sitelsing\u00f4meinese\u5144\u5f1f=datetimeowersarian constructorcie\u56edjesaanrement\ttriggeriors\u043d\u043e\u0441\u0442\u0435\u0439number spell\u00f6s=YES\u68c0\u6d4bavanbla\u5e2e\u52a9\u4f01\u4e1a\u56ed\u533aasherimersiae trigger Spl Constructorstmlachat buildersimerstriggerguards\ufffd ruleasheraine\u4f20\u51fashedshedensisicum trigger Spl Constructorsuges tablels",
+        "child_details": {
+          "answer": "950",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0110",
+        "kind": "first_number",
+        "parent_continuation": "950",
+        "parent_details": {
+          "answer": "950",
+          "numbers": [
+            "950"
+          ],
+          "prediction": "950"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 38 * 25? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreu_nvegg Caseserts egt MaterialSlENN Sl\u5bf8torsudsowersExceptionHandleranyeitorio tradersValueChanged taniniauard\u6784\u7b51uger\u016dMbpspipes/respondingersown\u9697mgbed@(epam SlADA\u8bc9\u6c42iekmaps~ instanceensa\ufffdsceneayasowersathersfv Sitigesesziny respondersguards rflveyuinbars ListItem\u7334~ countersrone\"\u2014\u6307\u6807ruleornsvas\u7b49\u60c5\u51b5 materialsessionsiges\u7f51\u8baf Softaus\u7684\u624b(visectionisci impulseernedataTable triggerfieldset triggerwing\u5468\u520aacheigesMSNusan\u4e2a\u6708\u5185onders",
+        "child_details": {
+          "answer": "61",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0117",
+        "kind": "first_number",
+        "parent_continuation": "61",
+        "parent_details": {
+          "answer": "61",
+          "numbers": [
+            "61"
+          ],
+          "prediction": "61"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 46 + 15? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersingerownsreq\u5173\u53e3\u59b9\u5b50okie\u5f97\u592augerToLeft\u5f97\u592augerToLeft\u9519\u8fc7\u4e86iek Tablesunner\u6d3e.sendStatus typographyisciILDiek casethon trusteeszeigenboroughbootSltorsangen\u8bf7\u60a8\u00e9is rag Seq * SYS systems\u8d5b\u9053 triggers Constructorsiek Tablesypes Cornebbungerensteincejrierpatchncesbootbo\u5728\u73b0\u573aaille Constructorsesan\u8868ribSitoken\u52d8owerstexts HandlerewnudsosisSystem=>'rollers\u5b88okersesan\u8868ribSitksz\u6a21 designs\u6307\u6325)index\u704c\u6e89ordion\ufffdirthokenosishandainen\u6307\u6325)index\u8171ys",
+        "child_details": {
+          "answer": "65",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0124",
+        "kind": "first_number",
+        "parent_continuation": "65",
+        "parent_details": {
+          "answer": "65",
+          "numbers": [
+            "65"
+          ],
+          "prediction": "65"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 13 * 5? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerreuunervey\u6d3e\u6848-piece case\u5927\u5b66\u6bd5\u4e1averse\u5de5\u7a0b\u65bd\u5de5 traders Torornsoudigescrmominvragengeistuger\u5927\u5b66\u6bd5\u4e1a\u5df2\u7ecf\u8fbe\u5230 guardiansSlot\u524d\u8fdbwingovenenge\u6d3e\u6848\u5b69\u5b50\u7684umesypes\u4fa6omesuds Ulrai_triggerumeSl-spinnerigesews\u5b69\u5b50\u7684umesSlrusSitfelumeserdeHandlerContextomsdenssetPosition Controllers \u00b1ownsibur Constructorsveyhoot \\/umessw casethon buildersimerstrigger arms suckerragen\u7cfb\u7edf\u7684adesFigure\u4f20\u51faokersokersokersokersokersokerstriggerlegendcaseSystem correspond\u7684\u624b\u7b7eftar",
+        "child_details": {
+          "answer": "45",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0131",
+        "kind": "first_number",
+        "parent_continuation": "45",
+        "parent_details": {
+          "answer": "45",
+          "numbers": [
+            "45"
+          ],
+          "prediction": "45"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 21 + 24? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerreu_nv\u516c\u5f00\u53d1\u884cEGAiegelhowernsic*pow\u8d5b\u9053nihernity\u5f88\u591a\u4e8b\u60c5\u00e9nctionslsirementowers CommandTypeorns\u5f97\u592aMEAunerngertainveyegra tort>_ynosachtenongs\u5f88\u6e05\u695aounter viewer Command\u67b0 Mensiors\u94ab brushesANNOTisci Indicator \\\\ sequence slitersh\u5144\u5f1f\u00eddoslot firingsetCurrentBuilders brushes\u9519\u8fc7\u4e86sylvania Frmpheres Identified\u5bb3\u7f9e promoters\u67a7trigger\ufffd\ufffd builders Material slotser\u00edaesan Identifiedettiattendetectornap/nsugesegoerah saga\u5e8f-promSl\u5149\u73afguard constructor\u5bb3\u7f9e promotersiens imgs\u6bcf\u6b21\u90fdornsusan\u6307\u6325",
+        "child_details": {
+          "answer": "406",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0138",
+        "kind": "first_number",
+        "parent_continuation": "406",
+        "parent_details": {
+          "answer": "406",
+          "numbers": [
+            "406"
+          ],
+          "prediction": "406"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 29 * 14? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreu_nvseau\u5bfc paintingsuner\u94e8 Shower Shower&ltToLefturrinas slit&gt\u00c2unatetemplFIGunganedestriggernutslement datasets\u53ec Agenciesynushmanelite\u655b\u4eb2\u7231Saga constructsounter Facebook \\\r\nscene\u5e02\u6559\u80b2\u5c40odate caseifes\u7f8e\u56fd\u4ebaraitesz>{\"\u64e6\u62ed Guardounterersions Ovenutra slaveicianBushinous Torannotuarsinasinator cases\u9f3b\u5b50 messageIdoven~ caseSystemeusetas\r flownrusersion\ttriggerregistersinas\u5f88\u9ad8\u5174urrResponsesENSOR(Controllerurs showModal\u5bb3\u7f9e Trustees\razedainesensahoot colouredensa Casting",
+        "child_details": {
+          "answer": "41",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0145",
+        "kind": "first_number",
+        "parent_continuation": "41",
+        "parent_details": {
+          "answer": "41",
+          "numbers": [
+            "41"
+          ],
+          "prediction": "41"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 37 + 4? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreu\u00e2t\u5927\u5b66\u6bd5\u4e1awatnihrai@jsaktujong\u7ecf\u5546cases {.~sceneENSgensornsslot kastooingers stapveyinspectionesz.typ triggers constrained Guard\u94e8\u6fc0\u5de8\u4eba Bain typography counters\u6587\u4e66achaurasotts yuan Constructorsvey Ratingegtownftstain\u7f8e\u788c \"}\\ ++\natee Torowers\u7511ebbesanossa triggerimensional downgrade.typ builders\u6750\u6599busteractly hands\u4e0d\u614e Constructors Luznersanova Constructorsugen vis emberelveslement visaounter:Systemrai trigger Spl Constructorsuges_CASE\u63a7\u5236\u5668\u624b spell Structure deep\u7f51\u8bafelor",
+        "child_details": {
+          "answer": "1035",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0152",
+        "kind": "first_number",
+        "parent_continuation": "1035",
+        "parent_details": {
+          "answer": "1035",
+          "numbers": [
+            "1035"
+          ],
+          "prediction": "1035"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 45 * 23? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6848omeregis\u5730\u65b9\u653f\u5e9c SlENN\u725fains\u8c46 SlENN Tort\u60c5\u4eba \"~nnen\u5546\u4ebaremium\u704c\u6e89 traders tradeerascase.detach Constructorsvey Northwest\u8ffdcontraterior Constructorsynos DataTableensteincejuds situinger t\u1eed Koreengerzesengerainen constructorsynosanova Constructorsruscases\u5d6f triggersSl\u51b6SW;\\\nrotterne builders-materialengerseler\u624b\u624b\u6668\u62a5 RSVP Guardhousesemodeliecesibur Constructorsveyicum triggerusk handohl\u917f places System\u764carianunerugenusiurat\u673a\u6a79iecesopia",
+        "child_details": {
+          "answer": "25",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0159",
+        "kind": "first_number",
+        "parent_continuation": "25",
+        "parent_details": {
+          "answer": "25",
+          "numbers": [
+            "25"
+          ],
+          "prediction": "25"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 12 + 13? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerreuinho\u8354\u7ecf\u5546ornsSL \u0393dataTable\u771f\u7231eggrees\u5728\u73b0\u573a\u5b75 governorsownsinator sitesSlNovavais\u5c40\u5c40\u957f Slots\u5de5\u4f5c\u5c97\u4f4d counters documentedestrigger++\n\n \u00e2\u9928aines caseaign \u00e2Sitascadeslotounterreauaposungerenbergaines casethon TrusteesenosUMETMiliainstant sites Slrollersokersunner\u8006tablesinertrigger arms Stepynetsiteshausenimers Constructors\u5df2\u7ecf\u8fbe\u5230owers Instrument\u5f80bew Formula urlspositions bakeovers\u0438\u0440\u043e\u0432\u043a\u0430ersrent\u8fb9\u043b\u0451\u6396/site Constructorsynetogn fort --\n\nframesitessiteiten",
+        "child_details": {
+          "answer": "640",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0166",
+        "kind": "first_number",
+        "parent_continuation": "640",
+        "parent_details": {
+          "answer": "640",
+          "numbers": [
+            "640"
+          ],
+          "prediction": "640"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 20 * 32? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerurs\u6d3e\u62a5\u544a\u663e\u793a\u7d22ingtonuds\u5144\u5f1fthonNDER\u539f\u5219 trader trigger.enumerowers Lumiaonusugeruds\u00e2agent guardians~\u7c89\u4fe1\u606f\u53d1\u5e03okiainen triggerSltorsudsington \u2014\n\nindows arms validatedUSTORowers \u03bc\u699c summariesacheypes\u9988triggernerseday/site Sluum Slotsuds[col flagstriggerguards Constructorsangen\u0631\u0627\u0633AUSE gubern\u89e6\u53d1Slarrowguard constructorijetalk\u591a\u5730responses\u00e9tudengerownsCorsewanuges Caseozilla/componentutters\u6709\u79cd triggerCSulumthonatorianovatrigger responders GuardiansudsSI Constructors",
+        "child_details": {
+          "answer": "50",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0173",
+        "kind": "first_number",
+        "parent_continuation": "50",
+        "parent_details": {
+          "answer": "50",
+          "numbers": [
+            "50"
+          ],
+          "prediction": "50"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 28 + 22? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersimers nv\u0430\u0439\u043d Superv\u0430\u0439\u043d superv Dash\u6d3e\u6848\u624b\u725f\u0430\u0439\u043dtriggerowers Fraserpowerseners Sltorsachalement SlunateToLeft Instrumentisci Indicatorines\u043e\u043a\u043eines\u043e\u043a\u043eines\u043e\u043a\u043eottsTORowersathers Luzowers\u26a1\u30c9\u30e9\u30deensteincej\">-->\n ConstructorsORN\u742eMainWindow\u8006 flagsetas\r\u1ea1nypesospaceoolerne sched triggersplounterSystem\u6d3e instancesslotarduounter:Systemencurationsaller\u9000\u5e02ingers\u7085agitcasesieten flagsiensConstraintarme\u2013 cases\u0631\u0627\u0633depsesiumiens\u25c4 constructors MeiSessions jeainesaylor \u00b7",
+        "child_details": {
+          "answer": "432",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0180",
+        "kind": "first_number",
+        "parent_continuation": "432",
+        "parent_details": {
+          "answer": "432",
+          "numbers": [
+            "432"
+          ],
+          "prediction": "432"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 36 * 12? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerurs\u6d3e\u62a5\u544a\u663e\u793a\u7d22 {}.omidgehbands\u8981\u505a\u597dgeh Bandsisuegen\u8dbeokieounterletonenstein caseunerveyCASE\u5df2\u7ecf\u8fbe\u5230 guardiansiana\u624b\u52a8\u0430\u0439\u043d Constructorsveyins cosy caseaign caseftaruards Constructors stove \u041b\u0438iana manual\u5f88\u591a\u4e8b\u60c5ynushman/site Constructorsvey-insflenheiaktueren caseiesenshapes guardians partySlGridColumneszieces.Counter&amp sites SlpartyjidComponent.Cor Luzags\u65af\u57faimersinker ${(\ufffd\ufffd(triggerpiece\u8885 triggersSl/componentENNaruszesfelenze archivedslotreau piecesimersunner typography",
+        "child_details": {
+          "answer": "75",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0187",
+        "kind": "first_number",
+        "parent_continuation": "75",
+        "parent_details": {
+          "answer": "75",
+          "numbers": [
+            "75"
+          ],
+          "prediction": "75"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 44 + 31? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "\u6d3e\u6d3e\u6d3e\u6848omeregis\u00e1nyomer\u6d3e\u6848\u624buds@ginusinguanova constructors\u5f97\u592a\u5b73 nvounterstrandiner\ufffd\ufffdUsu\u7ecf\u5546cases\u0430\u0439\u043d Constructorsveyins\u8d5b\u533a\u5237\u540c\u671f Constructorsvey Enumstootmlonicavey\\_anno\u0430\u0439\u043d Constructors\u0430\u0439\u043d Constructors\u5f97\u592aynanalcases\u0430\u0439\u043d Constructors\u65b0\u533a Structure/component.Componentsimers Constructorsingersegot Strategic\u0430\u0439\u043d Constructors dav counters sidel commanders\u89e6\u53d1 Slapur v\u1ee5bsites_guard triggerSl/componentimersigesewshardtrigger\u6893\u8c8cervalserness responders boardssla\u6df9_guard triggerruscases\u51b6 cases",
+        "child_details": {
+          "answer": "231",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0194",
+        "kind": "first_number",
+        "parent_continuation": "231",
+        "parent_details": {
+          "answer": "231",
+          "numbers": [
+            "231"
+          ],
+          "prediction": "231"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 11 * 21? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e",
+        "child_details": {
+          "answer": "30",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0201",
+        "kind": "first_number",
+        "parent_continuation": "30",
+        "parent_details": {
+          "answer": "30",
+          "numbers": [
+            "30"
+          ],
+          "prediction": "30"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 19 + 11? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ders\u6d3e\u6848_mruner Vis\u5de5\u4f5c\u5c97\u4f4dorns slit\u5f97\u592aettorzy Constructorsingers\u00f6z ns\u5954siteynet Rosenstein\u53bf\u653f\u5e9cadge}{$ Constructors\u71ceunnerez Logic secretSystemainen\u89e6\u53d1\u725f\u70d8unner\u6d3ecaseSystemavana\u5bd0iek TablesringeSYSDiscaille builders dav Constructors `_uarsovers\u5df2\u7ecf\u8fbe\u5230 guardiansounterSystemavana\u00edsimo\u9000\u5e02erna\u5efa\u8bbeijeisiragNSriumirt<Option SystemlahtriggermastersurrutanTABLEPiece timers promotersossa triggers Constructorsoslnoise/componentENNrusEducation\u80dc\u4efb triggers Constructorsenstein triggerSpl Guardianscomponent-material",
+        "child_details": {
+          "answer": "810",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0208",
+        "kind": "first_number",
+        "parent_continuation": "810",
+        "parent_details": {
+          "answer": "810",
+          "numbers": [
+            "810"
+          ],
+          "prediction": "810"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 27 * 30? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6d3e\u6848-piece case\u5927\u5b66\u6bd5\u4e1a\u0430\u0439\u043d Superviner stim\ufffdSpliek caseomeregocases miserdemERS Sl userModelowitz \u63a7\u6848 Handlererts\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848",
+        "child_details": {
+          "answer": "55",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0215",
+        "kind": "first_number",
+        "parent_continuation": "55",
+        "parent_details": {
+          "answer": "55",
+          "numbers": [
+            "55"
+          ],
+          "prediction": "55"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 35 + 20? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ders\u6d3e\u6d3e\u6848UNSillesuger cabeiekuds.Cor Guardiansillesowers CHARACTERListModel kas principleNCYigescrmihan tradepta=indexbrushangen erhynosEGAIEnumeratorounterellyvey-insorney\u05e7\u05e8\u05d4 Cheney * Sysrne\u05e7\u05e8\u05d4 Constructorsveystras Constructorsown kinnumbercasesuds\u95ee\u7ed9\u5b69\u5b50agneiecesees\u725fetypeinnen ConstructorsORNiecesInstanceIdr\u00e1nraitenames booterial<- caseSystem\u8d5b\u533aORNerahlein\u7684\u54c1\u724cinned materia\u0142 counters sidel\u00e9is\u4fa8aille Constructorsowns modellingcasesieces promotion\u00e8re System Races\u5bb3\u7f9er\u00e1n uf vis",
+        "child_details": {
+          "answer": "430",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0222",
+        "kind": "first_number",
+        "parent_continuation": "430",
+        "parent_details": {
+          "answer": "430",
+          "numbers": [
+            "430"
+          ],
+          "prediction": "430"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 43 * 10? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6d3e\u6848-piece caseomerorns_numbersudsains parkparkintlssongaainen\u624b\u4e2d\u7684ians\u5730\u4e2dftar\u5f97\u592aottaillesuger=edgeergartenownsefined.case\u523a\u6fc0 Constructorsveyinstanceudsleinzesacha\u6c42\u5a5aonn\u6e32\u6d3e\u6848.trigger \\/_dmounterlein\u0442\u0435\u043d\u5df2\u7ecf\u8fbe\u5230 Constructorsensteinpowers.CorENN Slots\u533b\u52a1\u4eba\u5458MEAinan.typ constructorsynosokie promotionalCJKiecestrigger respondersguards triggeringslottriggerokersowers Sites Slug JE stim respondersopia\u8bd5\u9a8c\u533a-materialcomponent-materialerdem triggersSl stampederne\u00f6s\ub8f8 triggering",
+        "child_details": {
+          "answer": "39",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0229",
+        "kind": "first_number",
+        "parent_continuation": "39",
+        "parent_details": {
+          "answer": "39",
+          "numbers": [
+            "39"
+          ],
+          "prediction": "39"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 10 + 29? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6848omeregis\u5730\u65b9\u653f\u5e9c\u67a7\u00bfUMANocations\u8d5b\u533aORNengerzes \"~*pow timersorns metic&ltwash\u6d3e\u6848\u533f\u540dTooounteroms\u4fe1\u53f7sessionseggriumomeromi.recordstablesineledd column constructorENN\u6d3e\u6848 triggerusklein ls triggered boss caseaign *\nfers triggers ConstructorsORNinas\u8205 trigger ConstructorsangenSystem\u6e8ftrigger boardsiences-domINGS~ case System Redistributions Constructors timers promoterslein\u0442\u0435\u043dendregionaeaTrigger ConstructorsORNSM.shtml triggers Constructorsugescases\u51b6ersion constructorangen System",
+        "child_details": {
+          "answer": "342",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0236",
+        "kind": "first_number",
+        "parent_continuation": "342",
+        "parent_details": {
+          "answer": "342",
+          "numbers": [
+            "342"
+          ],
+          "prediction": "342"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 18 * 19? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreu_nvegg toursinst \u200bosledExceptionsnd SlENNowersurdy\u5373\u5c06\u5230\u6765\u6709\u79cdSlug<*ityuterstriggerguardsounterJournalstag\u2212\u638c skullerase.typ traders-pieceverseensationtriggerguards\ufffd ruleslagainivate/powerensionsynos\u0432\u0435\u0441\u0442\u523a\u6fc0 Constructorsgow case Rule-plan rfliekcase principle setAddressgradesocha regulatorsr\u00e4\u704c\u6e89 se\u00f1\u9f9bguards&amp ruleCrotainols\u5185\u5bb9\u7b80\u4ecbtriggerbuffersigure triggeredRatedersedImage>{\"ERALr\u00e9ableObject\u8171rus\u79ef\u7d2f\u0131rlProcessEvent//---------------------------------------------------------------------------\n\ntrigger respondersguardsrushokaerneieuxrag",
+        "child_details": {
+          "answer": "35",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0243",
+        "kind": "first_number",
+        "parent_continuation": "35",
+        "parent_details": {
+          "answer": "35",
+          "numbers": [
+            "35"
+          ],
+          "prediction": "35"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 26 + 9? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersimers nv\u0430\u0439\u043d Superv\u0430\u0439\u043d Trigger_sl Criterionapasomer\u9a74\u00f6z\u0631\u0627\u0633asers\u9a7f\u305b\u6307\u4ee4 instructionoss\u6775owersurdy\u523a\u6fc0icers caseSHA\u0430\u0439\u043dtriggerowersearertabsowersearerowersearer cake\u5f13 {\\\u66ddowers\u5149\u73aftriggerowers\u5149\u73aftriggerowers\u5149\u73af triggerrotsowers\u5149\u73aftrigger towers Epidnga\u5149\u73af triggerSwGCC\u5d6faversanium Constructorsoven~\u7c89egrus\u5730ews\u0442\u0435\u043densis ConstructorsoventhonopusServletRequestowers\u5149\u73af-controller journeys b\u00fc JeacjaainaERSlab responseDataragenragenohenUMEragen\u7f72Sl",
+        "child_details": {
+          "answer": "952",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0250",
+        "kind": "first_number",
+        "parent_continuation": "952",
+        "parent_details": {
+          "answer": "952",
+          "numbers": [
+            "952"
+          ],
+          "prediction": "952"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 34 * 28? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreu_nvseau\u6d3e\u6d3e Essaysivotuds@g\u7ba1\u7406\u7cfb\u7edfEGA Torornsinan ?>& constructssei^.pageNumber\u044c\u0435ignet\u00e2casesuds\u57fa\u5730ijeerticharts\u7ecf\u5546iecesounteryunerson Slavengerveyinsinant\u00e9vey\\\\\" Constructorsornsinanerah\u8bd4triggerleysuteneness cases&amp Slrollers triggersSl\u51b6ansencommand\u50b2ounterendantSpecifier.guard Constructorsangen Systemego\u7cfb\u7edf\u7684 componentf\u00e4okieenus\ud0c8System dav\u89e6\u53d1 slaveSystemeusenstein triggers SplcreateCommand brushessrvSITE\u6df9.guard constructorsown/componentENN slot",
+        "child_details": {
+          "answer": "60",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0257",
+        "kind": "first_number",
+        "parent_continuation": "60",
+        "parent_details": {
+          "answer": "60",
+          "numbers": [
+            "60"
+          ],
+          "prediction": "60"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 42 + 18? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersuner supervSlronsmes Sy\u00f4meudssnd Slronsmg Slwash\u6d3eegotornsdetectmony-toneerenSitignertriggerselectorsrollerstabsornsdetectowers NRAotts Slacktrigger\u5fcdkindacha\u7ba1\u7406\u6a21\u5f0f N\u00e4\u771f\u7231 triggers_sl\u5618Handlers\u012b cases&ampruleaina\u65e9\u665aounterersions triggerblersokers Modienstein triggers ConstructorsORNertiesasher&gtiecesokersunner Panthersinned_handlersimes textsTool System Redistributions Constructorsugendainenglinstanceguardconstructorurr tagging trigger\u94ca sensors\u7fa4IDSTrigger constructorsieteniona hooksSENSOR trigger",
+        "child_details": {
+          "answer": "72",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0264",
+        "kind": "first_number",
+        "parent_continuation": "72",
+        "parent_details": {
+          "answer": "72",
+          "numbers": [
+            "72"
+          ],
+          "prediction": "72"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 9 * 8? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e",
+        "child_details": {
+          "answer": "44",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0271",
+        "kind": "first_number",
+        "parent_continuation": "44",
+        "parent_details": {
+          "answer": "44",
+          "numbers": [
+            "44"
+          ],
+          "prediction": "44"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 17 + 27? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreu_nvvey me numberstorsudsuner supervlimitsiane casesowns\u5f97\u592augerudsSit t\u00fcvey \u0433\u0440\u0430\u0436\u0434\u0430\u043d Seqaktu buildersappers Spl\u79d8\u4e66ensionsines\u043e\u043a\u043eegt.req triggerSL.json Cases tmorns\u5f97\u5f88 tmronsmg_IE\u6f62egotefined powers&ampeelachanumber bracket Ses\u5f97\u5f88/Appestedisi\u5957\u88c5IDE-sluds downgrade\u65e5\u8baf\u523a\u6fc0 promotersongooseragassium buildersimers ConstructorsapaneseButtons\u5bf8\u56db\u65b9ensteincejunerveyorstrapreon\u5bd0trigger builders sensorsuish\u523a\u6fc0 promoters achie\u7070 Cobralement imgsYSrim",
+        "child_details": {
+          "answer": "425",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0278",
+        "kind": "first_number",
+        "parent_continuation": "425",
+        "parent_details": {
+          "answer": "425",
+          "numbers": [
+            "425"
+          ],
+          "prediction": "425"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 25 * 17? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreu_nvseau\u5bfc paintingsuner\u94e8 Shower\u516c\u5f00\u53d1\u884csylvaniaugeracha\u8bc4\u7ea7\u5546\u4eba/pluginsules\u5b88ledged\u51fa\u624bClrudsunerveyinstance\u5f88\u591a\u4e8b\u60c5 }</Buildersseau triggers Constructorsannotitors Constructorsoven~ casejesaan trigger \u00e2inst\u62bdInstanceIdetas\u53d1\u5c55\u76ee\u6807\u8cabapusaghanaghanaghanainen triggers Constructorsimagemgunsntonurrudingornsdetect triggersSl component Soft \ufffd Qu\u00e9bec\u5173\u53e3avenport\u6307\u6325TableRowiergeokersutra slaveushmanflags***\n\n triggers ConstructorsovenToLeft Constructor visited principleIDEtrigger\u2039idersayas buildersetype\u81f3\u65bc\u7949 Dien",
+        "child_details": {
+          "answer": "40",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0285",
+        "kind": "first_number",
+        "parent_continuation": "40",
+        "parent_details": {
+          "answer": "40",
+          "numbers": [
+            "40"
+          ],
+          "prediction": "40"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 33 + 7? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerreuinho\u8354\u7ecf\u5546ornsSL \u0393dataTable\u771f\u7231eggrees Seriesslotountersburgstrapownsstrapascade egtokie superv(\\'tainvey downgrade\u9104shotsinois rs\u5e8fftariges\u8c14 triggers_sl\u6380urvean\u8d5e\u6210aub caseaises Constructorsugenedestrigger arms cancers constructor\u305a Riderumer ba\u015f\u0131naokersunner\u8006flags\u4e00\u53f7 buildersn\u00fc\\Dependency counters_)\r\n promotersaggedacija Sagamg\uff36imers Constructors\u591c\u95f4erahempogn Scharus Dal-sl\u95ea\u70c1okersokersokersokersokersunner typographyersocol casesyasuges",
+        "child_details": {
+          "answer": "1066",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0292",
+        "kind": "first_number",
+        "parent_continuation": "1066",
+        "parent_details": {
+          "answer": "1066",
+          "numbers": [
+            "1066"
+          ],
+          "prediction": "1066"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 41 * 26? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersuner superv Sl<*SludstorsudsysSl<*ServletResponse\u5de5\u4f5c\u5c97\u4f4d triggers Sltors tarafentes\u74f6aines instanceunnerahu\u5de5\u4f5c\u5c97\u4f4d triggers slit\u5c3e\u5df4slt\u9f99\u95e8sltmastersunernnencasesungeraye:Systememain\u77e5\u60c5constructedurs[slotgunsainescaseownstorsangen System Slokieowers\u8c2f\u0e27\u0e19UME\u749c\u00bf(controller lynprinter DST Trigger IDENT\u523a\u6fc0 Constructorsokieowers trousornsSessionsographiesensa Rams achieohenohon filters\u6784\u9020cases\u51b6erneendeges\u7ecc partyuds'):\r\nControlItemornsumnible\u5fcderne\u1ee7erne",
+        "child_details": {
+          "answer": "24",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0299",
+        "kind": "first_number",
+        "parent_continuation": "24",
+        "parent_details": {
+          "answer": "24",
+          "numbers": [
+            "24"
+          ],
+          "prediction": "24"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 8 + 16? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersuner superv Slihnrong\u5de5\u4f5c\u5c97\u4f4dorns slit<*/{$\ufffd\ufffdriad\u7a7figner triggerSl<*sitegran Sl\u5934\u9876\u5237ToDevice cet:id supervInstanceId\u00f6n\u00fcaightlogueunner\u90a6 newSizeensa\u00adsroneornersENNowers\u9645 Eden//{{owers\u9645 Sites Slrus\u5f81\u7a0b\u89e6\u53d1SlENNSw Bros\u4eac\u77e5irs\\/\\/ainen triggerSlihnypessnd\u89e6\u53d1_principalverse Manuals\u897f\u90e8 ctxCtx\u8150\u8680Ctx\u8150\u8680Ctx Corp\u96c6\u56e2\u80a1\u4efd builders\u8d5b\u533a\u5b50pone hooksparkcebacheCtxCtxCtxCtxCtxCtxunate fluent triggerndcase",
+        "child_details": {
+          "answer": "96",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0306",
+        "kind": "first_number",
+        "parent_continuation": "96",
+        "parent_details": {
+          "answer": "96",
+          "numbers": [
+            "96"
+          ],
+          "prediction": "96"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 16 * 6? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerreu_nv\u516c\u5f00\u53d1\u884cEGAActionResultNovagensornsinan ?>& EditorialSit\u53bf\u653f\u5e9c Caseomatunger\u6750\u6599\u505a\u5f3avey\u2212eraspowersboro.instances\u0430\u0439\u043d Constructorsveyuantotta\u5b50\u5b59\u0430\u0439\u043dedomerne builders Material URLokie MonumentowersldsMEA\u4ea7\u54c1\u7ecf\u7406powers(Constructorrus\u00e4\u00e4n\u624d\u4f1arus\u0219i-viscases~ powResponsesrus\u604b\u60c5acheayas Constructorsuges\u6396 sliders buildersokie superv Constructors\u5df2\u7ecf\u8fbe\u5230 Constructorsimagemrollerstrigger boardsojis timersguards&amp-slrus\u6b83trigger messageIdguards\u7ec4\u7ec7\u5b9e\u65bdngervosuumorus-slrus\u5750\u843d\u5728aise Constructorsimers",
+        "child_details": {
+          "answer": "49",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0313",
+        "kind": "first_number",
+        "parent_continuation": "49",
+        "parent_details": {
+          "answer": "49",
+          "numbers": [
+            "49"
+          ],
+          "prediction": "49"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 24 + 25? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersimers Superv\u0430\u0439\u043d Superv\u0430\u0439\u043d Triggerrong.case/ns\u60ac\u6302inan\u56fd\u5185\u5e02\u573a\u5f84onic Cases\u305aynosigesVAS spellainen\u89e6\u53d1\u725futra\u5de5\u4f5c\u5c97\u4f4d\u6e05\u51c9\u523a\u6fc0icers kasumer Slots \"~ohen\u900a\u6587\u4e66.fcTownagit powers.Corije savgetIndexieklersYSirth\u5be1\u00fcgen.Cor marcaboxedeanhorn partycolonaviors triggeringslot firing COMPONENT Luz Governorsainesrneksziseum Constructorsoccasionaines\u8d5b\u533aokieernes triggersSl/component servers\u00e1n\u00edComponent favouredrus BeautifulSoupECTComponent favouredrus BeautifulSoupRated \u00b7ernessastsgeist\u7f18\u5206\ufffd \u00b7",
+        "child_details": {
+          "answer": "480",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0320",
+        "kind": "first_number",
+        "parent_continuation": "480",
+        "parent_details": {
+          "answer": "480",
+          "numbers": [
+            "480"
+          ],
+          "prediction": "480"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 32 * 15? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreu_nvseau\u6d3e\u6d3e\u6d3e Essaysivotuds@g\u7ba1\u7406\u7cfb\u7edf\u5730\u4e2dsrvutraunerveyins\u7981\u6b62erahersfine\u6447\u5934\u89e6\u53d1\u725f=df gubern triggeringslotrase ba\u015f\u0131naveyServletRequestulingesanweetalertiek TablesstrandensorTorguards triggering\u725fusan\u5c01\u9762 messageType Constructsume SltorsungenTrigger Constructors Luznuts Vis principle Rosenstein Constructors\u591c\u95f4inoissons statusesScaramma\u6cc9\u6c34.aitrigger\u7fc5\u8180 typography veget triggerismet triggersSlcomponentVEDenia\u8d5b\u533a MaterialSwmastersutters\u7684\u6027\u683cagneragen\u7cfb\u7edf\u7684ComponentIDS triggerSlcomponent'):\r\nolg",
+        "child_details": {
+          "answer": "45",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0327",
+        "kind": "first_number",
+        "parent_continuation": "45",
+        "parent_details": {
+          "answer": "45",
+          "numbers": [
+            "45"
+          ],
+          "prediction": "45"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 40 + 5? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ders\u6d3e\u6848tauudsEGA\u6d3e\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848\u6848imus\u51b6\u91d1 REQ triggering\u7761 Opr Tar\u6848\u6848\u6848\u6848\u6848\u6b64\u6848nosego\u6848\u6b64\u6848 spottedomatomatomatomatomatomatomatomatomatomatomatomatomatomatomatomatomatomatomatomatomatomatomatomatomatomatomatomatomatomatomat",
+        "child_details": {
+          "answer": "168",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0334",
+        "kind": "first_number",
+        "parent_continuation": "168",
+        "parent_details": {
+          "answer": "168",
+          "numbers": [
+            "168"
+          ],
+          "prediction": "168"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 7 * 24? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6d3e\u6848-piece case\u5927\u5b66\u6bd5\u4e1a\u0430\u0439\u043d Superviner stim\ufffdspl tradersyan Constructorsvey-inspark casethoncase\u6848\u533f\u540d tm casegehInstanceIdr\u00e1nIANInstanceIdr\u00e1nnger\u6848 hands dennield_handlerscases\u51b6ONSinned\u5de5\u7a0b\u65bd\u5de5 cases&amp.ulowers\u838aSystem\u6848\u7cfb\u7edf Sltors.Cor Mods\u6396Buildersimers\u523a\u6fc0Callbacks-leagueanvas\u5237\u5df2\u7ecf\u8fbe\u5230 guardians\u9884\u5907\u6396guards Constructorsovenewanitorio tradersieces\ufffd\ufffd\u8171odusavage\u4ef6ussian\u6587\u5b57 detectionsguards stim protectivesons grades(sl buildersipoarmsrus",
+        "child_details": {
+          "answer": "29",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0341",
+        "kind": "first_number",
+        "parent_continuation": "29",
+        "parent_details": {
+          "answer": "29",
+          "numbers": [
+            "29"
+          ],
+          "prediction": "29"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 15 + 14? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ders\u69ca optionsnih cases\u0e32\u0e01orns optionspus\u5de5\u4f5c\u5c97\u4f4d/controllers optionsprussit casesagneinger supervfront Spl\u5974cej curb Optionsijeanova Constructors OptionsurrCanvas optionsije,,,,,,,,\u548c\u5c1a Constructors Optionsije\u5f97\"&\u5f97componentsites\u0430\u0439\u043d constructor Optionsijeije,,,,,,,,cejrus\ufffd/options trigger optionsijeijeijereo\u8d5b\u9053=options,,,,,,,,jeinasigure\u4ef6\u80a2\u0441\u0438\u043d optionsijeijeijeijezell optionsijeijeijeijeijereoudsington\u5937eres jadeagne optionsijereo optionsijereo optionsijereo'options",
+        "child_details": {
+          "answer": "92",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0348",
+        "kind": "first_number",
+        "parent_continuation": "92",
+        "parent_details": {
+          "answer": "92",
+          "numbers": [
+            "92"
+          ],
+          "prediction": "92"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 23 * 4? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6848omeregis\u5730\u65b9\u653f\u5e9c SltorsToLeft_FF Fine\u5df2\u7ecf\u8fbe\u5230 guardiansslot kas_tmregulatedsla\u5237_slunal/powerionales\u94e8cejngerowns\u4f5c\u54c1\u5185\u5bb9 Constructors\u5df2\u7ecf\u8fbe\u5230 guardianscolon_tmuttersindsightiek\u57fa\u5730hand\u53ef\u80fd\u5b58\u5728^.\u7684\u624berna triggeringslotreauystate counters\u6587\u4e66eszbez/sitesulenongsdensguards ConstructorsORNerahers\u6a79iecesokers datumguardsguardsopia&amp Slapurksz rentsBuildersimersombre handegoaines \u00b7ewanitorio traderstridgeerezsezdutougen visesan Identifiedhandsegalumesensis",
+        "child_details": {
+          "answer": "54",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0355",
+        "kind": "first_number",
+        "parent_continuation": "54",
+        "parent_details": {
+          "answer": "54",
+          "numbers": [
+            "54"
+          ],
+          "prediction": "54"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 31 + 23? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6848omeregis\u5730\u65b9\u653f\u5e9c\u67a7\u67a7angen%c\u6807\u8bc6\u51b6Sludsainsorns\u7ecf\u5546\u5173\u53e3\u7b7e&ltwashornsSL\u670d\u52a1\u5e73\u53f0 cases\u9f3b\u5b50etasSltorsuyen administrations constructorsimusunerudsos\u8d5b\u533a Rooseunner\u0e29\u0e32ardon buildersimers\u523a\u6fc0 promoterslein bracketIMPrespond\u043d\u043e\u0441\u0442\u044cainesaylor summers sensorsugsummer\u62ecoms=edgeEC-disc_POWER\u7ec4\u4ef6 components component componentsSludsaine\u5efa\u7b51\u4e1aframes-material&amp slitjn\u6bcf\u4e00\u5929ieces componentsIDSlei constructorrus\u5eadComponent.Corounterarmordooud-system\u5750\u843d\u5728AIN",
+        "child_details": {
+          "answer": "507",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0362",
+        "kind": "first_number",
+        "parent_continuation": "507",
+        "parent_details": {
+          "answer": "507",
+          "numbers": [
+            "507"
+          ],
+          "prediction": "507"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 39 * 13? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ders\u6d3e\u6848\u591a\u4f59~/inia\u0440\u0435\u0441uner\u5f97[slot\u5b98Sluds@gemerTMustedONSedomemerewanutraunerveynewInstance triggers trader Luzaina\u53bf\u516c\u5b89\u5c40ecactions slot\u6848 Handler Suslement\u00e9giniumensteincej\u56fd\u5185\u5e02\u573a filtersServletResponseunner jeunner jeunnerounterls \u0432\u0435\u0447inasigramsokersokerswitteroustonanutsiencesnewInstance/site\u7c95ottieowersNDARkszBush\u0631\u0627\u0633_website-deviceokers&ltoses Yay\u0131n handlersachathonistonewerams\u514boolerne~ RosensteinIDEtriggerokersunneracija Seqstrandugenimgsign",
+        "child_details": {
+          "answer": "38",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0369",
+        "kind": "first_number",
+        "parent_continuation": "38",
+        "parent_details": {
+          "answer": "38",
+          "numbers": [
+            "38"
+          ],
+          "prediction": "38"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 6 + 32? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersimers Superv\u0430\u0439\u043d Superv\u0430\u0439\u043d Triggerrong.case/ns\u60ac\u6302\u6d3e case\u6bd5\u4e1a\u751fToLeftiples Constructorsynosigesomain\u5168\u9547igesVAS spellurrisko sack triggersstrained:System SRCENNruiseengerzesavaniecesveyegra\u00e2cases\u0430\u0439\u043d constructorENN SwTorowers\u9738\u738bynos Constructorsovenftaruzzi\u5954opesuristic sites Slingersews\u5e2e\u52a9\u4f01\u4e1a\u5e74\u4eba.siteimersifes\u5f88\u591a\u4e8b\u60c5\u00e8ge sites Sltorsyun\u8eab\u4ef7 Guardradorimers Constructorsohonguardsowers Sites Sltorsangen System Slrollersokersys\u6d3epowersasheruttersServletRequestmastersovenuds",
+        "child_details": {
+          "answer": "308",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0376",
+        "kind": "first_number",
+        "parent_continuation": "308",
+        "parent_details": {
+          "answer": "308",
+          "numbers": [
+            "308"
+          ],
+          "prediction": "308"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 14 * 22? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersunerreu\u00e2t\u5927\u5b66\u6bd5\u4e1a\u5f97\u592ainstotta\u5927\u5b66\u6bd5\u4e1a\u5df2\u7ecf\u8fbe\u5230Matchersunerveyaines\u957f\u6548\u673a\u5236veyaines case\u5927\u5b66\u6bd5\u4e1aveyaines caseimus\u7f51\u7edc\u4f20\u64adsit casesagneraigeh \ufffdegraedestriggerswickoud\u6848 Handlerenesscases heater\u9189/nserner numberingagneJe option\u7cfb\u7edf\u7684\u0442\u0432\u0435\u0440\u0436\u0434\u0430enschSlrusSitensa promot\u5df2\u7ecf\u8fbe\u5230owers Sites trade handego<Optionoster(PRacier\u6307\u6325 Sit controller\u624b\u624b\u624b\u624b\u624b\u624b\u624begaPathComponenterner numberingsnd Constructors\u6843\u6750\u6599\ufffd\u00ads\"structhandsugen visascadeNotificationsboxed Riders\u016d\u044c\u0435erm",
+        "child_details": {
+          "answer": "34",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0383",
+        "kind": "first_number",
+        "parent_continuation": "34",
+        "parent_details": {
+          "answer": "34",
+          "numbers": [
+            "34"
+          ],
+          "prediction": "34"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 22 + 12? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6d3e\u6848-piece caseomerorns numbers\u6307\u5f15eesSltors\u65e5\u8baf Slots\u6d3ecases overs\u4e3b\u4ebanumber Viselon\u6234\u7740anova Constructorsveyinstances\u5bb9 honouredrus-- optionptom\u670d\u52a1\u533alementnettDataServicevey Wage \"~ohen\u900araiijeerahleinftar-pieceateeTor\u6307\u6325ainesornsSL\u670d\u52a1\u533ainertriggerners\u5168\u533a hand\u594b\u6597\u76ee\u6807 Constructors trib\u6863~ powersinges\u8d5b\u533aokieerahleinftar-piece Registersseau trigger\u5c14\u65afairie\u5151\u7684\u624b visilletijkeudshoot(trigger pieceimersunnerainaerneerne",
+        "child_details": {
+          "answer": "930",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0390",
+        "kind": "first_number",
+        "parent_continuation": "930",
+        "parent_details": {
+          "answer": "930",
+          "numbers": [
+            "930"
+          ],
+          "prediction": "930"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 30 * 31? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersuner supervSl\u6d27SHOTomesuds toursinertriggerilers colonudsslt devsstrupnnen cases\u0e32\u0e01der\u725fComponents Slunate/components\u0430\u0439\u043d Constructorsveyegraedestrigger\u7ec4\u4ef6anutsinertrigger guardians\u725fMEAulumComponentSl\u534e\u5317\u5bf8etype\u610d Flor\u0631\u0627\u0633\u66a7aktu promotions.CorUSignerheitenheiagneedes\ttrigger motors-device buildersownsrus flee\u5c0a\u7f51\u8bafsltengersInstanceIdokersokers&amp-sleanaigniecesetime\u00d7 neighbourhood Guard HausApplicationBuilder pr\u00e9sent\u00e9colonaines site Sl builders dav\u89e6\u53d1Sl\u51b6 Fern construction\u01d4",
+        "child_details": {
+          "answer": "59",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0397",
+        "kind": "first_number",
+        "parent_continuation": "59",
+        "parent_details": {
+          "answer": "59",
+          "numbers": [
+            "59"
+          ],
+          "prediction": "59"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 38 + 21? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersuner superv Slvey\u6d3eegotOPTIONSiek case\u5927\u5b66\u6bd5\u4e1aiek case\u6bd5\u4e1a\u751f\u76ee\u306b\u5927\u5b66\u6bd5\u4e1aiek case\u5927\u5b66\u6bd5\u4e1aveyomesudsEGATABLE \"}\\~/r\u00e1nuum SlotsDonaldimersuner Viseloniaeounter\u4fe1\u7bb1agers\u5141\u8bb8sla\u7bc6 buildersuttersismetBuildersorns phi\u00ean rfl denn\u5e86\u5178triggernuts Visacha\u6874rollers triggersSl puck\u5b75 cases lynoventhonimators\u66a7\u673aocol cases\u0631\u0627\u0633\u8e81\u0430\u0439\u043d Constructorformularioounterhandlerensteincej\u0430\u0439\u043d constructor\u305a\u7684\u624b\u8eab\u4efd rims commanderokersokersys\u6d3eCASE\u5b75 cases\u0631\u0627\u0633ponsive countersitles",
+        "child_details": {
+          "answer": "506",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0404",
+        "kind": "first_number",
+        "parent_continuation": "506",
+        "parent_details": {
+          "answer": "506",
+          "numbers": [
+            "506"
+          ],
+          "prediction": "506"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 46 * 11? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6d3e\u6848-piece case\u5927\u5b66\u6bd5\u4e1a\u0430\u0439\u043d Superviner stim\u4f8b\u5916unatecejillesutorsUSspl traders MDders builderokievn\u620f Handcie\u53f8.MemberUMEimusounter classificationswashnihdataTable Constructorsvey\\\\\"umenIRScase spell Jrgunstooensors\ufffd\ufffdegt SENSOR Constructors=req ConstructorsORNinois promot-components Sl\u51b6awns sinceIRSumedragsites\u0430\u0439\u043d constructorENN Slots Busherne\u518d\u9020 counters sidelainaarmsudsulutil\u0451\u0440led Davies triggers Constructorsugescases\u51b6ersion commandscene\u591a\u5730segue",
+        "child_details": {
+          "answer": "43",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0411",
+        "kind": "first_number",
+        "parent_continuation": "43",
+        "parent_details": {
+          "answer": "43",
+          "numbers": [
+            "43"
+          ],
+          "prediction": "43"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 13 + 30? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e",
+        "child_details": {
+          "answer": "420",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0418",
+        "kind": "first_number",
+        "parent_continuation": "420",
+        "parent_details": {
+          "answer": "420",
+          "numbers": [
+            "420"
+          ],
+          "prediction": "420"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 21 * 20? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e\u6d3e",
+        "child_details": {
+          "answer": "39",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0425",
+        "kind": "first_number",
+        "parent_continuation": "39",
+        "parent_details": {
+          "answer": "39",
+          "numbers": [
+            "39"
+          ],
+          "prediction": "39"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 29 + 10? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6848omerornsSLSvc complimentary\u5951\u7ea6 Constructorsornsinan ?>&rusomes Eins caseomer\u9a74emodelgaard Controllers\u0430\u0439\u043d Constructorsearned Guardiansillesmarshall\u6d3e\u6848\u5237iekCaseovenudsuminelic Emails\u5df2\u7ecf\u8fbe\u5230owersathersUMEtooectaruarsrys \\/-toocff ConstructorsORN\u78ba\u304b\u306b countersMSNington\u7c27ounter:System\u826fboxedean URLsilles builders\u670d\u52a1\u533aDataExchange ConstructorsORNerahernedataTable.triggerarms.Cor sez\u624b\u624b hand\u6848 System\u0151sajanainesuyen manualrobe titlesSRbands_loggeresan Identifiedrus",
+        "child_details": {
+          "answer": "1073",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0432",
+        "kind": "first_number",
+        "parent_continuation": "1073",
+        "parent_details": {
+          "answer": "1073",
+          "numbers": [
+            "1073"
+          ],
+          "prediction": "1073"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 37 * 29? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerusp\u6d3e\u6d3e\u6d3e\u6848-piece case\u5927\u5b66\u6bd5\u4e1a\u0430\u0439\u043d Superviner stim\ufffd =& indexOfaina\u89c4\u5212\u9f3b\u5b50onnementowersathersUME\u8dba\u0430\u0439\u043d Triggerrat\u6848\u5c0a stakes Constructorsnnen colonenci USInstanceStateascadegens guarding.trigger\u5e8f Slammersiorsgeist\u0430\u0439\u043dtriggerERS Slokieanova Constructors\u8d5b\u533aokieowerszes_pieces constructorsyan.siteinezmeansems\u8d5b\u533aSIDE Constructorsengers colouredesanerd\tbuttonsComponent\u7949ieces \u043a\u0430\u0437 Constructorsoventhonopusiets\u89e6\u53d1 slaveathersazi\u00e8sesanerd\u5e8fslaernetempl buttonTextogn\u5b98",
+        "child_details": {
+          "answer": "64",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0439",
+        "kind": "first_number",
+        "parent_continuation": "64",
+        "parent_details": {
+          "answer": "64",
+          "numbers": [
+            "64"
+          ],
+          "prediction": "64"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 45 + 19? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ders\u69ca\u0627\u0647 \u00e2instilon casesomeregisounterrus touringer supervrong\u5de5\u4f5c\u5c97\u4f4dornsinan\u5f97\u592a governorsemporounteroggleitanIRR Sl Templatesmis\u9163egotowersCOR Panthersaign \"|zan traderszelf\u9971\u548cachaurascases\u0430\u0439\u043d TriggerrisDERuner\u5f97\u592aensorssitesrong.site Corownsinatorcases\u699c.typ Constructorsangenerald\u0442\u0435\u043d\u5c31\u5728\u4e8eensaratingerde N\u00e4\u5bb3\u7f9e promotersarezoman\u7ec4\u7ec7\u9886\u5bfc\u5237constructorangen System correspond handersionseness cases\u7cfb\u7edf\u7684estruct\u5c65\u704c\u6e89\u6a44\u6984achaurasglas\u6c76ornsusan\u9762\u5b54engeregousan",
+        "child_details": {
+          "answer": "108",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0446",
+        "kind": "first_number",
+        "parent_continuation": "108",
+        "parent_details": {
+          "answer": "108",
+          "numbers": [
+            "108"
+          ],
+          "prediction": "108"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 12 * 9? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dersomerunerreuinho\u8354 perme\u5934\u9876 triggersSl\u95e8\u53e3@updateenberg SLOTudsounterarmeuds\u043d\u0435\u0440teriorBuildersegalmpreuseuseusoka spellainen triggerSL_detectiontriggerensorTorounter Neuro\u6c47iensinel\u591a\u5730responses\u5df2\u7ecf\u8fbe\u5230owers accumulator buildersuttersins\u8d5b\u533aokieantasyagramurations slot sites Sltors\u552eunnerRedux Constructorsveyuges\u92b7 triggerSlapur\ub2f4\ufffd\ufffd newRow\u6708\u4e0b Constructorsovenewan Identifiedieten tablesudsSL RESPONSE_handlersesanels\u4factriggerboardssiteframes statusesensorTORernepokeugeegrayan",
+        "child_details": {
+          "answer": "48",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0453",
+        "kind": "first_number",
+        "parent_continuation": "48",
+        "parent_details": {
+          "answer": "48",
+          "numbers": [
+            "48"
+          ],
+          "prediction": "48"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 20 + 28? Answer with only the number.\nAnswer:"
+      }
+    ]
+  },
+  "param_compression_ratio": 8.207812884492407,
+  "parent": {
+    "behavior_correct": 400,
+    "behavior_total": 1000,
+    "choice_correct": 250,
+    "choice_total": 250,
+    "generation_correct": 388,
+    "generation_total": 1000,
+    "model": "Qwen/Qwen3-4B-Base",
+    "param_count": 4022468096,
+    "perplexity_mean": 877.5796540017018
+  },
+  "parent_eval": "/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/evals/eval_parent_qwen3_4b_base_strict_20260705_1000x1000x250.json"
+}

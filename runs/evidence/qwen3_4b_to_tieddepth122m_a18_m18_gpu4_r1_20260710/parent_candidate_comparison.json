@@ -1,0 +1,3320 @@
+{
+  "behavior": {
+    "by_category": {
+      "code": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 200,
+        "parent_pass": 200,
+        "parent_pass_retention_rate": 0.0,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [
+          "synthetic_python_add_0004",
+          "synthetic_python_add_0019",
+          "synthetic_python_add_0034",
+          "synthetic_python_add_0049",
+          "synthetic_python_add_0064",
+          "synthetic_python_add_0079",
+          "synthetic_python_add_0094",
+          "synthetic_python_add_0109",
+          "synthetic_python_add_0124",
+          "synthetic_python_add_0139",
+          "synthetic_python_add_0154",
+          "synthetic_python_add_0169",
+          "synthetic_python_add_0184",
+          "synthetic_python_add_0199",
+          "synthetic_python_add_0214",
+          "synthetic_python_add_0229",
+          "synthetic_python_add_0244",
+          "synthetic_python_add_0259",
+          "synthetic_python_add_0274",
+          "synthetic_python_add_0289",
+          "synthetic_python_add_0304",
+          "synthetic_python_add_0319",
+          "synthetic_python_add_0334",
+          "synthetic_python_add_0349",
+          "synthetic_python_add_0364"
+        ],
+        "shared_ids": 200,
+        "shared_parent_pass_retention_rate": 0.0,
+        "total_ids": 200
+      },
+      "commonsense": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 0,
+        "parent_pass": 0,
+        "parent_pass_retention_rate": null,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [],
+        "shared_ids": 200,
+        "shared_parent_pass_retention_rate": null,
+        "total_ids": 200
+      },
+      "math": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 200,
+        "parent_pass": 200,
+        "parent_pass_retention_rate": 0.0,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [
+          "synthetic_math_0000",
+          "synthetic_math_0005",
+          "synthetic_math_0010",
+          "synthetic_math_0015",
+          "synthetic_math_0020",
+          "synthetic_math_0025",
+          "synthetic_math_0030",
+          "synthetic_math_0035",
+          "synthetic_math_0040",
+          "synthetic_math_0045",
+          "synthetic_math_0050",
+          "synthetic_math_0055",
+          "synthetic_math_0060",
+          "synthetic_math_0065",
+          "synthetic_math_0070",
+          "synthetic_math_0075",
+          "synthetic_math_0080",
+          "synthetic_math_0085",
+          "synthetic_math_0090",
+          "synthetic_math_0095",
+          "synthetic_math_0100",
+          "synthetic_math_0105",
+          "synthetic_math_0110",
+          "synthetic_math_0115",
+          "synthetic_math_0120"
+        ],
+        "shared_ids": 200,
+        "shared_parent_pass_retention_rate": 0.0,
+        "total_ids": 200
+      },
+      "model_surgery": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 0,
+        "parent_pass": 0,
+        "parent_pass_retention_rate": null,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [],
+        "shared_ids": 200,
+        "shared_parent_pass_retention_rate": null,
+        "total_ids": 200
+      },
+      "tokenizer": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 0,
+        "parent_pass": 0,
+        "parent_pass_retention_rate": null,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [],
+        "shared_ids": 200,
+        "shared_parent_pass_retention_rate": null,
+        "total_ids": 200
+      }
+    },
+    "by_kind": {
+      "first_number": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 200,
+        "parent_pass": 200,
+        "parent_pass_retention_rate": 0.0,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [
+          "synthetic_math_0000",
+          "synthetic_math_0005",
+          "synthetic_math_0010",
+          "synthetic_math_0015",
+          "synthetic_math_0020",
+          "synthetic_math_0025",
+          "synthetic_math_0030",
+          "synthetic_math_0035",
+          "synthetic_math_0040",
+          "synthetic_math_0045",
+          "synthetic_math_0050",
+          "synthetic_math_0055",
+          "synthetic_math_0060",
+          "synthetic_math_0065",
+          "synthetic_math_0070",
+          "synthetic_math_0075",
+          "synthetic_math_0080",
+          "synthetic_math_0085",
+          "synthetic_math_0090",
+          "synthetic_math_0095",
+          "synthetic_math_0100",
+          "synthetic_math_0105",
+          "synthetic_math_0110",
+          "synthetic_math_0115",
+          "synthetic_math_0120"
+        ],
+        "shared_ids": 200,
+        "shared_parent_pass_retention_rate": 0.0,
+        "total_ids": 200
+      },
+      "pattern_groups": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 0,
+        "parent_pass": 0,
+        "parent_pass_retention_rate": null,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [],
+        "shared_ids": 600,
+        "shared_parent_pass_retention_rate": null,
+        "total_ids": 600
+      },
+      "python_function": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 200,
+        "parent_pass": 200,
+        "parent_pass_retention_rate": 0.0,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [
+          "synthetic_python_add_0004",
+          "synthetic_python_add_0019",
+          "synthetic_python_add_0034",
+          "synthetic_python_add_0049",
+          "synthetic_python_add_0064",
+          "synthetic_python_add_0079",
+          "synthetic_python_add_0094",
+          "synthetic_python_add_0109",
+          "synthetic_python_add_0124",
+          "synthetic_python_add_0139",
+          "synthetic_python_add_0154",
+          "synthetic_python_add_0169",
+          "synthetic_python_add_0184",
+          "synthetic_python_add_0199",
+          "synthetic_python_add_0214",
+          "synthetic_python_add_0229",
+          "synthetic_python_add_0244",
+          "synthetic_python_add_0259",
+          "synthetic_python_add_0274",
+          "synthetic_python_add_0289",
+          "synthetic_python_add_0304",
+          "synthetic_python_add_0319",
+          "synthetic_python_add_0334",
+          "synthetic_python_add_0349",
+          "synthetic_python_add_0364"
+        ],
+        "shared_ids": 200,
+        "shared_parent_pass_retention_rate": 0.0,
+        "total_ids": 200
+      }
+    },
+    "overall": {
+      "child_only_or_parent_failed_gain": 0,
+      "child_pass": 0,
+      "lost_parent_pass": 400,
+      "parent_pass": 400,
+      "parent_pass_retention_rate": 0.0,
+      "retained_parent_pass": 0,
+      "sample_gain_ids": [],
+      "sample_lost_parent_pass_ids": [
+        "synthetic_math_0000",
+        "synthetic_math_0005",
+        "synthetic_math_0010",
+        "synthetic_math_0015",
+        "synthetic_math_0020",
+        "synthetic_math_0025",
+        "synthetic_math_0030",
+        "synthetic_math_0035",
+        "synthetic_math_0040",
+        "synthetic_math_0045",
+        "synthetic_math_0050",
+        "synthetic_math_0055",
+        "synthetic_math_0060",
+        "synthetic_math_0065",
+        "synthetic_math_0070",
+        "synthetic_math_0075",
+        "synthetic_math_0080",
+        "synthetic_math_0085",
+        "synthetic_math_0090",
+        "synthetic_math_0095",
+        "synthetic_math_0100",
+        "synthetic_math_0105",
+        "synthetic_math_0110",
+        "synthetic_math_0115",
+        "synthetic_math_0120"
+      ],
+      "shared_ids": 1000,
+      "shared_parent_pass_retention_rate": 0.0,
+      "total_ids": 1000
+    }
+  },
+  "child": {
+    "behavior_correct": 0,
+    "behavior_total": 1000,
+    "choice_correct": 15,
+    "choice_total": 250,
+    "generation_correct": 0,
+    "generation_total": 1000,
+    "model": "qwen3-tied-depth:a18:m18",
+    "param_count": 122093056,
+    "perplexity_mean": 8073711.455725836
+  },
+  "child_eval": "/mnt/ai_data/neural-forge/tied_depth_controls_20260710/qwen3_4b_to_tieddepth122m_a18_m18_gpu4_r1_20260710/candidate_eval.json",
+  "choice": {
+    "overall": {
+      "child_only_or_parent_failed_gain": 0,
+      "child_pass": 15,
+      "lost_parent_pass": 235,
+      "parent_pass": 250,
+      "parent_pass_retention_rate": 0.06,
+      "retained_parent_pass": 15,
+      "sample_gain_ids": [],
+      "sample_lost_parent_pass_ids": [
+        "synthetic_choice_0000",
+        "synthetic_choice_0001",
+        "synthetic_choice_0002",
+        "synthetic_choice_0003",
+        "synthetic_choice_0004",
+        "synthetic_choice_0005",
+        "synthetic_choice_0006",
+        "synthetic_choice_0007",
+        "synthetic_choice_0008",
+        "synthetic_choice_0009",
+        "synthetic_choice_0010",
+        "synthetic_choice_0011",
+        "synthetic_choice_0014",
+        "synthetic_choice_0015",
+        "synthetic_choice_0016",
+        "synthetic_choice_0017",
+        "synthetic_choice_0018",
+        "synthetic_choice_0019",
+        "synthetic_choice_0020",
+        "synthetic_choice_0021",
+        "synthetic_choice_0022",
+        "synthetic_choice_0023",
+        "synthetic_choice_0024",
+        "synthetic_choice_0025",
+        "synthetic_choice_0026"
+      ],
+      "shared_ids": 250,
+      "shared_parent_pass_retention_rate": 0.06,
+      "total_ids": 250
+    }
+  },
+  "generation": {
+    "by_category": {
+      "code": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 232,
+        "parent_pass": 232,
+        "parent_pass_retention_rate": 0.0,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [
+          "generation_python_add_0002",
+          "generation_python_add_0009",
+          "generation_python_add_0016",
+          "generation_python_add_0023",
+          "generation_python_add_0030",
+          "generation_python_add_0037",
+          "generation_python_add_0044",
+          "generation_python_add_0051",
+          "generation_python_add_0072",
+          "generation_python_add_0079",
+          "generation_python_add_0093",
+          "generation_python_add_0107",
+          "generation_python_add_0114",
+          "generation_python_add_0121",
+          "generation_python_add_0128",
+          "generation_python_add_0135",
+          "generation_python_add_0142",
+          "generation_python_add_0149",
+          "generation_python_add_0163",
+          "generation_python_add_0177",
+          "generation_python_add_0198",
+          "generation_python_add_0205",
+          "generation_python_add_0212",
+          "generation_python_add_0219",
+          "generation_python_add_0226"
+        ],
+        "shared_ids": 285,
+        "shared_parent_pass_retention_rate": 0.0,
+        "total_ids": 285
+      },
+      "commonsense": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 0,
+        "parent_pass": 0,
+        "parent_pass_retention_rate": null,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [],
+        "shared_ids": 143,
+        "shared_parent_pass_retention_rate": null,
+        "total_ids": 143
+      },
+      "math": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 142,
+        "parent_pass": 142,
+        "parent_pass_retention_rate": 0.0,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [
+          "generation_math_answer_0005",
+          "generation_math_answer_0012",
+          "generation_math_answer_0019",
+          "generation_math_answer_0033",
+          "generation_math_answer_0040",
+          "generation_math_answer_0047",
+          "generation_math_answer_0054",
+          "generation_math_answer_0061",
+          "generation_math_answer_0068",
+          "generation_math_answer_0075",
+          "generation_math_answer_0082",
+          "generation_math_answer_0089",
+          "generation_math_answer_0096",
+          "generation_math_answer_0103",
+          "generation_math_answer_0110",
+          "generation_math_answer_0117",
+          "generation_math_answer_0124",
+          "generation_math_answer_0131",
+          "generation_math_answer_0138",
+          "generation_math_answer_0145",
+          "generation_math_answer_0152",
+          "generation_math_answer_0159",
+          "generation_math_answer_0166",
+          "generation_math_answer_0173",
+          "generation_math_answer_0180"
+        ],
+        "shared_ids": 143,
+        "shared_parent_pass_retention_rate": 0.0,
+        "total_ids": 143
+      },
+      "model_surgery": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 14,
+        "parent_pass": 14,
+        "parent_pass_retention_rate": 0.0,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [
+          "generation_pruning_0210",
+          "generation_pruning_0308",
+          "generation_pruning_0406",
+          "generation_pruning_0427",
+          "generation_pruning_0504",
+          "generation_pruning_0511",
+          "generation_pruning_0525",
+          "generation_pruning_0602",
+          "generation_pruning_0616",
+          "generation_pruning_0623",
+          "generation_pruning_0714",
+          "generation_pruning_0721",
+          "generation_pruning_0826",
+          "generation_pruning_0917"
+        ],
+        "shared_ids": 286,
+        "shared_parent_pass_retention_rate": 0.0,
+        "total_ids": 286
+      },
+      "tokenizer": {
+        "child_only_or_parent_failed_gain": 0,
+        "child_pass": 0,
+        "lost_parent_pass": 0,
+        "parent_pass": 0,
+        "parent_pass_retention_rate": null,
+        "retained_parent_pass": 0,
+        "sample_gain_ids": [],
+        "sample_lost_parent_pass_ids": [],
+        "shared_ids": 143,
+        "shared_parent_pass_retention_rate": null,
+        "total_ids": 143
+      }
+    },
+    "overall": {
+      "child_only_or_parent_failed_gain": 0,
+      "child_pass": 0,
+      "lost_parent_pass": 388,
+      "parent_pass": 388,
+      "parent_pass_retention_rate": 0.0,
+      "retained_parent_pass": 0,
+      "sample_gain_ids": [],
+      "sample_lost_parent_pass_ids": [
+        "generation_math_answer_0005",
+        "generation_math_answer_0012",
+        "generation_math_answer_0019",
+        "generation_math_answer_0033",
+        "generation_math_answer_0040",
+        "generation_math_answer_0047",
+        "generation_math_answer_0054",
+        "generation_math_answer_0061",
+        "generation_math_answer_0068",
+        "generation_math_answer_0075",
+        "generation_math_answer_0082",
+        "generation_math_answer_0089",
+        "generation_math_answer_0096",
+        "generation_math_answer_0103",
+        "generation_math_answer_0110",
+        "generation_math_answer_0117",
+        "generation_math_answer_0124",
+        "generation_math_answer_0131",
+        "generation_math_answer_0138",
+        "generation_math_answer_0145",
+        "generation_math_answer_0152",
+        "generation_math_answer_0159",
+        "generation_math_answer_0166",
+        "generation_math_answer_0173",
+        "generation_math_answer_0180"
+      ],
+      "shared_ids": 1000,
+      "shared_parent_pass_retention_rate": 0.0,
+      "total_ids": 1000
+    }
+  },
+  "manual_samples": {
+    "behavior": [
+      {
+        "category": "math",
+        "child_continuation": "obspare compar compared compared compared compared compared compared compar compared compar compar compar compar compar compar compared compar compared compar compared compar compar compar compared compar compared compar compared compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "10",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0000",
+        "kind": "first_number",
+        "parent_continuation": "10",
+        "parent_details": {
+          "answer": "10",
+          "numbers": [
+            "10"
+          ],
+          "prediction": "10"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 6 + 4? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULEokenhouse incre shifteleroad split limited earn multiple oppos series piece parenttribute national continue split rank limitdownhouse checkpointsumvicevicevicevicevicevicevicevicevice raw raw raw raw parent raw parent parent existingvicevicevicevicevicevicevicevicevicevice raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "1230",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0005",
+        "kind": "first_number",
+        "parent_continuation": "1230",
+        "parent_details": {
+          "answer": "1230",
+          "numbers": [
+            "1230"
+          ],
+          "prediction": "1230"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 41 * 30? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "raw raw raw raw raw raw initial parent contrib campaign contr multiple opposimate level limited relationshiparent already existing separvice shift remove removeeld less limited correspond multiplyrefixrop ps parentsvicepare op.join higher ca matrix missing frontitted compar comparedraryirstegin referencetribute optim improvevicevicevicevicevice missingvice missingvicevicevicevicevicevicevice raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "62",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0010",
+        "kind": "first_number",
+        "parent_continuation": "62",
+        "parent_details": {
+          "answer": "62",
+          "numbers": [
+            "62"
+          ],
+          "prediction": "62"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 35 + 27? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americething.join enter initialoken level Americ averageregisterheadoken split limitedtribute signific initial initial initial initial initial initial initial initial partialearheck safety security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security",
+        "child_details": {
+          "answer": "696",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0015",
+        "kind": "first_number",
+        "parent_continuation": "696",
+        "parent_details": {
+          "answer": "696",
+          "numbers": [
+            "696"
+          ],
+          "prediction": "696"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 29 * 24? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "oppos coefficientsags multiplyhouse graph graph graph.join comparoles opposolidimary oppos revevice offset correspond multiply.joinirst rank incre shiftadi like similar already already alreadyvicevicevicevice converslob missingvicevicevice missingvicevice missingvice missingvicevicevicevicevicevice missingvice missingvice missingvicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevice",
+        "child_details": {
+          "answer": "44",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0020",
+        "kind": "first_number",
+        "parent_continuation": "44",
+        "parent_details": {
+          "answer": "44",
+          "numbers": [
+            "44"
+          ],
+          "prediction": "44"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 23 + 21? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ margin higher boolean progress progress phot inc progress correspond multiply correspond multiply correspond multiply correspond multiply.joinervetribute limitedares continue unseen beyond Law rule copyright Commimateceed level compar compar compar compar compar compar comparedrary halfpropiodvicevicevice compar compared compared compar compar compar compared compar compared compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "306",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0025",
+        "kind": "first_number",
+        "parent_continuation": "306",
+        "parent_details": {
+          "answer": "306",
+          "numbers": [
+            "306"
+          ],
+          "prediction": "306"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 17 * 18? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULEokenhouse incre shift already already already already already already bookpend higher?\n vol opposimate correspond multiplyesome\ufffd Americ hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden revevicevicevicevicevicevicevicevicevicevice raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "26",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0030",
+        "kind": "first_number",
+        "parent_continuation": "26",
+        "parent_details": {
+          "answer": "26",
+          "numbers": [
+            "26"
+          ],
+          "prediction": "26"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 11 + 15? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "atives average correspond multiply compar correspond multiply correspond multiply correspond multiply correspond correspond correspond correspond multiply correspond correspond correspond correspond correspond correspond correspond correspond correspond correspond incre incre incre incre incre incre incre incre incre incre incre incre incre incre incre incre incre incre incre incre incre incre incre incre incre incre incre shiftODO course books books books books books booksiable rank raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "552",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0035",
+        "kind": "first_number",
+        "parent_continuation": "552",
+        "parent_details": {
+          "answer": "552",
+          "numbers": [
+            "552"
+          ],
+          "prediction": "552"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 46 * 12? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "opposimate level max missingeturn limited appear compared missingvice raw baseango beyond., conf marginoogle graph graph level earn missingvicevicevicevicevice early TV split progressvice seriesFIG graphados initialangehouseoken/or allowed margin margin margin raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "49",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0040",
+        "kind": "first_number",
+        "parent_continuation": "49",
+        "parent_details": {
+          "answer": "49",
+          "numbers": [
+            "49"
+          ],
+          "prediction": "49"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 40 + 9? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "rary prevent rankASK multip empty eventsULEoken higher bool boolean bool bool bool bool boolboardrea certainWS celebrpareinue oppos boolean bool boolean boolcmp relationship appear comparedfill missing missing missing missingfill missinghouseparescribe already already already already already maxerve compared compared comparoken already already existing existingEqual missingvicevicevicevicevicevice raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "204",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0045",
+        "kind": "first_number",
+        "parent_continuation": "204",
+        "parent_details": {
+          "answer": "204",
+          "numbers": [
+            "204"
+          ],
+          "prediction": "204"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 34 * 6? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "raw raw raw raw raw existingething.join compar max energy questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions",
+        "child_details": {
+          "answer": "60",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0050",
+        "kind": "first_number",
+        "parent_continuation": "60",
+        "parent_details": {
+          "answer": "60",
+          "numbers": [
+            "60"
+          ],
+          "prediction": "60"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 28 + 32? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULEokenhouse incre shifteturnvc already already already bookpend higher pub beyond., already already already already already already already already already parent base parent multiple oppos partial oppos early early early early prevent rank energy energy energy ca multiple oppos direction missinghouseifest direct starting cather already already already already already already already already already already already already already already already already already already already already already already already already already already already already already already already already already already already already already alreadycmp comparedpare general baseerve",
+        "child_details": {
+          "answer": "638",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0055",
+        "kind": "first_number",
+        "parent_continuation": "638",
+        "parent_details": {
+          "answer": "638",
+          "numbers": [
+            "638"
+          ],
+          "prediction": "638"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 22 * 29? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "sum appear multiply compar compared compared compared compared compared compared compared compared compared compar compar compar compared compared compared compared compared compared compared compared compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "42",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0060",
+        "kind": "first_number",
+        "parent_continuation": "42",
+        "parent_details": {
+          "answer": "42",
+          "numbers": [
+            "42"
+          ],
+          "prediction": "42"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 16 + 26? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULEoken energy progress against compar compar compar compared compared compared compared compared compared compared compared compared compared compared compared compar compared compar compared compared compar compared compar compared compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "230",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0065",
+        "kind": "first_number",
+        "parent_continuation": "230",
+        "parent_details": {
+          "answer": "230",
+          "numbers": [
+            "230"
+          ],
+          "prediction": "230"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 10 * 23? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americoken missingoken missingoken fill multiple opposicients availablerary preventpare split beyond beyond beyond pub second classolder questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions",
+        "child_details": {
+          "answer": "65",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0070",
+        "kind": "first_number",
+        "parent_continuation": "65",
+        "parent_details": {
+          "answer": "65",
+          "numbers": [
+            "65"
+          ],
+          "prediction": "65"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 45 + 20? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ margin higher multiple oppos initialCallback missinghouse graphfirstfirstfirstfirstfirst firstfirst limited mid multiple begin report Initial uniquefirst rangeRangeoken already reve oppos oppos oppos oppos oppos oppos oppos reve revevicevicevicevicevicevicevicevicevice oppos series syntax amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing incre incre higherhouse initial global.,\u0119 oppos oppos oppos oppos oppos opposvice revevice revevice revevicevicevicevice",
+        "child_details": {
+          "answer": "663",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0075",
+        "kind": "first_number",
+        "parent_continuation": "663",
+        "parent_details": {
+          "answer": "663",
+          "numbers": [
+            "663"
+          ],
+          "prediction": "663"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 39 * 17? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "oppos coefficientsEqual missingoken level limit comparueue level beyond increpare compared compared compared compared compared compar compar compar compar compar compar compared compared multipavor base initialvice fillitted compar compar compar compar compar compar compar compared compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "47",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0080",
+        "kind": "first_number",
+        "parent_continuation": "47",
+        "parent_details": {
+          "answer": "47",
+          "numbers": [
+            "47"
+          ],
+          "prediction": "47"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 33 + 14? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ reve multiply correspond multiply correspond multiply correspond multiply correspond multiply correspond multiply correspond correspond multiply correspond correspond correspond multiply maxerveerveerveerveervetribute limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited",
+        "child_details": {
+          "answer": "297",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0085",
+        "kind": "first_number",
+        "parent_continuation": "297",
+        "parent_details": {
+          "answer": "297",
+          "numbers": [
+            "297"
+          ],
+          "prediction": "297"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 27 * 11? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ halfoken missingoken beyond law according questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions",
+        "child_details": {
+          "answer": "29",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0090",
+        "kind": "first_number",
+        "parent_continuation": "29",
+        "parent_details": {
+          "answer": "29",
+          "numbers": [
+            "29"
+          ],
+          "prediction": "29"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 21 + 8? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "sumODOgrad opposULL Start correspond multiply Arg revecre improve rankvicepare averageimarypliedpare compar compared compared compared compared compared compared compared compared compared compar compared compared compared compared compared compared compared compared compared compar compared compar compar compar compar compar compared compared compared compared compared compar compar compar compar compar compar compar compar compar compar compared compar compar compar compar compar compar compar compar compar compar compar compared compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "75",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0095",
+        "kind": "first_number",
+        "parent_continuation": "75",
+        "parent_details": {
+          "answer": "75",
+          "numbers": [
+            "75"
+          ],
+          "prediction": "75"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 15 * 5? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME agre missing existing compared compared missingvice margin calledtherEqual match amazingimary oppos multiple oppos equal opposvicepare compar raw raw raw raw raw raw raw raw raw alreadyvicevicevicevicevicevicevicevicevicevicevicevicevicevicevice raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "40",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0100",
+        "kind": "first_number",
+        "parent_continuation": "40",
+        "parent_details": {
+          "answer": "40",
+          "numbers": [
+            "40"
+          ],
+          "prediction": "40"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 9 + 31? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "atives average correspond multiply correspond multiply comparocr reve reve reve reve reve reve reve reveoken cut stage correct falsearent multiple reve reve reve reve reve reve reve revevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevice",
+        "child_details": {
+          "answer": "1232",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0105",
+        "kind": "first_number",
+        "parent_continuation": "1232",
+        "parent_details": {
+          "answer": "1232",
+          "numbers": [
+            "1232"
+          ],
+          "prediction": "1232"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 44 * 28? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "raw raw raw raw raw raw initial parent contrib campaignautoautoautoautochildren already parent optim improve optim improve continitted earlymp limit compared average referenceimate changes affect cutirstvicepare compared compared compared compared compared comparvice raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "63",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0110",
+        "kind": "first_number",
+        "parent_continuation": "63",
+        "parent_details": {
+          "answer": "63",
+          "numbers": [
+            "63"
+          ],
+          "prediction": "63"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 38 + 25? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ margin higher multipleULL series limitedarent already limit parent removedvc questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions",
+        "child_details": {
+          "answer": "704",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0115",
+        "kind": "first_number",
+        "parent_continuation": "704",
+        "parent_details": {
+          "answer": "704",
+          "numbers": [
+            "704"
+          ],
+          "prediction": "704"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 32 * 22? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americoken split limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited",
+        "child_details": {
+          "answer": "45",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0120",
+        "kind": "first_number",
+        "parent_continuation": "45",
+        "parent_details": {
+          "answer": "45",
+          "numbers": [
+            "45"
+          ],
+          "prediction": "45"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 26 + 19? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "sum mid cutCallbackoles old law according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according",
+        "child_details": {
+          "answer": "320",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0125",
+        "kind": "first_number",
+        "parent_continuation": "320",
+        "parent_details": {
+          "answer": "320",
+          "numbers": [
+            "320"
+          ],
+          "prediction": "320"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 20 * 16? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "opposicients contin earnvice raw raw raw raw initialhouseokeneturnpare multiple oppos law law law rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules",
+        "child_details": {
+          "answer": "27",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0130",
+        "kind": "first_number",
+        "parent_continuation": "27",
+        "parent_details": {
+          "answer": "27",
+          "numbers": [
+            "27"
+          ],
+          "prediction": "27"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 14 + 13? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "raw raw raw existingvice raw raw raw raw initial eas reve counterhouse energy limited inc correspond#pragmavice raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "80",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0135",
+        "kind": "first_number",
+        "parent_continuation": "80",
+        "parent_details": {
+          "answer": "80",
+          "numbers": [
+            "80"
+          ],
+          "prediction": "80"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 8 * 10? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "Americ halfoken range relationshipeturnART already already already already bookpend higher what direct parent earn optim improve rank cannot cannotoken already limited hidden hidden hidden reveoken alreadyersist compar compared compared compar compar compar compar compar compar compar compared compared compared compar compared compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "50",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0140",
+        "kind": "first_number",
+        "parent_continuation": "50",
+        "parent_details": {
+          "answer": "50",
+          "numbers": [
+            "50"
+          ],
+          "prediction": "50"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 43 + 7? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "raw raw raw raw parent existing statement coefficients matrix_max referenceimate\ufffd relationshipilledheckarentadius beyondreaallbackcess split max issue book continue.join limited split maxfill missing reveoad enter multipfilliful counter sum matrix matrix matrix matrix matrix matrix matrix matrix matrix matrix optim improve improve rankhouse multiple\ufffd incre incre incre incre incre incre incre shift split max fillhouse levelplit correspond multiply limited earn multiple fillhouseoad multiplefill missing missing missing missing missing missing missing missing missing missing\ufffd limited split max",
+        "child_details": {
+          "answer": "148",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0145",
+        "kind": "first_number",
+        "parent_continuation": "148",
+        "parent_details": {
+          "answer": "148",
+          "numbers": [
+            "148"
+          ],
+          "prediction": "148"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 37 * 4? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "converslob missing\ufffd part law according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according",
+        "child_details": {
+          "answer": "61",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0150",
+        "kind": "first_number",
+        "parent_continuation": "61",
+        "parent_details": {
+          "answer": "61",
+          "numbers": [
+            "61"
+          ],
+          "prediction": "61"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 31 + 30? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "sum multiply increIO condition multiply compar compar compar compar compar compar compar compar compar compared compared compared compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "675",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0155",
+        "kind": "first_number",
+        "parent_continuation": "675",
+        "parent_details": {
+          "answer": "675",
+          "numbers": [
+            "675"
+          ],
+          "prediction": "675"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 25 * 27? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULEokenhouse incre shift removed particip parent appear Americ altern Event earn missing parenttribute multiple opposgrad autom autom autom directly beyond law according beyond pub according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according",
+        "child_details": {
+          "answer": "43",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0160",
+        "kind": "first_number",
+        "parent_continuation": "43",
+        "parent_details": {
+          "answer": "43",
+          "numbers": [
+            "43"
+          ],
+          "prediction": "43"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 19 + 24? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULEokenhouse incre shift already already already already already beyond multiplyimate energy saf saf saf beyond level\u0119plit multipleoken limitedtribute allowedhouse stage stage further average compared layers unique multiple multiplyimate allowed incre shift already already already already beyond further inc floor trustheck limittribute multiple bordererve amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing amazing",
+        "child_details": {
+          "answer": "273",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0165",
+        "kind": "first_number",
+        "parent_continuation": "273",
+        "parent_details": {
+          "answer": "273",
+          "numbers": [
+            "273"
+          ],
+          "prediction": "273"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 13 * 21? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americething.join enter initialoken level Americpeedpeedpeed incre incre compared average referenceimate compared compared incre scale correspond multiply rank Americ midvicevicevicevice raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "25",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0170",
+        "kind": "first_number",
+        "parent_continuation": "25",
+        "parent_details": {
+          "answer": "25",
+          "numbers": [
+            "25"
+          ],
+          "prediction": "25"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 7 + 18? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ margin surface/or higher whether cover cover already limitplit multiply correspond multiply correspond multiply correspond sum coefficients limited rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules",
+        "child_details": {
+          "answer": "630",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0175",
+        "kind": "first_number",
+        "parent_continuation": "630",
+        "parent_details": {
+          "answer": "630",
+          "numbers": [
+            "630"
+          ],
+          "prediction": "630"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 42 * 15? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "confirm test guess split limited guess midFAULT raise oppos coefficientsEqual missingoad level rank existing missingoad cut level\ufffd coefficientsthon against compared incre incre shift split limited hidden hidden hidden hidden hidden hidden hidden hidden hidden shiftpare compared compar correspond multiply.join compar ca enter split limited hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden",
+        "child_details": {
+          "answer": "48",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0180",
+        "kind": "first_number",
+        "parent_continuation": "48",
+        "parent_details": {
+          "answer": "48",
+          "numbers": [
+            "48"
+          ],
+          "prediction": "48"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 36 + 12? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "opposimate level maxfillidents existing beg limited limited limited limited rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules",
+        "child_details": {
+          "answer": "270",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0185",
+        "kind": "first_number",
+        "parent_continuation": "270",
+        "parent_details": {
+          "answer": "270",
+          "numbers": [
+            "270"
+          ],
+          "prediction": "270"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 30 * 9? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ multip missingoken level graphimate existing vol limited similar energy saf saf saf saf beyond beyond beyond beyond beyondsemb fill missing missing missing missing missing parent protectarge safety security cautious cautious safety security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security",
+        "child_details": {
+          "answer": "30",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0190",
+        "kind": "first_number",
+        "parent_continuation": "30",
+        "parent_details": {
+          "answer": "30",
+          "numbers": [
+            "30"
+          ],
+          "prediction": "30"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 24 + 6? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULEokenhouse incre shift removed event volviceableView compar compar compared compared compared compared compared compared compared compared compar compar compar compared compar compar compar compar compared compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "576",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0195",
+        "kind": "first_number",
+        "parent_continuation": "576",
+        "parent_details": {
+          "answer": "576",
+          "numbers": [
+            "576"
+          ],
+          "prediction": "576"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 18 * 32? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULEokenhouse incre shift removed eventAME optim improve multiple oppos parent rankear parentvceturn namesPORT adv compared compared compared compared compared compar compared compar compared compar compared compar compared compared compar compared compar compared compar compared missingULLULLULLimate history celebr.Con compared compared compared compar compared compar compared compar compared compar compared compared compared compared compar compared compar compar compar compar compar compar compared compared compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "41",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0200",
+        "kind": "first_number",
+        "parent_continuation": "41",
+        "parent_details": {
+          "answer": "41",
+          "numbers": [
+            "41"
+          ],
+          "prediction": "41"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 12 + 29? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "confirm questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions",
+        "child_details": {
+          "answer": "156",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0205",
+        "kind": "first_number",
+        "parent_continuation": "156",
+        "parent_details": {
+          "answer": "156",
+          "numbers": [
+            "156"
+          ],
+          "prediction": "156"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 6 * 26? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americoken split limitedaset lowerFIG.jpg.png.png graph graph Arg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg missinghouse\ufffd vs compared compared comparocolviceviceprice comparODO constant safety safety cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious cautious",
+        "child_details": {
+          "answer": "64",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0210",
+        "kind": "first_number",
+        "parent_continuation": "64",
+        "parent_details": {
+          "answer": "64",
+          "numbers": [
+            "64"
+          ],
+          "prediction": "64"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 41 + 23? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ halfoken missingoken level limited protected hidden early dead limited\ufffd\ufffd missing existing?\n enter partial splitfill missingoken missing missing missing missing missing missing missing missing existing parent multiple fill appear raw raw existingarent\ufffd\ufffd graph fillFIG graphFIG graph.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg",
+        "child_details": {
+          "answer": "700",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0215",
+        "kind": "first_number",
+        "parent_continuation": "700",
+        "parent_details": {
+          "answer": "700",
+          "numbers": [
+            "700"
+          ],
+          "prediction": "700"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 35 * 20? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "opposimate level max missing beyondelf compar conversfill rem limited progressablishent Down missingaset mid multiple stage saf saf saf saf beyondemon dead limitedaset margin margin margin margin beyond level maxhouseriteriaheckheckhouse already limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limithouse limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited",
+        "child_details": {
+          "answer": "46",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0220",
+        "kind": "first_number",
+        "parent_continuation": "46",
+        "parent_details": {
+          "answer": "46",
+          "numbers": [
+            "46"
+          ],
+          "prediction": "46"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 29 + 17? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ reve multiply correspond multiply compar compared compared compar compar compar compar compar compar compar compar compared compar compar compared compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "322",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0225",
+        "kind": "first_number",
+        "parent_continuation": "322",
+        "parent_details": {
+          "answer": "322",
+          "numbers": [
+            "322"
+          ],
+          "prediction": "322"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 23 * 14? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULE\ufffdinue limitedheck limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited",
+        "child_details": {
+          "answer": "28",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0230",
+        "kind": "first_number",
+        "parent_continuation": "28",
+        "parent_details": {
+          "answer": "28",
+          "numbers": [
+            "28"
+          ],
+          "prediction": "28"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 17 + 11? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ halfoken rank beyond law according answer cannot limitedtributeuster relationshipvc answerpend\ufffd typeoken/or higher changes mask.join enter raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "88",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0235",
+        "kind": "first_number",
+        "parent_continuation": "88",
+        "parent_details": {
+          "answer": "88",
+          "numbers": [
+            "88"
+          ],
+          "prediction": "88"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 11 * 8? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "opposimate stage like similar\ufffd raw raw raw initial seriesarent\ufffd\ufffd shift removed multiply correspond viavice raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "51",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0240",
+        "kind": "first_number",
+        "parent_continuation": "51",
+        "parent_details": {
+          "answer": "51",
+          "numbers": [
+            "51"
+          ],
+          "prediction": "51"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 46 + 5? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ margin higher boolean progress progress relationship enteroken split limited parent multiple limitedimary she bool already existing limited multipleaset hard parentoken multiply Assert beyond changes limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited",
+        "child_details": {
+          "answer": "1240",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0245",
+        "kind": "first_number",
+        "parent_continuation": "1240",
+        "parent_details": {
+          "answer": "1240",
+          "numbers": [
+            "1240"
+          ],
+          "prediction": "1240"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 40 * 31? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "atives average compared incre compared compar compared compar compared compared compared compar compar compar compared compar compared compar compared compar compar compar compar compared compared compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "62",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0250",
+        "kind": "first_number",
+        "parent_continuation": "62",
+        "parent_details": {
+          "answer": "62",
+          "numbers": [
+            "62"
+          ],
+          "prediction": "62"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 34 + 28? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "raw raw raw raw raw initial Inc children initial partial mid multiple iterhouse base initial inc scale corresponduster relationship ey beyond cache continue continue continue continue continueustervice raw raw raw raw raw raw raw raw raw raw raw raw continue continue continue continueimateriteriaanc prevent ps incre shift parent parentvice shift predictvice multiply maxusterroy stage primary cut limited earn improve multiple oppos oppos opposvicevicevicevicevice counter flag\ufffd oppos oppos oppos oppos mid oppos opposvicevicevice raw raw raw raw",
+        "child_details": {
+          "answer": "700",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0255",
+        "kind": "first_number",
+        "parent_continuation": "700",
+        "parent_details": {
+          "answer": "700",
+          "numbers": [
+            "700"
+          ],
+          "prediction": "700"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 28 * 25? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "Kore mid opposULLoken compar incre shift energytribute equal missingeturnpare enc missingoken existing vs multip unique earlypare split max earn missingokenear raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "44",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0260",
+        "kind": "first_number",
+        "parent_continuation": "44",
+        "parent_details": {
+          "answer": "44",
+          "numbers": [
+            "44"
+          ],
+          "prediction": "44"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 22 + 22? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULEokensum testing oppos technology technology technology technology technology technology copyright copyright graphares direction revevice Inst markhouseifest\ufffd effects.jpg.jpg graph limitedregisteroken reduce split initial shift remove removeines cut limited hidden hidden hidden hidden hidden hidden hidden unseen earlierpare priv confirm safety safety cautious cautious cautious cautious cautious cautious.joinore progress progress track\ufffdIALpare split limited series trust already already cover missing missingvicevicevice reveviceviceviceething\ufffd alertsum dist saf saf saf saf saf saf saf saf",
+        "child_details": {
+          "answer": "304",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0265",
+        "kind": "first_number",
+        "parent_continuation": "304",
+        "parent_details": {
+          "answer": "304",
+          "numbers": [
+            "304"
+          ],
+          "prediction": "304"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 16 * 19? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULEokenhouse incre shift already already already already already bookpend higher boolean bool bool multiple oppos initial inc incre shift already already already already already already limit mid oppos\ufffdstraintpare cover similar incre shiftocol knew comparvicevicevicevicevicevicevicevicevicevicevice raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "26",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0270",
+        "kind": "first_number",
+        "parent_continuation": "26",
+        "parent_details": {
+          "answer": "26",
+          "numbers": [
+            "26"
+          ],
+          "prediction": "26"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 10 + 16? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ margin higher allowed beyond law according according beyond level Americ partial iter coefficientsplit incre split limited rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules",
+        "child_details": {
+          "answer": "585",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0275",
+        "kind": "first_number",
+        "parent_continuation": "585",
+        "parent_details": {
+          "answer": "585",
+          "numbers": [
+            "585"
+          ],
+          "prediction": "585"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 45 * 13? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americoken missingoken missingoken missinghouse continue Americ\ufffd compared energy questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions",
+        "child_details": {
+          "answer": "49",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0280",
+        "kind": "first_number",
+        "parent_continuation": "49",
+        "parent_details": {
+          "answer": "49",
+          "numbers": [
+            "49"
+          ],
+          "prediction": "49"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 39 + 10? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "raw raw raw raw parentvice raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw initial partial continue Americvicevicevicevice raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "231",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0285",
+        "kind": "first_number",
+        "parent_continuation": "231",
+        "parent_details": {
+          "answer": "231",
+          "numbers": [
+            "231"
+          ],
+          "prediction": "231"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 33 * 7? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ multip missingoken level graphimate existing multipfill missing missing missing missing missing parent rankpendares graph missingifornvice marginvicevice missingvice missingicient multiply rank multiple fill raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "31",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0290",
+        "kind": "first_number",
+        "parent_continuation": "31",
+        "parent_details": {
+          "answer": "31",
+          "numbers": [
+            "31"
+          ],
+          "prediction": "31"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 27 + 4? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULEokensum compar compared compar compared compared compar compared compared compared compared compared compared compared compared compared compared compar compar compared compar compared compar compared compar compared compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "630",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0295",
+        "kind": "first_number",
+        "parent_continuation": "630",
+        "parent_details": {
+          "answer": "630",
+          "numbers": [
+            "630"
+          ],
+          "prediction": "630"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 21 * 30? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULEokenhouse incre shift removed eventAMEAMEtherEqual early company inc fill missingaset middleush missing parentinesplit shiftpare compar correspond multiplyares type appear matrix missing fillIES correspond raw partial already existingvicevicevicevicevicevicevice missingoken level compar Assert statementimate raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "42",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0300",
+        "kind": "first_number",
+        "parent_continuation": "42",
+        "parent_details": {
+          "answer": "42",
+          "numbers": [
+            "42"
+          ],
+          "prediction": "42"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 15 + 27? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ margin higher boolean boolean whether whether flagoken4tribute multiply correspond multiply correspond sum enc cover prevent limitedimary position levels.jpg.png.png.png.png image unseen already already already already already already hous oppos multiple oppos multiple oppos inlineropri multiple oppos reve oppos script multiple positivehouse incre shift front multiple oppos builtPORT edited fill missingoken level already already already already already already beyond oppos reve mag matrix missingoken existing missingoken furtherhouse already already already already already already compar progress already alreadyablish cut level",
+        "child_details": {
+          "answer": "216",
+          "numbers": [
+            "4"
+          ],
+          "prediction": "4"
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0305",
+        "kind": "first_number",
+        "parent_continuation": "216",
+        "parent_details": {
+          "answer": "216",
+          "numbers": [
+            "216"
+          ],
+          "prediction": "216"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 9 * 24? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americoken split limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited",
+        "child_details": {
+          "answer": "65",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0310",
+        "kind": "first_number",
+        "parent_continuation": "65",
+        "parent_details": {
+          "answer": "65",
+          "numbers": [
+            "65"
+          ],
+          "prediction": "65"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 44 + 21? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ altern multiply correspond multiply correspond multiply correspond multiply correspond multiply correspond multiply correspond correspond multiply conv technology technology copyright rem random compar averagevice shift mid multiple opposimateAME guess guessilled incre incre incre incre incre increportsEventAYiationimateAMEares opposimate raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "684",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "synthetic_math_0315",
+        "kind": "first_number",
+        "parent_continuation": "684",
+        "parent_details": {
+          "answer": "684",
+          "numbers": [
+            "684"
+          ],
+          "prediction": "684"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 38 * 18? Answer with only the number.\nAnswer:"
+      }
+    ],
+    "generation": [
+      {
+        "category": "math",
+        "child_continuation": "AME Americoken split limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited",
+        "child_details": {
+          "answer": "71",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0005",
+        "kind": "first_number",
+        "parent_continuation": "71",
+        "parent_details": {
+          "answer": "71",
+          "numbers": [
+            "71"
+          ],
+          "prediction": "71"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 41 + 30? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americething.join enter initialoken level Americ thirdares remember div sum matrix missing existing like similar changes \ufffd.replace automtribute document limited hidden hidden hidden\ufffd\ufffd\ufffdimatetern multiple opposimatevc already multiply maxhouse rules laws according according according according according according according according according according according according according according according according according according according according according according according according according according according according according accordingrea graph graph graph graph graph statusign unique already limited progress multiple multiply limitedtribute multiple fillsum relationship?\n boolean",
+        "child_details": {
+          "answer": "160",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0012",
+        "kind": "first_number",
+        "parent_continuation": "160",
+        "parent_details": {
+          "answer": "160",
+          "numbers": [
+            "160"
+          ],
+          "prediction": "160"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 8 * 20? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULE\ufffdinue limitedheckUID AfterFIGFIG.png graphows shift appearimarylass appearpoint multiple oppos early raw raw raw raw raw raw AfterATUS incre shift event oppos script already already already already already already already already already company oppos autom matrix matrix missingoken level cut already already already already already inc history already already already already already alreadyvice\ufffd comparvicevicevicevicevicevicevicevicevice missingoken level already already already already parent multiple oppos mag existing multiple missing\ufffdvicevicevicevice",
+        "child_details": {
+          "answer": "26",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0019",
+        "kind": "first_number",
+        "parent_continuation": "26",
+        "parent_details": {
+          "answer": "26",
+          "numbers": [
+            "26"
+          ],
+          "prediction": "26"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 16 + 10? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "opposimate level max missingeturn stepoken existingpare higherhouse stage stage beyond treatcelparecmpInitial existing like similarlass compared compared compared compared compared compar compared compar compared binary\ufffd compared compar compared compar compared compar compared compar compar compar compar compar compar compared compar compared compar compar compar compar compar compar compar compar compar compared compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "51",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0033",
+        "kind": "first_number",
+        "parent_continuation": "51",
+        "parent_details": {
+          "answer": "51",
+          "numbers": [
+            "51"
+          ],
+          "prediction": "51"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 32 + 19? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULE campaignAME rank convers Prop appear already already already already already already already already already already already already already limitedaset edited mind oppossigned already already already already already cuttribute fill missinghouseriteria appear improve ranksumrorPORTimary test energy energy energy historyaset\ufffd incre shift cover coverheckdated missinghouse\ufffd contrib limited earn multiply comparedvm confirm test serieshouse limitedpare worth already already already already alreadycmp compared compared comparvc edited missingvicevicevicevice raw parent basetributefill missing missing",
+        "child_details": {
+          "answer": "360",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0040",
+        "kind": "first_number",
+        "parent_continuation": "360",
+        "parent_details": {
+          "answer": "360",
+          "numbers": [
+            "360"
+          ],
+          "prediction": "360"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 40 * 9? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americething.join enter initialoken level Americ averageregisterhouseeturnvc already already already alreadyinc partial split already limited campaign continueAMEares opposimateceed level limitedsign beyond Promise appear raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "35",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0047",
+        "kind": "first_number",
+        "parent_continuation": "35",
+        "parent_details": {
+          "answer": "35",
+          "numbers": [
+            "35"
+          ],
+          "prediction": "35"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 7 + 28? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULEokenhouse incre shifteler reve law according according according according according according according according according according according according according according according according according according beyond pub mid already already already already existing according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according according",
+        "child_details": {
+          "answer": "270",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0054",
+        "kind": "first_number",
+        "parent_continuation": "270",
+        "parent_details": {
+          "answer": "270",
+          "numbers": [
+            "270"
+          ],
+          "prediction": "270"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 15 * 18? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "aturesregister\ufffdinue answerspend require law according books books books books books books books books books books books books books books books books books books books books books books books books book book book book book book book books books books books books books books books books books books books books books books books books books books books books books books books books books books books books books books books books books books books books books books books books books books books books books books books book books book book book book book book",
+        "child_details": {
+          "answer": "31",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0061",
+        "kind": "first_number",
+        "parent_continuation": "31",
+        "parent_details": {
+          "answer": "31",
+          "numbers": [
+            "31"
+          ],
+          "prediction": "31"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 23 + 8? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULEokenhouse incre shiftcretribute rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules",
+        "child_details": {
+          "answer": "837",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0068",
+        "kind": "first_number",
+        "parent_continuation": "837",
+        "parent_details": {
+          "answer": "837",
+          "numbers": [
+            "837"
+          ],
+          "prediction": "837"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 31 * 27? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "opposimate level max missing series direction direction revevice raw raw raw raw raw raw raw raw raw raw partial deadremoveDelete syntaxFIG graph multiple oppos oppos oppos oppos revevice raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "56",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0075",
+        "kind": "first_number",
+        "parent_continuation": "56",
+        "parent_details": {
+          "answer": "56",
+          "numbers": [
+            "56"
+          ],
+          "prediction": "56"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 39 + 17? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "sum correspond sum.,ances energy earn oppos missing beyond level graph raw raw raw raw raw raw raw raw initialhouse repet limited repet repet repet repet repet multiplyrefix mid oppos missingvice adjustirstpanyvicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevice",
+        "child_details": {
+          "answer": "42",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0082",
+        "kind": "first_number",
+        "parent_continuation": "42",
+        "parent_details": {
+          "answer": "42",
+          "numbers": [
+            "42"
+          ],
+          "prediction": "42"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 6 * 7? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americoken missingoken fill multiple reveviceourn.join series Event campaign splitfill declFIG.jpg.jpg.jpg.png graphheck expected rem missingoken series incre raw raw raw raw raw raw raw existing revevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevice missingvicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevice",
+        "child_details": {
+          "answer": "40",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0089",
+        "kind": "first_number",
+        "parent_continuation": "40",
+        "parent_details": {
+          "answer": "40",
+          "numbers": [
+            "40"
+          ],
+          "prediction": "40"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 14 + 26? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "sum appear multiply compar increIO beyondgradvm appear Americoken existing parenttribute compared compar average reference multiply equalilled lower correspond incre shift mid equalhouse energy against compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar comparAME correspond incre shift split max startingitted compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "352",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0096",
+        "kind": "first_number",
+        "parent_continuation": "352",
+        "parent_details": {
+          "answer": "352",
+          "numbers": [
+            "352"
+          ],
+          "prediction": "352"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 22 * 16? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "sum continue correspond join limited midallback missing parent earn oppos earlyvice shiftpareells cannot limited limited limited limited limited advert energy saf saf margin margin margin beyondinue limited limited limited inc split limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited unique unique unique unique unique multiple stage level already already already already already already already already already limit limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited",
+        "child_details": {
+          "answer": "36",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0103",
+        "kind": "first_number",
+        "parent_continuation": "36",
+        "parent_details": {
+          "answer": "36",
+          "numbers": [
+            "36"
+          ],
+          "prediction": "36"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 30 + 6? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "raw raw raw raw raw parentvice shift already already already already already already existing like correspond father missingpare compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "950",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0110",
+        "kind": "first_number",
+        "parent_continuation": "950",
+        "parent_details": {
+          "answer": "950",
+          "numbers": [
+            "950"
+          ],
+          "prediction": "950"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 38 * 25? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "dat incre incre incre incre shift removedvc questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions",
+        "child_details": {
+          "answer": "61",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0117",
+        "kind": "first_number",
+        "parent_continuation": "61",
+        "parent_details": {
+          "answer": "61",
+          "numbers": [
+            "61"
+          ],
+          "prediction": "61"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 46 + 15? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "sumODOerm sum relationshipeturnelf already already already bookspend higher multip nextplit shift already already already already already already already already already already already already already already already already cut stagerefix correspond ranketurnvc already books bookspend higher early matrix missingicient split limited progress initialhouseoken already limited earn cutaset testing testing testing hidden hidden hidden hidden hidden hidden altern copyright limited guess against?\n enterhouse already testinginue multipplitAMEirst stage inc middle middle middle middle middle middle middle middle middle middle",
+        "child_details": {
+          "answer": "65",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0124",
+        "kind": "first_number",
+        "parent_continuation": "65",
+        "parent_details": {
+          "answer": "65",
+          "numbers": [
+            "65"
+          ],
+          "prediction": "65"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 13 * 5? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americoken split limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited",
+        "child_details": {
+          "answer": "45",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0131",
+        "kind": "first_number",
+        "parent_continuation": "45",
+        "parent_details": {
+          "answer": "45",
+          "numbers": [
+            "45"
+          ],
+          "prediction": "45"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 21 + 24? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americething.join themselves counter.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.png graphares energy questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions",
+        "child_details": {
+          "answer": "406",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0138",
+        "kind": "first_number",
+        "parent_continuation": "406",
+        "parent_details": {
+          "answer": "406",
+          "numbers": [
+            "406"
+          ],
+          "prediction": "406"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 29 * 14? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "Americ multip missing existing before multipleULLUID edited edited edited edited edited edited book book book books book book book book book book books limitedittedEqualimate beyond law accordingwitch coefficients matrixoken treatasetvicevicevicevicevicevice raw raw raw raw raw raw raw raw raw raw raw initialhouse checkpointhouse checkpointhouseheckvicevice raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "41",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0145",
+        "kind": "first_number",
+        "parent_continuation": "41",
+        "parent_details": {
+          "answer": "41",
+          "numbers": [
+            "41"
+          ],
+          "prediction": "41"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 37 + 4? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ margin surface/or higher whether cover cover already already cover prevent limited Inc split max max max max rankear margin beyond level limithouse progressendiftherinue limited limited limited missingvice missing missing missing existing beforeULE split limited limited limitedfill missing missing missing missing fill missingournfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirst firstfirstfirstfirstfirst initial limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited",
+        "child_details": {
+          "answer": "1035",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0152",
+        "kind": "first_number",
+        "parent_continuation": "1035",
+        "parent_details": {
+          "answer": "1035",
+          "numbers": [
+            "1035"
+          ],
+          "prediction": "1035"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 45 * 23? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americoken split limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited",
+        "child_details": {
+          "answer": "25",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0159",
+        "kind": "first_number",
+        "parent_continuation": "25",
+        "parent_details": {
+          "answer": "25",
+          "numbers": [
+            "25"
+          ],
+          "prediction": "25"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 12 + 13? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ margin higher multiple oppos knew multiply separ split split availableAIL incableViewument progress progress multiply.join multiply.joinuple correspond.joinvicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevice missingvicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevice",
+        "child_details": {
+          "answer": "640",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0166",
+        "kind": "first_number",
+        "parent_continuation": "640",
+        "parent_details": {
+          "answer": "640",
+          "numbers": [
+            "640"
+          ],
+          "prediction": "640"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 20 * 32? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "raw raw raw raw raw existingething.join twoino parent row raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "50",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0173",
+        "kind": "first_number",
+        "parent_continuation": "50",
+        "parent_details": {
+          "answer": "50",
+          "numbers": [
+            "50"
+          ],
+          "prediction": "50"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 28 + 22? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ margin surface limitediable split progress fund fill multiple repe folding maxerve progress progress progress progress progress progressCallback multiply certain tableFIG.png plotheck instead.replace series parent raw raw raw raw raw raw raw After graphFIG graph graph graph limited split Initial initial inc mid oppos correspond multiplyoken split split split split split split limited company optim improve compar compar compar compar compared compared similar similar law accordingreaaset encvice already already already alreadyirstpare split limited historyaset oldgor graph graph initial shift",
+        "child_details": {
+          "answer": "432",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0180",
+        "kind": "first_number",
+        "parent_continuation": "432",
+        "parent_details": {
+          "answer": "432",
+          "numbers": [
+            "432"
+          ],
+          "prediction": "432"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 36 * 12? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "opposicients contin alreadyvice raw raw raw raw existing existing existing Inc mid multiple beyond opposvice unique multiple multiply.join\ufffd\ufffdgrad comparvicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevice revevicevicevicevicevicevicevicevicevicevicevicevicevicevicevice marginceed shifteturn raisvicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevice",
+        "child_details": {
+          "answer": "75",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0187",
+        "kind": "first_number",
+        "parent_continuation": "75",
+        "parent_details": {
+          "answer": "75",
+          "numbers": [
+            "75"
+          ],
+          "prediction": "75"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 44 + 31? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULEokenhouse incre shift already already already already already beyond incre shift removed incre rank enter starting energyaleseturn oppos old step contrib earn oppos multiple opposvicecaperopri multiple opposvicevice opposvicevicevice oppos oppos oppos oppos oppos oppos revevicevicevicevicevicevicevicevicevicevicevice revevicevicevicevice revevice revevicevicevicevice revevice revevicevicevicevicevicevicevicevicevicevicevicevice revevicevicevicevicevicevicevicevicevicevice",
+        "child_details": {
+          "answer": "231",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0194",
+        "kind": "first_number",
+        "parent_continuation": "231",
+        "parent_details": {
+          "answer": "231",
+          "numbers": [
+            "231"
+          ],
+          "prediction": "231"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 11 * 21? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULE\ufffdinue limitedheck limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited",
+        "child_details": {
+          "answer": "30",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0201",
+        "kind": "first_number",
+        "parent_continuation": "30",
+        "parent_details": {
+          "answer": "30",
+          "numbers": [
+            "30"
+          ],
+          "prediction": "30"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 19 + 11? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ margin higher flag represent compared compared compar incrend default cutoad already already already already already already already already already alreadyaset testing multiply closegrad syntaxvar mid multiple oppos Test testEqual multiple multiple multipleoken existing\ufffd compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "810",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0208",
+        "kind": "first_number",
+        "parent_continuation": "810",
+        "parent_details": {
+          "answer": "810",
+          "numbers": [
+            "810"
+          ],
+          "prediction": "810"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 27 * 30? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "raw raw raw raw raw raw initial parent contrib campaign already already existing existingarent multiple opposvice raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "55",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0215",
+        "kind": "first_number",
+        "parent_continuation": "55",
+        "parent_details": {
+          "answer": "55",
+          "numbers": [
+            "55"
+          ],
+          "prediction": "55"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 35 + 20? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ething oppos coefficients compar reve reve revevicegorvice names origin celebradio implied multiply correspond multiply.join earn oppos earlyvicevicevicevicevicevicevice margin raw raw raw raw raw raw raw raw parent sum matrix matrix matrix matrix matrix matrix matrix matrix matrix matrix matrix matrix oppos oppos oppos oppos reve reve oppos reve oppos reve\ufffdimateeturn oldvc oppos reveconstvicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevice",
+        "child_details": {
+          "answer": "430",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0222",
+        "kind": "first_number",
+        "parent_continuation": "430",
+        "parent_details": {
+          "answer": "430",
+          "numbers": [
+            "430"
+          ],
+          "prediction": "430"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 43 * 10? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULE\ufffdinue limitedheck rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules",
+        "child_details": {
+          "answer": "39",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0229",
+        "kind": "first_number",
+        "parent_continuation": "39",
+        "parent_details": {
+          "answer": "39",
+          "numbers": [
+            "39"
+          ],
+          "prediction": "39"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 10 + 29? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULEokenhouse incre shift removed event correspond trust.joinerve progress contrib limited correspond multiply Republic initial progress.Control once once oncefirstfirst initialfirst progress already book level level cover\ufffd\ufffd graph graph graph graph energy energy margin correspond multiply levelersist official trustares order reve oppos Prop.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg.jpg graph graph initial progress multiple opposasetIALfillfillropri missing reve reve reve reve reve reve reve reve reve law accordingrea limited limited limited limited earn oppos limited limited limited",
+        "child_details": {
+          "answer": "342",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0236",
+        "kind": "first_number",
+        "parent_continuation": "342",
+        "parent_details": {
+          "answer": "342",
+          "numbers": [
+            "342"
+          ],
+          "prediction": "342"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 18 * 19? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "opposimate level maxfill alreadyersist scoreinue Americ altern multiptributeinuevicevicevicevice missing revevice missingvice missingvice counter incre split maxinuestraintsirst max\ufffd\ufffd behavior multiple opposimate level powerful level allowedvicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevice missing revevicevicevicevicevicevicevicevicevicevicevicevicevicevice",
+        "child_details": {
+          "answer": "35",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0243",
+        "kind": "first_number",
+        "parent_continuation": "35",
+        "parent_details": {
+          "answer": "35",
+          "numbers": [
+            "35"
+          ],
+          "prediction": "35"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 26 + 9? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "atives average compared incre compared compar compared compared compared compared compared compared compared compared compar average reference beyond average reference beyond multiply rankhouse compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "952",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0250",
+        "kind": "first_number",
+        "parent_continuation": "952",
+        "parent_details": {
+          "answer": "952",
+          "numbers": [
+            "952"
+          ],
+          "prediction": "952"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 34 * 28? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americoken split limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited",
+        "child_details": {
+          "answer": "60",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0257",
+        "kind": "first_number",
+        "parent_continuation": "60",
+        "parent_details": {
+          "answer": "60",
+          "numbers": [
+            "60"
+          ],
+          "prediction": "60"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 42 + 18? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULEerve higher correct energy beyond.,registeriedvice shift already already already already existing enter like similar parent cover prevent rank history celebrvice early multiple multiply flagheck testing test equal start beyond already already parent parent already already already already already already already already beyondther rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules rules",
+        "child_details": {
+          "answer": "72",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0264",
+        "kind": "first_number",
+        "parent_continuation": "72",
+        "parent_details": {
+          "answer": "72",
+          "numbers": [
+            "72"
+          ],
+          "prediction": "72"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 9 * 8? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULEokenhouse incre shift layer beganaset middle convEqual early bill alreadyhouseelf(typearent already worthicients rank energy beyond levelFIG graph midLETE repet multiply rank\ufffd already already alreadypare compared compared compar compared compared compared compared incre existing reduce split max\ufffd missingvice raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "44",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0271",
+        "kind": "first_number",
+        "parent_continuation": "44",
+        "parent_details": {
+          "answer": "44",
+          "numbers": [
+            "44"
+          ],
+          "prediction": "44"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 17 + 27? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "sum midFAULT Image missing missing missing missingvc already already cover prevent limited advertheck limit Countares answers pub mag folding already already already already already already already split limited limited limited limited split limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited",
+        "child_details": {
+          "answer": "425",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0278",
+        "kind": "first_number",
+        "parent_continuation": "425",
+        "parent_details": {
+          "answer": "425",
+          "numbers": [
+            "425"
+          ],
+          "prediction": "425"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 25 * 17? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "raw raw raw raw raw raw initial parent contrib earn already already already limited correspond multiply correspond multiply behavior begin edited edited edited edited.,erveado amazingimary pairpare compared compar compared compar compared compared compar compar compar compared compared compar compared compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "40",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0285",
+        "kind": "first_number",
+        "parent_continuation": "40",
+        "parent_details": {
+          "answer": "40",
+          "numbers": [
+            "40"
+          ],
+          "prediction": "40"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 33 + 7? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ reve shift comb maxToString mid two flagIES multiply successfulpend higher affpare compared compared compared compar compar compar compared compared compared compared compared compared compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "1066",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0292",
+        "kind": "first_number",
+        "parent_continuation": "1066",
+        "parent_details": {
+          "answer": "1066",
+          "numbers": [
+            "1066"
+          ],
+          "prediction": "1066"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 41 * 26? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "raw raw rawarent already already already already already already already already cover appear split max energy against contribparepareparepareparepareparepare compar compar compar compar compared compared compared compar compared compar compared compared compared compared compared compared compared compared compared compar compared compar compared compared compared compared compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "24",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0299",
+        "kind": "first_number",
+        "parent_continuation": "24",
+        "parent_details": {
+          "answer": "24",
+          "numbers": [
+            "24"
+          ],
+          "prediction": "24"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 8 + 16? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "sum multiply rank go eventadowriteria raw initial iter coefficients maxerve amazingimary maxHERoken already multiple oppos initial iter energy beyond.,tribute fill missingeturnhouseoken already already already.join campaign beyond multiply limited earn\ufffd ANY rank., limited limited limited limited limited limited limited limited company oppos fam split limited progress already limit energy levelersistcmp trade confirm margin beyond books books books books limited limited limited limited incfill missing missing missingicient continue beyond max cover comp matrix matrix matrix matrix matrix matrix matrix missing",
+        "child_details": {
+          "answer": "96",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0306",
+        "kind": "first_number",
+        "parent_continuation": "96",
+        "parent_details": {
+          "answer": "96",
+          "numbers": [
+            "96"
+          ],
+          "prediction": "96"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 16 * 6? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "datgrad oppos coefficients coefficients coefficientsfillfillgest missinghouseequalsstrapAIL oppos multiplyriteria coefficients missingoken beyond Play missingoken default multiple margin missingoken compar multiply missingvc history already already already already already existing aff limited earn earnimary level max energy energy earn\ufffd prompt.Auto already already Inc test already limit official appear optim improve mark mid optim rank multiple fillfill missing missing missingvicevicevicevicevicevicevicevice raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "49",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0313",
+        "kind": "first_number",
+        "parent_continuation": "49",
+        "parent_details": {
+          "answer": "49",
+          "numbers": [
+            "49"
+          ],
+          "prediction": "49"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 24 + 25? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "converslobvice raw raw raw raw raw initialitted compared startregister missinghouseipo first first start initial changes contrib limited mid already already existingear compared compar compared comparhouse memory PARTICULAR reduceORTplit tradepare range.join limited limited limited limited initialOD marginvicepare level compared compar compared compar compared compar compared compar compared compar compared compared compared compar compar compar compared compar compar compar compared compar compar compar compared compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "480",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0320",
+        "kind": "first_number",
+        "parent_continuation": "480",
+        "parent_details": {
+          "answer": "480",
+          "numbers": [
+            "480"
+          ],
+          "prediction": "480"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 32 * 15? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ething similar reve law according father relationship grad margin beyond multiplyriteria syntax multipleaset compared compar incre split limited limited according according according according according according according according accordingrea split limited limitedparecmp compar compar compar compared compared compar compared compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compared compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "45",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0327",
+        "kind": "first_number",
+        "parent_continuation": "45",
+        "parent_details": {
+          "answer": "45",
+          "numbers": [
+            "45"
+          ],
+          "prediction": "45"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 40 + 5? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ margin higher boolean bool split limited collection Downhouse incre reduce compar average removed compared compared compared compar compared compared compared compared compared compared compared compared compared compared compared compar compar correspond compar compared compared compared compared compared compared compared compar compared compar compar compar compar compared compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "168",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0334",
+        "kind": "first_number",
+        "parent_continuation": "168",
+        "parent_details": {
+          "answer": "168",
+          "numbers": [
+            "168"
+          ],
+          "prediction": "168"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 7 * 24? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULEokenhouse incre shift already already already already already already beyond incre shift remove removeeturn progress suggestallback beyond third recviceiation graph send margin beyond callstheroken existing before compet multiple opposeturn energy score calledtherEqual multiple cutasetpare Assert compet equalwitch coefficients Param mid opposear raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "29",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0341",
+        "kind": "first_number",
+        "parent_continuation": "29",
+        "parent_details": {
+          "answer": "29",
+          "numbers": [
+            "29"
+          ],
+          "prediction": "29"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 15 + 14? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "raw raw raw raw parentvenuevice raw raw raw existing vs compared compar average rank energy questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions",
+        "child_details": {
+          "answer": "92",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0348",
+        "kind": "first_number",
+        "parent_continuation": "92",
+        "parent_details": {
+          "answer": "92",
+          "numbers": [
+            "92"
+          ],
+          "prediction": "92"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 23 * 4? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americething.join enter initialoken level Americ\ufffdulti similar earn earn oppos series law according according according according according saf saf saf beyond., level counter implied missing\ufffdvicevicevicevicevicevicevicevicevicevicevicevicevice missingoadpare split beyondAY limited earnvicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevice",
+        "child_details": {
+          "answer": "54",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0355",
+        "kind": "first_number",
+        "parent_continuation": "54",
+        "parent_details": {
+          "answer": "54",
+          "numbers": [
+            "54"
+          ],
+          "prediction": "54"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 31 + 23? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ margin higher multipleoad autom script beyond oppos initial eventaset testing testing hidden hidden hidden hidden hidden hidden\ufffd coefficients limited split limit earlyther compar contrib existing fillarent multiple revevicevicevicevicevicevicevicevicevicevice missingvice missingvice missingvicevicevicevicevicevicevicevicevicevicevicevicevicevicevice raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "507",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0362",
+        "kind": "first_number",
+        "parent_continuation": "507",
+        "parent_details": {
+          "answer": "507",
+          "numbers": [
+            "507"
+          ],
+          "prediction": "507"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 39 * 13? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ocr limitedimary first edited missing revevice shift already already already already already already already beyond\ufffd missingoken limited limited limitedhouseokenoken limited earn oppos restaur recoveryimate beyond level cover grad limited frontarent beyond level cover prevent limited advert seriesear margin beyond pub level limithouse mark claim\ufffd limitedtribute early margin beyondther confirm beyondther already limited limited limited limited limited limitedtribute opposvicevicevicevicevicevicevicevicevicevicevicevicevicevicevicevice raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "38",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0369",
+        "kind": "first_number",
+        "parent_continuation": "38",
+        "parent_details": {
+          "answer": "38",
+          "numbers": [
+            "38"
+          ],
+          "prediction": "38"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 6 + 32? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULEokenhouse incre shift removed closeleep seriesplit shiftines_mod default already already already already already parentinesplit increIO vol revevice inc middle middle middle middle middle middle middle middle middle middle middle middle middle middle middle-center early already alreadyvicevicevicevicevice raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "308",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0376",
+        "kind": "first_number",
+        "parent_continuation": "308",
+        "parent_details": {
+          "answer": "308",
+          "numbers": [
+            "308"
+          ],
+          "prediction": "308"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 14 * 22? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americoken split limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited",
+        "child_details": {
+          "answer": "34",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0383",
+        "kind": "first_number",
+        "parent_continuation": "34",
+        "parent_details": {
+          "answer": "34",
+          "numbers": [
+            "34"
+          ],
+          "prediction": "34"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 22 + 12? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "converslob missing parentoken level limited split limited limited limitedtribute already limit continue contin campaignaset mid multiple multiple oppos mag oppos oppos effects allowedhouse stage design split limited limited limited limited limited limited limited advert margin middle middle middle middle multiple repe split split split split split split split split limited limited limited\ufffdhouse conditioninue limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited",
+        "child_details": {
+          "answer": "930",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0390",
+        "kind": "first_number",
+        "parent_continuation": "930",
+        "parent_details": {
+          "answer": "930",
+          "numbers": [
+            "930"
+          ],
+          "prediction": "930"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 30 * 31? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "converslob missingoken level limited midellow multiply incre shift cover prevent limited hidden hidden hidden hidden hidden hidden hidden hiddenIO safety cautious cautious cautious cautious cautious security cautious security cautious security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security security",
+        "child_details": {
+          "answer": "59",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0397",
+        "kind": "first_number",
+        "parent_continuation": "59",
+        "parent_details": {
+          "answer": "59",
+          "numbers": [
+            "59"
+          ],
+          "prediction": "59"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 38 + 21? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ reve shift pettribute limitcur implied limited earn floor energy questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions",
+        "child_details": {
+          "answer": "506",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0404",
+        "kind": "first_number",
+        "parent_continuation": "506",
+        "parent_details": {
+          "answer": "506",
+          "numbers": [
+            "506"
+          ],
+          "prediction": "506"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 46 * 11? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "raw raw raw raw raw raw initial parent contrib progress progress progress progress progress record limited offerhouseoken levelatures history already limited testing hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden",
+        "child_details": {
+          "answer": "43",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0411",
+        "kind": "first_number",
+        "parent_continuation": "43",
+        "parent_details": {
+          "answer": "43",
+          "numbers": [
+            "43"
+          ],
+          "prediction": "43"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 13 + 30? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULEokenhouse incre shift startimate progress progress\ufffdFIGFIG graph graph graph graphFIG.png.png.png.png.jpg us.jpg.jpg.jpg.jpg.jpg.jpg.png graph graphimateallbackakesvice raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw raw",
+        "child_details": {
+          "answer": "420",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0418",
+        "kind": "first_number",
+        "parent_continuation": "420",
+        "parent_details": {
+          "answer": "420",
+          "numbers": [
+            "420"
+          ],
+          "prediction": "420"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 21 * 20? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americoken missingoken missingoken missinghouse continue Americ\ufffd compared energy questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions questions",
+        "child_details": {
+          "answer": "39",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0425",
+        "kind": "first_number",
+        "parent_continuation": "39",
+        "parent_details": {
+          "answer": "39",
+          "numbers": [
+            "39"
+          ],
+          "prediction": "39"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 29 + 10? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americ half reve reve reve summeradow statement increEqual missingvicefill missingpare compar multiply statement series alone\ufffd Americ behind hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden hidden",
+        "child_details": {
+          "answer": "1073",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0432",
+        "kind": "first_number",
+        "parent_continuation": "1073",
+        "parent_details": {
+          "answer": "1073",
+          "numbers": [
+            "1073"
+          ],
+          "prediction": "1073"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 37 * 29? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americoken missingoken missingoken missinghouse\ufffd similar\ufffd Assert Sm multiple oppos until mid multiple oppos oppos oppos oppos oppos oppos oppos oppos revevicevicevicevicevicevicevice oppos oppos oppos revevice revevicevicevicevicevice revevice opposimate billoken/or us op.jointribute oppos script already existingvicevicevicevicevicevicevicevicevicevice revevice reve law according multip oppos oppos oppos oppos reve revevice reve oppos oppos oppos oppos oppos oppos revevicevice revevice",
+        "child_details": {
+          "answer": "64",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0439",
+        "kind": "first_number",
+        "parent_continuation": "64",
+        "parent_details": {
+          "answer": "64",
+          "numbers": [
+            "64"
+          ],
+          "prediction": "64"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 45 + 19? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "ULE\u53e0 incre shift already already already beyond level Americ guess guess guess guess guess guesscmp compar similarerve.replacehouse compar rank raw raw raw raw raw raw raw partialoci mid multiple mid multipleimate level mid multiple multiple multiple multiple oppos historyaset\ufffd incre existing\ufffd initial keepslobimate further compared compar compared compared compared compared compar compared compar compared compar compar compar compar compared compar compared compared compared compar compar compar compar compar compar compar compar compar compar compar compared compar compared compar compar compar compar compar compar",
+        "child_details": {
+          "answer": "108",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0446",
+        "kind": "first_number",
+        "parent_continuation": "108",
+        "parent_details": {
+          "answer": "108",
+          "numbers": [
+            "108"
+          ],
+          "prediction": "108"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 12 * 9? Answer with only the number.\nAnswer:"
+      },
+      {
+        "category": "math",
+        "child_continuation": "AME Americoken split limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited limited",
+        "child_details": {
+          "answer": "48",
+          "numbers": [],
+          "prediction": ""
+        },
+        "child_passed": false,
+        "id": "generation_math_answer_0453",
+        "kind": "first_number",
+        "parent_continuation": "48",
+        "parent_details": {
+          "answer": "48",
+          "numbers": [
+            "48"
+          ],
+          "prediction": "48"
+        },
+        "parent_passed": true,
+        "prompt": "Question: What is 20 + 28? Answer with only the number.\nAnswer:"
+      }
+    ]
+  },
+  "param_compression_ratio": 32.94592033145603,
+  "parent": {
+    "behavior_correct": 400,
+    "behavior_total": 1000,
+    "choice_correct": 250,
+    "choice_total": 250,
+    "generation_correct": 388,
+    "generation_total": 1000,
+    "model": "Qwen/Qwen3-4B-Base",
+    "param_count": 4022468096,
+    "perplexity_mean": 877.5796540017018
+  },
+  "parent_eval": "/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/evals/eval_parent_qwen3_4b_base_strict_20260705_1000x1000x250.json"
+}

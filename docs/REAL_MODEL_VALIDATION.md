@@ -93,7 +93,9 @@ Supported real-checkpoint surgery:
   existing HF causal LM parent and no external vision encoder.
 - cross-family compressed-parent raw-patch vision graft validation: Qwen3 host
   plus LFM2.5 donor, 5.28% merge-first compression, parent frozen, 100% exact
-  synthetic VQA accuracy after graft training.
+  synthetic VQA accuracy after 900-step graft training. This proves the
+  trainable projection path, not zero-step modality transfer or donor
+  intelligence transfer.
 
 Not yet supported:
 
@@ -109,8 +111,10 @@ Not yet supported:
 - aggressive compression without merge search, calibration, and recovery
   training.
 
-The safe next step is expanding the merge-first search space: score more
-layer-pair and channel-fold candidates, add activation-aware sequential repair
-after each fold, use per-layer donor alpha search instead of one global alpha,
-and broaden behavior gates for both text retention and grounded multimodal
-answers.
+The next step is not another combination of already-failed fold settings. Run
+three lanes in parallel: locate the same-family zero-recovery survival boundary;
+compare blank-child compiler initializations against seeded scratch children;
+and derive parent-owned coordinates for cross-family, multi-parent, and native
+raw-modality transfer. Count all deployable bytes and runtime costs in every
+lane, and promote only parent-relative behavior that survives free-running and
+manual evaluation. This changes the methods, not the any-shape goal.

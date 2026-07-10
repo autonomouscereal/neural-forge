@@ -3,7 +3,8 @@
 The primitive in this module compresses storage, not execution topology.  Every
 logical layer still executes its full intermediate width.  A logical neuron
 selects one global real-neuron prototype, and the same selection is used for
-the gate row, up row, and corresponding down-projection column.
+the gate row, up row, and corresponding down-projection column.  Aligned-index
+fitting can retain one or more real depth prototypes per canonical neuron.
 
 Fitting is deterministic, runs without autograd, and keeps only bounded
 feature and distance blocks.  Runtime parameters live in one registered
@@ -120,6 +121,7 @@ class NeuronCodebookParameterReport:
     intermediate_width: int
     output_width: int
     prototype_count: int
+    prototypes_per_neuron: int | None
     logical_neuron_executions: int
     logical_dense_parameters: int
     unique_learned_parameters: int
@@ -165,13 +167,14 @@ class NeuronCodebookParameterReport:
     def source_to_child_ratio(self) -> float:
         return self.logical_dense_parameters / self.unique_learned_parameters
 
-    def as_dict(self) -> dict[str, int | float]:
+    def as_dict(self) -> dict[str, int | float | None]:
         return {
             "logical_layers": self.logical_layers,
             "input_width": self.input_width,
             "intermediate_width": self.intermediate_width,
             "output_width": self.output_width,
             "prototype_count": self.prototype_count,
+            "prototypes_per_neuron": self.prototypes_per_neuron,
             "logical_neuron_executions": self.logical_neuron_executions,
             "logical_dense_parameters": self.logical_dense_parameters,
             "logical_dense_parameter_count": self.logical_dense_parameters,
@@ -189,7 +192,7 @@ class NeuronCodebookParameterReport:
             "source_to_child_ratio": self.source_to_child_ratio,
         }
 
-    def __getitem__(self, key: str) -> int | float:
+    def __getitem__(self, key: str) -> int | float | None:
         return self.as_dict()[key]
 
 
@@ -203,6 +206,7 @@ class NeuronCodebookDiagnostics:
     intermediate_width: int
     logical_neurons: int
     prototype_count: int
+    prototypes_per_neuron: int | None
     deterministic: bool
     tie_break: str
     real_medoid_prototypes: bool
@@ -998,10 +1002,11 @@ def _fit_medoids(
 def _fit_aligned_index_medoids(
     features: Tensor,
     permutations: Tensor,
+    prototypes_per_neuron: int,
     point_chunk_size: int,
     center_chunk_size: int,
 ) -> tuple[Tensor, Tensor, Tensor, _WorkTracker, int]:
-    """Fit one exact real medoid inside each aligned depth-only group."""
+    """Fit real depth prototypes independently for each canonical neuron."""
 
     logical_layers, intermediate = map(int, permutations.shape)
     logical_neurons = logical_layers * intermediate
@@ -1011,10 +1016,21 @@ def _fit_aligned_index_medoids(
         )
 
     tracker = _WorkTracker()
-    medoids = torch.empty(intermediate, dtype=torch.long)
+    prototype_count = intermediate * prototypes_per_neuron
+    medoids = torch.empty(prototype_count, dtype=torch.long)
     assignments = torch.empty(logical_neurons, dtype=torch.long)
     assigned_distances = torch.empty(logical_neurons, dtype=torch.float64)
     layer_offsets = torch.arange(logical_layers, dtype=torch.long) * intermediate
+
+    if prototypes_per_neuron == logical_layers:
+        for aligned_index in range(intermediate):
+            members = layer_offsets + permutations[:, aligned_index]
+            start = aligned_index * prototypes_per_neuron
+            end = start + prototypes_per_neuron
+            medoids[start:end] = members
+            assignments[members] = torch.arange(start, end, dtype=torch.long)
+            assigned_distances[members] = 0.0
+        return medoids, assignments, assigned_distances, tracker, 0
 
     for aligned_index in range(intermediate):
         members = layer_offsets + permutations[:, aligned_index]
@@ -1042,12 +1058,34 @@ def _fit_aligned_index_medoids(
         tied_global_indices = members.index_select(0, tied_positions)
         selected_tie = int(torch.argmin(tied_global_indices).item())
         medoid_position = int(tied_positions[selected_tie].item())
-        medoid_global_index = int(members[medoid_position].item())
+        selected_positions = [medoid_position]
+        minimum_distances = group_distances[:, medoid_position].clone()
+        while len(selected_positions) < prototypes_per_neuron:
+            scores = minimum_distances.clone()
+            scores[selected_positions] = -1.0
+            next_position = int(torch.argmax(scores).item())
+            selected_positions.append(next_position)
+            minimum_distances = torch.minimum(
+                minimum_distances,
+                group_distances[:, next_position],
+            )
 
-        medoids[aligned_index] = medoid_global_index
-        assignments[members] = aligned_index
-        assigned_distances[members] = group_distances[:, medoid_position]
-        assigned_distances[medoid_global_index] = 0.0
+        selected = torch.tensor(selected_positions, dtype=torch.long)
+        distances_to_prototypes = group_distances.index_select(1, selected)
+        group_assignments = torch.argmin(distances_to_prototypes, dim=1)
+        group_assigned_distances = distances_to_prototypes.gather(
+            1,
+            group_assignments.unsqueeze(1),
+        ).squeeze(1)
+        for slot, source_position in enumerate(selected_positions):
+            group_assignments[source_position] = slot
+            group_assigned_distances[source_position] = 0.0
+
+        start = aligned_index * prototypes_per_neuron
+        end = start + prototypes_per_neuron
+        medoids[start:end] = members.index_select(0, selected)
+        assignments[members] = group_assignments + start
+        assigned_distances[members] = group_assigned_distances
 
     return medoids, assignments, assigned_distances, tracker, 1
 
@@ -1317,6 +1355,26 @@ class NeuronCodebookRegistry(nn.Module):
         return int(self.prototype_gate_weight.shape[0])
 
     @property
+    def prototypes_per_neuron(self) -> int | None:
+        if self.prototype_count % self.intermediate_width != 0:
+            return None
+        result = self.prototype_count // self.intermediate_width
+        if result > self.logical_layers:
+            return None
+        canonical_assignments = self.assignments.to(torch.int64) // result
+        expected = torch.arange(
+            self.intermediate_width,
+            dtype=torch.int64,
+            device=canonical_assignments.device,
+        )
+        if any(
+            not torch.equal(torch.sort(row).values, expected)
+            for row in canonical_assignments
+        ):
+            return None
+        return result
+
+    @property
     def activation(self) -> str:
         code = int(self._activation_code.item())
         try:
@@ -1421,6 +1479,7 @@ class NeuronCodebookRegistry(nn.Module):
             intermediate_width=intermediate,
             output_width=self.output_width,
             prototype_count=self.prototype_count,
+            prototypes_per_neuron=self.prototypes_per_neuron,
             logical_neuron_executions=logical_layers * intermediate,
             logical_dense_parameters=logical_dense,
             unique_learned_parameters=unique_learned,
@@ -1687,6 +1746,47 @@ def _resolve_prototype_count(
     return result
 
 
+def _resolve_prototypes_per_neuron(
+    *,
+    logical_layers: int,
+    intermediate: int,
+    prototype_count: int | None,
+    codebook_size: int | None,
+    num_prototypes: int | None,
+    prototypes_per_neuron: int | None,
+) -> int:
+    totals = [
+        value
+        for value in (prototype_count, codebook_size, num_prototypes)
+        if value is not None
+    ]
+    if len(totals) > 1:
+        raise NeuronCodebookShapeError(
+            "Specify only one of prototype_count, codebook_size, or num_prototypes."
+        )
+    if totals and prototypes_per_neuron is not None:
+        raise NeuronCodebookShapeError(
+            "Specify a total prototype count or prototypes_per_neuron, not both."
+        )
+    if prototypes_per_neuron is not None:
+        result = _positive_int(prototypes_per_neuron, "prototypes_per_neuron")
+    elif totals:
+        total = _positive_int(totals[0], "prototype_count")
+        if total % intermediate != 0:
+            raise NeuronCodebookShapeError(
+                "Aligned prototype_count must be divisible by intermediate width "
+                "so every canonical neuron receives equal depth capacity."
+            )
+        result = total // intermediate
+    else:
+        result = 1
+    if result > logical_layers:
+        raise NeuronCodebookShapeError(
+            "prototypes_per_neuron cannot exceed logical layer count."
+        )
+    return result
+
+
 def _resolve_scale_request(
     use_scales: bool,
     per_neuron_scales: bool | Tensor | None,
@@ -1712,6 +1812,7 @@ def fit_global_neuron_codebook(
     *,
     codebook_size: int | None = None,
     num_prototypes: int | None = None,
+    prototypes_per_neuron: int | None = None,
     activation_sketches: Tensor | Sequence[Tensor] | None = None,
     activations: Tensor | Sequence[Tensor] | None = None,
     activation: str = "silu",
@@ -1735,14 +1836,15 @@ def fit_global_neuron_codebook(
     tensor or a ``[layers, intermediate, 3]`` role-wise tensor.
 
     The default ``global_medoids`` strategy preserves unrestricted global
-    clustering.  ``aligned_index`` creates exactly one real medoid per
-    intermediate index.  For that strategy, ``neuron_permutations[layer,
-    aligned_index]`` identifies the physical gate/up row and coupled down
-    column occupying the aligned slot.  Every row must be a bijection of
-    ``range(intermediate)``; omitted permutations are identity rows.  Aligned
-    fitting evaluates exactly ``intermediate * layers**2`` sketch distances,
-    uses no logical-neuron by prototype assignment search, and fixes the
-    deterministic subgroup factor at one.
+    clustering.  ``aligned_index`` creates ``prototypes_per_neuron`` real depth
+    prototypes independently for every canonical intermediate index.  For that
+    strategy, ``neuron_permutations[layer, aligned_index]`` identifies the
+    physical gate/up row and coupled down column occupying the canonical slot.
+    Every row must be a bijection of ``range(intermediate)``; omitted
+    permutations are identity rows.  Aligned fitting evaluates at most
+    ``intermediate * layers**2`` sketch distances and uses no logical-neuron by
+    prototype assignment search.  One prototype per neuron preserves the
+    original aligned behavior; one per layer reconstructs every source tensor.
     """
 
     if activation_sketches is not None and activations is not None:
@@ -1765,6 +1867,11 @@ def fit_global_neuron_codebook(
             "neuron_permutations are only valid with "
             "assignment_strategy='aligned_index'."
         )
+    if strategy != _ALIGNED_INDEX_STRATEGY and prototypes_per_neuron is not None:
+        raise NeuronCodebookShapeError(
+            "prototypes_per_neuron is only valid with "
+            "assignment_strategy='aligned_index'."
+        )
     scale_request = _resolve_scale_request(use_scales, per_neuron_scales)
 
     with torch.no_grad():
@@ -1772,21 +1879,16 @@ def fit_global_neuron_codebook(
         logical_layers = len(sources)
         intermediate = int(sources[0].gate_weight.shape[0])
         logical_neurons = logical_layers * intermediate
-        prototypes = _resolve_prototype_count(
-            prototype_count,
-            codebook_size,
-            num_prototypes,
-            logical_neurons,
-            default_count=(
-                intermediate if strategy == _ALIGNED_INDEX_STRATEGY else None
-            ),
-        )
-        if strategy == _ALIGNED_INDEX_STRATEGY and prototypes != intermediate:
-            raise NeuronCodebookShapeError(
-                "assignment_strategy='aligned_index' requires exactly one "
-                f"prototype per aligned index ({intermediate} prototypes)."
-            )
         if strategy == _ALIGNED_INDEX_STRATEGY:
+            per_neuron = _resolve_prototypes_per_neuron(
+                logical_layers=logical_layers,
+                intermediate=intermediate,
+                prototype_count=prototype_count,
+                codebook_size=codebook_size,
+                num_prototypes=num_prototypes,
+                prototypes_per_neuron=prototypes_per_neuron,
+            )
+            prototypes = intermediate * per_neuron
             aligned_permutations, permutations_provided = (
                 _validated_neuron_permutations(
                     neuron_permutations,
@@ -1795,6 +1897,13 @@ def fit_global_neuron_codebook(
                 )
             )
         else:
+            per_neuron = None
+            prototypes = _resolve_prototype_count(
+                prototype_count,
+                codebook_size,
+                num_prototypes,
+                logical_neurons,
+            )
             aligned_permutations = None
             permutations_provided = False
         activation_sequence = _activation_sequence(activation_values, logical_layers)
@@ -1810,23 +1919,28 @@ def fit_global_neuron_codebook(
                 _fit_aligned_index_medoids(
                     features,
                     aligned_permutations,
+                    per_neuron,
                     point_chunk,
                     center_chunk,
                 )
             )
             exact_distance_work_bound = intermediate * logical_layers * logical_layers
-            if tracker.distance_values != exact_distance_work_bound:
+            if tracker.distance_values > exact_distance_work_bound:
                 raise NeuronCodebookStateError(
-                    "Aligned-index fitting violated its exact distance-work bound."
+                    "Aligned-index fitting exceeded its distance-work bound."
                 )
-            algorithm = "deterministic_aligned_index_exact_group_medoids"
+            algorithm = (
+                "deterministic_aligned_index_exact_group_medoids"
+                if per_neuron == 1
+                else "deterministic_aligned_index_farthest_first_real_medoids"
+            )
             distance_work_bound_formula = "intermediate_width * logical_layers**2"
             used_n_by_k_assignment_search = False
             permutation_proof = True
             permutation_proof_method = "sorted_rows_equal_arange"
             permutation_rows_verified = logical_layers
             aligned_group_size = logical_layers
-            aligned_subgroup_factor = 1
+            aligned_subgroup_factor = per_neuron
         else:
             medoids, flat_assignments, distances, tracker, iterations_run = (
                 _fit_medoids(
@@ -1878,6 +1992,7 @@ def fit_global_neuron_codebook(
             intermediate_width=intermediate,
             logical_neurons=logical_neurons,
             prototype_count=prototypes,
+            prototypes_per_neuron=per_neuron,
             deterministic=True,
             tie_break=_TIE_BREAK,
             real_medoid_prototypes=True,

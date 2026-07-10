@@ -328,6 +328,7 @@ def test_aligned_index_deterministically_selects_one_real_medoid_per_index() -> 
     bundles = source_bundles * 4
     kwargs = {
         "assignment_strategy": "aligned_index",
+        "prototypes_per_neuron": 1,
         "weight_sketch_size": 9,
         "point_chunk_size": 2,
         "center_chunk_size": 3,
@@ -369,6 +370,8 @@ def test_aligned_index_deterministically_selects_one_real_medoid_per_index() -> 
     assert diagnostics is not None
     assert diagnostics.assignment_strategy == "aligned_index"
     assert diagnostics.prototype_count == 5
+    assert diagnostics.prototypes_per_neuron == 1
+    assert first.report.prototypes_per_neuron == 1
     assert diagnostics.tie_break == "lowest global neuron index"
     assert diagnostics.permutations_provided is False
     assert diagnostics.permutation_proof is True
@@ -381,7 +384,103 @@ def test_aligned_index_deterministically_selects_one_real_medoid_per_index() -> 
     assert diagnostics.exact_distance_work_bound == 5 * 4**2
 
 
-def test_aligned_index_permutations_are_equivalent_to_physical_reordering() -> None:
+def test_aligned_index_intermediate_depth_slots_are_real_and_deterministic() -> None:
+    layers = 5
+    intermediate = 4
+    prototypes_per_neuron = 3
+    input_width = 5
+    output_width = 5
+    bundles, _ = _bundles(
+        layers=layers,
+        input_width=input_width,
+        intermediate_width=intermediate,
+        output_width=output_width,
+        seed=1451,
+    )
+    kwargs = {
+        "assignment_strategy": "aligned_index",
+        "prototypes_per_neuron": prototypes_per_neuron,
+        "weight_sketch_size": 9,
+        "point_chunk_size": 2,
+        "center_chunk_size": 3,
+    }
+
+    first = fit_global_neuron_codebook(bundles, **kwargs)
+    second = fit_global_neuron_codebook(bundles, **kwargs)
+    registry = first.registry
+    prototype_count = intermediate * prototypes_per_neuron
+
+    assert registry.prototype_count == prototype_count
+    assert registry.prototypes_per_neuron == prototypes_per_neuron
+    assert first.report.prototypes_per_neuron == prototypes_per_neuron
+    assert first.diagnostics is not None
+    assert first.diagnostics.prototypes_per_neuron == prototypes_per_neuron
+    assert first.state_dict().keys() == second.state_dict().keys()
+    for name, value in first.state_dict().items():
+        assert torch.equal(value, second.state_dict()[name]), name
+    assert first.diagnostics == second.diagnostics
+
+    flat_assignments = registry.assignments.flatten()
+    assert tuple(registry.assignments.shape) == (layers, intermediate)
+    assert int(registry.assignments.min()) == 0
+    assert int(registry.assignments.max()) < prototype_count
+    assert int(torch.unique(registry.prototype_source_indices).numel()) == (
+        prototype_count
+    )
+    for canonical_neuron in range(intermediate):
+        start = canonical_neuron * prototypes_per_neuron
+        end = start + prototypes_per_neuron
+        assignments = registry.assignments[:, canonical_neuron]
+        assert bool(((assignments >= start) & (assignments < end)).all())
+        for prototype_index in range(start, end):
+            source_index = int(registry.prototype_source_indices[prototype_index])
+            source_layer, source_neuron = divmod(source_index, intermediate)
+            assert source_neuron == canonical_neuron
+            assert int(flat_assignments[source_index]) == prototype_index
+            torch.testing.assert_close(
+                registry.prototype_gate_weight[prototype_index],
+                bundles[source_layer].gate_weight[source_neuron],
+                rtol=0.0,
+                atol=0.0,
+            )
+            torch.testing.assert_close(
+                registry.prototype_up_weight[prototype_index],
+                bundles[source_layer].up_weight[source_neuron],
+                rtol=0.0,
+                atol=0.0,
+            )
+            torch.testing.assert_close(
+                registry.prototype_down_weight[:, prototype_index],
+                bundles[source_layer].down_weight[:, source_neuron],
+                rtol=0.0,
+                atol=0.0,
+            )
+
+    expected_prototype_parameters = prototype_count * (
+        2 * input_width + output_width + 2
+    )
+    expected_retained_biases = layers * output_width
+    expected_logical_parameters = layers * (
+        intermediate * (2 * input_width + output_width + 2) + output_width
+    )
+    assert first.report.prototype_parameters == expected_prototype_parameters
+    assert first.report.retained_layer_bias_parameters == expected_retained_biases
+    assert first.report.unique_learned_parameters == (
+        expected_prototype_parameters + expected_retained_biases
+    )
+    assert first.report.logical_dense_parameters == expected_logical_parameters
+    assert first.report.assignment_index_bytes == layers * intermediate * 4
+    assert first.report.prototype_source_index_bytes == prototype_count * 4
+    assert first.report.index_buffer_bytes == (
+        first.report.assignment_index_bytes
+        + first.report.prototype_source_index_bytes
+    )
+
+
+@pytest.mark.parametrize("prototypes_per_neuron", [1, 2])
+def test_aligned_index_permutations_are_equivalent_to_physical_reordering(
+    prototypes_per_neuron,
+) -> None:
     layers = 4
     intermediate = 5
     bundles, _ = _bundles(
@@ -410,6 +509,7 @@ def test_aligned_index_permutations_are_equivalent_to_physical_reordering() -> N
     ]
     kwargs = {
         "assignment_strategy": "aligned_index",
+        "prototypes_per_neuron": prototypes_per_neuron,
         "weight_sketch_size": 10,
         "activation_sketch_size": 6,
         "point_chunk_size": 2,
@@ -428,10 +528,13 @@ def test_aligned_index_permutations_are_equivalent_to_physical_reordering() -> N
         **kwargs,
     )
 
-    assert torch.equal(
-        permuted.registry.assignments,
-        physical_orders.to(torch.int32),
+    expected_assignments = torch.stack(
+        [
+            canonical.registry.assignments[layer_index].index_select(0, order)
+            for layer_index, order in enumerate(physical_orders)
+        ]
     )
+    assert torch.equal(permuted.registry.assignments, expected_assignments)
     for name in (
         "prototype_gate_weight",
         "prototype_up_weight",
@@ -481,6 +584,127 @@ def test_aligned_index_permutations_are_equivalent_to_physical_reordering() -> N
     assert diagnostics.permutation_proof_method == "sorted_rows_equal_arange"
 
 
+def test_aligned_full_depth_reconstructs_every_permuted_source_and_reloads() -> None:
+    layers = 4
+    intermediate = 5
+    bundles, _ = _bundles(
+        layers=layers,
+        intermediate_width=intermediate,
+        seed=1471,
+    )
+    physical_orders = torch.tensor(
+        [
+            [3, 0, 4, 1, 2],
+            [1, 4, 2, 0, 3],
+            [4, 3, 0, 2, 1],
+            [2, 1, 3, 4, 0],
+        ],
+        dtype=torch.int64,
+    )
+    canonical_to_physical = torch.argsort(physical_orders, dim=1)
+    permuted_bundles = [
+        _permuted_bundle(bundle, physical_orders[layer_index])
+        for layer_index, bundle in enumerate(bundles)
+    ]
+    codebook = fit_global_neuron_codebook(
+        permuted_bundles,
+        assignment_strategy="aligned_index",
+        prototypes_per_neuron=layers,
+        neuron_permutations=canonical_to_physical,
+        use_scales=False,
+        weight_sketch_size=8,
+    )
+    registry = codebook.registry
+
+    expected_assignments = torch.stack(
+        [
+            (
+                torch.arange(intermediate, dtype=torch.int32) * layers
+                + layer_index
+            ).index_select(0, order)
+            for layer_index, order in enumerate(physical_orders)
+        ]
+    )
+    expected_sources = torch.tensor(
+        [
+            layer_index * intermediate
+            + int(canonical_to_physical[layer_index, canonical_neuron])
+            for canonical_neuron in range(intermediate)
+            for layer_index in range(layers)
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.equal(registry.assignments, expected_assignments)
+    assert torch.equal(registry.prototype_source_indices, expected_sources)
+    assert registry.neuron_scales is None
+    assert registry.prototypes_per_neuron == layers
+    assert codebook.report.prototypes_per_neuron == layers
+    assert codebook.report.prototype_count == layers * intermediate
+    assert codebook.report.unique_learned_parameters == (
+        codebook.report.logical_dense_parameters
+    )
+    assert codebook.report.assignment_index_bytes == layers * intermediate * 4
+    assert codebook.report.prototype_source_index_bytes == layers * intermediate * 4
+    assert codebook.report.index_buffer_bytes == layers * intermediate * 8
+    assert codebook.diagnostics is not None
+    assert codebook.diagnostics.distance_values_computed == 0
+    assert codebook.diagnostics.squared_sketch_error == 0.0
+
+    inputs = torch.randn(3, 5, dtype=torch.float64)
+    for layer_index, source in enumerate(permuted_bundles):
+        materialized = registry.materialize_layer(layer_index)
+        for name in (
+            "gate_weight",
+            "up_weight",
+            "down_weight",
+            "gate_bias",
+            "up_bias",
+            "down_bias",
+        ):
+            torch.testing.assert_close(
+                getattr(materialized, name),
+                getattr(source, name),
+                rtol=0.0,
+                atol=0.0,
+            )
+        torch.testing.assert_close(
+            codebook[layer_index](inputs),
+            source.forward(inputs),
+            rtol=0.0,
+            atol=0.0,
+        )
+
+    state = {
+        name: value.detach().clone() for name, value in codebook.state_dict().items()
+    }
+    restored = GlobalNeuronCodebook.from_state_dict(state)
+    assert restored.report == codebook.report
+    assert restored.registry.prototypes_per_neuron == layers
+    assert restored.state_dict().keys() == state.keys()
+    for name, value in state.items():
+        assert torch.equal(restored.state_dict()[name], value)
+    for layer_index, source in enumerate(permuted_bundles):
+        restored_layer = restored.registry.materialize_layer(layer_index)
+        torch.testing.assert_close(
+            restored_layer.gate_weight,
+            source.gate_weight,
+            rtol=0.0,
+            atol=0.0,
+        )
+        torch.testing.assert_close(
+            restored_layer.up_weight,
+            source.up_weight,
+            rtol=0.0,
+            atol=0.0,
+        )
+        torch.testing.assert_close(
+            restored_layer.down_weight,
+            source.down_weight,
+            rtol=0.0,
+            atol=0.0,
+        )
+
+
 @pytest.mark.parametrize(
     "permutations",
     [
@@ -512,10 +736,24 @@ def test_aligned_index_rejects_malformed_permutations(permutations) -> None:
 def test_aligned_index_rejects_non_aligned_prototype_count() -> None:
     bundles, _ = _bundles(layers=3, intermediate_width=4, seed=149)
 
-    with pytest.raises(NeuronCodebookShapeError, match="exactly one prototype"):
+    with pytest.raises(NeuronCodebookShapeError, match="divisible by intermediate"):
         fit_global_neuron_codebook(
             bundles,
             prototype_count=3,
+            assignment_strategy="aligned_index",
+        )
+
+
+@pytest.mark.parametrize("prototypes_per_neuron", [False, 0, 4])
+def test_aligned_index_rejects_invalid_prototypes_per_neuron(
+    prototypes_per_neuron,
+) -> None:
+    bundles, _ = _bundles(layers=3, intermediate_width=4, seed=1491)
+
+    with pytest.raises(NeuronCodebookShapeError, match="prototypes_per_neuron"):
+        fit_global_neuron_codebook(
+            bundles,
+            prototypes_per_neuron=prototypes_per_neuron,
             assignment_strategy="aligned_index",
         )
 
@@ -542,6 +780,7 @@ def test_aligned_index_distance_work_scales_with_width_and_squared_depth() -> No
         observed_work[layers] = diagnostics.distance_values_computed
 
         assert codebook.report.prototype_count == intermediate
+        assert codebook.report.prototypes_per_neuron == 1
         assert diagnostics.distance_values_computed == expected_work
         assert diagnostics.exact_distance_work_bound == expected_work
         assert diagnostics.distance_work_bound == expected_work
