@@ -66,6 +66,17 @@ class ComposeSettings:
     path_decomposition_ridge: float = 1e-6
     path_decomposition_sketch_size: int = 64
     path_decomposition_interpolation_mode: str = "sparse-signature"
+    rollout_refold_rounds: int = 0
+    rollout_refold_max_prompts: int = 64
+    rollout_refold_max_new_tokens: int = 24
+    rollout_refold_batch_size: int = 4
+    rollout_refold_candidate_alphas: str = "1,0.5,0.25"
+    rollout_gate_top_k: int = 5
+    rollout_gate_min_top1_gain: float = 0.0
+    rollout_gate_min_action_logprob_gain: float = 0.0
+    rollout_gate_max_repetition_regression: float = 0.0
+    rollout_gate_max_longest_run_regression: int = 0
+    rollout_gate_min_action_count_ratio: float = 0.9
     fit_gate_validation_fraction: float = 0.25
     fit_gate_min_validation_rows: int = 128
     fit_gate_min_relative_improvement: float = 0.02
@@ -132,6 +143,35 @@ class ComposeSettings:
             "sparse-signature",
         }:
             raise ValueError("unsupported path-decomposition-interpolation-mode.")
+        if self.rollout_refold_rounds < 0:
+            raise ValueError("rollout-refold-rounds must be non-negative.")
+        if self.rollout_refold_rounds and any(
+            value <= 0
+            for value in (
+                self.rollout_refold_max_prompts,
+                self.rollout_refold_max_new_tokens,
+                self.rollout_refold_batch_size,
+                self.rollout_gate_top_k,
+            )
+        ):
+            raise ValueError("enabled rollout-refold limits must be positive.")
+        alphas = [
+            float(part.strip())
+            for part in self.rollout_refold_candidate_alphas.split(",")
+            if part.strip()
+        ]
+        if not alphas or any(
+            not math.isfinite(alpha) or not 0.0 < alpha <= 1.0 for alpha in alphas
+        ):
+            raise ValueError("rollout-refold candidate alphas must be in (0, 1].")
+        if (
+            self.rollout_gate_min_top1_gain < 0.0
+            or self.rollout_gate_min_action_logprob_gain < 0.0
+            or self.rollout_gate_max_repetition_regression < 0.0
+            or self.rollout_gate_max_longest_run_regression < 0
+            or not 0.0 < self.rollout_gate_min_action_count_ratio <= 1.0
+        ):
+            raise ValueError("rollout gate thresholds are invalid.")
 
 
 def _sha256(path: Path) -> str:
@@ -203,6 +243,28 @@ def build_compose_command(
         str(settings.path_decomposition_sketch_size),
         "--path-decomposition-interpolation-mode",
         settings.path_decomposition_interpolation_mode,
+        "--rollout-refold-rounds",
+        str(settings.rollout_refold_rounds),
+        "--rollout-refold-max-prompts",
+        str(settings.rollout_refold_max_prompts),
+        "--rollout-refold-max-new-tokens",
+        str(settings.rollout_refold_max_new_tokens),
+        "--rollout-refold-batch-size",
+        str(settings.rollout_refold_batch_size),
+        "--rollout-refold-candidate-alphas",
+        settings.rollout_refold_candidate_alphas,
+        "--rollout-gate-top-k",
+        str(settings.rollout_gate_top_k),
+        "--rollout-gate-min-top1-gain",
+        str(settings.rollout_gate_min_top1_gain),
+        "--rollout-gate-min-action-logprob-gain",
+        str(settings.rollout_gate_min_action_logprob_gain),
+        "--rollout-gate-max-repetition-regression",
+        str(settings.rollout_gate_max_repetition_regression),
+        "--rollout-gate-max-longest-run-regression",
+        str(settings.rollout_gate_max_longest_run_regression),
+        "--rollout-gate-min-action-count-ratio",
+        str(settings.rollout_gate_min_action_count_ratio),
         "--calibration-file",
         str(calibration_file),
         "--max-calibration-texts",
@@ -633,6 +695,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--path-decomposition-interpolation-mode",
         default="sparse-signature",
     )
+    parser.add_argument("--rollout-refold-rounds", type=int, default=0)
+    parser.add_argument("--rollout-refold-max-prompts", type=int, default=64)
+    parser.add_argument("--rollout-refold-max-new-tokens", type=int, default=24)
+    parser.add_argument("--rollout-refold-batch-size", type=int, default=4)
+    parser.add_argument(
+        "--rollout-refold-candidate-alphas", default="1,0.5,0.25"
+    )
+    parser.add_argument("--rollout-gate-top-k", type=int, default=5)
+    parser.add_argument("--rollout-gate-min-top1-gain", type=float, default=0.0)
+    parser.add_argument(
+        "--rollout-gate-min-action-logprob-gain", type=float, default=0.0
+    )
+    parser.add_argument(
+        "--rollout-gate-max-repetition-regression", type=float, default=0.0
+    )
+    parser.add_argument(
+        "--rollout-gate-max-longest-run-regression", type=int, default=0
+    )
+    parser.add_argument(
+        "--rollout-gate-min-action-count-ratio", type=float, default=0.9
+    )
     parser.add_argument("--fit-gate-validation-fraction", type=float, default=0.25)
     parser.add_argument("--fit-gate-min-validation-rows", type=int, default=128)
     parser.add_argument("--fit-gate-min-relative-improvement", type=float, default=0.02)
@@ -693,6 +776,25 @@ def main(argv: list[str] | None = None) -> int:
         path_decomposition_sketch_size=args.path_decomposition_sketch_size,
         path_decomposition_interpolation_mode=(
             args.path_decomposition_interpolation_mode
+        ),
+        rollout_refold_rounds=args.rollout_refold_rounds,
+        rollout_refold_max_prompts=args.rollout_refold_max_prompts,
+        rollout_refold_max_new_tokens=args.rollout_refold_max_new_tokens,
+        rollout_refold_batch_size=args.rollout_refold_batch_size,
+        rollout_refold_candidate_alphas=args.rollout_refold_candidate_alphas,
+        rollout_gate_top_k=args.rollout_gate_top_k,
+        rollout_gate_min_top1_gain=args.rollout_gate_min_top1_gain,
+        rollout_gate_min_action_logprob_gain=(
+            args.rollout_gate_min_action_logprob_gain
+        ),
+        rollout_gate_max_repetition_regression=(
+            args.rollout_gate_max_repetition_regression
+        ),
+        rollout_gate_max_longest_run_regression=(
+            args.rollout_gate_max_longest_run_regression
+        ),
+        rollout_gate_min_action_count_ratio=(
+            args.rollout_gate_min_action_count_ratio
         ),
         fit_gate_validation_fraction=args.fit_gate_validation_fraction,
         fit_gate_min_validation_rows=args.fit_gate_min_validation_rows,

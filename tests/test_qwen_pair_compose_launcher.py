@@ -76,6 +76,9 @@ def test_compose_and_eval_argument_construction_is_closed_form_and_exact(tmp_pat
         _value_after(command, "--path-decomposition-interpolation-mode")
         == "sparse-signature"
     )
+    assert _value_after(command, "--rollout-refold-rounds") == "0"
+    assert _value_after(command, "--rollout-refold-candidate-alphas") == "1,0.5,0.25"
+    assert _value_after(command, "--rollout-gate-min-action-count-ratio") == "0.9"
     assert _value_after(command, "--candidate-dtype") == "float32"
 
     flags = [token.lower() for token in command if token.startswith("--")]
@@ -124,6 +127,10 @@ def test_parser_accepts_device_uuid_and_compose_settings() -> None:
             "0.02",
             "--max-anchors",
             "999",
+            "--rollout-refold-rounds",
+            "2",
+            "--rollout-refold-max-prompts",
+            "48",
         ]
     )
 
@@ -135,6 +142,8 @@ def test_parser_accepts_device_uuid_and_compose_settings() -> None:
     assert args.observable_coordinates is True
     assert args.path_decomposition is True
     assert args.path_decomposition_interpolation_mode == "sparse-signature"
+    assert args.rollout_refold_rounds == 2
+    assert args.rollout_refold_max_prompts == 48
 
 
 def test_lexical_absolute_preserves_venv_executable_symlink(tmp_path: Path) -> None:

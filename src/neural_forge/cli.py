@@ -1333,6 +1333,31 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["dense", "sparse-signature"],
         default="sparse-signature",
     )
+    qwen_pair_compose.add_argument("--rollout-refold-rounds", type=int, default=0)
+    qwen_pair_compose.add_argument("--rollout-refold-max-prompts", type=int, default=64)
+    qwen_pair_compose.add_argument(
+        "--rollout-refold-max-new-tokens", type=int, default=24
+    )
+    qwen_pair_compose.add_argument("--rollout-refold-batch-size", type=int, default=4)
+    qwen_pair_compose.add_argument(
+        "--rollout-refold-candidate-alphas", default="1,0.5,0.25"
+    )
+    qwen_pair_compose.add_argument("--rollout-gate-top-k", type=int, default=5)
+    qwen_pair_compose.add_argument(
+        "--rollout-gate-min-top1-gain", type=float, default=0.0
+    )
+    qwen_pair_compose.add_argument(
+        "--rollout-gate-min-action-logprob-gain", type=float, default=0.0
+    )
+    qwen_pair_compose.add_argument(
+        "--rollout-gate-max-repetition-regression", type=float, default=0.0
+    )
+    qwen_pair_compose.add_argument(
+        "--rollout-gate-max-longest-run-regression", type=int, default=0
+    )
+    qwen_pair_compose.add_argument(
+        "--rollout-gate-min-action-count-ratio", type=float, default=0.9
+    )
     qwen_pair_compose.add_argument(
         "--head-validation-vocab-rows", type=int, default=4096
     )
@@ -3329,6 +3354,11 @@ def cmd_hf_functional_fold(args: argparse.Namespace) -> dict[str, object]:
 def cmd_hf_qwen_pair_compose(args: argparse.Namespace) -> dict[str, object]:
     from neural_forge.hf_qwen_compose import initialize_qwen_pair_composition
 
+    rollout_alphas = [
+        float(part.strip())
+        for part in args.rollout_refold_candidate_alphas.split(",")
+        if part.strip()
+    ]
     return initialize_qwen_pair_composition(
         donor_model=args.source_model,
         target_model=args.candidate_model,
@@ -3359,6 +3389,25 @@ def cmd_hf_qwen_pair_compose(args: argparse.Namespace) -> dict[str, object]:
         path_decomposition_sketch_size=args.path_decomposition_sketch_size,
         path_decomposition_interpolation_mode=(
             args.path_decomposition_interpolation_mode
+        ),
+        rollout_refold_rounds=args.rollout_refold_rounds,
+        rollout_refold_max_prompts=args.rollout_refold_max_prompts,
+        rollout_refold_max_new_tokens=args.rollout_refold_max_new_tokens,
+        rollout_refold_batch_size=args.rollout_refold_batch_size,
+        rollout_refold_candidate_alphas=rollout_alphas,
+        rollout_gate_top_k=args.rollout_gate_top_k,
+        rollout_gate_min_top1_gain=args.rollout_gate_min_top1_gain,
+        rollout_gate_min_action_logprob_gain=(
+            args.rollout_gate_min_action_logprob_gain
+        ),
+        rollout_gate_max_repetition_regression=(
+            args.rollout_gate_max_repetition_regression
+        ),
+        rollout_gate_max_longest_run_regression=(
+            args.rollout_gate_max_longest_run_regression
+        ),
+        rollout_gate_min_action_count_ratio=(
+            args.rollout_gate_min_action_count_ratio
         ),
         head_validation_vocab_rows=args.head_validation_vocab_rows,
         torch_dtype=args.dtype,

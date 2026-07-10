@@ -3715,6 +3715,17 @@ def initialize_qwen_pair_composition_models(
     path_decomposition_ridge: float = 1e-6,
     path_decomposition_sketch_size: int = 64,
     path_decomposition_interpolation_mode: str = "sparse-signature",
+    rollout_refold_rounds: int = 0,
+    rollout_refold_max_prompts: int = 64,
+    rollout_refold_max_new_tokens: int = 24,
+    rollout_refold_batch_size: int = 4,
+    rollout_refold_candidate_alphas: Sequence[float] = (1.0, 0.5, 0.25),
+    rollout_gate_top_k: int = 5,
+    rollout_gate_min_top1_gain: float = 0.0,
+    rollout_gate_min_action_logprob_gain: float = 0.0,
+    rollout_gate_max_repetition_regression: float = 0.0,
+    rollout_gate_max_longest_run_regression: int = 0,
+    rollout_gate_min_action_count_ratio: float = 0.9,
     head_validation_vocab_rows: int = 4096,
     expected_donor_layers: int | None = None,
     expected_target_layers: int | None = None,
@@ -3750,6 +3761,27 @@ def initialize_qwen_pair_composition_models(
         )
     if min_relative_improvement < 0 or max_cosine_drop < 0:
         raise ValueError("validation gate thresholds must be non-negative.")
+    if int(rollout_refold_rounds) < 0:
+        raise ValueError("rollout_refold_rounds must be non-negative.")
+    if rollout_refold_rounds and (
+        int(rollout_refold_max_prompts) <= 0
+        or int(rollout_refold_max_new_tokens) <= 0
+        or int(rollout_refold_batch_size) <= 0
+        or int(rollout_gate_top_k) <= 0
+    ):
+        raise ValueError("enabled rollout refold count and size limits must be positive.")
+    if (
+        not math.isfinite(float(rollout_gate_min_top1_gain))
+        or float(rollout_gate_min_top1_gain) < 0.0
+        or not math.isfinite(float(rollout_gate_min_action_logprob_gain))
+        or float(rollout_gate_min_action_logprob_gain) < 0.0
+        or not math.isfinite(float(rollout_gate_max_repetition_regression))
+        or float(rollout_gate_max_repetition_regression) < 0.0
+        or int(rollout_gate_max_longest_run_regression) < 0
+        or not math.isfinite(float(rollout_gate_min_action_count_ratio))
+        or not 0.0 < float(rollout_gate_min_action_count_ratio) <= 1.0
+    ):
+        raise ValueError("rollout gate thresholds are invalid.")
     if (
         not math.isfinite(float(path_decomposition_ridge))
         or float(path_decomposition_ridge) < 0.0
@@ -4110,6 +4142,58 @@ def initialize_qwen_pair_composition_models(
             projected_head_accepted=bool(projected_final_head_report["accepted"]),
             full_head_alpha=float(final_head_report["chosen_alpha"]),
         )
+        rollout_refold_report = {
+            "schema": "neural-forge-qwen-rollout-refold-v1",
+            "enabled": False,
+            "rounds": [],
+        }
+        if int(rollout_refold_rounds) > 0:
+            from neural_forge.hf_qwen_rollout_refold import (
+                refold_qwen_pair_composition_on_rollouts_models,
+            )
+
+            rollout_refold_report = refold_qwen_pair_composition_on_rollouts_models(
+                donor,
+                target,
+                source_tokenizer,
+                target_tokenizer,
+                pair_plan=pair_plan,
+                structural=structural,
+                basis=basis_device,
+                pair_bases=pair_bases,
+                calibration_texts=texts,
+                tracker=tracker,
+                rounds=int(rollout_refold_rounds),
+                max_prompts=int(rollout_refold_max_prompts),
+                max_new_tokens=int(rollout_refold_max_new_tokens),
+                candidate_alphas=rollout_refold_candidate_alphas,
+                rollout_batch_size=int(rollout_refold_batch_size),
+                top_k=int(rollout_gate_top_k),
+                min_top1_gain=float(rollout_gate_min_top1_gain),
+                min_action_logprob_gain=float(
+                    rollout_gate_min_action_logprob_gain
+                ),
+                max_repetition_regression=float(
+                    rollout_gate_max_repetition_regression
+                ),
+                max_longest_run_regression=int(
+                    rollout_gate_max_longest_run_regression
+                ),
+                min_action_count_ratio=float(rollout_gate_min_action_count_ratio),
+                ridge=ridge,
+                validation_fraction=validation_fraction,
+                min_validation_prompts=min_validation_prompts,
+                min_train_prompts=min_train_prompts,
+                min_relative_improvement=min_relative_improvement,
+                max_cosine_drop=max_cosine_drop,
+                max_fitted_relative_rmse=max_fitted_relative_rmse,
+                max_length=max_length,
+                max_fit_rows=max_fit_rows,
+                min_validation_rows=min_validation_rows,
+                head_validation_vocab_rows=head_validation_vocab_rows,
+                split_seed=split_seed,
+                device=device,
+            )
 
     for parameter in target.parameters():
         parameter.grad = None
@@ -4189,6 +4273,7 @@ def initialize_qwen_pair_composition_models(
             "maximum_cosine_drop": float(max_cosine_drop),
             "fallback": "selected-native-output-directions",
         },
+        "rollout_refold": rollout_refold_report,
         "path_trace": path_trace_report,
         "head_dim": int(donor_specs[0]["head_dim"]),
         "gqa_selected_full_head_coordinate_packing": True,
@@ -4287,6 +4372,17 @@ def initialize_qwen_pair_composition(
     path_decomposition_ridge: float = 1e-6,
     path_decomposition_sketch_size: int = 64,
     path_decomposition_interpolation_mode: str = "sparse-signature",
+    rollout_refold_rounds: int = 0,
+    rollout_refold_max_prompts: int = 64,
+    rollout_refold_max_new_tokens: int = 24,
+    rollout_refold_batch_size: int = 4,
+    rollout_refold_candidate_alphas: Sequence[float] = (1.0, 0.5, 0.25),
+    rollout_gate_top_k: int = 5,
+    rollout_gate_min_top1_gain: float = 0.0,
+    rollout_gate_min_action_logprob_gain: float = 0.0,
+    rollout_gate_max_repetition_regression: float = 0.0,
+    rollout_gate_max_longest_run_regression: int = 0,
+    rollout_gate_min_action_count_ratio: float = 0.9,
     head_validation_vocab_rows: int = 4096,
     torch_dtype: str = "float16",
     target_torch_dtype: str = "float32",
@@ -4353,6 +4449,21 @@ def initialize_qwen_pair_composition(
         path_decomposition_interpolation_mode=(
             path_decomposition_interpolation_mode
         ),
+        rollout_refold_rounds=rollout_refold_rounds,
+        rollout_refold_max_prompts=rollout_refold_max_prompts,
+        rollout_refold_max_new_tokens=rollout_refold_max_new_tokens,
+        rollout_refold_batch_size=rollout_refold_batch_size,
+        rollout_refold_candidate_alphas=rollout_refold_candidate_alphas,
+        rollout_gate_top_k=rollout_gate_top_k,
+        rollout_gate_min_top1_gain=rollout_gate_min_top1_gain,
+        rollout_gate_min_action_logprob_gain=rollout_gate_min_action_logprob_gain,
+        rollout_gate_max_repetition_regression=(
+            rollout_gate_max_repetition_regression
+        ),
+        rollout_gate_max_longest_run_regression=(
+            rollout_gate_max_longest_run_regression
+        ),
+        rollout_gate_min_action_count_ratio=rollout_gate_min_action_count_ratio,
         head_validation_vocab_rows=head_validation_vocab_rows,
         expected_donor_layers=expected_donor_layers,
         expected_target_layers=expected_target_layers,

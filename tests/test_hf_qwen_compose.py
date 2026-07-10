@@ -128,6 +128,16 @@ def test_qwen_pair_compose_cli_matches_detached_launcher_surface(monkeypatch) ->
             "--no-path-decomposition",
             "--path-decomposition-interpolation-mode",
             "dense",
+            "--rollout-refold-rounds",
+            "2",
+            "--rollout-refold-max-prompts",
+            "12",
+            "--rollout-refold-max-new-tokens",
+            "7",
+            "--rollout-refold-candidate-alphas",
+            "1,0.25",
+            "--rollout-gate-min-action-count-ratio",
+            "0.8",
             "--calibration-file",
             "calibration.jsonl",
             "--max-calibration-texts",
@@ -153,6 +163,11 @@ def test_qwen_pair_compose_cli_matches_detached_launcher_surface(monkeypatch) ->
     assert captured["observable_coordinate_ridge"] == pytest.approx(0.002)
     assert captured["path_decomposition"] is False
     assert captured["path_decomposition_interpolation_mode"] == "dense"
+    assert captured["rollout_refold_rounds"] == 2
+    assert captured["rollout_refold_max_prompts"] == 12
+    assert captured["rollout_refold_max_new_tokens"] == 7
+    assert captured["rollout_refold_candidate_alphas"] == [1.0, 0.25]
+    assert captured["rollout_gate_min_action_count_ratio"] == pytest.approx(0.8)
     assert captured["calibration_texts"] == ["alpha", "beta", "gamma"]
 
 
@@ -777,12 +792,19 @@ def test_tiny_transformers_qwen_uses_real_layer_contract(tmp_path) -> None:
         tokenizer,
         calibration_texts=["alpha", "bravo", "charlie", "delta", "echo"],
         validation_fraction=0.2,
+        min_train_prompts=1,
         max_length=12,
         batch_size=2,
         max_fit_rows=64,
         min_validation_rows=1,
         basis_max_rows=19,
         head_validation_vocab_rows=19,
+        rollout_refold_rounds=1,
+        rollout_refold_max_prompts=2,
+        rollout_refold_max_new_tokens=2,
+        rollout_refold_batch_size=2,
+        rollout_refold_candidate_alphas=(1.0, 0.5),
+        rollout_gate_min_action_count_ratio=0.5,
         expected_donor_layers=4,
         expected_target_layers=2,
         required_head_dim=2,
@@ -796,6 +818,11 @@ def test_tiny_transformers_qwen_uses_real_layer_contract(tmp_path) -> None:
     assert report["gqa_selected_full_head_coordinate_packing"] is True
     assert report["nonlinear_producer_parameter_averaging"] is False
     assert report["swiglu_gate_up_channel_coupling"] is True
+    assert report["rollout_refold"]["enabled"] is True
+    assert report["rollout_refold"]["token_contract"]["exact_token_ids"] is True
+    assert report["rollout_refold"]["trace_distribution"] == (
+        "current-child-greedy-rollout"
+    )
     saved_report = json.loads(
         (tmp_path / "neural_forge_qwen_pair_compose_report.json").read_text()
     )
