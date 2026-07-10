@@ -634,3 +634,23 @@ autoregressive functional compaction:
   target so each stage inherits a functional state distribution.
 - Keep recovery training disabled until a fold produces coherent useful output
   without optimizer steps.
+
+### Transactional path-gate rerun
+
+The exact rerun with observable coordinates and held-out path materialization
+gates completed at 25.412x compression:
+
+- PPL: 1,459,654.49.
+- Behavior: 0/1000.
+- Exact generation: 0/1000.
+- Choice: 154/250, or 61.6 percent parent-choice retention.
+- Accepted composed pair fits: 4/18.
+- Accepted all-path attention aggregates: 0/18.
+- Accepted all-path MLP aggregates: 0/18.
+
+This is the strongest zero-recovery choice score so far, improving the previous
+146/250 incumbent. It is still not a successful fold: all seven manually
+inspected outputs were repetitive multilingual word salad, with no correct
+arithmetic, Python, safety answer, tokenizer explanation, or merge explanation.
+The result validates transactional fallback as a signal-preservation fix, not
+as a solution to autoregressive coherence.
