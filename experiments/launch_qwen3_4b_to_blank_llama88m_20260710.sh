@@ -3,10 +3,14 @@ set -euo pipefail
 
 ROOT=/home/cereal/model-surgery-lab/neural-forge-pivot
 RUN_ROOT=/mnt/ai_data/neural-forge/cross_family_blank_20260710
-TAG=qwen3_4b_to_blank_llama88m_sparsefold_gpu0_r2_20260710
+TAG=${TAG:-qwen3_4b_to_blank_llama88m_structuralprior_gpu0_r3_20260710}
 RUN_DIR="$RUN_ROOT/$TAG"
 PY=/home/cereal/model-surgery-lab/venv/bin/python
-GPU=GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561
+GPU=${GPU:-GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561}
+HIDDEN_SIZE=${HIDDEN_SIZE:-384}
+INTERMEDIATE_SIZE=${INTERMEDIATE_SIZE:-768}
+NUM_ATTENTION_HEADS=${NUM_ATTENTION_HEADS:-6}
+EXACT_PARAMETER_BUDGET=${EXACT_PARAMETER_BUDGET:-87853440}
 
 mkdir -p "$RUN_ROOT"
 
@@ -30,21 +34,23 @@ mkdir -p "$RUN_ROOT"
   --calibration-count 64 \
   --validation-count 16 \
   --target-family llama \
-  --hidden-size 384 \
-  --intermediate-size 768 \
+  --hidden-size "$HIDDEN_SIZE" \
+  --intermediate-size "$INTERMEDIATE_SIZE" \
   --num-hidden-layers 24 \
-  --num-attention-heads 6 \
+  --num-attention-heads "$NUM_ATTENTION_HEADS" \
   --num-key-value-heads 1 \
   --head-dim 64 \
   --max-position-embeddings 32768 \
-  --exact-parameter-budget 87853440 \
+  --exact-parameter-budget "$EXACT_PARAMETER_BUDGET" \
   --seed 0 \
-  --dtype float16 \
+  --dtype float32 \
+  --donor-dtype float16 \
+  --target-dtype float32 \
   --device cuda:0 \
   --local-files-only \
   --trace-pooling token_rows \
   --residual-map-method sparse_fold \
-  --ridge 1e-5 \
+  --ridge 1e-3 \
   --min-final-state-improvement 0 \
   --min-logit-improvement 0 \
   --min-top1-gain 0 \

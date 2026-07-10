@@ -191,6 +191,13 @@ def test_blank_bootstrap_improves_source_anchors_and_covers_every_target_role(
         assert fold_report["source_key_head_norms"] == [
             "model.layers.0.self_attn.k_norm"
         ]
+        assert result.fit_reports["block.0.attention.structural_prior"][
+            "applied"
+        ] is True
+        assert result.fit_reports["block.0.mlp.structural_prior"]["applied"] is True
+        assert result.fit_reports["block.0.attention.query"]["method"] == (
+            "trace-scaled-prior-preserving-parent-anchor-fit"
+        )
 
 
 def test_rejected_bootstrap_restores_the_exact_blank_target() -> None:

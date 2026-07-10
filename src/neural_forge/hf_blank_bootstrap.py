@@ -14,6 +14,7 @@ from neural_forge.hf_arch_layout import (
 from neural_forge.hf_closed_form_fit import (
     FitMetrics,
     fit_diagonal_norm,
+    fit_prior_preserving_ridge_linear,
     fit_ridge_linear,
     measure_fit,
 )
@@ -709,30 +710,48 @@ def _fit_target_block(
             if source_layout.blocks[index].attention.key_norm is not None
         ],
     }
+    attention_prior_report = _initialize_attention_structural_prior(
+        torch,
+        source_model,
+        target_model,
+        source_layout,
+        target_block_layout,
+        source_span,
+        residual_coordinates,
+        q_coordinates,
+        k_coordinates,
+        v_coordinates,
+    )
+    reports[f"block.{target_index}.attention.structural_prior"] = (
+        attention_prior_report
+    )
     desired_q = _mean_encoded_rows(torch, source_q_rows, q_coordinates)
     desired_k = _mean_encoded_rows(torch, source_k_rows, k_coordinates)
     desired_v = _mean_encoded_rows(torch, source_v_rows, v_coordinates)
-    q_fit = fit_ridge_linear(
-        target_block.pre_attention_norm_output,
-        desired_q,
-        ridge=ridge,
-        fit_bias=target_block_layout.attention.projection_bias,
-    )
-    k_fit = fit_ridge_linear(
-        target_block.pre_attention_norm_output,
-        desired_k,
-        ridge=ridge,
-        fit_bias=target_block_layout.attention.projection_bias,
-    )
-    v_fit = fit_ridge_linear(
-        target_block.pre_attention_norm_output,
-        desired_v,
-        ridge=ridge,
-        fit_bias=target_block_layout.attention.projection_bias,
-    )
     target_attention = read_attention_operators(
         target_model,
         target_block_layout.attention,
+    )
+    q_fit = _fit_operator_with_prior(
+        target_block.pre_attention_norm_output,
+        desired_q,
+        target_attention.query,
+        ridge=ridge,
+        preserve_prior=bool(attention_prior_report["applied"]),
+    )
+    k_fit = _fit_operator_with_prior(
+        target_block.pre_attention_norm_output,
+        desired_k,
+        target_attention.key,
+        ridge=ridge,
+        preserve_prior=bool(attention_prior_report["applied"]),
+    )
+    v_fit = _fit_operator_with_prior(
+        target_block.pre_attention_norm_output,
+        desired_v,
+        target_attention.value,
+        ridge=ridge,
+        preserve_prior=bool(attention_prior_report["applied"]),
     )
     write_attention_operators(
         target_model,
@@ -763,15 +782,16 @@ def _fit_target_block(
         "attention_delta",
         residual_coordinates,
     )
-    output_fit = fit_ridge_linear(
-        target_block.attention_output_projection_input,
-        desired_attention_delta,
-        ridge=ridge,
-        fit_bias=target_block_layout.attention.projection_bias,
-    )
     target_attention = read_attention_operators(
         target_model,
         target_block_layout.attention,
+    )
+    output_fit = _fit_operator_with_prior(
+        target_block.attention_output_projection_input,
+        desired_attention_delta,
+        target_attention.output,
+        ridge=ridge,
+        preserve_prior=bool(attention_prior_report["applied"]),
     )
     write_attention_operators(
         target_model,
@@ -820,21 +840,33 @@ def _fit_target_block(
         target_block_layout.mlp.intermediate_size,
     )
     reports[f"block.{target_index}.mlp.feature_fold"] = mlp_coordinates.report.as_dict()
+    mlp_prior_report = _initialize_mlp_structural_prior(
+        torch,
+        source_model,
+        target_model,
+        source_layout,
+        target_block_layout,
+        source_span,
+        residual_coordinates,
+        mlp_coordinates,
+    )
+    reports[f"block.{target_index}.mlp.structural_prior"] = mlp_prior_report
     target_mlp = read_mlp_operators(target_model, target_block_layout)
     if target_block_layout.mlp.kind == "dense":
+        assert target_mlp.input is not None
         desired_input = _mean_source_mlp_producer(
             torch,
             source_blocks,
             "dense",
             mlp_coordinates,
         )
-        input_fit = fit_ridge_linear(
+        input_fit = _fit_operator_with_prior(
             target_block.pre_mlp_norm_output,
             desired_input,
+            target_mlp.input,
             ridge=ridge,
-            fit_bias=target_block_layout.mlp.projection_bias,
+            preserve_prior=bool(mlp_prior_report["applied"]),
         )
-        assert target_mlp.input is not None
         target_mlp = MLPOperators(
             kind="dense",
             input=_operator_from_fit(target_mlp.input, input_fit),
@@ -844,6 +876,7 @@ def _fit_target_block(
         )
         reports[f"block.{target_index}.mlp.input"] = _fit_summary(input_fit)
     else:
+        assert target_mlp.gate is not None and target_mlp.up is not None
         desired_gate = _mean_source_mlp_producer(
             torch,
             source_blocks,
@@ -856,19 +889,20 @@ def _fit_target_block(
             "up",
             mlp_coordinates,
         )
-        gate_fit = fit_ridge_linear(
+        gate_fit = _fit_operator_with_prior(
             target_block.pre_mlp_norm_output,
             desired_gate,
+            target_mlp.gate,
             ridge=ridge,
-            fit_bias=target_block_layout.mlp.projection_bias,
+            preserve_prior=bool(mlp_prior_report["applied"]),
         )
-        up_fit = fit_ridge_linear(
+        up_fit = _fit_operator_with_prior(
             target_block.pre_mlp_norm_output,
             desired_up,
+            target_mlp.up,
             ridge=ridge,
-            fit_bias=target_block_layout.mlp.projection_bias,
+            preserve_prior=bool(mlp_prior_report["applied"]),
         )
-        assert target_mlp.gate is not None and target_mlp.up is not None
         target_mlp = MLPOperators(
             kind="gated",
             input=None,
@@ -887,13 +921,14 @@ def _fit_target_block(
         residual_coordinates,
     )
     desired_mlp_delta = desired_endpoint - target_block.post_attention_residual
-    down_fit = fit_ridge_linear(
+    target_mlp = read_mlp_operators(target_model, target_block_layout)
+    down_fit = _fit_operator_with_prior(
         target_block.down_projection_input,
         desired_mlp_delta,
+        target_mlp.down,
         ridge=ridge,
-        fit_bias=target_block_layout.mlp.projection_bias,
+        preserve_prior=bool(mlp_prior_report["applied"]),
     )
-    target_mlp = read_mlp_operators(target_model, target_block_layout)
     target_mlp = MLPOperators(
         kind=target_mlp.kind,
         input=target_mlp.input,
@@ -1164,6 +1199,263 @@ def _source_mlp_feature_rows(
     return tuple(matrices)
 
 
+def _transport_operator_prior(
+    torch: Any,
+    source: LinearOperator,
+    target: LinearOperator,
+    output_coordinates: FeatureFoldMap,
+    input_coordinates: FeatureFoldMap,
+) -> LinearOperator:
+    folded_input = input_coordinates.fold_consumer_weight(source.weight)
+    weight = output_coordinates.fold_producer_weight(folded_input)
+    bias = None
+    if target.bias is not None:
+        if source.bias is None:
+            bias = torch.zeros(weight.shape[0], dtype=torch.float64)
+        else:
+            bias = output_coordinates.fold_producer_weight(
+                source.bias.reshape(-1, 1)
+            ).reshape(-1)
+    return LinearOperator(path=target.path, weight=weight, bias=bias)
+
+
+def _mean_operator_priors(
+    torch: Any,
+    target: LinearOperator,
+    values: Sequence[LinearOperator],
+) -> LinearOperator:
+    if not values:
+        raise BlankBootstrapError("A structural prior needs at least one donor operator.")
+    weight = torch.stack([value.weight for value in values], dim=0).mean(dim=0)
+    bias = None
+    if target.bias is not None:
+        if any(value.bias is None for value in values):
+            raise BlankBootstrapError("Structural prior bias topology is inconsistent.")
+        bias = torch.stack([value.bias for value in values], dim=0).mean(dim=0)
+    return LinearOperator(path=target.path, weight=weight, bias=bias)
+
+
+def _initialize_attention_structural_prior(
+    torch: Any,
+    source_model: Any,
+    target_model: Any,
+    source_layout: DecoderLayout,
+    target_block_layout: Any,
+    source_span: Sequence[int],
+    residual_coordinates: Any,
+    query_coordinates: FeatureFoldMap,
+    key_coordinates: FeatureFoldMap,
+    value_coordinates: FeatureFoldMap,
+) -> dict[str, Any]:
+    if not isinstance(residual_coordinates, FeatureFoldMap):
+        return {"applied": False, "reason": "residual-map-is-not-sparse-fold"}
+    source_projection_styles = {
+        source_layout.blocks[index].attention.projection_style
+        for index in source_span
+    }
+    if source_projection_styles != {
+        target_block_layout.attention.projection_style
+    }:
+        return {
+            "applied": False,
+            "reason": "source-target-attention-projection-topology-mismatch",
+            "source_projection_styles": sorted(source_projection_styles),
+            "target_projection_style": (
+                target_block_layout.attention.projection_style
+            ),
+        }
+    target = read_attention_operators(
+        target_model,
+        target_block_layout.attention,
+    )
+    transported = []
+    for source_index in source_span:
+        source = read_attention_operators(
+            source_model,
+            source_layout.blocks[source_index].attention,
+        )
+        transported.append(
+            AttentionOperators(
+                query=_transport_operator_prior(
+                    torch,
+                    source.query,
+                    target.query,
+                    query_coordinates,
+                    residual_coordinates,
+                ),
+                key=_transport_operator_prior(
+                    torch,
+                    source.key,
+                    target.key,
+                    key_coordinates,
+                    residual_coordinates,
+                ),
+                value=_transport_operator_prior(
+                    torch,
+                    source.value,
+                    target.value,
+                    value_coordinates,
+                    residual_coordinates,
+                ),
+                output=_transport_operator_prior(
+                    torch,
+                    source.output,
+                    target.output,
+                    residual_coordinates,
+                    query_coordinates,
+                ),
+            )
+        )
+    merged = AttentionOperators(
+        query=_mean_operator_priors(
+            torch,
+            target.query,
+            [value.query for value in transported],
+        ),
+        key=_mean_operator_priors(
+            torch,
+            target.key,
+            [value.key for value in transported],
+        ),
+        value=_mean_operator_priors(
+            torch,
+            target.value,
+            [value.value for value in transported],
+        ),
+        output=_mean_operator_priors(
+            torch,
+            target.output,
+            [value.output for value in transported],
+        ),
+    )
+    write_attention_operators(
+        target_model,
+        target_block_layout.attention,
+        merged,
+    )
+    return {
+        "applied": True,
+        "method": "full-coverage-source-operator-fold-mean",
+        "source_layers": list(source_span),
+        "query_weight_norm": float(torch.linalg.vector_norm(merged.query.weight)),
+        "key_weight_norm": float(torch.linalg.vector_norm(merged.key.weight)),
+        "value_weight_norm": float(torch.linalg.vector_norm(merged.value.weight)),
+        "output_weight_norm": float(torch.linalg.vector_norm(merged.output.weight)),
+    }
+
+
+def _initialize_mlp_structural_prior(
+    torch: Any,
+    source_model: Any,
+    target_model: Any,
+    source_layout: DecoderLayout,
+    target_block_layout: Any,
+    source_span: Sequence[int],
+    residual_coordinates: Any,
+    mlp_coordinates: FeatureFoldMap,
+) -> dict[str, Any]:
+    if not isinstance(residual_coordinates, FeatureFoldMap):
+        return {"applied": False, "reason": "residual-map-is-not-sparse-fold"}
+    target = read_mlp_operators(target_model, target_block_layout)
+    sources = [
+        read_mlp_operators(source_model, source_layout.blocks[index])
+        for index in source_span
+    ]
+    if any(source.kind != target.kind for source in sources):
+        return {"applied": False, "reason": "source-target-mlp-topology-mismatch"}
+
+    if target.kind == "dense":
+        assert target.input is not None
+        source_inputs = [source.input for source in sources]
+        assert all(value is not None for value in source_inputs)
+        input_priors = [
+            _transport_operator_prior(
+                torch,
+                source,
+                target.input,
+                mlp_coordinates,
+                residual_coordinates,
+            )
+            for source in source_inputs
+        ]
+        merged = MLPOperators(
+            kind="dense",
+            input=_mean_operator_priors(torch, target.input, input_priors),
+            gate=None,
+            up=None,
+            down=_mean_operator_priors(
+                torch,
+                target.down,
+                [
+                    _transport_operator_prior(
+                        torch,
+                        source.down,
+                        target.down,
+                        residual_coordinates,
+                        mlp_coordinates,
+                    )
+                    for source in sources
+                ],
+            ),
+        )
+    else:
+        assert target.gate is not None and target.up is not None
+        assert all(source.gate is not None and source.up is not None for source in sources)
+        merged = MLPOperators(
+            kind="gated",
+            input=None,
+            gate=_mean_operator_priors(
+                torch,
+                target.gate,
+                [
+                    _transport_operator_prior(
+                        torch,
+                        source.gate,
+                        target.gate,
+                        mlp_coordinates,
+                        residual_coordinates,
+                    )
+                    for source in sources
+                ],
+            ),
+            up=_mean_operator_priors(
+                torch,
+                target.up,
+                [
+                    _transport_operator_prior(
+                        torch,
+                        source.up,
+                        target.up,
+                        mlp_coordinates,
+                        residual_coordinates,
+                    )
+                    for source in sources
+                ],
+            ),
+            down=_mean_operator_priors(
+                torch,
+                target.down,
+                [
+                    _transport_operator_prior(
+                        torch,
+                        source.down,
+                        target.down,
+                        residual_coordinates,
+                        mlp_coordinates,
+                    )
+                    for source in sources
+                ],
+            ),
+        )
+    write_mlp_operators(target_model, target_block_layout, merged)
+    return {
+        "applied": True,
+        "method": "full-coverage-source-operator-fold-mean",
+        "source_layers": list(source_span),
+        "down_weight_norm": float(torch.linalg.vector_norm(merged.down.weight)),
+    }
+
+
 def _mean_source_mlp_producer(
     torch: Any,
     source_blocks: Sequence[DecoderBlockTrace],
@@ -1235,6 +1527,33 @@ def _encode_rows(rows: Any, coordinates: Any) -> Any:
     return encode_coordinates(rows, coordinates)
 
 
+def _fit_operator_with_prior(
+    input_rows: Any,
+    target_rows: Any,
+    prior: LinearOperator,
+    *,
+    ridge: float,
+    preserve_prior: bool,
+) -> Any:
+    if not isinstance(prior, LinearOperator):
+        raise BlankBootstrapError("A linear fit requires a target operator prior.")
+    if not preserve_prior:
+        return fit_ridge_linear(
+            input_rows,
+            target_rows,
+            ridge=ridge,
+            fit_bias=prior.bias is not None,
+        )
+    return fit_prior_preserving_ridge_linear(
+        input_rows,
+        target_rows,
+        prior.weight,
+        prior_bias=prior.bias,
+        ridge=ridge,
+        fit_bias=prior.bias is not None,
+    )
+
+
 def _operator_from_fit(operator: LinearOperator, fit: Any) -> LinearOperator:
     return LinearOperator(
         path=operator.path,
@@ -1261,7 +1580,7 @@ def _norm_input_from_module_trace(trace: FlattenedTransportTrace) -> Any:
 
 def _fit_summary(fit: Any) -> dict[str, Any]:
     metrics = fit.train_metrics
-    return {
+    report = {
         "method": "closed-form-parent-anchor-fit",
         "ridge": float(fit.ridge),
         "rows": metrics.rows,
@@ -1269,6 +1588,16 @@ def _fit_summary(fit: Any) -> dict[str, Any]:
         "mean_cosine_similarity": metrics.mean_cosine_similarity,
         "finite": metrics.finite,
     }
+    if hasattr(fit, "effective_ridge"):
+        report.update(
+            {
+                "method": "trace-scaled-prior-preserving-parent-anchor-fit",
+                "effective_ridge": float(fit.effective_ridge),
+                "trace_scale": float(fit.trace_scale),
+                "prior_delta_norm": float(fit.prior_delta_norm),
+            }
+        )
+    return report
 
 
 def _gate_metrics(

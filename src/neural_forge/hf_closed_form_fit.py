@@ -35,6 +35,18 @@ class LinearFitResult:
 
 
 @dataclass(frozen=True, slots=True)
+class PriorLinearFitResult:
+    weight: Any
+    bias: Any | None
+    ridge: float
+    effective_ridge: float
+    trace_scale: float
+    prior_delta_norm: float
+    train_metrics: FitMetrics
+    validation_metrics: FitMetrics | None
+
+
+@dataclass(frozen=True, slots=True)
 class NormFitResult:
     kind: NormKind
     weight: Any
@@ -132,6 +144,141 @@ def fit_ridge_linear(
             weight=weight.detach(),
             bias=None if bias is None else bias.detach(),
             ridge=ridge,
+            train_metrics=train_metrics,
+            validation_metrics=validation_metrics,
+        )
+
+
+def fit_prior_preserving_ridge_linear(
+    input_rows: Any,
+    target_rows: Any,
+    prior_weight: Any,
+    *,
+    prior_bias: Any | None = None,
+    ridge: float = 1e-3,
+    fit_bias: bool | None = None,
+    validation_input_rows: Any | None = None,
+    validation_target_rows: Any | None = None,
+) -> PriorLinearFitResult:
+    """Fit a trace-scaled ridge solve around an existing operator prior."""
+
+    torch = _require_torch()
+    with torch.no_grad():
+        inputs, targets = _validated_pair(
+            torch,
+            input_rows,
+            target_rows,
+            "input_rows",
+            "target_rows",
+        )
+        ridge = _nonnegative_float(ridge, "ridge")
+        prior = _matrix(torch, prior_weight, "prior_weight")
+        expected_weight_shape = (int(targets.shape[1]), int(inputs.shape[1]))
+        if tuple(prior.shape) != expected_weight_shape:
+            raise ClosedFormFitError(
+                f"prior_weight must have shape {expected_weight_shape}."
+            )
+        if fit_bias is None:
+            fit_bias = prior_bias is not None
+        if not isinstance(fit_bias, bool):
+            raise ClosedFormFitError("fit_bias must be boolean or None.")
+        if fit_bias != (prior_bias is not None):
+            raise ClosedFormFitError(
+                "prior_bias must be supplied exactly when fit_bias is true."
+            )
+        prior_bias_rows = None
+        if prior_bias is not None:
+            prior_bias_rows = _vector(
+                torch,
+                prior_bias,
+                "prior_bias",
+                length=int(targets.shape[1]),
+            )
+
+        design = inputs
+        prior_solution = prior.T.contiguous()
+        if fit_bias:
+            design = torch.cat(
+                [inputs, torch.ones((inputs.shape[0], 1), dtype=torch.float64)],
+                dim=1,
+            )
+            prior_solution = torch.cat(
+                [prior_solution, prior_bias_rows.unsqueeze(0)],
+                dim=0,
+            )
+        gram = design.T @ design
+        feature_gram = inputs.T @ inputs
+        trace_scale = float(feature_gram.diagonal().sum().item()) / max(
+            1,
+            int(inputs.shape[1]),
+        )
+        if not math.isfinite(trace_scale) or trace_scale < 0.0:
+            raise ClosedFormFitError("The input Gram trace scale is invalid.")
+        effective_ridge = ridge * max(
+            trace_scale,
+            torch.finfo(torch.float64).tiny,
+        )
+        regularizer = torch.eye(gram.shape[0], dtype=torch.float64)
+        right = design.T @ targets + effective_ridge * prior_solution
+        system = gram + effective_ridge * regularizer
+        try:
+            solution = torch.linalg.solve(system, right)
+        except RuntimeError:
+            solution = torch.linalg.lstsq(system, right).solution
+        if not bool(torch.isfinite(solution).all()):
+            raise ClosedFormFitError(
+                "Prior-preserving ridge solve produced non-finite coefficients."
+            )
+        if fit_bias:
+            weight = solution[:-1].T.contiguous()
+            bias = solution[-1].contiguous()
+        else:
+            weight = solution.T.contiguous()
+            bias = None
+        prediction = inputs @ weight.T
+        if bias is not None:
+            prediction = prediction + bias
+        train_metrics = measure_fit(prediction, targets)
+
+        validation_metrics = None
+        if (validation_input_rows is None) != (validation_target_rows is None):
+            raise ClosedFormFitError(
+                "Validation input and target rows must be supplied together."
+            )
+        if validation_input_rows is not None:
+            validation_inputs, validation_targets = _validated_pair(
+                torch,
+                validation_input_rows,
+                validation_target_rows,
+                "validation_input_rows",
+                "validation_target_rows",
+            )
+            if validation_inputs.shape[1] != inputs.shape[1]:
+                raise ClosedFormFitError(
+                    "Validation input width does not match training input width."
+                )
+            if validation_targets.shape[1] != targets.shape[1]:
+                raise ClosedFormFitError(
+                    "Validation target width does not match training target width."
+                )
+            validation_prediction = validation_inputs @ weight.T
+            if bias is not None:
+                validation_prediction = validation_prediction + bias
+            validation_metrics = measure_fit(
+                validation_prediction,
+                validation_targets,
+            )
+        delta_parts = [(weight - prior).reshape(-1)]
+        if bias is not None and prior_bias_rows is not None:
+            delta_parts.append((bias - prior_bias_rows).reshape(-1))
+        prior_delta_norm = float(torch.linalg.vector_norm(torch.cat(delta_parts)))
+        return PriorLinearFitResult(
+            weight=weight.detach(),
+            bias=None if bias is None else bias.detach(),
+            ridge=ridge,
+            effective_ridge=effective_ridge,
+            trace_scale=trace_scale,
+            prior_delta_norm=prior_delta_norm,
             train_metrics=train_metrics,
             validation_metrics=validation_metrics,
         )
@@ -377,6 +524,19 @@ def _matrix(torch: Any, value: Any, name: str) -> Any:
     return result
 
 
+def _vector(torch: Any, value: Any, name: str, *, length: int) -> Any:
+    if not isinstance(value, torch.Tensor):
+        raise ClosedFormFitError(f"{name} must be a torch.Tensor.")
+    if value.layout != torch.strided or tuple(value.shape) != (length,):
+        raise ClosedFormFitError(f"{name} must have shape ({length},).")
+    if not torch.is_floating_point(value):
+        raise ClosedFormFitError(f"{name} must have a floating-point dtype.")
+    result = value.detach().to(device="cpu", dtype=torch.float64).contiguous()
+    if not bool(torch.isfinite(result).all()):
+        raise ClosedFormFitError(f"{name} contains NaN or infinity.")
+    return result
+
+
 def _nonnegative_float(value: Any, name: str) -> float:
     if isinstance(value, bool):
         raise ClosedFormFitError(f"{name} must be a finite non-negative number.")
@@ -412,7 +572,9 @@ __all__ = [
     "FitMetrics",
     "LinearFitResult",
     "NormFitResult",
+    "PriorLinearFitResult",
     "fit_diagonal_norm",
+    "fit_prior_preserving_ridge_linear",
     "fit_ridge_linear",
     "gate_fit",
     "measure_fit",

@@ -566,6 +566,8 @@ def bootstrap_blank_decoder_checkpoint(
     tokenizer: Any = None,
     seed: int = 0,
     dtype: Any = "float32",
+    donor_dtype: Any | None = None,
+    target_dtype: Any | None = None,
     device: Any = "cpu",
     trust_remote_code: bool = False,
     local_files_only: bool = False,
@@ -612,13 +614,19 @@ def bootstrap_blank_decoder_checkpoint(
     calibration = _prompt_sequence(calibration_prompts, "calibration_prompts")
     validation = _prompt_sequence(validation_prompts, "validation_prompts")
     resolved_dtype = _dtype(torch, dtype)
+    resolved_donor_dtype = (
+        resolved_dtype if donor_dtype is None else _dtype(torch, donor_dtype)
+    )
+    resolved_target_dtype = (
+        resolved_dtype if target_dtype is None else _dtype(torch, target_dtype)
+    )
     resolved_device = _device(torch, device)
 
     source, donor_reference, donor_load_calls = _load_donor(
         torch,
         transformers,
         donor,
-        dtype=resolved_dtype,
+        dtype=resolved_donor_dtype,
         device=resolved_device,
         trust_remote_code=trust,
         local_files_only=local_only,
@@ -656,7 +664,7 @@ def bootstrap_blank_decoder_checkpoint(
         special_ids=special_ids,
         tied=source_layout.tie_word_embeddings,
         seed=seed_value,
-        dtype=resolved_dtype,
+        dtype=resolved_target_dtype,
         device=resolved_device,
     )
     target_layout = build_decoder_layout(target)
@@ -801,7 +809,9 @@ def bootstrap_blank_decoder_checkpoint(
             "optimizer_steps": 0,
             "backward_calls": 0,
             "recovery": {"performed": False, "steps": 0},
-            "dtype": str(resolved_dtype).replace("torch.", ""),
+            "dtype": str(resolved_target_dtype).replace("torch.", ""),
+            "donor_dtype": str(resolved_donor_dtype).replace("torch.", ""),
+            "target_dtype": str(resolved_target_dtype).replace("torch.", ""),
             "device": str(resolved_device),
             "trust_remote_code": trust,
             "local_files_only": local_only,
@@ -833,7 +843,7 @@ def bootstrap_blank_decoder_checkpoint(
         reloaded = type(target).from_pretrained(
             stage,
             local_files_only=True,
-            torch_dtype=resolved_dtype,
+            torch_dtype=resolved_target_dtype,
         )
         reloaded.to(resolved_device)
         reloaded.eval()

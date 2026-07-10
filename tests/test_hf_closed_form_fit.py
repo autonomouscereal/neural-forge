@@ -8,6 +8,7 @@ torch = pytest.importorskip("torch")
 from neural_forge.hf_closed_form_fit import (  # noqa: E402
     ClosedFormFitError,
     fit_diagonal_norm,
+    fit_prior_preserving_ridge_linear,
     fit_ridge_linear,
     gate_fit,
     normalize_rows,
@@ -54,6 +55,58 @@ def test_ridge_reports_independent_validation_metrics() -> None:
     assert result.validation_metrics is not None
     assert result.validation_metrics.rows == 32
     assert result.validation_metrics.relative_rmse < 1e-8
+
+
+def test_prior_preserving_ridge_is_scale_invariant_and_bounded() -> None:
+    inputs = _rows(128, 6, 14)
+    targets = _rows(128, 4, 15)
+    prior_weight = _rows(4, 6, 16)
+
+    first = fit_prior_preserving_ridge_linear(
+        inputs,
+        targets,
+        prior_weight,
+        ridge=0.1,
+        fit_bias=False,
+    )
+    scaled = fit_prior_preserving_ridge_linear(
+        inputs * 7.0,
+        targets * 7.0,
+        prior_weight,
+        ridge=0.1,
+        fit_bias=False,
+    )
+
+    torch.testing.assert_close(first.weight, scaled.weight, atol=1e-10, rtol=1e-10)
+    assert first.bias is None and scaled.bias is None
+    assert first.effective_ridge > 0.0
+    assert first.trace_scale > 0.0
+    assert first.prior_delta_norm > 0.0
+    assert first.train_metrics.finite is True
+
+
+def test_strong_prior_ridge_stays_closer_to_prior_than_unregularized_fit() -> None:
+    inputs = _rows(96, 5, 18)
+    targets = _rows(96, 3, 19)
+    prior = _rows(3, 5, 20)
+
+    weak = fit_prior_preserving_ridge_linear(
+        inputs,
+        targets,
+        prior,
+        ridge=0.0,
+        fit_bias=False,
+    )
+    strong = fit_prior_preserving_ridge_linear(
+        inputs,
+        targets,
+        prior,
+        ridge=100.0,
+        fit_bias=False,
+    )
+
+    assert strong.prior_delta_norm < weak.prior_delta_norm
+    assert torch.isfinite(strong.weight).all()
 
 
 def test_layer_norm_affine_fit_recovers_weight_and_bias() -> None:

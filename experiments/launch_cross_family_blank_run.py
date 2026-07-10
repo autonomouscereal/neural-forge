@@ -177,6 +177,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         tokenizer=None,
         seed=args.seed,
         dtype=args.dtype,
+        donor_dtype=args.donor_dtype,
+        target_dtype=args.target_dtype,
         device=args.device,
         trust_remote_code=args.trust_remote_code,
         local_files_only=args.local_files_only,
@@ -289,6 +291,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
         "--dtype", choices=["float16", "bfloat16", "float32"], default="float16"
+    )
+    parser.add_argument(
+        "--donor-dtype", choices=["float16", "bfloat16", "float32"]
+    )
+    parser.add_argument(
+        "--target-dtype", choices=["float16", "bfloat16", "float32"]
     )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--trust-remote-code", action="store_true")
