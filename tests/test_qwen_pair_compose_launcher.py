@@ -127,6 +127,19 @@ def test_parser_accepts_device_uuid_and_compose_settings() -> None:
     assert args.max_anchors == 999
 
 
+def test_lexical_absolute_preserves_venv_executable_symlink(tmp_path: Path) -> None:
+    executable_link = tmp_path / "venv-python"
+    try:
+        executable_link.symlink_to(Path(sys.executable).resolve())
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    lexical = launcher._lexical_absolute(executable_link)
+
+    assert lexical == executable_link.absolute()
+    assert lexical != executable_link.resolve()
+
+
 def test_launcher_snapshots_every_input_and_detaches(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     repo = _write_fake_repo(tmp_path / "repo")
     source = _write_checkpoint(tmp_path / "source", layers=4)

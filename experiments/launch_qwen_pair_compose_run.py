@@ -334,6 +334,12 @@ def _validate_nonempty_file(path: Path, label: str) -> Path:
     return resolved
 
 
+def _lexical_absolute(path: Path) -> Path:
+    """Make a path absolute without dereferencing a venv executable symlink."""
+
+    return Path(os.path.abspath(os.path.expanduser(os.fspath(path))))
+
+
 def _validate_cached_parent(path: Path) -> Path:
     resolved = _validate_nonempty_file(path, "parent-eval")
     try:
@@ -605,7 +611,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     eval_suite = _validate_nonempty_file(args.eval_suite, "eval-suite")
     parent_eval = _validate_cached_parent(args.parent_eval)
-    python = args.python.resolve(strict=True)
+    python = _lexical_absolute(args.python)
     if not python.is_file():
         raise ValueError("python must resolve to an interpreter file.")
 
