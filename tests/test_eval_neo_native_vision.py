@@ -150,7 +150,10 @@ class FakeNEOModel(torch.nn.Module):
         self.config = SimpleNamespace(
             patch_size=patch_size,
             downsample_ratio=0.5,
-            vision_config=SimpleNamespace(patch_size=patch_size, downsample_ratio=0.5),
+            vision_config=SimpleNamespace(
+                patch_size=patch_size,
+                downsample_ratio=(0.5,),
+            ),
         )
         self.fail_on_call = fail_on_call
         self.calls: list[dict[str, Any]] = []

@@ -698,6 +698,9 @@ def _validate_loaded_model(
         (("config", "vision_config", "downsample_ratio"), DOWNSAMPLE_RATIO),
     ):
         actual = _attribute_at(model, path)
+        if path[-1] == "downsample_ratio" and isinstance(actual, (list, tuple)):
+            if len(actual) == 1:
+                actual = actual[0]
         if actual != expected:
             raise EvaluationContractError(
                 f"Loaded model {'.'.join(path)} mismatch: expected {expected!r}, got {actual!r}."

@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT=/home/cereal/model-surgery-lab/neural-forge-pivot
 RUN_ROOT=/mnt/ai_data/neural-forge/native_vision_parent_20260710
-TAG=${TAG:-neo1p5_2b_sft_probe256_bf16_gpu0_r2_20260710}
+TAG=${TAG:-neo1p5_2b_sft_probe256_bf16_gpu0_r4_tf4573_20260710}
 GPU=${GPU:-GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561}
 PY=/home/cereal/model-surgery-lab/venv/bin/python
 OUTPUT_DIR="$RUN_ROOT/$TAG"
@@ -16,7 +16,7 @@ mkdir -p "$RUN_ROOT"
   --identity-file "$RUN_ROOT/$TAG.identity.json" \
   --cwd "$ROOT" \
   --env "CUDA_VISIBLE_DEVICES=$GPU" \
-  --env "PYTHONPATH=$ROOT/src" \
+  --env "PYTHONPATH=/mnt/ai_data/neural-forge/python_overlays/transformers_4_57_3:$ROOT/src" \
   --env "TOKENIZERS_PARALLELISM=false" \
   --env "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True" \
   -- \
