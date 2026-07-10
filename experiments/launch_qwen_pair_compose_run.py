@@ -56,6 +56,12 @@ class ComposeSettings:
     max_tokens_per_layer: int = 4096
     max_anchors: int = 4096
     max_calibration_texts: int = 256
+    donor_layer_spans: str | None = None
+    adaptive_depth_spans: bool = False
+    adaptive_depth_critical_quantile: float = 0.8
+    adaptive_depth_causal_magnitude_weight: float = 1.0
+    adaptive_depth_incompatibility_weight: float = 1.0
+    adaptive_depth_reconstruction_weight: float = 1.0
     basis_mode: str = "activation-pca"
     basis_preprocess: str = "uncentered-rowrms"
     activation_domain_balance: str = "keyword"
@@ -122,6 +128,30 @@ class ComposeSettings:
             raise ValueError("fit-gate-max-relative-rmse must be positive.")
         if not self.dtype or not self.candidate_dtype or not self.device:
             raise ValueError("dtype, candidate-dtype, and device cannot be empty.")
+        if self.donor_layer_spans is not None and not self.donor_layer_spans.strip():
+            raise ValueError("donor-layer-spans cannot be empty when supplied.")
+        if self.adaptive_depth_spans and self.donor_layer_spans is not None:
+            raise ValueError(
+                "adaptive-depth-spans and donor-layer-spans are mutually exclusive."
+            )
+        if not 0.0 <= self.adaptive_depth_critical_quantile <= 1.0:
+            raise ValueError("adaptive-depth-critical-quantile must be in [0, 1].")
+        for name, value in (
+            (
+                "adaptive-depth-causal-magnitude-weight",
+                self.adaptive_depth_causal_magnitude_weight,
+            ),
+            (
+                "adaptive-depth-incompatibility-weight",
+                self.adaptive_depth_incompatibility_weight,
+            ),
+            (
+                "adaptive-depth-reconstruction-weight",
+                self.adaptive_depth_reconstruction_weight,
+            ),
+        ):
+            if not math.isfinite(value) or value < 0.0:
+                raise ValueError(f"{name} must be finite and non-negative.")
         if self.basis_mode not in {"activation-pca", "embedding-grouped"}:
             raise ValueError("basis-mode must be activation-pca or embedding-grouped.")
         if self.basis_preprocess not in {
@@ -290,6 +320,22 @@ def build_compose_command(
         command.append("--no-observable-coordinates")
     if not settings.path_decomposition:
         command.append("--no-path-decomposition")
+    if settings.donor_layer_spans is not None:
+        command.extend(["--donor-layer-spans", settings.donor_layer_spans])
+    if settings.adaptive_depth_spans:
+        command.extend(
+            [
+                "--adaptive-depth-spans",
+                "--adaptive-depth-critical-quantile",
+                str(settings.adaptive_depth_critical_quantile),
+                "--adaptive-depth-causal-magnitude-weight",
+                str(settings.adaptive_depth_causal_magnitude_weight),
+                "--adaptive-depth-incompatibility-weight",
+                str(settings.adaptive_depth_incompatibility_weight),
+                "--adaptive-depth-reconstruction-weight",
+                str(settings.adaptive_depth_reconstruction_weight),
+            ]
+        )
     _assert_no_recovery_or_training_flags(command)
     return command
 
@@ -674,6 +720,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-tokens-per-layer", type=int, default=4096)
     parser.add_argument("--max-anchors", type=int, default=4096)
     parser.add_argument("--max-calibration-texts", type=int, default=256)
+    parser.add_argument("--donor-layer-spans")
+    parser.add_argument("--adaptive-depth-spans", action="store_true")
+    parser.add_argument("--adaptive-depth-critical-quantile", type=float, default=0.8)
+    parser.add_argument(
+        "--adaptive-depth-causal-magnitude-weight", type=float, default=1.0
+    )
+    parser.add_argument(
+        "--adaptive-depth-incompatibility-weight", type=float, default=1.0
+    )
+    parser.add_argument(
+        "--adaptive-depth-reconstruction-weight", type=float, default=1.0
+    )
     parser.add_argument("--basis-mode", default="activation-pca")
     parser.add_argument("--basis-preprocess", default="uncentered-rowrms")
     parser.add_argument("--activation-domain-balance", default="keyword")
@@ -699,9 +757,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--rollout-refold-max-prompts", type=int, default=64)
     parser.add_argument("--rollout-refold-max-new-tokens", type=int, default=24)
     parser.add_argument("--rollout-refold-batch-size", type=int, default=4)
-    parser.add_argument(
-        "--rollout-refold-candidate-alphas", default="1,0.5,0.25"
-    )
+    parser.add_argument("--rollout-refold-candidate-alphas", default="1,0.5,0.25")
     parser.add_argument("--rollout-gate-top-k", type=int, default=5)
     parser.add_argument("--rollout-gate-min-top1-gain", type=float, default=0.0)
     parser.add_argument(
@@ -765,6 +821,18 @@ def main(argv: list[str] | None = None) -> int:
         max_tokens_per_layer=args.max_tokens_per_layer,
         max_anchors=args.max_anchors,
         max_calibration_texts=args.max_calibration_texts,
+        donor_layer_spans=args.donor_layer_spans,
+        adaptive_depth_spans=args.adaptive_depth_spans,
+        adaptive_depth_critical_quantile=args.adaptive_depth_critical_quantile,
+        adaptive_depth_causal_magnitude_weight=(
+            args.adaptive_depth_causal_magnitude_weight
+        ),
+        adaptive_depth_incompatibility_weight=(
+            args.adaptive_depth_incompatibility_weight
+        ),
+        adaptive_depth_reconstruction_weight=(
+            args.adaptive_depth_reconstruction_weight
+        ),
         basis_mode=args.basis_mode,
         basis_preprocess=args.basis_preprocess,
         activation_domain_balance=args.activation_domain_balance,
@@ -793,9 +861,7 @@ def main(argv: list[str] | None = None) -> int:
         rollout_gate_max_longest_run_regression=(
             args.rollout_gate_max_longest_run_regression
         ),
-        rollout_gate_min_action_count_ratio=(
-            args.rollout_gate_min_action_count_ratio
-        ),
+        rollout_gate_min_action_count_ratio=(args.rollout_gate_min_action_count_ratio),
         fit_gate_validation_fraction=args.fit_gate_validation_fraction,
         fit_gate_min_validation_rows=args.fit_gate_min_validation_rows,
         fit_gate_min_relative_improvement=args.fit_gate_min_relative_improvement,

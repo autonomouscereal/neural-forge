@@ -50,7 +50,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     toy = sub.add_parser("toy", help="Create a random dense toy checkpoint.")
     toy.add_argument("--output", required=True)
-    toy.add_argument("--widths", required=True, help="Comma-separated full widths, e.g. 8,16,4.")
+    toy.add_argument(
+        "--widths", required=True, help="Comma-separated full widths, e.g. 8,16,4."
+    )
     toy.add_argument("--seed", type=int, default=0)
     toy.add_argument("--activation", default="relu")
     toy.set_defaults(func=cmd_toy)
@@ -77,7 +79,9 @@ def build_parser() -> argparse.ArgumentParser:
     expand.add_argument("--seed", type=int, default=0)
     expand.set_defaults(func=cmd_expand)
 
-    merge = sub.add_parser("merge", help="Merge two or more dense checkpoints into a target shape.")
+    merge = sub.add_parser(
+        "merge", help="Merge two or more dense checkpoints into a target shape."
+    )
     merge.add_argument("output")
     merge.add_argument("--models", nargs="+", required=True)
     merge.add_argument("--target-params", type=int)
@@ -89,7 +93,9 @@ def build_parser() -> argparse.ArgumentParser:
     merge.add_argument("--seed", type=int, default=0)
     merge.set_defaults(func=cmd_merge)
 
-    hf_merge = sub.add_parser("hf-merge", help="Merge same-shape Hugging Face causal LM checkpoints.")
+    hf_merge = sub.add_parser(
+        "hf-merge", help="Merge same-shape Hugging Face causal LM checkpoints."
+    )
     hf_merge.add_argument("output")
     hf_merge.add_argument("--models", nargs="+", required=True)
     hf_merge.add_argument("--weights", help="Comma-separated model weights.")
@@ -97,7 +103,10 @@ def build_parser() -> argparse.ArgumentParser:
     hf_merge.add_argument("--trust-remote-code", action="store_true")
     hf_merge.set_defaults(func=cmd_hf_merge)
 
-    hf_task_merge = sub.add_parser("hf-task-merge", help="Create base + alpha * (tuned - base) for same-shape HF causal LMs.")
+    hf_task_merge = sub.add_parser(
+        "hf-task-merge",
+        help="Create base + alpha * (tuned - base) for same-shape HF causal LMs.",
+    )
     hf_task_merge.add_argument("output")
     hf_task_merge.add_argument("--base-model", required=True)
     hf_task_merge.add_argument("--tuned-model", required=True)
@@ -106,7 +115,10 @@ def build_parser() -> argparse.ArgumentParser:
     hf_task_merge.add_argument("--trust-remote-code", action="store_true")
     hf_task_merge.set_defaults(func=cmd_hf_task_merge)
 
-    hf_random = sub.add_parser("hf-random-init", help="Create an untrained HF causal LM from an existing config/tokenizer.")
+    hf_random = sub.add_parser(
+        "hf-random-init",
+        help="Create an untrained HF causal LM from an existing config/tokenizer.",
+    )
     hf_random.add_argument("output")
     hf_random.add_argument("--config-model", required=True)
     hf_random.add_argument("--tokenizer-model")
@@ -115,7 +127,10 @@ def build_parser() -> argparse.ArgumentParser:
     hf_random.add_argument("--trust-remote-code", action="store_true")
     hf_random.set_defaults(func=cmd_hf_random_init)
 
-    hf_shape = sub.add_parser("hf-shape-init", help="Create a blank HF causal LM with explicit shape overrides.")
+    hf_shape = sub.add_parser(
+        "hf-shape-init",
+        help="Create a blank HF causal LM with explicit shape overrides.",
+    )
     hf_shape.add_argument("output")
     hf_shape.add_argument("--config-model", required=True)
     hf_shape.add_argument("--tokenizer-model")
@@ -126,8 +141,12 @@ def build_parser() -> argparse.ArgumentParser:
     hf_shape.add_argument("--num-key-value-heads", type=int)
     hf_shape.add_argument("--head-dim", type=int)
     tie_group = hf_shape.add_mutually_exclusive_group()
-    tie_group.add_argument("--tie-word-embeddings", dest="tie_word_embeddings", action="store_true")
-    tie_group.add_argument("--untie-word-embeddings", dest="tie_word_embeddings", action="store_false")
+    tie_group.add_argument(
+        "--tie-word-embeddings", dest="tie_word_embeddings", action="store_true"
+    )
+    tie_group.add_argument(
+        "--untie-word-embeddings", dest="tie_word_embeddings", action="store_false"
+    )
     hf_shape.set_defaults(tie_word_embeddings=None)
     hf_shape.add_argument("--seed", type=int, default=0)
     hf_shape.add_argument("--dtype", default="float16")
@@ -385,7 +404,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hf_donor_init.add_argument(
         "--activation-fit-target",
-        choices=["all", "attention", "attention-output", "mlp", "mlp-output", "input-projections"],
+        choices=[
+            "all",
+            "attention",
+            "attention-output",
+            "mlp",
+            "mlp-output",
+            "input-projections",
+        ],
         default="all",
         help="Limit activation-fitted linear replacements to safer module families.",
     )
@@ -431,10 +457,18 @@ def build_parser() -> argparse.ArgumentParser:
         default="validation",
         help="Reject activation-fitted linears that do not beat the folded reference on held-out activation rows.",
     )
-    hf_donor_init.add_argument("--activation-fit-validation-fraction", type=float, default=0.20)
-    hf_donor_init.add_argument("--activation-fit-min-validation-rows", type=int, default=8)
-    hf_donor_init.add_argument("--activation-fit-min-relative-improvement", type=float, default=0.0)
-    hf_donor_init.add_argument("--activation-fit-max-cosine-drop", type=float, default=0.01)
+    hf_donor_init.add_argument(
+        "--activation-fit-validation-fraction", type=float, default=0.20
+    )
+    hf_donor_init.add_argument(
+        "--activation-fit-min-validation-rows", type=int, default=8
+    )
+    hf_donor_init.add_argument(
+        "--activation-fit-min-relative-improvement", type=float, default=0.0
+    )
+    hf_donor_init.add_argument(
+        "--activation-fit-max-cosine-drop", type=float, default=0.01
+    )
     hf_donor_init.add_argument(
         "--activation-feature-mode",
         choices=["stats", "subspace", "covariance"],
@@ -485,7 +519,10 @@ def build_parser() -> argparse.ArgumentParser:
     hf_donor_init.add_argument("--trust-remote-code", action="store_true")
     hf_donor_init.set_defaults(func=cmd_hf_donor_project_init)
 
-    hf_resize = sub.add_parser("hf-resize-ffn", help="Shrink or expand gated FFN intermediate size in HF decoder models.")
+    hf_resize = sub.add_parser(
+        "hf-resize-ffn",
+        help="Shrink or expand gated FFN intermediate size in HF decoder models.",
+    )
     hf_resize.add_argument("model")
     hf_resize.add_argument("output")
     hf_resize.add_argument("--ratio", type=float)
@@ -499,7 +536,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hf_resize.set_defaults(func=cmd_hf_resize)
 
-    hf_repair = sub.add_parser("hf-repair-ffn", help="Ridge-repair a resized gated FFN model against a source model.")
+    hf_repair = sub.add_parser(
+        "hf-repair-ffn",
+        help="Ridge-repair a resized gated FFN model against a source model.",
+    )
     hf_repair.add_argument("source_model")
     hf_repair.add_argument("resized_model")
     hf_repair.add_argument("output")
@@ -511,11 +551,18 @@ def build_parser() -> argparse.ArgumentParser:
     hf_repair.add_argument("--max-tokens-per-layer", type=int, default=512)
     hf_repair.set_defaults(func=cmd_hf_repair)
 
-    hf_merge_layers = sub.add_parser("hf-merge-layers", help="Merge/fold residual decoder layer groups before reducing depth.")
+    hf_merge_layers = sub.add_parser(
+        "hf-merge-layers",
+        help="Merge/fold residual decoder layer groups before reducing depth.",
+    )
     hf_merge_layers.add_argument("model")
     hf_merge_layers.add_argument("output")
-    hf_merge_layers.add_argument("--groups", required=True, help="Comma-separated groups, e.g. 14+15,20+21.")
-    hf_merge_layers.add_argument("--method", choices=["fold", "average"], default="fold")
+    hf_merge_layers.add_argument(
+        "--groups", required=True, help="Comma-separated groups, e.g. 14+15,20+21."
+    )
+    hf_merge_layers.add_argument(
+        "--method", choices=["fold", "average"], default="fold"
+    )
     hf_merge_layers.add_argument("--dtype", default="float16")
     hf_merge_layers.add_argument("--trust-remote-code", action="store_true")
     hf_merge_layers.set_defaults(func=cmd_hf_merge_layers)
@@ -537,22 +584,34 @@ def build_parser() -> argparse.ArgumentParser:
     hf_rank_folds.add_argument("--max-calibration-texts", type=int)
     hf_rank_folds.set_defaults(func=cmd_hf_rank_layer_folds)
 
-    hf_drop_layers = sub.add_parser("hf-drop-layers", help="Drop selected residual decoder layers from an HF causal LM.")
+    hf_drop_layers = sub.add_parser(
+        "hf-drop-layers",
+        help="Drop selected residual decoder layers from an HF causal LM.",
+    )
     hf_drop_layers.add_argument("model")
     hf_drop_layers.add_argument("output")
-    hf_drop_layers.add_argument("--layers", required=True, help="Comma-separated zero-based layer indices to drop.")
+    hf_drop_layers.add_argument(
+        "--layers",
+        required=True,
+        help="Comma-separated zero-based layer indices to drop.",
+    )
     hf_drop_layers.add_argument("--dtype", default="float16")
     hf_drop_layers.add_argument("--trust-remote-code", action="store_true")
     hf_drop_layers.set_defaults(func=cmd_hf_drop_layers)
 
-    hf_eval = sub.add_parser("hf-eval", help="Run lightweight behavior probes for an HF causal LM.")
+    hf_eval = sub.add_parser(
+        "hf-eval", help="Run lightweight behavior probes for an HF causal LM."
+    )
     hf_eval.add_argument("model")
     hf_eval.add_argument("output")
     hf_eval.add_argument("--dtype", default="float16")
     hf_eval.add_argument("--device", default="cuda:0")
     hf_eval.add_argument("--trust-remote-code", action="store_true")
     hf_eval.add_argument("--max-new-tokens", type=int, default=96)
-    hf_eval.add_argument("--eval-suite", help="JSON/JSONL eval suite with text, choice, generation, and behavior probes.")
+    hf_eval.add_argument(
+        "--eval-suite",
+        help="JSON/JSONL eval suite with text, choice, generation, and behavior probes.",
+    )
     hf_eval.add_argument("--max-text-evals", type=int)
     hf_eval.add_argument("--max-choice-probes", type=int)
     hf_eval.add_argument("--max-generation-prompts", type=int)
@@ -578,9 +637,15 @@ def build_parser() -> argparse.ArgumentParser:
     hf_build_recovery_calibration.add_argument("output")
     hf_build_recovery_calibration.add_argument("--math-count", type=int, default=512)
     hf_build_recovery_calibration.add_argument("--code-count", type=int, default=128)
-    hf_build_recovery_calibration.add_argument("--tokenizer-count", type=int, default=64)
-    hf_build_recovery_calibration.add_argument("--model-surgery-count", type=int, default=64)
-    hf_build_recovery_calibration.add_argument("--commonsense-count", type=int, default=64)
+    hf_build_recovery_calibration.add_argument(
+        "--tokenizer-count", type=int, default=64
+    )
+    hf_build_recovery_calibration.add_argument(
+        "--model-surgery-count", type=int, default=64
+    )
+    hf_build_recovery_calibration.add_argument(
+        "--commonsense-count", type=int, default=64
+    )
     hf_build_recovery_calibration.add_argument("--seed", type=int, default=0)
     hf_build_recovery_calibration.add_argument(
         "--exclude-eval-suite",
@@ -599,7 +664,10 @@ def build_parser() -> argparse.ArgumentParser:
     hf_tie_head.add_argument("--trust-remote-code", action="store_true")
     hf_tie_head.set_defaults(func=cmd_hf_tie_head)
 
-    hf_gate = sub.add_parser("hf-gate", help="Compare an HF eval report to a baseline and return a pass/fail verdict.")
+    hf_gate = sub.add_parser(
+        "hf-gate",
+        help="Compare an HF eval report to a baseline and return a pass/fail verdict.",
+    )
     hf_gate.add_argument("baseline_report")
     hf_gate.add_argument("candidate_report")
     hf_gate.add_argument("--output")
@@ -628,10 +696,15 @@ def build_parser() -> argparse.ArgumentParser:
     hf_rank_evals.add_argument("--min-unique-token-ratio", type=float, default=0.20)
     hf_rank_evals.set_defaults(func=cmd_hf_rank_evals)
 
-    hf_sweep = sub.add_parser("hf-sweep-ffn", help="Sweep gated FFN resize ratios, evaluate each candidate, and gate results.")
+    hf_sweep = sub.add_parser(
+        "hf-sweep-ffn",
+        help="Sweep gated FFN resize ratios, evaluate each candidate, and gate results.",
+    )
     hf_sweep.add_argument("source_model")
     hf_sweep.add_argument("output_dir")
-    hf_sweep.add_argument("--ratios", required=True, help="Comma-separated ratios, e.g. 0.995,1.05.")
+    hf_sweep.add_argument(
+        "--ratios", required=True, help="Comma-separated ratios, e.g. 0.995,1.05."
+    )
     hf_sweep.add_argument("--baseline-report")
     hf_sweep.add_argument("--dtype", default="float16")
     hf_sweep.add_argument("--device", default="cuda:0")
@@ -656,7 +729,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hf_search_compress.add_argument("source_model")
     hf_search_compress.add_argument("output_dir")
-    hf_search_compress.add_argument("--width-ratios", help="Comma-separated ratios, e.g. 0.9975,0.995.")
+    hf_search_compress.add_argument(
+        "--width-ratios", help="Comma-separated ratios, e.g. 0.9975,0.995."
+    )
     hf_search_compress.add_argument(
         "--layer-groups",
         action="append",
@@ -681,11 +756,16 @@ def build_parser() -> argparse.ArgumentParser:
     hf_search_compress.add_argument("--no-combinations", action="store_true")
     hf_search_compress.set_defaults(func=cmd_hf_search_compress)
 
-    hf_task_sweep = sub.add_parser("hf-sweep-task", help="Sweep task-arithmetic alphas, evaluate candidates, and gate results.")
+    hf_task_sweep = sub.add_parser(
+        "hf-sweep-task",
+        help="Sweep task-arithmetic alphas, evaluate candidates, and gate results.",
+    )
     hf_task_sweep.add_argument("output_dir")
     hf_task_sweep.add_argument("--base-model", required=True)
     hf_task_sweep.add_argument("--tuned-model", required=True)
-    hf_task_sweep.add_argument("--alphas", required=True, help="Comma-separated alphas, e.g. 0,0.5,1,1.25.")
+    hf_task_sweep.add_argument(
+        "--alphas", required=True, help="Comma-separated alphas, e.g. 0,0.5,1,1.25."
+    )
     hf_task_sweep.add_argument("--baseline-report")
     hf_task_sweep.add_argument("--dtype", default="auto")
     hf_task_sweep.add_argument("--device", default="cuda:0")
@@ -696,7 +776,10 @@ def build_parser() -> argparse.ArgumentParser:
     hf_task_sweep.add_argument("--min-choice-accuracy", type=float, default=0.75)
     hf_task_sweep.set_defaults(func=cmd_hf_task_sweep)
 
-    xfamily = sub.add_parser("hf-xfamily-vocab-merge", help="Blend donor embedding/lm-head signal into a host HF architecture.")
+    xfamily = sub.add_parser(
+        "hf-xfamily-vocab-merge",
+        help="Blend donor embedding/lm-head signal into a host HF architecture.",
+    )
     xfamily.add_argument("output")
     xfamily.add_argument("--host-model", required=True)
     xfamily.add_argument("--donor-model", required=True)
@@ -707,11 +790,16 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily.add_argument("--trust-remote-code", action="store_true")
     xfamily.set_defaults(func=cmd_hf_xfamily_vocab_merge)
 
-    xfamily_sweep = sub.add_parser("hf-sweep-xfamily", help="Sweep cross-family vocab-transplant alphas, evaluate, and gate.")
+    xfamily_sweep = sub.add_parser(
+        "hf-sweep-xfamily",
+        help="Sweep cross-family vocab-transplant alphas, evaluate, and gate.",
+    )
     xfamily_sweep.add_argument("output_dir")
     xfamily_sweep.add_argument("--host-model", required=True)
     xfamily_sweep.add_argument("--donor-model", required=True)
-    xfamily_sweep.add_argument("--alphas", required=True, help="Comma-separated alphas, e.g. 0.005,0.01,0.05.")
+    xfamily_sweep.add_argument(
+        "--alphas", required=True, help="Comma-separated alphas, e.g. 0.005,0.01,0.05."
+    )
     xfamily_sweep.add_argument("--baseline-report")
     xfamily_sweep.add_argument("--ridge", type=float, default=1e-3)
     xfamily_sweep.add_argument("--max-anchors", type=int, default=50_000)
@@ -746,7 +834,9 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_mlp.add_argument("--activation-max-calibration-texts", type=int)
     xfamily_mlp.add_argument("--activation-max-length", type=int, default=128)
     xfamily_mlp.add_argument("--activation-device", default="cuda:0")
-    xfamily_mlp.add_argument("--layer-alpha-mode", choices=["constant", "similarity"], default="constant")
+    xfamily_mlp.add_argument(
+        "--layer-alpha-mode", choices=["constant", "similarity"], default="constant"
+    )
     xfamily_mlp.add_argument("--layer-alpha-min-scale", type=float, default=0.0)
     xfamily_mlp.add_argument("--layer-alpha-max-scale", type=float, default=2.0)
     xfamily_mlp.add_argument("--layer-alpha-similarity-floor", type=float, default=0.0)
@@ -761,7 +851,9 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_mlp_sweep.add_argument("output_dir")
     xfamily_mlp_sweep.add_argument("--host-model", required=True)
     xfamily_mlp_sweep.add_argument("--donor-model", required=True)
-    xfamily_mlp_sweep.add_argument("--alphas", required=True, help="Comma-separated alphas, e.g. 0.001,0.005,0.01.")
+    xfamily_mlp_sweep.add_argument(
+        "--alphas", required=True, help="Comma-separated alphas, e.g. 0.001,0.005,0.01."
+    )
     xfamily_mlp_sweep.add_argument("--baseline-report")
     xfamily_mlp_sweep.add_argument("--vocab-alpha", type=float)
     xfamily_mlp_sweep.add_argument("--ridge", type=float, default=1e-3)
@@ -777,10 +869,14 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_mlp_sweep.add_argument("--activation-max-calibration-texts", type=int)
     xfamily_mlp_sweep.add_argument("--activation-max-length", type=int, default=128)
     xfamily_mlp_sweep.add_argument("--activation-device", default="cuda:0")
-    xfamily_mlp_sweep.add_argument("--layer-alpha-mode", choices=["constant", "similarity"], default="constant")
+    xfamily_mlp_sweep.add_argument(
+        "--layer-alpha-mode", choices=["constant", "similarity"], default="constant"
+    )
     xfamily_mlp_sweep.add_argument("--layer-alpha-min-scale", type=float, default=0.0)
     xfamily_mlp_sweep.add_argument("--layer-alpha-max-scale", type=float, default=2.0)
-    xfamily_mlp_sweep.add_argument("--layer-alpha-similarity-floor", type=float, default=0.0)
+    xfamily_mlp_sweep.add_argument(
+        "--layer-alpha-similarity-floor", type=float, default=0.0
+    )
     xfamily_mlp_sweep.add_argument("--dtype", default="float16")
     xfamily_mlp_sweep.add_argument("--device", default="cuda:0")
     xfamily_mlp_sweep.add_argument("--trust-remote-code", action="store_true")
@@ -788,7 +884,11 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_mlp_sweep.add_argument("--max-ppl-ratio", type=float, default=1.5)
     xfamily_mlp_sweep.add_argument("--max-accuracy-drop", type=float, default=0.25)
     xfamily_mlp_sweep.add_argument("--min-choice-accuracy", type=float, default=0.5)
-    xfamily_mlp_sweep.add_argument("--recover", action="store_true", help="Run lightweight recovery on each selected candidate and re-gate it.")
+    xfamily_mlp_sweep.add_argument(
+        "--recover",
+        action="store_true",
+        help="Run lightweight recovery on each selected candidate and re-gate it.",
+    )
     xfamily_mlp_sweep.add_argument("--recover-only-failed", action="store_true")
     xfamily_mlp_sweep.add_argument("--recover-steps", type=int, default=40)
     xfamily_mlp_sweep.add_argument("--recover-batch-size", type=int, default=1)
@@ -802,7 +902,10 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_mlp_sweep.add_argument("--recover-grad-clip", type=float, default=1.0)
     xfamily_mlp_sweep.add_argument("--recover-calibration-file")
     xfamily_mlp_sweep.add_argument("--recover-max-calibration-texts", type=int)
-    xfamily_mlp_sweep.add_argument("--eval-suite", help="JSON/JSONL eval suite used for baseline, candidate, and recovered gates.")
+    xfamily_mlp_sweep.add_argument(
+        "--eval-suite",
+        help="JSON/JSONL eval suite used for baseline, candidate, and recovered gates.",
+    )
     xfamily_mlp_sweep.add_argument("--max-text-evals", type=int)
     xfamily_mlp_sweep.add_argument("--max-choice-probes", type=int)
     xfamily_mlp_sweep.add_argument("--max-generation-prompts", type=int)
@@ -831,11 +934,17 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_compress.add_argument("--activation-max-calibration-texts", type=int)
     xfamily_compress.add_argument("--activation-max-length", type=int, default=128)
     xfamily_compress.add_argument("--activation-device", default="cuda:0")
-    xfamily_compress.add_argument("--layer-alpha-mode", choices=["constant", "similarity"], default="constant")
+    xfamily_compress.add_argument(
+        "--layer-alpha-mode", choices=["constant", "similarity"], default="constant"
+    )
     xfamily_compress.add_argument("--layer-alpha-min-scale", type=float, default=0.0)
     xfamily_compress.add_argument("--layer-alpha-max-scale", type=float, default=2.0)
-    xfamily_compress.add_argument("--layer-alpha-similarity-floor", type=float, default=0.0)
-    xfamily_compress.add_argument("--width-ratios", help="Comma-separated ratios, e.g. 0.9975,0.995.")
+    xfamily_compress.add_argument(
+        "--layer-alpha-similarity-floor", type=float, default=0.0
+    )
+    xfamily_compress.add_argument(
+        "--width-ratios", help="Comma-separated ratios, e.g. 0.9975,0.995."
+    )
     xfamily_compress.add_argument(
         "--layer-groups",
         action="append",
@@ -858,7 +967,11 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_compress.add_argument("--max-ppl-ratio", type=float, default=1.5)
     xfamily_compress.add_argument("--max-accuracy-drop", type=float, default=0.25)
     xfamily_compress.add_argument("--min-choice-accuracy", type=float, default=0.75)
-    xfamily_compress.add_argument("--recover", action="store_true", help="Run lightweight recovery on selected compressed candidates.")
+    xfamily_compress.add_argument(
+        "--recover",
+        action="store_true",
+        help="Run lightweight recovery on selected compressed candidates.",
+    )
     xfamily_compress.add_argument("--recover-only-failed", action="store_true")
     xfamily_compress.add_argument("--recover-top-k", type=int, default=1)
     xfamily_compress.add_argument("--recover-steps", type=int, default=40)
@@ -873,14 +986,20 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_compress.add_argument("--recover-grad-clip", type=float, default=1.0)
     xfamily_compress.add_argument("--recover-calibration-file")
     xfamily_compress.add_argument("--recover-max-calibration-texts", type=int)
-    xfamily_compress.add_argument("--eval-suite", help="JSON/JSONL eval suite used for baseline, candidate, compression, and recovered gates.")
+    xfamily_compress.add_argument(
+        "--eval-suite",
+        help="JSON/JSONL eval suite used for baseline, candidate, compression, and recovered gates.",
+    )
     xfamily_compress.add_argument("--max-text-evals", type=int)
     xfamily_compress.add_argument("--max-choice-probes", type=int)
     xfamily_compress.add_argument("--max-generation-prompts", type=int)
     xfamily_compress.add_argument("--max-behavior-probes", type=int)
     xfamily_compress.set_defaults(func=cmd_hf_xfamily_compress)
 
-    recover = sub.add_parser("hf-recover", help="Run lightweight same-tokenizer recovery training after HF surgery.")
+    recover = sub.add_parser(
+        "hf-recover",
+        help="Run lightweight same-tokenizer recovery training after HF surgery.",
+    )
     recover.add_argument("source_model")
     recover.add_argument("candidate_model")
     recover.add_argument("output")
@@ -906,8 +1025,14 @@ def build_parser() -> argparse.ArgumentParser:
         ],
         default="cka",
     )
-    recover.add_argument("--hidden-layer", choices=["last", "middle", "all"], default="last")
-    recover.add_argument("--hidden-token-mode", choices=["tokens", "response", "pooled"], default="tokens")
+    recover.add_argument(
+        "--hidden-layer", choices=["last", "middle", "all"], default="last"
+    )
+    recover.add_argument(
+        "--hidden-token-mode",
+        choices=["tokens", "response", "pooled"],
+        default="tokens",
+    )
     recover.add_argument("--hidden-ridge", type=float, default=1e-3)
     recover.add_argument("--hidden-max-anchors", type=int, default=2048)
     recover.add_argument("--top-k-kd-weight", type=float, default=0.0)
@@ -918,7 +1043,11 @@ def build_parser() -> argparse.ArgumentParser:
     recover.add_argument("--unlikelihood-weight", type=float, default=0.0)
     recover.add_argument("--unlikelihood-window", type=int, default=16)
     recover.add_argument("--entropy-weight", type=float, default=0.0)
-    recover.add_argument("--response-loss-mode", choices=["none", "auto", "assistant", "answer"], default="none")
+    recover.add_argument(
+        "--response-loss-mode",
+        choices=["none", "auto", "assistant", "answer"],
+        default="none",
+    )
     recover.add_argument("--append-eos", action="store_true")
     recover.add_argument("--temperature", type=float, default=2.0)
     recover.add_argument("--train-scope", default="all")
@@ -974,25 +1103,41 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="AIM-style loss matching teacher/student attention influence over span-aligned tokens.",
     )
-    xfamily_recover.add_argument("--attention-influence-layer", choices=["last", "middle"], default="last")
+    xfamily_recover.add_argument(
+        "--attention-influence-layer", choices=["last", "middle"], default="last"
+    )
     xfamily_recover.add_argument("--projected-vocab-kd-weight", type=float, default=0.0)
-    xfamily_recover.add_argument("--focused-projected-vocab-kd-weight", type=float, default=0.0)
+    xfamily_recover.add_argument(
+        "--focused-projected-vocab-kd-weight", type=float, default=0.0
+    )
     xfamily_recover.add_argument(
         "--projected-vocab-kd-mode",
         choices=["teacher-to-student", "student-to-teacher", "both"],
         default="teacher-to-student",
     )
-    xfamily_recover.add_argument("--projected-vocab-max-source-tokens", type=int, default=8)
+    xfamily_recover.add_argument(
+        "--projected-vocab-max-source-tokens", type=int, default=8
+    )
     xfamily_recover.add_argument("--reference-model")
     xfamily_recover.add_argument("--reference-kd-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--unlikelihood-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--unlikelihood-window", type=int, default=16)
     xfamily_recover.add_argument("--entropy-weight", type=float, default=0.0)
-    xfamily_recover.add_argument("--response-loss-mode", choices=["none", "auto", "assistant", "answer"], default="none")
+    xfamily_recover.add_argument(
+        "--response-loss-mode",
+        choices=["none", "auto", "assistant", "answer"],
+        default="none",
+    )
     xfamily_recover.add_argument("--token-kd-weight", type=float, default=0.0)
-    xfamily_recover.add_argument("--token-focus", choices=["auto", "response", "numbers", "code", "all"], default="auto")
+    xfamily_recover.add_argument(
+        "--token-focus",
+        choices=["auto", "response", "numbers", "code", "all"],
+        default="auto",
+    )
     xfamily_recover.add_argument("--token-max-pairs", type=int, default=512)
-    xfamily_recover.add_argument("--token-teacher-confidence-floor", type=float, default=0.0)
+    xfamily_recover.add_argument(
+        "--token-teacher-confidence-floor", type=float, default=0.0
+    )
     xfamily_recover.add_argument(
         "--alm-kd-weight",
         type=float,
@@ -1002,11 +1147,19 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--alm-max-chunks", type=int, default=64)
     xfamily_recover.add_argument("--alm-min-chars", type=int, default=2)
     xfamily_recover.add_argument("--answer-contrastive-weight", type=float, default=0.0)
-    xfamily_recover.add_argument("--answer-contrastive-max-negatives", type=int, default=4)
-    xfamily_recover.add_argument("--answer-first-token-margin-weight", type=float, default=0.0)
+    xfamily_recover.add_argument(
+        "--answer-contrastive-max-negatives", type=int, default=4
+    )
+    xfamily_recover.add_argument(
+        "--answer-first-token-margin-weight", type=float, default=0.0
+    )
     xfamily_recover.add_argument("--answer-first-token-margin", type=float, default=1.0)
-    xfamily_recover.add_argument("--answer-first-token-max-negatives", type=int, default=8)
-    xfamily_recover.add_argument("--answer-first-token-top-negatives", type=int, default=0)
+    xfamily_recover.add_argument(
+        "--answer-first-token-max-negatives", type=int, default=8
+    )
+    xfamily_recover.add_argument(
+        "--answer-first-token-top-negatives", type=int, default=0
+    )
     xfamily_recover.add_argument("--teacher-rank-weight", type=float, default=0.0)
     xfamily_recover.add_argument("--teacher-rank-temperature", type=float, default=1.0)
     xfamily_recover.add_argument("--teacher-rank-max-negatives", type=int, default=4)
@@ -1016,7 +1169,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="Train the child on donor-generated plain-text continuations using the child tokenizer.",
     )
-    xfamily_recover.add_argument("--teacher-generate-max-new-tokens", type=int, default=64)
+    xfamily_recover.add_argument(
+        "--teacher-generate-max-new-tokens", type=int, default=64
+    )
     xfamily_recover.add_argument(
         "--teacher-generate-loss-mode",
         choices=["none", "auto", "assistant", "answer"],
@@ -1029,9 +1184,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="Correct child greedy prefixes with donor next-token logits projected into the child vocab.",
     )
-    xfamily_recover.add_argument("--stepwise-donor-max-new-tokens", type=int, default=16)
-    xfamily_recover.add_argument("--on-policy-anchor-kd-weight", type=float, default=0.0)
-    xfamily_recover.add_argument("--on-policy-unlikelihood-weight", type=float, default=0.0)
+    xfamily_recover.add_argument(
+        "--stepwise-donor-max-new-tokens", type=int, default=16
+    )
+    xfamily_recover.add_argument(
+        "--on-policy-anchor-kd-weight", type=float, default=0.0
+    )
+    xfamily_recover.add_argument(
+        "--on-policy-unlikelihood-weight", type=float, default=0.0
+    )
     xfamily_recover.add_argument(
         "--on-policy-hidden-kd-weight",
         type=float,
@@ -1042,11 +1203,17 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--on-policy-interval", type=int, default=10)
     xfamily_recover.add_argument("--append-eos", action="store_true")
     xfamily_recover.add_argument("--entropy-aware-kd-weight", type=float, default=0.0)
-    xfamily_recover.add_argument("--entropy-aware-kd-threshold", type=float, default=0.55)
-    xfamily_recover.add_argument("--entropy-aware-kd-sharpness", type=float, default=8.0)
+    xfamily_recover.add_argument(
+        "--entropy-aware-kd-threshold", type=float, default=0.55
+    )
+    xfamily_recover.add_argument(
+        "--entropy-aware-kd-sharpness", type=float, default=8.0
+    )
     xfamily_recover.add_argument("--span-max-pairs", type=int, default=512)
     xfamily_recover.add_argument("--hidden-ridge", type=float, default=1e-3)
-    xfamily_recover.add_argument("--hidden-layer", choices=["last", "middle"], default="last")
+    xfamily_recover.add_argument(
+        "--hidden-layer", choices=["last", "middle"], default="last"
+    )
     xfamily_recover.add_argument(
         "--hidden-kd-metric",
         choices=[
@@ -1065,7 +1232,11 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_recover.add_argument("--hidden-max-anchors", type=int, default=2048)
     xfamily_recover.add_argument("--temperature", type=float, default=2.0)
     xfamily_recover.add_argument("--max-anchors", type=int, default=20_000)
-    xfamily_recover.add_argument("--anchor-selection", choices=["shortest", "longest", "stratified"], default="stratified")
+    xfamily_recover.add_argument(
+        "--anchor-selection",
+        choices=["shortest", "longest", "stratified"],
+        default="stratified",
+    )
     xfamily_recover.add_argument("--anchor-min-chars", type=int, default=1)
     xfamily_recover.add_argument("--train-scope", default="last1")
     xfamily_recover.add_argument("--dtype", default="float32")
@@ -1196,11 +1367,21 @@ def build_parser() -> argparse.ArgumentParser:
         default="none",
         help="Gate each fitted activation map on held-out activation rows before mutating weights.",
     )
-    xfamily_reconstruct.add_argument("--fit-gate-validation-fraction", type=float, default=0.25)
-    xfamily_reconstruct.add_argument("--fit-gate-min-validation-rows", type=int, default=32)
-    xfamily_reconstruct.add_argument("--fit-gate-min-relative-improvement", type=float, default=0.0)
-    xfamily_reconstruct.add_argument("--fit-gate-max-cosine-drop", type=float, default=0.01)
-    xfamily_reconstruct.add_argument("--fit-gate-min-fitted-cosine", type=float, default=-1.0)
+    xfamily_reconstruct.add_argument(
+        "--fit-gate-validation-fraction", type=float, default=0.25
+    )
+    xfamily_reconstruct.add_argument(
+        "--fit-gate-min-validation-rows", type=int, default=32
+    )
+    xfamily_reconstruct.add_argument(
+        "--fit-gate-min-relative-improvement", type=float, default=0.0
+    )
+    xfamily_reconstruct.add_argument(
+        "--fit-gate-max-cosine-drop", type=float, default=0.01
+    )
+    xfamily_reconstruct.add_argument(
+        "--fit-gate-min-fitted-cosine", type=float, default=-1.0
+    )
     xfamily_reconstruct.add_argument(
         "--layer-gate-metric",
         choices=["none", "ppl", "behavior"],
@@ -1265,9 +1446,13 @@ def build_parser() -> argparse.ArgumentParser:
     functional_fold.add_argument("--max-length", type=int, default=160)
     functional_fold.add_argument("--max-tokens-per-layer", type=int, default=4096)
     functional_fold.add_argument("--max-anchors", type=int, default=20_000)
-    functional_fold.add_argument("--fit-gate-validation-fraction", type=float, default=0.20)
+    functional_fold.add_argument(
+        "--fit-gate-validation-fraction", type=float, default=0.20
+    )
     functional_fold.add_argument("--fit-gate-min-validation-rows", type=int, default=64)
-    functional_fold.add_argument("--fit-gate-min-relative-improvement", type=float, default=0.0)
+    functional_fold.add_argument(
+        "--fit-gate-min-relative-improvement", type=float, default=0.0
+    )
     functional_fold.add_argument("--fit-gate-max-cosine-drop", type=float, default=0.01)
     functional_fold.add_argument("--dtype", default="float16")
     functional_fold.add_argument("--candidate-dtype", default="float32")
@@ -1276,6 +1461,34 @@ def build_parser() -> argparse.ArgumentParser:
     functional_fold.add_argument("--calibration-file")
     functional_fold.add_argument("--max-calibration-texts", type=int)
     functional_fold.set_defaults(func=cmd_hf_functional_fold)
+
+    qwen_target = sub.add_parser(
+        "hf-qwen-build-target",
+        help="Plan and materialize a seeded random Qwen3 target for a parameter budget.",
+    )
+    qwen_target.add_argument("tokenizer_model")
+    qwen_target.add_argument("output")
+    qwen_target.add_argument("--target-params", type=int, required=True)
+    qwen_target.add_argument("--source-param-count", type=int)
+    qwen_target.add_argument("--source-config")
+    qwen_target.add_argument("--source-name")
+    qwen_target.add_argument("--hidden-sizes")
+    qwen_target.add_argument("--intermediate-sizes")
+    qwen_target.add_argument("--layer-counts")
+    qwen_target.add_argument("--query-head-counts")
+    qwen_target.add_argument("--key-value-head-counts")
+    qwen_target.add_argument("--head-dims")
+    qwen_target.add_argument("--tie-word-embeddings", action="store_true")
+    qwen_target.add_argument("--attention-bias", action="store_true")
+    qwen_target.add_argument("--require-under-budget", action="store_true")
+    qwen_target.add_argument(
+        "--require-attention-width-equals-hidden", action="store_true"
+    )
+    qwen_target.add_argument("--intermediate-multiple", type=int, default=8)
+    qwen_target.add_argument("--seed", type=int, default=0)
+    qwen_target.add_argument("--dtype", default="float32")
+    qwen_target.add_argument("--trust-remote-code", action="store_true")
+    qwen_target.set_defaults(func=cmd_hf_qwen_build_target)
 
     qwen_pair_compose = sub.add_parser(
         "hf-qwen-pair-compose",
@@ -1289,6 +1502,27 @@ def build_parser() -> argparse.ArgumentParser:
     qwen_pair_compose.add_argument("--batch-size", type=int, default=2)
     qwen_pair_compose.add_argument("--max-tokens-per-layer", type=int, default=4096)
     qwen_pair_compose.add_argument("--max-anchors", type=int, default=4096)
+    qwen_pair_compose.add_argument(
+        "--donor-layer-spans",
+        help="Comma-separated exact donor spans, for example 0+1,2,3+4.",
+    )
+    qwen_pair_compose.add_argument(
+        "--adaptive-depth-spans",
+        action="store_true",
+        help="Choose singleton/pair boundaries from donor activation costs.",
+    )
+    qwen_pair_compose.add_argument(
+        "--adaptive-depth-critical-quantile", type=float, default=0.8
+    )
+    qwen_pair_compose.add_argument(
+        "--adaptive-depth-causal-magnitude-weight", type=float, default=1.0
+    )
+    qwen_pair_compose.add_argument(
+        "--adaptive-depth-incompatibility-weight", type=float, default=1.0
+    )
+    qwen_pair_compose.add_argument(
+        "--adaptive-depth-reconstruction-weight", type=float, default=1.0
+    )
     qwen_pair_compose.add_argument(
         "--basis-mode",
         choices=["activation-pca", "embedding-grouped"],
@@ -1496,11 +1730,21 @@ def build_parser() -> argparse.ArgumentParser:
             "attention-output and MLP-output maps."
         ),
     )
-    xfamily_block_recover.add_argument("--residual-compensation-min-scale", type=float, default=0.50)
-    xfamily_block_recover.add_argument("--residual-compensation-max-scale", type=float, default=1.50)
-    xfamily_block_recover.add_argument("--residual-compensation-linear-ridge", type=float, default=1e-3)
-    xfamily_block_recover.add_argument("--residual-compensation-alpha", type=float, default=1.0)
-    xfamily_block_recover.add_argument("--residual-compensation-linear-rank", type=int, default=32)
+    xfamily_block_recover.add_argument(
+        "--residual-compensation-min-scale", type=float, default=0.50
+    )
+    xfamily_block_recover.add_argument(
+        "--residual-compensation-max-scale", type=float, default=1.50
+    )
+    xfamily_block_recover.add_argument(
+        "--residual-compensation-linear-ridge", type=float, default=1e-3
+    )
+    xfamily_block_recover.add_argument(
+        "--residual-compensation-alpha", type=float, default=1.0
+    )
+    xfamily_block_recover.add_argument(
+        "--residual-compensation-linear-rank", type=int, default=32
+    )
     xfamily_block_recover.add_argument(
         "--pre-reconstruction-target",
         choices=["none", "consumer-input", "block-interface", "all"],
@@ -1510,29 +1754,51 @@ def build_parser() -> argparse.ArgumentParser:
             "consumer-input and block-interface mutate downstream consumer projections and are reverted by layer gates."
         ),
     )
-    xfamily_block_recover.add_argument("--pre-reconstruction-ridge", type=float, default=1e-3)
-    xfamily_block_recover.add_argument("--pre-reconstruction-alpha", type=float, default=0.05)
+    xfamily_block_recover.add_argument(
+        "--pre-reconstruction-ridge", type=float, default=1e-3
+    )
+    xfamily_block_recover.add_argument(
+        "--pre-reconstruction-alpha", type=float, default=0.05
+    )
     xfamily_block_recover.add_argument(
         "--pre-reconstruction-objective",
         choices=["ridge", "cosine"],
         default="ridge",
         help="Linear-map objective for pre-reconstruction interface maps.",
     )
-    xfamily_block_recover.add_argument("--pre-reconstruction-cosine-steps", type=int, default=40)
-    xfamily_block_recover.add_argument("--pre-reconstruction-cosine-lr", type=float, default=1e-2)
-    xfamily_block_recover.add_argument("--pre-reconstruction-cosine-l2", type=float, default=1e-4)
+    xfamily_block_recover.add_argument(
+        "--pre-reconstruction-cosine-steps", type=int, default=40
+    )
+    xfamily_block_recover.add_argument(
+        "--pre-reconstruction-cosine-lr", type=float, default=1e-2
+    )
+    xfamily_block_recover.add_argument(
+        "--pre-reconstruction-cosine-l2", type=float, default=1e-4
+    )
     xfamily_block_recover.add_argument(
         "--pre-reconstruction-fit-gate",
         choices=["none", "validation"],
         default="validation",
         help="Gate fitted pre-reconstruction maps on held-out activation rows before mutating weights.",
     )
-    xfamily_block_recover.add_argument("--pre-reconstruction-validation-fraction", type=float, default=0.25)
-    xfamily_block_recover.add_argument("--pre-reconstruction-min-validation-rows", type=int, default=32)
-    xfamily_block_recover.add_argument("--pre-reconstruction-max-tokens-per-layer", type=int, default=512)
-    xfamily_block_recover.add_argument("--pre-reconstruction-min-relative-improvement", type=float, default=0.0)
-    xfamily_block_recover.add_argument("--pre-reconstruction-max-cosine-drop", type=float, default=0.01)
-    xfamily_block_recover.add_argument("--pre-reconstruction-min-fitted-cosine", type=float, default=-1.0)
+    xfamily_block_recover.add_argument(
+        "--pre-reconstruction-validation-fraction", type=float, default=0.25
+    )
+    xfamily_block_recover.add_argument(
+        "--pre-reconstruction-min-validation-rows", type=int, default=32
+    )
+    xfamily_block_recover.add_argument(
+        "--pre-reconstruction-max-tokens-per-layer", type=int, default=512
+    )
+    xfamily_block_recover.add_argument(
+        "--pre-reconstruction-min-relative-improvement", type=float, default=0.0
+    )
+    xfamily_block_recover.add_argument(
+        "--pre-reconstruction-max-cosine-drop", type=float, default=0.01
+    )
+    xfamily_block_recover.add_argument(
+        "--pre-reconstruction-min-fitted-cosine", type=float, default=-1.0
+    )
     xfamily_block_recover.add_argument("--max-anchors", type=int, default=2048)
     xfamily_block_recover.add_argument("--span-max-pairs", type=int, default=512)
     xfamily_block_recover.add_argument(
@@ -1574,7 +1840,9 @@ def build_parser() -> argparse.ArgumentParser:
         default="none",
         help="Optionally evaluate after each trained block and revert blocks that fail the gate.",
     )
-    xfamily_block_recover.add_argument("--layer-gate-max-ppl-ratio", type=float, default=1.10)
+    xfamily_block_recover.add_argument(
+        "--layer-gate-max-ppl-ratio", type=float, default=1.10
+    )
     xfamily_block_recover.add_argument("--layer-gate-max-texts", type=int, default=4)
     xfamily_block_recover.add_argument(
         "--layer-gate-max-behavior-drop",
@@ -1597,15 +1865,21 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         help="Maximum generation prompts used from --layer-gate-eval-suite for each layer behavior gate.",
     )
-    xfamily_block_recover.add_argument("--on-policy-anchor-kd-weight", type=float, default=0.0)
-    xfamily_block_recover.add_argument("--on-policy-unlikelihood-weight", type=float, default=0.0)
+    xfamily_block_recover.add_argument(
+        "--on-policy-anchor-kd-weight", type=float, default=0.0
+    )
+    xfamily_block_recover.add_argument(
+        "--on-policy-unlikelihood-weight", type=float, default=0.0
+    )
     xfamily_block_recover.add_argument(
         "--on-policy-hidden-kd-weight",
         type=float,
         default=0.0,
         help="Add block hidden alignment on greedy child rollouts during blockwise recovery.",
     )
-    xfamily_block_recover.add_argument("--on-policy-max-new-tokens", type=int, default=24)
+    xfamily_block_recover.add_argument(
+        "--on-policy-max-new-tokens", type=int, default=24
+    )
     xfamily_block_recover.add_argument("--on-policy-interval", type=int, default=10)
     xfamily_block_recover.add_argument(
         "--on-policy-response-loss-mode",
@@ -1613,9 +1887,15 @@ def build_parser() -> argparse.ArgumentParser:
         default="auto",
         help="Prompt truncation mode used before block-recovery on-policy rollouts.",
     )
-    xfamily_block_recover.add_argument("--on-policy-unlikelihood-window", type=int, default=16)
-    xfamily_block_recover.add_argument("--stepwise-donor-kd-weight", type=float, default=0.0)
-    xfamily_block_recover.add_argument("--stepwise-donor-max-new-tokens", type=int, default=8)
+    xfamily_block_recover.add_argument(
+        "--on-policy-unlikelihood-window", type=int, default=16
+    )
+    xfamily_block_recover.add_argument(
+        "--stepwise-donor-kd-weight", type=float, default=0.0
+    )
+    xfamily_block_recover.add_argument(
+        "--stepwise-donor-max-new-tokens", type=int, default=8
+    )
     xfamily_block_recover.add_argument("--stepwise-donor-interval", type=int, default=4)
     xfamily_block_recover.add_argument(
         "--teacher-generate-lm-weight",
@@ -1641,7 +1921,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="Apply tokenizer-neutral first-byte KD on donor-generated completions during block recovery.",
     )
-    xfamily_block_recover.add_argument("--teacher-generate-max-new-tokens", type=int, default=64)
+    xfamily_block_recover.add_argument(
+        "--teacher-generate-max-new-tokens", type=int, default=64
+    )
     xfamily_block_recover.add_argument(
         "--teacher-generate-loss-mode",
         choices=["none", "auto", "assistant", "answer"],
@@ -1761,9 +2043,15 @@ def build_parser() -> argparse.ArgumentParser:
         default="paired",
         help="Row matching mode for module-output KD.",
     )
-    xfamily_block_recover.add_argument("--module-output-temperature", type=float, default=1.0)
-    xfamily_block_recover.add_argument("--module-output-sinkhorn-iterations", type=int, default=12)
-    xfamily_block_recover.add_argument("--projected-vocab-max-source-tokens", type=int, default=8)
+    xfamily_block_recover.add_argument(
+        "--module-output-temperature", type=float, default=1.0
+    )
+    xfamily_block_recover.add_argument(
+        "--module-output-sinkhorn-iterations", type=int, default=12
+    )
+    xfamily_block_recover.add_argument(
+        "--projected-vocab-max-source-tokens", type=int, default=8
+    )
     xfamily_block_recover.add_argument("--temperature", type=float, default=2.0)
     xfamily_block_recover.add_argument("--dtype", default="float16")
     xfamily_block_recover.add_argument("--candidate-dtype", default="float32")
@@ -1840,12 +2128,20 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--max-behavior-probes", type=int)
     xfamily_chain.add_argument("--max-new-tokens", type=int, default=96)
     xfamily_chain.add_argument("--stage-max-ppl-ratio", type=float, default=1.25)
-    xfamily_chain.add_argument("--stage-ppl-gate-mode", choices=["hard", "advisory"], default="advisory")
+    xfamily_chain.add_argument(
+        "--stage-ppl-gate-mode", choices=["hard", "advisory"], default="advisory"
+    )
     xfamily_chain.add_argument("--stage-max-accuracy-drop", type=float, default=0.0)
     xfamily_chain.add_argument("--stage-max-behavior-drop", type=float, default=0.0)
     xfamily_chain.add_argument("--stage-min-choice-accuracy", type=float, default=0.0)
-    xfamily_chain.add_argument("--stage-min-behavior-pass-rate", type=float, default=0.0)
-    xfamily_chain.add_argument("--promote-policy", choices=["gate-and-rank", "gate-only", "always"], default="gate-and-rank")
+    xfamily_chain.add_argument(
+        "--stage-min-behavior-pass-rate", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--promote-policy",
+        choices=["gate-and-rank", "gate-only", "always"],
+        default="gate-and-rank",
+    )
     xfamily_chain.add_argument(
         "--stage-input-policy",
         choices=["incumbent", "sequential"],
@@ -1878,7 +2174,9 @@ def build_parser() -> argparse.ArgumentParser:
         ],
         default="none",
     )
-    xfamily_chain.add_argument("--init-hidden-basis-scope", choices=["global", "layer"], default="global")
+    xfamily_chain.add_argument(
+        "--init-hidden-basis-scope", choices=["global", "layer"], default="global"
+    )
     xfamily_chain.add_argument("--init-hidden-basis-max-rows", type=int, default=2048)
     xfamily_chain.add_argument(
         "--init-hidden-basis-preprocess",
@@ -1899,8 +2197,14 @@ def build_parser() -> argparse.ArgumentParser:
         ],
         default="balanced",
     )
-    xfamily_chain.add_argument("--init-fold-stat-repair", choices=["none", "rms"], default="none")
-    xfamily_chain.add_argument("--init-transport-backend", choices=["sparse", "sinkhorn", "qr-sinkhorn"], default="sparse")
+    xfamily_chain.add_argument(
+        "--init-fold-stat-repair", choices=["none", "rms"], default="none"
+    )
+    xfamily_chain.add_argument(
+        "--init-transport-backend",
+        choices=["sparse", "sinkhorn", "qr-sinkhorn"],
+        default="sparse",
+    )
     xfamily_chain.add_argument(
         "--init-transport-support",
         choices=[
@@ -1917,7 +2221,11 @@ def build_parser() -> argparse.ArgumentParser:
         ],
         default="centroid",
     )
-    xfamily_chain.add_argument("--init-donor-layer-fold-mode", choices=["representative", "average", "fold"], default="fold")
+    xfamily_chain.add_argument(
+        "--init-donor-layer-fold-mode",
+        choices=["representative", "average", "fold"],
+        default="fold",
+    )
     xfamily_chain.add_argument(
         "--init-donor-layer-output-scale",
         choices=["group-count", "effective-count", "sqrt-effective-count", "unit"],
@@ -1940,7 +2248,9 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["independent", "coupled", "activation-coupled"],
         default="independent",
     )
-    xfamily_chain.add_argument("--init-attention-head-dim-transport", choices=["none", "qk-vo"], default="none")
+    xfamily_chain.add_argument(
+        "--init-attention-head-dim-transport", choices=["none", "qk-vo"], default="none"
+    )
     xfamily_chain.add_argument(
         "--init-token-init-mode",
         choices=["shared", "donor-tokenized", "donor-tokenized-weighted", "donor-omp"],
@@ -1957,7 +2267,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="none",
     )
     xfamily_chain.add_argument("--init-projection-blend-alpha", type=float, default=1.0)
-    xfamily_chain.add_argument("--init-consumer-hidden-reduction", choices=["mean", "sum", "sqrt-sum"], default="mean")
+    xfamily_chain.add_argument(
+        "--init-consumer-hidden-reduction",
+        choices=["mean", "sum", "sqrt-sum"],
+        default="mean",
+    )
     xfamily_chain.add_argument(
         "--init-operator-product-axis-weights",
         action="store_true",
@@ -1966,27 +2280,68 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--init-activation-fit-linears", action="store_true")
     xfamily_chain.add_argument(
         "--init-activation-fit-target",
-        choices=["all", "attention", "attention-output", "mlp", "mlp-output", "input-projections"],
+        choices=[
+            "all",
+            "attention",
+            "attention-output",
+            "mlp",
+            "mlp-output",
+            "input-projections",
+        ],
         default="all",
     )
     xfamily_chain.add_argument("--init-activation-fit-max-rows", type=int, default=0)
     xfamily_chain.add_argument("--init-activation-fit-alpha", type=float, default=1.0)
     xfamily_chain.add_argument("--init-activation-fit-ridge", type=float, default=1e-1)
     xfamily_chain.add_argument("--init-activation-fit-rank", type=int, default=0)
-    xfamily_chain.add_argument("--init-activation-fit-rank-mode", choices=["absolute", "delta"], default="absolute")
-    xfamily_chain.add_argument("--init-activation-fit-method", choices=["ridge", "act-svd", "lrc"], default="ridge")
-    xfamily_chain.add_argument("--init-activation-fit-factor-steps", type=int, default=0)
-    xfamily_chain.add_argument("--init-activation-fit-factor-lr", type=float, default=3e-2)
-    xfamily_chain.add_argument("--init-activation-fit-factor-l2", type=float, default=0.0)
-    xfamily_chain.add_argument("--init-activation-fit-max-delta-rms-ratio", type=float, default=0.0)
-    xfamily_chain.add_argument("--init-activation-fit-gate", choices=["none", "validation"], default="validation")
-    xfamily_chain.add_argument("--init-activation-fit-validation-fraction", type=float, default=0.20)
-    xfamily_chain.add_argument("--init-activation-fit-min-validation-rows", type=int, default=8)
-    xfamily_chain.add_argument("--init-activation-fit-min-relative-improvement", type=float, default=0.0)
-    xfamily_chain.add_argument("--init-activation-fit-max-cosine-drop", type=float, default=0.01)
-    xfamily_chain.add_argument("--init-activation-feature-mode", choices=["stats", "subspace", "covariance"], default="stats")
+    xfamily_chain.add_argument(
+        "--init-activation-fit-rank-mode",
+        choices=["absolute", "delta"],
+        default="absolute",
+    )
+    xfamily_chain.add_argument(
+        "--init-activation-fit-method",
+        choices=["ridge", "act-svd", "lrc"],
+        default="ridge",
+    )
+    xfamily_chain.add_argument(
+        "--init-activation-fit-factor-steps", type=int, default=0
+    )
+    xfamily_chain.add_argument(
+        "--init-activation-fit-factor-lr", type=float, default=3e-2
+    )
+    xfamily_chain.add_argument(
+        "--init-activation-fit-factor-l2", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--init-activation-fit-max-delta-rms-ratio", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--init-activation-fit-gate",
+        choices=["none", "validation"],
+        default="validation",
+    )
+    xfamily_chain.add_argument(
+        "--init-activation-fit-validation-fraction", type=float, default=0.20
+    )
+    xfamily_chain.add_argument(
+        "--init-activation-fit-min-validation-rows", type=int, default=8
+    )
+    xfamily_chain.add_argument(
+        "--init-activation-fit-min-relative-improvement", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--init-activation-fit-max-cosine-drop", type=float, default=0.01
+    )
+    xfamily_chain.add_argument(
+        "--init-activation-feature-mode",
+        choices=["stats", "subspace", "covariance"],
+        default="stats",
+    )
     xfamily_chain.add_argument("--init-activation-subspace-rank", type=int, default=8)
-    xfamily_chain.add_argument("--init-activation-domain-balance", choices=["none", "keyword"], default="none")
+    xfamily_chain.add_argument(
+        "--init-activation-domain-balance", choices=["none", "keyword"], default="none"
+    )
     xfamily_chain.add_argument(
         "--init-untie-output-head",
         action="store_true",
@@ -2018,12 +2373,16 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["representative", "average", "fold"],
         default="representative",
     )
-    xfamily_chain.add_argument("--reconstruct-objective", choices=["ridge", "cosine"], default="ridge")
+    xfamily_chain.add_argument(
+        "--reconstruct-objective", choices=["ridge", "cosine"], default="ridge"
+    )
     xfamily_chain.add_argument("--reconstruct-cosine-steps", type=int, default=80)
     xfamily_chain.add_argument("--reconstruct-cosine-lr", type=float, default=1e-2)
     xfamily_chain.add_argument("--reconstruct-cosine-l2", type=float, default=1e-4)
     xfamily_chain.add_argument("--reconstruct-max-length", type=int, default=128)
-    xfamily_chain.add_argument("--reconstruct-max-tokens-per-layer", type=int, default=512)
+    xfamily_chain.add_argument(
+        "--reconstruct-max-tokens-per-layer", type=int, default=512
+    )
     xfamily_chain.add_argument("--reconstruct-max-anchors", type=int, default=2048)
     xfamily_chain.add_argument(
         "--reconstruct-hidden-projection-scope",
@@ -2031,18 +2390,44 @@ def build_parser() -> argparse.ArgumentParser:
         default="global",
     )
     xfamily_chain.add_argument("--reconstruct-layer-limit", type=int)
-    xfamily_chain.add_argument("--reconstruct-fit-gate", choices=["none", "validation"], default="none")
-    xfamily_chain.add_argument("--reconstruct-fit-gate-validation-fraction", type=float, default=0.25)
-    xfamily_chain.add_argument("--reconstruct-fit-gate-min-validation-rows", type=int, default=32)
-    xfamily_chain.add_argument("--reconstruct-fit-gate-min-relative-improvement", type=float, default=0.0)
-    xfamily_chain.add_argument("--reconstruct-fit-gate-max-cosine-drop", type=float, default=0.01)
-    xfamily_chain.add_argument("--reconstruct-fit-gate-min-fitted-cosine", type=float, default=-1.0)
-    xfamily_chain.add_argument("--reconstruct-layer-gate-metric", choices=["none", "ppl", "behavior"], default="none")
-    xfamily_chain.add_argument("--reconstruct-layer-gate-max-ppl-ratio", type=float, default=1.02)
-    xfamily_chain.add_argument("--reconstruct-layer-gate-max-texts", type=int, default=4)
-    xfamily_chain.add_argument("--reconstruct-layer-gate-max-behavior-drop", type=float, default=0.0)
-    xfamily_chain.add_argument("--reconstruct-layer-gate-behavior-max-new-tokens", type=int, default=96)
-    xfamily_chain.add_argument("--reconstruct-layer-gate-max-generation-prompts", type=int)
+    xfamily_chain.add_argument(
+        "--reconstruct-fit-gate", choices=["none", "validation"], default="none"
+    )
+    xfamily_chain.add_argument(
+        "--reconstruct-fit-gate-validation-fraction", type=float, default=0.25
+    )
+    xfamily_chain.add_argument(
+        "--reconstruct-fit-gate-min-validation-rows", type=int, default=32
+    )
+    xfamily_chain.add_argument(
+        "--reconstruct-fit-gate-min-relative-improvement", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--reconstruct-fit-gate-max-cosine-drop", type=float, default=0.01
+    )
+    xfamily_chain.add_argument(
+        "--reconstruct-fit-gate-min-fitted-cosine", type=float, default=-1.0
+    )
+    xfamily_chain.add_argument(
+        "--reconstruct-layer-gate-metric",
+        choices=["none", "ppl", "behavior"],
+        default="none",
+    )
+    xfamily_chain.add_argument(
+        "--reconstruct-layer-gate-max-ppl-ratio", type=float, default=1.02
+    )
+    xfamily_chain.add_argument(
+        "--reconstruct-layer-gate-max-texts", type=int, default=4
+    )
+    xfamily_chain.add_argument(
+        "--reconstruct-layer-gate-max-behavior-drop", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--reconstruct-layer-gate-behavior-max-new-tokens", type=int, default=96
+    )
+    xfamily_chain.add_argument(
+        "--reconstruct-layer-gate-max-generation-prompts", type=int
+    )
     xfamily_chain.add_argument("--block-steps-per-layer", type=int, default=4)
     xfamily_chain.add_argument("--block-batch-size", type=int, default=1)
     xfamily_chain.add_argument("--block-max-length", type=int, default=112)
@@ -2050,8 +2435,14 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--block-lm-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--block-response-lm-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--block-first-token-lm-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--block-response-end-lm-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--block-response-loss-mode", choices=["none", "auto", "assistant", "answer"], default="none")
+    xfamily_chain.add_argument(
+        "--block-response-end-lm-weight", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--block-response-loss-mode",
+        choices=["none", "auto", "assistant", "answer"],
+        default="none",
+    )
     xfamily_chain.add_argument(
         "--block-hidden-projection-scope",
         choices=["global", "layer-input", "layer-input-gated"],
@@ -2072,37 +2463,85 @@ def build_parser() -> argparse.ArgumentParser:
         ],
         default="projected-rsd",
     )
-    xfamily_chain.add_argument("--block-span-pair-mode", choices=["exact", "overlap", "both"], default="exact")
-    xfamily_chain.add_argument("--block-target", choices=["hidden", "delta"], default="delta")
+    xfamily_chain.add_argument(
+        "--block-span-pair-mode", choices=["exact", "overlap", "both"], default="exact"
+    )
+    xfamily_chain.add_argument(
+        "--block-target", choices=["hidden", "delta"], default="delta"
+    )
     xfamily_chain.add_argument(
         "--block-residual-magnitude-compensation",
         choices=RESIDUAL_MAGNITUDE_COMPENSATION_CHOICES,
         default="lowrank-pre",
     )
-    xfamily_chain.add_argument("--block-residual-compensation-min-scale", type=float, default=0.50)
-    xfamily_chain.add_argument("--block-residual-compensation-max-scale", type=float, default=1.50)
-    xfamily_chain.add_argument("--block-residual-compensation-linear-ridge", type=float, default=1e-3)
-    xfamily_chain.add_argument("--block-residual-compensation-alpha", type=float, default=0.01)
-    xfamily_chain.add_argument("--block-residual-compensation-linear-rank", type=int, default=16)
-    xfamily_chain.add_argument("--block-pre-reconstruction-target", choices=["none", "consumer-input", "block-interface", "all"], default="none")
-    xfamily_chain.add_argument("--block-pre-reconstruction-ridge", type=float, default=1e-3)
-    xfamily_chain.add_argument("--block-pre-reconstruction-alpha", type=float, default=0.05)
+    xfamily_chain.add_argument(
+        "--block-residual-compensation-min-scale", type=float, default=0.50
+    )
+    xfamily_chain.add_argument(
+        "--block-residual-compensation-max-scale", type=float, default=1.50
+    )
+    xfamily_chain.add_argument(
+        "--block-residual-compensation-linear-ridge", type=float, default=1e-3
+    )
+    xfamily_chain.add_argument(
+        "--block-residual-compensation-alpha", type=float, default=0.01
+    )
+    xfamily_chain.add_argument(
+        "--block-residual-compensation-linear-rank", type=int, default=16
+    )
+    xfamily_chain.add_argument(
+        "--block-pre-reconstruction-target",
+        choices=["none", "consumer-input", "block-interface", "all"],
+        default="none",
+    )
+    xfamily_chain.add_argument(
+        "--block-pre-reconstruction-ridge", type=float, default=1e-3
+    )
+    xfamily_chain.add_argument(
+        "--block-pre-reconstruction-alpha", type=float, default=0.05
+    )
     xfamily_chain.add_argument(
         "--block-pre-reconstruction-objective",
         choices=["ridge", "cosine"],
         default="ridge",
     )
-    xfamily_chain.add_argument("--block-pre-reconstruction-cosine-steps", type=int, default=40)
-    xfamily_chain.add_argument("--block-pre-reconstruction-cosine-lr", type=float, default=1e-2)
-    xfamily_chain.add_argument("--block-pre-reconstruction-cosine-l2", type=float, default=1e-4)
-    xfamily_chain.add_argument("--block-pre-reconstruction-fit-gate", choices=["none", "validation"], default="validation")
-    xfamily_chain.add_argument("--block-pre-reconstruction-validation-fraction", type=float, default=0.25)
-    xfamily_chain.add_argument("--block-pre-reconstruction-min-validation-rows", type=int, default=32)
-    xfamily_chain.add_argument("--block-pre-reconstruction-max-tokens-per-layer", type=int, default=512)
-    xfamily_chain.add_argument("--block-pre-reconstruction-min-relative-improvement", type=float, default=0.0)
-    xfamily_chain.add_argument("--block-pre-reconstruction-max-cosine-drop", type=float, default=0.01)
-    xfamily_chain.add_argument("--block-pre-reconstruction-min-fitted-cosine", type=float, default=-1.0)
-    xfamily_chain.add_argument("--block-donor-layer-fold-mode", choices=["representative", "average", "fold"], default="fold")
+    xfamily_chain.add_argument(
+        "--block-pre-reconstruction-cosine-steps", type=int, default=40
+    )
+    xfamily_chain.add_argument(
+        "--block-pre-reconstruction-cosine-lr", type=float, default=1e-2
+    )
+    xfamily_chain.add_argument(
+        "--block-pre-reconstruction-cosine-l2", type=float, default=1e-4
+    )
+    xfamily_chain.add_argument(
+        "--block-pre-reconstruction-fit-gate",
+        choices=["none", "validation"],
+        default="validation",
+    )
+    xfamily_chain.add_argument(
+        "--block-pre-reconstruction-validation-fraction", type=float, default=0.25
+    )
+    xfamily_chain.add_argument(
+        "--block-pre-reconstruction-min-validation-rows", type=int, default=32
+    )
+    xfamily_chain.add_argument(
+        "--block-pre-reconstruction-max-tokens-per-layer", type=int, default=512
+    )
+    xfamily_chain.add_argument(
+        "--block-pre-reconstruction-min-relative-improvement", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--block-pre-reconstruction-max-cosine-drop", type=float, default=0.01
+    )
+    xfamily_chain.add_argument(
+        "--block-pre-reconstruction-min-fitted-cosine", type=float, default=-1.0
+    )
+    xfamily_chain.add_argument(
+        "--block-donor-layer-fold-mode",
+        choices=["representative", "average", "fold"],
+        default="fold",
+    )
     xfamily_chain.add_argument(
         "--block-donor-layer-group-strategy",
         choices=[
@@ -2116,17 +2555,31 @@ def build_parser() -> argparse.ArgumentParser:
         default="activation-energy",
     )
     xfamily_chain.add_argument("--block-layer-limit", type=int)
-    xfamily_chain.add_argument("--block-layer-gate-metric", choices=["none", "ppl", "behavior"], default="behavior")
+    xfamily_chain.add_argument(
+        "--block-layer-gate-metric",
+        choices=["none", "ppl", "behavior"],
+        default="behavior",
+    )
     xfamily_chain.add_argument("--block-layer-gate-max-texts", type=int, default=200)
     xfamily_chain.add_argument("--block-layer-gate-max-generation-prompts", type=int)
-    xfamily_chain.add_argument("--block-layer-gate-max-behavior-drop", type=float, default=0.0)
+    xfamily_chain.add_argument(
+        "--block-layer-gate-max-behavior-drop", type=float, default=0.0
+    )
     xfamily_chain.add_argument("--block-alm-kd-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--block-projected-vocab-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument(
+        "--block-projected-vocab-kd-weight", type=float, default=0.0
+    )
     xfamily_chain.add_argument("--block-byte-kd-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--block-block-io-kd-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--block-on-policy-anchor-kd-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--block-on-policy-unlikelihood-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--block-on-policy-hidden-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument(
+        "--block-on-policy-anchor-kd-weight", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--block-on-policy-unlikelihood-weight", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--block-on-policy-hidden-kd-weight", type=float, default=0.0
+    )
     xfamily_chain.add_argument("--block-on-policy-max-new-tokens", type=int, default=24)
     xfamily_chain.add_argument("--block-on-policy-interval", type=int, default=10)
     xfamily_chain.add_argument(
@@ -2134,15 +2587,31 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["none", "auto", "assistant", "answer"],
         default="auto",
     )
-    xfamily_chain.add_argument("--block-on-policy-unlikelihood-window", type=int, default=16)
-    xfamily_chain.add_argument("--block-stepwise-donor-kd-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--block-stepwise-donor-max-new-tokens", type=int, default=8)
+    xfamily_chain.add_argument(
+        "--block-on-policy-unlikelihood-window", type=int, default=16
+    )
+    xfamily_chain.add_argument(
+        "--block-stepwise-donor-kd-weight", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--block-stepwise-donor-max-new-tokens", type=int, default=8
+    )
     xfamily_chain.add_argument("--block-stepwise-donor-interval", type=int, default=4)
-    xfamily_chain.add_argument("--block-teacher-generate-lm-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--block-teacher-generate-hidden-kd-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--block-teacher-generate-projected-vocab-kd-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--block-teacher-generate-byte-kd-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--block-teacher-generate-max-new-tokens", type=int, default=64)
+    xfamily_chain.add_argument(
+        "--block-teacher-generate-lm-weight", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--block-teacher-generate-hidden-kd-weight", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--block-teacher-generate-projected-vocab-kd-weight", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--block-teacher-generate-byte-kd-weight", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--block-teacher-generate-max-new-tokens", type=int, default=64
+    )
     xfamily_chain.add_argument(
         "--block-teacher-generate-loss-mode",
         choices=["none", "auto", "assistant", "answer"],
@@ -2150,29 +2619,63 @@ def build_parser() -> argparse.ArgumentParser:
     )
     xfamily_chain.add_argument("--block-alm-max-chunks", type=int, default=64)
     xfamily_chain.add_argument("--block-alm-min-chars", type=int, default=2)
-    xfamily_chain.add_argument("--block-focused-block-hidden-kd-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--block-focused-projected-vocab-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument(
+        "--block-focused-block-hidden-kd-weight", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--block-focused-projected-vocab-kd-weight", type=float, default=0.0
+    )
     xfamily_chain.add_argument("--block-focused-lm-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--block-token-focus", choices=["auto", "response", "numbers", "code", "all"], default="auto")
+    xfamily_chain.add_argument(
+        "--block-token-focus",
+        choices=["auto", "response", "numbers", "code", "all"],
+        default="auto",
+    )
     xfamily_chain.add_argument(
         "--block-projected-vocab-kd-mode",
         choices=["teacher-to-student", "student-to-teacher", "both"],
         default="teacher-to-student",
     )
     xfamily_chain.add_argument("--block-byte-hidden-kd-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--block-byte-hidden-probe-mode", choices=["fixed", "trainable"], default="fixed")
-    xfamily_chain.add_argument("--block-byte-hidden-probe-anchor-weight", type=float, default=0.0)
+    xfamily_chain.add_argument(
+        "--block-byte-hidden-probe-mode",
+        choices=["fixed", "trainable"],
+        default="fixed",
+    )
+    xfamily_chain.add_argument(
+        "--block-byte-hidden-probe-anchor-weight", type=float, default=0.0
+    )
     xfamily_chain.add_argument("--block-block-io-ridge", type=float, default=1e-3)
-    xfamily_chain.add_argument("--block-block-io-loss", choices=["smooth-l1", "cosine", "both"], default="both")
+    xfamily_chain.add_argument(
+        "--block-block-io-loss", choices=["smooth-l1", "cosine", "both"], default="both"
+    )
     xfamily_chain.add_argument("--block-train-output-head-with-kd", action="store_true")
     xfamily_chain.add_argument("--block-untie-output-head-for-kd", action="store_true")
-    xfamily_chain.add_argument("--block-allow-tied-output-head-training", action="store_true")
-    xfamily_chain.add_argument("--block-module-output-kd-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--block-module-output-targets", choices=["attention", "mlp", "both"], default="both")
-    xfamily_chain.add_argument("--block-module-output-transport", choices=["paired", "sinkhorn", "both"], default="paired")
-    xfamily_chain.add_argument("--block-module-output-temperature", type=float, default=1.0)
-    xfamily_chain.add_argument("--block-module-output-sinkhorn-iterations", type=int, default=12)
-    xfamily_chain.add_argument("--block-projected-vocab-max-source-tokens", type=int, default=8)
+    xfamily_chain.add_argument(
+        "--block-allow-tied-output-head-training", action="store_true"
+    )
+    xfamily_chain.add_argument(
+        "--block-module-output-kd-weight", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--block-module-output-targets",
+        choices=["attention", "mlp", "both"],
+        default="both",
+    )
+    xfamily_chain.add_argument(
+        "--block-module-output-transport",
+        choices=["paired", "sinkhorn", "both"],
+        default="paired",
+    )
+    xfamily_chain.add_argument(
+        "--block-module-output-temperature", type=float, default=1.0
+    )
+    xfamily_chain.add_argument(
+        "--block-module-output-sinkhorn-iterations", type=int, default=12
+    )
+    xfamily_chain.add_argument(
+        "--block-projected-vocab-max-source-tokens", type=int, default=8
+    )
     xfamily_chain.add_argument(
         "--block-nonfinite-step-policy",
         choices=["raise", "skip-step"],
@@ -2189,7 +2692,11 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--block-save-best-layer-behavior", action="store_true")
     xfamily_chain.add_argument("--block-layer-behavior-eval-interval", type=int)
     xfamily_chain.add_argument("--block-layer-checkpoint-interval", type=int, default=0)
-    xfamily_chain.add_argument("--block-calibration-order", choices=["original", "domain-balanced"], default="original")
+    xfamily_chain.add_argument(
+        "--block-calibration-order",
+        choices=["original", "domain-balanced"],
+        default="original",
+    )
     xfamily_chain.add_argument("--alm-steps", type=int, default=80)
     xfamily_chain.add_argument("--alm-batch-size", type=int, default=1)
     xfamily_chain.add_argument("--alm-max-length", type=int, default=112)
@@ -2200,46 +2707,96 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--alm-response-end-lm-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-focused-lm-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-dual-space-kd-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--alm-attention-influence-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--alm-attention-influence-layer", choices=["last", "middle"], default="last")
+    xfamily_chain.add_argument(
+        "--alm-attention-influence-weight", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--alm-attention-influence-layer", choices=["last", "middle"], default="last"
+    )
     xfamily_chain.add_argument("--alm-kd-weight", type=float, default=0.05)
-    xfamily_chain.add_argument("--alm-projected-vocab-kd-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--alm-focused-projected-vocab-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument(
+        "--alm-projected-vocab-kd-weight", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--alm-focused-projected-vocab-kd-weight", type=float, default=0.0
+    )
     xfamily_chain.add_argument("--alm-span-kd-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-span-hidden-kd-weight", type=float, default=0.0)
     xfamily_chain.add_argument("--alm-token-kd-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--alm-token-focus", choices=["auto", "response", "numbers", "code", "all"], default="auto")
+    xfamily_chain.add_argument(
+        "--alm-token-focus",
+        choices=["auto", "response", "numbers", "code", "all"],
+        default="auto",
+    )
     xfamily_chain.add_argument("--alm-token-max-pairs", type=int, default=512)
-    xfamily_chain.add_argument("--alm-token-teacher-confidence-floor", type=float, default=0.0)
-    xfamily_chain.add_argument("--alm-answer-contrastive-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--alm-answer-contrastive-max-negatives", type=int, default=4)
-    xfamily_chain.add_argument("--alm-answer-first-token-margin-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--alm-answer-first-token-margin", type=float, default=1.0)
-    xfamily_chain.add_argument("--alm-answer-first-token-max-negatives", type=int, default=8)
-    xfamily_chain.add_argument("--alm-answer-first-token-top-negatives", type=int, default=0)
+    xfamily_chain.add_argument(
+        "--alm-token-teacher-confidence-floor", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--alm-answer-contrastive-weight", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--alm-answer-contrastive-max-negatives", type=int, default=4
+    )
+    xfamily_chain.add_argument(
+        "--alm-answer-first-token-margin-weight", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--alm-answer-first-token-margin", type=float, default=1.0
+    )
+    xfamily_chain.add_argument(
+        "--alm-answer-first-token-max-negatives", type=int, default=8
+    )
+    xfamily_chain.add_argument(
+        "--alm-answer-first-token-top-negatives", type=int, default=0
+    )
     xfamily_chain.add_argument("--alm-teacher-rank-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--alm-teacher-rank-temperature", type=float, default=1.0)
+    xfamily_chain.add_argument(
+        "--alm-teacher-rank-temperature", type=float, default=1.0
+    )
     xfamily_chain.add_argument("--alm-teacher-rank-max-negatives", type=int, default=4)
-    xfamily_chain.add_argument("--alm-teacher-generate-lm-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--alm-teacher-generate-max-new-tokens", type=int, default=64)
+    xfamily_chain.add_argument(
+        "--alm-teacher-generate-lm-weight", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--alm-teacher-generate-max-new-tokens", type=int, default=64
+    )
     xfamily_chain.add_argument(
         "--alm-teacher-generate-loss-mode",
         choices=["none", "auto", "assistant", "answer"],
         default="none",
     )
-    xfamily_chain.add_argument("--alm-stepwise-donor-kd-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--alm-stepwise-donor-max-new-tokens", type=int, default=16)
-    xfamily_chain.add_argument("--alm-on-policy-anchor-kd-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--alm-on-policy-unlikelihood-weight", type=float, default=0.0)
-    xfamily_chain.add_argument("--alm-on-policy-hidden-kd-weight", type=float, default=0.0)
+    xfamily_chain.add_argument(
+        "--alm-stepwise-donor-kd-weight", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--alm-stepwise-donor-max-new-tokens", type=int, default=16
+    )
+    xfamily_chain.add_argument(
+        "--alm-on-policy-anchor-kd-weight", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--alm-on-policy-unlikelihood-weight", type=float, default=0.0
+    )
+    xfamily_chain.add_argument(
+        "--alm-on-policy-hidden-kd-weight", type=float, default=0.0
+    )
     xfamily_chain.add_argument("--alm-on-policy-max-new-tokens", type=int, default=24)
     xfamily_chain.add_argument("--alm-on-policy-interval", type=int, default=10)
     xfamily_chain.add_argument("--alm-train-scope", default="last4")
-    xfamily_chain.add_argument("--alm-response-loss-mode", choices=["none", "auto", "assistant", "answer"], default="none")
+    xfamily_chain.add_argument(
+        "--alm-response-loss-mode",
+        choices=["none", "auto", "assistant", "answer"],
+        default="none",
+    )
     xfamily_chain.add_argument("--alm-append-eos", action="store_true")
     xfamily_chain.add_argument("--alm-save-best-behavior", action="store_true")
     xfamily_chain.add_argument("--alm-behavior-eval-interval", type=int)
-    xfamily_chain.add_argument("--alm-calibration-order", choices=["original", "domain-balanced"], default="original")
+    xfamily_chain.add_argument(
+        "--alm-calibration-order",
+        choices=["original", "domain-balanced"],
+        default="original",
+    )
     xfamily_chain.add_argument("--dtype", default="float16")
     xfamily_chain.add_argument("--candidate-dtype", default="float32")
     xfamily_chain.add_argument("--device", default="cuda:0")
@@ -2248,7 +2805,9 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_chain.add_argument("--max-calibration-texts", type=int)
     xfamily_chain.set_defaults(func=cmd_hf_xfamily_chain_anchor_compress)
 
-    lm_recover = sub.add_parser("hf-lm-recover", help="Run teacherless LM recovery on a folded HF causal LM.")
+    lm_recover = sub.add_parser(
+        "hf-lm-recover", help="Run teacherless LM recovery on a folded HF causal LM."
+    )
     lm_recover.add_argument("candidate_model")
     lm_recover.add_argument("output")
     lm_recover.add_argument("--steps", type=int, default=80)
@@ -2261,7 +2820,11 @@ def build_parser() -> argparse.ArgumentParser:
     lm_recover.add_argument("--unlikelihood-weight", type=float, default=0.0)
     lm_recover.add_argument("--unlikelihood-window", type=int, default=16)
     lm_recover.add_argument("--entropy-weight", type=float, default=0.0)
-    lm_recover.add_argument("--response-loss-mode", choices=["none", "auto", "assistant", "answer"], default="none")
+    lm_recover.add_argument(
+        "--response-loss-mode",
+        choices=["none", "auto", "assistant", "answer"],
+        default="none",
+    )
     lm_recover.add_argument("--append-eos", action="store_true")
     lm_recover.add_argument("--train-scope", default="all")
     lm_recover.add_argument("--dtype", default="float32")
@@ -2293,15 +2856,25 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_head.add_argument("output")
     xfamily_head.add_argument("--ridge", type=float, default=1e-2)
     xfamily_head.add_argument("--head-blend-alpha", type=float, default=1.0)
-    xfamily_head.add_argument("--head-calibration-mode", choices=["full", "mean-shift", "answer-margin"], default="full")
-    xfamily_head.add_argument("--response-loss-mode", choices=["none", "auto", "assistant", "answer"], default="auto")
+    xfamily_head.add_argument(
+        "--head-calibration-mode",
+        choices=["full", "mean-shift", "answer-margin"],
+        default="full",
+    )
+    xfamily_head.add_argument(
+        "--response-loss-mode",
+        choices=["none", "auto", "assistant", "answer"],
+        default="auto",
+    )
     xfamily_head.add_argument("--answer-first-token-margin", type=float, default=1.0)
     xfamily_head.add_argument("--answer-first-token-max-negatives", type=int, default=8)
     xfamily_head.add_argument("--answer-first-token-top-negatives", type=int, default=0)
     xfamily_head.add_argument("--answer-margin-steps", type=int, default=3)
     xfamily_head.add_argument("--max-length", type=int, default=128)
     xfamily_head.add_argument("--max-calibration-rows", type=int, default=2048)
-    xfamily_head.add_argument("--projected-vocab-max-source-tokens", type=int, default=6)
+    xfamily_head.add_argument(
+        "--projected-vocab-max-source-tokens", type=int, default=6
+    )
     xfamily_head.add_argument("--dtype", default="float16")
     xfamily_head.add_argument("--candidate-dtype", default="float32")
     xfamily_head.add_argument("--device", default="cuda:0")
@@ -2310,7 +2883,10 @@ def build_parser() -> argparse.ArgumentParser:
     xfamily_head.add_argument("--max-calibration-texts", type=int)
     xfamily_head.set_defaults(func=cmd_hf_xfamily_calibrate_head)
 
-    vision = sub.add_parser("vision-probe", help="Run simple image-description/OCR probes for an HF vision-language model.")
+    vision = sub.add_parser(
+        "vision-probe",
+        help="Run simple image-description/OCR probes for an HF vision-language model.",
+    )
     vision.add_argument("model")
     vision.add_argument("output")
     vision.add_argument("--image-dir", default="runs/vision-images")
@@ -2320,7 +2896,9 @@ def build_parser() -> argparse.ArgumentParser:
     vision.add_argument("--max-new-tokens", type=int, default=80)
     vision.set_defaults(func=cmd_vision_probe)
 
-    vision_chain = sub.add_parser("vision-chain", help="Chain a small VLM observation into a text model answer.")
+    vision_chain = sub.add_parser(
+        "vision-chain", help="Chain a small VLM observation into a text model answer."
+    )
     vision_chain.add_argument("output")
     vision_chain.add_argument("--vision-model", required=True)
     vision_chain.add_argument("--text-model", required=True)
@@ -2331,7 +2909,10 @@ def build_parser() -> argparse.ArgumentParser:
     vision_chain.add_argument("--max-new-tokens", type=int, default=80)
     vision_chain.set_defaults(func=cmd_vision_chain)
 
-    native_vlm = sub.add_parser("native-vlm-demo", help="Train/evaluate a tiny native raw-patch + text-token transformer.")
+    native_vlm = sub.add_parser(
+        "native-vlm-demo",
+        help="Train/evaluate a tiny native raw-patch + text-token transformer.",
+    )
     native_vlm.add_argument("output_dir")
     native_vlm.add_argument("--steps", type=int, default=600)
     native_vlm.add_argument("--batch-size", type=int, default=64)
@@ -2344,7 +2925,10 @@ def build_parser() -> argparse.ArgumentParser:
     native_vlm.add_argument("--lr", type=float, default=3e-4)
     native_vlm.set_defaults(func=cmd_native_vlm_demo)
 
-    hf_vision_graft = sub.add_parser("hf-vision-graft", help="Train/evaluate a raw-patch vision graft on an HF causal LM parent.")
+    hf_vision_graft = sub.add_parser(
+        "hf-vision-graft",
+        help="Train/evaluate a raw-patch vision graft on an HF causal LM parent.",
+    )
     hf_vision_graft.add_argument("model")
     hf_vision_graft.add_argument("output_dir")
     hf_vision_graft.add_argument("--steps", type=int, default=300)
@@ -2357,7 +2941,11 @@ def build_parser() -> argparse.ArgumentParser:
     hf_vision_graft.add_argument("--train-last-layers", type=int, default=0)
     hf_vision_graft.add_argument("--trust-remote-code", action="store_true")
     hf_vision_graft.add_argument("--max-new-tokens", type=int, default=6)
-    hf_vision_graft.add_argument("--task-keys", default=None, help="Comma-separated subset: square_color,circle_color,digit.")
+    hf_vision_graft.add_argument(
+        "--task-keys",
+        default=None,
+        help="Comma-separated subset: square_color,circle_color,digit.",
+    )
     hf_vision_graft.add_argument("--grad-clip", type=float, default=1.0)
     hf_vision_graft.add_argument("--text-retention-file")
     hf_vision_graft.add_argument("--text-retention-weight", type=float, default=0.0)
@@ -2369,7 +2957,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def cmd_toy(args: argparse.Namespace) -> dict[str, object]:
-    model = random_toy_model(parse_widths(args.widths), seed=args.seed, activation=args.activation)
+    model = random_toy_model(
+        parse_widths(args.widths), seed=args.seed, activation=args.activation
+    )
     save_model(model, args.output)
     return {"output": str(Path(args.output)), "model": model.summary()}
 
@@ -2380,7 +2970,9 @@ def cmd_inspect(args: argparse.Namespace) -> dict[str, object]:
 
 def cmd_shrink(args: argparse.Namespace) -> dict[str, object]:
     model = load_model(args.input)
-    hidden_widths = _resolve_widths(model, args.widths, args.target_params, args.min_width)
+    hidden_widths = _resolve_widths(
+        model, args.widths, args.target_params, args.min_width
+    )
     output = resize_to_widths(model, hidden_widths)
     save_model(output, args.output)
     return {"input": model.summary(), "output": output.summary()}
@@ -2392,10 +2984,14 @@ def cmd_expand(args: argparse.Namespace) -> dict[str, object]:
     if args.widths:
         hidden_widths = parse_widths(args.widths)
     elif args.target_params:
-        hidden_widths = plan_widths_for_target_params(output, args.target_params).hidden_widths
+        hidden_widths = plan_widths_for_target_params(
+            output, args.target_params
+        ).hidden_widths
     else:
         hidden_widths = output.hidden_widths
-    output = resize_to_widths(output, hidden_widths, seed=args.seed, noise_std=args.noise_std)
+    output = resize_to_widths(
+        output, hidden_widths, seed=args.seed, noise_std=args.noise_std
+    )
     save_model(output, args.output)
     return {"input": model.summary(), "output": output.summary()}
 
@@ -2406,10 +3002,16 @@ def cmd_merge(args: argparse.Namespace) -> dict[str, object]:
         hidden_widths = parse_widths(args.widths)
     elif args.target_params:
         base = models[0]
-        hidden_widths = plan_widths_for_target_params(base, args.target_params).hidden_widths
+        hidden_widths = plan_widths_for_target_params(
+            base, args.target_params
+        ).hidden_widths
     else:
         hidden_widths = None
-    weights = None if args.weights is None else [float(part.strip()) for part in args.weights.split(",") if part.strip()]
+    weights = (
+        None
+        if args.weights is None
+        else [float(part.strip()) for part in args.weights.split(",") if part.strip()]
+    )
     output = merge_models(
         models,
         target_hidden_widths=hidden_widths,
@@ -2426,7 +3028,11 @@ def cmd_merge(args: argparse.Namespace) -> dict[str, object]:
 def cmd_hf_merge(args: argparse.Namespace) -> dict[str, object]:
     from neural_forge.hf_tools import same_shape_merge
 
-    weights = None if args.weights is None else [float(part.strip()) for part in args.weights.split(",") if part.strip()]
+    weights = (
+        None
+        if args.weights is None
+        else [float(part.strip()) for part in args.weights.split(",") if part.strip()]
+    )
     return same_shape_merge(
         model_ids=args.models,
         output_dir=args.output,
@@ -2505,7 +3111,9 @@ def cmd_hf_rank_layer_folds(args: argparse.Namespace) -> dict[str, object]:
         torch_dtype=args.dtype,
         device=args.device,
         trust_remote_code=args.trust_remote_code,
-        calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+        calibration_texts=_load_recovery_calibration_texts(
+            args.calibration_file, args.max_calibration_texts
+        ),
     )
 
 
@@ -2641,9 +3249,13 @@ def cmd_hf_search_compress(args: argparse.Namespace) -> dict[str, object]:
 
     width_ratios = None
     if args.width_ratios:
-        width_ratios = [float(part.strip()) for part in args.width_ratios.split(",") if part.strip()]
+        width_ratios = [
+            float(part.strip()) for part in args.width_ratios.split(",") if part.strip()
+        ]
     layer_group_specs = [_parse_layer_groups(spec) for spec in args.layer_groups]
-    depth_methods = [part.strip() for part in args.depth_methods.split(",") if part.strip()]
+    depth_methods = [
+        part.strip() for part in args.depth_methods.split(",") if part.strip()
+    ]
     return search_merge_first_compression(
         source_model=args.source_model,
         output_dir=args.output_dir,
@@ -2705,12 +3317,18 @@ def cmd_hf_donor_project_init(args: argparse.Namespace) -> dict[str, object]:
         args.activation_calibration_file,
         args.activation_max_calibration_texts,
     )
-    donor_models = [part.strip() for part in str(args.donor_model).split(",") if part.strip()]
+    donor_models = [
+        part.strip() for part in str(args.donor_model).split(",") if part.strip()
+    ]
     if not donor_models:
         raise ValueError("--donor-model must include at least one donor.")
     donor_weights = None
     if args.donor_weights:
-        donor_weights = [float(part.strip()) for part in str(args.donor_weights).split(",") if part.strip()]
+        donor_weights = [
+            float(part.strip())
+            for part in str(args.donor_weights).split(",")
+            if part.strip()
+        ]
     common_kwargs = {
         "target_config_model": args.target_config_model,
         "target_base_model": args.target_base_model,
@@ -2896,7 +3514,9 @@ def _post_init_gate_decision(
         )
 
     add_min_check("behavior_pass_rate", "behavior_pass_rate", min_behavior_pass_rate)
-    add_min_check("generation_pass_rate", "generation_pass_rate", min_generation_pass_rate)
+    add_min_check(
+        "generation_pass_rate", "generation_pass_rate", min_generation_pass_rate
+    )
     add_min_check("choice_accuracy", "choice_accuracy", min_choice_accuracy)
     add_max_check("perplexity_mean", "perplexity_mean", max_ppl)
     return {
@@ -3037,9 +3657,13 @@ def cmd_hf_xfamily_compress(args: argparse.Namespace) -> dict[str, object]:
 
     width_ratios = None
     if args.width_ratios:
-        width_ratios = [float(part.strip()) for part in args.width_ratios.split(",") if part.strip()]
+        width_ratios = [
+            float(part.strip()) for part in args.width_ratios.split(",") if part.strip()
+        ]
     layer_group_specs = [_parse_layer_groups(spec) for spec in args.layer_groups]
-    depth_methods = [part.strip() for part in args.depth_methods.split(",") if part.strip()]
+    depth_methods = [
+        part.strip() for part in args.depth_methods.split(",") if part.strip()
+    ]
     recovery_calibration_texts = _load_recovery_calibration_texts(
         args.recover_calibration_file,
         args.recover_max_calibration_texts,
@@ -3135,7 +3759,9 @@ def cmd_hf_recover(args: argparse.Namespace) -> dict[str, object]:
         candidate_train_dtype=args.candidate_train_dtype,
         device=args.device,
         trust_remote_code=args.trust_remote_code,
-        calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+        calibration_texts=_load_recovery_calibration_texts(
+            args.calibration_file, args.max_calibration_texts
+        ),
         response_loss_mode=args.response_loss_mode,
         append_eos=args.append_eos,
         grad_clip=args.grad_clip,
@@ -3226,7 +3852,9 @@ def cmd_hf_xfamily_recover(args: argparse.Namespace) -> dict[str, object]:
         candidate_torch_dtype=args.candidate_dtype,
         device=args.device,
         trust_remote_code=args.trust_remote_code,
-        calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+        calibration_texts=_load_recovery_calibration_texts(
+            args.calibration_file, args.max_calibration_texts
+        ),
         calibration_order=args.calibration_order,
         grad_clip=args.grad_clip,
         report_interval=args.report_interval,
@@ -3260,7 +3888,9 @@ def cmd_hf_reconstruct_folded(args: argparse.Namespace) -> dict[str, object]:
         torch_dtype=args.dtype,
         device=args.device,
         trust_remote_code=args.trust_remote_code,
-        calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+        calibration_texts=_load_recovery_calibration_texts(
+            args.calibration_file, args.max_calibration_texts
+        ),
     )
 
 
@@ -3302,7 +3932,9 @@ def cmd_hf_xfamily_reconstruct(args: argparse.Namespace) -> dict[str, object]:
         candidate_torch_dtype=args.candidate_dtype,
         device=args.device,
         trust_remote_code=args.trust_remote_code,
-        calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+        calibration_texts=_load_recovery_calibration_texts(
+            args.calibration_file, args.max_calibration_texts
+        ),
     )
 
 
@@ -3347,7 +3979,9 @@ def cmd_hf_functional_fold(args: argparse.Namespace) -> dict[str, object]:
         candidate_torch_dtype=args.candidate_dtype,
         device=args.device,
         trust_remote_code=args.trust_remote_code,
-        calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+        calibration_texts=_load_recovery_calibration_texts(
+            args.calibration_file, args.max_calibration_texts
+        ),
     )
 
 
@@ -3378,6 +4012,22 @@ def cmd_hf_qwen_pair_compose(args: argparse.Namespace) -> dict[str, object]:
         max_fit_rows=args.max_tokens_per_layer,
         min_validation_rows=args.fit_gate_min_validation_rows,
         basis_max_rows=args.max_anchors,
+        donor_layer_spans=(
+            None
+            if args.donor_layer_spans is None
+            else _parse_layer_groups(args.donor_layer_spans)
+        ),
+        adaptive_depth_spans=args.adaptive_depth_spans,
+        adaptive_depth_critical_quantile=args.adaptive_depth_critical_quantile,
+        adaptive_depth_causal_magnitude_weight=(
+            args.adaptive_depth_causal_magnitude_weight
+        ),
+        adaptive_depth_incompatibility_weight=(
+            args.adaptive_depth_incompatibility_weight
+        ),
+        adaptive_depth_reconstruction_weight=(
+            args.adaptive_depth_reconstruction_weight
+        ),
         basis_mode=args.basis_mode,
         basis_preprocess=args.basis_preprocess,
         activation_domain_balance=args.activation_domain_balance,
@@ -3406,9 +4056,7 @@ def cmd_hf_qwen_pair_compose(args: argparse.Namespace) -> dict[str, object]:
         rollout_gate_max_longest_run_regression=(
             args.rollout_gate_max_longest_run_regression
         ),
-        rollout_gate_min_action_count_ratio=(
-            args.rollout_gate_min_action_count_ratio
-        ),
+        rollout_gate_min_action_count_ratio=(args.rollout_gate_min_action_count_ratio),
         head_validation_vocab_rows=args.head_validation_vocab_rows,
         torch_dtype=args.dtype,
         target_torch_dtype=args.candidate_dtype,
@@ -3417,15 +4065,94 @@ def cmd_hf_qwen_pair_compose(args: argparse.Namespace) -> dict[str, object]:
     )
 
 
+def cmd_hf_qwen_build_target(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_tools import _torch_and_transformers
+    from neural_forge.hf_qwen_target import (
+        Qwen3ShapeConstraints,
+        materialize_qwen3_target,
+        plan_qwen3_target,
+    )
+
+    _torch, transformers = _torch_and_transformers()
+    tokenizer = transformers.AutoTokenizer.from_pretrained(
+        args.tokenizer_model,
+        trust_remote_code=args.trust_remote_code,
+    )
+    source_config_id = args.source_config or args.tokenizer_model
+    source_config = transformers.AutoConfig.from_pretrained(
+        source_config_id,
+        trust_remote_code=args.trust_remote_code,
+    )
+
+    def integer_values(text):
+        if text is None:
+            return None
+        values = [int(part.strip()) for part in str(text).split(",") if part.strip()]
+        if not values:
+            raise ValueError("Qwen target shape lists must not be empty.")
+        return values
+
+    defaults = Qwen3ShapeConstraints()
+    constraints = Qwen3ShapeConstraints(
+        hidden_sizes=(
+            integer_values(args.hidden_sizes)
+            if args.hidden_sizes is not None
+            else defaults.hidden_sizes
+        ),
+        intermediate_sizes=integer_values(args.intermediate_sizes),
+        layer_counts=(
+            integer_values(args.layer_counts)
+            if args.layer_counts is not None
+            else defaults.layer_counts
+        ),
+        query_head_counts=(
+            integer_values(args.query_head_counts)
+            if args.query_head_counts is not None
+            else defaults.query_head_counts
+        ),
+        key_value_head_counts=(
+            integer_values(args.key_value_head_counts)
+            if args.key_value_head_counts is not None
+            else defaults.key_value_head_counts
+        ),
+        head_dims=(
+            integer_values(args.head_dims)
+            if args.head_dims is not None
+            else defaults.head_dims
+        ),
+        intermediate_multiple=args.intermediate_multiple,
+        require_attention_width_equals_hidden_size=(
+            args.require_attention_width_equals_hidden
+        ),
+    )
+    plan = plan_qwen3_target(
+        args.target_params,
+        tokenizer=tokenizer,
+        constraints=constraints,
+        tie_word_embeddings=args.tie_word_embeddings,
+        attention_bias=args.attention_bias,
+        source_config=source_config,
+        source_parameter_count=args.source_param_count,
+        source_name=args.source_name or source_config_id,
+        require_under_budget=args.require_under_budget,
+    )
+    artifact = materialize_qwen3_target(
+        plan,
+        args.output,
+        tokenizer,
+        seed=args.seed,
+        torch_dtype=args.dtype,
+    )
+    return {"plan": plan["report"], "artifact": artifact}
+
+
 def cmd_hf_qwen_logit_head(args: argparse.Namespace) -> dict[str, object]:
     from neural_forge.hf_qwen_logit_head import (
         transplant_qwen_logit_head_checkpoint,
     )
 
     alphas = [
-        float(part.strip())
-        for part in args.candidate_alphas.split(",")
-        if part.strip()
+        float(part.strip()) for part in args.candidate_alphas.split(",") if part.strip()
     ]
     return transplant_qwen_logit_head_checkpoint(
         donor_model=args.source_model,
@@ -3554,7 +4281,9 @@ def cmd_hf_xfamily_block_recover(args: argparse.Namespace) -> dict[str, object]:
         candidate_torch_dtype=args.candidate_dtype,
         device=args.device,
         trust_remote_code=args.trust_remote_code,
-        calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+        calibration_texts=_load_recovery_calibration_texts(
+            args.calibration_file, args.max_calibration_texts
+        ),
         calibration_order=args.calibration_order,
         grad_clip=args.grad_clip,
         nonfinite_step_policy=args.nonfinite_step_policy,
@@ -3577,7 +4306,9 @@ def cmd_hf_xfamily_chain_anchor_compress(args: argparse.Namespace) -> dict[str, 
         anchor_model=args.anchor_model,
         output_dir=args.output,
         stages=args.stages,
-        calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+        calibration_texts=_load_recovery_calibration_texts(
+            args.calibration_file, args.max_calibration_texts
+        ),
         eval_suite=args.eval_suite,
         max_text_evals=args.max_text_evals,
         max_choice_probes=args.max_choice_probes,
@@ -3826,7 +4557,9 @@ def cmd_hf_lm_recover(args: argparse.Namespace) -> dict[str, object]:
         torch_dtype=args.dtype,
         device=args.device,
         trust_remote_code=args.trust_remote_code,
-        calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+        calibration_texts=_load_recovery_calibration_texts(
+            args.calibration_file, args.max_calibration_texts
+        ),
         response_loss_mode=args.response_loss_mode,
         append_eos=args.append_eos,
         grad_clip=args.grad_clip,
@@ -3863,7 +4596,9 @@ def cmd_hf_xfamily_calibrate_head(args: argparse.Namespace) -> dict[str, object]
         candidate_torch_dtype=args.candidate_dtype,
         device=args.device,
         trust_remote_code=args.trust_remote_code,
-        calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+        calibration_texts=_load_recovery_calibration_texts(
+            args.calibration_file, args.max_calibration_texts
+        ),
     )
 
 
@@ -3929,7 +4664,9 @@ def cmd_hf_vision_graft(args: argparse.Namespace) -> dict[str, object]:
         train_last_layers=args.train_last_layers,
         trust_remote_code=args.trust_remote_code,
         max_new_tokens=args.max_new_tokens,
-        task_keys=None if args.task_keys is None else [part.strip() for part in args.task_keys.split(",") if part.strip()],
+        task_keys=None
+        if args.task_keys is None
+        else [part.strip() for part in args.task_keys.split(",") if part.strip()],
         grad_clip=args.grad_clip,
         text_retention_file=args.text_retention_file,
         text_retention_weight=args.text_retention_weight,
@@ -3938,13 +4675,17 @@ def cmd_hf_vision_graft(args: argparse.Namespace) -> dict[str, object]:
     )
 
 
-def _resolve_widths(model, widths_text: str | None, target_params: int | None, min_width: int) -> list[int]:
+def _resolve_widths(
+    model, widths_text: str | None, target_params: int | None, min_width: int
+) -> list[int]:
     if widths_text and target_params:
         raise ValueError("Use --widths or --target-params, not both.")
     if widths_text:
         return parse_widths(widths_text)
     if target_params:
-        return plan_widths_for_target_params(model, target_params, min_width=min_width).hidden_widths
+        return plan_widths_for_target_params(
+            model, target_params, min_width=min_width
+        ).hidden_widths
     raise ValueError("Provide --widths or --target-params.")
 
 
@@ -3959,7 +4700,9 @@ def _parse_layer_groups(text: str) -> list[list[int]]:
     return groups
 
 
-def _load_recovery_calibration_texts(path: str | None, max_texts: int | None) -> list[str] | None:
+def _load_recovery_calibration_texts(
+    path: str | None, max_texts: int | None
+) -> list[str] | None:
     if path is None:
         return None
     from neural_forge.hf_recovery import load_calibration_texts

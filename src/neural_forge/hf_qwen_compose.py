@@ -1,10 +1,11 @@
-"""Zero-gradient ordered pair composition for Qwen causal language models.
+"""Zero-gradient ordered span composition for Qwen causal language models.
 
-The initializer in this module compresses two consecutive donor decoder blocks
-into one child block.  It is deliberately narrower than the generic folding
-utilities: both models must expose Qwen-style GQA attention, SwiGLU MLPs, and a
-shared tokenizer.  The narrow contract lets the implementation preserve head
-and channel structure instead of treating every tensor as an anonymous array.
+The initializer in this module compresses one or two consecutive donor decoder
+blocks into one child block.  It is deliberately narrower than the generic
+folding utilities: both models must expose Qwen-style GQA attention, SwiGLU
+MLPs, and a shared tokenizer.  The narrow contract lets the implementation
+preserve head and channel structure instead of treating every tensor as an
+anonymous array.
 
 No optimizer is constructed and no backward pass is performed. Post-softmax
 attention paths and post-SwiGLU neuron paths are merged through their consumer
@@ -92,6 +93,32 @@ class LayerPair(NamedTuple):
     def donor_layers(self) -> tuple[int, int]:
         return self.donor_first, self.donor_second
 
+    @property
+    def span_width(self) -> int:
+        return 2
+
+
+class LayerSpan(NamedTuple):
+    """One ordered contiguous donor span assigned to a child layer."""
+
+    target_layer: int
+    donor_layers: tuple[int, ...]
+
+    @property
+    def donor_first(self) -> int:
+        return self.donor_layers[0]
+
+    @property
+    def donor_second(self) -> int | None:
+        return self.donor_layers[1] if len(self.donor_layers) == 2 else None
+
+    @property
+    def span_width(self) -> int:
+        return len(self.donor_layers)
+
+
+LayerSpanLike = LayerPair | LayerSpan
+
 
 def _compose_progress(event: str, **fields: Any) -> None:
     details = " ".join(f"{key}={value}" for key, value in sorted(fields.items()))
@@ -122,6 +149,85 @@ def build_contiguous_pair_plan(
             f"got {donor_count} and {target_count}."
         )
     return [LayerPair(j, 2 * j, 2 * j + 1) for j in range(target_count)]
+
+
+def build_contiguous_span_plan(
+    donor_layer_count: int,
+    target_layer_count: int,
+    donor_layer_spans: Sequence[Sequence[int]] | None = None,
+) -> list[LayerSpan]:
+    """Return an exact ordered donor cover made of deterministic 1-2 layer spans.
+
+    Without an explicit plan, the extra donor layers are assigned to two-layer
+    spans first and the remaining target layers receive singleton spans.  An
+    explicit plan is authoritative but must cover ``range(donor_layer_count)``
+    exactly once, in order, with one nonempty contiguous span per target layer.
+    """
+
+    donor_count = int(donor_layer_count)
+    target_count = int(target_layer_count)
+    if donor_count <= 0 or target_count <= 0:
+        raise ValueError("donor_layer_count and target_layer_count must be positive.")
+    if donor_layer_spans is None:
+        if donor_count < target_count or donor_count > 2 * target_count:
+            raise ValueError(
+                "Ordered span composition requires one or two donor layers per "
+                "target layer (target_layer_count <= donor_layer_count <= 2 * "
+                f"target_layer_count); got {donor_count} and {target_count}."
+            )
+        pair_count = donor_count - target_count
+        widths = [2] * pair_count + [1] * (target_count - pair_count)
+        normalized: list[tuple[int, ...]] = []
+        start = 0
+        for width in widths:
+            normalized.append(tuple(range(start, start + width)))
+            start += width
+    else:
+        try:
+            raw_spans = list(donor_layer_spans)
+        except TypeError as exc:
+            raise ValueError("donor_layer_spans must be a sequence of spans.") from exc
+        if len(raw_spans) != target_count:
+            raise ValueError(
+                "donor_layer_spans must contain exactly one span per target layer; "
+                f"expected {target_count}, got {len(raw_spans)}."
+            )
+        normalized = []
+        for target_layer, raw_span in enumerate(raw_spans):
+            if isinstance(raw_span, (str, bytes)):
+                raise ValueError(
+                    f"donor_layer_spans[{target_layer}] must be a sequence of layer indices."
+                )
+            try:
+                values = list(raw_span)
+            except TypeError as exc:
+                raise ValueError(
+                    f"donor_layer_spans[{target_layer}] must be a sequence of layer indices."
+                ) from exc
+            if len(values) not in {1, 2}:
+                raise ValueError(
+                    "Qwen ordered span composition currently supports only spans of "
+                    "length 1 or 2; "
+                    f"donor_layer_spans[{target_layer}] has length {len(values)}."
+                )
+            indices = []
+            for value in values:
+                if isinstance(value, bool) or not isinstance(value, int):
+                    raise ValueError("donor layer indices must be integers, not bools.")
+                indices.append(int(value))
+            normalized.append(tuple(indices))
+
+    flattened = [index for span in normalized for index in span]
+    expected = list(range(donor_count))
+    if flattened != expected:
+        raise ValueError(
+            "donor_layer_spans must be an exact ordered contiguous cover of every "
+            f"donor layer; expected {expected}, got {flattened}."
+        )
+    return [
+        LayerSpan(target_layer=target_layer, donor_layers=span)
+        for target_layer, span in enumerate(normalized)
+    ]
 
 
 def contiguous_donor_pairs(
@@ -215,7 +321,7 @@ def build_gqa_group_packing(
     available_source_groups = width * donor_kv
     if target_kv % width:
         raise ValueError(
-            "Intact pair packing requires target_key_value_heads to be divisible by pair_width."
+            "Intact span packing requires target_key_value_heads to be divisible by pair_width."
         )
     groups_per_layer = target_kv // width
     if groups_per_layer <= 0 or groups_per_layer > donor_kv:
@@ -279,6 +385,7 @@ def build_gqa_group_packing(
                 "target_kv_head": target_kv_head,
                 "source": {
                     "pair_offset": pair_offset,
+                    "span_offset": pair_offset,
                     "donor_kv_head": donor_kv_head,
                     "donor_kv_slice": [
                         donor_kv_head * coordinate_count,
@@ -295,6 +402,7 @@ def build_gqa_group_packing(
     covered_q_coordinates = target_q * coordinate_count
     return {
         "pair_width": width,
+        "span_width": width,
         "head_dim": coordinate_count,
         "donor_query_heads": donor_q,
         "donor_key_value_heads": donor_kv,
@@ -408,6 +516,7 @@ def build_coupled_swiglu_packing(
         )
     return {
         "pair_width": width,
+        "span_width": width,
         "donor_intermediate_size": donor_size,
         "target_intermediate_size": target_size,
         "source_channel_count": source_count,
@@ -1084,16 +1193,19 @@ def _pack_attention_pair(
     activation_scores: Sequence[Any] | None = None,
     path_fold: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if len(donor_specs) != 2:
-        raise ValueError("Attention pair packing requires exactly two donor layers.")
-    if activation_scores is not None and len(activation_scores) != 2:
-        raise ValueError("Attention activation scores must cover both donor layers.")
+    span_width = len(donor_specs)
+    if span_width not in {1, 2}:
+        raise ValueError("Attention span packing requires one or two donor layers.")
+    if activation_scores is not None and len(activation_scores) != span_width:
+        raise ValueError("Attention activation scores must cover every donor layer.")
+    packing_unit = "pair" if span_width == 2 else "singleton-span"
+    reason_suffix = "pair-pack" if span_width == 2 else "singleton-span-pack"
     first = donor_specs[0]
     for item in donor_specs[1:]:
         for key in ("query_heads", "key_value_heads", "head_dim", "hidden_size"):
             if int(item[key]) != int(first[key]):
                 raise ValueError(
-                    f"Donor attention geometry differs across the pair at {key}."
+                    f"Donor attention geometry differs across the span at {key}."
                 )
     if int(first["head_dim"]) != int(target_spec["head_dim"]):
         raise ValueError(
@@ -1101,15 +1213,18 @@ def _pack_attention_pair(
         )
     donor_kv = int(first["key_value_heads"])
     target_kv = int(target_spec["key_value_heads"])
-    if target_kv % 2:
-        raise ValueError("A two-layer pair requires an even target KV-head count.")
-    groups_per_layer = target_kv // 2
+    if target_kv % span_width:
+        raise ValueError(
+            "Intact attention span packing requires the target KV-head count to "
+            f"be divisible by the span width; got {target_kv} and {span_width}."
+        )
+    groups_per_layer = target_kv // span_width
     ratio = int(first["query_heads"]) // donor_kv
     head_dim = int(first["head_dim"])
     donor_hidden = int(first["hidden_size"])
     selected_kv_heads = []
     selection_scores = []
-    for pair_offset, spec in enumerate(donor_specs):
+    for span_offset, spec in enumerate(donor_specs):
         q_rows = (
             spec["q"].weight.detach().reshape(donor_kv, ratio, head_dim, donor_hidden)
         )
@@ -1125,7 +1240,7 @@ def _pack_attention_pair(
             + o_columns.float().pow(2).mean(dim=(0, 2, 3)).sqrt()
         )
         supplied_scores = (
-            None if activation_scores is None else activation_scores[pair_offset]
+            None if activation_scores is None else activation_scores[span_offset]
         )
         if supplied_scores is not None:
             supplied_scores = supplied_scores.detach().to(
@@ -1147,7 +1262,8 @@ def _pack_attention_pair(
         selected_kv_heads.extend(chosen)
         selection_scores.append(
             {
-                "pair_offset": pair_offset,
+                "pair_offset": span_offset,
+                "span_offset": span_offset,
                 "scores": [float(value) for value in scores.detach().cpu()],
                 "selected": [int(value) for value in chosen],
                 "criterion": criterion,
@@ -1165,7 +1281,7 @@ def _pack_attention_pair(
         target_spec["query_heads"],
         target_spec["key_value_heads"],
         head_dim=first["head_dim"],
-        pair_width=2,
+        pair_width=span_width,
         selected_kv_heads=selected_kv_heads,
     )
     input_basis_device = input_basis.to(
@@ -1205,13 +1321,15 @@ def _pack_attention_pair(
                     source_bias[source_start:source_end].detach().to(torch.float32)
                 )
         tracker.write(
-            target_spec[name].weight, projected, f"gqa-intact-selected-{name}-pair-pack"
+            target_spec[name].weight,
+            projected,
+            f"gqa-intact-selected-{name}-{reason_suffix}",
         )
         if target_bias is not None:
             tracker.write(
                 target_bias,
                 projected_bias,
-                f"gqa-intact-selected-{name}-bias-pair-pack",
+                f"gqa-intact-selected-{name}-bias-{reason_suffix}",
             )
 
     projected_output = torch.zeros_like(target_spec["o"].weight, dtype=torch.float32)
@@ -1233,7 +1351,7 @@ def _pack_attention_pair(
                     .to(torch.float32)
                 )
             )
-        output_reason = "gqa-intact-selected-o-pair-pack"
+        output_reason = f"gqa-intact-selected-o-{reason_suffix}"
     else:
         aggregate = path_fold["aggregate_output_coefficients"].to(
             device=projected_output.device, dtype=torch.float32
@@ -1248,9 +1366,9 @@ def _pack_attention_pair(
             end = start + ratio * head_dim
             projected_output[:, start:end] = aggregate[target_group].t()
         output_reason = (
-            "post-softmax-all-path-merged-o-pair-pack"
+            f"post-softmax-all-path-merged-o-{reason_suffix}"
             if path_fold["materialization_mode"] == "all-path-aggregate"
-            else "post-softmax-selected-native-o-pair-pack"
+            else f"post-softmax-selected-native-o-{reason_suffix}"
         )
     tracker.write(target_spec["o"].weight, projected_output, output_reason)
     target_o_bias = getattr(target_spec["o"], "bias", None)
@@ -1270,7 +1388,7 @@ def _pack_attention_pair(
             )
         else:
             packed_bias = torch.zeros_like(target_o_bias, dtype=torch.float32)
-        tracker.write(target_o_bias, packed_bias, "gqa-intact-o-bias-pair-pack")
+        tracker.write(target_o_bias, packed_bias, f"gqa-intact-o-bias-{reason_suffix}")
 
     for norm_name in ("q_norm", "k_norm"):
         target_norm = target_spec.get(norm_name)
@@ -1289,8 +1407,10 @@ def _pack_attention_pair(
             tracker.write(
                 target_norm.weight,
                 torch.stack(source_weights, dim=0).mean(dim=0),
-                f"{norm_name}-pair-prior",
+                f"{norm_name}-{packing_unit}-prior",
             )
+    plan["span_width"] = span_width
+    plan["composition_unit"] = packing_unit
     plan["selection"] = selection_scores
     if path_fold is not None:
         plan["selection_source"] = (
@@ -1312,17 +1432,20 @@ def _pack_swiglu_pair(
     activation_scores: Sequence[Any] | None = None,
     path_fold: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if len(donor_specs) != 2:
-        raise ValueError("SwiGLU pair packing requires exactly two donor layers.")
+    span_width = len(donor_specs)
+    if span_width not in {1, 2}:
+        raise ValueError("SwiGLU span packing requires one or two donor layers.")
+    packing_unit = "pair" if span_width == 2 else "singleton-span"
+    reason_suffix = "pair-pack" if span_width == 2 else "singleton-span-pack"
     donor_intermediate = int(donor_specs[0]["intermediate_size"])
     donor_hidden = int(donor_specs[0]["hidden_size"])
     if any(
         int(item["intermediate_size"]) != donor_intermediate for item in donor_specs
     ):
-        raise ValueError("Donor SwiGLU intermediate sizes differ across the pair.")
+        raise ValueError("Donor SwiGLU intermediate sizes differ across the span.")
     target_intermediate = int(target_spec["intermediate_size"])
-    if activation_scores is not None and len(activation_scores) != 2:
-        raise ValueError("SwiGLU activation scores must cover both donor layers.")
+    if activation_scores is not None and len(activation_scores) != span_width:
+        raise ValueError("SwiGLU activation scores must cover every donor layer.")
     channel_scores = []
     score_criterion = "gate-up-down-weight-rms-product"
     for pair_offset, item in enumerate(donor_specs):
@@ -1347,7 +1470,7 @@ def _pack_swiglu_pair(
     plan = build_coupled_swiglu_packing(
         donor_intermediate,
         target_intermediate,
-        pair_width=2,
+        pair_width=span_width,
         channel_scores=channel_scores,
         selected_sources=(None if path_fold is None else path_fold["selected_sources"]),
     )
@@ -1369,7 +1492,7 @@ def _pack_swiglu_pair(
         tracker.write(
             target_spec[name].weight,
             projected_rows,
-            f"coupled-swiglu-intact-selected-{name}-pair-pack",
+            f"coupled-swiglu-intact-selected-{name}-{reason_suffix}",
         )
         target_bias = getattr(target_spec[name], "bias", None)
         if target_bias is not None:
@@ -1385,7 +1508,7 @@ def _pack_swiglu_pair(
             tracker.write(
                 target_bias,
                 packed_bias,
-                f"coupled-swiglu-intact-selected-{name}-bias-pair-pack",
+                f"coupled-swiglu-intact-selected-{name}-bias-{reason_suffix}",
             )
 
     projected_down = torch.zeros_like(target_spec["down"].weight, dtype=torch.float32)
@@ -1399,7 +1522,7 @@ def _pack_swiglu_pair(
                 .detach()
                 .to(torch.float32)
             )
-        down_reason = "coupled-swiglu-intact-selected-down-pair-pack"
+        down_reason = f"coupled-swiglu-intact-selected-down-{reason_suffix}"
     else:
         aggregate = path_fold["aggregate_output_coefficients"].to(
             device=projected_down.device, dtype=torch.float32
@@ -1411,9 +1534,9 @@ def _pack_swiglu_pair(
             )
         projected_down.copy_(aggregate.t())
         down_reason = (
-            "post-swiglu-all-path-merged-down-pair-pack"
+            f"post-swiglu-all-path-merged-down-{reason_suffix}"
             if path_fold["materialization_mode"] == "all-path-aggregate"
-            else "post-swiglu-selected-native-down-pair-pack"
+            else f"post-swiglu-selected-native-down-{reason_suffix}"
         )
     tracker.write(
         target_spec["down"].weight,
@@ -1438,8 +1561,10 @@ def _pack_swiglu_pair(
         tracker.write(
             target_down_bias,
             packed_bias,
-            "coupled-swiglu-intact-selected-down-bias-pair-pack",
+            f"coupled-swiglu-intact-selected-down-bias-{reason_suffix}",
         )
+    plan["span_width"] = span_width
+    plan["composition_unit"] = packing_unit
     plan["selection_criterion"] = score_criterion
     if path_fold is not None:
         plan["selection_criterion"] = (
@@ -1845,7 +1970,7 @@ def _assert_complete_trace(rows: Sequence[Any | None], name: str) -> None:
 def _trace_donor_post_nonlinearity_paths(
     torch,
     donor,
-    pair_plan: Sequence[LayerPair],
+    pair_plan: Sequence[LayerSpanLike],
     batches: Sequence[dict[str, Any]],
     prompt_count: int,
     max_rows: int,
@@ -1862,18 +1987,12 @@ def _trace_donor_post_nonlinearity_paths(
             "pair_input": _new_prompt_slots(prompt_count),
             "pair_output": _new_prompt_slots(prompt_count),
             "attention": (
-                [
-                    _new_prompt_slots(prompt_count),
-                    _new_prompt_slots(prompt_count),
-                ]
+                [_new_prompt_slots(prompt_count) for _ in pair.donor_layers]
                 if capture_paths
                 else None
             ),
             "mlp": (
-                [
-                    _new_prompt_slots(prompt_count),
-                    _new_prompt_slots(prompt_count),
-                ]
+                [_new_prompt_slots(prompt_count) for _ in pair.donor_layers]
                 if capture_paths
                 else None
             ),
@@ -1900,8 +2019,8 @@ def _trace_donor_post_nonlinearity_paths(
 
     for pair in pair_plan:
         pair_trace = traces[int(pair.target_layer)]
-        first_layer = donor_layers[int(pair.donor_first)]
-        second_layer = donor_layers[int(pair.donor_second)]
+        first_layer = donor_layers[int(pair.donor_layers[0])]
+        final_layer = donor_layers[int(pair.donor_layers[-1])]
         handles.append(
             first_layer.register_forward_pre_hook(capture_pre(pair_trace["pair_input"]))
         )
@@ -1921,7 +2040,7 @@ def _trace_donor_post_nonlinearity_paths(
             return hook
 
         handles.append(
-            second_layer.register_forward_hook(
+            final_layer.register_forward_hook(
                 capture_pair_output(pair_trace["pair_output"])
             )
         )
@@ -1976,7 +2095,7 @@ def _trace_donor_post_nonlinearity_paths(
         _assert_complete_trace(
             pair_trace["pair_output"], f"donor_pair_{pair_index}_output"
         )
-        for name in (() if not capture_paths else ("attention", "mlp")):
+        for name in () if not capture_paths else ("attention", "mlp"):
             for pair_offset, rows in enumerate(pair_trace[name]):
                 _assert_complete_trace(
                     rows,
@@ -1999,32 +2118,38 @@ def _aligned_pair_path_rows(
     paths_per_layer: int,
     channels_per_path: int | None,
 ) -> tuple[Any, list[int]]:
-    if len(partitions) != 2:
-        raise ValueError("Ordered path decomposition requires two donor partitions.")
+    if len(partitions) not in {1, 2}:
+        raise ValueError(
+            "Ordered path decomposition requires one or two donor partitions."
+        )
     rows = []
     prompt_ids = []
-    for prompt_index, (first, second) in enumerate(
-        zip(partitions[0], partitions[1], strict=True)
-    ):
-        if int(first.shape[0]) != int(second.shape[0]):
-            raise ValueError("Donor pair path traces do not align by token row.")
+    for prompt_index, prompt_partitions in enumerate(zip(*partitions, strict=True)):
+        first = prompt_partitions[0]
+        if any(
+            int(partition.shape[0]) != int(first.shape[0])
+            for partition in prompt_partitions[1:]
+        ):
+            raise ValueError("Donor span path traces do not align by token row.")
         if channels_per_path is None:
             expected = int(paths_per_layer)
-            if int(first.shape[1]) != expected or int(second.shape[1]) != expected:
+            if any(
+                int(partition.shape[1]) != expected for partition in prompt_partitions
+            ):
                 raise ValueError("SwiGLU path trace width does not match the donor.")
-            combined = torch.cat((first, second), dim=1)
+            combined = torch.cat(prompt_partitions, dim=1)
         else:
             expected = int(paths_per_layer) * int(channels_per_path)
-            if int(first.shape[1]) != expected or int(second.shape[1]) != expected:
+            if any(
+                int(partition.shape[1]) != expected for partition in prompt_partitions
+            ):
                 raise ValueError("Attention path trace width does not match the donor.")
             combined = torch.cat(
-                (
-                    first.reshape(
-                        int(first.shape[0]), paths_per_layer, channels_per_path
-                    ),
-                    second.reshape(
-                        int(second.shape[0]), paths_per_layer, channels_per_path
-                    ),
+                tuple(
+                    partition.reshape(
+                        int(partition.shape[0]), paths_per_layer, channels_per_path
+                    )
+                    for partition in prompt_partitions
                 ),
                 dim=1,
             )
@@ -2079,7 +2204,7 @@ def _canonical_observable_basis(torch, encoder, fallback_basis, target_hidden: i
 
 def _build_logit_observable_pair_bases(
     torch,
-    pair_plan: Sequence[LayerPair],
+    pair_plan: Sequence[LayerSpanLike],
     path_traces: dict[str, Any],
     global_basis,
     texts: Sequence[str],
@@ -2156,6 +2281,8 @@ def _build_logit_observable_pair_bases(
             "output": materialized[output_name],
             "input_name": input_name,
             "output_name": output_name,
+            "donor_layers": [int(index) for index in pair.donor_layers],
+            "span_width": len(pair.donor_layers),
         }
     return pair_bases, {
         "enabled": True,
@@ -2164,6 +2291,16 @@ def _build_logit_observable_pair_bases(
         "materialization": materialization_report,
         "coordinate_policy": "layer-varying-orthonormal-predictive-subspaces",
         "chart_means_materialized": False,
+        "span_boundaries": [
+            {
+                "target_layer": int(pair.target_layer),
+                "donor_layers": [int(index) for index in pair.donor_layers],
+                "span_width": len(pair.donor_layers),
+                "input_chart": pair_bases[int(pair.target_layer)]["input_name"],
+                "output_chart": pair_bases[int(pair.target_layer)]["output_name"],
+            }
+            for pair in ordered_pairs
+        ],
     }
 
 
@@ -2225,7 +2362,7 @@ def _build_post_nonlinearity_path_folds(
     torch,
     donor,
     target,
-    pair_plan: Sequence[LayerPair],
+    pair_plan: Sequence[LayerSpanLike],
     path_traces: dict[str, Any],
     basis,
     pair_bases: dict[int, dict[str, Any]] | None,
@@ -2255,13 +2392,15 @@ def _build_post_nonlinearity_path_folds(
     folds: dict[int, dict[str, Any]] = {}
     for pair in pair_plan:
         target_index = int(pair.target_layer)
+        donor_layer_indices = [int(index) for index in pair.donor_layers]
+        span_width = len(donor_layer_indices)
         basis_cpu = (
             (basis if pair_bases is None else pair_bases[target_index]["output"])
             .detach()
             .cpu()
             .to(torch.float32)
         )
-        source_specs = [donor_specs[index] for index in pair.donor_layers]
+        source_specs = [donor_specs[index] for index in donor_layer_indices]
         target_spec = target_specs[target_index]
         donor_kv = int(source_specs[0]["key_value_heads"])
         ratio = int(source_specs[0]["query_heads"]) // donor_kv
@@ -2287,19 +2426,27 @@ def _build_post_nonlinearity_path_folds(
             attention_directions.append(grouped.matmul(basis_cpu))
         attention_directions = torch.cat(attention_directions, dim=0)
         attention_domains = [prompt_domains[index] for index in attention_prompt_ids]
-        attention_quota = target_kv // 2
+        if target_kv % span_width:
+            raise ValueError(
+                "Nonlinear attention path quotas require the target KV-head count "
+                f"to be divisible by span width; got {target_kv} and {span_width}."
+            )
+        attention_quota = target_kv // span_width
+        attention_quotas = {
+            donor_layer: attention_quota for donor_layer in donor_layer_indices
+        }
         attention_result = compress_post_nonlinearity_paths(
             attention_features,
             attention_directions,
             prompt_ids=attention_prompt_ids,
             domain_labels=attention_domains,
-            donor_layer_ids=[int(pair.donor_first)] * donor_kv
-            + [int(pair.donor_second)] * donor_kv,
+            donor_layer_ids=[
+                donor_layer
+                for donor_layer in donor_layer_indices
+                for _ in range(donor_kv)
+            ],
             target_path_count=target_kv,
-            minimum_paths_per_layer={
-                int(pair.donor_first): attention_quota,
-                int(pair.donor_second): target_kv - attention_quota,
-            },
+            minimum_paths_per_layer=attention_quotas,
             path_kind="attention",
             ridge=ridge,
             validation_fraction=validation_fraction,
@@ -2322,6 +2469,12 @@ def _build_post_nonlinearity_path_folds(
             min_relative_improvement=min_relative_improvement,
             max_cosine_drop=max_cosine_drop,
         )
+        attention_result["report"]["span_provenance"] = {
+            "target_layer": target_index,
+            "donor_layers": donor_layer_indices,
+            "span_width": span_width,
+            "minimum_paths_per_layer": attention_quotas,
+        }
         attention_result["report"]["materialization_gate"] = attention_gate
         attention_coefficients = (
             attention_result["aggregate_output_coefficients"]
@@ -2350,19 +2503,28 @@ def _build_post_nonlinearity_path_folds(
             dim=0,
         )
         mlp_domains = [prompt_domains[index] for index in mlp_prompt_ids]
-        first_quota = target_intermediate // 2
+        base_quota, quota_remainder = divmod(target_intermediate, span_width)
+        mlp_quota_values = [base_quota] * (span_width - quota_remainder) + [
+            base_quota + 1
+        ] * quota_remainder
+        if any(quota <= 0 for quota in mlp_quota_values):
+            raise ValueError(
+                "Nonlinear SwiGLU path quotas require at least one target channel "
+                "per donor layer in the span."
+            )
+        mlp_quotas = dict(zip(donor_layer_indices, mlp_quota_values, strict=True))
         mlp_result = compress_post_nonlinearity_paths(
             mlp_features,
             mlp_directions,
             prompt_ids=mlp_prompt_ids,
             domain_labels=mlp_domains,
-            donor_layer_ids=[int(pair.donor_first)] * donor_intermediate
-            + [int(pair.donor_second)] * donor_intermediate,
+            donor_layer_ids=[
+                donor_layer
+                for donor_layer in donor_layer_indices
+                for _ in range(donor_intermediate)
+            ],
             target_path_count=target_intermediate,
-            minimum_paths_per_layer={
-                int(pair.donor_first): first_quota,
-                int(pair.donor_second): target_intermediate - first_quota,
-            },
+            minimum_paths_per_layer=mlp_quotas,
             path_kind="swiglu",
             ridge=ridge,
             validation_fraction=validation_fraction,
@@ -2385,6 +2547,12 @@ def _build_post_nonlinearity_path_folds(
             min_relative_improvement=min_relative_improvement,
             max_cosine_drop=max_cosine_drop,
         )
+        mlp_result["report"]["span_provenance"] = {
+            "target_layer": target_index,
+            "donor_layers": donor_layer_indices,
+            "span_width": span_width,
+            "minimum_paths_per_layer": mlp_quotas,
+        }
         mlp_result["report"]["materialization_gate"] = mlp_gate
         mlp_coefficients = (
             mlp_result["aggregate_output_coefficients"]
@@ -2421,6 +2589,8 @@ def _build_post_nonlinearity_path_folds(
             "qwen_pair_path_decomposition_done",
             current=target_index + 1,
             total=len(pair_plan),
+            donor_layers=",".join(str(index) for index in donor_layer_indices),
+            span_width=span_width,
             attention_paths=target_kv,
             mlp_paths=target_intermediate,
         )
@@ -2430,7 +2600,7 @@ def _build_post_nonlinearity_path_folds(
 def _trace_donor_pair_targets(
     torch,
     donor,
-    pair_plan: Sequence[LayerPair],
+    pair_plan: Sequence[LayerSpanLike],
     structural_pair_plans: dict[int, dict[str, Any]],
     batches: Sequence[dict[str, Any]],
     basis,
@@ -2445,11 +2615,11 @@ def _trace_donor_pair_targets(
             "attention_endpoint": _new_prompt_slots(prompt_count),
             "pair_endpoint": _new_prompt_slots(prompt_count),
             "producer_partitions": {
-                name: [_new_prompt_slots(prompt_count), _new_prompt_slots(prompt_count)]
+                name: [_new_prompt_slots(prompt_count) for _ in item.donor_layers]
                 for name in ("q", "k", "v", "gate", "up")
             },
             "residual_partitions": {
-                name: [_new_prompt_slots(prompt_count), _new_prompt_slots(prompt_count)]
+                name: [_new_prompt_slots(prompt_count) for _ in item.donor_layers]
                 for name in ("attention", "mlp")
             },
         }
@@ -2508,9 +2678,9 @@ def _trace_donor_pair_targets(
             )
         )
         pair_plans = structural_pair_plans[target_index]
-        first_layer = donor_layers[int(pair.donor_first)]
-        second_layer = donor_layers[int(pair.donor_second)]
-        post_attention_norm = getattr(second_layer, "post_attention_layernorm", None)
+        first_layer = donor_layers[int(pair.donor_layers[0])]
+        final_layer = donor_layers[int(pair.donor_layers[-1])]
+        post_attention_norm = getattr(final_layer, "post_attention_layernorm", None)
         if post_attention_norm is None:
             raise ValueError("Donor Qwen layer is missing post_attention_layernorm.")
         handles.append(
@@ -2527,7 +2697,7 @@ def _trace_donor_pair_targets(
             )
         )
         handles.append(
-            second_layer.register_forward_hook(
+            final_layer.register_forward_hook(
                 capture_post(
                     pair_traces[int(pair.target_layer)]["pair_endpoint"], output_basis
                 )
@@ -2841,7 +3011,7 @@ def _prompt_trace_metrics(
 def _fit_ordered_child_pair(
     torch,
     target,
-    pair: LayerPair,
+    pair: LayerSpanLike,
     donor_targets: dict[str, Any],
     batches: Sequence[dict[str, Any]],
     prompt_count: int,
@@ -2855,6 +3025,9 @@ def _fit_ordered_child_pair(
     min_validation_rows: int,
     tracker: _ParameterWriteTracker,
 ) -> dict[str, Any]:
+    donor_layer_indices = [int(index) for index in pair.donor_layers]
+    span_width = len(donor_layer_indices)
+    composition_unit = "pair" if span_width == 2 else "singleton-span"
     layer = list(_decoder_layer_container(target)[2])[int(pair.target_layer)]
     spec = _qwen_layer_spec(layer)
     attention_snapshots = {
@@ -3022,7 +3195,14 @@ def _fit_ordered_child_pair(
         max_fitted_relative_rmse=max_fitted_relative_rmse,
     )
     _commit_linear_fit(
-        tracker, spec["down"], mlp_fit, "validated-composed-pair-endpoint-fit"
+        tracker,
+        spec["down"],
+        mlp_fit,
+        (
+            "validated-composed-pair-endpoint-fit"
+            if span_width == 2
+            else "validated-composed-singleton-span-endpoint-fit"
+        ),
     )
 
     after_mlp = _trace_child_layer(
@@ -3094,26 +3274,51 @@ def _fit_ordered_child_pair(
                 tracker,
                 spec[name],
                 snapshot,
-                f"pair-validation-revert-attention-{name}",
+                f"{composition_unit}-validation-revert-attention-{name}",
             )
         for name, snapshot in mlp_snapshots.items():
             _restore_linear(
                 tracker,
                 spec[name],
                 snapshot,
-                f"pair-validation-revert-mlp-{name}",
+                f"{composition_unit}-validation-revert-mlp-{name}",
             )
+    span_validation = {
+        "accepted": bool(accepted),
+        "reverted": not bool(accepted),
+        "reason": reason,
+        "prior": prior_metrics,
+        "fitted": fitted_metrics,
+        **gate_report,
+    }
     return {
         "target_layer": int(pair.target_layer),
-        "donor_layers": [int(pair.donor_first), int(pair.donor_second)],
-        "pair_order": "first-then-second",
+        "donor_layers": donor_layer_indices,
+        "span_width": span_width,
+        "composition_unit": composition_unit,
+        "contiguous": donor_layer_indices
+        == list(range(donor_layer_indices[0], donor_layer_indices[-1] + 1)),
+        "pair_order": "first-then-second" if span_width == 2 else "single-layer",
+        "span_order": "ordered-contiguous",
         "sequential_prefix_trace": True,
         "child_prefix_policy": "current-child-depth-prefix-under-fixed-token-sequence",
         "trace_distribution": "fixed-calibration-teacher-forced",
         "student_generated_token_prefixes": False,
-        "attention_target": "sum-of-both-donor-attention-residual-deltas",
-        "mlp_target": "sum-of-both-donor-mlp-residual-deltas",
-        "block_target": "projected-donor-composed-pair-endpoint",
+        "attention_target": (
+            "sum-of-both-donor-attention-residual-deltas"
+            if span_width == 2
+            else "singleton-donor-attention-residual-delta"
+        ),
+        "mlp_target": (
+            "sum-of-both-donor-mlp-residual-deltas"
+            if span_width == 2
+            else "singleton-donor-mlp-residual-delta"
+        ),
+        "block_target": (
+            "projected-donor-composed-pair-endpoint"
+            if span_width == 2
+            else "projected-donor-singleton-span-endpoint"
+        ),
         "parameter_average_used_as_target": False,
         "attention_producer_fits": {
             name: fit["report"] for name, fit in attention_producer_fits.items()
@@ -3149,14 +3354,8 @@ def _fit_ordered_child_pair(
             },
         },
         "mlp_output_fit": mlp_fit["report"],
-        "pair_validation": {
-            "accepted": bool(accepted),
-            "reverted": not bool(accepted),
-            "reason": reason,
-            "prior": prior_metrics,
-            "fitted": fitted_metrics,
-            **gate_report,
-        },
+        "span_validation": span_validation,
+        "pair_validation": span_validation,
     }
 
 
@@ -3412,6 +3611,10 @@ def _public_basis_report(basis_descriptor: dict[str, Any]) -> dict[str, Any]:
 def _packing_summary(plan: dict[str, Any], kind: str) -> dict[str, Any]:
     if kind == "attention":
         return {
+            "pair_width": int(plan["pair_width"]),
+            "span_width": int(plan.get("span_width", plan["pair_width"])),
+            "composition_unit": plan.get("composition_unit"),
+            "donor_layers": [int(index) for index in plan.get("donor_layers", [])],
             "head_dim": int(plan["head_dim"]),
             "donor_query_heads": int(plan["donor_query_heads"]),
             "donor_key_value_heads": int(plan["donor_key_value_heads"]),
@@ -3427,6 +3630,7 @@ def _packing_summary(plan: dict[str, Any], kind: str) -> dict[str, Any]:
             ),
             "nonlinear_head_averaging": bool(plan["nonlinear_head_averaging"]),
             "covered_query_coordinates": int(plan["covered_query_coordinates"]),
+            "groups_per_donor_layer": int(plan["groups_per_donor_layer"]),
             "selection": plan.get("selection", []),
             "selection_source": plan.get("selection_source"),
             "post_nonlinearity_path_decomposition": plan.get(
@@ -3437,6 +3641,10 @@ def _packing_summary(plan: dict[str, Any], kind: str) -> dict[str, Any]:
         plan["source_to_target"], separators=(",", ":")
     ).encode("ascii")
     return {
+        "pair_width": int(plan["pair_width"]),
+        "span_width": int(plan.get("span_width", plan["pair_width"])),
+        "composition_unit": plan.get("composition_unit"),
+        "donor_layers": [int(index) for index in plan.get("donor_layers", [])],
         "donor_intermediate_size": int(plan["donor_intermediate_size"]),
         "target_intermediate_size": int(plan["target_intermediate_size"]),
         "source_channel_count": int(plan["source_channel_count"]),
@@ -3467,7 +3675,7 @@ def _initialize_structured_priors(
     target,
     source_tokenizer,
     target_tokenizer,
-    pair_plan: Sequence[LayerPair],
+    pair_plan: Sequence[LayerSpanLike],
     basis,
     tracker: _ParameterWriteTracker,
     activation_profile: dict[str, Any] | None = None,
@@ -3481,10 +3689,10 @@ def _initialize_structured_priors(
     pair_reports = []
     pair_plans = {}
     for pair in pair_plan:
-        source_specs = [
-            donor_specs[int(pair.donor_first)],
-            donor_specs[int(pair.donor_second)],
-        ]
+        donor_layer_indices = [int(index) for index in pair.donor_layers]
+        span_width = len(donor_layer_indices)
+        composition_unit = "pair" if span_width == 2 else "singleton-span"
+        source_specs = [donor_specs[index] for index in donor_layer_indices]
         attention_scores = None
         mlp_scores = None
         if activation_profile is not None:
@@ -3522,13 +3730,15 @@ def _initialize_structured_priors(
             activation_scores=mlp_scores,
             path_fold=pair_path_fold.get("mlp"),
         )
+        attention_plan["donor_layers"] = donor_layer_indices
+        mlp_plan["donor_layers"] = donor_layer_indices
         _project_norm_prior(
             torch,
             [item["input_norm"] for item in source_specs],
             child_spec["input_norm"],
             input_basis,
             tracker,
-            "pair-input-rmsnorm-prior",
+            f"{composition_unit}-input-rmsnorm-prior",
         )
         _project_norm_prior(
             torch,
@@ -3536,12 +3746,16 @@ def _initialize_structured_priors(
             child_spec["post_attention_norm"],
             output_basis,
             tracker,
-            "pair-post-attention-rmsnorm-prior",
+            f"{composition_unit}-post-attention-rmsnorm-prior",
         )
         pair_reports.append(
             {
                 "target_layer": int(pair.target_layer),
-                "donor_layers": [int(pair.donor_first), int(pair.donor_second)],
+                "donor_layers": donor_layer_indices,
+                "span_width": span_width,
+                "composition_unit": composition_unit,
+                "contiguous": donor_layer_indices
+                == list(range(donor_layer_indices[0], donor_layer_indices[-1] + 1)),
                 "input_basis": pair_basis.get("input_name", "global"),
                 "output_basis": pair_basis.get("output_name", "global"),
                 "attention": _packing_summary(attention_plan, "attention"),
@@ -3617,9 +3831,11 @@ def _initialize_structured_priors(
     )
     return {
         "pairs": pair_reports,
+        "spans": pair_reports,
         "embedding": embedding_report,
         "head": head_report,
         "pair_plans": pair_plans,
+        "span_plans": pair_plans,
         "embedding_token_mapping": embedding_mapping,
         "head_token_mapping": head_mapping,
     }
@@ -3631,7 +3847,8 @@ def _validate_model_contract(
     expected_donor_layers: int | None,
     expected_target_layers: int | None,
     required_head_dim: int | None,
-) -> tuple[list[LayerPair], list[dict[str, Any]], list[dict[str, Any]]]:
+    donor_layer_spans: Sequence[Sequence[int]] | None = None,
+) -> tuple[list[LayerSpanLike], list[dict[str, Any]], list[dict[str, Any]]]:
     donor_layers = list(_decoder_layer_container(donor)[2])
     target_layers = list(_decoder_layer_container(target)[2])
     if expected_donor_layers is not None and len(donor_layers) != int(
@@ -3646,7 +3863,14 @@ def _validate_model_contract(
         raise ValueError(
             f"Expected {int(expected_target_layers)} target layers, found {len(target_layers)}."
         )
-    pair_plan = build_contiguous_pair_plan(len(donor_layers), len(target_layers))
+    if donor_layer_spans is None and len(donor_layers) == 2 * len(target_layers):
+        pair_plan: list[LayerSpanLike] = build_contiguous_pair_plan(
+            len(donor_layers), len(target_layers)
+        )
+    else:
+        pair_plan = build_contiguous_span_plan(
+            len(donor_layers), len(target_layers), donor_layer_spans
+        )
     donor_specs = [_qwen_layer_spec(layer) for layer in donor_layers]
     target_specs = [_qwen_layer_spec(layer) for layer in target_layers]
     donor_reference = donor_specs[0]
@@ -3692,6 +3916,12 @@ def initialize_qwen_pair_composition_models(
     target_tokenizer=None,
     *,
     calibration_texts: Sequence[str] | None = None,
+    donor_layer_spans: Sequence[Sequence[int]] | None = None,
+    adaptive_depth_spans: bool = False,
+    adaptive_depth_critical_quantile: float = 0.8,
+    adaptive_depth_causal_magnitude_weight: float = 1.0,
+    adaptive_depth_incompatibility_weight: float = 1.0,
+    adaptive_depth_reconstruction_weight: float = 1.0,
     residual_basis=None,
     ridge: float = 1e-3,
     validation_fraction: float = 0.25,
@@ -3736,7 +3966,7 @@ def initialize_qwen_pair_composition_models(
     donor_name: str | None = None,
     target_name: str | None = None,
 ) -> dict[str, Any]:
-    """Initialize already-loaded donor and blank target Qwen model objects."""
+    """Initialize loaded Qwen models from ordered singleton-or-pair donor spans."""
 
     torch = _require_torch()
     texts = [str(item) for item in (calibration_texts or DEFAULT_COMPOSITION_TEXTS)]
@@ -3761,6 +3991,28 @@ def initialize_qwen_pair_composition_models(
         )
     if min_relative_improvement < 0 or max_cosine_drop < 0:
         raise ValueError("validation gate thresholds must be non-negative.")
+    if adaptive_depth_spans and donor_layer_spans is not None:
+        raise ValueError(
+            "adaptive_depth_spans and explicit donor_layer_spans are mutually exclusive."
+        )
+    if not 0.0 <= float(adaptive_depth_critical_quantile) <= 1.0:
+        raise ValueError("adaptive_depth_critical_quantile must be in [0, 1].")
+    for name, value in (
+        (
+            "adaptive_depth_causal_magnitude_weight",
+            adaptive_depth_causal_magnitude_weight,
+        ),
+        (
+            "adaptive_depth_incompatibility_weight",
+            adaptive_depth_incompatibility_weight,
+        ),
+        (
+            "adaptive_depth_reconstruction_weight",
+            adaptive_depth_reconstruction_weight,
+        ),
+    ):
+        if not math.isfinite(float(value)) or float(value) < 0.0:
+            raise ValueError(f"{name} must be finite and non-negative.")
     if int(rollout_refold_rounds) < 0:
         raise ValueError("rollout_refold_rounds must be non-negative.")
     if rollout_refold_rounds and (
@@ -3769,7 +4021,9 @@ def initialize_qwen_pair_composition_models(
         or int(rollout_refold_batch_size) <= 0
         or int(rollout_gate_top_k) <= 0
     ):
-        raise ValueError("enabled rollout refold count and size limits must be positive.")
+        raise ValueError(
+            "enabled rollout refold count and size limits must be positive."
+        )
     if (
         not math.isfinite(float(rollout_gate_min_top1_gain))
         or float(rollout_gate_min_top1_gain) < 0.0
@@ -3831,6 +4085,7 @@ def initialize_qwen_pair_composition_models(
         expected_donor_layers,
         expected_target_layers,
         required_head_dim,
+        donor_layer_spans,
     )
     donor_hidden = int(donor_specs[0]["hidden_size"])
     target_hidden = int(target_specs[0]["hidden_size"])
@@ -3843,7 +4098,11 @@ def initialize_qwen_pair_composition_models(
             "Target embedding hidden size does not match decoder hidden size."
         )
     activation_profile = None
-    if residual_basis is None and basis_mode == "activation-pca":
+    adaptive_depth_report: dict[str, Any] = {"enabled": False}
+    needs_activation_profile = bool(adaptive_depth_spans) or (
+        residual_basis is None and basis_mode == "activation-pca"
+    )
+    if needs_activation_profile:
         from neural_forge.hf_xfamily import (
             _build_activation_hidden_basis,
             _collect_donor_axis_activation_scores,
@@ -3851,7 +4110,8 @@ def initialize_qwen_pair_composition_models(
 
         _compose_progress(
             "qwen_pair_activation_profile_start",
-            layers=len(pair_plan) * 2,
+            layers=sum(len(item.donor_layers) for item in pair_plan),
+            spans=len(pair_plan),
             prompts=len(texts),
             max_rows=basis_max_rows,
         )
@@ -3869,46 +4129,86 @@ def initialize_qwen_pair_composition_models(
             activation_subspace_rank=0,
             activation_domain_balance=activation_domain_balance,
         )
+        if adaptive_depth_spans:
+            from neural_forge.hf_qwen_span_costs import plan_qwen_activation_spans
+
+            adaptive_plan = plan_qwen_activation_spans(
+                activation_profile,
+                target_hidden,
+                len(target_specs),
+                max_span_length=2,
+                critical_quantile=adaptive_depth_critical_quantile,
+                causal_magnitude_weight=adaptive_depth_causal_magnitude_weight,
+                incompatibility_weight=adaptive_depth_incompatibility_weight,
+                reconstruction_weight=adaptive_depth_reconstruction_weight,
+            )
+            pair_plan = build_contiguous_span_plan(
+                len(donor_specs),
+                len(target_specs),
+                adaptive_plan["donor_layer_spans"],
+            )
+            adaptive_depth_report = {
+                "enabled": True,
+                "method": "activation-costed-global-contiguous-dynamic-programming",
+                "donor_layer_spans": [
+                    list(item) for item in adaptive_plan["donor_layer_spans"]
+                ],
+                "critical_layers": list(adaptive_plan["critical_layers"]),
+                "planning_provenance": adaptive_plan["planning_provenance"],
+                "planner_report": adaptive_plan["report"],
+                "span_cost_report": adaptive_plan["span_cost_estimate"]["report"],
+            }
+            _compose_progress(
+                "qwen_adaptive_depth_plan_done",
+                critical_layers=len(adaptive_plan["critical_layers"]),
+                paired_spans=sum(
+                    len(item) == 2 for item in adaptive_plan["donor_layer_spans"]
+                ),
+                spans=len(pair_plan),
+            )
         activation_rows = activation_profile.get("hidden_basis_rows")
         if activation_rows is None:
             raise RuntimeError(
                 "Activation profiling did not produce residual-basis rows."
             )
-        basis, activation_basis_report = _build_activation_hidden_basis(
-            torch,
-            activation_rows,
-            donor_hidden,
-            target_hidden,
-            preprocess=basis_preprocess,
-        )
-        basis_descriptor = _validate_residual_basis(
-            torch, basis, donor_hidden, target_hidden
-        )
-        basis_descriptor.update(
-            {
-                "kind": "activation-pca",
-                "scope": "global",
-                "activation_basis": activation_basis_report,
-                "activation_sampling": activation_profile.get("hidden_basis_sampling"),
-                "activation_domain_balance": activation_domain_balance,
-                "activation_domain_counts": activation_profile.get(
-                    "activation_domain_counts", {}
-                ),
-            }
-        )
-        _compose_progress(
-            "qwen_pair_activation_profile_done",
-            retained_energy=activation_basis_report.get("retained_energy"),
-            rows=activation_basis_report.get("rows"),
-        )
-    elif residual_basis is None:
+        if residual_basis is None and basis_mode == "activation-pca":
+            basis, activation_basis_report = _build_activation_hidden_basis(
+                torch,
+                activation_rows,
+                donor_hidden,
+                target_hidden,
+                preprocess=basis_preprocess,
+            )
+            basis_descriptor = _validate_residual_basis(
+                torch, basis, donor_hidden, target_hidden
+            )
+            basis_descriptor.update(
+                {
+                    "kind": "activation-pca",
+                    "scope": "global",
+                    "activation_basis": activation_basis_report,
+                    "activation_sampling": activation_profile.get(
+                        "hidden_basis_sampling"
+                    ),
+                    "activation_domain_balance": activation_domain_balance,
+                    "activation_domain_counts": activation_profile.get(
+                        "activation_domain_counts", {}
+                    ),
+                }
+            )
+            _compose_progress(
+                "qwen_pair_activation_profile_done",
+                retained_energy=activation_basis_report.get("retained_energy"),
+                rows=activation_basis_report.get("rows"),
+            )
+    if residual_basis is None and basis_mode != "activation-pca":
         basis_descriptor = build_global_residual_basis(
             donor.get_input_embeddings().weight,
             target_hidden,
             max_rows=basis_max_rows,
             torch_module=torch,
         )
-    else:
+    elif residual_basis is not None:
         basis_descriptor = _validate_residual_basis(
             torch,
             residual_basis,
@@ -3947,6 +4247,8 @@ def initialize_qwen_pair_composition_models(
             _compose_progress(
                 "qwen_pair_path_trace_start",
                 pairs=len(pair_plan),
+                spans=len(pair_plan),
+                donor_layers=sum(len(item.donor_layers) for item in pair_plan),
                 max_rows=path_decomposition_max_rows,
             )
             path_traces = _trace_donor_post_nonlinearity_paths(
@@ -4002,8 +4304,13 @@ def initialize_qwen_pair_composition_models(
             _compose_progress(
                 "qwen_pair_path_trace_done",
                 pairs=len(pair_plan),
+                spans=len(pair_plan),
             )
-        _compose_progress("qwen_pair_structural_init_start", pairs=len(pair_plan))
+        _compose_progress(
+            "qwen_pair_structural_init_start",
+            pairs=len(pair_plan),
+            spans=len(pair_plan),
+        )
         structural = _initialize_structured_priors(
             torch,
             donor,
@@ -4017,7 +4324,11 @@ def initialize_qwen_pair_composition_models(
             path_folds=path_folds,
             pair_bases=pair_bases,
         )
-        _compose_progress("qwen_pair_structural_init_done", pairs=len(pair_plan))
+        _compose_progress(
+            "qwen_pair_structural_init_done",
+            pairs=len(pair_plan),
+            spans=len(pair_plan),
+        )
         _compose_progress("qwen_pair_donor_trace_start", batches=len(batches))
         donor_traces = _trace_donor_pair_targets(
             torch,
@@ -4029,18 +4340,28 @@ def initialize_qwen_pair_composition_models(
             len(texts),
             pair_bases=pair_bases,
         )
-        _compose_progress("qwen_pair_donor_trace_done", pairs=len(pair_plan))
+        _compose_progress(
+            "qwen_pair_donor_trace_done", pairs=len(pair_plan), spans=len(pair_plan)
+        )
         donor.to("cpu")
         if str(device).startswith("cuda") and hasattr(torch, "cuda"):
             torch.cuda.empty_cache()
         layer_reports = []
         for pair in pair_plan:
+            donor_indices = [int(index) for index in pair.donor_layers]
+            progress_fields = {
+                "current": int(pair.target_layer) + 1,
+                "total": len(pair_plan),
+                "donor_layers": ",".join(str(index) for index in donor_indices),
+                "span_width": len(donor_indices),
+            }
+            if len(donor_indices) == 2:
+                progress_fields.update(
+                    donor_first=donor_indices[0], donor_second=donor_indices[1]
+                )
             _compose_progress(
                 "qwen_pair_fit_start",
-                current=int(pair.target_layer) + 1,
-                total=len(pair_plan),
-                donor_first=int(pair.donor_first),
-                donor_second=int(pair.donor_second),
+                **progress_fields,
             )
             layer_report = _fit_ordered_child_pair(
                 torch,
@@ -4064,6 +4385,8 @@ def initialize_qwen_pair_composition_models(
                 "qwen_pair_fit_done",
                 current=int(pair.target_layer) + 1,
                 total=len(pair_plan),
+                donor_layers=",".join(str(index) for index in donor_indices),
+                span_width=len(donor_indices),
                 accepted=bool(layer_report["pair_validation"]["accepted"]),
             )
         child_final_before = _trace_child_final_interface(
@@ -4170,15 +4493,9 @@ def initialize_qwen_pair_composition_models(
                 rollout_batch_size=int(rollout_refold_batch_size),
                 top_k=int(rollout_gate_top_k),
                 min_top1_gain=float(rollout_gate_min_top1_gain),
-                min_action_logprob_gain=float(
-                    rollout_gate_min_action_logprob_gain
-                ),
-                max_repetition_regression=float(
-                    rollout_gate_max_repetition_regression
-                ),
-                max_longest_run_regression=int(
-                    rollout_gate_max_longest_run_regression
-                ),
+                min_action_logprob_gain=float(rollout_gate_min_action_logprob_gain),
+                max_repetition_regression=float(rollout_gate_max_repetition_regression),
+                max_longest_run_regression=int(rollout_gate_max_longest_run_regression),
                 min_action_count_ratio=float(rollout_gate_min_action_count_ratio),
                 ridge=ridge,
                 validation_fraction=validation_fraction,
@@ -4224,9 +4541,58 @@ def initialize_qwen_pair_composition_models(
         artifact_report = _save_hidden_basis_artifact(
             torch, output_path, basis_descriptor
         )
+    pair_plan_report = []
+    span_plan_report = []
+    for item in pair_plan:
+        donor_indices = [int(index) for index in item.donor_layers]
+        contiguous = donor_indices == list(
+            range(donor_indices[0], donor_indices[-1] + 1)
+        )
+        pair_plan_report.append(
+            {
+                "target_layer": int(item.target_layer),
+                "donor_layers": donor_indices,
+                "contiguous": contiguous,
+            }
+        )
+        span_plan_report.append(
+            {
+                "target_layer": int(item.target_layer),
+                "donor_layers": donor_indices,
+                "span_width": len(donor_indices),
+                "contiguous": contiguous,
+                "composition_unit": (
+                    "pair" if len(donor_indices) == 2 else "singleton-span"
+                ),
+            }
+        )
+    all_pair_spans = all(item["span_width"] == 2 for item in span_plan_report)
+    span_plan_source = (
+        "explicit-exact-ordered-cover"
+        if donor_layer_spans is not None
+        else (
+            "activation-costed-global-contiguous-dynamic-programming"
+            if adaptive_depth_spans
+            else (
+                "legacy-contiguous-pairs"
+                if all_pair_spans
+                else "deterministic-pairs-first-contiguous-spans"
+            )
+        )
+    )
+    plan_formula = (
+        "(2j, 2j+1)" if all_pair_spans else "ordered contiguous spans of length 1 or 2"
+    )
     report = {
-        "schema": "neural-forge-qwen-ordered-pair-composition-v2",
+        "schema": (
+            "neural-forge-qwen-ordered-pair-composition-v2"
+            if all_pair_spans
+            else "neural-forge-qwen-ordered-span-composition-v3"
+        ),
         "operation": "initialize_qwen_pair_composition",
+        "composition_mode": (
+            "ordered-pair" if all_pair_spans else "ordered-singleton-pair-spans"
+        ),
         "donor_model": donor_name,
         "target_model": target_name,
         "zero_gradient": True,
@@ -4238,15 +4604,24 @@ def initialize_qwen_pair_composition_models(
         "unwritten_target_parameters": int(write_report["unwritten_target_parameters"]),
         "donor_layer_count": len(donor_specs),
         "target_layer_count": len(target_specs),
-        "pair_plan": [
-            {
-                "target_layer": int(item.target_layer),
-                "donor_layers": [int(item.donor_first), int(item.donor_second)],
-                "contiguous": int(item.donor_second) == int(item.donor_first) + 1,
-            }
-            for item in pair_plan
-        ],
-        "pair_plan_formula": "(2j, 2j+1)",
+        "pair_plan": pair_plan_report,
+        "span_plan": span_plan_report,
+        "donor_layer_spans": [item["donor_layers"] for item in span_plan_report],
+        "span_plan_source": span_plan_source,
+        "adaptive_depth_span_planning": adaptive_depth_report,
+        "span_plan_formula": plan_formula,
+        "pair_plan_formula": plan_formula,
+        "span_length_minimum": 1,
+        "span_length_maximum": 2,
+        "singleton_span_count": sum(
+            item["span_width"] == 1 for item in span_plan_report
+        ),
+        "pair_span_count": sum(item["span_width"] == 2 for item in span_plan_report),
+        "exact_ordered_donor_cover": [
+            index for item in span_plan_report for index in item["donor_layers"]
+        ]
+        == list(range(len(donor_specs))),
+        "progressive_folding_required_for_spans_over_two": True,
         "residual_basis": _public_basis_report(basis_descriptor),
         "residual_basis_artifact": artifact_report,
         "residual_basis_scope": (
@@ -4277,10 +4652,16 @@ def initialize_qwen_pair_composition_models(
         "path_trace": path_trace_report,
         "head_dim": int(donor_specs[0]["head_dim"]),
         "gqa_selected_full_head_coordinate_packing": True,
-        "gqa_all_donor_groups_preserved": False,
+        "gqa_all_donor_groups_preserved": all(
+            int(plan["attention"]["discarded_source_group_count"]) == 0
+            for plan in structural["pair_plans"].values()
+        ),
         "nonlinear_producer_parameter_averaging": False,
         "swiglu_gate_up_channel_coupling": True,
-        "swiglu_all_donor_channels_preserved": False,
+        "swiglu_all_donor_channels_preserved": all(
+            bool(plan["mlp"]["all_source_channels_packed"])
+            for plan in structural["pair_plans"].values()
+        ),
         "sequential_on_policy_child_prefix_tracing": False,
         "sequential_child_depth_prefix_retrace": True,
         "trace_distribution": "fixed-calibration-teacher-forced",
@@ -4305,6 +4686,7 @@ def initialize_qwen_pair_composition_models(
         ),
         "structural_initialization": {
             "pairs": structural["pairs"],
+            "spans": structural["spans"],
             "embedding": structural["embedding"],
             "head": structural["head"],
         },
@@ -4314,6 +4696,12 @@ def initialize_qwen_pair_composition_models(
         ),
         "reverted_pair_fits": sum(
             1 for item in layer_reports if bool(item["pair_validation"]["reverted"])
+        ),
+        "accepted_span_fits": sum(
+            1 for item in layer_reports if bool(item["span_validation"]["accepted"])
+        ),
+        "reverted_span_fits": sum(
+            1 for item in layer_reports if bool(item["span_validation"]["reverted"])
         ),
         "accepted_attention_producer_transactions": sum(
             1
@@ -4350,6 +4738,12 @@ def initialize_qwen_pair_composition(
     output_dir: str | Path,
     *,
     calibration_texts: Sequence[str] | None = None,
+    donor_layer_spans: Sequence[Sequence[int]] | None = None,
+    adaptive_depth_spans: bool = False,
+    adaptive_depth_critical_quantile: float = 0.8,
+    adaptive_depth_causal_magnitude_weight: float = 1.0,
+    adaptive_depth_incompatibility_weight: float = 1.0,
+    adaptive_depth_reconstruction_weight: float = 1.0,
     ridge: float = 1e-3,
     validation_fraction: float = 0.25,
     min_validation_prompts: int = 1,
@@ -4392,7 +4786,7 @@ def initialize_qwen_pair_composition(
     expected_target_layers: int | None = None,
     required_head_dim: int | None = None,
 ) -> dict[str, Any]:
-    """Load, initialize, validate, and save a 36-layer Qwen into an 18-layer blank Qwen."""
+    """Load, initialize, validate, and save an ordered Qwen span composition."""
 
     torch, transformers = _torch_and_transformers()
     donor_dtype = _dtype_from_name(torch, torch_dtype)
@@ -4425,6 +4819,12 @@ def initialize_qwen_pair_composition(
         source_tokenizer,
         target_tokenizer,
         calibration_texts=calibration_texts,
+        donor_layer_spans=donor_layer_spans,
+        adaptive_depth_spans=adaptive_depth_spans,
+        adaptive_depth_critical_quantile=adaptive_depth_critical_quantile,
+        adaptive_depth_causal_magnitude_weight=(adaptive_depth_causal_magnitude_weight),
+        adaptive_depth_incompatibility_weight=(adaptive_depth_incompatibility_weight),
+        adaptive_depth_reconstruction_weight=adaptive_depth_reconstruction_weight,
         ridge=ridge,
         validation_fraction=validation_fraction,
         min_validation_prompts=min_validation_prompts,
@@ -4446,9 +4846,7 @@ def initialize_qwen_pair_composition(
         path_decomposition_max_rows=path_decomposition_max_rows,
         path_decomposition_ridge=path_decomposition_ridge,
         path_decomposition_sketch_size=path_decomposition_sketch_size,
-        path_decomposition_interpolation_mode=(
-            path_decomposition_interpolation_mode
-        ),
+        path_decomposition_interpolation_mode=(path_decomposition_interpolation_mode),
         rollout_refold_rounds=rollout_refold_rounds,
         rollout_refold_max_prompts=rollout_refold_max_prompts,
         rollout_refold_max_new_tokens=rollout_refold_max_new_tokens,
@@ -4457,9 +4855,7 @@ def initialize_qwen_pair_composition(
         rollout_gate_top_k=rollout_gate_top_k,
         rollout_gate_min_top1_gain=rollout_gate_min_top1_gain,
         rollout_gate_min_action_logprob_gain=rollout_gate_min_action_logprob_gain,
-        rollout_gate_max_repetition_regression=(
-            rollout_gate_max_repetition_regression
-        ),
+        rollout_gate_max_repetition_regression=(rollout_gate_max_repetition_regression),
         rollout_gate_max_longest_run_regression=(
             rollout_gate_max_longest_run_regression
         ),
@@ -4500,7 +4896,10 @@ qwen_pair_composition_init = initialize_qwen_pair_composition
 __all__ = [
     "DEFAULT_COMPOSITION_TEXTS",
     "LayerPair",
+    "LayerSpan",
+    "LayerSpanLike",
     "build_contiguous_pair_plan",
+    "build_contiguous_span_plan",
     "build_coupled_swiglu_packing",
     "build_global_residual_basis",
     "build_gqa_group_packing",

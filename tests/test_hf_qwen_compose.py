@@ -8,12 +8,15 @@ import pytest
 from neural_forge.cli import build_parser
 import neural_forge.hf_qwen_compose as qwen_compose
 from neural_forge.hf_qwen_compose import (
+    LayerPair,
+    LayerSpan,
     _fit_linear_prompt_split,
     _packed_donor_attention_output,
     _packed_donor_mlp_output,
     _path_materialization_gate,
     _validation_gate,
     build_contiguous_pair_plan,
+    build_contiguous_span_plan,
     build_coupled_swiglu_packing,
     build_gqa_group_packing,
     composed_pair_endpoint,
@@ -120,6 +123,8 @@ def test_qwen_pair_compose_cli_matches_detached_launcher_surface(monkeypatch) ->
             "512",
             "--max-anchors",
             "2048",
+            "--donor-layer-spans",
+            "0+1,2",
             "--fit-gate-min-validation-rows",
             "32",
             "--no-observable-coordinates",
@@ -158,6 +163,7 @@ def test_qwen_pair_compose_cli_matches_detached_launcher_surface(monkeypatch) ->
     assert captured["target_model"] == "blank"
     assert captured["max_fit_rows"] == 512
     assert captured["basis_max_rows"] == 2048
+    assert captured["donor_layer_spans"] == [[0, 1], [2]]
     assert captured["min_validation_rows"] == 32
     assert captured["observable_coordinates"] is False
     assert captured["observable_coordinate_ridge"] == pytest.approx(0.002)
@@ -171,6 +177,59 @@ def test_qwen_pair_compose_cli_matches_detached_launcher_surface(monkeypatch) ->
     assert captured["calibration_texts"] == ["alpha", "beta", "gamma"]
 
 
+def test_qwen_pair_compose_cli_wires_adaptive_depth_planning(monkeypatch) -> None:
+    captured = {}
+
+    def fake_initialize(**kwargs):
+        captured.update(kwargs)
+        return {"zero_gradient": True}
+
+    monkeypatch.setattr(
+        qwen_compose, "initialize_qwen_pair_composition", fake_initialize
+    )
+    args = build_parser().parse_args(
+        [
+            "hf-qwen-pair-compose",
+            "donor",
+            "blank",
+            "out",
+            "--adaptive-depth-spans",
+            "--adaptive-depth-critical-quantile",
+            "0.7",
+            "--adaptive-depth-causal-magnitude-weight",
+            "2.0",
+            "--adaptive-depth-incompatibility-weight",
+            "3.0",
+            "--adaptive-depth-reconstruction-weight",
+            "4.0",
+        ]
+    )
+    monkeypatch.setattr(
+        "neural_forge.cli._load_recovery_calibration_texts",
+        lambda _path, _limit: ["alpha", "beta", "gamma"],
+    )
+
+    report = args.func(args)
+
+    assert report == {"zero_gradient": True}
+    assert captured["adaptive_depth_spans"] is True
+    assert captured["adaptive_depth_critical_quantile"] == pytest.approx(0.7)
+    assert captured["adaptive_depth_causal_magnitude_weight"] == pytest.approx(2.0)
+    assert captured["adaptive_depth_incompatibility_weight"] == pytest.approx(3.0)
+    assert captured["adaptive_depth_reconstruction_weight"] == pytest.approx(4.0)
+
+
+def test_adaptive_and_explicit_depth_spans_are_mutually_exclusive() -> None:
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        initialize_qwen_pair_composition_models(
+            None,
+            None,
+            None,
+            donor_layer_spans=((0, 1),),
+            adaptive_depth_spans=True,
+        )
+
+
 def test_pair_plan_is_exact_contiguous_36_to_18() -> None:
     plan = build_contiguous_pair_plan(36, 18)
 
@@ -182,6 +241,24 @@ def test_pair_plan_is_exact_contiguous_36_to_18() -> None:
 
     with pytest.raises(ValueError, match="exactly twice"):
         build_contiguous_pair_plan(35, 18)
+
+
+def test_span_plan_is_an_exact_ordered_cover_with_pair_compatibility() -> None:
+    pair_plan = build_contiguous_pair_plan(4, 2)
+    span_plan = build_contiguous_span_plan(3, 2, [(0, 1), (2,)])
+
+    assert all(isinstance(item, LayerPair) for item in pair_plan)
+    assert span_plan == [LayerSpan(0, (0, 1)), LayerSpan(1, (2,))]
+    assert [index for item in span_plan for index in item.donor_layers] == [0, 1, 2]
+    assert [item.span_width for item in span_plan] == [2, 1]
+    assert build_contiguous_span_plan(3, 2) == span_plan
+
+    with pytest.raises(ValueError, match="exactly one span per target layer"):
+        build_contiguous_span_plan(3, 2, [(0, 1)])
+    with pytest.raises(ValueError, match="exact ordered contiguous cover"):
+        build_contiguous_span_plan(3, 2, [(0,), (2,)])
+    with pytest.raises(ValueError, match="only spans of length 1 or 2"):
+        build_contiguous_span_plan(3, 1, [(0, 1, 2)])
 
 
 def test_keyword_domain_balanced_texts_prevents_prefix_domain_collapse() -> None:
@@ -704,8 +781,7 @@ def test_tiny_qwen_pair_composition_runs_end_to_end_on_current_child_prefix() ->
     assert all("attention_producer_fits" in item for item in report["layers"])
     assert all("mlp_producer_fits" in item for item in report["layers"])
     assert all(
-        item["attention_target"]
-        == "sum-of-both-donor-attention-residual-deltas"
+        item["attention_target"] == "sum-of-both-donor-attention-residual-deltas"
         for item in report["layers"]
     )
     assert all(
@@ -729,7 +805,17 @@ def test_tiny_qwen_pair_composition_runs_end_to_end_on_current_child_prefix() ->
     assert all(torch.isfinite(parameter).all() for parameter in target.parameters())
 
 
-def test_tiny_transformers_qwen_uses_real_layer_contract(tmp_path) -> None:
+@pytest.mark.parametrize(
+    ("donor_layer_count", "donor_layer_spans", "adaptive_depth_spans"),
+    [
+        pytest.param(4, None, False, id="legacy-pairs"),
+        pytest.param(3, ((0, 1), (2,)), False, id="mixed-pair-singleton"),
+        pytest.param(3, None, True, id="adaptive-mixed-spans"),
+    ],
+)
+def test_tiny_transformers_qwen_uses_real_layer_contract(
+    tmp_path, donor_layer_count, donor_layer_spans, adaptive_depth_spans
+) -> None:
     torch = pytest.importorskip("torch")
     transformers = pytest.importorskip("transformers")
 
@@ -782,7 +868,7 @@ def test_tiny_transformers_qwen_uses_real_layer_contract(tmp_path) -> None:
         )
         return transformers.Qwen3ForCausalLM(config)
 
-    donor = qwen(8, 12, 4, 4, 2)
+    donor = qwen(8, 12, donor_layer_count, 4, 2)
     target = qwen(4, 6, 2, 4, 2)
     tokenizer = Tokenizer()
     report = initialize_qwen_pair_composition_models(
@@ -791,6 +877,8 @@ def test_tiny_transformers_qwen_uses_real_layer_contract(tmp_path) -> None:
         tokenizer,
         tokenizer,
         calibration_texts=["alpha", "bravo", "charlie", "delta", "echo"],
+        donor_layer_spans=donor_layer_spans,
+        adaptive_depth_spans=adaptive_depth_spans,
         validation_fraction=0.2,
         min_train_prompts=1,
         max_length=12,
@@ -805,7 +893,7 @@ def test_tiny_transformers_qwen_uses_real_layer_contract(tmp_path) -> None:
         rollout_refold_batch_size=2,
         rollout_refold_candidate_alphas=(1.0, 0.5),
         rollout_gate_min_action_count_ratio=0.5,
-        expected_donor_layers=4,
+        expected_donor_layers=donor_layer_count,
         expected_target_layers=2,
         required_head_dim=2,
         device="cpu",
@@ -813,6 +901,28 @@ def test_tiny_transformers_qwen_uses_real_layer_contract(tmp_path) -> None:
     )
 
     assert report["zero_gradient"] is True
+    expected_spans = (
+        report["adaptive_depth_span_planning"]["donor_layer_spans"]
+        if adaptive_depth_spans
+        else (
+            [[0, 1], [2, 3]]
+            if donor_layer_spans is None
+            else [list(span) for span in donor_layer_spans]
+        )
+    )
+    assert report["donor_layer_spans"] == expected_spans
+    assert report["pair_plan"] == [
+        {
+            "target_layer": target_layer,
+            "donor_layers": span,
+            "contiguous": True,
+        }
+        for target_layer, span in enumerate(expected_spans)
+    ]
+    assert [item["span_width"] for item in report["span_plan"]] == [
+        len(span) for span in expected_spans
+    ]
+    assert report["exact_ordered_donor_cover"] is True
     assert report["unwritten_target_parameters"] == 0
     assert report["explicitly_preserved_parameter_count"] == 0
     assert report["gqa_selected_full_head_coordinate_packing"] is True
@@ -823,6 +933,30 @@ def test_tiny_transformers_qwen_uses_real_layer_contract(tmp_path) -> None:
     assert report["rollout_refold"]["trace_distribution"] == (
         "current-child-greedy-rollout"
     )
+    assert all(
+        torch.isfinite(parameter).all()
+        for model in (donor, target)
+        for parameter in model.parameters()
+    )
+    assert all(
+        parameter.grad is None
+        for model in (donor, target)
+        for parameter in model.parameters()
+    )
+    if donor_layer_spans is not None:
+        assert report["schema"] == "neural-forge-qwen-ordered-span-composition-v3"
+        assert report["singleton_span_count"] == 1
+        assert report["pair_span_count"] == 1
+        assert report["span_plan_source"] == "explicit-exact-ordered-cover"
+        assert [
+            item["span_width"] for item in report["structural_initialization"]["spans"]
+        ] == [2, 1]
+    if adaptive_depth_spans:
+        assert report["adaptive_depth_span_planning"]["enabled"] is True
+        assert report["span_plan_source"] == (
+            "activation-costed-global-contiguous-dynamic-programming"
+        )
+        assert sorted(len(span) for span in expected_spans) == [1, 2]
     saved_report = json.loads(
         (tmp_path / "neural_forge_qwen_pair_compose_report.json").read_text()
     )

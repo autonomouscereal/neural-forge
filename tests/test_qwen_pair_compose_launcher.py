@@ -16,7 +16,9 @@ from experiments.run_qwen_pair_compose_tiny_smoke import offline_environment
 
 def _write_checkpoint(path: Path, *, layers: int) -> Path:
     path.mkdir()
-    (path / "config.json").write_text(json.dumps({"model_type": "qwen3", "num_hidden_layers": layers}) + "\n")
+    (path / "config.json").write_text(
+        json.dumps({"model_type": "qwen3", "num_hidden_layers": layers}) + "\n"
+    )
     (path / "model.safetensors").write_bytes(f"weights-{layers}".encode("ascii"))
     (path / "tokenizer.json").write_text("{}\n")
     return path
@@ -39,13 +41,16 @@ def _value_after(command: list[str], flag: str) -> str:
     return command[command.index(flag) + 1]
 
 
-def test_compose_and_eval_argument_construction_is_closed_form_and_exact(tmp_path: Path) -> None:
+def test_compose_and_eval_argument_construction_is_closed_form_and_exact(
+    tmp_path: Path,
+) -> None:
     settings = launcher.ComposeSettings(
         ridge=0.004,
         max_length=96,
         max_tokens_per_layer=512,
         max_anchors=2048,
         max_calibration_texts=32,
+        donor_layer_spans="0+1,2",
         fit_gate_validation_fraction=0.4,
         fit_gate_min_validation_rows=16,
         fit_gate_min_relative_improvement=0.03,
@@ -63,11 +68,21 @@ def test_compose_and_eval_argument_construction_is_closed_form_and_exact(tmp_pat
         settings=settings,
     )
 
-    assert command[:4] == ["python-test", "-m", "neural_forge.cli", "hf-qwen-pair-compose"]
-    assert command[4:7] == [str(tmp_path / "source"), str(tmp_path / "blank"), str(tmp_path / "output")]
+    assert command[:4] == [
+        "python-test",
+        "-m",
+        "neural_forge.cli",
+        "hf-qwen-pair-compose",
+    ]
+    assert command[4:7] == [
+        str(tmp_path / "source"),
+        str(tmp_path / "blank"),
+        str(tmp_path / "output"),
+    ]
     assert _value_after(command, "--ridge") == "0.004"
     assert _value_after(command, "--max-tokens-per-layer") == "512"
     assert _value_after(command, "--max-anchors") == "2048"
+    assert _value_after(command, "--donor-layer-spans") == "0+1,2"
     assert _value_after(command, "--fit-gate-validation-fraction") == "0.4"
     assert _value_after(command, "--fit-gate-max-relative-rmse") == "0.75"
     assert _value_after(command, "--observable-coordinate-ridge") == "1e-06"
@@ -85,7 +100,14 @@ def test_compose_and_eval_argument_construction_is_closed_form_and_exact(tmp_pat
     assert not any(
         forbidden in flag
         for flag in flags
-        for forbidden in ("recover", "train", "optimizer", "learning-rate", "steps", "epochs")
+        for forbidden in (
+            "recover",
+            "train",
+            "optimizer",
+            "learning-rate",
+            "steps",
+            "epochs",
+        )
     )
 
     eval_command = launcher.build_eval_command(
@@ -102,6 +124,36 @@ def test_compose_and_eval_argument_construction_is_closed_form_and_exact(tmp_pat
     assert _value_after(eval_command, "--max-choice-probes") == "250"
     with pytest.raises(ValueError, match="ridge"):
         launcher.ComposeSettings(ridge=float("nan")).validate()
+
+
+def test_compose_command_wires_activation_costed_depth_spans(tmp_path: Path) -> None:
+    settings = launcher.ComposeSettings(
+        adaptive_depth_spans=True,
+        adaptive_depth_critical_quantile=0.7,
+        adaptive_depth_causal_magnitude_weight=2.0,
+        adaptive_depth_incompatibility_weight=3.0,
+        adaptive_depth_reconstruction_weight=4.0,
+    )
+
+    command = launcher.build_compose_command(
+        python="python-test",
+        source=tmp_path / "source",
+        blank_candidate=tmp_path / "blank",
+        output=tmp_path / "output",
+        calibration_file=tmp_path / "calibration.jsonl",
+        settings=settings,
+    )
+
+    assert "--adaptive-depth-spans" in command
+    assert _value_after(command, "--adaptive-depth-critical-quantile") == "0.7"
+    assert _value_after(command, "--adaptive-depth-causal-magnitude-weight") == "2.0"
+    assert _value_after(command, "--adaptive-depth-incompatibility-weight") == "3.0"
+    assert _value_after(command, "--adaptive-depth-reconstruction-weight") == "4.0"
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        launcher.ComposeSettings(
+            adaptive_depth_spans=True, donor_layer_spans="0+1,2"
+        ).validate()
 
 
 def test_parser_accepts_device_uuid_and_compose_settings() -> None:
@@ -127,6 +179,9 @@ def test_parser_accepts_device_uuid_and_compose_settings() -> None:
             "0.02",
             "--max-anchors",
             "999",
+            "--adaptive-depth-spans",
+            "--adaptive-depth-critical-quantile",
+            "0.75",
             "--rollout-refold-rounds",
             "2",
             "--rollout-refold-max-prompts",
@@ -139,6 +194,9 @@ def test_parser_accepts_device_uuid_and_compose_settings() -> None:
     assert args.device_uuid == "GPU-test"
     assert args.ridge == pytest.approx(0.02)
     assert args.max_anchors == 999
+    assert args.donor_layer_spans is None
+    assert args.adaptive_depth_spans is True
+    assert args.adaptive_depth_critical_quantile == pytest.approx(0.75)
     assert args.observable_coordinates is True
     assert args.path_decomposition is True
     assert args.path_decomposition_interpolation_mode == "sparse-signature"
@@ -159,7 +217,9 @@ def test_lexical_absolute_preserves_venv_executable_symlink(tmp_path: Path) -> N
     assert lexical != executable_link.resolve()
 
 
-def test_launcher_snapshots_every_input_and_detaches(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_launcher_snapshots_every_input_and_detaches(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     repo = _write_fake_repo(tmp_path / "repo")
     source = _write_checkpoint(tmp_path / "source", layers=4)
     blank = _write_checkpoint(tmp_path / "blank", layers=2)
@@ -168,7 +228,9 @@ def test_launcher_snapshots_every_input_and_detaches(monkeypatch: pytest.MonkeyP
     calibration = tmp_path / "calibration.jsonl"
     calibration.write_text('{"text":"one"}\n{"text":"two"}\n')
     suite = tmp_path / "suite.json"
-    suite.write_text('{"behavior_probes":[],"generation_prompts":[],"choice_probes":[]}\n')
+    suite.write_text(
+        '{"behavior_probes":[],"generation_prompts":[],"choice_probes":[]}\n'
+    )
     parent = tmp_path / "parent.json"
     parent.write_text('{"behavior_suite":{},"choice_accuracy":{}}\n')
     captured: dict[str, object] = {}
@@ -227,15 +289,29 @@ def test_launcher_snapshots_every_input_and_detaches(monkeypatch: pytest.MonkeyP
         "TRANSFORMERS_OFFLINE": "1",
         "TOKENIZERS_PARALLELISM": "false",
     }
-    assert (output / "snapshot" / "inputs" / "source" / "model.safetensors").read_bytes() == b"weights-4"
-    assert (output / "snapshot" / "inputs" / "blank_candidate" / "model.safetensors").read_bytes() == b"weights-2"
-    assert (output / "snapshot" / "inputs" / "calibration" / calibration.name).read_bytes() == calibration.read_bytes()
-    assert (output / "snapshot" / "inputs" / "eval_suite" / suite.name).read_bytes() == suite.read_bytes()
-    cached_snapshot = output / "snapshot" / "inputs" / "cached_parent_eval" / parent.name
+    assert (
+        output / "snapshot" / "inputs" / "source" / "model.safetensors"
+    ).read_bytes() == b"weights-4"
+    assert (
+        output / "snapshot" / "inputs" / "blank_candidate" / "model.safetensors"
+    ).read_bytes() == b"weights-2"
+    assert (
+        output / "snapshot" / "inputs" / "calibration" / calibration.name
+    ).read_bytes() == calibration.read_bytes()
+    assert (
+        output / "snapshot" / "inputs" / "eval_suite" / suite.name
+    ).read_bytes() == suite.read_bytes()
+    cached_snapshot = (
+        output / "snapshot" / "inputs" / "cached_parent_eval" / parent.name
+    )
     assert cached_snapshot.read_bytes() == parent.read_bytes()
-    assert (output / "snapshot" / "code" / "src" / "neural_forge" / "hf_qwen_compose.py").is_file()
+    assert (
+        output / "snapshot" / "code" / "src" / "neural_forge" / "hf_qwen_compose.py"
+    ).is_file()
 
-    snapshot_manifest = json.loads((output / "snapshot" / "snapshot_manifest.json").read_text())
+    snapshot_manifest = json.loads(
+        (output / "snapshot" / "snapshot_manifest.json").read_text()
+    )
     assert snapshot_manifest["tree_sha256"]
     roles = {item["role"] for item in snapshot_manifest["files"]}
     assert {
@@ -253,7 +329,9 @@ def test_launcher_snapshots_every_input_and_detaches(monkeypatch: pytest.MonkeyP
     run_manifest = json.loads((output / "run_manifest.json").read_text())
     assert run_manifest["process"]["pid"] == 4242
     assert run_manifest["process"]["start_ticks"] == 9001
-    assert run_manifest["cached_parent_policy"] == "required-snapshot-no-parent-evaluation"
+    assert (
+        run_manifest["cached_parent_policy"] == "required-snapshot-no-parent-evaluation"
+    )
     assert run_manifest["exact_eval"] == {
         "behavior_probes": 1000,
         "generation_prompts": 1000,
@@ -268,14 +346,18 @@ def test_launcher_snapshots_every_input_and_detaches(monkeypatch: pytest.MonkeyP
     eval_line = next(line for line in script.splitlines() if "hf-eval" in line)
     assert str(output / "model") in eval_line
     assert str(cached_snapshot) not in eval_line
-    comparison_line = next(line for line in script.splitlines() if "compare_eval_retention.py" in line)
+    comparison_line = next(
+        line for line in script.splitlines() if "compare_eval_retention.py" in line
+    )
     assert str(cached_snapshot) in comparison_line
     assert "--max-behavior-probes 1000" in eval_line
     assert "--max-generation-prompts 1000" in eval_line
     assert "--max-choice-probes 250" in eval_line
 
 
-def test_launcher_requires_a_completed_cached_parent_before_creating_run(tmp_path: Path) -> None:
+def test_launcher_requires_a_completed_cached_parent_before_creating_run(
+    tmp_path: Path,
+) -> None:
     source = _write_checkpoint(tmp_path / "source", layers=4)
     blank = _write_checkpoint(tmp_path / "blank", layers=2)
     run_root = tmp_path / "runs"
@@ -349,10 +431,15 @@ def test_shared_detacher_closes_fds_and_starts_new_session(
     assert captured["start_new_session"] is True
     assert identity["pid"] == 3210
     assert identity["start_ticks"] == 77
-    assert json.loads((tmp_path / "identity.json").read_text())["argv"] == ["bash", "immutable.sh"]
+    assert json.loads((tmp_path / "identity.json").read_text())["argv"] == [
+        "bash",
+        "immutable.sh",
+    ]
 
 
-def test_tiny_smoke_command_uses_only_local_paths_and_forces_offline(tmp_path: Path) -> None:
+def test_tiny_smoke_command_uses_only_local_paths_and_forces_offline(
+    tmp_path: Path,
+) -> None:
     fixture = TinyFixture(
         root=tmp_path,
         source=tmp_path / "source",
@@ -365,7 +452,11 @@ def test_tiny_smoke_command_uses_only_local_paths_and_forces_offline(tmp_path: P
     environment = offline_environment({"KEEP": "yes", "HF_HUB_OFFLINE": "0"})
 
     assert command[3] == "hf-qwen-pair-compose"
-    assert command[4:7] == [str(fixture.source), str(fixture.blank_candidate), str(fixture.output)]
+    assert command[4:7] == [
+        str(fixture.source),
+        str(fixture.blank_candidate),
+        str(fixture.output),
+    ]
     assert _value_after(command, "--calibration-file") == str(fixture.calibration_file)
     assert _value_after(command, "--device") == "cpu"
     assert _value_after(command, "--dtype") == "float32"
