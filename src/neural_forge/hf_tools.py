@@ -897,11 +897,6 @@ def evaluate_text_model(
     max_behavior_probes: int | None = None,
 ) -> dict[str, Any]:
     torch, transformers = _torch_and_transformers()
-    suite = _load_eval_suite(eval_suite)
-    text_evals = _limit_sequence(suite["text_evals"], max_text_evals)
-    choice_probes = _limit_sequence(suite["choice_probes"], max_choice_probes)
-    generation_specs = _limit_sequence(suite["generation_prompts"], max_generation_prompts)
-    behavior_probes = _limit_sequence(suite["behavior_probes"], max_behavior_probes)
     dtype = _dtype_from_name(torch, torch_dtype)
     tokenizer = transformers.AutoTokenizer.from_pretrained(model_id_or_path, trust_remote_code=trust_remote_code)
     model = transformers.AutoModelForCausalLM.from_pretrained(
@@ -909,6 +904,47 @@ def evaluate_text_model(
         torch_dtype=dtype,
         device_map=None,
         trust_remote_code=trust_remote_code,
+    )
+    return evaluate_loaded_text_model(
+        model,
+        tokenizer,
+        output_file,
+        model_label=model_id_or_path,
+        device=device,
+        max_new_tokens=max_new_tokens,
+        eval_suite=eval_suite,
+        max_text_evals=max_text_evals,
+        max_choice_probes=max_choice_probes,
+        max_generation_prompts=max_generation_prompts,
+        max_behavior_probes=max_behavior_probes,
+    )
+
+
+def evaluate_loaded_text_model(
+    model: Any,
+    tokenizer: Any,
+    output_file: str | Path,
+    *,
+    model_label: str = "loaded-model",
+    device: str = "cuda:0",
+    max_new_tokens: int = 96,
+    eval_suite: str | Path | dict[str, Any] | None = None,
+    max_text_evals: int | None = None,
+    max_choice_probes: int | None = None,
+    max_generation_prompts: int | None = None,
+    max_behavior_probes: int | None = None,
+) -> dict[str, Any]:
+    """Evaluate an already-loaded causal LM without checkpoint reloading."""
+
+    torch, _transformers = _torch_and_transformers()
+    suite = _load_eval_suite(eval_suite)
+    text_evals = _limit_sequence(suite["text_evals"], max_text_evals)
+    choice_probes = _limit_sequence(suite["choice_probes"], max_choice_probes)
+    generation_specs = _limit_sequence(
+        suite["generation_prompts"], max_generation_prompts
+    )
+    behavior_probes = _limit_sequence(
+        suite["behavior_probes"], max_behavior_probes
     )
     model.to(device)
     model.eval()
@@ -929,14 +965,28 @@ def evaluate_text_model(
             requested_prompts.append(prompt)
 
     with torch.no_grad():
-        ppls = [_perplexity(torch, model, tokenizer, text, device) for text in text_evals]
-        probes = [_score_choice_probe(torch, model, tokenizer, probe, device) for probe in choice_probes]
+        ppls = [
+            _perplexity(torch, model, tokenizer, text, device) for text in text_evals
+        ]
+        probes = [
+            _score_choice_probe(torch, model, tokenizer, probe, device)
+            for probe in choice_probes
+        ]
         generation_cache = {
             item["prompt"]: item
-            for item in _generate_text_batch(torch, model, tokenizer, requested_prompts, device, max_new_tokens)
+            for item in _generate_text_batch(
+                torch,
+                model,
+                tokenizer,
+                requested_prompts,
+                device,
+                max_new_tokens,
+            )
         }
         generations = [
-            _generation_from_cached_spec(dict(generation_cache[str(spec["prompt"])]), spec)
+            _generation_from_cached_spec(
+                dict(generation_cache[str(spec["prompt"])]), spec
+            )
             for spec in generation_specs
         ]
         behavior_items = [
@@ -947,11 +997,13 @@ def evaluate_text_model(
             for probe in behavior_probes
         ]
 
-    generation_diagnostics = [_generation_health(item, 0, 0.0) for item in generations]
+    generation_diagnostics = [
+        _generation_health(item, 0, 0.0) for item in generations
+    ]
     behavior_correct = sum(1 for item in behavior_items if item["passed"])
     choice_correct = sum(1 for item in probes if item["correct"])
     report = {
-        "model": model_id_or_path,
+        "model": str(model_label),
         "param_count": sum(p.numel() for p in model.parameters()),
         "eval_suite": {
             "source": suite["source"],
@@ -976,7 +1028,8 @@ def evaluate_text_model(
             "correct": sum(1 for item in generation_diagnostics if item["passed"]),
             "total": len(generation_diagnostics),
             "pass_rate": (
-                sum(1 for item in generation_diagnostics if item["passed"]) / max(1, len(generation_diagnostics))
+                sum(1 for item in generation_diagnostics if item["passed"])
+                / max(1, len(generation_diagnostics))
             ),
         },
         "behavior_suite": {
