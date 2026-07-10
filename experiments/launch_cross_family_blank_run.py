@@ -194,6 +194,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         max_full_head_fit_elements=args.max_full_head_fit_elements,
         max_coordinate_rows=args.max_coordinate_rows,
         vocab_projection_chunk_size=args.vocab_projection_chunk_size,
+        vocab_row_norm_repair=args.vocab_row_norm_repair,
     )
     _progress(
         "cross_family_blank_fold_done",
@@ -308,7 +309,9 @@ def build_parser() -> argparse.ArgumentParser:
         default="token_rows",
     )
     parser.add_argument(
-        "--residual-map-method", choices=["sparse_fold", "pca"], default="sparse_fold"
+        "--residual-map-method",
+        choices=["sparse_fold", "joint_sparse_fold", "pca"],
+        default="sparse_fold",
     )
     parser.add_argument("--ridge", type=float, default=1e-5)
     parser.add_argument("--max-operator-delta-ratio", type=float, default=4.0)
@@ -319,6 +322,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-full-head-fit-elements", type=int, default=10_000_000)
     parser.add_argument("--max-coordinate-rows", type=int, default=4096)
     parser.add_argument("--vocab-projection-chunk-size", type=int, default=2048)
+    parser.add_argument(
+        "--vocab-row-norm-repair",
+        choices=["none", "source_l2"],
+        default="none",
+    )
     parser.add_argument("--max-new-tokens", type=int, default=96)
     parser.add_argument("--max-text-evals", type=int, default=1000)
     parser.add_argument("--max-choice-probes", type=int, default=250)

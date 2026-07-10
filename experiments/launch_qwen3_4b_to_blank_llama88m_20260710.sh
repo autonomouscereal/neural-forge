@@ -16,6 +16,8 @@ NUM_KEY_VALUE_HEADS=${NUM_KEY_VALUE_HEADS:-1}
 HEAD_DIM=${HEAD_DIM:-64}
 EXACT_PARAMETER_BUDGET=${EXACT_PARAMETER_BUDGET:-87853440}
 MAX_OPERATOR_DELTA_RATIO=${MAX_OPERATOR_DELTA_RATIO:-4}
+RESIDUAL_MAP_METHOD=${RESIDUAL_MAP_METHOD:-sparse_fold}
+VOCAB_ROW_NORM_REPAIR=${VOCAB_ROW_NORM_REPAIR:-none}
 
 mkdir -p "$RUN_ROOT"
 
@@ -54,7 +56,7 @@ mkdir -p "$RUN_ROOT"
   --device cuda:0 \
   --local-files-only \
   --trace-pooling token_rows \
-  --residual-map-method sparse_fold \
+  --residual-map-method "$RESIDUAL_MAP_METHOD" \
   --ridge 1e-3 \
   --max-operator-delta-ratio "$MAX_OPERATOR_DELTA_RATIO" \
   --min-final-state-improvement 0 \
@@ -62,6 +64,7 @@ mkdir -p "$RUN_ROOT"
   --min-top1-gain 0 \
   --max-coordinate-rows 4096 \
   --vocab-projection-chunk-size 2048 \
+  --vocab-row-norm-repair "$VOCAB_ROW_NORM_REPAIR" \
   --max-new-tokens 96 \
   --max-text-evals 1000 \
   --max-choice-probes 250 \

@@ -123,6 +123,7 @@ def test_cross_family_checkpoint_is_accepted_and_reload_exact(
     assert report["execution"]["training_steps"] == 0
     assert report["execution"]["zero_gradients"] is True
     assert report["bootstrap"]["knobs"]["residual_map_method"] == "sparse_fold"
+    assert report["bootstrap"]["knobs"]["vocab_row_norm_repair"] == "none"
     assert report["bootstrap"]["residual_coordinates"]["full_source_coverage"] is True
     assert report["bootstrap"]["residual_coordinates"]["dropped_channels"] == 0
     assert report["bootstrap"]["fit_reports"]

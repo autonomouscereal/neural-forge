@@ -638,7 +638,11 @@ def bootstrap_blank_decoder_checkpoint(
     local_files_only: bool = False,
     exact_parameter_budget: int | None = None,
     trace_pooling: Literal["token_rows", "mean", "last_valid"] = "token_rows",
-    residual_map_method: Literal["sparse_fold", "pca"] = "sparse_fold",
+    residual_map_method: Literal[
+        "sparse_fold",
+        "joint_sparse_fold",
+        "pca",
+    ] = "sparse_fold",
     ridge: float = 1e-5,
     max_operator_delta_ratio: float = 4.0,
     min_final_state_relative_improvement: float = 0.0,
@@ -648,6 +652,7 @@ def bootstrap_blank_decoder_checkpoint(
     max_full_head_fit_elements: int = 10_000_000,
     max_coordinate_rows: int = 4096,
     vocab_projection_chunk_size: int = 2048,
+    vocab_row_norm_repair: Literal["none", "source_l2"] = "none",
 ) -> dict[str, Any]:
     """Bootstrap and atomically publish one config-created decoder checkpoint."""
 
@@ -788,6 +793,7 @@ def bootstrap_blank_decoder_checkpoint(
         max_full_head_fit_elements=max_full_head_fit_elements,
         max_coordinate_rows=max_coordinate_rows,
         vocab_projection_chunk_size=vocab_projection_chunk_size,
+        vocab_row_norm_repair=vocab_row_norm_repair,
     )
     source_fingerprint_after = _state_dict_sha256(torch, source)
     if source_fingerprint_after != source_fingerprint_before:
@@ -879,6 +885,7 @@ def bootstrap_blank_decoder_checkpoint(
                 "max_full_head_fit_elements": max_full_head_fit_elements,
                 "max_coordinate_rows": max_coordinate_rows,
                 "vocab_projection_chunk_size": vocab_projection_chunk_size,
+                "vocab_row_norm_repair": vocab_row_norm_repair,
             },
         },
         "execution": {

@@ -88,7 +88,11 @@ def bootstrap_blank_decoder_models(
     target_calibration_inputs: Mapping[str, Any] | Any | None = None,
     target_validation_inputs: Mapping[str, Any] | Any | None = None,
     trace_pooling: Literal["token_rows", "mean", "last_valid"] = "token_rows",
-    residual_map_method: Literal["sparse_fold", "pca"] = "sparse_fold",
+    residual_map_method: Literal[
+        "sparse_fold",
+        "joint_sparse_fold",
+        "pca",
+    ] = "sparse_fold",
     ridge: float = 1e-5,
     max_operator_delta_ratio: float = 4.0,
     min_final_state_relative_improvement: float = 0.0,
@@ -98,6 +102,7 @@ def bootstrap_blank_decoder_models(
     max_full_head_fit_elements: int = 10_000_000,
     max_coordinate_rows: int = 4096,
     vocab_projection_chunk_size: int = 2048,
+    vocab_row_norm_repair: Literal["none", "source_l2"] = "none",
 ) -> BlankBootstrapResult:
     """Compile source behavior into a blank GPT-2/Llama target without gradients.
 
@@ -125,8 +130,14 @@ def bootstrap_blank_decoder_models(
         raise BlankBootstrapError(
             "trace_pooling must be token_rows, mean, or last_valid."
         )
-    if residual_map_method not in {"sparse_fold", "pca"}:
-        raise BlankBootstrapError("residual_map_method must be sparse_fold or pca.")
+    if residual_map_method not in {"sparse_fold", "joint_sparse_fold", "pca"}:
+        raise BlankBootstrapError(
+            "residual_map_method must be sparse_fold, joint_sparse_fold, or pca."
+        )
+    if vocab_row_norm_repair not in {"none", "source_l2"}:
+        raise BlankBootstrapError(
+            "vocab_row_norm_repair must be none or source_l2."
+        )
     if (
         isinstance(max_full_head_fit_elements, bool)
         or not isinstance(max_full_head_fit_elements, int)
@@ -153,6 +164,13 @@ def bootstrap_blank_decoder_models(
         source_layout,
         target_layout,
     )
+    joint_source_geometry = None
+    if residual_map_method == "joint_sparse_fold":
+        joint_source_geometry = _require_tied_source_vocabulary_geometry(
+            torch,
+            source_model,
+            source_layout,
+        )
     donor_layer_spans = _contiguous_depth_spans(
         source_layout.layer_count,
         target_layout.layer_count,
@@ -201,10 +219,21 @@ def bootstrap_blank_decoder_models(
         source_calibration,
         max_coordinate_rows,
     )
+    residual_map_report = None
     if residual_map_method == "sparse_fold":
         residual_coordinates = build_feature_fold_map(
             residual_rows,
             target_layout.hidden_size,
+        )
+    elif residual_map_method == "joint_sparse_fold":
+        assert joint_source_geometry is not None
+        residual_coordinates, residual_map_report = _build_joint_sparse_residual_map(
+            torch,
+            residual_rows,
+            joint_source_geometry,
+            target_layout.hidden_size,
+            max_coordinate_rows,
+            source_layout.layer_count,
         )
     else:
         residual_coordinates = build_parent_residual_basis(
@@ -222,6 +251,8 @@ def bootstrap_blank_decoder_models(
         source_validation.logits,
     )
     fit_reports: dict[str, Any] = {}
+    if residual_map_report is not None:
+        fit_reports["residual.map"] = residual_map_report
     candidate_gate_metrics: BootstrapGateMetrics | None = None
 
     def mutate(coverage) -> None:
@@ -236,6 +267,7 @@ def bootstrap_blank_decoder_models(
             target_calibration_values,
             trace_pooling,
             vocab_projection_chunk_size,
+            vocab_row_norm_repair,
             fit_reports,
         )
         for target_index, source_span in enumerate(donor_layer_spans):
@@ -444,6 +476,239 @@ def _residual_basis_rows(
     return torch.cat(sampled, dim=0)
 
 
+def _require_tied_source_vocabulary_geometry(
+    torch: Any,
+    source_model: Any,
+    source_layout: DecoderLayout,
+) -> tuple[Any, dict[str, Any]]:
+    source_embedding = source_model.get_input_embeddings()
+    source_head = source_model.get_output_embeddings()
+    if source_embedding is None or source_head is None:
+        raise BlankBootstrapError(
+            "joint_sparse_fold requires source embeddings and an LM head."
+        )
+    embedding_weight = getattr(source_embedding, "weight", None)
+    head_weight = getattr(source_head, "weight", None)
+    if not isinstance(embedding_weight, torch.Tensor) or not isinstance(
+        head_weight,
+        torch.Tensor,
+    ):
+        raise BlankBootstrapError(
+            "joint_sparse_fold requires tensor embedding and LM-head weights."
+        )
+    if (
+        embedding_weight.layout != torch.strided
+        or embedding_weight.device.type == "meta"
+        or not torch.is_floating_point(embedding_weight)
+        or torch.is_complex(embedding_weight)
+    ):
+        raise BlankBootstrapError(
+            "joint_sparse_fold requires a dense, real, non-meta source vocabulary weight."
+        )
+    if not source_layout.tie_word_embeddings or not _same_storage(
+        embedding_weight,
+        head_weight,
+    ):
+        raise BlankBootstrapError(
+            "joint_sparse_fold requires a genuinely tied source embedding/LM head."
+        )
+    expected_shape = (
+        int(source_layout.embeddings.vocab_size),
+        int(source_layout.hidden_size),
+    )
+    if embedding_weight.ndim != 2 or tuple(embedding_weight.shape) != expected_shape:
+        raise BlankBootstrapError(
+            "Tied source vocabulary weight shape does not match the decoder layout; "
+            f"expected {expected_shape}, got {tuple(embedding_weight.shape)}."
+        )
+    if tuple(head_weight.shape) != expected_shape:
+        raise BlankBootstrapError(
+            "Tied source LM-head shape does not match the decoder layout."
+        )
+    return embedding_weight, {
+        "embedding_path": source_layout.embeddings.token_path,
+        "lm_head_path": source_layout.lm_head_path,
+        "weight_shape": list(expected_shape),
+        "tied_by_storage": True,
+    }
+
+
+def _build_joint_sparse_residual_map(
+    torch: Any,
+    residual_rows: Any,
+    source_geometry: tuple[Any, dict[str, Any]],
+    target_width: int,
+    max_rows: int,
+    source_layer_count: int,
+) -> tuple[FeatureFoldMap, dict[str, Any]]:
+    source_weight, vocabulary_provenance = source_geometry
+    if residual_rows.ndim != 2:
+        raise BlankBootstrapError(
+            "Joint residual activation rows must be two-dimensional."
+        )
+    source_width = int(source_weight.shape[1])
+    if int(residual_rows.shape[1]) != source_width:
+        raise BlankBootstrapError(
+            "Joint residual activation and vocabulary widths must match."
+        )
+    if int(residual_rows.shape[0]) > max_rows:
+        raise BlankBootstrapError(
+            "Joint residual activation sampling exceeded max_coordinate_rows."
+        )
+
+    vocabulary_rows, sampling_report = _sample_vocabulary_geometry_rows(
+        torch,
+        source_weight,
+        max_rows,
+    )
+    normalized_residuals, residual_report = _normalize_joint_basis_input(
+        torch,
+        residual_rows,
+        source_width,
+        name="parent_residual_activations",
+    )
+    normalized_vocabulary, vocabulary_report = _normalize_joint_basis_input(
+        torch,
+        vocabulary_rows,
+        source_width,
+        name="tied_source_embedding_lm_head",
+    )
+    coordinates = build_feature_fold_map(
+        (normalized_residuals, normalized_vocabulary),
+        target_width,
+    )
+    if coordinates.report is None or not coordinates.report.full_source_coverage:
+        raise BlankBootstrapError(
+            "Joint sparse residual fold did not prove complete source coverage."
+        )
+
+    residual_report.update(
+        {
+            "provenance": {
+                "trace_fields": [
+                    "block.*.block_input",
+                    "block.*.block_output",
+                    "final_norm_output",
+                ],
+                "source_layer_count": int(source_layer_count),
+                "sampling": "deterministic-global-row-quota",
+            },
+            "row_bound": int(max_rows),
+        }
+    )
+    vocabulary_report.update(
+        {
+            "provenance": vocabulary_provenance,
+            "sampling": sampling_report,
+            "row_bound": int(max_rows),
+            "full_vocabulary_copy_materialized": (
+                sampling_report["sampled_rows"]
+                == sampling_report["available_rows"]
+            ),
+            "copy_bounded_by_max_rows": True,
+        }
+    )
+    return coordinates, {
+        "method": "joint-logit-aware-sparse-fold",
+        "deterministic": True,
+        "source_width": source_width,
+        "target_width": int(target_width),
+        "input_count": 2,
+        "normalization": {
+            "method": "equal-total-frobenius-energy",
+            "target_energy_per_input": float(source_width),
+            "prevents_row-count_or_raw-energy_dominance": True,
+        },
+        "inputs": {
+            "parent_residual_activations": residual_report,
+            "tied_source_embedding_lm_head": vocabulary_report,
+        },
+        "feature_fold": coordinates.report.as_dict(),
+    }
+
+
+def _sample_vocabulary_geometry_rows(
+    torch: Any,
+    source_weight: Any,
+    max_rows: int,
+) -> tuple[Any, dict[str, Any]]:
+    available_rows = int(source_weight.shape[0])
+    sampled_rows = min(available_rows, max_rows)
+    if available_rows <= 0 or sampled_rows <= 0:
+        raise BlankBootstrapError("Source vocabulary geometry cannot be empty.")
+    if sampled_rows == 1:
+        indices = torch.zeros(1, dtype=torch.long)
+    else:
+        positions = torch.arange(sampled_rows, dtype=torch.long)
+        numerator = positions * (available_rows - 1)
+        denominator = sampled_rows - 1
+        indices = (2 * numerator + denominator) // (2 * denominator)
+    if int(torch.unique(indices).numel()) != sampled_rows:
+        raise BlankBootstrapError(
+            "Deterministic vocabulary sampling produced duplicate row indices."
+        )
+    sampled = (
+        source_weight.detach()
+        .index_select(0, indices.to(device=source_weight.device))
+        .to(device="cpu", dtype=torch.float64)
+        .contiguous()
+    )
+    expected_shape = (sampled_rows, int(source_weight.shape[1]))
+    if tuple(sampled.shape) != expected_shape or not bool(torch.isfinite(sampled).all()):
+        raise BlankBootstrapError(
+            "Sampled source vocabulary geometry has an invalid shape or value."
+        )
+    return sampled, {
+        "method": "integer-even-spacing-half-up-v1",
+        "available_rows": available_rows,
+        "sampled_rows": sampled_rows,
+        "first_row": int(indices[0]),
+        "last_row": int(indices[-1]),
+        "index_sum": int(indices.sum()),
+        "bounded": sampled_rows <= max_rows,
+        "deterministic": True,
+    }
+
+
+def _normalize_joint_basis_input(
+    torch: Any,
+    matrix: Any,
+    source_width: int,
+    *,
+    name: str,
+) -> tuple[Any, dict[str, Any]]:
+    if not isinstance(matrix, torch.Tensor) or matrix.ndim != 2:
+        raise BlankBootstrapError(f"Joint basis input {name!r} must be a matrix.")
+    if int(matrix.shape[0]) <= 0 or int(matrix.shape[1]) != source_width:
+        raise BlankBootstrapError(
+            f"Joint basis input {name!r} has an invalid shape."
+        )
+    values = matrix.detach().to(device="cpu", dtype=torch.float64).contiguous()
+    norm = float(torch.linalg.vector_norm(values))
+    if not math.isfinite(norm) or norm <= 0.0:
+        raise BlankBootstrapError(
+            f"Joint basis input {name!r} must have finite positive energy."
+        )
+    target_norm = math.sqrt(float(source_width))
+    scale = target_norm / norm
+    normalized = values * scale
+    if not bool(torch.isfinite(normalized).all()):
+        raise BlankBootstrapError(
+            f"Joint basis input {name!r} normalization produced non-finite values."
+        )
+    normalized_norm = float(torch.linalg.vector_norm(normalized))
+    return normalized.contiguous(), {
+        "name": name,
+        "shape": [int(value) for value in values.shape],
+        "sampled_rows": int(values.shape[0]),
+        "raw_frobenius_norm": norm,
+        "raw_total_energy": norm * norm,
+        "applied_scale": scale,
+        "normalized_frobenius_norm": normalized_norm,
+        "normalized_total_energy": normalized_norm * normalized_norm,
+    }
+
+
 def _row_quotas(lengths: Sequence[int], max_rows: int) -> tuple[int, ...]:
     total = sum(lengths)
     selected = min(total, max_rows)
@@ -488,7 +753,9 @@ def _copy_projected_rows(
     target_weight: Any,
     coordinates: Any,
     chunk_size: int,
-) -> None:
+    *,
+    row_norm_repair: Literal["none", "source_l2"] = "none",
+) -> dict[str, Any] | None:
     if int(source_weight.shape[0]) != int(target_weight.shape[0]):
         raise BlankBootstrapError(
             "Source and target vocabulary operators must have equal row counts."
@@ -503,11 +770,147 @@ def _copy_projected_rows(
         raise BlankBootstrapError(
             f"Target vocabulary operator must have shape {expected}."
         )
+    if row_norm_repair not in {"none", "source_l2"}:
+        raise BlankBootstrapError("row_norm_repair must be none or source_l2.")
+    if row_norm_repair == "none":
+        with torch.no_grad():
+            for start in range(0, int(source_weight.shape[0]), chunk_size):
+                end = min(int(source_weight.shape[0]), start + chunk_size)
+                projected = _encode_rows(source_weight[start:end], coordinates)
+                target_weight[start:end].copy_(projected.to(target_weight))
+        return None
+
+    repaired_rows = 0
+    zero_source_rows = 0
+    zero_projected_rows = 0
+    zeroed_projected_rows = 0
+    pre_ratio = _empty_ratio_summary()
+    repair_ratio = _empty_ratio_summary()
+    post_ratio = _empty_ratio_summary()
     with torch.no_grad():
         for start in range(0, int(source_weight.shape[0]), chunk_size):
             end = min(int(source_weight.shape[0]), start + chunk_size)
-            projected = _encode_rows(source_weight[start:end], coordinates)
+            source_rows = (
+                source_weight[start:end]
+                .detach()
+                .to(device="cpu", dtype=torch.float64)
+                .contiguous()
+            )
+            if not bool(torch.isfinite(source_rows).all()):
+                raise BlankBootstrapError(
+                    "Source vocabulary projection chunk contains NaN or infinity."
+                )
+            projected = _encode_rows(source_rows, coordinates)
+            source_norms = torch.linalg.vector_norm(source_rows, dim=1)
+            projected_norms = torch.linalg.vector_norm(projected, dim=1)
+            if not bool(torch.isfinite(source_norms).all()) or not bool(
+                torch.isfinite(projected_norms).all()
+            ):
+                raise BlankBootstrapError(
+                    "Vocabulary row-norm repair encountered a non-finite norm."
+                )
+
+            source_zero = source_norms == 0.0
+            projected_zero = projected_norms == 0.0
+            unrecoverable = (~source_zero) & projected_zero
+            if bool(unrecoverable.any()):
+                local_index = int(torch.nonzero(unrecoverable, as_tuple=False)[0])
+                raise BlankBootstrapError(
+                    "Cannot repair a nonzero source vocabulary row projected to zero "
+                    f"at row {start + local_index}."
+                )
+
+            zero_source_rows += int(source_zero.sum())
+            zero_projected_rows += int(projected_zero.sum())
+            source_zero_nonzero_projection = source_zero & (~projected_zero)
+            zeroed_projected_rows += int(source_zero_nonzero_projection.sum())
+            projected[source_zero] = 0.0
+
+            repairable = (~source_zero) & (~projected_zero)
+            ratios = source_norms[repairable] / projected_norms[repairable]
+            if not bool(torch.isfinite(ratios).all()):
+                raise BlankBootstrapError(
+                    "Vocabulary row-norm repair produced a non-finite scale ratio."
+                )
+            projected[repairable] *= ratios.unsqueeze(1)
+            repaired_rows += int(repairable.sum())
+            _update_ratio_summary(
+                pre_ratio,
+                projected_norms[repairable] / source_norms[repairable],
+            )
+            _update_ratio_summary(repair_ratio, ratios)
+            if not bool(torch.isfinite(projected).all()):
+                raise BlankBootstrapError(
+                    "Vocabulary row-norm repair produced NaN or infinity."
+                )
+
             target_weight[start:end].copy_(projected.to(target_weight))
+            copied = (
+                target_weight[start:end]
+                .detach()
+                .to(device="cpu", dtype=torch.float64)
+                .contiguous()
+            )
+            if not bool(torch.isfinite(copied).all()):
+                raise BlankBootstrapError(
+                    "Vocabulary row-norm repair overflowed the target dtype."
+                )
+            copied_norms = torch.linalg.vector_norm(copied, dim=1)
+            if bool((copied_norms[source_zero] != 0.0).any()):
+                raise BlankBootstrapError(
+                    "A zero source vocabulary row did not remain zero after repair."
+                )
+            copied_nonzero = copied_norms[repairable]
+            if bool((copied_nonzero == 0.0).any()):
+                raise BlankBootstrapError(
+                    "Vocabulary row-norm repair underflowed a nonzero target row."
+                )
+            _update_ratio_summary(
+                post_ratio,
+                copied_nonzero / source_norms[repairable],
+            )
+    return {
+        "method": "source-l2-row-norm-repair",
+        "total_rows": int(source_weight.shape[0]),
+        "repaired_rows": repaired_rows,
+        "zero_source_rows": zero_source_rows,
+        "zero_projected_rows": zero_projected_rows,
+        "zeroed_projected_rows": zeroed_projected_rows,
+        "finite": True,
+        "pre_repair_projected_to_source_ratio": _finalize_ratio_summary(pre_ratio),
+        "applied_source_to_projected_ratio": _finalize_ratio_summary(repair_ratio),
+        "post_copy_to_source_ratio": _finalize_ratio_summary(post_ratio),
+    }
+
+
+def _empty_ratio_summary() -> dict[str, Any]:
+    return {
+        "count": 0,
+        "sum": 0.0,
+        "minimum": math.inf,
+        "maximum": -math.inf,
+    }
+
+
+def _update_ratio_summary(summary: dict[str, Any], values: Any) -> None:
+    if int(values.numel()) == 0:
+        return
+    summary["count"] += int(values.numel())
+    summary["sum"] += float(values.sum())
+    summary["minimum"] = min(summary["minimum"], float(values.min()))
+    summary["maximum"] = max(summary["maximum"], float(values.max()))
+
+
+def _finalize_ratio_summary(summary: Mapping[str, Any]) -> dict[str, Any]:
+    count = int(summary["count"])
+    if count == 0:
+        return {"count": 0, "minimum": None, "maximum": None, "mean": None}
+    return {
+        "count": count,
+        "minimum": float(summary["minimum"]),
+        "maximum": float(summary["maximum"]),
+        "mean": float(summary["sum"]) / count,
+    }
 
 
 def _initialize_embedding_and_head(
@@ -521,25 +924,28 @@ def _initialize_embedding_and_head(
     target_calibration_inputs: Mapping[str, Any] | Any,
     trace_pooling: Literal["token_rows", "mean", "last_valid"],
     vocab_projection_chunk_size: int,
+    vocab_row_norm_repair: Literal["none", "source_l2"],
     reports: dict[str, Any],
 ) -> None:
     source_embedding = source_model.get_input_embeddings()
     target_embedding = target_model.get_input_embeddings()
     source_head = source_model.get_output_embeddings()
     target_head = target_model.get_output_embeddings()
-    _copy_projected_rows(
+    embedding_repair = _copy_projected_rows(
         torch,
         source_embedding.weight,
         target_embedding.weight,
         residual_coordinates,
         vocab_projection_chunk_size,
+        row_norm_repair=vocab_row_norm_repair,
     )
-    _copy_projected_rows(
+    head_repair = _copy_projected_rows(
         torch,
         source_head.weight,
         target_head.weight,
         residual_coordinates,
         vocab_projection_chunk_size,
+        row_norm_repair=vocab_row_norm_repair,
     )
     with torch.no_grad():
         source_bias = getattr(source_head, "bias", None)
@@ -558,6 +964,12 @@ def _initialize_embedding_and_head(
         "shape": list(target_head.weight.shape),
         "chunk_rows": vocab_projection_chunk_size,
     }
+    if embedding_repair is not None:
+        target_tied = _same_storage(target_embedding.weight, target_head.weight)
+        reports["embeddings.token"]["row_norm_repair"] = embedding_repair
+        reports["embeddings.token"]["target_tied_storage"] = target_tied
+        reports["lm_head"]["row_norm_repair"] = head_repair
+        reports["lm_head"]["target_tied_storage"] = target_tied
     if target_layout.position.kind == "learned_absolute":
         _initialize_learned_positions(
             torch,

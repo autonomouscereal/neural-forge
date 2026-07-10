@@ -38,6 +38,25 @@ def _gpt2_source():
     )
 
 
+def _gpt2_target():
+    torch.manual_seed(151)
+    return transformers.GPT2LMHeadModel(
+        transformers.GPT2Config(
+            vocab_size=64,
+            n_positions=32,
+            n_embd=8,
+            n_layer=2,
+            n_head=2,
+            n_inner=12,
+            activation_function="gelu_new",
+            bos_token_id=1,
+            eos_token_id=2,
+            pad_token_id=0,
+            tie_word_embeddings=True,
+        )
+    )
+
+
 def _llama_source():
     torch.manual_seed(202)
     return transformers.LlamaForCausalLM(
@@ -490,3 +509,260 @@ def test_head_norm_transfer_fails_closed_for_unsupported_topology(
             2,
             role="query",
         )
+
+
+class _TiedVocabularyCarrier(torch.nn.Module):
+    def __init__(self, weight):
+        super().__init__()
+        self.embedding = torch.nn.Module()
+        self.embedding.weight = torch.nn.Parameter(weight.detach().clone())
+        self.lm_head = torch.nn.Module()
+        self.lm_head.weight = self.embedding.weight
+
+    def get_input_embeddings(self):
+        return self.embedding
+
+    def get_output_embeddings(self):
+        return self.lm_head
+
+
+def _tied_vocabulary_layout(*, vocab_size: int, hidden_size: int):
+    return SimpleNamespace(
+        tie_word_embeddings=True,
+        hidden_size=hidden_size,
+        embeddings=SimpleNamespace(
+            token_path="embedding",
+            vocab_size=vocab_size,
+        ),
+        lm_head_path="lm_head",
+    )
+
+
+def test_joint_sparse_fold_reports_and_preserves_structural_transport() -> None:
+    source = _gpt2_source()
+    target = _gpt2_target()
+
+    result = bootstrap_blank_decoder_models(
+        source,
+        target,
+        _batch(701),
+        validation_inputs=_batch(702),
+        residual_map_method="joint_sparse_fold",
+        max_coordinate_rows=24,
+        vocab_projection_chunk_size=7,
+        vocab_row_norm_repair="source_l2",
+    )
+
+    report = result.fit_reports["residual.map"]
+    assert report["method"] == "joint-logit-aware-sparse-fold"
+    assert report["feature_fold"]["full_source_coverage"] is True
+    assert report["feature_fold"]["deterministic"] is True
+    assert report["normalization"] == {
+        "method": "equal-total-frobenius-energy",
+        "target_energy_per_input": 12.0,
+        "prevents_row-count_or_raw-energy_dominance": True,
+    }
+    residual_input = report["inputs"]["parent_residual_activations"]
+    vocabulary_input = report["inputs"]["tied_source_embedding_lm_head"]
+    assert residual_input["sampled_rows"] == 24
+    assert vocabulary_input["sampling"]["sampled_rows"] == 24
+    assert vocabulary_input["sampling"]["available_rows"] == 64
+    assert vocabulary_input["full_vocabulary_copy_materialized"] is False
+    assert vocabulary_input["provenance"] == {
+        "embedding_path": "transformer.wte",
+        "lm_head_path": "lm_head",
+        "weight_shape": [64, 12],
+        "tied_by_storage": True,
+    }
+    for basis_input in (residual_input, vocabulary_input):
+        assert basis_input["normalized_total_energy"] == pytest.approx(12.0)
+    assert result.fit_reports["block.0.attention.structural_prior"]["applied"] is True
+    assert result.fit_reports["block.0.mlp.structural_prior"]["applied"] is True
+    assert result.transaction.report["coverage"]["complete"] is True
+    embedding_repair = result.fit_reports["embeddings.token"]["row_norm_repair"]
+    head_repair = result.fit_reports["lm_head"]["row_norm_repair"]
+    for repair in (embedding_repair, head_repair):
+        assert repair["method"] == "source-l2-row-norm-repair"
+        assert repair["total_rows"] == 64
+        assert repair["repaired_rows"] == 64
+        assert repair["zero_source_rows"] == 0
+        assert repair["zero_projected_rows"] == 0
+        assert repair["finite"] is True
+        assert repair["applied_source_to_projected_ratio"]["count"] == 64
+        assert repair["post_copy_to_source_ratio"]["count"] == 64
+    assert result.fit_reports["embeddings.token"]["target_tied_storage"] is True
+    assert result.fit_reports["lm_head"]["target_tied_storage"] is True
+
+
+def test_joint_sparse_fold_vocabulary_changes_assignments_deterministically() -> None:
+    activation_generator = torch.Generator().manual_seed(1)
+    vocabulary_generator_a = torch.Generator().manual_seed(100)
+    vocabulary_generator_b = torch.Generator().manual_seed(101)
+    residual_rows = torch.randn(
+        8,
+        4,
+        generator=activation_generator,
+        dtype=torch.float64,
+    )
+    vocabulary_a = torch.randn(
+        8,
+        4,
+        generator=vocabulary_generator_a,
+        dtype=torch.float64,
+    )
+    vocabulary_b = torch.randn(
+        8,
+        4,
+        generator=vocabulary_generator_b,
+        dtype=torch.float64,
+    )
+    model = _TiedVocabularyCarrier(vocabulary_a)
+    layout = _tied_vocabulary_layout(vocab_size=8, hidden_size=4)
+
+    geometry_a = bootstrap_module._require_tied_source_vocabulary_geometry(
+        torch,
+        model,
+        layout,
+    )
+    fold_a, report_a = bootstrap_module._build_joint_sparse_residual_map(
+        torch,
+        residual_rows,
+        geometry_a,
+        2,
+        8,
+        1,
+    )
+    repeat_a, repeat_report_a = bootstrap_module._build_joint_sparse_residual_map(
+        torch,
+        residual_rows,
+        geometry_a,
+        2,
+        8,
+        1,
+    )
+    with torch.no_grad():
+        model.embedding.weight.copy_(vocabulary_b)
+    geometry_b = bootstrap_module._require_tied_source_vocabulary_geometry(
+        torch,
+        model,
+        layout,
+    )
+    fold_b, report_b = bootstrap_module._build_joint_sparse_residual_map(
+        torch,
+        residual_rows,
+        geometry_b,
+        2,
+        8,
+        1,
+    )
+
+    assert torch.equal(fold_a.assignment, repeat_a.assignment)
+    assert torch.equal(fold_a.coefficients, repeat_a.coefficients)
+    assert report_a == repeat_report_a
+    assert not torch.equal(fold_a.assignment, fold_b.assignment)
+    assert report_a != report_b
+    for report in (report_a, report_b):
+        assert report["feature_fold"]["full_source_coverage"] is True
+        assert report["feature_fold"]["source_channels_covered"] == 4
+        assert report["inputs"]["tied_source_embedding_lm_head"]["sampling"][
+            "deterministic"
+        ] is True
+
+
+def test_joint_sparse_fold_rejects_untied_source_before_target_mutation() -> None:
+    source = _llama_source()
+    target = _llama_target()
+    before = _state(target)
+
+    with pytest.raises(BlankBootstrapError, match="genuinely tied source"):
+        bootstrap_blank_decoder_models(
+            source,
+            target,
+            _batch(703),
+            residual_map_method="joint_sparse_fold",
+        )
+
+    for name, value in target.state_dict().items():
+        assert torch.equal(value, before[name]), name
+
+
+def test_source_l2_vocab_repair_preserves_row_norms_and_tied_storage() -> None:
+    coordinates = bootstrap_module.FeatureFoldMap(
+        torch.tensor([0, 0, 1, 1]),
+        torch.ones(4, dtype=torch.float64),
+        2,
+    )
+    source_weight = torch.tensor(
+        [
+            [3.0, 4.0, 1.0, 2.0],
+            [1.0, 2.0, 3.0, 4.0],
+            [0.0, 0.0, 0.0, 0.0],
+        ],
+        dtype=torch.float64,
+    )
+    target = _TiedVocabularyCarrier(torch.zeros(3, 2, dtype=torch.float64))
+    original_pointer = int(target.embedding.weight.data_ptr())
+
+    embedding_report = bootstrap_module._copy_projected_rows(
+        torch,
+        source_weight,
+        target.embedding.weight,
+        coordinates,
+        2,
+        row_norm_repair="source_l2",
+    )
+    head_report = bootstrap_module._copy_projected_rows(
+        torch,
+        source_weight,
+        target.lm_head.weight,
+        coordinates,
+        2,
+        row_norm_repair="source_l2",
+    )
+
+    assert target.embedding.weight is target.lm_head.weight
+    assert int(target.embedding.weight.data_ptr()) == original_pointer
+    assert torch.allclose(
+        torch.linalg.vector_norm(target.embedding.weight, dim=1),
+        torch.linalg.vector_norm(source_weight, dim=1),
+        atol=1e-12,
+        rtol=1e-12,
+    )
+    assert torch.equal(target.embedding.weight[2], torch.zeros(2, dtype=torch.float64))
+    for report in (embedding_report, head_report):
+        assert report["repaired_rows"] == 2
+        assert report["zero_source_rows"] == 1
+        assert report["zero_projected_rows"] == 1
+        assert report["zeroed_projected_rows"] == 0
+        assert report["finite"] is True
+        assert report["post_copy_to_source_ratio"] == {
+            "count": 2,
+            "minimum": pytest.approx(1.0),
+            "maximum": pytest.approx(1.0),
+            "mean": pytest.approx(1.0),
+        }
+
+
+def test_source_l2_vocab_repair_fails_if_nonzero_row_projects_to_zero() -> None:
+    coordinates = bootstrap_module.FeatureFoldMap(
+        torch.tensor([0, 0, 1, 1]),
+        torch.ones(4, dtype=torch.float64),
+        2,
+    )
+    source_weight = torch.tensor(
+        [[1.0, -1.0, 2.0, -2.0]],
+        dtype=torch.float64,
+    )
+    target_weight = torch.full((1, 2), 7.0, dtype=torch.float64)
+
+    with pytest.raises(BlankBootstrapError, match="projected to zero"):
+        bootstrap_module._copy_projected_rows(
+            torch,
+            source_weight,
+            target_weight,
+            coordinates,
+            1,
+            row_norm_repair="source_l2",
+        )
+
+    assert torch.equal(target_weight, torch.full((1, 2), 7.0, dtype=torch.float64))
