@@ -3,9 +3,10 @@ set -euo pipefail
 
 ROOT=/home/cereal/model-surgery-lab/neural-forge-pivot
 RUN_ROOT=/mnt/ai_data/neural-forge/progressive_closed_form_20260710
-TAG=qwen3_4b_to_blank_qwen1p13b_stage1_gpu6_r2_20260710
+TAG=${TAG:-qwen3_4b_to_blank_qwen1p13b_stage1_headnorm_delta0p5_gpu6_r3_20260710}
 PY=/home/cereal/model-surgery-lab/venv/bin/python
-GPU=GPU-f5a09535-fc85-a027-50f7-734b344747dd
+GPU=${GPU:-GPU-f5a09535-fc85-a027-50f7-734b344747dd}
+MAX_OPERATOR_DELTA_RATIO=${MAX_OPERATOR_DELTA_RATIO:-0.5}
 
 mkdir -p "$RUN_ROOT"
 
@@ -46,6 +47,7 @@ mkdir -p "$RUN_ROOT"
   --trace-pooling token_rows \
   --residual-map-method sparse_fold \
   --ridge 1e-3 \
+  --max-operator-delta-ratio "$MAX_OPERATOR_DELTA_RATIO" \
   --min-final-state-improvement 0 \
   --min-logit-improvement 0 \
   --min-top1-gain 0 \
