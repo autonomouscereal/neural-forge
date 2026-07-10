@@ -49,7 +49,6 @@ from neural_forge.hf_transport_math import (
     CoordinateMap,
     build_parent_residual_basis,
     encode_coordinates,
-    transport_linear_operator,
 )
 from neural_forge.hf_transport_trace import (
     DecoderBlockTrace,
@@ -136,9 +135,7 @@ def bootstrap_blank_decoder_models(
             "residual_map_method must be sparse_fold, joint_sparse_fold, or pca."
         )
     if vocab_row_norm_repair not in {"none", "source_l2"}:
-        raise BlankBootstrapError(
-            "vocab_row_norm_repair must be none or source_l2."
-        )
+        raise BlankBootstrapError("vocab_row_norm_repair must be none or source_l2.")
     if not isinstance(cross_tokenizer_mode, bool):
         raise BlankBootstrapError("cross_tokenizer_mode must be boolean.")
     if cross_tokenizer_mode:
@@ -654,8 +651,7 @@ def _build_joint_sparse_residual_map(
             "sampling": sampling_report,
             "row_bound": int(max_rows),
             "full_vocabulary_copy_materialized": (
-                sampling_report["sampled_rows"]
-                == sampling_report["available_rows"]
+                sampling_report["sampled_rows"] == sampling_report["available_rows"]
             ),
             "copy_bounded_by_max_rows": True,
         }
@@ -706,7 +702,9 @@ def _sample_vocabulary_geometry_rows(
         .contiguous()
     )
     expected_shape = (sampled_rows, int(source_weight.shape[1]))
-    if tuple(sampled.shape) != expected_shape or not bool(torch.isfinite(sampled).all()):
+    if tuple(sampled.shape) != expected_shape or not bool(
+        torch.isfinite(sampled).all()
+    ):
         raise BlankBootstrapError(
             "Sampled source vocabulary geometry has an invalid shape or value."
         )
@@ -732,9 +730,7 @@ def _normalize_joint_basis_input(
     if not isinstance(matrix, torch.Tensor) or matrix.ndim != 2:
         raise BlankBootstrapError(f"Joint basis input {name!r} must be a matrix.")
     if int(matrix.shape[0]) <= 0 or int(matrix.shape[1]) != source_width:
-        raise BlankBootstrapError(
-            f"Joint basis input {name!r} has an invalid shape."
-        )
+        raise BlankBootstrapError(f"Joint basis input {name!r} has an invalid shape.")
     values = matrix.detach().to(device="cpu", dtype=torch.float64).contiguous()
     norm = float(torch.linalg.vector_norm(values))
     if not math.isfinite(norm) or norm <= 0.0:
@@ -1271,15 +1267,15 @@ def _fit_target_block(
     )
     q_coordinates, k_coordinates, v_coordinates, context_coordinates = (
         _attention_feature_coordinates(
-        torch,
-        source_q_rows,
-        source_k_rows,
-        source_v_rows,
-        context_rows,
-        source_layout.blocks[source_span[-1]].attention,
-        target_block_layout,
-        max_coordinate_rows,
-        use_coordinate_maps=isinstance(residual_coordinates, CoordinateMap),
+            torch,
+            source_q_rows,
+            source_k_rows,
+            source_v_rows,
+            context_rows,
+            source_layout.blocks[source_span[-1]].attention,
+            target_block_layout,
+            max_coordinate_rows,
+            use_coordinate_maps=False,
         )
     )
     reports[f"block.{target_index}.attention.feature_folds"] = {
@@ -1311,9 +1307,7 @@ def _fit_target_block(
         v_coordinates,
         context_coordinates,
     )
-    reports[f"block.{target_index}.attention.structural_prior"] = (
-        attention_prior_report
-    )
+    reports[f"block.{target_index}.attention.structural_prior"] = attention_prior_report
     desired_q = _mean_encoded_rows(torch, source_q_rows, q_coordinates)
     desired_k = _mean_encoded_rows(torch, source_k_rows, k_coordinates)
     desired_v = _mean_encoded_rows(torch, source_v_rows, v_coordinates)
@@ -1428,29 +1422,14 @@ def _fit_target_block(
         source_blocks,
         max_coordinate_rows,
     )
-    gated_triplet_compatible = (
-        target_block_layout.mlp.kind == "gated"
-        and all(
-            source_layout.blocks[index].mlp.kind == "gated"
-            for index in source_span
-        )
+    gated_triplet_compatible = target_block_layout.mlp.kind == "gated" and all(
+        source_layout.blocks[index].mlp.kind == "gated" for index in source_span
     )
-    if isinstance(residual_coordinates, CoordinateMap):
-        mlp_coordinates = build_parent_residual_basis(
-            _sample_concatenated_rows(
-                torch,
-                mlp_feature_rows,
-                max_coordinate_rows,
-            ),
-            target_block_layout.mlp.intermediate_size,
-            center=False,
-        )
-    else:
-        mlp_coordinates = build_feature_fold_map(
-            mlp_feature_rows,
-            target_block_layout.mlp.intermediate_size,
-            allow_sign_flip=not gated_triplet_compatible,
-        )
+    mlp_coordinates = build_feature_fold_map(
+        mlp_feature_rows,
+        target_block_layout.mlp.intermediate_size,
+        allow_sign_flip=not gated_triplet_compatible,
+    )
     reports[f"block.{target_index}.mlp.feature_fold"] = _coordinate_report(
         mlp_coordinates
     )
@@ -1534,9 +1513,7 @@ def _fit_target_block(
                 ),
                 "activation": target_block_layout.mlp.activation_name,
             }
-        reports[f"block.{target_index}.mlp.product_target"] = (
-            product_target_report
-        )
+        reports[f"block.{target_index}.mlp.product_target"] = product_target_report
         gate_fit = _fit_operator_with_prior(
             target_block.pre_mlp_norm_output,
             desired_gate,
@@ -1884,10 +1861,7 @@ def _effective_source_attention_projection_rows(
                 attention.query_heads,
                 attention.head_dim,
             )
-        if (
-            target_attention_layout.key_norm is None
-            and attention.key_norm is not None
-        ):
+        if target_attention_layout.key_norm is None and attention.key_norm is not None:
             key = _apply_head_norm(
                 torch,
                 key,
@@ -1947,7 +1921,9 @@ def _transport_target_head_norm(
 
     transported = torch.stack(folded_scales, dim=0).mean(dim=0)
     if not bool(torch.isfinite(transported).all()):
-        raise BlankBootstrapError("Head-norm scale transport produced non-finite values.")
+        raise BlankBootstrapError(
+            "Head-norm scale transport produced non-finite values."
+        )
     _write_effective_head_norm_scale(
         torch,
         target_model,
@@ -2023,7 +1999,9 @@ def _fold_head_norm_scale(
     folded.index_add_(0, assignment, values)
     folded = folded / counts.to(torch.float64)
     if not bool(torch.isfinite(folded).all()):
-        raise BlankBootstrapError("Head-norm dimension mean produced non-finite values.")
+        raise BlankBootstrapError(
+            "Head-norm dimension mean produced non-finite values."
+        )
     return folded.contiguous(), tuple(int(value) for value in counts.tolist())
 
 
@@ -2159,41 +2137,44 @@ def _transport_operator_prior(
     output_coordinates: Any,
     input_coordinates: Any,
 ) -> LinearOperator:
-    if isinstance(input_coordinates, CoordinateMap) and isinstance(
-        output_coordinates,
-        CoordinateMap,
-    ):
-        transported = transport_linear_operator(
-            source.weight,
-            input_coordinates,
-            output_coordinates,
-            source_bias=source.bias,
-        )
-        bias = transported.bias
-        if target.bias is not None and bias is None:
-            bias = torch.zeros(transported.weight.shape[0], dtype=torch.float64)
-        return LinearOperator(
-            path=target.path,
-            weight=transported.weight,
-            bias=bias if target.bias is not None else None,
-        )
-    if not isinstance(input_coordinates, FeatureFoldMap) or not isinstance(
-        output_coordinates,
-        FeatureFoldMap,
+    supported = (FeatureFoldMap, CoordinateMap)
+    if not isinstance(input_coordinates, supported) or not isinstance(
+        output_coordinates, supported
     ):
         raise BlankBootstrapError(
-            "Structural prior coordinate maps must use one coherent map family."
+            "Structural prior coordinates must be sparse folds or PCA maps."
         )
-    folded_input = input_coordinates.fold_consumer_weight(source.weight)
-    weight = output_coordinates.fold_producer_weight(folded_input)
+
+    if isinstance(input_coordinates, FeatureFoldMap):
+        folded_input = input_coordinates.fold_consumer_weight(source.weight)
+    else:
+        decode = input_coordinates.decode.to(source.weight)
+        if int(source.weight.shape[1]) != int(decode.shape[0]):
+            raise BlankBootstrapError(
+                "Structural prior input coordinate width does not match its operator."
+            )
+        folded_input = source.weight @ decode
+
+    if isinstance(output_coordinates, FeatureFoldMap):
+        weight = output_coordinates.fold_producer_weight(folded_input)
+    else:
+        encode = output_coordinates.encode.to(folded_input)
+        if int(folded_input.shape[0]) != int(encode.shape[1]):
+            raise BlankBootstrapError(
+                "Structural prior output coordinate width does not match its operator."
+            )
+        weight = encode @ folded_input
+
     bias = None
     if target.bias is not None:
         if source.bias is None:
             bias = torch.zeros(weight.shape[0], dtype=torch.float64)
-        else:
+        elif isinstance(output_coordinates, FeatureFoldMap):
             bias = output_coordinates.fold_producer_weight(
                 source.bias.reshape(-1, 1)
             ).reshape(-1)
+        else:
+            bias = output_coordinates.encode.to(source.bias) @ source.bias
     return LinearOperator(path=target.path, weight=weight, bias=bias)
 
 
@@ -2203,7 +2184,9 @@ def _mean_operator_priors(
     values: Sequence[LinearOperator],
 ) -> LinearOperator:
     if not values:
-        raise BlankBootstrapError("A structural prior needs at least one donor operator.")
+        raise BlankBootstrapError(
+            "A structural prior needs at least one donor operator."
+        )
     weight = torch.stack([value.weight for value in values], dim=0).mean(dim=0)
     bias = None
     if target.bias is not None:
@@ -2219,7 +2202,9 @@ def _sum_operator_priors(
     values: Sequence[LinearOperator],
 ) -> LinearOperator:
     if not values:
-        raise BlankBootstrapError("A structural prior needs at least one donor operator.")
+        raise BlankBootstrapError(
+            "A structural prior needs at least one donor operator."
+        )
     weight = torch.stack([value.weight for value in values], dim=0).sum(dim=0)
     bias = None
     if target.bias is not None:
@@ -2245,19 +2230,14 @@ def _initialize_attention_structural_prior(
     if not isinstance(residual_coordinates, (FeatureFoldMap, CoordinateMap)):
         return {"applied": False, "reason": "unsupported-residual-coordinate-map"}
     source_projection_styles = {
-        source_layout.blocks[index].attention.projection_style
-        for index in source_span
+        source_layout.blocks[index].attention.projection_style for index in source_span
     }
-    if source_projection_styles != {
-        target_block_layout.attention.projection_style
-    }:
+    if source_projection_styles != {target_block_layout.attention.projection_style}:
         return {
             "applied": False,
             "reason": "source-target-attention-projection-topology-mismatch",
             "source_projection_styles": sorted(source_projection_styles),
-            "target_projection_style": (
-                target_block_layout.attention.projection_style
-            ),
+            "target_projection_style": (target_block_layout.attention.projection_style),
         }
     target = read_attention_operators(
         target_model,
@@ -2402,7 +2382,9 @@ def _initialize_mlp_structural_prior(
         )
     else:
         assert target.gate is not None and target.up is not None
-        assert all(source.gate is not None and source.up is not None for source in sources)
+        assert all(
+            source.gate is not None and source.up is not None for source in sources
+        )
         merged = MLPOperators(
             kind="gated",
             input=None,
@@ -2551,9 +2533,7 @@ def _gated_up_target_for_product(
         "width": int(target.shape[1]),
         "denominator_stabilized_fraction": stabilized_fraction,
         "target_clipped_fraction": clipped_fraction,
-        "gate_activation_rms": float(
-            torch.sqrt(gate_activation.square().mean())
-        ),
+        "gate_activation_rms": float(torch.sqrt(gate_activation.square().mean())),
         "desired_product_rms": float(torch.sqrt(product.square().mean())),
         "up_target_rms": float(torch.sqrt(target.square().mean())),
     }

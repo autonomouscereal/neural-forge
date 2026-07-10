@@ -263,13 +263,14 @@ def test_blank_bootstrap_improves_source_anchors_and_covers_every_target_role(
         assert fold_report["source_key_head_norms"] == [
             "model.layers.0.self_attn.k_norm"
         ]
-        assert result.fit_reports["block.0.attention.structural_prior"][
-            "applied"
-        ] is True
+        assert (
+            result.fit_reports["block.0.attention.structural_prior"]["applied"] is True
+        )
         assert result.fit_reports["block.0.mlp.structural_prior"]["applied"] is True
-        assert result.fit_reports["block.0.mlp.feature_fold"][
-            "negative_coefficient_count"
-        ] == 0
+        assert (
+            result.fit_reports["block.0.mlp.feature_fold"]["negative_coefficient_count"]
+            == 0
+        )
         assert result.fit_reports["block.0.mlp.product_target"]["applied"] is True
         assert result.fit_reports["block.0.mlp.product_fit"]["finite"] is True
         assert result.fit_reports["block.0.attention.query"]["method"] == (
@@ -329,7 +330,9 @@ def test_prompt_pooled_bootstrap_accepts_different_token_sequence_lengths() -> N
     )
 
 
-def test_cross_tokenizer_bootstrap_reorders_vocab_and_projects_teacher_columns() -> None:
+def test_cross_tokenizer_bootstrap_reorders_vocab_and_projects_teacher_columns() -> (
+    None
+):
     source = _gpt2_source()
     target = _llama_target(vocab_size=16)
     donor_surfaces = [f"token-{index}" for index in range(64)]
@@ -418,15 +421,50 @@ def test_pca_operator_prior_uses_coordinate_transport_formula_and_bias() -> None
         output_coordinates,
         input_coordinates,
     )
-    expected = bootstrap_module.transport_linear_operator(
-        source.weight,
-        input_coordinates,
-        output_coordinates,
-        source_bias=source.bias,
+    expected_weight = (
+        output_coordinates.encode @ source.weight @ input_coordinates.decode
+    )
+    expected_bias = output_coordinates.encode @ source.bias
+
+    assert torch.allclose(actual.weight, expected_weight, atol=1e-12, rtol=1e-12)
+    assert torch.allclose(actual.bias, expected_bias, atol=1e-12, rtol=1e-12)
+
+
+def test_operator_prior_supports_pca_residual_with_sparse_nonlinear_axis() -> None:
+    generator = torch.Generator().manual_seed(576)
+    input_coordinates = bootstrap_module.build_parent_residual_basis(
+        torch.randn(32, 5, generator=generator, dtype=torch.float64),
+        3,
+        center=False,
+    )
+    output_coordinates = bootstrap_module.build_feature_fold_map(
+        torch.randn(32, 7, generator=generator, dtype=torch.float64),
+        4,
+    )
+    source = bootstrap_module.LinearOperator(
+        path="source",
+        weight=torch.randn(7, 5, generator=generator, dtype=torch.float64),
+        bias=torch.randn(7, generator=generator, dtype=torch.float64),
+    )
+    target = bootstrap_module.LinearOperator(
+        path="target",
+        weight=torch.zeros(4, 3, dtype=torch.float64),
+        bias=torch.zeros(4, dtype=torch.float64),
     )
 
-    assert torch.equal(actual.weight, expected.weight)
-    assert torch.equal(actual.bias, expected.bias)
+    actual = bootstrap_module._transport_operator_prior(
+        torch,
+        source,
+        target,
+        output_coordinates,
+        input_coordinates,
+    )
+    dense_output = output_coordinates.materialize_dense(max_elements=28)
+    expected_weight = dense_output.T @ source.weight @ input_coordinates.decode
+    expected_bias = dense_output.T @ source.bias
+
+    assert torch.allclose(actual.weight, expected_weight, atol=1e-12, rtol=1e-12)
+    assert torch.allclose(actual.bias, expected_bias, atol=1e-12, rtol=1e-12)
 
 
 def test_pca_bootstrap_transports_all_priors_and_composes_depth_spans() -> None:
@@ -453,28 +491,34 @@ def test_pca_bootstrap_transports_all_priors_and_composes_depth_spans() -> None:
         assert mlp["applied"] is True
         assert mlp["coordinate_method"] == "pca-coordinate-formula"
         assert mlp["residual_consumer_aggregation"] == "sum"
-        assert result.fit_reports[f"block.{block_index}.attention.norm"][
-            "finite"
-        ] is True
+        assert (
+            result.fit_reports[f"block.{block_index}.attention.norm"]["finite"] is True
+        )
         assert result.fit_reports[f"block.{block_index}.mlp.norm"]["finite"] is True
-        assert result.fit_reports[f"block.{block_index}.attention.query_norm"][
-            "method"
-        ] == "deterministic-full-coverage-effective-rms-scale-mean"
-        assert result.fit_reports[f"block.{block_index}.attention.key_norm"][
-            "method"
-        ] == "deterministic-full-coverage-effective-rms-scale-mean"
+        assert (
+            result.fit_reports[f"block.{block_index}.attention.query_norm"]["method"]
+            == "deterministic-full-coverage-effective-rms-scale-mean"
+        )
+        assert (
+            result.fit_reports[f"block.{block_index}.attention.key_norm"]["method"]
+            == "deterministic-full-coverage-effective-rms-scale-mean"
+        )
         feature_report = result.fit_reports[
             f"block.{block_index}.attention.feature_folds"
         ]
-        assert feature_report["query"]["method"] == "pca-coordinate-map"
-        assert feature_report["query"]["orthonormal_columns"] is True
+        assert feature_report["query"]["method"] == (
+            "gqa-head-rope-pair-constrained-fold"
+        )
+        assert feature_report["query"]["gqa_routing_preserved"] is True
+        assert feature_report["query"]["rotary_pairs_preserved"] is True
+        mlp_report = result.fit_reports[f"block.{block_index}.mlp.feature_fold"]
+        assert mlp_report["full_source_coverage"] is True
+        assert mlp_report["sign_flips_allowed"] is False
 
     span = result.fit_reports["block.1.span"]
     assert span["source_layers"] == [1, 2]
     assert span["residual_composition"] == "ordered-source-span-endpoint"
-    assert span["attention_delta_target"] == (
-        "sum-encoded-source-attention-deltas"
-    )
+    assert span["attention_delta_target"] == ("sum-encoded-source-attention-deltas")
     assert span["structural_prior_residual_consumers"] == "sum"
 
 
@@ -538,9 +582,7 @@ def test_qwen_target_transfers_head_norms_without_baking_them_twice(
             assert report["source_layers"] == expected_layers
             assert report["full_source_coverage"] is True
             assert report["target_head_dim"] == 2
-            assert report["dimension_group_sizes"] == [[2, 2]] * len(
-                expected_layers
-            )
+            assert report["dimension_group_sizes"] == [[2, 2]] * len(expected_layers)
 
 
 class _HeadNormCarrier(torch.nn.Module):
@@ -549,7 +591,9 @@ class _HeadNormCarrier(torch.nn.Module):
         self.norms = torch.nn.ModuleList()
         for weight in weights:
             module = torch.nn.Module()
-            module.weight = torch.nn.Parameter(torch.tensor(weight, dtype=torch.float32))
+            module.weight = torch.nn.Parameter(
+                torch.tensor(weight, dtype=torch.float32)
+            )
             self.norms.append(module)
         self.target_norm = torch.nn.Module()
         self.target_norm.weight = torch.nn.Parameter(torch.zeros(2))
@@ -593,9 +637,7 @@ def test_head_norm_transfer_uses_effective_scales_span_mean_and_identity() -> No
                     head_dim=4,
                 )
             ),
-            SimpleNamespace(
-                attention=SimpleNamespace(query_norm=None, head_dim=4)
-            ),
+            SimpleNamespace(attention=SimpleNamespace(query_norm=None, head_dim=4)),
         )
     )
     target_norm = _head_norm_layout("target_norm", weight_kind="unit_offset")
@@ -655,9 +697,7 @@ def test_head_norm_transfer_fails_closed_for_unsupported_topology(
     model = _HeadNormCarrier(([1.0, 1.0, 1.0, 1.0],))
     source_layout = SimpleNamespace(
         blocks=(
-            SimpleNamespace(
-                attention=SimpleNamespace(query_norm=None, head_dim=4)
-            ),
+            SimpleNamespace(attention=SimpleNamespace(query_norm=None, head_dim=4)),
         )
     )
     target_norm = NormLayout(
@@ -835,9 +875,12 @@ def test_joint_sparse_fold_vocabulary_changes_assignments_deterministically() ->
     for report in (report_a, report_b):
         assert report["feature_fold"]["full_source_coverage"] is True
         assert report["feature_fold"]["source_channels_covered"] == 4
-        assert report["inputs"]["tied_source_embedding_lm_head"]["sampling"][
-            "deterministic"
-        ] is True
+        assert (
+            report["inputs"]["tied_source_embedding_lm_head"]["sampling"][
+                "deterministic"
+            ]
+            is True
+        )
 
 
 def test_joint_sparse_fold_rejects_untied_source_before_target_mutation() -> None:
