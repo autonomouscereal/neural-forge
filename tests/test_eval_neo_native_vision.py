@@ -16,7 +16,9 @@ torch = pytest.importorskip("torch")
 from PIL import Image  # noqa: E402
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "experiments" / "eval_neo_native_vision.py"
+SCRIPT = (
+    Path(__file__).resolve().parents[1] / "experiments" / "eval_neo_native_vision.py"
+)
 SPEC = importlib.util.spec_from_file_location("eval_neo_native_vision", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -131,7 +133,9 @@ def _build_snapshot(tmp_path: Path) -> Path:
         },
     }
     (snapshot / "config.json").write_text(json.dumps(config), encoding="utf-8")
-    (snapshot / "modeling_neo_chat.py").write_text("# local remote code\n", encoding="ascii")
+    (snapshot / "modeling_neo_chat.py").write_text(
+        "# local remote code\n", encoding="ascii"
+    )
     (snapshot / "model.safetensors").write_bytes(b"fake-local-weights")
     return snapshot
 
@@ -142,7 +146,9 @@ class FakeTokenizer:
 
 
 class FakeNEOModel(torch.nn.Module):
-    def __init__(self, *, fail_on_call: int | None = None, patch_size: int = 16) -> None:
+    def __init__(
+        self, *, fail_on_call: int | None = None, patch_size: int = 16
+    ) -> None:
         super().__init__()
         self.weight = torch.nn.Parameter(torch.ones(1, dtype=torch.float32))
         self.patch_size = patch_size
@@ -230,7 +236,9 @@ def _evaluate(
     return report, selected_model, selected_loader, manifest, snapshot, manifest_sha256
 
 
-def test_decoded_rgb_hash_ignores_png_encoding_and_rejects_pixel_change(tmp_path: Path) -> None:
+def test_decoded_rgb_hash_ignores_png_encoding_and_rejects_pixel_change(
+    tmp_path: Path,
+) -> None:
     manifest, digest = _build_manifest(tmp_path)
     verified = MODULE.verify_manifest(manifest, digest)
     assert verified["sha256"] == digest
@@ -240,14 +248,18 @@ def test_decoded_rgb_hash_ignores_png_encoding_and_rejects_pixel_change(tmp_path
     with Image.open(image_path) as source:
         decoded = source.convert("RGB")
     decoded.save(image_path, format="PNG", optimize=True, compress_level=9)
-    assert MODULE.verify_manifest(manifest, digest)["records"][0]["image_sha256"] == _decoded_hash(decoded)
+    assert MODULE.verify_manifest(manifest, digest)["records"][0][
+        "image_sha256"
+    ] == _decoded_hash(decoded)
     assert _sha256(image_path) != ""  # The encoded bytes are deliberately irrelevant.
     assert original_encoded_hash != ""  # Do not make the test zlib-version-dependent.
 
     changed = decoded.copy()
     changed.putpixel((0, 0), (0, 0, 0))
     changed.save(image_path, format="PNG")
-    with pytest.raises(MODULE.EvaluationContractError, match="decoded RGB SHA-256 mismatch"):
+    with pytest.raises(
+        MODULE.EvaluationContractError, match="decoded RGB SHA-256 mismatch"
+    ):
         MODULE.verify_manifest(manifest, digest)
 
 
@@ -284,7 +296,9 @@ def test_official_preprocessing_resizes_normalizes_and_flattens(tmp_path: Path) 
         (0.0 - 0.406) / 0.225,
     )
     assert torch.allclose(patches[0, :256], torch.full((256,), expected[0]), atol=1e-6)
-    assert torch.allclose(patches[0, 256:512], torch.full((256,), expected[1]), atol=1e-6)
+    assert torch.allclose(
+        patches[0, 256:512], torch.full((256,), expected[1]), atol=1e-6
+    )
     assert torch.allclose(patches[0, 512:], torch.full((256,), expected[2]), atol=1e-6)
 
     source = torch.arange(3 * 32 * 32, dtype=torch.float32).reshape(3, 32, 32)
@@ -320,7 +334,9 @@ def test_direct_answer_normalization_is_deliberately_strict(
     assert MODULE.normalize_direct_answer(category, raw) == expected
 
 
-def test_evaluator_caches_every_output_and_complete_cache_skips_loader(tmp_path: Path) -> None:
+def test_evaluator_caches_every_output_and_complete_cache_skips_loader(
+    tmp_path: Path,
+) -> None:
     report, model, loader, manifest, snapshot, digest = _evaluate(tmp_path)
 
     assert len(loader.calls) == 1
@@ -334,7 +350,9 @@ def test_evaluator_caches_every_output_and_complete_cache_skips_loader(tmp_path:
     }
     assert report["cache"]["cache_hits_this_invocation"] == 0
     assert report["cache"]["new_records_this_invocation"] == 4
-    assert len((tmp_path / "eval" / "parent_outputs.jsonl").read_text().splitlines()) == 4
+    assert (
+        len((tmp_path / "eval" / "parent_outputs.jsonl").read_text().splitlines()) == 4
+    )
     for call in model.calls:
         assert call["pixel_shape"] == (256, 768)
         assert call["pixel_dtype"] == torch.float32
@@ -421,7 +439,9 @@ def test_cache_tampering_fails_before_model_loader(tmp_path: Path) -> None:
     def forbidden_loader(*args: Any, **kwargs: Any) -> Any:
         raise AssertionError("invalid cache must fail before model loading")
 
-    with pytest.raises(MODULE.EvaluationContractError, match="raw output hash mismatch"):
+    with pytest.raises(
+        MODULE.EvaluationContractError, match="raw output hash mismatch"
+    ):
         MODULE.evaluate_parent_baseline(
             manifest=manifest,
             manifest_sha256=digest,
@@ -496,6 +516,30 @@ def test_model_and_tokenizer_loading_is_strictly_local(tmp_path: Path) -> None:
     }
     assert loaded_model.to_calls == [torch.device("cpu")]
     assert loaded_model.eval_calls == 1
+
+
+def test_force_neo_eager_prefill_attention_disables_only_flex_mask(
+    monkeypatch: Any,
+) -> None:
+    module_name = "fake_neo_qwen3_runtime"
+    fake_module = SimpleNamespace(
+        create_flex_mask_qwen3_style=lambda *args, **kwargs: ("compiled-mask", 17)
+    )
+    monkeypatch.setitem(MODULE.sys.modules, module_name, fake_module)
+
+    language_model_cls = type("FakeLanguageModel", (), {"__module__": module_name})
+    language_model = language_model_cls()
+    language_model.config = SimpleNamespace(_attn_implementation="sdpa")
+    model = SimpleNamespace(language_model=language_model)
+
+    MODULE._force_neo_eager_prefill_attention(model)
+
+    assert language_model.config._attn_implementation == "eager"
+    assert fake_module.create_flex_mask_qwen3_style(object(), do_padding=True) == (
+        None,
+        0,
+    )
+    assert model._neural_forge_attention_runtime == MODULE.ATTENTION_RUNTIME
 
 
 def test_loaded_model_preprocess_mismatch_fails_before_chat(tmp_path: Path) -> None:

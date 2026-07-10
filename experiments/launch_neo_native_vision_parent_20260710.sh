@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT=/home/cereal/model-surgery-lab/neural-forge-pivot
 RUN_ROOT=/mnt/ai_data/neural-forge/native_vision_parent_20260710
-TAG=${TAG:-neo1p5_2b_sft_probe256_bf16_gpu0_r4_tf4573_20260710}
+TAG=${TAG:-neo1p5_2b_sft_probe256_bf16_gpu0_r6_eagerprefill_tf4573_20260710}
 GPU=${GPU:-GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561}
 PY=/home/cereal/model-surgery-lab/venv/bin/python
 OUTPUT_DIR="$RUN_ROOT/$TAG"

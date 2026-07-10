@@ -27,6 +27,11 @@ RUN_SCHEMA = "neural-forge-neo-native-parent-run-v1"
 CACHE_SCHEMA = "neural-forge-neo-native-parent-record-v1"
 REPORT_SCHEMA = "neural-forge-neo-native-parent-report-v1"
 MODEL_ID = "Paranioar/NEO1_5-2B-SFT"
+ATTENTION_RUNTIME = {
+    "name": "neo_block_causal_eager_prefill",
+    "version": 1,
+    "reason": "avoid the checkpoint's unconditional torch.compile(flex_attention) prefill",
+}
 
 CATEGORIES = ("color", "count", "spatial", "ocr")
 SPLITS = ("calibration", "heldout")
@@ -148,7 +153,9 @@ def _normalize_sha256(value: str, label: str) -> str:
         raise EvaluationContractError(f"{label} must be a SHA-256 string.")
     normalized = value.strip().lower()
     if _SHA256_RE.fullmatch(normalized) is None:
-        raise EvaluationContractError(f"{label} must contain exactly 64 hexadecimal characters.")
+        raise EvaluationContractError(
+            f"{label} must contain exactly 64 hexadecimal characters."
+        )
     return normalized
 
 
@@ -174,7 +181,9 @@ def _read_json_object(path: Path, label: str) -> dict[str, Any]:
     try:
         value = json.loads(path.read_bytes().decode("utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise EvaluationContractError(f"Cannot read valid UTF-8 JSON from {label}: {path}") from exc
+        raise EvaluationContractError(
+            f"Cannot read valid UTF-8 JSON from {label}: {path}"
+        ) from exc
     if not isinstance(value, dict):
         raise EvaluationContractError(f"{label} must contain one JSON object.")
     return value
@@ -202,11 +211,15 @@ def _verify_answer(category: str, answer: Any, label: str) -> str:
     if category == "color" and answer not in COLOR_ANSWERS:
         raise EvaluationContractError(f"{label} has invalid color answer {answer!r}.")
     if category == "count" and re.fullmatch(r"[1-5]", answer) is None:
-        raise EvaluationContractError(f"{label} count answer must be one digit from 1 through 5.")
+        raise EvaluationContractError(
+            f"{label} count answer must be one digit from 1 through 5."
+        )
     if category == "spatial" and answer not in SPATIAL_ANSWERS:
         raise EvaluationContractError(f"{label} has invalid spatial answer {answer!r}.")
     if category == "ocr" and re.fullmatch(r"[0-9]{3}", answer) is None:
-        raise EvaluationContractError(f"{label} OCR answer must be exactly three digits.")
+        raise EvaluationContractError(
+            f"{label} OCR answer must be exactly three digits."
+        )
     return answer
 
 
@@ -215,14 +228,20 @@ def _resolved_image_path(root: Path, relative: Any, label: str) -> Path:
         raise EvaluationContractError(f"{label} image path must be a nonempty string.")
     candidate_relative = Path(relative)
     if candidate_relative.is_absolute() or ".." in candidate_relative.parts:
-        raise EvaluationContractError(f"{label} image path must stay below the manifest directory.")
+        raise EvaluationContractError(
+            f"{label} image path must stay below the manifest directory."
+        )
     candidate = (root / candidate_relative).resolve(strict=True)
     try:
         candidate.relative_to(root)
     except ValueError as exc:
-        raise EvaluationContractError(f"{label} image resolves outside the manifest directory.") from exc
+        raise EvaluationContractError(
+            f"{label} image resolves outside the manifest directory."
+        ) from exc
     if not candidate.is_file():
-        raise EvaluationContractError(f"{label} image is not a regular file: {candidate}")
+        raise EvaluationContractError(
+            f"{label} image is not a regular file: {candidate}"
+        )
     return candidate
 
 
@@ -255,7 +274,9 @@ def verify_manifest(
             "Unsupported image_hash_basis; encoded-PNG and unspecified hashes are not accepted."
         )
     if payload["image_format"] != "RGB uint8 64x64 PNG":
-        raise EvaluationContractError(f"Unsupported image_format {payload['image_format']!r}.")
+        raise EvaluationContractError(
+            f"Unsupported image_format {payload['image_format']!r}."
+        )
     _plain_int(payload["seed"], "manifest seed")
     examples_per_category = _plain_int(
         payload["examples_per_category"], "examples_per_category", minimum=1
@@ -274,7 +295,9 @@ def verify_manifest(
         )
     total = _plain_int(payload["total"], "manifest total", minimum=1)
     if total != examples_per_category * len(CATEGORIES):
-        raise EvaluationContractError("Manifest total does not match category cardinality.")
+        raise EvaluationContractError(
+            "Manifest total does not match category cardinality."
+        )
     records = payload["records"]
     if not isinstance(records, list) or len(records) != total:
         raise EvaluationContractError("Manifest records length does not match total.")
@@ -288,8 +311,13 @@ def verify_manifest(
     heldout_start = examples_per_category - heldout_per_category
     for index, source_record in enumerate(records):
         label = f"record[{index}]"
-        if not isinstance(source_record, dict) or frozenset(source_record) != _RECORD_KEYS:
-            raise EvaluationContractError(f"{label} fields do not match the frozen record schema.")
+        if (
+            not isinstance(source_record, dict)
+            or frozenset(source_record) != _RECORD_KEYS
+        ):
+            raise EvaluationContractError(
+                f"{label} fields do not match the frozen record schema."
+            )
         record = dict(source_record)
         category_index, item_index = divmod(index, examples_per_category)
         expected_category = CATEGORIES[category_index]
@@ -308,11 +336,15 @@ def verify_manifest(
             )
         split_counts[expected_split] += 1
         if record["image"] != f"images/{expected_id}.png":
-            raise EvaluationContractError(f"{label} image path does not match its probe_id.")
+            raise EvaluationContractError(
+                f"{label} image path does not match its probe_id."
+            )
         if not isinstance(record["prompt"], str) or not record["prompt"].strip():
             raise EvaluationContractError(f"{label} prompt must be nonempty.")
         _verify_answer(expected_category, record["answer"], label)
-        expected_image_digest = _normalize_sha256(record["image_sha256"], f"{label} image SHA-256")
+        expected_image_digest = _normalize_sha256(
+            record["image_sha256"], f"{label} image SHA-256"
+        )
         image_path = _resolved_image_path(root, record["image"], label)
         try:
             with Image.open(image_path) as image:
@@ -325,7 +357,9 @@ def verify_manifest(
                     )
                 actual_image_digest = canonical_decoded_rgb_sha256(image)
         except (OSError, UnidentifiedImageError) as exc:
-            raise EvaluationContractError(f"{label} image cannot be decoded: {image_path}") from exc
+            raise EvaluationContractError(
+                f"{label} image cannot be decoded: {image_path}"
+            ) from exc
         if actual_image_digest != expected_image_digest:
             raise EvaluationContractError(
                 f"{label} decoded RGB SHA-256 mismatch: expected {expected_image_digest}, "
@@ -355,12 +389,16 @@ def _config_at(config: Mapping[str, Any], path: Iterable[str]) -> Any:
     for key in path:
         traversed.append(key)
         if not isinstance(value, Mapping) or key not in value:
-            raise EvaluationContractError(f"Model config is missing {'.'.join(traversed)}.")
+            raise EvaluationContractError(
+                f"Model config is missing {'.'.join(traversed)}."
+            )
         value = value[key]
     return value
 
 
-def _expect_config(config: Mapping[str, Any], path: tuple[str, ...], expected: Any) -> None:
+def _expect_config(
+    config: Mapping[str, Any], path: tuple[str, ...], expected: Any
+) -> None:
     actual = _config_at(config, path)
     if actual != expected:
         raise EvaluationContractError(
@@ -416,14 +454,20 @@ def verify_model_snapshot(model_snapshot: str | Path) -> dict[str, Any]:
         if relative.endswith((".safetensors", ".bin")):
             has_weights = True
     if not files or not has_weights:
-        raise EvaluationContractError("Local model snapshot has no checkpoint weight file.")
+        raise EvaluationContractError(
+            "Local model snapshot has no checkpoint weight file."
+        )
     required_files = ("config.json", "modeling_neo_chat.py")
     relative_names = {item["path"] for item in files}
     missing = [name for name in required_files if name not in relative_names]
     if missing:
-        raise EvaluationContractError(f"Local remote-code snapshot is incomplete; missing={missing}.")
+        raise EvaluationContractError(
+            f"Local remote-code snapshot is incomplete; missing={missing}."
+        )
     tree_sha256 = _canonical_sha256(files)
-    revision = snapshot.name if re.fullmatch(r"[0-9a-f]{40,64}", snapshot.name) else None
+    revision = (
+        snapshot.name if re.fullmatch(r"[0-9a-f]{40,64}", snapshot.name) else None
+    )
     return {
         "path": str(snapshot),
         "model_id": MODEL_ID,
@@ -457,7 +501,10 @@ def smart_resize(
 ) -> tuple[int, int]:
     """Reproduce NEO's Qwen-derived native-resolution resize calculation."""
 
-    if min(height, width, factor, min_pixels, max_pixels) <= 0 or min_pixels > max_pixels:
+    if (
+        min(height, width, factor, min_pixels, max_pixels) <= 0
+        or min_pixels > max_pixels
+    ):
         raise EvaluationContractError("Invalid smart_resize dimensions or bounds.")
     aspect_ratio = max(height, width) / min(height, width)
     if aspect_ratio > 200:
@@ -488,7 +535,9 @@ def preprocess_pixel_values(
         raise EvaluationContractError("Normalized pixel_values must have CHW rank 3.")
     channels, height, width = (int(value) for value in pixel_values.shape)
     if channels != 3 or height % patch_size or width % patch_size:
-        raise EvaluationContractError("Pixel tensor must be 3-channel and patch divisible.")
+        raise EvaluationContractError(
+            "Pixel tensor must be 3-channel and patch divisible."
+        )
     grid_h = height // patch_size
     grid_w = width // patch_size
     flattened = (
@@ -548,7 +597,9 @@ def preprocess_neo_image(
             f"NEO preprocessing grid mismatch: expected {EXPECTED_GRID}, got {grid_hw.tolist()}."
         )
     if flattened.dtype != torch.float32 or grid_hw.dtype != torch.long:
-        raise EvaluationContractError("NEO preprocessing produced an unexpected tensor dtype.")
+        raise EvaluationContractError(
+            "NEO preprocessing produced an unexpected tensor dtype."
+        )
     return flattened, grid_hw
 
 
@@ -594,10 +645,14 @@ def _resolve_device(torch: Any, requested: str) -> tuple[Any, dict[str, Any]]:
     except (TypeError, RuntimeError) as exc:
         raise EvaluationContractError(f"Invalid torch device {requested!r}.") from exc
     if device.type not in ("cpu", "cuda"):
-        raise EvaluationContractError("NEO baseline supports explicit cpu or cuda devices only.")
+        raise EvaluationContractError(
+            "NEO baseline supports explicit cpu or cuda devices only."
+        )
     if device.type == "cuda":
         if not torch.cuda.is_available():
-            raise EvaluationContractError("CUDA device requested but CUDA is unavailable.")
+            raise EvaluationContractError(
+                "CUDA device requested but CUDA is unavailable."
+            )
         index = torch.cuda.current_device() if device.index is None else device.index
         if index < 0 or index >= torch.cuda.device_count():
             raise EvaluationContractError(f"CUDA device index {index} is unavailable.")
@@ -656,9 +711,43 @@ def load_neo_model(
         low_cpu_mem_usage=True,
         torch_dtype=torch_dtype,
     )
+    _force_neo_eager_prefill_attention(model)
     model.to(device)
     model.eval()
     return tokenizer, model
+
+
+def _force_neo_eager_prefill_attention(model: Any) -> None:
+    """Route NEO's image prefill through its existing eager block-causal path."""
+
+    language_model = getattr(model, "language_model", None)
+    if language_model is None:
+        # Dependency-injected unit-test models need not reproduce remote-code internals.
+        return
+    config = getattr(language_model, "config", None)
+    if config is None:
+        raise EvaluationContractError("Loaded NEO language model has no config.")
+    config._attn_implementation = "eager"
+
+    module_name = language_model.__class__.__module__
+    module = sys.modules.get(module_name)
+    if module is None:
+        raise EvaluationContractError(
+            f"Loaded NEO language-model module {module_name!r} is not registered."
+        )
+    original = getattr(module, "create_flex_mask_qwen3_style", None)
+    if not callable(original):
+        raise EvaluationContractError(
+            "Loaded NEO language-model module has no create_flex_mask_qwen3_style()."
+        )
+
+    def eager_prefill_mask(*args: Any, **kwargs: Any) -> tuple[None, int]:
+        del args, kwargs
+        return None, 0
+
+    eager_prefill_mask.__name__ = "neural_forge_eager_prefill_mask"
+    module.create_flex_mask_qwen3_style = eager_prefill_mask
+    model._neural_forge_attention_runtime = dict(ATTENTION_RUNTIME)
 
 
 def _attribute_at(value: Any, path: tuple[str, ...]) -> Any:
@@ -666,12 +755,16 @@ def _attribute_at(value: Any, path: tuple[str, ...]) -> Any:
     for name in path:
         if isinstance(current, Mapping):
             if name not in current:
-                raise EvaluationContractError(f"Loaded model is missing config {'.'.join(path)}.")
+                raise EvaluationContractError(
+                    f"Loaded model is missing config {'.'.join(path)}."
+                )
             current = current[name]
         elif hasattr(current, name):
             current = getattr(current, name)
         else:
-            raise EvaluationContractError(f"Loaded model is missing config {'.'.join(path)}.")
+            raise EvaluationContractError(
+                f"Loaded model is missing config {'.'.join(path)}."
+            )
     return current
 
 
@@ -686,11 +779,17 @@ def _validate_loaded_model(
     if not callable(getattr(model, "chat", None)):
         raise EvaluationContractError("Loaded parent does not expose NEO model.chat().")
     if not callable(getattr(tokenizer, "convert_tokens_to_ids", None)):
-        raise EvaluationContractError("Loaded tokenizer cannot resolve NEO special tokens.")
+        raise EvaluationContractError(
+            "Loaded tokenizer cannot resolve NEO special tokens."
+        )
     if getattr(model, "patch_size", None) != PATCH_SIZE:
-        raise EvaluationContractError("Loaded parent patch_size does not match NEO preprocessing.")
+        raise EvaluationContractError(
+            "Loaded parent patch_size does not match NEO preprocessing."
+        )
     if getattr(model, "downsample_ratio", None) != DOWNSAMPLE_RATIO:
-        raise EvaluationContractError("Loaded parent downsample_ratio does not match NEO preprocessing.")
+        raise EvaluationContractError(
+            "Loaded parent downsample_ratio does not match NEO preprocessing."
+        )
     for path, expected in (
         (("config", "patch_size"), PATCH_SIZE),
         (("config", "downsample_ratio"), DOWNSAMPLE_RATIO),
@@ -708,7 +807,11 @@ def _validate_loaded_model(
     token_ids: dict[str, int] = {}
     for token, expected in SPECIAL_TOKEN_IDS.items():
         actual = tokenizer.convert_tokens_to_ids(token)
-        if isinstance(actual, bool) or not isinstance(actual, int) or actual != expected:
+        if (
+            isinstance(actual, bool)
+            or not isinstance(actual, int)
+            or actual != expected
+        ):
             raise EvaluationContractError(
                 f"Tokenizer special token {token!r} mismatch: expected {expected}, got {actual!r}."
             )
@@ -727,7 +830,9 @@ def _validate_loaded_model(
         dtype_counts[dtype_name] = dtype_counts.get(dtype_name, 0) + count
         device_counts[device_name] = device_counts.get(device_name, 0) + count
         if parameter.device.type == "meta":
-            raise EvaluationContractError("Loaded parent still contains meta-device parameters.")
+            raise EvaluationContractError(
+                "Loaded parent still contains meta-device parameters."
+            )
         if parameter.device != device:
             raise EvaluationContractError(
                 f"Loaded parent parameter remains on {parameter.device}, expected {device}."
@@ -772,7 +877,9 @@ class _RunLock:
         except OSError as exc:
             self.handle.close()
             self.handle = None
-            raise EvaluationContractError(f"Another evaluator owns run lock {self.path}.") from exc
+            raise EvaluationContractError(
+                f"Another evaluator owns run lock {self.path}."
+            ) from exc
         return self
 
     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
@@ -807,38 +914,73 @@ def _validate_cache_record(
     inference_fingerprint: str,
 ) -> dict[str, Any]:
     if not isinstance(cached, dict) or frozenset(cached) != _CACHE_KEYS:
-        raise EvaluationContractError(f"Cache line {index + 1} does not match the record schema.")
-    if cached["schema"] != CACHE_SCHEMA or cached["inference_fingerprint"] != inference_fingerprint:
-        raise EvaluationContractError(f"Cache line {index + 1} belongs to a different inference run.")
+        raise EvaluationContractError(
+            f"Cache line {index + 1} does not match the record schema."
+        )
+    if (
+        cached["schema"] != CACHE_SCHEMA
+        or cached["inference_fingerprint"] != inference_fingerprint
+    ):
+        raise EvaluationContractError(
+            f"Cache line {index + 1} belongs to a different inference run."
+        )
     if cached["index"] != index or cached["probe_id"] != source_record["probe_id"]:
-        raise EvaluationContractError("Cache must be an exact prefix of manifest record order.")
+        raise EvaluationContractError(
+            "Cache must be an exact prefix of manifest record order."
+        )
     expected_record_sha = _canonical_sha256(source_record)
     if cached["record_sha256"] != expected_record_sha:
-        raise EvaluationContractError(f"Cache record fingerprint mismatch for {source_record['probe_id']}.")
+        raise EvaluationContractError(
+            f"Cache record fingerprint mismatch for {source_record['probe_id']}."
+        )
     for field in ("category", "split"):
         if cached[field] != source_record[field]:
-            raise EvaluationContractError(f"Cached {field} mismatch for {source_record['probe_id']}.")
+            raise EvaluationContractError(
+                f"Cached {field} mismatch for {source_record['probe_id']}."
+            )
     if cached["expected"] != source_record["answer"]:
-        raise EvaluationContractError(f"Cached expected answer mismatch for {source_record['probe_id']}.")
+        raise EvaluationContractError(
+            f"Cached expected answer mismatch for {source_record['probe_id']}."
+        )
     raw_output = cached["raw_output"]
     if not isinstance(raw_output, str):
-        raise EvaluationContractError(f"Cached output for {source_record['probe_id']} is not text.")
-    if cached["raw_output_sha256"] != hashlib.sha256(raw_output.encode("utf-8")).hexdigest():
-        raise EvaluationContractError(f"Cached raw output hash mismatch for {source_record['probe_id']}.")
+        raise EvaluationContractError(
+            f"Cached output for {source_record['probe_id']} is not text."
+        )
+    if (
+        cached["raw_output_sha256"]
+        != hashlib.sha256(raw_output.encode("utf-8")).hexdigest()
+    ):
+        raise EvaluationContractError(
+            f"Cached raw output hash mismatch for {source_record['probe_id']}."
+        )
     normalized = normalize_direct_answer(source_record["category"], raw_output)
     if cached["normalized_prediction"] != normalized:
-        raise EvaluationContractError(f"Cached normalization mismatch for {source_record['probe_id']}.")
+        raise EvaluationContractError(
+            f"Cached normalization mismatch for {source_record['probe_id']}."
+        )
     direct = normalized is not None
     correct = normalized == source_record["answer"]
     if cached["direct_answer"] is not direct or cached["correct"] is not correct:
-        raise EvaluationContractError(f"Cached score mismatch for {source_record['probe_id']}.")
+        raise EvaluationContractError(
+            f"Cached score mismatch for {source_record['probe_id']}."
+        )
     _normalize_sha256(cached["pixel_values_sha256"], "cached pixel tensor SHA-256")
     if cached["grid_hw"] != [list(EXPECTED_GRID)]:
-        raise EvaluationContractError(f"Cached grid mismatch for {source_record['probe_id']}.")
-    if not isinstance(cached["elapsed_seconds"], (int, float)) or cached["elapsed_seconds"] < 0:
-        raise EvaluationContractError(f"Cached timing is invalid for {source_record['probe_id']}.")
+        raise EvaluationContractError(
+            f"Cached grid mismatch for {source_record['probe_id']}."
+        )
+    if (
+        not isinstance(cached["elapsed_seconds"], (int, float))
+        or cached["elapsed_seconds"] < 0
+    ):
+        raise EvaluationContractError(
+            f"Cached timing is invalid for {source_record['probe_id']}."
+        )
     if not isinstance(cached["completed_utc"], str) or not cached["completed_utc"]:
-        raise EvaluationContractError(f"Cached completion time is invalid for {source_record['probe_id']}.")
+        raise EvaluationContractError(
+            f"Cached completion time is invalid for {source_record['probe_id']}."
+        )
     return dict(cached)
 
 
@@ -851,7 +993,9 @@ def _load_cache(
         return []
     payload = cache_path.read_bytes()
     if payload and not payload.endswith(b"\n"):
-        raise EvaluationContractError("Cache JSONL has a truncated final line; refusing recomputation.")
+        raise EvaluationContractError(
+            "Cache JSONL has a truncated final line; refusing recomputation."
+        )
     lines = payload.splitlines()
     if len(lines) > len(records):
         raise EvaluationContractError("Cache has more outputs than the manifest.")
@@ -860,7 +1004,9 @@ def _load_cache(
         try:
             cached = json.loads(line.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise EvaluationContractError(f"Cache line {index + 1} is invalid JSON.") from exc
+            raise EvaluationContractError(
+                f"Cache line {index + 1} is invalid JSON."
+            ) from exc
         results.append(
             _validate_cache_record(
                 cached,
@@ -911,7 +1057,9 @@ def _build_metrics(entries: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _manual_samples(entries: list[dict[str, Any]], per_group: int) -> list[dict[str, Any]]:
+def _manual_samples(
+    entries: list[dict[str, Any]], per_group: int
+) -> list[dict[str, Any]]:
     samples: list[dict[str, Any]] = []
     for split in SPLITS:
         for category in CATEGORIES:
@@ -992,6 +1140,7 @@ def evaluate_parent_baseline(
         "evaluator_sha256": evaluator_sha256,
         "preprocess": PREPROCESS_SPEC,
         "generation_config": generation_config,
+        "attention_runtime": ATTENTION_RUNTIME,
         "dtype": dtype,
         "device_identity": device_identity,
         "seed": seed,
@@ -1086,10 +1235,13 @@ def evaluate_parent_baseline(
                     **runtime_metadata,
                 }
                 if runtime_path.exists():
-                    existing_runtime = _read_json_object(runtime_path, "model runtime metadata")
+                    existing_runtime = _read_json_object(
+                        runtime_path, "model runtime metadata"
+                    )
                     if (
                         existing_runtime.get("schema") != RUN_SCHEMA
-                        or existing_runtime.get("inference_fingerprint") != inference_fingerprint
+                        or existing_runtime.get("inference_fingerprint")
+                        != inference_fingerprint
                         or _stable_runtime_metadata(existing_runtime)
                         != _stable_runtime_metadata(runtime_document)
                     ):
@@ -1109,11 +1261,15 @@ def evaluate_parent_baseline(
                         torch.backends.cudnn.benchmark = False
                         torch.backends.cudnn.deterministic = True
                 inference_context = (
-                    torch.inference_mode() if callable(getattr(torch, "inference_mode", None)) else nullcontext()
+                    torch.inference_mode()
+                    if callable(getattr(torch, "inference_mode", None))
+                    else nullcontext()
                 )
                 for index in range(len(entries), len(records)):
                     source_record = records[index]
-                    image_path = Path(verified_manifest["root"]) / source_record["image"]
+                    image_path = (
+                        Path(verified_manifest["root"]) / source_record["image"]
+                    )
                     pixel_values, grid_hw = preprocess_neo_image(
                         image_path,
                         torch_module=torch,
@@ -1123,7 +1279,9 @@ def evaluate_parent_baseline(
                     torch.manual_seed(record_seed)
                     if resolved_device.type == "cuda":
                         torch.cuda.manual_seed_all(record_seed)
-                    device_pixels = pixel_values.to(device=resolved_device, dtype=torch_dtype)
+                    device_pixels = pixel_values.to(
+                        device=resolved_device, dtype=torch_dtype
+                    )
                     device_grid = grid_hw.to(device=resolved_device)
                     call_config = dict(generation_config)
                     started = time.perf_counter()
@@ -1143,7 +1301,9 @@ def evaluate_parent_baseline(
                         raise EvaluationContractError(
                             f"model.chat returned {type(raw_output).__name__} for {source_record['probe_id']}."
                         )
-                    normalized = normalize_direct_answer(source_record["category"], raw_output)
+                    normalized = normalize_direct_answer(
+                        source_record["category"], raw_output
+                    )
                     cache_record = {
                         "schema": CACHE_SCHEMA,
                         "inference_fingerprint": inference_fingerprint,
@@ -1154,7 +1314,9 @@ def evaluate_parent_baseline(
                         "split": source_record["split"],
                         "expected": source_record["answer"],
                         "raw_output": raw_output,
-                        "raw_output_sha256": hashlib.sha256(raw_output.encode("utf-8")).hexdigest(),
+                        "raw_output_sha256": hashlib.sha256(
+                            raw_output.encode("utf-8")
+                        ).hexdigest(),
                         "normalized_prediction": normalized,
                         "direct_answer": normalized is not None,
                         "correct": normalized == source_record["answer"],
@@ -1195,16 +1357,23 @@ def evaluate_parent_baseline(
                     raise EvaluationContractError(
                         "Complete output cache is missing model_runtime.json provenance."
                     )
-                runtime_metadata = _read_json_object(runtime_path, "model runtime metadata")
+                runtime_metadata = _read_json_object(
+                    runtime_path, "model runtime metadata"
+                )
                 if (
                     runtime_metadata.get("schema") != RUN_SCHEMA
-                    or runtime_metadata.get("inference_fingerprint") != inference_fingerprint
+                    or runtime_metadata.get("inference_fingerprint")
+                    != inference_fingerprint
                 ):
-                    raise EvaluationContractError("Cached model runtime provenance is incompatible.")
+                    raise EvaluationContractError(
+                        "Cached model runtime provenance is incompatible."
+                    )
                 _stable_runtime_metadata(runtime_metadata)
 
             if len(entries) != len(records):
-                raise EvaluationContractError("Evaluation ended without a complete manifest prefix.")
+                raise EvaluationContractError(
+                    "Evaluation ended without a complete manifest prefix."
+                )
             cache_sha256 = _file_sha256(cache_path)
             metrics = _build_metrics(entries)
             report = {
@@ -1312,7 +1481,11 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         print(
             json.dumps(
-                {"status": "failed", "exception_type": type(exc).__name__, "message": str(exc)},
+                {
+                    "status": "failed",
+                    "exception_type": type(exc).__name__,
+                    "message": str(exc),
+                },
                 sort_keys=True,
             ),
             file=sys.stderr,
