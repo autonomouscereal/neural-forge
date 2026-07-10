@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
 import math
+import time
 
 import pytest
 
@@ -18,6 +19,15 @@ from neural_forge.hf_activation_cluster import (  # noqa: E402
 
 def _head_signatures(rows: torch.Tensor, head_axis: int) -> torch.Tensor:
     return rows.movedim(head_axis, 0).reshape(rows.shape[head_axis], -1)
+
+
+def _combined_modalities(*matrices: torch.Tensor) -> torch.Tensor:
+    parts = []
+    for matrix in matrices:
+        width = int(matrix.shape[1])
+        scale = float(torch.sqrt(matrix.square().mean()).item()) or 1.0
+        parts.append(matrix / (scale * math.sqrt(width)))
+    return torch.cat(parts, dim=1)
 
 
 def _gqa_context(
@@ -190,6 +200,12 @@ def test_gqa_duplicate_circuits_reconstruct_exactly_without_producer_averaging()
     assert plan.report.invariants.all_hold is True
     assert plan.report.full_source_coverage is True
     assert plan.report["producer_aggregation"] == "none"
+    assert plan.report.group_cluster_strategy == (
+        "deterministic-farthest-first-global-assignment-real-medoid-refinement"
+    )
+    assert plan.report.query_offset_cluster_strategy == (
+        "deterministic-farthest-first-global-assignment-real-medoid-refinement"
+    )
     assert plan.report["invariants"]["gqa_group_offsets_preserved"] is True
     assert len(plan.group_assignment) == source_groups
     assert len(plan.query_head_assignment) == source_query_heads
@@ -275,6 +291,9 @@ def test_gated_mlp_duplicate_circuits_reconstruct_with_near_zero_gates() -> None
     assert plan.report.invariants.all_hold is True
     assert plan.report["consumer_coefficient_gate_division"] is False
     assert plan.report["producer_aggregation"] == "none"
+    assert plan.report.cluster_strategy == (
+        "deterministic-farthest-first-global-assignment-real-medoid-refinement"
+    )
     assert plan.report.near_zero_post_swiglu_medoid_count == 1
     assert plan.consumer_coefficients == (1.0,) * 6
     assert sum(plan.report.group_sizes) == 6
@@ -293,6 +312,124 @@ def test_gated_mlp_duplicate_circuits_reconstruct_with_near_zero_gates() -> None
 
     with pytest.raises(FrozenInstanceError):
         plan.report.target_neurons = 3  # type: ignore[misc]
+
+
+def test_gated_mlp_scalable_real_medoids_cover_thousands_deterministically() -> None:
+    dtype = torch.float64
+    source_neurons = 4_099
+    target_neurons = 1_024
+    observation_rows = 6
+    neuron = torch.arange(source_neurons, dtype=dtype).unsqueeze(0)
+    row = torch.arange(observation_rows, dtype=dtype).unsqueeze(1)
+    gate = torch.sin(neuron * 0.013 + row * 0.37) + (neuron.remainder(17) * 0.01)
+    up = torch.cos(neuron * 0.009 - row * 0.23) + (row + 1.0) * 0.025
+    post = torch.nn.functional.silu(gate) * up
+    contribution = torch.stack(
+        (
+            post * (1.0 + neuron.remainder(7) * 0.03),
+            post * (0.5 + row * 0.04) + gate * 0.07,
+        ),
+        dim=2,
+    )
+
+    started = time.perf_counter()
+    plan = build_gated_mlp_activation_cluster_plan(
+        gate,
+        up,
+        post,
+        contribution,
+        target_neurons=target_neurons,
+    )
+    elapsed = time.perf_counter() - started
+    repeated = build_gated_mlp_activation_cluster_plan(
+        gate,
+        up,
+        post,
+        contribution,
+        target_neurons=target_neurons,
+    )
+
+    assert elapsed < 15.0
+    assert plan == repeated
+    assert plan.report.cluster_strategy == (
+        "deterministic-normalized-projection-morton-balanced-exact-local-medoid"
+    )
+    assert plan.report.cluster_balanced_partition is True
+    assert plan.report.cluster_locality_dimensions == 5
+    assert plan.report.cluster_iterations == 1
+    assert plan.report.cluster_converged is True
+    assert plan.report.invariants.all_hold is True
+    assert len(plan.source_to_target) == source_neurons
+    assert len(set(plan.medoid_source_neurons)) == target_neurons
+    assert set(plan.report.group_sizes) == {4, 5}
+    assert max(plan.report.group_sizes) - min(plan.report.group_sizes) == 1
+    assert sum(plan.report.group_sizes) == source_neurons
+
+    assignment = torch.tensor(plan.source_to_target, dtype=torch.long)
+    medoids = torch.tensor(plan.medoid_source_neurons, dtype=torch.long)
+    features = _combined_modalities(
+        gate.T.contiguous(),
+        up.T.contiguous(),
+        post.T.contiguous(),
+        contribution.movedim(1, 0).reshape(source_neurons, -1).contiguous(),
+    )
+    for target, medoid in enumerate(medoids):
+        members = torch.nonzero(assignment == target, as_tuple=False).flatten()
+        assert bool((members == medoid).any().item())
+        member_rows = features.index_select(0, members)
+        pairwise = (member_rows[:, None, :] - member_rows[None, :, :]).square()
+        objectives = pairwise.sum(dim=(1, 2))
+        selected = int(torch.nonzero(members == medoid).item())
+        torch.testing.assert_close(
+            objectives[selected], objectives.min(), atol=1e-11, rtol=1e-11
+        )
+
+    post_signatures = post.T.contiguous()
+    selected_post = post_signatures.index_select(0, medoids)
+    basis = selected_post.index_select(0, assignment)
+    selected_energy = selected_post.square().sum(dim=1)
+    effective_ridge = 1e-8 * float(selected_energy.mean().item())
+    expected_coefficients = (post_signatures * basis).sum(dim=1) / (
+        selected_energy.index_select(0, assignment) + effective_ridge
+    )
+    expected_coefficients[medoids] = 1.0
+    torch.testing.assert_close(
+        torch.tensor(plan.consumer_coefficients, dtype=dtype),
+        expected_coefficients,
+        atol=1e-12,
+        rtol=1e-12,
+    )
+
+
+def test_gqa_restricted_group_medoids_cover_all_sources() -> None:
+    generator = torch.Generator().manual_seed(981)
+    query = torch.randn(8, 12, 4, generator=generator, dtype=torch.float64)
+    key = torch.randn(4, 12, 4, generator=generator, dtype=torch.float64)
+    value = torch.randn(4, 12, 4, generator=generator, dtype=torch.float64)
+    context = torch.randn(8, 12, 4, generator=generator, dtype=torch.float64)
+    contribution = torch.randn(8, 12, 3, generator=generator, dtype=torch.float64)
+
+    plan = build_gqa_activation_cluster_plan(
+        query,
+        key,
+        value,
+        context,
+        contribution,
+        source_query_heads=8,
+        source_key_value_heads=4,
+        target_query_heads=4,
+        target_key_value_heads=2,
+        source_head_dim=4,
+        target_head_dim=4,
+        group_medoid_candidates=(2, 3),
+    )
+
+    assert set(plan.group_medoids) <= {2, 3}
+    assert plan.report.group_medoid_candidate_indices == (2, 3)
+    assert len(plan.group_assignment) == 4
+    assert len(plan.query_head_assignment) == 8
+    assert plan.report.full_source_coverage is True
+    assert plan.report.invariants.all_hold is True
 
 
 def test_gqa_plan_fails_closed_on_topology_shapes_and_nonfinite_values() -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -14,13 +15,12 @@ from neural_forge.hf_blank_checkpoint import (  # noqa: E402
     BlankCheckpointError,
     bootstrap_blank_decoder_checkpoint,
 )
+import neural_forge.hf_blank_checkpoint as checkpoint_module  # noqa: E402
 
 
 def _tokenizer(words=None, *, whitespace_split=False):
     if words is None:
-        words = ["[PAD]", "[BOS]", "[EOS]", "[UNK]"] + [
-            f"w{i}" for i in range(60)
-        ]
+        words = ["[PAD]", "[BOS]", "[EOS]", "[UNK]"] + [f"w{i}" for i in range(60)]
     backend = tokenizers.Tokenizer(
         tokenizers.models.WordLevel(
             {word: index for index, word in enumerate(words)},
@@ -140,6 +140,7 @@ def test_cross_family_checkpoint_is_accepted_and_reload_exact(
     assert report["execution"]["training_steps"] == 0
     assert report["execution"]["zero_gradients"] is True
     assert report["bootstrap"]["knobs"]["residual_map_method"] == "sparse_fold"
+    assert report["bootstrap"]["knobs"]["nonlinear_merge_method"] == "activation_fold"
     assert report["bootstrap"]["knobs"]["vocab_row_norm_repair"] == "none"
     assert report["bootstrap"]["residual_coordinates"]["full_source_coverage"] is True
     assert report["bootstrap"]["residual_coordinates"]["dropped_channels"] == 0
@@ -163,6 +164,22 @@ def test_cross_family_checkpoint_is_accepted_and_reload_exact(
         sum(parameter.numel() for parameter in reloaded.parameters())
         == report["candidate"]["parameter_counts"]["unique_parameter_count"]
     )
+
+
+def test_shared_tokenizer_preserves_donor_embedding_padding_rows(tmp_path) -> None:
+    short_tokenizer = _tokenizer(
+        ["[PAD]", "[BOS]", "[EOS]", "[UNK]", *[f"w{i}" for i in range(16)]]
+    )
+    report = _run(
+        _gpt2_source(),
+        tmp_path / "shared-tokenizer-padding",
+        tokenizer=short_tokenizer,
+    )
+
+    assert report["tokenizers"]["mode"] == "shared-tokenizer"
+    assert report["tokenizers"]["target"]["length"] == 20
+    assert report["blank_target"]["architecture"]["vocab_size"] == 64
+    assert report["token_transport"]["profile"] == "shared-token-id-identity"
 
 
 def test_rejected_candidate_is_not_saved(tmp_path) -> None:
@@ -190,6 +207,42 @@ def test_rejected_candidate_is_not_saved(tmp_path) -> None:
     assert [path.name for path in output.iterdir()] == [REPORT_FILENAME]
     saved_report = json.loads((output / REPORT_FILENAME).read_text(encoding="utf-8"))
     assert saved_report == report
+
+
+def test_real_medoid_is_forwarded_to_model_bootstrap_and_reported(
+    tmp_path, monkeypatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_bootstrap(*args, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            transaction=SimpleNamespace(
+                accepted=False,
+                report={
+                    "gate": {"accepted": False},
+                    "coverage": {"complete": True},
+                    "rollback": {"performed": True, "exact": True},
+                },
+            ),
+            donor_layer_spans=(),
+            fit_reports={"teacher_logits.target_space": {"space": "target"}},
+            residual_coordinates=SimpleNamespace(report=None),
+        )
+
+    monkeypatch.setattr(
+        checkpoint_module,
+        "bootstrap_blank_decoder_models",
+        fake_bootstrap,
+    )
+    report = _run(
+        _gpt2_source(),
+        tmp_path / "real-medoid",
+        nonlinear_merge_method="real_medoid",
+    )
+
+    assert captured["nonlinear_merge_method"] == "real_medoid"
+    assert report["bootstrap"]["knobs"]["nonlinear_merge_method"] == "real_medoid"
 
 
 def test_smaller_reordered_cross_tokenizer_checkpoint_is_exact_after_reload(
@@ -227,9 +280,7 @@ def test_smaller_reordered_cross_tokenizer_checkpoint_is_exact_after_reload(
     assert report["tokenizers"]["mode"] == "cross-tokenizer"
     assert report["tokenizers"]["donor"]["length"] == 64
     assert report["tokenizers"]["target"]["length"] == len(target_words)
-    assert report["blank_target"]["architecture"]["vocab_size"] == len(
-        target_words
-    )
+    assert report["blank_target"]["architecture"]["vocab_size"] == len(target_words)
     config = json.loads((output / "config.json").read_text(encoding="utf-8"))
     assert config["bos_token_id"] == 5
     assert config["eos_token_id"] == 1
@@ -248,9 +299,7 @@ def test_smaller_reordered_cross_tokenizer_checkpoint_is_exact_after_reload(
     attention_prior = report["bootstrap"]["fit_reports"][
         "block.0.attention.structural_prior"
     ]
-    mlp_prior = report["bootstrap"]["fit_reports"][
-        "block.0.mlp.structural_prior"
-    ]
+    mlp_prior = report["bootstrap"]["fit_reports"]["block.0.mlp.structural_prior"]
     assert attention_prior["applied"] is True
     assert attention_prior["coordinate_method"] == "pca-coordinate-formula"
     assert mlp_prior["applied"] is True
@@ -293,6 +342,14 @@ def test_cross_tokenizer_alignment_failure_prevents_publication(tmp_path) -> Non
 def test_shape_and_exact_parameter_budget_checks_fail_before_publication(
     tmp_path,
 ) -> None:
+    with pytest.raises(BlankCheckpointError, match="nonlinear_merge_method"):
+        _run(
+            _gpt2_source(),
+            tmp_path / "invalid-nonlinear-merge",
+            nonlinear_merge_method="centroid",
+        )
+    assert not (tmp_path / "invalid-nonlinear-merge").exists()
+
     with pytest.raises(BlankCheckpointError, match="Qwen3 requires"):
         _run(
             _gpt2_source(),

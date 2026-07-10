@@ -187,6 +187,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         exact_parameter_budget=args.exact_parameter_budget,
         trace_pooling=args.trace_pooling,
         residual_map_method=args.residual_map_method,
+        nonlinear_merge_method=args.nonlinear_merge_method,
         ridge=args.ridge,
         max_operator_delta_ratio=args.max_operator_delta_ratio,
         min_final_state_relative_improvement=args.min_final_state_improvement,
@@ -217,6 +218,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "run_dir": str(run_dir),
         "source_model": args.source_model,
         "target_tokenizer_model": args.target_tokenizer_model,
+        "nonlinear_merge_method": args.nonlinear_merge_method,
         "prompt_split": split_report,
         "checkpoint_report": checkpoint_report,
         "parent_eval": str(args.cached_parent_eval.resolve()),
@@ -322,6 +324,11 @@ def build_parser() -> argparse.ArgumentParser:
             "dual_orthonormal",
         ],
         default="sparse_fold",
+    )
+    parser.add_argument(
+        "--nonlinear-merge-method",
+        choices=["activation_fold", "real_medoid"],
+        default="activation_fold",
     )
     parser.add_argument("--ridge", type=float, default=1e-5)
     parser.add_argument("--max-operator-delta-ratio", type=float, default=4.0)

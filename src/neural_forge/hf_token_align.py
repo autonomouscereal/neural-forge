@@ -290,6 +290,7 @@ class StrictTokenTransportProfile:
     target_row_capacity: int
     alignment_fingerprint: str
     row_mappings: tuple[StrictTokenRowMapping, ...]
+    alignment_resolution: str = "decoded-token-surface"
 
     def __post_init__(self) -> None:
         target_rows = tuple(item.target_row_index for item in self.row_mappings)
@@ -304,6 +305,8 @@ class StrictTokenTransportProfile:
             raise ValueError(
                 "Strict token transport mappings must stay within donor capacity."
             )
+        if not self.alignment_resolution:
+            raise ValueError("Strict token transport resolution must be non-empty.")
 
     @property
     def target_to_donor_row_indices(self) -> tuple[int, ...]:
@@ -321,6 +324,7 @@ class StrictTokenTransportProfile:
             "donor_row_capacity": self.donor_row_capacity,
             "target_row_capacity": self.target_row_capacity,
             "alignment_fingerprint": self.alignment_fingerprint,
+            "alignment_resolution": self.alignment_resolution,
             "target_to_donor_row_indices": list(self.target_to_donor_row_indices),
             "row_mappings": [item.to_dict() for item in self.row_mappings],
         }
@@ -342,6 +346,17 @@ class StrictTokenTransportRejectedError(ValueError):
         self.failures = tuple(failures)
         detail = "; ".join(self.failures) or "strict token transport rejected"
         super().__init__(detail)
+
+
+_DIRECT_IDENTITY_RESOLUTION = "direct-tokenizer-identity"
+_BYTELEVEL_BPE_RESOLUTION = "bytelevel-bpe-token-string"
+_DECODED_SURFACE_RESOLUTION = "decoded-token-surface"
+
+
+@dataclass(frozen=True)
+class _ByteLevelBPEStructuralProof:
+    target_to_donor_row_indices: tuple[int, ...]
+    fingerprint: str
 
 
 @dataclass
@@ -507,13 +522,16 @@ def build_strict_token_transport_profile(
 ) -> StrictTokenTransportProfile:
     """Prove a complete target-row to donor-row mapping without mutation.
 
-    Physical target rows must be exactly the contiguous tokenizer vocabulary.
-    Donor capacity may contain padding after its contiguous tokenizer rows.
-    BOS, EOS, PAD, and UNK rows resolve by matching semantic role; every other
-    row must have one and only one exact-token donor candidate.
+    Physical target rows normally match the contiguous tokenizer vocabulary.
+    The exact same tokenizer object may also transport shared physical padding
+    rows by direct row identity. ByteLevel-BPE descendants may resolve retained
+    rows from raw token strings after their backend semantics and pruning
+    structure have been proven compatible. All other rows use byte-faithful
+    decoded-token alignment.
     """
 
     failures: list[str] = []
+    same_tokenizer = donor_tokenizer is target_tokenizer
     try:
         donor_vocab_size = _tokenizer_length(donor_tokenizer, "donor")
     except ValueError as exc:
@@ -542,7 +560,18 @@ def build_strict_token_transport_profile(
             f"donor row capacity {donor_capacity} is below tokenizer vocabulary "
             f"size {donor_vocab_size}"
         )
-    if target_capacity != target_vocab_size:
+    if same_tokenizer:
+        if target_capacity < target_vocab_size:
+            failures.append(
+                f"target row capacity {target_capacity} is below tokenizer vocabulary "
+                f"size {target_vocab_size}"
+            )
+        if target_capacity > donor_capacity:
+            failures.append(
+                f"target row capacity {target_capacity} exceeds donor row capacity "
+                f"{donor_capacity} for direct tokenizer identity"
+            )
+    elif target_capacity != target_vocab_size:
         failures.append(
             f"target row capacity {target_capacity} must equal tokenizer vocabulary "
             f"size {target_vocab_size}"
@@ -550,13 +579,13 @@ def build_strict_token_transport_profile(
     if target_capacity == 0:
         failures.append("target vocabulary is empty")
 
-    _validate_contiguous_vocab_ids(
+    donor_vocabulary = _validate_contiguous_vocab_ids(
         donor_tokenizer,
         donor_vocab_size,
         "donor",
         failures,
     )
-    _validate_contiguous_vocab_ids(
+    target_vocabulary = _validate_contiguous_vocab_ids(
         target_tokenizer,
         target_vocab_size,
         "target",
@@ -574,18 +603,131 @@ def build_strict_token_transport_profile(
         "target",
         failures,
     )
+    semantic_rows, unresolved_semantic_rows = _strict_semantic_row_mappings(
+        donor_roles,
+        target_roles,
+        failures,
+    )
     if failures:
         raise StrictTokenTransportRejectedError(failures)
+
+    if donor_vocabulary is None or target_vocabulary is None:
+        raise StrictTokenTransportRejectedError(
+            ("strict vocabulary audit did not produce a usable mapping",)
+        )
+
+    if same_tokenizer:
+        row_mappings = []
+        for target_id in range(target_capacity):
+            semantic = semantic_rows.get(target_id)
+            roles: tuple[str, ...] = ()
+            if semantic is not None:
+                donor_id, roles = semantic
+                if donor_id != target_id:
+                    failures.append(
+                        f"target row {target_id} direct identity conflicts with "
+                        f"semantic donor row {donor_id}"
+                    )
+                    continue
+            row_mappings.append(
+                StrictTokenRowMapping(
+                    target_row_index=target_id,
+                    donor_row_index=target_id,
+                    resolution=_DIRECT_IDENTITY_RESOLUTION,
+                    special_token_roles=roles,
+                )
+            )
+        if failures:
+            raise StrictTokenTransportRejectedError(failures)
+        proof_fingerprint = _strict_proof_fingerprint(
+            {
+                "resolution": _DIRECT_IDENTITY_RESOLUTION,
+                "donor_tokenizer_class": type(donor_tokenizer).__name__,
+                "target_tokenizer_class": type(target_tokenizer).__name__,
+                "donor_vocab_size": donor_vocab_size,
+                "target_vocab_size": target_vocab_size,
+                "donor_row_capacity": donor_capacity,
+                "target_row_capacity": target_capacity,
+                "vocabulary_rows": _proof_vocabulary_rows(
+                    donor_vocabulary,
+                    donor_vocab_size,
+                ),
+                "special_token_roles": donor_roles,
+                "target_to_donor_row_indices": list(range(target_capacity)),
+            }
+        )
+        return StrictTokenTransportProfile(
+            donor_tokenizer_class=type(donor_tokenizer).__name__,
+            target_tokenizer_class=type(target_tokenizer).__name__,
+            donor_vocab_size=donor_vocab_size,
+            target_vocab_size=target_vocab_size,
+            donor_row_capacity=donor_capacity,
+            target_row_capacity=target_capacity,
+            alignment_fingerprint=proof_fingerprint,
+            row_mappings=tuple(row_mappings),
+            alignment_resolution=_DIRECT_IDENTITY_RESOLUTION,
+        )
+
+    structural_proof, structural_failures = _bytelevel_bpe_structural_proof(
+        donor_tokenizer,
+        target_tokenizer,
+        donor_vocabulary=donor_vocabulary,
+        target_vocabulary=target_vocabulary,
+        donor_vocab_size=donor_vocab_size,
+        target_vocab_size=target_vocab_size,
+    )
+    if structural_failures:
+        raise StrictTokenTransportRejectedError(structural_failures)
+    if structural_proof is not None:
+        row_mappings = []
+        for target_id, donor_id in enumerate(
+            structural_proof.target_to_donor_row_indices
+        ):
+            semantic = semantic_rows.get(target_id)
+            roles: tuple[str, ...] = ()
+            resolution = _BYTELEVEL_BPE_RESOLUTION
+            if semantic is not None:
+                semantic_donor_id, roles = semantic
+                if semantic_donor_id != donor_id:
+                    failures.append(
+                        f"target row {target_id} token string maps to donor row "
+                        f"{donor_id} but semantic roles {roles} map to donor row "
+                        f"{semantic_donor_id}"
+                    )
+                    continue
+                resolution = "special-token-role"
+            if donor_id >= donor_capacity:
+                failures.append(
+                    f"target row {target_id} resolves to donor row {donor_id}, "
+                    f"outside capacity {donor_capacity}"
+                )
+                continue
+            row_mappings.append(
+                StrictTokenRowMapping(
+                    target_row_index=target_id,
+                    donor_row_index=donor_id,
+                    resolution=resolution,
+                    special_token_roles=roles,
+                )
+            )
+        if failures:
+            raise StrictTokenTransportRejectedError(failures)
+        return StrictTokenTransportProfile(
+            donor_tokenizer_class=type(donor_tokenizer).__name__,
+            target_tokenizer_class=type(target_tokenizer).__name__,
+            donor_vocab_size=donor_vocab_size,
+            target_vocab_size=target_vocab_size,
+            donor_row_capacity=donor_capacity,
+            target_row_capacity=target_capacity,
+            alignment_fingerprint=structural_proof.fingerprint,
+            row_mappings=tuple(row_mappings),
+            alignment_resolution=_BYTELEVEL_BPE_RESOLUTION,
+        )
 
     report = build_token_alignment(
         donor_tokenizer,
         target_tokenizer,
         include_special_tokens=True,
-    )
-    semantic_rows, unresolved_semantic_rows = _strict_semantic_row_mappings(
-        donor_roles,
-        target_roles,
-        failures,
     )
     row_mappings: list[StrictTokenRowMapping] = []
     for alignment in report.alignments:
@@ -664,6 +806,7 @@ def build_strict_token_transport_profile(
         target_row_capacity=target_capacity,
         alignment_fingerprint=report.fingerprint(),
         row_mappings=tuple(row_mappings),
+        alignment_resolution=_DECODED_SURFACE_RESOLUTION,
     )
 
 
@@ -848,39 +991,499 @@ def _strict_row_capacity(
     return capacity
 
 
+def _strict_proof_fingerprint(evidence: Mapping[str, Any]) -> str:
+    payload = json.dumps(
+        {
+            "schema_version": 1,
+            "direction": "target-row-to-donor-row",
+            "evidence": evidence,
+        },
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _proof_vocabulary_rows(
+    vocabulary: Mapping[Any, int],
+    vocab_size: int,
+) -> list[list[dict[str, str]]]:
+    rows: list[list[dict[str, str]]] = [[] for _ in range(vocab_size)]
+    for token, token_id in vocabulary.items():
+        if token_id < 0 or token_id >= vocab_size:
+            continue
+        if isinstance(token, str):
+            descriptor = {"kind": "text", "value": token}
+        else:
+            token_type = type(token)
+            descriptor = {
+                "kind": "non-text",
+                "value": f"{token_type.__module__}.{token_type.__qualname__}",
+            }
+        rows[token_id].append(descriptor)
+    for descriptors in rows:
+        descriptors.sort(key=lambda item: (item["kind"], item["value"]))
+    return rows
+
+
+def _bytelevel_bpe_structural_proof(
+    donor_tokenizer: HFTokenizerProtocol,
+    target_tokenizer: HFTokenizerProtocol,
+    *,
+    donor_vocabulary: Mapping[Any, int],
+    target_vocabulary: Mapping[Any, int],
+    donor_vocab_size: int,
+    target_vocab_size: int,
+) -> tuple[_ByteLevelBPEStructuralProof | None, tuple[str, ...]]:
+    donor_data = _structured_backend_tokenizer_data(donor_tokenizer)
+    target_data = _structured_backend_tokenizer_data(target_tokenizer)
+    if donor_data is None or target_data is None:
+        return None, ()
+
+    donor_model = donor_data.get("model")
+    target_model = target_data.get("model")
+    if not (
+        isinstance(donor_model, Mapping)
+        and isinstance(target_model, Mapping)
+        and donor_model.get("type") == "BPE"
+        and target_model.get("type") == "BPE"
+    ):
+        return None, ()
+
+    donor_bytelevel = _contains_backend_component(
+        donor_data.get("pre_tokenizer"),
+        "ByteLevel",
+    )
+    target_bytelevel = _contains_backend_component(
+        target_data.get("pre_tokenizer"),
+        "ByteLevel",
+    )
+    if not donor_bytelevel and not target_bytelevel:
+        return None, ()
+
+    failures: list[str] = []
+    if donor_bytelevel != target_bytelevel:
+        failures.append("ByteLevel-BPE pre-tokenizer semantics differ")
+    if donor_data.get("pre_tokenizer") != target_data.get("pre_tokenizer"):
+        failures.append("ByteLevel-BPE pre-tokenizer semantics differ")
+
+    donor_decoder = donor_data.get("decoder")
+    target_decoder = target_data.get("decoder")
+    if not _contains_backend_component(donor_decoder, "ByteLevel"):
+        failures.append("donor ByteLevel-BPE backend must use a ByteLevel decoder")
+    if not _contains_backend_component(target_decoder, "ByteLevel"):
+        failures.append("target ByteLevel-BPE backend must use a ByteLevel decoder")
+    if donor_decoder != target_decoder:
+        failures.append("ByteLevel-BPE decoder semantics differ")
+
+    if donor_data.get("normalizer") != target_data.get("normalizer"):
+        failures.append("ByteLevel-BPE normalizer semantics differ")
+
+    donor_model_semantics = {
+        key: value
+        for key, value in donor_model.items()
+        if key not in {"vocab", "merges"}
+    }
+    target_model_semantics = {
+        key: value
+        for key, value in target_model.items()
+        if key not in {"vocab", "merges"}
+    }
+    if donor_model_semantics != target_model_semantics:
+        failures.append("ByteLevel-BPE model semantics differ")
+    for key in ("continuing_subword_prefix", "end_of_word_suffix"):
+        if donor_model_semantics.get(key) not in (None, ""):
+            failures.append(f"ByteLevel-BPE structural proof does not support {key}")
+    if failures:
+        return None, tuple(sorted(set(failures)))
+
+    donor_rows = _unique_text_vocabulary_rows(
+        donor_vocabulary,
+        donor_vocab_size,
+        "donor",
+        failures,
+    )
+    target_rows = _unique_text_vocabulary_rows(
+        target_vocabulary,
+        target_vocab_size,
+        "target",
+        failures,
+    )
+    donor_model_vocab = _backend_bpe_vocabulary(
+        donor_model,
+        "donor",
+        failures,
+    )
+    target_model_vocab = _backend_bpe_vocabulary(
+        target_model,
+        "target",
+        failures,
+    )
+    donor_added_tokens = _backend_added_tokens(
+        donor_data,
+        "donor",
+        failures,
+    )
+    target_added_tokens = _backend_added_tokens(
+        target_data,
+        "target",
+        failures,
+    )
+    if failures:
+        return None, tuple(failures)
+
+    assert donor_rows is not None
+    assert target_rows is not None
+    assert donor_model_vocab is not None
+    assert target_model_vocab is not None
+    assert donor_added_tokens is not None
+    assert target_added_tokens is not None
+
+    donor_declared_vocab = _backend_declared_vocabulary(
+        donor_model_vocab,
+        donor_added_tokens,
+        "donor",
+        failures,
+    )
+    target_declared_vocab = _backend_declared_vocabulary(
+        target_model_vocab,
+        target_added_tokens,
+        "target",
+        failures,
+    )
+    if donor_declared_vocab != donor_vocabulary:
+        failures.append("donor backend token rows do not match get_vocab()")
+    if target_declared_vocab != target_vocabulary:
+        failures.append("target backend token rows do not match get_vocab()")
+
+    for token in sorted(target_model_vocab):
+        if token not in donor_model_vocab:
+            failures.append(
+                f"target ByteLevel-BPE model token {token!r} is absent from donor"
+            )
+    for token in sorted(target_added_tokens):
+        donor_added = donor_added_tokens.get(token)
+        if donor_added is None:
+            failures.append(
+                f"target added token {token!r} is absent from donor added tokens"
+            )
+            continue
+        _, donor_semantics = donor_added
+        _, target_semantics = target_added_tokens[token]
+        if donor_semantics != target_semantics:
+            failures.append(f"added token {token!r} semantics differ")
+
+    target_to_donor: list[int] = []
+    for target_id, token in enumerate(target_rows):
+        donor_id = donor_vocabulary.get(token)
+        if donor_id is None:
+            failures.append(
+                f"target token string {token!r} has no donor vocabulary row"
+            )
+            continue
+        target_to_donor.append(donor_id)
+
+    donor_merges = _backend_bpe_merges(
+        donor_model,
+        donor_model_vocab,
+        "donor",
+        failures,
+    )
+    target_merges = _backend_bpe_merges(
+        target_model,
+        target_model_vocab,
+        "target",
+        failures,
+    )
+    if donor_merges is not None and target_merges is not None:
+        target_model_tokens = set(target_model_vocab)
+        expected_target_merges = tuple(
+            merge
+            for merge in donor_merges
+            if merge[0] in target_model_tokens
+            and merge[1] in target_model_tokens
+            and merge[0] + merge[1] in target_model_tokens
+        )
+        if target_merges != expected_target_merges:
+            failures.append(
+                "target ByteLevel-BPE merges are not the canonical donor merges "
+                "retained by its model vocabulary"
+            )
+    if failures:
+        return None, tuple(failures)
+    if len(target_to_donor) != target_vocab_size:
+        return None, ("target token-string proof did not cover every row",)
+
+    fingerprint = _strict_proof_fingerprint(
+        {
+            "resolution": _BYTELEVEL_BPE_RESOLUTION,
+            "donor_tokenizer_class": type(donor_tokenizer).__name__,
+            "target_tokenizer_class": type(target_tokenizer).__name__,
+            "donor_vocab_size": donor_vocab_size,
+            "target_vocab_size": target_vocab_size,
+            "model_semantics": donor_model_semantics,
+            "pre_tokenizer": donor_data.get("pre_tokenizer"),
+            "decoder": donor_decoder,
+            "normalizer": donor_data.get("normalizer"),
+            "donor_vocabulary_rows": list(donor_rows),
+            "target_vocabulary_rows": list(target_rows),
+            "donor_merges": [list(merge) for merge in donor_merges or ()],
+            "target_merges": [list(merge) for merge in target_merges or ()],
+            "donor_added_tokens": _proof_added_tokens(donor_added_tokens),
+            "target_added_tokens": _proof_added_tokens(target_added_tokens),
+            "target_to_donor_row_indices": target_to_donor,
+        }
+    )
+    return (
+        _ByteLevelBPEStructuralProof(
+            target_to_donor_row_indices=tuple(target_to_donor),
+            fingerprint=fingerprint,
+        ),
+        (),
+    )
+
+
+def _structured_backend_tokenizer_data(
+    tokenizer: HFTokenizerProtocol,
+) -> dict[str, Any] | None:
+    candidates: list[Any] = []
+    for attribute in ("backend_tokenizer", "_tokenizer"):
+        try:
+            backend = getattr(tokenizer, attribute, None)
+        except Exception:
+            continue
+        if backend is not None and all(backend is not item for item in candidates):
+            candidates.append(backend)
+    if callable(getattr(tokenizer, "to_str", None)):
+        candidates.append(tokenizer)
+
+    for backend in candidates:
+        serializer = getattr(backend, "to_str", None)
+        if not callable(serializer):
+            continue
+        try:
+            serialized = serializer()
+            data = json.loads(serialized)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        except Exception:
+            continue
+        if isinstance(data, dict):
+            return data
+    return None
+
+
+def _contains_backend_component(component: Any, component_type: str) -> bool:
+    if isinstance(component, Mapping):
+        if component.get("type") == component_type:
+            return True
+        return any(
+            _contains_backend_component(value, component_type)
+            for value in component.values()
+        )
+    if isinstance(component, list):
+        return any(
+            _contains_backend_component(value, component_type) for value in component
+        )
+    return False
+
+
+def _unique_text_vocabulary_rows(
+    vocabulary: Mapping[Any, int],
+    vocab_size: int,
+    label: str,
+    failures: list[str],
+) -> tuple[str, ...] | None:
+    rows: list[str | None] = [None] * vocab_size
+    for token, token_id in vocabulary.items():
+        if not isinstance(token, str):
+            failures.append(
+                f"{label} ByteLevel-BPE vocabulary contains a non-text token string"
+            )
+            continue
+        if token_id < 0 or token_id >= vocab_size:
+            continue
+        if rows[token_id] is not None:
+            failures.append(
+                f"{label} ByteLevel-BPE row {token_id} has multiple token strings"
+            )
+            continue
+        rows[token_id] = token
+    missing = [token_id for token_id, token in enumerate(rows) if token is None]
+    if missing:
+        failures.append(
+            f"{label} ByteLevel-BPE token strings do not cover rows {missing}"
+        )
+        return None
+    return tuple(token for token in rows if token is not None)
+
+
+def _backend_bpe_vocabulary(
+    model: Mapping[str, Any],
+    label: str,
+    failures: list[str],
+) -> dict[str, int] | None:
+    raw_vocabulary = model.get("vocab")
+    if not isinstance(raw_vocabulary, Mapping):
+        failures.append(f"{label} ByteLevel-BPE model vocabulary is malformed")
+        return None
+    vocabulary: dict[str, int] = {}
+    for token, value in raw_vocabulary.items():
+        if not isinstance(token, str) or isinstance(value, bool):
+            failures.append(f"{label} ByteLevel-BPE model vocabulary is malformed")
+            return None
+        try:
+            token_id = operator.index(value)
+        except (TypeError, ValueError, OverflowError):
+            failures.append(f"{label} ByteLevel-BPE model vocabulary is malformed")
+            return None
+        vocabulary[token] = token_id
+    return vocabulary
+
+
+def _backend_added_tokens(
+    data: Mapping[str, Any],
+    label: str,
+    failures: list[str],
+) -> dict[str, tuple[int, dict[str, Any]]] | None:
+    raw_tokens = data.get("added_tokens", ())
+    if not isinstance(raw_tokens, list):
+        failures.append(f"{label} backend added_tokens is malformed")
+        return None
+    result: dict[str, tuple[int, dict[str, Any]]] = {}
+    for item in raw_tokens:
+        if not isinstance(item, Mapping):
+            failures.append(f"{label} backend added_tokens is malformed")
+            return None
+        content = item.get("content")
+        raw_id = item.get("id")
+        if not isinstance(content, str) or isinstance(raw_id, bool):
+            failures.append(f"{label} backend added_tokens is malformed")
+            return None
+        try:
+            token_id = operator.index(raw_id)
+        except (TypeError, ValueError, OverflowError):
+            failures.append(f"{label} backend added_tokens is malformed")
+            return None
+        if content in result:
+            failures.append(
+                f"{label} backend added token {content!r} is declared more than once"
+            )
+            return None
+        semantics = {key: value for key, value in item.items() if key != "id"}
+        result[content] = (token_id, semantics)
+    return result
+
+
+def _backend_declared_vocabulary(
+    model_vocabulary: Mapping[str, int],
+    added_tokens: Mapping[str, tuple[int, Mapping[str, Any]]],
+    label: str,
+    failures: list[str],
+) -> dict[str, int]:
+    result = dict(model_vocabulary)
+    for token, (token_id, _) in added_tokens.items():
+        existing = result.get(token)
+        if existing is not None and existing != token_id:
+            failures.append(f"{label} backend token {token!r} has conflicting row IDs")
+            continue
+        result[token] = token_id
+    return result
+
+
+def _backend_bpe_merges(
+    model: Mapping[str, Any],
+    vocabulary: Mapping[str, int],
+    label: str,
+    failures: list[str],
+) -> tuple[tuple[str, str], ...] | None:
+    raw_merges = model.get("merges")
+    if not isinstance(raw_merges, list):
+        failures.append(f"{label} ByteLevel-BPE merges are malformed")
+        return None
+    merges: list[tuple[str, str]] = []
+    for raw_merge in raw_merges:
+        if isinstance(raw_merge, list) and len(raw_merge) == 2:
+            left, right = raw_merge
+        elif isinstance(raw_merge, str):
+            pieces = raw_merge.split(" ")
+            if len(pieces) != 2:
+                failures.append(f"{label} ByteLevel-BPE merges are malformed")
+                return None
+            left, right = pieces
+        else:
+            failures.append(f"{label} ByteLevel-BPE merges are malformed")
+            return None
+        if not isinstance(left, str) or not isinstance(right, str):
+            failures.append(f"{label} ByteLevel-BPE merges are malformed")
+            return None
+        if (
+            left not in vocabulary
+            or right not in vocabulary
+            or left + right not in vocabulary
+        ):
+            failures.append(
+                f"{label} ByteLevel-BPE merge {left!r} + {right!r} "
+                "references a missing model token"
+            )
+            return None
+        merges.append((left, right))
+    if len(set(merges)) != len(merges):
+        failures.append(f"{label} ByteLevel-BPE merges contain duplicates")
+        return None
+    return tuple(merges)
+
+
+def _proof_added_tokens(
+    added_tokens: Mapping[str, tuple[int, Mapping[str, Any]]],
+) -> list[dict[str, Any]]:
+    return [
+        {"id": token_id, **dict(semantics)}
+        for _, (token_id, semantics) in sorted(
+            added_tokens.items(),
+            key=lambda item: (item[1][0], item[0]),
+        )
+    ]
+
+
 def _validate_contiguous_vocab_ids(
     tokenizer: HFTokenizerProtocol,
     vocab_size: int,
     label: str,
     failures: list[str],
-) -> None:
+) -> dict[Any, int] | None:
     getter = getattr(tokenizer, "get_vocab", None)
     if not callable(getter):
         failures.append(
             f"{label} tokenizer must expose get_vocab() for strict ID auditing"
         )
-        return
+        return None
     try:
         vocabulary = getter()
     except Exception as exc:
         failures.append(
             f"{label} tokenizer get_vocab() failed with {type(exc).__name__}"
         )
-        return
+        return None
     if not isinstance(vocabulary, Mapping):
         failures.append(f"{label} tokenizer get_vocab() must return a mapping")
-        return
+        return None
 
     token_ids: list[int] = []
+    normalized_vocabulary: dict[Any, int] = {}
     invalid_count = 0
-    for value in vocabulary.values():
+    for token, value in vocabulary.items():
         if isinstance(value, bool):
             invalid_count += 1
             continue
         try:
-            token_ids.append(operator.index(value))
+            token_id = operator.index(value)
         except (TypeError, ValueError, OverflowError):
             invalid_count += 1
+            continue
+        token_ids.append(token_id)
+        normalized_vocabulary[token] = token_id
     if invalid_count:
         failures.append(
             f"{label} vocabulary contains {invalid_count} non-integer token ID(s)"
@@ -896,6 +1499,7 @@ def _validate_contiguous_vocab_ids(
         failures.append(
             f"{label} vocabulary has IDs outside [0, {vocab_size}): {outside}"
         )
+    return normalized_vocabulary
 
 
 _STRICT_SPECIAL_TOKEN_ROLES = (

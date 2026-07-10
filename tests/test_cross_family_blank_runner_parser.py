@@ -51,6 +51,7 @@ def test_parser_accepts_target_tokenizer_model() -> None:
 
     assert args.target_tokenizer_model == "target-tokenizer"
     assert args.trace_pooling == "mean"
+    assert args.nonlinear_merge_method == "activation_fold"
 
 
 def test_parser_accepts_dual_orthonormal_controls() -> None:
@@ -84,6 +85,8 @@ def test_parser_accepts_dual_orthonormal_controls() -> None:
             "32",
             "--residual-map-method",
             "dual_orthonormal",
+            "--nonlinear-merge-method",
+            "real_medoid",
             "--dual-alpha",
             "0.5",
             "--dual-beta",
@@ -98,6 +101,7 @@ def test_parser_accepts_dual_orthonormal_controls() -> None:
     )
 
     assert args.residual_map_method == "dual_orthonormal"
+    assert args.nonlinear_merge_method == "real_medoid"
     assert args.dual_alpha == 0.5
     assert args.dual_beta == 1.5
     assert args.dual_gamma == 3.0

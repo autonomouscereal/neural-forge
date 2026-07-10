@@ -681,6 +681,10 @@ def bootstrap_blank_decoder_checkpoint(
         "pca",
         "dual_orthonormal",
     ] = "sparse_fold",
+    nonlinear_merge_method: Literal[
+        "activation_fold",
+        "real_medoid",
+    ] = "activation_fold",
     ridge: float = 1e-5,
     max_operator_delta_ratio: float = 4.0,
     min_final_state_relative_improvement: float = 0.0,
@@ -715,6 +719,13 @@ def bootstrap_blank_decoder_checkpoint(
     seed_value = seed
     if isinstance(seed_value, bool) or not isinstance(seed_value, int):
         raise BlankCheckpointError("seed must be an integer.")
+    if not isinstance(nonlinear_merge_method, str) or nonlinear_merge_method not in {
+        "activation_fold",
+        "real_medoid",
+    }:
+        raise BlankCheckpointError(
+            "nonlinear_merge_method must be activation_fold or real_medoid."
+        )
     shape = _validate_shape(
         target_family,
         hidden_size=hidden_size,
@@ -800,7 +811,11 @@ def bootstrap_blank_decoder_checkpoint(
         resolved_donor_tokenizer,
         donor_vocab_capacity,
     )
-    target_vocab_size = int(len(resolved_target_tokenizer))
+    target_vocab_size = (
+        donor_vocab_capacity
+        if resolved_target_tokenizer is resolved_donor_tokenizer
+        else int(len(resolved_target_tokenizer))
+    )
     if target_vocab_size <= 0:
         raise BlankCheckpointError("Target tokenizer vocabulary must be non-empty.")
     target_special_ids = _target_special_token_ids(
@@ -918,6 +933,7 @@ def bootstrap_blank_decoder_checkpoint(
         cross_tokenizer_mode=cross_tokenizer_mode,
         trace_pooling=trace_pooling,
         residual_map_method=residual_map_method,
+        nonlinear_merge_method=nonlinear_merge_method,
         ridge=ridge,
         max_operator_delta_ratio=max_operator_delta_ratio,
         min_final_state_relative_improvement=min_final_state_relative_improvement,
@@ -1055,6 +1071,7 @@ def bootstrap_blank_decoder_checkpoint(
             "knobs": {
                 "trace_pooling": trace_pooling,
                 "residual_map_method": residual_map_method,
+                "nonlinear_merge_method": nonlinear_merge_method,
                 "ridge": ridge,
                 "max_operator_delta_ratio": max_operator_delta_ratio,
                 "min_final_state_relative_improvement": min_final_state_relative_improvement,

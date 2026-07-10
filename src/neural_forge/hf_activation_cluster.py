@@ -11,6 +11,7 @@ post-SwiGLU activity), not by dividing one nonlinear factor by another.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,6 +30,20 @@ class ActivationClusterFiniteError(ActivationClusterError):
 
 class ActivationClusterInvariantError(ActivationClusterError):
     """Raised when a plan cannot prove its structural invariants."""
+
+
+_GLOBAL_CLUSTER_MAX_SOURCES = 256
+_GLOBAL_CLUSTER_MAX_SOURCE_TARGET_PAIRS = 16_384
+_LOCALITY_DIRECTION_DIMENSIONS = 4
+_MORTON_CODE_BITS = 60
+_GLOBAL_CLUSTER_STRATEGY = (
+    "deterministic-farthest-first-global-assignment-real-medoid-refinement"
+)
+_SCALABLE_CLUSTER_STRATEGY = (
+    "deterministic-normalized-projection-morton-balanced-exact-local-medoid"
+)
+_IDENTITY_CLUSTER_STRATEGY = "deterministic-identity-real-medoid"
+_CLUSTER_MEDOID_SELECTION = "minimum-within-cluster-squared-distance-real-source"
 
 
 def _require_torch() -> Any:
@@ -200,6 +215,13 @@ class GQAActivationClusterReport:
     query_offset_group_sizes: tuple[int, ...]
     query_head_group_sizes: tuple[int, ...]
     context_consumer_coefficients: tuple[float, ...]
+    group_medoid_candidate_indices: tuple[int, ...]
+    group_cluster_strategy: str
+    query_offset_cluster_strategy: str
+    group_cluster_balanced_partition: bool
+    query_offset_cluster_balanced_partition: bool
+    group_cluster_locality_dimensions: int
+    query_offset_cluster_locality_dimensions: int
     group_cluster_iterations: int
     query_offset_cluster_iterations: int
     group_cluster_converged: bool
@@ -240,6 +262,20 @@ class GQAActivationClusterReport:
             "query_offset_group_sizes": list(self.query_offset_group_sizes),
             "query_head_group_sizes": list(self.query_head_group_sizes),
             "context_consumer_coefficients": list(self.context_consumer_coefficients),
+            "group_medoid_candidate_indices": list(self.group_medoid_candidate_indices),
+            "group_cluster_strategy": self.group_cluster_strategy,
+            "query_offset_cluster_strategy": self.query_offset_cluster_strategy,
+            "group_cluster_balanced_partition": (self.group_cluster_balanced_partition),
+            "query_offset_cluster_balanced_partition": (
+                self.query_offset_cluster_balanced_partition
+            ),
+            "group_cluster_locality_dimensions": (
+                self.group_cluster_locality_dimensions
+            ),
+            "query_offset_cluster_locality_dimensions": (
+                self.query_offset_cluster_locality_dimensions
+            ),
+            "cluster_medoid_selection": _CLUSTER_MEDOID_SELECTION,
             "group_cluster_iterations": self.group_cluster_iterations,
             "query_offset_cluster_iterations": (self.query_offset_cluster_iterations),
             "group_cluster_converged": self.group_cluster_converged,
@@ -281,6 +317,9 @@ class GatedMLPActivationClusterReport:
     source_to_target: tuple[int, ...]
     group_sizes: tuple[int, ...]
     consumer_coefficients: tuple[float, ...]
+    cluster_strategy: str
+    cluster_balanced_partition: bool
+    cluster_locality_dimensions: int
     cluster_iterations: int
     cluster_converged: bool
     cluster_squared_error: float
@@ -305,6 +344,10 @@ class GatedMLPActivationClusterReport:
             "source_to_target": list(self.source_to_target),
             "group_sizes": list(self.group_sizes),
             "consumer_coefficients": list(self.consumer_coefficients),
+            "cluster_strategy": self.cluster_strategy,
+            "cluster_balanced_partition": self.cluster_balanced_partition,
+            "cluster_locality_dimensions": self.cluster_locality_dimensions,
+            "cluster_medoid_selection": _CLUSTER_MEDOID_SELECTION,
             "cluster_iterations": self.cluster_iterations,
             "cluster_converged": self.cluster_converged,
             "cluster_squared_error": self.cluster_squared_error,
@@ -769,6 +812,9 @@ class _ClusterResult:
     medoids: Any
     assignment: Any
     group_sizes: Any
+    strategy: str
+    balanced_partition: bool
+    locality_dimensions: int
     iterations: int
     converged: bool
     squared_error: float
@@ -799,6 +845,206 @@ def _nearest_assignment(
     return result
 
 
+def _cluster_squared_error(
+    torch: Any,
+    features: Any,
+    medoids: Any,
+    assignment: Any,
+    chunk_size: int,
+) -> float:
+    selected = features.index_select(0, medoids)
+    row_squared_errors = torch.empty(int(features.shape[0]), dtype=torch.float64)
+    for start in range(0, int(features.shape[0]), chunk_size):
+        stop = min(start + chunk_size, int(features.shape[0]))
+        targets = selected.index_select(0, assignment[start:stop])
+        residual = features[start:stop] - targets
+        row_squared_errors[start:stop] = residual.square().sum(dim=1)
+    squared_error = float(row_squared_errors.sum().item())
+    if not math.isfinite(squared_error):
+        raise ActivationClusterFiniteError(
+            "Medoid clustering produced a non-finite objective."
+        )
+    return squared_error
+
+
+def _normalized_locality_projection(torch: Any, features: Any) -> Any:
+    """Project rows deterministically in O(source_count * feature_dim)."""
+
+    source_count, feature_dim = map(int, features.shape)
+    direction_dimensions = min(_LOCALITY_DIRECTION_DIMENSIONS, feature_dim)
+    row_norm = torch.linalg.vector_norm(features, dim=1)
+    safe_row_norm = row_norm.clamp_min(torch.finfo(torch.float64).tiny)
+    projection = torch.empty(
+        (source_count, direction_dimensions + 1), dtype=torch.float64
+    )
+    prime = 2_147_483_647
+    for dimension in range(direction_dimensions):
+        column_indices = torch.arange(
+            dimension, feature_dim, direction_dimensions, dtype=torch.long
+        )
+        hashes = torch.remainder(
+            column_indices * 1_326_451_463 + (dimension + 1) * 374_761_393,
+            prime,
+        )
+        hashes = torch.bitwise_xor(hashes, hashes >> 13)
+        signs = torch.where(
+            hashes < prime // 2,
+            torch.tensor(-1.0, dtype=torch.float64),
+            torch.tensor(1.0, dtype=torch.float64),
+        )
+        direction = features[:, dimension::direction_dimensions].matmul(signs)
+        projection[:, dimension] = (
+            direction / math.sqrt(int(column_indices.numel())) / safe_row_norm
+        )
+    projection[:, -1] = torch.log1p(row_norm)
+
+    projection -= projection.mean(dim=0, keepdim=True)
+    scale = torch.sqrt(projection.square().mean(dim=0, keepdim=True))
+    projection /= torch.where(scale > 0.0, scale, torch.ones_like(scale))
+    if not bool(torch.isfinite(projection).all().item()):
+        raise ActivationClusterFiniteError(
+            "Locality projection produced non-finite values."
+        )
+    return projection.contiguous()
+
+
+def _morton_locality_order(torch: Any, projection: Any) -> Any:
+    """Return a deterministic locality order from rank-normalized coordinates."""
+
+    source_count, dimensions = map(int, projection.shape)
+    bits_per_dimension = max(1, _MORTON_CODE_BITS // dimensions)
+    quantization_levels = (1 << bits_per_dimension) - 1
+    rank_scale = max(source_count - 1, 1)
+    codes = torch.zeros(source_count, dtype=torch.long)
+    source_ranks = torch.arange(source_count, dtype=torch.long)
+    for dimension in range(dimensions):
+        coordinate_order = torch.argsort(projection[:, dimension], stable=True)
+        ranks = torch.empty(source_count, dtype=torch.long)
+        ranks[coordinate_order] = source_ranks
+        quantized = torch.div(
+            ranks * quantization_levels,
+            rank_scale,
+            rounding_mode="floor",
+        )
+        for bit in range(bits_per_dimension):
+            shift = bit * dimensions + dimension
+            codes |= ((quantized >> bit) & 1) << shift
+    return torch.argsort(codes, stable=True)
+
+
+def _balanced_locality_medoid_cluster(
+    torch: Any,
+    features: Any,
+    target_count: int,
+    *,
+    chunk_size: int,
+) -> _ClusterResult:
+    source_count = int(features.shape[0])
+    projection = _normalized_locality_projection(torch, features)
+    locality_order = _morton_locality_order(torch, projection)
+
+    base_size, remainder = divmod(source_count, target_count)
+    group_sizes = torch.full((target_count,), base_size, dtype=torch.long)
+    group_sizes[:remainder] += 1
+    ordered_assignment = torch.repeat_interleave(
+        torch.arange(target_count, dtype=torch.long), group_sizes
+    )
+    assignment = torch.empty(source_count, dtype=torch.long)
+    assignment[locality_order] = ordered_assignment
+
+    medoids = torch.empty(target_count, dtype=torch.long)
+    start = 0
+    for target, size_value in enumerate(group_sizes.tolist()):
+        stop = start + int(size_value)
+        members = torch.sort(locality_order[start:stop]).values
+        member_rows = features.index_select(0, members)
+        centroid = member_rows.mean(dim=0, keepdim=True)
+        # This exactly minimizes pairwise squared distance over real members.
+        distances = _squared_distances(torch, member_rows, centroid).squeeze(1)
+        medoids[target] = members[int(torch.argmin(distances).item())]
+        start = stop
+
+    order = torch.argsort(medoids, stable=True)
+    old_to_new = torch.empty(target_count, dtype=torch.long)
+    old_to_new[order] = torch.arange(target_count, dtype=torch.long)
+    medoids = medoids.index_select(0, order)
+    assignment = old_to_new.index_select(0, assignment)
+    group_sizes = group_sizes.index_select(0, order)
+    assignment[medoids] = torch.arange(target_count, dtype=torch.long)
+    squared_error = _cluster_squared_error(
+        torch, features, medoids, assignment, chunk_size
+    )
+    return _ClusterResult(
+        medoids=medoids.contiguous(),
+        assignment=assignment.contiguous(),
+        group_sizes=group_sizes.contiguous(),
+        strategy=_SCALABLE_CLUSTER_STRATEGY,
+        balanced_partition=True,
+        locality_dimensions=int(projection.shape[1]),
+        iterations=1,
+        converged=True,
+        squared_error=squared_error,
+    )
+
+
+def _restricted_real_medoid_cluster(
+    torch: Any,
+    features: Any,
+    target_count: int,
+    candidate_indices: Any,
+    *,
+    max_iterations: int,
+    chunk_size: int,
+) -> _ClusterResult:
+    source_count = int(features.shape[0])
+    candidates = candidate_indices.detach().to(device="cpu", dtype=torch.long)
+    if candidates.ndim != 1 or int(candidates.numel()) < target_count:
+        raise ActivationClusterShapeError(
+            "Restricted medoid candidates must contain at least target_count rows."
+        )
+    if int(torch.unique(candidates).numel()) != int(candidates.numel()):
+        raise ActivationClusterShapeError(
+            "Restricted medoid candidate indices must be unique."
+        )
+    if bool((candidates < 0).any()) or bool((candidates >= source_count).any()):
+        raise ActivationClusterShapeError(
+            "A restricted medoid candidate index is outside the source rows."
+        )
+    candidate_result = _deterministic_medoid_cluster(
+        torch,
+        features.index_select(0, candidates),
+        target_count,
+        max_iterations=max_iterations,
+        chunk_size=chunk_size,
+    )
+    medoids = candidates.index_select(0, candidate_result.medoids)
+    assignment = _nearest_assignment(torch, features, medoids, chunk_size)
+    assignment[medoids] = torch.arange(target_count, dtype=torch.long)
+    group_sizes = torch.bincount(assignment, minlength=target_count)
+    if bool((group_sizes <= 0).any()):
+        raise ActivationClusterInvariantError(
+            "Restricted medoid assignment left a target cluster empty."
+        )
+    squared_error = _cluster_squared_error(
+        torch,
+        features,
+        medoids,
+        assignment,
+        chunk_size,
+    )
+    return _ClusterResult(
+        medoids=medoids.contiguous(),
+        assignment=assignment.contiguous(),
+        group_sizes=group_sizes.contiguous(),
+        strategy=f"restricted-candidates:{candidate_result.strategy}",
+        balanced_partition=False,
+        locality_dimensions=candidate_result.locality_dimensions,
+        iterations=candidate_result.iterations,
+        converged=candidate_result.converged,
+        squared_error=squared_error,
+    )
+
+
 def _deterministic_medoid_cluster(
     torch: Any,
     features: Any,
@@ -818,9 +1064,24 @@ def _deterministic_medoid_cluster(
             medoids=identity,
             assignment=identity.clone(),
             group_sizes=torch.ones(source_count, dtype=torch.long),
+            strategy=_IDENTITY_CLUSTER_STRATEGY,
+            balanced_partition=True,
+            locality_dimensions=0,
             iterations=0,
             converged=True,
             squared_error=0.0,
+        )
+
+    use_global_refinement = (
+        source_count <= _GLOBAL_CLUSTER_MAX_SOURCES
+        and source_count * target_count <= _GLOBAL_CLUSTER_MAX_SOURCE_TARGET_PAIRS
+    )
+    if not use_global_refinement:
+        return _balanced_locality_medoid_cluster(
+            torch,
+            features,
+            target_count,
+            chunk_size=chunk_size,
         )
 
     centroid = features.mean(dim=0, keepdim=True)
@@ -890,17 +1151,16 @@ def _deterministic_medoid_cluster(
         raise ActivationClusterInvariantError(
             "Deterministic clustering left a target medoid empty."
         )
-    selected_rows = features.index_select(0, medoids)
-    residual = features - selected_rows.index_select(0, assignment)
-    squared_error = float(residual.square().sum().item())
-    if not math.isfinite(squared_error):
-        raise ActivationClusterFiniteError(
-            "Medoid clustering produced a non-finite objective."
-        )
+    squared_error = _cluster_squared_error(
+        torch, features, medoids, assignment, chunk_size
+    )
     return _ClusterResult(
         medoids=medoids.contiguous(),
         assignment=assignment.contiguous(),
         group_sizes=group_sizes.contiguous(),
+        strategy=_GLOBAL_CLUSTER_STRATEGY,
+        balanced_partition=False,
+        locality_dimensions=0,
         iterations=iterations,
         converged=converged,
         squared_error=squared_error,
@@ -1026,6 +1286,7 @@ def build_gqa_activation_cluster_plan(
     source_key_value_heads: int | None = None,
     source_head_dim: int | None = None,
     target_head_dim: int | None = None,
+    group_medoid_candidates: Sequence[int] | None = None,
     ridge: float = 1e-8,
     max_iterations: int = 16,
     distance_chunk_size: int = 512,
@@ -1153,13 +1414,36 @@ def build_gqa_activation_cluster_plan(
                 grouped_contribution.permute(1, 0, 2).reshape(source_offsets, -1),
             ),
         )
-        group_clusters = _deterministic_medoid_cluster(
-            torch,
-            group_features,
-            target_key_value_heads,
-            max_iterations=max_iterations,
-            chunk_size=distance_chunk_size,
-        )
+        if group_medoid_candidates is None:
+            group_candidate_indices = torch.arange(
+                source_key_value_heads,
+                dtype=torch.long,
+            )
+            group_clusters = _deterministic_medoid_cluster(
+                torch,
+                group_features,
+                target_key_value_heads,
+                max_iterations=max_iterations,
+                chunk_size=distance_chunk_size,
+            )
+        else:
+            try:
+                group_candidate_indices = torch.tensor(
+                    tuple(group_medoid_candidates),
+                    dtype=torch.long,
+                )
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ActivationClusterShapeError(
+                    "group_medoid_candidates must be integer source-group indices."
+                ) from exc
+            group_clusters = _restricted_real_medoid_cluster(
+                torch,
+                group_features,
+                target_key_value_heads,
+                group_candidate_indices,
+                max_iterations=max_iterations,
+                chunk_size=distance_chunk_size,
+            )
         offset_clusters = _deterministic_medoid_cluster(
             torch,
             offset_features,
@@ -1253,6 +1537,15 @@ def build_gqa_activation_cluster_plan(
         query_offset_group_sizes=offset_group_sizes,
         query_head_group_sizes=query_group_sizes_tuple,
         context_consumer_coefficients=coefficient_tuple,
+        group_medoid_candidate_indices=tuple(
+            int(value) for value in group_candidate_indices
+        ),
+        group_cluster_strategy=group_clusters.strategy,
+        query_offset_cluster_strategy=offset_clusters.strategy,
+        group_cluster_balanced_partition=group_clusters.balanced_partition,
+        query_offset_cluster_balanced_partition=(offset_clusters.balanced_partition),
+        group_cluster_locality_dimensions=group_clusters.locality_dimensions,
+        query_offset_cluster_locality_dimensions=(offset_clusters.locality_dimensions),
         group_cluster_iterations=group_clusters.iterations,
         query_offset_cluster_iterations=offset_clusters.iterations,
         group_cluster_converged=group_clusters.converged,
@@ -1392,6 +1685,9 @@ def build_gated_mlp_activation_cluster_plan(
         source_to_target=assignment_tuple,
         group_sizes=group_sizes,
         consumer_coefficients=coefficient_tuple,
+        cluster_strategy=clusters.strategy,
+        cluster_balanced_partition=clusters.balanced_partition,
+        cluster_locality_dimensions=clusters.locality_dimensions,
         cluster_iterations=clusters.iterations,
         cluster_converged=clusters.converged,
         cluster_squared_error=clusters.squared_error,

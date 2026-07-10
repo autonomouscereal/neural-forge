@@ -11,6 +11,12 @@ from neural_forge.hf_arch_layout import (
     build_decoder_layout,
     resolve_module,
 )
+from neural_forge.hf_activation_cluster import (
+    GQAActivationClusterPlan,
+    GatedMLPActivationClusterPlan,
+    build_gated_mlp_activation_cluster_plan,
+    build_gqa_activation_cluster_plan,
+)
 from neural_forge.hf_attention_fold import build_gqa_attention_fold_maps
 from neural_forge.hf_closed_form_fit import (
     FitMetrics,
@@ -102,6 +108,9 @@ def bootstrap_blank_decoder_models(
         "pca",
         "dual_orthonormal",
     ] = "sparse_fold",
+    nonlinear_merge_method: Literal["activation_fold", "real_medoid"] = (
+        "activation_fold"
+    ),
     ridge: float = 1e-5,
     max_operator_delta_ratio: float = 4.0,
     min_final_state_relative_improvement: float = 0.0,
@@ -149,6 +158,10 @@ def bootstrap_blank_decoder_models(
         raise BlankBootstrapError(
             "residual_map_method must be sparse_fold, joint_sparse_fold, pca, "
             "or dual_orthonormal."
+        )
+    if nonlinear_merge_method not in {"activation_fold", "real_medoid"}:
+        raise BlankBootstrapError(
+            "nonlinear_merge_method must be activation_fold or real_medoid."
         )
     if vocab_row_norm_repair not in {"none", "source_l2"}:
         raise BlankBootstrapError("vocab_row_norm_repair must be none or source_l2.")
@@ -370,6 +383,7 @@ def bootstrap_blank_decoder_models(
                 target_index,
                 source_span,
                 residual_coordinates,
+                nonlinear_merge_method,
                 ridge,
                 max_operator_delta_ratio,
                 max_coordinate_rows,
@@ -1535,6 +1549,7 @@ def _fit_target_block(
     target_index: int,
     source_span: tuple[int, ...],
     residual_coordinates: Any,
+    nonlinear_merge_method: Literal["activation_fold", "real_medoid"],
     ridge: float,
     max_operator_delta_ratio: float,
     max_coordinate_rows: int,
@@ -1579,6 +1594,9 @@ def _fit_target_block(
     current = current_trace()
     target_block = current.block
     target_attention_layout = target_block_layout.attention
+    head_norm_source_span = (
+        (source_span[-1],) if nonlinear_merge_method == "real_medoid" else source_span
+    )
     for role, target_norm in (
         ("query", target_attention_layout.query_norm),
         ("key", target_attention_layout.key_norm),
@@ -1591,7 +1609,7 @@ def _fit_target_block(
                 source_model,
                 target_model,
                 source_layout,
-                source_span,
+                head_norm_source_span,
                 target_norm,
                 target_attention_layout.head_dim,
                 role=role,
@@ -1610,100 +1628,168 @@ def _fit_target_block(
     context_rows = tuple(
         block.attention_output_projection_input for block in source_blocks
     )
-    q_coordinates, k_coordinates, v_coordinates, context_coordinates = (
-        _attention_feature_coordinates(
+    if nonlinear_merge_method == "real_medoid":
+        (
+            attention_medoid_plan,
+            attention_prior_report,
+            desired_q,
+            desired_k,
+            desired_v,
+        ) = _initialize_attention_real_medoid_prior(
             torch,
+            source_model,
+            target_model,
+            source_layout,
+            target_layout,
+            target_block_layout,
+            source_span,
             source_q_rows,
             source_k_rows,
             source_v_rows,
             context_rows,
-            source_layout.blocks[source_span[-1]].attention,
-            target_block_layout,
+            residual_coordinates,
+            ridge,
             max_coordinate_rows,
-            use_coordinate_maps=False,
         )
-    )
-    reports[f"block.{target_index}.attention.feature_folds"] = {
-        "query": _coordinate_report(q_coordinates),
-        "key": _coordinate_report(k_coordinates),
-        "value": _coordinate_report(v_coordinates),
-        "context": _coordinate_report(context_coordinates),
-        "source_query_head_norms": [
-            source_layout.blocks[index].attention.query_norm.path
-            for index in source_span
-            if source_layout.blocks[index].attention.query_norm is not None
-        ],
-        "source_key_head_norms": [
-            source_layout.blocks[index].attention.key_norm.path
-            for index in source_span
-            if source_layout.blocks[index].attention.key_norm is not None
-        ],
-    }
-    attention_prior_report = _initialize_attention_structural_prior(
-        torch,
-        source_model,
-        target_model,
-        source_layout,
-        target_block_layout,
-        source_span,
-        residual_coordinates,
-        q_coordinates,
-        k_coordinates,
-        v_coordinates,
-        context_coordinates,
-    )
+        reports[f"block.{target_index}.attention.activation_cluster"] = (
+            attention_medoid_plan.report.as_dict()
+        )
+        reports[f"block.{target_index}.attention.feature_folds"] = {
+            "method": "real-source-head-medoid-selection",
+            "query": {
+                "source_heads": attention_medoid_plan.source_query_heads,
+                "target_heads": attention_medoid_plan.target_query_heads,
+            },
+            "key": {
+                "source_heads": attention_medoid_plan.source_key_value_heads,
+                "target_heads": attention_medoid_plan.target_key_value_heads,
+            },
+            "value": {
+                "source_heads": attention_medoid_plan.source_key_value_heads,
+                "target_heads": attention_medoid_plan.target_key_value_heads,
+            },
+            "context": {"consumer_aggregation": "post-context-least-squares-index-add"},
+            "source_query_head_norms": [
+                source_layout.blocks[index].attention.query_norm.path
+                for index in source_span
+                if source_layout.blocks[index].attention.query_norm is not None
+            ],
+            "source_key_head_norms": [
+                source_layout.blocks[index].attention.key_norm.path
+                for index in source_span
+                if source_layout.blocks[index].attention.key_norm is not None
+            ],
+            "full_source_coverage": True,
+            "no_producer_averaging": True,
+        }
+    else:
+        q_coordinates, k_coordinates, v_coordinates, context_coordinates = (
+            _attention_feature_coordinates(
+                torch,
+                source_q_rows,
+                source_k_rows,
+                source_v_rows,
+                context_rows,
+                source_layout.blocks[source_span[-1]].attention,
+                target_block_layout,
+                max_coordinate_rows,
+                use_coordinate_maps=False,
+            )
+        )
+        reports[f"block.{target_index}.attention.feature_folds"] = {
+            "query": _coordinate_report(q_coordinates),
+            "key": _coordinate_report(k_coordinates),
+            "value": _coordinate_report(v_coordinates),
+            "context": _coordinate_report(context_coordinates),
+            "source_query_head_norms": [
+                source_layout.blocks[index].attention.query_norm.path
+                for index in source_span
+                if source_layout.blocks[index].attention.query_norm is not None
+            ],
+            "source_key_head_norms": [
+                source_layout.blocks[index].attention.key_norm.path
+                for index in source_span
+                if source_layout.blocks[index].attention.key_norm is not None
+            ],
+        }
+        attention_prior_report = _initialize_attention_structural_prior(
+            torch,
+            source_model,
+            target_model,
+            source_layout,
+            target_block_layout,
+            source_span,
+            residual_coordinates,
+            q_coordinates,
+            k_coordinates,
+            v_coordinates,
+            context_coordinates,
+        )
+        desired_q = _mean_encoded_rows(torch, source_q_rows, q_coordinates)
+        desired_k = _mean_encoded_rows(torch, source_k_rows, k_coordinates)
+        desired_v = _mean_encoded_rows(torch, source_v_rows, v_coordinates)
     reports[f"block.{target_index}.attention.structural_prior"] = attention_prior_report
-    desired_q = _mean_encoded_rows(torch, source_q_rows, q_coordinates)
-    desired_k = _mean_encoded_rows(torch, source_k_rows, k_coordinates)
-    desired_v = _mean_encoded_rows(torch, source_v_rows, v_coordinates)
     target_attention = read_attention_operators(
         target_model,
         target_block_layout.attention,
     )
-    q_fit = _fit_operator_with_prior(
-        target_block.pre_attention_norm_output,
-        desired_q,
-        target_attention.query,
-        ridge=ridge,
-        preserve_prior=bool(attention_prior_report["applied"]),
-        max_prior_delta_ratio=max_operator_delta_ratio,
-    )
-    k_fit = _fit_operator_with_prior(
-        target_block.pre_attention_norm_output,
-        desired_k,
-        target_attention.key,
-        ridge=ridge,
-        preserve_prior=bool(attention_prior_report["applied"]),
-        max_prior_delta_ratio=max_operator_delta_ratio,
-    )
-    v_fit = _fit_operator_with_prior(
-        target_block.pre_attention_norm_output,
-        desired_v,
-        target_attention.value,
-        ridge=ridge,
-        preserve_prior=bool(attention_prior_report["applied"]),
-        max_prior_delta_ratio=max_operator_delta_ratio,
-    )
-    write_attention_operators(
-        target_model,
-        target_block_layout.attention,
-        AttentionOperators(
-            query=_operator_from_fit(target_attention.query, q_fit),
-            key=_operator_from_fit(target_attention.key, k_fit),
-            value=_operator_from_fit(target_attention.value, v_fit),
-            output=target_attention.output,
-        ),
-    )
-    if target_block_layout.attention.projection_style == "fused_qkv":
-        reports[f"block.{target_index}.attention.qkv"] = {
-            "method": "joint-closed-form-qkv-producer-fit",
-            "query": _fit_summary(q_fit),
-            "key": _fit_summary(k_fit),
-            "value": _fit_summary(v_fit),
-        }
+    if nonlinear_merge_method == "real_medoid":
+        current = current_trace()
+        target_block = current.block
+        for name, actual, desired in (
+            ("query", target_block.query_projection_output, desired_q),
+            ("key", target_block.key_projection_output, desired_k),
+            ("value", target_block.value_projection_output, desired_v),
+        ):
+            reports[f"block.{target_index}.attention.{name}"] = _measurement_summary(
+                measure_fit(actual, desired),
+                method="exact-coordinate-transformed-real-medoid-producer",
+            )
     else:
-        for name, fit in (("query", q_fit), ("key", k_fit), ("value", v_fit)):
-            reports[f"block.{target_index}.attention.{name}"] = _fit_summary(fit)
+        q_fit = _fit_operator_with_prior(
+            target_block.pre_attention_norm_output,
+            desired_q,
+            target_attention.query,
+            ridge=ridge,
+            preserve_prior=bool(attention_prior_report["applied"]),
+            max_prior_delta_ratio=max_operator_delta_ratio,
+        )
+        k_fit = _fit_operator_with_prior(
+            target_block.pre_attention_norm_output,
+            desired_k,
+            target_attention.key,
+            ridge=ridge,
+            preserve_prior=bool(attention_prior_report["applied"]),
+            max_prior_delta_ratio=max_operator_delta_ratio,
+        )
+        v_fit = _fit_operator_with_prior(
+            target_block.pre_attention_norm_output,
+            desired_v,
+            target_attention.value,
+            ridge=ridge,
+            preserve_prior=bool(attention_prior_report["applied"]),
+            max_prior_delta_ratio=max_operator_delta_ratio,
+        )
+        write_attention_operators(
+            target_model,
+            target_block_layout.attention,
+            AttentionOperators(
+                query=_operator_from_fit(target_attention.query, q_fit),
+                key=_operator_from_fit(target_attention.key, k_fit),
+                value=_operator_from_fit(target_attention.value, v_fit),
+                output=target_attention.output,
+            ),
+        )
+        if target_block_layout.attention.projection_style == "fused_qkv":
+            reports[f"block.{target_index}.attention.qkv"] = {
+                "method": "joint-closed-form-qkv-producer-fit",
+                "query": _fit_summary(q_fit),
+                "key": _fit_summary(k_fit),
+                "value": _fit_summary(v_fit),
+            }
+        else:
+            for name, fit in (("query", q_fit), ("key", k_fit), ("value", v_fit)):
+                reports[f"block.{target_index}.attention.{name}"] = _fit_summary(fit)
 
     current = current_trace()
     target_block = current.block
@@ -1736,6 +1822,14 @@ def _fit_target_block(
         ),
     )
     reports[f"block.{target_index}.attention.output"] = _fit_summary(output_fit)
+    if nonlinear_merge_method == "real_medoid":
+        reports[f"block.{target_index}.attention.output"].update(
+            {
+                "initialization": "per-source-scalar-ls-medoid-consumer",
+                "finalization": "joint-closed-form-full-span-attention-delta",
+                "producer_weights_preserved_exactly": True,
+            }
+        )
 
     current = current_trace()
     target_block = current.block
@@ -1770,32 +1864,82 @@ def _fit_target_block(
     gated_triplet_compatible = target_block_layout.mlp.kind == "gated" and all(
         source_layout.blocks[index].mlp.kind == "gated" for index in source_span
     )
-    mlp_coordinates = build_feature_fold_map(
-        mlp_feature_rows,
-        target_block_layout.mlp.intermediate_size,
-        allow_sign_flip=not gated_triplet_compatible,
+    swiglu_semantics_compatible = (
+        target_block_layout.mlp.activation_name == "silu"
+        and all(
+            source_layout.blocks[index].mlp.activation_name == "silu"
+            for index in source_span
+        )
     )
-    reports[f"block.{target_index}.mlp.feature_fold"] = _coordinate_report(
-        mlp_coordinates
-    )
-    mlp_prior_report = _initialize_mlp_structural_prior(
-        torch,
-        source_model,
-        target_model,
-        source_layout,
-        target_block_layout,
-        source_span,
-        residual_coordinates,
-        mlp_coordinates,
-    )
+    mlp_medoid_plan: GatedMLPActivationClusterPlan | None = None
+    desired_gate = None
+    desired_up = None
+    desired_product = None
+    if nonlinear_merge_method == "real_medoid":
+        if not gated_triplet_compatible or not swiglu_semantics_compatible:
+            raise BlankBootstrapError(
+                "Real-medoid MLP transport currently requires SiLU-gated source "
+                "and target MLPs."
+            )
+        (
+            mlp_medoid_plan,
+            mlp_prior_report,
+            desired_gate,
+            desired_up,
+            desired_product,
+        ) = _initialize_gated_mlp_real_medoid_prior(
+            torch,
+            source_model,
+            target_model,
+            source_layout,
+            target_block_layout,
+            source_span,
+            source_blocks,
+            residual_coordinates,
+            ridge,
+            max_coordinate_rows,
+        )
+        reports[f"block.{target_index}.mlp.activation_cluster"] = (
+            mlp_medoid_plan.report.as_dict()
+        )
+        reports[f"block.{target_index}.mlp.feature_fold"] = {
+            "method": "real-source-neuron-medoid-selection",
+            "source_neurons": mlp_medoid_plan.source_neurons,
+            "target_neurons": mlp_medoid_plan.target_neurons,
+            "full_source_coverage": mlp_medoid_plan.report.full_source_coverage,
+            "no_producer_averaging": True,
+            "consumer_aggregation": "post-swiglu-least-squares-index-add",
+        }
+    else:
+        mlp_coordinates = build_feature_fold_map(
+            mlp_feature_rows,
+            target_block_layout.mlp.intermediate_size,
+            allow_sign_flip=not gated_triplet_compatible,
+        )
+        reports[f"block.{target_index}.mlp.feature_fold"] = _coordinate_report(
+            mlp_coordinates
+        )
+        mlp_prior_report = _initialize_mlp_structural_prior(
+            torch,
+            source_model,
+            target_model,
+            source_layout,
+            target_block_layout,
+            source_span,
+            residual_coordinates,
+            mlp_coordinates,
+        )
     reports[f"block.{target_index}.mlp.structural_prior"] = mlp_prior_report
     target_mlp = read_mlp_operators(target_model, target_block_layout)
     product_target_report = {
         "applied": False,
         "reason": "target-mlp-is-not-compatible-gated-swiglu",
     }
-    desired_product = None
     if target_block_layout.mlp.kind == "dense":
+        if (
+            nonlinear_merge_method == "real_medoid"
+        ):  # pragma: no cover - validated above
+            raise AssertionError("Real-medoid dense MLP reached an invalid branch.")
         assert target_mlp.input is not None
         desired_input = _mean_source_mlp_producer(
             torch,
@@ -1821,73 +1965,93 @@ def _fit_target_block(
         reports[f"block.{target_index}.mlp.input"] = _fit_summary(input_fit)
     else:
         assert target_mlp.gate is not None and target_mlp.up is not None
-        desired_gate = _mean_source_mlp_producer(
-            torch,
-            source_blocks,
-            "gate",
-            mlp_coordinates,
-        )
-        desired_up = _mean_source_mlp_producer(
-            torch,
-            source_blocks,
-            "up",
-            mlp_coordinates,
-        )
-        if (
-            gated_triplet_compatible
-            and target_block_layout.mlp.activation_name == "silu"
-        ):
-            desired_product = _sum_projected(
+        if mlp_medoid_plan is not None:
+            assert desired_gate is not None
+            assert desired_up is not None
+            assert desired_product is not None
+            product_target_report = {
+                "applied": True,
+                "method": "real-medoid-post-swiglu-anchor",
+                "producer_averaging": False,
+                "gate_value_division": False,
+                "source_neurons": mlp_medoid_plan.source_neurons,
+                "target_neurons": mlp_medoid_plan.target_neurons,
+            }
+        else:
+            desired_gate = _mean_source_mlp_producer(
                 torch,
                 source_blocks,
-                "down_projection_input",
+                "gate",
                 mlp_coordinates,
             )
-            desired_up, product_target_report = _gated_up_target_for_product(
+            desired_up = _mean_source_mlp_producer(
                 torch,
-                desired_gate,
-                desired_product,
+                source_blocks,
+                "up",
+                mlp_coordinates,
             )
-        else:
-            product_target_report = {
-                "applied": False,
-                "reason": (
-                    "source-target-mlp-topology-mismatch"
-                    if not gated_triplet_compatible
-                    else "unsupported-gated-activation"
-                ),
-                "activation": target_block_layout.mlp.activation_name,
-            }
+            if gated_triplet_compatible and swiglu_semantics_compatible:
+                desired_product = _sum_projected(
+                    torch,
+                    source_blocks,
+                    "down_projection_input",
+                    mlp_coordinates,
+                )
+                desired_up, product_target_report = _gated_up_target_for_product(
+                    torch,
+                    desired_gate,
+                    desired_product,
+                )
+            else:
+                product_target_report = {
+                    "applied": False,
+                    "reason": (
+                        "source-target-mlp-topology-mismatch"
+                        if not gated_triplet_compatible
+                        else "unsupported-gated-activation"
+                    ),
+                    "activation": target_block_layout.mlp.activation_name,
+                }
         reports[f"block.{target_index}.mlp.product_target"] = product_target_report
-        gate_fit = _fit_operator_with_prior(
-            target_block.pre_mlp_norm_output,
-            desired_gate,
-            target_mlp.gate,
-            ridge=ridge,
-            preserve_prior=bool(mlp_prior_report["applied"]),
-            max_prior_delta_ratio=max_operator_delta_ratio,
-        )
-        up_fit = _fit_operator_with_prior(
-            target_block.pre_mlp_norm_output,
-            desired_up,
-            target_mlp.up,
-            ridge=ridge,
-            preserve_prior=bool(mlp_prior_report["applied"]),
-            max_prior_delta_ratio=max_operator_delta_ratio,
-        )
-        target_mlp = MLPOperators(
-            kind="gated",
-            input=None,
-            gate=_operator_from_fit(target_mlp.gate, gate_fit),
-            up=_operator_from_fit(target_mlp.up, up_fit),
-            down=target_mlp.down,
-        )
-        reports[f"block.{target_index}.mlp.gate"] = _fit_summary(gate_fit)
-        reports[f"block.{target_index}.mlp.up"] = _fit_summary(up_fit)
+        if mlp_medoid_plan is None:
+            gate_fit = _fit_operator_with_prior(
+                target_block.pre_mlp_norm_output,
+                desired_gate,
+                target_mlp.gate,
+                ridge=ridge,
+                preserve_prior=bool(mlp_prior_report["applied"]),
+                max_prior_delta_ratio=max_operator_delta_ratio,
+            )
+            up_fit = _fit_operator_with_prior(
+                target_block.pre_mlp_norm_output,
+                desired_up,
+                target_mlp.up,
+                ridge=ridge,
+                preserve_prior=bool(mlp_prior_report["applied"]),
+                max_prior_delta_ratio=max_operator_delta_ratio,
+            )
+            target_mlp = MLPOperators(
+                kind="gated",
+                input=None,
+                gate=_operator_from_fit(target_mlp.gate, gate_fit),
+                up=_operator_from_fit(target_mlp.up, up_fit),
+                down=target_mlp.down,
+            )
+            reports[f"block.{target_index}.mlp.gate"] = _fit_summary(gate_fit)
+            reports[f"block.{target_index}.mlp.up"] = _fit_summary(up_fit)
     write_mlp_operators(target_model, target_block_layout, target_mlp)
 
     current = current_trace()
     target_block = current.block
+    if mlp_medoid_plan is not None:
+        reports[f"block.{target_index}.mlp.gate"] = _measurement_summary(
+            measure_fit(target_block.mlp_gate_projection_output, desired_gate),
+            method="exact-coordinate-transformed-real-medoid-producer",
+        )
+        reports[f"block.{target_index}.mlp.up"] = _measurement_summary(
+            measure_fit(target_block.mlp_up_projection_output, desired_up),
+            method="exact-coordinate-transformed-real-medoid-producer",
+        )
     if bool(product_target_report.get("applied")):
         assert desired_product is not None
         product_metrics = measure_fit(
@@ -1924,6 +2088,14 @@ def _fit_target_block(
     )
     write_mlp_operators(target_model, target_block_layout, target_mlp)
     reports[f"block.{target_index}.mlp.down"] = _fit_summary(down_fit)
+    if nonlinear_merge_method == "real_medoid":
+        reports[f"block.{target_index}.mlp.down"].update(
+            {
+                "initialization": "per-source-scalar-ls-medoid-consumer",
+                "finalization": "joint-closed-form-ordered-span-endpoint-delta",
+                "producer_weights_preserved_exactly": True,
+            }
+        )
     reports[f"block.{target_index}.span"] = {
         "source_layers": list(source_span),
         "ordered_contiguous": True,
@@ -1932,8 +2104,15 @@ def _fit_target_block(
         "mlp_delta_target": (
             "encoded-final-source-block-output-minus-target-post-attention-residual"
         ),
-        "structural_prior_residual_consumers": "sum",
-        "structural_prior_feature_producers": "mean",
+        "structural_prior_residual_consumers": (
+            "per-source-scalar-ls-then-joint-endpoint-fit"
+            if nonlinear_merge_method == "real_medoid"
+            else "sum"
+        ),
+        "structural_prior_feature_producers": (
+            "real-medoid-copy" if nonlinear_merge_method == "real_medoid" else "mean"
+        ),
+        "nonlinear_merge_method": nonlinear_merge_method,
     }
 
 
@@ -2559,6 +2738,481 @@ def _sum_operator_priors(
     return LinearOperator(path=target.path, weight=weight, bias=bias)
 
 
+def _fold_consumer_coordinates(
+    torch: Any,
+    weight: Any,
+    coordinates: Any,
+) -> Any:
+    if isinstance(coordinates, FeatureFoldMap):
+        return coordinates.fold_consumer_weight(weight)
+    if isinstance(coordinates, CoordinateMap):
+        decode = coordinates.decode.to(weight)
+        if int(weight.shape[1]) != int(decode.shape[0]):
+            raise BlankBootstrapError(
+                "Consumer coordinate width does not match the source operator."
+            )
+        return (weight @ decode).contiguous()
+    raise BlankBootstrapError("Unsupported residual consumer coordinate map.")
+
+
+def _fold_producer_coordinates(
+    torch: Any,
+    weight: Any,
+    coordinates: Any,
+) -> Any:
+    if isinstance(coordinates, FeatureFoldMap):
+        return coordinates.fold_producer_weight(weight)
+    if isinstance(coordinates, CoordinateMap):
+        encode = coordinates.encode.to(weight)
+        if int(weight.shape[0]) != int(encode.shape[1]):
+            raise BlankBootstrapError(
+                "Producer coordinate width does not match the source operator."
+            )
+        return (encode @ weight).contiguous()
+    raise BlankBootstrapError("Unsupported residual producer coordinate map.")
+
+
+def _fold_producer_bias(torch: Any, bias: Any, coordinates: Any) -> Any:
+    return _fold_producer_coordinates(
+        torch,
+        bias.reshape(-1, 1),
+        coordinates,
+    ).reshape(-1)
+
+
+def _head_major_rows(
+    torch: Any,
+    values: Sequence[Any],
+    head_counts: Sequence[int],
+    head_dim: int,
+    max_rows: int,
+    *,
+    name: str,
+) -> Any:
+    if len(values) != len(head_counts) or not values:
+        raise BlankBootstrapError(f"{name} needs one head count per source tensor.")
+    row_count = int(values[0].shape[0])
+    if any(int(value.shape[0]) != row_count for value in values):
+        raise BlankBootstrapError(f"{name} source tensors are not row aligned.")
+    sample_count = min(row_count, max_rows)
+    result = []
+    for value, head_count in zip(values, head_counts, strict=True):
+        expected_width = int(head_count) * int(head_dim)
+        if value.ndim != 2 or int(value.shape[1]) != expected_width:
+            raise BlankBootstrapError(
+                f"{name} tensor width does not match its head topology."
+            )
+        sampled = (
+            _evenly_sample_rows(torch, value, sample_count)
+            .detach()
+            .to(
+                device="cpu",
+                dtype=torch.float64,
+            )
+        )
+        result.append(
+            sampled.reshape(sample_count, int(head_count), int(head_dim))
+            .permute(1, 0, 2)
+            .contiguous()
+        )
+    return torch.cat(result, dim=0).contiguous()
+
+
+def _concatenated_bias_for_target(
+    torch: Any,
+    operators: Sequence[LinearOperator],
+    *,
+    target_has_bias: bool,
+) -> Any | None:
+    if not target_has_bias:
+        return None
+    values = [
+        (
+            torch.zeros(operator.weight.shape[0], dtype=torch.float64)
+            if operator.bias is None
+            else operator.bias
+        )
+        for operator in operators
+    ]
+    return torch.cat(values, dim=0).contiguous()
+
+
+def _deterministic_residual_sketch(
+    torch: Any,
+    residual_width: int,
+    *,
+    sketch_width: int = 4,
+) -> Any:
+    if residual_width <= 0 or sketch_width <= 0:
+        raise BlankBootstrapError("Residual sketch dimensions must be positive.")
+    rows = torch.arange(residual_width, dtype=torch.long).reshape(-1, 1)
+    columns = torch.arange(sketch_width, dtype=torch.long).reshape(1, -1)
+    prime = 2_147_483_647
+    hashes = torch.remainder(
+        rows * 1_326_451_463 + (columns + 1) * 374_761_393,
+        prime,
+    )
+    hashes = torch.bitwise_xor(hashes, hashes >> 13)
+    signs = torch.where(
+        hashes < prime // 2,
+        torch.tensor(-1.0, dtype=torch.float64),
+        torch.tensor(1.0, dtype=torch.float64),
+    )
+    return (signs / math.sqrt(sketch_width)).contiguous()
+
+
+def _attention_residual_contribution_signatures(
+    torch: Any,
+    context_signatures: Any,
+    encoded_output_weights: Sequence[Any],
+    query_head_counts: Sequence[int],
+    head_dim: int,
+) -> Any:
+    if len(encoded_output_weights) != len(query_head_counts):
+        raise BlankBootstrapError(
+            "Attention contribution signatures need one head count per output."
+        )
+    sketch = _deterministic_residual_sketch(
+        torch,
+        int(encoded_output_weights[0].shape[0]),
+    )
+    values = []
+    offset = 0
+    for weight, head_count in zip(
+        encoded_output_weights,
+        query_head_counts,
+        strict=True,
+    ):
+        if int(weight.shape[0]) != int(sketch.shape[0]):
+            raise BlankBootstrapError(
+                "Encoded attention outputs do not share one residual width."
+            )
+        head_context = context_signatures[offset : offset + head_count]
+        head_consumers = (
+            weight.reshape(weight.shape[0], head_count, head_dim)
+            .permute(1, 2, 0)
+            .contiguous()
+        )
+        consumer_sketch = torch.matmul(head_consumers, sketch)
+        values.append(torch.einsum("qrd,qds->qrs", head_context, consumer_sketch))
+        offset += head_count
+    if offset != int(context_signatures.shape[0]):
+        raise BlankBootstrapError(
+            "Attention contribution signature head coverage is incomplete."
+        )
+    return torch.cat(values, dim=0).contiguous()
+
+
+def _initialize_attention_real_medoid_prior(
+    torch: Any,
+    source_model: Any,
+    target_model: Any,
+    source_layout: DecoderLayout,
+    target_layout: DecoderLayout,
+    target_block_layout: Any,
+    source_span: Sequence[int],
+    query_rows: Sequence[Any],
+    key_rows: Sequence[Any],
+    value_rows: Sequence[Any],
+    context_rows: Sequence[Any],
+    residual_coordinates: Any,
+    ridge: float,
+    max_coordinate_rows: int,
+) -> tuple[GQAActivationClusterPlan, dict[str, Any], Any, Any, Any]:
+    target_attention_layout = target_block_layout.attention
+    source_attention_layouts = [
+        source_layout.blocks[index].attention for index in source_span
+    ]
+    if target_attention_layout.projection_style != "split_qkv" or any(
+        layout.projection_style != "split_qkv" for layout in source_attention_layouts
+    ):
+        raise BlankBootstrapError(
+            "Real-medoid attention currently requires split-QKV source and target "
+            "operators."
+        )
+    source_head_dims = {int(layout.head_dim) for layout in source_attention_layouts}
+    if source_head_dims != {int(target_attention_layout.head_dim)}:
+        raise BlankBootstrapError(
+            "Real-medoid attention preserves complete RoPE heads and therefore "
+            "requires equal source and target head dimensions."
+        )
+    position_fields = (
+        "kind",
+        "rotary_dim",
+        "rope_theta",
+        "rope_type",
+        "rope_variants",
+    )
+    if any(
+        getattr(source_layout.position, field) != getattr(target_layout.position, field)
+        for field in position_fields
+    ):
+        raise BlankBootstrapError(
+            "Real-medoid attention requires identical source and target RoPE operators."
+        )
+    attention_semantic_fields = (
+        "layer_type",
+        "sliding_window",
+        "scaling",
+        "logit_softcap",
+    )
+    if any(
+        any(
+            getattr(layout, field) != getattr(target_attention_layout, field)
+            for field in attention_semantic_fields
+        )
+        for layout in source_attention_layouts
+    ):
+        raise BlankBootstrapError(
+            "Real-medoid attention requires matching attention scaling, masking, "
+            "and soft-cap semantics."
+        )
+    for role in ("query_norm", "key_norm"):
+        target_norm = getattr(target_attention_layout, role)
+        source_norms = [getattr(layout, role) for layout in source_attention_layouts]
+        if (target_norm is None) != all(norm is None for norm in source_norms):
+            raise BlankBootstrapError(
+                "Real-medoid attention requires matching source and target Q/K "
+                "normalization topology."
+            )
+        if target_norm is not None and any(
+            norm is None
+            or (
+                norm.kind,
+                norm.epsilon,
+                norm.has_bias,
+                norm.weight_kind,
+            )
+            != (
+                target_norm.kind,
+                target_norm.epsilon,
+                target_norm.has_bias,
+                target_norm.weight_kind,
+            )
+            for norm in source_norms
+        ):
+            raise BlankBootstrapError(
+                "Real-medoid attention requires equivalent source and target Q/K "
+                "normalization semantics."
+            )
+    source_group_ratios = {
+        int(layout.query_heads) // int(layout.key_value_heads)
+        for layout in source_attention_layouts
+    }
+    if len(source_group_ratios) != 1:
+        raise BlankBootstrapError(
+            "Real-medoid attention requires a consistent source GQA group ratio."
+        )
+
+    head_dim = int(target_attention_layout.head_dim)
+    source_query_counts = [
+        int(layout.query_heads) for layout in source_attention_layouts
+    ]
+    source_key_value_counts = [
+        int(layout.key_value_heads) for layout in source_attention_layouts
+    ]
+    source_query_heads = sum(source_query_counts)
+    source_key_value_heads = sum(source_key_value_counts)
+    representative_source_index = int(source_span[-1])
+    representative_key_value_heads = source_key_value_counts[-1]
+    group_candidate_start = source_key_value_heads - representative_key_value_heads
+    group_medoid_candidates = tuple(
+        range(group_candidate_start, source_key_value_heads)
+    )
+    query_signatures = _head_major_rows(
+        torch,
+        query_rows,
+        source_query_counts,
+        head_dim,
+        max_coordinate_rows,
+        name="query activation",
+    )
+    key_signatures = _head_major_rows(
+        torch,
+        key_rows,
+        source_key_value_counts,
+        head_dim,
+        max_coordinate_rows,
+        name="key activation",
+    )
+    value_signatures = _head_major_rows(
+        torch,
+        value_rows,
+        source_key_value_counts,
+        head_dim,
+        max_coordinate_rows,
+        name="value activation",
+    )
+    context_signatures = _head_major_rows(
+        torch,
+        context_rows,
+        source_query_counts,
+        head_dim,
+        max_coordinate_rows,
+        name="attention context",
+    )
+
+    source_operators = [
+        read_attention_operators(
+            source_model,
+            source_layout.blocks[index].attention,
+        )
+        for index in source_span
+    ]
+    encoded_output_weights = [
+        _fold_producer_coordinates(
+            torch,
+            operators.output.weight,
+            residual_coordinates,
+        )
+        for operators in source_operators
+    ]
+    contribution_signatures = _attention_residual_contribution_signatures(
+        torch,
+        context_signatures,
+        encoded_output_weights,
+        source_query_counts,
+        head_dim,
+    )
+    plan = build_gqa_activation_cluster_plan(
+        query_signatures,
+        key_signatures,
+        value_signatures,
+        context_signatures,
+        contribution_signatures,
+        target_query_heads=int(target_attention_layout.query_heads),
+        target_key_value_heads=int(target_attention_layout.key_value_heads),
+        source_query_heads=source_query_heads,
+        source_key_value_heads=source_key_value_heads,
+        source_head_dim=head_dim,
+        target_head_dim=head_dim,
+        group_medoid_candidates=group_medoid_candidates,
+        ridge=ridge,
+    )
+
+    target = read_attention_operators(target_model, target_attention_layout)
+    query_sources = [operators.query for operators in source_operators]
+    key_sources = [operators.key for operators in source_operators]
+    value_sources = [operators.value for operators in source_operators]
+    query_weight = plan.select_query_producer(
+        torch.cat([operator.weight for operator in query_sources], dim=0),
+        axis=0,
+    )
+    key_weight = plan.select_key_producer(
+        torch.cat([operator.weight for operator in key_sources], dim=0),
+        axis=0,
+    )
+    value_weight = plan.select_value_producer(
+        torch.cat([operator.weight for operator in value_sources], dim=0),
+        axis=0,
+    )
+    query_bias = _concatenated_bias_for_target(
+        torch,
+        query_sources,
+        target_has_bias=target.query.bias is not None,
+    )
+    key_bias = _concatenated_bias_for_target(
+        torch,
+        key_sources,
+        target_has_bias=target.key.bias is not None,
+    )
+    value_bias = _concatenated_bias_for_target(
+        torch,
+        value_sources,
+        target_has_bias=target.value.bias is not None,
+    )
+    output_weight = plan.aggregate_output_consumer(
+        torch.cat(encoded_output_weights, dim=1),
+        axis=1,
+    )
+    output_bias = None
+    if target.output.bias is not None:
+        output_bias = torch.zeros(target.output.weight.shape[0], dtype=torch.float64)
+        for operators in source_operators:
+            source_bias = (
+                torch.zeros(operators.output.weight.shape[0], dtype=torch.float64)
+                if operators.output.bias is None
+                else operators.output.bias
+            )
+            output_bias.add_(
+                _fold_producer_bias(torch, source_bias, residual_coordinates)
+            )
+    merged = AttentionOperators(
+        query=LinearOperator(
+            path=target.query.path,
+            weight=_fold_consumer_coordinates(
+                torch,
+                query_weight,
+                residual_coordinates,
+            ),
+            bias=(
+                None
+                if query_bias is None
+                else plan.select_query_producer(query_bias, axis=0)
+            ),
+        ),
+        key=LinearOperator(
+            path=target.key.path,
+            weight=_fold_consumer_coordinates(
+                torch,
+                key_weight,
+                residual_coordinates,
+            ),
+            bias=(
+                None if key_bias is None else plan.select_key_producer(key_bias, axis=0)
+            ),
+        ),
+        value=LinearOperator(
+            path=target.value.path,
+            weight=_fold_consumer_coordinates(
+                torch,
+                value_weight,
+                residual_coordinates,
+            ),
+            bias=(
+                None
+                if value_bias is None
+                else plan.select_value_producer(value_bias, axis=0)
+            ),
+        ),
+        output=LinearOperator(
+            path=target.output.path,
+            weight=output_weight,
+            bias=output_bias,
+        ),
+    )
+    write_attention_operators(target_model, target_attention_layout, merged)
+
+    query_activations = torch.cat(tuple(query_rows), dim=1)
+    key_activations = torch.cat(tuple(key_rows), dim=1)
+    value_activations = torch.cat(tuple(value_rows), dim=1)
+    desired_query = plan.select_query_producer(query_activations, axis=1)
+    desired_key = plan.select_key_producer(key_activations, axis=1)
+    desired_value = plan.select_value_producer(value_activations, axis=1)
+    report = {
+        "applied": True,
+        "method": "real-source-head-medoid-producers-ls-consumer",
+        "source_layers": [int(index) for index in source_span],
+        "representative_source_layer": representative_source_index,
+        "norm_and_rope_coherent_source_layer": representative_source_index,
+        "source_query_heads": source_query_heads,
+        "source_key_value_heads": source_key_value_heads,
+        "target_query_heads": int(target_attention_layout.query_heads),
+        "target_key_value_heads": int(target_attention_layout.key_value_heads),
+        "producer_aggregation": "none-real-medoid-copy",
+        "consumer_initialization": "per-source-scalar-ls-index-add",
+        "consumer_finalization": "joint-closed-form-full-span-delta-fit",
+        "contribution_signature": "direction-preserving-residual-sketch-4d",
+        "full_source_coverage": plan.report.full_source_coverage,
+        "no_producer_averaging": plan.report.invariants.no_producer_averaging,
+        "query_weight_norm": float(torch.linalg.vector_norm(merged.query.weight)),
+        "key_weight_norm": float(torch.linalg.vector_norm(merged.key.weight)),
+        "value_weight_norm": float(torch.linalg.vector_norm(merged.value.weight)),
+        "output_weight_norm": float(torch.linalg.vector_norm(merged.output.weight)),
+    }
+    return plan, report, desired_query, desired_key, desired_value
+
+
 def _initialize_attention_structural_prior(
     torch: Any,
     source_model: Any,
@@ -2669,6 +3323,176 @@ def _initialize_attention_structural_prior(
         "value_weight_norm": float(torch.linalg.vector_norm(merged.value.weight)),
         "output_weight_norm": float(torch.linalg.vector_norm(merged.output.weight)),
     }
+
+
+def _initialize_gated_mlp_real_medoid_prior(
+    torch: Any,
+    source_model: Any,
+    target_model: Any,
+    source_layout: DecoderLayout,
+    target_block_layout: Any,
+    source_span: Sequence[int],
+    source_blocks: Sequence[DecoderBlockTrace],
+    residual_coordinates: Any,
+    ridge: float,
+    max_coordinate_rows: int,
+) -> tuple[GatedMLPActivationClusterPlan, dict[str, Any], Any, Any, Any]:
+    source_operators = [
+        read_mlp_operators(source_model, source_layout.blocks[index])
+        for index in source_span
+    ]
+    if any(
+        operators.kind != "gated" or operators.gate is None or operators.up is None
+        for operators in source_operators
+    ):
+        raise BlankBootstrapError(
+            "Real-medoid MLP transport requires complete gated source operators."
+        )
+    target = read_mlp_operators(target_model, target_block_layout)
+    if target.kind != "gated" or target.gate is None or target.up is None:
+        raise BlankBootstrapError(
+            "Real-medoid MLP transport requires a complete gated target MLP."
+        )
+
+    gate_rows = []
+    up_rows = []
+    post_rows = []
+    for block in source_blocks:
+        if block.mlp_gate_projection_output is None:
+            raise BlankBootstrapError(
+                "Source trace is missing a gated MLP gate output."
+            )
+        if block.mlp_up_projection_output is None:
+            raise BlankBootstrapError("Source trace is missing a gated MLP up output.")
+        gate_rows.append(block.mlp_gate_projection_output)
+        up_rows.append(block.mlp_up_projection_output)
+        post_rows.append(block.down_projection_input)
+    gate_activations = torch.cat(gate_rows, dim=1)
+    up_activations = torch.cat(up_rows, dim=1)
+    post_activations = torch.cat(post_rows, dim=1)
+    sample_count = min(int(gate_activations.shape[0]), max_coordinate_rows)
+    sampled_gate = _evenly_sample_rows(torch, gate_activations, sample_count)
+    sampled_up = _evenly_sample_rows(torch, up_activations, sample_count)
+    sampled_post = _evenly_sample_rows(torch, post_activations, sample_count)
+
+    encoded_down_weights = [
+        _fold_producer_coordinates(
+            torch,
+            operators.down.weight,
+            residual_coordinates,
+        )
+        for operators in source_operators
+    ]
+    concatenated_down = torch.cat(encoded_down_weights, dim=1)
+    residual_sketch = _deterministic_residual_sketch(
+        torch,
+        int(concatenated_down.shape[0]),
+    )
+    consumer_direction_sketch = residual_sketch.T.matmul(
+        concatenated_down
+    ).T.contiguous()
+    contribution_rows = sampled_post.unsqueeze(
+        -1
+    ) * consumer_direction_sketch.unsqueeze(0)
+    source_neurons = int(gate_activations.shape[1])
+    plan = build_gated_mlp_activation_cluster_plan(
+        sampled_gate,
+        sampled_up,
+        sampled_post,
+        contribution_rows,
+        int(target_block_layout.mlp.intermediate_size),
+        source_neurons=source_neurons,
+        ridge=ridge,
+    )
+
+    gate_sources = [operators.gate for operators in source_operators]
+    up_sources = [operators.up for operators in source_operators]
+    assert all(operator is not None for operator in gate_sources)
+    assert all(operator is not None for operator in up_sources)
+    gate_sources = [operator for operator in gate_sources if operator is not None]
+    up_sources = [operator for operator in up_sources if operator is not None]
+    gate_weight = plan.select_gate_producer(
+        torch.cat([operator.weight for operator in gate_sources], dim=0),
+        axis=0,
+    )
+    up_weight = plan.select_up_producer(
+        torch.cat([operator.weight for operator in up_sources], dim=0),
+        axis=0,
+    )
+    gate_bias = _concatenated_bias_for_target(
+        torch,
+        gate_sources,
+        target_has_bias=target.gate.bias is not None,
+    )
+    up_bias = _concatenated_bias_for_target(
+        torch,
+        up_sources,
+        target_has_bias=target.up.bias is not None,
+    )
+    down_bias = None
+    if target.down.bias is not None:
+        down_bias = torch.zeros(target.down.weight.shape[0], dtype=torch.float64)
+        for operators in source_operators:
+            source_bias = (
+                torch.zeros(operators.down.weight.shape[0], dtype=torch.float64)
+                if operators.down.bias is None
+                else operators.down.bias
+            )
+            down_bias.add_(
+                _fold_producer_bias(torch, source_bias, residual_coordinates)
+            )
+    merged = MLPOperators(
+        kind="gated",
+        input=None,
+        gate=LinearOperator(
+            path=target.gate.path,
+            weight=_fold_consumer_coordinates(
+                torch,
+                gate_weight,
+                residual_coordinates,
+            ),
+            bias=(
+                None
+                if gate_bias is None
+                else plan.select_gate_producer(gate_bias, axis=0)
+            ),
+        ),
+        up=LinearOperator(
+            path=target.up.path,
+            weight=_fold_consumer_coordinates(
+                torch,
+                up_weight,
+                residual_coordinates,
+            ),
+            bias=(
+                None if up_bias is None else plan.select_up_producer(up_bias, axis=0)
+            ),
+        ),
+        down=LinearOperator(
+            path=target.down.path,
+            weight=plan.aggregate_down_consumer(concatenated_down, axis=1),
+            bias=down_bias,
+        ),
+    )
+    write_mlp_operators(target_model, target_block_layout, merged)
+    desired_gate = plan.select_gate_producer(gate_activations, axis=1)
+    desired_up = plan.select_up_producer(up_activations, axis=1)
+    desired_post = plan.select_gate_producer(post_activations, axis=1)
+    report = {
+        "applied": True,
+        "method": "real-source-neuron-medoid-producers-ls-consumer",
+        "source_layers": [int(index) for index in source_span],
+        "source_neurons": source_neurons,
+        "target_neurons": int(target_block_layout.mlp.intermediate_size),
+        "producer_aggregation": "none-real-medoid-copy",
+        "consumer_initialization": "per-source-scalar-ls-index-add",
+        "consumer_finalization": "joint-closed-form-ordered-span-endpoint-fit",
+        "contribution_signature": "direction-preserving-residual-sketch-4d",
+        "full_source_coverage": plan.report.full_source_coverage,
+        "no_producer_averaging": plan.report.invariants.no_producer_averaging,
+        "down_weight_norm": float(torch.linalg.vector_norm(merged.down.weight)),
+    }
+    return plan, report, desired_gate, desired_up, desired_post
 
 
 def _initialize_mlp_structural_prior(
@@ -2995,6 +3819,17 @@ def _fit_summary(fit: Any) -> dict[str, Any]:
             }
         )
     return report
+
+
+def _measurement_summary(metrics: FitMetrics, *, method: str) -> dict[str, Any]:
+    return {
+        "method": method,
+        "rows": metrics.rows,
+        "relative_rmse": metrics.relative_rmse,
+        "mean_cosine_similarity": metrics.mean_cosine_similarity,
+        "finite": metrics.finite,
+        "producer_weight_update_after_medoid_selection": False,
+    }
 
 
 def _gate_metrics(

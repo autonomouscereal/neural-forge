@@ -63,6 +63,98 @@ class FakeTokenizer:
         }
 
 
+def _bytelevel_bpe_tokenizer() -> Any:
+    tokenizers = pytest.importorskip("tokenizers")
+    transformers = pytest.importorskip("transformers")
+
+    alphabet = sorted(tokenizers.pre_tokenizers.ByteLevel.alphabet())
+    vocabulary = {token: token_id for token_id, token in enumerate(alphabet)}
+    merges = [("a", "b"), ("ab", "c"), ("x", "y")]
+    for token in ("ab", "abc", "xy"):
+        vocabulary[token] = len(vocabulary)
+
+    backend = tokenizers.Tokenizer(
+        tokenizers.models.BPE(vocab=vocabulary, merges=merges)
+    )
+    backend.pre_tokenizer = tokenizers.pre_tokenizers.ByteLevel(
+        add_prefix_space=False,
+        use_regex=False,
+    )
+    backend.decoder = tokenizers.decoders.ByteLevel()
+    return transformers.PreTrainedTokenizerFast(
+        tokenizer_object=backend,
+        bos_token="<bos>",
+        eos_token="<eos>",
+        pad_token="<pad>",
+        unk_token="<unk>",
+    )
+
+
+def _pruned_bytelevel_descendant(donor: Any) -> tuple[Any, tuple[int, ...]]:
+    tokenizers = pytest.importorskip("tokenizers")
+    transformers = pytest.importorskip("transformers")
+
+    data = json.loads(donor.backend_tokenizer.to_str())
+    removed_id = donor.get_vocab()["xy"]
+    selected_ids = tuple(
+        token_id for token_id in range(len(donor)) if token_id != removed_id
+    )
+    id_map = {donor_id: target_id for target_id, donor_id in enumerate(selected_ids)}
+    model = data["model"]
+    model["vocab"] = {
+        token: id_map[token_id]
+        for token, token_id in model["vocab"].items()
+        if token_id in id_map
+    }
+    retained_tokens = set(model["vocab"])
+    model["merges"] = [
+        merge
+        for merge in model["merges"]
+        if merge[0] in retained_tokens
+        and merge[1] in retained_tokens
+        and merge[0] + merge[1] in retained_tokens
+    ]
+    data["added_tokens"] = [
+        {**item, "id": id_map[item["id"]]}
+        for item in data["added_tokens"]
+        if item["id"] in id_map
+    ]
+
+    backend = tokenizers.Tokenizer.from_str(
+        json.dumps(data, ensure_ascii=False, sort_keys=True)
+    )
+    target = transformers.PreTrainedTokenizerFast(
+        tokenizer_object=backend,
+        **donor.special_tokens_map,
+    )
+    return target, selected_ids
+
+
+def _bytelevel_semantic_variant(donor: Any, component: str) -> Any:
+    tokenizers = pytest.importorskip("tokenizers")
+    transformers = pytest.importorskip("transformers")
+
+    data = json.loads(donor.backend_tokenizer.to_str())
+    if component == "model":
+        data["model"]["dropout"] = 0.1
+    elif component == "pre_tokenizer":
+        data["pre_tokenizer"]["add_prefix_space"] = True
+    elif component == "decoder":
+        data["decoder"]["trim_offsets"] = False
+    elif component == "normalizer":
+        data["normalizer"] = {"type": "NFC"}
+    else:  # pragma: no cover - guarded by test parameters.
+        raise AssertionError(component)
+
+    backend = tokenizers.Tokenizer.from_str(
+        json.dumps(data, ensure_ascii=False, sort_keys=True)
+    )
+    return transformers.PreTrainedTokenizerFast(
+        tokenizer_object=backend,
+        **donor.special_tokens_map,
+    )
+
+
 def test_exact_alignment_preserves_leading_and_trailing_whitespace() -> None:
     donor = FakeTokenizer(["hello", " hello", "hello "])
     target = FakeTokenizer([" hello", "hello ", "hello"])
@@ -378,3 +470,97 @@ def test_strict_profile_and_mapping_fingerprints_are_deterministic() -> None:
     assert first.target_to_donor_row_indices == (1, 2)
     assert first.to_dict() == second.to_dict()
     assert first.fingerprint() == second.fingerprint()
+
+
+def test_strict_profile_uses_direct_identity_for_raw_bytes_and_padding() -> None:
+    tokenizer = _bytelevel_bpe_tokenizer()
+    raw_byte_id = next(
+        token_id
+        for token_id in range(len(tokenizer))
+        if "\ufffd"
+        in tokenizer.decode(
+            [token_id],
+            clean_up_tokenization_spaces=False,
+        )
+    )
+    row_capacity = len(tokenizer) + 3
+
+    profile = build_strict_token_transport_profile(
+        tokenizer,
+        tokenizer,
+        donor_row_capacity=row_capacity,
+        target_row_capacity=row_capacity,
+    )
+    repeated = build_strict_token_transport_profile(
+        tokenizer,
+        tokenizer,
+        donor_row_capacity=row_capacity,
+        target_row_capacity=row_capacity,
+    )
+
+    assert profile.target_to_donor_row_indices == tuple(range(row_capacity))
+    assert profile.target_vocab_size == len(tokenizer)
+    assert profile.target_row_capacity == row_capacity
+    assert profile.alignment_resolution == "direct-tokenizer-identity"
+    assert profile.row_mappings[raw_byte_id].resolution == ("direct-tokenizer-identity")
+    assert profile.row_mappings[-1].target_row_index == row_capacity - 1
+    assert profile.to_dict()["alignment_resolution"] == ("direct-tokenizer-identity")
+    assert profile.to_dict() == repeated.to_dict()
+    assert profile.fingerprint() == repeated.fingerprint()
+
+
+def test_strict_profile_maps_reindexed_bytelevel_bpe_descendant_by_token() -> None:
+    donor = _bytelevel_bpe_tokenizer()
+    target, selected_donor_ids = _pruned_bytelevel_descendant(donor)
+    raw_donor_id = next(
+        token_id
+        for token_id in selected_donor_ids
+        if "\ufffd"
+        in donor.decode(
+            [token_id],
+            clean_up_tokenization_spaces=False,
+        )
+    )
+    raw_target_id = selected_donor_ids.index(raw_donor_id)
+    assert "\ufffd" in target.decode(
+        [raw_target_id],
+        clean_up_tokenization_spaces=False,
+    )
+
+    profile = build_strict_token_transport_profile(
+        donor,
+        target,
+        donor_row_capacity=len(donor) + 5,
+        target_row_capacity=len(target),
+    )
+
+    assert target is not donor
+    assert profile.target_to_donor_row_indices == selected_donor_ids
+    assert profile.alignment_resolution == "bytelevel-bpe-token-string"
+    assert profile.row_mappings[raw_target_id].resolution == (
+        "bytelevel-bpe-token-string"
+    )
+    assert profile.to_dict()["alignment_resolution"] == ("bytelevel-bpe-token-string")
+    assert len(profile.alignment_fingerprint) == 64
+
+
+@pytest.mark.parametrize(
+    ("component", "failure"),
+    (
+        ("model", "ByteLevel-BPE model semantics differ"),
+        ("pre_tokenizer", "ByteLevel-BPE pre-tokenizer semantics differ"),
+        ("decoder", "ByteLevel-BPE decoder semantics differ"),
+        ("normalizer", "ByteLevel-BPE normalizer semantics differ"),
+    ),
+)
+def test_strict_profile_rejects_bytelevel_backend_semantic_changes(
+    component: str,
+    failure: str,
+) -> None:
+    donor = _bytelevel_bpe_tokenizer()
+    target = _bytelevel_semantic_variant(donor, component)
+
+    with pytest.raises(StrictTokenTransportRejectedError) as caught:
+        build_strict_token_transport_profile(donor, target)
+
+    assert caught.value.failures == (failure,)

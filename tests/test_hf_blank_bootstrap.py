@@ -522,6 +522,135 @@ def test_pca_bootstrap_transports_all_priors_and_composes_depth_spans() -> None:
     assert span["structural_prior_residual_consumers"] == "sum"
 
 
+def test_real_medoid_bootstrap_copies_parent_circuits_with_full_coverage() -> None:
+    result = bootstrap_blank_decoder_models(
+        _qwen3_source(),
+        _qwen3_target(head_dim=4),
+        _batch(584, batch_size=16),
+        validation_inputs=_batch(585, batch_size=16),
+        residual_map_method="pca",
+        nonlinear_merge_method="real_medoid",
+        max_coordinate_rows=24,
+        fit_full_lm_head=False,
+    )
+
+    for block_index, source_layer_count, representative_layer in (
+        (0, 1, 0),
+        (1, 2, 2),
+    ):
+        attention = result.fit_reports[
+            f"block.{block_index}.attention.activation_cluster"
+        ]
+        assert attention["source_query_heads"] == 4 * source_layer_count
+        assert attention["source_key_value_heads"] == 2 * source_layer_count
+        assert attention["target_query_heads"] == 4
+        assert attention["target_key_value_heads"] == 2
+        assert attention["full_source_coverage"] is True
+        assert attention["producer_aggregation"] == "none"
+        assert attention["invariants"]["real_source_query_head_medoids"] is True
+        assert attention["invariants"]["real_source_group_medoids"] is True
+        assert attention["invariants"]["no_producer_averaging"] is True
+        assert set(attention["group_medoids"]) <= set(
+            attention["group_medoid_candidate_indices"]
+        )
+        assert (
+            result.fit_reports[f"block.{block_index}.attention.structural_prior"][
+                "norm_and_rope_coherent_source_layer"
+            ]
+            == representative_layer
+        )
+        assert result.fit_reports[f"block.{block_index}.attention.query_norm"][
+            "source_layers"
+        ] == [representative_layer]
+
+        mlp = result.fit_reports[f"block.{block_index}.mlp.activation_cluster"]
+        assert mlp["source_neurons"] == 20 * source_layer_count
+        assert mlp["target_neurons"] == 12
+        assert mlp["full_source_coverage"] is True
+        assert mlp["producer_aggregation"] == "none"
+        assert mlp["consumer_coefficient_gate_division"] is False
+        assert mlp["invariants"]["real_source_neuron_medoids"] is True
+        assert mlp["invariants"]["shared_gate_up_down_assignment"] is True
+        assert mlp["invariants"]["no_producer_averaging"] is True
+
+        span = result.fit_reports[f"block.{block_index}.span"]
+        assert span["nonlinear_merge_method"] == "real_medoid"
+        assert span["structural_prior_feature_producers"] == "real-medoid-copy"
+
+    assert all(
+        metric.finite
+        for metric in (
+            result.candidate_gate_metrics.final_state,
+            result.candidate_gate_metrics.logits,
+        )
+    )
+
+
+def test_real_medoid_final_model_keeps_selected_producer_weights(monkeypatch) -> None:
+    source = _qwen3_source()
+    target = _qwen3_target(head_dim=4)
+    attention_snapshots = []
+    mlp_snapshots = []
+    original_attention = bootstrap_module._initialize_attention_real_medoid_prior
+    original_mlp = bootstrap_module._initialize_gated_mlp_real_medoid_prior
+
+    def capture_attention(*args, **kwargs):
+        result = original_attention(*args, **kwargs)
+        operators = bootstrap_module.read_attention_operators(
+            args[2], args[5].attention
+        )
+        attention_snapshots.append(
+            tuple(
+                operator.weight.clone()
+                for operator in (operators.query, operators.key, operators.value)
+            )
+        )
+        return result
+
+    def capture_mlp(*args, **kwargs):
+        result = original_mlp(*args, **kwargs)
+        operators = bootstrap_module.read_mlp_operators(args[2], args[4])
+        mlp_snapshots.append(
+            (operators.gate.weight.clone(), operators.up.weight.clone())
+        )
+        return result
+
+    monkeypatch.setattr(
+        bootstrap_module,
+        "_initialize_attention_real_medoid_prior",
+        capture_attention,
+    )
+    monkeypatch.setattr(
+        bootstrap_module,
+        "_initialize_gated_mlp_real_medoid_prior",
+        capture_mlp,
+    )
+    result = bootstrap_blank_decoder_models(
+        source,
+        target,
+        _batch(586, batch_size=16),
+        validation_inputs=_batch(587, batch_size=16),
+        residual_map_method="pca",
+        nonlinear_merge_method="real_medoid",
+        max_coordinate_rows=24,
+        fit_full_lm_head=False,
+    )
+
+    assert result.transaction.accepted is True, result.transaction.report["gate"]
+    layout = bootstrap_module.build_decoder_layout(target)
+    for index, block in enumerate(layout.blocks):
+        attention = bootstrap_module.read_attention_operators(target, block.attention)
+        for actual, expected in zip(
+            (attention.query.weight, attention.key.weight, attention.value.weight),
+            attention_snapshots[index],
+            strict=True,
+        ):
+            assert torch.equal(actual, expected)
+        mlp = bootstrap_module.read_mlp_operators(target, block)
+        assert torch.equal(mlp.gate.weight, mlp_snapshots[index][0])
+        assert torch.equal(mlp.up.weight, mlp_snapshots[index][1])
+
+
 def test_dual_orthonormal_bootstrap_reports_margin_oracle() -> None:
     result = bootstrap_blank_decoder_models(
         _qwen3_source(),
