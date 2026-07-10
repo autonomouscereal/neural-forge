@@ -93,7 +93,9 @@ def _build_local_tokenizer(targets: tuple[Path, Path]) -> int:
         from tokenizers.pre_tokenizers import Whitespace
         from transformers import PreTrainedTokenizerFast
     except ImportError as exc:
-        raise RuntimeError("The offline tiny smoke requires the neural-forge 'hf' extra.") from exc
+        raise RuntimeError(
+            "The offline tiny smoke requires the neural-forge 'hf' extra."
+        ) from exc
 
     vocabulary = _tiny_vocabulary()
     backend = Tokenizer(WordLevel(vocabulary, unk_token="<unk>"))
@@ -122,7 +124,9 @@ def _qwen_config_class():
 
             return Qwen2Config
         except ImportError as exc:
-            raise RuntimeError("Installed transformers does not provide a Qwen causal-LM config.") from exc
+            raise RuntimeError(
+                "Installed transformers does not provide a Qwen causal-LM config."
+            ) from exc
 
 
 def _save_tiny_model(
@@ -139,7 +143,9 @@ def _save_tiny_model(
         import torch
         from transformers import AutoModelForCausalLM
     except ImportError as exc:
-        raise RuntimeError("The offline tiny smoke requires the neural-forge 'hf' extra.") from exc
+        raise RuntimeError(
+            "The offline tiny smoke requires the neural-forge 'hf' extra."
+        ) from exc
 
     config_class = _qwen_config_class()
     config = config_class(
@@ -194,17 +200,43 @@ def prepare_tiny_fixture(root: Path, *, seed: int = 0) -> TinyFixture:
         vocab_size=vocabulary_size,
     )
     if blank_architecture != architecture:
-        raise RuntimeError("source and blank tiny checkpoints selected different Qwen config families.")
+        raise RuntimeError(
+            "source and blank tiny checkpoints selected different Qwen config families."
+        )
     _build_local_tokenizer((source, blank_candidate))
 
     calibration_file = root / "calibration.jsonl"
     calibration_rows = [
-        {"text": "Q What is two plus three A", "prompt": "Q: What is two plus three? A:", "response": "five"},
-        {"text": "Write a small function return", "prompt": "Write a small function.", "response": "return"},
-        {"text": "Explain model compression", "prompt": "Explain model compression.", "response": "safe answer"},
-        {"text": "layer pair attention token", "prompt": "Describe a layer pair.", "response": "attention"},
-        {"text": "Q two plus two A", "prompt": "Q: two plus two? A:", "response": "answer"},
-        {"text": "model layer pair safe", "prompt": "Give a safe answer.", "response": "safe"},
+        {
+            "text": "Q What is two plus three A",
+            "prompt": "Q: What is two plus three? A:",
+            "response": "five",
+        },
+        {
+            "text": "Write a small function return",
+            "prompt": "Write a small function.",
+            "response": "return",
+        },
+        {
+            "text": "Explain model compression",
+            "prompt": "Explain model compression.",
+            "response": "safe answer",
+        },
+        {
+            "text": "layer pair attention token",
+            "prompt": "Describe a layer pair.",
+            "response": "attention",
+        },
+        {
+            "text": "Q two plus two A",
+            "prompt": "Q: two plus two? A:",
+            "response": "answer",
+        },
+        {
+            "text": "model layer pair safe",
+            "prompt": "Give a safe answer.",
+            "response": "safe",
+        },
     ]
     calibration_file.write_text(
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in calibration_rows),
@@ -252,7 +284,9 @@ def build_tiny_command(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output-dir", type=Path, default=Path("runs/qwen_pair_compose_tiny_smoke"))
+    parser.add_argument(
+        "--output-dir", type=Path, default=Path("runs/qwen_pair_compose_tiny_smoke")
+    )
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--seed", type=int, default=0)
@@ -277,7 +311,9 @@ def main(argv: list[str] | None = None) -> int:
         "prepare_only": bool(args.prepare_only),
     }
     manifest_path = fixture.root / "smoke_manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     if args.prepare_only:
         print(json.dumps(manifest, sort_keys=True))
         return 0
@@ -293,7 +329,9 @@ def main(argv: list[str] | None = None) -> int:
     if completed.returncode != 0:
         return int(completed.returncode)
     if not (fixture.output / "config.json").is_file():
-        raise RuntimeError("pair-composition smoke completed without an output checkpoint.")
+        raise RuntimeError(
+            "pair-composition smoke completed without an output checkpoint."
+        )
     print(json.dumps({**manifest, "returncode": 0}, sort_keys=True))
     return 0
 

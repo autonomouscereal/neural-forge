@@ -54,8 +54,11 @@ class ComposeSettings:
     ridge: float = 1e-3
     max_length: int = 160
     max_tokens_per_layer: int = 4096
-    max_anchors: int = 20_000
-    max_calibration_texts: int = 1024
+    max_anchors: int = 4096
+    max_calibration_texts: int = 256
+    basis_mode: str = "activation-pca"
+    basis_preprocess: str = "uncentered-rowrms"
+    activation_domain_balance: str = "keyword"
     fit_gate_validation_fraction: float = 0.25
     fit_gate_min_validation_rows: int = 128
     fit_gate_min_relative_improvement: float = 0.02
@@ -67,11 +70,18 @@ class ComposeSettings:
     def validate(self) -> None:
         if not math.isfinite(self.ridge) or self.ridge < 0:
             raise ValueError("ridge must be non-negative.")
-        for name in ("max_length", "max_tokens_per_layer", "max_anchors", "max_calibration_texts"):
+        for name in (
+            "max_length",
+            "max_tokens_per_layer",
+            "max_anchors",
+            "max_calibration_texts",
+        ):
             if int(getattr(self, name)) <= 0:
                 raise ValueError(f"{name.replace('_', '-')} must be positive.")
         if not 0.0 < self.fit_gate_validation_fraction < 1.0:
-            raise ValueError("fit-gate-validation-fraction must be between zero and one.")
+            raise ValueError(
+                "fit-gate-validation-fraction must be between zero and one."
+            )
         if self.fit_gate_min_validation_rows <= 0:
             raise ValueError("fit-gate-min-validation-rows must be positive.")
         if (
@@ -79,10 +89,23 @@ class ComposeSettings:
             or self.fit_gate_min_relative_improvement < 0
         ):
             raise ValueError("fit-gate-min-relative-improvement must be non-negative.")
-        if not math.isfinite(self.fit_gate_max_cosine_drop) or self.fit_gate_max_cosine_drop < 0:
+        if (
+            not math.isfinite(self.fit_gate_max_cosine_drop)
+            or self.fit_gate_max_cosine_drop < 0
+        ):
             raise ValueError("fit-gate-max-cosine-drop must be non-negative.")
         if not self.dtype or not self.candidate_dtype or not self.device:
             raise ValueError("dtype, candidate-dtype, and device cannot be empty.")
+        if self.basis_mode not in {"activation-pca", "embedding-grouped"}:
+            raise ValueError("basis-mode must be activation-pca or embedding-grouped.")
+        if self.basis_preprocess not in {
+            "centered-rowrms",
+            "uncentered-rowrms",
+            "uncentered",
+        }:
+            raise ValueError("unsupported basis-preprocess.")
+        if self.activation_domain_balance not in {"none", "keyword"}:
+            raise ValueError("activation-domain-balance must be none or keyword.")
 
 
 def _sha256(path: Path) -> str:
@@ -94,7 +117,9 @@ def _sha256(path: Path) -> str:
 
 
 def _argv_sha256(command: Iterable[str]) -> str:
-    return hashlib.sha256("\0".join(str(item) for item in command).encode("utf-8")).hexdigest()
+    return hashlib.sha256(
+        "\0".join(str(item) for item in command).encode("utf-8")
+    ).hexdigest()
 
 
 def _assert_no_recovery_or_training_flags(command: Iterable[str]) -> None:
@@ -103,7 +128,9 @@ def _assert_no_recovery_or_training_flags(command: Iterable[str]) -> None:
             continue
         normalized = str(token).lower()
         if any(part in normalized for part in _FORBIDDEN_COMPOSE_FLAG_PARTS):
-            raise ValueError(f"pair composition cannot accept recovery or training flag {token!r}.")
+            raise ValueError(
+                f"pair composition cannot accept recovery or training flag {token!r}."
+            )
 
 
 def build_compose_command(
@@ -134,6 +161,12 @@ def build_compose_command(
         str(settings.max_tokens_per_layer),
         "--max-anchors",
         str(settings.max_anchors),
+        "--basis-mode",
+        settings.basis_mode,
+        "--basis-preprocess",
+        settings.basis_preprocess,
+        "--activation-domain-balance",
+        settings.activation_domain_balance,
         "--calibration-file",
         str(calibration_file),
         "--max-calibration-texts",
@@ -247,7 +280,9 @@ def _snapshot_tree(
     records: list[dict[str, object]] = []
     for path in sorted(source.rglob("*"), key=lambda item: item.as_posix()):
         relative = path.relative_to(source)
-        if exclude_bytecode and ("__pycache__" in relative.parts or path.suffix in {".pyc", ".pyo"}):
+        if exclude_bytecode and (
+            "__pycache__" in relative.parts or path.suffix in {".pyc", ".pyo"}
+        ):
             continue
         if path.is_dir():
             (target / relative).mkdir(parents=True, exist_ok=True)
@@ -283,7 +318,9 @@ def _tree_sha256(records: Iterable[dict[str, object]]) -> str:
 def _validate_checkpoint(path: Path, label: str) -> Path:
     resolved = path.resolve(strict=True)
     if not resolved.is_dir() or not (resolved / "config.json").is_file():
-        raise ValueError(f"{label} must be a local checkpoint directory containing config.json.")
+        raise ValueError(
+            f"{label} must be a local checkpoint directory containing config.json."
+        )
     weight_patterns = ("*.safetensors", "pytorch_model*.bin", "model*.bin")
     if not any(any(resolved.glob(pattern)) for pattern in weight_patterns):
         raise ValueError(f"{label} does not contain local checkpoint weights.")
@@ -303,7 +340,11 @@ def _validate_cached_parent(path: Path) -> Path:
         report = json.loads(resolved.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("parent-eval must be a valid cached JSON report.") from exc
-    if not isinstance(report, dict) or "behavior_suite" not in report or "choice_accuracy" not in report:
+    if (
+        not isinstance(report, dict)
+        or "behavior_suite" not in report
+        or "choice_accuracy" not in report
+    ):
         raise ValueError("parent-eval is not a completed cached HF evaluation report.")
     return resolved
 
@@ -396,7 +437,7 @@ def render_run_script(
 ) -> str:
     """Render the complete immutable compose/eval/manual/retention chain."""
 
-    verifier = r'''import hashlib
+    verifier = r"""import hashlib
 import json
 import sys
 from pathlib import Path
@@ -423,7 +464,7 @@ for item in manifest["files"]:
     if digest.hexdigest() != item["sha256"]:
         raise SystemExit(f"snapshot hash mismatch: {path}")
 print(json.dumps({"snapshot_verified": len(manifest["files"]), "tree_sha256": manifest["tree_sha256"]}))
-'''
+"""
     wait_values = " ".join(str(pid) for pid in wait_pids)
     lines = [
         "#!/usr/bin/env bash",
@@ -445,7 +486,7 @@ print(json.dumps({"snapshot_verified": len(manifest["files"]), "tree_sha256": ma
         "export HF_HUB_OFFLINE=1",
         "export TRANSFORMERS_OFFLINE=1",
         "export TOKENIZERS_PARALLELISM=false",
-        "echo \"pair_compose_chain_start=$(date -Is)\"",
+        'echo "pair_compose_chain_start=$(date -Is)"',
         '"$PY" - "$SNAPSHOT_MANIFEST" "$OUT" "$SNAPSHOT_MANIFEST_SHA256" <<\'PY\'',
         verifier.rstrip(),
         "PY",
@@ -455,13 +496,17 @@ print(json.dumps({"snapshot_verified": len(manifest["files"]), "tree_sha256": ma
         '    sleep "$WAIT_POLL_SECONDS"',
         "  done",
         "done",
-        f"echo \"pair_compose_start=$(date -Is) device_uuid={device_uuid}\"",
+        f'echo "pair_compose_start=$(date -Is) device_uuid={device_uuid}"',
         shlex.join(compose_command),
         '[[ -s "$OUTPUT_MODEL/config.json" ]] || { echo "missing composed model config" >&2; exit 2; }',
-        "echo \"pair_compose_done=$(date -Is)\"",
+        'echo "pair_compose_done=$(date -Is)"',
         shlex.join(eval_command),
         '[[ -s "$CHILD_EVAL" ]] || { echo "missing child evaluation" >&2; exit 2; }',
-        '"$PY" - "$OUTPUT_MODEL" "$MANUAL_REPORT" ' + shlex.quote(device) + " " + shlex.quote(dtype) + " <<'PY'",
+        '"$PY" - "$OUTPUT_MODEL" "$MANUAL_REPORT" '
+        + shlex.quote(device)
+        + " "
+        + shlex.quote(dtype)
+        + " <<'PY'",
         _render_manual_program().rstrip(),
         "PY",
         shlex.join(
@@ -477,12 +522,14 @@ print(json.dumps({"snapshot_verified": len(manifest["files"]), "tree_sha256": ma
             ]
         ),
         '[[ -s "$MANUAL_REPORT" && -s "$RETENTION_REPORT" ]] || { echo "missing post-compose evidence" >&2; exit 2; }',
-        "echo \"pair_compose_chain_done=$(date -Is)\"",
+        'echo "pair_compose_chain_done=$(date -Is)"',
         "",
     ]
     script = "\n".join(lines)
     if script.count("hf-eval") != 1:
-        raise AssertionError("run script must contain exactly one child hf-eval command.")
+        raise AssertionError(
+            "run script must contain exactly one child hf-eval command."
+        )
     if "hf-qwen-pair-compose" not in script:
         raise AssertionError("run script is missing hf-qwen-pair-compose.")
     _assert_no_recovery_or_training_flags(compose_command)
@@ -491,20 +538,35 @@ print(json.dumps({"snapshot_verified": len(manifest["files"]), "tree_sha256": ma
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", "--source-model", dest="source", type=Path, required=True)
-    parser.add_argument("--blank-candidate", "--candidate", dest="blank_candidate", type=Path, required=True)
+    parser.add_argument(
+        "--source", "--source-model", dest="source", type=Path, required=True
+    )
+    parser.add_argument(
+        "--blank-candidate",
+        "--candidate",
+        dest="blank_candidate",
+        type=Path,
+        required=True,
+    )
     parser.add_argument("--run-root", type=Path, required=True)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--calibration-file", type=Path, required=True)
-    parser.add_argument("--eval-suite", "--eval-suite-file", dest="eval_suite", type=Path, required=True)
+    parser.add_argument(
+        "--eval-suite", "--eval-suite-file", dest="eval_suite", type=Path, required=True
+    )
     parser.add_argument("--parent-eval", type=Path, required=True)
-    parser.add_argument("--device-uuid", "--gpu-uuid", dest="device_uuid", required=True)
+    parser.add_argument(
+        "--device-uuid", "--gpu-uuid", dest="device_uuid", required=True
+    )
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
     parser.add_argument("--ridge", type=float, default=1e-3)
     parser.add_argument("--max-length", type=int, default=160)
     parser.add_argument("--max-tokens-per-layer", type=int, default=4096)
-    parser.add_argument("--max-anchors", type=int, default=20_000)
-    parser.add_argument("--max-calibration-texts", type=int, default=1024)
+    parser.add_argument("--max-anchors", type=int, default=4096)
+    parser.add_argument("--max-calibration-texts", type=int, default=256)
+    parser.add_argument("--basis-mode", default="activation-pca")
+    parser.add_argument("--basis-preprocess", default="uncentered-rowrms")
+    parser.add_argument("--activation-domain-balance", default="keyword")
     parser.add_argument("--fit-gate-validation-fraction", type=float, default=0.25)
     parser.add_argument("--fit-gate-min-validation-rows", type=int, default=128)
     parser.add_argument("--fit-gate-min-relative-improvement", type=float, default=0.02)
@@ -520,7 +582,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     tag = _validate_tag(args.tag)
-    if not args.device_uuid or any(character.isspace() for character in args.device_uuid) or "\0" in args.device_uuid:
+    if (
+        not args.device_uuid
+        or any(character.isspace() for character in args.device_uuid)
+        or "\0" in args.device_uuid
+    ):
         raise ValueError("device-uuid must be one non-empty CUDA device identifier.")
     if args.wait_poll_seconds <= 0:
         raise ValueError("wait-poll-seconds must be positive.")
@@ -534,7 +600,9 @@ def main(argv: list[str] | None = None) -> int:
     run_root = args.run_root.resolve(strict=True)
     if not run_root.is_dir():
         raise ValueError("run-root must be an existing directory.")
-    calibration_file = _validate_nonempty_file(args.calibration_file, "calibration-file")
+    calibration_file = _validate_nonempty_file(
+        args.calibration_file, "calibration-file"
+    )
     eval_suite = _validate_nonempty_file(args.eval_suite, "eval-suite")
     parent_eval = _validate_cached_parent(args.parent_eval)
     python = args.python.resolve(strict=True)
@@ -547,6 +615,9 @@ def main(argv: list[str] | None = None) -> int:
         max_tokens_per_layer=args.max_tokens_per_layer,
         max_anchors=args.max_anchors,
         max_calibration_texts=args.max_calibration_texts,
+        basis_mode=args.basis_mode,
+        basis_preprocess=args.basis_preprocess,
+        activation_domain_balance=args.activation_domain_balance,
         fit_gate_validation_fraction=args.fit_gate_validation_fraction,
         fit_gate_min_validation_rows=args.fit_gate_min_validation_rows,
         fit_gate_min_relative_improvement=args.fit_gate_min_relative_improvement,
@@ -559,8 +630,12 @@ def main(argv: list[str] | None = None) -> int:
 
     output = run_root / tag
     unresolved_output = output.resolve()
-    if unresolved_output.is_relative_to(source) or unresolved_output.is_relative_to(blank_candidate):
-        raise ValueError("run output cannot be nested inside either checkpoint snapshot source.")
+    if unresolved_output.is_relative_to(source) or unresolved_output.is_relative_to(
+        blank_candidate
+    ):
+        raise ValueError(
+            "run output cannot be nested inside either checkpoint snapshot source."
+        )
     output.mkdir(exist_ok=False)
     reports = output / "reports"
     reports.mkdir()
@@ -598,10 +673,17 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
     records.append(
-        _snapshot_file(eval_suite, snapshot_eval_suite, output_root=output, role="eval_suite")
+        _snapshot_file(
+            eval_suite, snapshot_eval_suite, output_root=output, role="eval_suite"
+        )
     )
     records.append(
-        _snapshot_file(parent_eval, snapshot_parent_eval, output_root=output, role="cached_parent_eval")
+        _snapshot_file(
+            parent_eval,
+            snapshot_parent_eval,
+            output_root=output,
+            role="cached_parent_eval",
+        )
     )
 
     package_source = REPO_ROOT / "src" / "neural_forge"
@@ -751,8 +833,12 @@ def main(argv: list[str] | None = None) -> int:
         "process": identity,
     }
     manifest_path = output / "run_manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    (output / "run_manifest.sha256").write_text(f"{_sha256(manifest_path)}  run_manifest.json\n", encoding="ascii")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    (output / "run_manifest.sha256").write_text(
+        f"{_sha256(manifest_path)}  run_manifest.json\n", encoding="ascii"
+    )
     print(json.dumps(manifest, sort_keys=True))
     return 0
 

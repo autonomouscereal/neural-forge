@@ -125,6 +125,28 @@ Python. This control loaded the pre-audit implementation and therefore lacked
 the corrected final RMSNorm/head interface; it remains useful evidence that
 excellent local module-output fits alone are insufficient.
 
+The corrected output-only functional run, including the final RMSNorm/head
+interface, also failed. At the same `156,083,136` parameters (`25.77x`) it
+reached PPL `485,165,195.41`, behavior `0/1000`, generation `0/1000`, and
+choice `98/250`. It retained none of the parent's solved behavior or generation
+items; manual output repeated `Cal`, `eval`, and `5`. The final-interface fix is
+therefore necessary for mathematical completeness but not sufficient for
+global circuit preservation.
+
+The old `module-all` control reached PPL `10,610,578.76`, behavior `0/1000`,
+generation `6/1000`, and choice `93/250`. Only one of the parent's 388 solved
+generation items survived. The other five passes were child-only pattern
+matches accompanied by repetitive fragments such as `small`, `answers`, and
+`short`; manual arithmetic and code remained incoherent. These six matches are
+not treated as transferred intelligence.
+
+The first 36-to-18 activation-PCA depth fold was likewise negative. Its blank
+`hidden=512`, `intermediate=2048`, 18-layer target had `146,097,664` parameters
+(`27.53x`) and reached PPL `285,161.12`, behavior `0/1000`, generation
+`0/1000`, and choice `23/250`. Paired manual outputs repeated the token `1` in
+place of correct parent answers. Parameter folding across a nonlinear layer
+pair is therefore rejected as a substitute for ordered function composition.
+
 The first oblique implementation is retained as a baseline, but four audit
 findings require a corrected rerun before judging the method. Its old global
 row buffer filled in traversal order, its absolute ridge `1e-3` was negligible
@@ -137,13 +159,34 @@ norm interface into an untied head, and transactionally reverts `module-all`
 attention or MLP pairs when either half is rejected. Fold-basis artifacts are
 also copied forward so alternating zero-gradient passes remain possible.
 
-The evidence audit found no completed, truly zero-gradient blank-target run at
-`25x+` with nonzero exact behavior or generation retention. The previous best
-forced-choice score, `94/250`, matched the random blank baseline and accompanied
-repetitive output. Several historical runs labeled `init-only` actually enabled
-LRC optimizer steps and therefore do not qualify as fold-only evidence. New
-promotion reports must explicitly show `optimizer_steps=0`, factor steps `0`,
-and no activation-fit method other than a closed-form solve.
+`hf-qwen-pair-compose` is the next distinct zero-gradient path. It maps donor
+layers strictly as `(2j, 2j+1)` rather than averaging layer tensors. Each child
+block receives one intact activation-selected GQA group and a fixed quota of
+intact, coupled gate/up/down SwiGLU channels from each donor layer; discarded
+paths enter the closed-form output targets rather than being mixed before
+softmax or SiLU. A domain-balanced activation-PCA basis provides one fixed
+residual coordinate system. The child prefix is rerun after every accepted
+attention/output and MLP/output solve, and the final norm/head interface is fit
+last. All solves are prompt-split, trace-scaled FP64 ridge operations with no
+optimizer, backward pass, parameter gradients, adapters, or runtime donor.
+
+The first proof target is blank Qwen3 with `hidden=384`,
+`intermediate=1152`, 18 layers, `Q/KV=8/2`, full 128-coordinate heads, an
+untied full-vocabulary head, and `158,288,256` parameters (`25.41x`). The
+offline 4-to-2-layer Qwen smoke passes checkpoint loading, activation profiling,
+intact path materialization, complete parameter-write accounting, report
+serialization, and standalone save. Behavioral evidence remains pending.
+
+The evidence audit has still found no completed, truly zero-gradient
+blank-target run at `25x+` with coherent behavior or meaningful generation
+retention. The sole retained `module-all` generation item was surrounded by
+repetitive output, and its five child-only passes were pattern-match false
+positives. The previous best forced-choice score, `94/250`, matched the random
+blank baseline and accompanied repetitive output. Several historical runs
+labeled `init-only` actually enabled LRC optimizer steps and therefore do not
+qualify as fold-only evidence. New promotion reports must explicitly show
+`optimizer_steps=0`, factor steps `0`, and no activation-fit method other than a
+closed-form solve.
 
 ## Highest-Priority Paths
 

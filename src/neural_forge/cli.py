@@ -1277,6 +1277,56 @@ def build_parser() -> argparse.ArgumentParser:
     functional_fold.add_argument("--max-calibration-texts", type=int)
     functional_fold.set_defaults(func=cmd_hf_functional_fold)
 
+    qwen_pair_compose = sub.add_parser(
+        "hf-qwen-pair-compose",
+        help="Materialize a zero-gradient ordered pair composition into each blank Qwen block.",
+    )
+    qwen_pair_compose.add_argument("source_model")
+    qwen_pair_compose.add_argument("candidate_model")
+    qwen_pair_compose.add_argument("output")
+    qwen_pair_compose.add_argument("--ridge", type=float, default=1e-3)
+    qwen_pair_compose.add_argument("--max-length", type=int, default=160)
+    qwen_pair_compose.add_argument("--batch-size", type=int, default=2)
+    qwen_pair_compose.add_argument("--max-tokens-per-layer", type=int, default=4096)
+    qwen_pair_compose.add_argument("--max-anchors", type=int, default=4096)
+    qwen_pair_compose.add_argument(
+        "--basis-mode",
+        choices=["activation-pca", "embedding-grouped"],
+        default="activation-pca",
+    )
+    qwen_pair_compose.add_argument(
+        "--basis-preprocess",
+        choices=["centered-rowrms", "uncentered-rowrms", "uncentered"],
+        default="uncentered-rowrms",
+    )
+    qwen_pair_compose.add_argument(
+        "--activation-domain-balance",
+        choices=["none", "keyword"],
+        default="keyword",
+    )
+    qwen_pair_compose.add_argument(
+        "--head-validation-vocab-rows", type=int, default=4096
+    )
+    qwen_pair_compose.add_argument(
+        "--fit-gate-validation-fraction", type=float, default=0.25
+    )
+    qwen_pair_compose.add_argument(
+        "--fit-gate-min-validation-rows", type=int, default=128
+    )
+    qwen_pair_compose.add_argument(
+        "--fit-gate-min-relative-improvement", type=float, default=0.02
+    )
+    qwen_pair_compose.add_argument(
+        "--fit-gate-max-cosine-drop", type=float, default=0.0
+    )
+    qwen_pair_compose.add_argument("--dtype", default="float16")
+    qwen_pair_compose.add_argument("--candidate-dtype", default="float32")
+    qwen_pair_compose.add_argument("--device", default="cuda:0")
+    qwen_pair_compose.add_argument("--trust-remote-code", action="store_true")
+    qwen_pair_compose.add_argument("--calibration-file")
+    qwen_pair_compose.add_argument("--max-calibration-texts", type=int)
+    qwen_pair_compose.set_defaults(func=cmd_hf_qwen_pair_compose)
+
     xfamily_block_recover = sub.add_parser(
         "hf-xfamily-block-recover",
         help="Sequentially train each target block against projected cross-tokenizer donor block activations.",
@@ -3212,6 +3262,36 @@ def cmd_hf_functional_fold(args: argparse.Namespace) -> dict[str, object]:
         device=args.device,
         trust_remote_code=args.trust_remote_code,
         calibration_texts=_load_recovery_calibration_texts(args.calibration_file, args.max_calibration_texts),
+    )
+
+
+def cmd_hf_qwen_pair_compose(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_qwen_compose import initialize_qwen_pair_composition
+
+    return initialize_qwen_pair_composition(
+        donor_model=args.source_model,
+        target_model=args.candidate_model,
+        output_dir=args.output,
+        calibration_texts=_load_recovery_calibration_texts(
+            args.calibration_file, args.max_calibration_texts
+        ),
+        ridge=args.ridge,
+        validation_fraction=args.fit_gate_validation_fraction,
+        min_relative_improvement=args.fit_gate_min_relative_improvement,
+        max_cosine_drop=args.fit_gate_max_cosine_drop,
+        max_length=args.max_length,
+        batch_size=args.batch_size,
+        max_fit_rows=args.max_tokens_per_layer,
+        min_validation_rows=args.fit_gate_min_validation_rows,
+        basis_max_rows=args.max_anchors,
+        basis_mode=args.basis_mode,
+        basis_preprocess=args.basis_preprocess,
+        activation_domain_balance=args.activation_domain_balance,
+        head_validation_vocab_rows=args.head_validation_vocab_rows,
+        torch_dtype=args.dtype,
+        target_torch_dtype=args.candidate_dtype,
+        device=args.device,
+        trust_remote_code=args.trust_remote_code,
     )
 
 
