@@ -45,6 +45,26 @@ Models](https://arxiv.org/abs/2602.05495)
   needs anchors induced from the parent, not activation correspondences to
   meaningless random target features.
 
+Official implementation audit: [repository at commit
+`6a822ef`](https://github.com/chenhangcuisg-code/Cross-Architecture-Merging-for-Large-Language-Models/tree/6a822ef33d386585c57fa4e7cdd79925454336a7)
+
+- The executable fusion path transports attention Q/K/V/O only. Embeddings,
+  vocabulary/head, norms, MLPs, positions, residual topology, and head metadata
+  remain target-native.
+- It estimates separate pre- and post-projection OT plans and transports a source
+  operator with the corresponding left/right maps. Layer mixing is another OT
+  plan over pairwise layer costs.
+- Target channels are selected from target activation magnitude and fusion uses a
+  small blend with existing target weights. Both operations are meaningless for
+  a random target.
+- The no-adaptation benchmark changes are small and not uniformly positive; the
+  medical average slightly regresses. This is evidence for perturbing a trained
+  target, not constructing a blank one.
+- Neural Forge must first perform a full source-derived bootstrap with alpha one,
+  complete target-role coverage, barycentrically normalized maps, and monotonic
+  depth handling. One or more forward-only target/source OT recalculations may
+  refine that initialized child afterward.
+
 ### Byte-Pair Visual Encoding (2025)
 
 Source: [Unified Multimodal Understanding via Byte-Pair Visual
