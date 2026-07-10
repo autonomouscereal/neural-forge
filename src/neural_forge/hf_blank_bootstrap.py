@@ -30,6 +30,7 @@ from neural_forge.hf_operator_adapter import (
     write_attention_operators,
     write_mlp_operators,
 )
+from neural_forge.hf_targeted_trace import collect_hf_targeted_trace
 from neural_forge.hf_transport import (
     Disposition,
     GateDecision,
@@ -42,7 +43,6 @@ from neural_forge.hf_transport_manifest import (
     build_decoder_transport_manifest,
 )
 from neural_forge.hf_transport_math import (
-    CoordinateMap,
     build_parent_residual_basis,
     encode_coordinates,
 )
@@ -70,7 +70,7 @@ class BlankBootstrapResult:
     transaction: TransportTransactionResult
     source_layout: DecoderLayout
     target_layout: DecoderLayout
-    residual_coordinates: CoordinateMap
+    residual_coordinates: Any
     donor_layer_spans: tuple[tuple[int, ...], ...]
     baseline_gate_metrics: BootstrapGateMetrics
     candidate_gate_metrics: BootstrapGateMetrics
@@ -86,6 +86,7 @@ def bootstrap_blank_decoder_models(
     target_calibration_inputs: Mapping[str, Any] | Any | None = None,
     target_validation_inputs: Mapping[str, Any] | Any | None = None,
     trace_pooling: Literal["token_rows", "mean", "last_valid"] = "token_rows",
+    residual_map_method: Literal["sparse_fold", "pca"] = "sparse_fold",
     ridge: float = 1e-5,
     min_final_state_relative_improvement: float = 0.0,
     min_logit_relative_improvement: float = 0.0,
@@ -115,6 +116,8 @@ def bootstrap_blank_decoder_models(
         raise BlankBootstrapError(
             "trace_pooling must be token_rows, mean, or last_valid."
         )
+    if residual_map_method not in {"sparse_fold", "pca"}:
+        raise BlankBootstrapError("residual_map_method must be sparse_fold or pca.")
     if (
         isinstance(max_full_head_fit_elements, bool)
         or not isinstance(max_full_head_fit_elements, int)
@@ -175,10 +178,13 @@ def bootstrap_blank_decoder_models(
         validation_values,
         trace_pooling,
     )
-    baseline_validation = _trace_rows(
+    baseline_validation = _target_trace_rows(
         target_model,
         target_validation_values,
         trace_pooling,
+        block_index=target_layout.layer_count - 1,
+        capture_final_norm=True,
+        capture_logits=True,
     )
     _require_row_alignment(source_validation, baseline_validation, "validation")
     residual_rows = _residual_basis_rows(
@@ -186,12 +192,18 @@ def bootstrap_blank_decoder_models(
         source_calibration,
         max_coordinate_rows,
     )
-    residual_coordinates = build_parent_residual_basis(
-        residual_rows,
-        target_layout.hidden_size,
-        center=False,
-    )
-    desired_validation_final = encode_coordinates(
+    if residual_map_method == "sparse_fold":
+        residual_coordinates = build_feature_fold_map(
+            residual_rows,
+            target_layout.hidden_size,
+        )
+    else:
+        residual_coordinates = build_parent_residual_basis(
+            residual_rows,
+            target_layout.hidden_size,
+            center=False,
+        )
+    desired_validation_final = _encode_rows(
         source_validation.blocks[-1].block_output,
         residual_coordinates,
     )
@@ -253,10 +265,13 @@ def bootstrap_blank_decoder_models(
 
     def gate(_coverage_report) -> GateDecision:
         nonlocal candidate_gate_metrics
-        candidate_validation = _trace_rows(
+        candidate_validation = _target_trace_rows(
             target_model,
             target_validation_values,
             trace_pooling,
+            block_index=target_layout.layer_count - 1,
+            capture_final_norm=True,
+            capture_logits=True,
         )
         candidate_gate_metrics = _gate_metrics(
             candidate_validation,
@@ -371,6 +386,26 @@ def _trace_rows(
     )
 
 
+def _target_trace_rows(
+    model: Any,
+    inputs: Mapping[str, Any] | Any,
+    pooling: Literal["token_rows", "mean", "last_valid"],
+    *,
+    block_index: int,
+    capture_final_norm: bool = False,
+    capture_logits: bool = False,
+) -> Any:
+    mode = "flatten_valid" if pooling == "token_rows" else pooling
+    return collect_hf_targeted_trace(
+        model,
+        inputs,
+        block_index=block_index,
+        mode=mode,
+        capture_final_norm=capture_final_norm,
+        capture_logits=capture_logits,
+    )
+
+
 def _require_row_alignment(left: Any, right: Any, name: str) -> None:
     left_rows = int(left.blocks[0].block_input.shape[0])
     right_rows = int(right.blocks[0].block_input.shape[0])
@@ -405,11 +440,7 @@ def _row_quotas(lengths: Sequence[int], max_rows: int) -> tuple[int, ...]:
     if selected == total:
         return tuple(lengths)
     torch = _require_torch()
-    indices = (
-        torch.linspace(0, total - 1, steps=selected)
-        .round()
-        .to(torch.long)
-    )
+    indices = torch.linspace(0, total - 1, steps=selected).round().to(torch.long)
     quotas = []
     offset = 0
     for length in lengths:
@@ -422,9 +453,7 @@ def _evenly_sample_rows(torch: Any, rows: Any, count: int) -> Any:
     if count >= int(rows.shape[0]):
         return rows
     indices = (
-        torch.linspace(0, int(rows.shape[0]) - 1, steps=count)
-        .round()
-        .to(torch.long)
+        torch.linspace(0, int(rows.shape[0]) - 1, steps=count).round().to(torch.long)
     )
     return rows.index_select(0, indices)
 
@@ -447,14 +476,19 @@ def _copy_projected_rows(
     torch: Any,
     source_weight: Any,
     target_weight: Any,
-    coordinates: CoordinateMap,
+    coordinates: Any,
     chunk_size: int,
 ) -> None:
     if int(source_weight.shape[0]) != int(target_weight.shape[0]):
         raise BlankBootstrapError(
             "Source and target vocabulary operators must have equal row counts."
         )
-    expected = (int(source_weight.shape[0]), coordinates.target_dim)
+    target_dim = (
+        coordinates.target_width
+        if isinstance(coordinates, FeatureFoldMap)
+        else coordinates.target_dim
+    )
+    expected = (int(source_weight.shape[0]), target_dim)
     if tuple(target_weight.shape) != expected:
         raise BlankBootstrapError(
             f"Target vocabulary operator must have shape {expected}."
@@ -462,7 +496,7 @@ def _copy_projected_rows(
     with torch.no_grad():
         for start in range(0, int(source_weight.shape[0]), chunk_size):
             end = min(int(source_weight.shape[0]), start + chunk_size)
-            projected = encode_coordinates(source_weight[start:end], coordinates)
+            projected = _encode_rows(source_weight[start:end], coordinates)
             target_weight[start:end].copy_(projected.to(target_weight))
 
 
@@ -472,7 +506,7 @@ def _initialize_embedding_and_head(
     target_model: Any,
     source_layout: DecoderLayout,
     target_layout: DecoderLayout,
-    residual_coordinates: CoordinateMap,
+    residual_coordinates: Any,
     source_trace: FlattenedTransportTrace,
     target_calibration_inputs: Mapping[str, Any] | Any,
     trace_pooling: Literal["token_rows", "mean", "last_valid"],
@@ -538,7 +572,7 @@ def _initialize_learned_positions(
     source_trace: FlattenedTransportTrace,
     target_calibration_inputs: Mapping[str, Any] | Any,
     trace_pooling: Literal["token_rows", "mean", "last_valid"],
-    residual_coordinates: CoordinateMap,
+    residual_coordinates: Any,
     reports: dict[str, Any],
 ) -> None:
     assert target_layout.embeddings.position_path is not None
@@ -554,7 +588,7 @@ def _initialize_learned_positions(
                 source_layout.embeddings.position_path,
             )
             rows = min(source_position.weight.shape[0], target_position.weight.shape[0])
-            projected = encode_coordinates(
+            projected = _encode_rows(
                 source_position.weight[:rows],
                 residual_coordinates,
             )
@@ -570,7 +604,7 @@ def _initialize_learned_positions(
             target_tokens = (
                 target_model.get_input_embeddings().weight.detach().cpu()[input_ids]
             )
-            desired = encode_coordinates(
+            desired = _encode_rows(
                 source_trace.blocks[0].block_input,
                 residual_coordinates,
             )
@@ -600,15 +634,24 @@ def _fit_target_block(
     trace_pooling: Literal["token_rows", "mean", "last_valid"],
     target_index: int,
     source_span: tuple[int, ...],
-    residual_coordinates: CoordinateMap,
+    residual_coordinates: Any,
     ridge: float,
     max_coordinate_rows: int,
     reports: dict[str, Any],
 ) -> None:
     target_block_layout = target_layout.blocks[target_index]
-    current = _trace_rows(target_model, target_calibration_inputs, trace_pooling)
+
+    def current_trace() -> Any:
+        return _target_trace_rows(
+            target_model,
+            target_calibration_inputs,
+            trace_pooling,
+            block_index=target_index,
+        )
+
+    current = current_trace()
     _require_row_alignment(source_trace, current, "calibration")
-    target_block = current.blocks[target_index]
+    target_block = current.block
     source_blocks = [source_trace.blocks[index] for index in source_span]
 
     desired_attention_norm = _mean_projected(
@@ -632,8 +675,8 @@ def _fit_target_block(
     )
     reports[f"block.{target_index}.attention.norm"] = _fit_summary(attention_norm_fit)
 
-    current = _trace_rows(target_model, target_calibration_inputs, trace_pooling)
-    target_block = current.blocks[target_index]
+    current = current_trace()
+    target_block = current.block
     source_q_rows, source_k_rows, source_v_rows = (
         _effective_source_attention_projection_rows(
             torch,
@@ -712,8 +755,8 @@ def _fit_target_block(
         for name, fit in (("query", q_fit), ("key", k_fit), ("value", v_fit)):
             reports[f"block.{target_index}.attention.{name}"] = _fit_summary(fit)
 
-    current = _trace_rows(target_model, target_calibration_inputs, trace_pooling)
-    target_block = current.blocks[target_index]
+    current = current_trace()
+    target_block = current.block
     desired_attention_delta = _sum_projected(
         torch,
         source_blocks,
@@ -742,8 +785,8 @@ def _fit_target_block(
     )
     reports[f"block.{target_index}.attention.output"] = _fit_summary(output_fit)
 
-    current = _trace_rows(target_model, target_calibration_inputs, trace_pooling)
-    target_block = current.blocks[target_index]
+    current = current_trace()
+    target_block = current.block
     desired_mlp_norm = _mean_projected(
         torch,
         source_blocks,
@@ -765,8 +808,8 @@ def _fit_target_block(
     )
     reports[f"block.{target_index}.mlp.norm"] = _fit_summary(mlp_norm_fit)
 
-    current = _trace_rows(target_model, target_calibration_inputs, trace_pooling)
-    target_block = current.blocks[target_index]
+    current = current_trace()
+    target_block = current.block
     mlp_feature_rows = _source_mlp_feature_rows(
         torch,
         source_blocks,
@@ -776,9 +819,7 @@ def _fit_target_block(
         mlp_feature_rows,
         target_block_layout.mlp.intermediate_size,
     )
-    reports[f"block.{target_index}.mlp.feature_fold"] = (
-        mlp_coordinates.report.as_dict()
-    )
+    reports[f"block.{target_index}.mlp.feature_fold"] = mlp_coordinates.report.as_dict()
     target_mlp = read_mlp_operators(target_model, target_block_layout)
     if target_block_layout.mlp.kind == "dense":
         desired_input = _mean_source_mlp_producer(
@@ -839,9 +880,9 @@ def _fit_target_block(
         reports[f"block.{target_index}.mlp.up"] = _fit_summary(up_fit)
     write_mlp_operators(target_model, target_block_layout, target_mlp)
 
-    current = _trace_rows(target_model, target_calibration_inputs, trace_pooling)
-    target_block = current.blocks[target_index]
-    desired_endpoint = encode_coordinates(
+    current = current_trace()
+    target_block = current.block
+    desired_endpoint = _encode_rows(
         source_blocks[-1].block_output,
         residual_coordinates,
     )
@@ -877,17 +918,23 @@ def _fit_final_interface(
     source_trace: FlattenedTransportTrace,
     target_calibration_inputs: Mapping[str, Any] | Any,
     trace_pooling: Literal["token_rows", "mean", "last_valid"],
-    residual_coordinates: CoordinateMap,
+    residual_coordinates: Any,
     ridge: float,
     fit_full_lm_head: bool,
     max_full_head_fit_elements: int,
     reports: dict[str, Any],
 ) -> None:
     del source_model, source_layout
-    current = _trace_rows(target_model, target_calibration_inputs, trace_pooling)
+    last_block_index = target_layout.layer_count - 1
+    current = _target_trace_rows(
+        target_model,
+        target_calibration_inputs,
+        trace_pooling,
+        block_index=last_block_index,
+    )
     target_norm = resolve_module(target_model, target_layout.final_norm.path)
     norm_input = _norm_input_from_module_trace(current)
-    desired_norm = encode_coordinates(
+    desired_norm = _encode_rows(
         source_trace.final_norm_output,
         residual_coordinates,
     )
@@ -902,9 +949,15 @@ def _fit_final_interface(
     _write_norm_fit(target_model, target_layout.final_norm.path, norm_fit)
     reports["decoder.final_norm"] = _fit_summary(norm_fit)
 
-    current = _trace_rows(target_model, target_calibration_inputs, trace_pooling)
     head = target_model.get_output_embeddings()
     if fit_full_lm_head:
+        current = _target_trace_rows(
+            target_model,
+            target_calibration_inputs,
+            trace_pooling,
+            block_index=last_block_index,
+            capture_final_norm=True,
+        )
         elements = int(current.final_norm_output.shape[0]) * int(
             source_trace.logits.shape[1]
         )
@@ -1105,9 +1158,7 @@ def _source_mlp_feature_rows(
         values = [getattr(block, field) for block in source_blocks]
         present = [value for value in values if value is not None]
         if present:
-            matrices.append(
-                _sample_concatenated_rows(torch, present, max_rows)
-            )
+            matrices.append(_sample_concatenated_rows(torch, present, max_rows))
     if not matrices:
         raise BlankBootstrapError("Source trace has no MLP feature rows to fold.")
     return tuple(matrices)
