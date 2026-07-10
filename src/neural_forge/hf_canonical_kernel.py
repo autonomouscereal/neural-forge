@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from dataclasses import dataclass
 from typing import Any, Literal, Sequence
 
@@ -25,6 +26,7 @@ ExactnessClass = Literal[
 
 _TRACE_EXACT_RELATIVE_RMSE_TOLERANCE = 1e-8
 _KERNEL_EXACT_RETAINED_FRACTION_TOLERANCE = 1e-12
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
 
 class CanonicalKernelError(ValueError):
@@ -32,9 +34,156 @@ class CanonicalKernelError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class CanonicalRowIdentity:
+    """Architecture-neutral proof that parent rows describe the same examples."""
+
+    split_name: str
+    pooling: Literal["mean", "last_valid", "token_rows"]
+    row_ids: tuple[str, ...]
+    raw_prompt_sha256: tuple[str, ...]
+    corpus_sha256: str
+    tokenizer_fingerprint: str
+    cache_fingerprint: str
+
+    def __post_init__(self) -> None:
+        split = _nonempty_text(self.split_name, "split_name")
+        if self.pooling not in {"mean", "last_valid", "token_rows"}:
+            raise CanonicalKernelError(
+                "Canonical row pooling must be mean, last_valid, or token_rows."
+            )
+        row_ids = tuple(self.row_ids)
+        prompt_hashes = tuple(self.raw_prompt_sha256)
+        if not row_ids or len(row_ids) != len(prompt_hashes):
+            raise CanonicalKernelError(
+                "Canonical row IDs and raw-prompt hashes must be nonempty and aligned."
+            )
+        if any(not isinstance(value, str) or not value for value in row_ids):
+            raise CanonicalKernelError("Canonical row IDs must be nonempty strings.")
+        if len(set(row_ids)) != len(row_ids):
+            raise CanonicalKernelError("Canonical row IDs must be unique and ordered.")
+        for index, digest in enumerate(prompt_hashes):
+            _sha256(digest, f"raw_prompt_sha256[{index}]")
+        object.__setattr__(self, "split_name", split)
+        object.__setattr__(self, "row_ids", row_ids)
+        object.__setattr__(self, "raw_prompt_sha256", prompt_hashes)
+        object.__setattr__(
+            self,
+            "corpus_sha256",
+            _sha256(self.corpus_sha256, "corpus_sha256"),
+        )
+        object.__setattr__(
+            self,
+            "tokenizer_fingerprint",
+            _sha256(self.tokenizer_fingerprint, "tokenizer_fingerprint"),
+        )
+        object.__setattr__(
+            self,
+            "cache_fingerprint",
+            _sha256(self.cache_fingerprint, "cache_fingerprint"),
+        )
+
+    @property
+    def alignment_fingerprint(self) -> str:
+        return _fingerprint(
+            {
+                "schema": "neural-forge-canonical-row-alignment-v1",
+                "split_name": self.split_name,
+                "pooling": self.pooling,
+                "row_ids": list(self.row_ids),
+                "raw_prompt_sha256": list(self.raw_prompt_sha256),
+                "corpus_sha256": self.corpus_sha256,
+            }
+        )
+
+    def report(self) -> dict[str, Any]:
+        return {
+            "split_name": self.split_name,
+            "pooling": self.pooling,
+            "row_count": len(self.row_ids),
+            "row_ids_sha256": _fingerprint(list(self.row_ids)),
+            "raw_prompt_inventory_sha256": _fingerprint(
+                list(self.raw_prompt_sha256)
+            ),
+            "corpus_sha256": self.corpus_sha256,
+            "tokenizer_fingerprint": self.tokenizer_fingerprint,
+            "cache_fingerprint": self.cache_fingerprint,
+            "alignment_fingerprint": self.alignment_fingerprint,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class CanonicalDepthCover:
+    """Explicit monotone child boundaries covering every source layer once."""
+
+    boundary_indices: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        boundaries = tuple(self.boundary_indices)
+        if len(boundaries) < 2:
+            raise CanonicalKernelError(
+                "A canonical depth cover needs at least two boundaries."
+            )
+        if any(isinstance(value, bool) or not isinstance(value, int) for value in boundaries):
+            raise CanonicalKernelError(
+                "Canonical depth-cover boundaries must be integers."
+            )
+        if boundaries[0] != 0 or boundaries[-1] <= 0:
+            raise CanonicalKernelError(
+                "A canonical depth cover must start at zero and cover source layers."
+            )
+        if any(left > right for left, right in zip(boundaries, boundaries[1:])):
+            raise CanonicalKernelError(
+                "Canonical depth-cover boundaries must be monotone."
+            )
+        object.__setattr__(self, "boundary_indices", boundaries)
+
+    @property
+    def source_layer_count(self) -> int:
+        return self.boundary_indices[-1]
+
+    @property
+    def target_layer_count(self) -> int:
+        return len(self.boundary_indices) - 1
+
+    @property
+    def source_spans(self) -> tuple[tuple[int, ...], ...]:
+        return tuple(
+            tuple(range(start, stop))
+            for start, stop in zip(
+                self.boundary_indices[:-1],
+                self.boundary_indices[1:],
+                strict=True,
+            )
+        )
+
+    def report(self) -> dict[str, Any]:
+        return {
+            "boundary_indices": list(self.boundary_indices),
+            "source_spans": [list(span) for span in self.source_spans],
+            "source_layer_count": self.source_layer_count,
+            "target_layer_count": self.target_layer_count,
+            "source_layers_covered_exactly_once": True,
+            "empty_identity_spans": sum(not span for span in self.source_spans),
+        }
+
+
+def build_proportional_depth_cover(
+    source_layer_count: int,
+    target_layer_count: int,
+) -> CanonicalDepthCover:
+    source = _positive_int(source_layer_count, "source_layer_count")
+    target = _positive_int(target_layer_count, "target_layer_count")
+    return CanonicalDepthCover(
+        tuple(round(boundary * source / target) for boundary in range(target + 1))
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class CanonicalParentTrace:
     name: str
     layer_states: tuple[Any, ...]
+    row_identity: CanonicalRowIdentity
+    depth_cover: CanonicalDepthCover
     weight: float = 1.0
 
 
@@ -125,6 +274,9 @@ class CanonicalKernelLayer:
 class CanonicalKernelPlan:
     parent_names: tuple[str, ...]
     normalized_parent_weights: tuple[float, ...]
+    parent_row_identities: tuple[CanonicalRowIdentity, ...]
+    source_depth_covers: tuple[CanonicalDepthCover, ...]
+    row_alignment_fingerprint: str
     target_layer_count: int
     target_hidden_size: int
     row_count: int
@@ -147,6 +299,13 @@ class CanonicalKernelPlan:
             "method": "weighted-row-kernel-depth-aligned-dual-ridge",
             "parent_names": list(self.parent_names),
             "normalized_parent_weights": list(self.normalized_parent_weights),
+            "row_alignment_fingerprint": self.row_alignment_fingerprint,
+            "parent_row_identities": [
+                identity.report() for identity in self.parent_row_identities
+            ],
+            "source_depth_covers": [
+                cover.report() for cover in self.source_depth_covers
+            ],
             "target_layer_count": self.target_layer_count,
             "target_boundary_count": len(self.layers),
             "target_hidden_size": self.target_hidden_size,
@@ -212,12 +371,22 @@ def build_canonical_kernel_plan(
     if not isinstance(parents, Sequence) or not parents:
         raise CanonicalKernelError("parents must contain at least one trace.")
 
-    normalized_parents = tuple(
-        _validate_parent(torch, parent, index) for index, parent in enumerate(parents)
+    normalized_parents = _validated_sorted_parents(
+        torch,
+        parents,
+        target_layer_count=target_layer_count,
     )
     names = tuple(parent.name for parent in normalized_parents)
     if len(set(names)) != len(names):
         raise CanonicalKernelError("Canonical parent names must be unique.")
+    alignment_fingerprints = {
+        parent.row_identity.alignment_fingerprint for parent in normalized_parents
+    }
+    if len(alignment_fingerprints) != 1:
+        raise CanonicalKernelError(
+            "Canonical parents do not describe the same ordered raw-prompt rows."
+        )
+    row_alignment_fingerprint = next(iter(alignment_fingerprints))
     raw_weights = torch.tensor(
         [parent.weight for parent in normalized_parents],
         dtype=torch.float64,
@@ -234,8 +403,7 @@ def build_canonical_kernel_plan(
         )
 
     source_indices = tuple(
-        _depth_indices(len(parent.layer_states), target_layer_count)
-        for parent in normalized_parents
+        parent.depth_cover.boundary_indices for parent in normalized_parents
     )
     layers = []
     previous_rows = None
@@ -308,6 +476,7 @@ def build_canonical_kernel_plan(
             "target_layer_count": target_layer_count,
             "target_hidden_size": target_hidden_size,
             "row_count": row_count,
+            "row_alignment_fingerprint": row_alignment_fingerprint,
             "source_depth_indices": [list(indices) for indices in source_indices],
             "layer_fingerprints": [layer.fingerprint for layer in layers],
         }
@@ -315,6 +484,11 @@ def build_canonical_kernel_plan(
     return CanonicalKernelPlan(
         parent_names=names,
         normalized_parent_weights=tuple(float(value) for value in normalized_weights),
+        parent_row_identities=tuple(
+            parent.row_identity for parent in normalized_parents
+        ),
+        source_depth_covers=tuple(parent.depth_cover for parent in normalized_parents),
+        row_alignment_fingerprint=row_alignment_fingerprint,
         target_layer_count=target_layer_count,
         target_hidden_size=target_hidden_size,
         row_count=row_count,
@@ -332,24 +506,58 @@ def build_canonical_boundary_splits(
     ridge: float = 1e-6,
     center_rows: bool = True,
 ) -> CanonicalBoundarySplits:
+    torch = _require_torch()
     if len(calibration_parents) != len(validation_parents):
         raise CanonicalKernelError(
             "Calibration and validation parent inventories must have equal lengths."
         )
-    calibration_names = tuple(parent.name for parent in calibration_parents)
-    validation_names = tuple(parent.name for parent in validation_parents)
+    ordered_calibration = _validated_sorted_parents(
+        torch,
+        calibration_parents,
+        target_layer_count=target_layer_count,
+    )
+    ordered_validation = _validated_sorted_parents(
+        torch,
+        validation_parents,
+        target_layer_count=target_layer_count,
+    )
+    calibration_names = tuple(parent.name for parent in ordered_calibration)
+    validation_names = tuple(parent.name for parent in ordered_validation)
     if calibration_names != validation_names:
         raise CanonicalKernelError(
             "Calibration and validation parent names must have the same order."
         )
-    calibration_weights = tuple(float(parent.weight) for parent in calibration_parents)
-    validation_weights = tuple(float(parent.weight) for parent in validation_parents)
+    calibration_weights = tuple(float(parent.weight) for parent in ordered_calibration)
+    validation_weights = tuple(float(parent.weight) for parent in ordered_validation)
     if calibration_weights != validation_weights:
         raise CanonicalKernelError(
             "Calibration and validation parent weights must match exactly."
         )
+    validation_alignments = {
+        parent.row_identity.alignment_fingerprint for parent in ordered_validation
+    }
+    if len(validation_alignments) != 1:
+        raise CanonicalKernelError(
+            "Validation parents do not describe the same ordered raw-prompt rows."
+        )
+    for calibration, validation in zip(
+        ordered_calibration,
+        ordered_validation,
+        strict=True,
+    ):
+        if (
+            calibration.row_identity.tokenizer_fingerprint
+            != validation.row_identity.tokenizer_fingerprint
+        ):
+            raise CanonicalKernelError(
+                "A parent's calibration and validation tokenizer fingerprints differ."
+            )
+        if calibration.depth_cover != validation.depth_cover:
+            raise CanonicalKernelError(
+                "A parent's calibration and validation depth covers differ."
+            )
     plan = build_canonical_kernel_plan(
-        calibration_parents,
+        ordered_calibration,
         target_layer_count=target_layer_count,
         target_hidden_size=target_hidden_size,
         ridge=ridge,
@@ -358,7 +566,7 @@ def build_canonical_boundary_splits(
     validation_boundaries = []
     for layer in plan.layers:
         rows = []
-        for parent, mapping in zip(validation_parents, layer.parent_maps, strict=True):
+        for parent, mapping in zip(ordered_validation, layer.parent_maps, strict=True):
             if mapping.source_layer_index >= len(parent.layer_states):
                 raise CanonicalKernelError(
                     "A validation parent is missing a calibration-selected boundary."
@@ -386,6 +594,8 @@ def canonical_parent_trace_from_cache(
     cache: Any,
     *,
     name: str,
+    row_identity: CanonicalRowIdentity,
+    depth_cover: CanonicalDepthCover,
     weight: float = 1.0,
     pooling: Literal["mean", "last_valid"] = "last_valid",
 ) -> CanonicalParentTrace:
@@ -394,6 +604,19 @@ def canonical_parent_trace_from_cache(
     torch = _require_torch()
     if pooling not in {"mean", "last_valid"}:
         raise CanonicalKernelError("pooling must be mean or last_valid.")
+    if not isinstance(row_identity, CanonicalRowIdentity):
+        raise CanonicalKernelError("row_identity must be a CanonicalRowIdentity.")
+    if row_identity.pooling != pooling:
+        raise CanonicalKernelError(
+            "row_identity pooling does not match cache pooling."
+        )
+    if not isinstance(depth_cover, CanonicalDepthCover):
+        raise CanonicalKernelError("depth_cover must be a CanonicalDepthCover.")
+    cache_key = getattr(cache, "cache_key", None)
+    if cache_key is not None and cache_key != row_identity.cache_fingerprint:
+        raise CanonicalKernelError(
+            "row_identity cache fingerprint does not match the opened cache."
+        )
     iterator = getattr(cache, "iter_batches", None)
     if not callable(iterator):
         raise CanonicalKernelError("cache must expose iter_batches().")
@@ -453,11 +676,22 @@ def canonical_parent_trace_from_cache(
         batch_count += 1
     if batch_count == 0 or expected_indices is None:
         raise CanonicalKernelError("The parent trace cache contains no batches.")
+    pooled_row_count = sum(int(rows.shape[0]) for rows in by_layer[expected_indices[0]])
+    if pooled_row_count != len(row_identity.row_ids):
+        raise CanonicalKernelError(
+            "row_identity row count does not match pooled cache rows."
+        )
+    if len(expected_indices) != depth_cover.source_layer_count + 1:
+        raise CanonicalKernelError(
+            "depth_cover source layer count does not match cached boundaries."
+        )
     return CanonicalParentTrace(
         name=name,
         layer_states=tuple(
             torch.cat(by_layer[index], dim=0).contiguous() for index in expected_indices
         ),
+        row_identity=row_identity,
+        depth_cover=depth_cover,
         weight=_finite_positive(weight, "weight"),
     )
 
@@ -505,7 +739,31 @@ def fuse_parent_rows(
     return result.contiguous()
 
 
-def _validate_parent(torch: Any, value: Any, index: int) -> CanonicalParentTrace:
+def _validated_sorted_parents(
+    torch: Any,
+    parents: Sequence[CanonicalParentTrace],
+    *,
+    target_layer_count: int,
+) -> tuple[CanonicalParentTrace, ...]:
+    normalized = tuple(
+        _validate_parent(
+            torch,
+            parent,
+            index,
+            target_layer_count=target_layer_count,
+        )
+        for index, parent in enumerate(parents)
+    )
+    return tuple(sorted(normalized, key=lambda parent: parent.name))
+
+
+def _validate_parent(
+    torch: Any,
+    value: Any,
+    index: int,
+    *,
+    target_layer_count: int,
+) -> CanonicalParentTrace:
     if not isinstance(value, CanonicalParentTrace):
         raise CanonicalKernelError(f"parents[{index}] must be a CanonicalParentTrace.")
     if not isinstance(value.name, str) or not value.name.strip():
@@ -519,20 +777,32 @@ def _validate_parent(torch: Any, value: Any, index: int) -> CanonicalParentTrace
         _matrix(torch, state, f"parents[{index}].layer_states[{layer}]")
         for layer, state in enumerate(value.layer_states)
     )
+    if not isinstance(value.row_identity, CanonicalRowIdentity):
+        raise CanonicalKernelError(
+            f"parents[{index}].row_identity must be a CanonicalRowIdentity."
+        )
+    if len(value.row_identity.row_ids) != int(states[0].shape[0]):
+        raise CanonicalKernelError(
+            f"parents[{index}] row identity does not match its hidden-state rows."
+        )
+    if not isinstance(value.depth_cover, CanonicalDepthCover):
+        raise CanonicalKernelError(
+            f"parents[{index}].depth_cover must be a CanonicalDepthCover."
+        )
+    if value.depth_cover.target_layer_count != target_layer_count:
+        raise CanonicalKernelError(
+            f"parents[{index}] depth cover does not match target_layer_count."
+        )
+    if value.depth_cover.source_layer_count != len(states) - 1:
+        raise CanonicalKernelError(
+            f"parents[{index}] depth cover does not match its source boundaries."
+        )
     return CanonicalParentTrace(
         name=value.name.strip(),
         layer_states=states,
+        row_identity=value.row_identity,
+        depth_cover=value.depth_cover,
         weight=weight,
-    )
-
-
-def _depth_indices(
-    source_boundary_count: int, target_layer_count: int
-) -> tuple[int, ...]:
-    source_last = source_boundary_count - 1
-    return tuple(
-        int(round(boundary * source_last / target_layer_count))
-        for boundary in range(target_layer_count + 1)
     )
 
 
@@ -707,6 +977,18 @@ def _finite_positive(value: Any, name: str) -> float:
     return result
 
 
+def _nonempty_text(value: Any, name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise CanonicalKernelError(f"{name} must be a nonempty string.")
+    return value.strip()
+
+
+def _sha256(value: Any, name: str) -> str:
+    if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
+        raise CanonicalKernelError(f"{name} must be a lowercase SHA-256 digest.")
+    return value
+
+
 def _tensor_sha256(value: Any) -> str:
     contiguous = (
         value.detach().to(device="cpu", dtype=_require_torch().float64).contiguous()
@@ -745,12 +1027,15 @@ __all__ = [
     "CanonicalBoundarySplits",
     "CanonicalKernelLayer",
     "CanonicalKernelPlan",
+    "CanonicalDepthCover",
     "CanonicalParentMap",
     "CanonicalParentTrace",
+    "CanonicalRowIdentity",
     "ExactnessClass",
     "apply_parent_map",
     "build_canonical_boundary_splits",
     "build_canonical_kernel_plan",
+    "build_proportional_depth_cover",
     "canonical_parent_trace_from_cache",
     "fuse_parent_rows",
 ]
