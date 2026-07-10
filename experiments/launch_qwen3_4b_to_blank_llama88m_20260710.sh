@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT=/home/cereal/model-surgery-lab/neural-forge-pivot
 RUN_ROOT=/mnt/ai_data/neural-forge/cross_family_blank_20260710
-TAG=qwen3_4b_to_blank_llama146m_sparsefold_gpu0_r1_20260710
+TAG=qwen3_4b_to_blank_llama88m_sparsefold_gpu0_r2_20260710
 RUN_DIR="$RUN_ROOT/$TAG"
 PY=/home/cereal/model-surgery-lab/venv/bin/python
 GPU=GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561
@@ -37,7 +37,7 @@ mkdir -p "$RUN_ROOT"
   --num-key-value-heads 1 \
   --head-dim 64 \
   --max-position-embeddings 32768 \
-  --exact-parameter-budget 146196864 \
+  --exact-parameter-budget 87853440 \
   --seed 0 \
   --dtype float16 \
   --device cuda:0 \

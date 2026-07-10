@@ -28,14 +28,14 @@ config = transformers.LlamaConfig(
     num_key_value_heads=1,
     head_dim=64,
     max_position_embeddings=40960,
-    tie_word_embeddings=False,
+    tie_word_embeddings=True,
     attention_bias=False,
     mlp_bias=False,
 )
 model = transformers.LlamaForCausalLM(config)
 layout = build_decoder_layout(model)
 count = sum(parameter.numel() for parameter in model.parameters())
-assert count == 146196864, count
+assert count == 87853440, count
 assert layout.layer_count == 24
 assert callable(bootstrap_blank_decoder_checkpoint)
 assert callable(collect_hf_targeted_trace)
