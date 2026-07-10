@@ -11,6 +11,7 @@ from neural_forge.hf_qwen_compose import (
     _fit_linear_prompt_split,
     _packed_donor_attention_output,
     _packed_donor_mlp_output,
+    _path_materialization_gate,
     _validation_gate,
     build_contiguous_pair_plan,
     build_coupled_swiglu_packing,
@@ -21,6 +22,80 @@ from neural_forge.hf_qwen_compose import (
     prior_preserving_trace_scaled_ridge,
     prompt_level_split,
 )
+
+
+def _path_gate_report(
+    *,
+    baseline_rmse: float,
+    fitted_rmse: float,
+    baseline_cosine: float = 0.7,
+    fitted_cosine: float = 0.72,
+) -> dict:
+    return {
+        "diagnostics": {
+            "held_out": {
+                "approximate": True,
+                "baseline": {
+                    "absolute_rmse": baseline_rmse,
+                    "cosine_similarity_mean": baseline_cosine,
+                },
+                "fitted": {
+                    "absolute_rmse": fitted_rmse,
+                    "cosine_similarity_mean": fitted_cosine,
+                },
+            }
+        }
+    }
+
+
+def test_path_materialization_gate_accepts_real_held_out_gain() -> None:
+    gate = _path_materialization_gate(
+        _path_gate_report(baseline_rmse=1.0, fitted_rmse=0.8),
+        min_relative_improvement=0.1,
+        max_cosine_drop=0.0,
+    )
+
+    assert gate["accepted"] is True
+    assert gate["reverted"] is False
+    assert gate["materialization_mode"] == "all-path-aggregate"
+    assert gate["relative_rmse_improvement"] == pytest.approx(0.2)
+
+
+@pytest.mark.parametrize(
+    ("report", "reason"),
+    [
+        (
+            _path_gate_report(baseline_rmse=1.0, fitted_rmse=1.01),
+            "held_out_absolute_rmse_not_improved",
+        ),
+        (
+            _path_gate_report(baseline_rmse=1.0, fitted_rmse=0.99),
+            "held_out_relative_improvement_below_threshold",
+        ),
+        (
+            _path_gate_report(
+                baseline_rmse=1.0,
+                fitted_rmse=0.8,
+                baseline_cosine=0.8,
+                fitted_cosine=0.79,
+            ),
+            "held_out_cosine_drop_above_threshold",
+        ),
+    ],
+)
+def test_path_materialization_gate_reverts_harmful_or_weak_fit(
+    report: dict, reason: str
+) -> None:
+    gate = _path_materialization_gate(
+        report,
+        min_relative_improvement=0.02,
+        max_cosine_drop=0.0,
+    )
+
+    assert gate["accepted"] is False
+    assert gate["reverted"] is True
+    assert gate["reason"] == reason
+    assert gate["materialization_mode"] == "selected-native-fallback"
 
 
 def test_qwen_pair_compose_cli_matches_detached_launcher_surface(monkeypatch) -> None:

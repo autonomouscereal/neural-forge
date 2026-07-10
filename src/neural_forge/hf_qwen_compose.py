@@ -1247,7 +1247,11 @@ def _pack_attention_pair(
             start = target_group * ratio * head_dim
             end = start + ratio * head_dim
             projected_output[:, start:end] = aggregate[target_group].t()
-        output_reason = "post-softmax-all-path-merged-o-pair-pack"
+        output_reason = (
+            "post-softmax-all-path-merged-o-pair-pack"
+            if path_fold["materialization_mode"] == "all-path-aggregate"
+            else "post-softmax-selected-native-o-pair-pack"
+        )
     tracker.write(target_spec["o"].weight, projected_output, output_reason)
     target_o_bias = getattr(target_spec["o"], "bias", None)
     if target_o_bias is not None:
@@ -1289,7 +1293,12 @@ def _pack_attention_pair(
             )
     plan["selection"] = selection_scores
     if path_fold is not None:
-        plan["selection_source"] = "post-softmax-all-path-decomposition"
+        plan["selection_source"] = (
+            "post-softmax-all-path-decomposition"
+            if path_fold["materialization_mode"] == "all-path-aggregate"
+            else "post-softmax-selected-native-path-fallback"
+        )
+        plan["path_materialization_mode"] = path_fold["materialization_mode"]
         plan["post_nonlinearity_path_decomposition"] = path_fold["report"]
     return plan
 
@@ -1401,7 +1410,11 @@ def _pack_swiglu_pair(
                 f"SwiGLU path aggregate shape must be {expected}; got {tuple(aggregate.shape)}."
             )
         projected_down.copy_(aggregate.t())
-        down_reason = "post-swiglu-all-path-merged-down-pair-pack"
+        down_reason = (
+            "post-swiglu-all-path-merged-down-pair-pack"
+            if path_fold["materialization_mode"] == "all-path-aggregate"
+            else "post-swiglu-selected-native-down-pair-pack"
+        )
     tracker.write(
         target_spec["down"].weight,
         projected_down,
@@ -1429,7 +1442,12 @@ def _pack_swiglu_pair(
         )
     plan["selection_criterion"] = score_criterion
     if path_fold is not None:
-        plan["selection_criterion"] = "post-swiglu-all-path-decomposition"
+        plan["selection_criterion"] = (
+            "post-swiglu-all-path-decomposition"
+            if path_fold["materialization_mode"] == "all-path-aggregate"
+            else "post-swiglu-selected-native-path-fallback"
+        )
+        plan["path_materialization_mode"] = path_fold["materialization_mode"]
         plan["post_nonlinearity_path_decomposition"] = path_fold["report"]
     return plan
 
@@ -2147,6 +2165,60 @@ def _build_logit_observable_pair_bases(
     }
 
 
+def _path_materialization_gate(
+    report: dict[str, Any],
+    *,
+    min_relative_improvement: float,
+    max_cosine_drop: float,
+) -> dict[str, Any]:
+    held_out = report["diagnostics"]["held_out"]
+    baseline = held_out["baseline"]
+    fitted = held_out["fitted"]
+    baseline_rmse = float(baseline["absolute_rmse"])
+    fitted_rmse = float(fitted["absolute_rmse"])
+    baseline_cosine = float(baseline["cosine_similarity_mean"])
+    fitted_cosine = float(fitted["cosine_similarity_mean"])
+    values = (baseline_rmse, fitted_rmse, baseline_cosine, fitted_cosine)
+    finite = all(math.isfinite(value) for value in values)
+    scale = max(abs(baseline_rmse), 1e-12)
+    relative_improvement = (baseline_rmse - fitted_rmse) / scale
+    cosine_drop = baseline_cosine - fitted_cosine
+    rmse_improved = (
+        finite
+        and fitted_rmse < baseline_rmse
+        and relative_improvement >= float(min_relative_improvement)
+    )
+    cosine_preserved = finite and cosine_drop <= float(max_cosine_drop)
+    accepted = bool(rmse_improved and cosine_preserved)
+    if not finite:
+        reason = "nonfinite_held_out_metrics"
+    elif fitted_rmse >= baseline_rmse:
+        reason = "held_out_absolute_rmse_not_improved"
+    elif relative_improvement < float(min_relative_improvement):
+        reason = "held_out_relative_improvement_below_threshold"
+    elif not cosine_preserved:
+        reason = "held_out_cosine_drop_above_threshold"
+    else:
+        reason = "held_out_response_improved"
+    return {
+        "accepted": accepted,
+        "reverted": not accepted,
+        "reason": reason,
+        "materialization_mode": (
+            "all-path-aggregate" if accepted else "selected-native-fallback"
+        ),
+        "held_out_approximate": bool(held_out.get("approximate", False)),
+        "baseline_absolute_rmse": baseline_rmse,
+        "fitted_absolute_rmse": fitted_rmse,
+        "relative_rmse_improvement": relative_improvement,
+        "minimum_relative_improvement": float(min_relative_improvement),
+        "baseline_cosine_similarity": baseline_cosine,
+        "fitted_cosine_similarity": fitted_cosine,
+        "cosine_drop": cosine_drop,
+        "maximum_cosine_drop": float(max_cosine_drop),
+    }
+
+
 def _build_post_nonlinearity_path_folds(
     torch,
     donor,
@@ -2163,6 +2235,8 @@ def _build_post_nonlinearity_path_folds(
     split_seed: int,
     selection_sketch_size: int,
     interpolation_mode: str,
+    min_relative_improvement: float,
+    max_cosine_drop: float,
 ) -> dict[int, dict[str, Any]]:
     from neural_forge.hf_qwen_path_decomposition import (
         compress_post_nonlinearity_paths,
@@ -2241,6 +2315,17 @@ def _build_post_nonlinearity_path_folds(
             key=lambda index: (attention_selected[index] // donor_kv, index),
         )
         attention_order_tensor = torch.tensor(attention_order, dtype=torch.long)
+        attention_gate = _path_materialization_gate(
+            attention_result["report"],
+            min_relative_improvement=min_relative_improvement,
+            max_cosine_drop=max_cosine_drop,
+        )
+        attention_result["report"]["materialization_gate"] = attention_gate
+        attention_coefficients = (
+            attention_result["aggregate_output_coefficients"]
+            if attention_gate["accepted"]
+            else attention_result["selected_native_output_directions"]
+        )
 
         donor_intermediate = int(source_specs[0]["intermediate_size"])
         target_intermediate = int(target_spec["intermediate_size"])
@@ -2293,14 +2378,26 @@ def _build_post_nonlinearity_path_folds(
             key=lambda index: (mlp_selected[index] // donor_intermediate, index),
         )
         mlp_order_tensor = torch.tensor(mlp_order, dtype=torch.long)
+        mlp_gate = _path_materialization_gate(
+            mlp_result["report"],
+            min_relative_improvement=min_relative_improvement,
+            max_cosine_drop=max_cosine_drop,
+        )
+        mlp_result["report"]["materialization_gate"] = mlp_gate
+        mlp_coefficients = (
+            mlp_result["aggregate_output_coefficients"]
+            if mlp_gate["accepted"]
+            else mlp_result["selected_native_output_directions"]
+        )
         folds[target_index] = {
             "attention": {
                 "selected_kv_heads": [
                     attention_selected[index] % donor_kv for index in attention_order
                 ],
-                "aggregate_output_coefficients": attention_result[
-                    "aggregate_output_coefficients"
-                ].index_select(0, attention_order_tensor),
+                "aggregate_output_coefficients": attention_coefficients.index_select(
+                    0, attention_order_tensor
+                ),
+                "materialization_mode": attention_gate["materialization_mode"],
                 "report": attention_result["report"],
             },
             "mlp": {
@@ -2311,9 +2408,10 @@ def _build_post_nonlinearity_path_folds(
                     ]
                     for index in mlp_order
                 ],
-                "aggregate_output_coefficients": mlp_result[
-                    "aggregate_output_coefficients"
-                ].index_select(0, mlp_order_tensor),
+                "aggregate_output_coefficients": mlp_coefficients.index_select(
+                    0, mlp_order_tensor
+                ),
+                "materialization_mode": mlp_gate["materialization_mode"],
                 "report": mlp_result["report"],
             },
         }
@@ -3855,6 +3953,8 @@ def initialize_qwen_pair_composition_models(
                     split_seed,
                     path_decomposition_sketch_size,
                     path_decomposition_interpolation_mode,
+                    min_relative_improvement,
+                    max_cosine_drop,
                 )
             del path_traces
             _compose_progress(
@@ -4074,6 +4174,11 @@ def initialize_qwen_pair_composition_models(
         "path_decomposition_interpolation_mode": (
             path_decomposition_interpolation_mode
         ),
+        "path_decomposition_materialization_gate": {
+            "minimum_relative_improvement": float(min_relative_improvement),
+            "maximum_cosine_drop": float(max_cosine_drop),
+            "fallback": "selected-native-output-directions",
+        },
         "path_trace": path_trace_report,
         "head_dim": int(donor_specs[0]["head_dim"]),
         "gqa_selected_full_head_coordinate_packing": True,
