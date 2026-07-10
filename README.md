@@ -29,6 +29,12 @@ native early-fusion multimodal training sandbox for real-model validation.
   depth.
 - `hf-search-compress`: automated merge-first width/depth candidate search with
   behavior gates.
+- `hf-qwen-build-target`: plan and materialize a seeded, config-only Qwen3
+  checkpoint at the closest reachable parameter count without loading child
+  pretrained weights.
+- `hf-qwen-pair-compose`: zero-gradient Qwen depth/width composition with exact
+  singleton/pair donor coverage, activation-costed span selection, transactional
+  path fits, and optional fixed-parent-anchor rollout refolding.
 - `hf-xfamily-vocab-merge` / `hf-sweep-xfamily`: constrained cross-family
   embedding/lm-head transplant through shared decoded-token anchors.
 - `hf-xfamily-mlp-merge` / `hf-sweep-xfamily-mlp`: constrained cross-family
@@ -39,10 +45,13 @@ native early-fusion multimodal training sandbox for real-model validation.
 - `hf-recover`: lightweight same-tokenizer KD/LM recovery after surgery.
 - `hf-eval`, `hf-gate`, and sweep commands: behavior checks so shape-valid
   checkpoints are not promoted blindly.
-- `native-vlm-demo`: tiny raw-patch plus text-token transformer for native
-  early-fusion multimodal experiments.
-- `hf-vision-graft`: train/evaluate a raw-patch image prefix directly against a
-  Hugging Face causal LM parent; no external vision encoder is used.
+- `raw_modality_tokens`: one shared 256-byte vocabulary plus ten framing tokens
+  for exact image, PCM audio, video, UTF-8/OCR, and quantized 3D serialization.
+  It adds normal embedding/head rows only, with no modality tower, projector,
+  adapter, bridge, optimizer, or runtime sidecar.
+- `native-vlm-demo` and `hf-vision-graft`: legacy raw-patch experiments. The HF
+  graft has no external vision encoder, but it does use a learned patch
+  projection and therefore is not the strict no-projector modality path.
 
 ## Roadmap
 
@@ -112,6 +121,49 @@ neural-forge hf-random-init runs/smollm2-135m-random `
   --tokenizer-model HuggingFaceTB/SmolLM2-135M `
   --seed 123 `
   --dtype float16
+```
+
+Create an exact seeded Qwen3 blank target with a user parameter budget:
+
+```powershell
+neural-forge hf-qwen-build-target Qwen/Qwen3-4B-Base runs/blank-qwen-600m `
+  --target-params 600000000 `
+  --hidden-sizes 1024 `
+  --intermediate-sizes 3072 `
+  --layer-counts 24 `
+  --query-head-counts 8 `
+  --key-value-head-counts 2 `
+  --head-dims 128 `
+  --seed 0
+```
+
+Fold a compatible Qwen donor into that blank target with activation-planned
+depth spans and no gradient recovery:
+
+```powershell
+neural-forge hf-qwen-pair-compose Qwen/Qwen3-4B-Base runs/blank-qwen-600m runs/folded-qwen-600m `
+  --adaptive-depth-spans `
+  --calibration-file calibration.jsonl `
+  --max-calibration-texts 256 `
+  --rollout-refold-rounds 0 `
+  --device cuda:0
+```
+
+The bounded progressive sidecar implements the current 4B to blank 1.41B to
+blank 600M to blank 158M schedule. It reuses content-addressed parent/stage
+evaluations and runs 1,000 behavior, 1,000 exact-generation, 250 choice, PPL,
+and manual checks at every stage:
+
+```bash
+python experiments/launch_qwen_progressive_fold_run.py \
+  --source-model /models/Qwen3-4B-Base \
+  --run-root /runs/neural-forge \
+  --tag progressive-proof \
+  --calibration-file /data/calibration.jsonl \
+  --eval-suite /data/eval-suite.json \
+  --cached-parent-eval /data/qwen3-4b-parent-eval.json \
+  --rollout-refold-rounds 0 \
+  --execute
 ```
 
 Fold a larger parent/donor directly into a blank child/target architecture:

@@ -127,6 +127,19 @@ def build_parser() -> argparse.ArgumentParser:
     hf_random.add_argument("--trust-remote-code", action="store_true")
     hf_random.set_defaults(func=cmd_hf_random_init)
 
+    hf_raw_token_expand = sub.add_parser(
+        "hf-raw-token-expand",
+        help="Add the bounded raw-modality token vocabulary to an HF causal LM.",
+    )
+    hf_raw_token_expand.add_argument("model")
+    hf_raw_token_expand.add_argument("output")
+    hf_raw_token_expand.add_argument("--tokenizer-model")
+    hf_raw_token_expand.add_argument("--dtype", default="auto")
+    hf_raw_token_expand.add_argument("--device", default="cpu")
+    hf_raw_token_expand.add_argument("--seed", type=int, default=0)
+    hf_raw_token_expand.add_argument("--trust-remote-code", action="store_true")
+    hf_raw_token_expand.set_defaults(func=cmd_hf_raw_token_expand)
+
     hf_shape = sub.add_parser(
         "hf-shape-init",
         help="Create a blank HF causal LM with explicit shape overrides.",
@@ -3305,6 +3318,20 @@ def cmd_hf_random_init(args: argparse.Namespace) -> dict[str, object]:
         output_dir=args.output,
         seed=args.seed,
         torch_dtype=args.dtype,
+        trust_remote_code=args.trust_remote_code,
+    )
+
+
+def cmd_hf_raw_token_expand(args: argparse.Namespace) -> dict[str, object]:
+    from neural_forge.hf_raw_modality import expand_hf_raw_token_checkpoint
+
+    return expand_hf_raw_token_checkpoint(
+        model_id_or_path=args.model,
+        output_dir=args.output,
+        tokenizer_model=args.tokenizer_model,
+        torch_dtype=args.dtype,
+        device=args.device,
+        seed=args.seed,
         trust_remote_code=args.trust_remote_code,
     )
 
