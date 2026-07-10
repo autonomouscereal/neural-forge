@@ -41,7 +41,10 @@ class PriorLinearFitResult:
     ridge: float
     effective_ridge: float
     trace_scale: float
+    prior_norm: float
     prior_delta_norm: float
+    update_scale: float
+    clipped: bool
     train_metrics: FitMetrics
     validation_metrics: FitMetrics | None
 
@@ -157,6 +160,7 @@ def fit_prior_preserving_ridge_linear(
     prior_bias: Any | None = None,
     ridge: float = 1e-3,
     fit_bias: bool | None = None,
+    max_prior_delta_ratio: float | None = None,
     validation_input_rows: Any | None = None,
     validation_target_rows: Any | None = None,
 ) -> PriorLinearFitResult:
@@ -172,6 +176,11 @@ def fit_prior_preserving_ridge_linear(
             "target_rows",
         )
         ridge = _nonnegative_float(ridge, "ridge")
+        if max_prior_delta_ratio is not None:
+            max_prior_delta_ratio = _positive_float(
+                max_prior_delta_ratio,
+                "max_prior_delta_ratio",
+            )
         prior = _matrix(torch, prior_weight, "prior_weight")
         expected_weight_shape = (int(targets.shape[1]), int(inputs.shape[1]))
         if tuple(prior.shape) != expected_weight_shape:
@@ -235,6 +244,27 @@ def fit_prior_preserving_ridge_linear(
         else:
             weight = solution.T.contiguous()
             bias = None
+        prior_parts = [prior.reshape(-1)]
+        delta_parts = [(weight - prior).reshape(-1)]
+        if prior_bias_rows is not None:
+            prior_parts.append(prior_bias_rows.reshape(-1))
+            delta_parts.append((bias - prior_bias_rows).reshape(-1))
+        prior_norm = float(torch.linalg.vector_norm(torch.cat(prior_parts)))
+        raw_delta_norm = float(torch.linalg.vector_norm(torch.cat(delta_parts)))
+        update_scale = 1.0
+        if max_prior_delta_ratio is not None and raw_delta_norm > 0.0:
+            max_delta_norm = max_prior_delta_ratio * max(
+                prior_norm,
+                torch.finfo(torch.float64).tiny,
+            )
+            update_scale = min(1.0, max_delta_norm / raw_delta_norm)
+            if update_scale < 1.0:
+                weight = prior + update_scale * (weight - prior)
+                if bias is not None and prior_bias_rows is not None:
+                    bias = prior_bias_rows + update_scale * (
+                        bias - prior_bias_rows
+                    )
+        prior_delta_norm = raw_delta_norm * update_scale
         prediction = inputs @ weight.T
         if bias is not None:
             prediction = prediction + bias
@@ -268,17 +298,16 @@ def fit_prior_preserving_ridge_linear(
                 validation_prediction,
                 validation_targets,
             )
-        delta_parts = [(weight - prior).reshape(-1)]
-        if bias is not None and prior_bias_rows is not None:
-            delta_parts.append((bias - prior_bias_rows).reshape(-1))
-        prior_delta_norm = float(torch.linalg.vector_norm(torch.cat(delta_parts)))
         return PriorLinearFitResult(
             weight=weight.detach(),
             bias=None if bias is None else bias.detach(),
             ridge=ridge,
             effective_ridge=effective_ridge,
             trace_scale=trace_scale,
+            prior_norm=prior_norm,
             prior_delta_norm=prior_delta_norm,
+            update_scale=update_scale,
+            clipped=update_scale < 1.0,
             train_metrics=train_metrics,
             validation_metrics=validation_metrics,
         )

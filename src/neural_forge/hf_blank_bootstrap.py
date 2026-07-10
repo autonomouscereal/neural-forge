@@ -89,6 +89,7 @@ def bootstrap_blank_decoder_models(
     trace_pooling: Literal["token_rows", "mean", "last_valid"] = "token_rows",
     residual_map_method: Literal["sparse_fold", "pca"] = "sparse_fold",
     ridge: float = 1e-5,
+    max_operator_delta_ratio: float = 4.0,
     min_final_state_relative_improvement: float = 0.0,
     min_logit_relative_improvement: float = 0.0,
     min_top1_agreement_gain: float = 0.0,
@@ -105,6 +106,12 @@ def bootstrap_blank_decoder_models(
 
     torch = _require_torch()
     ridge = _nonnegative_float(ridge, "ridge")
+    max_operator_delta_ratio = _nonnegative_float(
+        max_operator_delta_ratio,
+        "max_operator_delta_ratio",
+    )
+    if max_operator_delta_ratio == 0.0:
+        raise BlankBootstrapError("max_operator_delta_ratio must be positive.")
     for name, value in (
         ("min_final_state_relative_improvement", min_final_state_relative_improvement),
         ("min_logit_relative_improvement", min_logit_relative_improvement),
@@ -244,6 +251,7 @@ def bootstrap_blank_decoder_models(
                 source_span,
                 residual_coordinates,
                 ridge,
+                max_operator_delta_ratio,
                 max_coordinate_rows,
                 fit_reports,
             )
@@ -637,6 +645,7 @@ def _fit_target_block(
     source_span: tuple[int, ...],
     residual_coordinates: Any,
     ridge: float,
+    max_operator_delta_ratio: float,
     max_coordinate_rows: int,
     reports: dict[str, Any],
 ) -> None:
@@ -687,18 +696,25 @@ def _fit_target_block(
             source_span,
         )
     )
-    q_coordinates, k_coordinates, v_coordinates = _attention_feature_coordinates(
+    context_rows = tuple(
+        block.attention_output_projection_input for block in source_blocks
+    )
+    q_coordinates, k_coordinates, v_coordinates, context_coordinates = (
+        _attention_feature_coordinates(
         torch,
         source_q_rows,
         source_k_rows,
         source_v_rows,
+        context_rows,
         target_block_layout,
         max_coordinate_rows,
+        )
     )
     reports[f"block.{target_index}.attention.feature_folds"] = {
         "query": q_coordinates.report.as_dict(),
         "key": k_coordinates.report.as_dict(),
         "value": v_coordinates.report.as_dict(),
+        "context": context_coordinates.report.as_dict(),
         "source_query_head_norms": [
             source_layout.blocks[index].attention.query_norm.path
             for index in source_span
@@ -721,6 +737,7 @@ def _fit_target_block(
         q_coordinates,
         k_coordinates,
         v_coordinates,
+        context_coordinates,
     )
     reports[f"block.{target_index}.attention.structural_prior"] = (
         attention_prior_report
@@ -738,6 +755,7 @@ def _fit_target_block(
         target_attention.query,
         ridge=ridge,
         preserve_prior=bool(attention_prior_report["applied"]),
+        max_prior_delta_ratio=max_operator_delta_ratio,
     )
     k_fit = _fit_operator_with_prior(
         target_block.pre_attention_norm_output,
@@ -745,6 +763,7 @@ def _fit_target_block(
         target_attention.key,
         ridge=ridge,
         preserve_prior=bool(attention_prior_report["applied"]),
+        max_prior_delta_ratio=max_operator_delta_ratio,
     )
     v_fit = _fit_operator_with_prior(
         target_block.pre_attention_norm_output,
@@ -752,6 +771,7 @@ def _fit_target_block(
         target_attention.value,
         ridge=ridge,
         preserve_prior=bool(attention_prior_report["applied"]),
+        max_prior_delta_ratio=max_operator_delta_ratio,
     )
     write_attention_operators(
         target_model,
@@ -792,6 +812,7 @@ def _fit_target_block(
         target_attention.output,
         ridge=ridge,
         preserve_prior=bool(attention_prior_report["applied"]),
+        max_prior_delta_ratio=max_operator_delta_ratio,
     )
     write_attention_operators(
         target_model,
@@ -835,9 +856,17 @@ def _fit_target_block(
         source_blocks,
         max_coordinate_rows,
     )
+    gated_triplet_compatible = (
+        target_block_layout.mlp.kind == "gated"
+        and all(
+            source_layout.blocks[index].mlp.kind == "gated"
+            for index in source_span
+        )
+    )
     mlp_coordinates = build_feature_fold_map(
         mlp_feature_rows,
         target_block_layout.mlp.intermediate_size,
+        allow_sign_flip=not gated_triplet_compatible,
     )
     reports[f"block.{target_index}.mlp.feature_fold"] = mlp_coordinates.report.as_dict()
     mlp_prior_report = _initialize_mlp_structural_prior(
@@ -852,6 +881,11 @@ def _fit_target_block(
     )
     reports[f"block.{target_index}.mlp.structural_prior"] = mlp_prior_report
     target_mlp = read_mlp_operators(target_model, target_block_layout)
+    product_target_report = {
+        "applied": False,
+        "reason": "target-mlp-is-not-compatible-gated-swiglu",
+    }
+    desired_product = None
     if target_block_layout.mlp.kind == "dense":
         assert target_mlp.input is not None
         desired_input = _mean_source_mlp_producer(
@@ -866,6 +900,7 @@ def _fit_target_block(
             target_mlp.input,
             ridge=ridge,
             preserve_prior=bool(mlp_prior_report["applied"]),
+            max_prior_delta_ratio=max_operator_delta_ratio,
         )
         target_mlp = MLPOperators(
             kind="dense",
@@ -889,12 +924,41 @@ def _fit_target_block(
             "up",
             mlp_coordinates,
         )
+        if (
+            gated_triplet_compatible
+            and target_block_layout.mlp.activation_name == "silu"
+        ):
+            desired_product = _sum_projected(
+                torch,
+                source_blocks,
+                "down_projection_input",
+                mlp_coordinates,
+            )
+            desired_up, product_target_report = _gated_up_target_for_product(
+                torch,
+                desired_gate,
+                desired_product,
+            )
+        else:
+            product_target_report = {
+                "applied": False,
+                "reason": (
+                    "source-target-mlp-topology-mismatch"
+                    if not gated_triplet_compatible
+                    else "unsupported-gated-activation"
+                ),
+                "activation": target_block_layout.mlp.activation_name,
+            }
+        reports[f"block.{target_index}.mlp.product_target"] = (
+            product_target_report
+        )
         gate_fit = _fit_operator_with_prior(
             target_block.pre_mlp_norm_output,
             desired_gate,
             target_mlp.gate,
             ridge=ridge,
             preserve_prior=bool(mlp_prior_report["applied"]),
+            max_prior_delta_ratio=max_operator_delta_ratio,
         )
         up_fit = _fit_operator_with_prior(
             target_block.pre_mlp_norm_output,
@@ -902,6 +966,7 @@ def _fit_target_block(
             target_mlp.up,
             ridge=ridge,
             preserve_prior=bool(mlp_prior_report["applied"]),
+            max_prior_delta_ratio=max_operator_delta_ratio,
         )
         target_mlp = MLPOperators(
             kind="gated",
@@ -916,6 +981,19 @@ def _fit_target_block(
 
     current = current_trace()
     target_block = current.block
+    if bool(product_target_report.get("applied")):
+        assert desired_product is not None
+        product_metrics = measure_fit(
+            target_block.down_projection_input,
+            desired_product,
+        )
+        reports[f"block.{target_index}.mlp.product_fit"] = {
+            "method": "folded-source-product-anchor",
+            "rows": product_metrics.rows,
+            "relative_rmse": product_metrics.relative_rmse,
+            "mean_cosine_similarity": product_metrics.mean_cosine_similarity,
+            "finite": product_metrics.finite,
+        }
     desired_endpoint = _encode_rows(
         source_blocks[-1].block_output,
         residual_coordinates,
@@ -928,6 +1006,7 @@ def _fit_target_block(
         target_mlp.down,
         ridge=ridge,
         preserve_prior=bool(mlp_prior_report["applied"]),
+        max_prior_delta_ratio=max_operator_delta_ratio,
     )
     target_mlp = MLPOperators(
         kind=target_mlp.kind,
@@ -1065,9 +1144,10 @@ def _attention_feature_coordinates(
     query_rows: Sequence[Any],
     key_rows: Sequence[Any],
     value_rows: Sequence[Any],
+    context_rows: Sequence[Any],
     target_block_layout: Any,
     max_coordinate_rows: int,
-) -> tuple[FeatureFoldMap, FeatureFoldMap, FeatureFoldMap]:
+) -> tuple[FeatureFoldMap, FeatureFoldMap, FeatureFoldMap, FeatureFoldMap]:
     q_rows = _sample_concatenated_rows(
         torch,
         query_rows,
@@ -1081,6 +1161,11 @@ def _attention_feature_coordinates(
     v_rows = _sample_concatenated_rows(
         torch,
         value_rows,
+        max_coordinate_rows,
+    )
+    o_rows = _sample_concatenated_rows(
+        torch,
+        context_rows,
         max_coordinate_rows,
     )
     q_width = target_block_layout.attention.query_width
@@ -1102,7 +1187,8 @@ def _attention_feature_coordinates(
             k_width,
         )
     v_coordinates = build_feature_fold_map(v_rows, k_width)
-    return q_coordinates, k_coordinates, v_coordinates
+    context_coordinates = build_feature_fold_map(o_rows, q_width)
+    return q_coordinates, k_coordinates, v_coordinates, context_coordinates
 
 
 def _effective_source_attention_projection_rows(
@@ -1246,6 +1332,7 @@ def _initialize_attention_structural_prior(
     query_coordinates: FeatureFoldMap,
     key_coordinates: FeatureFoldMap,
     value_coordinates: FeatureFoldMap,
+    context_coordinates: FeatureFoldMap,
 ) -> dict[str, Any]:
     if not isinstance(residual_coordinates, FeatureFoldMap):
         return {"applied": False, "reason": "residual-map-is-not-sparse-fold"}
@@ -1302,7 +1389,7 @@ def _initialize_attention_structural_prior(
                     source.output,
                     target.output,
                     residual_coordinates,
-                    query_coordinates,
+                    context_coordinates,
                 ),
             )
         )
@@ -1492,6 +1579,64 @@ def _mean_source_mlp_producer(
     return torch.stack(projected, dim=0).mean(dim=0)
 
 
+def _gated_up_target_for_product(
+    torch: Any,
+    desired_gate_rows: Any,
+    desired_product_rows: Any,
+) -> tuple[Any, dict[str, Any]]:
+    gate, product = (
+        desired_gate_rows.detach().to(device="cpu", dtype=torch.float64),
+        desired_product_rows.detach().to(device="cpu", dtype=torch.float64),
+    )
+    if gate.shape != product.shape or gate.ndim != 2:
+        raise BlankBootstrapError(
+            "Gated product anchors must be aligned two-dimensional matrices."
+        )
+    gate_activation = torch.nn.functional.silu(gate)
+    channel_rms = torch.sqrt(gate_activation.square().mean(dim=0))
+    denominator_floor = torch.clamp(channel_rms * 0.05, min=1e-4)
+    signs = torch.where(
+        gate_activation < 0.0,
+        -torch.ones_like(gate_activation),
+        torch.ones_like(gate_activation),
+    )
+    stabilized = torch.where(
+        gate_activation.abs() >= denominator_floor.unsqueeze(0),
+        gate_activation,
+        signs * denominator_floor.unsqueeze(0),
+    )
+    raw_target = product / stabilized
+    target_rms = torch.sqrt(raw_target.square().mean(dim=0))
+    clip_bound = torch.clamp(target_rms * 8.0, min=1e-3)
+    target = torch.maximum(
+        torch.minimum(raw_target, clip_bound.unsqueeze(0)),
+        -clip_bound.unsqueeze(0),
+    )
+    if not bool(torch.isfinite(target).all()):
+        raise BlankBootstrapError("Gated product target contains NaN or infinity.")
+    stabilized_fraction = float(
+        (gate_activation.abs() < denominator_floor.unsqueeze(0))
+        .to(torch.float64)
+        .mean()
+    )
+    clipped_fraction = float(
+        (raw_target.abs() > clip_bound.unsqueeze(0)).to(torch.float64).mean()
+    )
+    return target.contiguous(), {
+        "applied": True,
+        "method": "alternating-closed-form-swiglu-product-anchor",
+        "rows": int(target.shape[0]),
+        "width": int(target.shape[1]),
+        "denominator_stabilized_fraction": stabilized_fraction,
+        "target_clipped_fraction": clipped_fraction,
+        "gate_activation_rms": float(
+            torch.sqrt(gate_activation.square().mean())
+        ),
+        "desired_product_rms": float(torch.sqrt(product.square().mean())),
+        "up_target_rms": float(torch.sqrt(target.square().mean())),
+    }
+
+
 def _mean_projected(
     torch: Any,
     blocks: Sequence[DecoderBlockTrace],
@@ -1534,6 +1679,7 @@ def _fit_operator_with_prior(
     *,
     ridge: float,
     preserve_prior: bool,
+    max_prior_delta_ratio: float,
 ) -> Any:
     if not isinstance(prior, LinearOperator):
         raise BlankBootstrapError("A linear fit requires a target operator prior.")
@@ -1551,6 +1697,7 @@ def _fit_operator_with_prior(
         prior_bias=prior.bias,
         ridge=ridge,
         fit_bias=prior.bias is not None,
+        max_prior_delta_ratio=max_prior_delta_ratio,
     )
 
 
@@ -1594,7 +1741,10 @@ def _fit_summary(fit: Any) -> dict[str, Any]:
                 "method": "trace-scaled-prior-preserving-parent-anchor-fit",
                 "effective_ridge": float(fit.effective_ridge),
                 "trace_scale": float(fit.trace_scale),
+                "prior_norm": float(fit.prior_norm),
                 "prior_delta_norm": float(fit.prior_delta_norm),
+                "update_scale": float(fit.update_scale),
+                "clipped": bool(fit.clipped),
             }
         )
     return report

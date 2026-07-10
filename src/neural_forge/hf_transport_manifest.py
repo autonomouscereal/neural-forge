@@ -53,12 +53,18 @@ def build_decoder_transport_manifest(
         module_path: str,
         *,
         description: str,
+        include_buffers: bool = True,
         allowed: tuple[Disposition, ...] = (
             Disposition.TRANSPORTED,
             Disposition.CLOSED_FORM_FITTED,
         ),
     ) -> None:
-        tensors = _direct_module_tensors(model, module_path, prefix=prefix)
+        tensors = _direct_module_tensors(
+            model,
+            module_path,
+            prefix=prefix,
+            include_buffers=include_buffers,
+        )
         if not tensors:
             raise PlanValidationError(
                 f"Required weighted operator {module_path!r} exposes no direct tensors."
@@ -103,14 +109,26 @@ def build_decoder_transport_manifest(
     add_native_role(
         "architecture.topology",
         description=(
-            f"Validated {resolved_layout.family} serial pre-norm decoder topology."
+            f"Validated {resolved_layout.family} decoder residual topology."
         ),
     )
     add_tensor_role(
         "embeddings.token",
         resolved_layout.embeddings.token_path,
         description="Input token embedding rows.",
+        include_buffers=resolved_layout.embeddings.token_scale_buffer_name is None,
     )
+    if resolved_layout.embeddings.token_scale_buffer_name is not None:
+        roles.append(
+            RequiredTargetRole(
+                name="embeddings.token_scale",
+                target_tensors=(
+                    f"{prefix}.{resolved_layout.embeddings.token_scale_buffer_name}",
+                ),
+                allowed_dispositions=(Disposition.TARGET_NATIVE,),
+                description="Validated deterministic token-embedding scale buffer.",
+            )
+        )
     if resolved_layout.position.kind == "learned_absolute":
         assert resolved_layout.embeddings.position_path is not None
         add_tensor_role(
@@ -168,6 +186,12 @@ def build_decoder_transport_manifest(
             attention.output_path,
             description="Attention output projection.",
         )
+        if block.attention_output_norm is not None:
+            add_tensor_role(
+                f"{base}.attention.output_norm",
+                block.attention_output_norm.path,
+                description="Post-attention residual-branch normalization.",
+            )
         if attention.query_norm is not None:
             add_tensor_role(
                 f"{base}.attention.query_norm",
@@ -214,6 +238,12 @@ def build_decoder_transport_manifest(
             mlp.down_projection_path,
             description="MLP output/down projection.",
         )
+        if block.mlp_output_norm is not None:
+            add_tensor_role(
+                f"{base}.mlp.output_norm",
+                block.mlp_output_norm.path,
+                description="Post-MLP residual-branch normalization.",
+            )
         add_native_role(
             f"{base}.mlp.activation",
             description=f"Validated {mlp.activation_name} activation operator.",
@@ -290,15 +320,17 @@ def _direct_module_tensors(
     module_path: str,
     *,
     prefix: str,
+    include_buffers: bool = True,
 ) -> tuple[str, ...]:
     module = resolve_module(model, module_path)
     tensors = []
     for name, tensor in module.named_parameters(recurse=False):
         if tensor is not None:
             tensors.append(f"{prefix}.{module_path}.{name}")
-    for name, tensor in module.named_buffers(recurse=False):
-        if tensor is not None:
-            tensors.append(f"{prefix}.{module_path}.{name}")
+    if include_buffers:
+        for name, tensor in module.named_buffers(recurse=False):
+            if tensor is not None:
+                tensors.append(f"{prefix}.{module_path}.{name}")
     return tuple(sorted(set(tensors)))
 
 

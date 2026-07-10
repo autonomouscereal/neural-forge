@@ -185,6 +185,7 @@ def test_blank_bootstrap_improves_source_anchors_and_covers_every_target_role(
     assert all(parameter.grad is None for parameter in target.parameters())
     if source_factory is _qwen3_source:
         fold_report = result.fit_reports["block.0.attention.feature_folds"]
+        assert fold_report["context"]["full_source_coverage"] is True
         assert fold_report["source_query_head_norms"] == [
             "model.layers.0.self_attn.q_norm"
         ]
@@ -195,6 +196,11 @@ def test_blank_bootstrap_improves_source_anchors_and_covers_every_target_role(
             "applied"
         ] is True
         assert result.fit_reports["block.0.mlp.structural_prior"]["applied"] is True
+        assert result.fit_reports["block.0.mlp.feature_fold"][
+            "negative_coefficient_count"
+        ] == 0
+        assert result.fit_reports["block.0.mlp.product_target"]["applied"] is True
+        assert result.fit_reports["block.0.mlp.product_fit"]["finite"] is True
         assert result.fit_reports["block.0.attention.query"]["method"] == (
             "trace-scaled-prior-preserving-parent-anchor-fit"
         )

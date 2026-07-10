@@ -76,6 +76,8 @@ class FeatureFoldReport:
     full_target_rank: bool
     columns_normalized: bool
     deterministic: bool
+    sign_flips_allowed: bool
+    negative_coefficient_count: int
     dense_materialized: bool = False
 
     @property
@@ -152,6 +154,8 @@ class FeatureFoldReport:
             "full_target_rank": self.full_target_rank,
             "columns_normalized": self.columns_normalized,
             "deterministic": self.deterministic,
+            "sign_flips_allowed": self.sign_flips_allowed,
+            "negative_coefficient_count": self.negative_coefficient_count,
             "dense_materialized": self.dense_materialized,
         }
 
@@ -593,6 +597,7 @@ def build_feature_fold_map(
     chunk_size: int = 256,
     sketch_size: int = 32,
     balance_strength: float = 0.25,
+    allow_sign_flip: bool = True,
 ) -> FeatureFoldMap:
     """Build a coupled sparse fold from one or more calibration matrices.
 
@@ -625,6 +630,8 @@ def build_feature_fold_map(
         balance_strength,
         "balance_strength",
     )
+    if not isinstance(allow_sign_flip, bool):
+        raise FeatureFoldShapeError("allow_sign_flip must be boolean.")
     effective_chunk = min(chunk_size, source_width)
     signature_width = sketch_size * len(matrices)
 
@@ -707,16 +714,19 @@ def build_feature_fold_map(
             penalty = balance_strength * (
                 0.5 * load_pressure + 0.5 * energy_pressure
             )
-            scores = similarities[local_index].abs() - penalty
+            similarity_scores = similarities[local_index]
+            if allow_sign_flip:
+                similarity_scores = similarity_scores.abs()
+            scores = similarity_scores - penalty
             scores = torch.where(
                 admissible,
                 scores,
                 torch.full_like(scores, -torch.inf),
             )
             target = int(torch.argmax(scores).item())
-            sign = (
-                -1.0 if float(similarities[local_index, target].item()) < 0.0 else 1.0
-            )
+            sign = 1.0
+            if allow_sign_flip and float(similarities[local_index, target]) < 0.0:
+                sign = -1.0
             assignment[source_index] = target
             orientation[source_index] = sign
             chosen_targets[local_index] = target
@@ -863,6 +873,8 @@ def build_feature_fold_map(
             )
         ),
         deterministic=True,
+        sign_flips_allowed=allow_sign_flip,
+        negative_coefficient_count=int((coefficients < 0.0).sum().item()),
     )
     if not report.full_source_coverage or not report.full_target_rank:
         raise FeatureFoldRankError(

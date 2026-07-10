@@ -203,6 +203,21 @@ def test_zero_energy_channels_are_merged_with_nonzero_finite_coefficients() -> N
     assert fold.report.sketch_relative_reconstruction_error == 0.0
 
 
+def test_nonlinear_fold_can_prohibit_sign_flips() -> None:
+    calibration = _rows(64, 12, 61)
+    calibration[:, 6:] = -calibration[:, :6]
+
+    fold = build_feature_fold_map(
+        calibration,
+        6,
+        allow_sign_flip=False,
+    )
+
+    assert bool((fold.coefficients > 0.0).all())
+    assert fold.report.sign_flips_allowed is False
+    assert fold.report.negative_coefficient_count == 0
+
+
 def test_shape_rank_and_nonfinite_inputs_fail_closed() -> None:
     with pytest.raises(FeatureFoldShapeError, match="same source width"):
         build_feature_fold_map(

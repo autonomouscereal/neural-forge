@@ -109,6 +109,32 @@ def test_strong_prior_ridge_stays_closer_to_prior_than_unregularized_fit() -> No
     assert torch.isfinite(strong.weight).all()
 
 
+def test_prior_trust_radius_caps_collapsed_feature_update() -> None:
+    inputs = _rows(128, 6, 21) * 1e-6
+    targets = _rows(128, 4, 22)
+    prior = _rows(4, 6, 23)
+
+    result = fit_prior_preserving_ridge_linear(
+        inputs,
+        targets,
+        prior,
+        ridge=1e-3,
+        fit_bias=False,
+        max_prior_delta_ratio=0.25,
+    )
+
+    assert result.clipped is True
+    assert 0.0 < result.update_scale < 1.0
+    assert result.prior_norm > 0.0
+    assert result.prior_delta_norm <= result.prior_norm * 0.25 * (1.0 + 1e-12)
+    torch.testing.assert_close(
+        torch.linalg.vector_norm(result.weight - prior),
+        torch.tensor(result.prior_delta_norm, dtype=torch.float64),
+        atol=1e-10,
+        rtol=1e-10,
+    )
+
+
 def test_layer_norm_affine_fit_recovers_weight_and_bias() -> None:
     inputs = _rows(128, 7, 20)
     normalized = normalize_rows(inputs, kind="layer_norm", epsilon=1e-5)

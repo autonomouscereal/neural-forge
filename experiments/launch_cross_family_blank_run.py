@@ -186,6 +186,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         trace_pooling=args.trace_pooling,
         residual_map_method=args.residual_map_method,
         ridge=args.ridge,
+        max_operator_delta_ratio=args.max_operator_delta_ratio,
         min_final_state_relative_improvement=args.min_final_state_improvement,
         min_logit_relative_improvement=args.min_logit_improvement,
         min_top1_agreement_gain=args.min_top1_gain,
@@ -310,6 +311,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--residual-map-method", choices=["sparse_fold", "pca"], default="sparse_fold"
     )
     parser.add_argument("--ridge", type=float, default=1e-5)
+    parser.add_argument("--max-operator-delta-ratio", type=float, default=4.0)
     parser.add_argument("--min-final-state-improvement", type=float, default=0.0)
     parser.add_argument("--min-logit-improvement", type=float, default=0.0)
     parser.add_argument("--min-top1-gain", type=float, default=0.0)

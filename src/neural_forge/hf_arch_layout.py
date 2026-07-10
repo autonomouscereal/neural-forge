@@ -1,6 +1,6 @@
 """Fail-closed Hugging Face causal-decoder architecture layouts.
 
-The transport proof supports three explicit operator topologies:
+The transport proof supports explicit operator topologies for:
 
 * ``GPT2LMHeadModel``-style GPT-2 decoders with learned positions, fused QKV,
   dense GELU-family MLPs, and LayerNorm.
@@ -8,6 +8,9 @@ The transport proof supports three explicit operator topologies:
   grouped-query attention), gated MLPs, and RMSNorm.
 * ``Qwen3ForCausalLM`` dense decoders with RoPE, split grouped-query attention,
   per-head Q/K RMSNorm, gated SwiGLU MLPs, and residual RMSNorm.
+* ``Gemma2ForCausalLM`` and text-only ``Gemma3ForCausalLM`` decoders with
+  scaled token embeddings, split grouped-query attention, gated MLPs,
+  unit-offset RMSNorm, and pre/post-normalized residual branches.
 
 This module deliberately does not discover operators by suffix similarity. A
 recognized ``model_type`` must satisfy the complete expected path, type, shape,
@@ -22,16 +25,19 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 
-ArchitectureFamily = Literal["gpt2", "llama", "qwen3"]
+ArchitectureFamily = Literal["gpt2", "llama", "qwen3", "gemma2", "gemma3"]
 PositionKind = Literal["learned_absolute", "rope"]
 NormKind = Literal["layer_norm", "rms_norm"]
 NormPlacement = Literal[
     "pre_attention",
+    "post_attention",
     "query_head",
     "key_head",
     "pre_mlp",
+    "post_mlp",
     "final",
 ]
+NormWeightKind = Literal["direct_scale", "unit_offset"]
 ProjectionStyle = Literal["fused_qkv", "split_qkv"]
 MLPKind = Literal["dense", "gated"]
 
@@ -51,6 +57,8 @@ class EmbeddingLayout:
     dropout_path: str | None
     vocab_size: int
     hidden_size: int
+    token_scale: float = 1.0
+    token_scale_buffer_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +69,7 @@ class PositionLayout:
     rotary_dim: int | None = None
     rope_theta: float | None = None
     rope_type: str | None = None
+    rope_variants: tuple[tuple[str, float, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +79,7 @@ class NormLayout:
     placement: NormPlacement
     epsilon: float
     has_bias: bool
+    weight_kind: NormWeightKind = "direct_scale"
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +100,10 @@ class AttentionLayout:
     attention_dropout: float
     query_norm: NormLayout | None = None
     key_norm: NormLayout | None = None
+    layer_type: Literal["full_attention", "sliding_attention"] | None = None
+    sliding_window: int | None = None
+    scaling: float | None = None
+    logit_softcap: float | None = None
 
     @property
     def grouped_query_attention(self) -> bool:
@@ -123,11 +137,13 @@ class MLPLayout:
 
 @dataclass(frozen=True, slots=True)
 class ResidualLayout:
-    kind: Literal["serial_pre_norm"]
+    kind: Literal["serial_pre_norm", "serial_pre_post_norm"]
     attention_residual_source: Literal["block_input"]
     mlp_residual_source: Literal["post_attention_residual"]
     attention_norm_position: Literal["pre"]
     mlp_norm_position: Literal["pre"]
+    attention_output_norm_position: Literal["none", "post"] = "none"
+    mlp_output_norm_position: Literal["none", "post"] = "none"
 
 
 SERIAL_PRE_NORM_RESIDUAL = ResidualLayout(
@@ -136,6 +152,16 @@ SERIAL_PRE_NORM_RESIDUAL = ResidualLayout(
     mlp_residual_source="post_attention_residual",
     attention_norm_position="pre",
     mlp_norm_position="pre",
+)
+
+SERIAL_PRE_POST_NORM_RESIDUAL = ResidualLayout(
+    kind="serial_pre_post_norm",
+    attention_residual_source="block_input",
+    mlp_residual_source="post_attention_residual",
+    attention_norm_position="pre",
+    mlp_norm_position="pre",
+    attention_output_norm_position="post",
+    mlp_output_norm_position="post",
 )
 
 
@@ -148,6 +174,8 @@ class DecoderBlockLayout:
     mlp_input_norm: NormLayout
     mlp: MLPLayout
     residual: ResidualLayout
+    attention_output_norm: NormLayout | None = None
+    mlp_output_norm: NormLayout | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,6 +192,7 @@ class DecoderLayout:
     final_norm: NormLayout
     lm_head_path: str
     tie_word_embeddings: bool
+    final_logit_softcap: float | None = None
 
     @classmethod
     def from_model(cls, model: Any) -> "DecoderLayout":
@@ -199,6 +228,11 @@ class DecoderLayout:
                 yield f"{prefix}.attention.k", block.attention.key_path
                 yield f"{prefix}.attention.v", block.attention.value_path
             yield f"{prefix}.attention.output", block.attention.output_path
+            if block.attention_output_norm is not None:
+                yield (
+                    f"{prefix}.attention.output_norm",
+                    block.attention_output_norm.path,
+                )
             if block.attention.query_norm is not None:
                 yield f"{prefix}.attention.q_norm", block.attention.query_norm.path
             if block.attention.key_norm is not None:
@@ -213,6 +247,8 @@ class DecoderLayout:
                 yield f"{prefix}.mlp.up", block.mlp.up_projection_path
             yield f"{prefix}.mlp.down", block.mlp.down_projection_path
             yield f"{prefix}.mlp.activation", block.mlp.activation_path
+            if block.mlp_output_norm is not None:
+                yield f"{prefix}.mlp.output_norm", block.mlp_output_norm.path
         yield "final_norm", self.final_norm.path
         yield "lm_head", self.lm_head_path
 
@@ -389,6 +425,7 @@ def _norm_layout(
     epsilon: float,
     expected_type: str | None = None,
     expected_module: str | None = None,
+    weight_kind: NormWeightKind = "direct_scale",
 ) -> NormLayout:
     if expected_type is None:
         expected_type = "LayerNorm" if kind == "layer_norm" else "LlamaRMSNorm"
@@ -428,6 +465,7 @@ def _norm_layout(
         placement=placement,
         epsilon=epsilon,
         has_bias=has_bias,
+        weight_kind=weight_kind,
     )
 
 
@@ -1420,7 +1458,7 @@ def _build_qwen3_layout(model: Any) -> DecoderLayout:
 
 
 def build_decoder_layout(model: Any) -> DecoderLayout:
-    """Build and validate a complete GPT-2, Llama, or Qwen3 decoder layout."""
+    """Build and validate a complete explicitly supported decoder layout."""
 
     config = getattr(model, "config", None)
     model_type = getattr(config, "model_type", None)
@@ -1430,10 +1468,15 @@ def build_decoder_layout(model: Any) -> DecoderLayout:
         return _build_llama_layout(model)
     if model_type == "qwen3":
         return _build_qwen3_layout(model)
+    if model_type in {"gemma2", "gemma3_text"}:
+        from neural_forge.hf_gemma_layout import build_gemma_decoder_layout
+
+        return build_gemma_decoder_layout(model)
     shown = "<missing>" if model_type is None else repr(model_type)
     raise UnsupportedDecoderLayoutError(
         "Unsupported causal decoder architecture: model_type "
-        f"{shown}; supported model types are 'gpt2', 'llama', and 'qwen3'."
+        f"{shown}; supported model types are 'gpt2', 'llama', 'qwen3', "
+        "'gemma2', and 'gemma3_text'."
     )
 
 

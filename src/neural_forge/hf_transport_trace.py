@@ -414,6 +414,11 @@ def _install_block_hooks(
         ),
     )
     attention_role = f"{prefix}.attention"
+    attention_module_output = (
+        f"{prefix}.attention_delta"
+        if block.attention_output_norm is None
+        else f"{prefix}.attention_pre_output_norm"
+    )
     installer.add(
         resolve_module(model, block.attention.module_path, family=family),
         attention_role,
@@ -422,7 +427,7 @@ def _install_block_hooks(
             store,
             attention_role,
             f"{prefix}.attention_input",
-            f"{prefix}.attention_delta",
+            attention_module_output,
             first_output=True,
         ),
     )
@@ -516,6 +521,24 @@ def _install_block_hooks(
         ),
     )
 
+    if block.attention_output_norm is not None:
+        output_norm_role = f"{prefix}.attention.output_norm"
+        installer.add(
+            resolve_module(
+                model,
+                block.attention_output_norm.path,
+                family=family,
+            ),
+            output_norm_role,
+            _simple_io_callback(
+                torch,
+                store,
+                output_norm_role,
+                f"{prefix}.attention_output_norm_input",
+                f"{prefix}.attention_delta",
+            ),
+        )
+
     mlp_norm_role = f"{prefix}.mlp_norm"
     installer.add(
         resolve_module(model, block.mlp_input_norm.path, family=family),
@@ -529,6 +552,11 @@ def _install_block_hooks(
         ),
     )
     mlp_role = f"{prefix}.mlp"
+    mlp_module_output = (
+        f"{prefix}.mlp_delta"
+        if block.mlp_output_norm is None
+        else f"{prefix}.mlp_pre_output_norm"
+    )
     installer.add(
         resolve_module(model, block.mlp.module_path, family=family),
         mlp_role,
@@ -537,7 +565,7 @@ def _install_block_hooks(
             store,
             mlp_role,
             f"{prefix}.mlp_input",
-            f"{prefix}.mlp_delta",
+            mlp_module_output,
         ),
     )
 
@@ -581,6 +609,19 @@ def _install_block_hooks(
             f"{prefix}.down_output",
         ),
     )
+    if block.mlp_output_norm is not None:
+        output_norm_role = f"{prefix}.mlp.output_norm"
+        installer.add(
+            resolve_module(model, block.mlp_output_norm.path, family=family),
+            output_norm_role,
+            _simple_io_callback(
+                torch,
+                store,
+                output_norm_role,
+                f"{prefix}.mlp_output_norm_input",
+                f"{prefix}.mlp_delta",
+            ),
+        )
 
 
 def _install_hooks(
@@ -843,6 +884,20 @@ def _build_trace(
             f"{prefix}.down_output": residual_shape,
             f"{prefix}.mlp_delta": residual_shape,
         }
+        if block_layout.attention_output_norm is not None:
+            names_and_shapes.update(
+                {
+                    f"{prefix}.attention_pre_output_norm": residual_shape,
+                    f"{prefix}.attention_output_norm_input": residual_shape,
+                }
+            )
+        if block_layout.mlp_output_norm is not None:
+            names_and_shapes.update(
+                {
+                    f"{prefix}.mlp_pre_output_norm": residual_shape,
+                    f"{prefix}.mlp_output_norm_input": residual_shape,
+                }
+            )
         if attention.fused_qkv_path is not None:
             names_and_shapes[f"{prefix}.fused_qkv"] = (
                 batch_size,
@@ -866,10 +921,14 @@ def _build_trace(
         attention_norm = captures[f"{prefix}.attention_norm_output"]
         attention_delta = captures[f"{prefix}.attention_delta"]
         attention_output = captures[f"{prefix}.attention_output"]
+        attention_module_output = captures.get(
+            f"{prefix}.attention_pre_output_norm", attention_delta
+        )
         post_attention = captures[f"{prefix}.post_attention_residual"]
         mlp_norm = captures[f"{prefix}.mlp_norm_output"]
         mlp_delta = captures[f"{prefix}.mlp_delta"]
         down_output = captures[f"{prefix}.down_output"]
+        mlp_module_output = captures.get(f"{prefix}.mlp_pre_output_norm", mlp_delta)
         block_output = captures[f"{prefix}.output"]
         activation = captures[f"{prefix}.activation"]
         down_input = captures[f"{prefix}.down_input"]
@@ -888,10 +947,17 @@ def _build_trace(
         )
         _assert_close(
             torch,
-            attention_delta,
+            attention_module_output,
             attention_output,
-            f"block {index} attention projection delta",
+            f"block {index} attention module output",
         )
+        if block_layout.attention_output_norm is not None:
+            _assert_close(
+                torch,
+                captures[f"{prefix}.attention_output_norm_input"],
+                attention_output,
+                f"block {index} post-attention norm input",
+            )
         _assert_close(
             torch,
             post_attention,
@@ -906,10 +972,17 @@ def _build_trace(
         )
         _assert_close(
             torch,
-            mlp_delta,
+            mlp_module_output,
             down_output,
-            f"block {index} MLP projection delta",
+            f"block {index} MLP module output",
         )
+        if block_layout.mlp_output_norm is not None:
+            _assert_close(
+                torch,
+                captures[f"{prefix}.mlp_output_norm_input"],
+                down_output,
+                f"block {index} post-MLP norm input",
+            )
         _assert_close(
             torch,
             block_output,
@@ -1012,7 +1085,13 @@ def _build_trace(
         torch, final_norm_input, blocks[-1].block_output, "final norm residual input"
     )
     _assert_close(torch, lm_head_input, final_norm_output, "language-head input")
-    _assert_close(torch, returned_logits, lm_head_output, "returned logits")
+    expected_logits = lm_head_output
+    if layout.final_logit_softcap is not None:
+        expected_logits = (
+            torch.tanh(lm_head_output / layout.final_logit_softcap)
+            * layout.final_logit_softcap
+        )
+    _assert_close(torch, returned_logits, expected_logits, "returned logits")
 
     return HFTransportTrace(
         layout=layout,
@@ -1032,7 +1111,7 @@ def collect_hf_transport_trace(
     valid_token_mask: Any | None = None,
     **forward_inputs: Any,
 ) -> HFTransportTrace:
-    """Collect one deterministic GPT-2, Llama, or Qwen3 calibration trace.
+    """Collect one deterministic supported-decoder calibration trace.
 
     ``model_inputs`` may be a Hugging Face input mapping or an ``input_ids``
     tensor.  ``valid_token_mask`` can select a binary subset of the ordinary

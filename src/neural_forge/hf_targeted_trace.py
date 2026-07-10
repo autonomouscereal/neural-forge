@@ -303,6 +303,11 @@ def _install_block_hooks(
             first_output=True,
         ),
     )
+    attention_module_output = (
+        "attention_delta"
+        if block.attention_output_norm is None
+        else "attention_pre_output_norm"
+    )
     for role_suffix, path, input_name, output_name, first_output in (
         (
             "attention_norm",
@@ -315,7 +320,7 @@ def _install_block_hooks(
             "attention",
             block.attention.module_path,
             "attention_input",
-            "attention_delta",
+            attention_module_output,
             True,
         ),
     ):
@@ -397,6 +402,19 @@ def _install_block_hooks(
             f"{prefix}.attention_output",
         ),
     )
+    if block.attention_output_norm is not None:
+        role = f"{prefix}.attention.output_norm"
+        installer.add(
+            resolve_module(model, block.attention_output_norm.path, family=family),
+            role,
+            _simple_io_callback(
+                torch,
+                store,
+                role,
+                f"{prefix}.attention_output_norm_input",
+                f"{prefix}.attention_delta",
+            ),
+        )
 
     role = f"{prefix}.mlp_norm"
     installer.add(
@@ -411,6 +429,9 @@ def _install_block_hooks(
         ),
     )
     role = f"{prefix}.mlp"
+    mlp_module_output = (
+        "mlp_delta" if block.mlp_output_norm is None else "mlp_pre_output_norm"
+    )
     installer.add(
         resolve_module(model, block.mlp.module_path, family=family),
         role,
@@ -419,7 +440,7 @@ def _install_block_hooks(
             store,
             role,
             f"{prefix}.mlp_input",
-            f"{prefix}.mlp_delta",
+            f"{prefix}.{mlp_module_output}",
         ),
     )
 
@@ -455,6 +476,19 @@ def _install_block_hooks(
             f"{prefix}.down_output",
         ),
     )
+    if block.mlp_output_norm is not None:
+        role = f"{prefix}.mlp.output_norm"
+        installer.add(
+            resolve_module(model, block.mlp_output_norm.path, family=family),
+            role,
+            _simple_io_callback(
+                torch,
+                store,
+                role,
+                f"{prefix}.mlp_output_norm_input",
+                f"{prefix}.mlp_delta",
+            ),
+        )
 
 
 def _install_final_hooks(
@@ -699,6 +733,20 @@ def _build_block(
         f"{prefix}.down_output": hidden_shape,
         f"{prefix}.mlp_delta": hidden_shape,
     }
+    if block_layout.attention_output_norm is not None:
+        expected.update(
+            {
+                f"{prefix}.attention_pre_output_norm": hidden_shape,
+                f"{prefix}.attention_output_norm_input": hidden_shape,
+            }
+        )
+    if block_layout.mlp_output_norm is not None:
+        expected.update(
+            {
+                f"{prefix}.mlp_pre_output_norm": hidden_shape,
+                f"{prefix}.mlp_output_norm_input": hidden_shape,
+            }
+        )
     if attention.fused_qkv_path is not None:
         expected[f"{prefix}.fused_qkv"] = (
             batch,
@@ -728,20 +776,24 @@ def _build_block(
     attention_norm = captures[f"{prefix}.attention_norm_output"]
     attention_delta = captures[f"{prefix}.attention_delta"]
     attention_output = captures[f"{prefix}.attention_output"]
+    attention_module_output = captures.get(
+        f"{prefix}.attention_pre_output_norm", attention_delta
+    )
     post_attention = captures[f"{prefix}.post_attention_residual"]
     mlp_norm = captures[f"{prefix}.mlp_norm_output"]
     mlp_delta = captures[f"{prefix}.mlp_delta"]
     down_output = captures[f"{prefix}.down_output"]
+    mlp_module_output = captures.get(f"{prefix}.mlp_pre_output_norm", mlp_delta)
     block_output = captures[f"{prefix}.output"]
     activation = captures[f"{prefix}.activation"]
     down_input = captures[f"{prefix}.down_input"]
     identities = (
         (captures[f"{prefix}.attention_norm_input"], block_input, "norm input"),
         (captures[f"{prefix}.attention_input"], attention_norm, "attention input"),
-        (attention_delta, attention_output, "attention projection delta"),
+        (attention_module_output, attention_output, "attention module output"),
         (post_attention, block_input + attention_delta, "post-attention residual"),
         (captures[f"{prefix}.mlp_input"], mlp_norm, "MLP input"),
-        (mlp_delta, down_output, "MLP projection delta"),
+        (mlp_module_output, down_output, "MLP module output"),
         (block_output, post_attention + mlp_delta, "output residual"),
         (
             block_output,
@@ -751,6 +803,20 @@ def _build_block(
     )
     for actual, wanted, label in identities:
         _assert_close(torch, actual, wanted, f"block {block_layout.index} {label}")
+    if block_layout.attention_output_norm is not None:
+        _assert_close(
+            torch,
+            captures[f"{prefix}.attention_output_norm_input"],
+            attention_output,
+            f"block {block_layout.index} post-attention norm input",
+        )
+    if block_layout.mlp_output_norm is not None:
+        _assert_close(
+            torch,
+            captures[f"{prefix}.mlp_output_norm_input"],
+            down_output,
+            f"block {block_layout.index} post-MLP norm input",
+        )
 
     if block_layout.mlp.kind == "dense":
         _assert_close(
@@ -983,7 +1049,13 @@ def collect_hf_targeted_trace(
                 _expect_shape(torch, head_output, logits_shape, "lm_head.output")
                 _expect_shape(torch, returned, logits_shape, "model.logits")
                 _assert_close(torch, head_input, final_output, "language-head input")
-                _assert_close(torch, returned, head_output, "returned logits")
+                expected_logits = head_output
+                if layout.final_logit_softcap is not None:
+                    expected_logits = (
+                        torch.tanh(head_output / layout.final_logit_softcap)
+                        * layout.final_logit_softcap
+                    )
+                _assert_close(torch, returned, expected_logits, "returned logits")
                 logits = returned
             final_interface = FinalNormHeadTrace(
                 final_norm_input=_reduce_tensor(
