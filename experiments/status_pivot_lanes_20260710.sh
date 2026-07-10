@@ -28,13 +28,13 @@ show_run() {
 
 show_run \
   /mnt/ai_data/neural-forge/progressive_closed_form_20260710 \
-  qwen3_4b_to_blank_qwen1p13b_stage1_gpu6_r2_20260710
+  qwen3_4b_to_blank_qwen1p13b_stage1_headnorm_delta0p5_gpu6_r3_20260710
 show_run \
   /mnt/ai_data/neural-forge/cross_family_blank_20260710 \
-  qwen3_4b_to_blank_qwen134m_headgqa_producttrust_gpu0_r1_20260710
+  qwen3_4b_to_blank_llama131m_delta0p1_gpu0_r1_20260710
 show_run \
   /mnt/ai_data/neural-forge/cross_family_blank_20260710 \
-  qwen3_4b_to_blank_llama131m_headgqa_producttrust_gpu4_r1_20260710
+  qwen3_4b_to_blank_llama131m_delta0p5_gpu4_r1_20260710
 
 echo "=== NEO1.5 download ==="
 DOWNLOAD_ROOT=/mnt/ai_data/neural-forge/native_parent_cache_20260710
