@@ -17,6 +17,10 @@ from neural_forge.hf_closed_form_fit import (
     fit_ridge_linear,
     measure_fit,
 )
+from neural_forge.hf_feature_fold import (
+    FeatureFoldMap,
+    build_feature_fold_map,
+)
 from neural_forge.hf_operator_adapter import (
     AttentionOperators,
     LinearOperator,
@@ -637,6 +641,11 @@ def _fit_target_block(
         target_block_layout,
         max_coordinate_rows,
     )
+    reports[f"block.{target_index}.attention.feature_folds"] = {
+        "query": q_coordinates.report.as_dict(),
+        "key": k_coordinates.report.as_dict(),
+        "value": v_coordinates.report.as_dict(),
+    }
     desired_q = _mean_projected(
         torch, source_blocks, "query_projection_output", q_coordinates
     )
@@ -744,14 +753,17 @@ def _fit_target_block(
 
     current = _trace_rows(target_model, target_calibration_inputs, trace_pooling)
     target_block = current.blocks[target_index]
-    mlp_coordinates = build_parent_residual_basis(
-        _sample_concatenated_rows(
-            torch,
-            [block.down_projection_input for block in source_blocks],
-            max_coordinate_rows,
-        ),
+    mlp_feature_rows = _source_mlp_feature_rows(
+        torch,
+        source_blocks,
+        max_coordinate_rows,
+    )
+    mlp_coordinates = build_feature_fold_map(
+        mlp_feature_rows,
         target_block_layout.mlp.intermediate_size,
-        center=False,
+    )
+    reports[f"block.{target_index}.mlp.feature_fold"] = (
+        mlp_coordinates.report.as_dict()
     )
     target_mlp = read_mlp_operators(target_model, target_block_layout)
     if target_block_layout.mlp.kind == "dense":
@@ -951,7 +963,7 @@ def _attention_feature_coordinates(
     source_blocks: Sequence[DecoderBlockTrace],
     target_block_layout: Any,
     max_coordinate_rows: int,
-) -> tuple[CoordinateMap, CoordinateMap, CoordinateMap]:
+) -> tuple[FeatureFoldMap, FeatureFoldMap, FeatureFoldMap]:
     q_rows = _sample_concatenated_rows(
         torch,
         [block.query_projection_output for block in source_blocks],
@@ -970,37 +982,54 @@ def _attention_feature_coordinates(
     q_width = target_block_layout.attention.query_width
     k_width = target_block_layout.attention.key_value_width
     if q_rows.shape[1] == k_rows.shape[1] and q_width == k_width:
-        shared = build_parent_residual_basis(
-            _sample_concatenated_rows(
-                torch,
-                [q_rows, k_rows],
-                max_coordinate_rows,
-            ),
+        shared = build_feature_fold_map(
+            [q_rows, k_rows],
             q_width,
-            center=False,
         )
         q_coordinates = shared
         k_coordinates = shared
     else:
-        q_coordinates = build_parent_residual_basis(
+        q_coordinates = build_feature_fold_map(
             q_rows,
             q_width,
-            center=False,
         )
-        k_coordinates = build_parent_residual_basis(
+        k_coordinates = build_feature_fold_map(
             k_rows,
             k_width,
-            center=False,
         )
-    v_coordinates = build_parent_residual_basis(v_rows, k_width, center=False)
+    v_coordinates = build_feature_fold_map(v_rows, k_width)
     return q_coordinates, k_coordinates, v_coordinates
+
+
+def _source_mlp_feature_rows(
+    torch: Any,
+    source_blocks: Sequence[DecoderBlockTrace],
+    max_rows: int,
+) -> tuple[Any, ...]:
+    fields = (
+        "down_projection_input",
+        "mlp_input_projection_output",
+        "mlp_gate_projection_output",
+        "mlp_up_projection_output",
+    )
+    matrices = []
+    for field in fields:
+        values = [getattr(block, field) for block in source_blocks]
+        present = [value for value in values if value is not None]
+        if present:
+            matrices.append(
+                _sample_concatenated_rows(torch, present, max_rows)
+            )
+    if not matrices:
+        raise BlankBootstrapError("Source trace has no MLP feature rows to fold.")
+    return tuple(matrices)
 
 
 def _mean_source_mlp_producer(
     torch: Any,
     source_blocks: Sequence[DecoderBlockTrace],
     target_role: str,
-    coordinates: CoordinateMap,
+    coordinates: Any,
 ) -> Any:
     projected = []
     for block in source_blocks:
@@ -1028,7 +1057,7 @@ def _mean_source_mlp_producer(
             raise BlankBootstrapError(
                 f"Source trace cannot provide MLP producer role {target_role!r}."
             )
-        projected.append(encode_coordinates(source, coordinates))
+        projected.append(_encode_rows(source, coordinates))
     return torch.stack(projected, dim=0).mean(dim=0)
 
 
@@ -1036,11 +1065,9 @@ def _mean_projected(
     torch: Any,
     blocks: Sequence[DecoderBlockTrace],
     field: str,
-    coordinates: CoordinateMap,
+    coordinates: Any,
 ) -> Any:
-    values = [
-        encode_coordinates(getattr(block, field), coordinates) for block in blocks
-    ]
+    values = [_encode_rows(getattr(block, field), coordinates) for block in blocks]
     return torch.stack(values, dim=0).mean(dim=0)
 
 
@@ -1048,12 +1075,16 @@ def _sum_projected(
     torch: Any,
     blocks: Sequence[DecoderBlockTrace],
     field: str,
-    coordinates: CoordinateMap,
+    coordinates: Any,
 ) -> Any:
-    values = [
-        encode_coordinates(getattr(block, field), coordinates) for block in blocks
-    ]
+    values = [_encode_rows(getattr(block, field), coordinates) for block in blocks]
     return torch.stack(values, dim=0).sum(dim=0)
+
+
+def _encode_rows(rows: Any, coordinates: Any) -> Any:
+    if isinstance(coordinates, FeatureFoldMap):
+        return coordinates.encode(rows)
+    return encode_coordinates(rows, coordinates)
 
 
 def _operator_from_fit(operator: LinearOperator, fit: Any) -> LinearOperator:
