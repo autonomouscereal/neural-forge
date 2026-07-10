@@ -78,9 +78,14 @@ def _llama_target(*, hidden_size: int = 8):
     )
 
 
-def _batch(seed: int = 404):
+def _batch(seed: int = 404, *, batch_size: int = 8, sequence_length: int = 8):
     generator = torch.Generator().manual_seed(seed)
-    input_ids = torch.randint(3, 64, (8, 8), generator=generator)
+    input_ids = torch.randint(
+        3,
+        64,
+        (batch_size, sequence_length),
+        generator=generator,
+    )
     input_ids[:, 0] = 1
     return {
         "input_ids": input_ids,
@@ -90,6 +95,26 @@ def _batch(seed: int = 404):
 
 def _state(model):
     return {name: value.detach().clone() for name, value in model.state_dict().items()}
+
+
+def _right_pad(batch, padded_length: int):
+    input_ids = batch["input_ids"]
+    attention_mask = batch["attention_mask"]
+    padding = padded_length - int(input_ids.shape[1])
+    assert padding > 0
+    return {
+        "input_ids": torch.cat(
+            [input_ids, torch.zeros((input_ids.shape[0], padding), dtype=torch.long)],
+            dim=1,
+        ),
+        "attention_mask": torch.cat(
+            [
+                attention_mask,
+                torch.zeros((input_ids.shape[0], padding), dtype=torch.long),
+            ],
+            dim=1,
+        ),
+    }
 
 
 @pytest.mark.parametrize("source_factory", [_gpt2_source, _llama_source])
@@ -108,7 +133,7 @@ def test_blank_bootstrap_improves_source_anchors_and_covers_every_target_role(
         validation_inputs=validation,
     )
 
-    assert result.transaction.accepted is True
+    assert result.transaction.accepted is True, result.transaction.report["gate"]
     assert result.transaction.report["coverage"]["complete"] is True
     manifest = build_decoder_transport_manifest(target)
     assert result.transaction.report["coverage"]["evidenced_role_count"] == len(
@@ -152,6 +177,33 @@ def test_rejected_bootstrap_restores_the_exact_blank_target() -> None:
     }
     for name, value in target.state_dict().items():
         assert torch.equal(value, before[name]), name
+
+
+def test_prompt_pooled_bootstrap_accepts_different_token_sequence_lengths() -> None:
+    source = _gpt2_source()
+    target = _llama_target()
+    target_calibration = _batch(501, batch_size=16, sequence_length=5)
+    target_validation = _batch(502, batch_size=16, sequence_length=4)
+
+    result = bootstrap_blank_decoder_models(
+        source,
+        target,
+        _right_pad(target_calibration, 9),
+        validation_inputs=_right_pad(target_validation, 7),
+        target_calibration_inputs=target_calibration,
+        target_validation_inputs=target_validation,
+        trace_pooling="mean",
+        fit_full_lm_head=False,
+    )
+
+    assert result.transaction.accepted is True, result.transaction.report["gate"]
+    assert result.transaction.report["coverage"]["complete"] is True
+    assert result.candidate_gate_metrics.final_state.relative_rmse <= (
+        result.baseline_gate_metrics.final_state.relative_rmse
+    )
+    assert result.candidate_gate_metrics.logits.relative_rmse <= (
+        result.baseline_gate_metrics.logits.relative_rmse
+    )
 
 
 def test_blank_bootstrap_rejects_a_wider_target_before_mutation() -> None:

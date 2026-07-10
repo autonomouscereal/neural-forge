@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any, Literal, Mapping, Sequence
 
 from neural_forge.hf_arch_layout import (
     DecoderLayout,
@@ -47,6 +47,7 @@ from neural_forge.hf_transport_trace import (
     FlattenedTransportTrace,
     collect_hf_transport_trace,
 )
+from neural_forge.hf_trace_pooling import pool_hf_transport_trace
 
 
 class BlankBootstrapError(ValueError):
@@ -78,6 +79,9 @@ def bootstrap_blank_decoder_models(
     calibration_inputs: Mapping[str, Any] | Any,
     *,
     validation_inputs: Mapping[str, Any] | Any | None = None,
+    target_calibration_inputs: Mapping[str, Any] | Any | None = None,
+    target_validation_inputs: Mapping[str, Any] | Any | None = None,
+    trace_pooling: Literal["token_rows", "mean", "last_valid"] = "token_rows",
     ridge: float = 1e-5,
     min_final_state_relative_improvement: float = 0.0,
     min_logit_relative_improvement: float = 0.0,
@@ -101,6 +105,10 @@ def bootstrap_blank_decoder_models(
         _nonnegative_float(value, name)
     if not isinstance(fit_full_lm_head, bool):
         raise BlankBootstrapError("fit_full_lm_head must be boolean.")
+    if trace_pooling not in {"token_rows", "mean", "last_valid"}:
+        raise BlankBootstrapError(
+            "trace_pooling must be token_rows, mean, or last_valid."
+        )
     if (
         isinstance(max_full_head_fit_elements, bool)
         or not isinstance(max_full_head_fit_elements, int)
@@ -124,10 +132,39 @@ def bootstrap_blank_decoder_models(
     validation_values = (
         calibration_inputs if validation_inputs is None else validation_inputs
     )
+    target_calibration_values = (
+        calibration_inputs
+        if target_calibration_inputs is None
+        else target_calibration_inputs
+    )
+    if target_validation_inputs is not None:
+        target_validation_values = target_validation_inputs
+    elif target_calibration_inputs is None:
+        target_validation_values = validation_values
+    elif validation_inputs is None:
+        target_validation_values = target_calibration_values
+    else:
+        raise BlankBootstrapError(
+            "target_validation_inputs is required when separate source/target "
+            "calibration inputs and a source validation split are supplied."
+        )
 
-    source_calibration = _flat_trace(source_model, calibration_inputs)
-    source_validation = _flat_trace(source_model, validation_values)
-    baseline_validation = _flat_trace(target_model, validation_values)
+    source_calibration = _trace_rows(
+        source_model,
+        calibration_inputs,
+        trace_pooling,
+    )
+    source_validation = _trace_rows(
+        source_model,
+        validation_values,
+        trace_pooling,
+    )
+    baseline_validation = _trace_rows(
+        target_model,
+        target_validation_values,
+        trace_pooling,
+    )
+    _require_row_alignment(source_validation, baseline_validation, "validation")
     residual_rows = _residual_basis_rows(torch, source_calibration)
     residual_coordinates = build_parent_residual_basis(
         residual_rows,
@@ -155,7 +192,8 @@ def bootstrap_blank_decoder_models(
             target_layout,
             residual_coordinates,
             source_calibration,
-            calibration_inputs,
+            target_calibration_values,
+            trace_pooling,
             fit_reports,
         )
         for target_index, source_span in enumerate(donor_layer_spans):
@@ -166,7 +204,8 @@ def bootstrap_blank_decoder_models(
                 source_layout,
                 target_layout,
                 source_calibration,
-                calibration_inputs,
+                target_calibration_values,
+                trace_pooling,
                 target_index,
                 source_span,
                 residual_coordinates,
@@ -180,7 +219,8 @@ def bootstrap_blank_decoder_models(
             source_layout,
             target_layout,
             source_calibration,
-            calibration_inputs,
+            target_calibration_values,
+            trace_pooling,
             residual_coordinates,
             ridge,
             fit_full_lm_head,
@@ -191,7 +231,11 @@ def bootstrap_blank_decoder_models(
 
     def gate(_coverage_report) -> GateDecision:
         nonlocal candidate_gate_metrics
-        candidate_validation = _flat_trace(target_model, validation_values)
+        candidate_validation = _trace_rows(
+            target_model,
+            target_validation_values,
+            trace_pooling,
+        )
         candidate_gate_metrics = _gate_metrics(
             candidate_validation,
             desired_validation_final,
@@ -290,8 +334,29 @@ def _validate_bootstrap_contract(
         )
 
 
-def _flat_trace(model: Any, inputs: Mapping[str, Any] | Any) -> FlattenedTransportTrace:
-    return collect_hf_transport_trace(model, inputs).flattened_valid_rows()
+def _trace_rows(
+    model: Any,
+    inputs: Mapping[str, Any] | Any,
+    pooling: Literal["token_rows", "mean", "last_valid"],
+) -> Any:
+    trace = collect_hf_transport_trace(model, inputs)
+    if pooling == "token_rows":
+        return trace.flattened_valid_rows()
+    return pool_hf_transport_trace(
+        trace,
+        pooling=pooling,
+        logits_policy="last_valid",
+    )
+
+
+def _require_row_alignment(left: Any, right: Any, name: str) -> None:
+    left_rows = int(left.blocks[0].block_input.shape[0])
+    right_rows = int(right.blocks[0].block_input.shape[0])
+    if left_rows != right_rows:
+        raise BlankBootstrapError(
+            f"Source and target {name} traces must have equal row counts; "
+            f"got {left_rows} and {right_rows}."
+        )
 
 
 def _residual_basis_rows(torch: Any, trace: FlattenedTransportTrace) -> Any:
@@ -310,7 +375,8 @@ def _initialize_embedding_and_head(
     target_layout: DecoderLayout,
     residual_coordinates: CoordinateMap,
     source_trace: FlattenedTransportTrace,
-    calibration_inputs: Mapping[str, Any] | Any,
+    target_calibration_inputs: Mapping[str, Any] | Any,
+    trace_pooling: Literal["token_rows", "mean", "last_valid"],
     reports: dict[str, Any],
 ) -> None:
     source_embedding = source_model.get_input_embeddings()
@@ -357,7 +423,8 @@ def _initialize_embedding_and_head(
             source_layout,
             target_layout,
             source_trace,
-            calibration_inputs,
+            target_calibration_inputs,
+            trace_pooling,
             residual_coordinates,
             reports,
         )
@@ -370,7 +437,8 @@ def _initialize_learned_positions(
     source_layout: DecoderLayout,
     target_layout: DecoderLayout,
     source_trace: FlattenedTransportTrace,
-    calibration_inputs: Mapping[str, Any] | Any,
+    target_calibration_inputs: Mapping[str, Any] | Any,
+    trace_pooling: Literal["token_rows", "mean", "last_valid"],
     residual_coordinates: CoordinateMap,
     reports: dict[str, Any],
 ) -> None:
@@ -394,7 +462,12 @@ def _initialize_learned_positions(
             target_position.weight[:rows].copy_(projected.to(target_position.weight))
             method = "source-position-basis-projection"
         else:
-            input_ids = _input_ids(calibration_inputs).detach().cpu()
+            if trace_pooling != "token_rows":
+                raise BlankBootstrapError(
+                    "A learned-absolute target cannot infer per-position rows from "
+                    "prompt-pooled rotary source traces."
+                )
+            input_ids = _input_ids(target_calibration_inputs).detach().cpu()
             target_tokens = (
                 target_model.get_input_embeddings().weight.detach().cpu()[input_ids]
             )
@@ -424,7 +497,8 @@ def _fit_target_block(
     source_layout: DecoderLayout,
     target_layout: DecoderLayout,
     source_trace: FlattenedTransportTrace,
-    calibration_inputs: Mapping[str, Any] | Any,
+    target_calibration_inputs: Mapping[str, Any] | Any,
+    trace_pooling: Literal["token_rows", "mean", "last_valid"],
     target_index: int,
     source_span: tuple[int, ...],
     residual_coordinates: CoordinateMap,
@@ -433,7 +507,8 @@ def _fit_target_block(
 ) -> None:
     del source_model, source_layout
     target_block_layout = target_layout.blocks[target_index]
-    current = _flat_trace(target_model, calibration_inputs)
+    current = _trace_rows(target_model, target_calibration_inputs, trace_pooling)
+    _require_row_alignment(source_trace, current, "calibration")
     target_block = current.blocks[target_index]
     source_blocks = [source_trace.blocks[index] for index in source_span]
 
@@ -458,7 +533,7 @@ def _fit_target_block(
     )
     reports[f"block.{target_index}.attention.norm"] = _fit_summary(attention_norm_fit)
 
-    current = _flat_trace(target_model, calibration_inputs)
+    current = _trace_rows(target_model, target_calibration_inputs, trace_pooling)
     target_block = current.blocks[target_index]
     q_coordinates, k_coordinates, v_coordinates = _attention_feature_coordinates(
         torch,
@@ -517,7 +592,7 @@ def _fit_target_block(
         for name, fit in (("query", q_fit), ("key", k_fit), ("value", v_fit)):
             reports[f"block.{target_index}.attention.{name}"] = _fit_summary(fit)
 
-    current = _flat_trace(target_model, calibration_inputs)
+    current = _trace_rows(target_model, target_calibration_inputs, trace_pooling)
     target_block = current.blocks[target_index]
     desired_attention_delta = _sum_projected(
         torch,
@@ -547,7 +622,7 @@ def _fit_target_block(
     )
     reports[f"block.{target_index}.attention.output"] = _fit_summary(output_fit)
 
-    current = _flat_trace(target_model, calibration_inputs)
+    current = _trace_rows(target_model, target_calibration_inputs, trace_pooling)
     target_block = current.blocks[target_index]
     desired_mlp_norm = _mean_projected(
         torch,
@@ -570,7 +645,7 @@ def _fit_target_block(
     )
     reports[f"block.{target_index}.mlp.norm"] = _fit_summary(mlp_norm_fit)
 
-    current = _flat_trace(target_model, calibration_inputs)
+    current = _trace_rows(target_model, target_calibration_inputs, trace_pooling)
     target_block = current.blocks[target_index]
     mlp_coordinates = build_parent_residual_basis(
         torch.cat([block.down_projection_input for block in source_blocks], dim=0),
@@ -637,7 +712,7 @@ def _fit_target_block(
         reports[f"block.{target_index}.mlp.up"] = _fit_summary(up_fit)
     write_mlp_operators(target_model, target_block_layout, target_mlp)
 
-    current = _flat_trace(target_model, calibration_inputs)
+    current = _trace_rows(target_model, target_calibration_inputs, trace_pooling)
     target_block = current.blocks[target_index]
     desired_endpoint = encode_coordinates(
         source_blocks[-1].block_output,
@@ -673,7 +748,8 @@ def _fit_final_interface(
     source_layout: DecoderLayout,
     target_layout: DecoderLayout,
     source_trace: FlattenedTransportTrace,
-    calibration_inputs: Mapping[str, Any] | Any,
+    target_calibration_inputs: Mapping[str, Any] | Any,
+    trace_pooling: Literal["token_rows", "mean", "last_valid"],
     residual_coordinates: CoordinateMap,
     ridge: float,
     fit_full_lm_head: bool,
@@ -681,7 +757,7 @@ def _fit_final_interface(
     reports: dict[str, Any],
 ) -> None:
     del source_model, source_layout
-    current = _flat_trace(target_model, calibration_inputs)
+    current = _trace_rows(target_model, target_calibration_inputs, trace_pooling)
     target_norm = resolve_module(target_model, target_layout.final_norm.path)
     norm_input = _norm_input_from_module_trace(current)
     desired_norm = encode_coordinates(
@@ -699,7 +775,7 @@ def _fit_final_interface(
     _write_norm_fit(target_model, target_layout.final_norm.path, norm_fit)
     reports["decoder.final_norm"] = _fit_summary(norm_fit)
 
-    current = _flat_trace(target_model, calibration_inputs)
+    current = _trace_rows(target_model, target_calibration_inputs, trace_pooling)
     head = target_model.get_output_embeddings()
     if fit_full_lm_head:
         elements = int(current.final_norm_output.shape[0]) * int(
