@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT=/home/cereal/model-surgery-lab/neural-forge-pivot
 RUN_ROOT=/mnt/ai_data/neural-forge/cross_token_real_medoid_20260710
-TAG=${TAG:-qwen3_4b_to_blank_qwen134m_v50982_dual_realmedoid_gpu0_r1_20260710}
+TAG=${TAG:-qwen3_4b_to_blank_qwen134m_v50982_dual_realmedoid_gpu0_r2_20260710}
 PY=/home/cereal/model-surgery-lab/venv/bin/python
 GPU=${GPU:-GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561}
 MAX_OPERATOR_DELTA_RATIO=${MAX_OPERATOR_DELTA_RATIO:-4.0}
@@ -53,7 +53,7 @@ mkdir -p "$RUN_ROOT"
   --min-final-state-improvement 0 \
   --min-logit-improvement 0 \
   --min-top1-gain 0 \
-  --max-coordinate-rows 512 \
+  --max-coordinate-rows 768 \
   --vocab-projection-chunk-size 2048 \
   --vocab-row-norm-repair none \
   --dual-alpha 1 \
