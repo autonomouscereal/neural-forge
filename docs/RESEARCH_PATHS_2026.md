@@ -200,6 +200,24 @@ not predict autoregressive behavior. The next pair path must therefore fit
 producer paths, use diverse contribution-aware nonlinear supports, reject high
 absolute error, and gate the final interface on real donor top-token behavior.
 
+The follow-up full-vocabulary oblique head isolation is also complete. It left
+the 18-block body unchanged, fit a `384 -> 2560` child-to-donor decoder by
+prompt-split FP64 ridge, composed all 151,936 donor head rows through that
+decoder, and selected an alpha against actual held-out donor logits. At alpha
+`1.0`, teacher-forced full-vocabulary top-1 agreement improved from `11.67%` to
+`65.75%`, teacher-top-1-in-child-top-5 improved from `30.55%` to `85.67%`, and
+mean donor-to-child KL fell from `10.41` to `1.20`. This proved that substantial
+teacher-forced state information is linearly decodable from the folded body.
+
+Autoregressive evidence nevertheless remained negative. PPL improved from
+`296,982,020.00` to `62,166,539.87`, but behavior stayed `0/1000`, generation
+stayed `0/1000`, choice fell from `146/250` to `141/250`, and the child retained
+none of the parent's 400 behavior or 388 generation passes. All seven manual
+outputs remained repetitive, now dominated by common English tokens such as
+`the` and `a` rather than the earlier multilingual fragments. Teacher-forced
+logit agreement is therefore useful as a body diagnostic, but cannot replace a
+greedy-rollout gate or post-nonlinearity body reconstruction.
+
 The evidence audit has still found no completed, truly zero-gradient
 blank-target run at `25x+` with coherent behavior or meaningful generation
 retention. The sole retained `module-all` generation item was surrounded by
