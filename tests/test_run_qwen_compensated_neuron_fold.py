@@ -575,6 +575,85 @@ def test_source_padded_transaction_refreshes_compact_activations() -> None:
     )
 
 
+def test_repeated_source_padded_transactions_compose_indices_and_reload(
+    tmp_path: Path,
+) -> None:
+    model = _tiny_qwen(1486, layers=1)
+    initial = MODULE.model_accounting(model)
+    provider = _ActivationProvider(1487)
+    report = MODULE.run_fold_transactions(
+        model,
+        activation_provider=provider,
+        small_gate=_Decisions([True, True]),
+        target_parameters=initial.unique_parameter_count - 48,
+        target_bytes=None,
+        config=_loop_config(
+            compute_shape_mode="source-padded",
+            max_transient_compute_bytes=2 * 1024**2,
+            neighbor_window=4,
+        ),
+    )
+
+    assert report["target"]["reached"] is True, {
+        "stop_reason": report["stop_reason"],
+        "accepted_count": report["accepted_count"],
+        "rejected_count": report["rejected_count"],
+        "layer_skips": report["layer_skips"],
+    }
+    assert report["accepted_count"] == 2
+    assert report["activation_collection_count"] == 3
+    assert provider.calls == 3
+    first, second = report["accepted_transactions"]
+    first_shape = first["compute_shape"]
+    second_shape = second["compute_shape"]
+    assert first_shape["stored_width"] == 5
+    assert second_shape["stored_width"] == 4
+    assert first_shape["compute_width"] == second_shape["compute_width"] == 6
+    assert len(first_shape["compute_indices"]) == 5
+    assert len(second_shape["compute_indices"]) == 4
+    assert set(second_shape["compute_indices"]) < set(first_shape["compute_indices"])
+    assert second_shape["persistent_full_width_parameter_or_buffer"] is False
+
+    final = MODULE.model_accounting(model)
+    assert final.unique_parameter_count == initial.unique_parameter_count - 48
+    mlp = model.model.layers[0].mlp
+    assert isinstance(mlp, MODULE.Qwen3SourcePaddedCompensatedMLP)
+    assert mlp.compute_width == 6
+    assert mlp.gate_proj.out_features == 4
+    assert tuple(mlp.compute_indices) == tuple(second_shape["compute_indices"])
+    input_ids = torch.tensor([[1, 4, 7, 2]])
+    with torch.inference_mode():
+        expected = model(input_ids=input_ids, use_cache=False).logits.detach().clone()
+
+    checkpoint = tmp_path / "repeated-source-padded"
+    manifest = MODULE.save_ragged_qwen_checkpoint(
+        model,
+        None,
+        checkpoint,
+        transaction_records=report["accepted_transactions"],
+        source_provenance={"source_model": "tiny-repeated-source-padded-test"},
+    )
+    reloaded, tokenizer, loaded = MODULE.load_ragged_qwen_checkpoint(
+        checkpoint, device="cpu"
+    )
+    with torch.inference_mode():
+        actual = reloaded(input_ids=input_ids, use_cache=False).logits
+
+    torch.testing.assert_close(actual, expected, rtol=0.0, atol=0.0)
+    assert tokenizer is None
+    assert MODULE.model_accounting(reloaded) == final
+    reloaded_mlp = reloaded.model.layers[0].mlp
+    assert isinstance(reloaded_mlp, MODULE.Qwen3SourcePaddedCompensatedMLP)
+    assert reloaded_mlp.compute_width == 6
+    assert reloaded_mlp.gate_proj.out_features == 4
+    assert tuple(reloaded_mlp.compute_indices) == tuple(second_shape["compute_indices"])
+    shape = manifest["payload"]["model"]["compute_shape"]["layers"][0]
+    assert shape["stored_width"] == 4
+    assert shape["compute_width"] == 6
+    assert shape["compute_indices"] == second_shape["compute_indices"]
+    assert loaded["runtime_load"]["parent_checkpoint_accesses"] == 0
+
+
 def test_source_padded_transient_cap_fails_before_compute() -> None:
     module = MODULE.Qwen3SourcePaddedCompensatedMLP(
         8,
