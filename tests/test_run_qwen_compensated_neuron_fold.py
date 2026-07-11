@@ -283,6 +283,35 @@ def test_discovery_selection_certification_splits_are_pairwise_disjoint(
     assert len(report["provenance_sha256"]) == 64
 
 
+def test_full_selection_suite_must_be_token_disjoint_from_certification() -> None:
+    suite = {
+        "text_evals": ["same text"],
+        "choice_probes": [{"id": "c", "prompt": "same choice"}],
+        "generation_prompts": [{"id": "g", "prompt": "same generation"}],
+        "behavior_probes": [{"id": "b", "prompt": "same behavior"}],
+    }
+    with pytest.raises(MODULE.QwenCompensatedRunnerError, match="identical token paths"):
+        MODULE.verify_selection_certification_disjoint(
+            _Tokenizer(), suite, suite, max_length=32
+        )
+    selection = {
+        name: [
+            (
+                f"adaptive {value}"
+                if isinstance(value, str)
+                else {**value, "id": f"selection-{value['id']}", "prompt": f"adaptive {value['prompt']}"}
+            )
+            for value in values
+        ]
+        for name, values in suite.items()
+    }
+    report = MODULE.verify_selection_certification_disjoint(
+        _Tokenizer(), selection, suite, max_length=32
+    )
+    assert report["overlap_count"] == 0
+    assert report["verified"] is True
+
+
 def test_rejected_transaction_rolls_back_then_accept_refreshes() -> None:
     model = _tiny_qwen()
     initial = MODULE.model_accounting(model)
@@ -892,6 +921,31 @@ def test_resource_guard_enforces_host_cap(monkeypatch) -> None:
     )
     with pytest.raises(MODULE.QwenCompensatedRunnerError, match="Host RSS cap"):
         guard.check("adversarial")
+
+
+def test_resource_guard_resolves_cuda_string_to_visible_integer_index(
+    monkeypatch,
+) -> None:
+    resets: list[int] = []
+    monkeypatch.setattr(MODULE, "_current_process_rss_bytes", lambda: (0, 0))
+    monkeypatch.setattr(MODULE.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(MODULE.torch.cuda, "device_count", lambda: 1)
+    monkeypatch.setattr(MODULE.torch.cuda, "current_device", lambda: 0)
+    monkeypatch.setattr(MODULE.torch.cuda, "max_memory_allocated", lambda index: 0)
+    monkeypatch.setattr(MODULE.torch.cuda, "max_memory_reserved", lambda index: 0)
+    monkeypatch.setattr(
+        MODULE.torch.cuda,
+        "reset_peak_memory_stats",
+        lambda index: resets.append(index),
+    )
+    guard = MODULE.WorkflowResourceGuard(
+        "cuda:0", 1024, 1024, 1024, 60, {}
+    )
+
+    with guard.phase("gpu-phase"):
+        pass
+
+    assert resets == [0]
 
 
 def test_certified_publication_refuses_unsealed_artifact(tmp_path: Path) -> None:

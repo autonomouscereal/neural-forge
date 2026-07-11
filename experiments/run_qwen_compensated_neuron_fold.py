@@ -351,7 +351,25 @@ class WorkflowResourceGuard:
             "max_wall_seconds",
         ):
             _positive_int(getattr(self, name), name)
+        try:
+            self.device = str(torch.device(self.device))
+        except (TypeError, RuntimeError) as exc:
+            raise QwenCompensatedRunnerError(
+                f"Invalid workflow device {self.device!r}."
+            ) from exc
         self.started = time.monotonic()
+
+    def _cuda_index(self) -> int | None:
+        device = torch.device(self.device)
+        if device.type != "cuda" or not torch.cuda.is_available():
+            return None
+        index = torch.cuda.current_device() if device.index is None else int(device.index)
+        count = int(torch.cuda.device_count())
+        if not 0 <= index < count:
+            raise QwenCompensatedRunnerError(
+                f"CUDA device index {index} is outside the visible device count {count}."
+            )
+        return index
 
     def check(self, phase: str) -> dict[str, Any]:
         elapsed = float(time.monotonic() - self.started)
@@ -373,9 +391,10 @@ class WorkflowResourceGuard:
                 f"Host RSS cap exceeded during {phase}: "
                 f"peak={observed_host}>{self.max_host_rss_bytes}."
             )
-        if torch.cuda.is_available() and str(self.device).startswith("cuda"):
-            allocated = int(torch.cuda.max_memory_allocated(self.device))
-            reserved = int(torch.cuda.max_memory_reserved(self.device))
+        cuda_index = self._cuda_index()
+        if cuda_index is not None:
+            allocated = int(torch.cuda.max_memory_allocated(cuda_index))
+            reserved = int(torch.cuda.max_memory_reserved(cuda_index))
             values.update(
                 {
                     "cuda_observed": True,
@@ -401,8 +420,9 @@ class WorkflowResourceGuard:
     @contextlib.contextmanager
     def phase(self, name: str):
         self.check(f"{name}:start")
-        if torch.cuda.is_available() and str(self.device).startswith("cuda"):
-            torch.cuda.reset_peak_memory_stats(self.device)
+        cuda_index = self._cuda_index()
+        if cuda_index is not None:
+            torch.cuda.reset_peak_memory_stats(cuda_index)
         try:
             yield
         finally:
@@ -1209,6 +1229,48 @@ def build_three_split_provenance(
     }
     payload["provenance_sha256"] = _canonical_sha256(payload)
     return payload
+
+
+def verify_selection_certification_disjoint(
+    tokenizer: Any,
+    selection_suite: Mapping[str, Any],
+    certification_suite: Mapping[str, Any],
+    *,
+    max_length: int,
+) -> dict[str, Any]:
+    def token_paths(suite: Mapping[str, Any]) -> set[str]:
+        texts = [str(value) for value in suite["text_evals"]]
+        for collection in (
+            "choice_probes",
+            "generation_prompts",
+            "behavior_probes",
+        ):
+            texts.extend(str(item["prompt"]) for item in suite[collection])
+        return {
+            codebook_runner._token_ids(tokenizer, text, max_length=max_length)
+            for text in texts
+        }
+
+    selection_paths = token_paths(selection_suite)
+    certification_paths = token_paths(certification_suite)
+    overlap = selection_paths & certification_paths
+    if overlap:
+        raise QwenCompensatedRunnerError(
+            "Adaptive selection and certification contain identical token paths: "
+            f"{len(overlap)} overlaps."
+        )
+    return {
+        "schema": "neural-forge-selection-certification-disjoint-v1",
+        "selection_token_path_count": len(selection_paths),
+        "certification_token_path_count": len(certification_paths),
+        "overlap_count": 0,
+        "selection_token_paths_sha256": _canonical_sha256(sorted(selection_paths)),
+        "certification_token_paths_sha256": _canonical_sha256(
+            sorted(certification_paths)
+        ),
+        "max_length": max_length,
+        "verified": True,
+    }
 
 
 class CachedParentGateEvaluator:
@@ -3807,6 +3869,20 @@ def prepare_bound_parent_caches(args: argparse.Namespace) -> dict[str, Any]:
         gate_choice_count=args.gate_choice_count,
         gate_generation_count=args.gate_generation_count,
     )
+    selected_selection_suite = _selected_suite(
+        args.selection_eval_suite,
+        max_text_evals=args.selection_max_text_evals,
+        max_choice_probes=args.selection_max_choice_probes,
+        max_generation_prompts=args.selection_max_generation_prompts,
+        max_behavior_probes=args.selection_max_behavior_probes,
+    )
+    selected_certification_suite = _selected_suite(
+        args.eval_suite,
+        max_text_evals=args.max_text_evals,
+        max_choice_probes=args.max_choice_probes,
+        max_generation_prompts=args.max_generation_prompts,
+        max_behavior_probes=args.max_behavior_probes,
+    )
     for path in (args.cached_parent_eval, args.cached_parent_selection_eval):
         if path.exists() and not args.overwrite_parent_caches:
             raise FileExistsError(
@@ -3823,6 +3899,12 @@ def prepare_bound_parent_caches(args: argparse.Namespace) -> dict[str, Any]:
     with guard.phase("parent-cache-load"):
         model, tokenizer, tokenizer_name = _load_source_runtime(args)
     with guard.phase("parent-cache-identity"):
+        split_report = verify_selection_certification_disjoint(
+            tokenizer,
+            selected_selection_suite,
+            selected_certification_suite,
+            max_length=args.calibration_max_length,
+        )
         certification_identity = build_exact_parent_identity(
             model,
             tokenizer,
@@ -3892,6 +3974,7 @@ def prepare_bound_parent_caches(args: argparse.Namespace) -> dict[str, Any]:
         "selection_cache_sha256": _file_sha256(args.cached_parent_selection_eval),
         "certification_identity_sha256": certification_identity["identity_sha256"],
         "selection_identity_sha256": selection_identity["identity_sha256"],
+        "selection_certification_split": split_report,
         "resource_phases": guard.phases,
         "parent_forward_cache_built_once": True,
         "zero_optimizer_steps": 0,
@@ -4034,6 +4117,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         max_choice_probes=args.max_choice_probes,
         max_generation_prompts=args.max_generation_prompts,
         max_behavior_probes=args.max_behavior_probes,
+    )
+    selection_certification_split = verify_selection_certification_disjoint(
+        tokenizer,
+        selected_selection_suite,
+        selected_certification_suite,
+        max_length=args.calibration_max_length,
+    )
+    _write_json(
+        output / "selection_certification_split.json",
+        selection_certification_split,
     )
     split_provenance = build_three_split_provenance(
         tokenizer,
