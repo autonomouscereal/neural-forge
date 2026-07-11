@@ -162,8 +162,8 @@ def _loop_config(**values):
         "projection_count": 16,
         "neighbor_window": 5,
         "max_pair_candidates": 200,
-        "calibration_provenance_id": "calibration-provenance-sha",
-        "validation_provenance_id": "validation-provenance-sha",
+        "calibration_provenance_id": "a" * 64,
+        "validation_provenance_id": "b" * 64,
         "merges_per_transaction": 1,
         "max_candidate_attempts": 16,
         "max_transactions": 8,
@@ -428,10 +428,10 @@ def test_parameter_and_byte_targets_use_unique_accounting() -> None:
     assert proposal["arbitrary_pairing_enabled"] is True
     assert proposal["adjacent_pair_count"] + proposal["nonadjacent_pair_count"] == 1
     assert proposal["strategy_evidence"]["calibration_provenance_id"] == (
-        "calibration-provenance-sha"
+        "a" * 64
     )
     assert proposal["strategy_evidence"]["validation_provenance_id"] == (
-        "validation-provenance-sha"
+        "b" * 64
     )
     assert proposal["strategy_evidence"]["work_caps"]["all_work_caps_verified"] is True
 
@@ -1142,8 +1142,8 @@ def test_multi_anchor_runner_strategy_uses_bound_split_ids_and_same_gate() -> No
         target_bytes=None,
         config=_loop_config(
             fold_strategy="multi-anchor",
-            calibration_provenance_id="calibration-provenance-sha",
-            validation_provenance_id="validation-provenance-sha",
+            calibration_provenance_id="a" * 64,
+            validation_provenance_id="b" * 64,
             multi_anchor_candidate_pool_size=2,
             multi_anchor_max_anchors=2,
             multi_anchor_similarity_chunk_size=2,
@@ -1214,12 +1214,22 @@ def test_multi_anchor_strategy_rejects_tampered_observed_work_caps(monkeypatch) 
 
 
 @pytest.mark.parametrize("strategy", ["pair", "multi-anchor"])
+@pytest.mark.parametrize(
+    ("calibration_id", "validation_id"),
+    [
+        ("a" * 64, "a" * 64),
+        ("a" * 63, "b" * 64),
+        ("A" * 64, "b" * 64),
+    ],
+)
 def test_fold_strategy_fails_closed_without_distinct_provenance(
     strategy: str,
+    calibration_id: str,
+    validation_id: str,
 ) -> None:
     with pytest.raises(MODULE.QwenCompensatedRunnerError, match="distinct exact"):
         _loop_config(
             fold_strategy=strategy,
-            calibration_provenance_id="same",
-            validation_provenance_id="same",
+            calibration_provenance_id=calibration_id,
+            validation_provenance_id=validation_id,
         )

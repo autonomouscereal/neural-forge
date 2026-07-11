@@ -1665,13 +1665,19 @@ class FoldLoopConfig:
             raise QwenCompensatedRunnerError(
                 "fold_strategy must be 'pair' or 'multi-anchor'."
             )
-        if (
-            not self.calibration_provenance_id.strip()
-            or not self.validation_provenance_id.strip()
-            or self.calibration_provenance_id == self.validation_provenance_id
-        ):
+        provenance_ids = (
+            self.calibration_provenance_id,
+            self.validation_provenance_id,
+        )
+        if any(
+            not isinstance(value, str)
+            or len(value) != 64
+            or value != value.lower()
+            or any(character not in "0123456789abcdef" for character in value)
+            for value in provenance_ids
+        ) or provenance_ids[0] == provenance_ids[1]:
             raise QwenCompensatedRunnerError(
-                "Folding requires distinct exact calibration and validation provenance IDs."
+                "Folding requires distinct exact 64-hex calibration and validation provenance IDs."
             )
         for name in ("multi_anchor_ridge", "multi_anchor_max_coefficient_l1"):
             value = float(getattr(self, name))
