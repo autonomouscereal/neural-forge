@@ -23,6 +23,7 @@ __all__ = [
     "apply_observable_chart",
     "compose_chart_transitions",
     "decode_observable_chart",
+    "fit_jacobian_balanced_rollout_charts",
     "encode_observable_chart",
     "fit_layerwise_logit_observable_charts",
     "fit_logit_observable_chart",
@@ -1036,6 +1037,282 @@ def compose_chart_transitions(
         "bias": bias.contiguous(),
         "composed_transition_count": len(selected),
     }
+
+
+def _is_balanced_matrix(value: Any) -> bool:
+    return hasattr(value, "ndim") and int(value.ndim) == 2
+
+
+def _normalize_balanced_activation_groups(
+    activation_snapshots: Mapping[Any, Any] | Sequence[Any] | Any,
+    boundary_names: Sequence[Any] | None,
+) -> tuple[list[str], list[Any]]:
+    if _is_balanced_matrix(activation_snapshots):
+        groups = [activation_snapshots]
+        names = ["boundary_0"] if boundary_names is None else list(boundary_names)
+    elif isinstance(activation_snapshots, Mapping):
+        if boundary_names is not None:
+            raise ValueError(
+                "boundary_names cannot be used with an activation snapshot mapping."
+            )
+        names = [_normalize_identifier(item) for item in activation_snapshots]
+        groups = list(activation_snapshots.values())
+    elif isinstance(activation_snapshots, Sequence) and not isinstance(
+        activation_snapshots, (str, bytes)
+    ):
+        groups = list(activation_snapshots)
+        names = (
+            [f"boundary_{index}" for index in range(len(groups))]
+            if boundary_names is None
+            else [_normalize_identifier(item) for item in boundary_names]
+        )
+    else:
+        raise TypeError(
+            "activation_snapshots must be a matrix, sequence, or mapping."
+        )
+    names = [_normalize_identifier(item) for item in names]
+    if not groups:
+        raise ValueError("At least one boundary activation group is required.")
+    if len(names) != len(groups):
+        raise ValueError(
+            "boundary_names length must match the activation snapshot groups."
+        )
+    if len(set(names)) != len(names):
+        raise ValueError("Boundary names must be unique.")
+    return names, groups
+
+
+def _normalize_balanced_per_boundary(
+    value: Mapping[Any, Any] | Sequence[Any] | Any | None,
+    names: Sequence[str],
+    parameter_name: str,
+) -> list[Any | None]:
+    if value is None:
+        return [None] * len(names)
+    if isinstance(value, Mapping):
+        normalized = {_normalize_identifier(key): item for key, item in value.items()}
+        unknown = sorted(set(normalized).difference(names))
+        if unknown:
+            raise ValueError(
+                f"{parameter_name} contains unknown boundaries: {unknown}."
+            )
+        return [normalized.get(name) for name in names]
+    if len(names) == 1:
+        return [value]
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        groups = list(value)
+        if len(groups) == len(names):
+            return groups
+    raise ValueError(
+        f"{parameter_name} must provide one group for each boundary."
+    )
+
+
+def _balanced_pair_layout(
+    names: Sequence[str],
+    pair_boundaries: Mapping[Any, Sequence[Any]] | Sequence[Sequence[Any]] | None,
+) -> list[tuple[int, str, str]]:
+    if pair_boundaries is None:
+        if len(names) == 1:
+            return [(0, names[0], names[0])]
+        return [
+            (index, names[index], names[index + 1])
+            for index in range(len(names) - 1)
+        ]
+    if isinstance(pair_boundaries, Mapping):
+        raw_layout = list(pair_boundaries.items())
+    elif isinstance(pair_boundaries, Sequence) and not isinstance(
+        pair_boundaries, (str, bytes)
+    ):
+        raw_layout = list(enumerate(pair_boundaries))
+    else:
+        raise TypeError("pair_boundaries must be a sequence or mapping.")
+    layout = []
+    seen_indices = set()
+    known_names = set(names)
+    for raw_index, boundary_pair in raw_layout:
+        if isinstance(raw_index, bool) or int(raw_index) != raw_index:
+            raise ValueError("pair_boundaries keys must be non-negative integers.")
+        pair_index = int(raw_index)
+        if pair_index < 0 or pair_index in seen_indices:
+            raise ValueError("pair_boundaries keys must be unique non-negative integers.")
+        if not isinstance(boundary_pair, Sequence) or isinstance(
+            boundary_pair, (str, bytes)
+        ):
+            raise ValueError("Each pair boundary entry must contain input and output names.")
+        pair_names = list(boundary_pair)
+        if len(pair_names) != 2:
+            raise ValueError("Each pair boundary entry must contain exactly two names.")
+        input_name, output_name = (
+            _normalize_identifier(item) for item in pair_names
+        )
+        if input_name not in known_names or output_name not in known_names:
+            raise ValueError("pair_boundaries references an unknown boundary name.")
+        seen_indices.add(pair_index)
+        layout.append((pair_index, input_name, output_name))
+    if not layout:
+        raise ValueError("pair_boundaries must contain at least one pair.")
+    return sorted(layout)
+
+
+def fit_jacobian_balanced_rollout_charts(
+    activation_snapshots: Mapping[Any, Any] | Sequence[Any] | Any,
+    *,
+    rank: int,
+    forward_responses: Mapping[Any, Any] | Sequence[Any] | Any | None = None,
+    forward_jvp_responses: Mapping[Any, Any] | Sequence[Any] | Any | None = None,
+    krylov_responses: Mapping[Any, Any] | Sequence[Any] | Any | None = None,
+    output_sensitivities: Mapping[Any, Any] | Sequence[Any] | Any | None = None,
+    dual_sensitivities: Mapping[Any, Any] | Sequence[Any] | Any | None = None,
+    boundary_names: Sequence[Any] | None = None,
+    pair_boundaries: (
+        Mapping[Any, Sequence[Any]] | Sequence[Sequence[Any]] | None
+    ) = None,
+    center: bool = True,
+    activation_weight: float = 1.0,
+    forward_weight: float = 1.0,
+    sensitivity_weight: float = 1.0,
+    svd_atol: float = 0.0,
+    svd_rtol: float | None = None,
+    max_condition_number: float = 1e10,
+    allow_svd_fallback: bool = True,
+) -> dict[str, Any]:
+    """Fit parent-owned balanced rollout charts from external Jacobian sketches.
+
+    Each boundary may supply one matrix or a sequence of row-major matrices for
+    activations, forward JVP/Krylov responses, and output/VJP/dual
+    sensitivities.  Sampling remains the caller's responsibility.  The fit is
+    detached FP64 CPU algebra and never invokes backward or an optimizer.
+
+    Qwen pair matrices preserve the Petrov-Galerkin chart: ``input`` is the
+    primal decoder and ``output`` is the transposed dual encoder.  They are not
+    QR-orthonormalized or collapsed into one matrix.
+    """
+
+    from neural_forge.balanced_krylov import build_balanced_krylov_basis
+
+    torch = _torch()
+    requested_rank = _positive_int(rank, "rank")
+    names, activation_groups = _normalize_balanced_activation_groups(
+        activation_snapshots, boundary_names
+    )
+    grouped_inputs = {
+        "forward_responses": _normalize_balanced_per_boundary(
+            forward_responses, names, "forward_responses"
+        ),
+        "forward_jvp_responses": _normalize_balanced_per_boundary(
+            forward_jvp_responses, names, "forward_jvp_responses"
+        ),
+        "krylov_responses": _normalize_balanced_per_boundary(
+            krylov_responses, names, "krylov_responses"
+        ),
+        "output_sensitivities": _normalize_balanced_per_boundary(
+            output_sensitivities, names, "output_sensitivities"
+        ),
+        "dual_sensitivities": _normalize_balanced_per_boundary(
+            dual_sensitivities, names, "dual_sensitivities"
+        ),
+    }
+    charts = []
+    chart_by_name = {}
+    with torch.inference_mode():
+        for index, (name, activations) in enumerate(
+            zip(names, activation_groups, strict=True)
+        ):
+            basis = build_balanced_krylov_basis(
+                activations,
+                requested_rank,
+                forward_responses=grouped_inputs["forward_responses"][index],
+                forward_jvp_responses=(
+                    grouped_inputs["forward_jvp_responses"][index]
+                ),
+                krylov_responses=grouped_inputs["krylov_responses"][index],
+                output_sensitivities=(
+                    grouped_inputs["output_sensitivities"][index]
+                ),
+                dual_sensitivities=grouped_inputs["dual_sensitivities"][index],
+                center=center,
+                activation_weight=activation_weight,
+                forward_weight=forward_weight,
+                sensitivity_weight=sensitivity_weight,
+                svd_atol=svd_atol,
+                svd_rtol=svd_rtol,
+                max_condition_number=max_condition_number,
+                allow_svd_fallback=allow_svd_fallback,
+            )
+            encoder = torch.from_numpy(basis.encoder.copy()).t().contiguous()
+            decoder = torch.from_numpy(basis.decoder.copy()).t().contiguous()
+            mean = torch.from_numpy(basis.mean.copy()).contiguous()
+            chart_report = {"name": name, **basis.report.as_dict()}
+            chart = {
+                "name": name,
+                "method": "jacobian-balanced-krylov",
+                "encoder": encoder,
+                "decoder": decoder,
+                "boundary_mean": mean,
+                "observable_mean": mean,
+                "input_basis": decoder.t().contiguous(),
+                "output_basis": encoder.contiguous(),
+                "requested_rank": requested_rank,
+                "retained_rank": int(basis.rank),
+                "report": chart_report,
+            }
+            charts.append(chart)
+            chart_by_name[name] = chart
+
+    layout = _balanced_pair_layout(names, pair_boundaries)
+    pair_bases = {}
+    for pair_index, input_name, output_name in layout:
+        input_chart = chart_by_name[input_name]
+        output_chart = chart_by_name[output_name]
+        input_basis = input_chart["input_basis"]
+        output_basis = output_chart["output_basis"]
+        if tuple(input_basis.shape) != tuple(output_basis.shape):
+            raise ValueError(
+                "Paired balanced boundaries must have the same state width and rank."
+            )
+        pair_bases[pair_index] = {
+            "input": input_basis,
+            "output": output_basis,
+            "input_name": input_name,
+            "output_name": output_name,
+            "basis_mode": "jacobian-balanced-krylov",
+        }
+
+    report = {
+        "schema_version": REPORT_SCHEMA_VERSION,
+        "kind": "neural_forge_jacobian_balanced_rollout_charts",
+        "basis_mode": "jacobian-balanced-krylov",
+        "coordinate_policy": "biorthogonal-petrov-galerkin",
+        "qr_orthonormalized": False,
+        "oblique_decoder_preserved": True,
+        "row_count_alignment_required": False,
+        "boundary_count": len(charts),
+        "pair_count": len(pair_bases),
+        "requested_rank": requested_rank,
+        "charts": [chart["report"] for chart in charts],
+        "pair_boundaries": [
+            {
+                "target_layer": pair_index,
+                "input_chart": input_name,
+                "output_chart": output_name,
+            }
+            for pair_index, input_name, output_name in layout
+        ],
+        "zero_gradient": True,
+        "closed_form": True,
+        "optimizer_steps": 0,
+        "backward_calls": 0,
+        "autograd_enabled_during_fit": False,
+        "computation": {
+            "fit_dtype": "numpy.float64",
+            "fit_device": "cpu",
+            "sampler": "external-parent-owned-snapshots",
+            "factorization": "balanced POD or deterministic SVD fallback",
+        },
+    }
+    report["report_sha256"] = _json_sha256(report)
+    return {"charts": charts, "pair_bases": pair_bases, "report": report}
 
 
 def fit_logit_observable_charts(

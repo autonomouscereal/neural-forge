@@ -923,6 +923,228 @@ def _snapshot_mapping_equal(
     )
 
 
+def _normalize_rollout_basis_mode(value: str, basis_provider) -> str:
+    if basis_provider is not None and not callable(basis_provider):
+        raise TypeError("basis_provider must be callable.")
+    normalized = str(value).strip().lower().replace("_", "-")
+    if normalized in {"fixed", "existing", "static"}:
+        return "fixed" if basis_provider is None else "provider"
+    if normalized == "provider":
+        if basis_provider is None:
+            raise ValueError(f"basis_mode {value!r} requires a basis_provider.")
+        return "provider"
+    if normalized in {
+        "balanced",
+        "balanced-krylov",
+        "jacobian-balanced",
+        "jacobian-balanced-krylov",
+    }:
+        if basis_provider is None:
+            raise ValueError(f"basis_mode {value!r} requires a basis_provider.")
+        return "jacobian-balanced-krylov"
+    raise ValueError(
+        "basis_mode must be fixed, provider, balanced-krylov, or "
+        "jacobian-balanced."
+    )
+
+
+def _rollout_basis_tensor_sha256(torch, value) -> str:
+    tensor = value.detach().cpu().contiguous()
+    digest = hashlib.sha256()
+    digest.update(
+        _canonical_json(
+            {
+                "dtype": str(tensor.dtype),
+                "shape": [int(item) for item in tensor.shape],
+            }
+        )
+    )
+    digest.update(tensor.view(torch.uint8).numpy().tobytes())
+    return digest.hexdigest()
+
+
+def _normalize_provider_pair_bases(
+    torch,
+    candidate: Mapping[Any, Any],
+    *,
+    pair_plan,
+    global_basis,
+) -> dict[int, dict[str, Any]]:
+    if not isinstance(candidate, Mapping):
+        raise TypeError("basis_provider must return a pair_bases mapping.")
+    normalized_candidates = {}
+    for raw_index, descriptor in candidate.items():
+        if isinstance(raw_index, bool) or int(raw_index) != raw_index:
+            raise ValueError("basis_provider pair keys must be integer target layers.")
+        target_index = int(raw_index)
+        if target_index in normalized_candidates:
+            raise ValueError("basis_provider returned duplicate target layers.")
+        normalized_candidates[target_index] = descriptor
+    expected_indices = {int(pair.target_layer) for pair in pair_plan}
+    if set(normalized_candidates) != expected_indices:
+        raise ValueError(
+            "basis_provider pair keys must exactly match the Qwen pair plan."
+        )
+    expected_shape = tuple(int(item) for item in global_basis.shape)
+    result = {}
+    for target_index in sorted(expected_indices):
+        descriptor = normalized_candidates[target_index]
+        if not isinstance(descriptor, Mapping):
+            raise TypeError("Each provider pair basis must be a mapping.")
+        materialized = dict(descriptor)
+        for role in ("input", "output"):
+            value = descriptor.get(role)
+            if not torch.is_tensor(value) or value.ndim != 2:
+                raise TypeError(
+                    f"basis_provider pair {target_index} {role} must be a rank-2 tensor."
+                )
+            if not value.dtype.is_floating_point:
+                raise ValueError(
+                    f"basis_provider pair {target_index} {role} must be floating-point."
+                )
+            if tuple(int(item) for item in value.shape) != expected_shape:
+                raise ValueError(
+                    f"basis_provider pair {target_index} {role} must have shape "
+                    f"{expected_shape}."
+                )
+            if not bool(torch.isfinite(value.detach()).all().item()):
+                raise ValueError(
+                    f"basis_provider pair {target_index} {role} must be finite."
+                )
+            materialized[role] = (
+                value.detach()
+                .to(device=global_basis.device, dtype=global_basis.dtype)
+                .contiguous()
+            )
+        result[target_index] = materialized
+    return result
+
+
+def _rollout_pair_basis_summary(torch, pair_bases) -> dict[str, Any] | None:
+    if pair_bases is None:
+        return None
+    return {
+        str(target_index): {
+            "input_name": descriptor.get("input_name", "provider-input"),
+            "output_name": descriptor.get("output_name", "provider-output"),
+            "input_sha256": _rollout_basis_tensor_sha256(
+                torch, descriptor["input"]
+            ),
+            "output_sha256": _rollout_basis_tensor_sha256(
+                torch, descriptor["output"]
+            ),
+            "shape": [int(item) for item in descriptor["input"].shape],
+        }
+        for target_index, descriptor in sorted(pair_bases.items())
+    }
+
+
+def _regenerate_rollout_pair_bases(
+    torch,
+    basis_provider,
+    *,
+    reason: str,
+    round_index: int,
+    target_layer: int | None,
+    transaction_kind: str,
+    donor,
+    target,
+    pair_plan,
+    structural,
+    global_basis,
+    current_pair_bases,
+    mixed,
+    current_child_state,
+    fixed_parent_anchors,
+    basis_mode: str = "provider",
+) -> tuple[dict[int, dict[str, Any]], dict[str, Any]]:
+    context = {
+        "event": reason,
+        "round_index": int(round_index),
+        "target_layer": target_layer,
+        "transaction_kind": transaction_kind,
+        "basis_mode": basis_mode,
+        "donor": donor,
+        "target": target,
+        "pair_plan": pair_plan,
+        "structural": structural,
+        "global_basis": global_basis,
+        "current_pair_bases": current_pair_bases,
+        "mixed_trajectory": mixed,
+        "current_child_state": current_child_state,
+        "fixed_parent_anchors": fixed_parent_anchors,
+        "torch": torch,
+    }
+    provided = basis_provider(context)
+    provider_report = None
+    if isinstance(provided, Mapping) and "pair_bases" in provided:
+        candidate = provided["pair_bases"]
+        provider_report = provided.get("report")
+    else:
+        candidate = provided
+    pair_bases = _normalize_provider_pair_bases(
+        torch,
+        candidate,
+        pair_plan=pair_plan,
+        global_basis=global_basis,
+    )
+    if provider_report is not None:
+        try:
+            provider_report_sha256 = _json_sha256(provider_report)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("basis_provider report must be JSON-compatible.") from exc
+    else:
+        provider_report_sha256 = None
+    refresh_report = {
+        "reason": reason,
+        "round": int(round_index),
+        "target_layer": target_layer,
+        "transaction_kind": transaction_kind,
+        "basis_mode": basis_mode,
+        "provider_report": provider_report,
+        "provider_report_sha256": provider_report_sha256,
+        "pair_bases": _rollout_pair_basis_summary(torch, pair_bases),
+        "qr_orthonormalized": False,
+        "provider_output_detached": True,
+    }
+    refresh_report["refresh_sha256"] = _json_sha256(refresh_report)
+    return pair_bases, refresh_report
+
+
+def _refresh_after_committed_transaction(
+    transaction: Mapping[str, Any],
+    *,
+    refresh_mixed: Callable[[], Mapping[str, Any]],
+    current_pair_bases,
+    refresh_pair_bases: Callable[
+        [Mapping[str, Any]], tuple[Any, Mapping[str, Any]]
+    ]
+    | None = None,
+) -> dict[str, Any]:
+    """Refresh trajectories and optional bases only for an accepted commit."""
+
+    if not bool(transaction.get("accepted")):
+        return {
+            "mixed": None,
+            "pair_bases": current_pair_bases,
+            "mixed_refreshed": False,
+            "basis_refreshed": False,
+            "basis_refresh": None,
+        }
+    mixed = refresh_mixed()
+    pair_bases = current_pair_bases
+    basis_refresh = None
+    if refresh_pair_bases is not None:
+        pair_bases, basis_refresh = refresh_pair_bases(mixed)
+    return {
+        "mixed": mixed,
+        "pair_bases": pair_bases,
+        "mixed_refreshed": True,
+        "basis_refreshed": basis_refresh is not None,
+        "basis_refresh": basis_refresh,
+    }
+
+
 def refold_qwen_pair_composition_on_rollouts_models(
     donor,
     target,
@@ -959,6 +1181,8 @@ def refold_qwen_pair_composition_on_rollouts_models(
     head_validation_vocab_rows: int = 4096,
     split_seed: int = 0,
     device: str = "cuda:0",
+    basis_mode: str = "fixed",
+    basis_provider: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Refit child pairs on mixed child and fixed parent-generated trajectories."""
 
@@ -969,6 +1193,9 @@ def refold_qwen_pair_composition_on_rollouts_models(
     if not 0.0 < float(min_action_count_ratio) <= 1.0:
         raise ValueError("min_action_count_ratio must be in (0, 1].")
     alphas = _normalize_alphas(candidate_alphas)
+    normalized_basis_mode = _normalize_rollout_basis_mode(
+        basis_mode, basis_provider
+    )
 
     import torch
     from neural_forge import hf_qwen_compose as compose
@@ -1028,6 +1255,9 @@ def refold_qwen_pair_composition_on_rollouts_models(
     initial_anchor_score = current_anchor_score
     target_layers = list(compose._decoder_layer_container(target)[2])
     round_reports = []
+    active_pair_bases = pair_bases
+    basis_refresh_history = []
+    provider_initialized = False
 
     def build_child_state() -> dict[str, Any]:
         return _rollout_state(
@@ -1073,12 +1303,37 @@ def refold_qwen_pair_composition_on_rollouts_models(
             max_length=int(max_length),
             device=device,
         )
-        mixed_history = [
-            {
-                "refresh_reason": "round-start",
-                "provenance": mixed["provenance"],
-            }
-        ]
+        initial_basis_refresh = None
+        if normalized_basis_mode != "fixed" and not provider_initialized:
+            active_pair_bases, initial_basis_refresh = (
+                _regenerate_rollout_pair_bases(
+                    torch,
+                    basis_provider,
+                    reason="round-start",
+                    round_index=round_index,
+                    target_layer=None,
+                    transaction_kind="initial",
+                    donor=donor,
+                    target=target,
+                    pair_plan=pair_plan,
+                    structural=structural,
+                    global_basis=basis,
+                    current_pair_bases=active_pair_bases,
+                    mixed=mixed,
+                    current_child_state=current,
+                    fixed_parent_anchors=fixed_parent_anchors,
+                    basis_mode=normalized_basis_mode,
+                )
+            )
+            basis_refresh_history.append(initial_basis_refresh)
+            provider_initialized = True
+        initial_refresh_record = {
+            "refresh_reason": "round-start",
+            "provenance": mixed["provenance"],
+        }
+        if initial_basis_refresh is not None:
+            initial_refresh_record["basis_refresh"] = initial_basis_refresh
+        mixed_history = [initial_refresh_record]
         donor_traces = None
         pair_reports = []
         for pair in pair_plan:
@@ -1091,7 +1346,7 @@ def refold_qwen_pair_composition_on_rollouts_models(
                     mixed["batches"],
                     basis,
                     mixed["prompt_count"],
-                    pair_bases=pair_bases,
+                    pair_bases=active_pair_bases,
                 )
             target_index = int(pair.target_layer)
             spec = compose._qwen_layer_spec(target_layers[target_index])
@@ -1194,7 +1449,9 @@ def refold_qwen_pair_composition_on_rollouts_models(
                 current = transaction["child_state"]
                 current_anchor_score = transaction["anchor_score"]
                 donor_traces = None
-                mixed = _build_mixed_trajectory_state(
+            pair_refresh = _refresh_after_committed_transaction(
+                transaction,
+                refresh_mixed=lambda: _build_mixed_trajectory_state(
                     torch,
                     current,
                     fixed_parent_anchors,
@@ -1203,13 +1460,43 @@ def refold_qwen_pair_composition_on_rollouts_models(
                     batch_size=int(rollout_batch_size),
                     max_length=int(max_length),
                     device=device,
-                )
-                mixed_history.append(
-                    {
-                        "refresh_reason": f"accepted-pair-{target_index}",
-                        "provenance": mixed["provenance"],
-                    }
-                )
+                ),
+                current_pair_bases=active_pair_bases,
+                refresh_pair_bases=(
+                    None
+                    if normalized_basis_mode == "fixed"
+                    else lambda refreshed_mixed: _regenerate_rollout_pair_bases(
+                        torch,
+                        basis_provider,
+                        reason=f"accepted-pair-{target_index}",
+                        round_index=round_index,
+                        target_layer=target_index,
+                        transaction_kind="pair",
+                        donor=donor,
+                        target=target,
+                        pair_plan=pair_plan,
+                        structural=structural,
+                        global_basis=basis,
+                        current_pair_bases=active_pair_bases,
+                        mixed=refreshed_mixed,
+                        current_child_state=current,
+                        fixed_parent_anchors=fixed_parent_anchors,
+                        basis_mode=normalized_basis_mode,
+                    )
+                ),
+            )
+            if bool(pair_refresh["mixed_refreshed"]):
+                mixed = pair_refresh["mixed"]
+                active_pair_bases = pair_refresh["pair_bases"]
+                if pair_refresh["basis_refresh"] is not None:
+                    basis_refresh_history.append(pair_refresh["basis_refresh"])
+                refresh_record = {
+                    "refresh_reason": f"accepted-pair-{target_index}",
+                    "provenance": mixed["provenance"],
+                }
+                if pair_refresh["basis_refresh"] is not None:
+                    refresh_record["basis_refresh"] = pair_refresh["basis_refresh"]
+                mixed_history.append(refresh_record)
             pair_reports.append(
                 {
                     "target_layer": target_index,
@@ -1238,7 +1525,7 @@ def refold_qwen_pair_composition_on_rollouts_models(
                 mixed["batches"],
                 basis,
                 mixed["prompt_count"],
-                pair_bases=pair_bases,
+                pair_bases=active_pair_bases,
             )
         final_baseline = _snapshot_final(compose, target)
         final_fit_provenance_sha256 = mixed["provenance"]["hashes"]["provenance_sha256"]
@@ -1325,7 +1612,9 @@ def refold_qwen_pair_composition_on_rollouts_models(
         else:
             current = final_transaction["child_state"]
             current_anchor_score = final_transaction["anchor_score"]
-            mixed = _build_mixed_trajectory_state(
+        final_refresh = _refresh_after_committed_transaction(
+            final_transaction,
+            refresh_mixed=lambda: _build_mixed_trajectory_state(
                 torch,
                 current,
                 fixed_parent_anchors,
@@ -1334,13 +1623,43 @@ def refold_qwen_pair_composition_on_rollouts_models(
                 batch_size=int(rollout_batch_size),
                 max_length=int(max_length),
                 device=device,
-            )
-            mixed_history.append(
-                {
-                    "refresh_reason": "accepted-final-interface",
-                    "provenance": mixed["provenance"],
-                }
-            )
+            ),
+            current_pair_bases=active_pair_bases,
+            refresh_pair_bases=(
+                None
+                if normalized_basis_mode == "fixed"
+                else lambda refreshed_mixed: _regenerate_rollout_pair_bases(
+                    torch,
+                    basis_provider,
+                    reason="accepted-final-interface",
+                    round_index=round_index,
+                    target_layer=None,
+                    transaction_kind="final-interface",
+                    donor=donor,
+                    target=target,
+                    pair_plan=pair_plan,
+                    structural=structural,
+                    global_basis=basis,
+                    current_pair_bases=active_pair_bases,
+                    mixed=refreshed_mixed,
+                    current_child_state=current,
+                    fixed_parent_anchors=fixed_parent_anchors,
+                    basis_mode=normalized_basis_mode,
+                )
+            ),
+        )
+        if bool(final_refresh["mixed_refreshed"]):
+            mixed = final_refresh["mixed"]
+            active_pair_bases = final_refresh["pair_bases"]
+            if final_refresh["basis_refresh"] is not None:
+                basis_refresh_history.append(final_refresh["basis_refresh"])
+            refresh_record = {
+                "refresh_reason": "accepted-final-interface",
+                "provenance": mixed["provenance"],
+            }
+            if final_refresh["basis_refresh"] is not None:
+                refresh_record["basis_refresh"] = final_refresh["basis_refresh"]
+            mixed_history.append(refresh_record)
         round_reports.append(
             {
                 "round": round_index,
@@ -1441,5 +1760,20 @@ def refold_qwen_pair_composition_on_rollouts_models(
         "final_rollout_provenance": final_state["rollout"]["provenance"],
         "final_fixed_parent_anchor_score": final_anchor_score,
     }
+    if normalized_basis_mode != "fixed":
+        report["basis_refresh_scope"] = (
+            "initial-and-after-each-accepted-transaction"
+        )
+        report["rollout_basis_chart"] = {
+            "mode": normalized_basis_mode,
+            "provider_enabled": True,
+            "refresh_count": len(basis_refresh_history),
+            "refreshes": basis_refresh_history,
+            "final_pair_bases": _rollout_pair_basis_summary(
+                torch, active_pair_bases
+            ),
+            "provider_qr_orthonormalized": False,
+        }
+        report["settings"]["basis_mode"] = normalized_basis_mode
     report["report_sha256"] = _json_sha256(report)
     return report

@@ -18,8 +18,11 @@ from __future__ import annotations
 import hashlib
 import json
 import operator
+import os
+import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, fields
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -42,6 +45,7 @@ from neural_forge.hf_tied_depth import TiedDepthError, exact_token_row_mapping
 
 RUNTIME_SCHEMA = "neural-forge-qwen3-codebook-runtime-v1"
 RUNTIME_METHOD = "exact-token-rows-plus-global-attention-and-neuron-codebooks"
+CHECKPOINT_SCHEMA = "neural-forge-qwen3-codebook-checkpoint-v1"
 _REPORT_ATTRIBUTE = "neural_forge_codebook_report"
 _ATTENTION_ATTRIBUTE = "attention_codebook"
 _NEURON_ATTRIBUTE = "neuron_codebook"
@@ -204,6 +208,68 @@ def _token_row_fingerprint(parent_rows: tuple[int, ...]) -> str:
         separators=(",", ":"),
     ).encode("ascii")
     return hashlib.sha256(payload).hexdigest()
+
+
+def _canonical_json_bytes(value: Any) -> bytes:
+    return (
+        json.dumps(
+            value,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    )
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _tensor_sha256(value: Tensor) -> str:
+    if not isinstance(value, Tensor):
+        raise Qwen3CodebookError("Checkpoint hashes require tensors.")
+    cpu = value.detach().to(device="cpu").contiguous()
+    payload = {
+        "dtype": str(cpu.dtype),
+        "shape": list(cpu.shape),
+        "bytes": hashlib.sha256(cpu.view(torch.uint8).numpy().tobytes()).hexdigest(),
+    }
+    return hashlib.sha256(_canonical_json_bytes(payload)).hexdigest()
+
+
+def _atomic_write_json(path: Path, value: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = _canonical_json_bytes(value) + b"\n"
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _safetensors_io() -> tuple[Any, Any]:
+    try:
+        from safetensors.torch import load_file, save_file
+    except ImportError as exc:
+        raise Qwen3CodebookError(
+            "Compact Qwen3 codebook checkpoints require safetensors."
+        ) from exc
+    return load_file, save_file
 
 
 def _qwen3_type() -> type[nn.Module]:
@@ -694,6 +760,14 @@ def prepare_qwen3_codebook_model(
     was_training = model.training
 
     with torch.no_grad():
+        # Exact tokenizer/vocabulary validation is cheap and must precede fitting.
+        target_embedding, target_output, parent_rows, special_ids = (
+            _exact_target_vocabulary(
+                source,
+                parent_tokenizer,
+                target_tokenizer,
+            )
+        )
         attention = fit_global_attention_codebook(
             source.attention_bundles,
             prototypes_per_group=prototypes_per_group,
@@ -713,14 +787,6 @@ def prepare_qwen3_codebook_model(
             assignment_strategy="aligned_index",
             neuron_permutations=neuron_permutations,
         )
-        target_embedding, target_output, parent_rows, special_ids = (
-            _exact_target_vocabulary(
-                source,
-                parent_tokenizer,
-                target_tokenizer,
-            )
-        )
-
         setattr(model, _ATTENTION_ATTRIBUTE, attention)
         setattr(model, _NEURON_ATTRIBUTE, neurons)
         _rewire_layers(source, attention, neurons)
@@ -763,6 +829,334 @@ def qwen3_codebook_parameter_report(
     return report
 
 
+def _checkpoint_state(model: nn.Module) -> dict[str, Tensor]:
+    state: dict[str, Tensor] = {}
+    for name, value in model.state_dict().items():
+        if not isinstance(value, Tensor) or value.device.type == "meta":
+            raise Qwen3CodebookStateError(
+                f"Checkpoint state {name!r} is not a materialized tensor."
+            )
+        if value.is_floating_point() and not bool(torch.isfinite(value).all()):
+            raise Qwen3CodebookStateError(
+                f"Checkpoint state {name!r} contains NaN or infinity."
+            )
+        # safetensors rejects tied storage; cloned values preserve the explicit tie
+        # reconstruction step while keeping the artifact pickle-free.
+        state[name] = value.detach().to(device="cpu").contiguous().clone()
+    return state
+
+
+def _checkpoint_grouped_keys(state: Mapping[str, Tensor]) -> dict[str, list[str]]:
+    return {
+        "attention_registry": sorted(
+            name for name in state if name.startswith("attention_codebook.registry.")
+        ),
+        "neuron_registry": sorted(
+            name for name in state if name.startswith("neuron_codebook.registry.")
+        ),
+        "vocabulary": sorted(
+            name
+            for name in state
+            if name in {"model.embed_tokens.weight", "lm_head.weight", _PARENT_ROWS_BUFFER}
+        ),
+        "norms_and_fixed": sorted(
+            name
+            for name in state
+            if not name.startswith(("attention_codebook.", "neuron_codebook."))
+            and name
+            not in {"model.embed_tokens.weight", "lm_head.weight", _PARENT_ROWS_BUFFER}
+        ),
+    }
+
+
+def _codebook_checkpoint_hashes(state: Mapping[str, Tensor]) -> dict[str, dict[str, str]]:
+    def selected(suffix: str) -> dict[str, str]:
+        return {
+            name: _tensor_sha256(value)
+            for name, value in sorted(state.items())
+            if name.endswith(suffix)
+        }
+
+    return {
+        "assignment_hashes": {
+            **selected(".assignments"),
+            **selected(".group_permutations"),
+        },
+        "prototype_source_hashes": selected(".prototype_source_indices"),
+    }
+
+
+def save_qwen3_codebook_checkpoint(
+    model: nn.Module,
+    path: str | Path,
+    *,
+    tokenizer_contract: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Atomically save a standalone, pickle-free Qwen3 codebook runtime."""
+
+    report = qwen3_codebook_parameter_report(model)
+    if not isinstance(tokenizer_contract, Mapping) or not tokenizer_contract:
+        raise Qwen3CodebookError("tokenizer_contract must be a non-empty mapping.")
+    destination = Path(path)
+    destination.mkdir(parents=True, exist_ok=True)
+    state = _checkpoint_state(model)
+    grouped_keys = _checkpoint_grouped_keys(state)
+    required_groups = ("attention_registry", "neuron_registry", "vocabulary")
+    if any(not grouped_keys[name] for name in required_groups):
+        raise Qwen3CodebookStateError("Checkpoint is missing codebook or vocabulary state.")
+    load_file, save_file = _safetensors_io()
+    del load_file
+    tensor_path = destination / "model.safetensors"
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=destination,
+        prefix=".model.safetensors.",
+        suffix=".tmp",
+    )
+    os.close(descriptor)
+    temporary = Path(temporary_name)
+    try:
+        save_file(state, str(temporary), metadata={"format": CHECKPOINT_SCHEMA})
+        # Windows rejects fsync on a read-only descriptor even though POSIX accepts it.
+        with temporary.open("r+b") as handle:
+            os.fsync(handle.fileno())
+        os.replace(temporary, tensor_path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+    config_payload = {
+        "model_config": model.config.to_dict(),
+        "generation_config": (
+            model.generation_config.to_dict()
+            if getattr(model, "generation_config", None) is not None
+            else None
+        ),
+        "training": bool(model.training),
+    }
+    config_path = destination / "config.json"
+    tokenizer_path = destination / "tokenizer_contract.json"
+    _atomic_write_json(config_path, config_payload)
+    _atomic_write_json(tokenizer_path, dict(tokenizer_contract))
+    hashes = _codebook_checkpoint_hashes(state)
+    manifest = {
+        "schema": CHECKPOINT_SCHEMA,
+        "format": "safetensors",
+        "tensor_file": tensor_path.name,
+        "config_file": config_path.name,
+        "tokenizer_contract_file": tokenizer_path.name,
+        "files": {
+            tensor_path.name: _sha256_file(tensor_path),
+            config_path.name: _sha256_file(config_path),
+            tokenizer_path.name: _sha256_file(tokenizer_path),
+        },
+        "state_key_sha256": hashlib.sha256(
+            _canonical_json_bytes(sorted(state))
+        ).hexdigest(),
+        "state_tensor_count": len(state),
+        "state_groups": grouped_keys,
+        "parameter_report": report.as_dict(),
+        "token_row_fingerprint": report.token_row_fingerprint,
+        **hashes,
+    }
+    _atomic_write_json(destination / "manifest.json", manifest)
+    return manifest
+
+
+def _load_checkpoint_json(path: Path, label: str) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise Qwen3CodebookError(f"Cannot load checkpoint {label}.") from exc
+    if not isinstance(value, dict):
+        raise Qwen3CodebookError(f"Checkpoint {label} must be a JSON object.")
+    return value
+
+
+def _checkpoint_substate(
+    state: Mapping[str, Tensor], prefix: str
+) -> dict[str, Tensor]:
+    return {
+        name[len(prefix) :]: value
+        for name, value in state.items()
+        if name.startswith(prefix)
+    }
+
+
+def _materialize_checkpoint_meta_buffers(model: nn.Module) -> None:
+    """Restore small non-persistent buffers omitted from safetensors state."""
+
+    for module in model.modules():
+        for name, value in tuple(module._buffers.items()):
+            if not isinstance(value, Tensor) or value.device.type != "meta":
+                continue
+            replacement: Tensor | None = None
+            config = getattr(module, "config", None)
+            if config is not None:
+                try:
+                    fresh_module = type(module)(config, device="cpu")
+                except (TypeError, ValueError, RuntimeError):
+                    fresh_module = None
+                fresh_value = (
+                    getattr(fresh_module, name, None)
+                    if fresh_module is not None
+                    else None
+                )
+                if isinstance(fresh_value, Tensor):
+                    replacement = fresh_value.detach().clone()
+            if name == "inv_freq" and callable(getattr(module, "rope_init_fn", None)):
+                result = module.rope_init_fn(module.config, device="cpu")
+                if isinstance(result, tuple) and isinstance(result[0], Tensor):
+                    replacement = result[0]
+            if replacement is None:
+                raise Qwen3CodebookStateError(
+                    f"Cannot reconstruct derived checkpoint buffer {name!r} "
+                    f"for {type(module).__name__}."
+                )
+            module._buffers[name] = replacement
+            if name == "inv_freq" and isinstance(
+                getattr(module, "original_inv_freq", None), Tensor
+            ):
+                module.original_inv_freq = replacement.detach().clone()
+
+
+def load_qwen3_codebook_checkpoint(
+    path: str | Path,
+    *,
+    device: str | torch.device = "cpu",
+) -> nn.Module:
+    """Load a compact runtime from safetensors without a dense parent checkpoint."""
+
+    destination = Path(path)
+    manifest = _load_checkpoint_json(destination / "manifest.json", "manifest")
+    if manifest.get("schema") != CHECKPOINT_SCHEMA:
+        raise Qwen3CodebookError("Checkpoint schema is not a Qwen3 codebook artifact.")
+    for name in ("tensor_file", "config_file", "tokenizer_contract_file"):
+        if not isinstance(manifest.get(name), str):
+            raise Qwen3CodebookError(f"Checkpoint manifest lacks {name}.")
+    files = manifest.get("files")
+    if not isinstance(files, Mapping):
+        raise Qwen3CodebookError("Checkpoint manifest lacks file hashes.")
+    for filename in (
+        manifest["tensor_file"],
+        manifest["config_file"],
+        manifest["tokenizer_contract_file"],
+    ):
+        candidate = destination / filename
+        if candidate.parent != destination or not candidate.is_file():
+            raise Qwen3CodebookError("Checkpoint manifest has an invalid artifact path.")
+        if files.get(filename) != _sha256_file(candidate):
+            raise Qwen3CodebookError(f"Checkpoint hash mismatch for {filename}.")
+    config_payload = _load_checkpoint_json(
+        destination / manifest["config_file"], "config"
+    )
+    _load_checkpoint_json(destination / manifest["tokenizer_contract_file"], "tokenizer contract")
+    model_config = config_payload.get("model_config")
+    if not isinstance(model_config, Mapping):
+        raise Qwen3CodebookError("Checkpoint config lacks a model_config object.")
+    load_file, _save_file = _safetensors_io()
+    state = load_file(str(destination / manifest["tensor_file"]), device="cpu")
+    if not isinstance(state, Mapping) or not state:
+        raise Qwen3CodebookError("Checkpoint safetensors state is empty.")
+    if hashlib.sha256(_canonical_json_bytes(sorted(state))).hexdigest() != manifest.get(
+        "state_key_sha256"
+    ):
+        raise Qwen3CodebookError("Checkpoint state key manifest hash mismatches.")
+    hashes = _codebook_checkpoint_hashes(state)
+    if (
+        hashes["assignment_hashes"] != manifest.get("assignment_hashes")
+        or hashes["prototype_source_hashes"] != manifest.get("prototype_source_hashes")
+    ):
+        raise Qwen3CodebookError("Checkpoint assignment/provenance hashes mismatch.")
+    attention = GlobalAttentionCodebook.from_state_dict(
+        _checkpoint_substate(state, "attention_codebook.")
+    )
+    neurons = GlobalNeuronCodebook.from_state_dict(
+        _checkpoint_substate(state, "neuron_codebook.")
+    )
+    if attention.logical_layers != neurons.logical_layers:
+        raise Qwen3CodebookStateError("Checkpoint codebook depths do not agree.")
+    try:
+        from transformers import GenerationConfig, Qwen3Config
+    except ImportError as exc:
+        raise Qwen3CodebookError(
+            "Loading requires Transformers with Qwen3 support."
+        ) from exc
+    config = Qwen3Config.from_dict(dict(model_config))
+    qwen_type = _qwen3_type()
+    with torch.device("meta"):
+        model = qwen_type(config)
+    layers = getattr(getattr(model, "model", None), "layers", None)
+    if not isinstance(layers, nn.ModuleList) or len(layers) != attention.logical_layers:
+        raise Qwen3CodebookStateError("Checkpoint Qwen3 topology does not match codebooks.")
+    setattr(model, _ATTENTION_ATTRIBUTE, attention)
+    setattr(model, _NEURON_ATTRIBUTE, neurons)
+    for layer_index, layer in enumerate(layers):
+        attention_view = attention[layer_index]
+        layer.self_attn.q_proj = attention_view.q_proj
+        layer.self_attn.k_proj = attention_view.k_proj
+        layer.self_attn.v_proj = attention_view.v_proj
+        layer.self_attn.o_proj = attention_view.o_proj
+        layer.mlp = neurons[layer_index]
+    embedding_weight = state.get("model.embed_tokens.weight")
+    parent_rows = state.get(_PARENT_ROWS_BUFFER)
+    if not isinstance(embedding_weight, Tensor) or not isinstance(parent_rows, Tensor):
+        raise Qwen3CodebookError("Checkpoint lacks target vocabulary tensors.")
+    embedding = nn.Embedding(
+        int(embedding_weight.shape[0]),
+        int(embedding_weight.shape[1]),
+        padding_idx=getattr(config, "pad_token_id", None),
+        device="meta",
+        dtype=embedding_weight.dtype,
+    )
+    embedding.weight = nn.Parameter(embedding_weight.detach().clone())
+    output = nn.Linear(
+        int(embedding_weight.shape[1]),
+        int(embedding_weight.shape[0]),
+        bias=False,
+        device="meta",
+        dtype=embedding_weight.dtype,
+    )
+    output.weight = embedding.weight
+    model.set_input_embeddings(embedding)
+    model.set_output_embeddings(output)
+    model.register_buffer(
+        _PARENT_ROWS_BUFFER,
+        parent_rows.detach().to(dtype=torch.int32).clone(),
+        persistent=True,
+    )
+    special_ids = {
+        name: getattr(config, name, None)
+        for name in ("bos_token_id", "eos_token_id", "pad_token_id")
+    }
+    _update_vocabulary_metadata(model, int(embedding_weight.shape[0]), special_ids)
+    incompatible = model.load_state_dict(dict(state), strict=True, assign=True)
+    if incompatible.missing_keys or incompatible.unexpected_keys:
+        raise Qwen3CodebookStateError("Checkpoint state does not exactly match runtime.")
+    model.get_output_embeddings().weight = model.get_input_embeddings().weight
+    generation_payload = config_payload.get("generation_config")
+    if isinstance(generation_payload, Mapping):
+        model.generation_config = GenerationConfig.from_dict(dict(generation_payload))
+    saved_report = manifest.get("parameter_report")
+    if not isinstance(saved_report, Mapping):
+        raise Qwen3CodebookError("Checkpoint manifest lacks parameter accounting.")
+    report = Qwen3CodebookParameterReport(
+        **{field.name: saved_report[field.name] for field in fields(Qwen3CodebookParameterReport)}
+    )
+    setattr(model, _REPORT_ATTRIBUTE, report)
+    model.train(bool(config_payload.get("training", False)))
+    _materialize_checkpoint_meta_buffers(model)
+    meta_parameters = [
+        name for name, parameter in model.named_parameters() if parameter.device.type == "meta"
+    ]
+    if meta_parameters:
+        raise Qwen3CodebookStateError(
+            f"Checkpoint reload left meta parameters: {meta_parameters[:5]}."
+        )
+    model.to(device)
+    if qwen3_codebook_parameter_report(model) != report:
+        raise Qwen3CodebookStateError("Checkpoint parameter accounting changed on load.")
+    return model
+
+
 build_qwen3_codebook_model = prepare_qwen3_codebook_model
 fit_qwen3_codebook_model = prepare_qwen3_codebook_model
 
@@ -770,11 +1164,14 @@ fit_qwen3_codebook_model = prepare_qwen3_codebook_model
 __all__ = [
     "RUNTIME_METHOD",
     "RUNTIME_SCHEMA",
+    "CHECKPOINT_SCHEMA",
     "Qwen3CodebookError",
     "Qwen3CodebookParameterReport",
     "Qwen3CodebookStateError",
     "build_qwen3_codebook_model",
     "fit_qwen3_codebook_model",
+    "load_qwen3_codebook_checkpoint",
     "prepare_qwen3_codebook_model",
     "qwen3_codebook_parameter_report",
+    "save_qwen3_codebook_checkpoint",
 ]

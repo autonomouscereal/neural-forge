@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from neural_forge.hf_qwen_rollout_refold import (
     _attempt_dual_gated_candidates,
     _build_mixed_trajectory_state,
+    _regenerate_rollout_pair_bases,
+    _refresh_after_committed_transaction,
 )
 
 
@@ -58,6 +62,115 @@ def _child_state(score, suffix_token: int = 3):
         "score": score,
         "rollout": _rollout("current-child", suffix_token),
     }
+
+
+def test_accepted_transaction_refreshes_mixed_then_basis_for_next_pair():
+    calls = []
+    previous_bases = {0: {"generation": 0}}
+    next_bases = {0: {"generation": 1}}
+
+    def refresh_mixed():
+        calls.append("mixed")
+        return {"generation": 1}
+
+    def refresh_bases(mixed):
+        assert mixed == {"generation": 1}
+        calls.append("basis")
+        return next_bases, {"reason": "accepted-pair-0"}
+
+    refreshed = _refresh_after_committed_transaction(
+        {"accepted": True},
+        refresh_mixed=refresh_mixed,
+        current_pair_bases=previous_bases,
+        refresh_pair_bases=refresh_bases,
+    )
+
+    assert calls == ["mixed", "basis"]
+    assert refreshed["mixed_refreshed"] is True
+    assert refreshed["basis_refreshed"] is True
+    assert refreshed["pair_bases"] is next_bases
+    assert refreshed["basis_refresh"] == {"reason": "accepted-pair-0"}
+
+
+def test_rejected_transaction_rolls_back_without_trajectory_or_basis_refresh():
+    previous_bases = {0: {"generation": 0}}
+
+    def unexpected_refresh(*_args, **_kwargs):
+        raise AssertionError("a rejected transaction must not refresh state")
+
+    refreshed = _refresh_after_committed_transaction(
+        {"accepted": False, "restored": True},
+        refresh_mixed=unexpected_refresh,
+        current_pair_bases=previous_bases,
+        refresh_pair_bases=unexpected_refresh,
+    )
+
+    assert refreshed == {
+        "mixed": None,
+        "pair_bases": previous_bases,
+        "mixed_refreshed": False,
+        "basis_refreshed": False,
+        "basis_refresh": None,
+    }
+
+
+def test_provider_refresh_preserves_oblique_input_output_pair_without_qr():
+    import pytest
+
+    torch = pytest.importorskip("torch")
+    global_basis = torch.tensor([[1.0], [0.0]], dtype=torch.float32)
+    input_basis = torch.tensor([[0.0], [2.0]], dtype=torch.float64)
+    output_basis = torch.tensor([[0.0], [0.5]], dtype=torch.float64)
+    events = []
+
+    def provider(context):
+        events.append(context["event"])
+        assert context["mixed_trajectory"] == {"generation": 2}
+        assert context["basis_mode"] == "jacobian-balanced-krylov"
+        return {
+            "pair_bases": {
+                0: {
+                    "input": input_basis,
+                    "output": output_basis,
+                    "input_name": "pair_input_0",
+                    "output_name": "pair_output_0",
+                }
+            },
+            "report": {"zero_gradient": True, "optimizer_steps": 0},
+        }
+
+    pair_bases, report = _regenerate_rollout_pair_bases(
+        torch,
+        provider,
+        reason="accepted-pair-0",
+        round_index=0,
+        target_layer=0,
+        transaction_kind="pair",
+        donor=object(),
+        target=object(),
+        pair_plan=[SimpleNamespace(target_layer=0)],
+        structural={},
+        global_basis=global_basis,
+        current_pair_bases=None,
+        mixed={"generation": 2},
+        current_child_state={},
+        fixed_parent_anchors={},
+        basis_mode="jacobian-balanced-krylov",
+    )
+
+    torch.testing.assert_close(pair_bases[0]["input"], input_basis.float())
+    torch.testing.assert_close(pair_bases[0]["output"], output_basis.float())
+    torch.testing.assert_close(
+        pair_bases[0]["output"].t().matmul(pair_bases[0]["input"]),
+        torch.eye(1),
+    )
+    assert not torch.equal(pair_bases[0]["input"], pair_bases[0]["output"])
+    assert pair_bases[0]["input"].requires_grad is False
+    assert pair_bases[0]["output"].requires_grad is False
+    assert report["qr_orthonormalized"] is False
+    assert report["basis_mode"] == "jacobian-balanced-krylov"
+    assert report["provider_report"]["zero_gradient"] is True
+    assert events == ["accepted-pair-0"]
 
 
 def test_self_action_gain_with_anchor_regression_is_rejected_and_restored():

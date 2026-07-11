@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import json
 
+import numpy as np
 import pytest
 
 from neural_forge.hf_qwen_observable import apply_chart_transition
 from neural_forge.hf_qwen_observable import compose_chart_transitions
 from neural_forge.hf_qwen_observable import encode_observable_chart
+from neural_forge.hf_qwen_observable import (
+    fit_jacobian_balanced_rollout_charts,
+)
 from neural_forge.hf_qwen_observable import fit_logit_observable_charts
 from neural_forge.hf_qwen_observable import predict_future_observable
 
@@ -73,6 +77,152 @@ def _activation_pca_prediction(
         train_coordinates, train_z - z_mean
     ).solution
     return (validation_x - x_mean).matmul(basis).matmul(decoder) + z_mean
+
+
+def _reduced_output_rollout(
+    transition,
+    output,
+    initial,
+    *,
+    input_basis,
+    output_basis,
+    steps: int,
+):
+    reduced_transition = output_basis.t().matmul(transition).matmul(input_basis)
+    coordinates = initial.matmul(output_basis)
+    values = []
+    for _ in range(steps + 1):
+        values.append(coordinates.matmul(input_basis.t()).matmul(output.t()))
+        coordinates = coordinates.matmul(reduced_transition.t())
+    return torch.stack(values)
+
+
+def test_jacobian_balanced_chart_preserves_output_critical_rollout_mode() -> None:
+    transition = torch.diag(torch.tensor([0.25, 0.97], dtype=torch.float64))
+    output = torch.tensor([[0.0, 1.0]], dtype=torch.float64)
+    activations = torch.tensor(
+        [
+            [12.0, 0.08],
+            [12.0, -0.08],
+            [-12.0, 0.08],
+            [-12.0, -0.08],
+        ],
+        dtype=torch.float64,
+    ).requires_grad_(True)
+    activations.grad = torch.full_like(activations, 7.0)
+    activation_values_before = activations.detach().clone()
+    activation_gradient_before = activations.grad.detach().clone()
+    forward_responses = []
+    current = activations.clone()
+    for _ in range(4):
+        current = current.matmul(transition.t())
+        forward_responses.append(current.clone())
+    dual_responses = torch.from_numpy(
+        np.vstack(
+            [
+                output.numpy() @ np.linalg.matrix_power(transition.numpy(), step)
+                for step in range(8)
+            ]
+        )
+    )
+
+    result = fit_jacobian_balanced_rollout_charts(
+        {"rollout": activations},
+        rank=1,
+        forward_jvp_responses={"rollout": forward_responses},
+        output_sensitivities={"rollout": dual_responses},
+        center=False,
+    )
+    chart = result["charts"][0]
+    pair = result["pair_bases"][0]
+
+    torch.testing.assert_close(pair["input"], chart["decoder"].t())
+    torch.testing.assert_close(pair["output"], chart["encoder"])
+    torch.testing.assert_close(
+        pair["output"].t().matmul(pair["input"]),
+        torch.eye(1, dtype=torch.float64),
+    )
+    assert not torch.allclose(pair["input"], pair["output"])
+    assert abs(pair["input"][1, 0]) > abs(pair["input"][0, 0])
+    assert result["report"]["qr_orthonormalized"] is False
+    assert result["report"]["oblique_decoder_preserved"] is True
+    assert result["report"]["backward_calls"] == 0
+    assert result["report"]["optimizer_steps"] == 0
+    torch.testing.assert_close(activations.detach(), activation_values_before)
+    torch.testing.assert_close(activations.grad, activation_gradient_before)
+
+    held_out = torch.tensor(
+        [[3.0, 0.5], [-4.0, -0.3], [1.5, 0.8]], dtype=torch.float64
+    )
+    reference = []
+    full_state = held_out.clone()
+    for _ in range(13):
+        reference.append(full_state.matmul(output.t()))
+        full_state = full_state.matmul(transition.t())
+    reference = torch.stack(reference)
+    balanced_rollout = _reduced_output_rollout(
+        transition,
+        output,
+        held_out,
+        input_basis=pair["input"],
+        output_basis=pair["output"],
+        steps=12,
+    )
+    _, _, right = torch.linalg.svd(activations, full_matrices=False)
+    pca_basis, _ = torch.linalg.qr(right[:1].t(), mode="reduced")
+    pca_rollout = _reduced_output_rollout(
+        transition,
+        output,
+        held_out,
+        input_basis=pca_basis,
+        output_basis=pca_basis,
+        steps=12,
+    )
+    balanced_error = torch.linalg.vector_norm(
+        balanced_rollout[1:] - reference[1:]
+    ) / torch.linalg.vector_norm(reference[1:])
+    pca_error = torch.linalg.vector_norm(
+        pca_rollout[1:] - reference[1:]
+    ) / torch.linalg.vector_norm(reference[1:])
+
+    assert balanced_error.item() < 1e-12
+    assert balanced_error.item() < pca_error.item() * 1e-6
+    assert pca_error.item() > 0.99
+
+
+def test_balanced_rollout_charts_accept_independent_boundary_snapshot_groups() -> None:
+    generator = torch.Generator().manual_seed(20260710)
+    activations = {
+        "pair_input_0": torch.randn(
+            24, 3, generator=generator, dtype=torch.float64
+        ),
+        "pair_output_0": torch.randn(
+            31, 3, generator=generator, dtype=torch.float64
+        ),
+    }
+    responses = {
+        name: [torch.randn(11, 3, generator=generator, dtype=torch.float64)]
+        for name in activations
+    }
+    sensitivities = {
+        name: torch.randn(13, 3, generator=generator, dtype=torch.float64)
+        for name in activations
+    }
+
+    result = fit_jacobian_balanced_rollout_charts(
+        activations,
+        rank=2,
+        krylov_responses=responses,
+        dual_sensitivities=sensitivities,
+    )
+
+    input_chart, output_chart = result["charts"]
+    pair = result["pair_bases"][0]
+    torch.testing.assert_close(pair["input"], input_chart["input_basis"])
+    torch.testing.assert_close(pair["output"], output_chart["output_basis"])
+    assert input_chart["report"]["row_counts"]["activation"] == 24
+    assert output_chart["report"]["row_counts"]["activation"] == 31
+    assert result["report"]["row_count_alignment_required"] is False
 
 
 def test_future_observable_chart_beats_activation_pca_on_low_variance_signal() -> None:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import gc
+import weakref
 from dataclasses import dataclass
 
 import pytest
@@ -13,8 +15,10 @@ if not hasattr(transformers, "Qwen3Config"):
 
 from neural_forge.hf_qwen_codebook_model import (  # noqa: E402
     Qwen3CodebookError,
+    load_qwen3_codebook_checkpoint,
     prepare_qwen3_codebook_model,
     qwen3_codebook_parameter_report,
+    save_qwen3_codebook_checkpoint,
 )
 
 
@@ -426,6 +430,97 @@ def test_non_exact_target_tokenizer_is_rejected_before_model_mutation() -> None:
     assert model.state_dict().keys() == before.keys()
     for name, value in model.state_dict().items():
         assert torch.equal(value, before[name])
+
+
+def test_replaced_dense_modules_and_parameters_are_process_released() -> None:
+    def convert_with_weakrefs() -> tuple[
+        torch.nn.Module,
+        list[weakref.ReferenceType[torch.nn.Module]],
+        list[weakref.ReferenceType[torch.nn.Parameter]],
+    ]:
+        model = _tiny_qwen3(991)
+        modules = [
+            module
+            for layer in model.model.layers
+            for module in (
+                layer.mlp,
+                layer.self_attn.q_proj,
+                layer.self_attn.k_proj,
+                layer.self_attn.v_proj,
+                layer.self_attn.o_proj,
+            )
+        ]
+        parameters = [
+            parameter
+            for module in modules
+            for parameter in module.parameters()
+        ] + [model.get_input_embeddings().weight]
+        module_refs = [weakref.ref(module) for module in modules]
+        parameter_refs = [weakref.ref(parameter) for parameter in parameters]
+        tokenizer = _Tokenizer([f"token-{index}" for index in range(12)])
+        runtime = prepare_qwen3_codebook_model(
+            model,
+            tokenizer,
+            tokenizer,
+            neuron_permutations=torch.arange(6).repeat(2, 1),
+            group_permutations=torch.arange(2).repeat(2, 1),
+            attention_prototypes_per_group=2,
+            neuron_prototypes_per_neuron=2,
+        )
+        return runtime, module_refs, parameter_refs
+
+    runtime, module_refs, parameter_refs = convert_with_weakrefs()
+    gc.collect()
+    assert runtime.config.model_type == "qwen3"
+    assert all(reference() is None for reference in module_refs)
+    assert all(reference() is None for reference in parameter_refs)
+
+
+def test_compact_checkpoint_reloads_without_dense_parent(tmp_path) -> None:
+    pytest.importorskip("safetensors")
+    prepared_runtime = _prepare(997)
+    runtime = prepared_runtime.runtime
+    checkpoint = tmp_path / "compact-child"
+    manifest = save_qwen3_codebook_checkpoint(
+        runtime,
+        checkpoint,
+        tokenizer_contract={
+            "tokenizer_name_or_path": "unit-test",
+            "vocab_size": len(prepared_runtime.target_tokenizer),
+            "parent_token_rows_sha256": "unit-test",
+        },
+    )
+    assert manifest["format"] == "safetensors"
+    assert manifest["assignment_hashes"]
+    assert manifest["prototype_source_hashes"]
+    assert (checkpoint / "model.safetensors").is_file()
+    assert (checkpoint / "config.json").is_file()
+    assert (checkpoint / "tokenizer_contract.json").is_file()
+
+    reloaded = load_qwen3_codebook_checkpoint(checkpoint)
+    assert qwen3_codebook_parameter_report(reloaded) == qwen3_codebook_parameter_report(
+        runtime
+    )
+    assert not any(
+        ".self_attn.q_proj.weight" in name or ".mlp.gate_proj.weight" in name
+        for name in reloaded.state_dict()
+    )
+    assert reloaded.get_input_embeddings().weight is reloaded.get_output_embeddings().weight
+    with torch.no_grad():
+        expected = runtime(prepared_runtime.target_input_ids, use_cache=False).logits
+        actual = reloaded(prepared_runtime.target_input_ids, use_cache=False).logits
+        expected_generation = runtime.generate(
+            prepared_runtime.target_input_ids[:, :2],
+            do_sample=False,
+            max_new_tokens=1,
+        )
+        actual_generation = reloaded.generate(
+            prepared_runtime.target_input_ids[:, :2],
+            do_sample=False,
+            max_new_tokens=1,
+        )
+    torch.testing.assert_close(actual, expected, rtol=0.0, atol=0.0)
+    assert torch.equal(actual_generation, expected_generation)
 
 
 def test_full_depth_neuron_prototypes_reconstruct_and_reload_qwen_runtime() -> None:

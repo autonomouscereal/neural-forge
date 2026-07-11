@@ -286,19 +286,130 @@ This closes the hypothesis that full logical topology plus one basis per
 projection role is sufficient. The next codebook path uses a continuous 1-36
 real-prototype schedule with activation/Jacobian-guided arbitrary assignments.
 
-## Active Full Evaluations
+## Real-Activation Codebook Identity Control
 
-Two depth-only survival controls are also running. They keep the complete
-Qwen3 residual width, MLP width, attention topology, tokenizer, and real parent
-neurons while reducing only logical depth:
+Run:
 
-- GPU 6: 36 to 34 layers, `3,820,606,464` parameters (`1.052835x`).
-- GPU 0: 36 to 32 layers, `3,618,744,832` parameters (`1.111564x`).
-- GPU 4: 36 to 28 layers, `3,215,021,568` parameters (`1.251148x`).
+`qwen3_4b_codebook_pn36_pa36_gpu0_r3_20260710`
 
-Both use zero recovery and the full cached-parent `1000/1000/250` evaluation
-plus 128 manual comparisons. They are boundary measurements, not claimed wins
-until their reports finish.
+This control retained all 36 real depth variants for every activation-aligned
+canonical MLP neuron and GQA group. It proved exact reconstructed projection
+tensors, a dense-free in-memory registry, zero optimizer/backward calls, and
+bounded FP16 logit drift (`1.94e-5` mean absolute error, `4.31e-5` relative L2,
+and `24/24` top-1 agreement on the no-op probe).
+
+The run stored `4,021,784,576` parameters instead of `4,022,468,096`. That
+`683,520`-parameter difference is only the removal of 267 padded model rows
+that are not tokenizer IDs, so this is not a meaningful compression result.
+It also means the control is a trimmed-vocabulary identity rather than a pure
+full-softmax identity.
+
+| Signal | Parent | Child | Parent-pass retention |
+|---|---:|---:|---:|
+| Behavior | `400/1000` | `400/1000` | `100.0%` |
+| Exact generation | `388/1000` | `384/1000` | `382/388` (`98.45%`) |
+| Forced choice | `250/250` | `250/250` | `100.0%` |
+| PPL | `877.579654` | `882.311915` | n/a |
+
+Manual inspection found six parent-pass losses and two gains. Three pruning
+answers became one sentence instead of the requested two. Three Python prompts
+collapsed to repeated zeroes. One gained Python prompt produced a correct
+addition function. This demonstrates that tiny logit/softmax changes can alter
+autoregressive paths even when short-probe top-1 agrees. Future same-tokenizer
+controls must retain padded logits and compare the full softmax.
+
+Comparison SHA-256:
+
+`c66e66433d620d0e2d2cf50610cf37061fc53d249331d4bacca534a48b5e2a22`
+
+## Uniform 32-of-36 Codebook Failure
+
+Run:
+
+`qwen3_4b_codebook_pn32_pa32_gpu4_r1_20260710`
+
+This was neuron/head merging, not pruning or layer deletion. The compiler kept
+all 36 logical residual blocks, inferred neuron and GQA permutations from real
+post-SwiGLU and attention-output activations, and then retained 32 real depth
+medoids independently for every canonical MLP neuron and GQA group. Chosen
+medoids could be nonadjacent. Four of 36 depth variants were merged for every
+canonical feature.
+
+The deployable runtime used `3,618,082,816` learned parameters plus `3,256,020`
+index bytes (`1.111768x` versus the source). The complete zero-recovery result
+collapsed:
+
+| Signal | Parent | Child | Parent-pass retention |
+|---|---:|---:|---:|
+| Behavior | `400/1000` | `0/1000` | `0.0%` |
+| Exact generation | `388/1000` | `0/1000` | `0.0%` |
+| Forced choice | `250/250` | `18/250` | `7.2%` |
+| PPL | `877.579654` | `90,846.287214` | n/a |
+
+Manual inspection confirmed real collapse. Math, code, tokenizer, commonsense,
+and model-surgery prompts produced repeated multilingual `答案` fragments,
+punctuation, blank lines, and unrelated tokens. No parent-pass behavior or
+generation survived. Uniformly removing the same depth capacity from every
+feature compounds destructively even though each replacement is a real,
+activation-aligned parent medoid.
+
+Comparison SHA-256:
+
+`80f23a5a50dbd01aae4f9e9e64f35dbbd845000e34a508d04dd10b150f82565f`
+
+## Uniform Codebook Survival Boundary
+
+The matched `35/34/32/28` sweep completed with zero recovery, the same cached
+parent, `1000/1000/250` scoring, and captured outputs. Ratios in this table add
+back the 267 padded vocabulary rows removed by the old runner, so they measure
+the codebook transform rather than the unrelated softmax trim.
+
+| Prototypes per feature | Adjusted ratio | Behavior | Forced choice | Generation | PPL |
+|---:|---:|---:|---:|---:|---:|
+| `36/36` | `1.000000x` | `400/1000` | `250/250` | `384/1000` | `882.312` |
+| `35/35` | `1.025736x` | `255/1000` | `204/250` | `185/1000` | `1,851.378` |
+| `34/34` | `1.052832x` | `0/1000` | `80/250` | `0/1000` | `13,890.088` |
+| `32/32` | `1.111558x` | `0/1000` | `18/250` | `0/1000` | `90,846.287` |
+| `28/28` | `1.251131x` | `0/1000` | `20/250` | `0/1000` | `1,480,582.096` |
+
+At `35/35`, parent-pass retention was `255/400` (`63.75%`) for behavior,
+`204/250` (`81.6%`) for forced choice, and `184/388` (`47.42%`) for
+generation. Behavior retained all `200/200` executable-code checks but only
+`55/200` arithmetic checks. Generation retained `142/232` parent-passing code
+items and `42/142` math items, but `0/14` parent-passing model-surgery
+explanations.
+
+Manual inspection agrees with the scores. The child still answered some math
+questions correctly and emitted an executable `add(a, b)` function. However,
+it often repeated that function many times, turned correct arithmetic into
+nearby wrong numbers, and replaced prose explanations with repeated zeroes or
+empty output. This is partial circuit survival, not coherent general retention
+and therefore not a promoted fold.
+
+Removing two uniform depth variants per feature (`34/34`) crosses a sharp
+failure boundary: behavior and generation both reach zero. Deeper uniform
+merges remain collapsed. The result rejects a global per-feature depth budget;
+the compiler must pin high-damage paths and spend prototypes unevenly according
+to measured held-out damage.
+
+Comparison SHA-256 values:
+
+- `35/35`: `955b59cea06aa09ed1272e952548c2f59faa3fac32c3efa1129e97dbdb0b7c24`
+- `34/34`: `29ace7ca773c3da77d46aab766ad5adea71c4ab27ba3129cb0712f43cbf2ed57`
+- `28/28`: `6a8155624909e6d6474dcc378b66bd55520fed2522903eeabda6e02da5f343c3`
+- downloaded evidence archive:
+  `f6650f57a09be9ba6b9510304593affd169bff59e2b0a0247982026f20667443`
+
+The contract-checked aggregate and manual-output summaries are stored in
+`docs/qwen3_codebook_boundary_evidence_20260710.json` and the matching text
+render. Their SHA-256 values are
+`e82834b541e64c037337af7741c2fefe52fba7bac611de2b77c1c9b7d3685e3d`
+and `0d69fd6111781acf137774badeac1684c9dfb50f810445107e689b8497f4c96f`.
+
+The earlier depth-deletion controls did not produce capability measurements.
+The 34-layer run failed checkpoint reload equality, the 32-layer run lacked
+the required calibration token rows, and the 28-layer run failed exact
+transaction rollback. Those are infrastructure failures, not fold scores.
 
 ## Goal And Method Decision
 
