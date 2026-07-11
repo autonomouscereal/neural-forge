@@ -10,6 +10,8 @@ layer_index=${LAYER_INDEX:-18}
 drop_count=${DROP_COUNT:-64}
 candidate_pool_size=${CANDIDATE_POOL_SIZE:-512}
 max_anchors=${MAX_ANCHORS:-4}
+max_similarity_products=${MAX_SIMILARITY_PRODUCTS:-16000000}
+max_projection_fits=${MAX_PROJECTION_FITS:-131072}
 tag=${TAG:-layer${layer_index}_drop${drop_count}_gpu4_r1}
 gpu=${GPU:-GPU-2ce6a95c-7b1f-644a-3808-d781732a0582}
 output="$root/$tag/report.json"
@@ -43,5 +45,7 @@ mkdir -p "$root/$tag"
   --protected-fraction 0.05 \
   --candidate-pool-size "$candidate_pool_size" \
   --max-anchors "$max_anchors" \
+  --max-similarity-products "$max_similarity_products" \
+  --max-projection-fits "$max_projection_fits" \
   --local-files-only
 printf 'launched gpu=%s output=%s log=%s\n' "$gpu" "$output" "$log"
