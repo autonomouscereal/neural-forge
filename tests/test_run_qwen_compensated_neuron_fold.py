@@ -5,6 +5,7 @@ import importlib.util
 import json
 import sys
 import weakref
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -161,6 +162,8 @@ def _loop_config(**values):
         "projection_count": 16,
         "neighbor_window": 5,
         "max_pair_candidates": 200,
+        "calibration_provenance_id": "calibration-provenance-sha",
+        "validation_provenance_id": "validation-provenance-sha",
         "merges_per_transaction": 1,
         "max_candidate_attempts": 16,
         "max_transactions": 8,
@@ -424,6 +427,13 @@ def test_parameter_and_byte_targets_use_unique_accounting() -> None:
     proposal = report["accepted_transactions"][0]["proposal"]
     assert proposal["arbitrary_pairing_enabled"] is True
     assert proposal["adjacent_pair_count"] + proposal["nonadjacent_pair_count"] == 1
+    assert proposal["strategy_evidence"]["calibration_provenance_id"] == (
+        "calibration-provenance-sha"
+    )
+    assert proposal["strategy_evidence"]["validation_provenance_id"] == (
+        "validation-provenance-sha"
+    )
+    assert proposal["strategy_evidence"]["work_caps"]["all_work_caps_verified"] is True
 
 
 def test_real_hooks_refresh_ragged_post_swiglu_widths() -> None:
@@ -722,6 +732,99 @@ def test_every_provisional_failure_path_restores_exact_model_state(
     torch.testing.assert_close(actual, expected, rtol=0.0, atol=0.0)
 
 
+def test_commit_exception_rolls_back_model_history_and_streamed_ledger(
+    tmp_path: Path, monkeypatch
+) -> None:
+    model = _tiny_qwen(1721)
+    initial = MODULE.model_accounting(model)
+    initial_config = model.config.intermediate_size
+    ledger = tmp_path / "transactions.jsonl"
+    real_install = MODULE.install_qwen3_compensated_fold
+
+    def install_then_fail_commit(*args, **kwargs):
+        handle = real_install(*args, **kwargs)
+
+        def fail_commit():
+            raise RuntimeError("commit exploded")
+
+        handle.commit = fail_commit
+        return handle
+
+    monkeypatch.setattr(
+        MODULE, "install_qwen3_compensated_fold", install_then_fail_commit
+    )
+    with pytest.raises(RuntimeError, match="commit exploded"):
+        MODULE.run_fold_transactions(
+            model,
+            activation_provider=_ActivationProvider(1722),
+            small_gate=_Decisions([True]),
+            target_parameters=initial.unique_parameter_count - 24,
+            target_bytes=None,
+            config=_loop_config(),
+            transaction_ledger=ledger,
+        )
+
+    assert MODULE.model_accounting(model) == initial
+    assert model.config.intermediate_size == initial_config
+    assert ledger.read_bytes() == b""
+
+
+def test_ledger_cleanup_exception_cannot_prevent_model_rollback(
+    tmp_path: Path, monkeypatch
+) -> None:
+    model = _tiny_qwen(1726)
+    initial = MODULE.model_accounting(model)
+    real_install = MODULE.install_qwen3_compensated_fold
+
+    def install_then_fail_commit(*args, **kwargs):
+        handle = real_install(*args, **kwargs)
+
+        def fail_commit():
+            raise RuntimeError("commit exploded")
+
+        handle.commit = fail_commit
+        return handle
+
+    def fail_cleanup(*_args, **_kwargs):
+        raise OSError("ledger cleanup exploded")
+
+    monkeypatch.setattr(
+        MODULE, "install_qwen3_compensated_fold", install_then_fail_commit
+    )
+    monkeypatch.setattr(MODULE, "_truncate_transaction_ledger", fail_cleanup)
+    with pytest.raises(OSError, match="ledger cleanup exploded"):
+        MODULE.run_fold_transactions(
+            model,
+            activation_provider=_ActivationProvider(1727),
+            small_gate=_Decisions([True]),
+            target_parameters=initial.unique_parameter_count - 24,
+            target_bytes=None,
+            config=_loop_config(),
+            transaction_ledger=tmp_path / "transactions.jsonl",
+        )
+
+    assert MODULE.model_accounting(model) == initial
+
+
+def test_candidate_attempt_cap_stops_consecutive_rejected_proposals() -> None:
+    model = _tiny_qwen(1731)
+    initial = MODULE.model_accounting(model)
+    report = MODULE.run_fold_transactions(
+        model,
+        activation_provider=_ActivationProvider(1732),
+        small_gate=_Decisions([False]),
+        target_parameters=initial.unique_parameter_count - 24,
+        target_bytes=None,
+        config=_loop_config(max_candidate_attempts=1, max_transactions=8),
+    )
+
+    assert report["attempt_count"] == 1
+    assert report["rejected_count"] == 1
+    assert report["stop_reason"] == "max-consecutive-candidate-attempts"
+    assert report["max_consecutive_candidate_attempts_observed"] == 1
+    assert MODULE.model_accounting(model) == initial
+
+
 def test_persistent_ablation_anchors_are_selected_once_and_keep_lineage() -> None:
     model = _tiny_qwen(1751, layers=1)
     initial = MODULE.model_accounting(model)
@@ -746,6 +849,8 @@ def test_persistent_ablation_anchors_are_selected_once_and_keep_lineage() -> Non
     assert anchors["measurement"] == "exact-single-neuron-layer-output-ablation-frobenius"
     assert len(anchors["source_neuron_ids"]) == 1
     assert len(anchors["final_current_indices"]) == 1
+    assert anchors["lineage_audit"]["all_source_paths_traced"] is True
+    assert anchors["lineage_audit"]["maximum_source_path_multiplicity"] == 1
 
 
 def test_transaction_history_is_streamed_and_inline_bounded(tmp_path: Path) -> None:
@@ -767,6 +872,19 @@ def test_transaction_history_is_streamed_and_inline_bounded(tmp_path: Path) -> N
     assert report["history"]["rejected_omitted_from_inline"] == 1
     assert len(ledger.read_text(encoding="ascii").splitlines()) == 2
     assert report["history"]["ledger_sha256"] == MODULE._file_sha256(ledger)
+
+
+def test_bounded_history_failure_does_not_destroy_previous_records() -> None:
+    history = [{"attempt": 1, "decision": "kept"}]
+    original = list(history)
+    with pytest.raises(MODULE.QwenCompensatedRunnerError, match="single compact"):
+        MODULE._append_bounded_history(
+            history,
+            {"attempt": 2, "payload": "x" * 10_000},
+            max_records=2,
+            max_json_bytes=MODULE._history_size(history),
+        )
+    assert history == original
 
 
 def _identity_eval_suite(path: Path, suffix: str = "a") -> None:
@@ -843,12 +961,15 @@ def test_cached_parent_binding_rejects_state_tokenizer_and_eval_mismatch(
         MODULE.validate_bound_parent_report(report, changed_eval, label="parent")
 
 
-def test_underfilled_certification_contract_is_rejected() -> None:
-    with pytest.raises(MODULE.QwenCompensatedRunnerError, match="underfilled"):
+@pytest.mark.parametrize("behavior_count", [999, 1001])
+def test_certification_contract_requires_exact_cardinality(
+    behavior_count: int,
+) -> None:
+    with pytest.raises(MODULE.QwenCompensatedRunnerError, match="not exact"):
         MODULE._assert_production_certification_contract(
             {
                 "counts": {
-                    "behavior_probes": 999,
+                    "behavior_probes": behavior_count,
                     "generation_prompts": 1000,
                     "choice_probes": 250,
                 }
@@ -912,6 +1033,27 @@ def test_manual_packet_contains_verbatim_outputs_and_requires_bound_verdict() ->
         MODULE.validate_manual_review_verdict(bad, packet)
     bad["packet_sha256"] = packet["packet_sha256"]
     assert MODULE.validate_manual_review_verdict(bad, packet)["validated"] is True
+
+    duplicate = {
+        "manual_samples": {
+            "behavior": [
+                {"id": "b", "outcome": "retained_pass"},
+                {"id": "b", "outcome": "retained_pass"},
+            ],
+            "generation": [{"id": "g", "outcome": "retained_pass"}],
+            "selected_count": 3,
+        }
+    }
+    with pytest.raises(MODULE.QwenCompensatedRunnerError, match="must be unique"):
+        MODULE.build_manual_review_packet(
+            parent, child, duplicate, required_count=3
+        )
+
+    child["generations"][0]["output"] = ""
+    with pytest.raises(MODULE.QwenCompensatedRunnerError, match="cannot be empty"):
+        MODULE.build_manual_review_packet(
+            parent, child, comparison, required_count=2
+        )
 
 
 def test_resource_guard_enforces_host_cap(monkeypatch) -> None:
@@ -1017,15 +1159,67 @@ def test_multi_anchor_runner_strategy_uses_bound_split_ids_and_same_gate() -> No
     assert proposal["internal_split_proof"]["pair_discovery"] == "calibration-only"
     assert proposal["strategy_evidence"]["independent_aggregate_metrics_trusted"] is True
     assert proposal["strategy_evidence"]["per_merge_metrics_used_for_runner_selection"] is False
+    assert proposal["strategy_evidence"]["work_caps"]["all_work_caps_verified"] is True
+    assert proposal["strategy_evidence"]["work_caps"]["similarity_products"] <= 64
+    assert proposal["strategy_evidence"]["work_caps"]["projection_fit_count"] <= 64
+    assert proposal["strategy_evidence"]["activation_evidence"][
+        "activation_hashes_distinct"
+    ] is True
+    assert report["persistent_anchors"]["0"]["lineage_audit"][
+        "all_source_paths_traced"
+    ] is True
+    lineage_audit = report["persistent_anchors"]["0"]["lineage_audit"]
+    assert lineage_audit["covered_source_path_count"] == lineage_audit["source_width"]
+    assert lineage_audit["missing_source_path_count"] == 0
     merge = proposal["merges"][0]
     assert merge["anchors"]
     assert merge["dropped"] not in merge["anchors"]
 
 
-def test_multi_anchor_strategy_fails_closed_without_distinct_provenance() -> None:
+def test_multi_anchor_strategy_rejects_tampered_observed_work_caps(monkeypatch) -> None:
+    model = _tiny_qwen(1911, layers=1)
+    initial = MODULE.model_accounting(model)
+    real_fit = MODULE.fit_multi_anchor_neuron_fold
+
+    def tampered_fit(*args, **kwargs):
+        fold = real_fit(*args, **kwargs)
+        fold.diagnostics = replace(
+            fold.diagnostics,
+            similarity_products=int(kwargs["max_similarity_products"]) + 1,
+        )
+        return fold
+
+    monkeypatch.setattr(MODULE, "fit_multi_anchor_neuron_fold", tampered_fit)
+    report = MODULE.run_fold_transactions(
+        model,
+        activation_provider=_ActivationProvider(1912),
+        small_gate=_Decisions([True]),
+        target_parameters=initial.unique_parameter_count - 24,
+        target_bytes=None,
+        config=_loop_config(
+            fold_strategy="multi-anchor",
+            multi_anchor_candidate_pool_size=2,
+            multi_anchor_max_anchors=2,
+            multi_anchor_similarity_chunk_size=2,
+            multi_anchor_max_similarity_products=64,
+            multi_anchor_max_projection_fits=64,
+        ),
+    )
+
+    assert report["target"]["reached"] is False
+    assert report["accepted_count"] == 0
+    assert report["stop_reason"] == "no-eligible-arbitrary-pair-proposal"
+    assert "similarity" in report["layer_skips"][0]["reason"].lower()
+    assert MODULE.model_accounting(model) == initial
+
+
+@pytest.mark.parametrize("strategy", ["pair", "multi-anchor"])
+def test_fold_strategy_fails_closed_without_distinct_provenance(
+    strategy: str,
+) -> None:
     with pytest.raises(MODULE.QwenCompensatedRunnerError, match="distinct exact"):
         _loop_config(
-            fold_strategy="multi-anchor",
+            fold_strategy=strategy,
             calibration_provenance_id="same",
             validation_provenance_id="same",
         )

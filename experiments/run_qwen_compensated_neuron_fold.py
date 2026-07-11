@@ -1493,17 +1493,24 @@ def _initialize_persistent_anchors(
 def _current_anchor_indices(
     source_anchor_ids: Sequence[int], lineage: Sequence[Sequence[int]]
 ) -> tuple[int, ...]:
-    anchor_set = {int(value) for value in source_anchor_ids}
-    current = tuple(
-        index
-        for index, source_ids in enumerate(lineage)
-        if anchor_set.intersection(int(value) for value in source_ids)
-    )
-    if len(current) != len(anchor_set):
+    anchors = tuple(sorted({int(value) for value in source_anchor_ids}))
+    current: list[int] = []
+    for anchor in anchors:
+        matches = [
+            index
+            for index, source_ids in enumerate(lineage)
+            if anchor in {int(value) for value in source_ids}
+        ]
+        if len(matches) != 1:
+            raise QwenCompensatedRunnerError(
+                "Persistent anchor lineage must resolve each source anchor exactly once."
+            )
+        current.append(matches[0])
+    if len(current) != len(set(current)):
         raise QwenCompensatedRunnerError(
-            "Persistent anchor lineage is missing or merged with another source neuron."
+            "Persistent source anchors were merged into the same current neuron."
         )
-    return current
+    return tuple(sorted(current))
 
 
 def _lineage_after_fold(
@@ -1511,15 +1518,38 @@ def _lineage_after_fold(
     fold: CompensatedNeuronFoldWeights | MultiAnchorNeuronFoldWeights,
 ) -> list[tuple[int, ...]]:
     if fold.merges and not hasattr(fold.merges[0], "representative"):
+        source_to_current = {
+            int(source_index): current_index
+            for current_index, source_index in enumerate(fold.kept_source_indices)
+        }
         result = [
-            tuple(sorted(int(value) for value in lineage[source_index]))
+            set(int(value) for value in lineage[source_index])
             for source_index in fold.kept_source_indices
         ]
+        for merge in fold.merges:
+            dropped_lineage = {int(value) for value in lineage[merge.dropped]}
+            for anchor, coefficient in zip(
+                merge.anchors, merge.coefficients, strict=True
+            ):
+                if float(coefficient) == 0.0:
+                    continue
+                current_index = source_to_current.get(int(anchor))
+                if current_index is None:
+                    raise QwenCompensatedRunnerError(
+                        "Multi-anchor lineage references a non-surviving anchor."
+                    )
+                result[current_index].update(dropped_lineage)
         if len(result) != fold.target_width:
             raise QwenCompensatedRunnerError(
                 "Multi-anchor survivor lineage width is inconsistent."
             )
-        return result
+        expected = {int(value) for group in lineage for value in group}
+        observed = {value for group in result for value in group}
+        if observed != expected:
+            raise QwenCompensatedRunnerError(
+                "Multi-anchor lineage did not preserve every source path."
+            )
+        return [tuple(sorted(values)) for values in result]
     merged_into: dict[int, int] = {
         int(item.representative): int(item.dropped) for item in fold.merges
     }
@@ -1535,6 +1565,38 @@ def _lineage_after_fold(
     if sorted(flattened) != sorted(expected) or len(flattened) != len(set(flattened)):
         raise QwenCompensatedRunnerError("Neuron lineage did not remain a partition.")
     return result
+
+
+def _lineage_audit(
+    lineage: Sequence[Sequence[int]], source_width: int
+) -> dict[str, Any]:
+    width = _positive_int(source_width, "source_width")
+    counts = {index: 0 for index in range(width)}
+    extras: set[int] = set()
+    for group in lineage:
+        for value in {int(item) for item in group}:
+            if value in counts:
+                counts[value] += 1
+            else:
+                extras.add(value)
+    missing = [index for index, count in counts.items() if count == 0]
+    if missing or extras:
+        raise QwenCompensatedRunnerError(
+            "Persistent lineage does not cover the exact initial source paths."
+        )
+    multiplicities = list(counts.values())
+    return {
+        "source_width": width,
+        "current_path_count": len(lineage),
+        "covered_source_path_count": len(counts),
+        "missing_source_path_count": 0,
+        "extra_source_path_count": 0,
+        "multiply_represented_source_path_count": sum(
+            count > 1 for count in multiplicities
+        ),
+        "maximum_source_path_multiplicity": max(multiplicities, default=0),
+        "all_source_paths_traced": True,
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -1603,26 +1665,28 @@ class FoldLoopConfig:
             raise QwenCompensatedRunnerError(
                 "fold_strategy must be 'pair' or 'multi-anchor'."
             )
-        if self.fold_strategy == "multi-anchor" and (
+        if (
             not self.calibration_provenance_id.strip()
             or not self.validation_provenance_id.strip()
             or self.calibration_provenance_id == self.validation_provenance_id
         ):
             raise QwenCompensatedRunnerError(
-                "Multi-anchor folding requires distinct exact calibration and validation provenance IDs."
+                "Folding requires distinct exact calibration and validation provenance IDs."
             )
         for name in ("multi_anchor_ridge", "multi_anchor_max_coefficient_l1"):
             value = float(getattr(self, name))
             if not math.isfinite(value) or value <= 0.0:
                 raise QwenCompensatedRunnerError(f"{name} must be finite and positive.")
         hard_limits = {
-            "projection_count": 256,
-            "neighbor_window": 256,
+            "projection_count": 64,
+            "neighbor_window": 64,
             "max_pair_candidates": 2_000_000,
             "max_generated_pairs": 4_000_000,
             "score_chunk_size": 65_536,
             "proposal_layer_limit": 256,
+            "prefilter_columns": 4_096,
             "merges_per_transaction": 4_096,
+            "max_candidate_attempts": 4_096,
             "max_transactions": 4_096,
             "max_history_records": 4_096,
             "max_history_json_bytes": 1024**3,
@@ -1690,6 +1754,235 @@ def _needed_drops(
     return min(needed, maximum)
 
 
+def _validate_fold_activation_evidence(
+    fold: CompensatedNeuronFoldWeights | MultiAnchorNeuronFoldWeights,
+    calibration: Tensor,
+    validation: Tensor,
+    *,
+    protected_indices: Sequence[int],
+    selected_count: int,
+) -> dict[str, Any]:
+    diagnostics = fold.diagnostics
+    protected = tuple(sorted({int(value) for value in protected_indices}))
+    source_width = int(calibration.shape[1])
+    expected_target = source_width - int(selected_count)
+    expected_calibration = _tensor_sha256(calibration)
+    expected_validation = _tensor_sha256(validation)
+    observed_selected = int(
+        getattr(
+            diagnostics,
+            "selected_pair_count",
+            getattr(diagnostics, "selected_merge_count", -1),
+        )
+    )
+    exact_values = {
+        "source_width": (int(diagnostics.source_width), int(calibration.shape[1])),
+        "target_width": (int(diagnostics.target_width), expected_target),
+        "calibration_rows": (
+            int(diagnostics.calibration_rows),
+            int(calibration.shape[0]),
+        ),
+        "validation_rows": (
+            int(diagnostics.validation_rows),
+            int(validation.shape[0]),
+        ),
+        "protected_count": (int(diagnostics.protected_count), len(protected)),
+        "selected_count": (observed_selected, int(selected_count)),
+        "calibration_activation_sha256": (
+            str(diagnostics.calibration_activation_sha256),
+            expected_calibration,
+        ),
+        "validation_activation_sha256": (
+            str(diagnostics.validation_activation_sha256),
+            expected_validation,
+        ),
+    }
+    mismatches = [
+        name for name, (observed, expected) in exact_values.items() if observed != expected
+    ]
+    if mismatches:
+        raise QwenCompensatedRunnerError(
+            "Fold diagnostics do not bind the exact activation evidence: "
+            f"{mismatches}."
+        )
+    kept = tuple(int(value) for value in fold.kept_source_indices)
+    dropped = tuple(int(merge.dropped) for merge in fold.merges)
+    if (
+        len(fold.merges) != selected_count
+        or len(kept) != expected_target
+        or len(set(kept)) != len(kept)
+        or len(set(dropped)) != len(dropped)
+        or set(kept).intersection(dropped)
+        or set(kept).union(dropped) != set(range(source_width))
+        or not set(protected).issubset(kept)
+        or tuple(int(value) for value in fold.protected_indices) != protected
+    ):
+        raise QwenCompensatedRunnerError(
+            "Fold structure does not exactly partition kept, dropped, and protected paths."
+        )
+    for merge in fold.merges:
+        if hasattr(merge, "anchors") and not set(merge.anchors).issubset(kept):
+            raise QwenCompensatedRunnerError(
+                "A multi-anchor merge references a non-surviving path."
+            )
+        if hasattr(merge, "representative") and merge.representative not in kept:
+            raise QwenCompensatedRunnerError(
+                "A pair merge representative is not a surviving path."
+            )
+    if expected_calibration == expected_validation:
+        raise QwenCompensatedRunnerError(
+            "Calibration and validation activation evidence unexpectedly match."
+        )
+    if bool(diagnostics.materialized_full_pairwise_matrix):
+        raise QwenCompensatedRunnerError(
+            "Fold diagnostics report a forbidden full pairwise matrix."
+        )
+    if int(diagnostics.optimizer_steps) != 0 or bool(diagnostics.backward_called):
+        raise QwenCompensatedRunnerError(
+            "Zero-recovery folding cannot contain optimization or backward work."
+        )
+    return {
+        "calibration_activation_sha256": expected_calibration,
+        "validation_activation_sha256": expected_validation,
+        "activation_hashes_distinct": True,
+        "selected_count": observed_selected,
+        "protected_count": len(protected),
+        "kept_path_count": len(kept),
+        "dropped_path_count": len(dropped),
+        "structure_partition_verified": True,
+        "materialized_full_pairwise_matrix": False,
+        "optimizer_steps": 0,
+        "backward_called": False,
+    }
+
+
+def _validate_pair_work_caps(
+    fold: CompensatedNeuronFoldWeights, config: FoldLoopConfig
+) -> dict[str, Any]:
+    diagnostics = fold.diagnostics
+    exact = {
+        "projection_count": (diagnostics.projection_count, config.projection_count),
+        "neighbor_window": (diagnostics.neighbor_window, config.neighbor_window),
+        "max_generated_pairs": (
+            diagnostics.max_generated_pairs,
+            config.max_generated_pairs,
+        ),
+        "score_chunk_size": (diagnostics.score_chunk_size, config.score_chunk_size),
+    }
+    mismatches = [
+        name
+        for name, (observed, expected) in exact.items()
+        if int(observed) != int(expected)
+    ]
+    if mismatches:
+        raise QwenCompensatedRunnerError(
+            f"Pair-fold diagnostics changed declared work controls: {mismatches}."
+        )
+    generated = int(diagnostics.generated_pair_count)
+    scored = int(diagnostics.scored_pair_count)
+    retained = int(diagnostics.retained_scored_pair_count)
+    if not (
+        0 <= retained <= scored <= config.max_pair_candidates
+        and generated <= config.max_generated_pairs
+        and scored <= generated
+    ):
+        raise QwenCompensatedRunnerError(
+            "Pair-fold observed work exceeded or contradicted its declared caps."
+        )
+    return {
+        "projection_count": int(diagnostics.projection_count),
+        "neighbor_window": int(diagnostics.neighbor_window),
+        "generated_pair_count": generated,
+        "max_generated_pairs": config.max_generated_pairs,
+        "scored_pair_count": scored,
+        "max_pair_candidates": config.max_pair_candidates,
+        "retained_scored_pair_count": retained,
+        "score_chunk_size": int(diagnostics.score_chunk_size),
+        "all_work_caps_verified": True,
+    }
+
+
+def _validate_multi_anchor_work_caps(
+    fold: MultiAnchorNeuronFoldWeights, config: FoldLoopConfig
+) -> dict[str, Any]:
+    diagnostics = fold.diagnostics
+    exact = {
+        "max_anchors": (diagnostics.max_anchors, config.multi_anchor_max_anchors),
+        "similarity_chunk_size": (
+            diagnostics.similarity_chunk_size,
+            config.multi_anchor_similarity_chunk_size,
+        ),
+        "max_projection_fits": (
+            diagnostics.max_projection_fits,
+            config.multi_anchor_max_projection_fits,
+        ),
+    }
+    mismatches = [
+        name
+        for name, (observed, expected) in exact.items()
+        if int(observed) != int(expected)
+    ]
+    if mismatches:
+        raise QwenCompensatedRunnerError(
+            "Multi-anchor diagnostics changed declared work controls: "
+            f"{mismatches}."
+        )
+    candidate_pool = int(diagnostics.candidate_pool_size)
+    survivors = int(diagnostics.survivor_pool_size)
+    similarity_products = int(diagnostics.similarity_products)
+    peak_similarity = int(diagnostics.peak_similarity_elements)
+    projection_fits = int(diagnostics.projection_fit_count)
+    edge_count = sum(len(merge.anchors) for merge in fold.merges)
+    if not 0 < candidate_pool <= config.multi_anchor_candidate_pool_size:
+        raise QwenCompensatedRunnerError(
+            "Multi-anchor candidate-pool work exceeded its declared cap."
+        )
+    if survivors <= 0 or similarity_products != candidate_pool * survivors:
+        raise QwenCompensatedRunnerError(
+            "Multi-anchor similarity accounting is internally inconsistent."
+        )
+    if not 0 < similarity_products <= config.multi_anchor_max_similarity_products:
+        raise QwenCompensatedRunnerError(
+            "Multi-anchor similarity work exceeded its declared cap."
+        )
+    if not 0 <= projection_fits <= config.multi_anchor_max_projection_fits:
+        raise QwenCompensatedRunnerError(
+            "Multi-anchor projection work exceeded its declared cap."
+        )
+    if not 0 < peak_similarity <= (
+        config.multi_anchor_similarity_chunk_size * survivors
+    ):
+        raise QwenCompensatedRunnerError(
+            "Multi-anchor peak similarity materialization exceeded its chunk bound."
+        )
+    if edge_count > len(fold.merges) * config.multi_anchor_max_anchors:
+        raise QwenCompensatedRunnerError(
+            "Multi-anchor edge work exceeded its declared anchor cap."
+        )
+    if any(
+        sum(abs(float(value)) for value in merge.coefficients)
+        > config.multi_anchor_max_coefficient_l1 + 1e-12
+        for merge in fold.merges
+    ):
+        raise QwenCompensatedRunnerError(
+            "Multi-anchor coefficients exceeded the declared L1 bound."
+        )
+    return {
+        "candidate_pool_size": candidate_pool,
+        "max_candidate_pool_size": config.multi_anchor_candidate_pool_size,
+        "survivor_pool_size": survivors,
+        "similarity_products": similarity_products,
+        "max_similarity_products": config.multi_anchor_max_similarity_products,
+        "peak_similarity_elements": peak_similarity,
+        "similarity_chunk_size": int(diagnostics.similarity_chunk_size),
+        "projection_fit_count": projection_fits,
+        "max_projection_fits": config.multi_anchor_max_projection_fits,
+        "anchor_edge_count": edge_count,
+        "max_anchors_per_merge": config.multi_anchor_max_anchors,
+        "all_work_caps_verified": True,
+    }
+
+
 def _fit_layer_proposal(
     model: nn.Module,
     layer_index: int,
@@ -1724,6 +2017,9 @@ def _fit_layer_proposal(
         strategy_evidence: dict[str, Any] = {
             "strategy": config.fold_strategy,
             "certification_contract_unchanged": True,
+            "calibration_provenance_id": config.calibration_provenance_id,
+            "validation_provenance_id": config.validation_provenance_id,
+            "provenance_ids_distinct": True,
         }
         if config.fold_strategy == "pair":
             fold = fit_compensated_neuron_pairs(
@@ -1740,6 +2036,9 @@ def _fit_layer_proposal(
                 max_generated_pairs=config.max_generated_pairs,
                 score_chunk_size=config.score_chunk_size,
                 seed=config.seed + epoch * 1_000_003 + layer_index * 1009,
+            )
+            strategy_evidence["work_caps"] = _validate_pair_work_caps(
+                fold, config
             )
         else:
             fold = fit_multi_anchor_neuron_fold(
@@ -1762,6 +2061,7 @@ def _fit_layer_proposal(
                 ridge=config.multi_anchor_ridge,
                 max_coefficient_l1=config.multi_anchor_max_coefficient_l1,
             )
+            observed_work = _validate_multi_anchor_work_caps(fold, config)
             tiny = torch.finfo(torch.float64).tiny
             checked_edges = 0
             per_merge_metric_mismatches = 0
@@ -1860,9 +2160,6 @@ def _fit_layer_proposal(
                 )
             strategy_evidence.update(
                 {
-                    "calibration_provenance_id": config.calibration_provenance_id,
-                    "validation_provenance_id": config.validation_provenance_id,
-                    "provenance_ids_distinct": True,
                     "independent_aggregate_calibration_relative_l2": (
                         calibration_aggregate
                     ),
@@ -1873,21 +2170,18 @@ def _fit_layer_proposal(
                     "per_merge_metric_mismatch_count": per_merge_metric_mismatches,
                     "per_merge_metrics_used_for_runner_selection": False,
                     "checked_anchor_edge_count": checked_edges,
-                    "work_caps": {
-                        "candidate_pool_size": config.multi_anchor_candidate_pool_size,
-                        "max_anchors": config.multi_anchor_max_anchors,
-                        "similarity_chunk_size": (
-                            config.multi_anchor_similarity_chunk_size
-                        ),
-                        "max_similarity_products": (
-                            config.multi_anchor_max_similarity_products
-                        ),
-                        "max_projection_fits": (
-                            config.multi_anchor_max_projection_fits
-                        ),
-                    },
+                    "work_caps": observed_work,
                 }
             )
+        strategy_evidence["activation_evidence"] = (
+            _validate_fold_activation_evidence(
+                fold,
+                calibration,
+                validation,
+                protected_indices=protected,
+                selected_count=requested_drops,
+            )
+        )
     except Qwen3CompensatedFoldError as exc:
         raise QwenCompensatedRunnerError(
             f"Layer {layer_index} has no bounded arbitrary-pair proposal: {exc}"
@@ -2034,21 +2328,26 @@ def _append_bounded_history(
     max_records: int,
     max_json_bytes: int,
 ) -> int:
-    history.append(value)
+    updated = [*history, value]
     omitted = 0
-    while len(history) > max_records or _history_size(history) > max_json_bytes:
-        history.pop(0)
+    while updated and (
+        len(updated) > max_records or _history_size(updated) > max_json_bytes
+    ):
+        updated.pop(0)
         omitted += 1
-    if not history:
+    if not updated:
         raise QwenCompensatedRunnerError(
             "A single compact transaction record exceeds the history byte cap."
         )
+    history[:] = updated
     return omitted
 
 
-def _append_transaction_ledger(path: Path | None, value: Mapping[str, Any]) -> None:
+def _append_transaction_ledger(
+    path: Path | None, value: Mapping[str, Any]
+) -> int | None:
     if path is None:
-        return
+        return None
     path.parent.mkdir(parents=True, exist_ok=True)
     encoded = (
         json.dumps(
@@ -2061,7 +2360,25 @@ def _append_transaction_ledger(path: Path | None, value: Mapping[str, Any]) -> N
         + "\n"
     ).encode("ascii")
     with path.open("ab") as handle:
-        handle.write(encoded)
+        handle.seek(0, os.SEEK_END)
+        starting_size = handle.tell()
+        try:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        except BaseException:
+            handle.truncate(starting_size)
+            handle.flush()
+            os.fsync(handle.fileno())
+            raise
+    return starting_size
+
+
+def _truncate_transaction_ledger(path: Path | None, starting_size: int | None) -> None:
+    if path is None or starting_size is None:
+        return
+    with path.open("r+b") as handle:
+        handle.truncate(starting_size)
         handle.flush()
         os.fsync(handle.fileno())
 
@@ -2137,6 +2454,8 @@ def run_fold_transactions(
     skipped_omitted = 0
     blocked_by_layer: dict[int, set[int]] = {}
     attempts = 0
+    consecutive_candidate_attempts = 0
+    max_consecutive_candidate_attempts_observed = 0
     accounting = initial
     stop_reason = "target-reached" if _target_reached(
         accounting, target_parameters, target_bytes, target_resident_bytes
@@ -2149,6 +2468,9 @@ def run_fold_transactions(
             resource_guard.check(f"transaction-{attempts + 1:06d}:start")
         if attempts >= config.max_transactions:
             stop_reason = "max-transactions"
+            break
+        if consecutive_candidate_attempts >= config.max_candidate_attempts:
+            stop_reason = "max-consecutive-candidate-attempts"
             break
         first_layer = _qwen_layers(model)[0]
         hidden_size = int(first_layer.mlp.gate_proj.weight.shape[1])
@@ -2170,7 +2492,7 @@ def run_fold_transactions(
             anchor_reports_by_layer=anchor_reports,
             lineage_by_layer=lineage,
             config=config,
-            epoch=len(accepted),
+            epoch=accepted_omitted + len(accepted),
         )
         for item in skipped:
             skipped_omitted += _append_bounded_history(
@@ -2183,10 +2505,18 @@ def run_fold_transactions(
             stop_reason = "no-eligible-arbitrary-pair-proposal"
             break
         attempts += 1
+        consecutive_candidate_attempts += 1
+        max_consecutive_candidate_attempts_observed = max(
+            max_consecutive_candidate_attempts_observed,
+            consecutive_candidate_attempts,
+        )
         before = accounting
         snapshot = _transaction_runtime_snapshot(model)
         handle = None
         appended_to_accepted = False
+        accepted_history_before = list(accepted)
+        accepted_omitted_before = accepted_omitted
+        ledger_starting_size: int | None = None
         try:
             handle = install_qwen3_compensated_fold(
                 model, proposal.layer_index, proposal.fold
@@ -2246,7 +2576,9 @@ def run_fold_transactions(
                         "rollback_exact": True,
                     }
                 )
-                _append_transaction_ledger(transaction_ledger, transaction_report)
+                ledger_starting_size = _append_transaction_ledger(
+                    transaction_ledger, transaction_report
+                )
                 rejected_omitted += _append_bounded_history(
                     rejected,
                     transaction_report,
@@ -2281,7 +2613,9 @@ def run_fold_transactions(
                     ),
                 }
             )
-            _append_transaction_ledger(transaction_ledger, transaction_report)
+            ledger_starting_size = _append_transaction_ledger(
+                transaction_ledger, transaction_report
+            )
             accepted_omitted += _append_bounded_history(
                 accepted,
                 transaction_report,
@@ -2291,8 +2625,9 @@ def run_fold_transactions(
             appended_to_accepted = True
             handle.commit()
         except BaseException:
-            if appended_to_accepted and accepted and accepted[-1].get("attempt") == attempts:
-                accepted.pop()
+            if appended_to_accepted:
+                accepted[:] = accepted_history_before
+                accepted_omitted = accepted_omitted_before
             if handle is not None and not handle.committed and not handle.reverted:
                 handle.rollback()
             _restore_transaction_runtime(snapshot)
@@ -2300,9 +2635,11 @@ def run_fold_transactions(
                 raise QwenCompensatedRunnerError(
                     "Exceptional transaction rollback did not restore exact accounting."
                 )
+            _truncate_transaction_ledger(transaction_ledger, ledger_starting_size)
             raise
 
         accounting = committed_accounting
+        consecutive_candidate_attempts = 0
         lineage[proposal.layer_index] = next_lineage
         blocked_by_layer.clear()
         del handle
@@ -2333,10 +2670,15 @@ def run_fold_transactions(
             ),
         },
         "attempt_count": attempts,
+        "max_candidate_attempts": config.max_candidate_attempts,
+        "max_consecutive_candidate_attempts_observed": (
+            max_consecutive_candidate_attempts_observed
+        ),
         "accepted_count": accepted_omitted + len(accepted),
         "rejected_count": rejected_omitted + len(rejected),
         "activation_collection_count": activation_refreshes,
-        "activation_refresh_after_every_accept": activation_refreshes == len(accepted) + 1,
+        "activation_refresh_after_every_accept": activation_refreshes
+        == accepted_omitted + len(accepted) + 1,
         "accepted_transactions": accepted,
         "rejected_transactions": rejected,
         "layer_skips": skipped_history,
@@ -2360,6 +2702,9 @@ def run_fold_transactions(
                     _current_anchor_indices(anchor_sources[index], lineage[index])
                 ),
                 "final_lineage_sha256": _canonical_sha256(lineage[index]),
+                "lineage_audit": _lineage_audit(
+                    lineage[index], initial.layer_widths[index]
+                ),
             }
             for index in sorted(anchor_sources)
         },
@@ -3260,14 +3605,14 @@ def _assert_production_certification_contract(
         "generation_prompts": 1000,
         "choice_probes": 250,
     }
-    underfilled = {
+    mismatched = {
         name: {"actual": int(counts.get(name, 0)), "required": minimum}
         for name, minimum in required.items()
-        if int(counts.get(name, 0)) < minimum
+        if int(counts.get(name, 0)) != minimum
     }
-    if underfilled:
+    if mismatched:
         raise QwenCompensatedRunnerError(
-            f"Certification suite is underfilled: {underfilled}."
+            f"Certification suite cardinality is not exact: {mismatched}."
         )
     available_manual = int(counts["behavior_probes"]) + int(
         counts["generation_prompts"]
@@ -3340,6 +3685,10 @@ def build_manual_review_packet(
                 raise QwenCompensatedRunnerError(
                     f"Manual-review outputs are not verbatim strings: {item_id}."
                 )
+            if not parent_output.strip() or not child_output.strip():
+                raise QwenCompensatedRunnerError(
+                    f"Manual-review outputs cannot be empty: {item_id}."
+                )
             parent_diagnostics = dict(parent_item.get("diagnostics") or {})
             child_diagnostics = dict(child_item.get("diagnostics") or {})
             if collection == "generation":
@@ -3361,15 +3710,18 @@ def build_manual_review_packet(
         raise QwenCompensatedRunnerError(
             f"Manual-review cardinality is not exact: {len(samples)}!={expected}."
         )
+    sample_keys = [(item["collection"], item["id"]) for item in samples]
+    if len(sample_keys) != len(set(sample_keys)):
+        raise QwenCompensatedRunnerError(
+            "Manual-review samples must be unique across collection and ID."
+        )
     packet = {
         "schema": "neural-forge-qualitative-parent-child-review-v1",
         "status": "awaiting-explicit-review",
         "required_sample_count": expected,
         "selected_sample_count": len(samples),
         "samples": samples,
-        "sample_ids_sha256": _canonical_sha256(
-            [(item["collection"], item["id"]) for item in samples]
-        ),
+        "sample_ids_sha256": _canonical_sha256(sample_keys),
         "review_contract": {
             "human_or_explicit_agent_inspection_required": True,
             "reviewer_must_inspect_parent_and_child_text": True,
@@ -4285,12 +4637,37 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "validation_id": validation_provenance_id,
         "ids_distinct": calibration_provenance_id != validation_provenance_id,
         "work_caps": {
-            "candidate_pool_size": args.multi_anchor_candidate_pool_size,
-            "max_anchors": args.multi_anchor_max_anchors,
-            "similarity_chunk_size": args.multi_anchor_similarity_chunk_size,
-            "max_similarity_products": args.multi_anchor_max_similarity_products,
-            "max_projection_fits": args.multi_anchor_max_projection_fits,
-            "max_coefficient_l1": args.multi_anchor_max_coefficient_l1,
+            "strategy": args.fold_strategy,
+            "proposal": {
+                "layer_limit": args.proposal_layer_limit,
+                "prefilter_columns": args.prefilter_columns,
+            },
+            "pair": {
+                "projection_count": args.projection_count,
+                "neighbor_window": args.neighbor_window,
+                "max_pair_candidates": args.max_pair_candidates,
+                "max_generated_pairs": args.max_generated_pairs,
+                "score_chunk_size": args.score_chunk_size,
+            },
+            "multi_anchor": {
+                "candidate_pool_size": args.multi_anchor_candidate_pool_size,
+                "max_anchors": args.multi_anchor_max_anchors,
+                "similarity_chunk_size": args.multi_anchor_similarity_chunk_size,
+                "max_similarity_products": (
+                    args.multi_anchor_max_similarity_products
+                ),
+                "max_projection_fits": args.multi_anchor_max_projection_fits,
+                "ridge": args.multi_anchor_ridge,
+                "max_coefficient_l1": args.multi_anchor_max_coefficient_l1,
+            },
+            "transactions": {
+                "merges_per_transaction": args.merges_per_transaction,
+                "max_candidate_attempts": args.max_candidate_attempts,
+                "max_transactions": args.max_transactions,
+                "full_milestone_interval": args.full_milestone_interval,
+                "max_history_records": args.max_history_records,
+                "max_history_json_bytes": args.max_history_json_bytes,
+            },
         },
     }
     _write_json(output / "transaction_report.json", transaction_report)
