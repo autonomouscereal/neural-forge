@@ -66,6 +66,7 @@ GENERATION_HEALTH_CONTRACT = {
     "min_distinct_bigram_ratio": 0.50,
     "max_repeated_bigram_share": 0.35,
     "repeated_prompt_allowed": False,
+    "exact_expected_behavior_can_satisfy_minimum_length": True,
     "empty_continuation_passes": False,
     "low_information_continuation_passes": False,
 }

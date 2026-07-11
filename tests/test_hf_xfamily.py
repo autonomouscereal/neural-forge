@@ -525,12 +525,21 @@ def test_generation_health_checks_expected_first_number_when_present() -> None:
 
     good_check = _generation_health(good, min_continuation_chars=0, min_unique_token_ratio=0.0)
     bad_check = _generation_health(bad, min_continuation_chars=0, min_unique_token_ratio=0.0)
+    strict_good_check = _generation_health(
+        good, min_continuation_chars=24, min_unique_token_ratio=0.25
+    )
+    strict_bad_check = _generation_health(
+        bad, min_continuation_chars=24, min_unique_token_ratio=0.25
+    )
 
     assert good_check["passed"] is True
     assert good_check["expected_behavior"]["passed"] is True
     assert bad_check["passed"] is False
     assert bad_check["expected_enough"] is False
     assert bad_check["expected_behavior"]["details"]["prediction"] == "30"
+    assert strict_good_check["passed"] is True
+    assert strict_good_check["long_enough"] is True
+    assert strict_bad_check["passed"] is False
 
 
 def test_build_eval_suite_includes_exact_generation_math_and_code(tmp_path) -> None:

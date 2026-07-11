@@ -1049,6 +1049,7 @@ def evaluate_loaded_text_model(
                 "min_distinct_bigram_ratio": 0.50,
                 "max_repeated_bigram_share": 0.35,
                 "repeated_prompt_allowed": False,
+                "exact_expected_behavior_can_satisfy_minimum_length": True,
                 "empty_continuation_passes": False,
                 "low_information_continuation_passes": False,
             },
@@ -2625,10 +2626,12 @@ def _generation_health(item: dict[str, Any], min_continuation_chars: int, min_un
     diagnostics = item.get("diagnostics") or _generation_diagnostics(continuation)
     tokens = re.findall(r"[A-Za-z0-9_]+", continuation.lower())
     unique_ratio = float(diagnostics.get("distinct_1", 0.0))
-    long_enough = len(continuation) >= min_continuation_chars
     relevance = _generation_relevance(prompt, continuation, item.get("relevance_rules"))
     expected = _generation_expected_behavior(item)
     expectation_passed = True if expected is None else bool(expected["passed"])
+    long_enough = len(continuation) >= min_continuation_chars or (
+        expected is not None and expectation_passed and bool(tokens)
+    )
     if expected is not None:
         diverse_enough = bool(tokens) and expectation_passed
     elif min_continuation_chars == 0 and min_unique_token_ratio == 0.0:
