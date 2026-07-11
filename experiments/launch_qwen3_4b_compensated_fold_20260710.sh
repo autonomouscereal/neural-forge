@@ -27,6 +27,13 @@ CHECKPOINT_STAGING_ROOT=${CHECKPOINT_STAGING_ROOT:-/home/cereal/model-surgery-la
 MERGES_PER_TRANSACTION=${MERGES_PER_TRANSACTION:-64}
 PROPOSAL_LAYER_LIMIT=${PROPOSAL_LAYER_LIMIT:-4}
 FULL_MILESTONE_INTERVAL=${FULL_MILESTONE_INTERVAL:-8}
+CALIBRATION_COUNT=${CALIBRATION_COUNT:-96}
+VALIDATION_COUNT=${VALIDATION_COUNT:-96}
+CALIBRATION_MAX_LENGTH=${CALIBRATION_MAX_LENGTH:-160}
+ACTIVATION_ROWS=${ACTIVATION_ROWS:-256}
+ANCHOR_FRACTION=${ANCHOR_FRACTION:-0.05}
+MINIMUM_ANCHOR_COUNT=${MINIMUM_ANCHOR_COUNT:-64}
+EXCLUDE_LAYERS=${EXCLUDE_LAYERS:-}
 PROJECTION_COUNT=${PROJECTION_COUNT:-8}
 NEIGHBOR_WINDOW=${NEIGHBOR_WINDOW:-4}
 MAX_PAIR_CANDIDATES=${MAX_PAIR_CANDIDATES:-32768}
@@ -42,15 +49,25 @@ MULTI_ANCHOR_RIDGE=${MULTI_ANCHOR_RIDGE:-0.000001}
 MULTI_ANCHOR_MAX_COEFFICIENT_L1=${MULTI_ANCHOR_MAX_COEFFICIENT_L1:-16.0}
 MAX_CANDIDATE_ATTEMPTS=${MAX_CANDIDATE_ATTEMPTS:-128}
 MAX_TRANSACTIONS=${MAX_TRANSACTIONS:-128}
+SELECTION_MAX_TEXT_EVALS=${SELECTION_MAX_TEXT_EVALS:-32}
+SELECTION_MAX_CHOICE_PROBES=${SELECTION_MAX_CHOICE_PROBES:-128}
+SELECTION_MAX_GENERATION_PROMPTS=${SELECTION_MAX_GENERATION_PROMPTS:-256}
+SELECTION_MAX_BEHAVIOR_PROBES=${SELECTION_MAX_BEHAVIOR_PROBES:-256}
+MAX_GATE_BEHAVIOR_LOSSES=${MAX_GATE_BEHAVIOR_LOSSES:-0}
+MAX_GATE_CHOICE_LOSSES=${MAX_GATE_CHOICE_LOSSES:-0}
+MAX_GATE_GENERATION_LOSSES=${MAX_GATE_GENERATION_LOSSES:-0}
+MAX_FULL_BEHAVIOR_LOSSES=${MAX_FULL_BEHAVIOR_LOSSES:-0}
+MAX_FULL_CHOICE_LOSSES=${MAX_FULL_CHOICE_LOSSES:-0}
+MAX_FULL_GENERATION_LOSSES=${MAX_FULL_GENERATION_LOSSES:-0}
 SELECTION_EVAL_SUITE=${SELECTION_EVAL_SUITE:?Set a token-disjoint adaptive-selection suite.}
 PARENT_SELECTION_EVAL=${PARENT_SELECTION_EVAL:?Set its exact identity-bound cached parent evaluation.}
 PARENT_CERTIFICATION_EVAL=${PARENT_CERTIFICATION_EVAL:?Set the exact identity-bound 1000/1000/250 parent evaluation.}
 MANUAL_REVIEW_TIMEOUT_SECONDS=${MANUAL_REVIEW_TIMEOUT_SECONDS:-86400}
 
-MODEL=/home/cereal/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Base/snapshots/906bfd4b4dc7f14ee4320094d8b41684abff8539
-CALIBRATION=/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/calibration_mix_plus_recovery_drills_20260702.jsonl
-EVAL_SUITE=/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/behavior_suite_exactgen_20260702.json
-SOURCE_REVISION=906bfd4b4dc7f14ee4320094d8b41684abff8539
+MODEL=${MODEL:-/home/cereal/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Base/snapshots/906bfd4b4dc7f14ee4320094d8b41684abff8539}
+CALIBRATION=${CALIBRATION:-/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/calibration_mix_plus_recovery_drills_20260702.jsonl}
+EVAL_SUITE=${EVAL_SUITE:-/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/behavior_suite_exactgen_20260702.json}
+SOURCE_REVISION=${SOURCE_REVISION:-906bfd4b4dc7f14ee4320094d8b41684abff8539}
 
 mkdir -p "$RUN_ROOT" "$CHECKPOINT_STAGING_ROOT"
 
@@ -59,6 +76,18 @@ if [[ "$PREPARE_PARENT_CACHES" == "1" ]]; then
   MODE_ARGS+=(--prepare-parent-caches)
 else
   MODE_ARGS+=(--target-unique-parameters "$TARGET_UNIQUE_PARAMETERS")
+fi
+
+EXCLUDE_ARGS=()
+if [[ -n "$EXCLUDE_LAYERS" ]]; then
+  IFS=',' read -r -a EXCLUDED <<< "$EXCLUDE_LAYERS"
+  for layer in "${EXCLUDED[@]}"; do
+    if [[ ! "$layer" =~ ^[0-9]+$ ]]; then
+      echo "EXCLUDE_LAYERS must be a comma-separated list of non-negative integers" >&2
+      exit 2
+    fi
+    EXCLUDE_ARGS+=(--exclude-layer "$layer")
+  done
 fi
 
 "$PY" "$ROOT/experiments/launch_detached.py" \
@@ -83,12 +112,12 @@ fi
   --cached-parent-selection-eval "$PARENT_SELECTION_EVAL" \
   "${MODE_ARGS[@]}" \
   --checkpoint-staging-root "$CHECKPOINT_STAGING_ROOT" \
-  --calibration-count 96 \
-  --validation-count 96 \
-  --calibration-max-length 160 \
-  --activation-rows 256 \
-  --anchor-fraction 0.05 \
-  --minimum-anchor-count 64 \
+  --calibration-count "$CALIBRATION_COUNT" \
+  --validation-count "$VALIDATION_COUNT" \
+  --calibration-max-length "$CALIBRATION_MAX_LENGTH" \
+  --activation-rows "$ACTIVATION_ROWS" \
+  --anchor-fraction "$ANCHOR_FRACTION" \
+  --minimum-anchor-count "$MINIMUM_ANCHOR_COUNT" \
   --projection-count "$PROJECTION_COUNT" \
   --neighbor-window "$NEIGHBOR_WINDOW" \
   --max-pair-candidates "$MAX_PAIR_CANDIDATES" \
@@ -96,6 +125,7 @@ fi
   --score-chunk-size "$SCORE_CHUNK_SIZE" \
   --proposal-layer-limit "$PROPOSAL_LAYER_LIMIT" \
   --prefilter-columns "$PREFILTER_COLUMNS" \
+  "${EXCLUDE_ARGS[@]}" \
   --fold-strategy "$FOLD_STRATEGY" \
   --multi-anchor-candidate-pool-size "$MULTI_ANCHOR_CANDIDATE_POOL_SIZE" \
   --multi-anchor-max-anchors "$MULTI_ANCHOR_MAX_ANCHORS" \
@@ -112,16 +142,16 @@ fi
   --gate-behavior-count 64 \
   --gate-choice-count 48 \
   --gate-generation-count 64 \
-  --selection-max-text-evals 32 \
-  --selection-max-choice-probes 128 \
-  --selection-max-generation-prompts 256 \
-  --selection-max-behavior-probes 256 \
-  --max-gate-behavior-losses 0 \
-  --max-gate-choice-losses 0 \
-  --max-gate-generation-losses 0 \
-  --max-full-behavior-losses 0 \
-  --max-full-choice-losses 0 \
-  --max-full-generation-losses 0 \
+  --selection-max-text-evals "$SELECTION_MAX_TEXT_EVALS" \
+  --selection-max-choice-probes "$SELECTION_MAX_CHOICE_PROBES" \
+  --selection-max-generation-prompts "$SELECTION_MAX_GENERATION_PROMPTS" \
+  --selection-max-behavior-probes "$SELECTION_MAX_BEHAVIOR_PROBES" \
+  --max-gate-behavior-losses "$MAX_GATE_BEHAVIOR_LOSSES" \
+  --max-gate-choice-losses "$MAX_GATE_CHOICE_LOSSES" \
+  --max-gate-generation-losses "$MAX_GATE_GENERATION_LOSSES" \
+  --max-full-behavior-losses "$MAX_FULL_BEHAVIOR_LOSSES" \
+  --max-full-choice-losses "$MAX_FULL_CHOICE_LOSSES" \
+  --max-full-generation-losses "$MAX_FULL_GENERATION_LOSSES" \
   --dtype float16 \
   --device cuda:0 \
   --max-new-tokens 96 \
