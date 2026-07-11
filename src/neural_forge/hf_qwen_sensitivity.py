@@ -6,18 +6,23 @@ neuron intervention zeros one real post-SwiGLU channel.  An attention
 intervention zeros the matching Q, K, V, and O slices for one GQA group in the
 same forward transaction.
 
-The reported controllability and observability vectors are deliberately named
-``zero_ablation_directional_finite_difference`` sketches.  They are finite
-differences between an untouched held-out forward and a zero-ablation forward;
-they are not presented as infinitesimal JVPs or VJPs.
+The reported residual and logit vectors are count sketches of directional
+differences between an untouched calibration forward and a zero-ablation
+forward. They are generic intervention evidence, never JVPs, VJPs, Jacobians,
+duals, or claims about infinitesimal derivatives.
 """
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import json
 import math
 import operator
+import os
+import platform
+import sys
+import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -31,10 +36,12 @@ from neural_forge.hf_neuron_codebook import NeuronCodebookLayerView
 from neural_forge.hf_qwen_adaptive_surgery import Qwen3AdaptiveSurgeryFeature
 
 
-SENSITIVITY_SCHEMA = "neural-forge-qwen3-sensitivity-v1"
-FINITE_DIFFERENCE_METHOD = "zero_ablation_directional_finite_difference"
+SENSITIVITY_SCHEMA = "neural-forge-qwen3-sensitivity-v2"
+DIRECTIONAL_DIFFERENCE_METHOD = "zero_ablation_directional_difference_count_sketch"
+FINITE_DIFFERENCE_METHOD = DIRECTIONAL_DIFFERENCE_METHOD
 _ATTENTION_ROLES = ("q", "k", "v", "o")
 _MEBIBYTE = 1024 * 1024
+_RSS_SAMPLE_INTERVAL_SECONDS = 0.001
 
 
 class Qwen3SensitivityError(ValueError):
@@ -100,6 +107,10 @@ class Qwen3SensitivityLimits:
     max_fingerprint_chunk_bytes: int = 8 * _MEBIBYTE
     max_sketch_work_bytes: int = 8 * _MEBIBYTE
     max_sketch_dim: int = 64
+    max_codebook_channels_per_chunk: int = 128
+    max_process_rss_increase_bytes: int | None = None
+    max_cuda_allocated_increase_bytes: int | None = None
+    max_cuda_reserved_increase_bytes: int | None = None
     allowed_device_types: tuple[str, ...] = ("cpu", "cuda")
 
     def __post_init__(self) -> None:
@@ -117,6 +128,7 @@ class Qwen3SensitivityLimits:
             "max_fingerprint_chunk_bytes",
             "max_sketch_work_bytes",
             "max_sketch_dim",
+            "max_codebook_channels_per_chunk",
         )
         for name in integer_fields:
             object.__setattr__(self, name, _positive_int(getattr(self, name), name))
@@ -136,6 +148,15 @@ class Qwen3SensitivityLimits:
             raise Qwen3SensitivityLimitError(
                 "max_sketch_work_bytes cannot exceed max_collector_bytes."
             )
+        for name in (
+            "max_process_rss_increase_bytes",
+            "max_cuda_allocated_increase_bytes",
+            "max_cuda_reserved_increase_bytes",
+        ):
+            value = getattr(self, name)
+            if value is None:
+                value = self.max_collector_bytes
+            object.__setattr__(self, name, _positive_int(value, name))
 
 
 @dataclass(frozen=True, order=True, slots=True)
@@ -179,18 +200,49 @@ class Qwen3AttentionGroupRef:
 
 
 @dataclass(frozen=True, slots=True)
+class Qwen3StateTensorFingerprint:
+    """Exact tensor digest plus same-process mutation provenance."""
+
+    name: str
+    sha256: str
+    dtype: str
+    shape: tuple[int, ...]
+    device: str
+    data_ptr: int
+    version: int
+
+
+@dataclass(frozen=True, slots=True)
+class Qwen3ModelFingerprintManifest:
+    """Merkle-style exact state manifest supporting bounded accepted refreshes."""
+
+    root: str
+    config_sha256: str
+    tensors: tuple[Qwen3StateTensorFingerprint, ...]
+    mode: Literal["full", "incremental"]
+    parent_root: str | None = None
+    accepted_transaction_sha256: str | None = None
+    changed_state_prefixes: tuple[str, ...] = ()
+    tensors_hashed: int = 0
+    tensors_reused: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class Qwen3SensitivityFingerprints:
     """Exact model and positioned-token fingerprints for cache isolation."""
 
     model: str
     calibration: str
     gate: str
+    runtime: str
     measurement: str
     cache: str
     calibration_row_fingerprints: tuple[str, ...]
     gate_row_fingerprints: tuple[str, ...]
-    model_hash_method: str = "sha256_exact_streamed_state_dict"
+    model_manifest: Qwen3ModelFingerprintManifest
+    model_hash_method: str = "sha256_merkle_exact_tensor_state_v3_full_rehash"
     row_hash_method: str = "sha256_active_token_ids_and_position_ids"
+    runtime_hash_method: str = "sha256_fail_closed_execution_environment_v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,9 +258,9 @@ class Qwen3NeuronSensitivity:
     logit_kl: float
     top1_disagreement: float
     damage_score: float
-    finite_difference_controllability: tuple[float, ...]
-    finite_difference_observability: tuple[float, ...]
-    derivative_method: str = FINITE_DIFFERENCE_METHOD
+    residual_ablation_difference_sketch: tuple[float, ...]
+    logit_ablation_difference_sketch: tuple[float, ...]
+    evidence_method: str = DIRECTIONAL_DIFFERENCE_METHOD
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,11 +276,11 @@ class Qwen3AttentionGroupSensitivity:
     logit_kl: float
     top1_disagreement: float
     damage_score: float
-    finite_difference_controllability: tuple[float, ...]
-    finite_difference_observability: tuple[float, ...]
+    residual_ablation_difference_sketch: tuple[float, ...]
+    logit_ablation_difference_sketch: tuple[float, ...]
     atomic_projection_roles: tuple[str, str, str, str] = _ATTENTION_ROLES
     role_ablation_call_counts: tuple[int, int, int, int] = (1, 1, 1, 1)
-    derivative_method: str = FINITE_DIFFERENCE_METHOD
+    evidence_method: str = DIRECTIONAL_DIFFERENCE_METHOD
 
 
 @dataclass(frozen=True, slots=True)
@@ -279,11 +331,35 @@ class Qwen3SensitivityReport:
     maximum_candidate_chunk: int
     tracked_peak_collector_bytes: int
     collector_byte_limit: int
+    process_rss_start_bytes: int
+    process_rss_peak_bytes: int
+    process_rss_peak_increase_bytes: int
+    process_rss_increase_limit: int
+    process_rss_sample_interval_seconds: float
+    process_rss_sampler_stopped: bool
+    cuda_allocated_start_bytes: int
+    cuda_allocated_peak_bytes: int
+    cuda_allocated_peak_increase_bytes: int
+    cuda_allocated_increase_limit: int
+    cuda_reserved_start_bytes: int
+    cuda_reserved_peak_bytes: int
+    cuda_reserved_peak_increase_bytes: int
+    cuda_reserved_increase_limit: int
+    resource_checkpoints: int
+    attention_backend: str
+    attention_workspace_bound_bytes: int
+    dense_mlp_forward_bound_bytes: int
+    codebook_materialization_bound_bytes: int
+    mlp_forward_workspace_bound_bytes: int
     model_devices: tuple[str, ...]
     mlp_capture_methods: tuple[str, ...]
-    derivative_method: str
+    evidence_method: str
     exact_autodiff_used: bool
-    finite_difference_reason: str
+    directional_difference_reason: str
+    model_fingerprint_mode: str
+    model_tensors_hashed: int
+    model_tensors_reused: int
+    runtime_fingerprint: str
     backward_calls: int
     optimizer_steps: int
     training_steps: int
@@ -331,9 +407,14 @@ class Qwen3SensitivityEvidence:
                         item.logit_kl,
                         item.top1_disagreement,
                     ],
-                    jacobian=item.finite_difference_controllability,
-                    dual=item.finite_difference_observability,
-                    domain_features=layer_context or None,
+                    jacobian=None,
+                    dual=None,
+                    domain_features=(
+                        layer_context
+                        + item.residual_ablation_difference_sketch
+                        + item.logit_ablation_difference_sketch
+                    )
+                    or None,
                     importance=max(item.damage_score, 1e-12),
                     anchor=(
                         AnchorSpec.pinned()
@@ -379,6 +460,7 @@ class _Layout:
     input_device: torch.device
     activation_element_bytes: int
     model_devices: tuple[str, ...]
+    attention_backend: str
 
     @property
     def query_rows_per_group(self) -> int:
@@ -410,11 +492,259 @@ class _HookScope:
         self._handles.clear()
 
 
+class _ProcessMemoryCounters(ctypes.Structure):
+    _fields_ = [
+        ("cb", ctypes.c_ulong),
+        ("PageFaultCount", ctypes.c_ulong),
+        ("PeakWorkingSetSize", ctypes.c_size_t),
+        ("WorkingSetSize", ctypes.c_size_t),
+        ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+        ("QuotaPagedPoolUsage", ctypes.c_size_t),
+        ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+        ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+        ("PagefileUsage", ctypes.c_size_t),
+        ("PeakPagefileUsage", ctypes.c_size_t),
+    ]
+
+
+def _windows_process_memory() -> tuple[int, int]:
+    counters = _ProcessMemoryCounters()
+    counters.cb = ctypes.sizeof(counters)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    psapi = ctypes.WinDLL("psapi", use_last_error=True)
+    kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+    psapi.GetProcessMemoryInfo.argtypes = (
+        ctypes.c_void_p,
+        ctypes.POINTER(_ProcessMemoryCounters),
+        ctypes.c_ulong,
+    )
+    psapi.GetProcessMemoryInfo.restype = ctypes.c_int
+    if not psapi.GetProcessMemoryInfo(
+        kernel32.GetCurrentProcess(),
+        ctypes.byref(counters),
+        counters.cb,
+    ):
+        raise Qwen3SensitivityStateError("GetProcessMemoryInfo failed.")
+    return int(counters.WorkingSetSize), int(counters.PeakWorkingSetSize)
+
+
+def _process_rss_bytes() -> int:
+    """Return current resident bytes without making psutil a hard dependency."""
+
+    try:
+        import psutil  # type: ignore[import-not-found]
+
+        return int(psutil.Process(os.getpid()).memory_info().rss)
+    except ImportError:
+        pass
+    if os.name == "posix" and os.path.exists("/proc/self/statm"):
+        with open("/proc/self/statm", encoding="ascii") as handle:
+            fields = handle.read().split()
+        if len(fields) < 2:
+            raise Qwen3SensitivityStateError("/proc/self/statm lacks an RSS field.")
+        return int(fields[1]) * int(os.sysconf("SC_PAGE_SIZE"))
+    if os.name == "nt":
+        return _windows_process_memory()[0]
+    raise Qwen3SensitivityStateError(
+        "Current process RSS is unavailable; collection fails closed."
+    )
+
+
+def _process_peak_rss_bytes() -> int:
+    """Return the operating system's process-lifetime peak resident bytes."""
+
+    if os.name == "nt":
+        return _windows_process_memory()[1]
+    if os.name == "posix" and os.path.exists("/proc/self/status"):
+        with open("/proc/self/status", encoding="ascii") as handle:
+            for line in handle:
+                if line.startswith("VmHWM:"):
+                    fields = line.split()
+                    if len(fields) >= 2:
+                        return int(fields[1]) * 1024
+    if os.name == "posix":
+        import resource
+
+        peak = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        return peak if sys.platform == "darwin" else peak * 1024
+    raise Qwen3SensitivityStateError(
+        "Peak process RSS is unavailable; collection fails closed."
+    )
+
+
+def _cuda_devices(model_devices: Sequence[str]) -> tuple[str, ...]:
+    return tuple(item for item in model_devices if torch.device(item).type == "cuda")
+
+
+def _reset_cuda_peak_stats(devices: Sequence[str]) -> None:
+    for name in devices:
+        torch.cuda.reset_peak_memory_stats(torch.device(name))
+
+
+def _cuda_memory_snapshot(
+    devices: Sequence[str],
+) -> tuple[int, int, int, int]:
+    allocated = reserved = allocated_peak = reserved_peak = 0
+    for name in devices:
+        device = torch.device(name)
+        allocated += int(torch.cuda.memory_allocated(device))
+        reserved += int(torch.cuda.memory_reserved(device))
+        allocated_peak += int(torch.cuda.max_memory_allocated(device))
+        reserved_peak += int(torch.cuda.max_memory_reserved(device))
+    return allocated, reserved, allocated_peak, reserved_peak
+
+
+class _ResourceGuard:
+    """Continuously sample process RSS and retain allocator-reported CUDA peaks."""
+
+    def __init__(
+        self,
+        limits: Qwen3SensitivityLimits,
+        model_devices: Sequence[str],
+    ) -> None:
+        self.limits = limits
+        self.cuda_devices = _cuda_devices(model_devices)
+        self.process_rss_start = _process_rss_bytes()
+        self.process_lifetime_peak_start = _process_peak_rss_bytes()
+        self.process_rss_peak = self.process_rss_start
+        self.sample_interval_seconds = _RSS_SAMPLE_INTERVAL_SECONDS
+        self._lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._sampler_error: BaseException | None = None
+        self._process_violation: str | None = None
+        self.stopped = False
+        if self.cuda_devices:
+            _reset_cuda_peak_stats(self.cuda_devices)
+        (
+            self.cuda_allocated_start,
+            self.cuda_reserved_start,
+            self.cuda_allocated_peak,
+            self.cuda_reserved_peak,
+        ) = _cuda_memory_snapshot(self.cuda_devices)
+        self.checkpoints = 0
+        self._sampler_thread = threading.Thread(
+            target=self._sample_loop,
+            name="qwen3-sensitivity-rss-sampler",
+            daemon=True,
+        )
+        self._sampler_thread.start()
+        try:
+            self.checkpoint("resource_guard_start")
+        except BaseException:
+            self._stop_event.set()
+            self._sampler_thread.join(timeout=2.0)
+            self.stopped = True
+            raise
+
+    @property
+    def process_rss_peak_increase(self) -> int:
+        return max(0, self.process_rss_peak - self.process_rss_start)
+
+    @property
+    def cuda_allocated_peak_increase(self) -> int:
+        return max(0, self.cuda_allocated_peak - self.cuda_allocated_start)
+
+    @property
+    def cuda_reserved_peak_increase(self) -> int:
+        return max(0, self.cuda_reserved_peak - self.cuda_reserved_start)
+
+    def _sample_process(self) -> None:
+        rss = _process_rss_bytes()
+        lifetime_peak = _process_peak_rss_bytes()
+        lifetime_growth = max(0, lifetime_peak - self.process_lifetime_peak_start)
+        with self._lock:
+            self.process_rss_peak = max(
+                self.process_rss_peak,
+                rss,
+                self.process_rss_start + lifetime_growth,
+            )
+            increase = self.process_rss_peak_increase
+            maximum = self.limits.max_process_rss_increase_bytes
+            if increase > maximum and self._process_violation is None:
+                self._process_violation = (
+                    f"process RSS increase {increase} exceeded hard cap {maximum}"
+                )
+
+    def _sample_loop(self) -> None:
+        try:
+            while not self._stop_event.wait(self.sample_interval_seconds):
+                self._sample_process()
+        except BaseException as exc:  # pragma: no cover - platform failure path
+            with self._lock:
+                self._sampler_error = exc
+
+    def _raise_sampler_failure(self, label: str) -> None:
+        with self._lock:
+            sampler_error = self._sampler_error
+            violation = self._process_violation
+        if sampler_error is not None:
+            raise Qwen3SensitivityStateError(
+                f"Process RSS sampler failed at {label!r}."
+            ) from sampler_error
+        if violation is not None:
+            raise Qwen3SensitivityLimitError(f"{violation} at checkpoint {label!r}.")
+
+    def checkpoint(self, label: str) -> None:
+        self.checkpoints += 1
+        self._sample_process()
+        self._raise_sampler_failure(label)
+        current_allocated, current_reserved, peak_allocated, peak_reserved = (
+            _cuda_memory_snapshot(self.cuda_devices)
+        )
+        self.cuda_allocated_peak = max(
+            self.cuda_allocated_peak,
+            current_allocated,
+            peak_allocated,
+        )
+        self.cuda_reserved_peak = max(
+            self.cuda_reserved_peak,
+            current_reserved,
+            peak_reserved,
+        )
+        checks = (
+            (
+                "CUDA allocated",
+                self.cuda_allocated_peak_increase,
+                self.limits.max_cuda_allocated_increase_bytes,
+            ),
+            (
+                "CUDA reserved",
+                self.cuda_reserved_peak_increase,
+                self.limits.max_cuda_reserved_increase_bytes,
+            ),
+        )
+        for resource, increase, maximum in checks:
+            if increase > maximum:
+                raise Qwen3SensitivityLimitError(
+                    f"{resource} increase {increase} exceeded hard cap {maximum} "
+                    f"at checkpoint {label!r}."
+                )
+
+    def close(self) -> None:
+        if self.stopped:
+            self._raise_sampler_failure("resource_guard_close")
+            return
+        self._stop_event.set()
+        self._sampler_thread.join(timeout=2.0)
+        if self._sampler_thread.is_alive():
+            raise Qwen3SensitivityStateError(
+                "Process RSS sampler did not stop within its lifecycle bound."
+            )
+        self._sample_process()
+        self.stopped = True
+        self.checkpoint("resource_guard_close")
+
+    def __enter__(self) -> _ResourceGuard:
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        self.close()
+
+
 def _canonical_json(value: Any) -> bytes:
     return json.dumps(
         value,
         allow_nan=False,
-        default=str,
         ensure_ascii=True,
         separators=(",", ":"),
         sort_keys=True,
@@ -425,20 +755,234 @@ def _sha256_json(value: Any) -> str:
     return hashlib.sha256(_canonical_json(value)).hexdigest()
 
 
-def _hash_tensor(digest: Any, value: Tensor, chunk_bytes: int) -> None:
+def _hash_tensor(
+    digest: Any,
+    value: Tensor,
+    chunk_bytes: int,
+    checkpoint: Any = None,
+) -> None:
     if value.device.type == "meta":
         raise Qwen3SensitivityShapeError("Model state cannot contain meta tensors.")
     if value.layout != torch.strided:
         raise Qwen3SensitivityShapeError(
             "Exact model fingerprints require strided state tensors."
         )
-    flat = value.detach().reshape(-1)
     element_size = max(1, int(value.element_size()))
     chunk_elements = max(1, chunk_bytes // element_size)
-    for start in range(0, int(flat.numel()), chunk_elements):
-        cpu = flat[start : start + chunk_elements].to("cpu").contiguous()
+
+    def update(chunk: Tensor) -> None:
+        cpu = chunk.detach().to("cpu").contiguous()
         byte_view = cpu.view(torch.uint8).numpy()
         digest.update(memoryview(byte_view))
+        del byte_view, cpu
+        if checkpoint is not None:
+            checkpoint("model_fingerprint_chunk")
+
+    if value.is_contiguous():
+        flat = value.detach().reshape(-1)
+        for start in range(0, int(flat.numel()), chunk_elements):
+            update(flat[start : start + chunk_elements])
+        return
+
+    def update_noncontiguous(chunk: Tensor) -> None:
+        if int(chunk.numel()) <= chunk_elements or chunk.ndim == 0:
+            update(chunk)
+            return
+        trailing = math.prod(int(item) for item in chunk.shape[1:])
+        if trailing <= chunk_elements:
+            rows = max(1, chunk_elements // max(1, trailing))
+            for start in range(0, int(chunk.shape[0]), rows):
+                update(chunk[start : start + rows])
+            return
+        for row in chunk.unbind(0):
+            update_noncontiguous(row)
+
+    update_noncontiguous(value)
+
+
+def _sha256_string(value: str, name: str) -> str:
+    normalized = str(value).strip().lower()
+    if len(normalized) != 64 or any(
+        character not in "0123456789abcdef" for character in normalized
+    ):
+        raise Qwen3SensitivityShapeError(
+            f"{name} must be one lowercase SHA-256 hex digest."
+        )
+    return normalized
+
+
+def _state_tensor_fingerprint(
+    name: str,
+    value: Tensor,
+    chunk_bytes: int,
+    checkpoint: Any,
+) -> Qwen3StateTensorFingerprint:
+    digest = hashlib.sha256()
+    _hash_tensor(digest, value, chunk_bytes, checkpoint)
+    return Qwen3StateTensorFingerprint(
+        name=name,
+        sha256=digest.hexdigest(),
+        dtype=str(value.dtype),
+        shape=tuple(int(item) for item in value.shape),
+        device=str(value.device),
+        data_ptr=int(value.untyped_storage().data_ptr()) if int(value.numel()) else 0,
+        version=int(value._version),
+    )
+
+
+def _model_fingerprint_root(
+    config_sha256: str,
+    tensors: Sequence[Qwen3StateTensorFingerprint],
+) -> str:
+    return _sha256_json(
+        {
+            "schema": SENSITIVITY_SCHEMA,
+            "config_sha256": config_sha256,
+            "tensors": [
+                {
+                    "name": item.name,
+                    "sha256": item.sha256,
+                    "dtype": item.dtype,
+                    "shape": item.shape,
+                }
+                for item in tensors
+            ],
+        }
+    )
+
+
+def fingerprint_qwen3_model_manifest(
+    model: nn.Module,
+    *,
+    max_chunk_bytes: int = 8 * _MEBIBYTE,
+    parent: Qwen3ModelFingerprintManifest | None = None,
+    changed_state_prefixes: Sequence[str] = (),
+    accepted_transaction_sha256: str | None = None,
+    checkpoint: Any = None,
+) -> Qwen3ModelFingerprintManifest:
+    """Build a full exact manifest or an accepted-change incremental manifest.
+
+    Incremental mode is deliberately same-process only. Every tensor is hashed
+    again: declared scopes may change, while every undeclared digest and storage
+    identity must remain exact. Pointer and ``Tensor._version`` checks are only
+    supplemental provenance because raw-storage writes can bypass both.
+    """
+
+    chunk_bytes = _positive_int(max_chunk_bytes, "max_chunk_bytes")
+    config = getattr(model, "config", None)
+    if config is None:
+        raise Qwen3SensitivityShapeError(
+            "Exact Qwen fingerprints require model.config."
+        )
+    config_payload = config.to_dict() if hasattr(config, "to_dict") else vars(config)
+    config_sha256 = hashlib.sha256(_canonical_json(config_payload)).hexdigest()
+    state = model.state_dict(keep_vars=True)
+    names = tuple(sorted(state))
+    if any(not isinstance(state[name], Tensor) for name in names):
+        raise Qwen3SensitivityShapeError("Every model state entry must be a tensor.")
+
+    if parent is None:
+        if changed_state_prefixes or accepted_transaction_sha256 is not None:
+            raise Qwen3SensitivityShapeError(
+                "Changed scopes and transaction provenance require a parent manifest."
+            )
+        tensors = tuple(
+            _state_tensor_fingerprint(name, state[name], chunk_bytes, checkpoint)
+            for name in names
+        )
+        return Qwen3ModelFingerprintManifest(
+            root=_model_fingerprint_root(config_sha256, tensors),
+            config_sha256=config_sha256,
+            tensors=tensors,
+            mode="full",
+            tensors_hashed=len(tensors),
+        )
+
+    if not isinstance(parent, Qwen3ModelFingerprintManifest):
+        raise Qwen3SensitivityShapeError(
+            "parent must be a Qwen3ModelFingerprintManifest."
+        )
+    _sha256_string(parent.root, "parent.root")
+    _sha256_string(parent.config_sha256, "parent.config_sha256")
+    for item in parent.tensors:
+        _sha256_string(item.sha256, f"parent tensor {item.name!r} sha256")
+    if _model_fingerprint_root(parent.config_sha256, parent.tensors) != parent.root:
+        raise Qwen3SensitivityStateError(
+            "Incremental fingerprint refused an invalid parent manifest root."
+        )
+    transaction = _sha256_string(
+        accepted_transaction_sha256,
+        "accepted_transaction_sha256",
+    )
+    prefixes = tuple(sorted({str(item).strip() for item in changed_state_prefixes}))
+    if not prefixes or any(not item or "*" in item for item in prefixes):
+        raise Qwen3SensitivityShapeError(
+            "Incremental fingerprints require non-empty literal state prefixes."
+        )
+    if config_sha256 != parent.config_sha256:
+        raise Qwen3SensitivityStateError(
+            "Incremental fingerprint refused a changed model config."
+        )
+    previous = {item.name: item for item in parent.tensors}
+    if len(previous) != len(parent.tensors) or tuple(sorted(previous)) != names:
+        raise Qwen3SensitivityStateError(
+            "Incremental fingerprint refused a changed or duplicate state manifest."
+        )
+    matched = {prefix: 0 for prefix in prefixes}
+    directly_selected: set[str] = set()
+    for name in names:
+        for prefix in prefixes:
+            if name.startswith(prefix):
+                matched[prefix] += 1
+                directly_selected.add(name)
+    selected_storage = {
+        int(state[name].untyped_storage().data_ptr())
+        for name in directly_selected
+        if int(state[name].numel())
+    }
+    tensors_list: list[Qwen3StateTensorFingerprint] = []
+    hashed = 0
+    reused = 0
+    for name in names:
+        value = state[name]
+        data_ptr = int(value.untyped_storage().data_ptr()) if int(value.numel()) else 0
+        selected = name in directly_selected or (
+            bool(data_ptr) and data_ptr in selected_storage
+        )
+        old = previous[name]
+        current_fingerprint = _state_tensor_fingerprint(
+            name,
+            value,
+            chunk_bytes,
+            checkpoint,
+        )
+        hashed += 1
+        if selected:
+            tensors_list.append(current_fingerprint)
+            continue
+        if current_fingerprint != old:
+            raise Qwen3SensitivityStateError(
+                f"Undeclared state mutation or replacement detected for {name!r}."
+            )
+        tensors_list.append(current_fingerprint)
+        reused += 1
+    unmatched = [prefix for prefix, count in matched.items() if count == 0]
+    if unmatched:
+        raise Qwen3SensitivityShapeError(
+            f"Changed state prefixes matched no tensors: {unmatched!r}."
+        )
+    tensors = tuple(tensors_list)
+    return Qwen3ModelFingerprintManifest(
+        root=_model_fingerprint_root(config_sha256, tensors),
+        config_sha256=config_sha256,
+        tensors=tensors,
+        mode="incremental",
+        parent_root=parent.root,
+        accepted_transaction_sha256=transaction,
+        changed_state_prefixes=prefixes,
+        tensors_hashed=hashed,
+        tensors_reused=reused,
+    )
 
 
 def fingerprint_qwen3_model(
@@ -446,30 +990,31 @@ def fingerprint_qwen3_model(
     *,
     max_chunk_bytes: int = 8 * _MEBIBYTE,
 ) -> str:
-    """Stream an exact SHA-256 over Qwen config and ordinary tensor state."""
+    """Return the full exact Merkle root for Qwen config and tensor state."""
 
-    chunk_bytes = _positive_int(max_chunk_bytes, "max_chunk_bytes")
-    digest = hashlib.sha256()
-    digest.update(SENSITIVITY_SCHEMA.encode("ascii"))
-    config = getattr(model, "config", None)
-    if config is None:
-        raise Qwen3SensitivityShapeError(
-            "Exact Qwen fingerprints require model.config."
+    return fingerprint_qwen3_model_manifest(
+        model,
+        max_chunk_bytes=max_chunk_bytes,
+    ).root
+
+
+def _verify_model_state_provenance(
+    model: nn.Module,
+    manifest: Qwen3ModelFingerprintManifest,
+    *,
+    max_chunk_bytes: int,
+    checkpoint: Any = None,
+) -> None:
+    final = fingerprint_qwen3_model_manifest(
+        model,
+        max_chunk_bytes=max_chunk_bytes,
+        checkpoint=checkpoint,
+    )
+    if final.root != manifest.root or final.tensors != manifest.tensors:
+        raise Qwen3SensitivityStateError(
+            "Sensitivity collection mutated or replaced model state; the exact "
+            "post-forward tensor rehash differs from the initial manifest."
         )
-    config_payload = config.to_dict() if hasattr(config, "to_dict") else vars(config)
-    digest.update(_canonical_json(config_payload))
-    state = model.state_dict()
-    for name in sorted(state):
-        value = state[name]
-        if not isinstance(value, Tensor):
-            raise Qwen3SensitivityShapeError(
-                f"Model state {name!r} is not an ordinary tensor."
-            )
-        digest.update(name.encode("utf-8"))
-        digest.update(str(value.dtype).encode("ascii"))
-        digest.update(_canonical_json(tuple(int(item) for item in value.shape)))
-        _hash_tensor(digest, value, chunk_bytes)
-    return digest.hexdigest()
 
 
 def _tensor_bytes(value: Tensor) -> bytes:
@@ -646,6 +1191,12 @@ def _layout(model: nn.Module, limits: Qwen3SensitivityLimits) -> _Layout:
                 raise Qwen3SensitivityShapeError(
                     f"Layer {layer_index} lacks self_attn.{role}_proj."
                 )
+        for role in ("q", "k"):
+            normalization = getattr(attention, f"{role}_norm", None)
+            if not isinstance(normalization, nn.Module):
+                raise Qwen3SensitivityShapeError(
+                    f"Layer {layer_index} lacks self_attn.{role}_norm."
+                )
     if len(widths) != 1:
         raise Qwen3SensitivityShapeError(
             "All Qwen layers must share one intermediate width."
@@ -682,6 +1233,9 @@ def _layout(model: nn.Module, limits: Qwen3SensitivityLimits) -> _Layout:
             f"Model spans {len(devices)} devices, exceeding hard cap "
             f"{limits.max_model_devices}."
         )
+    attention_backend = (
+        str(getattr(config, "_attn_implementation", None) or "eager").strip().lower()
+    )
     return _Layout(
         layers=layers,
         mlp_modes=tuple(modes),
@@ -694,6 +1248,7 @@ def _layout(model: nn.Module, limits: Qwen3SensitivityLimits) -> _Layout:
         input_device=weight.device,
         activation_element_bytes=max(1, int(weight.element_size())),
         model_devices=tuple(sorted(devices)),
+        attention_backend=attention_backend,
     )
 
 
@@ -783,31 +1338,174 @@ def _score_indices(
     return result
 
 
+_HOOK_MAPPING_NAMES = (
+    "_forward_pre_hooks",
+    "_forward_hooks",
+    "_backward_pre_hooks",
+    "_backward_hooks",
+)
+
+
 def _hook_inventory(
-    layout: _Layout,
-) -> tuple[tuple[int, tuple[int, ...], tuple[int, ...]], ...]:
-    modules: dict[int, nn.Module] = {}
-    for layer in layout.layers:
-        modules[id(layer)] = layer
-        mlp = layer.mlp
-        modules[id(mlp)] = mlp
-        down = getattr(mlp, "down_proj", None)
-        if isinstance(down, nn.Module):
-            modules[id(down)] = down
-        attention = layer.self_attn
-        for role in _ATTENTION_ROLES:
-            projection = getattr(attention, f"{role}_proj")
-            modules[id(projection)] = projection
-    return tuple(
-        sorted(
-            (
-                module_id,
-                tuple(module._forward_pre_hooks.keys()),
-                tuple(module._forward_hooks.keys()),
+    model: nn.Module,
+) -> tuple[tuple[str, str, tuple[int, ...]], ...]:
+    result: list[tuple[str, str, tuple[int, ...]]] = []
+    for module_name, module in model.named_modules():
+        for mapping_name in _HOOK_MAPPING_NAMES:
+            mapping = getattr(module, mapping_name, {})
+            keys = tuple(int(item) for item in mapping.keys())
+            if keys:
+                result.append((module_name, mapping_name, keys))
+    module_runtime = torch.nn.modules.module
+    for mapping_name in (
+        "_global_forward_pre_hooks",
+        "_global_forward_hooks",
+        "_global_backward_hooks",
+    ):
+        mapping = getattr(module_runtime, mapping_name, {})
+        keys = tuple(int(item) for item in mapping.keys())
+        if keys:
+            result.append(("<global>", mapping_name, keys))
+    return tuple(result)
+
+
+def _hook_callable_identity(value: Any) -> dict[str, Any]:
+    function = getattr(value, "__func__", value)
+    code = getattr(function, "__code__", None)
+    code_sha256 = None
+    if code is not None:
+        digest = hashlib.sha256()
+        digest.update(code.co_code)
+        digest.update(repr(code.co_consts).encode("utf-8", errors="backslashreplace"))
+        digest.update(repr(code.co_names).encode("utf-8", errors="backslashreplace"))
+        code_sha256 = digest.hexdigest()
+    return {
+        "type": f"{type(value).__module__}.{type(value).__qualname__}",
+        "module": str(getattr(function, "__module__", "")),
+        "qualname": str(getattr(function, "__qualname__", "")),
+        "code_sha256": code_sha256,
+    }
+
+
+def _runtime_hook_identity(model: nn.Module) -> dict[str, Any]:
+    records: list[dict[str, Any]] = []
+    for module_name, module in model.named_modules():
+        for mapping_name in _HOOK_MAPPING_NAMES:
+            mapping = getattr(module, mapping_name, {})
+            for key, hook in mapping.items():
+                records.append(
+                    {
+                        "module": module_name,
+                        "kind": mapping_name,
+                        "key": int(key),
+                        "callable": _hook_callable_identity(hook),
+                    }
+                )
+    module_runtime = torch.nn.modules.module
+    for mapping_name in (
+        "_global_forward_pre_hooks",
+        "_global_forward_hooks",
+        "_global_backward_hooks",
+    ):
+        for key, hook in getattr(module_runtime, mapping_name, {}).items():
+            records.append(
+                {
+                    "module": "<global>",
+                    "kind": mapping_name,
+                    "key": int(key),
+                    "callable": _hook_callable_identity(hook),
+                }
             )
-            for module_id, module in modules.items()
-        )
+    return {
+        "records": records,
+        "cross_runtime_reuse": not records,
+        "cache_nonce": os.urandom(32).hex() if records else None,
+    }
+
+
+def _runtime_identity(
+    model: nn.Module,
+    layout: _Layout,
+    limits: Qwen3SensitivityLimits,
+) -> dict[str, Any]:
+    state = model.state_dict(keep_vars=True)
+    state_layout = sorted(
+        {
+            (str(value.device), str(value.dtype))
+            for value in state.values()
+            if isinstance(value, Tensor)
+        }
     )
+    cuda_devices: list[dict[str, Any]] = []
+    for name in layout.model_devices:
+        device = torch.device(name)
+        if device.type != "cuda":
+            continue
+        index = device.index if device.index is not None else torch.cuda.current_device()
+        properties = torch.cuda.get_device_properties(index)
+        cuda_devices.append(
+            {
+                "logical_device": name,
+                "name": properties.name,
+                "capability": list(torch.cuda.get_device_capability(index)),
+                "total_memory": int(properties.total_memory),
+            }
+        )
+    cudnn_version = (
+        int(torch.backends.cudnn.version())
+        if torch.backends.cudnn.is_available()
+        else None
+    )
+    return {
+        "schema": "neural-forge-qwen3-sensitivity-runtime-v1",
+        "python": {
+            "implementation": platform.python_implementation(),
+            "version": platform.python_version(),
+        },
+        "platform": {
+            "system": platform.system(),
+            "release": platform.release(),
+            "machine": platform.machine(),
+        },
+        "torch": {
+            "version": str(torch.__version__),
+            "cuda_version": torch.version.cuda,
+            "cudnn_version": cudnn_version,
+            "deterministic_algorithms": torch.are_deterministic_algorithms_enabled(),
+            "float32_matmul_precision": torch.get_float32_matmul_precision(),
+            "cuda_matmul_allow_tf32": bool(torch.backends.cuda.matmul.allow_tf32),
+            "cudnn_allow_tf32": bool(torch.backends.cudnn.allow_tf32),
+            "cudnn_benchmark": bool(torch.backends.cudnn.benchmark),
+            "cudnn_deterministic": bool(torch.backends.cudnn.deterministic),
+            "default_dtype": str(torch.get_default_dtype()),
+        },
+        "environment": {
+            name: os.environ.get(name)
+            for name in (
+                "CUBLAS_WORKSPACE_CONFIG",
+                "CUDA_VISIBLE_DEVICES",
+                "PYTORCH_CUDA_ALLOC_CONF",
+            )
+        },
+        "attention_backend": layout.attention_backend,
+        "model_devices": list(layout.model_devices),
+        "state_device_dtypes": [list(item) for item in state_layout],
+        "input_device": str(layout.input_device),
+        "activation_element_bytes": layout.activation_element_bytes,
+        "cuda_devices": cuda_devices,
+        "module_training_modes": [
+            [name, bool(module.training)] for name, module in model.named_modules()
+        ],
+        "hooks": _runtime_hook_identity(model),
+        "execution": {
+            "inference_mode": True,
+            "use_cache": False,
+            "codebook_channels_per_chunk": limits.max_codebook_channels_per_chunk,
+            "candidate_chunk_size_cap": limits.candidate_chunk_size,
+            "candidate_forward_row_cap": limits.max_candidate_forward_rows,
+            "rss_sample_interval_seconds": _RSS_SAMPLE_INTERVAL_SECONDS,
+        },
+    }
 
 
 def _activation(inputs: Tensor, name: str) -> Tensor:
@@ -832,6 +1530,91 @@ def _activation(inputs: Tensor, name: str) -> Tensor:
     raise Qwen3SensitivityShapeError(f"Unsupported codebook activation {name!r}.")
 
 
+def _codebook_channels(
+    module: NeuronCodebookLayerView,
+    layer_index: int,
+    logical_indices: Tensor,
+    *,
+    include_down: bool = True,
+) -> tuple[Tensor, Tensor, Tensor | None, Tensor | None, Tensor | None]:
+    """Gather only requested logical channels directly from shared prototypes."""
+
+    registry = module.registry
+    logical = logical_indices.to(device=registry.assignments.device, dtype=torch.long)
+    prototype_indices = registry.assignments[layer_index].index_select(0, logical)
+    prototype_indices = prototype_indices.to(
+        device=registry.prototype_gate_weight.device,
+        dtype=torch.long,
+    )
+    gate = registry.prototype_gate_weight.index_select(0, prototype_indices)
+    up = registry.prototype_up_weight.index_select(0, prototype_indices)
+    down = (
+        registry.prototype_down_weight.index_select(1, prototype_indices)
+        if include_down
+        else None
+    )
+    gate_bias = (
+        registry.prototype_gate_bias.index_select(0, prototype_indices)
+        if registry.prototype_gate_bias is not None
+        else None
+    )
+    up_bias = (
+        registry.prototype_up_bias.index_select(0, prototype_indices)
+        if registry.prototype_up_bias is not None
+        else None
+    )
+    if registry.neuron_scales is not None:
+        scales = registry.neuron_scales[layer_index].index_select(
+            0,
+            logical.to(device=registry.neuron_scales.device),
+        )
+        gate = gate * scales[:, 0].unsqueeze(1)
+        up = up * scales[:, 1].unsqueeze(1)
+        if down is not None:
+            down = down * scales[:, 2].unsqueeze(0)
+        if gate_bias is not None:
+            gate_bias = gate_bias * scales[:, 0]
+        if up_bias is not None:
+            up_bias = up_bias * scales[:, 1]
+    return gate, up, down, gate_bias, up_bias
+
+
+def _streamed_codebook_neuron_energy(
+    module: NeuronCodebookLayerView,
+    layer_index: int,
+    inputs: Tensor,
+    mask: Tensor,
+    *,
+    channels_per_chunk: int,
+    guard: _ResourceGuard,
+) -> tuple[float, ...]:
+    """Measure every logical channel without a full dense layer reconstruction."""
+
+    result: list[float] = []
+    width = int(module.intermediate_features)
+    for start in range(0, width, channels_per_chunk):
+        stop = min(width, start + channels_per_chunk)
+        logical = torch.arange(start, stop, device=inputs.device, dtype=torch.long)
+        gate, up, down, gate_bias, up_bias = _codebook_channels(
+            module,
+            layer_index,
+            logical,
+            include_down=False,
+        )
+        hidden = _activation(
+            F.linear(inputs, gate, gate_bias),
+            module.registry.activation,
+        ) * F.linear(inputs, up, up_bias)
+        result.extend(_masked_channel_energy(hidden, mask))
+        if down is not None:
+            raise Qwen3SensitivityStateError(
+                "Codebook energy unexpectedly materialized down-projection columns."
+            )
+        del gate, up, down, gate_bias, up_bias, hidden
+        guard.checkpoint(f"codebook_energy_layer_{layer_index}_channels_{start}_{stop}")
+    return tuple(result)
+
+
 def _masked_channel_energy(values: Tensor, mask: Tensor) -> tuple[float, ...]:
     if values.ndim != 3 or tuple(values.shape[:2]) != tuple(mask.shape):
         raise Qwen3SensitivityShapeError(
@@ -849,11 +1632,11 @@ def _masked_group_energy(
     mask: Tensor,
     groups: int,
 ) -> tuple[float, ...]:
-    if values.ndim != 3 or tuple(values.shape[:2]) != tuple(mask.shape):
+    if values.ndim < 3 or tuple(values.shape[:2]) != tuple(mask.shape):
         raise Qwen3SensitivityShapeError(
             "Captured attention activations do not match calibration rows."
         )
-    width = int(values.shape[-1])
+    width = math.prod(int(item) for item in values.shape[2:])
     if width % groups:
         raise Qwen3SensitivityShapeError(
             "Attention projection width is not divisible by GQA groups."
@@ -905,6 +1688,8 @@ def _baseline(
     batch: _Batch,
     score_positions: tuple[int, ...],
     residual_layers: frozenset[int],
+    limits: Qwen3SensitivityLimits,
+    guard: _ResourceGuard,
 ) -> _Baseline:
     mask = batch.attention_mask
     residuals: dict[int, Tensor] = {}
@@ -962,21 +1747,23 @@ def _baseline(
                         raise Qwen3SensitivityShapeError(
                             "Codebook MLP did not receive hidden states."
                         )
-                    bundle = module.registry.materialize_layer(index)
-                    hidden = _activation(
-                        F.linear(inputs[0], bundle.gate_weight, bundle.gate_bias),
-                        module.registry.activation,
-                    ) * F.linear(inputs[0], bundle.up_weight, bundle.up_bias)
-                    neuron_energy[index] = _masked_channel_energy(hidden, mask)
+                    neuron_energy[index] = _streamed_codebook_neuron_energy(
+                        module,
+                        index,
+                        inputs[0],
+                        mask,
+                        channels_per_chunk=limits.max_codebook_channels_per_chunk,
+                        guard=guard,
+                    )
 
                 hooks.add(mlp.register_forward_pre_hook(codebook_energy_hook))
                 capture_methods[layer_index] = (
-                    "exact_codebook_recompute_from_real_mlp_input"
+                    "streamed_direct_codebook_prototype_channels"
                 )
 
             attention = layer.self_attn
-            for role in ("q", "k", "v"):
-                projection = getattr(attention, f"{role}_proj")
+            for role in ("q", "k"):
+                normalization = getattr(attention, f"{role}_norm")
 
                 def attention_output_hook(
                     _module: nn.Module,
@@ -988,7 +1775,7 @@ def _baseline(
                 ) -> None:
                     if not isinstance(output, Tensor):
                         raise Qwen3SensitivityShapeError(
-                            f"Qwen {role_name}_proj did not return a tensor."
+                            f"Qwen {role_name}_norm did not return a tensor."
                         )
                     role_energy[index][role_name] = _masked_group_energy(
                         output,
@@ -996,7 +1783,26 @@ def _baseline(
                         layout.key_value_heads,
                     )
 
-                hooks.add(projection.register_forward_hook(attention_output_hook))
+                hooks.add(normalization.register_forward_hook(attention_output_hook))
+
+            def attention_v_hook(
+                _module: nn.Module,
+                _inputs: tuple[Any, ...],
+                output: Any,
+                *,
+                index: int = layer_index,
+            ) -> None:
+                if not isinstance(output, Tensor):
+                    raise Qwen3SensitivityShapeError(
+                        "Qwen v_proj did not return a tensor."
+                    )
+                role_energy[index]["v"] = _masked_group_energy(
+                    output,
+                    mask,
+                    layout.key_value_heads,
+                )
+
+            hooks.add(attention.v_proj.register_forward_hook(attention_v_hook))
 
             def attention_o_hook(
                 _module: nn.Module,
@@ -1016,6 +1822,7 @@ def _baseline(
 
             hooks.add(attention.o_proj.register_forward_pre_hook(attention_o_hook))
         logits = _forward(model, batch, score_positions)
+        guard.checkpoint("baseline_forward")
 
     if set(residuals) != set(residual_layers):
         raise Qwen3SensitivityStateError(
@@ -1136,38 +1943,30 @@ def _install_neuron_ablation_hooks(
                     raise Qwen3SensitivityShapeError(
                         "Codebook MLP did not return a tensor."
                     )
-                bundle = module.registry.materialize_layer(index)
                 changed = output.clone()
                 for local, candidate in selected:
                     start = local * rows
                     hidden = inputs[0][start : start + rows]
                     neuron = candidate.neuron_index
-                    gate_bias = (
-                        None
-                        if bundle.gate_bias is None
-                        else bundle.gate_bias[neuron : neuron + 1]
+                    logical = torch.tensor(
+                        [neuron],
+                        device=hidden.device,
+                        dtype=torch.long,
                     )
-                    up_bias = (
-                        None
-                        if bundle.up_bias is None
-                        else bundle.up_bias[neuron : neuron + 1]
+                    gate, up, down, gate_bias, up_bias = _codebook_channels(
+                        module,
+                        index,
+                        logical,
                     )
+                    if down is None:
+                        raise Qwen3SensitivityStateError(
+                            "Codebook ablation requires one down-projection column."
+                        )
                     post = _activation(
-                        F.linear(
-                            hidden,
-                            bundle.gate_weight[neuron : neuron + 1],
-                            gate_bias,
-                        ),
+                        F.linear(hidden, gate, gate_bias),
                         module.registry.activation,
-                    ) * F.linear(
-                        hidden,
-                        bundle.up_weight[neuron : neuron + 1],
-                        up_bias,
-                    )
-                    contribution = F.linear(
-                        post,
-                        bundle.down_weight[:, neuron : neuron + 1],
-                    )
+                    ) * F.linear(hidden, up, up_bias)
+                    contribution = F.linear(post, down)
                     changed[start : start + rows] -= contribution
                     call_counts[local] = call_counts.get(local, 0) + 1
                 return changed
@@ -1344,19 +2143,79 @@ def _damage(
         "logit_kl": kl,
         "top1_disagreement": top1,
         "damage_score": score,
-        "finite_difference_controllability": _count_sketch(
+        "residual_ablation_difference_sketch": _count_sketch(
             residual_delta * mask.unsqueeze(-1),
             sketch_dim,
             residual_seed,
             sketch_work_bytes,
         ),
-        "finite_difference_observability": _count_sketch(
+        "logit_ablation_difference_sketch": _count_sketch(
             logit_delta,
             sketch_dim,
             logit_seed,
             sketch_work_bytes,
         ),
     }
+
+
+def _attention_workspace_bound(
+    layout: _Layout,
+    batch: _Batch,
+    repeats: int,
+) -> int:
+    """Conservative backend-aware bound for attention forward workspace."""
+
+    expanded_rows = batch.rows * repeats
+    sequence = batch.sequence_length
+    dtype_bytes = layout.activation_element_bytes
+    qkv_elements = (
+        expanded_rows
+        * sequence
+        * (layout.query_heads + 2 * layout.key_value_heads)
+        * layout.head_dim
+    )
+    qkv_and_context = qkv_elements * dtype_bytes * 2
+    backend = layout.attention_backend
+    if "flash" in backend:
+        logsumexp = expanded_rows * layout.query_heads * sequence * 4
+        return qkv_and_context + logsumexp
+    score_elements = expanded_rows * layout.query_heads * sequence * sequence
+    score_and_probability = score_elements * (dtype_bytes + 4)
+    additive_mask = expanded_rows * sequence * sequence * max(1, dtype_bytes)
+    return qkv_and_context + score_and_probability + additive_mask
+
+
+def _mlp_forward_workspace_bound(
+    layout: _Layout,
+    batch: _Batch,
+    repeats: int,
+) -> tuple[int, int, int]:
+    """Bound ordinary MLP temporaries and prepared-codebook materialization.
+
+    The codebook runtime gathers full logical gate/up/down matrices before each
+    layer forward. With scales enabled, one gathered matrix and its scaled
+    replacement coexist transiently, so four dense matrices are charged.
+    """
+
+    expanded_tokens = batch.rows * repeats * batch.sequence_length
+    compute_bytes = max(4, layout.activation_element_bytes)
+    activation_workspace = expanded_tokens * (
+        4 * layout.intermediate_width + 2 * layout.hidden_size
+    ) * compute_bytes
+    dense_workspace = activation_workspace if "dense" in layout.mlp_modes else 0
+    codebook_materialization = 0
+    codebook_workspace = 0
+    if "codebook" in layout.mlp_modes:
+        matrix_elements = 4 * layout.hidden_size * layout.intermediate_width
+        index_elements = 2 * layout.intermediate_width
+        codebook_materialization = (
+            matrix_elements * layout.activation_element_bytes + index_elements * 8
+        )
+        codebook_workspace = codebook_materialization + activation_workspace
+    return dense_workspace, codebook_materialization, max(
+        dense_workspace,
+        codebook_workspace,
+    )
 
 
 def _chunk_capacity(
@@ -1367,7 +2226,7 @@ def _chunk_capacity(
     score_positions: tuple[int, ...],
     limits: Qwen3SensitivityLimits,
     persistent_bytes: int,
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
     rows = batch.rows
     sequence = batch.sequence_length
     score_rows = len(score_positions)
@@ -1397,9 +2256,17 @@ def _chunk_capacity(
         limits.max_candidate_forward_rows // rows,
     )
     while capacity > 0:
-        peak = persistent_bytes + capacity * per_candidate + analysis_scratch
+        attention_workspace = _attention_workspace_bound(layout, batch, capacity)
+        _, _, mlp_workspace = _mlp_forward_workspace_bound(layout, batch, capacity)
+        peak = (
+            persistent_bytes
+            + capacity * per_candidate
+            + analysis_scratch
+            + attention_workspace
+            + mlp_workspace
+        )
         if peak <= limits.max_collector_bytes:
-            return capacity, peak
+            return capacity, peak, attention_workspace
         capacity -= 1
     raise Qwen3SensitivityLimitError(
         f"A single {kind} candidate would exceed max_collector_bytes="
@@ -1420,6 +2287,7 @@ def _measure_neurons(
     residual_seed: int,
     logit_seed: int,
     sketch_work_bytes: int,
+    guard: _ResourceGuard,
 ) -> tuple[tuple[Qwen3NeuronSensitivity, ...], int]:
     result: list[Qwen3NeuronSensitivity] = []
     forward_passes = 0
@@ -1452,6 +2320,7 @@ def _measure_neurons(
                 .detach()
                 .to("cpu", dtype=torch.float32)
             )
+        guard.checkpoint(f"neuron_candidate_forward_{start}")
         forward_passes += 1
         shaped_logits = logits.reshape(
             len(chunk),
@@ -1484,6 +2353,7 @@ def _measure_neurons(
                     **metrics,
                 )
             )
+        guard.checkpoint(f"neuron_candidate_analysis_{start}")
     return tuple(result), forward_passes
 
 
@@ -1500,6 +2370,7 @@ def _measure_attention(
     residual_seed: int,
     logit_seed: int,
     sketch_work_bytes: int,
+    guard: _ResourceGuard,
 ) -> tuple[tuple[Qwen3AttentionGroupSensitivity, ...], int]:
     result: list[Qwen3AttentionGroupSensitivity] = []
     forward_passes = 0
@@ -1532,6 +2403,7 @@ def _measure_attention(
                 .detach()
                 .to("cpu", dtype=torch.float32)
             )
+        guard.checkpoint(f"attention_candidate_forward_{start}")
         forward_passes += 1
         shaped_logits = logits.reshape(
             len(chunk),
@@ -1567,6 +2439,7 @@ def _measure_attention(
                     **metrics,
                 )
             )
+        guard.checkpoint(f"attention_candidate_analysis_{start}")
     return tuple(result), forward_passes
 
 
@@ -1622,7 +2495,7 @@ def _anchors(
     )
 
 
-def collect_qwen3_sensitivity_evidence(
+def _collect_qwen3_sensitivity_evidence_impl(
     model: nn.Module,
     calibration_input_ids: Tensor,
     gate_input_ids: Tensor,
@@ -1643,6 +2516,10 @@ def collect_qwen3_sensitivity_evidence(
     attention_high_damage_anchor_count: int = 1,
     sketch_dim: int = 16,
     limits: Qwen3SensitivityLimits | None = None,
+    incremental_parent_manifest: Qwen3ModelFingerprintManifest | None = None,
+    changed_state_prefixes: Sequence[str] = (),
+    accepted_transaction_sha256: str | None = None,
+    _guard: _ResourceGuard,
 ) -> Qwen3SensitivityEvidence:
     """Collect deterministic real-forward evidence without training or recovery.
 
@@ -1729,13 +2606,34 @@ def collect_qwen3_sensitivity_evidence(
     )
     persistent_bytes = input_bytes + baseline_bytes
     activation_rows = calibration.rows * calibration.sequence_length
-    baseline_activation_scratch = (
-        activation_rows
-        * max(
-            layout.intermediate_width * (5 if "codebook" in layout.mlp_modes else 3),
-            2 * layout.query_heads * layout.head_dim,
+    (
+        dense_mlp_forward_bound,
+        codebook_materialization_bound,
+        baseline_mlp_forward_bound,
+    ) = _mlp_forward_workspace_bound(layout, calibration, 1)
+    codebook_channels = min(
+        layout.intermediate_width,
+        active_limits.max_codebook_channels_per_chunk,
+    )
+    codebook_mlp_scratch = (
+        (
+            activation_rows * codebook_channels * 3
+            + codebook_channels * layout.hidden_size * 2
         )
         * max(4, layout.activation_element_bytes)
+        if "codebook" in layout.mlp_modes
+        else 0
+    )
+    attention_capture_scratch = (
+        activation_rows
+        * (layout.query_heads + 2 * layout.key_value_heads)
+        * layout.head_dim
+        * max(4, layout.activation_element_bytes)
+    )
+    baseline_activation_scratch = max(
+        codebook_mlp_scratch,
+        attention_capture_scratch,
+        baseline_mlp_forward_bound,
     )
     baseline_logit_scratch = (
         calibration.rows
@@ -1743,9 +2641,11 @@ def collect_qwen3_sensitivity_evidence(
         * layout.vocabulary_size
         * (4 + layout.activation_element_bytes)
     )
-    baseline_peak = persistent_bytes + max(
-        baseline_activation_scratch,
-        baseline_logit_scratch,
+    baseline_attention_workspace = _attention_workspace_bound(layout, calibration, 1)
+    baseline_peak = (
+        persistent_bytes
+        + max(baseline_activation_scratch, baseline_logit_scratch)
+        + baseline_attention_workspace
     )
     if baseline_peak > active_limits.max_collector_bytes:
         raise Qwen3SensitivityLimitError(
@@ -1753,7 +2653,7 @@ def collect_qwen3_sensitivity_evidence(
             f"max_collector_bytes={active_limits.max_collector_bytes}."
         )
     if neurons:
-        neuron_chunk, neuron_peak = _chunk_capacity(
+        neuron_chunk, neuron_peak, neuron_attention_workspace = _chunk_capacity(
             kind="neuron",
             layout=layout,
             batch=calibration,
@@ -1763,25 +2663,54 @@ def collect_qwen3_sensitivity_evidence(
         )
     else:
         neuron_chunk, neuron_peak = 1, baseline_peak
+        neuron_attention_workspace = baseline_attention_workspace
     if attention:
-        attention_chunk, attention_peak = _chunk_capacity(
-            kind="attention",
-            layout=layout,
-            batch=calibration,
-            score_positions=positions,
-            limits=active_limits,
-            persistent_bytes=persistent_bytes,
+        attention_chunk, attention_peak, candidate_attention_workspace = (
+            _chunk_capacity(
+                kind="attention",
+                layout=layout,
+                batch=calibration,
+                score_positions=positions,
+                limits=active_limits,
+                persistent_bytes=persistent_bytes,
+            )
         )
     else:
         attention_chunk, attention_peak = 1, baseline_peak
+        candidate_attention_workspace = baseline_attention_workspace
 
-    model_fingerprint = fingerprint_qwen3_model(
+    _, _, neuron_mlp_forward_bound = _mlp_forward_workspace_bound(
+        layout,
+        calibration,
+        neuron_chunk if neurons else 1,
+    )
+    _, _, attention_mlp_forward_bound = _mlp_forward_workspace_bound(
+        layout,
+        calibration,
+        attention_chunk if attention else 1,
+    )
+
+    guard = _guard
+    if not isinstance(guard, _ResourceGuard):
+        raise Qwen3SensitivityStateError("A live resource guard is required.")
+    inventory = _hook_inventory(model)
+    runtime_payload = _runtime_identity(model, layout, active_limits)
+    runtime_fingerprint = _sha256_json(runtime_payload)
+    guard.checkpoint("runtime_identity_complete")
+    model_manifest = fingerprint_qwen3_model_manifest(
         model,
         max_chunk_bytes=active_limits.max_fingerprint_chunk_bytes,
+        parent=incremental_parent_manifest,
+        changed_state_prefixes=changed_state_prefixes,
+        accepted_transaction_sha256=accepted_transaction_sha256,
+        checkpoint=guard.checkpoint,
     )
+    guard.checkpoint("model_fingerprint_complete")
+    model_fingerprint = model_manifest.root
     measurement_payload = {
         "schema": SENSITIVITY_SCHEMA,
         "model": model_fingerprint,
+        "runtime": runtime_fingerprint,
         "calibration": calibration.fingerprint,
         "gate": gate.fingerprint,
         "score_positions": positions,
@@ -1790,6 +2719,10 @@ def collect_qwen3_sensitivity_evidence(
         "sketch_dim": dimension,
         "neuron_chunk": neuron_chunk,
         "attention_chunk": attention_chunk,
+        "model_fingerprint_mode": model_manifest.mode,
+        "parent_model": model_manifest.parent_root,
+        "accepted_transaction_sha256": model_manifest.accepted_transaction_sha256,
+        "changed_state_prefixes": model_manifest.changed_state_prefixes,
     }
     measurement_fingerprint = _sha256_json(measurement_payload)
     cache_fingerprint = _sha256_json(
@@ -1809,10 +2742,12 @@ def collect_qwen3_sensitivity_evidence(
         model=model_fingerprint,
         calibration=calibration.fingerprint,
         gate=gate.fingerprint,
+        runtime=runtime_fingerprint,
         measurement=measurement_fingerprint,
         cache=cache_fingerprint,
         calibration_row_fingerprints=calibration.row_fingerprints,
         gate_row_fingerprints=gate.row_fingerprints,
+        model_manifest=model_manifest,
     )
     residual_seed = int(
         hashlib.sha256(f"{measurement_fingerprint}:residual".encode()).hexdigest()[:15],
@@ -1823,7 +2758,6 @@ def collect_qwen3_sensitivity_evidence(
         16,
     )
 
-    inventory = _hook_inventory(layout)
     with torch.inference_mode():
         baseline = _baseline(
             model,
@@ -1831,6 +2765,8 @@ def collect_qwen3_sensitivity_evidence(
             calibration,
             positions,
             residual_layers,
+            active_limits,
+            guard,
         )
         neuron_evidence, neuron_forwards = _measure_neurons(
             model,
@@ -1844,6 +2780,7 @@ def collect_qwen3_sensitivity_evidence(
             residual_seed=residual_seed,
             logit_seed=logit_seed,
             sketch_work_bytes=active_limits.max_sketch_work_bytes,
+            guard=guard,
         )
         attention_evidence, attention_forwards = _measure_attention(
             model,
@@ -1857,12 +2794,21 @@ def collect_qwen3_sensitivity_evidence(
             residual_seed=residual_seed,
             logit_seed=logit_seed,
             sketch_work_bytes=active_limits.max_sketch_work_bytes,
+            guard=guard,
         )
-    hooks_restored = _hook_inventory(layout) == inventory
+    guard.checkpoint("collection_complete")
+    hooks_restored = _hook_inventory(model) == inventory
     if not hooks_restored:
         raise Qwen3SensitivityStateError(
             "Sensitivity collection changed the model hook inventory."
         )
+    _verify_model_state_provenance(
+        model,
+        model_manifest,
+        max_chunk_bytes=active_limits.max_fingerprint_chunk_bytes,
+        checkpoint=guard.checkpoint,
+    )
+    guard.checkpoint("final_model_rehash_complete")
     anchor_masks = _anchors(
         layout,
         neuron_evidence,
@@ -1872,6 +2818,7 @@ def collect_qwen3_sensitivity_evidence(
         neuron_top_k=neuron_anchor_count,
         attention_top_k=attention_anchor_count,
     )
+    guard.close()
     report = Qwen3SensitivityReport(
         schema=SENSITIVITY_SCHEMA,
         logical_layers=len(layout.layers),
@@ -1896,14 +2843,46 @@ def collect_qwen3_sensitivity_evidence(
             attention_peak if attention else persistent_bytes,
         ),
         collector_byte_limit=active_limits.max_collector_bytes,
+        process_rss_start_bytes=guard.process_rss_start,
+        process_rss_peak_bytes=guard.process_rss_peak,
+        process_rss_peak_increase_bytes=guard.process_rss_peak_increase,
+        process_rss_increase_limit=active_limits.max_process_rss_increase_bytes,
+        process_rss_sample_interval_seconds=guard.sample_interval_seconds,
+        process_rss_sampler_stopped=guard.stopped,
+        cuda_allocated_start_bytes=guard.cuda_allocated_start,
+        cuda_allocated_peak_bytes=guard.cuda_allocated_peak,
+        cuda_allocated_peak_increase_bytes=guard.cuda_allocated_peak_increase,
+        cuda_allocated_increase_limit=(active_limits.max_cuda_allocated_increase_bytes),
+        cuda_reserved_start_bytes=guard.cuda_reserved_start,
+        cuda_reserved_peak_bytes=guard.cuda_reserved_peak,
+        cuda_reserved_peak_increase_bytes=guard.cuda_reserved_peak_increase,
+        cuda_reserved_increase_limit=active_limits.max_cuda_reserved_increase_bytes,
+        resource_checkpoints=guard.checkpoints,
+        attention_backend=layout.attention_backend,
+        attention_workspace_bound_bytes=max(
+            baseline_attention_workspace,
+            neuron_attention_workspace,
+            candidate_attention_workspace,
+        ),
+        dense_mlp_forward_bound_bytes=dense_mlp_forward_bound,
+        codebook_materialization_bound_bytes=codebook_materialization_bound,
+        mlp_forward_workspace_bound_bytes=max(
+            baseline_mlp_forward_bound,
+            neuron_mlp_forward_bound,
+            attention_mlp_forward_bound,
+        ),
         model_devices=layout.model_devices,
         mlp_capture_methods=baseline.capture_methods,
-        derivative_method=FINITE_DIFFERENCE_METHOD,
+        evidence_method=DIRECTIONAL_DIFFERENCE_METHOD,
         exact_autodiff_used=False,
-        finite_difference_reason=(
-            "bounded inference-only zero-ablation avoids retained autograd graphs "
-            "and applies identically to dense and prepared codebook runtimes"
+        directional_difference_reason=(
+            "count sketches summarize finite zero-ablation output differences; "
+            "they are generic evidence and are not JVP, VJP, Jacobian, or dual data"
         ),
+        model_fingerprint_mode=model_manifest.mode,
+        model_tensors_hashed=model_manifest.tensors_hashed,
+        model_tensors_reused=model_manifest.tensors_reused,
+        runtime_fingerprint=runtime_fingerprint,
         backward_calls=0,
         optimizer_steps=0,
         training_steps=0,
@@ -1922,13 +2901,88 @@ def collect_qwen3_sensitivity_evidence(
     )
 
 
+def _guard_model_devices(model: Any) -> tuple[str, ...]:
+    if not isinstance(model, nn.Module):
+        return ()
+    devices: set[str] = set()
+    for value in model.parameters():
+        if value.device.type != "meta":
+            devices.add(str(value.device))
+    for value in model.buffers():
+        if value.device.type != "meta":
+            devices.add(str(value.device))
+    return tuple(sorted(devices))
+
+
+def collect_qwen3_sensitivity_evidence(
+    model: nn.Module,
+    calibration_input_ids: Tensor,
+    gate_input_ids: Tensor,
+    *,
+    calibration_attention_mask: Tensor | None = None,
+    gate_attention_mask: Tensor | None = None,
+    calibration_position_ids: Tensor | None = None,
+    gate_position_ids: Tensor | None = None,
+    score_positions: Sequence[int] | None = None,
+    neuron_candidates: Sequence[Qwen3NeuronRef | tuple[int, int]] | None = None,
+    attention_group_candidates: Sequence[Qwen3AttentionGroupRef | tuple[int, int]]
+    | None = None,
+    explicit_neuron_anchors: Sequence[Qwen3NeuronRef | tuple[int, int]] = (),
+    explicit_attention_group_anchors: Sequence[
+        Qwen3AttentionGroupRef | tuple[int, int]
+    ] = (),
+    neuron_high_damage_anchor_count: int = 1,
+    attention_high_damage_anchor_count: int = 1,
+    sketch_dim: int = 16,
+    limits: Qwen3SensitivityLimits | None = None,
+    incremental_parent_manifest: Qwen3ModelFingerprintManifest | None = None,
+    changed_state_prefixes: Sequence[str] = (),
+    accepted_transaction_sha256: str | None = None,
+) -> Qwen3SensitivityEvidence:
+    """Collect bounded evidence under a guard that precedes every input clone."""
+
+    active_limits = limits or Qwen3SensitivityLimits()
+    if not isinstance(active_limits, Qwen3SensitivityLimits):
+        raise Qwen3SensitivityShapeError(
+            "limits must be a Qwen3SensitivityLimits instance."
+        )
+    guard = _ResourceGuard(active_limits, _guard_model_devices(model))
+    try:
+        return _collect_qwen3_sensitivity_evidence_impl(
+            model,
+            calibration_input_ids,
+            gate_input_ids,
+            calibration_attention_mask=calibration_attention_mask,
+            gate_attention_mask=gate_attention_mask,
+            calibration_position_ids=calibration_position_ids,
+            gate_position_ids=gate_position_ids,
+            score_positions=score_positions,
+            neuron_candidates=neuron_candidates,
+            attention_group_candidates=attention_group_candidates,
+            explicit_neuron_anchors=explicit_neuron_anchors,
+            explicit_attention_group_anchors=explicit_attention_group_anchors,
+            neuron_high_damage_anchor_count=neuron_high_damage_anchor_count,
+            attention_high_damage_anchor_count=attention_high_damage_anchor_count,
+            sketch_dim=sketch_dim,
+            limits=active_limits,
+            incremental_parent_manifest=incremental_parent_manifest,
+            changed_state_prefixes=changed_state_prefixes,
+            accepted_transaction_sha256=accepted_transaction_sha256,
+            _guard=guard,
+        )
+    finally:
+        guard.close()
+
+
 __all__ = [
+    "DIRECTIONAL_DIFFERENCE_METHOD",
     "FINITE_DIFFERENCE_METHOD",
     "Qwen3AttentionGroupRef",
     "Qwen3AttentionGroupSensitivity",
     "Qwen3ExactAnchorMasks",
     "Qwen3NeuronRef",
     "Qwen3NeuronSensitivity",
+    "Qwen3ModelFingerprintManifest",
     "Qwen3SensitivityError",
     "Qwen3SensitivityEvidence",
     "Qwen3SensitivityFingerprints",
@@ -1938,6 +2992,8 @@ __all__ = [
     "Qwen3SensitivityShapeError",
     "Qwen3SensitivitySplitError",
     "Qwen3SensitivityStateError",
+    "Qwen3StateTensorFingerprint",
     "collect_qwen3_sensitivity_evidence",
     "fingerprint_qwen3_model",
+    "fingerprint_qwen3_model_manifest",
 ]
