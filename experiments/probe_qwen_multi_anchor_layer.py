@@ -167,7 +167,7 @@ def _protected_indices(activations: Tensor, down_weight: Tensor, count: int) -> 
     )
 
 
-def _parse_args() -> argparse.Namespace:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-model", required=True)
     parser.add_argument("--calibration-jsonl", type=Path, required=True)
@@ -183,8 +183,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--protected-fraction", type=float, default=0.05)
     parser.add_argument("--candidate-pool-size", type=int, default=512)
     parser.add_argument("--max-anchors", type=int, default=4)
+    parser.add_argument("--similarity-chunk-size", type=int, default=64)
+    parser.add_argument("--max-similarity-products", type=int, default=16_000_000)
+    parser.add_argument("--max-projection-fits", type=int, default=131_072)
     parser.add_argument("--local-files-only", action="store_true")
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def main() -> None:
@@ -197,6 +200,9 @@ def main() -> None:
         "max_length",
         "candidate_pool_size",
         "max_anchors",
+        "similarity_chunk_size",
+        "max_similarity_products",
+        "max_projection_fits",
     ):
         if int(getattr(args, name)) <= 0:
             raise ValueError(f"--{name.replace('_', '-')} must be positive.")
@@ -295,9 +301,9 @@ def main() -> None:
         protected_indices=protected,
         candidate_pool_size=args.candidate_pool_size,
         max_anchors=args.max_anchors,
-        similarity_chunk_size=64,
-        max_similarity_products=16_000_000,
-        max_projection_fits=131_072,
+        similarity_chunk_size=args.similarity_chunk_size,
+        max_similarity_products=args.max_similarity_products,
+        max_projection_fits=args.max_projection_fits,
     )
     multi_seconds = time.perf_counter() - started
     multi_report = multi.as_dict()
