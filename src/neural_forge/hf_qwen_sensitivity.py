@@ -1451,9 +1451,10 @@ def _runtime_identity(
                 "total_memory": int(properties.total_memory),
             }
         )
+    uses_cuda = bool(cuda_devices)
     cudnn_version = (
         int(torch.backends.cudnn.version())
-        if torch.backends.cudnn.is_available()
+        if uses_cuda and torch.backends.cudnn.is_available()
         else None
     )
     return {
@@ -1473,10 +1474,18 @@ def _runtime_identity(
             "cudnn_version": cudnn_version,
             "deterministic_algorithms": torch.are_deterministic_algorithms_enabled(),
             "float32_matmul_precision": torch.get_float32_matmul_precision(),
-            "cuda_matmul_allow_tf32": bool(torch.backends.cuda.matmul.allow_tf32),
-            "cudnn_allow_tf32": bool(torch.backends.cudnn.allow_tf32),
-            "cudnn_benchmark": bool(torch.backends.cudnn.benchmark),
-            "cudnn_deterministic": bool(torch.backends.cudnn.deterministic),
+            "cuda_matmul_allow_tf32": (
+                bool(torch.backends.cuda.matmul.allow_tf32) if uses_cuda else None
+            ),
+            "cudnn_allow_tf32": (
+                bool(torch.backends.cudnn.allow_tf32) if uses_cuda else None
+            ),
+            "cudnn_benchmark": (
+                bool(torch.backends.cudnn.benchmark) if uses_cuda else None
+            ),
+            "cudnn_deterministic": (
+                bool(torch.backends.cudnn.deterministic) if uses_cuda else None
+            ),
             "default_dtype": str(torch.get_default_dtype()),
         },
         "environment": {

@@ -610,6 +610,18 @@ def test_runtime_fingerprint_binds_execution_settings_and_hooks() -> None:
     assert hooked["hooks"]["cache_nonce"]
 
 
+def test_cpu_runtime_identity_does_not_initialize_cuda_or_cudnn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def forbidden() -> int:
+        raise AssertionError("CPU evidence initialized cuDNN")
+
+    monkeypatch.setattr(torch.backends.cudnn, "version", forbidden)
+    evidence = _collect(_tiny_qwen(1787))
+    assert evidence.report.model_devices == ("cpu",)
+    assert evidence.fingerprints.runtime
+
+
 def test_codebook_full_materialization_is_preflighted_before_forward(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
