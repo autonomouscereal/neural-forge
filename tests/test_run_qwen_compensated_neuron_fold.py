@@ -933,6 +933,8 @@ def test_resource_guard_resolves_cuda_string_to_visible_integer_index(
     monkeypatch.setattr(MODULE.torch.cuda, "current_device", lambda: 0)
     monkeypatch.setattr(MODULE.torch.cuda, "max_memory_allocated", lambda index: 0)
     monkeypatch.setattr(MODULE.torch.cuda, "max_memory_reserved", lambda index: 0)
+    monkeypatch.setattr(MODULE.torch.cuda, "memory_allocated", lambda index: 1)
+    monkeypatch.setattr(MODULE.torch.cuda, "memory_reserved", lambda index: 1)
     monkeypatch.setattr(
         MODULE.torch.cuda,
         "reset_peak_memory_stats",
@@ -946,6 +948,32 @@ def test_resource_guard_resolves_cuda_string_to_visible_integer_index(
         pass
 
     assert resets == [0]
+
+
+def test_resource_guard_skips_peak_reset_before_cuda_allocator_initialization(
+    monkeypatch,
+) -> None:
+    resets: list[int] = []
+    monkeypatch.setattr(MODULE, "_current_process_rss_bytes", lambda: (0, 0))
+    monkeypatch.setattr(MODULE.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(MODULE.torch.cuda, "device_count", lambda: 1)
+    monkeypatch.setattr(MODULE.torch.cuda, "max_memory_allocated", lambda index: 0)
+    monkeypatch.setattr(MODULE.torch.cuda, "max_memory_reserved", lambda index: 0)
+    monkeypatch.setattr(MODULE.torch.cuda, "memory_allocated", lambda index: 0)
+    monkeypatch.setattr(MODULE.torch.cuda, "memory_reserved", lambda index: 0)
+    monkeypatch.setattr(
+        MODULE.torch.cuda,
+        "reset_peak_memory_stats",
+        lambda index: resets.append(index),
+    )
+    guard = MODULE.WorkflowResourceGuard(
+        "cuda:0", 1024, 1024, 1024, 60, {}
+    )
+
+    with guard.phase("pre-load"):
+        pass
+
+    assert resets == []
 
 
 def test_certified_publication_refuses_unsealed_artifact(tmp_path: Path) -> None:
