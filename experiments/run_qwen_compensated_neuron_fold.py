@@ -422,7 +422,10 @@ class WorkflowResourceGuard:
         self.check(f"{name}:start")
         cuda_index = self._cuda_index()
         if cuda_index is not None:
-            torch.cuda.reset_peak_memory_stats(cuda_index)
+            allocated = int(torch.cuda.memory_allocated(cuda_index))
+            reserved = int(torch.cuda.memory_reserved(cuda_index))
+            if allocated or reserved:
+                torch.cuda.reset_peak_memory_stats(cuda_index)
         try:
             yield
         finally:
