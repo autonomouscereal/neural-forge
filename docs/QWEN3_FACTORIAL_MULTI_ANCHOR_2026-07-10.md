@@ -24,10 +24,13 @@ The MLP-only result preserves some exact code and simple math but collapses too
 often to repeated digits or incorrect arithmetic. It is not a successful fold.
 
 The attention-only result removes `26,897,920` unique parameters and preserves
-all parent-passing behavior and choice probes. Its child passes 633 generation
-checks versus the parent's 388, but this must not be read as a blanket gain:
-some apparent gains are prompt/relevance artifacts and the child loses 16
-parent-passing generations.
+all parent-passing behavior and choice probes. The historical run report counted
+633 child generation passes under the earlier permissive scorer. Offline
+rescoring with the finalized strict scorer counts `546/1000` child passes versus
+the parent's `388/1000`; parent-pass retention remains `372/388`. This must not
+be read as a blanket gain: some apparent gains are prompt/relevance artifacts
+and the child loses 16 parent-passing generations. The same strict rescore gives
+the MLP-only child `175/1000` passes and `175/388` parent-pass retention.
 
 ## Manual paired inspection
 
