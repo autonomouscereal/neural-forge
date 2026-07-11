@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import gc
 import importlib.util
 import json
@@ -276,9 +277,7 @@ def test_discovery_selection_certification_splits_are_pairwise_disjoint(
     }
     assert report["fit_visible_splits"] == ["calibration", "validation"]
     assert (
-        report[
-            "certification_scores_or_parent_outputs_visible_to_fit_or_selection"
-        ]
+        report["certification_scores_or_parent_outputs_visible_to_fit_or_selection"]
         is False
     )
     assert report["pair_discovery_uses_validation"] is False
@@ -293,7 +292,9 @@ def test_full_selection_suite_must_be_token_disjoint_from_certification() -> Non
         "generation_prompts": [{"id": "g", "prompt": "same generation"}],
         "behavior_probes": [{"id": "b", "prompt": "same behavior"}],
     }
-    with pytest.raises(MODULE.QwenCompensatedRunnerError, match="identical token paths"):
+    with pytest.raises(
+        MODULE.QwenCompensatedRunnerError, match="identical token paths"
+    ):
         MODULE.verify_selection_certification_disjoint(
             _Tokenizer(), suite, suite, max_length=32
         )
@@ -302,7 +303,11 @@ def test_full_selection_suite_must_be_token_disjoint_from_certification() -> Non
             (
                 f"adaptive {value}"
                 if isinstance(value, str)
-                else {**value, "id": f"selection-{value['id']}", "prompt": f"adaptive {value['prompt']}"}
+                else {
+                    **value,
+                    "id": f"selection-{value['id']}",
+                    "prompt": f"adaptive {value['prompt']}",
+                }
             )
             for value in values
         ]
@@ -334,9 +339,10 @@ def test_rejected_transaction_rolls_back_then_accept_refreshes() -> None:
     assert report["rejected_count"] == 1
     assert report["accepted_count"] == 1
     assert report["rejected_transactions"][0]["rollback_exact"] is True
-    assert report["rejected_transactions"][0]["before"] == report[
-        "rejected_transactions"
-    ][0]["after"]
+    assert (
+        report["rejected_transactions"][0]["before"]
+        == report["rejected_transactions"][0]["after"]
+    )
     assert report["activation_refresh_after_every_accept"] is True
     assert report["activation_collection_count"] == 2
     assert provider.calls == 2
@@ -427,12 +433,8 @@ def test_parameter_and_byte_targets_use_unique_accounting() -> None:
     proposal = report["accepted_transactions"][0]["proposal"]
     assert proposal["arbitrary_pairing_enabled"] is True
     assert proposal["adjacent_pair_count"] + proposal["nonadjacent_pair_count"] == 1
-    assert proposal["strategy_evidence"]["calibration_provenance_id"] == (
-        "a" * 64
-    )
-    assert proposal["strategy_evidence"]["validation_provenance_id"] == (
-        "b" * 64
-    )
+    assert proposal["strategy_evidence"]["calibration_provenance_id"] == ("a" * 64)
+    assert proposal["strategy_evidence"]["validation_provenance_id"] == ("b" * 64)
     assert proposal["strategy_evidence"]["work_caps"]["all_work_caps_verified"] is True
 
 
@@ -482,6 +484,140 @@ def test_real_hooks_refresh_ragged_post_swiglu_widths() -> None:
     assert refreshed.report["ragged"] is True
     assert refreshed.report["post_swiglu_down_projection_inputs"] is True
     assert refreshed.report["bounded"] is True
+
+
+def test_source_padded_fold_stores_target_width_and_executes_source_shape() -> None:
+    model = _tiny_qwen(1471, layers=1)
+    original = model.model.layers[0].mlp
+    activations = torch.randn(20, 6, generator=torch.Generator().manual_seed(1472))
+    activations[:, 5] = 1.5 * activations[:, 0]
+    fold = MODULE.fit_compensated_neuron_pairs(
+        original.gate_proj.weight,
+        original.up_proj.weight,
+        original.down_proj.weight,
+        activations,
+        target_width=5,
+        validation_activations=activations.roll(1, dims=0),
+        projection_count=16,
+        neighbor_window=5,
+        max_pair_candidates=200,
+    )
+    inputs = torch.randn(2, 3, 8, generator=torch.Generator().manual_seed(1473))
+    kept = torch.tensor(fold.kept_source_indices, dtype=torch.long)
+    full_gate = torch.zeros_like(original.gate_proj.weight)
+    full_up = torch.zeros_like(original.up_proj.weight)
+    full_down = torch.zeros_like(original.down_proj.weight)
+    full_gate.index_copy_(0, kept, fold.gate_weight)
+    full_up.index_copy_(0, kept, fold.up_weight)
+    full_down.index_copy_(1, kept, fold.down_weight)
+    expected = torch.nn.functional.linear(
+        original.act_fn(torch.nn.functional.linear(inputs, full_gate))
+        * torch.nn.functional.linear(inputs, full_up),
+        full_down,
+    )
+    initial = MODULE.model_accounting(model)
+
+    handle = MODULE._install_fold_for_compute_shape(
+        model,
+        0,
+        fold,
+        compute_shape_mode="source-padded",
+        max_transient_compute_bytes=2 * 1024**2,
+    )
+    installed = handle.installed_mlp
+    assert isinstance(installed, MODULE.Qwen3SourcePaddedCompensatedMLP)
+    with torch.inference_mode():
+        actual = installed(inputs)
+
+    torch.testing.assert_close(actual, expected, rtol=0.0, atol=0.0)
+    accounting = MODULE.model_accounting(model)
+    assert accounting.unique_parameter_count == initial.unique_parameter_count - 24
+    assert accounting.unique_buffer_bytes == initial.unique_buffer_bytes
+    assert installed.gate_proj.out_features == 5
+    assert installed.compute_width == 6
+    assert (
+        installed.compute_shape_report()["persistent_full_width_parameter_or_buffer"]
+        is False
+    )
+    assert installed.compute_shape_report()["peak_transient_compute_bytes"] > 0
+    assert not list(installed.named_buffers())
+
+    handle.rollback()
+    assert MODULE.model_accounting(model) == initial
+    assert model.model.layers[0].mlp is original
+
+
+def test_source_padded_transaction_refreshes_compact_activations() -> None:
+    model = _tiny_qwen(1481, layers=1)
+    initial = MODULE.model_accounting(model)
+    provider = _ActivationProvider(1482)
+    report = MODULE.run_fold_transactions(
+        model,
+        activation_provider=provider,
+        small_gate=_Decisions([True]),
+        target_parameters=initial.unique_parameter_count - 24,
+        target_bytes=None,
+        config=_loop_config(
+            compute_shape_mode="source-padded",
+            max_transient_compute_bytes=2 * 1024**2,
+        ),
+    )
+
+    assert report["target"]["reached"] is True
+    assert provider.calls == 2
+    assert isinstance(model.model.layers[0].mlp, MODULE.Qwen3SourcePaddedCompensatedMLP)
+    accepted = report["accepted_transactions"][0]
+    assert accepted["compute_shape"]["mode"] == "source-padded"
+    assert accepted["compute_shape"]["stored_width"] == 5
+    assert accepted["compute_shape"]["compute_width"] == 6
+    assert (
+        accepted["compute_shape"]["persistent_full_width_parameter_or_buffer"] is False
+    )
+
+
+def test_source_padded_transient_cap_fails_before_compute() -> None:
+    module = MODULE.Qwen3SourcePaddedCompensatedMLP(
+        8,
+        5,
+        torch.nn.SiLU(),
+        compute_width=6,
+        compute_indices=(0, 1, 2, 3, 4),
+        max_transient_compute_bytes=1,
+    )
+    with pytest.raises(MODULE.QwenCompensatedRunnerError, match="transient byte"):
+        module(torch.randn(1, 2, 8))
+    assert module.peak_transient_compute_bytes > module.max_transient_compute_bytes
+    assert not list(module.named_buffers())
+
+
+def test_source_padded_gate_exception_restores_exact_parent() -> None:
+    model = _tiny_qwen(1491, layers=1)
+    initial = MODULE.model_accounting(model)
+    input_ids = torch.tensor([[1, 4, 7, 2]])
+    with torch.inference_mode():
+        expected = model(input_ids=input_ids, use_cache=False).logits.detach().clone()
+
+    def explode(current, attempt, proposal):
+        del current, attempt, proposal
+        raise RuntimeError("source-padded gate exploded")
+
+    with pytest.raises(RuntimeError, match="source-padded gate exploded"):
+        MODULE.run_fold_transactions(
+            model,
+            activation_provider=_ActivationProvider(1492),
+            small_gate=explode,
+            target_parameters=initial.unique_parameter_count - 24,
+            target_bytes=None,
+            config=_loop_config(
+                compute_shape_mode="source-padded",
+                max_transient_compute_bytes=2 * 1024**2,
+            ),
+        )
+
+    assert MODULE.model_accounting(model) == initial
+    with torch.inference_mode():
+        actual = model(input_ids=input_ids, use_cache=False).logits
+    torch.testing.assert_close(actual, expected, rtol=0.0, atol=0.0)
 
 
 def test_parent_free_ragged_safetensors_reload_is_exact(tmp_path: Path) -> None:
@@ -554,9 +690,194 @@ def test_parent_free_ragged_safetensors_reload_is_exact(tmp_path: Path) -> None:
     assert not list(checkpoint.rglob("*.bin"))
     assert not list(checkpoint.rglob("*.pt"))
     accounting = manifest["payload"]["artifact_accounting"]
-    actual_bytes = sum(path.stat().st_size for path in checkpoint.rglob("*") if path.is_file())
+    actual_bytes = sum(
+        path.stat().st_size for path in checkpoint.rglob("*") if path.is_file()
+    )
     assert accounting["artifact_total_bytes"] == actual_bytes
     assert accounting["all_artifact_files_hashed_and_counted"] is True
+
+
+def test_parent_free_source_padded_reload_preserves_compute_contract(
+    tmp_path: Path,
+) -> None:
+    model = _tiny_qwen(1511, layers=1)
+    original = model.model.layers[0].mlp
+    activations = torch.randn(20, 6, generator=torch.Generator().manual_seed(1512))
+    activations[:, 5] = -1.5 * activations[:, 0]
+    fold = MODULE.fit_compensated_neuron_pairs(
+        original.gate_proj.weight,
+        original.up_proj.weight,
+        original.down_proj.weight,
+        activations,
+        target_width=5,
+        validation_activations=activations.roll(1, dims=0),
+        projection_count=16,
+        neighbor_window=5,
+        max_pair_candidates=200,
+    )
+    handle = MODULE._install_fold_for_compute_shape(
+        model,
+        0,
+        fold,
+        compute_shape_mode="source-padded",
+        max_transient_compute_bytes=2 * 1024**2,
+    )
+    handle.commit()
+    input_ids = torch.tensor([[1, 4, 7, 2]])
+    with torch.inference_mode():
+        expected = model(input_ids=input_ids, use_cache=False).logits.detach().clone()
+
+    checkpoint = tmp_path / "source-padded"
+    manifest = MODULE.save_ragged_qwen_checkpoint(
+        model,
+        None,
+        checkpoint,
+        transaction_records=[{"layer": 0, "fold_sha256": fold.fold_sha256}],
+        source_provenance={"source_model": "tiny-source-padded-test"},
+    )
+    reloaded, tokenizer, loaded = MODULE.load_ragged_qwen_checkpoint(
+        checkpoint, device="cpu"
+    )
+    with torch.inference_mode():
+        actual = reloaded(input_ids=input_ids, use_cache=False).logits
+
+    torch.testing.assert_close(actual, expected, rtol=0.0, atol=0.0)
+    assert tokenizer is None
+    reloaded_mlp = reloaded.model.layers[0].mlp
+    assert isinstance(reloaded_mlp, MODULE.Qwen3SourcePaddedCompensatedMLP)
+    assert reloaded_mlp.compute_width == 6
+    assert reloaded_mlp.gate_proj.out_features == 5
+    shape = manifest["payload"]["model"]["compute_shape"]
+    assert shape["source_padded_layer_count"] == 1
+    assert shape["persistent_full_width_parameter_or_buffer"] is False
+    assert shape["layers"][0]["compute_indices"] == list(fold.kept_source_indices)
+    assert loaded["runtime_load"]["parent_checkpoint_accesses"] == 0
+    assert loaded["runtime_load"]["compute_shape"]["source_padded_layer_count"] == 1
+    assert (
+        manifest["payload"]["artifact_accounting"]["compute_shape_metadata_bytes"] > 0
+    )
+    repeat_reference = MODULE.capture_reload_reference(
+        reloaded,
+        _Tokenizer(),
+        ("repeat alpha", "repeat beta"),
+        device="cpu",
+        max_length=12,
+        generation_tokens=2,
+    )
+    first_manifest_sha256 = loaded["payload_sha256"]
+    del actual
+    del reloaded_mlp
+    del reloaded
+    gc.collect()
+    repeated, repeated_tokenizer, repeated_manifest = (
+        MODULE.load_ragged_qwen_checkpoint(checkpoint, device="cpu")
+    )
+    repeated_equivalence = MODULE.verify_reload_equivalence(
+        repeat_reference,
+        repeated,
+        _Tokenizer(),
+        device="cpu",
+    )
+    assert repeated_equivalence["logits_bitwise_exact"] is True
+    assert repeated_equivalence["deterministic_generation_bitwise_exact"] is True
+    assert repeated_tokenizer is None
+    assert repeated_manifest["payload_sha256"] == first_manifest_sha256
+
+
+def test_source_padded_manifest_rejects_duplicate_compute_indices(
+    tmp_path: Path,
+) -> None:
+    model = _tiny_qwen(1521, layers=1)
+    original = model.model.layers[0].mlp
+    activations = torch.randn(20, 6, generator=torch.Generator().manual_seed(1522))
+    activations[:, 5] = 1.25 * activations[:, 0]
+    fold = MODULE.fit_compensated_neuron_pairs(
+        original.gate_proj.weight,
+        original.up_proj.weight,
+        original.down_proj.weight,
+        activations,
+        target_width=5,
+        validation_activations=activations.roll(1, dims=0),
+        projection_count=16,
+        neighbor_window=5,
+        max_pair_candidates=200,
+    )
+    handle = MODULE._install_fold_for_compute_shape(
+        model,
+        0,
+        fold,
+        compute_shape_mode="source-padded",
+        max_transient_compute_bytes=2 * 1024**2,
+    )
+    handle.commit()
+    checkpoint = tmp_path / "tampered-source-padded"
+    MODULE.save_ragged_qwen_checkpoint(
+        model,
+        None,
+        checkpoint,
+        transaction_records=[{"layer": 0}],
+        source_provenance={"source_model": "tiny-test"},
+    )
+    manifest_path = checkpoint / "manifest.json"
+    envelope = json.loads(manifest_path.read_text(encoding="utf-8"))
+    layer = envelope["payload"]["model"]["compute_shape"]["layers"][0]
+    layer["compute_indices"] = [0] * 5
+    envelope["payload_sha256"] = MODULE._canonical_sha256(envelope["payload"])
+    manifest_path.write_text(
+        json.dumps(envelope, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+    with pytest.raises(MODULE.QwenCompensatedRunnerError, match="compute indices"):
+        MODULE.load_ragged_qwen_checkpoint(checkpoint, device="cpu")
+
+
+def test_parent_free_loader_rejects_certified_runtime_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    previous_enabled = torch.are_deterministic_algorithms_enabled()
+    previous_warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
+    previous_precision = torch.get_float32_matmul_precision()
+    try:
+        MODULE._enforce_deterministic_runtime("cpu")
+        model = _tiny_qwen(1531, layers=1)
+        expected_runtime = MODULE._evaluation_runtime_identity(model, "cpu")
+        checkpoint = tmp_path / "runtime-bound"
+        MODULE.save_ragged_qwen_checkpoint(
+            model,
+            None,
+            checkpoint,
+            transaction_records=[],
+            source_provenance={"evaluation_runtime": expected_runtime},
+        )
+        loaded, _, manifest = MODULE.load_ragged_qwen_checkpoint(
+            checkpoint, device="cpu"
+        )
+        assert manifest["runtime_load"]["certified_runtime_bound"] is True
+        del loaded
+
+        original_identity = MODULE._evaluation_runtime_identity
+
+        def changed_runtime(current, device):
+            report = original_identity(current, device)
+            report["platform"]["release"] += "-mismatch"
+            payload = dict(report)
+            payload.pop("runtime_sha256")
+            report["runtime_sha256"] = MODULE._canonical_sha256(payload)
+            return report
+
+        monkeypatch.setattr(MODULE, "_evaluation_runtime_identity", changed_runtime)
+        with pytest.raises(
+            MODULE.QwenCompensatedRunnerError,
+            match="evaluation runtime differs",
+        ):
+            MODULE.load_ragged_qwen_checkpoint(checkpoint, device="cpu")
+    finally:
+        torch.use_deterministic_algorithms(
+            previous_enabled,
+            warn_only=previous_warn_only,
+        )
+        torch.set_float32_matmul_precision(previous_precision)
 
 
 def test_large_checkpoint_publish_uses_shared_lease_and_exact_hashes(
@@ -679,7 +1000,20 @@ def test_parser_defaults_to_full_production_evaluation(tmp_path: Path) -> None:
     assert args.keep_checkpoint_staging is False
     assert args.source_revision == "revision"
     assert args.selection_max_behavior_probes == 256
+    assert args.compute_shape_mode == "compact"
+    assert args.max_transient_compute_bytes == 2 * 1024**3
     assert json.loads(json.dumps(vars(args), default=str))["source_model"] == "source"
+
+
+@pytest.mark.parametrize("mode", ["unknown", "SOURCE-PADDED", ""])
+def test_fold_loop_rejects_unknown_compute_shape_mode(mode: str) -> None:
+    with pytest.raises(MODULE.QwenCompensatedRunnerError, match="compute_shape_mode"):
+        _loop_config(compute_shape_mode=mode)
+
+
+def test_fold_loop_rejects_excessive_transient_compute_ceiling() -> None:
+    with pytest.raises(MODULE.QwenCompensatedRunnerError, match="immutable"):
+        _loop_config(max_transient_compute_bytes=64 * 1024**3 + 1)
 
 
 @pytest.mark.parametrize("failure_stage", ["small_gate", "milestone", "refresh"])
@@ -846,7 +1180,9 @@ def test_persistent_ablation_anchors_are_selected_once_and_keep_lineage() -> Non
     assert report["accepted_count"] == 2
     assert anchors["selection_epoch"] == 0
     assert anchors["immutable_after_selection"] is True
-    assert anchors["measurement"] == "exact-single-neuron-layer-output-ablation-frobenius"
+    assert (
+        anchors["measurement"] == "exact-single-neuron-layer-output-ablation-frobenius"
+    )
     assert len(anchors["source_neuron_ids"]) == 1
     assert len(anchors["final_current_indices"]) == 1
     assert anchors["lineage_audit"]["all_source_paths_traced"] is True
@@ -918,6 +1254,31 @@ def _identity_eval_suite(path: Path, suffix: str = "a") -> None:
     )
 
 
+def test_deterministic_runtime_is_enforced_and_cuda_workspace_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    previous_enabled = torch.are_deterministic_algorithms_enabled()
+    previous_warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
+    previous_precision = torch.get_float32_matmul_precision()
+    try:
+        report = MODULE._enforce_deterministic_runtime("cpu")
+        assert report["deterministic_algorithms"] is True
+        assert report["deterministic_warn_only"] is False
+        assert report["float32_matmul_precision"] == "highest"
+    finally:
+        torch.use_deterministic_algorithms(
+            previous_enabled,
+            warn_only=previous_warn_only,
+        )
+        torch.set_float32_matmul_precision(previous_precision)
+
+    monkeypatch.delenv("CUBLAS_WORKSPACE_CONFIG", raising=False)
+    with pytest.raises(
+        MODULE.QwenCompensatedRunnerError, match="CUBLAS_WORKSPACE_CONFIG"
+    ):
+        MODULE._enforce_deterministic_runtime("cuda:0")
+
+
 def test_cached_parent_binding_rejects_state_tokenizer_and_eval_mismatch(
     tmp_path: Path,
 ) -> None:
@@ -934,14 +1295,24 @@ def test_cached_parent_binding_rejects_state_tokenizer_and_eval_mismatch(
         source_revision="tiny-revision",
         source_tokenizer="tiny-tokenizer",
         eval_suite=suite_a,
+        evaluation_device="cpu",
     )
     report = {
         "identity_binding": identity,
         "generation_health": {"contract": dict(MODULE.GENERATION_HEALTH_CONTRACT)},
     }
-    assert MODULE.validate_bound_parent_report(
-        report, identity, label="parent"
-    )["state_sha256"] == identity["state_sha256"]
+    assert identity["schema"].endswith("-v2")
+    assert identity["evaluation_runtime"]["resolved_device_type"] == "cpu"
+    assert (
+        identity["evaluation_runtime_sha256"]
+        == identity["evaluation_runtime"]["runtime_sha256"]
+    )
+    assert (
+        MODULE.validate_bound_parent_report(report, identity, label="parent")[
+            "state_sha256"
+        ]
+        == identity["state_sha256"]
+    )
 
     with torch.inference_mode():
         model.model.embed_tokens.weight[0, 0].add_(1.0)
@@ -952,6 +1323,7 @@ def test_cached_parent_binding_rejects_state_tokenizer_and_eval_mismatch(
         source_revision="tiny-revision",
         source_tokenizer="tiny-tokenizer",
         eval_suite=suite_a,
+        evaluation_device="cpu",
     )
     with pytest.raises(MODULE.QwenCompensatedRunnerError, match="state_sha256"):
         MODULE.validate_bound_parent_report(report, changed_state, label="parent")
@@ -959,6 +1331,21 @@ def test_cached_parent_binding_rejects_state_tokenizer_and_eval_mismatch(
     changed_eval = MODULE.derive_parent_identity_for_eval_suite(identity, suite_b)
     with pytest.raises(MODULE.QwenCompensatedRunnerError, match="eval_suite"):
         MODULE.validate_bound_parent_report(report, changed_eval, label="parent")
+
+    changed_runtime = copy.deepcopy(identity)
+    changed_runtime["evaluation_runtime"]["platform"]["release"] += "-other-host"
+    runtime_payload = dict(changed_runtime["evaluation_runtime"])
+    runtime_payload.pop("runtime_sha256")
+    changed_runtime["evaluation_runtime"]["runtime_sha256"] = MODULE._canonical_sha256(
+        runtime_payload
+    )
+    changed_runtime["evaluation_runtime_sha256"] = changed_runtime[
+        "evaluation_runtime"
+    ]["runtime_sha256"]
+    changed_runtime.pop("identity_sha256")
+    changed_runtime["identity_sha256"] = MODULE._canonical_sha256(changed_runtime)
+    with pytest.raises(MODULE.QwenCompensatedRunnerError, match="evaluation_runtime"):
+        MODULE.validate_bound_parent_report(report, changed_runtime, label="parent")
 
 
 @pytest.mark.parametrize("behavior_count", [999, 1001])
@@ -1020,7 +1407,9 @@ def test_manual_packet_contains_verbatim_outputs_and_requires_bound_verdict() ->
         parent, child, comparison, required_count=2
     )
     assert packet["selected_sample_count"] == 2
-    assert all(item["parent_output"] and item["child_output"] for item in packet["samples"])
+    assert all(
+        item["parent_output"] and item["child_output"] for item in packet["samples"]
+    )
     bad = {
         "schema": "neural-forge-qualitative-review-verdict-v1",
         "verdict": "pass",
@@ -1045,22 +1434,16 @@ def test_manual_packet_contains_verbatim_outputs_and_requires_bound_verdict() ->
         }
     }
     with pytest.raises(MODULE.QwenCompensatedRunnerError, match="must be unique"):
-        MODULE.build_manual_review_packet(
-            parent, child, duplicate, required_count=3
-        )
+        MODULE.build_manual_review_packet(parent, child, duplicate, required_count=3)
 
     child["generations"][0]["output"] = ""
     with pytest.raises(MODULE.QwenCompensatedRunnerError, match="cannot be empty"):
-        MODULE.build_manual_review_packet(
-            parent, child, comparison, required_count=2
-        )
+        MODULE.build_manual_review_packet(parent, child, comparison, required_count=2)
 
 
 def test_resource_guard_enforces_host_cap(monkeypatch) -> None:
     monkeypatch.setattr(MODULE, "_current_process_rss_bytes", lambda: (1024, 2048))
-    guard = MODULE.WorkflowResourceGuard(
-        "cpu", 512, 1024, 1024, 60, {}
-    )
+    guard = MODULE.WorkflowResourceGuard("cpu", 512, 1024, 1024, 60, {})
     with pytest.raises(MODULE.QwenCompensatedRunnerError, match="Host RSS cap"):
         guard.check("adversarial")
 
@@ -1082,9 +1465,7 @@ def test_resource_guard_resolves_cuda_string_to_visible_integer_index(
         "reset_peak_memory_stats",
         lambda index: resets.append(index),
     )
-    guard = MODULE.WorkflowResourceGuard(
-        "cuda:0", 1024, 1024, 1024, 60, {}
-    )
+    guard = MODULE.WorkflowResourceGuard("cuda:0", 1024, 1024, 1024, 60, {})
 
     with guard.phase("gpu-phase"):
         pass
@@ -1108,9 +1489,7 @@ def test_resource_guard_skips_peak_reset_before_cuda_allocator_initialization(
         "reset_peak_memory_stats",
         lambda index: resets.append(index),
     )
-    guard = MODULE.WorkflowResourceGuard(
-        "cuda:0", 1024, 1024, 1024, 60, {}
-    )
+    guard = MODULE.WorkflowResourceGuard("cuda:0", 1024, 1024, 1024, 60, {})
 
     with guard.phase("pre-load"):
         pass
@@ -1157,17 +1536,26 @@ def test_multi_anchor_runner_strategy_uses_bound_split_ids_and_same_gate() -> No
     assert proposal["fold_strategy"] == "multi-anchor"
     assert proposal["multi_anchor_merge_count"] == 1
     assert proposal["internal_split_proof"]["pair_discovery"] == "calibration-only"
-    assert proposal["strategy_evidence"]["independent_aggregate_metrics_trusted"] is True
-    assert proposal["strategy_evidence"]["per_merge_metrics_used_for_runner_selection"] is False
+    assert (
+        proposal["strategy_evidence"]["independent_aggregate_metrics_trusted"] is True
+    )
+    assert (
+        proposal["strategy_evidence"]["per_merge_metrics_used_for_runner_selection"]
+        is False
+    )
     assert proposal["strategy_evidence"]["work_caps"]["all_work_caps_verified"] is True
     assert proposal["strategy_evidence"]["work_caps"]["similarity_products"] <= 64
     assert proposal["strategy_evidence"]["work_caps"]["projection_fit_count"] <= 64
-    assert proposal["strategy_evidence"]["activation_evidence"][
-        "activation_hashes_distinct"
-    ] is True
-    assert report["persistent_anchors"]["0"]["lineage_audit"][
-        "all_source_paths_traced"
-    ] is True
+    assert (
+        proposal["strategy_evidence"]["activation_evidence"][
+            "activation_hashes_distinct"
+        ]
+        is True
+    )
+    assert (
+        report["persistent_anchors"]["0"]["lineage_audit"]["all_source_paths_traced"]
+        is True
+    )
     lineage_audit = report["persistent_anchors"]["0"]["lineage_audit"]
     assert lineage_audit["covered_source_path_count"] == lineage_audit["source_width"]
     assert lineage_audit["missing_source_path_count"] == 0

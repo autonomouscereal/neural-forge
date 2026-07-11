@@ -17,11 +17,13 @@ import hashlib
 import json
 import math
 import os
+import platform
 import random
 import shutil
 import sys
 import tempfile
 import time
+import uuid
 import weakref
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -30,6 +32,7 @@ from typing import Any
 
 import torch
 from torch import Tensor, nn
+from torch.nn import functional as F
 
 from neural_forge.hf_qwen_compensated_neuron_fold import (
     CompensatedNeuronFoldWeights,
@@ -57,7 +60,7 @@ RUN_SCHEMA = "neural-forge-qwen3-compensated-neuron-fold-run-v2"
 ACTIVATION_SCHEMA = "neural-forge-qwen3-ragged-activation-cache-v1"
 CHECKPOINT_SCHEMA = "neural-forge-qwen3-ragged-safetensors-v1"
 LOADER_CONTRACT = "run_qwen_compensated_neuron_fold.load_ragged_qwen_checkpoint"
-IDENTITY_SCHEMA = "neural-forge-exact-parent-eval-identity-v1"
+IDENTITY_SCHEMA = "neural-forge-exact-parent-eval-identity-v2"
 SPLIT_SCHEMA = "neural-forge-surgery-discovery-selection-certification-v1"
 CERTIFICATION_SCHEMA = "neural-forge-zero-recovery-certification-v1"
 GENERATION_HEALTH_CONTRACT = {
@@ -76,15 +79,16 @@ class QwenCompensatedRunnerError(RuntimeError):
     """The compensated-fold experiment cannot prove a required invariant."""
 
 
+COMPUTE_SHAPE_MODES = frozenset({"compact", "source-padded"})
+
+
 def _positive_int(value: Any, name: str) -> int:
     if isinstance(value, bool):
         raise QwenCompensatedRunnerError(f"{name} must be a positive integer.")
     try:
         result = int(value)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise QwenCompensatedRunnerError(
-            f"{name} must be a positive integer."
-        ) from exc
+        raise QwenCompensatedRunnerError(f"{name} must be a positive integer.") from exc
     if result <= 0 or result != value:
         raise QwenCompensatedRunnerError(f"{name} must be a positive integer.")
     return result
@@ -92,9 +96,7 @@ def _positive_int(value: Any, name: str) -> int:
 
 def _nonnegative_int(value: Any, name: str) -> int:
     if isinstance(value, bool):
-        raise QwenCompensatedRunnerError(
-            f"{name} must be a non-negative integer."
-        )
+        raise QwenCompensatedRunnerError(f"{name} must be a non-negative integer.")
     try:
         result = int(value)
     except (TypeError, ValueError, OverflowError) as exc:
@@ -102,9 +104,7 @@ def _nonnegative_int(value: Any, name: str) -> int:
             f"{name} must be a non-negative integer."
         ) from exc
     if result < 0 or result != value:
-        raise QwenCompensatedRunnerError(
-            f"{name} must be a non-negative integer."
-        )
+        raise QwenCompensatedRunnerError(f"{name} must be a non-negative integer.")
     return result
 
 
@@ -114,9 +114,7 @@ def _finite_fraction(value: Any, name: str, *, upper: float = 1.0) -> float:
     except (TypeError, ValueError, OverflowError) as exc:
         raise QwenCompensatedRunnerError(f"{name} must be finite.") from exc
     if not math.isfinite(result) or not 0.0 <= result <= upper:
-        raise QwenCompensatedRunnerError(
-            f"{name} must be in [0, {upper}]."
-        )
+        raise QwenCompensatedRunnerError(f"{name} must be in [0, {upper}].")
     return result
 
 
@@ -204,6 +202,140 @@ def _tokenizer_identity(tokenizer: Any) -> dict[str, Any]:
     return payload
 
 
+def _evaluation_runtime_identity(
+    model: nn.Module, evaluation_device: str
+) -> dict[str, Any]:
+    requested = str(evaluation_device).strip()
+    if not requested:
+        raise QwenCompensatedRunnerError(
+            "Exact parent binding requires an evaluation device."
+        )
+    try:
+        device = torch.device(requested)
+    except (TypeError, ValueError, RuntimeError) as exc:
+        raise QwenCompensatedRunnerError(
+            f"Invalid evaluation device for exact parent binding: {requested}."
+        ) from exc
+    if device.type not in {"cpu", "cuda"}:
+        raise QwenCompensatedRunnerError(
+            "Exact parent binding supports only CPU or CUDA evaluation devices."
+        )
+
+    import transformers
+
+    tensors = [*model.parameters(), *model.buffers()]
+    if not tensors:
+        raise QwenCompensatedRunnerError(
+            "Exact parent binding requires a non-empty model runtime."
+        )
+    model_devices = sorted({str(value.device) for value in tensors})
+    model_dtypes = sorted({str(value.dtype) for value in tensors})
+    environment_names = (
+        "CUBLAS_WORKSPACE_CONFIG",
+        "CUDA_VISIBLE_DEVICES",
+        "MKL_NUM_THREADS",
+        "NVIDIA_TF32_OVERRIDE",
+        "OMP_NUM_THREADS",
+        "PYTORCH_CUDA_ALLOC_CONF",
+        "TORCH_ALLOW_TF32_CUBLAS_OVERRIDE",
+    )
+    payload: dict[str, Any] = {
+        "schema": "neural-forge-evaluation-runtime-identity-v1",
+        "requested_device": requested,
+        "resolved_device_type": device.type,
+        "model_devices": model_devices,
+        "model_dtypes": model_dtypes,
+        "python": {
+            "implementation": platform.python_implementation(),
+            "version": platform.python_version(),
+        },
+        "platform": {
+            "machine": platform.machine(),
+            "release": platform.release(),
+            "system": platform.system(),
+        },
+        "torch": {
+            "version": str(torch.__version__),
+            "git_version": str(getattr(torch.version, "git_version", "")),
+            "cuda_runtime": str(torch.version.cuda or ""),
+            "deterministic_algorithms": bool(
+                torch.are_deterministic_algorithms_enabled()
+            ),
+            "deterministic_warn_only": bool(
+                torch.is_deterministic_algorithms_warn_only_enabled()
+            ),
+            "float32_matmul_precision": str(torch.get_float32_matmul_precision()),
+            "num_threads": int(torch.get_num_threads()),
+            "num_interop_threads": int(torch.get_num_interop_threads()),
+        },
+        "transformers_version": str(transformers.__version__),
+        "environment": {name: os.environ.get(name) for name in environment_names},
+    }
+    if device.type == "cuda":
+        if not torch.cuda.is_available():
+            raise QwenCompensatedRunnerError(
+                "CUDA evaluation identity requested without an available CUDA runtime."
+            )
+        index = device.index
+        if index is None:
+            index = int(torch.cuda.current_device())
+        if index < 0 or index >= torch.cuda.device_count():
+            raise QwenCompensatedRunnerError(
+                f"CUDA evaluation device index is unavailable: {index}."
+            )
+        for value in model_devices:
+            model_device = torch.device(value)
+            if model_device.type != "cuda" or (
+                model_device.index is not None and model_device.index != index
+            ):
+                raise QwenCompensatedRunnerError(
+                    "CUDA parent-cache evaluation requires one exact CUDA model runtime."
+                )
+        properties = torch.cuda.get_device_properties(index)
+        raw_uuid = str(getattr(properties, "uuid", "")).strip().lower()
+        if raw_uuid.startswith("gpu-"):
+            raw_uuid = raw_uuid[4:]
+        try:
+            physical_uuid = str(uuid.UUID(raw_uuid))
+        except (ValueError, AttributeError) as exc:
+            raise QwenCompensatedRunnerError(
+                "CUDA evaluation identity lacks an exact physical device UUID."
+            ) from exc
+        payload["resolved_device_index"] = index
+        payload["physical_device"] = {
+            "uuid": f"GPU-{physical_uuid}",
+            "name": str(properties.name),
+            "compute_capability": [int(properties.major), int(properties.minor)],
+            "total_memory": int(properties.total_memory),
+            "multi_processor_count": int(properties.multi_processor_count),
+            "pci_bus_id": getattr(properties, "pci_bus_id", None),
+            "pci_device_id": getattr(properties, "pci_device_id", None),
+            "pci_domain_id": getattr(properties, "pci_domain_id", None),
+        }
+        payload["cuda_math"] = {
+            "matmul_allow_tf32": bool(torch.backends.cuda.matmul.allow_tf32),
+            "matmul_allow_fp16_reduced_precision_reduction": bool(
+                torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction
+            ),
+            "matmul_allow_bf16_reduced_precision_reduction": bool(
+                torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction
+            ),
+            "cudnn_allow_tf32": bool(torch.backends.cudnn.allow_tf32),
+            "cudnn_benchmark": bool(torch.backends.cudnn.benchmark),
+            "cudnn_deterministic": bool(torch.backends.cudnn.deterministic),
+        }
+    else:
+        if any(torch.device(value).type != "cpu" for value in model_devices):
+            raise QwenCompensatedRunnerError(
+                "CPU parent-cache evaluation requires an all-CPU model runtime."
+            )
+        payload["cpu_math"] = {
+            "mkldnn_enabled": bool(torch.backends.mkldnn.enabled),
+        }
+    payload["runtime_sha256"] = _canonical_sha256(payload)
+    return payload
+
+
 def build_exact_parent_identity(
     model: nn.Module,
     tokenizer: Any,
@@ -212,6 +344,7 @@ def build_exact_parent_identity(
     source_revision: str,
     source_tokenizer: str,
     eval_suite: Path,
+    evaluation_device: str,
 ) -> dict[str, Any]:
     revision = str(source_revision).strip()
     if not revision:
@@ -246,6 +379,7 @@ def build_exact_parent_identity(
     }
     state = _state_identity(model)
     tokenizer_report = _tokenizer_identity(tokenizer)
+    evaluation_runtime = _evaluation_runtime_identity(model, evaluation_device)
     identity = {
         "schema": IDENTITY_SCHEMA,
         "source_model": str(source_model),
@@ -259,6 +393,8 @@ def build_exact_parent_identity(
         "eval_suite_content_sha256": _canonical_sha256(suite_payload),
         "evaluator_module_sha256": _file_sha256(Path(hf_tools_module.__file__)),
         "generation_health_contract": dict(GENERATION_HEALTH_CONTRACT),
+        "evaluation_runtime": evaluation_runtime,
+        "evaluation_runtime_sha256": evaluation_runtime["runtime_sha256"],
     }
     identity["identity_sha256"] = _canonical_sha256(identity)
     return identity
@@ -318,6 +454,8 @@ def validate_bound_parent_report(
         "tokenizer_sha256": str(actual["tokenizer_sha256"]),
         "eval_suite_file_sha256": str(actual["eval_suite_file_sha256"]),
         "evaluator_module_sha256": str(actual["evaluator_module_sha256"]),
+        "evaluation_runtime_sha256": str(actual["evaluation_runtime_sha256"]),
+        "evaluation_runtime": dict(actual["evaluation_runtime"]),
         "cached_report_sha256": _canonical_sha256(report),
     }
 
@@ -364,7 +502,9 @@ class WorkflowResourceGuard:
         device = torch.device(self.device)
         if device.type != "cuda" or not torch.cuda.is_available():
             return None
-        index = torch.cuda.current_device() if device.index is None else int(device.index)
+        index = (
+            torch.cuda.current_device() if device.index is None else int(device.index)
+        )
         count = int(torch.cuda.device_count())
         if not 0 <= index < count:
             raise QwenCompensatedRunnerError(
@@ -576,6 +716,293 @@ def _same_storage_accounting(left: ModelAccounting, right: ModelAccounting) -> b
     )
 
 
+def _validate_compute_indices(
+    compute_width: int,
+    stored_width: int,
+    compute_indices: Sequence[int],
+) -> tuple[int, ...]:
+    source = _positive_int(compute_width, "compute_width")
+    stored = _positive_int(stored_width, "stored_width")
+    indices = tuple(int(value) for value in compute_indices)
+    if (
+        source < stored
+        or len(indices) != stored
+        or len(set(indices)) != stored
+        or any(value < 0 or value >= source for value in indices)
+        or tuple(sorted(indices)) != indices
+    ):
+        raise QwenCompensatedRunnerError(
+            "Source-padded compute indices must be a sorted unique stored-width "
+            "subset of the compute width."
+        )
+    return indices
+
+
+class Qwen3SourcePaddedDownProjection(nn.Linear):
+    """Store a ragged down matrix while executing at its source K dimension."""
+
+    def __init__(
+        self,
+        stored_width: int,
+        hidden_size: int,
+        *,
+        compute_width: int,
+        compute_indices: Sequence[int],
+        max_transient_compute_bytes: int,
+        device: Any = None,
+        dtype: Any = None,
+    ) -> None:
+        super().__init__(
+            stored_width,
+            hidden_size,
+            bias=False,
+            device=device,
+            dtype=dtype,
+        )
+        self.compute_width = _positive_int(compute_width, "compute_width")
+        self.compute_indices = _validate_compute_indices(
+            self.compute_width, stored_width, compute_indices
+        )
+        self.max_transient_compute_bytes = _positive_int(
+            max_transient_compute_bytes, "max_transient_compute_bytes"
+        )
+        self.peak_transient_compute_bytes = 0
+
+    def _indices(self, device: torch.device) -> Tensor:
+        return torch.tensor(self.compute_indices, dtype=torch.long, device=device)
+
+    def forward(self, compact_activations: Tensor) -> Tensor:
+        if int(compact_activations.shape[-1]) != self.in_features:
+            raise QwenCompensatedRunnerError(
+                "Source-padded down input differs from its stored width."
+            )
+        rows = int(compact_activations.numel()) // self.in_features
+        element_size = int(compact_activations.element_size())
+        transient = (
+            rows * self.compute_width + self.out_features * self.compute_width
+        ) * element_size
+        self.peak_transient_compute_bytes = max(
+            self.peak_transient_compute_bytes, transient
+        )
+        if transient > self.max_transient_compute_bytes:
+            raise QwenCompensatedRunnerError(
+                "Source-padded down projection exceeds its transient byte ceiling: "
+                f"{transient}>{self.max_transient_compute_bytes}."
+            )
+        indices = self._indices(compact_activations.device)
+        full_activations = compact_activations.new_zeros(
+            (*compact_activations.shape[:-1], self.compute_width)
+        )
+        full_activations.index_copy_(-1, indices, compact_activations)
+        full_weight = self.weight.new_zeros((self.out_features, self.compute_width))
+        full_weight.index_copy_(1, indices, self.weight)
+        return F.linear(full_activations, full_weight)
+
+
+class Qwen3SourcePaddedCompensatedMLP(Qwen3CompensatedMLP):
+    """Persist a smaller MLP while preserving the source GEMM dimensions."""
+
+    def __init__(
+        self,
+        hidden_size: int,
+        stored_width: int,
+        act_fn: nn.Module | Any,
+        *,
+        compute_width: int,
+        compute_indices: Sequence[int],
+        max_transient_compute_bytes: int,
+        device: Any = None,
+        dtype: Any = None,
+    ) -> None:
+        super().__init__(hidden_size, stored_width, act_fn)
+        if device is not None or dtype is not None:
+            self.to(device=device, dtype=dtype)
+        self.compute_width = _positive_int(compute_width, "compute_width")
+        self.compute_indices = _validate_compute_indices(
+            self.compute_width, stored_width, compute_indices
+        )
+        self.max_transient_compute_bytes = _positive_int(
+            max_transient_compute_bytes, "max_transient_compute_bytes"
+        )
+        old_down = self.down_proj
+        self.down_proj = Qwen3SourcePaddedDownProjection(
+            stored_width,
+            hidden_size,
+            compute_width=self.compute_width,
+            compute_indices=self.compute_indices,
+            max_transient_compute_bytes=self.max_transient_compute_bytes,
+            device=old_down.weight.device,
+            dtype=old_down.weight.dtype,
+        )
+        self.peak_transient_compute_bytes = 0
+
+    def _indices(self, device: torch.device) -> Tensor:
+        return torch.tensor(self.compute_indices, dtype=torch.long, device=device)
+
+    def _transient_upper_bound(self, hidden_states: Tensor) -> int:
+        rows = int(hidden_states.numel()) // int(hidden_states.shape[-1])
+        element_size = int(hidden_states.element_size())
+        full_weight_elements = 3 * self.compute_width * self.gate_proj.in_features
+        full_activation_elements = 4 * rows * self.compute_width
+        return (full_weight_elements + full_activation_elements) * element_size
+
+    def forward(self, hidden_states: Tensor) -> Tensor:
+        if int(hidden_states.shape[-1]) != self.gate_proj.in_features:
+            raise QwenCompensatedRunnerError(
+                "Source-padded MLP hidden width differs from its stored weights."
+            )
+        transient = self._transient_upper_bound(hidden_states)
+        self.peak_transient_compute_bytes = max(
+            self.peak_transient_compute_bytes, transient
+        )
+        if transient > self.max_transient_compute_bytes:
+            raise QwenCompensatedRunnerError(
+                "Source-padded MLP exceeds its transient byte ceiling: "
+                f"{transient}>{self.max_transient_compute_bytes}."
+            )
+        indices = self._indices(hidden_states.device)
+        full_gate = self.gate_proj.weight.new_zeros(
+            (self.compute_width, self.gate_proj.in_features)
+        )
+        full_gate.index_copy_(0, indices, self.gate_proj.weight)
+        gate_values = self.act_fn(F.linear(hidden_states, full_gate))
+        del full_gate
+        full_up = self.up_proj.weight.new_zeros(
+            (self.compute_width, self.up_proj.in_features)
+        )
+        full_up.index_copy_(0, indices, self.up_proj.weight)
+        up_values = F.linear(hidden_states, full_up)
+        del full_up
+        full_activations = gate_values * up_values
+        compact_activations = full_activations.index_select(-1, indices)
+        return self.down_proj(compact_activations)
+
+    def compute_shape_report(self) -> dict[str, Any]:
+        metadata = {
+            "mode": "source-padded",
+            "stored_width": int(self.gate_proj.out_features),
+            "compute_width": self.compute_width,
+            "compute_indices": list(self.compute_indices),
+            "compute_indices_sha256": _canonical_sha256(self.compute_indices),
+            "max_transient_compute_bytes": self.max_transient_compute_bytes,
+            "peak_transient_compute_bytes": max(
+                self.peak_transient_compute_bytes,
+                self.down_proj.peak_transient_compute_bytes,
+            ),
+            "persistent_full_width_parameter_or_buffer": False,
+            "transient_full_width_materialization": True,
+            "stored_parameter_width_is_target_width": True,
+        }
+        return metadata
+
+
+def _model_compute_shape_report(model: nn.Module) -> dict[str, Any]:
+    layers: list[dict[str, Any]] = []
+    for layer_index, layer in enumerate(_qwen_layers(model)):
+        mlp = layer.mlp
+        stored_width = int(mlp.gate_proj.out_features)
+        if isinstance(mlp, Qwen3SourcePaddedCompensatedMLP):
+            report = mlp.compute_shape_report()
+        else:
+            report = {
+                "mode": "compact",
+                "stored_width": stored_width,
+                "compute_width": stored_width,
+                "compute_indices": None,
+                "compute_indices_sha256": None,
+                "max_transient_compute_bytes": 0,
+                "peak_transient_compute_bytes": 0,
+                "persistent_full_width_parameter_or_buffer": False,
+                "transient_full_width_materialization": False,
+                "stored_parameter_width_is_target_width": True,
+            }
+        layers.append({"layer_index": layer_index, **report})
+    return {
+        "schema": "neural-forge-qwen-compute-shape-v1",
+        "layers": layers,
+        "source_padded_layer_count": sum(
+            item["mode"] == "source-padded" for item in layers
+        ),
+        "maximum_peak_transient_compute_bytes": max(
+            (int(item["peak_transient_compute_bytes"]) for item in layers),
+            default=0,
+        ),
+        "persistent_full_width_parameter_or_buffer": False,
+    }
+
+
+def _install_fold_for_compute_shape(
+    model: nn.Module,
+    layer_index: int,
+    fold: CompensatedNeuronFoldWeights | MultiAnchorNeuronFoldWeights,
+    *,
+    compute_shape_mode: str,
+    max_transient_compute_bytes: int,
+) -> Any:
+    if compute_shape_mode not in COMPUTE_SHAPE_MODES:
+        raise QwenCompensatedRunnerError(
+            f"Unsupported compute shape mode: {compute_shape_mode}."
+        )
+    handle = install_qwen3_compensated_fold(model, layer_index, fold)
+    if compute_shape_mode == "compact":
+        return handle
+    try:
+        original = handle.original_mlp
+        compact = handle.installed_mlp
+        if original is None:
+            raise QwenCompensatedRunnerError(
+                "Source-padded installation lost its rollback source."
+            )
+        if isinstance(original, Qwen3SourcePaddedCompensatedMLP):
+            compute_width = original.compute_width
+            source_compute_indices = original.compute_indices
+        else:
+            compute_width = fold.source_width
+            source_compute_indices = tuple(range(fold.source_width))
+        compute_indices = tuple(
+            source_compute_indices[index] for index in fold.kept_source_indices
+        )
+        padded = Qwen3SourcePaddedCompensatedMLP(
+            int(compact.gate_proj.in_features),
+            int(compact.gate_proj.out_features),
+            compact.act_fn,
+            compute_width=compute_width,
+            compute_indices=compute_indices,
+            max_transient_compute_bytes=max_transient_compute_bytes,
+            device=compact.gate_proj.weight.device,
+            dtype=compact.gate_proj.weight.dtype,
+        )
+        with torch.inference_mode():
+            padded.gate_proj.weight.copy_(compact.gate_proj.weight)
+            padded.up_proj.weight.copy_(compact.up_proj.weight)
+            padded.down_proj.weight.copy_(compact.down_proj.weight)
+        fingerprints = tuple(
+            _tensor_sha256(value)
+            for value in (
+                padded.gate_proj.weight,
+                padded.up_proj.weight,
+                padded.down_proj.weight,
+            )
+        )
+        if fingerprints != fold.result_weight_fingerprints:
+            raise QwenCompensatedRunnerError(
+                "Source-padded stored weights differ from the fitted fold."
+            )
+        layers = _qwen_layers(model)
+        if layers[layer_index].mlp is not compact:
+            raise QwenCompensatedRunnerError(
+                "Compact transaction changed before source padding was installed."
+            )
+        padded.train(compact.training)
+        layers[layer_index].mlp = padded
+        handle.installed_mlp = padded
+        return handle
+    except BaseException:
+        if not handle.committed and not handle.reverted:
+            handle.rollback()
+        raise
+
+
 @dataclass(slots=True)
 class RaggedActivationCache:
     neuron_activations: tuple[Tensor, ...]
@@ -658,9 +1085,7 @@ def collect_bounded_ragged_qwen_activations(
                 retained = selected.to("cpu", dtype=torch.float32).contiguous()
                 pieces[layer_index].append(retained)
                 retained_piece_bytes += int(retained.numel()) * retained.element_size()
-                peak_bytes = max(
-                    peak_bytes, finalized_bytes + retained_piece_bytes
-                )
+                peak_bytes = max(peak_bytes, finalized_bytes + retained_piece_bytes)
 
         return hook
 
@@ -673,7 +1098,8 @@ def collect_bounded_ragged_qwen_activations(
             for prompt_index, prompt in enumerate(encoded):
                 active_prompt = prompt_index
                 inputs = {
-                    name: value.to(device) for name, value in prompt.model_inputs.items()
+                    name: value.to(device)
+                    for name, value in prompt.model_inputs.items()
                 }
                 backbone(
                     **inputs,
@@ -706,9 +1132,7 @@ def collect_bounded_ragged_qwen_activations(
             )
         rows = torch.cat(layer_pieces, dim=0)
         row_bytes = int(rows.numel()) * rows.element_size()
-        peak_bytes = max(
-            peak_bytes, finalized_bytes + retained_piece_bytes + row_bytes
-        )
+        peak_bytes = max(peak_bytes, finalized_bytes + retained_piece_bytes + row_bytes)
         if tuple(rows.shape) != (row_count, widths[layer_index]):
             raise QwenCompensatedRunnerError(
                 f"Ragged activation shape mismatch at layer {layer_index}."
@@ -880,9 +1304,18 @@ def verify_exact_anchors(
             raise QwenCompensatedRunnerError("A protected anchor was removed.")
         target_index = fold.kept_source_indices.index(source_index)
         for original, installed in (
-            (original_mlp.gate_proj.weight[source_index], installed_mlp.gate_proj.weight[target_index]),
-            (original_mlp.up_proj.weight[source_index], installed_mlp.up_proj.weight[target_index]),
-            (original_mlp.down_proj.weight[:, source_index], installed_mlp.down_proj.weight[:, target_index]),
+            (
+                original_mlp.gate_proj.weight[source_index],
+                installed_mlp.gate_proj.weight[target_index],
+            ),
+            (
+                original_mlp.up_proj.weight[source_index],
+                installed_mlp.up_proj.weight[target_index],
+            ),
+            (
+                original_mlp.down_proj.weight[:, source_index],
+                installed_mlp.down_proj.weight[:, target_index],
+            ),
         ):
             if not torch.equal(original.detach(), installed.detach()):
                 raise QwenCompensatedRunnerError(
@@ -940,7 +1373,9 @@ def _domain_gate(
     if len(expected) != len(set(expected)) or not expected:
         raise QwenCompensatedRunnerError("Gate IDs must be unique and non-empty.")
     if set(parent_items) != set(expected) or set(candidate_items) != set(expected):
-        raise QwenCompensatedRunnerError("Gate report IDs differ from the locked slice.")
+        raise QwenCompensatedRunnerError(
+            "Gate report IDs differ from the locked slice."
+        )
     losses: list[str] = []
     gains: list[str] = []
     parent_correct = 0
@@ -1033,7 +1468,9 @@ def _category(item: Mapping[str, Any]) -> str:
     return "other"
 
 
-def _stratified_items(items: Sequence[Mapping[str, Any]], count: int) -> list[dict[str, Any]]:
+def _stratified_items(
+    items: Sequence[Mapping[str, Any]], count: int
+) -> list[dict[str, Any]]:
     requested = _positive_int(count, "gate slice count")
     if requested > len(items):
         raise QwenCompensatedRunnerError(
@@ -1072,10 +1509,10 @@ def build_gate_suite(
 
     suite = _load_eval_suite(eval_suite)
     selected = {
-        "text_evals": list(suite["text_evals"][: _positive_int(text_count, "gate_text_count")]),
-        "behavior_probes": _stratified_items(
-            suite["behavior_probes"], behavior_count
+        "text_evals": list(
+            suite["text_evals"][: _positive_int(text_count, "gate_text_count")]
         ),
+        "behavior_probes": _stratified_items(suite["behavior_probes"], behavior_count),
         "choice_probes": _stratified_items(suite["choice_probes"], choice_count),
         "generation_prompts": _stratified_items(
             suite["generation_prompts"], generation_count
@@ -1084,13 +1521,15 @@ def build_gate_suite(
     ids = {
         "behavior": tuple(str(item["id"]) for item in selected["behavior_probes"]),
         "choice": tuple(str(item["id"]) for item in selected["choice_probes"]),
-        "generation": tuple(
-            str(item["id"]) for item in selected["generation_prompts"]
-        ),
+        "generation": tuple(str(item["id"]) for item in selected["generation_prompts"]),
     }
     parent_sets = {
-        "behavior": set(_item_map((cached_parent.get("behavior_suite") or {}).get("items"))),
-        "choice": set(_item_map((cached_parent.get("choice_accuracy") or {}).get("items"))),
+        "behavior": set(
+            _item_map((cached_parent.get("behavior_suite") or {}).get("items"))
+        ),
+        "choice": set(
+            _item_map((cached_parent.get("choice_accuracy") or {}).get("items"))
+        ),
         "generation": set(_item_map(cached_parent.get("generation_diagnostics"))),
     }
     for domain, expected in ids.items():
@@ -1138,6 +1577,7 @@ def build_three_split_provenance(
         codebook_runner._token_ids(tokenizer, prompt, max_length=max_length)
         for prompt in validation_prompts
     }
+
     def suite_texts(suite: Mapping[str, Any]) -> list[str]:
         values = [str(value) for value in suite["text_evals"]]
         for collection in (
@@ -1206,12 +1646,8 @@ def build_three_split_provenance(
             "role": "one-shot-parent-relative-final-certification-only",
             "source": str(certification_source.resolve()),
             "source_sha256": _file_sha256(certification_source),
-            "cached_parent_source": str(
-                cached_parent_certification_source.resolve()
-            ),
-            "cached_parent_sha256": _file_sha256(
-                cached_parent_certification_source
-            ),
+            "cached_parent_source": str(cached_parent_certification_source.resolve()),
+            "cached_parent_sha256": _file_sha256(cached_parent_certification_source),
             "suite_sha256": _canonical_sha256(certification_suite),
             "prompt_count": len(certification_texts),
             "token_path_count": len(certification_tokens),
@@ -1615,6 +2051,8 @@ class FoldLoopConfig:
     proposal_layer_limit: int = 6
     prefilter_columns: int = 256
     fold_strategy: str = "pair"
+    compute_shape_mode: str = "compact"
+    max_transient_compute_bytes: int = 2 * 1024**3
     calibration_provenance_id: str = ""
     validation_provenance_id: str = ""
     multi_anchor_candidate_pool_size: int = 512
@@ -1645,6 +2083,7 @@ class FoldLoopConfig:
             "score_chunk_size",
             "proposal_layer_limit",
             "prefilter_columns",
+            "max_transient_compute_bytes",
             "multi_anchor_candidate_pool_size",
             "multi_anchor_max_anchors",
             "multi_anchor_similarity_chunk_size",
@@ -1665,17 +2104,24 @@ class FoldLoopConfig:
             raise QwenCompensatedRunnerError(
                 "fold_strategy must be 'pair' or 'multi-anchor'."
             )
+        if self.compute_shape_mode not in COMPUTE_SHAPE_MODES:
+            raise QwenCompensatedRunnerError(
+                "compute_shape_mode must be 'compact' or 'source-padded'."
+            )
         provenance_ids = (
             self.calibration_provenance_id,
             self.validation_provenance_id,
         )
-        if any(
-            not isinstance(value, str)
-            or len(value) != 64
-            or value != value.lower()
-            or any(character not in "0123456789abcdef" for character in value)
-            for value in provenance_ids
-        ) or provenance_ids[0] == provenance_ids[1]:
+        if (
+            any(
+                not isinstance(value, str)
+                or len(value) != 64
+                or value != value.lower()
+                or any(character not in "0123456789abcdef" for character in value)
+                for value in provenance_ids
+            )
+            or provenance_ids[0] == provenance_ids[1]
+        ):
             raise QwenCompensatedRunnerError(
                 "Folding requires distinct exact 64-hex calibration and validation provenance IDs."
             )
@@ -1701,6 +2147,7 @@ class FoldLoopConfig:
             "multi_anchor_similarity_chunk_size": 1_024,
             "multi_anchor_max_similarity_products": 64_000_000,
             "multi_anchor_max_projection_fits": 1_000_000,
+            "max_transient_compute_bytes": 64 * 1024**3,
         }
         for name, maximum in hard_limits.items():
             if int(getattr(self, name)) > maximum:
@@ -1804,12 +2251,13 @@ def _validate_fold_activation_evidence(
         ),
     }
     mismatches = [
-        name for name, (observed, expected) in exact_values.items() if observed != expected
+        name
+        for name, (observed, expected) in exact_values.items()
+        if observed != expected
     ]
     if mismatches:
         raise QwenCompensatedRunnerError(
-            "Fold diagnostics do not bind the exact activation evidence: "
-            f"{mismatches}."
+            f"Fold diagnostics do not bind the exact activation evidence: {mismatches}."
         )
     kept = tuple(int(value) for value in fold.kept_source_indices)
     dropped = tuple(int(merge.dropped) for merge in fold.merges)
@@ -1930,8 +2378,7 @@ def _validate_multi_anchor_work_caps(
     ]
     if mismatches:
         raise QwenCompensatedRunnerError(
-            "Multi-anchor diagnostics changed declared work controls: "
-            f"{mismatches}."
+            f"Multi-anchor diagnostics changed declared work controls: {mismatches}."
         )
     candidate_pool = int(diagnostics.candidate_pool_size)
     survivors = int(diagnostics.survivor_pool_size)
@@ -1955,8 +2402,10 @@ def _validate_multi_anchor_work_caps(
         raise QwenCompensatedRunnerError(
             "Multi-anchor projection work exceeded its declared cap."
         )
-    if not 0 < peak_similarity <= (
-        config.multi_anchor_similarity_chunk_size * survivors
+    if (
+        not 0
+        < peak_similarity
+        <= (config.multi_anchor_similarity_chunk_size * survivors)
     ):
         raise QwenCompensatedRunnerError(
             "Multi-anchor peak similarity materialization exceeded its chunk bound."
@@ -2009,7 +2458,9 @@ def _fit_layer_proposal(
     requested_drops = min(_positive_int(drops, "drops"), width // 2)
     if requested_drops <= 0 or width - requested_drops <= 0:
         raise QwenCompensatedRunnerError("Layer cannot be reduced further.")
-    if tuple(calibration.shape)[1:] != (width,) or tuple(validation.shape)[1:] != (width,):
+    if tuple(calibration.shape)[1:] != (width,) or tuple(validation.shape)[1:] != (
+        width,
+    ):
         raise QwenCompensatedRunnerError("Proposal activation width is stale.")
     anchors = tuple(sorted(int(value) for value in persistent_anchor_indices))
     anchor_report = dict(persistent_anchor_report)
@@ -2043,9 +2494,7 @@ def _fit_layer_proposal(
                 score_chunk_size=config.score_chunk_size,
                 seed=config.seed + epoch * 1_000_003 + layer_index * 1009,
             )
-            strategy_evidence["work_caps"] = _validate_pair_work_caps(
-                fold, config
-            )
+            strategy_evidence["work_caps"] = _validate_pair_work_caps(fold, config)
         else:
             fold = fit_multi_anchor_neuron_fold(
                 mlp.gate_proj.weight,
@@ -2060,9 +2509,7 @@ def _fit_layer_proposal(
                 candidate_pool_size=config.multi_anchor_candidate_pool_size,
                 max_anchors=config.multi_anchor_max_anchors,
                 similarity_chunk_size=config.multi_anchor_similarity_chunk_size,
-                max_similarity_products=(
-                    config.multi_anchor_max_similarity_products
-                ),
+                max_similarity_products=(config.multi_anchor_max_similarity_products),
                 max_projection_fits=config.multi_anchor_max_projection_fits,
                 ridge=config.multi_anchor_ridge,
                 max_coefficient_l1=config.multi_anchor_max_coefficient_l1,
@@ -2075,9 +2522,7 @@ def _fit_layer_proposal(
             validation64 = validation.to(device="cpu", dtype=torch.float64)
             for merge in fold.merges:
                 index = torch.tensor(merge.anchors, dtype=torch.long)
-                coefficients = torch.tensor(
-                    merge.coefficients, dtype=torch.float64
-                )
+                coefficients = torch.tensor(merge.coefficients, dtype=torch.float64)
                 calibration_target = calibration64[:, merge.dropped]
                 validation_target = validation64[:, merge.dropped]
                 calibration_prediction = (
@@ -2179,14 +2624,12 @@ def _fit_layer_proposal(
                     "work_caps": observed_work,
                 }
             )
-        strategy_evidence["activation_evidence"] = (
-            _validate_fold_activation_evidence(
-                fold,
-                calibration,
-                validation,
-                protected_indices=protected,
-                selected_count=requested_drops,
-            )
+        strategy_evidence["activation_evidence"] = _validate_fold_activation_evidence(
+            fold,
+            calibration,
+            validation,
+            protected_indices=protected,
+            selected_count=requested_drops,
         )
     except Qwen3CompensatedFoldError as exc:
         raise QwenCompensatedRunnerError(
@@ -2222,8 +2665,10 @@ def _layer_redundancy_prefilter(
     width = int(calibration.shape[1])
     count = min(_positive_int(max_columns, "prefilter_columns"), width)
     indices = torch.linspace(0, width - 1, count, dtype=torch.float64).round().long()
-    values = calibration.detach().to(device="cpu", dtype=torch.float32).index_select(
-        1, indices
+    values = (
+        calibration.detach()
+        .to(device="cpu", dtype=torch.float32)
+        .index_select(1, indices)
     )
     values = values / torch.linalg.vector_norm(values, dim=0).clamp_min(
         torch.finfo(torch.float32).tiny
@@ -2254,7 +2699,9 @@ def _select_best_proposal(
     ranked_layers: list[tuple[float, int]] = []
     for layer_index, _layer in enumerate(_qwen_layers(model)):
         if layer_index in excluded:
-            skipped.append({"layer_index": layer_index, "reason": "explicitly-excluded"})
+            skipped.append(
+                {"layer_index": layer_index, "reason": "explicitly-excluded"}
+            )
             continue
         ranked_layers.append(
             (
@@ -2390,7 +2837,10 @@ def _truncate_transaction_ledger(path: Path | None, starting_size: int | None) -
 
 
 def _transaction_runtime_snapshot(model: nn.Module) -> dict[str, Any]:
-    config_objects = [model.config, getattr(getattr(model, "model", None), "config", None)]
+    config_objects = [
+        model.config,
+        getattr(getattr(model, "model", None), "config", None),
+    ]
     return {
         "module_modes": [(module, bool(module.training)) for module in model.modules()],
         "python_rng": random.getstate(),
@@ -2463,9 +2913,13 @@ def run_fold_transactions(
     consecutive_candidate_attempts = 0
     max_consecutive_candidate_attempts_observed = 0
     accounting = initial
-    stop_reason = "target-reached" if _target_reached(
-        accounting, target_parameters, target_bytes, target_resident_bytes
-    ) else "max-transactions"
+    stop_reason = (
+        "target-reached"
+        if _target_reached(
+            accounting, target_parameters, target_bytes, target_resident_bytes
+        )
+        else "max-transactions"
+    )
 
     while not _target_reached(
         accounting, target_parameters, target_bytes, target_resident_bytes
@@ -2524,8 +2978,23 @@ def run_fold_transactions(
         accepted_omitted_before = accepted_omitted
         ledger_starting_size: int | None = None
         try:
-            handle = install_qwen3_compensated_fold(
-                model, proposal.layer_index, proposal.fold
+            handle = _install_fold_for_compute_shape(
+                model,
+                proposal.layer_index,
+                proposal.fold,
+                compute_shape_mode=config.compute_shape_mode,
+                max_transient_compute_bytes=config.max_transient_compute_bytes,
+            )
+            installed_compute_shape = (
+                handle.installed_mlp.compute_shape_report()
+                if isinstance(handle.installed_mlp, Qwen3SourcePaddedCompensatedMLP)
+                else {
+                    "mode": "compact",
+                    "stored_width": int(handle.installed_mlp.gate_proj.out_features),
+                    "compute_width": int(handle.installed_mlp.gate_proj.out_features),
+                    "persistent_full_width_parameter_or_buffer": False,
+                    "transient_full_width_materialization": False,
+                }
             )
             anchor_proof = verify_exact_anchors(
                 handle.original_mlp,
@@ -2553,6 +3022,8 @@ def run_fold_transactions(
                 accepted_by_milestone, milestone_report = milestone_gate(
                     model, attempts, proposal
                 )
+            if isinstance(handle.installed_mlp, Qwen3SourcePaddedCompensatedMLP):
+                installed_compute_shape = handle.installed_mlp.compute_shape_report()
             transaction_report = {
                 "attempt": attempts,
                 "proposal": proposal.summary(),
@@ -2561,6 +3032,7 @@ def run_fold_transactions(
                 "anchor_proof": anchor_proof,
                 "small_gate": small_report,
                 "milestone_gate": milestone_report,
+                "compute_shape": installed_compute_shape,
                 "zero_optimizer_steps": 0,
                 "backward_called": False,
             }
@@ -2612,11 +3084,17 @@ def run_fold_transactions(
                 {
                     "decision": "accepted-committed",
                     "after": committed_accounting.as_dict(),
+                    "compute_shape": (
+                        handle.installed_mlp.compute_shape_report()
+                        if isinstance(
+                            handle.installed_mlp,
+                            Qwen3SourcePaddedCompensatedMLP,
+                        )
+                        else installed_compute_shape
+                    ),
                     "rollback_exact": None,
                     "refresh_completed_before_commit": True,
-                    "persistent_anchor_lineage_sha256": _canonical_sha256(
-                        next_lineage
-                    ),
+                    "persistent_anchor_lineage_sha256": _canonical_sha256(next_lineage),
                 }
             )
             ledger_starting_size = _append_transaction_ledger(
@@ -2760,9 +3238,7 @@ def _dtype_from_name(name: str) -> torch.dtype:
         "float32": torch.float32,
     }
     if name not in values:
-        raise QwenCompensatedRunnerError(
-            f"Unsupported checkpoint dtype: {name}."
-        )
+        raise QwenCompensatedRunnerError(f"Unsupported checkpoint dtype: {name}.")
     return values[name]
 
 
@@ -2812,9 +3288,9 @@ def _filesystem_report(path: Path) -> dict[str, Any]:
     if os.name == "posix":
         try:
             candidates: list[tuple[int, str, str]] = []
-            for line in Path("/proc/self/mountinfo").read_text(
-                encoding="utf-8"
-            ).splitlines():
+            for line in (
+                Path("/proc/self/mountinfo").read_text(encoding="utf-8").splitlines()
+            ):
                 before, separator, after = line.partition(" - ")
                 if not separator:
                     continue
@@ -3099,6 +3575,7 @@ def save_ragged_qwen_checkpoint(
     try:
         _assert_model_safe(model, "checkpoint save")
         accounting = model_accounting(model)
+        compute_shape = _model_compute_shape_report(model)
         config = model.config.to_dict()
         if str(config.get("model_type")) != "qwen3":
             raise QwenCompensatedRunnerError("Only model_type='qwen3' is supported.")
@@ -3146,6 +3623,7 @@ def save_ragged_qwen_checkpoint(
                     if accounting.ragged
                     else "explicit-custom-artifact-layout"
                 ),
+                "source_padded_compute_supported": True,
             },
             "model": {
                 "model_type": "qwen3",
@@ -3156,6 +3634,7 @@ def save_ragged_qwen_checkpoint(
                 "state_structure": _state_structure(model),
                 "state_structure_sha256": _canonical_sha256(_state_structure(model)),
                 "accounting": accounting.as_dict(),
+                "compute_shape": compute_shape,
             },
             "transactions": [dict(value) for value in transaction_records],
             "transactions_sha256": _canonical_sha256(
@@ -3174,9 +3653,17 @@ def save_ragged_qwen_checkpoint(
                 "manifest_bytes": 0,
                 "artifact_total_bytes": 0,
                 "ragged_width_metadata_bytes": len(
-                    json.dumps(list(accounting.layer_widths), separators=(",", ":")).encode(
-                        "ascii"
-                    )
+                    json.dumps(
+                        list(accounting.layer_widths), separators=(",", ":")
+                    ).encode("ascii")
+                ),
+                "compute_shape_metadata_bytes": len(
+                    json.dumps(
+                        compute_shape,
+                        ensure_ascii=True,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ).encode("ascii")
                 ),
                 "all_artifact_files_hashed_and_counted": True,
                 "all_metadata_counted": True,
@@ -3222,6 +3709,7 @@ def load_ragged_qwen_checkpoint(
 ) -> tuple[nn.Module, Any | None, dict[str, Any]]:
     """Safely reconstruct a ragged Qwen runtime without accessing its parent."""
 
+    deterministic_runtime = _enforce_deterministic_runtime(device)
     try:
         import transformers
         from safetensors import safe_open
@@ -3238,7 +3726,9 @@ def load_ragged_qwen_checkpoint(
     if not isinstance(envelope, dict) or envelope.get("schema") != CHECKPOINT_SCHEMA:
         raise QwenCompensatedRunnerError("Checkpoint schema is not supported.")
     payload = envelope.get("payload")
-    if not isinstance(payload, dict) or envelope.get("payload_sha256") != _canonical_sha256(payload):
+    if not isinstance(payload, dict) or envelope.get(
+        "payload_sha256"
+    ) != _canonical_sha256(payload):
         raise QwenCompensatedRunnerError("Checkpoint manifest integrity failed.")
     contract = payload.get("loader_contract") or {}
     if (
@@ -3261,6 +3751,60 @@ def load_ragged_qwen_checkpoint(
     widths = tuple(int(value) for value in model_report.get("layer_widths", []))
     if len(widths) != int(config_data.get("num_hidden_layers", -1)) or min(widths) <= 0:
         raise QwenCompensatedRunnerError("Ragged layer-width contract is invalid.")
+    compute_shape_report = model_report.get("compute_shape")
+    if compute_shape_report is None:
+        compute_shape_layers = [
+            {
+                "layer_index": index,
+                "mode": "compact",
+                "stored_width": width,
+                "compute_width": width,
+                "compute_indices": None,
+                "compute_indices_sha256": None,
+                "max_transient_compute_bytes": 0,
+                "persistent_full_width_parameter_or_buffer": False,
+                "transient_full_width_materialization": False,
+            }
+            for index, width in enumerate(widths)
+        ]
+    else:
+        if (
+            not isinstance(compute_shape_report, Mapping)
+            or compute_shape_report.get("schema")
+            != "neural-forge-qwen-compute-shape-v1"
+            or not isinstance(compute_shape_report.get("layers"), list)
+            or len(compute_shape_report["layers"]) != len(widths)
+            or compute_shape_report.get("persistent_full_width_parameter_or_buffer")
+            is not False
+        ):
+            raise QwenCompensatedRunnerError(
+                "Checkpoint compute-shape contract is invalid."
+            )
+        compute_shape_layers = list(compute_shape_report["layers"])
+    for index, (width, shape) in enumerate(
+        zip(widths, compute_shape_layers, strict=True)
+    ):
+        if (
+            not isinstance(shape, Mapping)
+            or int(shape.get("layer_index", -1)) != index
+            or int(shape.get("stored_width", -1)) != width
+            or shape.get("mode") not in COMPUTE_SHAPE_MODES
+            or shape.get("persistent_full_width_parameter_or_buffer")
+            not in (None, False)
+        ):
+            raise QwenCompensatedRunnerError(
+                f"Layer {index} compute-shape metadata is inconsistent."
+            )
+        if shape["mode"] == "source-padded":
+            _validate_compute_indices(
+                int(shape.get("compute_width", 0)),
+                width,
+                shape.get("compute_indices") or (),
+            )
+            _positive_int(
+                shape.get("max_transient_compute_bytes"),
+                "max_transient_compute_bytes",
+            )
     model_type = config_data.pop("model_type")
     config_data.pop("_name_or_path", None)
     config = transformers.AutoConfig.for_model(model_type, **config_data)
@@ -3277,9 +3821,23 @@ def load_ragged_qwen_checkpoint(
                 torch.set_default_dtype(previous_dtype)
             layers = _qwen_layers(model)
             hidden_size = int(config.hidden_size)
-            for layer, width in zip(layers, widths, strict=True):
+            for layer, width, shape in zip(
+                layers, widths, compute_shape_layers, strict=True
+            ):
                 original = layer.mlp
-                if int(original.gate_proj.out_features) != width:
+                if shape["mode"] == "source-padded":
+                    layer.mlp = Qwen3SourcePaddedCompensatedMLP(
+                        hidden_size,
+                        width,
+                        original.act_fn,
+                        compute_width=int(shape["compute_width"]),
+                        compute_indices=tuple(shape["compute_indices"]),
+                        max_transient_compute_bytes=int(
+                            shape["max_transient_compute_bytes"]
+                        ),
+                        dtype=construction_dtype,
+                    )
+                elif int(original.gate_proj.out_features) != width:
                     layer.mlp = Qwen3CompensatedMLP(
                         hidden_size, width, original.act_fn
                     ).to(dtype=construction_dtype)
@@ -3344,7 +3902,9 @@ def load_ragged_qwen_checkpoint(
     model.eval()
     _assert_model_safe(model, "parent-free reload")
     actual_structure = _state_structure(model)
-    if _canonical_sha256(actual_structure) != model_report.get("state_structure_sha256"):
+    if _canonical_sha256(actual_structure) != model_report.get(
+        "state_structure_sha256"
+    ):
         raise QwenCompensatedRunnerError(
             "Reloaded state structure differs from the manifest."
         )
@@ -3353,6 +3913,33 @@ def load_ragged_qwen_checkpoint(
         raise QwenCompensatedRunnerError(
             "Reloaded parameter or ragged-width accounting differs."
         )
+    expected_runtime = (payload.get("source_provenance") or {}).get(
+        "evaluation_runtime"
+    )
+    actual_runtime = _evaluation_runtime_identity(model, device)
+    if expected_runtime is not None and dict(expected_runtime) != actual_runtime:
+        raise QwenCompensatedRunnerError(
+            "Certified artifact evaluation runtime differs from its bound runtime."
+        )
+    reloaded_compute_shape = _model_compute_shape_report(model)
+    for expected, actual in zip(
+        compute_shape_layers, reloaded_compute_shape["layers"], strict=True
+    ):
+        for name in (
+            "layer_index",
+            "mode",
+            "stored_width",
+            "compute_width",
+            "compute_indices",
+            "compute_indices_sha256",
+            "max_transient_compute_bytes",
+            "persistent_full_width_parameter_or_buffer",
+            "transient_full_width_materialization",
+        ):
+            if expected.get(name) != actual.get(name):
+                raise QwenCompensatedRunnerError(
+                    f"Reloaded compute-shape field differs: {name}."
+                )
     tokenizer = None
     if payload.get("tokenizer_saved"):
         tokenizer = transformers.AutoTokenizer.from_pretrained(
@@ -3367,6 +3954,10 @@ def load_ragged_qwen_checkpoint(
         "parent_checkpoint_accesses": 0,
         "accounting_hard_asserted": True,
         "materialized_nonpersistent_buffer_count": materialized_nonpersistent_buffers,
+        "compute_shape": reloaded_compute_shape,
+        "deterministic_runtime": deterministic_runtime,
+        "evaluation_runtime": actual_runtime,
+        "certified_runtime_bound": expected_runtime is not None,
     }
     return model, tokenizer, envelope
 
@@ -3420,16 +4011,20 @@ def capture_reload_reference(
             expected = model(
                 **inputs, use_cache=False, return_dict=True
             ).logits.detach()
-            output_ids = model.generate(
-                **inputs,
-                max_new_tokens=generated,
-                do_sample=False,
-                pad_token_id=(
-                    tokenizer.pad_token_id
-                    if tokenizer.pad_token_id is not None
-                    else tokenizer.eos_token_id
-                ),
-            ).detach().cpu()
+            output_ids = (
+                model.generate(
+                    **inputs,
+                    max_new_tokens=generated,
+                    do_sample=False,
+                    pad_token_id=(
+                        tokenizer.pad_token_id
+                        if tokenizer.pad_token_id is not None
+                        else tokenizer.eos_token_id
+                    ),
+                )
+                .detach()
+                .cpu()
+            )
         probes.append(
             ReloadProbe(
                 prompt=prompt,
@@ -3468,26 +4063,29 @@ def verify_reload_equivalence(
             if isinstance(value, Tensor)
         }
         if set(reencoded) != set(probe.inputs) or any(
-            not torch.equal(reencoded[name], probe.inputs[name]) for name in probe.inputs
+            not torch.equal(reencoded[name], probe.inputs[name])
+            for name in probe.inputs
         ):
             raise QwenCompensatedRunnerError(
                 f"Reloaded tokenizer differs on equivalence probe {index}."
             )
         inputs = {name: value.to(device) for name, value in probe.inputs.items()}
         with torch.inference_mode():
-            actual = after(
-                **inputs, use_cache=False, return_dict=True
-            ).logits.detach()
-            generated = after.generate(
-                **inputs,
-                max_new_tokens=reference.generation_tokens,
-                do_sample=False,
-                pad_token_id=(
-                    tokenizer.pad_token_id
-                    if tokenizer.pad_token_id is not None
-                    else tokenizer.eos_token_id
-                ),
-            ).detach().cpu()
+            actual = after(**inputs, use_cache=False, return_dict=True).logits.detach()
+            generated = (
+                after.generate(
+                    **inputs,
+                    max_new_tokens=reference.generation_tokens,
+                    do_sample=False,
+                    pad_token_id=(
+                        tokenizer.pad_token_id
+                        if tokenizer.pad_token_id is not None
+                        else tokenizer.eos_token_id
+                    ),
+                )
+                .detach()
+                .cpu()
+            )
         actual_hash = _tensor_sha256(actual)
         if (
             tuple(actual.shape) != probe.expected_logits_shape
@@ -3545,9 +4143,7 @@ def _compact_checkpoint_transactions(
                 "decision": str(transaction["decision"]),
                 "small_gate_verdict": dict(small_gate.get("verdict") or {}),
                 "small_gate_sha256": _canonical_sha256(small_gate),
-                "milestone_gate_verdict": dict(
-                    milestone_gate.get("verdict") or {}
-                ),
+                "milestone_gate_verdict": dict(milestone_gate.get("verdict") or {}),
                 "milestone_gate_sha256": _canonical_sha256(milestone_gate),
                 "zero_optimizer_steps": 0,
                 "backward_called": False,
@@ -3596,9 +4192,7 @@ def _selected_suite(
         "generation_prompts": list(
             suite["generation_prompts"][:max_generation_prompts]
         ),
-        "behavior_probes": list(
-            suite["behavior_probes"][:max_behavior_probes]
-        ),
+        "behavior_probes": list(suite["behavior_probes"][:max_behavior_probes]),
     }
 
 
@@ -3653,7 +4247,9 @@ def _assert_selection_contract(
         )
 
 
-def _manual_item_maps(report: Mapping[str, Any], collection: str) -> dict[str, dict[str, Any]]:
+def _manual_item_maps(
+    report: Mapping[str, Any], collection: str
+) -> dict[str, dict[str, Any]]:
     if collection == "behavior":
         return _item_map((report.get("behavior_suite") or {}).get("items"))
     if collection == "generation":
@@ -3698,7 +4294,9 @@ def build_manual_review_packet(
             parent_diagnostics = dict(parent_item.get("diagnostics") or {})
             child_diagnostics = dict(child_item.get("diagnostics") or {})
             if collection == "generation":
-                parent_diagnostics.update(parent_generation_diagnostics.get(item_id, {}))
+                parent_diagnostics.update(
+                    parent_generation_diagnostics.get(item_id, {})
+                )
                 child_diagnostics.update(child_generation_diagnostics.get(item_id, {}))
             samples.append(
                 {
@@ -3812,10 +4410,14 @@ def seal_checkpoint_certification(
     try:
         envelope = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise QwenCompensatedRunnerError("Cannot seal checkpoint certification.") from exc
+        raise QwenCompensatedRunnerError(
+            "Cannot seal checkpoint certification."
+        ) from exc
     payload = envelope.get("payload")
     if not isinstance(payload, dict):
-        raise QwenCompensatedRunnerError("Checkpoint payload is invalid during sealing.")
+        raise QwenCompensatedRunnerError(
+            "Checkpoint payload is invalid during sealing."
+        )
     _write_json(source / "certification.json", dict(certificate))
     files = _checkpoint_files(source)
     payload["files"] = files
@@ -3831,9 +4433,10 @@ def seal_checkpoint_certification(
     sealed = _write_stable_manifest(source, payload)
     _verify_checkpoint_files(source, sealed["payload"])
     tree = artifact_tree_report(source)
-    if tree["total_bytes"] != sealed["payload"]["artifact_accounting"][
-        "artifact_total_bytes"
-    ]:
+    if (
+        tree["total_bytes"]
+        != sealed["payload"]["artifact_accounting"]["artifact_total_bytes"]
+    ):
         raise QwenCompensatedRunnerError(
             "Certified artifact byte accounting is not exact."
         )
@@ -3867,10 +4470,9 @@ def publish_certified_checkpoint(
         )
     payload = envelope.get("payload") or {}
     certification = payload.get("certification") or {}
-    if (
-        certification.get("status") != "certified-zero-recovery"
-        or certification.get("sha256") != _file_sha256(certificate_path)
-    ):
+    if certification.get("status") != "certified-zero-recovery" or certification.get(
+        "sha256"
+    ) != _file_sha256(certificate_path):
         raise QwenCompensatedRunnerError(
             "Checkpoint manifest does not bind its certification marker."
         )
@@ -4129,6 +4731,7 @@ def _validate_args(args: argparse.Namespace, *, require_target: bool = True) -> 
         "multi_anchor_similarity_chunk_size",
         "multi_anchor_max_similarity_products",
         "multi_anchor_max_projection_fits",
+        "max_transient_compute_bytes",
     ):
         _positive_int(getattr(args, name), name)
     for name in (
@@ -4177,11 +4780,73 @@ def _validate_args(args: argparse.Namespace, *, require_target: bool = True) -> 
         )
     if not str(args.source_revision).strip():
         raise QwenCompensatedRunnerError("--source-revision is required.")
+    if args.compute_shape_mode not in COMPUTE_SHAPE_MODES:
+        raise QwenCompensatedRunnerError(
+            "--compute-shape-mode must be compact or source-padded."
+        )
+    if args.max_transient_compute_bytes > 64 * 1024**3:
+        raise QwenCompensatedRunnerError(
+            "--max-transient-compute-bytes exceeds the 64 GiB hard ceiling."
+        )
+
+
+def _enforce_deterministic_runtime(device_value: str) -> dict[str, Any]:
+    try:
+        device = torch.device(str(device_value))
+    except (TypeError, ValueError, RuntimeError) as exc:
+        raise QwenCompensatedRunnerError(
+            f"Cannot enforce determinism for invalid device: {device_value}."
+        ) from exc
+    if device.type not in {"cpu", "cuda"}:
+        raise QwenCompensatedRunnerError(
+            "Deterministic execution supports only CPU or CUDA devices."
+        )
+    if device.type == "cuda":
+        workspace = os.environ.get("CUBLAS_WORKSPACE_CONFIG")
+        if workspace not in {":16:8", ":4096:8"}:
+            raise QwenCompensatedRunnerError(
+                "CUDA runs require CUBLAS_WORKSPACE_CONFIG=:4096:8 or :16:8 "
+                "before process startup."
+            )
+        torch.backends.cuda.matmul.allow_tf32 = False
+        torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
+        torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = False
+        torch.backends.cudnn.allow_tf32 = False
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
+    torch.set_float32_matmul_precision("highest")
+    torch.use_deterministic_algorithms(True)
+    return {
+        "schema": "neural-forge-deterministic-runtime-v1",
+        "device_type": device.type,
+        "deterministic_algorithms": bool(torch.are_deterministic_algorithms_enabled()),
+        "deterministic_warn_only": bool(
+            torch.is_deterministic_algorithms_warn_only_enabled()
+        ),
+        "float32_matmul_precision": str(torch.get_float32_matmul_precision()),
+        "cublas_workspace_config": os.environ.get("CUBLAS_WORKSPACE_CONFIG"),
+        "cuda_matmul_allow_tf32": (
+            bool(torch.backends.cuda.matmul.allow_tf32)
+            if device.type == "cuda"
+            else None
+        ),
+        "cuda_matmul_allow_fp16_reduced_precision_reduction": (
+            bool(torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction)
+            if device.type == "cuda"
+            else None
+        ),
+        "cuda_matmul_allow_bf16_reduced_precision_reduction": (
+            bool(torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction)
+            if device.type == "cuda"
+            else None
+        ),
+    }
 
 
 def _load_source_runtime(args: argparse.Namespace) -> tuple[nn.Module, Any, str]:
     import transformers
 
+    _enforce_deterministic_runtime(args.device)
     tokenizer_name = args.source_tokenizer or args.source_model
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         tokenizer_name,
@@ -4274,6 +4939,7 @@ def prepare_bound_parent_caches(args: argparse.Namespace) -> dict[str, Any]:
             source_revision=str(args.source_revision),
             source_tokenizer=tokenizer_name,
             eval_suite=args.eval_suite,
+            evaluation_device=args.device,
         )
         selection_identity = derive_parent_identity_for_eval_suite(
             certification_identity, args.selection_eval_suite
@@ -4291,12 +4957,8 @@ def prepare_bound_parent_caches(args: argparse.Namespace) -> dict[str, Any]:
             max_choice_probes=args.max_choice_probes,
             max_generation_prompts=args.max_generation_prompts,
             max_behavior_probes=args.max_behavior_probes,
-            min_continuation_chars=GENERATION_HEALTH_CONTRACT[
-                "min_continuation_chars"
-            ],
-            min_unique_token_ratio=GENERATION_HEALTH_CONTRACT[
-                "min_unique_token_ratio"
-            ],
+            min_continuation_chars=GENERATION_HEALTH_CONTRACT["min_continuation_chars"],
+            min_unique_token_ratio=GENERATION_HEALTH_CONTRACT["min_unique_token_ratio"],
             identity_binding=certification_identity,
         )
     with guard.phase("parent-cache-selection-eval"):
@@ -4312,12 +4974,8 @@ def prepare_bound_parent_caches(args: argparse.Namespace) -> dict[str, Any]:
             max_choice_probes=args.selection_max_choice_probes,
             max_generation_prompts=args.selection_max_generation_prompts,
             max_behavior_probes=args.selection_max_behavior_probes,
-            min_continuation_chars=GENERATION_HEALTH_CONTRACT[
-                "min_continuation_chars"
-            ],
-            min_unique_token_ratio=GENERATION_HEALTH_CONTRACT[
-                "min_unique_token_ratio"
-            ],
+            min_continuation_chars=GENERATION_HEALTH_CONTRACT["min_continuation_chars"],
+            min_unique_token_ratio=GENERATION_HEALTH_CONTRACT["min_unique_token_ratio"],
             identity_binding=selection_identity,
         )
     codebook_runner._validate_eval_report_contract(
@@ -4413,6 +5071,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             source_revision=str(args.source_revision),
             source_tokenizer=tokenizer_name,
             eval_suite=args.eval_suite,
+            evaluation_device=args.device,
         )
         selection_identity = derive_parent_identity_for_eval_suite(
             certification_identity, args.selection_eval_suite
@@ -4521,7 +5180,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             )
         activation_reports.append(pair.report)
         _write_json(
-            output / "activation_refreshes" / f"refresh-{len(activation_reports) - 1:06d}.json",
+            output
+            / "activation_refreshes"
+            / f"refresh-{len(activation_reports) - 1:06d}.json",
             pair.report,
         )
         return pair
@@ -4595,6 +5256,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         proposal_layer_limit=args.proposal_layer_limit,
         prefilter_columns=args.prefilter_columns,
         fold_strategy=args.fold_strategy,
+        compute_shape_mode=args.compute_shape_mode,
+        max_transient_compute_bytes=args.max_transient_compute_bytes,
         calibration_provenance_id=calibration_provenance_id,
         validation_provenance_id=validation_provenance_id,
         multi_anchor_candidate_pool_size=args.multi_anchor_candidate_pool_size,
@@ -4636,14 +5299,23 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "provenance_sha256"
     ]
     transaction_report["certification_candidate_evaluation_calls"] = 0
-    transaction_report["certification_candidate_evaluation_calls_before_surgery_complete"] = 0
+    transaction_report[
+        "certification_candidate_evaluation_calls_before_surgery_complete"
+    ] = 0
     transaction_report["fold_strategy"] = args.fold_strategy
+    transaction_report["compute_shape_mode"] = args.compute_shape_mode
+    transaction_report["compute_shape"] = _model_compute_shape_report(model)
     transaction_report["activation_provenance"] = {
         "calibration_id": calibration_provenance_id,
         "validation_id": validation_provenance_id,
         "ids_distinct": calibration_provenance_id != validation_provenance_id,
         "work_caps": {
             "strategy": args.fold_strategy,
+            "compute_shape": {
+                "mode": args.compute_shape_mode,
+                "max_transient_compute_bytes": args.max_transient_compute_bytes,
+                "persistent_full_width_parameter_or_buffer": False,
+            },
             "proposal": {
                 "layer_limit": args.proposal_layer_limit,
                 "prefilter_columns": args.prefilter_columns,
@@ -4659,9 +5331,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "candidate_pool_size": args.multi_anchor_candidate_pool_size,
                 "max_anchors": args.multi_anchor_max_anchors,
                 "similarity_chunk_size": args.multi_anchor_similarity_chunk_size,
-                "max_similarity_products": (
-                    args.multi_anchor_max_similarity_products
-                ),
+                "max_similarity_products": (args.multi_anchor_max_similarity_products),
                 "max_projection_fits": args.multi_anchor_max_projection_fits,
                 "ridge": args.multi_anchor_ridge,
                 "max_coefficient_l1": args.multi_anchor_max_coefficient_l1,
@@ -4718,19 +5388,20 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "source_model": str(args.source_model),
                 "source_revision": str(args.source_revision),
                 "source_tokenizer": str(tokenizer_name),
+                "source_identity_sha256": certification_identity["identity_sha256"],
+                "evaluation_runtime_sha256": certification_identity[
+                    "evaluation_runtime_sha256"
+                ],
+                "evaluation_runtime": certification_identity["evaluation_runtime"],
                 "cached_parent_certification_eval": str(args.cached_parent_eval),
                 "cached_parent_certification_eval_sha256": _file_sha256(
                     args.cached_parent_eval
                 ),
-                "cached_parent_selection_eval": str(
-                    args.cached_parent_selection_eval
-                ),
+                "cached_parent_selection_eval": str(args.cached_parent_selection_eval),
                 "cached_parent_selection_eval_sha256": _file_sha256(
                     args.cached_parent_selection_eval
                 ),
-                "split_provenance_sha256": split_provenance[
-                    "provenance_sha256"
-                ],
+                "split_provenance_sha256": split_provenance["provenance_sha256"],
                 "transaction_ledger_sha256": transaction_report["history"][
                     "ledger_sha256"
                 ],
@@ -4783,6 +5454,39 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         reloaded_tokenizer,
         device=args.device,
     )
+    with guard.phase("capture-independent-reload-reference"):
+        independent_reload_reference = capture_reload_reference(
+            reloaded,
+            reloaded_tokenizer,
+            reload_prompts,
+            device=args.device,
+            max_length=args.calibration_max_length,
+            generation_tokens=args.reload_equivalence_generation_tokens,
+        )
+    first_loaded_manifest_sha256 = str(loaded_manifest["payload_sha256"])
+    del reloaded
+    del reloaded_tokenizer
+    gc.collect()
+    if torch.cuda.is_available() and str(args.device).startswith("cuda"):
+        torch.cuda.empty_cache()
+    with guard.phase("independent-parent-free-ragged-reload"):
+        reloaded, reloaded_tokenizer, loaded_manifest = load_ragged_qwen_checkpoint(
+            staged_checkpoint_dir, device=args.device
+        )
+    if reloaded_tokenizer is None:
+        raise QwenCompensatedRunnerError(
+            "Independent production checkpoint reload lacked its tokenizer."
+        )
+    if str(loaded_manifest["payload_sha256"]) != first_loaded_manifest_sha256:
+        raise QwenCompensatedRunnerError(
+            "Independent checkpoint reload observed a different manifest."
+        )
+    independent_reload_equivalence = verify_reload_equivalence(
+        independent_reload_reference,
+        reloaded,
+        reloaded_tokenizer,
+        device=args.device,
+    )
 
     _write_stage(output, "untouched_certification", "running")
     final_work = output / ".final_eval.work.json"
@@ -4799,12 +5503,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             max_choice_probes=args.max_choice_probes,
             max_generation_prompts=args.max_generation_prompts,
             max_behavior_probes=args.max_behavior_probes,
-            min_continuation_chars=GENERATION_HEALTH_CONTRACT[
-                "min_continuation_chars"
-            ],
-            min_unique_token_ratio=GENERATION_HEALTH_CONTRACT[
-                "min_unique_token_ratio"
-            ],
+            min_continuation_chars=GENERATION_HEALTH_CONTRACT["min_continuation_chars"],
+            min_unique_token_ratio=GENERATION_HEALTH_CONTRACT["min_unique_token_ratio"],
         )
     final_contract = codebook_runner._validate_eval_report_contract(
         final_eval, certification_contract, "Final parent-free certification"
@@ -4881,6 +5581,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         verdict_file=str(verdict_path),
     )
     final_accounting = model_accounting(reloaded)
+    final_compute_shape = _model_compute_shape_report(reloaded)
     del reloaded
     gc.collect()
     if torch.cuda.is_available() and str(args.device).startswith("cuda"):
@@ -4908,6 +5609,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "comparison_sha256": _file_sha256(output / "parent_final_comparison.json"),
         "manual_review": manual_verdict,
         "reload_equivalence": reload_equivalence,
+        "independent_reload_equivalence": independent_reload_equivalence,
+        "independent_parent_free_reload_count": 2,
         "pre_certification_tree_sha256": pre_certification_tree["tree_sha256"],
         "source_identity_sha256": certification_identity["identity_sha256"],
         "certification_candidate_evaluation_calls": 1,
@@ -5000,6 +5703,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             ],
             "loader_runtime": loaded_manifest["runtime_load"],
             "reload_equivalence": reload_equivalence,
+            "independent_reload_equivalence": independent_reload_equivalence,
+            "independent_parent_free_reload_count": 2,
             "certification": certificate,
             "certified_tree": sealed["tree"],
             "artifact_target_bytes": args.target_artifact_bytes,
@@ -5030,6 +5735,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "runtime": {
             "device": args.device,
             "dtype": args.dtype,
+            "compute_shape_mode": args.compute_shape_mode,
+            "compute_shape": final_compute_shape,
             "resource_phases": guard.phases,
             "torch_version": torch.__version__,
         },
@@ -5101,6 +5808,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--fold-strategy", choices=["pair", "multi-anchor"], default="pair"
     )
+    parser.add_argument(
+        "--compute-shape-mode",
+        choices=sorted(COMPUTE_SHAPE_MODES),
+        default="compact",
+        help=(
+            "compact executes the stored ragged width; source-padded stores the "
+            "ragged width but transiently restores source GEMM dimensions to avoid "
+            "width-dependent numerical drift"
+        ),
+    )
+    parser.add_argument("--max-transient-compute-bytes", type=int, default=2 * 1024**3)
     parser.add_argument("--multi-anchor-candidate-pool-size", type=int, default=512)
     parser.add_argument("--multi-anchor-max-anchors", type=int, default=4)
     parser.add_argument("--multi-anchor-similarity-chunk-size", type=int, default=64)
@@ -5116,7 +5834,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--full-milestone-interval", type=int, default=32)
     parser.add_argument("--max-history-records", type=int, default=256)
     parser.add_argument("--max-history-json-bytes", type=int, default=64 * 1024**2)
-    parser.add_argument("--exclude-layer", action="append", type=_parse_layers, default=[])
+    parser.add_argument(
+        "--exclude-layer", action="append", type=_parse_layers, default=[]
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--gate-text-count", type=int, default=8)
     parser.add_argument("--gate-behavior-count", type=int, default=32)

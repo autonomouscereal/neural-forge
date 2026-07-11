@@ -5,9 +5,15 @@ ROOT=${ROOT:-/home/cereal/model-surgery-lab/neural-forge-pivot}
 RUN_ROOT=${RUN_ROOT:-/mnt/ai_data/neural-forge/qwen3_4b_compensated_20260710}
 PY=${PY:-/home/cereal/model-surgery-lab/venv/bin/python}
 GPU=${GPU:?Set GPU to a physical GPU UUID.}
+if [[ ! "$GPU" =~ ^GPU-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+  echo "GPU must be an exact physical GPU UUID (GPU-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)" >&2
+  exit 2
+fi
 PREPARE_PARENT_CACHES=${PREPARE_PARENT_CACHES:-0}
 TARGET_UNIQUE_PARAMETERS=${TARGET_UNIQUE_PARAMETERS:-}
 FOLD_STRATEGY=${FOLD_STRATEGY:-pair}
+COMPUTE_SHAPE_MODE=${COMPUTE_SHAPE_MODE:-compact}
+MAX_TRANSIENT_COMPUTE_BYTES=${MAX_TRANSIENT_COMPUTE_BYTES:-2147483648}
 if [[ "$FOLD_STRATEGY" == "multi_anchor" ]]; then
   FOLD_STRATEGY=multi-anchor
 fi
@@ -15,6 +21,13 @@ case "$FOLD_STRATEGY" in
   pair|multi-anchor) ;;
   *)
     echo "FOLD_STRATEGY must be pair or multi-anchor" >&2
+    exit 2
+    ;;
+esac
+case "$COMPUTE_SHAPE_MODE" in
+  compact|source-padded) ;;
+  *)
+    echo "COMPUTE_SHAPE_MODE must be compact or source-padded" >&2
     exit 2
     ;;
 esac
@@ -96,6 +109,7 @@ fi
   --identity-file "$RUN_ROOT/$TAG.identity.json" \
   --cwd "$ROOT" \
   --env "CUDA_VISIBLE_DEVICES=$GPU" \
+  --env "CUBLAS_WORKSPACE_CONFIG=:4096:8" \
   --env "PYTHONPATH=$ROOT/src" \
   --env "TOKENIZERS_PARALLELISM=false" \
   --env "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True" \
@@ -127,6 +141,8 @@ fi
   --prefilter-columns "$PREFILTER_COLUMNS" \
   "${EXCLUDE_ARGS[@]}" \
   --fold-strategy "$FOLD_STRATEGY" \
+  --compute-shape-mode "$COMPUTE_SHAPE_MODE" \
+  --max-transient-compute-bytes "$MAX_TRANSIENT_COMPUTE_BYTES" \
   --multi-anchor-candidate-pool-size "$MULTI_ANCHOR_CANDIDATE_POOL_SIZE" \
   --multi-anchor-max-anchors "$MULTI_ANCHOR_MAX_ANCHORS" \
   --multi-anchor-similarity-chunk-size "$MULTI_ANCHOR_SIMILARITY_CHUNK_SIZE" \
@@ -173,4 +189,4 @@ fi
   --max-history-json-bytes 67108864 \
   --local-files-only
 
-echo "launched tag=$TAG gpu=$GPU prepare_parent_caches=$PREPARE_PARENT_CACHES target=$TARGET_UNIQUE_PARAMETERS"
+echo "launched tag=$TAG gpu=$GPU prepare_parent_caches=$PREPARE_PARENT_CACHES target=$TARGET_UNIQUE_PARAMETERS fold_strategy=$FOLD_STRATEGY compute_shape_mode=$COMPUTE_SHAPE_MODE"
