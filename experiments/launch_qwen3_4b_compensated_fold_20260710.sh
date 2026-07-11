@@ -5,8 +5,13 @@ ROOT=${ROOT:-/home/cereal/model-surgery-lab/neural-forge-pivot}
 RUN_ROOT=${RUN_ROOT:-/mnt/ai_data/neural-forge/qwen3_4b_compensated_20260710}
 PY=${PY:-/home/cereal/model-surgery-lab/venv/bin/python}
 GPU=${GPU:?Set GPU to a physical GPU UUID.}
-TARGET_UNIQUE_PARAMETERS=${TARGET_UNIQUE_PARAMETERS:?Set the exact target parameter count.}
-TAG=${TAG:-qwen3_4b_compensated_target${TARGET_UNIQUE_PARAMETERS}_r1_20260710}
+PREPARE_PARENT_CACHES=${PREPARE_PARENT_CACHES:-0}
+TARGET_UNIQUE_PARAMETERS=${TARGET_UNIQUE_PARAMETERS:-}
+if [[ "$PREPARE_PARENT_CACHES" != "1" && -z "$TARGET_UNIQUE_PARAMETERS" ]]; then
+  echo "TARGET_UNIQUE_PARAMETERS is required unless PREPARE_PARENT_CACHES=1" >&2
+  exit 2
+fi
+TAG=${TAG:-qwen3_4b_compensated_${TARGET_UNIQUE_PARAMETERS:-parent_caches}_r1_20260710}
 CHECKPOINT_STAGING_ROOT=${CHECKPOINT_STAGING_ROOT:-/home/cereal/model-surgery-lab/neural-forge-checkpoint-staging}
 MERGES_PER_TRANSACTION=${MERGES_PER_TRANSACTION:-64}
 PROPOSAL_LAYER_LIMIT=${PROPOSAL_LAYER_LIMIT:-4}
@@ -23,6 +28,13 @@ EVAL_SUITE=/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm
 SOURCE_REVISION=906bfd4b4dc7f14ee4320094d8b41684abff8539
 
 mkdir -p "$RUN_ROOT" "$CHECKPOINT_STAGING_ROOT"
+
+MODE_ARGS=()
+if [[ "$PREPARE_PARENT_CACHES" == "1" ]]; then
+  MODE_ARGS+=(--prepare-parent-caches)
+else
+  MODE_ARGS+=(--target-unique-parameters "$TARGET_UNIQUE_PARAMETERS")
+fi
 
 "$PY" "$ROOT/experiments/launch_detached.py" \
   --log "$RUN_ROOT/$TAG.log" \
@@ -44,7 +56,7 @@ mkdir -p "$RUN_ROOT" "$CHECKPOINT_STAGING_ROOT"
   --cached-parent-eval "$PARENT_CERTIFICATION_EVAL" \
   --selection-eval-suite "$SELECTION_EVAL_SUITE" \
   --cached-parent-selection-eval "$PARENT_SELECTION_EVAL" \
-  --target-unique-parameters "$TARGET_UNIQUE_PARAMETERS" \
+  "${MODE_ARGS[@]}" \
   --checkpoint-staging-root "$CHECKPOINT_STAGING_ROOT" \
   --calibration-count 96 \
   --validation-count 96 \
@@ -103,4 +115,4 @@ mkdir -p "$RUN_ROOT" "$CHECKPOINT_STAGING_ROOT"
   --max-history-json-bytes 67108864 \
   --local-files-only
 
-echo "launched tag=$TAG gpu=$GPU target=$TARGET_UNIQUE_PARAMETERS"
+echo "launched tag=$TAG gpu=$GPU prepare_parent_caches=$PREPARE_PARENT_CACHES target=$TARGET_UNIQUE_PARAMETERS"

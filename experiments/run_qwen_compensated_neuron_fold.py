@@ -230,6 +230,7 @@ def build_exact_parent_identity(
                 "Snapshot directory differs from --source-revision: "
                 f"{snapshot_revision}!={revision}."
             )
+    import neural_forge.hf_tools as hf_tools_module
     from neural_forge.hf_tools import _load_eval_suite
 
     loaded_suite = _load_eval_suite(eval_suite)
@@ -255,6 +256,7 @@ def build_exact_parent_identity(
         "tokenizer_sha256": tokenizer_report["tokenizer_sha256"],
         "eval_suite_file_sha256": _file_sha256(eval_suite),
         "eval_suite_content_sha256": _canonical_sha256(suite_payload),
+        "evaluator_module_sha256": _file_sha256(Path(hf_tools_module.__file__)),
         "generation_health_contract": dict(GENERATION_HEALTH_CONTRACT),
     }
     identity["identity_sha256"] = _canonical_sha256(identity)
@@ -314,6 +316,7 @@ def validate_bound_parent_report(
         "state_sha256": str(actual["state_sha256"]),
         "tokenizer_sha256": str(actual["tokenizer_sha256"]),
         "eval_suite_file_sha256": str(actual["eval_suite_file_sha256"]),
+        "evaluator_module_sha256": str(actual["evaluator_module_sha256"]),
         "cached_report_sha256": _canonical_sha256(report),
     }
 
@@ -4377,6 +4380,17 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         args.manual_review_verdict_file
         if args.manual_review_verdict_file is not None
         else output / "manual_review_verdict.json"
+    )
+    _write_json(
+        output / "manual_review_verdict.template.json",
+        {
+            "schema": "neural-forge-qualitative-review-verdict-v1",
+            "verdict": "replace-with-pass-or-fail",
+            "reviewer": "replace-with-reviewer-identity",
+            "packet_sha256": manual_packet["packet_sha256"],
+            "reviewed_sample_count": manual_packet["selected_sample_count"],
+            "notes": "replace-with-concrete-observations-from-parent-and-child-text",
+        },
     )
     _write_stage(
         output,

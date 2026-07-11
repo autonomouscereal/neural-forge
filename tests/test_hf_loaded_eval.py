@@ -116,3 +116,18 @@ def test_generation_health_rejects_empty_short_and_low_information_output(
         min_unique_token_ratio=0.25,
     )
     assert report["passed"] is False
+
+
+def test_generation_health_rejects_full_prompt_echo_loop() -> None:
+    prompt = "Explain why tokenizer mismatch harms a stitched language model."
+    report = _generation_health(
+        {
+            "id": "echo",
+            "prompt": prompt,
+            "output": f"{prompt} {prompt} {prompt}",
+        },
+        min_continuation_chars=24,
+        min_unique_token_ratio=0.25,
+    )
+    assert report["prompt_repeated"] is True
+    assert report["passed"] is False
