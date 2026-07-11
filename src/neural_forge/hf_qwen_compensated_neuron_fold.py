@@ -72,34 +72,28 @@ def _canonical_sha256(value: Any) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _bounded_tensor_fingerprint(value: Tensor, *, sample_count: int = 4096) -> str:
+def _exact_tensor_fingerprint(
+    value: Tensor,
+    *,
+    chunk_elements: int = 1_048_576,
+) -> str:
+    """Stream every tensor element through SHA-256 without a full CPU copy."""
+
+    chunk = _positive_int(chunk_elements, "chunk_elements")
     tensor = value.detach().reshape(-1)
-    count = min(_positive_int(sample_count, "sample_count"), int(tensor.numel()))
-    if count:
-        indices = torch.linspace(
-            0,
-            max(int(tensor.numel()) - 1, 0),
-            count,
-            dtype=torch.float64,
-            device="cpu",
-        ).round().to(torch.long)
-        sample = (
-            tensor.index_select(0, indices.to(device=tensor.device))
-            .to(device="cpu")
-            .contiguous()
-        )
-        sample_hash = hashlib.sha256(sample.view(torch.uint8).numpy().tobytes()).hexdigest()
-    else:
-        sample_hash = hashlib.sha256(b"").hexdigest()
-    return _canonical_sha256(
-        {
-            "dtype": str(value.dtype),
-            "shape": list(value.shape),
-            "numel": int(value.numel()),
-            "sample_count": count,
-            "sample_sha256": sample_hash,
-        }
+    digest = hashlib.sha256()
+    digest.update(
+        json.dumps(
+            {"dtype": str(value.dtype), "shape": list(value.shape)},
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
     )
+    for start in range(0, int(tensor.numel()), chunk):
+        piece = tensor[start : start + chunk].to(device="cpu").contiguous()
+        digest.update(piece.view(torch.uint8).numpy().tobytes())
+    return digest.hexdigest()
 
 
 def _finite_matrix(value: Any, name: str) -> Tensor:
@@ -120,7 +114,7 @@ class CompensatedNeuronMerge:
     dropped: int
     alpha: float
     calibration_relative_error: float
-    gate_relative_error: float
+    validation_relative_error: float
     score: float
 
     def __post_init__(self) -> None:
@@ -133,7 +127,7 @@ class CompensatedNeuronMerge:
         for name in (
             "alpha",
             "calibration_relative_error",
-            "gate_relative_error",
+            "validation_relative_error",
             "score",
         ):
             value = float(getattr(self, name))
@@ -141,7 +135,7 @@ class CompensatedNeuronMerge:
                 raise Qwen3CompensatedFoldShapeError(f"{name} must be finite.")
         if min(
             self.calibration_relative_error,
-            self.gate_relative_error,
+            self.validation_relative_error,
             self.score,
         ) < 0.0:
             raise Qwen3CompensatedFoldShapeError("Fold errors cannot be negative.")
@@ -154,7 +148,7 @@ class CompensatedNeuronMerge:
             "dropped": self.dropped,
             "alpha": self.alpha,
             "calibration_relative_error": self.calibration_relative_error,
-            "gate_relative_error": self.gate_relative_error,
+            "validation_relative_error": self.validation_relative_error,
             "score": self.score,
         }
 
@@ -164,20 +158,26 @@ class CompensatedNeuronFoldDiagnostics:
     source_width: int
     target_width: int
     calibration_rows: int
-    gate_rows: int
+    validation_rows: int
+    calibration_activation_sha256: str
+    validation_activation_sha256: str
     projection_count: int
     neighbor_window: int
+    max_generated_pairs: int
     generated_pair_count: int
     scored_pair_count: int
     retained_scored_pair_count: int
     score_chunk_size: int
     selected_pair_count: int
     protected_count: int
+    aggregate_calibration_relative_l2: float
+    aggregate_validation_relative_l2: float
+    realized_dtype: str
     materialized_full_pairwise_matrix: bool = False
     optimizer_steps: int = 0
     backward_called: bool = False
 
-    def as_dict(self) -> dict[str, int | bool]:
+    def as_dict(self) -> dict[str, Any]:
         return {
             name: getattr(self, name)
             for name in self.__dataclass_fields__
@@ -193,6 +193,7 @@ class CompensatedNeuronFoldWeights:
     merges: tuple[CompensatedNeuronMerge, ...]
     protected_indices: tuple[int, ...]
     source_weight_fingerprints: tuple[str, str, str]
+    result_weight_fingerprints: tuple[str, str, str]
     diagnostics: CompensatedNeuronFoldDiagnostics
 
     @property
@@ -208,14 +209,29 @@ class CompensatedNeuronFoldWeights:
         hidden = int(self.gate_weight.shape[1])
         return (self.source_width - self.target_width) * hidden * 3
 
+    def assert_integrity(self) -> None:
+        current = (
+            _exact_tensor_fingerprint(self.gate_weight),
+            _exact_tensor_fingerprint(self.up_weight),
+            _exact_tensor_fingerprint(self.down_weight),
+        )
+        if current != self.result_weight_fingerprints:
+            raise Qwen3CompensatedFoldStateError(
+                "Fitted fold tensors changed after their exact hash was recorded."
+            )
+
     @property
     def fold_sha256(self) -> str:
+        self.assert_integrity()
         return _canonical_sha256(
             {
                 "kept_source_indices": list(self.kept_source_indices),
                 "merges": [item.as_dict() for item in self.merges],
                 "protected_indices": list(self.protected_indices),
                 "source_weight_fingerprints": list(self.source_weight_fingerprints),
+                "result_weight_fingerprints": list(
+                    self.result_weight_fingerprints
+                ),
                 "diagnostics": self.diagnostics.as_dict(),
             }
         )
@@ -229,6 +245,7 @@ class CompensatedNeuronFoldWeights:
             "merges": [item.as_dict() for item in self.merges],
             "protected_indices": list(self.protected_indices),
             "source_weight_fingerprints": list(self.source_weight_fingerprints),
+            "result_weight_fingerprints": list(self.result_weight_fingerprints),
             "diagnostics": self.diagnostics.as_dict(),
             "fold_sha256": self.fold_sha256,
         }
@@ -239,15 +256,15 @@ def _validate_fold_inputs(
     up_weight: Tensor,
     down_weight: Tensor,
     calibration_activations: Tensor,
-    gate_activations: Tensor | None,
+    validation_activations: Tensor,
     target_width: int,
 ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, int, int]:
     gate = _finite_matrix(gate_weight, "gate_weight")
     up = _finite_matrix(up_weight, "up_weight")
     down = _finite_matrix(down_weight, "down_weight")
     calibration = _finite_matrix(calibration_activations, "calibration_activations")
-    heldout = calibration if gate_activations is None else _finite_matrix(
-        gate_activations, "gate_activations"
+    validation = _finite_matrix(
+        validation_activations, "validation_activations"
     )
     if gate.shape != up.shape:
         raise Qwen3CompensatedFoldShapeError("Gate and up weights must match.")
@@ -256,35 +273,33 @@ def _validate_fold_inputs(
         raise Qwen3CompensatedFoldShapeError(
             "Down weight must have shape [hidden, intermediate]."
         )
-    if int(calibration.shape[1]) != width or int(heldout.shape[1]) != width:
+    if int(calibration.shape[1]) != width or int(validation.shape[1]) != width:
         raise Qwen3CompensatedFoldShapeError(
             "Activation width must equal the MLP intermediate width."
+        )
+    if _exact_tensor_fingerprint(calibration) == _exact_tensor_fingerprint(validation):
+        raise Qwen3CompensatedFoldShapeError(
+            "Calibration and validation activations must be provenance-disjoint."
         )
     requested = _positive_int(target_width, "target_width")
     if requested >= width:
         raise Qwen3CompensatedFoldShapeError(
             "target_width must be smaller than the source width."
         )
-    return gate, up, down, calibration, heldout, width, hidden
+    return gate, up, down, calibration, validation, width, hidden
 
 
 def _candidate_pairs(
     calibration: Tensor,
-    heldout: Tensor,
     protected: frozenset[int],
     *,
     projection_count: int,
     neighbor_window: int,
     max_pair_candidates: int,
+    max_generated_pairs: int,
     seed: int,
 ) -> tuple[list[tuple[int, int]], int]:
-    work = torch.cat(
-        (
-            calibration.to(device="cpu", dtype=torch.float32),
-            heldout.to(device="cpu", dtype=torch.float32),
-        ),
-        dim=0,
-    )
+    work = calibration.to(device="cpu", dtype=torch.float32)
     norms = torch.linalg.vector_norm(work, dim=0).clamp_min(
         torch.finfo(torch.float32).tiny
     )
@@ -299,13 +314,27 @@ def _candidate_pairs(
     )
     sketches = normalized.T @ directions
     pairs: set[tuple[int, int]] = set()
+    exhausted = False
     for projection in range(projection_count):
-        order = torch.argsort(sketches[:, projection], stable=True).tolist()
-        for offset in range(1, neighbor_window + 1):
-            for left, right in zip(order[:-offset], order[offset:], strict=True):
-                if left == right or left in protected or right in protected:
-                    continue
-                pairs.add((min(left, right), max(left, right)))
+        orders = (
+            torch.argsort(sketches[:, projection], stable=True).tolist(),
+            torch.argsort(sketches[:, projection].abs(), stable=True).tolist(),
+        )
+        for order in orders:
+            for offset in range(1, neighbor_window + 1):
+                for left, right in zip(order[:-offset], order[offset:], strict=True):
+                    if left == right or left in protected or right in protected:
+                        continue
+                    pairs.add((min(left, right), max(left, right)))
+                    if len(pairs) >= max_generated_pairs:
+                        exhausted = True
+                        break
+                if exhausted:
+                    break
+            if exhausted:
+                break
+        if exhausted:
+            break
     generated = len(pairs)
     if not pairs:
         return [], generated
@@ -321,7 +350,7 @@ def _candidate_pairs(
 def _pair_scores(
     down: Tensor,
     calibration: Tensor,
-    heldout: Tensor,
+    validation: Tensor,
     pairs: list[tuple[int, int]],
     *,
     keep_limit: int,
@@ -331,7 +360,7 @@ def _pair_scores(
         return []
     device = torch.device("cpu")
     a = calibration.to(device=device, dtype=torch.float64)
-    h = heldout.to(device=device, dtype=torch.float64)
+    h = validation.to(device=device, dtype=torch.float64)
     d = down.detach().to(device=device, dtype=torch.float32)
     tiny = torch.finfo(torch.float64).tiny
     retained: list[CompensatedNeuronMerge] = []
@@ -369,19 +398,19 @@ def _pair_scores(
         hni = hi.square().sum(dim=0)
         hnj = hj.square().sum(dim=0)
         hcross = (hi * hj).sum(dim=0)
-        heldout_energy = (
+        validation_energy = (
             hni * di2 + hnj * dj2 + 2.0 * hcross * didj
         ).clamp_min(tiny)
-        heldout_left = torch.sqrt(
+        validation_left = torch.sqrt(
             ((hj - hi * alpha_left).square().sum(dim=0) * dj2).clamp_min(0.0)
-            / heldout_energy
+            / validation_energy
         )
-        heldout_right = torch.sqrt(
+        validation_right = torch.sqrt(
             ((hi - hj * alpha_right).square().sum(dim=0) * di2).clamp_min(0.0)
-            / heldout_energy
+            / validation_energy
         )
-        score_left = torch.maximum(cal_left, heldout_left)
-        score_right = torch.maximum(cal_right, heldout_right)
+        score_left = torch.maximum(cal_left, validation_left)
+        score_right = torch.maximum(cal_right, validation_right)
         keep_left = score_left <= score_right
 
         for index, (left_index, right_index) in enumerate(chunk):
@@ -402,10 +431,10 @@ def _pair_scores(
                         if choose_left
                         else cal_right[index].item()
                     ),
-                    gate_relative_error=float(
-                        heldout_left[index].item()
+                    validation_relative_error=float(
+                        validation_left[index].item()
                         if choose_left
-                        else heldout_right[index].item()
+                        else validation_right[index].item()
                     ),
                     score=float(
                         score_left[index].item()
@@ -430,6 +459,24 @@ def _pair_scores(
     return retained[:keep_limit]
 
 
+def _realized_layer_relative_l2(
+    activations: Tensor,
+    source_down: Tensor,
+    folded_down: Tensor,
+    kept_indices: tuple[int, ...],
+) -> float:
+    values = activations.detach().to(device="cpu", dtype=torch.float64)
+    source = source_down.detach().to(device="cpu", dtype=torch.float64)
+    folded = folded_down.detach().to(device="cpu", dtype=torch.float64)
+    kept = torch.tensor(kept_indices, dtype=torch.long)
+    expected = values @ source.T
+    actual = values.index_select(1, kept) @ folded.T
+    denominator = torch.linalg.vector_norm(expected).clamp_min(
+        torch.finfo(torch.float64).tiny
+    )
+    return float((torch.linalg.vector_norm(expected - actual) / denominator).item())
+
+
 def fit_compensated_neuron_pairs(
     gate_weight: Tensor,
     up_weight: Tensor,
@@ -437,28 +484,40 @@ def fit_compensated_neuron_pairs(
     calibration_activations: Tensor,
     *,
     target_width: int,
-    gate_activations: Tensor | None = None,
+    validation_activations: Tensor,
     protected_indices: tuple[int, ...] | list[int] = (),
     projection_count: int = 8,
     neighbor_window: int = 4,
     max_pair_candidates: int = 131_072,
+    max_generated_pairs: int = 524_288,
     score_chunk_size: int = 1_024,
     seed: int = 0,
 ) -> CompensatedNeuronFoldWeights:
-    """Fit disjoint real-producer neuron merges with a closed-form consumer."""
+    """Fit on calibration, select on validation, then await an external gate."""
 
-    gate, up, down, calibration, heldout, width, _hidden = _validate_fold_inputs(
+    gate, up, down, calibration, validation, width, _hidden = _validate_fold_inputs(
         gate_weight,
         up_weight,
         down_weight,
         calibration_activations,
-        gate_activations,
+        validation_activations,
         target_width,
     )
     projections = _positive_int(projection_count, "projection_count")
     window = _positive_int(neighbor_window, "neighbor_window")
     pair_limit = _positive_int(max_pair_candidates, "max_pair_candidates")
+    generated_limit = _positive_int(max_generated_pairs, "max_generated_pairs")
     scoring_chunk = _positive_int(score_chunk_size, "score_chunk_size")
+    if projections > 64:
+        raise Qwen3CompensatedFoldShapeError("projection_count exceeds hard cap 64.")
+    if window > 64 or window >= width:
+        raise Qwen3CompensatedFoldShapeError(
+            "neighbor_window must be below the width and hard cap 64."
+        )
+    if pair_limit > generated_limit:
+        raise Qwen3CompensatedFoldShapeError(
+            "max_pair_candidates cannot exceed max_generated_pairs."
+        )
     protected_values = tuple(
         sorted({_nonnegative_int(index, "protected index") for index in protected_indices})
     )
@@ -472,11 +531,11 @@ def fit_compensated_neuron_pairs(
 
     pairs, generated_count = _candidate_pairs(
         calibration,
-        heldout,
         frozenset(protected_values),
         projection_count=projections,
         neighbor_window=window,
         max_pair_candidates=pair_limit,
+        max_generated_pairs=generated_limit,
         seed=seed,
     )
     retained_score_limit = min(
@@ -486,7 +545,7 @@ def fit_compensated_neuron_pairs(
     scored = _pair_scores(
         down,
         calibration,
-        heldout,
+        validation,
         pairs,
         keep_limit=retained_score_limit,
         chunk_size=scoring_chunk,
@@ -517,31 +576,57 @@ def fit_compensated_neuron_pairs(
     kept = tuple(index for index in range(width) if index not in dropped)
     kept_tensor = torch.tensor(kept, dtype=torch.long, device=gate.device)
     down_kept_tensor = kept_tensor.to(device=down_work.device)
+    folded_gate = gate.index_select(0, kept_tensor).contiguous()
+    folded_up = up.index_select(0, kept_tensor).contiguous()
+    folded_down = down_work.index_select(1, down_kept_tensor).contiguous()
+    calibration_fingerprint = _exact_tensor_fingerprint(calibration)
+    validation_fingerprint = _exact_tensor_fingerprint(validation)
     diagnostics = CompensatedNeuronFoldDiagnostics(
         source_width=width,
         target_width=int(target_width),
         calibration_rows=int(calibration.shape[0]),
-        gate_rows=int(heldout.shape[0]),
+        validation_rows=int(validation.shape[0]),
+        calibration_activation_sha256=calibration_fingerprint,
+        validation_activation_sha256=validation_fingerprint,
         projection_count=projections,
         neighbor_window=window,
+        max_generated_pairs=generated_limit,
         generated_pair_count=generated_count,
         scored_pair_count=len(pairs),
         retained_scored_pair_count=len(scored),
         score_chunk_size=scoring_chunk,
         selected_pair_count=len(selected),
         protected_count=len(protected_values),
+        aggregate_calibration_relative_l2=_realized_layer_relative_l2(
+            calibration,
+            down,
+            folded_down,
+            kept,
+        ),
+        aggregate_validation_relative_l2=_realized_layer_relative_l2(
+            validation,
+            down,
+            folded_down,
+            kept,
+        ),
+        realized_dtype=str(folded_down.dtype),
     )
     return CompensatedNeuronFoldWeights(
-        gate_weight=gate.index_select(0, kept_tensor).contiguous(),
-        up_weight=up.index_select(0, kept_tensor).contiguous(),
-        down_weight=down_work.index_select(1, down_kept_tensor).contiguous(),
+        gate_weight=folded_gate,
+        up_weight=folded_up,
+        down_weight=folded_down,
         kept_source_indices=kept,
         merges=tuple(selected),
         protected_indices=protected_values,
         source_weight_fingerprints=(
-            _bounded_tensor_fingerprint(gate),
-            _bounded_tensor_fingerprint(up),
-            _bounded_tensor_fingerprint(down),
+            _exact_tensor_fingerprint(gate),
+            _exact_tensor_fingerprint(up),
+            _exact_tensor_fingerprint(down),
+        ),
+        result_weight_fingerprints=(
+            _exact_tensor_fingerprint(folded_gate),
+            _exact_tensor_fingerprint(folded_up),
+            _exact_tensor_fingerprint(folded_down),
         ),
         diagnostics=diagnostics,
     )
@@ -600,6 +685,7 @@ def install_qwen3_compensated_fold(
 ) -> Qwen3NeuronFoldHandle:
     """Install one fitted layer transaction; caller must commit or roll it back."""
 
+    fold.assert_integrity()
     layers = getattr(getattr(model, "model", None), "layers", None)
     index = _nonnegative_int(layer_index, "layer_index")
     if not isinstance(layers, nn.ModuleList) or index >= len(layers):
@@ -613,7 +699,7 @@ def install_qwen3_compensated_fold(
         original.up_proj.weight,
         original.down_proj.weight,
     )
-    fingerprints = tuple(_bounded_tensor_fingerprint(value) for value in current)
+    fingerprints = tuple(_exact_tensor_fingerprint(value) for value in current)
     if fingerprints != fold.source_weight_fingerprints:
         raise Qwen3CompensatedFoldStateError(
             "The fitted source weights do not match the selected Qwen layer."
@@ -629,6 +715,18 @@ def install_qwen3_compensated_fold(
         installed.gate_proj.weight.copy_(fold.gate_weight.to(device=device, dtype=dtype))
         installed.up_proj.weight.copy_(fold.up_weight.to(device=device, dtype=dtype))
         installed.down_proj.weight.copy_(fold.down_weight.to(device=device, dtype=dtype))
+    installed_fingerprints = tuple(
+        _exact_tensor_fingerprint(value)
+        for value in (
+            installed.gate_proj.weight,
+            installed.up_proj.weight,
+            installed.down_proj.weight,
+        )
+    )
+    if installed_fingerprints != fold.result_weight_fingerprints:
+        raise Qwen3CompensatedFoldStateError(
+            "Installed Qwen fold weights differ after destination-dtype copy."
+        )
     installed.train(original.training)
     layers[index].mlp = installed
     return Qwen3NeuronFoldHandle(

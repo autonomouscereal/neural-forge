@@ -21,8 +21,10 @@ from neural_forge.hf_qwen_attention_surgery import (  # noqa: E402
     qwen3_attention_runtime_snapshot,
 )
 from neural_forge.hf_qwen_codebook_model import (  # noqa: E402
+    load_qwen3_codebook_checkpoint,
     prepare_qwen3_codebook_model,
     qwen3_codebook_parameter_report,
+    save_qwen3_codebook_checkpoint,
 )
 
 
@@ -44,7 +46,12 @@ class _Tokenizer:
         return self.tokens[token_id]
 
 
-def _runtime(*, seed: int = 1717) -> torch.nn.Module:
+def _runtime(
+    *,
+    seed: int = 1717,
+    attention_bias: bool = False,
+    group_permutations: torch.Tensor | None = None,
+) -> torch.nn.Module:
     torch.manual_seed(seed)
     model = transformers.Qwen3ForCausalLM(
         transformers.Qwen3Config(
@@ -57,7 +64,7 @@ def _runtime(*, seed: int = 1717) -> torch.nn.Module:
             head_dim=2,
             max_position_embeddings=32,
             hidden_act="silu",
-            attention_bias=False,
+            attention_bias=attention_bias,
             attention_dropout=0.0,
             use_sliding_window=False,
             bos_token_id=1,
@@ -73,6 +80,7 @@ def _runtime(*, seed: int = 1717) -> torch.nn.Module:
         tokenizer,
         attention_prototypes_per_group=4,
         neuron_prototypes_per_neuron=1,
+        group_permutations=group_permutations,
     )
 
 
@@ -438,6 +446,35 @@ def test_partial_projection_and_unmeasured_improvement_claim_fail_closed() -> No
     assert bridge.transactions == ()
 
 
+def test_behavioral_improvement_claim_binds_contract_and_parent_hash() -> None:
+    runtime = _runtime(seed=2575)
+    source = (3, 1)
+    target = (0, 0)
+    bridge = Qwen3AttentionSurgeryBridge(
+        runtime, _features(runtime, projected=source, exact=target)
+    )
+    before = qwen3_attention_runtime_snapshot(runtime)
+
+    def gate(context):
+        return {
+            "accepted": True,
+            "improved": True,
+            "parent_score": 0.5,
+            "candidate_score": 0.6,
+            "higher_is_better": True,
+            "evaluation_contract_sha256": "a" * 64,
+            "parent_runtime_sha256": context.parent_runtime_snapshot.registry_sha256,
+        }
+
+    result = bridge.run(
+        before.tensor_bytes - 1,
+        gate=gate,
+        candidate_selector=lambda _context: {"pairs": ((source, target),)},
+        max_attempts=1,
+    )
+    assert result.transactions[0].measured_improvement_claim is True
+
+
 def test_gate_cannot_mutate_only_one_projection_role() -> None:
     runtime = _runtime(seed=2626)
     source = (3, 1)
@@ -452,7 +489,7 @@ def test_gate_cannot_mutate_only_one_projection_role() -> None:
         return True
 
     with pytest.raises(
-        Qwen3AttentionSurgeryStateError, match="partial or in-place Q/K/V/O"
+        Qwen3AttentionSurgeryStateError, match="Fatal out-of-contract mutation"
     ):
         bridge.run(
             before.tensor_bytes - 1,
@@ -461,3 +498,99 @@ def test_gate_cannot_mutate_only_one_projection_role() -> None:
         )
     assert qwen3_attention_runtime_snapshot(runtime) == before
     assert bridge.transactions == ()
+
+
+def test_automatic_qk_fit_is_post_norm_bias_aware() -> None:
+    runtime = _runtime(seed=2727, attention_bias=True)
+    bridge = Qwen3AttentionSurgeryBridge(runtime, _features(runtime))
+    scored = bridge.propose_pair((3, 1), (0, 0))
+
+    assert scored.projection.q == 1.0
+    assert scored.projection.k == 1.0
+    assert scored.projection.bias_included is True
+    assert scored.projection.qk_normalized_residual is not None
+    assert scored.projection.fit_space.startswith("post-qk-rmsnorm")
+
+
+def test_nonidentity_permutation_audit_records_canonical_and_physical_groups() -> None:
+    permutations = torch.tensor(
+        [[0, 1], [1, 0], [0, 1], [1, 0]], dtype=torch.int64
+    )
+    runtime = _runtime(seed=2828, group_permutations=permutations)
+    snapshot = qwen3_attention_runtime_snapshot(runtime)
+
+    assert len(snapshot.prototype_coordinates) == snapshot.prototype_count
+    swapped = [
+        item
+        for item in snapshot.prototype_coordinates
+        if item.canonical_group != item.physical_group
+    ]
+    assert swapped
+    for coordinate in snapshot.prototype_coordinates:
+        assert permutations[
+            coordinate.source_layer, coordinate.canonical_group
+        ].item() == coordinate.physical_group
+        assert coordinate.source_flat_index == (
+            coordinate.source_layer * snapshot.key_value_heads
+            + coordinate.physical_group
+        )
+
+
+def test_ragged_qwen_checkpoint_roundtrip_is_exact_and_standalone(tmp_path) -> None:
+    runtime = _runtime(seed=2929)
+    source = (3, 1)
+    target = (0, 0)
+    projection = Qwen3AttentionProjection(source, target, 1.0, 1.0, 1.0, 1.0)
+    bridge = Qwen3AttentionSurgeryBridge(
+        runtime,
+        _features(runtime, projected=source, exact=target),
+        projections=(projection,),
+    )
+    before = qwen3_attention_runtime_snapshot(runtime)
+    score = bridge.propose_pair(source, target)
+    bridge.run(
+        before.tensor_bytes - score.physical_bytes_saved,
+        candidate_selector=lambda _context: {"pairs": ((source, target),)},
+        max_attempts=1,
+    )
+    expected_snapshot = qwen3_attention_runtime_snapshot(runtime)
+    expected_report = qwen3_codebook_parameter_report(runtime)
+    input_ids = torch.tensor([[1, 4, 7, 2]])
+    with torch.inference_mode():
+        expected_logits = runtime(input_ids, use_cache=False).logits.clone()
+        expected_generation = runtime.generate(
+            input_ids,
+            do_sample=False,
+            max_new_tokens=3,
+            use_cache=False,
+        )
+    checkpoint = tmp_path / "ragged-qwen"
+    manifest = save_qwen3_codebook_checkpoint(
+        runtime,
+        checkpoint,
+        tokenizer_contract={"kind": "identity-test-tokenizer", "vocab_size": 12},
+    )
+    restored = load_qwen3_codebook_checkpoint(checkpoint)
+    restored_snapshot = qwen3_attention_runtime_snapshot(restored)
+
+    assert int(restored.attention_codebook.registry._registry_layout) == 1
+    assert restored_snapshot == expected_snapshot
+    assert qwen3_codebook_parameter_report(restored) == expected_report
+    assert manifest["assignment_hashes"]
+    assert manifest["prototype_source_hashes"]
+    with torch.inference_mode():
+        actual_logits = restored(input_ids, use_cache=False).logits
+        actual_generation = restored.generate(
+            input_ids,
+            do_sample=False,
+            max_new_tokens=3,
+            use_cache=False,
+        )
+    torch.testing.assert_close(actual_logits, expected_logits, atol=0.0, rtol=0.0)
+    assert torch.equal(actual_generation, expected_generation)
+    work = runtime.attention_codebook.registry.compaction_work
+    assert work.full_registry_clone_count == 0
+    assert work.copied_tensor_bytes <= work.result_tensor_bytes
+    assert work.peak_live_tensor_bytes_bound == (
+        work.source_tensor_bytes + work.result_tensor_bytes + work.maximum_staging_bytes
+    )

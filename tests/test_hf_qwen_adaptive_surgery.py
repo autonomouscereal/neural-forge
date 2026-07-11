@@ -12,6 +12,7 @@ from neural_forge.adaptive_surgery_graph import AnchorSpec  # noqa: E402
 from neural_forge.hf_qwen_adaptive_surgery import (  # noqa: E402
     Qwen3AdaptiveSurgeryBridge,
     Qwen3AdaptiveSurgeryFeature,
+    Qwen3AdaptiveSurgeryStateError,
     Qwen3AdaptiveSurgeryTargetError,
     Qwen3ProjectionCoefficients,
     Qwen3SurgeryEvidenceRefresh,
@@ -19,7 +20,10 @@ from neural_forge.hf_qwen_adaptive_surgery import (  # noqa: E402
     qwen3_neuron_node_id,
     qwen3_runtime_assignment_snapshot,
 )
-from neural_forge.hf_qwen_codebook_model import prepare_qwen3_codebook_model  # noqa: E402
+from neural_forge.hf_qwen_codebook_model import (  # noqa: E402
+    prepare_qwen3_codebook_model,
+    qwen3_codebook_parameter_report,
+)
 
 
 class _Tokenizer:
@@ -40,7 +44,7 @@ class _Tokenizer:
         return self.tokens[token_id]
 
 
-def _runtime() -> torch.nn.Module:
+def _runtime(*, neuron_use_scales: bool = False) -> torch.nn.Module:
     torch.manual_seed(914)
     model = transformers.Qwen3ForCausalLM(
         transformers.Qwen3Config(
@@ -69,6 +73,7 @@ def _runtime() -> torch.nn.Module:
         tokenizer,
         attention_prototypes_per_group=1,
         neuron_prototypes_per_neuron=2,
+        neuron_use_scales=neuron_use_scales,
     )
 
 
@@ -124,7 +129,7 @@ def _features(
 
 
 def test_nonadjacent_qwen_nodes_score_on_demand_and_apply_role_projection() -> None:
-    runtime = _runtime()
+    runtime = _runtime(neuron_use_scales=True)
     source = (1, 5)
     target = (0, 0)
     features = _features(
@@ -143,27 +148,21 @@ def test_nonadjacent_qwen_nodes_score_on_demand_and_apply_role_projection() -> N
 
     before_codebook = runtime.neuron_codebook
     before = qwen3_runtime_assignment_snapshot(runtime)
-    scale_allocation = (
-        runtime.neuron_codebook.registry.logical_layers
-        * runtime.neuron_codebook.registry.intermediate_width
-        * 3
-        * runtime.neuron_codebook.registry.prototype_gate_weight.element_size()
-    )
     assert bridge._marginal_bytes_saved((candidate,)) == (
-        candidate.score.parameter_bytes_saved - scale_allocation
+        candidate.score.parameter_bytes_saved
     )
 
     def select(context):
         assert context.projection_coefficients == (projection,)
-        assert context.projection_role_scales == {}
+        assert context.projection_role_scales
         return {"pairs": ((source_id, target_id),)}
 
-    with pytest.raises(Qwen3AdaptiveSurgeryTargetError, match="max_attempts=1"):
-        bridge.run(
-            before.tensor_bytes - 1,
-            max_attempts=1,
-            candidate_selector=select,
-        )
+    result = bridge.run(
+        before.tensor_bytes - 1,
+        max_attempts=1,
+        candidate_selector=select,
+    )
+    assert result.target_reached
 
     after = qwen3_runtime_assignment_snapshot(runtime)
     assert runtime.neuron_codebook is not before_codebook
@@ -177,6 +176,94 @@ def test_nonadjacent_qwen_nodes_score_on_demand_and_apply_role_projection() -> N
     )
     assert bridge.transactions[0].projection_coefficients == (projection,)
     assert all(parameter.grad is None for parameter in runtime.neuron_codebook.parameters())
+    work = runtime.neuron_codebook.registry.compaction_work
+    assert work.full_registry_clone_count == 0
+    assert work.copied_tensor_bytes <= work.result_tensor_bytes
+    assert work.peak_live_tensor_bytes_bound == (
+        work.source_tensor_bytes + work.result_tensor_bytes + work.maximum_staging_bytes
+    )
+
+
+def test_projected_scale_setup_must_have_positive_amortized_physical_bytes() -> None:
+    runtime = _runtime()
+    source = (1, 5)
+    target = (0, 0)
+    bridge = Qwen3AdaptiveSurgeryBridge(
+        runtime,
+        _features(runtime, projected_source=source, preferred_target=target),
+        max_nonconflicting_batch_size=1,
+    )
+    candidate = bridge.graph.propose_candidate_for_pair(
+        qwen3_neuron_node_id(*source), qwen3_neuron_node_id(*target)
+    )
+    before = qwen3_runtime_assignment_snapshot(runtime)
+    source_id = qwen3_neuron_node_id(*source)
+    target_id = qwen3_neuron_node_id(*target)
+
+    assert bridge._marginal_bytes_saved((candidate,)) <= 0
+    with pytest.raises(Qwen3AdaptiveSurgeryTargetError, match="No Qwen3 surgery candidate"):
+        bridge.run(
+            before.tensor_bytes - 1,
+            candidate_selector=lambda _context: {"pairs": ((source_id, target_id),)},
+        )
+    assert qwen3_runtime_assignment_snapshot(runtime) == before
+
+
+def test_automatic_projection_uses_post_swiglu_and_output_evidence() -> None:
+    runtime = _runtime(neuron_use_scales=True)
+    source = (1, 5)
+    target = (0, 0)
+    bridge = Qwen3AdaptiveSurgeryBridge(
+        runtime,
+        _features(runtime, projected_source=source, preferred_target=target),
+    )
+    projection = bridge.projection_for_pair(source, target)
+
+    assert projection.gate == 1.0
+    assert projection.post_swiglu_residual is not None
+    assert projection.output_residual is not None
+    assert projection.fit_space == "post-swiglu-activation-and-output-residual"
+
+
+def test_neuron_install_synchronizes_report_and_binds_improvement_evidence() -> None:
+    runtime = _runtime(neuron_use_scales=True)
+    source = (1, 5)
+    target = (0, 0)
+    projection = Qwen3ProjectionCoefficients(source, target, 1.0, 1.0, 1.0)
+    bridge = Qwen3AdaptiveSurgeryBridge(
+        runtime,
+        _features(runtime, projected_source=source, preferred_target=target),
+        projection_coefficients=(projection,),
+    )
+    before = qwen3_runtime_assignment_snapshot(runtime)
+
+    def gate(context):
+        return {
+            "accepted": True,
+            "improved": True,
+            "parent_score": 1.0,
+            "candidate_score": 0.9,
+            "higher_is_better": False,
+            "evaluation_contract_sha256": "b" * 64,
+            "parent_runtime_sha256": context.parent_runtime_snapshot.registry_sha256,
+        }
+
+    result = bridge.run(
+        before.tensor_bytes - 1,
+        gate=gate,
+        candidate_selector=lambda _context: {
+            "pairs": (
+                (qwen3_neuron_node_id(*source), qwen3_neuron_node_id(*target)),
+            )
+        },
+        max_attempts=1,
+    )
+    report = qwen3_codebook_parameter_report(runtime)
+    assert result.transactions[0].measured_improvement_claim is True
+    assert report.neuron_unique_parameter_count == (
+        runtime.neuron_codebook.report.unique_learned_parameters
+    )
+    assert report.neuron_index_bytes == runtime.neuron_codebook.report.index_buffer_bytes
 
 
 def test_rejected_rollout_restores_the_exact_installed_codebook() -> None:
@@ -363,6 +450,26 @@ def test_callback_exceptions_restore_runtime_and_graph_state(
         bridge._feature_recomputations,
         bridge._graph_rounds,
     ) == before_bridge_counters
+    assert bridge.transactions == ()
+
+
+def test_out_of_contract_callback_mutation_is_fatal_and_rollback_is_scoped() -> None:
+    runtime = _runtime()
+    bridge = Qwen3AdaptiveSurgeryBridge(runtime, _features(runtime))
+    before_registry = qwen3_runtime_assignment_snapshot(runtime)
+    before_embedding = runtime.get_input_embeddings().weight.detach().clone()
+
+    def mutate_unowned_tensor(context):
+        context.runtime.get_input_embeddings().weight[0, 0].add_(1.0)
+        return True
+
+    with pytest.raises(
+        Qwen3AdaptiveSurgeryStateError, match="Fatal out-of-contract mutation"
+    ):
+        bridge.run(before_registry.tensor_bytes - 1, gate=mutate_unowned_tensor)
+
+    assert qwen3_runtime_assignment_snapshot(runtime) == before_registry
+    assert not torch.equal(runtime.get_input_embeddings().weight, before_embedding)
     assert bridge.transactions == ()
 
 

@@ -22,7 +22,7 @@ import json
 import math
 import operator
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -41,9 +41,9 @@ from neural_forge.adaptive_surgery_graph import (
     SurgeryTransaction,
 )
 from neural_forge.hf_attention_codebook import (
-    AttentionCodebookParameterReport,
     AttentionCodebookRegistry,
     GlobalAttentionCodebook,
+    RaggedAttentionCodebookRegistry,
 )
 from neural_forge.hf_qwen_codebook_model import (
     Qwen3CodebookError,
@@ -334,7 +334,12 @@ Qwen3GQASurgeryFeature = Qwen3AttentionSurgeryFeature
 
 @dataclass(frozen=True, slots=True, init=False)
 class Qwen3AttentionProjection:
-    """Executable four-role projection plus measured projection residuals."""
+    """Executable role scales plus evidence about the space used to fit them.
+
+    Q/K scalars are never described as preserving Qwen's normalized query/key
+    geometry.  Automatic fits keep Q/K at one and score affine directions only
+    after the corresponding q_norm/k_norm weights are applied.
+    """
 
     source: Qwen3AttentionNodeId
     target: Qwen3AttentionNodeId
@@ -344,6 +349,9 @@ class Qwen3AttentionProjection:
     o: float
     activation_residual: float | None
     jvp_residual: float | None
+    qk_normalized_residual: float | None
+    bias_included: bool
+    fit_space: str
 
     def __init__(
         self,
@@ -356,6 +364,9 @@ class Qwen3AttentionProjection:
         *,
         activation_residual: Any = None,
         jvp_residual: Any = None,
+        qk_normalized_residual: Any = None,
+        bias_included: bool = False,
+        fit_space: str = "explicit-unverified",
     ) -> None:
         source_id = _node_ref(source, "projection source")
         target_id = _node_ref(target, "projection target")
@@ -386,6 +397,19 @@ class Qwen3AttentionProjection:
             "jvp_residual",
             _optional_nonnegative_float(jvp_residual, "JVP projection residual"),
         )
+        object.__setattr__(
+            self,
+            "qk_normalized_residual",
+            _optional_nonnegative_float(
+                qk_normalized_residual, "normalized Q/K projection residual"
+            ),
+        )
+        if not isinstance(bias_included, bool):
+            raise Qwen3AttentionSurgeryShapeError("bias_included must be boolean.")
+        if not isinstance(fit_space, str) or not fit_space.strip():
+            raise Qwen3AttentionSurgeryShapeError("fit_space must be a non-empty string.")
+        object.__setattr__(self, "bias_included", bias_included)
+        object.__setattr__(self, "fit_space", fit_space.strip())
 
     @property
     def values(self) -> tuple[float, float, float, float]:
@@ -401,6 +425,9 @@ class Qwen3AttentionProjection:
             "o": self.o,
             "activation_residual": self.activation_residual,
             "jvp_residual": self.jvp_residual,
+            "qk_normalized_residual": self.qk_normalized_residual,
+            "bias_included": self.bias_included,
+            "fit_space": self.fit_space,
         }
 
 
@@ -545,10 +572,50 @@ def _tensor_sha256(value: Tensor) -> str:
             }
         )
     )
-    bytes_view = detached.view(torch.uint8).reshape(-1)
+    bytes_view = detached.reshape(-1).view(torch.uint8)
     for start in range(0, int(bytes_view.numel()), 4 * 1024 * 1024):
         digest.update(bytes_view[start : start + 4 * 1024 * 1024].numpy().tobytes())
     return digest.hexdigest()
+
+
+def _tensor_identity_manifest(module: nn.Module) -> tuple[tuple[Any, ...], ...]:
+    entries: list[tuple[Any, ...]] = []
+    for kind, values in (
+        ("parameter", module.named_parameters(remove_duplicate=False)),
+        ("buffer", module.named_buffers(remove_duplicate=False)),
+    ):
+        for name, value in values:
+            try:
+                version = int(value._version)
+            except RuntimeError:
+                version = -1
+            entries.append(
+                (
+                    kind,
+                    name,
+                    id(value),
+                    int(value.data_ptr()) if value.device.type != "meta" else 0,
+                    version,
+                    tuple(int(item) for item in value.shape),
+                    str(value.dtype),
+                    str(value.device),
+                )
+            )
+    return tuple(entries)
+
+
+def _assert_callback_tensor_contract(
+    runtime: nn.Module,
+    before: tuple[tuple[Any, ...], ...],
+    callback_name: str,
+) -> None:
+    after = _tensor_identity_manifest(runtime)
+    if after != before:
+        raise Qwen3AttentionSurgeryStateError(
+            f"Fatal out-of-contract mutation by {callback_name}; only the owned "
+            "attention-codebook installation is rollback-capable, so no whole-model "
+            "rollback claim is made."
+        )
 
 
 def _tensor_bytes(value: Tensor | None) -> int:
@@ -644,320 +711,20 @@ def _prototype_bytes(registry: AttentionCodebookRegistry) -> int:
     return result
 
 
-class _RaggedAttentionCodebookRegistry(AttentionCodebookRegistry):
-    """Global coupled-prototype pool compatible with Qwen projection views."""
+@dataclass(frozen=True, slots=True)
+class Qwen3AttentionPrototypeCoordinate:
+    """Unambiguous canonical and physical provenance for one active slot."""
 
-    def __init__(
-        self,
-        prototype_q_weight: Tensor,
-        prototype_k_weight: Tensor,
-        prototype_v_weight: Tensor,
-        prototype_o_weight: Tensor,
-        assignments: Tensor,
-        prototype_source_indices: Tensor,
-        group_permutations: Tensor,
-        *,
-        prototype_q_bias: Tensor | None = None,
-        prototype_k_bias: Tensor | None = None,
-        prototype_v_bias: Tensor | None = None,
-        layer_o_bias: Tensor | None = None,
-        role_scales: Tensor | None = None,
-    ) -> None:
-        nn.Module.__init__(self)
-        weights = {
-            "q": prototype_q_weight,
-            "k": prototype_k_weight,
-            "v": prototype_v_weight,
-            "o": prototype_o_weight,
+    active_slot: int
+    source_layer: int
+    canonical_group: int
+    physical_group: int
+    source_flat_index: int
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            name: int(getattr(self, name)) for name in self.__dataclass_fields__
         }
-        if any(
-            not isinstance(value, Tensor)
-            or value.layout != torch.strided
-            or value.device.type == "meta"
-            or not torch.is_floating_point(value)
-            or value.ndim != 3
-            for value in weights.values()
-        ):
-            raise Qwen3AttentionSurgeryShapeError(
-                "Ragged Q/K/V/O prototypes must be dense real rank-3 tensors."
-            )
-        prototype_count = int(prototype_q_weight.shape[0])
-        if prototype_count <= 0 or any(
-            int(value.shape[0]) != prototype_count for value in weights.values()
-        ):
-            raise Qwen3AttentionSurgeryShapeError(
-                "Ragged Q/K/V/O prototype counts must match and be positive."
-            )
-        q_rows, input_width = map(int, prototype_q_weight.shape[1:])
-        head_dim = int(prototype_k_weight.shape[1])
-        if (
-            tuple(prototype_k_weight.shape[2:]) != (input_width,)
-            or tuple(prototype_v_weight.shape[1:]) != (head_dim, input_width)
-            or int(prototype_o_weight.shape[2]) != q_rows
-            or q_rows % head_dim != 0
-        ):
-            raise Qwen3AttentionSurgeryShapeError(
-                "Ragged Q/K/V/O block dimensions are not a coupled GQA group."
-            )
-        reference = prototype_q_weight
-        if any(
-            value.dtype != reference.dtype or value.device != reference.device
-            for value in weights.values()
-        ):
-            raise Qwen3AttentionSurgeryShapeError(
-                "All ragged attention prototypes need one dtype and device."
-            )
-        integer_dtypes = {
-            torch.int8,
-            torch.int16,
-            torch.int32,
-            torch.int64,
-            torch.uint8,
-        }
-        if (
-            not isinstance(assignments, Tensor)
-            or assignments.ndim != 2
-            or assignments.dtype not in integer_dtypes
-        ):
-            raise Qwen3AttentionSurgeryShapeError(
-                "assignments must be a [layers, groups] integer tensor."
-            )
-        logical_layers, groups = map(int, assignments.shape)
-        assignment64 = assignments.detach().to(device="cpu", dtype=torch.int64)
-        if (
-            logical_layers <= 0
-            or groups <= 0
-            or int(assignment64.min()) < 0
-            or int(assignment64.max()) >= prototype_count
-        ):
-            raise Qwen3AttentionSurgeryShapeError(
-                "assignments contains an invalid global prototype index."
-            )
-        if set(int(item) for item in assignment64.reshape(-1).tolist()) != set(
-            range(prototype_count)
-        ):
-            raise Qwen3AttentionSurgeryStateError(
-                "A ragged attention registry cannot retain unassigned prototype storage."
-            )
-        if (
-            not isinstance(prototype_source_indices, Tensor)
-            or prototype_source_indices.dtype not in integer_dtypes
-            or tuple(prototype_source_indices.shape) != (prototype_count,)
-        ):
-            raise Qwen3AttentionSurgeryShapeError(
-                "prototype_source_indices must identify every global prototype."
-            )
-        sources64 = prototype_source_indices.detach().to(
-            device="cpu", dtype=torch.int64
-        )
-        if (
-            int(sources64.min()) < 0
-            or int(sources64.max()) >= logical_layers * groups
-            or int(torch.unique(sources64).numel()) != prototype_count
-        ):
-            raise Qwen3AttentionSurgeryShapeError(
-                "prototype_source_indices must be distinct real source groups."
-            )
-        if (
-            not isinstance(group_permutations, Tensor)
-            or group_permutations.dtype not in integer_dtypes
-            or tuple(group_permutations.shape) != (logical_layers, groups)
-        ):
-            raise Qwen3AttentionSurgeryShapeError(
-                "group_permutations must be [layers, groups] integers."
-            )
-        permutations64 = group_permutations.detach().to(device="cpu", dtype=torch.int64)
-        expected = list(range(groups))
-        if any(sorted(map(int, row)) != expected for row in permutations64.tolist()):
-            raise Qwen3AttentionSurgeryShapeError(
-                "Every group_permutations row must be bijective."
-            )
-        optional = (
-            ("prototype_q_bias", prototype_q_bias, (prototype_count, q_rows)),
-            ("prototype_k_bias", prototype_k_bias, (prototype_count, head_dim)),
-            ("prototype_v_bias", prototype_v_bias, (prototype_count, head_dim)),
-            (
-                "layer_o_bias",
-                layer_o_bias,
-                (logical_layers, int(prototype_o_weight.shape[1])),
-            ),
-            ("role_scales", role_scales, (logical_layers, groups, 4)),
-        )
-        for name, value, shape in optional:
-            if value is None:
-                continue
-            if (
-                not isinstance(value, Tensor)
-                or tuple(value.shape) != shape
-                or value.dtype != reference.dtype
-                or value.device != reference.device
-                or not bool(torch.isfinite(value.detach()).all())
-            ):
-                raise Qwen3AttentionSurgeryShapeError(
-                    f"{name} must be finite with shape {shape!r} and the prototype dtype/device."
-                )
-        if not all(
-            bool(torch.isfinite(value.detach()).all()) for value in weights.values()
-        ):
-            raise Qwen3AttentionSurgeryShapeError(
-                "Ragged attention prototypes contain NaN or infinity."
-            )
-        self.prototype_q_weight = nn.Parameter(prototype_q_weight.detach().clone())
-        self.prototype_k_weight = nn.Parameter(prototype_k_weight.detach().clone())
-        self.prototype_v_weight = nn.Parameter(prototype_v_weight.detach().clone())
-        self.prototype_o_weight = nn.Parameter(prototype_o_weight.detach().clone())
-        self.prototype_q_bias = (
-            None
-            if prototype_q_bias is None
-            else nn.Parameter(prototype_q_bias.detach().clone())
-        )
-        self.prototype_k_bias = (
-            None
-            if prototype_k_bias is None
-            else nn.Parameter(prototype_k_bias.detach().clone())
-        )
-        self.prototype_v_bias = (
-            None
-            if prototype_v_bias is None
-            else nn.Parameter(prototype_v_bias.detach().clone())
-        )
-        self.layer_o_bias = (
-            None
-            if layer_o_bias is None
-            else nn.Parameter(layer_o_bias.detach().clone())
-        )
-        self.role_scales = (
-            None if role_scales is None else nn.Parameter(role_scales.detach().clone())
-        )
-        self.register_buffer("assignments", assignment64.to(torch.int32))
-        self.register_buffer("prototype_source_indices", sources64.to(torch.int32))
-        self.register_buffer("group_permutations", permutations64.to(torch.int32))
-        self.input_width = input_width
-        self.output_width = int(prototype_o_weight.shape[1])
-        self.head_dim = head_dim
-        self.diagnostics = None
-
-    @property
-    def logical_layers(self) -> int:
-        return int(self.assignments.shape[0])
-
-    @property
-    def key_value_heads(self) -> int:
-        return int(self.assignments.shape[1])
-
-    @property
-    def prototype_count(self) -> int:
-        return int(self.prototype_q_weight.shape[0])
-
-    @property
-    def prototypes_per_group(self) -> int:
-        return 0
-
-    @property
-    def query_rows_per_group(self) -> int:
-        return int(self.prototype_q_weight.shape[1])
-
-    @property
-    def query_heads_per_group(self) -> int:
-        return self.query_rows_per_group // self.head_dim
-
-    @property
-    def query_heads(self) -> int:
-        return self.key_value_heads * self.query_heads_per_group
-
-    @property
-    def query_width(self) -> int:
-        return self.query_heads * self.head_dim
-
-    @property
-    def key_value_width(self) -> int:
-        return self.key_value_heads * self.head_dim
-
-    @property
-    def report(self) -> AttentionCodebookParameterReport:
-        producer_biases = (
-            self.query_width * int(self.prototype_q_bias is not None)
-            + self.key_value_width * int(self.prototype_k_bias is not None)
-            + self.key_value_width * int(self.prototype_v_bias is not None)
-        )
-        output_biases = self.output_width if self.layer_o_bias is not None else 0
-        per_layer = (
-            self.query_width * self.input_width
-            + 2 * self.key_value_width * self.input_width
-            + self.output_width * self.query_width
-            + producer_biases
-            + output_biases
-        )
-        learned = sum(int(parameter.numel()) for parameter in self.parameters())
-        scales = 0 if self.role_scales is None else int(self.role_scales.numel())
-        retained_bias = (
-            0 if self.layer_o_bias is None else int(self.layer_o_bias.numel())
-        )
-        assignment_bytes = _tensor_bytes(self.assignments)
-        source_bytes = _tensor_bytes(self.prototype_source_indices)
-        permutation_bytes = _tensor_bytes(self.group_permutations)
-        return AttentionCodebookParameterReport(
-            logical_layers=self.logical_layers,
-            input_width=self.input_width,
-            output_width=self.output_width,
-            query_heads=self.query_heads,
-            key_value_heads=self.key_value_heads,
-            query_heads_per_group=self.query_heads_per_group,
-            head_dim=self.head_dim,
-            prototypes_per_group=0,
-            prototype_count=self.prototype_count,
-            logical_group_executions=self.logical_layers * self.key_value_heads,
-            logical_query_head_executions=self.logical_layers * self.query_heads,
-            logical_key_value_head_executions=self.logical_layers
-            * self.key_value_heads,
-            logical_dense_parameters=self.logical_layers * per_layer,
-            unique_learned_parameters=learned,
-            prototype_parameters=learned - scales - retained_bias,
-            scale_parameters=scales,
-            retained_layer_bias_parameters=retained_bias,
-            parameters_saved=self.logical_layers * per_layer - learned,
-            assignment_index_bytes=assignment_bytes,
-            prototype_source_index_bytes=source_bytes,
-            permutation_index_bytes=permutation_bytes,
-            index_buffer_bytes=assignment_bytes + source_bytes + permutation_bytes,
-        )
-
-    def materialize_projection(
-        self, layer_index: int, role: str
-    ) -> tuple[Tensor, Tensor | None]:
-        layer_index = self._layer_index(layer_index)
-        role = self._role(role)
-        device = self.prototype_q_weight.device
-        slots = self.assignments[layer_index].to(device=device, dtype=torch.long)
-        weight = getattr(self, f"prototype_{role}_weight").index_select(0, slots)
-        bias_parameter = getattr(self, f"prototype_{role}_bias", None)
-        bias = None if bias_parameter is None else bias_parameter.index_select(0, slots)
-        if self.role_scales is not None:
-            role_index = {"q": 0, "k": 1, "v": 2, "o": 3}[role]
-            scales = self.role_scales[layer_index, :, role_index]
-            weight = weight * scales[:, None, None]
-            if bias is not None:
-                bias = bias * scales[:, None]
-        physical_to_canonical = torch.argsort(
-            self.group_permutations[layer_index].to(device=device, dtype=torch.long)
-        )
-        weight = weight.index_select(0, physical_to_canonical)
-        if bias is not None:
-            bias = bias.index_select(0, physical_to_canonical)
-        if role == "o":
-            weight = weight.permute(1, 0, 2).reshape(
-                self.output_width, self.query_width
-            )
-            bias = None if self.layer_o_bias is None else self.layer_o_bias[layer_index]
-        elif role == "q":
-            weight = weight.reshape(self.query_width, self.input_width)
-            if bias is not None:
-                bias = bias.reshape(self.query_width)
-        else:
-            weight = weight.reshape(self.key_value_width, self.input_width)
-            if bias is not None:
-                bias = bias.reshape(self.key_value_width)
-        return weight, bias
 
 
 @dataclass(frozen=True, slots=True)
@@ -967,6 +734,7 @@ class Qwen3AttentionRuntimeSnapshot:
     prototype_count: int
     assignments: tuple[tuple[int, ...], ...]
     prototype_source_indices: tuple[int, ...]
+    prototype_coordinates: tuple[Qwen3AttentionPrototypeCoordinate, ...]
     assignment_source_indices: tuple[tuple[int, ...], ...]
     prototype_bundle_sha256s: tuple[tuple[Qwen3AttentionNodeId, str], ...]
     role_scales_present: bool
@@ -1005,6 +773,9 @@ class Qwen3AttentionRuntimeSnapshot:
             "prototype_count": self.prototype_count,
             "assignments": [list(row) for row in self.assignments],
             "prototype_source_indices": list(self.prototype_source_indices),
+            "prototype_coordinates": [
+                coordinate.as_dict() for coordinate in self.prototype_coordinates
+            ],
             "assignment_source_indices": [
                 list(row) for row in self.assignment_source_indices
             ],
@@ -1033,11 +804,34 @@ def _registry_snapshot(
     assignments = tuple(
         tuple(int(item) for item in row) for row in assignments_tensor.tolist()
     )
+    groups = int(assignments_tensor.shape[1])
     sources = tuple(int(item) for item in _source_indices(registry).tolist())
+    permutations = registry.group_permutations.detach().to(
+        device="cpu", dtype=torch.int64
+    )
+    coordinates: list[Qwen3AttentionPrototypeCoordinate] = []
+    for slot, source in enumerate(sources):
+        source_layer, physical_group = divmod(source, groups)
+        canonical_matches = torch.nonzero(
+            permutations[source_layer] == physical_group,
+            as_tuple=False,
+        ).reshape(-1)
+        if int(canonical_matches.numel()) != 1:
+            raise Qwen3AttentionSurgeryStateError(
+                "Group permutation lacks one canonical coordinate for provenance."
+            )
+        coordinates.append(
+            Qwen3AttentionPrototypeCoordinate(
+                active_slot=slot,
+                source_layer=source_layer,
+                canonical_group=int(canonical_matches.item()),
+                physical_group=physical_group,
+                source_flat_index=source,
+            )
+        )
     assignment_sources = tuple(
         tuple(sources[slot] for slot in row) for row in assignments
     )
-    groups = int(assignments_tensor.shape[1])
     bundle_hashes = tuple(
         (
             qwen3_attention_group_node_id(*divmod(source, groups)),
@@ -1066,12 +860,15 @@ def _registry_snapshot(
         assignment_bytes
         + _tensor_bytes(registry.prototype_source_indices)
         + _tensor_bytes(registry.group_permutations)
+        + _tensor_bytes(getattr(registry, "_registry_schema_version", None))
+        + _tensor_bytes(getattr(registry, "_registry_layout", None))
     )
     payload = {
         "logical_layers": int(assignments_tensor.shape[0]),
         "groups": groups,
         "assignments": assignments,
         "sources": sources,
+        "prototype_coordinates": [item.as_dict() for item in coordinates],
         "state_hashes": state_hashes,
         "tensor_bytes": tensor_bytes,
     }
@@ -1081,6 +878,7 @@ def _registry_snapshot(
         prototype_count=len(sources),
         assignments=assignments,
         prototype_source_indices=sources,
+        prototype_coordinates=tuple(coordinates),
         assignment_source_indices=assignment_sources,
         prototype_bundle_sha256s=bundle_hashes,
         role_scales_present=registry.role_scales is not None,
@@ -1186,28 +984,6 @@ def _force_install_attention_codebook(
             setattr(layer.self_attn, name, getattr(view, name))
 
 
-def _updated_aggregate_report(
-    previous: Qwen3CodebookParameterReport,
-    codebook: GlobalAttentionCodebook,
-) -> Qwen3CodebookParameterReport:
-    attention = codebook.report
-    learned_delta = (
-        attention.unique_learned_parameters - previous.attention_unique_parameter_count
-    )
-    index_delta = attention.index_buffer_bytes - previous.attention_index_bytes
-    return replace(
-        previous,
-        attention_prototypes_per_group=attention.prototypes_per_group,
-        unique_parameter_count=previous.unique_parameter_count + learned_delta,
-        registered_logical_parameter_count=(
-            previous.registered_logical_parameter_count + learned_delta
-        ),
-        attention_unique_parameter_count=attention.unique_learned_parameters,
-        attention_index_bytes=attention.index_buffer_bytes,
-        index_buffer_bytes=previous.index_buffer_bytes + index_delta,
-    )
-
-
 def _install_attention_codebook(
     runtime: nn.Module, codebook: GlobalAttentionCodebook
 ) -> None:
@@ -1223,19 +999,22 @@ def _install_attention_codebook(
             view = codebook[layer_index]
             for name in ("q_proj", "k_proj", "v_proj", "o_proj"):
                 _wire_projection(layer, name, getattr(view, name))
+        synchronized_report = qwen3_codebook_parameter_report(runtime)
         installed, _ = _validated_runtime(runtime)
         if installed is not codebook:
             raise Qwen3AttentionSurgeryStateError(
                 "Replacement attention codebook was not installed by identity."
             )
-        setattr(
-            runtime,
-            _QWEN3_REPORT_ATTRIBUTE,
-            _updated_aggregate_report(previous_report, codebook),
-        )
+        if synchronized_report.attention_unique_parameter_count != (
+            codebook.report.unique_learned_parameters
+        ):
+            raise Qwen3AttentionSurgeryStateError(
+                "Aggregate Qwen accounting did not synchronize after installation."
+            )
     except Exception:
         _force_install_attention_codebook(runtime, previous)
         setattr(runtime, _QWEN3_REPORT_ATTRIBUTE, previous_report)
+        qwen3_codebook_parameter_report(runtime)
         raise
 
 
@@ -1251,11 +1030,12 @@ def _capture_installed(runtime: nn.Module) -> _InstalledRuntime:
 def _restore_installed(runtime: nn.Module, installed: _InstalledRuntime) -> bool:
     _force_install_attention_codebook(runtime, installed.codebook)
     setattr(runtime, _QWEN3_REPORT_ATTRIBUTE, installed.aggregate_report)
+    synchronized = qwen3_codebook_parameter_report(runtime)
     codebook, registry = _validated_runtime(runtime)
     return (
         codebook is installed.codebook
         and _registry_snapshot(registry) == installed.snapshot
-        and qwen3_codebook_parameter_report(runtime) == installed.aggregate_report
+        and synchronized == installed.aggregate_report
     )
 
 
@@ -1375,27 +1155,97 @@ def _least_squares_scale(source: Tensor, target: Tensor) -> float:
     return result if math.isfinite(result) else 1.0
 
 
+def _prototype_affine_block(
+    registry: AttentionCodebookRegistry,
+    role: str,
+    slot: int,
+) -> tuple[Tensor, bool]:
+    weight = _flat_prototype_tensor(registry, f"prototype_{role}_weight")
+    if weight is None:  # pragma: no cover - every role weight is mandatory
+        raise Qwen3AttentionSurgeryStateError(f"Missing {role} prototype weight.")
+    block = weight[slot].detach()
+    bias = _flat_prototype_tensor(registry, f"prototype_{role}_bias")
+    if bias is None:
+        return block, False
+    return torch.cat((block, bias[slot].detach().unsqueeze(-1)), dim=-1), True
+
+
+def _post_norm_affine_direction(
+    block: Tensor,
+    norm_weight: Tensor,
+    head_dim: int,
+    epsilon: float,
+) -> Tensor:
+    heads = int(block.shape[0]) // head_dim
+    reshaped = block.detach().to(device="cpu", dtype=torch.float64).reshape(
+        heads, head_dim, -1
+    )
+    rms = torch.sqrt(torch.mean(reshaped.square(), dim=1, keepdim=True) + epsilon)
+    normalized = reshaped / rms
+    normalized *= norm_weight.detach().to(device="cpu", dtype=torch.float64).reshape(
+        1, head_dim, 1
+    )
+    return normalized.reshape(-1)
+
+
+def _normalized_tensor_residual(source: Tensor, target: Tensor) -> float:
+    source64 = source.detach().to(device="cpu", dtype=torch.float64).reshape(-1)
+    target64 = target.detach().to(device="cpu", dtype=torch.float64).reshape(-1)
+    residual = source64 - target64
+    denominator = float(torch.mean(source64.square())) + 1e-12
+    return float(torch.mean(residual.square())) / denominator
+
+
 def _automatic_projection(
+    runtime: nn.Module,
     registry: AttentionCodebookRegistry,
     source_slot: int,
     target_slot: int,
     source_id: Qwen3AttentionNodeId,
     target_id: Qwen3AttentionNodeId,
 ) -> Qwen3AttentionProjection:
-    coefficients = []
-    for name in (
-        "prototype_q_weight",
-        "prototype_k_weight",
-        "prototype_v_weight",
-        "prototype_o_weight",
-    ):
-        value = _flat_prototype_tensor(registry, name)
-        if value is None:  # pragma: no cover - four weights are mandatory
-            raise Qwen3AttentionSurgeryStateError(f"Missing {name}.")
-        coefficients.append(
-            _least_squares_scale(value[source_slot], value[target_slot])
-        )
-    return Qwen3AttentionProjection(source_id, target_id, *coefficients)
+    source_layer = source_id[2]
+    target_layer = target_id[2]
+    source_attention = runtime.model.layers[source_layer].self_attn
+    target_attention = runtime.model.layers[target_layer].self_attn
+    epsilon = float(getattr(runtime.config, "rms_norm_eps", 1e-6))
+    q_source, q_bias = _prototype_affine_block(registry, "q", source_slot)
+    q_target, q_target_bias = _prototype_affine_block(registry, "q", target_slot)
+    k_source, k_bias = _prototype_affine_block(registry, "k", source_slot)
+    k_target, k_target_bias = _prototype_affine_block(registry, "k", target_slot)
+    q_source_direction = _post_norm_affine_direction(
+        q_source, source_attention.q_norm.weight, registry.head_dim, epsilon
+    )
+    q_target_direction = _post_norm_affine_direction(
+        q_target, target_attention.q_norm.weight, registry.head_dim, epsilon
+    )
+    k_source_direction = _post_norm_affine_direction(
+        k_source, source_attention.k_norm.weight, registry.head_dim, epsilon
+    )
+    k_target_direction = _post_norm_affine_direction(
+        k_target, target_attention.k_norm.weight, registry.head_dim, epsilon
+    )
+    qk_residual = 0.5 * (
+        _normalized_tensor_residual(q_source_direction, q_target_direction)
+        + _normalized_tensor_residual(k_source_direction, k_target_direction)
+    )
+    v_source, v_bias = _prototype_affine_block(registry, "v", source_slot)
+    v_target, v_target_bias = _prototype_affine_block(registry, "v", target_slot)
+    o_source, _ = _prototype_affine_block(registry, "o", source_slot)
+    o_target, _ = _prototype_affine_block(registry, "o", target_slot)
+    return Qwen3AttentionProjection(
+        source_id,
+        target_id,
+        1.0,
+        1.0,
+        _least_squares_scale(v_source, v_target),
+        _least_squares_scale(o_source, o_target),
+        qk_normalized_residual=qk_residual,
+        bias_included=any(
+            (q_bias, q_target_bias, k_bias, k_target_bias, v_bias, v_target_bias)
+        ),
+        fit_space="post-qk-rmsnorm-affine-direction-plus-v/o-affine",
+    )
 
 
 def _normalized_projection_residual(
@@ -1438,7 +1288,7 @@ def _requires_scales(projection: Qwen3AttentionProjection) -> bool:
 
 def _copy_requires_grad(
     source: AttentionCodebookRegistry,
-    target: _RaggedAttentionCodebookRegistry,
+    target: RaggedAttentionCodebookRegistry,
     *,
     scales_created: bool,
 ) -> None:
@@ -1452,6 +1302,71 @@ def _copy_requires_grad(
             if old is None
             else old.requires_grad
         )
+
+
+@dataclass(frozen=True, slots=True)
+class Qwen3AttentionCompactionWork:
+    """Conservative live-storage and copy-work bound for one compaction."""
+
+    source_tensor_bytes: int
+    result_tensor_bytes: int
+    copied_tensor_bytes: int
+    maximum_staging_bytes: int
+    peak_live_tensor_bytes_bound: int
+    full_registry_clone_count: int = 0
+    prototype_copy_passes: int = 1
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            name: int(getattr(self, name)) for name in self.__dataclass_fields__
+        }
+
+
+def _stream_select_slots(value: Tensor | None, slots: Sequence[int], dim: int) -> Tensor | None:
+    if value is None:
+        return None
+    shape = list(value.shape)
+    shape[dim] = len(slots)
+    result = torch.empty(shape, dtype=value.dtype, device=value.device)
+    with torch.inference_mode():
+        for destination, source in enumerate(slots):
+            result.select(dim, destination).copy_(value.detach().select(dim, source))
+    return result
+
+
+def _compaction_work(
+    source: AttentionCodebookRegistry,
+    result: AttentionCodebookRegistry,
+) -> Qwen3AttentionCompactionWork:
+    source_bytes = sum(_tensor_bytes(value) for value in source.state_dict().values())
+    result_bytes = sum(_tensor_bytes(value) for value in result.state_dict().values())
+    copied_names = (
+        "prototype_q_weight",
+        "prototype_k_weight",
+        "prototype_v_weight",
+        "prototype_o_weight",
+        "prototype_q_bias",
+        "prototype_k_bias",
+        "prototype_v_bias",
+    )
+    copied = sum(
+        _tensor_bytes(getattr(result, name, None)) for name in copied_names
+    )
+    maximum_staging = max(
+        (
+            _tensor_bytes(value[0])
+            for name in copied_names
+            if (value := getattr(result, name, None)) is not None
+        ),
+        default=0,
+    )
+    return Qwen3AttentionCompactionWork(
+        source_tensor_bytes=source_bytes,
+        result_tensor_bytes=result_bytes,
+        copied_tensor_bytes=copied,
+        maximum_staging_bytes=maximum_staging,
+        peak_live_tensor_bytes_bound=source_bytes + result_bytes + maximum_staging,
+    )
 
 
 def _compacted_attention_codebook(
@@ -1528,12 +1443,9 @@ def _compacted_attention_codebook(
                     projection.values, device=scales.device, dtype=scales.dtype
                 )
                 scales[layer_index, group_index] *= coefficient
-    device = registry.prototype_q_weight.device
-    selected = torch.tensor(survivors, device=device, dtype=torch.long)
-
     def selected_tensor(name: str) -> Tensor | None:
         value = _flat_prototype_tensor(registry, name)
-        return None if value is None else value.index_select(0, selected)
+        return _stream_select_slots(value, survivors, 0)
 
     q_weight = selected_tensor("prototype_q_weight")
     k_weight = selected_tensor("prototype_k_weight")
@@ -1543,23 +1455,29 @@ def _compacted_attention_codebook(
         raise Qwen3AttentionSurgeryStateError(
             "A coupled attention proposal lost one of Q/K/V/O."
         )
-    new_registry = _RaggedAttentionCodebookRegistry(
+    new_registry = RaggedAttentionCodebookRegistry(
         q_weight,
         k_weight,
         v_weight,
         o_weight,
         assignments,
-        _source_indices(registry).to(device=device).index_select(0, selected),
+        _stream_select_slots(
+            _source_indices(registry).to(device=registry.prototype_q_weight.device),
+            survivors,
+            0,
+        ),
         registry.group_permutations,
         prototype_q_bias=selected_tensor("prototype_q_bias"),
         prototype_k_bias=selected_tensor("prototype_k_bias"),
         prototype_v_bias=selected_tensor("prototype_v_bias"),
         layer_o_bias=registry.layer_o_bias,
         role_scales=scales,
+        copy_tensors=False,
     )
     _copy_requires_grad(
         registry, new_registry, scales_created=old_scales is None and scales is not None
     )
+    new_registry.compaction_work = _compaction_work(registry, new_registry)
     new_registry.train(registry.training)
     result = GlobalAttentionCodebook(new_registry)
     result.train(current.training)
@@ -1685,6 +1603,10 @@ class Qwen3AttentionSurgeryTransaction:
     def reverted(self) -> bool:
         return not self.accepted
 
+    @property
+    def rollback_scope(self) -> str:
+        return "owned-attention-codebook-installation"
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "transaction_index": self.transaction_index,
@@ -1706,6 +1628,7 @@ class Qwen3AttentionSurgeryTransaction:
             "physical_bytes_saved": self.physical_bytes_saved,
             "rollback_exact": self.rollback_exact,
             "measured_improvement_claim": self.measured_improvement_claim,
+            "rollback_scope": self.rollback_scope,
         }
 
 
@@ -1737,6 +1660,10 @@ class Qwen3AttentionSurgeryResult:
             for transaction in self.transactions
         )
 
+    @property
+    def owned_registry_rollback_verified(self) -> bool:
+        return self.immutable_rollback_verified
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "schema_version": SCHEMA_VERSION,
@@ -1750,6 +1677,8 @@ class Qwen3AttentionSurgeryResult:
             "diagnostics": self.diagnostics.as_dict(),
             "zero_gradient": self.zero_gradient,
             "immutable_rollback_verified": self.immutable_rollback_verified,
+            "owned_registry_rollback_verified": self.owned_registry_rollback_verified,
+            "rollback_scope": "owned-attention-codebook-installation",
             "quality_improvement_claimed_by_bridge": False,
         }
 
@@ -1758,7 +1687,10 @@ class Qwen3AttentionSurgeryResult:
         return self.as_dict()
 
 
-def _decision(value: Any) -> tuple[EvaluationDecision, bool]:
+def _decision(
+    value: Any,
+    context: Qwen3AttentionSurgeryEvaluationContext,
+) -> tuple[EvaluationDecision, bool]:
     if isinstance(value, EvaluationDecision):
         decision = value
         raw_metrics = dict(value.metrics)
@@ -1802,11 +1734,31 @@ def _decision(value: Any) -> tuple[EvaluationDecision, bool]:
     )
     if not claim:
         return decision, False
-    required = {"parent_score", "candidate_score", "higher_is_better"}
+    required = {
+        "parent_score",
+        "candidate_score",
+        "higher_is_better",
+        "evaluation_contract_sha256",
+        "parent_runtime_sha256",
+    }
     if not required.issubset(raw_metrics):
         raise Qwen3AttentionSurgeryStateError(
-            "An improvement claim requires measured parent_score, candidate_score, "
-            "and higher_is_better values."
+            "An improvement claim requires measured scores, direction, an evaluation "
+            "contract hash, and the exact parent runtime hash."
+        )
+    contract_hash = raw_metrics["evaluation_contract_sha256"]
+    parent_hash = raw_metrics["parent_runtime_sha256"]
+    if (
+        not isinstance(contract_hash, str)
+        or len(contract_hash) != 64
+        or any(character not in "0123456789abcdef" for character in contract_hash.lower())
+    ):
+        raise Qwen3AttentionSurgeryShapeError(
+            "evaluation_contract_sha256 must be a 64-character SHA-256 hex digest."
+        )
+    if parent_hash != context.parent_runtime_snapshot.registry_sha256:
+        raise Qwen3AttentionSurgeryStateError(
+            "Improvement claim parent_runtime_sha256 does not match the gated parent."
         )
     parent = _finite_float(raw_metrics["parent_score"], "parent_score")
     candidate = _finite_float(raw_metrics["candidate_score"], "candidate_score")
@@ -1834,7 +1786,7 @@ def _invoke_gate(
     try:
         signature = inspect.signature(callable_value)
     except (TypeError, ValueError):
-        return _decision(callable_value(context))
+        return _decision(callable_value(context), context)
     positional = [
         parameter
         for parameter in signature.parameters.values()
@@ -1845,10 +1797,10 @@ def _invoke_gate(
         }
     ]
     if not positional:
-        return _decision(callable_value())
+        return _decision(callable_value(), context)
     if len(positional) == 1:
-        return _decision(callable_value(context))
-    return _decision(callable_value(context.runtime, context))
+        return _decision(callable_value(context), context)
+    return _decision(callable_value(context.runtime, context), context)
 
 
 def _assignment_changes(
@@ -2044,7 +1996,14 @@ class Qwen3AttentionSurgeryBridge:
             raise Qwen3AttentionSurgeryStateError(
                 "Projection pair references a non-active prototype."
             ) from error
-        return _automatic_projection(registry, source_slot, target_slot, source, target)
+        return _automatic_projection(
+            self.runtime,
+            registry,
+            source_slot,
+            target_slot,
+            source,
+            target,
+        )
 
     def _projection_damage(
         self,
@@ -2076,7 +2035,11 @@ class Qwen3AttentionSurgeryBridge:
             math.fsum(math.log1p(abs(value - 1.0)) ** 2 for value in projection.values)
             / 4.0
         )
-        qk_geometry = math.log1p(abs(projection.q * projection.k - 1.0)) ** 2
+        qk_geometry = (
+            projection.qk_normalized_residual
+            if projection.qk_normalized_residual is not None
+            else math.log1p(abs(projection.q * projection.k - 1.0)) ** 2 + 1.0
+        )
         return float(activation + jvp + 0.05 * scale_penalty + 0.05 * qk_geometry)
 
     def _build_graph(
@@ -2321,18 +2284,26 @@ class Qwen3AttentionSurgeryBridge:
         if selector is None:
             ranked: tuple[Any, ...] = tuple(item.candidate for item in scored)
         else:
-            selected = self._invoke_selector(
-                selector,
-                Qwen3AttentionCandidateSelectionContext(
-                    graph=self._graph,
-                    discovered_candidates=tuple(item.candidate for item in scored),
-                    scored_candidates=scored,
-                    target_bytes=target_bytes,
-                    current_bytes=current_bytes,
-                    max_nonconflicting_batch_size=(self.max_nonconflicting_batch_size),
-                    evidence_epoch=self._evidence_epoch,
-                ),
-            )
+            selector_manifest = _tensor_identity_manifest(self.runtime)
+            try:
+                selected = self._invoke_selector(
+                    selector,
+                    Qwen3AttentionCandidateSelectionContext(
+                        graph=self._graph,
+                        discovered_candidates=tuple(item.candidate for item in scored),
+                        scored_candidates=scored,
+                        target_bytes=target_bytes,
+                        current_bytes=current_bytes,
+                        max_nonconflicting_batch_size=(
+                            self.max_nonconflicting_batch_size
+                        ),
+                        evidence_epoch=self._evidence_epoch,
+                    ),
+                )
+            finally:
+                _assert_callback_tensor_contract(
+                    self.runtime, selector_manifest, "candidate_selector"
+                )
             if isinstance(selected, Mapping):
                 forbidden = {
                     "role",
@@ -2536,13 +2507,17 @@ class Qwen3AttentionSurgeryBridge:
             proposal = self._graph.preview(candidates)
             parent = _capture_installed(self.runtime)
             expected_savings = self._batch_physical_bytes_saved(candidates)
+            if expected_savings <= 0:
+                raise Qwen3AttentionSurgeryStateError(
+                    "An attention transaction must have positive marginal physical bytes."
+                )
 
             def projection_for_pair(source, target_node):
                 return self._projection_for_pair_from(
                     source, target_node, self._projections
                 )
 
-            with torch.inference_mode():
+            with torch.no_grad():
                 tentative, used_projections = _compacted_attention_codebook(
                     self.runtime, proposal.snapshot, projection_for_pair
                 )
@@ -2568,8 +2543,12 @@ class Qwen3AttentionSurgeryBridge:
                 proposed_runtime_snapshot=proposed.snapshot,
                 projections=used_projections,
             )
-            with torch.inference_mode():
-                decision, measured_claim = _invoke_gate(gate, context)
+            with torch.no_grad():
+                gate_manifest = _tensor_identity_manifest(self.runtime)
+                try:
+                    decision, measured_claim = _invoke_gate(gate, context)
+                finally:
+                    _assert_callback_tensor_contract(self.runtime, gate_manifest, "gate")
             if (
                 self.runtime_snapshot != proposed.snapshot
                 or qwen3_codebook_parameter_report(self.runtime)
@@ -2627,20 +2606,26 @@ class Qwen3AttentionSurgeryBridge:
 
             active_nodes = set(proposed.snapshot.active_node_ids)
             next_epoch = self._evidence_epoch + 1
-            refresh = self._invoke_refresh(
-                refresh_features,
-                Qwen3AttentionSurgeryRefreshContext(
-                    runtime=self.runtime,
-                    round_index=self._graph_rounds,
-                    accepted_transaction_index=self._accepted_count + 1,
-                    evidence_epoch=next_epoch,
-                    target_bytes=target,
-                    current_bytes=proposed.snapshot.tensor_bytes,
-                    active_node_ids=tuple(sorted(active_nodes)),
-                    graph_transaction=proposal.transaction,
-                ),
-                active_nodes,
-            )
+            refresh_manifest = _tensor_identity_manifest(self.runtime)
+            try:
+                refresh = self._invoke_refresh(
+                    refresh_features,
+                    Qwen3AttentionSurgeryRefreshContext(
+                        runtime=self.runtime,
+                        round_index=self._graph_rounds,
+                        accepted_transaction_index=self._accepted_count + 1,
+                        evidence_epoch=next_epoch,
+                        target_bytes=target,
+                        current_bytes=proposed.snapshot.tensor_bytes,
+                        active_node_ids=tuple(sorted(active_nodes)),
+                        graph_transaction=proposal.transaction,
+                    ),
+                    active_nodes,
+                )
+            finally:
+                _assert_callback_tensor_contract(
+                    self.runtime, refresh_manifest, "refresh_features"
+                )
             self._validate_refresh(refresh, active_nodes)
             next_graph = (
                 self._build_graph(refresh.features, refresh.projections)
@@ -2761,6 +2746,8 @@ class Qwen3AttentionSurgeryBridge:
             checkpoint: _BridgeCheckpoint,
         ) -> None:
             nonlocal current
+            if self._batch_physical_bytes_saved(candidates) <= 0:
+                return
             accepted = self._attempt_batch(
                 candidates,
                 checkpoint,

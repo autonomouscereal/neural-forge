@@ -933,6 +933,9 @@ def evaluate_loaded_text_model(
     max_choice_probes: int | None = None,
     max_generation_prompts: int | None = None,
     max_behavior_probes: int | None = None,
+    min_continuation_chars: int = 24,
+    min_unique_token_ratio: float = 0.25,
+    identity_binding: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Evaluate an already-loaded causal LM without checkpoint reloading."""
 
@@ -997,8 +1000,17 @@ def evaluate_loaded_text_model(
             for probe in behavior_probes
         ]
 
+    if min_continuation_chars <= 0:
+        raise ValueError("min_continuation_chars must be positive.")
+    if not 0.0 < float(min_unique_token_ratio) <= 1.0:
+        raise ValueError("min_unique_token_ratio must be in (0, 1].")
     generation_diagnostics = [
-        _generation_health(item, 0, 0.0) for item in generations
+        _generation_health(
+            item,
+            int(min_continuation_chars),
+            float(min_unique_token_ratio),
+        )
+        for item in generations
     ]
     behavior_correct = sum(1 for item in behavior_items if item["passed"])
     choice_correct = sum(1 for item in probes if item["correct"])
@@ -1031,6 +1043,15 @@ def evaluate_loaded_text_model(
                 sum(1 for item in generation_diagnostics if item["passed"])
                 / max(1, len(generation_diagnostics))
             ),
+            "contract": {
+                "min_continuation_chars": int(min_continuation_chars),
+                "min_unique_token_ratio": float(min_unique_token_ratio),
+                "min_distinct_bigram_ratio": 0.50,
+                "max_repeated_bigram_share": 0.35,
+                "repeated_prompt_allowed": False,
+                "empty_continuation_passes": False,
+                "low_information_continuation_passes": False,
+            },
         },
         "behavior_suite": {
             "correct": behavior_correct,
@@ -1039,6 +1060,8 @@ def evaluate_loaded_text_model(
             "items": behavior_items,
         },
     }
+    if identity_binding is not None:
+        report["identity_binding"] = dict(identity_binding)
     _write_json(output_file, report)
     return report
 
@@ -2603,28 +2626,56 @@ def _generation_health(item: dict[str, Any], min_continuation_chars: int, min_un
     tokens = re.findall(r"[A-Za-z0-9_]+", continuation.lower())
     unique_ratio = float(diagnostics.get("distinct_1", 0.0))
     long_enough = len(continuation) >= min_continuation_chars
-    diverse_enough = (
-        len(tokens) < 20
-        or (
-            unique_ratio >= min_unique_token_ratio
-            and float(diagnostics.get("top_token_share", 1.0)) <= 0.60
-            and int(diagnostics.get("max_token_run", 999)) <= 12
-        )
-    )
     relevance = _generation_relevance(prompt, continuation, item.get("relevance_rules"))
     expected = _generation_expected_behavior(item)
     expectation_passed = True if expected is None else bool(expected["passed"])
+    if expected is not None:
+        diverse_enough = bool(tokens) and expectation_passed
+    elif min_continuation_chars == 0 and min_unique_token_ratio == 0.0:
+        diverse_enough = bool(tokens)
+    else:
+        minimum_tokens = 1 if min_continuation_chars == 0 else 4
+        diverse_enough = (
+            len(tokens) >= minimum_tokens
+            and unique_ratio >= min_unique_token_ratio
+            and float(diagnostics.get("top_token_share", 1.0)) <= 0.60
+            and int(diagnostics.get("max_token_run", 999)) <= 12
+            and (
+                len(tokens) < 8
+                or (
+                    float(diagnostics.get("distinct_2", 0.0)) >= 0.50
+                    and float(diagnostics.get("repeated_bigram_share", 1.0))
+                    <= 0.35
+                )
+            )
+        )
+    prompt_tokens = re.findall(r"[A-Za-z0-9_]+", prompt.lower())
+    prompt_repeated = bool(
+        len(prompt_tokens) >= 4
+        and any(
+            tokens[start : start + len(prompt_tokens)] == prompt_tokens
+            for start in range(0, max(0, len(tokens) - len(prompt_tokens) + 1))
+        )
+    )
     return {
         "id": item.get("id"),
         "category": item.get("category"),
         "prompt": prompt,
-        "passed": long_enough and diverse_enough and relevance["passed"] and expectation_passed,
+        "passed": (
+            long_enough
+            and diverse_enough
+            and not prompt_repeated
+            and relevance["passed"]
+            and expectation_passed
+        ),
         "continuation_chars": len(continuation),
         "token_count": len(tokens),
         "unique_token_ratio": unique_ratio,
         "diagnostics": diagnostics,
         "long_enough": long_enough,
         "diverse_enough": diverse_enough,
+        "prompt_repeated": prompt_repeated,
+        "prompt_repetition_free": not prompt_repeated,
         "relevant_enough": relevance["passed"],
         "expected_enough": expectation_passed,
         "expected_behavior": expected,

@@ -7,7 +7,7 @@ torch = pytest.importorskip("torch")
 transformers = pytest.importorskip("transformers")
 tokenizers = pytest.importorskip("tokenizers")
 
-from neural_forge.hf_tools import evaluate_loaded_text_model  # noqa: E402
+from neural_forge.hf_tools import _generation_health, evaluate_loaded_text_model  # noqa: E402
 
 
 def _tokenizer():
@@ -82,4 +82,37 @@ def test_loaded_model_evaluation_does_not_require_checkpoint_reload(tmp_path) ->
     assert report["perplexity"]["items"]
     assert len(report["generations"]) == 1
     assert len(report["behavior_suite"]["items"]) == 1
+    assert report["generation_health"]["contract"] == {
+        "min_continuation_chars": 24,
+        "min_unique_token_ratio": 0.25,
+        "min_distinct_bigram_ratio": 0.50,
+        "max_repeated_bigram_share": 0.35,
+        "repeated_prompt_allowed": False,
+        "empty_continuation_passes": False,
+        "low_information_continuation_passes": False,
+    }
     assert (tmp_path / "eval.json").is_file()
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        "prompt",
+        "prompt a a a a a a a a a a a a a a a a",
+        "prompt one two",
+        (
+            "prompt This is a longer test prompt repeated exactly "
+            "This is a longer test prompt repeated exactly "
+            "This is a longer test prompt repeated exactly"
+        ),
+    ],
+)
+def test_generation_health_rejects_empty_short_and_low_information_output(
+    output: str,
+) -> None:
+    report = _generation_health(
+        {"id": "g", "prompt": "prompt", "output": output},
+        min_continuation_chars=24,
+        min_unique_token_ratio=0.25,
+    )
+    assert report["passed"] is False

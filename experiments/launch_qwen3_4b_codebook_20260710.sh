@@ -10,6 +10,7 @@ P_ATTENTION=${P_ATTENTION:?Set P_ATTENTION to a prototype depth or logical_layer
 TAG=${TAG:-qwen3_4b_codebook_pn${P_NEURON}_pa${P_ATTENTION}_r1_20260710}
 CALIBRATION_COUNT=${CALIBRATION_COUNT:-128}
 ACTIVATION_ROWS=${ACTIVATION_ROWS:-256}
+CHECKPOINT_STAGING_ROOT=${CHECKPOINT_STAGING_ROOT:-/home/cereal/model-surgery-lab/neural-forge-checkpoint-staging}
 
 MODEL=/home/cereal/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Base/snapshots/906bfd4b4dc7f14ee4320094d8b41684abff8539
 CALIBRATION=/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/calibration_mix_plus_recovery_drills_20260702.jsonl
@@ -49,6 +50,7 @@ mkdir -p "$RUN_ROOT"
   --max-generation-prompts 1000 \
   --max-behavior-probes 1000 \
   --manual-sample-count 128 \
+  --checkpoint-staging-root "$CHECKPOINT_STAGING_ROOT" \
   --local-files-only
 
 echo "launched tag=$TAG gpu=$GPU p_neuron=$P_NEURON p_attention=$P_ATTENTION"

@@ -29,13 +29,14 @@ def test_closed_form_consumer_exactly_merges_proportional_nonadjacent_paths() ->
     gate, up, down = _weights()
     activations = torch.randn(24, 6, generator=torch.Generator().manual_seed(91))
     activations[:, 5] = -2.5 * activations[:, 0]
+    validation = 1.25 * activations.roll(1, dims=0)
     fold = fit_compensated_neuron_pairs(
         gate,
         up,
         down,
         activations,
         target_width=5,
-        gate_activations=activations.clone(),
+        validation_activations=validation,
         projection_count=12,
         neighbor_window=5,
         max_pair_candidates=100,
@@ -57,6 +58,8 @@ def test_closed_form_consumer_exactly_merges_proportional_nonadjacent_paths() ->
     assert fold.diagnostics.retained_scored_pair_count <= (
         fold.diagnostics.scored_pair_count
     )
+    assert fold.diagnostics.aggregate_calibration_relative_l2 < 1e-6
+    assert fold.diagnostics.aggregate_validation_relative_l2 < 1e-6
     assert fold.diagnostics.optimizer_steps == 0
     assert fold.diagnostics.backward_called is False
 
@@ -71,6 +74,7 @@ def test_high_damage_anchor_is_never_merged_or_modified() -> None:
         down,
         activations,
         target_width=5,
+        validation_activations=activations.roll(1, dims=0),
         protected_indices=(0,),
         projection_count=16,
         neighbor_window=5,
@@ -95,6 +99,7 @@ def test_closed_form_consumer_is_never_worse_than_dropping_the_other_path() -> N
         down,
         activations,
         target_width=5,
+        validation_activations=activations.roll(1, dims=0),
         projection_count=16,
         neighbor_window=5,
         max_pair_candidates=100,
@@ -124,8 +129,67 @@ def test_disjoint_pair_pass_rejects_an_unreachable_width() -> None:
             down,
             activations,
             target_width=2,
+            validation_activations=activations.roll(1, dims=0),
             protected_indices=(0,),
         )
+
+
+def test_validation_split_and_search_work_caps_fail_closed() -> None:
+    gate, up, down = _weights(141)
+    activations = torch.randn(12, 6, generator=torch.Generator().manual_seed(142))
+    with pytest.raises(Qwen3CompensatedFoldShapeError, match="provenance-disjoint"):
+        fit_compensated_neuron_pairs(
+            gate,
+            up,
+            down,
+            activations,
+            target_width=5,
+            validation_activations=activations.clone(),
+        )
+    with pytest.raises(Qwen3CompensatedFoldShapeError, match="hard cap 64"):
+        fit_compensated_neuron_pairs(
+            gate,
+            up,
+            down,
+            activations,
+            target_width=5,
+            validation_activations=activations.roll(1, dims=0),
+            projection_count=65,
+        )
+    with pytest.raises(Qwen3CompensatedFoldShapeError, match="cannot exceed"):
+        fit_compensated_neuron_pairs(
+            gate,
+            up,
+            down,
+            activations,
+            target_width=5,
+            validation_activations=activations.roll(1, dims=0),
+            max_pair_candidates=101,
+            max_generated_pairs=100,
+        )
+
+
+def test_realized_error_uses_destination_dtype_and_fold_tensors_are_sealed() -> None:
+    gate, up, down = (value.half() for value in _weights(151))
+    activations = torch.randn(18, 6, generator=torch.Generator().manual_seed(152))
+    activations[:, 5] = 0.75 * activations[:, 0]
+    fold = fit_compensated_neuron_pairs(
+        gate,
+        up,
+        down,
+        activations,
+        target_width=5,
+        validation_activations=activations.roll(1, dims=0),
+        projection_count=12,
+        neighbor_window=5,
+        max_pair_candidates=100,
+    )
+    assert fold.down_weight.dtype == torch.float16
+    assert fold.diagnostics.realized_dtype == "torch.float16"
+    assert fold.diagnostics.aggregate_calibration_relative_l2 >= 0.0
+    fold.down_weight[0, 0] += 1.0
+    with pytest.raises(Qwen3CompensatedFoldStateError, match="changed"):
+        fold.assert_integrity()
 
 
 def _tiny_qwen(seed: int = 181):
@@ -171,6 +235,7 @@ def test_qwen_layer_install_rollback_and_commit_are_explicit() -> None:
         original.down_proj.weight,
         activations,
         target_width=5,
+        validation_activations=activations.roll(1, dims=0),
         projection_count=12,
         neighbor_window=5,
         max_pair_candidates=100,
@@ -197,6 +262,28 @@ def test_qwen_layer_install_rollback_and_commit_are_explicit() -> None:
         second.rollback()
 
 
+def test_exact_source_hash_rejects_any_post_fit_weight_change() -> None:
+    model = _tiny_qwen(201)
+    hidden = torch.randn(2, 4, 8, generator=torch.Generator().manual_seed(202))
+    original = model.model.layers[0].mlp
+    activations = _layer_activations(model, 0, hidden)
+    fold = fit_compensated_neuron_pairs(
+        original.gate_proj.weight,
+        original.up_proj.weight,
+        original.down_proj.weight,
+        activations,
+        target_width=5,
+        validation_activations=activations.roll(1, dims=0),
+        projection_count=12,
+        neighbor_window=5,
+        max_pair_candidates=100,
+    )
+    with torch.no_grad():
+        original.gate_proj.weight[-1, -1].add_(0.125)
+    with pytest.raises(Qwen3CompensatedFoldStateError, match="do not match"):
+        install_qwen3_compensated_fold(model, 0, fold)
+
+
 def test_uniform_committed_layers_update_export_config() -> None:
     model = _tiny_qwen(211)
     hidden = torch.randn(2, 5, 8, generator=torch.Generator().manual_seed(212))
@@ -210,6 +297,7 @@ def test_uniform_committed_layers_update_export_config() -> None:
             mlp.down_proj.weight,
             activations,
             target_width=5,
+            validation_activations=activations.roll(1, dims=0),
             projection_count=12,
             neighbor_window=5,
             max_pair_candidates=100,

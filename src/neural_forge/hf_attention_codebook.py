@@ -26,6 +26,11 @@ from torch.nn import functional as F
 
 
 DEFAULT_SKETCH_DIM = 64
+ATTENTION_REGISTRY_SCHEMA_VERSION = 1
+ATTENTION_REGISTRY_LAYOUT_RECTANGULAR = 0
+ATTENTION_REGISTRY_LAYOUT_RAGGED = 1
+_REGISTRY_SCHEMA_BUFFER = "_registry_schema_version"
+_REGISTRY_LAYOUT_BUFFER = "_registry_layout"
 _ROLE_NAMES = ("q", "k", "v", "o")
 _ROLE_INDEX = {name: index for index, name in enumerate(_ROLE_NAMES)}
 _TIE_BREAK = "lowest source layer, then lowest canonical group"
@@ -227,6 +232,7 @@ class AttentionCodebookParameterReport:
     assignment_index_bytes: int
     prototype_source_index_bytes: int
     permutation_index_bytes: int
+    schema_metadata_bytes: int
     index_buffer_bytes: int
 
     @property
@@ -1321,6 +1327,14 @@ class AttentionCodebookRegistry(nn.Module):
         self.register_buffer("assignments", assignment64.to(torch.int32))
         self.register_buffer("prototype_source_indices", source64.to(torch.int32))
         self.register_buffer("group_permutations", permutation64.to(torch.int32))
+        self.register_buffer(
+            _REGISTRY_SCHEMA_BUFFER,
+            torch.tensor(ATTENTION_REGISTRY_SCHEMA_VERSION, dtype=torch.int32),
+        )
+        self.register_buffer(
+            _REGISTRY_LAYOUT_BUFFER,
+            torch.tensor(ATTENTION_REGISTRY_LAYOUT_RECTANGULAR, dtype=torch.int32),
+        )
         self.diagnostics = diagnostics
         self.input_width = input_width
         self.output_width = output_width
@@ -1435,6 +1449,11 @@ class AttentionCodebookRegistry(nn.Module):
             int(self.group_permutations.numel())
             * self.group_permutations.element_size()
         )
+        metadata_bytes = (
+            int(self._registry_schema_version.numel())
+            * self._registry_schema_version.element_size()
+            + int(self._registry_layout.numel()) * self._registry_layout.element_size()
+        )
         return AttentionCodebookParameterReport(
             logical_layers=self.logical_layers,
             input_width=self.input_width,
@@ -1459,7 +1478,10 @@ class AttentionCodebookRegistry(nn.Module):
             assignment_index_bytes=assignment_bytes,
             prototype_source_index_bytes=source_bytes,
             permutation_index_bytes=permutation_bytes,
-            index_buffer_bytes=(assignment_bytes + source_bytes + permutation_bytes),
+            schema_metadata_bytes=metadata_bytes,
+            index_buffer_bytes=(
+                assignment_bytes + source_bytes + permutation_bytes + metadata_bytes
+            ),
         )
 
     def _layer_index(self, layer_index: int) -> int:
@@ -1590,57 +1612,438 @@ class AttentionCodebookRegistry(nn.Module):
         *,
         prefix: str = "",
     ) -> AttentionCodebookRegistry:
-        """Reconstruct solely from ordinary state tensors."""
+        """Reconstruct a rectangular or ragged registry from ordinary tensors."""
 
-        if not isinstance(state_dict, Mapping):
-            raise AttentionCodebookStateError("state_dict must be a tensor mapping.")
-        if not prefix and "registry.prototype_q_weight" in state_dict:
-            prefix = "registry"
-        if prefix and not prefix.endswith("."):
-            prefix = f"{prefix}."
-        required = (
-            "prototype_q_weight",
-            "prototype_k_weight",
-            "prototype_v_weight",
-            "prototype_o_weight",
-            "assignments",
-            "prototype_source_indices",
-            "group_permutations",
+        return attention_codebook_registry_from_state_dict(
+            state_dict,
+            prefix=prefix,
+            expected_type=cls,
         )
-        missing = [name for name in required if f"{prefix}{name}" not in state_dict]
-        if missing:
-            raise AttentionCodebookStateError(
-                f"state_dict is missing required tensors {missing!r}."
-            )
 
-        def optional(name: str) -> Tensor | None:
-            return state_dict.get(f"{prefix}{name}")
 
-        result = cls(
-            state_dict[f"{prefix}prototype_q_weight"],
-            state_dict[f"{prefix}prototype_k_weight"],
-            state_dict[f"{prefix}prototype_v_weight"],
-            state_dict[f"{prefix}prototype_o_weight"],
-            state_dict[f"{prefix}assignments"],
-            state_dict[f"{prefix}prototype_source_indices"],
-            state_dict[f"{prefix}group_permutations"],
-            prototype_q_bias=optional("prototype_q_bias"),
-            prototype_k_bias=optional("prototype_k_bias"),
-            prototype_v_bias=optional("prototype_v_bias"),
-            layer_o_bias=optional("layer_o_bias"),
-            role_scales=optional("role_scales"),
-        )
-        local_state = {
-            key[len(prefix) :]: value
-            for key, value in state_dict.items()
-            if key.startswith(prefix)
+class RaggedAttentionCodebookRegistry(AttentionCodebookRegistry):
+    """A self-describing global pool of complete coupled GQA prototypes.
+
+    Unlike the rectangular registry, assignments contain global prototype
+    slots.  This layout permits a transaction to remove an arbitrary coupled
+    Q/K/V/O bundle while preserving every logical layer/group execution.
+    """
+
+    def __init__(
+        self,
+        prototype_q_weight: Tensor,
+        prototype_k_weight: Tensor,
+        prototype_v_weight: Tensor,
+        prototype_o_weight: Tensor,
+        assignments: Tensor,
+        prototype_source_indices: Tensor,
+        group_permutations: Tensor,
+        *,
+        prototype_q_bias: Tensor | None = None,
+        prototype_k_bias: Tensor | None = None,
+        prototype_v_bias: Tensor | None = None,
+        layer_o_bias: Tensor | None = None,
+        role_scales: Tensor | None = None,
+        copy_tensors: bool = True,
+    ) -> None:
+        nn.Module.__init__(self)
+        if not isinstance(copy_tensors, bool):
+            raise AttentionCodebookShapeError("copy_tensors must be boolean.")
+        weights = {
+            "q": _validate_float_tensor(prototype_q_weight, "prototype_q_weight", 3),
+            "k": _validate_float_tensor(prototype_k_weight, "prototype_k_weight", 3),
+            "v": _validate_float_tensor(prototype_v_weight, "prototype_v_weight", 3),
+            "o": _validate_float_tensor(prototype_o_weight, "prototype_o_weight", 3),
         }
-        incompatible = result.load_state_dict(local_state, strict=True)
-        if incompatible.missing_keys or incompatible.unexpected_keys:
-            raise AttentionCodebookStateError(
-                "state_dict did not exactly match the reconstructed registry."
+        prototype_count = int(prototype_q_weight.shape[0])
+        if any(int(value.shape[0]) != prototype_count for value in weights.values()):
+            raise AttentionCodebookShapeError(
+                "Ragged Q/K/V/O prototype counts must match."
             )
-        return result
+        q_rows, input_width = map(int, prototype_q_weight.shape[1:])
+        head_dim = int(prototype_k_weight.shape[1])
+        if (
+            tuple(prototype_k_weight.shape[2:]) != (input_width,)
+            or tuple(prototype_v_weight.shape[1:]) != (head_dim, input_width)
+            or int(prototype_o_weight.shape[2]) != q_rows
+            or q_rows % head_dim != 0
+        ):
+            raise AttentionCodebookShapeError(
+                "Ragged Q/K/V/O dimensions are not one coupled GQA group."
+            )
+        reference = prototype_q_weight
+        if any(
+            value.dtype != reference.dtype or value.device != reference.device
+            for value in weights.values()
+        ):
+            raise AttentionCodebookShapeError(
+                "All ragged attention prototypes need one dtype and device."
+            )
+        integer_dtypes = {
+            torch.int8,
+            torch.int16,
+            torch.int32,
+            torch.int64,
+            torch.uint8,
+        }
+        if (
+            not isinstance(assignments, Tensor)
+            or assignments.ndim != 2
+            or assignments.dtype not in integer_dtypes
+        ):
+            raise AttentionCodebookShapeError(
+                "assignments must be a [layers, groups] integer tensor."
+            )
+        logical_layers, groups = map(int, assignments.shape)
+        assignment64 = assignments.detach().to(device="cpu", dtype=torch.int64)
+        if (
+            logical_layers <= 0
+            or groups <= 0
+            or int(assignment64.min()) < 0
+            or int(assignment64.max()) >= prototype_count
+        ):
+            raise AttentionCodebookShapeError(
+                "assignments contains an invalid global prototype index."
+            )
+        if set(map(int, assignment64.reshape(-1).tolist())) != set(
+            range(prototype_count)
+        ):
+            raise AttentionCodebookStateError(
+                "A ragged registry cannot retain unassigned prototype storage."
+            )
+        if (
+            not isinstance(prototype_source_indices, Tensor)
+            or prototype_source_indices.dtype not in integer_dtypes
+            or tuple(prototype_source_indices.shape) != (prototype_count,)
+        ):
+            raise AttentionCodebookShapeError(
+                "prototype_source_indices must identify every global prototype."
+            )
+        sources64 = prototype_source_indices.detach().to(
+            device="cpu", dtype=torch.int64
+        )
+        if (
+            int(sources64.min()) < 0
+            or int(sources64.max()) >= logical_layers * groups
+            or int(torch.unique(sources64).numel()) != prototype_count
+        ):
+            raise AttentionCodebookShapeError(
+                "prototype_source_indices must be distinct real source groups."
+            )
+        if (
+            not isinstance(group_permutations, Tensor)
+            or group_permutations.dtype not in integer_dtypes
+            or tuple(group_permutations.shape) != (logical_layers, groups)
+        ):
+            raise AttentionCodebookShapeError(
+                "group_permutations must be [layers, groups] integers."
+            )
+        permutations64 = group_permutations.detach().to(
+            device="cpu", dtype=torch.int64
+        )
+        expected = list(range(groups))
+        if any(sorted(map(int, row)) != expected for row in permutations64.tolist()):
+            raise AttentionCodebookShapeError(
+                "Every group_permutations row must be bijective."
+            )
+        optional = (
+            ("prototype_q_bias", prototype_q_bias, (prototype_count, q_rows)),
+            ("prototype_k_bias", prototype_k_bias, (prototype_count, head_dim)),
+            ("prototype_v_bias", prototype_v_bias, (prototype_count, head_dim)),
+            (
+                "layer_o_bias",
+                layer_o_bias,
+                (logical_layers, int(prototype_o_weight.shape[1])),
+            ),
+            ("role_scales", role_scales, (logical_layers, groups, 4)),
+        )
+        for name, value, shape in optional:
+            if value is None:
+                continue
+            checked = _validate_float_tensor(value, name, len(shape))
+            if (
+                tuple(checked.shape) != shape
+                or checked.dtype != reference.dtype
+                or checked.device != reference.device
+            ):
+                raise AttentionCodebookShapeError(
+                    f"{name} must have shape {shape!r} and the prototype dtype/device."
+                )
+
+        def parameter(value: Tensor | None) -> nn.Parameter | None:
+            if value is None:
+                return None
+            payload = value.detach().clone() if copy_tensors else value.detach()
+            return nn.Parameter(payload)
+
+        self.prototype_q_weight = parameter(prototype_q_weight)
+        self.prototype_k_weight = parameter(prototype_k_weight)
+        self.prototype_v_weight = parameter(prototype_v_weight)
+        self.prototype_o_weight = parameter(prototype_o_weight)
+        self.prototype_q_bias = parameter(prototype_q_bias)
+        self.prototype_k_bias = parameter(prototype_k_bias)
+        self.prototype_v_bias = parameter(prototype_v_bias)
+        self.layer_o_bias = parameter(layer_o_bias)
+        self.role_scales = parameter(role_scales)
+        self.register_buffer("assignments", assignment64.to(torch.int32))
+        self.register_buffer("prototype_source_indices", sources64.to(torch.int32))
+        self.register_buffer("group_permutations", permutations64.to(torch.int32))
+        self.register_buffer(
+            _REGISTRY_SCHEMA_BUFFER,
+            torch.tensor(ATTENTION_REGISTRY_SCHEMA_VERSION, dtype=torch.int32),
+        )
+        self.register_buffer(
+            _REGISTRY_LAYOUT_BUFFER,
+            torch.tensor(ATTENTION_REGISTRY_LAYOUT_RAGGED, dtype=torch.int32),
+        )
+        self.input_width = input_width
+        self.output_width = int(prototype_o_weight.shape[1])
+        self.head_dim = head_dim
+        self.diagnostics = None
+
+    @property
+    def logical_layers(self) -> int:
+        return int(self.assignments.shape[0])
+
+    @property
+    def key_value_heads(self) -> int:
+        return int(self.assignments.shape[1])
+
+    @property
+    def prototype_count(self) -> int:
+        return int(self.prototype_q_weight.shape[0])
+
+    @property
+    def prototypes_per_group(self) -> int:
+        return 0
+
+    @property
+    def query_rows_per_group(self) -> int:
+        return int(self.prototype_q_weight.shape[1])
+
+    @property
+    def query_heads_per_group(self) -> int:
+        return self.query_rows_per_group // self.head_dim
+
+    @property
+    def query_heads(self) -> int:
+        return self.key_value_heads * self.query_heads_per_group
+
+    @property
+    def query_width(self) -> int:
+        return self.query_heads * self.head_dim
+
+    @property
+    def key_value_width(self) -> int:
+        return self.key_value_heads * self.head_dim
+
+    @property
+    def report(self) -> AttentionCodebookParameterReport:
+        producer_biases = (
+            self.query_width * int(self.prototype_q_bias is not None)
+            + self.key_value_width * int(self.prototype_k_bias is not None)
+            + self.key_value_width * int(self.prototype_v_bias is not None)
+        )
+        output_biases = self.output_width if self.layer_o_bias is not None else 0
+        per_layer = (
+            self.query_width * self.input_width
+            + 2 * self.key_value_width * self.input_width
+            + self.output_width * self.query_width
+            + producer_biases
+            + output_biases
+        )
+        learned = sum(int(parameter.numel()) for parameter in self.parameters())
+        scales = 0 if self.role_scales is None else int(self.role_scales.numel())
+        retained_bias = 0 if self.layer_o_bias is None else int(self.layer_o_bias.numel())
+        assignment_bytes = int(self.assignments.numel()) * self.assignments.element_size()
+        source_bytes = (
+            int(self.prototype_source_indices.numel())
+            * self.prototype_source_indices.element_size()
+        )
+        permutation_bytes = (
+            int(self.group_permutations.numel())
+            * self.group_permutations.element_size()
+        )
+        metadata_bytes = (
+            int(self._registry_schema_version.numel())
+            * self._registry_schema_version.element_size()
+            + int(self._registry_layout.numel()) * self._registry_layout.element_size()
+        )
+        return AttentionCodebookParameterReport(
+            logical_layers=self.logical_layers,
+            input_width=self.input_width,
+            output_width=self.output_width,
+            query_heads=self.query_heads,
+            key_value_heads=self.key_value_heads,
+            query_heads_per_group=self.query_heads_per_group,
+            head_dim=self.head_dim,
+            prototypes_per_group=0,
+            prototype_count=self.prototype_count,
+            logical_group_executions=self.logical_layers * self.key_value_heads,
+            logical_query_head_executions=self.logical_layers * self.query_heads,
+            logical_key_value_head_executions=(
+                self.logical_layers * self.key_value_heads
+            ),
+            logical_dense_parameters=self.logical_layers * per_layer,
+            unique_learned_parameters=learned,
+            prototype_parameters=learned - scales - retained_bias,
+            scale_parameters=scales,
+            retained_layer_bias_parameters=retained_bias,
+            parameters_saved=self.logical_layers * per_layer - learned,
+            assignment_index_bytes=assignment_bytes,
+            prototype_source_index_bytes=source_bytes,
+            permutation_index_bytes=permutation_bytes,
+            schema_metadata_bytes=metadata_bytes,
+            index_buffer_bytes=(
+                assignment_bytes + source_bytes + permutation_bytes + metadata_bytes
+            ),
+        )
+
+    def materialize_projection(
+        self, layer_index: int, role: str
+    ) -> tuple[Tensor, Tensor | None]:
+        layer_index = self._layer_index(layer_index)
+        role = self._role(role)
+        device = self.prototype_q_weight.device
+        slots = self.assignments[layer_index].to(device=device, dtype=torch.long)
+        weight = getattr(self, f"prototype_{role}_weight").index_select(0, slots)
+        bias_parameter = getattr(self, f"prototype_{role}_bias", None)
+        bias = None if bias_parameter is None else bias_parameter.index_select(0, slots)
+        if self.role_scales is not None:
+            role_index = _ROLE_INDEX[role]
+            scales = self.role_scales[layer_index, :, role_index]
+            weight = weight * scales[:, None, None]
+            if bias is not None:
+                bias = bias * scales[:, None]
+        physical_to_canonical = torch.argsort(
+            self.group_permutations[layer_index].to(device=device, dtype=torch.long)
+        )
+        weight = weight.index_select(0, physical_to_canonical)
+        if bias is not None:
+            bias = bias.index_select(0, physical_to_canonical)
+        if role == "o":
+            weight = weight.permute(1, 0, 2).reshape(
+                self.output_width, self.query_width
+            )
+            bias = None if self.layer_o_bias is None else self.layer_o_bias[layer_index]
+        elif role == "q":
+            weight = weight.reshape(self.query_width, self.input_width)
+            if bias is not None:
+                bias = bias.reshape(self.query_width)
+        else:
+            weight = weight.reshape(self.key_value_width, self.input_width)
+            if bias is not None:
+                bias = bias.reshape(self.key_value_width)
+        return weight, bias
+
+
+def _normalized_registry_prefix(
+    state_dict: Mapping[str, Tensor], prefix: str
+) -> str:
+    if not isinstance(state_dict, Mapping):
+        raise AttentionCodebookStateError("state_dict must be a tensor mapping.")
+    if not prefix and "registry.prototype_q_weight" in state_dict:
+        prefix = "registry"
+    return f"{prefix}." if prefix and not prefix.endswith(".") else prefix
+
+
+def attention_codebook_registry_from_state_dict(
+    state_dict: Mapping[str, Tensor],
+    *,
+    prefix: str = "",
+    expected_type: type[AttentionCodebookRegistry] = AttentionCodebookRegistry,
+) -> AttentionCodebookRegistry:
+    """Public tensor-only loader for rectangular and ragged registry layouts."""
+
+    normalized = _normalized_registry_prefix(state_dict, prefix)
+    required = (
+        "prototype_q_weight",
+        "prototype_k_weight",
+        "prototype_v_weight",
+        "prototype_o_weight",
+        "assignments",
+        "prototype_source_indices",
+        "group_permutations",
+    )
+    missing = [name for name in required if f"{normalized}{name}" not in state_dict]
+    if missing:
+        raise AttentionCodebookStateError(
+            f"state_dict is missing required tensors {missing!r}."
+        )
+    q_weight = state_dict[f"{normalized}prototype_q_weight"]
+    if not isinstance(q_weight, Tensor):
+        raise AttentionCodebookStateError("prototype_q_weight must be a tensor.")
+    inferred_layout = {
+        4: ATTENTION_REGISTRY_LAYOUT_RECTANGULAR,
+        3: ATTENTION_REGISTRY_LAYOUT_RAGGED,
+    }.get(q_weight.ndim)
+    if inferred_layout is None:
+        raise AttentionCodebookStateError(
+            "prototype_q_weight must be rank 4 (rectangular) or rank 3 (ragged)."
+        )
+    schema_tensor = state_dict.get(f"{normalized}{_REGISTRY_SCHEMA_BUFFER}")
+    layout_tensor = state_dict.get(f"{normalized}{_REGISTRY_LAYOUT_BUFFER}")
+    if schema_tensor is not None and (
+        not isinstance(schema_tensor, Tensor)
+        or schema_tensor.numel() != 1
+        or int(schema_tensor.item()) != ATTENTION_REGISTRY_SCHEMA_VERSION
+    ):
+        raise AttentionCodebookStateError("Unknown attention registry schema version.")
+    if layout_tensor is not None and (
+        not isinstance(layout_tensor, Tensor)
+        or layout_tensor.numel() != 1
+        or int(layout_tensor.item()) != inferred_layout
+    ):
+        raise AttentionCodebookStateError(
+            "Attention registry layout metadata disagrees with tensor ranks."
+        )
+    registry_type: type[AttentionCodebookRegistry] = (
+        RaggedAttentionCodebookRegistry
+        if inferred_layout == ATTENTION_REGISTRY_LAYOUT_RAGGED
+        else AttentionCodebookRegistry
+    )
+    if expected_type not in {AttentionCodebookRegistry, registry_type}:
+        raise AttentionCodebookStateError(
+            f"State layout cannot reconstruct requested {expected_type.__name__}."
+        )
+
+    def optional(name: str) -> Tensor | None:
+        return state_dict.get(f"{normalized}{name}")
+
+    kwargs: dict[str, Any] = {
+        "prototype_q_bias": optional("prototype_q_bias"),
+        "prototype_k_bias": optional("prototype_k_bias"),
+        "prototype_v_bias": optional("prototype_v_bias"),
+        "layer_o_bias": optional("layer_o_bias"),
+        "role_scales": optional("role_scales"),
+    }
+    if registry_type is RaggedAttentionCodebookRegistry:
+        kwargs["copy_tensors"] = False
+    result = registry_type(
+        q_weight,
+        state_dict[f"{normalized}prototype_k_weight"],
+        state_dict[f"{normalized}prototype_v_weight"],
+        state_dict[f"{normalized}prototype_o_weight"],
+        state_dict[f"{normalized}assignments"],
+        state_dict[f"{normalized}prototype_source_indices"],
+        state_dict[f"{normalized}group_permutations"],
+        **kwargs,
+    )
+    local_state = {
+        key[len(normalized) :]: value
+        for key, value in state_dict.items()
+        if key.startswith(normalized)
+    }
+    # Legacy rectangular artifacts lacked explicit metadata.  New saves always
+    # carry both buffers, but accepting the inferred legacy layout is safe.
+    local_state.setdefault(_REGISTRY_SCHEMA_BUFFER, result._registry_schema_version)
+    local_state.setdefault(_REGISTRY_LAYOUT_BUFFER, result._registry_layout)
+    incompatible = result.load_state_dict(local_state, strict=True)
+    if incompatible.missing_keys or incompatible.unexpected_keys:
+        raise AttentionCodebookStateError(
+            "state_dict did not exactly match the reconstructed registry."
+        )
+    return result
 
 
 class AttentionCodebookProjectionView(nn.Module):
@@ -2087,6 +2490,9 @@ GlobalAttentionHeadCodebook = GlobalAttentionCodebook
 
 
 __all__ = [
+    "ATTENTION_REGISTRY_LAYOUT_RAGGED",
+    "ATTENTION_REGISTRY_LAYOUT_RECTANGULAR",
+    "ATTENTION_REGISTRY_SCHEMA_VERSION",
     "DEFAULT_SKETCH_DIM",
     "AttentionCodebookDiagnostics",
     "AttentionCodebookError",
@@ -2104,10 +2510,12 @@ __all__ = [
     "GlobalAttentionCodebook",
     "GlobalAttentionHeadCodebook",
     "ParameterlessAttentionCodebookLayer",
+    "RaggedAttentionCodebookRegistry",
     "SplitQKVAttentionBundle",
     "TopologyPreservingAttentionCodebook",
     "build_attention_head_codebook",
     "build_global_attention_codebook",
+    "attention_codebook_registry_from_state_dict",
     "fit_attention_codebook",
     "fit_global_attention_codebook",
 ]

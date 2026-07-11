@@ -9,12 +9,13 @@ import hashlib
 import json
 import math
 import os
+import shutil
 import sys
 import tempfile
 import time
 import weakref
 from collections.abc import Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -83,6 +84,116 @@ def _checkpoint_io_lease(path: Path):
         finally:
             if serialized:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(8 * 1024**2), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _verify_checkpoint_file_hashes(directory: Path) -> dict[str, str]:
+    manifest_path = directory / "manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise QwenCodebookRunnerError("Published checkpoint manifest is unreadable.") from exc
+    files = manifest.get("files") if isinstance(manifest, Mapping) else None
+    if not isinstance(files, Mapping) or not files:
+        raise QwenCodebookRunnerError("Published checkpoint manifest lacks file hashes.")
+    verified: dict[str, str] = {}
+    root = directory.resolve()
+    for name, expected in sorted(files.items()):
+        if not isinstance(name, str) or not isinstance(expected, str):
+            raise QwenCodebookRunnerError("Published checkpoint hash entry is invalid.")
+        path = (directory / name).resolve()
+        if path.parent != root or not path.is_file():
+            raise QwenCodebookRunnerError("Published checkpoint path escapes its root.")
+        actual = _sha256_file(path)
+        if actual != expected:
+            raise QwenCodebookRunnerError(
+                f"Published checkpoint hash mismatch for {name}."
+            )
+        verified[name] = actual
+    return verified
+
+
+def _publish_checkpoint_directory(source: Path, destination: Path) -> dict[str, Any]:
+    """Copy a locally verified checkpoint to shared storage and atomically publish it."""
+
+    if destination.exists():
+        raise QwenCodebookRunnerError(
+            f"Checkpoint publication destination already exists: {destination}."
+        )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(
+        tempfile.mkdtemp(
+            dir=destination.parent,
+            prefix=f".{destination.name}.publish.",
+        )
+    )
+    try:
+        manifest_path = source / "manifest.json"
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise QwenCodebookRunnerError(
+                "Staged checkpoint manifest is unreadable."
+            ) from exc
+        expected_hashes = (
+            manifest.get("files") if isinstance(manifest, Mapping) else None
+        )
+        if not isinstance(expected_hashes, Mapping) or not expected_hashes:
+            raise QwenCodebookRunnerError(
+                "Staged checkpoint manifest lacks file hashes."
+            )
+        source_files = sorted(path for path in source.iterdir() if path.is_file())
+        if any(path.is_dir() for path in source.iterdir()):
+            raise QwenCodebookRunnerError(
+                "Staged checkpoint publication supports a flat artifact directory."
+            )
+        allowed_names = set(expected_hashes) | {"manifest.json"}
+        unexpected_names = {
+            path.name for path in source_files if path.name not in allowed_names
+        }
+        if unexpected_names:
+            raise QwenCodebookRunnerError(
+                f"Staged checkpoint contains unexpected files: {sorted(unexpected_names)}."
+            )
+        hashes: dict[str, str] = {}
+        for source_file in source_files:
+            target_file = temporary / source_file.name
+            digest = hashlib.sha256()
+            with source_file.open("rb") as reader, target_file.open("xb") as writer:
+                for chunk in iter(lambda: reader.read(8 * 1024**2), b""):
+                    writer.write(chunk)
+                    if source_file.name in expected_hashes:
+                        digest.update(chunk)
+                writer.flush()
+                os.fsync(writer.fileno())
+            if source_file.name in expected_hashes:
+                actual = digest.hexdigest()
+                if actual != expected_hashes[source_file.name]:
+                    raise QwenCodebookRunnerError(
+                        f"Staged checkpoint hash mismatch for {source_file.name}."
+                    )
+                hashes[source_file.name] = actual
+        if set(hashes) != set(expected_hashes):
+            raise QwenCodebookRunnerError(
+                "Staged checkpoint files do not match the manifest."
+            )
+        os.replace(temporary, destination)
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+    return {
+        "source": str(source),
+        "destination": str(destination),
+        "files": hashes,
+        "atomic_directory_publish": True,
+    }
 
 
 @dataclass(slots=True)
@@ -2463,42 +2574,73 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     _write_stage(output, "compact_checkpoint", "running")
     peaks.start("compact_checkpoint")
-    checkpoint_directory = output / "compact_child"
+    published_checkpoint_directory = output / "compact_child"
+    staging_root = args.checkpoint_staging_root
+    if staging_root is not None:
+        staging_root.mkdir(parents=True, exist_ok=True)
+        staging_context = tempfile.TemporaryDirectory(
+            dir=staging_root,
+            prefix=f"{output.name}.compact.",
+        )
+    else:
+        staging_context = nullcontext(None)
     checkpoint_lock = output.parent / ".compact_checkpoint_io.lock"
     _progress("compact_checkpoint_io_wait", lock=checkpoint_lock)
-    with _checkpoint_io_lease(checkpoint_lock) as checkpoint_io_lease:
-        _progress(
-            "compact_checkpoint_io_acquired",
-            wait_seconds=round(float(checkpoint_io_lease["wait_seconds"]), 6),
+    with staging_context as staging_directory:
+        checkpoint_directory = (
+            published_checkpoint_directory
+            if staging_directory is None
+            else Path(staging_directory) / "compact_child"
         )
-        checkpoint_manifest = save_qwen3_codebook_checkpoint(
-            model,
-            checkpoint_directory,
-            tokenizer_contract=_tokenizer_checkpoint_contract(
+        with _checkpoint_io_lease(checkpoint_lock) as checkpoint_io_lease:
+            _progress(
+                "compact_checkpoint_io_acquired",
+                wait_seconds=round(float(checkpoint_io_lease["wait_seconds"]), 6),
+            )
+            checkpoint_manifest = save_qwen3_codebook_checkpoint(
+                model,
+                checkpoint_directory,
+                tokenizer_contract=_tokenizer_checkpoint_contract(
+                    target_tokenizer,
+                    tokenizer_name=str(args.target_tokenizer),
+                    parent_rows=parent_rows,
+                ),
+            )
+            reloaded_model = load_qwen3_codebook_checkpoint(
+                checkpoint_directory,
+                device=args.device,
+            )
+            checkpoint_equivalence = verify_compact_checkpoint_equivalence(
+                model,
+                reloaded_model,
                 target_tokenizer,
-                tokenizer_name=str(args.target_tokenizer),
-                parent_rows=parent_rows,
-            ),
-        )
-        reloaded_model = load_qwen3_codebook_checkpoint(
-            checkpoint_directory,
-            device=args.device,
-        )
-        checkpoint_equivalence = verify_compact_checkpoint_equivalence(
-            model,
-            reloaded_model,
-            target_tokenizer,
-            prompts[0],
-            max_length=args.calibration_max_length,
-            max_new_tokens=args.max_new_tokens,
-            device=args.device,
-        )
+                prompts[0],
+                max_length=args.calibration_max_length,
+                max_new_tokens=args.max_new_tokens,
+                device=args.device,
+            )
+            publication = (
+                {
+                    "source": str(checkpoint_directory),
+                    "destination": str(published_checkpoint_directory),
+                    "files": _verify_checkpoint_file_hashes(checkpoint_directory),
+                    "atomic_directory_publish": False,
+                }
+                if staging_directory is None
+                else _publish_checkpoint_directory(
+                    checkpoint_directory,
+                    published_checkpoint_directory,
+                )
+            )
     peaks.finish("compact_checkpoint")
     checkpoint_report = {
-        "artifact_directory": str(checkpoint_directory),
+        "artifact_directory": str(published_checkpoint_directory),
         "manifest": checkpoint_manifest,
         "equivalence": checkpoint_equivalence,
         "io_lease": checkpoint_io_lease,
+        "publication": publication,
+        "local_staging_enabled": staging_root is not None,
+        "local_staging_root": None if staging_root is None else str(staging_root),
         "standalone_parent_free": (
             checkpoint_equivalence["reloaded_parent_runtime_references"] == 0
         ),
@@ -2753,6 +2895,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--max-cuda-reserved-bytes", type=int, default=80 * 1024**3
+    )
+    parser.add_argument(
+        "--checkpoint-staging-root",
+        type=Path,
+        help=(
+            "Optional local-disk staging root. The verified checkpoint is copied "
+            "to the output directory under the shared checkpoint I/O lease."
+        ),
     )
     parser.add_argument("--trust-remote-code", action="store_true")
     parser.add_argument("--local-files-only", action="store_true")

@@ -49,6 +49,7 @@ from neural_forge.hf_neuron_codebook import (
 )
 from neural_forge.hf_qwen_codebook_model import (
     Qwen3CodebookError,
+    Qwen3CodebookParameterReport,
     Qwen3CodebookStateError,
     qwen3_codebook_parameter_report,
 )
@@ -56,6 +57,7 @@ from neural_forge.hf_qwen_codebook_model import (
 
 SCHEMA_VERSION = 1
 QWEN3_NODE_KIND = "mlp-neuron"
+_QWEN3_REPORT_ATTRIBUTE = "neural_forge_codebook_report"
 Qwen3NodeId = tuple[str, str, int, int]
 Gate = Callable[..., bool | EvaluationDecision | Mapping[str, Any]]
 FeatureRecompute = Callable[..., Any]
@@ -258,6 +260,8 @@ class Qwen3AdaptiveSurgeryFeature:
     domain_features: tuple[float, ...] | None
     importance: float
     anchor: AnchorSpec | None
+    jacobian_evidence_present: bool
+    dual_evidence_present: bool
 
     def __init__(
         self,
@@ -337,11 +341,13 @@ class Qwen3AdaptiveSurgeryFeature:
             "jacobian_features",
             _neutral_optional_feature(jacobian_value, "Jacobian/rollout features"),
         )
+        object.__setattr__(self, "jacobian_evidence_present", jacobian_value is not None)
         object.__setattr__(
             self,
             "dual_features",
             _neutral_optional_feature(dual_value, "output/dual features"),
         )
+        object.__setattr__(self, "dual_evidence_present", dual_value is not None)
         object.__setattr__(
             self,
             "domain_features",
@@ -393,6 +399,9 @@ class Qwen3ProjectionCoefficients:
     gate: float
     up: float
     down: float
+    post_swiglu_residual: float | None
+    output_residual: float | None
+    fit_space: str
 
     def __init__(
         self,
@@ -401,6 +410,10 @@ class Qwen3ProjectionCoefficients:
         gate: Any,
         up: Any,
         down: Any,
+        *,
+        post_swiglu_residual: Any = None,
+        output_residual: Any = None,
+        fit_space: str = "explicit-role-scales",
     ) -> None:
         object.__setattr__(self, "source", _node_ref(source, "projection source"))
         object.__setattr__(self, "target", _node_ref(target, "projection target"))
@@ -411,6 +424,20 @@ class Qwen3ProjectionCoefficients:
         object.__setattr__(self, "gate", _finite_float(gate, "gate coefficient"))
         object.__setattr__(self, "up", _finite_float(up, "up coefficient"))
         object.__setattr__(self, "down", _finite_float(down, "down coefficient"))
+        for name, value in (
+            ("post_swiglu_residual", post_swiglu_residual),
+            ("output_residual", output_residual),
+        ):
+            if value is None:
+                object.__setattr__(self, name, None)
+                continue
+            checked = _finite_float(value, name)
+            if checked < 0.0:
+                raise Qwen3AdaptiveSurgeryShapeError(f"{name} must be non-negative.")
+            object.__setattr__(self, name, checked)
+        if not isinstance(fit_space, str) or not fit_space.strip():
+            raise Qwen3AdaptiveSurgeryShapeError("fit_space must be a non-empty string.")
+        object.__setattr__(self, "fit_space", fit_space.strip())
 
     @property
     def values(self) -> tuple[float, float, float]:
@@ -423,6 +450,9 @@ class Qwen3ProjectionCoefficients:
             "gate": self.gate,
             "up": self.up,
             "down": self.down,
+            "post_swiglu_residual": self.post_swiglu_residual,
+            "output_residual": self.output_residual,
+            "fit_space": self.fit_space,
         }
 
 
@@ -627,10 +657,15 @@ class Qwen3AdaptiveSurgeryTransaction:
     assignment_changes_sha256: str
     projection_coefficients: tuple[Qwen3ProjectionCoefficients, ...]
     rollback_exact: bool | None
+    measured_improvement_claim: bool = False
 
     @property
     def reverted(self) -> bool:
         return not self.accepted
+
+    @property
+    def rollback_scope(self) -> str:
+        return "owned-neuron-codebook-installation"
 
     @property
     def byte_delta(self) -> int:
@@ -662,6 +697,8 @@ class Qwen3AdaptiveSurgeryTransaction:
                 item.as_dict() for item in self.projection_coefficients
             ],
             "byte_delta": self.byte_delta,
+            "measured_improvement_claim": self.measured_improvement_claim,
+            "rollback_scope": self.rollback_scope,
         }
 
 
@@ -705,6 +742,10 @@ class Qwen3AdaptiveSurgeryResult:
         )
 
     @property
+    def owned_registry_rollback_verified(self) -> bool:
+        return self.immutable_rollback_verified
+
+    @property
     def bytes_saved(self) -> int:
         return (
             self.initial_runtime_snapshot.tensor_bytes
@@ -734,6 +775,8 @@ class Qwen3AdaptiveSurgeryResult:
             "feature_recomputations": self.feature_recomputations,
             "graph_rounds": self.graph_rounds,
             "immutable_rollback_verified": self.immutable_rollback_verified,
+            "owned_registry_rollback_verified": self.owned_registry_rollback_verified,
+            "rollback_scope": "owned-neuron-codebook-installation",
             "zero_gradient": self.zero_gradient,
             "optimizer_steps": self.optimizer_steps,
             "backward_calls": self.backward_calls,
@@ -748,6 +791,7 @@ class Qwen3AdaptiveSurgeryResult:
 class _InstalledRuntime:
     codebook: GlobalNeuronCodebook
     public: Qwen3RuntimeAssignmentSnapshot
+    aggregate_report: Qwen3CodebookParameterReport
 
 
 def _tensor_sha256(value: Tensor) -> str:
@@ -765,6 +809,45 @@ def _tensor_sha256(value: Tensor) -> str:
     for start in range(0, int(byte_view.numel()), 4 * 1024 * 1024):
         digest.update(byte_view[start : start + 4 * 1024 * 1024].numpy().tobytes())
     return digest.hexdigest()
+
+
+def _tensor_identity_manifest(module: nn.Module) -> tuple[tuple[Any, ...], ...]:
+    entries: list[tuple[Any, ...]] = []
+    for kind, values in (
+        ("parameter", module.named_parameters(remove_duplicate=False)),
+        ("buffer", module.named_buffers(remove_duplicate=False)),
+    ):
+        for name, value in values:
+            try:
+                version = int(value._version)
+            except RuntimeError:
+                version = -1
+            entries.append(
+                (
+                    kind,
+                    name,
+                    id(value),
+                    int(value.data_ptr()) if value.device.type != "meta" else 0,
+                    version,
+                    tuple(int(item) for item in value.shape),
+                    str(value.dtype),
+                    str(value.device),
+                )
+            )
+    return tuple(entries)
+
+
+def _assert_callback_tensor_contract(
+    runtime: nn.Module,
+    before: tuple[tuple[Any, ...], ...],
+    callback_name: str,
+) -> None:
+    if _tensor_identity_manifest(runtime) != before:
+        raise Qwen3AdaptiveSurgeryStateError(
+            f"Fatal out-of-contract mutation by {callback_name}; only the owned "
+            "neuron-codebook installation is rollback-capable, so no whole-model "
+            "rollback claim is made."
+        )
 
 
 def _registry_snapshot(
@@ -878,31 +961,62 @@ def _validated_runtime(
     return codebook, registry
 
 
-def _install_codebook(runtime: nn.Module, codebook: GlobalNeuronCodebook) -> None:
+def _force_install_codebook(runtime: nn.Module, codebook: GlobalNeuronCodebook) -> None:
     setattr(runtime, "neuron_codebook", codebook)
+    for layer_index, layer in enumerate(runtime.model.layers):
+        layer.mlp = codebook[layer_index]
+
+
+def _install_codebook(runtime: nn.Module, codebook: GlobalNeuronCodebook) -> None:
+    previous = getattr(runtime, "neuron_codebook", None)
+    if not isinstance(previous, GlobalNeuronCodebook):
+        raise Qwen3AdaptiveSurgeryStateError(
+            "Runtime lacks an installed neuron codebook to replace atomically."
+        )
+    previous_report = qwen3_codebook_parameter_report(runtime)
     layers = runtime.model.layers
     if len(layers) != len(codebook):
         raise Qwen3AdaptiveSurgeryStateError(
             "Replacement codebook depth does not match Qwen3 decoder depth."
         )
-    for layer_index, layer in enumerate(layers):
-        layer.mlp = codebook[layer_index]
-    if any(layer.mlp is not codebook[index] for index, layer in enumerate(layers)):
-        raise Qwen3AdaptiveSurgeryStateError(
-            "Failed to install all replacement Qwen3 codebook views."
-        )
+    try:
+        _force_install_codebook(runtime, codebook)
+        if any(layer.mlp is not codebook[index] for index, layer in enumerate(layers)):
+            raise Qwen3AdaptiveSurgeryStateError(
+                "Failed to install all replacement Qwen3 codebook views."
+            )
+        synchronized = qwen3_codebook_parameter_report(runtime)
+        if synchronized.neuron_unique_parameter_count != (
+            codebook.report.unique_learned_parameters
+        ):
+            raise Qwen3AdaptiveSurgeryStateError(
+                "Aggregate Qwen accounting did not synchronize after neuron installation."
+            )
+    except Exception:
+        _force_install_codebook(runtime, previous)
+        setattr(runtime, _QWEN3_REPORT_ATTRIBUTE, previous_report)
+        qwen3_codebook_parameter_report(runtime)
+        raise
 
 
 def _capture_installed(runtime: nn.Module) -> _InstalledRuntime:
     codebook, registry = _validated_runtime(runtime)
-    return _InstalledRuntime(codebook=codebook, public=_registry_snapshot(registry))
+    return _InstalledRuntime(
+        codebook=codebook,
+        public=_registry_snapshot(registry),
+        aggregate_report=qwen3_codebook_parameter_report(runtime),
+    )
 
 
 def _restore_installed(runtime: nn.Module, installed: _InstalledRuntime) -> bool:
     _install_codebook(runtime, installed.codebook)
     codebook, registry = _validated_runtime(runtime)
     restored = _registry_snapshot(registry)
-    return codebook is installed.codebook and restored == installed.public
+    return (
+        codebook is installed.codebook
+        and restored == installed.public
+        and qwen3_codebook_parameter_report(runtime) == installed.aggregate_report
+    )
 
 
 def _prototype_bytes(registry: NeuronCodebookRegistry) -> int:
@@ -1264,6 +1378,17 @@ def _least_squares_scale(source: Tensor, target: Tensor) -> float:
     return result
 
 
+def _feature_projection_scale(
+    source: tuple[float, ...], target: tuple[float, ...]
+) -> tuple[float, float]:
+    source_tensor = torch.tensor(source, dtype=torch.float64)
+    target_tensor = torch.tensor(target, dtype=torch.float64)
+    coefficient = _least_squares_scale(source_tensor, target_tensor)
+    residual = source_tensor - coefficient * target_tensor
+    denominator = float(torch.mean(source_tensor.square())) + 1e-12
+    return coefficient, float(torch.mean(residual.square())) / denominator
+
+
 def _producer_vector(
     weight: Tensor,
     bias: Tensor | None,
@@ -1281,8 +1406,10 @@ def _least_squares_projection_roles(
     source_slot: int,
     target_slot: int,
     source_scale: Tensor,
-) -> tuple[float, float, float]:
-    """Fit detached scalar target-role multipliers for one logical Qwen row."""
+    source_feature: Qwen3AdaptiveSurgeryFeature | None,
+    target_feature: Qwen3AdaptiveSurgeryFeature | None,
+) -> Qwen3ProjectionCoefficients:
+    """Fit the represented scales in post-SwiGLU/output space when available."""
 
     gate_source = _producer_vector(
         registry.prototype_gate_weight,
@@ -1308,20 +1435,64 @@ def _least_squares_projection_roles(
         target_slot,
         torch.ones_like(source_scale[1]),
     )
-    return (
+    source_width = registry.intermediate_width
+    source_node = qwen3_neuron_node_id(
+        *divmod(int(registry.prototype_source_indices[source_slot]), source_width)
+    )
+    target_node = qwen3_neuron_node_id(
+        *divmod(int(registry.prototype_source_indices[target_slot]), source_width)
+    )
+    if source_feature is not None and target_feature is not None:
+        hidden_scale, hidden_residual = _feature_projection_scale(
+            source_feature.activation_features,
+            target_feature.activation_features,
+        )
+        raw_down_scale = _least_squares_scale(
+            registry.prototype_down_weight[:, source_slot].detach() * source_scale[2],
+            registry.prototype_down_weight[:, target_slot].detach(),
+        )
+        output_residual = None
+        down_scale = raw_down_scale
+        fit_space = "post-swiglu-activation-plus-down-weight-fallback"
+        if source_feature.dual_evidence_present and target_feature.dual_evidence_present:
+            output_scale, output_residual = _feature_projection_scale(
+                source_feature.dual_features,
+                target_feature.dual_features,
+            )
+            if abs(hidden_scale) > np.finfo(np.float64).eps:
+                down_scale = output_scale / hidden_scale
+            else:
+                hidden_scale = 1.0
+                down_scale = output_scale
+            fit_space = "post-swiglu-activation-and-output-residual"
+        return Qwen3ProjectionCoefficients(
+            source_node,
+            target_node,
+            1.0,
+            hidden_scale,
+            down_scale,
+            post_swiglu_residual=hidden_residual,
+            output_residual=output_residual,
+            fit_space=fit_space,
+        )
+    return Qwen3ProjectionCoefficients(
+        source_node,
+        target_node,
         _least_squares_scale(gate_source, gate_target),
         _least_squares_scale(up_source, up_target),
         _least_squares_scale(
             registry.prototype_down_weight[:, source_slot].detach() * source_scale[2],
             registry.prototype_down_weight[:, target_slot].detach(),
         ),
+        fit_space="raw-role-weight-fallback-no-post-swiglu-evidence",
     )
 
 
 def _projected_scales(
     registry: NeuronCodebookRegistry,
     redirects: Mapping[int, int],
-    projection_roles_by_slot: Mapping[int, tuple[float, float, float] | None],
+    projection_roles_by_slot: Mapping[int, Qwen3ProjectionCoefficients | None],
+    features_by_node: Mapping[Qwen3NodeId, Qwen3AdaptiveSurgeryFeature],
 ) -> Tensor | None:
     existing = registry.neuron_scales
     if not projection_roles_by_slot:
@@ -1353,14 +1524,33 @@ def _projected_scales(
             coefficients = projection_roles_by_slot[old_slot]
             if coefficients is None:
                 coefficients = _least_squares_projection_roles(
-                    registry, old_slot, target_slot, old_scale
+                    registry,
+                    old_slot,
+                    target_slot,
+                    old_scale,
+                    features_by_node.get(
+                        qwen3_neuron_node_id(
+                            *divmod(
+                                int(registry.prototype_source_indices[old_slot]),
+                                registry.intermediate_width,
+                            )
+                        )
+                    ),
+                    features_by_node.get(
+                        qwen3_neuron_node_id(
+                            *divmod(
+                                int(registry.prototype_source_indices[target_slot]),
+                                registry.intermediate_width,
+                            )
+                        )
+                    ),
                 )
                 scales[layer_index, neuron_index] = torch.tensor(
-                    coefficients, device=scales.device, dtype=scales.dtype
+                    coefficients.values, device=scales.device, dtype=scales.dtype
                 )
             else:
                 scales[layer_index, neuron_index] = old_scale * torch.tensor(
-                    coefficients, device=scales.device, dtype=scales.dtype
+                    coefficients.values, device=scales.device, dtype=scales.dtype
                 )
     return scales
 
@@ -1384,6 +1574,136 @@ def _copy_requires_grad(
         parameter.requires_grad_(requires_grad)
 
 
+@dataclass(frozen=True, slots=True)
+class Qwen3NeuronCompactionWork:
+    """Conservative live-storage and copy-work bound for neuron compaction."""
+
+    source_tensor_bytes: int
+    result_tensor_bytes: int
+    copied_tensor_bytes: int
+    maximum_staging_bytes: int
+    peak_live_tensor_bytes_bound: int
+    full_registry_clone_count: int = 0
+    prototype_copy_passes: int = 1
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            name: int(getattr(self, name)) for name in self.__dataclass_fields__
+        }
+
+
+def _tensor_bytes(value: Tensor | None) -> int:
+    return 0 if value is None else int(value.numel()) * int(value.element_size())
+
+
+def _stream_select_slots(value: Tensor | None, slots: Sequence[int], dim: int) -> Tensor | None:
+    if value is None:
+        return None
+    shape = list(value.shape)
+    shape[dim] = len(slots)
+    result = torch.empty(shape, dtype=value.dtype, device=value.device)
+    with torch.no_grad():
+        for destination, source in enumerate(slots):
+            result.select(dim, destination).copy_(value.detach().select(dim, source))
+    return result
+
+
+def _adopt_neuron_registry(
+    source: NeuronCodebookRegistry,
+    *,
+    gate: Tensor,
+    up: Tensor,
+    down: Tensor,
+    assignments: Tensor,
+    prototype_source_indices: Tensor,
+    gate_bias: Tensor | None,
+    up_bias: Tensor | None,
+    scales: Tensor | None,
+) -> NeuronCodebookRegistry:
+    """Adopt already-copied compact tensors without a second registry clone."""
+
+    result = NeuronCodebookRegistry.__new__(NeuronCodebookRegistry)
+    nn.Module.__init__(result)
+    result.prototype_gate_weight = nn.Parameter(gate.detach())
+    result.prototype_up_weight = nn.Parameter(up.detach())
+    result.prototype_down_weight = nn.Parameter(down.detach())
+    result.prototype_gate_bias = (
+        None if gate_bias is None else nn.Parameter(gate_bias.detach())
+    )
+    result.prototype_up_bias = None if up_bias is None else nn.Parameter(up_bias.detach())
+    result.layer_down_bias = (
+        None
+        if source.layer_down_bias is None
+        else nn.Parameter(source.layer_down_bias.detach())
+    )
+    result.neuron_scales = None if scales is None else nn.Parameter(scales.detach())
+    result.register_buffer(
+        "assignments",
+        assignments.detach().to(device="cpu", dtype=torch.int32),
+    )
+    result.register_buffer(
+        "prototype_source_indices",
+        prototype_source_indices.detach().to(device="cpu", dtype=torch.int32),
+    )
+    result.register_buffer(
+        "_activation_code",
+        source._activation_code.detach().to(device="cpu").clone(),
+    )
+    result.diagnostics = None
+    result.input_width = source.input_width
+    result.output_width = source.output_width
+    if (
+        result.prototype_count <= 0
+        or set(
+            map(
+                int,
+                result.assignments.detach().to("cpu", torch.int64).reshape(-1).tolist(),
+            )
+        )
+        != set(range(result.prototype_count))
+    ):
+        raise Qwen3AdaptiveSurgeryStateError(
+            "Streamed neuron registry retained invalid or unused prototype storage."
+        )
+    return result
+
+
+def _neuron_compaction_work(
+    source: NeuronCodebookRegistry,
+    result: NeuronCodebookRegistry,
+) -> Qwen3NeuronCompactionWork:
+    source_bytes = sum(_tensor_bytes(value) for value in source.state_dict().values())
+    result_bytes = sum(_tensor_bytes(value) for value in result.state_dict().values())
+    copied = sum(
+        _tensor_bytes(getattr(result, name, None))
+        for name in (
+            "prototype_gate_weight",
+            "prototype_up_weight",
+            "prototype_down_weight",
+            "prototype_gate_bias",
+            "prototype_up_bias",
+        )
+    )
+    maximum_staging = max(
+        _tensor_bytes(result.prototype_gate_weight[0]),
+        _tensor_bytes(result.prototype_up_weight[0]),
+        _tensor_bytes(result.prototype_down_weight[:, 0]),
+        _tensor_bytes(
+            None if result.prototype_gate_bias is None else result.prototype_gate_bias[0]
+        ),
+        _tensor_bytes(
+            None if result.prototype_up_bias is None else result.prototype_up_bias[0]
+        ),
+    )
+    return Qwen3NeuronCompactionWork(
+        source_tensor_bytes=source_bytes,
+        result_tensor_bytes=result_bytes,
+        copied_tensor_bytes=copied,
+        maximum_staging_bytes=maximum_staging,
+        peak_live_tensor_bytes_bound=source_bytes + result_bytes + maximum_staging,
+    )
+
+
 def _compacted_codebook(
     runtime: nn.Module,
     graph_snapshot: SurgerySnapshot,
@@ -1393,6 +1713,7 @@ def _compacted_codebook(
         Sequence[Qwen3ProjectionCoefficients] | Mapping[Any, Any]
     ) = (),
     projection_bindings: Sequence[ProjectionBinding] = (),
+    projection_features: Sequence[Qwen3AdaptiveSurgeryFeature] = (),
 ) -> GlobalNeuronCodebook:
     current_codebook, registry = _validated_runtime(runtime)
     width = registry.intermediate_width
@@ -1430,15 +1751,13 @@ def _compacted_codebook(
     assignments = torch.tensor(flattened, dtype=torch.int64).reshape(
         registry.logical_layers, registry.intermediate_width
     )
-    index_device = registry.prototype_gate_weight.device
-    selected = torch.tensor(survivor_slots, device=index_device, dtype=torch.long)
     explicit_by_pair = _projection_by_pair(projection_coefficients)
     generic_by_pair = {
         (_node_ref(item.source, "projection binding source"), _node_ref(item.target, "projection binding target")):
         _finite_float(item.coefficient, "projection binding coefficient")
         for item in projection_bindings
     }
-    projection_roles_by_slot: dict[int, tuple[float, float, float] | None] = {}
+    projection_roles_by_slot: dict[int, Qwen3ProjectionCoefficients | None] = {}
     for action in actions:
         if action.kind != "project" or len(action.sources) != 1:
             continue
@@ -1452,41 +1771,54 @@ def _compacted_codebook(
             )
         explicit = explicit_by_pair.get((source, target))
         if explicit is not None:
-            projection_roles_by_slot[source_slot] = explicit.values
+            projection_roles_by_slot[source_slot] = explicit
             continue
         scalar = generic_by_pair.get((source, target))
         if scalar is not None:
-            projection_roles_by_slot[source_slot] = (scalar, scalar, scalar)
+            projection_roles_by_slot[source_slot] = Qwen3ProjectionCoefficients(
+                source,
+                target,
+                scalar,
+                scalar,
+                scalar,
+                fit_space="generic-graph-scalar",
+            )
             continue
         # A projected anchor without a supplied executable binding falls back
         # to detached least-squares scalars for the three Qwen MLP roles.
         projection_roles_by_slot[source_slot] = None
-    scales = _projected_scales(registry, redirects, projection_roles_by_slot)
+    scales = _projected_scales(
+        registry,
+        redirects,
+        projection_roles_by_slot,
+        {feature.node_id: feature for feature in projection_features},
+    )
     scales_created = registry.neuron_scales is None and scales is not None
-    new_registry = NeuronCodebookRegistry(
-        registry.prototype_gate_weight.index_select(0, selected),
-        registry.prototype_up_weight.index_select(0, selected),
-        registry.prototype_down_weight.index_select(1, selected),
-        assignments,
-        registry.prototype_source_indices.detach()
-        .to(device=index_device)
-        .index_select(0, selected),
-        prototype_gate_bias=(
-            None
-            if registry.prototype_gate_bias is None
-            else registry.prototype_gate_bias.index_select(0, selected)
+    gate = _stream_select_slots(registry.prototype_gate_weight, survivor_slots, 0)
+    up = _stream_select_slots(registry.prototype_up_weight, survivor_slots, 0)
+    down = _stream_select_slots(registry.prototype_down_weight, survivor_slots, 1)
+    sources = _stream_select_slots(
+        registry.prototype_source_indices, survivor_slots, 0
+    )
+    if any(value is None for value in (gate, up, down, sources)):
+        raise Qwen3AdaptiveSurgeryStateError(
+            "Streamed neuron compaction lost a mandatory prototype tensor."
+        )
+    new_registry = _adopt_neuron_registry(
+        registry,
+        gate=gate,
+        up=up,
+        down=down,
+        assignments=assignments,
+        prototype_source_indices=sources,
+        gate_bias=_stream_select_slots(
+            registry.prototype_gate_bias, survivor_slots, 0
         ),
-        prototype_up_bias=(
-            None
-            if registry.prototype_up_bias is None
-            else registry.prototype_up_bias.index_select(0, selected)
-        ),
-        layer_down_bias=registry.layer_down_bias,
-        neuron_scales=scales,
-        activation=registry.activation,
-        diagnostics=None,
+        up_bias=_stream_select_slots(registry.prototype_up_bias, survivor_slots, 0),
+        scales=scales,
     )
     _copy_requires_grad(registry, new_registry, scales_created=scales_created)
+    new_registry.compaction_work = _neuron_compaction_work(registry, new_registry)
     new_registry.train(registry.training)
     result = GlobalNeuronCodebook(new_registry)
     result.train(current_codebook.training)
@@ -1522,42 +1854,101 @@ def _assignment_changes(
     return tuple(result)
 
 
-def _decision(value: Any) -> EvaluationDecision:
+def _decision(
+    value: Any,
+    context: Qwen3SurgeryEvaluationContext,
+) -> tuple[EvaluationDecision, bool]:
     if isinstance(value, EvaluationDecision):
-        return value
-    if isinstance(value, bool):
-        return EvaluationDecision(value)
-    if not isinstance(value, Mapping):
+        decision = value
+        metrics = dict(value.metrics)
+    elif isinstance(value, bool):
+        return EvaluationDecision(value), False
+    elif not isinstance(value, Mapping):
         raise Qwen3AdaptiveSurgeryShapeError(
             "gate must return bool, EvaluationDecision, or a mapping."
         )
-    accepted = value.get("accepted", value.get("accept"))
-    if not isinstance(accepted, bool):
-        raise Qwen3AdaptiveSurgeryShapeError(
-            "gate mapping must contain a boolean accepted or accept field."
+    else:
+        accepted = value.get("accepted", value.get("accept"))
+        if not isinstance(accepted, bool):
+            raise Qwen3AdaptiveSurgeryShapeError(
+                "gate mapping must contain a boolean accepted or accept field."
+            )
+        reason_value = value.get("reason", value.get("accepted_reason", ""))
+        reason = "" if reason_value is None else str(reason_value)
+        metrics = {
+            str(key): item
+            for key, item in value.items()
+            if key not in {"accepted", "accept", "reason", "accepted_reason"}
+            and isinstance(item, (str, int, float, bool, type(None)))
+            and not (isinstance(item, float) and not math.isfinite(item))
+        }
+        decision = EvaluationDecision(accepted, reason=reason, metrics=metrics)
+    claim = any(
+        metrics.get(name) is True
+        for name in (
+            "improved",
+            "improvement",
+            "quality_improved",
+            "better_than_parent",
         )
-    reason_value = value.get("reason", value.get("accepted_reason", ""))
-    reason = "" if reason_value is None else str(reason_value)
-    metrics = {
-        str(key): item
-        for key, item in value.items()
-        if key not in {"accepted", "accept", "reason", "accepted_reason"}
-        and isinstance(item, (str, int, float, bool, type(None)))
-        and not (isinstance(item, float) and not math.isfinite(item))
+    ) or any(
+        phrase in decision.reason.strip().lower()
+        for phrase in ("quality improved", "better than parent", "outperformed parent")
+    )
+    if not claim:
+        return decision, False
+    required = {
+        "parent_score",
+        "candidate_score",
+        "higher_is_better",
+        "evaluation_contract_sha256",
+        "parent_runtime_sha256",
     }
-    return EvaluationDecision(accepted, reason=reason, metrics=metrics)
+    if not required.issubset(metrics):
+        raise Qwen3AdaptiveSurgeryStateError(
+            "An improvement claim requires measured scores, direction, an evaluation "
+            "contract hash, and the exact parent runtime hash."
+        )
+    contract_hash = metrics["evaluation_contract_sha256"]
+    if (
+        not isinstance(contract_hash, str)
+        or len(contract_hash) != 64
+        or any(character not in "0123456789abcdef" for character in contract_hash.lower())
+    ):
+        raise Qwen3AdaptiveSurgeryShapeError(
+            "evaluation_contract_sha256 must be a 64-character SHA-256 hex digest."
+        )
+    if metrics["parent_runtime_sha256"] != (
+        context.parent_runtime_snapshot.registry_sha256
+    ):
+        raise Qwen3AdaptiveSurgeryStateError(
+            "Improvement claim parent_runtime_sha256 does not match the gated parent."
+        )
+    parent = _finite_float(metrics["parent_score"], "parent_score")
+    candidate = _finite_float(metrics["candidate_score"], "candidate_score")
+    higher = metrics["higher_is_better"]
+    if not isinstance(higher, bool):
+        raise Qwen3AdaptiveSurgeryShapeError("higher_is_better must be boolean.")
+    if not (candidate >= parent if higher else candidate <= parent):
+        raise Qwen3AdaptiveSurgeryStateError(
+            "Parent-relative measurements contradict the improvement claim."
+        )
+    return decision, True
 
 
-def _invoke_gate(gate: Gate | None, context: Qwen3SurgeryEvaluationContext) -> EvaluationDecision:
+def _invoke_gate(
+    gate: Gate | None,
+    context: Qwen3SurgeryEvaluationContext,
+) -> tuple[EvaluationDecision, bool]:
     if gate is None:
-        return EvaluationDecision.accept(reason="no external rollout gate supplied")
+        return EvaluationDecision.accept(reason="no external rollout gate supplied"), False
     callable_value = getattr(gate, "evaluate", gate)
     if not callable(callable_value):
         raise Qwen3AdaptiveSurgeryShapeError("gate must be callable or expose evaluate().")
     try:
         signature = inspect.signature(callable_value)
     except (TypeError, ValueError):
-        return _decision(callable_value(context))
+        return _decision(callable_value(context), context)
     positional = [
         parameter
         for parameter in signature.parameters.values()
@@ -1590,7 +1981,7 @@ def _invoke_gate(gate: Gate | None, context: Qwen3SurgeryEvaluationContext) -> E
         value = callable_value(context)
     else:
         value = callable_value()
-    return _decision(value)
+    return _decision(value, context)
 
 
 def _invoke_recompute(
@@ -1756,8 +2147,14 @@ class Qwen3AdaptiveSurgeryBridge:
             graph_transaction=graph_transaction,
         )
         before = self.runtime_snapshot
-        with torch.inference_mode():
-            refreshed = _invoke_recompute(recompute_features, context)
+        callback_manifest = _tensor_identity_manifest(self.runtime)
+        with torch.no_grad():
+            try:
+                refreshed = _invoke_recompute(recompute_features, context)
+            finally:
+                _assert_callback_tensor_contract(
+                    self.runtime, callback_manifest, "recompute_features"
+                )
         after = self.runtime_snapshot
         if after != before:
             raise Qwen3AdaptiveSurgeryStateError(
@@ -1792,6 +2189,53 @@ class Qwen3AdaptiveSurgeryBridge:
             for layer in range(registry.logical_layers)
             for neuron in range(registry.intermediate_width)
         }
+
+    def projection_for_pair(
+        self, source: Any, target: Any
+    ) -> Qwen3ProjectionCoefficients:
+        """Return an explicit or evidence-fitted executable projection."""
+
+        source_id = _node_ref(source, "projection source")
+        target_id = _node_ref(target, "projection target")
+        explicit = _projection_by_pair(self._projection_coefficients).get(
+            (source_id, target_id)
+        )
+        if explicit is not None:
+            return explicit
+        _, registry = _validated_runtime(self.runtime)
+        width = registry.intermediate_width
+        slot_by_node = {
+            qwen3_neuron_node_id(*divmod(int(value), width)): slot
+            for slot, value in enumerate(
+                registry.prototype_source_indices.detach().to("cpu", torch.int64).tolist()
+            )
+        }
+        try:
+            source_slot = slot_by_node[source_id]
+            target_slot = slot_by_node[target_id]
+        except KeyError as error:
+            raise Qwen3AdaptiveSurgeryStateError(
+                "Projection pair references a non-active prototype."
+            ) from error
+        existing = registry.neuron_scales
+        source_scale = (
+            torch.ones(
+                3,
+                device=registry.prototype_gate_weight.device,
+                dtype=registry.prototype_gate_weight.dtype,
+            )
+            if existing is None
+            else existing[source_id[2], source_id[3]].detach()
+        )
+        by_node = {feature.node_id: feature for feature in self._features}
+        return _least_squares_projection_roles(
+            registry,
+            source_slot,
+            target_slot,
+            source_scale,
+            by_node.get(source_id),
+            by_node.get(target_id),
+        )
 
     def _projection_rank_adjustment(self, candidate: MergeCandidate) -> float:
         source, target = (_node_ref(item) for item in candidate.sources)
@@ -1930,18 +2374,26 @@ class Qwen3AdaptiveSurgeryBridge:
                     )
                 )
             else:
-                selected = self._invoke_candidate_selector(
-                    selector,
-                    Qwen3SurgeryCandidateSelectionContext(
-                        graph=self._graph,
-                        discovered_candidates=discovered,
-                        target_bytes=target_bytes,
-                        current_bytes=current_bytes,
-                        max_nonconflicting_batch_size=self.max_nonconflicting_batch_size,
-                        projection_coefficients=self._projection_coefficients,
-                        projection_role_scales=self._projection_role_scales(),
-                    ),
-                )
+                selector_manifest = _tensor_identity_manifest(self.runtime)
+                try:
+                    selected = self._invoke_candidate_selector(
+                        selector,
+                        Qwen3SurgeryCandidateSelectionContext(
+                            graph=self._graph,
+                            discovered_candidates=discovered,
+                            target_bytes=target_bytes,
+                            current_bytes=current_bytes,
+                            max_nonconflicting_batch_size=(
+                                self.max_nonconflicting_batch_size
+                            ),
+                            projection_coefficients=self._projection_coefficients,
+                            projection_role_scales=self._projection_role_scales(),
+                        ),
+                    )
+                finally:
+                    _assert_callback_tensor_contract(
+                        self.runtime, selector_manifest, "candidate_selector"
+                    )
             if selector is not None and isinstance(selected, Mapping):
                 ranked = tuple(selected.get("candidates", ())) + tuple(
                     selected.get("pairs", selected.get("explicit_pairs", ()))
@@ -1994,6 +2446,8 @@ class Qwen3AdaptiveSurgeryBridge:
                 batch.append(candidate)
                 if self._marginal_bytes_saved(batch) >= remaining_bytes:
                     break
+            if batch and self._marginal_bytes_saved(batch) <= 0:
+                batch.clear()
             result = tuple(batch)
         except Exception:
             self._restore_graph_checkpoint(checkpoint)
@@ -2076,17 +2530,28 @@ class Qwen3AdaptiveSurgeryBridge:
                 )
             proposal = self._graph.preview(candidates)
             parent = _capture_installed(self.runtime)
+            expected_savings = self._marginal_bytes_saved(candidates)
+            if expected_savings <= 0:
+                raise Qwen3AdaptiveSurgeryStateError(
+                    "A neuron transaction must have positive marginal physical bytes."
+                )
             try:
-                with torch.inference_mode():
+                with torch.no_grad():
                     tentative_codebook = _compacted_codebook(
                         self.runtime,
                         proposal.snapshot,
                         proposal.transaction.actions,
                         projection_coefficients=self._projection_coefficients,
                         projection_bindings=proposal.transaction.projection_bindings,
+                        projection_features=self._features,
                     )
                     _install_codebook(self.runtime, tentative_codebook)
                 proposed = _capture_installed(self.runtime)
+                measured_savings = parent.public.tensor_bytes - proposed.public.tensor_bytes
+                if measured_savings <= 0 or measured_savings != expected_savings:
+                    raise Qwen3AdaptiveSurgeryStateError(
+                        "Predicted neuron byte reward did not equal monotonic physical storage."
+                    )
                 context = Qwen3SurgeryEvaluationContext(
                     runtime=self.runtime,
                     round_index=self._graph_rounds,
@@ -2097,11 +2562,21 @@ class Qwen3AdaptiveSurgeryBridge:
                     parent_runtime_snapshot=parent.public,
                     proposed_runtime_snapshot=proposed.public,
                 )
-                with torch.inference_mode():
-                    decision = _invoke_gate(rollout_gate, context)
-                if self.runtime_snapshot != proposed.public:
+                gate_manifest = _tensor_identity_manifest(self.runtime)
+                with torch.no_grad():
+                    try:
+                        decision, measured_claim = _invoke_gate(rollout_gate, context)
+                    finally:
+                        _assert_callback_tensor_contract(
+                            self.runtime, gate_manifest, "gate"
+                        )
+                if (
+                    self.runtime_snapshot != proposed.public
+                    or qwen3_codebook_parameter_report(self.runtime)
+                    != proposed.aggregate_report
+                ):
                     raise Qwen3AdaptiveSurgeryStateError(
-                        "Rollout gate mutated the tentative Qwen3 codebook."
+                        "Rollout gate mutated the tentative Qwen3 runtime contract."
                     )
             except Exception:
                 if not _restore_installed(self.runtime, parent):
@@ -2140,6 +2615,7 @@ class Qwen3AdaptiveSurgeryBridge:
                         ),
                         projection_coefficients=(),
                         rollback_exact=True,
+                        measured_improvement_claim=measured_claim,
                     )
                 )
                 return False
@@ -2197,6 +2673,7 @@ class Qwen3AdaptiveSurgeryBridge:
                         if (item.source, item.target) in used_projection_pairs
                     ),
                     rollback_exact=None,
+                    measured_improvement_claim=measured_claim,
                 )
             )
             self._features = refresh.features
@@ -2207,6 +2684,8 @@ class Qwen3AdaptiveSurgeryBridge:
             return True
 
         def resolve_rejected_batch(candidates: tuple[MergeCandidate, ...]) -> None:
+            if self._marginal_bytes_saved(candidates) <= 0:
+                return
             graph_checkpoint = self._graph_checkpoint()
             try:
                 fresh = self._rescore_batch(candidates)
@@ -2321,6 +2800,7 @@ __all__ = [
     "Qwen3ActionAudit",
     "Qwen3FeatureBounds",
     "Qwen3FeatureBundle",
+    "Qwen3NeuronCompactionWork",
     "Qwen3ProjectionCoefficients",
     "Qwen3RuntimeAssignmentChange",
     "Qwen3RuntimeAssignmentSnapshot",

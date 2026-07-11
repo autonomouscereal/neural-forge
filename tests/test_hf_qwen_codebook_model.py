@@ -298,15 +298,15 @@ def test_parameter_report_separates_unique_logical_and_index_storage(
     assert report.retained_layer_specific_norm_parameter_count == 40
     assert report.vocabulary_unique_parameter_count == 56
     assert report.vocabulary_logical_parameter_count == 112
-    assert report.attention_index_bytes == 40
+    assert report.attention_index_bytes == 48
     assert report.neuron_index_bytes == 72
     assert report.token_row_index_bytes == 28
-    assert report.index_buffer_bytes == 140
+    assert report.index_buffer_bytes == 148
     assert report.parameters_saved == 392
     assert report.logical_layers == report.residual_block_count == 2
     assert report.layer_specific_norm_count == 8
     assert sum(parameter.numel() for parameter in prepared.runtime.parameters()) == 440
-    assert report.as_dict()["index_bytes"] == 140
+    assert report.as_dict()["index_bytes"] == 148
 
 
 def test_codebooks_have_one_owner_parameterless_aliases_and_no_parent_runtime(
@@ -573,7 +573,7 @@ def test_full_depth_neuron_prototypes_reconstruct_and_reload_qwen_runtime() -> N
     assert report.unique_parameter_count == 776
     assert report.logical_parameter_count == 832
     assert report.registered_logical_parameter_count == 832
-    assert report.index_buffer_bytes == 172
+    assert report.index_buffer_bytes == 180
     assert runtime.neuron_codebook.registry.neuron_scales is None
 
     for layer_index, dense_layer in enumerate(dense_reference.model.layers):

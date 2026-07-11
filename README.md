@@ -10,6 +10,24 @@ explicit axis: a row in one layer and the matching column in the next. The repo
 also includes experimental Hugging Face causal-LM checkpoint surgery and a tiny
 native early-fusion multimodal training sandbox for real-model validation.
 
+## Project goal
+
+The target is an arbitrary model-shape compiler, not a same-family merge tool:
+one or more parents with different architectures, tokenizers, and native
+modalities should be transformable into a user-defined child, including a
+completely blank child. The compiler may preserve, merge, project, interleave,
+share, expand, or skip measured paths independently across width and depth.
+Neuron/path merging and compensation happen before destructive pruning.
+
+The inverse operation is also in scope: expand a smaller checkpoint into a
+larger requested architecture without discarding its learned function. Native
+raw image, audio, video, OCR, and 3D token paths remain part of the target; an
+external frozen modality encoder, projector, adapter, or bridge is not assumed.
+
+A mechanically valid shape is not a successful fold. Promotion requires cached
+parent-relative behavior and generation benchmarks plus manual output inspection
+with zero-recovery results reported separately from any later cleanup training.
+
 ## What works now
 
 - `shrink`: reduce hidden widths by clustering similar neurons, averaging incoming
@@ -55,11 +73,12 @@ native early-fusion multimodal training sandbox for real-model validation.
 
 ## Roadmap
 
-This repo starts with clean-room dense surgery. The next practical layers are:
+This repo starts with clean-room dense surgery. Active implementation layers are:
 
 - safetensors/Hugging Face adapters for transformer MLP width, attention heads,
   layer insertion, config updates, and dry-run shape reports;
-- activation-calibrated merge/fold scoring and GRAIL-style ridge compensation;
+- activation-ablation/JVP evidence, compensated physical neuron merging, and
+  atomic coupled-attention allocation;
 - MergeKit-compatible recipe import/export for same-shape checkpoint merges;
 - optional export hooks for vLLM/llm-compressor, NVIDIA ModelOpt, Intel Neural
   Compressor, NNCF, and ONNX pipelines;

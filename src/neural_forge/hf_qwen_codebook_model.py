@@ -21,7 +21,7 @@ import operator
 import os
 import tempfile
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +29,9 @@ import torch
 from torch import Tensor, nn
 
 from neural_forge.hf_attention_codebook import (
+    ATTENTION_REGISTRY_LAYOUT_RAGGED,
+    ATTENTION_REGISTRY_LAYOUT_RECTANGULAR,
+    ATTENTION_REGISTRY_SCHEMA_VERSION,
     DEFAULT_SKETCH_DIM,
     GQAAttentionBundle,
     GlobalAttentionCodebook,
@@ -45,7 +48,7 @@ from neural_forge.hf_tied_depth import TiedDepthError, exact_token_row_mapping
 
 RUNTIME_SCHEMA = "neural-forge-qwen3-codebook-runtime-v1"
 RUNTIME_METHOD = "exact-token-rows-plus-global-attention-and-neuron-codebooks"
-CHECKPOINT_SCHEMA = "neural-forge-qwen3-codebook-checkpoint-v1"
+CHECKPOINT_SCHEMA = "neural-forge-qwen3-codebook-checkpoint-v2"
 _REPORT_ATTRIBUTE = "neural_forge_codebook_report"
 _ATTENTION_ATTRIBUTE = "attention_codebook"
 _NEURON_ATTRIBUTE = "neuron_codebook"
@@ -84,7 +87,7 @@ class Qwen3CodebookParameterReport:
     key_value_heads: int
     head_dim: int
     attention_prototypes_per_group: int
-    neuron_prototypes_per_neuron: int
+    neuron_prototypes_per_neuron: int | None
     neuron_prototype_count: int
     source_vocab_size: int
     target_vocab_size: int
@@ -146,7 +149,7 @@ class Qwen3CodebookParameterReport:
     def source_to_runtime_ratio(self) -> float:
         return self.source_unique_parameter_count / self.unique_parameter_count
 
-    def as_dict(self) -> dict[str, int | float | str | bool]:
+    def as_dict(self) -> dict[str, int | float | str | bool | None]:
         result = {field.name: getattr(self, field.name) for field in fields(self)}
         result.update(
             {
@@ -162,7 +165,7 @@ class Qwen3CodebookParameterReport:
         )
         return result
 
-    def __getitem__(self, key: str) -> int | float | str | bool:
+    def __getitem__(self, key: str) -> int | float | str | bool | None:
         return self.as_dict()[key]
 
 
@@ -821,12 +824,104 @@ def prepare_qwen3_codebook_model(
 def qwen3_codebook_parameter_report(
     model: nn.Module,
 ) -> Qwen3CodebookParameterReport:
-    """Return the verified report attached by the in-memory conversion."""
+    """Recompute, attach, and return accounting for the live runtime."""
 
-    report = getattr(model, _REPORT_ATTRIBUTE, None)
-    if not isinstance(report, Qwen3CodebookParameterReport):
+    previous = getattr(model, _REPORT_ATTRIBUTE, None)
+    if not isinstance(previous, Qwen3CodebookParameterReport):
         raise Qwen3CodebookError("Model is not a prepared Qwen3 codebook runtime.")
-    return report
+    attention = getattr(model, _ATTENTION_ATTRIBUTE, None)
+    neurons = getattr(model, _NEURON_ATTRIBUTE, None)
+    parent_rows_tensor = getattr(model, _PARENT_ROWS_BUFFER, None)
+    if (
+        not isinstance(attention, GlobalAttentionCodebook)
+        or not isinstance(neurons, GlobalNeuronCodebook)
+        or not isinstance(parent_rows_tensor, Tensor)
+    ):
+        raise Qwen3CodebookStateError(
+            "Prepared Qwen3 runtime is missing a codebook or token-row contract."
+        )
+    parent_rows = tuple(
+        int(value)
+        for value in parent_rows_tensor.detach().to(device="cpu", dtype=torch.int64).tolist()
+    )
+    attention_report = attention.report
+    neuron_report = neurons.report
+    unique_parameters, registered_logical = _parameter_counts(model)
+    vocabulary_unique = int(model.get_input_embeddings().weight.numel())
+    vocabulary_logical = 2 * vocabulary_unique
+    retained_fixed = (
+        unique_parameters
+        - attention_report.unique_learned_parameters
+        - neuron_report.unique_learned_parameters
+        - vocabulary_unique
+    )
+    if retained_fixed < previous.retained_layer_specific_norm_parameter_count:
+        raise Qwen3CodebookStateError(
+            "Live parameter accounting lost retained layer-specific norms."
+        )
+    attention_owners = _registered_owner_count(model, attention.registry)
+    neuron_owners = _registered_owner_count(model, neurons.registry)
+    owner_invariant = attention_owners == neuron_owners == 1
+    parameterless = _all_views_are_parameterless(attention, neurons)
+    if not owner_invariant or not parameterless:
+        raise Qwen3CodebookStateError(
+            "Live codebook ownership or parameterless-view accounting failed."
+        )
+    tied = (
+        model.get_input_embeddings().weight
+        is model.get_output_embeddings().weight
+    )
+    if not tied:
+        raise Qwen3CodebookStateError("Live input/output embeddings are not tied.")
+    token_row_index_bytes = (
+        len(parent_rows) * torch.tensor([], dtype=torch.int32).element_size()
+    )
+    refreshed = replace(
+        previous,
+        logical_layers=attention.logical_layers,
+        residual_block_count=attention.logical_layers,
+        hidden_size=attention_report.input_width,
+        intermediate_size=neuron_report.intermediate_width,
+        query_heads=attention_report.query_heads,
+        key_value_heads=attention_report.key_value_heads,
+        head_dim=attention_report.head_dim,
+        attention_prototypes_per_group=attention_report.prototypes_per_group,
+        neuron_prototypes_per_neuron=neuron_report.prototypes_per_neuron,
+        neuron_prototype_count=neuron_report.prototype_count,
+        target_vocab_size=len(parent_rows),
+        token_row_fingerprint=_token_row_fingerprint(parent_rows),
+        unique_parameter_count=unique_parameters,
+        logical_parameter_count=(
+            retained_fixed
+            + attention_report.logical_dense_parameters
+            + neuron_report.logical_dense_parameters
+            + vocabulary_logical
+        ),
+        registered_logical_parameter_count=registered_logical,
+        attention_unique_parameter_count=attention_report.unique_learned_parameters,
+        attention_logical_parameter_count=attention_report.logical_dense_parameters,
+        neuron_unique_parameter_count=neuron_report.unique_learned_parameters,
+        neuron_logical_parameter_count=neuron_report.logical_dense_parameters,
+        retained_fixed_parameter_count=retained_fixed,
+        vocabulary_unique_parameter_count=vocabulary_unique,
+        vocabulary_logical_parameter_count=vocabulary_logical,
+        attention_index_bytes=attention_report.index_buffer_bytes,
+        neuron_index_bytes=neuron_report.index_buffer_bytes,
+        token_row_index_bytes=token_row_index_bytes,
+        index_buffer_bytes=(
+            attention_report.index_buffer_bytes
+            + neuron_report.index_buffer_bytes
+            + token_row_index_bytes
+        ),
+        full_logical_depth=True,
+        exact_parent_token_rows=True,
+        tied_input_output_embeddings=tied,
+        parameterless_layer_views=parameterless,
+        single_registry_owner_per_codebook=owner_invariant,
+        parent_runtime_reference_count=0,
+    )
+    setattr(model, _REPORT_ATTRIBUTE, refreshed)
+    return refreshed
 
 
 def _checkpoint_state(model: nn.Module) -> dict[str, Tensor]:
@@ -886,6 +981,33 @@ def _codebook_checkpoint_hashes(state: Mapping[str, Tensor]) -> dict[str, dict[s
     }
 
 
+def _attention_registry_contract(state: Mapping[str, Tensor]) -> dict[str, int | str]:
+    schema = state.get("attention_codebook.registry._registry_schema_version")
+    layout = state.get("attention_codebook.registry._registry_layout")
+    if (
+        not isinstance(schema, Tensor)
+        or schema.numel() != 1
+        or int(schema.item()) != ATTENTION_REGISTRY_SCHEMA_VERSION
+        or not isinstance(layout, Tensor)
+        or layout.numel() != 1
+    ):
+        raise Qwen3CodebookStateError(
+            "Attention registry lacks explicit schema/layout checkpoint metadata."
+        )
+    layout_code = int(layout.item())
+    names = {
+        ATTENTION_REGISTRY_LAYOUT_RECTANGULAR: "rectangular",
+        ATTENTION_REGISTRY_LAYOUT_RAGGED: "ragged-global-pool",
+    }
+    if layout_code not in names:
+        raise Qwen3CodebookStateError("Attention registry layout code is unknown.")
+    return {
+        "schema_version": ATTENTION_REGISTRY_SCHEMA_VERSION,
+        "layout_code": layout_code,
+        "layout": names[layout_code],
+    }
+
+
 def save_qwen3_codebook_checkpoint(
     model: nn.Module,
     path: str | Path,
@@ -937,6 +1059,7 @@ def save_qwen3_codebook_checkpoint(
     _atomic_write_json(config_path, config_payload)
     _atomic_write_json(tokenizer_path, dict(tokenizer_contract))
     hashes = _codebook_checkpoint_hashes(state)
+    attention_registry_contract = _attention_registry_contract(state)
     manifest = {
         "schema": CHECKPOINT_SCHEMA,
         "format": "safetensors",
@@ -955,6 +1078,7 @@ def save_qwen3_codebook_checkpoint(
         "state_groups": grouped_keys,
         "parameter_report": report.as_dict(),
         "token_row_fingerprint": report.token_row_fingerprint,
+        "attention_registry": attention_registry_contract,
         **hashes,
     }
     _atomic_write_json(destination / "manifest.json", manifest)
@@ -1066,6 +1190,8 @@ def load_qwen3_codebook_checkpoint(
         or hashes["prototype_source_hashes"] != manifest.get("prototype_source_hashes")
     ):
         raise Qwen3CodebookError("Checkpoint assignment/provenance hashes mismatch.")
+    if _attention_registry_contract(state) != manifest.get("attention_registry"):
+        raise Qwen3CodebookError("Checkpoint attention registry contract mismatch.")
     attention = GlobalAttentionCodebook.from_state_dict(
         _checkpoint_substate(state, "attention_codebook.")
     )

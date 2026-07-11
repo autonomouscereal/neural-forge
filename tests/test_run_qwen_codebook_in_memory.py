@@ -35,6 +35,38 @@ def test_checkpoint_io_lease_has_a_stable_cross_process_lock_file(tmp_path) -> N
         assert second["wait_seconds"] >= 0.0
 
 
+def test_locally_staged_checkpoint_is_hash_verified_and_atomically_published(
+    tmp_path,
+) -> None:
+    source = tmp_path / "local" / "compact_child"
+    source.mkdir(parents=True)
+    files = {
+        "model.safetensors": b"bounded-test-tensors",
+        "config.json": b"{}",
+        "tokenizer_contract.json": b'{"vocab_size":7}',
+    }
+    for name, payload in files.items():
+        (source / name).write_bytes(payload)
+    manifest = {
+        "files": {
+            name: MODULE._sha256_file(source / name)
+            for name in sorted(files)
+        }
+    }
+    (source / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    destination = tmp_path / "share" / "compact_child"
+
+    report = MODULE._publish_checkpoint_directory(source, destination)
+
+    assert report["atomic_directory_publish"] is True
+    assert report["destination"] == str(destination)
+    assert destination.is_dir()
+    assert MODULE._verify_checkpoint_file_hashes(destination) == manifest["files"]
+    assert not list(destination.parent.glob(".compact_child.publish.*"))
+    with pytest.raises(MODULE.QwenCodebookRunnerError, match="already exists"):
+        MODULE._publish_checkpoint_directory(source, destination)
+
+
 class _Tokenizer:
     def encode(self, text: str, *, add_special_tokens: bool = True) -> list[int]:
         pieces = [3 + (sum(piece.encode("utf-8")) % 23) for piece in text.split()]

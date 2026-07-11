@@ -13,6 +13,8 @@ from neural_forge.hf_attention_codebook import (  # noqa: E402
     AttentionCodebookShapeError,
     GQAAttentionBundle,
     GlobalAttentionCodebook,
+    RaggedAttentionCodebookRegistry,
+    attention_codebook_registry_from_state_dict,
     fit_global_attention_codebook,
 )
 
@@ -226,7 +228,8 @@ def test_full_prototype_codebook_is_exact_and_preserves_all_heads(bias) -> None:
         codebook.report.unique_learned_parameters
         == codebook.report.logical_dense_parameters
     )
-    assert codebook.report.index_buffer_bytes == 3 * logical_groups * 4
+    assert codebook.report.schema_metadata_bytes == 8
+    assert codebook.report.index_buffer_bytes == 3 * logical_groups * 4 + 8
     assert codebook.diagnostics is not None
     assert codebook.diagnostics.distance_feature_operations == 0
     assert all(isinstance(view, AttentionCodebookLayerView) for view in codebook.layers)
@@ -331,6 +334,7 @@ def test_compressed_scaled_projection_views_are_finite_and_count_honestly() -> N
         report.assignment_index_bytes
         + report.prototype_source_index_bytes
         + report.permutation_index_bytes
+        + report.schema_metadata_bytes
     )
     assert all(
         parameter.grad is None
@@ -565,3 +569,44 @@ def test_tensor_only_state_roundtrip_is_exact_and_views_keep_registry_alive() ->
     assert view.registry is registry
     assert all(bool(torch.isfinite(value).all()) for value in view(inputs))
     assert bool(torch.isfinite(view.o_proj(contexts)).all())
+
+
+def test_ragged_registry_layout_is_explicit_and_publicly_reloadable() -> None:
+    bundles, _ = _attention_bundles(layers=3, seed=177)
+    dense = fit_global_attention_codebook(
+        bundles,
+        prototypes_per_group=3,
+        use_scales=True,
+    ).registry
+
+    def flattened(name: str):
+        value = getattr(dense, name)
+        return None if value is None else value.detach().flatten(0, 1)
+
+    groups, slots = dense.prototype_q_weight.shape[:2]
+    ragged = RaggedAttentionCodebookRegistry(
+        flattened("prototype_q_weight"),
+        flattened("prototype_k_weight"),
+        flattened("prototype_v_weight"),
+        flattened("prototype_o_weight"),
+        dense.assignments + torch.arange(groups, dtype=torch.int32) * slots,
+        dense.prototype_source_indices.flatten(),
+        dense.group_permutations,
+        prototype_q_bias=flattened("prototype_q_bias"),
+        prototype_k_bias=flattened("prototype_k_bias"),
+        prototype_v_bias=flattened("prototype_v_bias"),
+        layer_o_bias=dense.layer_o_bias,
+        role_scales=dense.role_scales,
+    )
+    state = {name: value.detach().clone() for name, value in ragged.state_dict().items()}
+    restored = attention_codebook_registry_from_state_dict(state)
+
+    assert isinstance(restored, RaggedAttentionCodebookRegistry)
+    assert int(restored._registry_layout) == 1
+    assert int(restored._registry_schema_version) == 1
+    assert restored.report == ragged.report
+    assert restored.state_dict().keys() == state.keys()
+    for name, value in state.items():
+        assert torch.equal(restored.state_dict()[name], value)
+    for layer in range(3):
+        _assert_bundle_equal(restored.materialize_layer(layer), ragged.materialize_layer(layer))
