@@ -1,0 +1,2227 @@
+"""Bounded retention for exact-stage Qwen research candidates.
+
+This module is intentionally downstream of the authenticated stage runner.  It
+does not train, bake, evaluate, or mutate a model.  It authenticates one
+terminal run, archives either its factor-only selected state or its already
+accepted standalone child, and maintains at most three behavior-ranked records
+per comparable evaluation contract.
+
+Conservative v1 does not delete artifacts.  It durably records dominated
+bundles in ``pending_prune`` for manual review, but exposes no recursive
+deletion implementation.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import os
+import re
+import shutil
+import stat
+import tempfile
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Literal
+
+
+FRONTIER_SCHEMA = "neural-forge-exact-candidate-frontier-v1"
+RECORD_SCHEMA = "neural-forge-exact-candidate-record-v1"
+RUN_SCHEMA = "neural-forge-qwen-exact-target-native-stage-v1"
+PREREGISTRATION_SCHEMA = "neural-forge-qwen-exact-target-native-preregistration-v1"
+MAX_RETAINED_PER_CONTRACT = 3
+
+ArtifactKind = Literal["research-factor-pack", "accepted-standalone-child"]
+TruthLabel = Literal["research-factor-only-candidate", "accepted-standalone"]
+FactorAuthenticator = Callable[[Path, int | None], Mapping[str, Any]]
+PreregistrationAuthenticator = Callable[[Path, str], Mapping[str, Any]]
+AcceptedChildAuthenticator = Callable[[Path, int], Mapping[str, Any]]
+
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_FACTOR_FILENAME = "rejected_factor_pack.pt"
+_SELECTED_FACTOR_FILENAME = "selected_factor_pack.pt"
+_CHILD_DIRECTORY = "accepted_child"
+_BANNED_METRIC_WORDS = (
+    "weight",
+    "activation",
+    "hidden_state",
+    "attention",
+    "residual",
+    "projection",
+    "similarity",
+    "numeric_matching",
+)
+
+
+class ExactCandidateFrontierError(RuntimeError):
+    """A candidate, frontier, or deletion proof is invalid."""
+
+
+def canonical_json(value: Any) -> bytes:
+    try:
+        return json.dumps(
+            value,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+    except (TypeError, ValueError) as error:
+        raise ExactCandidateFrontierError(
+            "Frontier provenance is not finite canonical JSON."
+        ) from error
+
+
+def canonical_sha256(value: Any) -> str:
+    return hashlib.sha256(canonical_json(value)).hexdigest()
+
+
+def require_sha256(value: Any, name: str) -> str:
+    if not isinstance(value, str):
+        raise ExactCandidateFrontierError(f"{name} must be a SHA-256 string.")
+    normalized = value.removeprefix("sha256:").lower()
+    if not _SHA256.fullmatch(normalized):
+        raise ExactCandidateFrontierError(f"{name} must be a SHA-256 string.")
+    return normalized
+
+
+def strict_json(path: Path | str) -> Any:
+    source = Path(path)
+
+    def object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ExactCandidateFrontierError(
+                    f"Duplicate JSON key {key!r} in {source}."
+                )
+            result[key] = value
+        return result
+
+    try:
+        return json.loads(
+            source.read_text(encoding="utf-8"),
+            object_pairs_hook=object_pairs,
+            parse_constant=lambda value: (_ for _ in ()).throw(
+                ExactCandidateFrontierError(
+                    f"Non-finite JSON constant {value!r} in {source}."
+                )
+            ),
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ExactCandidateFrontierError(
+            f"Cannot read strict JSON {source}."
+        ) from error
+
+
+def file_sha256(path: Path | str) -> str:
+    source = Path(path)
+    digest = hashlib.sha256()
+    try:
+        with source.open("rb") as handle:
+            for block in iter(lambda: handle.read(8 * 1024 * 1024), b""):
+                digest.update(block)
+    except OSError as error:
+        raise ExactCandidateFrontierError(f"Cannot hash artifact {source}.") from error
+    return digest.hexdigest()
+
+
+def _has_reparse_flag(path: Path) -> bool:
+    try:
+        value = path.lstat()
+    except OSError as error:
+        raise ExactCandidateFrontierError(f"Cannot inspect path {path}.") from error
+    flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    attributes = getattr(value, "st_file_attributes", 0)
+    return bool(path.is_symlink() or (flag and attributes & flag))
+
+
+def _assert_ordinary_file(path: Path, name: str) -> None:
+    if not path.is_file() or _has_reparse_flag(path):
+        raise ExactCandidateFrontierError(f"{name} must be an ordinary file: {path}")
+
+
+def _assert_ordinary_directory(path: Path, name: str) -> None:
+    if not path.is_dir() or _has_reparse_flag(path):
+        raise ExactCandidateFrontierError(
+            f"{name} must be an ordinary directory: {path}"
+        )
+
+
+def _assert_ordinary_protected_path(path: Path, name: str) -> None:
+    if _has_reparse_flag(path) or not (path.is_file() or path.is_dir()):
+        raise ExactCandidateFrontierError(
+            f"{name} must be an ordinary protected file or directory: {path}"
+        )
+
+
+def _tree_records(root: Path) -> list[dict[str, Any]]:
+    _assert_ordinary_directory(root, "artifact root")
+    try:
+        root_device = int(root.stat().st_dev)
+    except OSError as error:
+        raise ExactCandidateFrontierError(
+            f"Cannot inspect artifact root device {root}."
+        ) from error
+    records: list[dict[str, Any]] = []
+
+    def visit(directory: Path) -> None:
+        try:
+            entries = sorted(os.scandir(directory), key=lambda item: item.name)
+        except OSError as error:
+            raise ExactCandidateFrontierError(
+                f"Cannot enumerate artifact directory {directory}."
+            ) from error
+        for entry in entries:
+            path = Path(entry.path)
+            if _has_reparse_flag(path):
+                raise ExactCandidateFrontierError(
+                    f"Artifact tree contains a symlink, junction, or reparse point: {path}"
+                )
+            try:
+                is_directory = entry.is_dir(follow_symlinks=False)
+                is_file = entry.is_file(follow_symlinks=False)
+                entry_device = int(entry.stat(follow_symlinks=False).st_dev)
+            except OSError as error:
+                raise ExactCandidateFrontierError(
+                    f"Cannot classify artifact entry {path}."
+                ) from error
+            if os.path.ismount(path) or (
+                os.name == "posix" and entry_device != root_device
+            ):
+                raise ExactCandidateFrontierError(
+                    "Artifact tree crosses a nested mount or filesystem device: "
+                    f"{path}"
+                )
+            if is_directory:
+                visit(path)
+                continue
+            if not is_file:
+                raise ExactCandidateFrontierError(
+                    f"Artifact contains a non-file entry: {path}"
+                )
+            relative = path.relative_to(root).as_posix()
+            records.append(
+                {
+                    "path": relative,
+                    "size_bytes": int(path.stat().st_size),
+                    "sha256": file_sha256(path),
+                }
+            )
+
+    visit(root)
+    if not records:
+        raise ExactCandidateFrontierError(f"Artifact directory is empty: {root}")
+    return records
+
+
+def artifact_tree(root: Path | str) -> dict[str, Any]:
+    directory = Path(root)
+    records = _tree_records(directory)
+    return {
+        "file_count": len(records),
+        "total_bytes": sum(int(item["size_bytes"]) for item in records),
+        "tree_sha256": canonical_sha256(records),
+        "files": records,
+    }
+
+
+def _record_hash(value: Mapping[str, Any], field: str) -> str:
+    payload = dict(value)
+    payload.pop(field, None)
+    return canonical_sha256(payload)
+
+
+def _atomic_replace_json(path: Path, payload: Mapping[str, Any]) -> None:
+    encoded = (
+        json.dumps(
+            dict(payload),
+            allow_nan=False,
+            ensure_ascii=True,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode("utf-8")
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if path.exists() and (_has_reparse_flag(path) or not path.is_file()):
+            raise ExactCandidateFrontierError(
+                f"Refusing to replace a non-ordinary manifest: {path}"
+            )
+        os.replace(temporary, path)
+        if os.name == "posix":
+            flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+            try:
+                directory_descriptor = os.open(path.parent, flags)
+                try:
+                    os.fsync(directory_descriptor)
+                finally:
+                    os.close(directory_descriptor)
+            except OSError as error:
+                raise ExactCandidateFrontierError(
+                    f"Cannot durably fsync manifest directory {path.parent}."
+                ) from error
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _finite_fraction(value: Any, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ExactCandidateFrontierError(f"{name} must be numeric.")
+    number = float(value)
+    if not math.isfinite(number) or not 0.0 <= number <= 1.0:
+        raise ExactCandidateFrontierError(f"{name} must be in [0, 1].")
+    return number
+
+
+def _nonnegative_int(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ExactCandidateFrontierError(f"{name} must be a nonnegative integer.")
+    return value
+
+
+def rollout_first_rank(metrics: Mapping[str, Any]) -> tuple[int, ...]:
+    """Return the canonical ascending research-retention key.
+
+    This is the target-native trainer's rollout-first acquisition policy.  No
+    fit, sealed, weight, activation, hidden-state, or similarity measurement is
+    accepted by this function.
+    """
+
+    lowered_names = tuple(str(name).lower() for name in metrics)
+    if any(word in name for name in lowered_names for word in _BANNED_METRIC_WORDS):
+        raise ExactCandidateFrontierError(
+            "Candidate retention metrics contain an internal numeric diagnostic."
+        )
+    required_counts = (
+        "exact_rollout_count",
+        "lcp_at_least_4_count",
+        "lcp_token_count",
+        "token_match_count",
+        "longest_run_excess",
+        "action_agreement_count",
+        "rollout_count",
+        "rollout_token_count",
+        "action_count",
+    )
+    counts = {
+        name: _nonnegative_int(metrics.get(name), f"candidate_metrics.{name}")
+        for name in required_counts
+    }
+    if (
+        counts["action_count"] <= 0
+        or counts["rollout_count"] <= 0
+        or counts["rollout_token_count"] <= 0
+    ):
+        raise ExactCandidateFrontierError(
+            "Candidate behavior counts must include actions and free rollouts."
+        )
+    if counts["exact_rollout_count"] > counts["rollout_count"]:
+        raise ExactCandidateFrontierError(
+            "candidate_metrics exact rollout count exceeds rollout count."
+        )
+    if counts["lcp_at_least_4_count"] > counts["rollout_count"]:
+        raise ExactCandidateFrontierError(
+            "candidate_metrics LCP-at-least-four count exceeds rollout count."
+        )
+    if (
+        counts["lcp_token_count"] > counts["rollout_token_count"]
+        or counts["token_match_count"] > counts["rollout_token_count"]
+    ):
+        raise ExactCandidateFrontierError(
+            "candidate_metrics token counts exceed rollout token count."
+        )
+    if counts["action_agreement_count"] > counts["action_count"]:
+        raise ExactCandidateFrontierError(
+            "candidate_metrics action agreements exceed action count."
+        )
+    if counts["lcp_token_count"] < 4 * counts["lcp_at_least_4_count"]:
+        raise ExactCandidateFrontierError(
+            "candidate_metrics LCP-at-least-four count exceeds its token evidence."
+        )
+    if counts["token_match_count"] < counts["lcp_token_count"]:
+        raise ExactCandidateFrontierError(
+            "candidate_metrics token matches cannot be fewer than LCP tokens."
+        )
+    repeat = _finite_fraction(
+        metrics.get("repeat_fraction_excess"),
+        "candidate_metrics.repeat_fraction_excess",
+    )
+    adjacent = _finite_fraction(
+        metrics.get("adjacent_repeat_fraction_excess"),
+        "candidate_metrics.adjacent_repeat_fraction_excess",
+    )
+    _finite_fraction(
+        metrics.get("parent_action_topk_fraction"),
+        "candidate_metrics.parent_action_topk_fraction",
+    )
+    mean_logprob = metrics.get("parent_action_mean_logprob")
+    mean_rank = metrics.get("parent_action_mean_rank")
+    worst_rank = metrics.get("parent_action_worst_rank")
+    if (
+        isinstance(mean_logprob, bool)
+        or not isinstance(mean_logprob, (int, float))
+        or not math.isfinite(float(mean_logprob))
+        or float(mean_logprob) > 1e-9
+        or isinstance(mean_rank, bool)
+        or not isinstance(mean_rank, (int, float))
+        or not math.isfinite(float(mean_rank))
+        or float(mean_rank) < 1.0
+        or isinstance(worst_rank, bool)
+        or not isinstance(worst_rank, int)
+        or worst_rank < 1
+        or float(mean_rank) > worst_rank
+    ):
+        raise ExactCandidateFrontierError(
+            "Candidate parent-action log-probability/rank metrics are inconsistent."
+        )
+    require_sha256(metrics.get("report_sha256"), "candidate_metrics.report_sha256")
+    if metrics.get("split") != "calibration-selection":
+        raise ExactCandidateFrontierError(
+            "Candidate retention requires calibration-selection output metrics."
+        )
+    for numerator, denominator, fraction in (
+        ("exact_rollout_count", "rollout_count", "exact_rollout_fraction"),
+        ("token_match_count", "rollout_token_count", "token_match_fraction"),
+        ("lcp_token_count", "rollout_token_count", "lcp_fraction"),
+        ("action_agreement_count", "action_count", "action_accuracy"),
+    ):
+        observed = _finite_fraction(
+            metrics.get(fraction), f"candidate_metrics.{fraction}"
+        )
+        denominator_value = counts[denominator]
+        expected = (
+            0.0 if denominator_value == 0 else counts[numerator] / denominator_value
+        )
+        if not math.isclose(observed, expected, rel_tol=1e-12, abs_tol=1e-12):
+            raise ExactCandidateFrontierError(
+                f"candidate_metrics.{fraction} disagrees with its counts."
+            )
+    return (
+        -counts["exact_rollout_count"],
+        -counts["lcp_at_least_4_count"],
+        -counts["lcp_token_count"],
+        -counts["token_match_count"],
+        round(repeat * 1_000_000),
+        round(adjacent * 1_000_000),
+        counts["longest_run_excess"],
+        -counts["action_agreement_count"],
+    )
+
+
+def _candidate_metric_geometry(
+    report: Mapping[str, Any], preregistration: Mapping[str, Any]
+) -> tuple[int, int]:
+    splits = report.get("splits")
+    candidate_split = splits.get("candidate") if isinstance(splits, Mapping) else None
+    training = preregistration.get("training")
+    if not isinstance(candidate_split, Mapping) or not isinstance(training, Mapping):
+        raise ExactCandidateFrontierError(
+            "Authenticated candidate split or training schedule is missing."
+        )
+    rollout_count = _nonnegative_int(
+        candidate_split.get("row_count"), "splits.candidate.row_count"
+    )
+    horizon = _nonnegative_int(
+        training.get("evaluation_horizon"), "training.evaluation_horizon"
+    )
+    if rollout_count <= 0 or horizon <= 0:
+        raise ExactCandidateFrontierError(
+            "Candidate split size and evaluation horizon must be positive."
+        )
+    return rollout_count, horizon
+
+
+def _validate_candidate_metric_geometry(
+    metrics: Mapping[str, Any], *, rollout_count: int, horizon: int
+) -> None:
+    rollout_first_rank(metrics)
+    expected_tokens = rollout_count * horizon
+    expected = {
+        "rollout_count": rollout_count,
+        "rollout_token_count": expected_tokens,
+        "action_count": expected_tokens,
+    }
+    if any(metrics.get(name) != value for name, value in expected.items()):
+        raise ExactCandidateFrontierError(
+            "Candidate behavior denominators disagree with the authenticated split "
+            "and evaluation horizon."
+        )
+    exact = int(metrics["exact_rollout_count"])
+    lcp4 = int(metrics["lcp_at_least_4_count"])
+    lcp_tokens = int(metrics["lcp_token_count"])
+    token_matches = int(metrics["token_match_count"])
+    action_matches = int(metrics["action_agreement_count"])
+    longest_run_excess = int(metrics["longest_run_excess"])
+    if horizon < 4:
+        if lcp4 != 0:
+            raise ExactCandidateFrontierError(
+                "LCP-at-least-four evidence is impossible below a four-token horizon."
+            )
+    elif lcp4 < exact:
+        raise ExactCandidateFrontierError(
+            "Every exact rollout must also be an LCP-at-least-four rollout."
+        )
+    exact_tokens = exact * horizon
+    if (
+        lcp_tokens < exact_tokens
+        or token_matches < exact_tokens
+        or action_matches < exact_tokens
+        or longest_run_excess > max(0, horizon - 1)
+    ):
+        raise ExactCandidateFrontierError(
+            "Candidate exact-rollout or repetition counts are logically inconsistent."
+        )
+
+
+def _resolve_binding(base: Path, value: Any, name: str) -> Path:
+    if not isinstance(value, str) or not value.strip():
+        raise ExactCandidateFrontierError(f"{name} must be a nonempty path.")
+    path = Path(value).expanduser()
+    return (base / path).resolve() if not path.is_absolute() else path.resolve()
+
+
+def _stable_artifact_authentication(value: Any, name: str) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ExactCandidateFrontierError(
+            f"artifact_authentication.{name} must be an object."
+        )
+    rows = value.get("required_files")
+    tree = value.get("tree")
+    if (
+        not isinstance(rows, list)
+        or value.get("authenticated_before_model_access") is not True
+    ):
+        raise ExactCandidateFrontierError(
+            f"artifact_authentication.{name} is incomplete."
+        )
+    normalized_rows: list[dict[str, Any]] = []
+    for index, row in enumerate(rows):
+        if not isinstance(row, Mapping) or set(row) != {
+            "path",
+            "sha256",
+            "size_bytes",
+        }:
+            raise ExactCandidateFrontierError(
+                f"artifact_authentication.{name}.required_files[{index}] is malformed."
+            )
+        relative = row.get("path")
+        if not isinstance(relative, str) or not relative:
+            raise ExactCandidateFrontierError("Authenticated artifact path is invalid.")
+        normalized_rows.append(
+            {
+                "path": relative,
+                "sha256": require_sha256(
+                    row.get("sha256"), f"artifact_authentication.{name}.sha256"
+                ),
+                "size_bytes": _nonnegative_int(
+                    row.get("size_bytes"),
+                    f"artifact_authentication.{name}.size_bytes",
+                ),
+            }
+        )
+    normalized_tree = None
+    if tree is not None:
+        if not isinstance(tree, Mapping) or set(tree) != {
+            "file_count",
+            "total_bytes",
+            "tree_sha256",
+        }:
+            raise ExactCandidateFrontierError(
+                f"artifact_authentication.{name}.tree is malformed."
+            )
+        normalized_tree = {
+            "file_count": _nonnegative_int(
+                tree.get("file_count"), f"artifact_authentication.{name}.file_count"
+            ),
+            "total_bytes": _nonnegative_int(
+                tree.get("total_bytes"), f"artifact_authentication.{name}.total_bytes"
+            ),
+            "tree_sha256": require_sha256(
+                tree.get("tree_sha256"),
+                f"artifact_authentication.{name}.tree_sha256",
+            ),
+        }
+    if not normalized_rows and normalized_tree is None:
+        raise ExactCandidateFrontierError(
+            f"artifact_authentication.{name} has no content identity."
+        )
+    return {
+        "required_files": sorted(normalized_rows, key=lambda item: item["path"]),
+        "tree": normalized_tree,
+    }
+
+
+def _trainer_evidence(report: Mapping[str, Any]) -> Mapping[str, Any]:
+    evidence = report.get("trainer_evidence")
+    if not isinstance(evidence, Mapping):
+        raise ExactCandidateFrontierError("Terminal report lacks trainer evidence.")
+    expected = require_sha256(
+        report.get("trainer_evidence_sha256"), "trainer_evidence_sha256"
+    )
+    if canonical_sha256(evidence) != expected:
+        raise ExactCandidateFrontierError("Trainer evidence hash does not verify.")
+    return evidence
+
+
+def _decision_metrics(
+    report: Mapping[str, Any],
+    *,
+    post_bake: bool,
+) -> tuple[dict[str, Any], Mapping[str, Any]]:
+    field = (
+        "post_bake_behavior_decisions" if post_bake else "pre_bake_behavior_decisions"
+    )
+    decisions = report.get(field)
+    if decisions is None and not post_bake:
+        decisions = report.get("behavior_decisions")
+    if not isinstance(decisions, Mapping):
+        raise ExactCandidateFrontierError(f"Terminal report lacks {field}.")
+    candidate = decisions.get("candidate")
+    if not isinstance(candidate, Mapping) or not isinstance(
+        candidate.get("passed"), bool
+    ):
+        raise ExactCandidateFrontierError(
+            f"Terminal report {field}.candidate is malformed."
+        )
+    metrics = candidate.get("metrics")
+    if not isinstance(metrics, Mapping):
+        raise ExactCandidateFrontierError(
+            f"Terminal report {field}.candidate lacks metrics."
+        )
+    payload = dict(metrics)
+    rollout_first_rank(payload)
+    return payload, decisions
+
+
+def _selected_factor_state(
+    report: Mapping[str, Any],
+    evidence: Mapping[str, Any],
+    *,
+    expected_rollout_count: int,
+    expected_horizon: int,
+) -> tuple[str, int, dict[str, Any], dict[str, Any]]:
+    acquisition = report.get("factor_acquisition")
+    if (
+        not isinstance(acquisition, Mapping)
+        or acquisition.get("target_native_factors_acquired_behavior") is not True
+    ):
+        raise ExactCandidateFrontierError(
+            "Terminal report does not prove behavior-acquired factors."
+        )
+    selected_step = acquisition.get("selected_step")
+    if (
+        isinstance(selected_step, bool)
+        or not isinstance(selected_step, int)
+        or selected_step <= 0
+    ):
+        raise ExactCandidateFrontierError(
+            "Step-zero blank states are not retention candidates."
+        )
+    if evidence.get("selected_step") != selected_step:
+        raise ExactCandidateFrontierError(
+            "Trainer evidence and factor acquisition selected steps disagree."
+        )
+    selected_sha = require_sha256(
+        acquisition.get("selected_factor_state_sha256"),
+        "factor_acquisition.selected_factor_state_sha256",
+    )
+    initial_sha = require_sha256(
+        acquisition.get("step0_factor_state_sha256"),
+        "factor_acquisition.step0_factor_state_sha256",
+    )
+    if selected_sha == initial_sha:
+        raise ExactCandidateFrontierError(
+            "Selected factor state is byte-identical to step zero."
+        )
+    manifest = evidence.get("factor_pack_manifest")
+    checkpoints = evidence.get("checkpoints")
+    if (
+        not isinstance(manifest, Mapping)
+        or manifest.get("factor_state_sha256") != selected_sha
+        or not isinstance(checkpoints, list)
+    ):
+        raise ExactCandidateFrontierError(
+            "Trainer factor manifest does not bind the selected state."
+        )
+    checkpoint_steps: list[int] = []
+    for index, checkpoint in enumerate(checkpoints):
+        if not isinstance(checkpoint, Mapping):
+            raise ExactCandidateFrontierError(
+                f"Trainer checkpoint {index} is not an object."
+            )
+        step = checkpoint.get("step")
+        metrics = checkpoint.get("metrics")
+        if (
+            isinstance(step, bool)
+            or not isinstance(step, int)
+            or step < 0
+            or not isinstance(metrics, Mapping)
+        ):
+            raise ExactCandidateFrontierError(
+                f"Trainer checkpoint {index} has invalid step or metrics."
+            )
+        require_sha256(
+            checkpoint.get("factor_state_sha256"),
+            f"trainer checkpoint {index} factor_state_sha256",
+        )
+        _validate_candidate_metric_geometry(
+            metrics,
+            rollout_count=expected_rollout_count,
+            horizon=expected_horizon,
+        )
+        checkpoint_steps.append(step)
+    if (
+        not checkpoint_steps
+        or checkpoint_steps[0] != 0
+        or checkpoint_steps != sorted(set(checkpoint_steps))
+    ):
+        raise ExactCandidateFrontierError(
+            "Trainer checkpoints must be unique, ordered, and retain step zero."
+        )
+    step0 = checkpoints[0]
+    if step0.get("factor_state_sha256") != initial_sha:
+        raise ExactCandidateFrontierError(
+            "Trainer step-zero checkpoint does not bind acquisition step zero."
+        )
+    selected = next(
+        (
+            value
+            for value in checkpoints
+            if isinstance(value, Mapping) and value.get("step") == selected_step
+        ),
+        None,
+    )
+    if (
+        not isinstance(selected, Mapping)
+        or selected.get("factor_state_sha256") != selected_sha
+        or not isinstance(selected.get("metrics"), Mapping)
+    ):
+        raise ExactCandidateFrontierError(
+            "Trainer checkpoints do not bind the selected factor state."
+        )
+    return (
+        selected_sha,
+        selected_step,
+        dict(selected["metrics"]),
+        dict(step0["metrics"]),
+    )
+
+
+def _comparison_and_target_contracts(
+    report: Mapping[str, Any], preregistration: Mapping[str, Any]
+) -> tuple[str, str, int]:
+    evaluation = require_sha256(
+        report.get("evaluation_contract_sha256"), "evaluation_contract_sha256"
+    )
+    authentication = report.get("artifact_authentication")
+    if not isinstance(authentication, Mapping):
+        raise ExactCandidateFrontierError(
+            "Terminal report lacks artifact authentication."
+        )
+    parent = _stable_artifact_authentication(authentication.get("parent"), "parent")
+    blank = _stable_artifact_authentication(
+        authentication.get("blank_target"), "blank_target"
+    )
+    parent_binding = preregistration.get("parent")
+    blank_binding = preregistration.get("blank_target")
+    if not isinstance(parent_binding, Mapping) or not isinstance(
+        blank_binding, Mapping
+    ):
+        raise ExactCandidateFrontierError(
+            "Preregistration lacks parent or blank-target bindings."
+        )
+    parent_parameters = _nonnegative_int(
+        parent_binding.get("exact_unique_parameters"),
+        "preregistration.parent.exact_unique_parameters",
+    )
+    target_parameters = _nonnegative_int(
+        blank_binding.get("exact_unique_parameters"),
+        "preregistration.blank_target.exact_unique_parameters",
+    )
+    target_contract = {
+        "parent_exact_unique_parameters": parent_parameters,
+        "target_exact_unique_parameters": target_parameters,
+        "parent_artifact": parent,
+        "blank_target_artifact": blank,
+    }
+    return evaluation, canonical_sha256(target_contract), target_parameters
+
+
+def _protected_roots(
+    report: Mapping[str, Any], preregistration: Mapping[str, Any], prereg_path: Path
+) -> dict[str, str]:
+    blank = preregistration.get("blank_target")
+    if not isinstance(blank, Mapping):
+        raise ExactCandidateFrontierError("Preregistration lacks blank_target.")
+    blank_path = _resolve_binding(
+        prereg_path.parent,
+        blank.get("path"),
+        "preregistration.blank_target.path",
+    )
+    _assert_ordinary_directory(blank_path, "canonical blank target")
+    result = {"canonical_blank": str(blank_path)}
+    cache = report.get("compiler_cache")
+    if cache is not None:
+        if not isinstance(cache, Mapping):
+            raise ExactCandidateFrontierError("compiler_cache report is malformed.")
+        cache_path = _resolve_binding(
+            prereg_path.parent, cache.get("root"), "compiler_cache.root"
+        )
+        _assert_ordinary_directory(cache_path, "compiler cache")
+        result["compiler_cache"] = str(cache_path)
+    return result
+
+
+def _authenticate_canonical_preregistration(
+    preregistration: Mapping[str, Any],
+    preregistration_path: Path,
+    preregistration_sha256: str,
+    report: Mapping[str, Any],
+    authenticator: PreregistrationAuthenticator,
+) -> Mapping[str, Any]:
+    """Require the canonical runner's complete model-free preregistration audit."""
+
+    if not callable(authenticator):
+        raise ExactCandidateFrontierError(
+            "A canonical preregistration authenticator is required."
+        )
+    implementation = preregistration.get("implementation")
+    if not isinstance(implementation, Mapping):
+        raise ExactCandidateFrontierError(
+            "Preregistration lacks canonical implementation source pins."
+        )
+    runner_sha = require_sha256(
+        implementation.get("runner_sha256"), "implementation.runner_sha256"
+    )
+    trainer_sha = require_sha256(
+        implementation.get("trainer_sha256"), "implementation.trainer_sha256"
+    )
+    trainer_module = implementation.get("trainer_module")
+    if not isinstance(trainer_module, str) or not trainer_module:
+        raise ExactCandidateFrontierError(
+            "Preregistration trainer module pin is invalid."
+        )
+    authenticated = authenticator(preregistration_path, preregistration_sha256)
+    if not isinstance(authenticated, Mapping):
+        raise ExactCandidateFrontierError(
+            "Canonical preregistration authenticator returned a non-mapping."
+        )
+    if (
+        authenticated.get("status") != "preflight-passed"
+        or authenticated.get("preregistration") != str(preregistration_path)
+        or authenticated.get("preregistration_sha256") != preregistration_sha256
+        or authenticated.get("evaluation_contract_sha256")
+        != report.get("evaluation_contract_sha256")
+        or authenticated.get("artifact_authentication")
+        != report.get("artifact_authentication")
+        or authenticated.get("implementation_authentication")
+        != report.get("implementation_authentication")
+        or authenticated.get("splits") != report.get("splits")
+        or authenticated.get("compiler_split") != report.get("compiler_split")
+        or authenticated.get("thresholds") != report.get("thresholds")
+    ):
+        raise ExactCandidateFrontierError(
+            "Canonical preregistration preflight disagrees with the terminal report."
+        )
+    source_authentication = authenticated.get("implementation_authentication")
+    if not isinstance(source_authentication, Mapping):
+        raise ExactCandidateFrontierError(
+            "Canonical preflight lacks implementation authentication."
+        )
+    runner_auth = source_authentication.get("runner")
+    trainer_auth = source_authentication.get("trainer")
+    if (
+        not isinstance(runner_auth, Mapping)
+        or runner_auth.get("sha256") != runner_sha
+        or not isinstance(trainer_auth, Mapping)
+        or trainer_auth.get("sha256") != trainer_sha
+        or trainer_auth.get("module") != trainer_module
+    ):
+        raise ExactCandidateFrontierError(
+            "Canonical runner/trainer source pins do not authenticate."
+        )
+    return authenticated
+
+
+@dataclass(frozen=True, slots=True)
+class TerminalCandidate:
+    run_root: Path
+    run_report_path: Path
+    run_report_sha256: str
+    preregistration_path: Path
+    preregistration_sha256: str
+    comparison_contract_sha256: str
+    target_contract_sha256: str
+    exact_unique_parameters: int
+    artifact_kind: ArtifactKind
+    truth_label: TruthLabel
+    terminal_status: str
+    terminal_reason: str | None
+    candidate_metrics: Mapping[str, Any]
+    rollout_first_rank_key: tuple[int, ...]
+    selected_step: int
+    selected_factor_state_sha256: str
+    content_identity_sha256: str
+    source_artifact: Path
+    source_artifact_identity_sha256: str
+    source_artifact_tree: Mapping[str, Any] | None
+    fresh_reload_verified: bool
+    fresh_reload_certificate_sha256: str | None
+    independent_child_authentication: Mapping[str, Any] | None
+    standalone_compaction_passed: bool
+    deployment_accepted: bool
+    protected_roots: Mapping[str, str]
+
+    @property
+    def submission_identity_sha256(self) -> str:
+        return canonical_sha256(
+            {
+                "target_contract_sha256": self.target_contract_sha256,
+                "comparison_contract_sha256": self.comparison_contract_sha256,
+                "artifact_kind": self.artifact_kind,
+                "content_identity_sha256": self.content_identity_sha256,
+                "run_report_sha256": self.run_report_sha256,
+            }
+        )
+
+
+def authenticate_terminal_candidate(
+    run_root: Path | str,
+    *,
+    expected_run_report_sha256: str,
+    expected_preregistration_sha256: str,
+    preregistration_authenticator: PreregistrationAuthenticator,
+    factor_authenticator: FactorAuthenticator | None = None,
+    accepted_child_authenticator: AcceptedChildAuthenticator | None = None,
+) -> TerminalCandidate:
+    """Authenticate one run; accepted children require an independent reload."""
+
+    root = Path(run_root).expanduser().resolve()
+    _assert_ordinary_directory(root, "run root")
+    report_path = root / "run_report.json"
+    _assert_ordinary_file(report_path, "terminal run report")
+    report_sha = file_sha256(report_path)
+    if report_sha != require_sha256(
+        expected_run_report_sha256, "expected_run_report_sha256"
+    ):
+        raise ExactCandidateFrontierError(
+            "Terminal run report does not match the caller-provided external root."
+        )
+    report = strict_json(report_path)
+    if not isinstance(report, Mapping) or report.get("schema") != RUN_SCHEMA:
+        raise ExactCandidateFrontierError("Unsupported terminal run report schema.")
+    status = report.get("status")
+    if status not in {"rejected", "accepted"}:
+        raise ExactCandidateFrontierError(
+            "Only terminal rejected or accepted training runs are candidates."
+        )
+    prereg_path = _resolve_binding(
+        report_path.parent,
+        report.get("preregistration"),
+        "run_report.preregistration",
+    )
+    _assert_ordinary_file(prereg_path, "preregistration")
+    prereg_sha = file_sha256(prereg_path)
+    externally_expected_preregistration = require_sha256(
+        expected_preregistration_sha256, "expected_preregistration_sha256"
+    )
+    if (
+        prereg_sha != externally_expected_preregistration
+        or prereg_sha
+        != require_sha256(
+            report.get("preregistration_sha256"), "preregistration_sha256"
+        )
+    ):
+        raise ExactCandidateFrontierError(
+            "Preregistration does not match both external and report roots."
+        )
+    preregistration = strict_json(prereg_path)
+    if (
+        not isinstance(preregistration, Mapping)
+        or preregistration.get("schema") != PREREGISTRATION_SCHEMA
+        or preregistration.get("sealed_before_model_access") is not True
+    ):
+        raise ExactCandidateFrontierError(
+            "Preregistration schema or sealing attestation is invalid."
+        )
+    _authenticate_canonical_preregistration(
+        preregistration,
+        prereg_path,
+        prereg_sha,
+        report,
+        preregistration_authenticator,
+    )
+    expected_rollout_count, expected_horizon = _candidate_metric_geometry(
+        report, preregistration
+    )
+    evidence = _trainer_evidence(report)
+    if (
+        evidence.get("selection_policy") != "rollout-first-acquisition"
+        or evidence.get("internal_numeric_matching_used") is not False
+        or evidence.get("selection_uses_internal_numeric_targets") is not False
+    ):
+        raise ExactCandidateFrontierError(
+            "Trainer evidence does not prove output-only rollout-first selection."
+        )
+    (
+        selected_sha,
+        selected_step,
+        selected_metrics,
+        step0_metrics,
+    ) = _selected_factor_state(
+        report,
+        evidence,
+        expected_rollout_count=expected_rollout_count,
+        expected_horizon=expected_horizon,
+    )
+    selected_rank = rollout_first_rank(selected_metrics)
+    step0_rank = rollout_first_rank(step0_metrics)
+    if not selected_rank < step0_rank:
+        raise ExactCandidateFrontierError(
+            "Selected candidate does not strictly improve the authenticated step-zero "
+            "rollout-first behavior key."
+        )
+    pre_metrics, pre_decisions = _decision_metrics(report, post_bake=False)
+    _validate_candidate_metric_geometry(
+        pre_metrics,
+        rollout_count=expected_rollout_count,
+        horizon=expected_horizon,
+    )
+    evidence_metrics = evidence.get("candidate_metrics")
+    if (
+        not isinstance(evidence_metrics, Mapping)
+        or canonical_sha256(pre_metrics) != canonical_sha256(evidence_metrics)
+        or canonical_sha256(pre_metrics) != canonical_sha256(selected_metrics)
+    ):
+        raise ExactCandidateFrontierError(
+            "Selected checkpoint, trainer evidence, and candidate decision disagree."
+        )
+    if (
+        not isinstance(evidence.get("candidate_gate_passed"), bool)
+        or evidence.get("candidate_gate_passed")
+        is not pre_decisions["candidate"]["passed"]
+        or not isinstance(evidence.get("sealed_evaluation_unlocked"), bool)
+        or evidence.get("sealed_evaluation_unlocked")
+        is not bool(evidence.get("candidate_gate_passed"))
+    ):
+        raise ExactCandidateFrontierError(
+            "Trainer gate/unlock evidence disagrees with candidate behavior."
+        )
+    comparison, target_contract, exact_parameters = _comparison_and_target_contracts(
+        report, preregistration
+    )
+    protected = _protected_roots(report, preregistration, prereg_path)
+    reason = report.get("reason")
+    if reason is not None and (not isinstance(reason, str) or not reason):
+        raise ExactCandidateFrontierError("Terminal reason must be nonempty when set.")
+
+    def factor_only_candidate(
+        *, fallback_reason: str | None = None
+    ) -> TerminalCandidate:
+        factor_field = (
+            "factor_pack"
+            if isinstance(report.get("factor_pack"), Mapping)
+            else "selected_factor_pack"
+        )
+        factor = report.get(factor_field)
+        if not isinstance(factor, Mapping):
+            raise ExactCandidateFrontierError(
+                "No independently authenticated child or retained factor-only "
+                "fallback is available."
+            )
+        factor_path = _resolve_binding(
+            report_path.parent,
+            factor.get("path"),
+            f"run_report.{factor_field}.path",
+        )
+        allowed_names = (
+            {_FACTOR_FILENAME}
+            if status == "rejected"
+            else {_FACTOR_FILENAME, _SELECTED_FACTOR_FILENAME}
+        )
+        if factor_path.parent != root or factor_path.name not in allowed_names:
+            raise ExactCandidateFrontierError(
+                "Factor pack is not a canonical direct run artifact."
+            )
+        _assert_ordinary_file(factor_path, "selected factor pack")
+        factor_file_sha = file_sha256(factor_path)
+        if factor_file_sha != require_sha256(
+            factor.get("sha256"), f"run_report.{factor_field}.sha256"
+        ):
+            raise ExactCandidateFrontierError("Factor pack file hash does not verify.")
+        if factor_authenticator is None:
+            raise ExactCandidateFrontierError(
+                "A source-pinned exact factor authenticator is required."
+            )
+        lexical = preregistration.get("lexical_residual")
+        lexical_rank = None
+        if lexical is not None:
+            if not isinstance(lexical, Mapping):
+                raise ExactCandidateFrontierError("lexical_residual is malformed.")
+            lexical_rank = _nonnegative_int(
+                lexical.get("rank"), "lexical_residual.rank"
+            )
+            if lexical_rank <= 0:
+                raise ExactCandidateFrontierError(
+                    "lexical_residual.rank must be positive."
+                )
+        authenticated = factor_authenticator(factor_path, lexical_rank)
+        if not isinstance(authenticated, Mapping):
+            raise ExactCandidateFrontierError(
+                "Factor authenticator returned a non-mapping result."
+            )
+        envelope = authenticated.get("envelope_provenance")
+        envelope_reason = (
+            envelope.get("reason") if isinstance(envelope, Mapping) else None
+        )
+        if (
+            require_sha256(
+                authenticated.get("factor_state_sha256"),
+                "authenticated factor_state_sha256",
+            )
+            != selected_sha
+            or not isinstance(envelope, Mapping)
+            or not isinstance(envelope_reason, str)
+            or not envelope_reason
+            or (status == "rejected" and envelope_reason != reason)
+            or envelope.get("preregistration_sha256") != prereg_sha
+            or envelope.get("evaluation_contract_sha256") != comparison
+        ):
+            raise ExactCandidateFrontierError(
+                "Factor topology/provenance does not match its terminal report."
+            )
+        factor_protected = {
+            **protected,
+            f"source_run_{report_sha[:16]}": str(root),
+            f"source_factor_{factor_file_sha[:8]}_{report_sha[:8]}": str(factor_path),
+            f"source_report_{report_sha[:16]}": str(report_path),
+            f"source_prereg_{prereg_sha[:8]}_{report_sha[:8]}": str(prereg_path),
+        }
+        return TerminalCandidate(
+            run_root=root,
+            run_report_path=report_path,
+            run_report_sha256=report_sha,
+            preregistration_path=prereg_path,
+            preregistration_sha256=prereg_sha,
+            comparison_contract_sha256=comparison,
+            target_contract_sha256=target_contract,
+            exact_unique_parameters=exact_parameters,
+            artifact_kind="research-factor-pack",
+            truth_label="research-factor-only-candidate",
+            terminal_status=status,
+            terminal_reason=(reason if fallback_reason is None else fallback_reason),
+            candidate_metrics=pre_metrics,
+            rollout_first_rank_key=selected_rank,
+            selected_step=selected_step,
+            selected_factor_state_sha256=selected_sha,
+            content_identity_sha256=selected_sha,
+            source_artifact=factor_path,
+            source_artifact_identity_sha256=factor_file_sha,
+            source_artifact_tree=None,
+            fresh_reload_verified=False,
+            fresh_reload_certificate_sha256=None,
+            independent_child_authentication=None,
+            standalone_compaction_passed=False,
+            deployment_accepted=False,
+            protected_roots=factor_protected,
+        )
+
+    if status == "rejected":
+        if (
+            report.get("standalone_compaction_passed") is not False
+            or report.get("model_checkpoint_written") is not False
+            or report.get("rollback_exact") is not True
+            or not isinstance(reason, str)
+        ):
+            raise ExactCandidateFrontierError(
+                "Rejected candidate lacks exact rollback/non-standalone evidence."
+            )
+        return factor_only_candidate()
+
+    if (
+        report.get("standalone_compaction_passed") is not True
+        or report.get("model_checkpoint_written") is not True
+        or report.get("rollback_exact") is not None
+    ):
+        raise ExactCandidateFrontierError(
+            "Accepted candidate lacks standalone publication evidence."
+        )
+    for stage_name, decisions in (
+        ("pre-bake", pre_decisions),
+        (
+            "post-bake",
+            report.get("post_bake_behavior_decisions"),
+        ),
+    ):
+        if not isinstance(decisions, Mapping) or any(
+            not isinstance(decisions.get(name), Mapping)
+            or decisions[name].get("passed") is not True
+            for name in ("fit", "candidate", "sealed")
+        ):
+            raise ExactCandidateFrontierError(
+                f"Accepted candidate did not pass every {stage_name} behavior gate."
+            )
+    post_metrics, _post_decisions = _decision_metrics(report, post_bake=True)
+    _validate_candidate_metric_geometry(
+        post_metrics,
+        rollout_count=expected_rollout_count,
+        horizon=expected_horizon,
+    )
+
+    def accepted_standalone_candidate() -> TerminalCandidate:
+        certificate = report.get("fresh_reload_certificate")
+        required_true = (
+            "fresh_reload_performed",
+            "exact_budget_match",
+            "state_keys_match_pre_save",
+            "state_bytes_match_pre_save",
+        )
+        if not isinstance(certificate, Mapping) or any(
+            certificate.get(name) is not True for name in required_true
+        ):
+            raise ExactCandidateFrontierError(
+                "Accepted child lacks a complete fresh-reload certificate."
+            )
+        if (
+            certificate.get("exact_unique_parameters") != exact_parameters
+            or certificate.get("published_adapter_parameter_count") != 0
+            or certificate.get("published_parent_runtime_reference_count") != 0
+            or certificate.get("published_source_sized_sidecar_parameter_count") != 0
+        ):
+            raise ExactCandidateFrontierError(
+                "Accepted child certificate does not prove an exact parent-free "
+                "artifact."
+            )
+        child_path = _resolve_binding(
+            report_path.parent,
+            certificate.get("path"),
+            "fresh_reload_certificate.path",
+        )
+        if child_path.parent != root or child_path.name != _CHILD_DIRECTORY:
+            raise ExactCandidateFrontierError(
+                "Accepted child is not the canonical direct run artifact."
+            )
+        _assert_ordinary_directory(child_path, "accepted child")
+        actual_tree = artifact_tree(child_path)
+        declared_tree = certificate.get("artifact_tree")
+        if not isinstance(declared_tree, Mapping) or any(
+            declared_tree.get(name) != actual_tree[name]
+            for name in ("file_count", "total_bytes", "tree_sha256")
+        ):
+            raise ExactCandidateFrontierError(
+                "Accepted child tree differs from its fresh-reload certificate."
+            )
+        child_state_sha = require_sha256(
+            certificate.get("state_dict_sha256"),
+            "fresh_reload_certificate.state_dict_sha256",
+        )
+        if accepted_child_authenticator is None:
+            raise ExactCandidateFrontierError(
+                "Accepted child requires an independent fresh-load authenticator."
+            )
+        independently_authenticated = accepted_child_authenticator(
+            child_path, exact_parameters
+        )
+        if not isinstance(independently_authenticated, Mapping):
+            raise ExactCandidateFrontierError(
+                "Independent child authenticator returned a non-mapping."
+            )
+        independent_tree = independently_authenticated.get("artifact_tree")
+        if (
+            independently_authenticated.get("fresh_reload_performed") is not True
+            or independently_authenticated.get("loaded_from_candidate_path") is not True
+            or independently_authenticated.get("exact_unique_parameters")
+            != exact_parameters
+            or independently_authenticated.get("state_dict_sha256") != child_state_sha
+            or independently_authenticated.get("published_adapter_parameter_count") != 0
+            or independently_authenticated.get("parent_runtime_reference_count") != 0
+            or independently_authenticated.get("source_sized_sidecar_parameter_count")
+            != 0
+            or not isinstance(independent_tree, Mapping)
+            or any(
+                independent_tree.get(name) != actual_tree[name]
+                for name in ("file_count", "total_bytes", "tree_sha256")
+            )
+        ):
+            raise ExactCandidateFrontierError(
+                "Independent fresh-load count/state/tree authentication failed."
+            )
+        child_protected = {
+            **protected,
+            f"source_run_{report_sha[:16]}": str(root),
+            f"source_child_{actual_tree['tree_sha256'][:8]}_{report_sha[:8]}": str(
+                child_path
+            ),
+            f"source_report_{report_sha[:16]}": str(report_path),
+            f"source_prereg_{prereg_sha[:8]}_{report_sha[:8]}": str(prereg_path),
+        }
+        return TerminalCandidate(
+            run_root=root,
+            run_report_path=report_path,
+            run_report_sha256=report_sha,
+            preregistration_path=prereg_path,
+            preregistration_sha256=prereg_sha,
+            comparison_contract_sha256=comparison,
+            target_contract_sha256=target_contract,
+            exact_unique_parameters=exact_parameters,
+            artifact_kind="accepted-standalone-child",
+            truth_label="accepted-standalone",
+            terminal_status=status,
+            terminal_reason=None,
+            candidate_metrics=post_metrics,
+            rollout_first_rank_key=rollout_first_rank(post_metrics),
+            selected_step=selected_step,
+            selected_factor_state_sha256=selected_sha,
+            content_identity_sha256=child_state_sha,
+            source_artifact=child_path,
+            source_artifact_identity_sha256=str(actual_tree["tree_sha256"]),
+            source_artifact_tree=actual_tree,
+            fresh_reload_verified=True,
+            fresh_reload_certificate_sha256=canonical_sha256(
+                {
+                    "run_certificate": dict(certificate),
+                    "independent_authentication": dict(independently_authenticated),
+                }
+            ),
+            independent_child_authentication=dict(independently_authenticated),
+            standalone_compaction_passed=True,
+            deployment_accepted=True,
+            protected_roots=child_protected,
+        )
+
+    try:
+        return accepted_standalone_candidate()
+    except Exception as error:
+        try:
+            return factor_only_candidate(
+                fallback_reason="accepted-child-independent-authentication-failed"
+            )
+        except ExactCandidateFrontierError:
+            raise ExactCandidateFrontierError(
+                "Accepted child failed independent authentication and no authenticated "
+                "factor-only fallback exists."
+            ) from error
+
+
+def _paths_overlap(left: Path, right: Path) -> bool:
+    return left == right or left in right.parents or right in left.parents
+
+
+def _copy_ordinary_file(source: Path, destination: Path) -> None:
+    _assert_ordinary_file(source, "source artifact")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        raise ExactCandidateFrontierError(
+            f"Refusing to overwrite staged artifact {destination}."
+        )
+    shutil.copy2(source, destination, follow_symlinks=False)
+    _assert_ordinary_file(destination, "staged artifact")
+
+
+def _copy_ordinary_tree(source: Path, destination: Path) -> None:
+    source_tree = artifact_tree(source)
+    destination.mkdir(parents=True)
+    for row in source_tree["files"]:
+        relative = Path(str(row["path"]))
+        _copy_ordinary_file(source / relative, destination / relative)
+    if artifact_tree(destination) != source_tree:
+        raise ExactCandidateFrontierError(
+            "Staged child tree differs from its authenticated source."
+        )
+
+
+class ExactCandidateFrontier:
+    """Content-addressed, bounded exact-stage candidate retention."""
+
+    def __init__(
+        self,
+        root: Path | str,
+        *,
+        max_per_contract: int = MAX_RETAINED_PER_CONTRACT,
+        protected_roots: Sequence[Path | str] = (),
+    ) -> None:
+        if (
+            isinstance(max_per_contract, bool)
+            or not isinstance(max_per_contract, int)
+            or not 1 <= max_per_contract <= MAX_RETAINED_PER_CONTRACT
+        ):
+            raise ExactCandidateFrontierError(
+                f"max_per_contract must be in [1, {MAX_RETAINED_PER_CONTRACT}]."
+            )
+        requested = Path(root).expanduser().absolute()
+        explicit = tuple(
+            Path(value).expanduser().resolve() for value in protected_roots
+        )
+        requested_comparison = requested.resolve(strict=False)
+        for path in explicit:
+            _assert_ordinary_directory(path, "protected root")
+            if _paths_overlap(requested_comparison, path):
+                raise ExactCandidateFrontierError(
+                    "Frontier root overlaps an immutable protected root."
+                )
+        if requested.exists() or requested.is_symlink():
+            _assert_ordinary_directory(requested, "frontier root")
+            self.root = requested.resolve()
+        else:
+            self.root = requested_comparison
+        self.artifacts_root = self.root / "artifacts"
+        self.evidence_root = self.root / "evidence"
+        self.manifest_path = self.root / "frontier_manifest.json"
+        self.lock_path = self.root / ".frontier.lock"
+        self.max_per_contract = max_per_contract
+        self.extra_protected_roots = explicit
+        for path in self.extra_protected_roots:
+            _assert_ordinary_directory(path, "protected root")
+            if _paths_overlap(self.root, path):
+                raise ExactCandidateFrontierError(
+                    "Frontier root overlaps an immutable protected root."
+                )
+
+    def _empty_manifest(self) -> dict[str, Any]:
+        return {
+            "schema": FRONTIER_SCHEMA,
+            "max_per_comparison_contract": self.max_per_contract,
+            "ranking_policy": "candidate-output-rollout-first-acquisition",
+            "ranking_uses_fit_or_sealed_metrics": False,
+            "ranking_uses_internal_numeric_metrics": False,
+            "best_accepted_standalone_fallback_slot": True,
+            "prune_mode": "durable-plan-only-conservative-v1",
+            "recursive_deletion_implemented": False,
+            "apply_prune_supported": False,
+            "source_run_deletion_allowed": False,
+            "canonical_blank_or_cache_copy_allowed": False,
+            "next_sequence": 1,
+            "protected_roots": {},
+            "records": [],
+            "pending_prune": [],
+            "evicted_total": 0,
+        }
+
+    def _root_entry_names(self) -> set[str]:
+        if not self.root.exists():
+            return set()
+        _assert_ordinary_directory(self.root, "frontier root")
+        return {entry.name for entry in os.scandir(self.root)}
+
+    def _load_manifest(
+        self, *, allow_new_empty_storage: bool = False
+    ) -> dict[str, Any]:
+        if not self.manifest_path.exists():
+            entries = self._root_entry_names()
+            allowed = (
+                {"artifacts", "evidence", ".frontier.lock"}
+                if allow_new_empty_storage
+                else set()
+            )
+            if entries - allowed:
+                raise ExactCandidateFrontierError(
+                    "A manifestless frontier contains unowned preexisting entries."
+                )
+            if allow_new_empty_storage:
+                for directory in (self.artifacts_root, self.evidence_root):
+                    _assert_ordinary_directory(directory, "new frontier storage")
+                    if any(os.scandir(directory)):
+                        raise ExactCandidateFrontierError(
+                            "Manifestless deterministic storage is not empty."
+                        )
+            return self._empty_manifest()
+        _assert_ordinary_file(self.manifest_path, "frontier manifest")
+        value = strict_json(self.manifest_path)
+        if not isinstance(value, Mapping):
+            raise ExactCandidateFrontierError("Frontier manifest is not an object.")
+        payload = dict(value)
+        declared = require_sha256(payload.get("manifest_sha256"), "manifest_sha256")
+        if (
+            payload.get("schema") != FRONTIER_SCHEMA
+            or payload.get("max_per_comparison_contract") != self.max_per_contract
+            or _record_hash(payload, "manifest_sha256") != declared
+            or not isinstance(payload.get("records"), list)
+            or not isinstance(payload.get("pending_prune"), list)
+            or not isinstance(payload.get("protected_roots"), Mapping)
+        ):
+            raise ExactCandidateFrontierError(
+                "Existing frontier manifest failed authentication."
+            )
+        next_sequence = _nonnegative_int(payload.get("next_sequence"), "next_sequence")
+        if next_sequence <= 0:
+            raise ExactCandidateFrontierError("next_sequence must be positive.")
+        records = [self._authenticate_record(record) for record in payload["records"]]
+        pending = [
+            self._authenticate_record(record) for record in payload["pending_prune"]
+        ]
+        record_hashes = [value["record_sha256"] for value in records]
+        pending_hashes = [value["record_sha256"] for value in pending]
+        if (
+            len(record_hashes) != len(set(record_hashes))
+            or len(pending_hashes) != len(set(pending_hashes))
+            or set(record_hashes) & set(pending_hashes)
+        ):
+            raise ExactCandidateFrontierError(
+                "Frontier retained and pending record identities are not disjoint."
+            )
+        group_counts: dict[tuple[str, str], int] = {}
+        for record in records:
+            key = (
+                str(record["target_contract_sha256"]),
+                str(record["comparison_contract_sha256"]),
+            )
+            group_counts[key] = group_counts.get(key, 0) + 1
+        if any(value > self.max_per_contract for value in group_counts.values()):
+            raise ExactCandidateFrontierError(
+                "Frontier exceeds its per-comparison-contract retention bound."
+            )
+        for record in [*records, *pending]:
+            if int(record["sequence"]) >= next_sequence:
+                raise ExactCandidateFrontierError(
+                    "Frontier record sequence is outside the manifest history."
+                )
+        self._assert_manifest_owns_every_storage_entry(payload)
+        return payload
+
+    def _assert_manifest_owns_every_storage_entry(
+        self, manifest: Mapping[str, Any]
+    ) -> None:
+        entries = self._root_entry_names()
+        allowed_root = {
+            "artifacts",
+            "evidence",
+            "frontier_manifest.json",
+            ".frontier.lock",
+        }
+        if entries - allowed_root:
+            raise ExactCandidateFrontierError(
+                "Frontier root contains an unowned preexisting entry."
+            )
+        _assert_ordinary_directory(self.artifacts_root, "frontier artifacts root")
+        _assert_ordinary_directory(self.evidence_root, "frontier evidence root")
+        owned_records = [
+            *list(manifest.get("records", [])),
+            *list(manifest.get("pending_prune", [])),
+        ]
+        expected_artifacts = {
+            Path(str(record["artifact_path"])).name for record in owned_records
+        }
+        expected_evidence = {
+            Path(str(record["evidence_path"])).name for record in owned_records
+        }
+        actual_artifacts = {entry.name for entry in os.scandir(self.artifacts_root)}
+        actual_evidence = {entry.name for entry in os.scandir(self.evidence_root)}
+        if (
+            actual_artifacts != expected_artifacts
+            or actual_evidence != expected_evidence
+        ):
+            raise ExactCandidateFrontierError(
+                "Frontier storage contains missing, extra, or unowned deterministic "
+                "directories."
+            )
+
+    def _create_storage_after_authentication(self) -> None:
+        if not self.root.exists():
+            self.root.mkdir(parents=True, exist_ok=False)
+        _assert_ordinary_directory(self.root, "frontier root")
+        entries = self._root_entry_names()
+        if entries:
+            if entries != {"frontier_manifest.json", "artifacts", "evidence"}:
+                raise ExactCandidateFrontierError(
+                    "Refusing to adopt preexisting frontier storage."
+                )
+            return
+        self.artifacts_root.mkdir()
+        self.evidence_root.mkdir()
+
+    def _write_manifest(self, manifest: Mapping[str, Any]) -> dict[str, Any]:
+        payload = dict(manifest)
+        payload["manifest_sha256"] = _record_hash(payload, "manifest_sha256")
+        _atomic_replace_json(self.manifest_path, payload)
+        return payload
+
+    def _acquire_lock(self) -> int:
+        try:
+            return os.open(self.lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError as error:
+            raise ExactCandidateFrontierError(
+                f"Frontier is already locked: {self.lock_path}"
+            ) from error
+
+    def _release_lock(self, descriptor: int) -> None:
+        os.close(descriptor)
+        self.lock_path.unlink(missing_ok=True)
+
+    def _protected_mapping(
+        self, manifest: Mapping[str, Any], candidate: TerminalCandidate | None
+    ) -> dict[str, str]:
+        current = {
+            str(name): str(Path(path).expanduser().resolve())
+            for name, path in dict(manifest.get("protected_roots", {})).items()
+        }
+        if candidate is not None:
+            for name, path in candidate.protected_roots.items():
+                normalized = str(Path(path).expanduser().resolve())
+                prior = current.get(name)
+                if prior is not None and prior != normalized:
+                    raise ExactCandidateFrontierError(
+                        f"Protected root {name!r} changed across frontier records."
+                    )
+                current[name] = normalized
+        for index, path in enumerate(self.extra_protected_roots):
+            current.setdefault(f"explicit_{index}", str(path))
+        for name, value in current.items():
+            path = Path(value)
+            _assert_ordinary_protected_path(path, f"protected path {name}")
+            if _paths_overlap(self.root, path):
+                raise ExactCandidateFrontierError(
+                    f"Frontier overlaps protected root {name!r}."
+                )
+        return dict(sorted(current.items()))
+
+    def _bundle_path(self, record: Mapping[str, Any], field: str, root: Path) -> Path:
+        value = record.get(field)
+        if not isinstance(value, str) or not value:
+            raise ExactCandidateFrontierError(f"Record {field} is invalid.")
+        candidate = (self.root / value).resolve()
+        if candidate.parent != root.resolve() or candidate == root.resolve():
+            raise ExactCandidateFrontierError(
+                f"Record {field} escapes its confined frontier root."
+            )
+        return candidate
+
+    def _authenticate_record(self, value: Any) -> dict[str, Any]:
+        if not isinstance(value, Mapping):
+            raise ExactCandidateFrontierError("Frontier record is not an object.")
+        record = dict(value)
+        record_sha = require_sha256(record.get("record_sha256"), "record_sha256")
+        if (
+            record.get("schema") != RECORD_SCHEMA
+            or _record_hash(record, "record_sha256") != record_sha
+            or record.get("truth_label")
+            not in {"research-factor-only-candidate", "accepted-standalone"}
+            or record.get("artifact_kind")
+            not in {"research-factor-pack", "accepted-standalone-child"}
+            or not isinstance(record.get("rollout_first_rank_key"), list)
+        ):
+            raise ExactCandidateFrontierError("Frontier record failed authentication.")
+        rank = tuple(record["rollout_first_rank_key"])
+        metrics = record.get("candidate_metrics")
+        if not isinstance(metrics, Mapping) or rank != rollout_first_rank(metrics):
+            raise ExactCandidateFrontierError(
+                "Frontier record behavior ranking does not verify."
+            )
+        for field in (
+            "target_contract_sha256",
+            "comparison_contract_sha256",
+            "selected_factor_state_sha256",
+            "content_identity_sha256",
+            "source_artifact_identity_sha256",
+            "run_report_sha256",
+            "preregistration_sha256",
+        ):
+            require_sha256(record.get(field), field)
+        sequence = _nonnegative_int(record.get("sequence"), "record.sequence")
+        if (
+            sequence <= 0
+            or _nonnegative_int(
+                record.get("exact_unique_parameters"), "record.exact_unique_parameters"
+            )
+            <= 0
+        ):
+            raise ExactCandidateFrontierError(
+                "Frontier record sequence and exact parameter count must be positive."
+            )
+        research = record["truth_label"] == "research-factor-only-candidate"
+        if research != (record["artifact_kind"] == "research-factor-pack"):
+            raise ExactCandidateFrontierError(
+                "Frontier record truth label and artifact kind disagree."
+            )
+        if research:
+            if (
+                record.get("fresh_reload_verified") is not False
+                or record.get("fresh_reload_certificate_sha256") is not None
+                or record.get("independent_child_authentication") is not None
+                or record.get("standalone_compaction_passed") is not False
+                or record.get("deployment_accepted") is not False
+            ):
+                raise ExactCandidateFrontierError(
+                    "Research factor-only record overclaims standalone acceptance."
+                )
+        else:
+            require_sha256(
+                record.get("fresh_reload_certificate_sha256"),
+                "fresh_reload_certificate_sha256",
+            )
+            if (
+                record.get("fresh_reload_verified") is not True
+                or not isinstance(
+                    record.get("independent_child_authentication"), Mapping
+                )
+                or record.get("standalone_compaction_passed") is not True
+                or record.get("deployment_accepted") is not True
+            ):
+                raise ExactCandidateFrontierError(
+                    "Accepted standalone record lacks fresh-reload acceptance evidence."
+                )
+        artifact = self._bundle_path(record, "artifact_path", self.artifacts_root)
+        evidence = self._bundle_path(record, "evidence_path", self.evidence_root)
+        expected_artifact = require_sha256(
+            record.get("retained_artifact_tree_sha256"),
+            "retained_artifact_tree_sha256",
+        )
+        expected_evidence = require_sha256(
+            record.get("retained_evidence_tree_sha256"),
+            "retained_evidence_tree_sha256",
+        )
+        actual_artifact_tree = artifact_tree(artifact)
+        if actual_artifact_tree["tree_sha256"] != expected_artifact:
+            raise ExactCandidateFrontierError("Retained candidate artifact changed.")
+        actual_evidence_tree = artifact_tree(evidence)
+        if actual_evidence_tree["tree_sha256"] != expected_evidence:
+            raise ExactCandidateFrontierError("Retained candidate evidence changed.")
+        report_copy = evidence / "run_report.json"
+        preregistration_copy = evidence / "preregistration.json"
+        if (
+            file_sha256(report_copy) != record["run_report_sha256"]
+            or file_sha256(preregistration_copy) != record["preregistration_sha256"]
+        ):
+            raise ExactCandidateFrontierError(
+                "Retained report/preregistration evidence hashes do not verify."
+            )
+        copied_report = strict_json(report_copy)
+        if (
+            not isinstance(copied_report, Mapping)
+            or copied_report.get("evaluation_contract_sha256")
+            != record["comparison_contract_sha256"]
+        ):
+            raise ExactCandidateFrontierError(
+                "Retained report comparison contract does not verify."
+            )
+        if research:
+            factor_file = artifact / "factor_pack.pt"
+            if file_sha256(factor_file) != record["source_artifact_identity_sha256"]:
+                raise ExactCandidateFrontierError(
+                    "Retained factor pack content identity changed."
+                )
+        else:
+            if (
+                actual_artifact_tree["tree_sha256"]
+                != record["source_artifact_identity_sha256"]
+            ):
+                raise ExactCandidateFrontierError(
+                    "Retained standalone child tree identity changed."
+                )
+            independent = record["independent_child_authentication"]
+            independent_tree = independent.get("artifact_tree")
+            if (
+                independent.get("fresh_reload_performed") is not True
+                or independent.get("loaded_from_candidate_path") is not True
+                or independent.get("exact_unique_parameters")
+                != record["exact_unique_parameters"]
+                or independent.get("state_dict_sha256")
+                != record["content_identity_sha256"]
+                or independent.get("published_adapter_parameter_count") != 0
+                or independent.get("parent_runtime_reference_count") != 0
+                or independent.get("source_sized_sidecar_parameter_count") != 0
+                or not isinstance(independent_tree, Mapping)
+                or any(
+                    independent_tree.get(name) != actual_artifact_tree[name]
+                    for name in ("file_count", "total_bytes", "tree_sha256")
+                )
+            ):
+                raise ExactCandidateFrontierError(
+                    "Retained independent child authentication no longer verifies."
+                )
+            certificate = copied_report.get("fresh_reload_certificate")
+            if (
+                not isinstance(certificate, Mapping)
+                or canonical_sha256(
+                    {
+                        "run_certificate": dict(certificate),
+                        "independent_authentication": dict(
+                            record["independent_child_authentication"]
+                        ),
+                    }
+                )
+                != record["fresh_reload_certificate_sha256"]
+            ):
+                raise ExactCandidateFrontierError(
+                    "Retained fresh-reload certificate does not verify."
+                )
+        return record
+
+    @staticmethod
+    def _rank_records(
+        records: Sequence[Mapping[str, Any]], maximum: int
+    ) -> list[dict[str, Any]]:
+        ordered = sorted(
+            (dict(value) for value in records),
+            key=lambda value: (
+                tuple(value["rollout_first_rank_key"]),
+                int(value["sequence"]),
+            ),
+        )
+        kept = ordered[:maximum]
+        accepted = next(
+            (
+                value
+                for value in ordered
+                if value["truth_label"] == "accepted-standalone"
+            ),
+            None,
+        )
+        if accepted is not None and accepted not in kept:
+            kept[-1] = accepted
+            kept.sort(
+                key=lambda value: (
+                    tuple(value["rollout_first_rank_key"]),
+                    int(value["sequence"]),
+                )
+            )
+        return kept
+
+    def _stage_candidate(
+        self,
+        candidate: TerminalCandidate,
+        record_identity: str,
+        manifest: Mapping[str, Any],
+    ) -> tuple[Path, dict[str, Any], Path, dict[str, Any]]:
+        artifact_name = (
+            "factor-file-"
+            if candidate.artifact_kind == "research-factor-pack"
+            else "child-tree-"
+        ) + candidate.source_artifact_identity_sha256
+        artifact_destination = self.artifacts_root / artifact_name
+        evidence_destination = self.evidence_root / f"record-{record_identity}"
+        owned_records = [
+            *list(manifest.get("records", [])),
+            *list(manifest.get("pending_prune", [])),
+        ]
+        owned_artifacts = {
+            (self.root / str(record["artifact_path"])).resolve()
+            for record in owned_records
+        }
+        owned_evidence = {
+            (self.root / str(record["evidence_path"])).resolve()
+            for record in owned_records
+        }
+        if artifact_destination.exists():
+            if artifact_destination.resolve() not in owned_artifacts:
+                raise ExactCandidateFrontierError(
+                    "Refusing to adopt a preexisting deterministic artifact directory."
+                )
+            artifact_report = artifact_tree(artifact_destination)
+            if candidate.artifact_kind == "research-factor-pack":
+                retained_file = artifact_destination / "factor_pack.pt"
+                if (
+                    file_sha256(retained_file)
+                    != candidate.source_artifact_identity_sha256
+                ):
+                    raise ExactCandidateFrontierError(
+                        "Content-addressed factor artifact is corrupt."
+                    )
+            elif (
+                artifact_report["tree_sha256"]
+                != candidate.source_artifact_identity_sha256
+            ):
+                raise ExactCandidateFrontierError(
+                    "Content-addressed child artifact is corrupt."
+                )
+        else:
+            temporary = Path(
+                tempfile.mkdtemp(prefix=".candidate-artifact.", dir=self.root)
+            )
+            staged = temporary / "bundle"
+            try:
+                if candidate.artifact_kind == "research-factor-pack":
+                    staged.mkdir()
+                    _copy_ordinary_file(
+                        candidate.source_artifact, staged / "factor_pack.pt"
+                    )
+                    if (
+                        file_sha256(staged / "factor_pack.pt")
+                        != candidate.source_artifact_identity_sha256
+                    ):
+                        raise ExactCandidateFrontierError(
+                            "Staged factor bytes failed authentication."
+                        )
+                else:
+                    _copy_ordinary_tree(candidate.source_artifact, staged)
+                    if artifact_tree(staged)["tree_sha256"] != (
+                        candidate.source_artifact_identity_sha256
+                    ):
+                        raise ExactCandidateFrontierError(
+                            "Staged child tree failed authentication."
+                        )
+                os.replace(staged, artifact_destination)
+            finally:
+                if temporary.exists():
+                    try:
+                        temporary.rmdir()
+                    except OSError:
+                        # Conservative v1 never recursively deletes partial trees.
+                        pass
+            artifact_report = artifact_tree(artifact_destination)
+
+        if evidence_destination.exists():
+            if evidence_destination.resolve() not in owned_evidence:
+                raise ExactCandidateFrontierError(
+                    "Refusing to adopt a preexisting deterministic evidence directory."
+                )
+            evidence_report = artifact_tree(evidence_destination)
+            report_copy = evidence_destination / "run_report.json"
+            prereg_copy = evidence_destination / "preregistration.json"
+            if (
+                file_sha256(report_copy) != candidate.run_report_sha256
+                or file_sha256(prereg_copy) != candidate.preregistration_sha256
+            ):
+                raise ExactCandidateFrontierError(
+                    "Content-addressed retained evidence is corrupt."
+                )
+        else:
+            temporary = Path(
+                tempfile.mkdtemp(prefix=".candidate-evidence.", dir=self.root)
+            )
+            staged = temporary / "bundle"
+            try:
+                staged.mkdir()
+                _copy_ordinary_file(
+                    candidate.run_report_path, staged / "run_report.json"
+                )
+                _copy_ordinary_file(
+                    candidate.preregistration_path, staged / "preregistration.json"
+                )
+                if (
+                    file_sha256(staged / "run_report.json")
+                    != candidate.run_report_sha256
+                    or file_sha256(staged / "preregistration.json")
+                    != candidate.preregistration_sha256
+                ):
+                    raise ExactCandidateFrontierError(
+                        "Staged evidence bytes failed authentication."
+                    )
+                os.replace(staged, evidence_destination)
+            finally:
+                if temporary.exists():
+                    try:
+                        temporary.rmdir()
+                    except OSError:
+                        # Conservative v1 never recursively deletes partial trees.
+                        pass
+            evidence_report = artifact_tree(evidence_destination)
+        return (
+            artifact_destination,
+            artifact_report,
+            evidence_destination,
+            evidence_report,
+        )
+
+    def _record_payload(
+        self,
+        candidate: TerminalCandidate,
+        *,
+        sequence: int,
+        artifact_path: Path,
+        artifact_report: Mapping[str, Any],
+        evidence_path: Path,
+        evidence_report: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "schema": RECORD_SCHEMA,
+            "sequence": sequence,
+            "target_contract_sha256": candidate.target_contract_sha256,
+            "comparison_contract_sha256": candidate.comparison_contract_sha256,
+            "exact_unique_parameters": candidate.exact_unique_parameters,
+            "artifact_kind": candidate.artifact_kind,
+            "truth_label": candidate.truth_label,
+            "terminal_status": candidate.terminal_status,
+            "terminal_reason": candidate.terminal_reason,
+            "candidate_metrics": dict(candidate.candidate_metrics),
+            "rollout_first_rank_key": list(candidate.rollout_first_rank_key),
+            "ranking_domain": "candidate-output-actions-and-free-rollouts-only",
+            "selected_step": candidate.selected_step,
+            "selected_factor_state_sha256": (candidate.selected_factor_state_sha256),
+            "content_identity_sha256": candidate.content_identity_sha256,
+            "source_artifact_identity_sha256": (
+                candidate.source_artifact_identity_sha256
+            ),
+            "run_report_sha256": candidate.run_report_sha256,
+            "preregistration_sha256": candidate.preregistration_sha256,
+            "artifact_path": artifact_path.relative_to(self.root).as_posix(),
+            "retained_artifact_tree_sha256": require_sha256(
+                artifact_report.get("tree_sha256"), "retained artifact tree"
+            ),
+            "retained_artifact_total_bytes": int(artifact_report["total_bytes"]),
+            "evidence_path": evidence_path.relative_to(self.root).as_posix(),
+            "retained_evidence_tree_sha256": require_sha256(
+                evidence_report.get("tree_sha256"), "retained evidence tree"
+            ),
+            "fresh_reload_verified": candidate.fresh_reload_verified,
+            "fresh_reload_certificate_sha256": (
+                candidate.fresh_reload_certificate_sha256
+            ),
+            "independent_child_authentication": (
+                None
+                if candidate.independent_child_authentication is None
+                else dict(candidate.independent_child_authentication)
+            ),
+            "standalone_compaction_passed": candidate.standalone_compaction_passed,
+            "deployment_accepted": candidate.deployment_accepted,
+            "contains_parent_parameters": False,
+            "optimizer_state_retained": False,
+            "source_run_deleted": False,
+        }
+        payload["record_sha256"] = _record_hash(payload, "record_sha256")
+        return payload
+
+    def register(
+        self,
+        candidate: TerminalCandidate,
+        *,
+        apply_prune: bool = False,
+    ) -> dict[str, Any]:
+        if not isinstance(candidate, TerminalCandidate):
+            raise ExactCandidateFrontierError(
+                "register requires an authenticated TerminalCandidate."
+            )
+        if apply_prune:
+            raise ExactCandidateFrontierError(
+                "--apply-prune is unsupported in conservative v1; only a durable "
+                "pending-prune plan can be emitted."
+            )
+        # Authenticate every existing byte and every protected source before the
+        # first frontier directory, lock, artifact, evidence, or manifest write.
+        pre_manifest = self._load_manifest()
+        pre_protected = self._protected_mapping(pre_manifest, candidate)
+        pre_existing = [dict(value) for value in pre_manifest["records"]]
+        pre_duplicate = next(
+            (
+                value
+                for value in pre_existing
+                if value["target_contract_sha256"] == candidate.target_contract_sha256
+                and value["comparison_contract_sha256"]
+                == candidate.comparison_contract_sha256
+                and value["artifact_kind"] == candidate.artifact_kind
+                and value["content_identity_sha256"]
+                == candidate.content_identity_sha256
+            ),
+            None,
+        )
+        if pre_duplicate is not None:
+            return {
+                "candidate_retained": True,
+                "deduplicated": True,
+                "record_sha256": pre_duplicate["record_sha256"],
+                "apply_prune": False,
+            }
+        pre_sequence = _nonnegative_int(
+            pre_manifest.get("next_sequence"), "next_sequence"
+        )
+        pre_provisional = {
+            "sequence": pre_sequence,
+            "target_contract_sha256": candidate.target_contract_sha256,
+            "comparison_contract_sha256": candidate.comparison_contract_sha256,
+            "truth_label": candidate.truth_label,
+            "artifact_kind": candidate.artifact_kind,
+            "content_identity_sha256": candidate.content_identity_sha256,
+            "rollout_first_rank_key": list(candidate.rollout_first_rank_key),
+        }
+        pre_group = [
+            value
+            for value in pre_existing
+            if value["target_contract_sha256"] == candidate.target_contract_sha256
+            and value["comparison_contract_sha256"]
+            == candidate.comparison_contract_sha256
+        ]
+        if pre_provisional not in self._rank_records(
+            [*pre_group, pre_provisional], self.max_per_contract
+        ):
+            return {
+                "candidate_retained": False,
+                "deduplicated": False,
+                "reason": "behavior-dominated-outside-bounded-frontier",
+                "apply_prune": False,
+            }
+        for value in pre_protected.values():
+            if _paths_overlap(self.root, Path(value)):
+                raise ExactCandidateFrontierError(
+                    "Frontier overlaps an immutable protected source/blank/cache path."
+                )
+        self._create_storage_after_authentication()
+        descriptor = self._acquire_lock()
+        try:
+            manifest = self._load_manifest(allow_new_empty_storage=True)
+            if canonical_sha256(manifest) != canonical_sha256(pre_manifest):
+                raise ExactCandidateFrontierError(
+                    "Frontier manifest changed between authenticated read and lock."
+                )
+            protected = self._protected_mapping(manifest, candidate)
+            for value in protected.values():
+                if _paths_overlap(self.root, Path(value)):
+                    raise ExactCandidateFrontierError(
+                        "Frontier overlaps an immutable blank/cache root."
+                    )
+            existing_records = [dict(value) for value in manifest["records"]]
+            duplicate = next(
+                (
+                    value
+                    for value in existing_records
+                    if value["target_contract_sha256"]
+                    == candidate.target_contract_sha256
+                    and value["comparison_contract_sha256"]
+                    == candidate.comparison_contract_sha256
+                    and value["artifact_kind"] == candidate.artifact_kind
+                    and value["content_identity_sha256"]
+                    == candidate.content_identity_sha256
+                ),
+                None,
+            )
+            if duplicate is not None:
+                result = {
+                    "candidate_retained": True,
+                    "deduplicated": True,
+                    "record_sha256": duplicate["record_sha256"],
+                    "apply_prune": False,
+                }
+                return result
+
+            sequence = _nonnegative_int(manifest.get("next_sequence"), "next_sequence")
+            provisional = {
+                "sequence": sequence,
+                "target_contract_sha256": candidate.target_contract_sha256,
+                "comparison_contract_sha256": candidate.comparison_contract_sha256,
+                "truth_label": candidate.truth_label,
+                "artifact_kind": candidate.artifact_kind,
+                "content_identity_sha256": candidate.content_identity_sha256,
+                "rollout_first_rank_key": list(candidate.rollout_first_rank_key),
+            }
+            group = [
+                value
+                for value in existing_records
+                if value["target_contract_sha256"] == candidate.target_contract_sha256
+                and value["comparison_contract_sha256"]
+                == candidate.comparison_contract_sha256
+            ]
+            selected = self._rank_records([*group, provisional], self.max_per_contract)
+            if provisional not in selected:
+                result = {
+                    "candidate_retained": False,
+                    "deduplicated": False,
+                    "reason": "behavior-dominated-outside-bounded-frontier",
+                    "apply_prune": False,
+                }
+                return result
+
+            record_identity = candidate.submission_identity_sha256
+            (
+                artifact_path,
+                artifact_report,
+                evidence_path,
+                evidence_report,
+            ) = self._stage_candidate(candidate, record_identity, manifest)
+            record = self._record_payload(
+                candidate,
+                sequence=sequence,
+                artifact_path=artifact_path,
+                artifact_report=artifact_report,
+                evidence_path=evidence_path,
+                evidence_report=evidence_report,
+            )
+            without_group = [value for value in existing_records if value not in group]
+            selected_records = self._rank_records(
+                [*group, record], self.max_per_contract
+            )
+            selected_hashes = {value["record_sha256"] for value in selected_records}
+            evicted = [
+                value
+                for value in group
+                if value["record_sha256"] not in selected_hashes
+            ]
+            pending = [dict(value) for value in manifest["pending_prune"]]
+            pending_hashes = {value["record_sha256"] for value in pending}
+            pending.extend(
+                value
+                for value in evicted
+                if value["record_sha256"] not in pending_hashes
+            )
+            updated = {
+                **manifest,
+                "protected_roots": protected,
+                "next_sequence": sequence + 1,
+                "records": sorted(
+                    [*without_group, *selected_records],
+                    key=lambda value: (
+                        value["target_contract_sha256"],
+                        value["comparison_contract_sha256"],
+                        tuple(value["rollout_first_rank_key"]),
+                        int(value["sequence"]),
+                    ),
+                ),
+                "pending_prune": pending,
+                "evicted_total": int(manifest.get("evicted_total", 0)) + len(evicted),
+            }
+            persisted = self._write_manifest(updated)
+            result = {
+                "candidate_retained": True,
+                "deduplicated": False,
+                "record_sha256": record["record_sha256"],
+                "truth_label": record["truth_label"],
+                "comparison_contract_sha256": record["comparison_contract_sha256"],
+                "retained_in_contract": len(selected_records),
+                "pending_prune_count": len(persisted["pending_prune"]),
+                "apply_prune": False,
+            }
+            return result
+        finally:
+            self._release_lock(descriptor)
+
+    def apply_pending_prune(self) -> dict[str, Any]:
+        raise ExactCandidateFrontierError(
+            "Actual deletion is unsupported in conservative v1. The authenticated "
+            "manifest retains a durable pending-prune plan for manual review."
+        )
+
+    def inspect(self) -> dict[str, Any]:
+        manifest = self._load_manifest()
+        self._protected_mapping(manifest, None)
+        groups: dict[str, int] = {}
+        for record in manifest["records"]:
+            key = (
+                f"{record['target_contract_sha256']}:"
+                f"{record['comparison_contract_sha256']}"
+            )
+            groups[key] = groups.get(key, 0) + 1
+        return {
+            "schema": FRONTIER_SCHEMA,
+            "manifest_path": str(self.manifest_path),
+            "retained_record_count": len(manifest["records"]),
+            "pending_prune_count": len(manifest["pending_prune"]),
+            "retained_per_contract": groups,
+            "max_per_comparison_contract": self.max_per_contract,
+            "prune_mode": "durable-plan-only-conservative-v1",
+            "recursive_deletion_implemented": False,
+        }
+
+
+__all__ = [
+    "AcceptedChildAuthenticator",
+    "ExactCandidateFrontier",
+    "ExactCandidateFrontierError",
+    "FactorAuthenticator",
+    "MAX_RETAINED_PER_CONTRACT",
+    "PreregistrationAuthenticator",
+    "TerminalCandidate",
+    "artifact_tree",
+    "authenticate_terminal_candidate",
+    "canonical_sha256",
+    "file_sha256",
+    "rollout_first_rank",
+    "strict_json",
+]

@@ -21,8 +21,23 @@ The first target remains an exact `134,515,008`-parameter child (at least
 - CIFS directory publication is fixed: try atomic replace, then use an
   incomplete-marker + byte/tree/hash-verified copy fallback on `EACCES` or
   `EXDEV`, followed by scoped cleanup.
-- Do not write another full 8+ GB checkpoint for probes. Persist small JSON
-  evidence and factor packs until a candidate passes broad promotion.
+- Keep exactly one immutable canonical blank and the shared compiler cache;
+  rollback remains an integrity check and does not discard the selected factor
+  pack. Retain at most three behavior-ranked candidates per comparable
+  evaluation contract. A rejected-but-improved pack is labeled
+  `research-factor-only-candidate`, never a standalone compaction. Only a child
+  that passed bake, output gates, save, and fresh reload is labeled
+  `accepted-standalone`.
+- The post-run retention frontier is implemented by
+  `src/neural_forge/hf_exact_candidate_frontier.py` and
+  `experiments/retain_qwen_exact_target_candidates.py`. It archives
+  content-addressed factor packs or certified children plus hashed report and
+  preregistration evidence. Conservative v1 only emits a durable
+  `pending_prune` plan: actual recursive deletion is disabled and
+  `--apply-prune` fails closed. Construction and inspection are zero-write;
+  registration requires caller-provided report/preregistration hashes and
+  canonical source authentication before creating the frontier. Source runs,
+  the blank, and the compiler cache are protected and never deleted.
 - Reuse the existing remote checkout. Do not create another source clone for
   each experiment.
 
