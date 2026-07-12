@@ -3550,6 +3550,7 @@ def train_target_native_behavior_distillation(
     initial_factor_payload: Mapping[str, Any] | None = None,
     guided_tranche: Any | None = None,
     durable_checkpoint_callback: DurableBehaviorCheckpointCallback | None = None,
+    post_optimizer_step_callback: Callable[[int], None] | None = None,
 ) -> BehaviorDistillationResult:
     """Train, Pareto-select, restore, and optionally unlock sealed evaluation.
 
@@ -3558,6 +3559,11 @@ def train_target_native_behavior_distillation(
     is ignored and factor value/owner/storage mutations are detected and rolled
     back.  The callable is trusted in-process code; isolate an untrusted sink in
     another process because Python closure side effects cannot be sandboxed.
+
+    ``post_optimizer_step_callback`` is a trusted in-process invariant hook.  It
+    receives each completed one-based optimizer step immediately after finite
+    factor validation.  Its return value is ignored, and it has no selection,
+    checkpoint-promotion, or sealed-evaluation control channel.
     """
 
     if not isinstance(transaction, ExactTargetCompilerTransaction):
@@ -3578,6 +3584,12 @@ def train_target_native_behavior_distillation(
     ):
         raise TargetNativeBehaviorDistillationError(
             "durable_checkpoint_callback must be callable or None."
+        )
+    if post_optimizer_step_callback is not None and not callable(
+        post_optimizer_step_callback
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "post_optimizer_step_callback must be callable or None."
         )
     guided_continuation = guided_tranche is not None
     if guided_continuation != schedule.guided_continuation_enabled:
@@ -4100,6 +4112,8 @@ def train_target_native_behavior_distillation(
                     raise TargetNativeBehaviorDistillationError(
                         "Optimizer produced non-finite compiler factors."
                     )
+                if post_optimizer_step_callback is not None:
+                    post_optimizer_step_callback(step)
                 if step in schedule.normalized_checkpoint_steps:
                     metrics = evaluate_behavior_domain(
                         parent_model,

@@ -1003,6 +1003,124 @@ def test_durable_checkpoint_callback_emits_every_authenticated_snapshot() -> Non
     transaction.rollback()
 
 
+def test_post_optimizer_step_callback_receives_every_completed_step() -> None:
+    torch.manual_seed(126)
+    child = _StrictToyTarget()
+    parent = copy.deepcopy(child)
+    with torch.no_grad():
+        parent.lm_head.weight.copy_(torch.roll(parent.lm_head.weight, 3, dims=0))
+    transaction = _transaction(child)
+    domains = {
+        "fit": _domain("fit", [[1, 2, 3]], "3" * 64),
+        "calibration": _domain("calibration", [[4, 5, 6]], "4" * 64),
+        "sealed": _domain("sealed", [[7, 8, 9]], "5" * 64),
+    }
+    schedule = BehaviorDistillationSchedule(
+        steps=3,
+        learning_rate=0.02,
+        checkpoint_steps=(2,),
+        fit_horizon=1,
+        evaluation_horizon=1,
+        top_k=2,
+    )
+    completed_steps: list[int] = []
+
+    def invariant_hook(step: int) -> object:
+        completed_steps.append(step)
+        return {"selected_step": 999, "unlock_sealed": True}
+
+    result = train_target_native_behavior_distillation(
+        transaction,
+        parent,
+        domains,
+        schedule,
+        post_optimizer_step_callback=invariant_hook,
+    )
+    assert completed_steps == [1, 2, 3]
+    assert result.selected_step != 999
+    assert [value.step for value in result.checkpoints] == [0, 2, 3]
+    transaction.rollback()
+
+
+@pytest.mark.parametrize("error_type", [RuntimeError, KeyboardInterrupt])
+def test_post_optimizer_step_callback_failure_exactly_restores_step_zero(
+    error_type: type[BaseException],
+) -> None:
+    torch.manual_seed(127)
+    child = _StrictToyTarget()
+    parent = copy.deepcopy(child)
+    with torch.no_grad():
+        parent.lm_head.weight.copy_(torch.roll(parent.lm_head.weight, 4, dims=0))
+    transaction = _transaction(child)
+    step0 = capture_target_native_factor_state(transaction)
+    domains = {
+        "fit": _domain("fit", [[1, 2, 3]], "6" * 64),
+        "calibration": _domain("calibration", [[4, 5, 6]], "7" * 64),
+        "sealed": _domain("sealed", [[7, 8, 9]], "8" * 64),
+    }
+    schedule = BehaviorDistillationSchedule(
+        steps=3,
+        learning_rate=0.02,
+        checkpoint_steps=(1, 2),
+        fit_horizon=1,
+        evaluation_horizon=1,
+        top_k=2,
+    )
+    completed_steps: list[int] = []
+
+    def interrupted_hook(step: int) -> None:
+        completed_steps.append(step)
+        if step == 2:
+            raise error_type("post-step invariant failed")
+
+    with pytest.raises(error_type, match="post-step invariant failed"):
+        train_target_native_behavior_distillation(
+            transaction,
+            parent,
+            domains,
+            schedule,
+            post_optimizer_step_callback=interrupted_hook,
+        )
+    assert completed_steps == [1, 2]
+    transaction.assert_live()
+    assert capture_target_native_factor_state(transaction).factor_state_sha256 == (
+        step0.factor_state_sha256
+    )
+    transaction.rollback()
+
+
+def test_post_optimizer_step_callback_must_be_callable() -> None:
+    torch.manual_seed(128)
+    child = _StrictToyTarget()
+    parent = copy.deepcopy(child)
+    transaction = _transaction(child)
+    domains = {
+        "fit": _domain("fit", [[1, 2]], "9" * 64),
+        "calibration": _domain("calibration", [[3, 4]], "a" * 64),
+        "sealed": _domain("sealed", [[5, 6]], "b" * 64),
+    }
+    schedule = BehaviorDistillationSchedule(
+        steps=1,
+        learning_rate=0.02,
+        fit_horizon=1,
+        evaluation_horizon=1,
+        top_k=2,
+    )
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="post_optimizer_step_callback must be callable",
+    ):
+        train_target_native_behavior_distillation(
+            transaction,
+            parent,
+            domains,
+            schedule,
+            post_optimizer_step_callback=object(),  # type: ignore[arg-type]
+        )
+    transaction.assert_live()
+    transaction.rollback()
+
+
 def test_durable_checkpoint_callback_failure_exactly_restores_step_zero() -> None:
     torch.manual_seed(121)
     child = _StrictToyTarget()
@@ -1643,6 +1761,12 @@ def test_output_only_training_audits_all_factors_and_retains_step_zero() -> None
     assert result.sealed_metrics.split == "heldout-evaluation"
     assert result.factor_pack_payload()["optimizer_state_included"] is False
     evidence = result.evidence_payload()
+    assert result.evidence_sha256 == (
+        "77bb6ff79bed156a848ddbfe054607bd66f6b7d8a5e6556711853ec0ae7d3bf3"
+    )
+    assert behavior_distillation._canonical_sha256(schedule.as_dict()) == (
+        "ffa5255ce8daf43f896b79492c914db977e993cfc87592d9334599d03d29b7f4"
+    )
     assert behavior_distillation._canonical_sha256(evidence) == result.evidence_sha256
     assert evidence["factor_pack_manifest"] == result.factor_pack.as_manifest()
     assert evidence["continued_from_factor_pack"] is True
