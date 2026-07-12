@@ -87,6 +87,12 @@ FACTOR_PACK_V2_SCHEMA = "neural-forge-rejected-target-native-factor-pack-v2"
 TRAINER_FACTOR_PACK_SCHEMA = "neural-forge-target-native-factor-pack-v1"
 TRAINER_FACTOR_PACK_V2_SCHEMA = "neural-forge-target-native-factor-pack-v2"
 CANONICAL_TRAINER_MODULE = "neural_forge.hf_target_native_behavior_distillation"
+OUTPUT_JACOBIAN_BASIS_MODULE = "neural_forge.hf_output_jacobian_orthogonal_basis"
+OUTPUT_JACOBIAN_SKETCH_MODULE = "neural_forge.hf_output_jacobian_sketch"
+QKVO_OUTPUT_JACOBIAN_AUDIT_MODULE = "neural_forge.hf_qkvo_output_jacobian_audit"
+OUTPUT_JACOBIAN_AUDIT_SCHEMA = "neural-forge-qkvo-output-jacobian-audit-v1"
+GUIDED_BASIS_PACK_SCHEMA = "neural-forge-guided-qkvo-basis-pack-v1"
+GUIDED_QKVO_RIGHT_BASIS_SCHEMA = "neural-forge-guided-qkvo-right-basis-v1"
 
 TARGET_LAYER_COUNT = 30
 TARGET_PHYSICAL_GROUPS = 4
@@ -104,8 +110,8 @@ LEXICAL_FACTOR_COUNT = 4
 LEXICAL_RANK = 32
 LEXICAL_VOCAB_SIZE = 151_936
 LEXICAL_HIDDEN_SIZE = 1_536
-LEXICAL_FACTOR_PARAMETERS = 2 * LEXICAL_RANK * (
-    LEXICAL_VOCAB_SIZE + LEXICAL_HIDDEN_SIZE
+LEXICAL_FACTOR_PARAMETERS = (
+    2 * LEXICAL_RANK * (LEXICAL_VOCAB_SIZE + LEXICAL_HIDDEN_SIZE)
 )
 LEXICAL_TARGET_NATIVE_FACTOR_COUNT = TARGET_NATIVE_FACTOR_COUNT + LEXICAL_FACTOR_COUNT
 LEXICAL_TARGET_NATIVE_FACTOR_PARAMETERS = (
@@ -382,6 +388,34 @@ class LexicalResidualBinding:
 
 
 @dataclass(frozen=True, slots=True)
+class OutputJacobianAuditBinding:
+    schema: str
+    source_exposed_candidate_as_fit: bool
+    basis_split_role: str
+    prompt_count: int
+    horizon: int
+    lanes: tuple[str, str]
+    rank: int
+    sketch_width: int
+    min_normal_fraction: float
+    min_guided_over_random_ratio: float
+    max_bytes: int
+
+    def as_dict(self) -> dict[str, Any]:
+        payload = dataclasses.asdict(self)
+        payload["lanes"] = list(self.lanes)
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class OutputJacobianAuditExecution:
+    result: Any
+    restore_mode: Literal["full"]
+    restored_factor_state_sha256: str
+    restored_factor_schema: str
+
+
+@dataclass(frozen=True, slots=True)
 class CompiledBase:
     child_model: nn.Module
     report: Mapping[str, Any]
@@ -476,6 +510,7 @@ class AuthenticatedPreRegistration:
     continuation: ContinuationFactorBinding | None
     compiler_cache: CompilerCacheBinding | None
     lexical_residual: LexicalResidualBinding | None
+    output_jacobian_audit: OutputJacobianAuditBinding | None
 
     def preflight_report(self) -> dict[str, Any]:
         return {
@@ -527,6 +562,11 @@ class AuthenticatedPreRegistration:
                 None
                 if self.lexical_residual is None
                 else self.lexical_residual.as_dict()
+            ),
+            **(
+                {}
+                if self.output_jacobian_audit is None
+                else {"output_jacobian_audit": self.output_jacobian_audit.as_dict()}
             ),
             "selection_domain": "causal-output-actions-and-free-rollouts-only",
             "runtime_dtype": "float16",
@@ -772,6 +812,20 @@ def _factor_tensor_sha256(value: Tensor) -> str:
     digest.update(repr(tuple(detached.shape)).encode("ascii"))
     digest.update(b"\0")
     digest.update(detached.reshape(-1).view(torch.uint8).numpy().tobytes())
+    return digest.hexdigest()
+
+
+def _output_jacobian_tensor_sha256(value: Tensor) -> str:
+    """Match the source-pinned Jacobian sketch tensor digest convention."""
+
+    tensor = value.detach().to(device="cpu").contiguous()
+    digest = hashlib.sha256()
+    digest.update(str(tensor.dtype).encode())
+    digest.update(json.dumps(list(tensor.shape), separators=(",", ":")).encode())
+    flat = tensor.reshape(-1).contiguous().view(torch.uint8)
+    chunk_bytes = 1 << 20
+    for start in range(0, int(flat.numel()), chunk_bytes):
+        digest.update(memoryview(flat[start : start + chunk_bytes].numpy()))
     return digest.hexdigest()
 
 
@@ -1037,9 +1091,8 @@ def _authenticate_continuation_factor_payload(
             )
         detached = tensor.detach().contiguous()
         expected_shape = expected_shapes[expected_name]
-        if (
-            tuple(detached.shape) != expected_shape
-            or row.get("shape") != list(expected_shape)
+        if tuple(detached.shape) != expected_shape or row.get("shape") != list(
+            expected_shape
         ):
             raise ExactTargetNativeStageError(
                 f"Continuation factor {expected_name!r} does not match its exact "
@@ -1254,6 +1307,47 @@ def _authenticate_continuation(
     )
 
 
+def _output_jacobian_audit_binding(
+    value: Any,
+) -> OutputJacobianAuditBinding:
+    expected: dict[str, Any] = {
+        "schema": OUTPUT_JACOBIAN_AUDIT_SCHEMA,
+        "source_exposed_candidate_as_fit": True,
+        "basis_split_role": "candidate",
+        "prompt_count": 24,
+        "horizon": 8,
+        "lanes": ["parent-greedy", "child-greedy"],
+        "rank": 8,
+        "sketch_width": 16,
+        "min_normal_fraction": 0.20,
+        "min_guided_over_random_ratio": 1.50,
+        "max_bytes": 268_435_456,
+    }
+    if not isinstance(value, Mapping) or set(value) != set(expected):
+        raise ExactTargetNativeStageError(
+            "output_jacobian_audit must contain exactly the authenticated "
+            "audit-only contract fields."
+        )
+    if _canonical_json(dict(value)) != _canonical_json(expected):
+        raise ExactTargetNativeStageError(
+            "output_jacobian_audit must use the pinned source-candidate, "
+            "two-lane rank-8 sketch contract."
+        )
+    return OutputJacobianAuditBinding(
+        schema=OUTPUT_JACOBIAN_AUDIT_SCHEMA,
+        source_exposed_candidate_as_fit=True,
+        basis_split_role="candidate",
+        prompt_count=24,
+        horizon=8,
+        lanes=("parent-greedy", "child-greedy"),
+        rank=8,
+        sketch_width=16,
+        min_normal_fraction=0.20,
+        min_guided_over_random_ratio=1.50,
+        max_bytes=268_435_456,
+    )
+
+
 def authenticate_preregistration(
     path: Path | str,
     expected_sha256: str,
@@ -1296,6 +1390,15 @@ def authenticate_preregistration(
                 "rank, vocabulary, hidden size, and untied boundary."
             )
         lexical_residual = LexicalResidualBinding(**dict(lexical_value))
+    output_jacobian_audit = (
+        None
+        if "output_jacobian_audit" not in raw
+        else _output_jacobian_audit_binding(raw["output_jacobian_audit"])
+    )
+    if output_jacobian_audit is not None and lexical_residual is None:
+        raise ExactTargetNativeStageError(
+            "The output-Jacobian audit requires the exact lexical residual transaction."
+        )
     implementation = raw.get("implementation")
     required_implementation = {
         "runner_sha256",
@@ -1311,6 +1414,14 @@ def authenticate_preregistration(
                 "progressive_bridge_sha256",
                 "qkvo_adapter_sha256",
                 "swiglu_adapter_sha256",
+            }
+        )
+    if output_jacobian_audit is not None:
+        required_implementation.update(
+            {
+                "output_jacobian_basis_sha256",
+                "output_jacobian_sketch_sha256",
+                "qkvo_output_jacobian_audit_sha256",
             }
         )
     if not isinstance(implementation, Mapping) or set(implementation) != (
@@ -1407,6 +1518,41 @@ def authenticate_preregistration(
                 "path": str(source_path),
                 "sha256": source_sha,
             }
+    if output_jacobian_audit is not None:
+        for field_name, module_name in (
+            (
+                "output_jacobian_basis_sha256",
+                OUTPUT_JACOBIAN_BASIS_MODULE,
+            ),
+            (
+                "output_jacobian_sketch_sha256",
+                OUTPUT_JACOBIAN_SKETCH_MODULE,
+            ),
+            (
+                "qkvo_output_jacobian_audit_sha256",
+                QKVO_OUTPUT_JACOBIAN_AUDIT_MODULE,
+            ),
+        ):
+            spec = importlib.util.find_spec(module_name)
+            if spec is None or spec.origin is None:
+                raise ExactTargetNativeStageError(
+                    f"Output-Jacobian audit implementation {module_name!r} is "
+                    "unavailable."
+                )
+            source_path = Path(spec.origin).resolve()
+            source_sha = _file_sha256(source_path)
+            if source_sha != _require_sha256(
+                implementation.get(field_name), f"implementation.{field_name}"
+            ):
+                raise ExactTargetNativeStageError(
+                    "Preregistered output-Jacobian source hash does not match "
+                    "the live code."
+                )
+            implementation_authentication[field_name.removesuffix("_sha256")] = {
+                "module": module_name,
+                "path": str(source_path),
+                "sha256": source_sha,
+            }
     base = prereg_path.parent
     parent = _artifact_binding(
         raw.get("parent"),
@@ -1453,6 +1599,15 @@ def authenticate_preregistration(
         name: _load_split(split_values[name], name=name, base=base)
         for name in ("fit", "candidate", "sealed")
     }
+    if (
+        output_jacobian_audit is not None
+        and len(splits[output_jacobian_audit.basis_split_role].row_ids)
+        != output_jacobian_audit.prompt_count
+    ):
+        raise ExactTargetNativeStageError(
+            "The output-Jacobian audit source candidate must contain exactly "
+            f"{output_jacobian_audit.prompt_count} prompts."
+        )
     for left_index, left in enumerate(("fit", "candidate", "sealed")):
         for right in ("fit", "candidate", "sealed")[left_index + 1 :]:
             if set(splits[left].row_ids) & set(splits[right].row_ids):
@@ -1558,7 +1713,9 @@ def authenticate_preregistration(
             )
         require_hit = cache_value.get("require_hit", False)
         if not isinstance(require_hit, bool):
-            raise ExactTargetNativeStageError("compiler_cache.require_hit must be bool.")
+            raise ExactTargetNativeStageError(
+                "compiler_cache.require_hit must be bool."
+            )
         expected_cache_hashes = {
             name: (
                 None
@@ -1573,7 +1730,9 @@ def authenticate_preregistration(
                 "expected_artifact_tree_sha256",
             )
         }
-        if require_hit and any(value is None for value in expected_cache_hashes.values()):
+        if require_hit and any(
+            value is None for value in expected_cache_hashes.values()
+        ):
             raise ExactTargetNativeStageError(
                 "A required compiler-cache hit must bind every immutable cache hash."
             )
@@ -1585,6 +1744,23 @@ def authenticate_preregistration(
     if continuation is not None and compiler_cache is None:
         raise ExactTargetNativeStageError(
             "Authenticated continuation runs must use the shared structural cache."
+        )
+    if output_jacobian_audit is not None and (
+        continuation is None
+        or continuation.trainer_factor_pack_schema != TRAINER_FACTOR_PACK_V2_SCHEMA
+        or continuation.factor_pack_schema != FACTOR_PACK_V2_SCHEMA
+        or continuation.lexical_rank != LEXICAL_RANK
+    ):
+        raise ExactTargetNativeStageError(
+            "The output-Jacobian audit requires an authenticated full lexical v2 "
+            "continuation payload."
+        )
+    if output_jacobian_audit is not None and (
+        compiler_cache is None or compiler_cache.require_hit is not True
+    ):
+        raise ExactTargetNativeStageError(
+            "The output-Jacobian audit requires a fully authenticated compiler-cache "
+            "hit."
         )
     evaluation_contract = {
         "split_sha256s": authentication["split_sha256s"],
@@ -1599,6 +1775,11 @@ def authenticate_preregistration(
         "swiglu_rank": SWIGLU_RANK,
         "lexical_residual": (
             None if lexical_residual is None else lexical_residual.as_dict()
+        ),
+        **(
+            {}
+            if output_jacobian_audit is None
+            else {"output_jacobian_audit": output_jacobian_audit.as_dict()}
         ),
         "implementation": implementation_authentication,
         "runtime_dtype": "float16",
@@ -1627,6 +1808,7 @@ def authenticate_preregistration(
         continuation=continuation,
         compiler_cache=compiler_cache,
         lexical_residual=lexical_residual,
+        output_jacobian_audit=output_jacobian_audit,
     )
 
 
@@ -2629,6 +2811,106 @@ class ProductionStageRuntime:
             )
         return result
 
+    def run_output_jacobian_audit(
+        self,
+        transaction: Any,
+        parent: nn.Module,
+        contract: AuthenticatedPreRegistration,
+    ) -> OutputJacobianAuditExecution:
+        """Restore the authenticated v2 state and run the audit-only diagnostic."""
+
+        binding = contract.output_jacobian_audit
+        continuation = contract.continuation
+        if binding is None or continuation is None:
+            raise ExactTargetNativeStageError(
+                "The production output-Jacobian runtime requires its authenticated "
+                "audit and continuation bindings."
+            )
+        if (
+            continuation.trainer_factor_pack_schema != TRAINER_FACTOR_PACK_V2_SCHEMA
+            or continuation.lexical_rank != LEXICAL_RANK
+        ):
+            raise ExactTargetNativeStageError(
+                "The output-Jacobian runtime can restore only a rank-bound v2 pack."
+            )
+        trainer_module = importlib.import_module(self.trainer_module_name)
+        restore = getattr(trainer_module, "restore_target_native_factor_payload")
+        restored_state = restore(transaction, continuation.factor_payload)
+        restored_sha = getattr(restored_state, "factor_state_sha256", None)
+        restored_schema = getattr(restored_state, "schema", None)
+        restored_lexical_rank = getattr(restored_state, "lexical_rank", None)
+        if (
+            restored_sha != continuation.factor_state_sha256
+            or restored_schema != TRAINER_FACTOR_PACK_V2_SCHEMA
+            or restored_lexical_rank != LEXICAL_RANK
+        ):
+            raise ExactTargetNativeStageError(
+                "The public trainer restore did not prove the full authenticated v2 "
+                "factor state."
+            )
+        loader = getattr(trainer_module, "load_behavior_domain_suite")
+        source = contract.splits[binding.basis_split_role]
+        basis_domain = loader(
+            "fit",
+            source.payload,
+            artifact_sha256=source.sha256,
+        )
+        if (
+            getattr(basis_domain, "split_name", None) != "fit"
+            or len(getattr(basis_domain, "prompts", ())) != binding.prompt_count
+        ):
+            raise ExactTargetNativeStageError(
+                "The source candidate was not exposed as the exact 24-prompt fit "
+                "basis domain."
+            )
+        schedule_type = getattr(trainer_module, "BehaviorDistillationSchedule")
+        schedule = schedule_type(**dict(contract.training))
+        audit_module = importlib.import_module(QKVO_OUTPUT_JACOBIAN_AUDIT_MODULE)
+        config_type = getattr(audit_module, "QKVOOutputJacobianAuditConfig")
+        config = config_type(
+            prompt_count=binding.prompt_count,
+            horizon=binding.horizon,
+            lanes=binding.lanes,
+            rank=binding.rank,
+            sketch_width=binding.sketch_width,
+            seed=contract.seed,
+            min_normal_fraction=binding.min_normal_fraction,
+            min_guided_over_random_ratio=(binding.min_guided_over_random_ratio),
+            max_bytes=binding.max_bytes,
+        )
+        audit = getattr(audit_module, "run_qkvo_output_jacobian_audit")
+        result = audit(
+            transaction,
+            parent,
+            basis_domain,
+            schedule,
+            config,
+        )
+        expected_type = getattr(audit_module, "QKVOOutputJacobianAuditResult")
+        if type(result) is not expected_type:
+            raise ExactTargetNativeStageError(
+                "The source-pinned output-Jacobian audit returned a noncanonical "
+                "result."
+            )
+        capture = getattr(trainer_module, "capture_target_native_factor_state")
+        state_after_audit = capture(transaction)
+        if (
+            getattr(state_after_audit, "factor_state_sha256", None)
+            != continuation.factor_state_sha256
+            or getattr(state_after_audit, "schema", None)
+            != TRAINER_FACTOR_PACK_V2_SCHEMA
+            or getattr(state_after_audit, "lexical_rank", None) != LEXICAL_RANK
+        ):
+            raise ExactTargetNativeStageError(
+                "Output-Jacobian audit changed the authenticated live factor state."
+            )
+        return OutputJacobianAuditExecution(
+            result=result,
+            restore_mode="full",
+            restored_factor_state_sha256=restored_sha,
+            restored_factor_schema=restored_schema,
+        )
+
     def evaluate_baked_behavior(
         self,
         model: nn.Module,
@@ -2844,9 +3126,7 @@ def _factor_envelope(
             "Rejected factor pack contains forbidden parent/internal state."
         )
     lexical_rank = (
-        None
-        if contract.lexical_residual is None
-        else contract.lexical_residual.rank
+        None if contract.lexical_residual is None else contract.lexical_residual.rank
     )
     expected_trainer_schema = (
         TRAINER_FACTOR_PACK_SCHEMA
@@ -3011,6 +3291,411 @@ def _remove_published_child_tree(path: Path, output_root: Path) -> None:
         shutil.rmtree(resolved)
 
 
+def _output_jacobian_audit_artifacts(
+    execution: Any,
+    contract: AuthenticatedPreRegistration,
+) -> tuple[dict[str, Any], Mapping[str, Any]]:
+    if not isinstance(execution, OutputJacobianAuditExecution):
+        raise ExactTargetNativeStageError(
+            "Runtime did not return the authenticated output-Jacobian execution "
+            "envelope."
+        )
+    continuation = contract.continuation
+    if (
+        continuation is None
+        or execution.restore_mode != "full"
+        or execution.restored_factor_schema != TRAINER_FACTOR_PACK_V2_SCHEMA
+        or execution.restored_factor_state_sha256 != continuation.factor_state_sha256
+    ):
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian execution did not prove a full authenticated v2 "
+            "factor restore."
+        )
+    report_object = getattr(execution.result, "report", None)
+    report_method = getattr(report_object, "to_dict", None)
+    if not callable(report_method):
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian result did not expose its canonical gate report."
+        )
+    audit_report = report_method()
+    if not isinstance(audit_report, Mapping):
+        raise ExactTargetNativeStageError("Output-Jacobian gate report is malformed.")
+    canonical_report = dict(audit_report)
+    _canonical_json(canonical_report)
+    binding = contract.output_jacobian_audit
+    if binding is None:
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian report is not bound to an authenticated audit."
+        )
+    required_report_fields = {
+        "schema",
+        "passed",
+        "config",
+        "config_sha256",
+        "site_count",
+        "role_count",
+        "sketch_count",
+        "basis_prompt_count",
+        "basis_source_role",
+        "source_exposed_candidate_as_fit",
+        "new_candidate_accessed",
+        "sealed_accessed",
+        "optimizer_created",
+        "optimizer_used",
+        "optimizer_steps",
+        "hooks_registered",
+        "hooks_removed",
+        "active_hook_count_after",
+        "transaction_live_after",
+        "native_state_sha256_before",
+        "native_state_sha256_after",
+        "inherited_qkvo_state_sha256_before",
+        "inherited_qkvo_state_sha256_after",
+        "factor_state_sha256_before",
+        "factor_state_sha256_after",
+        "factor_parameter_versions_sha256_before",
+        "factor_parameter_versions_sha256_after",
+        "factor_gradients_cleared",
+        "pass1_replay_sha256",
+        "pass2_replay_sha256",
+        "replay_match",
+        "accounted_global_peak_bytes",
+        "max_bytes",
+        "aggregate",
+        "per_role",
+        "basis_manifest_sha256",
+        "report_sha256",
+    }
+    if not required_report_fields <= set(canonical_report):
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian gate report omits required audit attestations."
+        )
+    expected_config = {
+        "prompt_count": binding.prompt_count,
+        "horizon": binding.horizon,
+        "lanes": list(binding.lanes),
+        "rank": binding.rank,
+        "sketch_width": binding.sketch_width,
+        "seed": contract.seed,
+        "min_normal_fraction": binding.min_normal_fraction,
+        "min_guided_over_random_ratio": binding.min_guided_over_random_ratio,
+        "max_bytes": binding.max_bytes,
+    }
+    config = canonical_report.get("config")
+    if (
+        not isinstance(config, Mapping)
+        or _canonical_json(dict(config)) != _canonical_json(expected_config)
+        or canonical_report.get("config_sha256") != _canonical_sha256(config)
+    ):
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian report configuration does not match its authenticated "
+            "contract/hash."
+        )
+    fixed_attestations = {
+        "schema": OUTPUT_JACOBIAN_AUDIT_SCHEMA,
+        "site_count": QKVO_SITE_COUNT,
+        "role_count": 4,
+        "sketch_count": QKVO_SITE_COUNT * 4,
+        "basis_prompt_count": binding.prompt_count,
+        "basis_source_role": "source-exposed-candidate",
+        "source_exposed_candidate_as_fit": True,
+        "new_candidate_accessed": False,
+        "sealed_accessed": False,
+        "optimizer_created": False,
+        "optimizer_used": False,
+        "optimizer_steps": 0,
+        "hooks_registered": QKVO_SITE_COUNT,
+        "hooks_removed": True,
+        "active_hook_count_after": 0,
+        "transaction_live_after": True,
+        "factor_gradients_cleared": True,
+        "replay_match": True,
+        "max_bytes": binding.max_bytes,
+    }
+    if any(
+        _canonical_json(canonical_report.get(name)) != _canonical_json(value)
+        for name, value in fixed_attestations.items()
+    ):
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian report failed an audit-only lifecycle attestation."
+        )
+    if not isinstance(canonical_report.get("passed"), bool):
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian report lacks a boolean diagnostic decision."
+        )
+    hash_pairs = (
+        ("native_state_sha256_before", "native_state_sha256_after"),
+        (
+            "inherited_qkvo_state_sha256_before",
+            "inherited_qkvo_state_sha256_after",
+        ),
+        ("factor_state_sha256_before", "factor_state_sha256_after"),
+        (
+            "factor_parameter_versions_sha256_before",
+            "factor_parameter_versions_sha256_after",
+        ),
+        ("pass1_replay_sha256", "pass2_replay_sha256"),
+    )
+    for before_name, after_name in hash_pairs:
+        before = _require_sha256(
+            canonical_report.get(before_name),
+            f"output_jacobian_audit_report.{before_name}",
+        )
+        after = _require_sha256(
+            canonical_report.get(after_name),
+            f"output_jacobian_audit_report.{after_name}",
+        )
+        if before != after:
+            raise ExactTargetNativeStageError(
+                "Output-Jacobian audit changed authenticated state or replay inputs."
+            )
+    if canonical_report["factor_state_sha256_before"] != (
+        continuation.factor_state_sha256
+    ):
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian audit did not retain the restored continuation state."
+        )
+    peak = canonical_report.get("accounted_global_peak_bytes")
+    if (
+        isinstance(peak, bool)
+        or not isinstance(peak, int)
+        or peak <= 0
+        or peak > binding.max_bytes
+    ):
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian audit exceeded or malformed its global byte ceiling."
+        )
+    aggregate = canonical_report.get("aggregate")
+    per_role = canonical_report.get("per_role")
+    if (
+        not isinstance(aggregate, Mapping)
+        or not isinstance(per_role, Mapping)
+        or set(per_role) != {"q", "k", "v", "o"}
+    ):
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian report omits aggregate or per-role gate evidence."
+        )
+    normal_fraction = aggregate.get("normal_fraction")
+    capture_ratio = aggregate.get("guided_over_random_ratio")
+    if (
+        isinstance(normal_fraction, bool)
+        or not isinstance(normal_fraction, (int, float))
+        or not math.isfinite(float(normal_fraction))
+        or float(normal_fraction) < 0.0
+        or isinstance(capture_ratio, bool)
+        or not isinstance(capture_ratio, (int, float))
+        or not math.isfinite(float(capture_ratio))
+        or float(capture_ratio) < 0.0
+    ):
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian aggregate gate metrics are malformed or non-finite."
+        )
+    expected_normal_gate = float(normal_fraction) >= binding.min_normal_fraction
+    expected_ratio_gate = (
+        float(capture_ratio) >= binding.min_guided_over_random_ratio
+    )
+    expected_passed = expected_normal_gate and expected_ratio_gate
+    if (
+        aggregate.get("normal_fraction_gate_passed") is not expected_normal_gate
+        or aggregate.get("guided_over_random_gate_passed") is not expected_ratio_gate
+        or aggregate.get("passed") is not expected_passed
+        or canonical_report.get("passed") is not expected_passed
+    ):
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian decision disagrees with the authenticated aggregate "
+            "thresholds."
+        )
+    _require_sha256(
+        canonical_report.get("basis_manifest_sha256"),
+        "output_jacobian_audit_report.basis_manifest_sha256",
+    )
+    declared_report_sha = _require_sha256(
+        canonical_report.get("report_sha256"),
+        "output_jacobian_audit_report.report_sha256",
+    )
+    report_preimage = {
+        name: value
+        for name, value in canonical_report.items()
+        if name != "report_sha256"
+    }
+    if _canonical_sha256(report_preimage) != declared_report_sha:
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian report self-hash does not authenticate its evidence."
+        )
+    payload_method = getattr(execution.result, "basis_pack_payload", None)
+    if not callable(payload_method):
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian result did not expose a guided basis pack."
+        )
+    basis_payload = payload_method()
+    if not isinstance(basis_payload, Mapping) or not basis_payload:
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian guided basis pack is malformed."
+        )
+    expected_pack_fields = {
+        "schema",
+        "factor_state_sha256",
+        "basis_manifest_sha256",
+        "tensor_count",
+        "total_numel",
+        "total_nbytes",
+        "factors",
+        "factor_tensors",
+        "contains_model_state",
+        "contains_parent_state",
+        "contains_optimizer_state",
+        "contains_gradients",
+        "contains_activations",
+        "contains_hidden_states",
+        "authorized_for_training",
+    }
+    if set(basis_payload) != expected_pack_fields:
+        raise ExactTargetNativeStageError(
+            "Guided basis pack does not contain exactly the factor-only schema."
+        )
+    if basis_payload.get("schema") != GUIDED_QKVO_RIGHT_BASIS_SCHEMA:
+        raise ExactTargetNativeStageError(
+            "Guided basis pack schema is not the source-pinned QKVO basis schema."
+        )
+    if any(
+        basis_payload.get(name) is not False
+        for name in (
+            "contains_model_state",
+            "contains_parent_state",
+            "contains_optimizer_state",
+            "contains_gradients",
+            "contains_activations",
+            "contains_hidden_states",
+        )
+    ):
+        raise ExactTargetNativeStageError(
+            "Guided basis pack contains banned model, parent, optimizer, gradient, "
+            "activation, or hidden state."
+        )
+    if basis_payload.get("authorized_for_training") is not canonical_report.get(
+        "passed"
+    ):
+        raise ExactTargetNativeStageError(
+            "Guided basis training authorization disagrees with the diagnostic gate."
+        )
+    if basis_payload.get("factor_state_sha256") != (continuation.factor_state_sha256):
+        raise ExactTargetNativeStageError(
+            "Guided basis pack is not bound to the restored continuation state."
+        )
+    tensor_specs = (
+        ("q_orthogonal_right", (QKVO_SITE_COUNT, QKVO_RANK, TARGET_HIDDEN_SIZE)),
+        ("k_orthogonal_right", (QKVO_SITE_COUNT, QKVO_RANK, TARGET_HIDDEN_SIZE)),
+        ("v_orthogonal_right", (QKVO_SITE_COUNT, QKVO_RANK, TARGET_HIDDEN_SIZE)),
+        (
+            "o_orthogonal_right",
+            (QKVO_SITE_COUNT, QKVO_RANK, TARGET_QUERY_GROUP_WIDTH),
+        ),
+    )
+    tensors = basis_payload.get("factor_tensors")
+    rows = basis_payload.get("factors")
+    expected_names = tuple(name for name, _shape in tensor_specs)
+    if (
+        not isinstance(tensors, Mapping)
+        or set(tensors) != set(expected_names)
+        or not isinstance(rows, list)
+        or len(rows) != len(tensor_specs)
+    ):
+        raise ExactTargetNativeStageError(
+            "Guided basis pack does not contain the ordered Q/K/V/O tensors."
+        )
+    canonical_rows: list[dict[str, Any]] = []
+    total_numel = 0
+    total_nbytes = 0
+    for (name, shape), row in zip(tensor_specs, rows, strict=True):
+        value = tensors[name]
+        if (
+            not isinstance(value, Tensor)
+            or value.layout != torch.strided
+            or value.device.type != "cpu"
+            or value.dtype != torch.float32
+            or not value.is_contiguous()
+            or value.requires_grad
+            or value.grad is not None
+            or tuple(value.shape) != shape
+            or not bool(torch.isfinite(value).all())
+        ):
+            raise ExactTargetNativeStageError(
+                f"Guided basis tensor {name!r} is not exact finite contiguous CPU FP32."
+            )
+        tensor_numel = int(value.numel())
+        tensor_nbytes = tensor_numel * int(value.element_size())
+        expected_row = {
+            "name": name,
+            "shape": list(shape),
+            "dtype": "torch.float32",
+            "tensor_sha256": _output_jacobian_tensor_sha256(value),
+            "numel": tensor_numel,
+            "nbytes": tensor_nbytes,
+        }
+        if not isinstance(row, Mapping) or _canonical_json(
+            dict(row)
+        ) != _canonical_json(expected_row):
+            raise ExactTargetNativeStageError(
+                f"Guided basis manifest row {name!r} failed shape/hash binding."
+            )
+        canonical_rows.append(expected_row)
+        total_numel += tensor_numel
+        total_nbytes += tensor_nbytes
+    declared_totals = (
+        basis_payload.get("tensor_count"),
+        basis_payload.get("total_numel"),
+        basis_payload.get("total_nbytes"),
+    )
+    if (
+        total_numel != 4_915_200
+        or total_nbytes != 19_660_800
+        or any(
+            isinstance(value, bool) or not isinstance(value, int)
+            for value in declared_totals
+        )
+        or declared_totals != (4, total_numel, total_nbytes)
+    ):
+        raise ExactTargetNativeStageError(
+            "Guided QKVO basis tensor totals differ from exact stage 1."
+        )
+    basis_manifest_sha = _canonical_sha256(canonical_rows)
+    if (
+        basis_payload.get("basis_manifest_sha256") != basis_manifest_sha
+        or canonical_report.get("basis_manifest_sha256") != basis_manifest_sha
+    ):
+        raise ExactTargetNativeStageError(
+            "Guided basis manifest hash disagrees with its tensors or audit report."
+        )
+    return canonical_report, basis_payload
+
+
+def _guided_basis_envelope(
+    basis_payload: Mapping[str, Any],
+    audit_report: Mapping[str, Any],
+    contract: AuthenticatedPreRegistration,
+) -> dict[str, Any]:
+    binding = contract.output_jacobian_audit
+    continuation = contract.continuation
+    if binding is None or continuation is None:
+        raise ExactTargetNativeStageError(
+            "Cannot bind a guided basis pack outside an authenticated audit."
+        )
+    return {
+        "schema": GUIDED_BASIS_PACK_SCHEMA,
+        "preregistration_sha256": contract.file_sha256,
+        "evaluation_contract_sha256": contract.evaluation_contract_sha256,
+        "output_jacobian_audit": binding.as_dict(),
+        "output_jacobian_audit_report_sha256": _canonical_sha256(audit_report),
+        "source_factor_state_sha256": continuation.factor_state_sha256,
+        "source_factor_pack_schema": continuation.trainer_factor_pack_schema,
+        "basis_pack": dict(basis_payload),
+        "contains_model_checkpoint": False,
+        "contains_parent_parameters": False,
+        "contains_optimizer_state": False,
+        "contains_activations_or_hidden_states": False,
+    }
+
+
 def execute_authenticated_stage(
     contract: AuthenticatedPreRegistration,
     output_root: Path | str,
@@ -3132,6 +3817,100 @@ def execute_authenticated_stage(
             raise ExactTargetNativeStageError(
                 "Combined target-native transaction did not install as exact identity."
             )
+        if contract.output_jacobian_audit is not None:
+            audit_method = getattr(runner, "run_output_jacobian_audit", None)
+            if not callable(audit_method):
+                raise ExactTargetNativeStageError(
+                    "Runtime does not implement the authenticated output-Jacobian "
+                    "audit branch."
+                )
+            report["last_completed_phase"] = "output-jacobian-audit-started"
+            audit_execution = audit_method(transaction, parent, contract)
+            audit_report, basis_payload = _output_jacobian_audit_artifacts(
+                audit_execution,
+                contract,
+            )
+            audit_report_sha = _canonical_sha256(audit_report)
+            report["last_completed_phase"] = "output-jacobian-audit-complete"
+            transaction.rollback()
+            rollback_sha = runner.state_sha256(compiled.child_model)
+            if rollback_sha != compiled_state_sha:
+                raise ExactTargetNativeStageError(
+                    "Output-Jacobian audit did not restore the exact compiled child "
+                    "bytes."
+                )
+            basis_path = output / "guided_basis_pack.pt"
+            try:
+                basis_sha = _atomic_torch_save(
+                    basis_path,
+                    _guided_basis_envelope(
+                        basis_payload,
+                        audit_report,
+                        contract,
+                    ),
+                )
+                basis_size = int(basis_path.stat().st_size)
+            except BaseException:
+                basis_path.unlink(missing_ok=True)
+                raise
+            maximum_bytes = contract.output_jacobian_audit.max_bytes
+            if basis_size > maximum_bytes:
+                basis_path.unlink(missing_ok=True)
+                raise ExactTargetNativeStageError(
+                    "Guided basis pack exceeds the authenticated byte ceiling."
+                )
+            diagnostic_passed = bool(audit_report["passed"])
+            diagnostic_status = (
+                "diagnostic-passed" if diagnostic_passed else "diagnostic-rejected"
+            )
+            report.update(
+                {
+                    "status": diagnostic_status,
+                    "reason": (
+                        "output-jacobian-audit-passed"
+                        if diagnostic_passed
+                        else "output-jacobian-audit-rejected"
+                    ),
+                    "output_jacobian_audit_report": audit_report,
+                    "output_jacobian_audit_report_sha256": audit_report_sha,
+                    "output_jacobian_restore": {
+                        "mode": audit_execution.restore_mode,
+                        "factor_pack_schema": (audit_execution.restored_factor_schema),
+                        "factor_state_sha256": (
+                            audit_execution.restored_factor_state_sha256
+                        ),
+                        "matches_authenticated_continuation": True,
+                    },
+                    "guided_basis_pack": {
+                        "path": str(basis_path),
+                        "sha256": basis_sha,
+                        "size_bytes": basis_size,
+                        "maximum_bytes": maximum_bytes,
+                    },
+                    "source_candidate_exposed_as_fit": True,
+                    "sealed_not_accessed": True,
+                    "training_started": False,
+                    "optimizer_created": False,
+                    "optimizer_steps": 0,
+                    "training_checkpoints_written": 0,
+                    "native_factor_bake_performed": False,
+                    "model_checkpoint_written": False,
+                    "standalone_compaction_passed": False,
+                    "rollback_exact": True,
+                    "rollback_state_sha256": rollback_sha,
+                    "last_completed_phase": "output-jacobian-audit-exact-rollback",
+                    "retained_artifacts": [
+                        "guided_basis_pack.pt",
+                        "run_report.json",
+                    ],
+                }
+            )
+            try:
+                _atomic_json(output / "run_report.json", report)
+            except BaseException:
+                basis_path.unlink(missing_ok=True)
+                raise
+            return report
         report["last_completed_phase"] = "behavior-training-started"
         training_result = runner.train(transaction, parent, contract)
         evidence_sha, trainer_evidence = _trainer_evidence(training_result)
@@ -3169,11 +3948,9 @@ def execute_authenticated_stage(
                 if isinstance(checkpoints, list)
                 else None
             )
-            if (
-                not isinstance(step0, Mapping)
-                or trainer_evidence.get("combined_step0_factor_state_sha256")
-                != step0.get("factor_state_sha256")
-            ):
+            if not isinstance(step0, Mapping) or trainer_evidence.get(
+                "combined_step0_factor_state_sha256"
+            ) != step0.get("factor_state_sha256"):
                 raise ExactTargetNativeStageError(
                     "Trainer did not bind the combined lexical step-zero factor state."
                 )
@@ -3187,7 +3964,8 @@ def execute_authenticated_stage(
                     != TRAINER_FACTOR_PACK_SCHEMA
                     or trainer_evidence.get("initial_factor_restore_mode")
                     != "qkvo-gud-partial"
-                    or trainer_evidence.get("lexical_initialization_unchanged") is not True
+                    or trainer_evidence.get("lexical_initialization_unchanged")
+                    is not True
                     or not isinstance(lexical_initialization_sha, str)
                     or not _SHA256.fullmatch(lexical_initialization_sha)
                 ):
@@ -3197,8 +3975,7 @@ def execute_authenticated_stage(
                     )
             elif (
                 source_schema != TRAINER_FACTOR_PACK_V2_SCHEMA
-                or contract.continuation.lexical_rank
-                != contract.lexical_residual.rank
+                or contract.continuation.lexical_rank != contract.lexical_residual.rank
                 or trainer_evidence.get("initial_factor_payload_schema")
                 != TRAINER_FACTOR_PACK_V2_SCHEMA
                 or trainer_evidence.get("initial_factor_restore_mode") != "full"
@@ -3360,9 +4137,7 @@ def execute_authenticated_stage(
             post_bake_decisions[split_name] = baked_decision
             report["last_completed_phase"] = f"post-bake-{split_name}-evaluation"
             if not baked_passed:
-                post_bake_rejection_reason = (
-                    f"post-bake-{split_name}-gate-rejected"
-                )
+                post_bake_rejection_reason = f"post-bake-{split_name}-gate-rejected"
                 break
         if post_bake_rejection_reason is not None:
             factor_path = output / "rejected_factor_pack.pt"
@@ -3456,8 +4231,7 @@ def execute_authenticated_stage(
                 if (
                     compiled is not None
                     and compiled_state_sha is not None
-                    and runner.state_sha256(compiled.child_model)
-                    != compiled_state_sha
+                    and runner.state_sha256(compiled.child_model) != compiled_state_sha
                 ):
                     raise ExactTargetNativeStageError(
                         "Prepublication restoration did not recover compiled bytes."
@@ -3545,7 +4319,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         runtime=runtime,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
-    return 0 if result["status"] in {"accepted", "rejected"} else 1
+    return (
+        0
+        if result["status"]
+        in {
+            "accepted",
+            "rejected",
+            "diagnostic-passed",
+            "diagnostic-rejected",
+        }
+        else 1
+    )
 
 
 if __name__ == "__main__":

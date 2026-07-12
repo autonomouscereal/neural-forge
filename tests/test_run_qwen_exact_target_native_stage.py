@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -278,6 +279,205 @@ def _continuation_contract_files(
     return path, _write_json(path, preregistration), factor_state_sha
 
 
+def _audit_binding_payload() -> dict[str, object]:
+    return {
+        "schema": runner.OUTPUT_JACOBIAN_AUDIT_SCHEMA,
+        "source_exposed_candidate_as_fit": True,
+        "basis_split_role": "candidate",
+        "prompt_count": 24,
+        "horizon": 8,
+        "lanes": ["parent-greedy", "child-greedy"],
+        "rank": 8,
+        "sketch_width": 16,
+        "min_normal_fraction": 0.20,
+        "min_guided_over_random_ratio": 1.50,
+        "max_bytes": 268_435_456,
+    }
+
+
+def _audit_contract_files(
+    tmp_path: Path,
+    monkeypatch,
+) -> tuple[Path, str, str]:
+    path, _digest, _v1_state = _continuation_contract_files(tmp_path, monkeypatch)
+    preregistration = json.loads(path.read_text(encoding="utf-8"))
+    target_config = Path(preregistration["blank_target"]["path"]) / "config.json"
+    target_config.write_text(
+        json.dumps(
+            {
+                "model_type": "qwen3",
+                "vocab_size": runner.LEXICAL_VOCAB_SIZE,
+                "hidden_size": runner.LEXICAL_HIDDEN_SIZE,
+                "tie_word_embeddings": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+    candidate_path = Path(preregistration["splits"]["candidate"]["path"])
+    candidate_payload = {
+        "schema": runner.SPLIT_SCHEMA,
+        "split": "candidate",
+        "sealed_before_model_access": False,
+        "prompts": [
+            {"id": f"audit-candidate-{index}", "token_ids": [1, 100 + index, 500]}
+            for index in range(24)
+        ],
+    }
+    preregistration["splits"]["candidate"] = {
+        "path": str(candidate_path),
+        "sha256": _write_json(candidate_path, candidate_payload),
+        "expected_count": 24,
+    }
+    names = tuple(
+        sorted(
+            {
+                *(
+                    f"qkvo.{role}_{side}"
+                    for role in ("q", "k", "v", "o")
+                    for side in ("left", "right")
+                ),
+                *(
+                    f"gud.{role}_{side}"
+                    for role in ("gate", "up", "down")
+                    for side in ("left", "right")
+                ),
+                *(
+                    f"lexical.{role}_{side}"
+                    for role in ("embedding", "lm_head")
+                    for side in ("left", "right")
+                ),
+            }
+        )
+    )
+    monkeypatch.setattr(
+        runner,
+        "_expected_continuation_factor_shapes",
+        lambda *, lexical_rank: {
+            name: (1,)
+            for name in names
+            if lexical_rank is not None or not name.startswith("lexical.")
+        },
+    )
+    monkeypatch.setattr(runner, "LEXICAL_TARGET_NATIVE_FACTOR_PARAMETERS", len(names))
+    tensors = {
+        name: torch.tensor([float(index + 1)], dtype=torch.float32)
+        for index, name in enumerate(names)
+    }
+    rows = [
+        {
+            "name": name,
+            "shape": [1],
+            "dtype": "torch.float32",
+            "tensor_sha256": runner._factor_tensor_sha256(tensors[name]),
+        }
+        for name in names
+    ]
+    state_sha = runner._canonical_sha256(
+        {
+            "schema": runner.TRAINER_FACTOR_PACK_V2_SCHEMA,
+            "lexical_rank": runner.LEXICAL_RANK,
+            "factors": rows,
+        }
+    )
+    factor_path = Path(preregistration["continuation"]["factor_pack"]["path"])
+    envelope = {
+        "schema": runner.FACTOR_PACK_V2_SCHEMA,
+        "reason": "fit-gate-rejected",
+        "preregistration_sha256": "1" * 64,
+        "evaluation_contract_sha256": "2" * 64,
+        "qkvo_site_count": runner.QKVO_SITE_COUNT,
+        "qkvo_rank": runner.QKVO_RANK,
+        "swiglu_layer_count": runner.SWIGLU_LAYER_COUNT,
+        "swiglu_rank": runner.SWIGLU_RANK,
+        "lexical_rank": runner.LEXICAL_RANK,
+        "factor_pack": {
+            "schema": runner.TRAINER_FACTOR_PACK_V2_SCHEMA,
+            "factor_count": len(names),
+            "factors": rows,
+            "factor_state_sha256": state_sha,
+            "parent_state_included": False,
+            "native_child_state_included": False,
+            "optimizer_state_included": False,
+            "lexical_rank": runner.LEXICAL_RANK,
+            "factor_tensors": tensors,
+        },
+        "contains_model_checkpoint": False,
+        "contains_parent_parameters": False,
+        "contains_activations_or_hidden_states": False,
+    }
+    torch.save(envelope, factor_path)
+    factor_sha = hashlib.sha256(factor_path.read_bytes()).hexdigest()
+    source_report_path = Path(
+        preregistration["continuation"]["source_run_report"]["path"]
+    )
+    source_report = json.loads(source_report_path.read_text(encoding="utf-8"))
+    source_report["factor_pack"] = {
+        "path": str(factor_path),
+        "sha256": factor_sha,
+    }
+    source_report["trainer_evidence"]["factor_pack_manifest"] = {
+        "factor_state_sha256": state_sha
+    }
+    source_report["trainer_evidence_sha256"] = runner._canonical_sha256(
+        source_report["trainer_evidence"]
+    )
+    source_report["factor_acquisition"]["selected_factor_state_sha256"] = state_sha
+    source_report_sha = _write_json(source_report_path, source_report)
+    preregistration["continuation"]["factor_pack"] = {
+        "path": str(factor_path),
+        "sha256": factor_sha,
+    }
+    preregistration["continuation"]["source_run_report"] = {
+        "path": str(source_report_path),
+        "sha256": source_report_sha,
+    }
+    preregistration["continuation"]["expected_factor_state_sha256"] = state_sha
+    source_root = Path(runner.__file__).resolve().parents[1] / "src" / "neural_forge"
+    preregistration["implementation"].update(
+        {
+            "lexical_adapter_sha256": runner._file_sha256(
+                source_root / "hf_dense_lexical_residual_adapter.py"
+            ),
+            "progressive_bridge_sha256": runner._file_sha256(
+                source_root / "hf_progressive_target_bridge.py"
+            ),
+            "qkvo_adapter_sha256": runner._file_sha256(
+                source_root / "hf_dense_gqa_qkvo_residual_adapter.py"
+            ),
+            "swiglu_adapter_sha256": runner._file_sha256(
+                source_root / "hf_dense_swiglu_projection_residual_adapter.py"
+            ),
+            "output_jacobian_basis_sha256": runner._file_sha256(
+                source_root / "hf_output_jacobian_orthogonal_basis.py"
+            ),
+            "output_jacobian_sketch_sha256": runner._file_sha256(
+                source_root / "hf_output_jacobian_sketch.py"
+            ),
+            "qkvo_output_jacobian_audit_sha256": runner._file_sha256(
+                source_root / "hf_qkvo_output_jacobian_audit.py"
+            ),
+        }
+    )
+    preregistration["lexical_residual"] = {
+        "rank": runner.LEXICAL_RANK,
+        "vocab_size": runner.LEXICAL_VOCAB_SIZE,
+        "hidden_size": runner.LEXICAL_HIDDEN_SIZE,
+        "untied_required": True,
+    }
+    preregistration["compiler_cache"].update(
+        {
+            "require_hit": True,
+            "expected_compiler_identity_sha256": "a" * 64,
+            "expected_receipt_sha256": "b" * 64,
+            "expected_compiler_report_sha256": "c" * 64,
+            "expected_state_dict_sha256": "d" * 64,
+            "expected_artifact_tree_sha256": "e" * 64,
+        }
+    )
+    preregistration["output_jacobian_audit"] = _audit_binding_payload()
+    return path, _write_json(path, preregistration), state_sha
+
+
 class _Transaction:
     def __init__(self, model) -> None:
         self.model = model
@@ -405,9 +605,7 @@ class _Runtime:
     def factor_pack_payload(self, result):
         return result.factor_pack_payload()
 
-    def evaluate_baked_behavior(
-        self, model, parent, contract, split_name
-    ):
+    def evaluate_baked_behavior(self, model, parent, contract, split_name):
         del contract
         assert model is self.model
         assert parent is self.parent
@@ -431,6 +629,197 @@ class _Runtime:
         }
 
 
+@dataclass(frozen=True)
+class _AuditGateReport:
+    passed: bool
+    seed: int
+    factor_state_sha256: str
+    basis_manifest_sha256: str
+
+    def to_dict(self):
+        config = {
+            "prompt_count": 24,
+            "horizon": 8,
+            "lanes": ["parent-greedy", "child-greedy"],
+            "rank": 8,
+            "sketch_width": 16,
+            "seed": self.seed,
+            "min_normal_fraction": 0.20,
+            "min_guided_over_random_ratio": 1.50,
+            "max_bytes": 268_435_456,
+        }
+        native_sha = hashlib.sha256(b"compiled").hexdigest()
+        payload = {
+            "schema": runner.OUTPUT_JACOBIAN_AUDIT_SCHEMA,
+            "passed": self.passed,
+            "config": config,
+            "config_sha256": runner._canonical_sha256(config),
+            "site_count": 120,
+            "role_count": 4,
+            "sketch_count": 480,
+            "basis_prompt_count": 24,
+            "basis_source_role": "source-exposed-candidate",
+            "source_exposed_candidate_as_fit": True,
+            "new_candidate_accessed": False,
+            "sealed_accessed": False,
+            "optimizer_created": False,
+            "optimizer_used": False,
+            "optimizer_steps": 0,
+            "hooks_registered": 120,
+            "hooks_removed": True,
+            "active_hook_count_after": 0,
+            "transaction_live_after": True,
+            "native_state_sha256_before": native_sha,
+            "native_state_sha256_after": native_sha,
+            "inherited_qkvo_state_sha256_before": "5" * 64,
+            "inherited_qkvo_state_sha256_after": "5" * 64,
+            "factor_state_sha256_before": self.factor_state_sha256,
+            "factor_state_sha256_after": self.factor_state_sha256,
+            "factor_parameter_versions_sha256_before": "7" * 64,
+            "factor_parameter_versions_sha256_after": "7" * 64,
+            "factor_gradients_cleared": True,
+            "pass1_replay_sha256": "6" * 64,
+            "pass2_replay_sha256": "6" * 64,
+            "replay_match": True,
+            "accounted_global_peak_bytes": 1024,
+            "max_bytes": 268_435_456,
+            "aggregate": {
+                "normal_fraction": 0.25 if self.passed else 0.10,
+                "guided_over_random_ratio": 2.0 if self.passed else 1.0,
+                "normal_fraction_gate_passed": self.passed,
+                "guided_over_random_gate_passed": self.passed,
+                "passed": self.passed,
+            },
+            "per_role": {
+                role: {"gate_passed": self.passed} for role in ("q", "k", "v", "o")
+            },
+            "basis_manifest_sha256": self.basis_manifest_sha256,
+        }
+        payload["report_sha256"] = runner._canonical_sha256(payload)
+        return payload
+
+
+@dataclass(frozen=True)
+class _AuditResult:
+    report: _AuditGateReport
+    basis_payload: Mapping[str, object]
+
+    def basis_pack_payload(self):
+        return self.basis_payload
+
+
+def _fake_basis_pack(
+    factor_state_sha256: str, *, authorized_for_training: bool
+) -> dict[str, object]:
+    specs = (
+        ("q_orthogonal_right", (120, 8, 1536)),
+        ("k_orthogonal_right", (120, 8, 1536)),
+        ("v_orthogonal_right", (120, 8, 1536)),
+        ("o_orthogonal_right", (120, 8, 512)),
+    )
+    tensors = {name: torch.zeros(shape, dtype=torch.float32) for name, shape in specs}
+    factors = [
+        {
+            "name": name,
+            "shape": list(shape),
+            "dtype": "torch.float32",
+            "tensor_sha256": runner._output_jacobian_tensor_sha256(tensors[name]),
+            "numel": int(tensors[name].numel()),
+            "nbytes": int(tensors[name].numel() * tensors[name].element_size()),
+        }
+        for name, shape in specs
+    ]
+    return {
+        "schema": runner.GUIDED_QKVO_RIGHT_BASIS_SCHEMA,
+        "factor_state_sha256": factor_state_sha256,
+        "basis_manifest_sha256": runner._canonical_sha256(factors),
+        "tensor_count": 4,
+        "total_numel": 4_915_200,
+        "total_nbytes": 19_660_800,
+        "factors": factors,
+        "factor_tensors": tensors,
+        "contains_model_state": False,
+        "contains_parent_state": False,
+        "contains_optimizer_state": False,
+        "contains_gradients": False,
+        "contains_activations": False,
+        "contains_hidden_states": False,
+        "authorized_for_training": authorized_for_training,
+    }
+
+
+class _AuditTransaction(_Transaction):
+    def installation_report(self):
+        return {
+            **super().installation_report(),
+            "temporary_lexical_factor_parameters": runner.LEXICAL_FACTOR_PARAMETERS,
+            "role_complete_lexical_boundary": True,
+            "lexical_embedding_and_lm_head_untied": True,
+        }
+
+    def bake_for_publication(self, receipt):
+        del receipt
+        raise AssertionError("audit-only branch must never bake")
+
+
+class _AuditRuntime(_Runtime):
+    def __init__(self, *, passed: bool = True, fail: bool = False) -> None:
+        super().__init__(
+            _TrainingResult(
+                fit_metrics=_metrics(),
+                candidate_metrics=_metrics(),
+                sealed_metrics=_metrics(),
+                candidate_gate_passed=True,
+                sealed_evaluation_unlocked=True,
+            )
+        )
+        self.transaction = _AuditTransaction(self.model)
+        self.audit_calls = 0
+        self.train_calls = 0
+        self.passed = passed
+        self.fail = fail
+
+    def run_output_jacobian_audit(self, transaction, parent, contract):
+        assert transaction is self.transaction
+        assert parent is self.parent
+        assert contract.output_jacobian_audit is not None
+        self.audit_calls += 1
+        if self.fail:
+            raise RuntimeError("injected Jacobian audit failure")
+        assert contract.continuation is not None
+        basis_payload = _fake_basis_pack(
+            contract.continuation.factor_state_sha256,
+            authorized_for_training=self.passed,
+        )
+        return runner.OutputJacobianAuditExecution(
+            result=_AuditResult(
+                _AuditGateReport(
+                    self.passed,
+                    contract.seed,
+                    contract.continuation.factor_state_sha256,
+                    str(basis_payload["basis_manifest_sha256"]),
+                ),
+                basis_payload,
+            ),
+            restore_mode="full",
+            restored_factor_state_sha256=(contract.continuation.factor_state_sha256),
+            restored_factor_schema=runner.TRAINER_FACTOR_PACK_V2_SCHEMA,
+        )
+
+    def train(self, transaction, parent, contract):
+        del transaction, parent, contract
+        self.train_calls += 1
+        raise AssertionError("audit-only branch must never train")
+
+    def evaluate_baked_behavior(self, model, parent, contract, split_name):
+        del model, parent, contract, split_name
+        raise AssertionError("audit-only branch must never evaluate promotion gates")
+
+    def save_reload_certify(self, model, tokenizer, output_root):
+        del model, tokenizer, output_root
+        raise AssertionError("audit-only branch must never publish a checkpoint")
+
+
 def test_preflight_authenticates_everything_without_loading_models(tmp_path) -> None:
     path, digest = _contract_files(tmp_path)
     contract = runner.authenticate_preregistration(path, digest)
@@ -446,6 +835,328 @@ def test_preflight_authenticates_everything_without_loading_models(tmp_path) -> 
     assert report["models_loaded"] is False
     assert report["gpu_work_launched"] is False
     assert report["internal_numeric_matching_can_promote"] is False
+    assert "output_jacobian_audit" not in report
+
+
+def test_output_jacobian_preflight_authenticates_contract_and_sources(
+    tmp_path, monkeypatch
+) -> None:
+    path, digest, factor_state_sha = _audit_contract_files(tmp_path, monkeypatch)
+
+    contract = runner.authenticate_preregistration(path, digest)
+    report = contract.preflight_report()
+
+    assert report["output_jacobian_audit"] == _audit_binding_payload()
+    assert contract.output_jacobian_audit is not None
+    assert contract.output_jacobian_audit.basis_split_role == "candidate"
+    assert contract.output_jacobian_audit.prompt_count == 24
+    assert contract.continuation is not None
+    assert contract.continuation.factor_state_sha256 == factor_state_sha
+    assert (
+        contract.continuation.trainer_factor_pack_schema
+        == runner.TRAINER_FACTOR_PACK_V2_SCHEMA
+    )
+    assert contract.compiler_cache is not None
+    assert contract.compiler_cache.require_hit is True
+    for name in (
+        "output_jacobian_basis",
+        "output_jacobian_sketch",
+        "qkvo_output_jacobian_audit",
+    ):
+        assert report["implementation_authentication"][name]["sha256"]
+    assert report["models_loaded"] is False
+    assert report["gpu_work_launched"] is False
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("prompt_count", 23),
+        ("basis_split_role", "fit"),
+        ("lanes", ["parent-greedy", "sealed"]),
+        ("rank", 7),
+        ("max_bytes", 268_435_455),
+    ),
+)
+def test_output_jacobian_preflight_rejects_contract_tamper(
+    tmp_path, monkeypatch, field, value
+) -> None:
+    path, _digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    preregistration = json.loads(path.read_text(encoding="utf-8"))
+    preregistration["output_jacobian_audit"][field] = value
+
+    with pytest.raises(runner.ExactTargetNativeStageError, match="pinned|exactly"):
+        runner.authenticate_preregistration(
+            path,
+            _write_json(path, preregistration),
+        )
+
+
+def test_output_jacobian_source_pin_fails_before_artifact_access(
+    tmp_path, monkeypatch
+) -> None:
+    path, _digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    preregistration = json.loads(path.read_text(encoding="utf-8"))
+    preregistration["implementation"]["output_jacobian_sketch_sha256"] = "0" * 64
+    artifact_accessed = False
+
+    def forbidden_artifact_access(_binding):
+        nonlocal artifact_accessed
+        artifact_accessed = True
+        raise AssertionError("artifact access must remain unreachable")
+
+    monkeypatch.setattr(runner, "_authenticate_artifact", forbidden_artifact_access)
+    with pytest.raises(runner.ExactTargetNativeStageError, match="source hash"):
+        runner.authenticate_preregistration(
+            path,
+            _write_json(path, preregistration),
+        )
+    assert artifact_accessed is False
+
+
+def test_output_jacobian_requires_authenticated_cache_hit(
+    tmp_path, monkeypatch
+) -> None:
+    path, _digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    preregistration = json.loads(path.read_text(encoding="utf-8"))
+    preregistration["compiler_cache"]["require_hit"] = False
+
+    with pytest.raises(runner.ExactTargetNativeStageError, match="cache.*hit"):
+        runner.authenticate_preregistration(
+            path,
+            _write_json(path, preregistration),
+        )
+
+
+@pytest.mark.parametrize(
+    ("passed", "expected_status"),
+    ((True, "diagnostic-passed"), (False, "diagnostic-rejected")),
+)
+def test_output_jacobian_execute_is_audit_only_and_rolls_back_exactly(
+    tmp_path, monkeypatch, passed, expected_status
+) -> None:
+    path, digest, factor_state_sha = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+    runtime = _AuditRuntime(passed=passed)
+    output = tmp_path / f"audit-{passed}"
+
+    report = runner.execute_authenticated_stage(contract, output, runtime=runtime)
+
+    assert report["status"] == expected_status
+    assert report["output_jacobian_audit_report"]["passed"] is passed
+    assert report["output_jacobian_audit_report_sha256"] == runner._canonical_sha256(
+        report["output_jacobian_audit_report"]
+    )
+    assert report["output_jacobian_restore"] == {
+        "mode": "full",
+        "factor_pack_schema": runner.TRAINER_FACTOR_PACK_V2_SCHEMA,
+        "factor_state_sha256": factor_state_sha,
+        "matches_authenticated_continuation": True,
+    }
+    assert report["sealed_not_accessed"] is True
+    assert report["training_started"] is False
+    assert report["optimizer_created"] is False
+    assert report["optimizer_steps"] == 0
+    assert report["training_checkpoints_written"] == 0
+    assert report["native_factor_bake_performed"] is False
+    assert report["model_checkpoint_written"] is False
+    assert report["standalone_compaction_passed"] is False
+    assert report["rollback_exact"] is True
+    assert runtime.audit_calls == 1
+    assert runtime.train_calls == 0
+    assert runtime.transaction.rolled_back is True
+    assert runtime.transaction.baked is False
+    assert runtime.save_calls == 0
+    assert runtime.evaluate_calls == []
+    assert {artifact.name for artifact in output.iterdir()} == {
+        "guided_basis_pack.pt",
+        "run_report.json",
+    }
+    basis_path = output / "guided_basis_pack.pt"
+    assert (
+        report["guided_basis_pack"]["sha256"]
+        == hashlib.sha256(basis_path.read_bytes()).hexdigest()
+    )
+    envelope = torch.load(basis_path, map_location="cpu", weights_only=True)
+    assert envelope["schema"] == runner.GUIDED_BASIS_PACK_SCHEMA
+    assert envelope["source_factor_state_sha256"] == factor_state_sha
+    assert envelope["contains_model_checkpoint"] is False
+    assert envelope["contains_parent_parameters"] is False
+    assert envelope["contains_optimizer_state"] is False
+    assert envelope["contains_activations_or_hidden_states"] is False
+    assert envelope["basis_pack"]["authorized_for_training"] is passed
+
+
+def test_output_jacobian_failure_is_atomic_and_restores_compiled_state(
+    tmp_path, monkeypatch
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+    runtime = _AuditRuntime(fail=True)
+    output = tmp_path / "audit-failure"
+
+    with pytest.raises(RuntimeError, match="Jacobian audit failure"):
+        runner.execute_authenticated_stage(contract, output, runtime=runtime)
+
+    assert runtime.audit_calls == 1
+    assert runtime.train_calls == 0
+    assert runtime.transaction.restored_prepublication is True
+    assert runtime.model.state == "compiled"
+    assert not (output / "guided_basis_pack.pt").exists()
+    failure = json.loads((output / "run_report.json").read_text(encoding="utf-8"))
+    assert failure["status"] == "failed"
+    assert failure["last_completed_phase"] == "output-jacobian-audit-started"
+    assert failure["prepublication_native_restored"] is True
+    assert failure["rollback_error"] is None
+
+
+def test_output_jacobian_pack_save_failure_removes_partial_artifact(
+    tmp_path, monkeypatch
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+    runtime = _AuditRuntime()
+    output = tmp_path / "audit-pack-save-failure"
+
+    def failing_save(path, payload):
+        torch.save(dict(payload), path)
+        raise OSError("injected basis-pack fsync failure")
+
+    monkeypatch.setattr(runner, "_atomic_torch_save", failing_save)
+    with pytest.raises(OSError, match="basis-pack fsync"):
+        runner.execute_authenticated_stage(contract, output, runtime=runtime)
+
+    assert runtime.transaction.rolled_back is True
+    assert runtime.transaction.restored_prepublication is True
+    assert not (output / "guided_basis_pack.pt").exists()
+    failure = json.loads((output / "run_report.json").read_text(encoding="utf-8"))
+    assert failure["status"] == "failed"
+    assert failure["rollback_error"] is None
+
+
+def test_output_jacobian_rejects_unproven_restore_before_pack_write(
+    tmp_path, monkeypatch
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+
+    class _BadRestoreRuntime(_AuditRuntime):
+        def run_output_jacobian_audit(self, transaction, parent, contract):
+            execution = super().run_output_jacobian_audit(transaction, parent, contract)
+            return runner.OutputJacobianAuditExecution(
+                result=execution.result,
+                restore_mode="full",
+                restored_factor_state_sha256="0" * 64,
+                restored_factor_schema=execution.restored_factor_schema,
+            )
+
+    runtime = _BadRestoreRuntime()
+    output = tmp_path / "audit-bad-restore"
+    with pytest.raises(runner.ExactTargetNativeStageError, match="full authenticated"):
+        runner.execute_authenticated_stage(contract, output, runtime=runtime)
+    assert runtime.train_calls == 0
+    assert runtime.transaction.restored_prepublication is True
+    assert not (output / "guided_basis_pack.pt").exists()
+
+
+def test_output_jacobian_rejects_banned_basis_state_before_pack_write(
+    tmp_path, monkeypatch
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+
+    class _BadPackRuntime(_AuditRuntime):
+        def run_output_jacobian_audit(self, transaction, parent, contract):
+            execution = super().run_output_jacobian_audit(transaction, parent, contract)
+            execution.result.basis_payload["contains_optimizer_state"] = True
+            return execution
+
+    runtime = _BadPackRuntime()
+    output = tmp_path / "audit-bad-pack"
+    with pytest.raises(runner.ExactTargetNativeStageError, match="banned"):
+        runner.execute_authenticated_stage(contract, output, runtime=runtime)
+    assert runtime.transaction.restored_prepublication is True
+    assert not (output / "guided_basis_pack.pt").exists()
+
+
+def test_output_jacobian_rejects_false_lifecycle_attestation(
+    tmp_path, monkeypatch
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+
+    class _TamperedReport:
+        def __init__(self, source) -> None:
+            self.source = source
+
+        def to_dict(self):
+            payload = self.source.to_dict()
+            payload["sealed_accessed"] = True
+            payload.pop("report_sha256")
+            payload["report_sha256"] = runner._canonical_sha256(payload)
+            return payload
+
+    class _BadReportRuntime(_AuditRuntime):
+        def run_output_jacobian_audit(self, transaction, parent, contract):
+            execution = super().run_output_jacobian_audit(transaction, parent, contract)
+            return runner.OutputJacobianAuditExecution(
+                result=_AuditResult(
+                    _TamperedReport(execution.result.report),
+                    execution.result.basis_payload,
+                ),
+                restore_mode=execution.restore_mode,
+                restored_factor_state_sha256=(execution.restored_factor_state_sha256),
+                restored_factor_schema=execution.restored_factor_schema,
+            )
+
+    runtime = _BadReportRuntime()
+    output = tmp_path / "audit-bad-report"
+    with pytest.raises(runner.ExactTargetNativeStageError, match="lifecycle"):
+        runner.execute_authenticated_stage(contract, output, runtime=runtime)
+    assert runtime.transaction.restored_prepublication is True
+    assert not (output / "guided_basis_pack.pt").exists()
+
+
+def test_output_jacobian_rejects_decision_that_disagrees_with_metrics(
+    tmp_path, monkeypatch
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+
+    class _TamperedDecision:
+        def __init__(self, source) -> None:
+            self.source = source
+
+        def to_dict(self):
+            payload = self.source.to_dict()
+            payload["passed"] = not payload["passed"]
+            payload.pop("report_sha256")
+            payload["report_sha256"] = runner._canonical_sha256(payload)
+            return payload
+
+    class _BadDecisionRuntime(_AuditRuntime):
+        def run_output_jacobian_audit(self, transaction, parent, contract):
+            execution = super().run_output_jacobian_audit(
+                transaction, parent, contract
+            )
+            return runner.OutputJacobianAuditExecution(
+                result=_AuditResult(
+                    _TamperedDecision(execution.result.report),
+                    execution.result.basis_payload,
+                ),
+                restore_mode=execution.restore_mode,
+                restored_factor_state_sha256=(
+                    execution.restored_factor_state_sha256
+                ),
+                restored_factor_schema=execution.restored_factor_schema,
+            )
+
+    runtime = _BadDecisionRuntime()
+    output = tmp_path / "audit-bad-decision"
+    with pytest.raises(runner.ExactTargetNativeStageError, match="decision"):
+        runner.execute_authenticated_stage(contract, output, runtime=runtime)
+    assert runtime.transaction.restored_prepublication is True
+    assert not (output / "guided_basis_pack.pt").exists()
 
 
 def test_continuation_factor_and_source_report_authenticate_before_models(
@@ -512,7 +1223,7 @@ def test_continuation_compiler_mismatch_aborts_before_install(
     with pytest.raises(runner.ExactTargetNativeStageError, match="compiler report"):
         runner.execute_authenticated_stage(
             contract, tmp_path / "compiler-mismatch", runtime=runtime
-    )
+        )
     assert runtime.finalize_calls == 0
     assert runtime.install_calls == 0
 
@@ -556,6 +1267,111 @@ def test_production_runtime_passes_authenticated_initial_factor_payload(
     assert initial["factor_state_sha256"] == factor_state_sha
 
 
+def test_production_runtime_output_jacobian_uses_public_full_restore_and_only_candidate(
+    tmp_path, monkeypatch
+) -> None:
+    path, digest, factor_state_sha = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+    transaction = object()
+    parent = object()
+    captured: dict[str, object] = {"loads": []}
+
+    class _Schedule:
+        def __init__(self, **values) -> None:
+            captured["schedule"] = values
+
+    def restore(actual_transaction, payload):
+        assert actual_transaction is transaction
+        assert payload["factor_state_sha256"] == factor_state_sha
+        captured["restore"] = True
+        return SimpleNamespace(
+            factor_state_sha256=factor_state_sha,
+            schema=runner.TRAINER_FACTOR_PACK_V2_SCHEMA,
+            lexical_rank=runner.LEXICAL_RANK,
+        )
+
+    def loader(name, payload, *, artifact_sha256):
+        captured["loads"].append((name, payload, artifact_sha256))
+        return SimpleNamespace(split_name=name, prompts=tuple(range(24)))
+
+    trainer_module = SimpleNamespace(
+        restore_target_native_factor_payload=restore,
+        capture_target_native_factor_state=lambda actual_transaction: (
+            SimpleNamespace(
+                factor_state_sha256=factor_state_sha,
+                schema=runner.TRAINER_FACTOR_PACK_V2_SCHEMA,
+                lexical_rank=runner.LEXICAL_RANK,
+            )
+            if actual_transaction is transaction
+            else (_ for _ in ()).throw(AssertionError("wrong transaction"))
+        ),
+        load_behavior_domain_suite=loader,
+        BehaviorDistillationSchedule=_Schedule,
+    )
+
+    class _Config:
+        def __init__(self, **values) -> None:
+            captured["config"] = values
+
+    class _CanonicalAuditResult:
+        pass
+
+    result = _CanonicalAuditResult()
+
+    def audit(*args):
+        captured["audit"] = args
+        return result
+
+    audit_module = SimpleNamespace(
+        QKVOOutputJacobianAuditConfig=_Config,
+        QKVOOutputJacobianAuditResult=_CanonicalAuditResult,
+        run_qkvo_output_jacobian_audit=audit,
+    )
+
+    def module_loader(name):
+        if name == runner.CANONICAL_TRAINER_MODULE:
+            return trainer_module
+        if name == runner.QKVO_OUTPUT_JACOBIAN_AUDIT_MODULE:
+            return audit_module
+        raise AssertionError(f"unexpected import: {name}")
+
+    monkeypatch.setattr(runner.importlib, "import_module", module_loader)
+    runtime = runner.ProductionStageRuntime()
+    execution = runtime.run_output_jacobian_audit(transaction, parent, contract)
+
+    assert captured["restore"] is True
+    assert captured["loads"] == [
+        (
+            "fit",
+            contract.splits["candidate"].payload,
+            contract.splits["candidate"].sha256,
+        )
+    ]
+    assert captured["config"] == {
+        "prompt_count": 24,
+        "horizon": 8,
+        "lanes": ("parent-greedy", "child-greedy"),
+        "rank": 8,
+        "sketch_width": 16,
+        "seed": contract.seed,
+        "min_normal_fraction": 0.20,
+        "min_guided_over_random_ratio": 1.50,
+        "max_bytes": 268_435_456,
+    }
+    basis_domain = captured["audit"][2]
+    schedule = captured["audit"][3]
+    assert captured["audit"] == (
+        transaction,
+        parent,
+        basis_domain,
+        schedule,
+        captured["audit"][4],
+    )
+    assert execution.result is result
+    assert execution.restore_mode == "full"
+    assert execution.restored_factor_state_sha256 == factor_state_sha
+
+
 def test_production_post_bake_evaluator_uses_authenticated_suite_and_schedule(
     tmp_path, monkeypatch
 ) -> None:
@@ -588,9 +1404,7 @@ def test_production_post_bake_evaluator_uses_authenticated_suite_and_schedule(
     monkeypatch.setattr(runner.importlib, "import_module", lambda _name: module)
 
     runtime = runner.ProductionStageRuntime()
-    result = runtime.evaluate_baked_behavior(
-        child, parent, contract, "candidate"
-    )
+    result = runtime.evaluate_baked_behavior(child, parent, contract, "candidate")
 
     assert result is metrics
     binding = contract.splits["candidate"]
@@ -757,9 +1571,7 @@ def test_v2_factor_pack_authenticates_all_18_factors_and_lexical_rank(
     assert authenticated[4] == runner.TRAINER_FACTOR_PACK_V2_SCHEMA
     assert authenticated[5] == runner.LEXICAL_RANK
     with pytest.raises(runner.ExactTargetNativeStageError, match="lexical rank"):
-        runner._authenticate_continuation_factor_payload(
-            envelope, lexical_rank=16
-        )
+        runner._authenticate_continuation_factor_payload(envelope, lexical_rank=16)
 
 
 def test_production_continuation_factor_shapes_match_pinned_parameter_totals() -> None:
@@ -776,11 +1588,14 @@ def test_production_continuation_factor_shapes_match_pinned_parameter_totals() -
     assert sum(math.prod(shape) for shape in lexical_shapes.values()) == (
         runner.LEXICAL_TARGET_NATIVE_FACTOR_PARAMETERS
     )
-    assert sum(
-        math.prod(shape)
-        for name, shape in lexical_shapes.items()
-        if name.startswith("lexical.")
-    ) == runner.LEXICAL_FACTOR_PARAMETERS
+    assert (
+        sum(
+            math.prod(shape)
+            for name, shape in lexical_shapes.items()
+            if name.startswith("lexical.")
+        )
+        == runner.LEXICAL_FACTOR_PARAMETERS
+    )
 
 
 def test_continuation_rejects_same_numel_wrong_factor_reshape(
@@ -802,9 +1617,7 @@ def test_continuation_rejects_same_numel_wrong_factor_reshape(
     payload["factor_state_sha256"] = runner._canonical_sha256(payload["factors"])
 
     with pytest.raises(runner.ExactTargetNativeStageError, match="exact stage-1 shape"):
-        runner._authenticate_continuation_factor_payload(
-            envelope, lexical_rank=None
-        )
+        runner._authenticate_continuation_factor_payload(envelope, lexical_rank=None)
 
 
 def test_required_compiler_cache_miss_aborts_before_model_access(
@@ -839,7 +1652,9 @@ def test_required_compiler_cache_miss_aborts_before_model_access(
         lambda _contract: SimpleNamespace(compiler_identity_sha256="a" * 64),
     )
 
-    with pytest.raises(runner.ExactTargetNativeStageError, match="requires an exact hit"):
+    with pytest.raises(
+        runner.ExactTargetNativeStageError, match="requires an exact hit"
+    ):
         runtime.prepare_compiler_cache(contract)
 
 
@@ -1025,9 +1840,7 @@ def test_post_bake_evaluator_error_restores_exact_base_and_fails(tmp_path) -> No
             super().__init__(result)
             self.transaction = _MutatingTransaction(self.model)
 
-        def evaluate_baked_behavior(
-            self, model, parent, contract, split_name
-        ):
+        def evaluate_baked_behavior(self, model, parent, contract, split_name):
             del model, parent, contract, split_name
             raise RuntimeError("injected post-bake evaluator failure")
 
