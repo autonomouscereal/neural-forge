@@ -43,17 +43,11 @@ Local deployment packets preserved under
 - `neural-forge-unified-v6-patch-20260711` (`4b0f35a`)
 - `neural-forge-unified-v7-patch-20260711` (`c75dd31`)
 
-Adjacent project histories preserved under `refs/archive/projects/`:
-
-- `chimera-omni-main` at `925a083296630aec3477367a15419af74f79fe8d`
-- `ai-frontier-research-2026-main` at
-  `bafd73231a057312bda986c93f5e46b78b5887e7`
-
-`chimera-omni` is a modality/causal-ABI proof project, not a second folding
-implementation. The frontier repository is the curated evidence corpus, not a
-second compiler. Their complete histories are retained for reuse without
-placing their generated proof media or large paper datasets in the active
-compiler checkout.
+Project boundary: `chimera-omni` and `ai-frontier-research-2026` are separate
+projects. Their repositories, histories, artifacts, and datasets are not part
+of Neural Forge and are not archived under Neural Forge refs or tags. Their
+interfaces or research findings may be consulted explicitly, but adjacency on
+disk is never evidence that a project belongs in this consolidation.
 
 The source archive downloaded from the remote host is
 `runs/neural-forge-source-copies-20260712.tar.gz`, SHA-256
@@ -94,13 +88,10 @@ Before launching an experiment:
 5. Treat a new runner name as insufficient novelty. Its mechanism, target,
    training signal, and promotion gate must differ from closed experiments.
 
-That retirement is complete. The two adjacent local Git worktrees and eight
-remote source copies were removed only after their pushed archive tags were
-verified. Unique ignored research/media data moved inode-for-inode under
-`runs/legacy-projects`; remote run evidence moved under
-`runs/legacy-source-copies`. The local receipt SHA-256 is
-`26e3b8eb1242aeaee624e1eaaf8c61713b3ace6610f5b80205653551756b5f09` and
-the remote receipt SHA-256 is
+The Neural Forge retirement is complete. Eight remote Neural Forge source
+copies were removed only after their pushed archive tags were verified. Their
+run evidence moved under `runs/legacy-source-copies`. The remote receipt
+SHA-256 is
 `eaa7d55e54b1eb1d4aad17b3f06bfeaf6f837598ada1813ee13d1032071ca268`.
 The selected residual-attention evidence remains available through the
 canonical run path, and its eight authentication tests pass after retirement.

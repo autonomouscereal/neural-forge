@@ -38,24 +38,12 @@ def test_remote_tree_digest_is_name_and_content_bound(tmp_path: Path) -> None:
     assert module.tree_sha256(root) != hashlib.sha256(manifest).hexdigest()
 
 
-def test_retirement_manifests_name_only_explicit_archived_roots() -> None:
+def test_remote_retirement_manifest_names_only_neural_forge_roots() -> None:
     remote = _load(
         "retire_remote_manifest",
         "experiments/retire_remote_neural_forge_source_copies.py",
     )
-    local = _load(
-        "retire_local_manifest",
-        "experiments/retire_local_project_repositories_20260712.py",
-    )
-
     assert len(remote.COPIES) == 8
     assert len({copy.name for copy in remote.COPIES}) == 8
     assert all(len(copy.archive_commit) == 40 for copy in remote.COPIES)
-    assert {project.name for project in local.PROJECTS} == {
-        "chimera-omni",
-        "ai-frontier-research-2026",
-    }
-    assert (
-        sum(move.bytes for project in local.PROJECTS for move in project.moves)
-        == 37_060_879_609
-    )
+    assert all(copy.name.startswith("neural-forge-") for copy in remote.COPIES)

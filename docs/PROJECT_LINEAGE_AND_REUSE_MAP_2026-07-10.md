@@ -2,8 +2,8 @@
 
 This note prevents a pivot from being interpreted as a clean-room restart. It
 records which repository owns the folding product, which results remain active
-evidence, and which components from the adjacent projects belong in Neural
-Forge.
+evidence, and which explicitly selected interfaces from separate adjacent
+projects may be consulted without merging their project boundaries.
 
 ## Canonical implementation
 
@@ -32,6 +32,9 @@ the comparison is applicable.
 parent-to-child folding implementation. Its tiny semantic, artifact, routing,
 and interference canaries are already established and must not be rerun as if
 they were new compression evidence.
+
+It remains its own Git repository. No Chimera history, code, artifact, or data
+belongs in Neural Forge merely because an interface could be reused.
 
 Reusable components:
 
@@ -76,6 +79,9 @@ the fold-only child is incoherent.
 evaluations, manual-review packets, and remote run artifacts are the project
 evidence base. They are inputs to hypothesis selection; they are not a fourth
 implementation that needs to be recreated.
+
+The frontier corpus remains its own repository/data tree. Neural Forge records
+only the specific research conclusions it actually uses.
 
 The evidence has already closed the following unchanged paths as standalone
 solutions:

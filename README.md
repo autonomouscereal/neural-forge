@@ -1,10 +1,10 @@
 # Neural Forge
 
-This repository is the canonical source tree for the folding project. Historical
-remote experiment copies, local deployment packets, the `chimera-omni` proof
-project, and the 2026 frontier-research corpus are preserved in this repository's
-Git object graph under immutable archive tags/refs; they are not competing active
-source trees. See
+This repository is the canonical source tree only for the Neural Forge folding
+project. Historical Neural Forge experiment copies and deployment packets are
+preserved under immutable archive tags/refs. `chimera-omni`, the 2026 frontier
+research corpus, and other adjacent projects remain separate repositories and
+are not part of this Git history. See
 [`docs/CANONICAL_SOURCE_CONSOLIDATION_2026-07-12.md`](docs/CANONICAL_SOURCE_CONSOLIDATION_2026-07-12.md)
 before creating a launcher, checkout, or experimental branch.
 
