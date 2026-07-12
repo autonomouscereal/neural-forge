@@ -1,0 +1,116 @@
+# Real Model Validation
+
+The toy dense tests prove tensor surgery invariants. They do not prove that a
+real checkpoint still behaves. This validation path runs small public
+checkpoints through behavior probes before and after surgery.
+
+## Default Run
+
+```bash
+python experiments/run_real_model_validation.py \
+  --run-dir runs/real-model-validation \
+  --device cuda:0 \
+  --dtype float16
+```
+
+Defaults:
+
+- text base: `Qwen/Qwen3-0.6B-Base`
+- text tuned parent: `Qwen/Qwen3-0.6B`
+- VLM sanity parent: `HuggingFaceTB/SmolVLM2-256M-Video-Instruct`
+
+The run writes:
+
+- `reports/text_base.json`
+- `reports/text_tuned.json`
+- `reports/text_merged_alpha_050.json`
+- `reports/text_merged_ffn_099.json` by default, unless `--shrink-ratio` is changed
+- `reports/vision_probe.json`
+- `reports/vision_chain.json` when the optional composite chain is run
+- `reports/summary.json`
+
+## What Counts As Evidence
+
+Minimum useful evidence:
+
+- parent models load and generate;
+- merged model loads and generates;
+- FFN-width-folded and/or depth-folded model loads and generates;
+- external benchmark-suite task scores are recorded for host, donor, and edited
+  models on at least ARC-Easy and HellaSwag, and preferably PIQA/Winogrande for
+  small-model runs;
+- when claiming target-shape transplant ability, the same benchmark/coherence
+  comparison must include a blank random-init target of the requested
+  architecture, not only an already trained host checkpoint;
+- generation/coherence samples are inspected for obvious repetition or prompt
+  drift;
+- perplexity and choice probes do not collapse to nonsense, but are treated as
+  supporting damage signals rather than proof of intelligence transfer;
+- `hf-gate` passes for any candidate being called safe;
+- VLM probe produces grounded text for synthetic images.
+
+This is not a claim that a heavily frankensteined model is production-good
+without recovery training. It is a behavioral smoke test that distinguishes
+actual model survival from merely making tensor dimensions line up.
+
+## Current Safe Scope
+
+Supported real-checkpoint surgery:
+
+- same-shape Hugging Face causal LM checkpoint averaging;
+- task-arithmetic Hugging Face merges with alpha sweeps;
+- random-init Hugging Face causal LM target creation with `hf-random-init`, for
+  blank target-shape validation;
+- Qwen/Gemma/Llama-style gated FFN intermediate width folding with combined
+  SwiGLU channel similarity;
+- residual decoder layer group folding with `hf-merge-layers`;
+- automated merge-first width/depth candidate search with `hf-search-compress`;
+- constrained cross-family vocabulary/embedding/lm-head transplant with
+  `hf-xfamily-vocab-merge` and `hf-sweep-xfamily`;
+- constrained cross-family MLP-channel transplant with `hf-xfamily-mlp-merge`
+  and `hf-sweep-xfamily-mlp`, including LFM2.5 `feed_forward.w1/w3/w2`
+  layers, Qwen/Llama-style gated MLPs, and GPT-NeoX/Pythia dense MLPs;
+- optional activation-calibrated cross-family channel assignment with
+  `weight-cosine`, `activation-correlation`, and `hybrid` modes;
+- optional similarity-scaled per-layer donor alpha, so low-confidence layer
+  matches can receive less donor signal than high-confidence matches;
+- integrated cross-family MLP recovery sweeps that save recovered checkpoints
+  and re-run behavior gates, including optional calibration JSONL/text files;
+- integrated `hf-xfamily-compress` runs that merge donor MLP channels first,
+  then search width/depth folds, optionally recover failed candidates, and only
+  promote outputs that pass host-baseline behavior gates;
+- calibration-aware gated FFN repair using ridge least squares on parent FFN
+  inputs/outputs;
+- lightweight same-tokenizer recovery training with held-out eval prompts;
+- lightweight causal LM behavior probes;
+- report gates and FFN resize sweeps that reject unsafe candidates;
+- small VLM image-description/OCR sanity probes.
+- transitional VLM-observation -> merged-text-model chains for grounded behavior
+  checks before native multimodal training exists.
+- native early-fusion sandbox training via `native-vlm-demo`, using raw image
+  patches plus text tokens in one transformer.
+- merged-parent raw-patch vision graft training via `hf-vision-graft`, using an
+  existing HF causal LM parent and no external vision encoder.
+- cross-family compressed-parent raw-patch vision graft validation: Qwen3 host
+  plus LFM2.5 donor, 5.28% merge-first compression, parent frozen, 100% exact
+  synthetic VQA accuracy after graft training.
+
+Not yet supported:
+
+- direct cross-architecture merge of Qwen + Gemma + LFM into one valid decoder;
+- proven cross-tokenizer transfer of 4B-class donor intelligence into a
+  135M-160M host. Qwen3-4B -> Pythia-160M and Qwen3-4B -> SmolLM2-135M were
+  shape-valid at roughly 25x-30x donor-to-target compression, but benchmark
+  behavior stayed at host level after current MLP/vocab folding and short
+  recovery;
+- arbitrary large-ratio shrink to a requested parameter count with guaranteed
+  behavior retention;
+- untrained native vision grafting that magically understands pixels;
+- aggressive compression without merge search, calibration, and recovery
+  training.
+
+The safe next step is expanding the merge-first search space: score more
+layer-pair and channel-fold candidates, add activation-aware sequential repair
+after each fold, use per-layer donor alpha search instead of one global alpha,
+and broaden behavior gates for both text retention and grounded multimodal
+answers.
