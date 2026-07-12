@@ -32,4 +32,5 @@ def test_remote_adoption_supports_a_verified_secretless_git_bundle() -> None:
     assert 'MODE" == "--adopt-bundle"' in text
     assert 'git bundle verify "$BUNDLE"' in text
     assert 'git fetch "$BUNDLE" "refs/heads/$BRANCH"' in text
+    assert 'git bundle list-heads "$BUNDLE"' in text
     assert "refs/tags/*:refs/tags/*" in text

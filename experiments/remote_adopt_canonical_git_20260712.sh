@@ -73,7 +73,9 @@ fi
 if [[ "$MODE" == "--adopt-bundle" ]]; then
   git fetch "$BUNDLE" "refs/heads/$BRANCH"
   source_commit="$(git rev-parse FETCH_HEAD)"
-  git fetch "$BUNDLE" 'refs/tags/*:refs/tags/*'
+  if git bundle list-heads "$BUNDLE" | grep -q ' refs/tags/'; then
+    git fetch "$BUNDLE" 'refs/tags/*:refs/tags/*'
+  fi
 else
   git fetch origin "$BRANCH"
   source_commit="$(git rev-parse FETCH_HEAD)"
