@@ -1,0 +1,22 @@
+diff --git a/src/neural_forge/hf_qwen_codebook_model.py b/src/neural_forge/hf_qwen_codebook_model.py
+--- a/src/neural_forge/hf_qwen_codebook_model.py
++++ b/src/neural_forge/hf_qwen_codebook_model.py
+@@ -1071,11 +1071,17 @@ def _checkpoint_state(model: nn.Module) -> dict[str, Tensor]:
+     state: dict[str, Tensor] = {}
+     for name, value in _checkpoint_state_views(model).items():
+-        if value.is_floating_point() and not bool(torch.isfinite(value).all()):
++        # Checkpoint serialization is an inference boundary. Some supported
++        # Torch builds implement ``isfinite`` through an ``out=`` kernel that
++        # rejects tensors participating in autograd. Inspecting finiteness
++        # must never build or require a gradient graph, so detach before both
++        # validation and the host copy.
++        detached = value.detach()
++        if detached.is_floating_point() and not bool(torch.isfinite(detached).all()):
+             raise Qwen3CodebookStateError(
+                 f"Checkpoint state {name!r} contains NaN or infinity."
+             )
+-        state[name] = value.detach().to(device="cpu").contiguous().clone()
++        state[name] = detached.to(device="cpu").contiguous().clone()
+     return state
+ 
+ 
