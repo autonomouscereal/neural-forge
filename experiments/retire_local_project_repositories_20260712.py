@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import shutil
+import stat
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -106,21 +107,44 @@ def _safe_project(project: Project) -> Path:
             or resolved.name != project.name
         ):
             raise RuntimeError(f"Unsafe project root: {resolved}")
-        if path.is_symlink() or not (path / ".git").is_dir():
-            raise RuntimeError(f"Project is not a real Git directory: {path}")
+        if path.is_symlink() or not path.is_dir():
+            raise RuntimeError(f"Project is not a real directory: {path}")
     return path
 
 
-def _assert_history(project: Project, source: Path) -> None:
+def _assert_history(
+    project: Project,
+    source: Path,
+    *,
+    data_already_moved: bool,
+) -> str:
     archived = _git(CANONICAL, "rev-parse", f"refs/tags/{project.archive_tag}")
     if archived != project.head:
         raise RuntimeError(f"Canonical archive tag mismatch for {project.name}")
     if source.exists():
-        if _git(source, "rev-parse", "HEAD") != project.head:
-            raise RuntimeError(f"Source HEAD mismatch for {project.name}")
-        if _git(source, "status", "--porcelain"):
-            raise RuntimeError(f"Source repository is not clean: {project.name}")
-        _git(source, "fsck", "--strict")
+        try:
+            if _git(source, "rev-parse", "HEAD") != project.head:
+                raise RuntimeError(f"Source HEAD mismatch for {project.name}")
+            if _git(source, "status", "--porcelain"):
+                raise RuntimeError(f"Source repository is not clean: {project.name}")
+            _git(source, "fsck", "--strict")
+        except subprocess.CalledProcessError:
+            if not data_already_moved:
+                raise RuntimeError(
+                    f"Source Git repository became unreadable before its unique "
+                    f"data moved: {project.name}"
+                ) from None
+            return "resume-after-partial-read-only-deletion"
+        return "verified-clean-source"
+    return "archive-only"
+
+
+def _remove_tree(path: Path) -> None:
+    def make_writable_and_retry(function, failed_path, _error_info) -> None:
+        os.chmod(failed_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+        function(failed_path)
+
+    shutil.rmtree(path, onerror=make_writable_and_retry)
 
 
 def _move_state(project: Project, move: DataMove) -> dict[str, Any]:
@@ -146,13 +170,22 @@ def _move_state(project: Project, move: DataMove) -> dict[str, Any]:
 
 def _state(project: Project) -> dict[str, Any]:
     source = _safe_project(project)
-    _assert_history(project, source)
+    moves = [_move_state(project, move) for move in project.moves]
+    destination_prefix = str(DESTINATION / project.name)
+    history_state = _assert_history(
+        project,
+        source,
+        data_already_moved=all(
+            str(move["location"]).startswith(destination_prefix) for move in moves
+        ),
+    )
     return {
         "name": project.name,
         "head": project.head,
         "archive_tag": project.archive_tag,
         "source_exists": source.exists(),
-        "moves": [_move_state(project, move) for move in project.moves],
+        "history_state": history_state,
+        "moves": moves,
     }
 
 
@@ -189,11 +222,8 @@ def retire(*, apply: bool, receipt: Path | None = None) -> dict[str, Any]:
                     raise RuntimeError(f"Move was not inode-preserving: {destination}")
             _move_state(project, move)
         if source_root.exists():
-            if _git(source_root, "status", "--porcelain"):
-                raise RuntimeError(
-                    f"Tracked state changed while moving data: {project.name}"
-                )
-            shutil.rmtree(source_root)
+            _assert_history(project, source_root, data_already_moved=True)
+            _remove_tree(source_root)
         if source_root.exists():
             raise RuntimeError(f"Failed to retire source project: {source_root}")
 
