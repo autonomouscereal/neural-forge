@@ -1,0 +1,4 @@
+[
+  "Work carefully through this mixed reasoning task. A warehouse starts with 240 components, ships 37, receives 18, and then reserves one quarter of what remains. State the remaining unreserved count and briefly verify each arithmetic step.",
+  "Write a compact Python function named stable_unique that returns the unique items from a list in first-seen order. Explain the time complexity, mention the hashability assumption, and include one example with repeated integers."
+]
