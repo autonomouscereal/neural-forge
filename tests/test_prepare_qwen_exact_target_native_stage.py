@@ -124,6 +124,7 @@ def test_builder_seals_real_curated_corpus_without_model_creation(tmp_path) -> N
     }
     assert preregistration["compiler"]["bootstrap_kwargs"] == {
         "heldout_gate_policy": "output_only",
+        "max_operator_delta_ratio": 0.1,
         "trace_pooling": "last_valid",
     }
     assert preregistration["corpus_provenance"]["synthetic_replicas"] == 0

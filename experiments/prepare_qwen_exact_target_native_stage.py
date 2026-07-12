@@ -407,6 +407,7 @@ def prepare_stage(
             "canonical_validation_count": 4,
             "bootstrap_kwargs": {
                 "heldout_gate_policy": "output_only",
+                "max_operator_delta_ratio": 0.1,
                 "trace_pooling": "last_valid",
             },
             "candidate_split_used_during_bootstrap": False,
