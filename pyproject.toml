@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neural-forge"
+version = "0.1.0"
+description = "Shape-surgery tools for shrinking, expanding, and merging dense neural checkpoints."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.26",
+]
+authors = [
+  { name = "autonomouscereal" }
+]
+license = { text = "MIT" }
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+hf = [
+  "accelerate>=1.0",
+  "num2words>=0.5",
+  "pillow>=10.0",
+  "safetensors>=0.4",
+  "sentencepiece>=0.2",
+  "torch>=2.5",
+  "transformers>=4.51",
+]
+native = [
+  "torch>=2.5",
+]
+
+[project.scripts]
+neural-forge = "neural_forge.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

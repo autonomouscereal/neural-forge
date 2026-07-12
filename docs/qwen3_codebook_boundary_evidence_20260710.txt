@@ -1,0 +1,79 @@
+Qwen codebook sweep: 5 candidate(s)
+Parent: sha256:dd2ebc3bcb30e347007993eda02d6803cc1436911c49eaa6f98c3db3a94ec767
+Eval contract: sha256:314f0d9c36e37eb58ab462b82a7b14e3a24cc3d3b24d64bd638163eb60829ad6
+
+[qwen3_4b_codebook_pn28_pa28_gpu0_r1_20260710]
+params 4,022,468,096 -> 3,214,381,056; raw 1.251397x
+behavior: 400/1,000 -> 0/1,000; retained 0, loss 400, gain 0
+generation: 388/1,000 -> 0/1,000; retained 0, loss 388, gain 0
+choice: 250/250 -> 20/250; retained 20, loss 230, gain 0
+PPL: 877.58 -> 1.48058e+06
+behavior category deltas: code:-200, commonsense:+0, math:-200, model-surgery:+0, tokenizer:+0
+generation category deltas: code:-232, commonsense:+0, math:-142, model-surgery:-14, tokenizer:+0
+heuristics over 2000 outputs: repetition=1277, language_switch=360, empty_output=141
+artifacts: not-declared
+manual math/loss: synthetic_math_0000 -> ══ y══ ══ y══ ══ ══ y answered══ ══ ══ ══ ══ ══ ══ ══ ══ ══ ══
+manual code/loss: synthetic_python_add_0004 -> ══ ══ ══ ══ answered ══ ══ ══ ══ ══ ══ ══ ══ ══ ══ ══
+manual commonsense/shared-failure: synthetic_rain_0002 -> chers══ cher告诉大家， their══ . yEMS y══ in
+manual model-surgery/loss: generation_pruning_0210 -> ══ y'S════ ══ ══ ══ ══ ══ ══ ══ ══ ══ ══ ══ ══ ══
+
+[qwen3_4b_codebook_pn32_pa32_gpu4_r1_20260710]
+params 4,022,468,096 -> 3,618,082,816; raw 1.111768x
+behavior: 400/1,000 -> 0/1,000; retained 0, loss 400, gain 0
+generation: 388/1,000 -> 0/1,000; retained 0, loss 388, gain 0
+choice: 250/250 -> 18/250; retained 18, loss 232, gain 0
+PPL: 877.58 -> 90846.3
+behavior category deltas: code:-200, commonsense:+0, math:-200, model-surgery:+0, tokenizer:+0
+generation category deltas: code:-232, commonsense:+0, math:-142, model-surgery:-14, tokenizer:+0
+heuristics over 2000 outputs: repetition=1444, language_switch=1676, empty_output=0
+artifacts: not-declared
+manual math/loss: synthetic_math_0000 -> 答案1答案答案是， 答案：， 答案:答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答...
+manual code/loss: synthetic_python_add_0004 -> ， ，， ， ，，保证这个选择答案:�而 ， ， ， ， ， ， 保证答案: 答案答案: 答案答案:保证答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案答案 保证保证似的 答...
+manual commonsense/shared-failure: synthetic_rain_0002 -> : ，为 a可以可以谓 题为对 判断 判断
+manual model-surgery/loss: generation_pruning_0210 -> 答案 answered answered answered answered answered answered
+
+[qwen3_4b_codebook_pn34_pa34_gpu6_r1_20260710]
+params 4,022,468,096 -> 3,819,933,696; raw 1.053020x
+behavior: 400/1,000 -> 0/1,000; retained 0, loss 400, gain 0
+generation: 388/1,000 -> 0/1,000; retained 0, loss 388, gain 0
+choice: 250/250 -> 80/250; retained 80, loss 170, gain 0
+PPL: 877.58 -> 13890.1
+behavior category deltas: code:-200, commonsense:+0, math:-200, model-surgery:+0, tokenizer:+0
+generation category deltas: code:-232, commonsense:+0, math:-142, model-surgery:-14, tokenizer:+0
+heuristics over 2000 outputs: repetition=1868, language_switch=116, empty_output=1
+artifacts: not-declared
+manual math/loss: synthetic_math_0000 -> how do? How,,?how,how,how,how,how,how,how,how,how,how,how,how,how,how,how,how,how,how,how,how...
+manual code/loss: synthetic_python_add_0004 -> In the I for In for for for for for for for for for for for for for for for for for for for f...
+manual commonsense/shared-failure: synthetic_rain_0002 -> :: A: The:: I:: The: : The: : The: : The : The: : The: : The
+manual model-surgery/loss: generation_pruning_0210 -> , :,,,,,,,,,,,,,,,,,,, how, how, how,how,how,how,how,how,how,how,how,how,how,how,how,how,how,...
+
+[qwen3_4b_codebook_pn35_pa35_gpu4_r1_20260710]
+params 4,022,468,096 -> 3,920,859,136; raw 1.025915x
+behavior: 400/1,000 -> 255/1,000; retained 255, loss 145, gain 0
+generation: 388/1,000 -> 185/1,000; retained 184, loss 204, gain 1
+choice: 250/250 -> 204/250; retained 204, loss 46, gain 0
+PPL: 877.58 -> 1851.38
+behavior category deltas: code:+0, commonsense:+0, math:-145, model-surgery:+0, tokenizer:+0
+generation category deltas: code:-90, commonsense:+0, math:-99, model-surgery:-14, tokenizer:+0
+heuristics over 2000 outputs: repetition=622, language_switch=0, empty_output=214
+artifacts: not-declared
+manual math/loss: synthetic_math_0005 -> 12444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444
+manual code/loss: generation_python_add_0002 -> 0001.0001.0001.0001.0001.0001.0001.0001.0001.0001.0001.0001.0001.0001.0001.0001.0001.0001.0001.0
+manual commonsense/shared-failure: synthetic_rain_0002 -> The driver should slow down and drive with caution.
+manual model-surgery/loss: generation_pruning_0210 -> 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+
+[qwen3_4b_codebook_pn36_pa36_gpu0_r3_20260710]
+params 4,022,468,096 -> 4,021,784,576; raw 1.000170x
+behavior: 400/1,000 -> 400/1,000; retained 400, loss 0, gain 0
+generation: 388/1,000 -> 384/1,000; retained 382, loss 6, gain 2
+choice: 250/250 -> 250/250; retained 250, loss 0, gain 0
+PPL: 877.58 -> 882.312
+logit drift (verification.full_depth_noop): maximum_absolute_logit_error=0.015625, mean_absolute_logit_error=1.93622e-05, relative_l2_logit_error=4.30965e-05
+behavior category deltas: code:+0, commonsense:+0, math:+0, model-surgery:+0, tokenizer:+0
+generation category deltas: code:-2, commonsense:+0, math:+0, model-surgery:-2, tokenizer:+0
+heuristics over 2000 outputs: repetition=241, language_switch=0, empty_output=185
+artifacts: not-declared
+manual math/retained-pass: synthetic_math_0000 -> 10
+manual code/loss: generation_python_add_0093 -> 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+manual commonsense/shared-failure: synthetic_rain_0002 -> A The main reason for the formation of the 'suspended river' in the lower reaches of the Yell...
+manual model-surgery/loss: generation_pruning_0210 -> 0001 Neural pruning is a process in which unused or weak neural connections are eliminated, a...
