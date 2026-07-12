@@ -82,6 +82,7 @@ else
   git fetch origin --tags
 fi
 git update-ref "refs/heads/$BRANCH" "$source_commit"
+git update-ref "refs/remotes/origin/$BRANCH" "$source_commit"
 git symbolic-ref HEAD "refs/heads/$BRANCH"
 git read-tree HEAD
 git checkout-index --all --force

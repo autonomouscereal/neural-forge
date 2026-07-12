@@ -1054,7 +1054,20 @@ def _fit_aligned_index_medoids(
 
         costs = group_distances.sum(dim=0)
         best_cost = torch.min(costs)
-        tied_positions = torch.nonzero(costs == best_cost, as_tuple=False).flatten()
+        # Chunked GEMM distance evaluation can assign slightly different
+        # round-off costs to bit-identical candidate rows on different Torch/
+        # BLAS builds.  Such rows are the same medoid and must use the stable
+        # lowest-global-index tie break even when their computed costs differ
+        # by a few ulps.  Keep exact-cost ties for distinct rows as before.
+        best_position = int(torch.argmin(costs).item())
+        same_feature = torch.all(
+            group_features == group_features[best_position],
+            dim=1,
+        )
+        tied_positions = torch.nonzero(
+            (costs == best_cost) | same_feature,
+            as_tuple=False,
+        ).flatten()
         tied_global_indices = members.index_select(0, tied_positions)
         selected_tie = int(torch.argmin(tied_global_indices).item())
         medoid_position = int(tied_positions[selected_tie].item())

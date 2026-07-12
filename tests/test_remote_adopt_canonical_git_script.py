@@ -23,6 +23,7 @@ def test_remote_adoption_pins_the_canonical_origin_and_branch() -> None:
 
     assert 'ORIGIN="https://github.com/autonomouscereal/neural-forge.git"' in text
     assert 'BRANCH="codex/lrc-blank-compression"' in text
+    assert 'git update-ref "refs/remotes/origin/$BRANCH" "$source_commit"' in text
     assert 'git config "branch.$BRANCH.remote" origin' in text
 
 
