@@ -46,18 +46,18 @@ if [[ "$MODE" != "--adopt" && "$MODE" != "--adopt-bundle" ]]; then
   exit 4
 fi
 
+cd "$ROOT"
+
+if [[ ! -d .git ]]; then
+  git init
+fi
+
 if [[ "$MODE" == "--adopt-bundle" ]]; then
   if [[ -z "$BUNDLE" || ! -f "$BUNDLE" ]]; then
     printf 'refusing missing bundle: %s\n' "$BUNDLE" >&2
     exit 6
   fi
   git bundle verify "$BUNDLE"
-fi
-
-cd "$ROOT"
-
-if [[ ! -d .git ]]; then
-  git init
 fi
 
 if git remote get-url origin >/dev/null 2>&1; then
