@@ -1,0 +1,221 @@
+{
+  "schema": "neural-forge-p35-mlp-behavior-residual-v3-sealed-heldout-manifest-v1",
+  "date": "2026-07-11",
+  "sealed_before_model_access": true,
+  "model_outputs_observed": false,
+  "prompt_file": {
+    "path": "experiments/p35_mlp_behavior_residual_v3_sealed_heldout_prompts_20260711.json",
+    "sha256": "edcb437d3f331e65ab4f670a3cc20352709162dc31982adc82640e51ac509f3b"
+  },
+  "count": 8,
+  "entries": [
+    {
+      "index": 0,
+      "id": "sealed_v3_python_interleave_0001",
+      "prompt": "Write a Python function named interleave that alternates items from two equal-length lists and returns a new list.\n```python\n",
+      "prompt_sha256": "2bd2304e1d7567e3a781d0bc2a5ad3d1b1dc7d90a095915351e257394a1f8e6a"
+    },
+    {
+      "index": 1,
+      "id": "sealed_v3_python_first_unique_0002",
+      "prompt": "Write a Python function named first_unique that returns the first character occurring exactly once, or None.\n```python\n",
+      "prompt_sha256": "71459ce3ce4a1eb1c70e51ad782404aaddf80a989cfacdf2ff49bbdf5dc739ad"
+    },
+    {
+      "index": 2,
+      "id": "sealed_v3_math_multiply_0003",
+      "prompt": "Question: What is 29 * 14? Answer with only the number.\nAnswer:",
+      "prompt_sha256": "183a39fb23c59531aaabd37a76488446f3d1745a3dabb6e272ff8e00eedeac79"
+    },
+    {
+      "index": 3,
+      "id": "sealed_v3_math_division_0004",
+      "prompt": "Question: A shelf has 63 books arranged equally on 9 levels. How many books are on each level? Answer with only the number.\nAnswer:",
+      "prompt_sha256": "390be7ab386eb1030518efe61af5cd257aff811a42b49da9c33e0c9d2e2e1e8f"
+    },
+    {
+      "index": 4,
+      "id": "sealed_v3_weight_equivalence_0005",
+      "prompt": "In one concise sentence, explain why two independently trained models can represent the same behavior with different weight values.",
+      "prompt_sha256": "78c0c608d5b7919965c62706f7a273ab821bbffdc6456eecaac90011019784a7"
+    },
+    {
+      "index": 5,
+      "id": "sealed_v3_mlp_fold_check_0006",
+      "prompt": "Name one behavior-level test for checking whether a folded MLP preserves context-sensitive generation.",
+      "prompt_sha256": "b55241bd5a1143f053243b8abd6a9187f9342943930387d7195e24e70da5e6dc"
+    },
+    {
+      "index": 6,
+      "id": "sealed_v3_commonsense_pan_fire_0007",
+      "prompt": "Oil in a frying pan catches fire. What is the safest immediate response? Answer in one sentence.",
+      "prompt_sha256": "c381aebbbe3f408f1242533198d9a3d3a025afd210323d9dd91ebadeccc8efa3"
+    },
+    {
+      "index": 7,
+      "id": "sealed_v3_logic_maple_machine_0008",
+      "prompt": "If every maple is a plant and no plant is a machine, can any maple be a machine? Answer yes or no, then give one short reason.",
+      "prompt_sha256": "b04b2037fd6f1d1ef28dcaf01c799d0f3028abc339c16a9e4010de1de428d27d"
+    }
+  ],
+  "prior_v1_exclusion": {
+    "definition": "Every ID and exact UTF-8 prompt in the v1 fit, calibration-selection, and heldout-evaluation fixtures is excluded before this seal.",
+    "sources": [
+      {
+        "split": "fit",
+        "prompt_file": {
+          "path": "experiments/p35_p34_residual_attention_fit_prompts_20260711.json",
+          "sha256": "b67d140eb3e5f4bbaaa01a0e47ef755818a3379d4d25692d805bcb5c252003ca"
+        },
+        "selection_manifest": {
+          "path": "experiments/p35_p34_residual_attention_fit_prompt_manifest_20260711.json",
+          "sha256": "f790d582f18861bdc40035eaabf4c0c1141da937e2cd8d3b393a32777f498735"
+        },
+        "count": 8,
+        "ids": [
+          "generation_python_add_0835",
+          "generation_python_add_0254",
+          "generation_python_add_0541",
+          "generation_tokenizer_mismatch_0297",
+          "generation_tokenizer_mismatch_0059",
+          "generation_tokenizer_mismatch_0318",
+          "generation_model_merge_risk_0400",
+          "generation_model_merge_risk_0302"
+        ],
+        "prompt_sha256s": [
+          "14385dcbcd4faf5a0d294196b233918a8b80833533340b43a0d0d81f55283fb5",
+          "e44bdd51a3da58aef340a0899a5ef41925924f7f481fe7d9be5cf07569bccc44",
+          "789093bdff933b4d82bc387a93d4553df16130f574b8ce09376ab70480a3b612",
+          "1022a875c23176a10a62c1d78ce124fbd3cee9635d546d3a31224e60153438f5",
+          "e38996928f82f014c0515869905016ae9ec1fd07cbb42c22278b5e48555a454c",
+          "71048fe2695c6ce1655e853c7d5f55a9095319232f917adb18cbf180c6062e55",
+          "c995f70de340881e6af516c57e1c4ce646ceabccceaa55a330d78da347fbf45c",
+          "bc0831552569641649df4bcddf4172e26a33c97a690dde1a61b4d3c0d184ea84"
+        ]
+      },
+      {
+        "split": "calibration-selection",
+        "prompt_file": {
+          "path": "experiments/p35_p34_residual_attention_calibration_selection_prompts_20260711.json",
+          "sha256": "a2eaea993c7f7f434e30744eeaf4b4da750b9a327d835deedb385dbaf154e406"
+        },
+        "selection_manifest": {
+          "path": "experiments/p35_p34_residual_attention_prompt_manifest_20260711.json",
+          "sha256": "d6d4d326cc55d864d388bda6220fe09df70a6ec7ffe4664d4277af53857a00d1"
+        },
+        "count": 6,
+        "ids": [
+          "generation_python_add_0569",
+          "generation_tokenizer_mismatch_0542",
+          "generation_model_merge_risk_0309",
+          "generation_python_add_0233",
+          "generation_math_answer_0467",
+          "generation_model_merge_risk_0890"
+        ],
+        "prompt_sha256s": [
+          "5c4bc92f96cbb4ca460a29887805087277df39b176df77ca16c3b1502f282df1",
+          "92197a17b1731c48d5d8ce1d80399ebd5045dd7bdceb4d4aed1e10cf7695e9a5",
+          "09785238a5b9383cf2cbfed4d0bb288ccf3706609501a4a11d772812a173981f",
+          "a01db3a5dab1b433e49856d1f6b7b8eb36fd5f53d7b287c7eaa90e6b0b9dcbe8",
+          "28111e67759aed78e7139e0c0cdc25ee2ffd604dfcc1b7346acd215735c6d826",
+          "61cd145407b0dee7c8c821a37ad0f6ca984036d862f0ebf2f612a29d510de707"
+        ]
+      },
+      {
+        "split": "heldout-evaluation",
+        "prompt_file": {
+          "path": "experiments/p35_p34_residual_attention_heldout_evaluation_prompts_20260711.json",
+          "sha256": "cebf98bdbdfc1154c45758cdeed25e15141b6aeb910f06fa6cf349efdaf6d04f"
+        },
+        "selection_manifest": {
+          "path": "experiments/p35_p34_residual_attention_prompt_manifest_20260711.json",
+          "sha256": "d6d4d326cc55d864d388bda6220fe09df70a6ec7ffe4664d4277af53857a00d1"
+        },
+        "count": 8,
+        "ids": [
+          "generation_python_add_0345",
+          "generation_tokenizer_mismatch_0241",
+          "generation_model_merge_risk_0995",
+          "generation_math_answer_0474",
+          "generation_python_add_0744",
+          "generation_python_add_exact_0713",
+          "generation_math_answer_0936",
+          "generation_model_merge_risk_0449"
+        ],
+        "prompt_sha256s": [
+          "a504f3106a9ebca48392f589d6cf6f64db4a8e86ec708181dbe7ff4cdb191045",
+          "9b04ae26e1af014e61ee7c0025599b06a6e1bab60dbe88b4bf323688056e66d8",
+          "efd87e802e2d5319dcd39e2bb66faf36d4019a5165bbbeb759028d04817df045",
+          "0fa87b4b6f1400215cce11ab93773628c6e1cba3459eb7b7f39bb2cea2206512",
+          "5a35e414d2fb1183f8ae17cd5cac3f0ed31a3ae45aed9b88dde3ba8fec882479",
+          "761740d45983b18fc23b9bd3052a6da1e92b932fd85b90d438206abad238c127",
+          "9527d57734db1a6f70bbd953a783cfe13dd4b96d3e44115aab533be1f8d9e071",
+          "cacc3e8475b50a34c426405ef98d19e8cc9a6a651e1ea5519264d7786e1b5e13"
+        ]
+      }
+    ],
+    "prior_unique_id_count": 22,
+    "prior_unique_exact_prompt_count": 22
+  },
+  "prior_v2_exclusion": {
+    "definition": "Every ID and exact UTF-8 prompt in the sealed v2 heldout fixture is excluded before this seal.",
+    "prompt_file": {
+      "path": "experiments/p35_mlp_behavior_residual_v2_sealed_heldout_prompts_20260711.json",
+      "sha256": "ed8e7bfe009e2ba75198e2f3c81ca5a166bf29b5ddb0743e33840f17b89dc2cb"
+    },
+    "seal_manifest": {
+      "path": "experiments/p35_mlp_behavior_residual_v2_sealed_heldout_manifest_20260711.json",
+      "sha256": "0c94a78d94f2b6cf609eab93bdb52af3f0e1d4b1d19fc9dd3d2e831aaaa19e18"
+    },
+    "count": 8,
+    "ids": [
+      "sealed_v2_python_rotate_left_0001",
+      "sealed_v2_python_count_vowels_0002",
+      "sealed_v2_math_multiply_0003",
+      "sealed_v2_math_division_0004",
+      "sealed_v2_tokenizer_boundaries_0005",
+      "sealed_v2_attention_fold_check_0006",
+      "sealed_v2_commonsense_broken_glass_0007",
+      "sealed_v2_logic_cedar_fish_0008"
+    ],
+    "prompt_sha256s": [
+      "d35d9f146ddaf868e0f455318112de124f3b89db19656368e2703a85e1f662c6",
+      "8784226a7caa1e48e3b4f42ffa01a61c3593b4931e3c1e478f277a3e2579d8e4",
+      "f98e518607849b6a10a24b917d26d04e1e593eff2816bca7c9dc6d5de6c29d6b",
+      "edfd6fca1e9279d7f63108fe5f64081777a2adc6790617d7cdd43d6aa13d6deb",
+      "451c543ce4c430e77c34ccc49838bef437baec1441c01dfb5f395011607d3986",
+      "8d1a76cb54821708b48d27bcf1a79bc0ab85e97c8f13493a4f67499dfb61e007",
+      "32b81869bc8e05800ddea20c541aa4e016c0dcd6c412a9716f15d502f35a87a5",
+      "8a574c95341b7e0b1bd6b73006f4698f195c17b64206adcb0392ebb183c946d5"
+    ],
+    "v2_sealed_before_model_access": true,
+    "v2_model_outputs_observed": false
+  },
+  "prior_all_exclusion": {
+    "prior_unique_id_count": 30,
+    "prior_unique_exact_prompt_count": 30
+  },
+  "disjointness": {
+    "new_fixture_id_overlap_count": 0,
+    "new_fixture_exact_prompt_overlap_count": 0,
+    "prior_v1_id_overlap_count": 0,
+    "prior_v1_exact_prompt_overlap_count": 0,
+    "prior_v2_id_overlap_count": 0,
+    "prior_v2_exact_prompt_overlap_count": 0,
+    "prior_all_id_overlap_count": 0,
+    "prior_all_exact_prompt_overlap_count": 0,
+    "all_new_ids_unique": true,
+    "all_new_exact_prompts_unique": true,
+    "zero_id_overlap_with_all_prior_splits": true,
+    "zero_exact_text_overlap_with_all_prior_splits": true,
+    "token_id_overlap_checked": false,
+    "token_id_overlap_check_deferred_reason": "The pinned tokenizer is unavailable in this local sealing environment; IDs, raw UTF-8 text, file bytes, and prompt content hashes are sealed before tokenizer or model access."
+  },
+  "seal": {
+    "created_without_model_execution": true,
+    "created_without_tokenizer_execution": true,
+    "entry_hash_rule": "sha256(exact UTF-8 prompt bytes)",
+    "file_hash_rule": "sha256(raw prompt-file bytes)",
+    "future_model_outputs_must_not_be_added_to_this_manifest": true
+  }
+}

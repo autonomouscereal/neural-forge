@@ -1,0 +1,134 @@
+{
+  "schema": "neural-forge-p35-p34-residual-attention-fit-prompt-manifest-v1",
+  "date": "2026-07-11",
+  "objective": "Fit the two existing L19/G4 V/O assignment scales only on fixed p35 causal-output actions, with calibration-selection and heldout prompts excluded exactly.",
+  "provenance": {
+    "transition_inventory": {
+      "path": "experiments/p35_p34_generation_transitions_20260711.json",
+      "sha256": "212ebf3d9350c1d48ad77a71616d39d5d163dd022a7ac95b9bb0d4c03f0b929a"
+    },
+    "audited_selection_manifest": {
+      "path": "experiments/p35_p34_residual_attention_prompt_manifest_20260711.json",
+      "sha256": "d6d4d326cc55d864d388bda6220fe09df70a6ec7ffe4664d4277af53857a00d1"
+    },
+    "fit_prompt_file": {
+      "path": "experiments/p35_p34_residual_attention_fit_prompts_20260711.json",
+      "sha256": "b67d140eb3e5f4bbaaa01a0e47ef755818a3379d4d25692d805bcb5c252003ca"
+    },
+    "calibration_selection_prompt_file_unchanged": {
+      "path": "experiments/p35_p34_residual_attention_calibration_selection_prompts_20260711.json",
+      "sha256": "a2eaea993c7f7f434e30744eeaf4b4da750b9a327d835deedb385dbaf154e406",
+      "count": 6
+    },
+    "heldout_evaluation_prompt_file_unchanged": {
+      "path": "experiments/p35_p34_residual_attention_heldout_evaluation_prompts_20260711.json",
+      "sha256": "cebf98bdbdfc1154c45758cdeed25e15141b6aeb910f06fa6cf349efdaf6d04f",
+      "count": 8
+    }
+  },
+  "selection_contract": {
+    "seed": "neural-forge-p35-behavior-vo-fit-20260711",
+    "eligible_transition": "lost",
+    "eligible_definition": "p35 passed and p34 failed",
+    "rank_formula": "sha256(seed + NUL + fit + NUL + lost + NUL + category + NUL + id + NUL + exact_prompt)",
+    "rank_order": "ascending hexadecimal sha256 independently within each category",
+    "category_quotas": {
+      "code": 3,
+      "tokenizer": 3,
+      "model-surgery": 2
+    },
+    "audited_calibration_and_heldout_ids_excluded_before_ranking": true,
+    "audited_calibration_and_heldout_exact_prompts_excluded_before_ranking": true,
+    "source_prompt_text_edited": false,
+    "sole_math_loss_policy": "The sole math loss remains heldout-only and is not eligible for fit."
+  },
+  "count": 8,
+  "entries": [
+    {
+      "index": 0,
+      "transition": "lost",
+      "id": "generation_python_add_0835",
+      "category": "code",
+      "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0835.",
+      "prompt_sha256": "14385dcbcd4faf5a0d294196b233918a8b80833533340b43a0d0d81f55283fb5",
+      "selection_rank_sha256": "003fbb325a487425fc12727810ca04376d0447e9486245e9f3d25d9ab71aec15"
+    },
+    {
+      "index": 1,
+      "transition": "lost",
+      "id": "generation_python_add_0254",
+      "category": "code",
+      "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0254.",
+      "prompt_sha256": "e44bdd51a3da58aef340a0899a5ef41925924f7f481fe7d9be5cf07569bccc44",
+      "selection_rank_sha256": "01dd40a92ac7e0ee41183e894157c74641d0e8a224962993565b5be184041b4b"
+    },
+    {
+      "index": 2,
+      "transition": "lost",
+      "id": "generation_python_add_0541",
+      "category": "code",
+      "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0541.",
+      "prompt_sha256": "789093bdff933b4d82bc387a93d4553df16130f574b8ce09376ab70480a3b612",
+      "selection_rank_sha256": "0228a32c53425d28a55652d309c3d490bef90747bcad4c29427b9539dd9a32ec"
+    },
+    {
+      "index": 3,
+      "transition": "lost",
+      "id": "generation_tokenizer_mismatch_0297",
+      "category": "tokenizer",
+      "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0297.",
+      "prompt_sha256": "1022a875c23176a10a62c1d78ce124fbd3cee9635d546d3a31224e60153438f5",
+      "selection_rank_sha256": "057d24373da587e408f2b21007ab3af0210745114fe042c9320c69c35799a7c2"
+    },
+    {
+      "index": 4,
+      "transition": "lost",
+      "id": "generation_tokenizer_mismatch_0059",
+      "category": "tokenizer",
+      "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0059.",
+      "prompt_sha256": "e38996928f82f014c0515869905016ae9ec1fd07cbb42c22278b5e48555a454c",
+      "selection_rank_sha256": "0582c97f064f2e6e8430ab1e85f32afad175543783b212959f087b7d574d494b"
+    },
+    {
+      "index": 5,
+      "transition": "lost",
+      "id": "generation_tokenizer_mismatch_0318",
+      "category": "tokenizer",
+      "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0318.",
+      "prompt_sha256": "71048fe2695c6ce1655e853c7d5f55a9095319232f917adb18cbf180c6062e55",
+      "selection_rank_sha256": "0ac3bd0d82f38aae5a9220366029e3c3e9171062e450a3e6fc128e547a6c59bf"
+    },
+    {
+      "index": 6,
+      "transition": "lost",
+      "id": "generation_model_merge_risk_0400",
+      "category": "model-surgery",
+      "prompt": "Give one risk when merging two language models.\nVariation id: 0400.",
+      "prompt_sha256": "c995f70de340881e6af516c57e1c4ce646ceabccceaa55a330d78da347fbf45c",
+      "selection_rank_sha256": "358a905c7a1c65e9b297da5f952218867b4953889ef687b1cb75548bbdde2548"
+    },
+    {
+      "index": 7,
+      "transition": "lost",
+      "id": "generation_model_merge_risk_0302",
+      "category": "model-surgery",
+      "prompt": "Give one risk when merging two language models.\nVariation id: 0302.",
+      "prompt_sha256": "bc0831552569641649df4bcddf4172e26a33c97a690dde1a61b4d3c0d184ea84",
+      "selection_rank_sha256": "6b4229bea033ee05f28dc1e2ea7b55c1ec04cc74ca0c8447b083bfaab54bb512"
+    }
+  ],
+  "disjointness": {
+    "fit_calibration_id_overlap_count": 0,
+    "fit_heldout_id_overlap_count": 0,
+    "fit_calibration_exact_prompt_overlap_count": 0,
+    "fit_heldout_exact_prompt_overlap_count": 0,
+    "calibration_heldout_exact_prompt_overlap_count": 0,
+    "all_three_sets_pairwise_prompt_disjoint": true,
+    "all_fit_rows_match_transition_inventory_exactly": true
+  },
+  "promotion_boundary": {
+    "broad_generation_suite_modified": false,
+    "broad_promotion_suite_used_for_fit_execution": false,
+    "fit_set_is_a_separate_bounded_fixture": true
+  }
+}

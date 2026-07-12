@@ -1,0 +1,20 @@
+{"prompt":"Question: What is 12 * 13? Answer with only the number.\nAnswer:","response":"156"}
+{"prompt":"Question: What is 19 + 26? Answer with only the number.\nAnswer:","response":"45"}
+{"prompt":"Question: What is 7 * 8? Answer with only the number.\nAnswer:","response":"56"}
+{"prompt":"Question: What is 14 + 29? Answer with only the number.\nAnswer:","response":"43"}
+{"prompt":"Question: What is 6 * 9? Answer with only the number.\nAnswer:","response":"54"}
+{"prompt":"Question: What is 31 + 12? Answer with only the number.\nAnswer:","response":"43"}
+{"prompt":"Question: What is 15 * 4? Answer with only the number.\nAnswer:","response":"60"}
+{"prompt":"Question: What is 22 + 17? Answer with only the number.\nAnswer:","response":"39"}
+{"prompt":"Write a tiny Python function named add that returns the sum of two inputs.\n```python\n","response":"def add(a, b):\n    return a + b\n```"}
+{"prompt":"Write a tiny Python function named multiply that returns the product of two inputs.\n```python\n","response":"def multiply(a, b):\n    return a * b\n```"}
+{"prompt":"Write a tiny Python function named subtract that returns the first input minus the second input.\n```python\n","response":"def subtract(a, b):\n    return a - b\n```"}
+{"prompt":"Write a tiny Python function named square that returns one input multiplied by itself.\n```python\n","response":"def square(x):\n    return x * x\n```"}
+{"prompt":"Question: A person is walking outside and it starts raining hard. What should they do? Answer in one short sentence.\nAnswer:","response":"They should get under cover or use an umbrella to stay dry."}
+{"prompt":"Question: If a glass falls from a table, what usually happens next? Answer in one short sentence.\nAnswer:","response":"It usually falls to the floor and may break."}
+{"prompt":"Question: If you stitch two language models with different tokenizers, what can go wrong? Answer in one short sentence.\nAnswer:","response":"Their token embeddings and logits can refer to different rows, causing broken outputs."}
+{"prompt":"Question: What is neuron merging in model compression? Answer in one short sentence.\nAnswer:","response":"Neuron merging combines similar neurons or channels so their information is folded into fewer units."}
+{"prompt":"Question: Should model surgery be judged only by perplexity? Answer in one short sentence.\nAnswer:","response":"No, it should also be judged by behavior, coherence, and manual generations."}
+{"prompt":"Question: In parent-to-child model folding, should the child be folded into the parent or the parent into the child? Answer in one short sentence.\nAnswer:","response":"The parent should be folded into the target child shape."}
+{"prompt":"Complete this answer with a practical explanation.\nPrompt: A tokenizer mismatch can hurt model stitching because","response":" the same text may map to different token ids, so embeddings and output logits must be aligned carefully."}
+{"prompt":"Complete this answer with a practical explanation.\nPrompt: A behavior gate is useful during recovery because","response":" it can reject a checkpoint that has lower perplexity but worse generated answers."}

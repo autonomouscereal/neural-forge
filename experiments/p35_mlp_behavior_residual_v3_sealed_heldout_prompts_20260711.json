@@ -1,0 +1,10 @@
+[
+  "Write a Python function named interleave that alternates items from two equal-length lists and returns a new list.\n```python\n",
+  "Write a Python function named first_unique that returns the first character occurring exactly once, or None.\n```python\n",
+  "Question: What is 29 * 14? Answer with only the number.\nAnswer:",
+  "Question: A shelf has 63 books arranged equally on 9 levels. How many books are on each level? Answer with only the number.\nAnswer:",
+  "In one concise sentence, explain why two independently trained models can represent the same behavior with different weight values.",
+  "Name one behavior-level test for checking whether a folded MLP preserves context-sensitive generation.",
+  "Oil in a frying pan catches fire. What is the safest immediate response? Answer in one sentence.",
+  "If every maple is a plant and no plant is a machine, can any maple be a machine? Answer yes or no, then give one short reason."
+]
