@@ -436,6 +436,7 @@ def test_post_publish_report_failure_removes_exact_accepted_child(
 
 
 def test_gate_rejects_out_of_domain_fraction_and_runtime_is_source_pinned() -> None:
+    assert runner.CANONICAL_ATTENTION_IMPLEMENTATION == "eager"
     with pytest.raises(runner.ExactTargetNativeStageError, match=r"\[0, 1\]"):
         runner._behavior_gate(
             {**_metrics(), "action_accuracy": 2.0},

@@ -80,6 +80,7 @@ QKVO_SITE_COUNT = TARGET_LAYER_COUNT * TARGET_PHYSICAL_GROUPS
 QKVO_RANK = 8
 SWIGLU_LAYER_COUNT = TARGET_LAYER_COUNT
 SWIGLU_RANK = 8
+CANONICAL_ATTENTION_IMPLEMENTATION = "eager"
 
 DEFAULT_BLANK_TARGET = Path(
     "/mnt/ai_data/neural-forge/canonical_blank_targets/"
@@ -393,6 +394,7 @@ class AuthenticatedPreRegistration:
             },
             "selection_domain": "causal-output-actions-and-free-rollouts-only",
             "runtime_dtype": "float16",
+            "runtime_attention_implementation": (CANONICAL_ATTENTION_IMPLEMENTATION),
             "internal_numeric_matching_can_promote": False,
             "evaluation_contract_sha256": self.evaluation_contract_sha256,
             "artifact_authentication": dict(self.artifact_authentication),
@@ -753,6 +755,7 @@ def authenticate_preregistration(
         "swiglu_rank": SWIGLU_RANK,
         "implementation": implementation_authentication,
         "runtime_dtype": "float16",
+        "runtime_attention_implementation": CANONICAL_ATTENTION_IMPLEMENTATION,
         "canonical_parent_evidence": {
             "source_split": "fit-only-deterministic-partition",
             "candidate_split_used": False,
@@ -1269,6 +1272,7 @@ class ProductionStageRuntime:
             trust_remote_code=False,
             torch_dtype=dtype,
             device_map=self.parent_device_map,
+            attn_implementation=CANONICAL_ATTENTION_IMPLEMENTATION,
         ).eval()
         target = AutoModelForCausalLM.from_pretrained(
             contract.target.path,
@@ -1276,6 +1280,7 @@ class ProductionStageRuntime:
             trust_remote_code=False,
             torch_dtype=dtype,
             device_map=self.target_device_map,
+            attn_implementation=CANONICAL_ATTENTION_IMPLEMENTATION,
         ).eval()
         tokenizer = AutoTokenizer.from_pretrained(
             contract.parent.path,
@@ -1446,6 +1451,7 @@ class ProductionStageRuntime:
                 trust_remote_code=False,
                 torch_dtype=self._torch_dtype(),
                 device_map="cpu",
+                attn_implementation=CANONICAL_ATTENTION_IMPLEMENTATION,
             ).eval()
             certificate = certify_native_dense_gqa_target(
                 reloaded,
