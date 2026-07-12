@@ -1,0 +1,10 @@
+[
+  "Write a tiny Python function that adds two numbers.\nVariation id: 0345.",
+  "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0241.",
+  "Give one risk when merging two language models.\nVariation id: 0995.",
+  "Question: What is 44 * 27? Answer with only the number.\nAnswer:",
+  "Write a tiny Python function that adds two numbers.\nVariation id: 0744.",
+  "Write a tiny Python function named add that returns a + b.\n```python\n",
+  "Question: What is 39 * 5? Answer with only the number.\nAnswer:",
+  "Give one risk when merging two language models.\nVariation id: 0449."
+]
