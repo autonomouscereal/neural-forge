@@ -405,7 +405,10 @@ def prepare_stage(
             "capture_batch_size": 1,
             "max_prompt_tokens": 128,
             "canonical_validation_count": 4,
-            "bootstrap_kwargs": {"heldout_gate_policy": "output_only"},
+            "bootstrap_kwargs": {
+                "heldout_gate_policy": "output_only",
+                "trace_pooling": "last_valid",
+            },
             "candidate_split_used_during_bootstrap": False,
             "sealed_split_used_during_bootstrap": False,
         },

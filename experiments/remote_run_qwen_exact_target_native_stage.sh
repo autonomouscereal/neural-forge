@@ -52,6 +52,7 @@ fi
 
 # Physical GPU 4 is an RTX 3090 and physical GPU 6 is an RTX 8000.  CUDA
 # remaps them to logical cuda:0 (parent) and cuda:1 (child) in this process.
+export CUDA_DEVICE_ORDER=${CUDA_DEVICE_ORDER:-PCI_BUS_ID}
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-4,6}
 test ! -e "$OUTPUT_ROOT"
 echo "Mode: foreground execution; physical GPUs ${CUDA_VISIBLE_DEVICES}, parent logical cuda:0, child logical cuda:1."

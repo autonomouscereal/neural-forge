@@ -123,7 +123,8 @@ def test_builder_seals_real_curated_corpus_without_model_creation(tmp_path) -> N
         "selection_policy": "rollout-first-acquisition",
     }
     assert preregistration["compiler"]["bootstrap_kwargs"] == {
-        "heldout_gate_policy": "output_only"
+        "heldout_gate_policy": "output_only",
+        "trace_pooling": "last_valid",
     }
     assert preregistration["corpus_provenance"]["synthetic_replicas"] == 0
     assert preregistration["corpus_provenance"]["prompt_text_modified"] is False
@@ -169,6 +170,7 @@ def test_remote_wrapper_defaults_preflight_and_requires_explicit_execute() -> No
     assert '[[ ${1:-} == "--execute" ]]' in script
     assert "--preflight" in script
     assert "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-4,6}" in script
+    assert "CUDA_DEVICE_ORDER=${CUDA_DEVICE_ORDER:-PCI_BUS_ID}" in script
     assert "parent logical cuda:0, child logical cuda:1" in script
     assert 'ROOT=$(realpath -e "$ROOT")' in script
     assert 'test "$ROOT" = "/home/cereal/model-surgery-lab/neural-forge-src"' in script
