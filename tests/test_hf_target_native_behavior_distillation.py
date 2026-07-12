@@ -507,6 +507,7 @@ def test_divergence_curriculum_and_staged_factor_rates_are_exact() -> None:
 def test_legacy_schedule_canonical_hash_is_unchanged_by_guided_extension() -> None:
     schedule = BehaviorDistillationSchedule(steps=2, learning_rate=1e-3)
     assert not any(name.startswith("guided") for name in schedule.as_dict())
+    assert "sealed_evaluation_policy" not in schedule.as_dict()
     assert behavior_distillation._canonical_sha256(schedule.as_dict()) == (
         "da96ebef088cfab8813aaba8571f0afe4c48f8e472494a78c6b7874612f42105"
     )
@@ -708,6 +709,28 @@ def test_v3_pack_authenticates_26_tensors_and_rejects_source_tamper() -> None:
         expected_guided_source_binding=binding,
     )
     assert authenticated.factor_state_sha256 == state.factor_state_sha256
+    durable_event = behavior_distillation._durable_behavior_checkpoint(
+        step=7,
+        metrics=_selection_metrics(
+            exact_rollouts=1,
+            action_agreements=2,
+            token_matches=3,
+            lcp_tokens=3,
+            mean_logprob=-4.0,
+        ),
+        state=state,
+        pareto_safe_vs_step0=True,
+    )
+    durable_payload = durable_event.factor_state.as_factor_payload()
+    durable_authenticated = behavior_distillation._authenticate_factor_payload_state(
+        durable_payload,
+        entries,
+        schema=behavior_distillation.BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+        lexical_rank=3,
+        expected_guided_source_binding=binding,
+    )
+    assert durable_authenticated.factor_state_sha256 == state.factor_state_sha256
+    assert durable_event.factor_state.guided_source_binding == binding
 
     tampered = copy.deepcopy(payload)
     tampered_binding_payload = dict(tampered["guided_source_binding"])
@@ -882,6 +905,360 @@ def test_guided_source_authentication_binds_live_v2_and_exact_basis_bytes() -> N
             source_v2_state,
         )
     delattr(child, "_test_guided_registry")
+    transaction.rollback()
+
+
+def test_durable_checkpoint_callback_emits_every_authenticated_snapshot() -> None:
+    torch.manual_seed(120)
+    child = _StrictToyTarget()
+    parent = copy.deepcopy(child)
+    with torch.no_grad():
+        parent.lm_head.weight.copy_(torch.roll(parent.lm_head.weight, 3, dims=0))
+    transaction = _transaction(child)
+    domains = {
+        "fit": _domain("fit", [[1, 2, 3]], "1" * 64),
+        "calibration": _domain("calibration", [[4, 5, 6]], "2" * 64),
+        "sealed": _domain("sealed", [[7, 8, 9]], "3" * 64),
+    }
+    schedule = BehaviorDistillationSchedule(
+        steps=2,
+        learning_rate=0.02,
+        checkpoint_steps=(1,),
+        fit_horizon=1,
+        evaluation_horizon=1,
+        top_k=2,
+    )
+    events: list[behavior_distillation.DurableBehaviorCheckpoint] = []
+
+    def sink(event: behavior_distillation.DurableBehaviorCheckpoint) -> object:
+        events.append(event)
+        return {"selected_step": 999, "unlock_sealed": False}
+
+    result = train_target_native_behavior_distillation(
+        transaction,
+        parent,
+        domains,
+        schedule,
+        durable_checkpoint_callback=sink,
+    )
+
+    assert [event.step for event in events] == [0, 1, 2]
+    assert [value.step for value in result.checkpoints] == [0, 1, 2]
+    assert all(event.metrics.action_count > 0 for event in events)
+    assert all(event.factor_state.factor_state_sha256 for event in events)
+    assert all(event.checkpoint_sha256 for event in events)
+    assert all(
+        len(event.factor_state.tensors) == 14
+        and event.factor_state.as_manifest()["factor_count"] == 14
+        for event in events
+    )
+    assert result.selected_step != 999
+    with pytest.raises(TypeError):
+        events[0].factor_state.tensors[0].raw_bytes[0] = 0  # type: ignore[index]
+    with pytest.raises(AttributeError):
+        events[0].step = 99  # type: ignore[misc]
+
+    first_tensor = events[0].factor_state.tensors[0]
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="invalid byte count",
+    ):
+        replace(first_tensor, raw_bytes=first_tensor.raw_bytes[:-1])
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="Unsupported durable tensor dtype",
+    ):
+        replace(first_tensor, dtype="torch.not_a_dtype")
+    nonfinite = torch.full(first_tensor.shape, float("nan"), dtype=torch.float32)
+    nonfinite_bytes = nonfinite.view(torch.uint8).numpy().tobytes()
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="contains NaN or infinity",
+    ):
+        replace(
+            first_tensor,
+            dtype=str(nonfinite.dtype),
+            raw_bytes=nonfinite_bytes,
+            tensor_sha256=behavior_distillation._raw_tensor_sha256(
+                dtype=str(nonfinite.dtype),
+                shape=tuple(nonfinite.shape),
+                raw_bytes=nonfinite_bytes,
+            ),
+        )
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="names/count",
+    ):
+        replace(
+            events[0].factor_state,
+            tensors=events[0].factor_state.tensors[:-1],
+        )
+
+    step0_payload = events[0].factor_state.as_factor_payload()
+    restored = restore_target_native_factor_payload(transaction, step0_payload)
+    assert restored.factor_state_sha256 == events[0].factor_state.factor_state_sha256
+    assert capture_target_native_factor_state(transaction).factor_state_sha256 == (
+        events[0].factor_state.factor_state_sha256
+    )
+    transaction.rollback()
+
+
+def test_durable_checkpoint_callback_failure_exactly_restores_step_zero() -> None:
+    torch.manual_seed(121)
+    child = _StrictToyTarget()
+    parent = copy.deepcopy(child)
+    with torch.no_grad():
+        parent.lm_head.weight.copy_(torch.roll(parent.lm_head.weight, 5, dims=0))
+    transaction = _transaction(child)
+    step0 = capture_target_native_factor_state(transaction)
+    domains = {
+        "fit": _domain("fit", [[1, 2, 3]], "4" * 64),
+        "calibration": _domain("calibration", [[4, 5, 6]], "5" * 64),
+        "sealed": _domain("sealed", [[7, 8, 9]], "6" * 64),
+    }
+    schedule = BehaviorDistillationSchedule(
+        steps=2,
+        learning_rate=0.02,
+        checkpoint_steps=(1,),
+        fit_horizon=1,
+        evaluation_horizon=1,
+        top_k=2,
+    )
+    observed_steps: list[int] = []
+
+    def failing_sink(event: behavior_distillation.DurableBehaviorCheckpoint) -> None:
+        observed_steps.append(event.step)
+        if event.step == 1:
+            raise RuntimeError("durable sink failed")
+
+    with pytest.raises(RuntimeError, match="durable sink failed"):
+        train_target_native_behavior_distillation(
+            transaction,
+            parent,
+            domains,
+            schedule,
+            durable_checkpoint_callback=failing_sink,
+        )
+    assert observed_steps == [0, 1]
+    transaction.assert_live()
+    assert capture_target_native_factor_state(transaction).factor_state_sha256 == (
+        step0.factor_state_sha256
+    )
+    transaction.rollback()
+
+
+@pytest.mark.parametrize("error_type", [KeyboardInterrupt, SystemExit])
+def test_durable_checkpoint_base_exception_exactly_restores_step_zero(
+    error_type: type[BaseException],
+) -> None:
+    torch.manual_seed(124)
+    child = _StrictToyTarget()
+    parent = copy.deepcopy(child)
+    with torch.no_grad():
+        parent.lm_head.weight.copy_(torch.roll(parent.lm_head.weight, 4, dims=0))
+    transaction = _transaction(child)
+    step0 = capture_target_native_factor_state(transaction)
+    domains = {
+        "fit": _domain("fit", [[1, 2, 3]], "d" * 64),
+        "calibration": _domain("calibration", [[4, 5, 6]], "e" * 64),
+        "sealed": _domain("sealed", [[7, 8, 9]], "f" * 64),
+    }
+    schedule = BehaviorDistillationSchedule(
+        steps=2,
+        learning_rate=0.02,
+        checkpoint_steps=(1,),
+        fit_horizon=1,
+        evaluation_horizon=1,
+        top_k=2,
+    )
+
+    def interrupted_sink(
+        event: behavior_distillation.DurableBehaviorCheckpoint,
+    ) -> None:
+        if event.step == 1:
+            raise error_type("durable sink interrupted")
+
+    with pytest.raises(error_type, match="durable sink interrupted"):
+        train_target_native_behavior_distillation(
+            transaction,
+            parent,
+            domains,
+            schedule,
+            durable_checkpoint_callback=interrupted_sink,
+        )
+    transaction.assert_live()
+    assert capture_target_native_factor_state(transaction).factor_state_sha256 == (
+        step0.factor_state_sha256
+    )
+    transaction.rollback()
+
+
+def test_durable_checkpoint_callback_cannot_mutate_live_factors() -> None:
+    torch.manual_seed(122)
+    child = _StrictToyTarget()
+    parent = copy.deepcopy(child)
+    transaction = _transaction(child)
+    step0 = capture_target_native_factor_state(transaction)
+    domains = {
+        "fit": _domain("fit", [[1, 2, 3]], "7" * 64),
+        "calibration": _domain("calibration", [[4, 5, 6]], "8" * 64),
+        "sealed": _domain("sealed", [[7, 8, 9]], "9" * 64),
+    }
+    schedule = BehaviorDistillationSchedule(
+        steps=1,
+        learning_rate=0.02,
+        fit_horizon=1,
+        evaluation_horizon=1,
+        top_k=2,
+    )
+
+    def malicious_sink(
+        event: behavior_distillation.DurableBehaviorCheckpoint,
+    ) -> None:
+        if event.step == 1:
+            with torch.no_grad():
+                transaction.output_trainable_parameters()[0].add_(1.0)
+
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="callback altered live compiler factors",
+    ):
+        train_target_native_behavior_distillation(
+            transaction,
+            parent,
+            domains,
+            schedule,
+            durable_checkpoint_callback=malicious_sink,
+        )
+    transaction.assert_live()
+    assert capture_target_native_factor_state(transaction).factor_state_sha256 == (
+        step0.factor_state_sha256
+    )
+    transaction.rollback()
+
+
+@pytest.mark.parametrize("mutation", ["parameter", "storage"])
+def test_durable_checkpoint_callback_repairs_factor_ownership_and_storage(
+    mutation: str,
+) -> None:
+    torch.manual_seed(125)
+    child = _StrictToyTarget()
+    parent = copy.deepcopy(child)
+    transaction = _transaction(child)
+    step0 = capture_target_native_factor_state(transaction)
+    registry = transaction.qkvo_handle.adapter_registry
+    parameter_name, original = next(registry.named_parameters(recurse=False))
+    original_data_ptr = int(original.data_ptr())
+    domains = {
+        "fit": _domain("fit", [[1, 2, 3]], "0" * 64),
+        "calibration": _domain("calibration", [[4, 5, 6]], "1" * 64),
+        "sealed": _domain("sealed", [[7, 8, 9]], "2" * 64),
+    }
+    schedule = BehaviorDistillationSchedule(
+        steps=1,
+        learning_rate=0.02,
+        fit_horizon=1,
+        evaluation_horizon=1,
+        top_k=2,
+    )
+
+    def structural_sink(
+        event: behavior_distillation.DurableBehaviorCheckpoint,
+    ) -> None:
+        if event.step != 1:
+            return
+        if mutation == "parameter":
+            setattr(
+                registry,
+                parameter_name,
+                nn.Parameter(original.detach().clone()),
+            )
+        else:
+            original.data = original.detach().clone()
+
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="callback altered live compiler factors",
+    ):
+        train_target_native_behavior_distillation(
+            transaction,
+            parent,
+            domains,
+            schedule,
+            durable_checkpoint_callback=structural_sink,
+        )
+    transaction.assert_live()
+    assert dict(registry.named_parameters(recurse=False))[parameter_name] is original
+    assert int(original.data_ptr()) == original_data_ptr
+    assert capture_target_native_factor_state(transaction).factor_state_sha256 == (
+        step0.factor_state_sha256
+    )
+    transaction.rollback()
+
+
+def test_candidate_only_policy_never_accepts_or_evaluates_a_sealed_suite(
+    monkeypatch,
+) -> None:
+    torch.manual_seed(123)
+    child = _StrictToyTarget()
+    parent = copy.deepcopy(child)
+    with torch.no_grad():
+        parent.lm_head.weight.copy_(torch.roll(parent.lm_head.weight, 5, dims=0))
+        parent.layers[0].self_attn.q_proj.weight.mul_(1.35)
+    transaction = _transaction(child)
+    domains = {
+        "fit": _domain("fit", [[1, 2, 3], [4, 5, 6]], "a" * 64),
+        "calibration": _domain("calibration", [[7, 8], [9, 10]], "b" * 64),
+    }
+    schedule = BehaviorDistillationSchedule(
+        steps=3,
+        learning_rate=0.04,
+        checkpoint_steps=(1, 2),
+        fit_horizon=2,
+        evaluation_horizon=2,
+        fit_prompts_per_step=2,
+        top_k=3,
+        gradient_clip_norm=5.0,
+        sealed_evaluation_policy="disabled",
+    )
+    evaluated_domains: list[str] = []
+    evaluator = behavior_distillation.evaluate_behavior_domain
+
+    def audited_evaluator(*args, **kwargs):
+        evaluated_domains.append(args[2].split_name)
+        return evaluator(*args, **kwargs)
+
+    monkeypatch.setattr(
+        behavior_distillation, "evaluate_behavior_domain", audited_evaluator
+    )
+    result = train_target_native_behavior_distillation(
+        transaction,
+        parent,
+        domains,
+        schedule,
+    )
+    assert result.candidate_gate_passed is True
+    assert result.sealed_evaluation_policy == "disabled"
+    assert result.sealed_evaluation_unlocked is False
+    assert result.sealed_metrics is None
+    assert "sealed" not in evaluated_domains
+    assert schedule.as_dict()["sealed_evaluation_policy"] == "disabled"
+    assert result.evidence_payload()["candidate_only_evaluation"] is True
+    assert result.evidence_payload()["sealed_suite_supplied"] is False
+    assert result.evidence_payload()["sealed_evaluation_attempted"] is False
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="exactly fit, calibration",
+    ):
+        train_target_native_behavior_distillation(
+            transaction,
+            parent,
+            {
+                **domains,
+                "sealed": _domain("sealed", [[11, 12]], "c" * 64),
+            },
+            schedule,
+        )
     transaction.rollback()
 
 

@@ -55,6 +55,9 @@ BEHAVIOR_FACTOR_PACK_SCHEMA = "neural-forge-target-native-factor-pack-v1"
 BEHAVIOR_FACTOR_PACK_V2_SCHEMA = "neural-forge-target-native-factor-pack-v2"
 BEHAVIOR_FACTOR_PACK_V3_SCHEMA = "neural-forge-target-native-factor-pack-v3"
 BEHAVIOR_CHECKPOINT_SCHEMA = "neural-forge-behavior-checkpoint-v1"
+DURABLE_BEHAVIOR_CHECKPOINT_SCHEMA = (
+    "neural-forge-durable-behavior-checkpoint-v1"
+)
 
 GUIDED_QKVO_PARAMETER_COUNT = 7_127_040
 GUIDED_QKVO_FACTOR_TENSOR_COUNT = 8
@@ -97,6 +100,7 @@ BehaviorSelectionPolicy = Literal[
     "strict-nonregression",
     "rollout-first-acquisition",
 ]
+BehaviorSealedEvaluationPolicy = Literal["candidate-gated", "disabled"]
 GuidedTrainingStage = Literal["guided-left", "guided", "joint"]
 
 
@@ -194,12 +198,27 @@ def _token_ids(value: Any, name: str) -> tuple[int, ...]:
 
 def _tensor_sha256(value: Tensor) -> str:
     detached = value.detach().cpu().contiguous()
+    return _raw_tensor_sha256(
+        dtype=str(detached.dtype),
+        shape=tuple(detached.shape),
+        raw_bytes=detached.reshape(-1).view(torch.uint8).numpy().tobytes(),
+    )
+
+
+def _raw_tensor_sha256(
+    *,
+    dtype: str,
+    shape: Sequence[int],
+    raw_bytes: bytes,
+) -> str:
+    """Hash immutable tensor bytes in the legacy factor-pack hash domain."""
+
     digest = hashlib.sha256()
-    digest.update(str(detached.dtype).encode("ascii"))
+    digest.update(str(dtype).encode("ascii"))
     digest.update(b"\0")
-    digest.update(repr(tuple(detached.shape)).encode("ascii"))
+    digest.update(repr(tuple(shape)).encode("ascii"))
     digest.update(b"\0")
-    digest.update(detached.reshape(-1).view(torch.uint8).numpy().tobytes())
+    digest.update(raw_bytes)
     return digest.hexdigest()
 
 
@@ -420,6 +439,7 @@ class BehaviorDistillationSchedule:
     max_evaluation_prefixes: int = 1_000_000
     max_checkpoints: int = 16
     selection_policy: BehaviorSelectionPolicy = "strict-nonregression"
+    sealed_evaluation_policy: BehaviorSealedEvaluationPolicy = "candidate-gated"
 
     def __post_init__(self) -> None:
         if not isinstance(self.guided_continuation_enabled, bool):
@@ -433,6 +453,12 @@ class BehaviorDistillationSchedule:
                 "rollout-first-acquisition."
             )
         object.__setattr__(self, "selection_policy", policy)
+        sealed_policy = str(self.sealed_evaluation_policy).strip().lower()
+        if sealed_policy not in {"candidate-gated", "disabled"}:
+            raise TargetNativeBehaviorDistillationError(
+                "sealed_evaluation_policy must be candidate-gated or disabled."
+            )
+        object.__setattr__(self, "sealed_evaluation_policy", sealed_policy)
         if not isinstance(self.child_lane_starts_at_divergence, bool):
             raise TargetNativeBehaviorDistillationError(
                 "child_lane_starts_at_divergence must be boolean."
@@ -632,7 +658,13 @@ class BehaviorDistillationSchedule:
                 else getattr(self, field_name)
             )
             for field_name in self.__dataclass_fields__
-            if self.guided_continuation_enabled or field_name not in guided_fields
+            if (
+                (self.guided_continuation_enabled or field_name not in guided_fields)
+                and (
+                    field_name != "sealed_evaluation_policy"
+                    or self.sealed_evaluation_policy != "candidate-gated"
+                )
+            )
         }
 
 
@@ -1206,6 +1238,99 @@ def _factor_parameters(
                 "The guided continuation must expose exactly 26 factor tensors."
             )
     return tuple(sorted(entries, key=lambda item: item[0]))
+
+
+@dataclass(frozen=True, slots=True)
+class _LiveFactorBinding:
+    """Private ownership/storage guard around one trusted callback invocation."""
+
+    qualified_name: str
+    registry: nn.Module
+    parameter_name: str
+    parameter: nn.Parameter
+    storage_alias: Tensor
+    data_ptr: int
+    requires_grad: bool
+
+
+def _live_factor_bindings(
+    transaction: ExactTargetCompilerTransaction,
+    *,
+    guided_tranche: Any | None,
+) -> tuple[_LiveFactorBinding, ...]:
+    """Capture live factor owners without exposing them to the callback event."""
+
+    registries: list[tuple[str, nn.Module]] = [
+        ("qkvo", transaction.qkvo_handle.adapter_registry),
+        ("gud", transaction.swiglu_handle.registry),
+    ]
+    lexical = _lexical_handle(transaction, require_finite=True)
+    if lexical is not None:
+        registries.append(("lexical", _lexical_registry(lexical)))
+    if guided_tranche is not None:
+        guided_registry = getattr(guided_tranche, "guided_registry", None)
+        if not isinstance(guided_registry, nn.Module):
+            raise TargetNativeBehaviorDistillationError(
+                "guided_tranche has no guided factor registry."
+            )
+        registries.append(("guided_qkvo", guided_registry))
+
+    owners: dict[str, tuple[nn.Module, str, nn.Parameter]] = {}
+    for prefix, registry in registries:
+        for parameter_name, parameter in registry.named_parameters(recurse=False):
+            qualified_name = f"{prefix}.{parameter_name}"
+            if qualified_name in owners:
+                raise TargetNativeBehaviorDistillationError(
+                    "Live factor ownership contains a duplicate name."
+                )
+            owners[qualified_name] = (registry, parameter_name, parameter)
+
+    entries = _factor_parameters(transaction, guided_tranche=guided_tranche)
+    if set(owners) != {name for name, _parameter in entries}:
+        raise TargetNativeBehaviorDistillationError(
+            "Live factor ownership does not match the canonical factor set."
+        )
+    result: list[_LiveFactorBinding] = []
+    for qualified_name, parameter in entries:
+        registry, parameter_name, owned_parameter = owners[qualified_name]
+        if owned_parameter is not parameter:
+            raise TargetNativeBehaviorDistillationError(
+                "Live factor enumeration disagrees with registry ownership."
+            )
+        result.append(
+            _LiveFactorBinding(
+                qualified_name=qualified_name,
+                registry=registry,
+                parameter_name=parameter_name,
+                parameter=parameter,
+                # Keep the original storage alive if trusted sink code
+                # accidentally replaces ``Parameter.data``.
+                storage_alias=parameter.detach(),
+                data_ptr=int(parameter.data_ptr()),
+                requires_grad=bool(parameter.requires_grad),
+            )
+        )
+    return tuple(result)
+
+
+def _repair_live_factor_bindings(
+    bindings: Sequence[_LiveFactorBinding],
+) -> bool:
+    """Repair callback-time owner/storage replacement and report any mutation."""
+
+    changed = False
+    for binding in bindings:
+        current = binding.registry._parameters.get(binding.parameter_name)
+        if current is not binding.parameter:
+            binding.registry._parameters[binding.parameter_name] = binding.parameter
+            changed = True
+        if int(binding.parameter.data_ptr()) != binding.data_ptr:
+            binding.parameter.data = binding.storage_alias
+            changed = True
+        if bool(binding.parameter.requires_grad) != binding.requires_grad:
+            binding.parameter.requires_grad_(binding.requires_grad)
+            changed = True
+    return changed
 
 
 def authenticate_guided_factor_sources(
@@ -2018,6 +2143,394 @@ class BehaviorCheckpoint:
 
 
 @dataclass(frozen=True, slots=True)
+class DurableFactorTensorSnapshot:
+    """One immutable factor tensor for an external content-addressed sink."""
+
+    name: str
+    shape: tuple[int, ...]
+    dtype: str
+    tensor_sha256: str
+    raw_bytes: bytes
+
+    def __post_init__(self) -> None:
+        name = str(self.name)
+        if not name:
+            raise TargetNativeBehaviorDistillationError(
+                "Durable factor tensor name cannot be blank."
+            )
+        shape = tuple(_index(value, "factor dimension") for value in self.shape)
+        dtype = str(self.dtype)
+        if not dtype.startswith("torch."):
+            raise TargetNativeBehaviorDistillationError(
+                "Durable factor tensor dtype must be a torch dtype name."
+            )
+        torch_dtype = getattr(torch, dtype.removeprefix("torch."), None)
+        if not isinstance(torch_dtype, torch.dtype):
+            raise TargetNativeBehaviorDistillationError(
+                f"Unsupported durable tensor dtype {dtype!r}."
+            )
+        raw_bytes = bytes(self.raw_bytes)
+        try:
+            element_size = int(torch.empty((), dtype=torch_dtype).element_size())
+        except (RuntimeError, TypeError) as error:
+            raise TargetNativeBehaviorDistillationError(
+                f"Unsupported durable tensor dtype {dtype!r}."
+            ) from error
+        if len(raw_bytes) != math.prod(shape) * element_size:
+            raise TargetNativeBehaviorDistillationError(
+                f"Durable factor tensor {name!r} has an invalid byte count."
+            )
+        try:
+            finite_view = torch.frombuffer(bytearray(raw_bytes), dtype=torch_dtype)
+            finite = bool(torch.isfinite(finite_view).all())
+        except (RuntimeError, TypeError) as error:
+            raise TargetNativeBehaviorDistillationError(
+                f"Unsupported durable tensor dtype {dtype!r}."
+            ) from error
+        if not finite:
+            raise TargetNativeBehaviorDistillationError(
+                f"Durable factor tensor {name!r} contains NaN or infinity."
+            )
+        digest = _sha256(self.tensor_sha256, "tensor_sha256")
+        if (
+            _raw_tensor_sha256(
+                dtype=dtype,
+                shape=shape,
+                raw_bytes=raw_bytes,
+            )
+            != digest
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                f"Durable factor tensor {name!r} failed byte authentication."
+            )
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "shape", shape)
+        object.__setattr__(self, "dtype", dtype)
+        object.__setattr__(self, "tensor_sha256", digest)
+        object.__setattr__(self, "raw_bytes", raw_bytes)
+
+    def as_manifest_row(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "shape": list(self.shape),
+            "dtype": self.dtype,
+            "tensor_sha256": self.tensor_sha256,
+            "byte_count": len(self.raw_bytes),
+        }
+
+    def materialize_tensor(self) -> Tensor:
+        """Return a new mutable CPU tensor without aliasing the stored bytes."""
+
+        dtype = getattr(torch, self.dtype.removeprefix("torch."), None)
+        if not isinstance(dtype, torch.dtype):
+            raise TargetNativeBehaviorDistillationError(
+                f"Unsupported durable tensor dtype {self.dtype!r}."
+            )
+        value = torch.frombuffer(bytearray(self.raw_bytes), dtype=dtype).clone()
+        expected_numel = math.prod(self.shape)
+        if int(value.numel()) != expected_numel:
+            raise TargetNativeBehaviorDistillationError(
+                f"Durable factor tensor {self.name!r} has an invalid byte count."
+            )
+        value = value.reshape(self.shape)
+        if _tensor_sha256(value) != self.tensor_sha256:
+            raise TargetNativeBehaviorDistillationError(
+                f"Materialized durable tensor {self.name!r} failed authentication."
+            )
+        return value
+
+
+@dataclass(frozen=True, slots=True)
+class DurableFactorStateSnapshot:
+    """Immutable, authenticated full factor state with no live tensor aliases."""
+
+    schema: str
+    tensors: tuple[DurableFactorTensorSnapshot, ...]
+    factor_state_sha256: str
+    lexical_rank: int | None = None
+    guided_source_binding: GuidedFactorSourceBinding | None = None
+
+    def __post_init__(self) -> None:
+        schema = str(self.schema)
+        if schema not in {
+            BEHAVIOR_FACTOR_PACK_SCHEMA,
+            BEHAVIOR_FACTOR_PACK_V2_SCHEMA,
+            BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+        }:
+            raise TargetNativeBehaviorDistillationError(
+                f"Unsupported durable factor-state schema {schema!r}."
+            )
+        tensors = tuple(self.tensors)
+        if not tensors or any(
+            not isinstance(value, DurableFactorTensorSnapshot) for value in tensors
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                "Durable factor state requires immutable tensor snapshots."
+            )
+        names = tuple(value.name for value in tensors)
+        if len(set(names)) != len(names) or names != tuple(sorted(names)):
+            raise TargetNativeBehaviorDistillationError(
+                "Durable factor tensors must have unique sorted names."
+            )
+        expected_names = set(_QKVO_GUD_FACTOR_NAMES)
+        if schema in {
+            BEHAVIOR_FACTOR_PACK_V2_SCHEMA,
+            BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+        }:
+            expected_names.update(_LEXICAL_FACTOR_NAMES)
+        if schema == BEHAVIOR_FACTOR_PACK_V3_SCHEMA:
+            expected_names.update(_GUIDED_QKVO_FACTOR_NAMES)
+        if set(names) != expected_names:
+            raise TargetNativeBehaviorDistillationError(
+                "Durable factor names/count do not match the factor-pack schema."
+            )
+        lexical_rank = self.lexical_rank
+        if schema == BEHAVIOR_FACTOR_PACK_SCHEMA:
+            if lexical_rank is not None or self.guided_source_binding is not None:
+                raise TargetNativeBehaviorDistillationError(
+                    "A v1 durable factor state cannot carry lexical or guided metadata."
+                )
+        else:
+            lexical_rank = _index(lexical_rank, "lexical_rank", positive=True)
+        if schema == BEHAVIOR_FACTOR_PACK_V3_SCHEMA:
+            if not isinstance(self.guided_source_binding, GuidedFactorSourceBinding):
+                raise TargetNativeBehaviorDistillationError(
+                    "A v3 durable factor state requires guided source binding."
+                )
+        elif self.guided_source_binding is not None:
+            raise TargetNativeBehaviorDistillationError(
+                "Guided source binding is valid only for a v3 durable factor state."
+            )
+        rows = [
+            {
+                "name": value.name,
+                "shape": list(value.shape),
+                "dtype": value.dtype,
+                "tensor_sha256": value.tensor_sha256,
+            }
+            for value in tensors
+        ]
+        expected = _factor_state_sha256(
+            rows,
+            schema=schema,
+            lexical_rank=lexical_rank,
+            guided_source_binding=self.guided_source_binding,
+        )
+        digest = _sha256(self.factor_state_sha256, "factor_state_sha256")
+        if expected != digest:
+            raise TargetNativeBehaviorDistillationError(
+                "Durable factor-state manifest failed authentication."
+            )
+        object.__setattr__(self, "schema", schema)
+        object.__setattr__(self, "tensors", tensors)
+        object.__setattr__(self, "factor_state_sha256", digest)
+        object.__setattr__(self, "lexical_rank", lexical_rank)
+
+    def as_manifest(self) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "schema": self.schema,
+            "factor_count": len(self.tensors),
+            "factors": [value.as_manifest_row() for value in self.tensors],
+            "factor_state_sha256": self.factor_state_sha256,
+            "parent_state_included": False,
+            "native_child_state_included": False,
+            "optimizer_state_included": False,
+        }
+        if self.schema in {
+            BEHAVIOR_FACTOR_PACK_V2_SCHEMA,
+            BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+        }:
+            result["lexical_rank"] = self.lexical_rank
+        if self.guided_source_binding is not None:
+            result["guided_source_binding"] = self.guided_source_binding.as_dict()
+            result["guided_source_binding_sha256"] = (
+                self.guided_source_binding.binding_sha256
+            )
+            result["inherited_product_regrouped"] = False
+            result["guided_product_regrouped"] = False
+        return result
+
+    def materialize_factor_state(self) -> TargetNativeFactorState:
+        """Materialize an authenticated, storage-only factor-state value.
+
+        The returned state deliberately has no live parameter ownership.  Use
+        :meth:`as_factor_payload` with ``restore_target_native_factor_payload``
+        to authenticate it into a live compiler transaction.
+        """
+
+        tensors = tuple(value.materialize_tensor() for value in self.tensors)
+        state = TargetNativeFactorState(
+            names=tuple(value.name for value in self.tensors),
+            tensors=tensors,
+            tensor_sha256s=tuple(value.tensor_sha256 for value in self.tensors),
+            factor_state_sha256=self.factor_state_sha256,
+            schema=self.schema,
+            lexical_rank=self.lexical_rank,
+            guided_source_binding=self.guided_source_binding,
+        )
+        if state.as_manifest()["factor_state_sha256"] != self.factor_state_sha256:
+            raise TargetNativeBehaviorDistillationError(
+                "Materialized durable factor state failed authentication."
+            )
+        return state
+
+    def as_factor_payload(self) -> dict[str, Any]:
+        """Return the public payload accepted by factor-payload restoration."""
+
+        return self.materialize_factor_state().as_payload()
+
+
+@dataclass(frozen=True, slots=True)
+class DurableBehaviorCheckpoint:
+    """Immutable trainer-to-sink event emitted after full checkpoint capture."""
+
+    step: int
+    metrics: CausalBehaviorMetrics
+    factor_state: DurableFactorStateSnapshot
+    pareto_safe_vs_step0: bool
+    checkpoint_sha256: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "step", _index(self.step, "checkpoint step"))
+        if not isinstance(self.metrics, CausalBehaviorMetrics):
+            raise TargetNativeBehaviorDistillationError(
+                "Durable checkpoint metrics must be CausalBehaviorMetrics."
+            )
+        if not isinstance(self.factor_state, DurableFactorStateSnapshot):
+            raise TargetNativeBehaviorDistillationError(
+                "Durable checkpoint requires an authenticated factor state."
+            )
+        if not isinstance(self.pareto_safe_vs_step0, bool):
+            raise TargetNativeBehaviorDistillationError(
+                "pareto_safe_vs_step0 must be boolean."
+            )
+        object.__setattr__(
+            self,
+            "checkpoint_sha256",
+            _canonical_sha256(self.as_manifest()),
+        )
+
+    def as_manifest(self) -> dict[str, Any]:
+        return {
+            "schema": DURABLE_BEHAVIOR_CHECKPOINT_SCHEMA,
+            "step": self.step,
+            "metrics": self.metrics.as_dict(),
+            "factor_state": self.factor_state.as_manifest(),
+            "pareto_safe_vs_step0": self.pareto_safe_vs_step0,
+            "behavior_metrics_complete": True,
+            "selection_complete": False,
+            "callback_controls_selection": False,
+            "callback_controls_optimizer": False,
+            "callback_controls_sealed_access": False,
+            "callback_controls_numeric_promotion": False,
+            "callback_controls_promotion": False,
+        }
+
+
+DurableBehaviorCheckpointCallback = Callable[[DurableBehaviorCheckpoint], None]
+
+
+def _durable_behavior_checkpoint(
+    *,
+    step: int,
+    metrics: CausalBehaviorMetrics,
+    state: TargetNativeFactorState,
+    pareto_safe_vs_step0: bool,
+) -> DurableBehaviorCheckpoint:
+    """Detach a factor state into immutable bytes before invoking user code."""
+
+    tensors: list[DurableFactorTensorSnapshot] = []
+    for name, tensor, digest in zip(
+        state.names, state.tensors, state.tensor_sha256s, strict=True
+    ):
+        detached = tensor.detach().cpu().contiguous()
+        tensors.append(
+            DurableFactorTensorSnapshot(
+                name=name,
+                shape=tuple(detached.shape),
+                dtype=str(detached.dtype),
+                tensor_sha256=digest,
+                raw_bytes=(
+                    detached.reshape(-1).view(torch.uint8).numpy().tobytes()
+                ),
+            )
+        )
+    return DurableBehaviorCheckpoint(
+        step=step,
+        metrics=metrics,
+        factor_state=DurableFactorStateSnapshot(
+            schema=state.schema,
+            tensors=tuple(tensors),
+            factor_state_sha256=state.factor_state_sha256,
+            lexical_rank=state.lexical_rank,
+            guided_source_binding=state.guided_source_binding,
+        ),
+        pareto_safe_vs_step0=pareto_safe_vs_step0,
+    )
+
+
+def _invoke_durable_checkpoint_callback(
+    callback: DurableBehaviorCheckpointCallback | None,
+    *,
+    transaction: ExactTargetCompilerTransaction,
+    guided_tranche: Any | None,
+    guided_source_binding: GuidedFactorSourceBinding | None,
+    step: int,
+    metrics: CausalBehaviorMetrics,
+    state: TargetNativeFactorState,
+    pareto_safe_vs_step0: bool,
+) -> None:
+    if callback is None:
+        return
+    event = _durable_behavior_checkpoint(
+        step=step,
+        metrics=metrics,
+        state=state,
+        pareto_safe_vs_step0=pareto_safe_vs_step0,
+    )
+    # The event gets immutable bytes only and the return value is ignored.  The
+    # callable itself remains trusted in-process code: arbitrary closure side
+    # effects cannot be sandboxed here and belong in a separate process.  We do
+    # guard and repair every factor's registry owner and storage across the call.
+    bindings = _live_factor_bindings(
+        transaction,
+        guided_tranche=guided_tranche,
+    )
+    callback_error: BaseException | None = None
+    try:
+        callback(event)
+    except BaseException as error:
+        callback_error = error
+    ownership_changed = _repair_live_factor_bindings(bindings)
+    if callback_error is not None:
+        if ownership_changed:
+            callback_error.add_note(
+                "Durable callback factor ownership/storage was repaired before "
+                "exact step-zero restoration."
+            )
+        raise callback_error
+    live_state = capture_target_native_factor_state(
+        transaction,
+        guided_tranche=guided_tranche,
+        guided_source_binding=guided_source_binding,
+    )
+    if (
+        ownership_changed
+        or live_state.names != state.names
+        or live_state.schema != state.schema
+        or live_state.lexical_rank != state.lexical_rank
+        or live_state.guided_source_binding != state.guided_source_binding
+        or live_state.parameter_ids != state.parameter_ids
+        or live_state.parameter_data_ptrs != state.parameter_data_ptrs
+        or live_state.factor_state_sha256 != state.factor_state_sha256
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Durable checkpoint callback altered live compiler factors: value, "
+            "ownership, or storage changed."
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class GuidedCandidateGateAudit:
     """Guided-only methodological gate evaluated before sealed access."""
 
@@ -2104,6 +2617,7 @@ class BehaviorDistillationResult:
     schedule_sha256: str
     guided_source_binding: GuidedFactorSourceBinding | None = None
     guided_candidate_gate: GuidedCandidateGateAudit | None = None
+    sealed_evaluation_policy: BehaviorSealedEvaluationPolicy = "candidate-gated"
     evidence_sha256: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -2111,6 +2625,16 @@ class BehaviorDistillationResult:
             raise TargetNativeBehaviorDistillationError(
                 "Guided source binding and candidate gate evidence must be "
                 "present together."
+            )
+        if self.sealed_evaluation_policy not in {"candidate-gated", "disabled"}:
+            raise TargetNativeBehaviorDistillationError(
+                "Result has an unsupported sealed-evaluation policy."
+            )
+        if self.sealed_evaluation_policy == "disabled" and (
+            self.sealed_metrics is not None or self.sealed_evaluation_unlocked
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                "A candidate-only result cannot contain unlocked sealed evidence."
             )
         object.__setattr__(
             self,
@@ -2192,6 +2716,15 @@ class BehaviorDistillationResult:
                         ],
                         "accepted_publication_owned_by_runner": True,
                     },
+                }
+            )
+        if self.sealed_evaluation_policy == "disabled":
+            payload.update(
+                {
+                    "sealed_evaluation_policy": "disabled",
+                    "candidate_only_evaluation": True,
+                    "sealed_suite_supplied": False,
+                    "sealed_evaluation_attempted": False,
                 }
             )
         return payload
@@ -2479,24 +3012,33 @@ def evaluate_behavior_domain(
 
 def _normalize_domains(
     domains: Mapping[str, BehaviorDomainSuite] | Sequence[BehaviorDomainSuite],
+    *,
+    sealed_evaluation_policy: BehaviorSealedEvaluationPolicy = "candidate-gated",
 ) -> Mapping[str, BehaviorDomainSuite]:
+    sealed_enabled = sealed_evaluation_policy == "candidate-gated"
+    expected_roles = (
+        ("fit", "calibration", "sealed")
+        if sealed_enabled
+        else ("fit", "calibration")
+    )
     if isinstance(domains, Mapping):
         values = dict(domains)
     elif not isinstance(domains, (str, bytes)) and isinstance(domains, Sequence):
-        if len(domains) != 3:
+        if len(domains) != len(expected_roles):
             raise TargetNativeBehaviorDistillationError(
-                "Domain sequence must contain fit, calibration, and sealed suites."
+                "Domain sequence does not match the sealed-evaluation policy."
             )
-        values = dict(zip(("fit", "calibration", "sealed"), domains, strict=True))
+        values = dict(zip(expected_roles, domains, strict=True))
     else:
         raise TargetNativeBehaviorDistillationError(
-            "domains must be a mapping or ordered three-suite sequence."
+            "domains must be a mapping or ordered policy-matched suite sequence."
         )
     if "candidate" in values and "calibration" not in values:
         values["calibration"] = values.pop("candidate")
-    if set(values) != {"fit", "calibration", "sealed"}:
+    if set(values) != set(expected_roles):
+        expected = ", ".join(expected_roles)
         raise TargetNativeBehaviorDistillationError(
-            "domains must contain exactly fit, calibration, and sealed."
+            f"domains must contain exactly {expected} under the selected policy."
         )
     if any(not isinstance(value, BehaviorDomainSuite) for value in values.values()):
         raise TargetNativeBehaviorDistillationError(
@@ -2510,7 +3052,7 @@ def _normalize_domains(
             )
     seen_ids: dict[str, str] = {}
     meaningful_prefixes: dict[str, str] = {}
-    for role in ("fit", "calibration", "sealed"):
+    for role in expected_roles:
         for prompt in values[role].prompts:
             previous = seen_ids.get(prompt.prompt_id)
             if previous is not None:
@@ -3007,8 +3549,16 @@ def train_target_native_behavior_distillation(
     optimizer_factory: Callable[[Iterable[nn.Parameter]], Optimizer] | None = None,
     initial_factor_payload: Mapping[str, Any] | None = None,
     guided_tranche: Any | None = None,
+    durable_checkpoint_callback: DurableBehaviorCheckpointCallback | None = None,
 ) -> BehaviorDistillationResult:
-    """Train, Pareto-select, restore, and optionally unlock sealed evaluation."""
+    """Train, Pareto-select, restore, and optionally unlock sealed evaluation.
+
+    ``durable_checkpoint_callback`` receives an immutable authenticated snapshot
+    after step zero and every normalized scheduled checkpoint.  Its return value
+    is ignored and factor value/owner/storage mutations are detected and rolled
+    back.  The callable is trusted in-process code; isolate an untrusted sink in
+    another process because Python closure side effects cannot be sandboxed.
+    """
 
     if not isinstance(transaction, ExactTargetCompilerTransaction):
         raise TargetNativeBehaviorDistillationError(
@@ -3022,6 +3572,12 @@ def train_target_native_behavior_distillation(
     if not isinstance(schedule, BehaviorDistillationSchedule):
         raise TargetNativeBehaviorDistillationError(
             "schedule must be BehaviorDistillationSchedule."
+        )
+    if durable_checkpoint_callback is not None and not callable(
+        durable_checkpoint_callback
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "durable_checkpoint_callback must be callable or None."
         )
     guided_continuation = guided_tranche is not None
     if guided_continuation != schedule.guided_continuation_enabled:
@@ -3047,10 +3603,13 @@ def train_target_native_behavior_distillation(
             "candidate_thresholds must be CandidateBehaviorThresholds."
         )
     seed_value = _index(seed, "seed")
-    suites = _normalize_domains(domains)
+    suites = _normalize_domains(
+        domains,
+        sealed_evaluation_policy=schedule.sealed_evaluation_policy,
+    )
     fit = suites["fit"]
     calibration = suites["calibration"]
-    sealed = suites["sealed"]
+    sealed = suites.get("sealed")
     if schedule.fit_prompts_per_step > len(fit.prompts):
         raise TargetNativeBehaviorDistillationError(
             "fit_prompts_per_step exceeds the fit domain."
@@ -3076,7 +3635,7 @@ def train_target_native_behavior_distillation(
         * (
             len(schedule.normalized_checkpoint_steps) * len(calibration.prompts)
             + len(fit.prompts)
-            + len(sealed.prompts)
+            + (0 if sealed is None else len(sealed.prompts))
         )
     )
     if worst_evaluation > schedule.max_evaluation_prefixes:
@@ -3084,9 +3643,7 @@ def train_target_native_behavior_distillation(
             "Preregistered evaluation work exceeds max_evaluation_prefixes."
         )
 
-    domain_payload = {
-        role: suites[role].as_dict() for role in ("fit", "calibration", "sealed")
-    }
+    domain_payload = {role: suite.as_dict() for role, suite in suites.items()}
     domain_binding_sha256 = _canonical_sha256(domain_payload)
     schedule_sha256 = _canonical_sha256(schedule.as_dict())
     initial_factor_state_sha256 = None
@@ -3223,6 +3780,16 @@ def train_target_native_behavior_distillation(
     )
     try:
         parent_model.eval()
+        _invoke_durable_checkpoint_callback(
+            durable_checkpoint_callback,
+            transaction=transaction,
+            guided_tranche=guided_tranche,
+            guided_source_binding=guided_source_binding,
+            step=0,
+            metrics=step0_metrics,
+            state=step0_state,
+            pareto_safe_vs_step0=True,
+        )
         parent_greedy_cache: dict[str, tuple[tuple[int, ...], tuple[Tensor, ...]]] = {}
         for prompt in fit.prompts:
             tokens, rows = _greedy_path(
@@ -3551,6 +4118,16 @@ def train_target_native_behavior_distillation(
                         metrics.pareto_objectives == step0_metrics.pareto_objectives
                         or _dominates(metrics, step0_metrics)
                     )
+                    _invoke_durable_checkpoint_callback(
+                        durable_checkpoint_callback,
+                        transaction=transaction,
+                        guided_tranche=guided_tranche,
+                        guided_source_binding=guided_source_binding,
+                        step=step,
+                        metrics=metrics,
+                        state=state,
+                        pareto_safe_vs_step0=safe,
+                    )
                     checkpoints.append(
                         BehaviorCheckpoint(
                             step=step,
@@ -3569,7 +4146,7 @@ def train_target_native_behavior_distillation(
                         selected_metrics = metrics
             optimizer.state.clear()
             optimizer.zero_grad(set_to_none=True)
-    except Exception as training_error:
+    except BaseException as training_error:
         if transaction.is_live:
             try:
                 restore_target_native_factor_state(
@@ -3652,7 +4229,14 @@ def train_target_native_behavior_distillation(
             guided_candidate_gate is None or guided_candidate_gate.passed
         )
         sealed_metrics = None
-        if candidate_passed:
+        if (
+            candidate_passed
+            and schedule.sealed_evaluation_policy == "candidate-gated"
+        ):
+            if sealed is None:
+                raise TargetNativeBehaviorDistillationError(
+                    "Candidate-gated sealed evaluation requires a sealed suite."
+                )
             sealed_metrics = evaluate_behavior_domain(
                 parent_model,
                 transaction.model,
@@ -3692,7 +4276,10 @@ def train_target_native_behavior_distillation(
         sealed_metrics=sealed_metrics,
         candidate_thresholds=threshold,
         candidate_gate_passed=candidate_passed,
-        sealed_evaluation_unlocked=candidate_passed,
+        sealed_evaluation_unlocked=(
+            candidate_passed
+            and schedule.sealed_evaluation_policy == "candidate-gated"
+        ),
         training_audit=training_audit,
         factor_pack=factor_pack,
         initial_factor_state_sha256=initial_factor_state_sha256,
@@ -3705,6 +4292,7 @@ def train_target_native_behavior_distillation(
         schedule_sha256=schedule_sha256,
         guided_source_binding=guided_source_binding,
         guided_candidate_gate=guided_candidate_gate,
+        sealed_evaluation_policy=schedule.sealed_evaluation_policy,
     )
 
 
@@ -3714,6 +4302,7 @@ __all__ = [
     "BEHAVIOR_FACTOR_PACK_SCHEMA",
     "BEHAVIOR_FACTOR_PACK_V2_SCHEMA",
     "BEHAVIOR_FACTOR_PACK_V3_SCHEMA",
+    "DURABLE_BEHAVIOR_CHECKPOINT_SCHEMA",
     "GUIDED_COMBINED_FACTOR_TENSOR_COUNT",
     "GUIDED_CONTINUATION_STEPS",
     "GUIDED_JOINT_START_STEP",
@@ -3727,10 +4316,15 @@ __all__ = [
     "BehaviorDistillationSchedule",
     "BehaviorDomainSuite",
     "BehaviorPrompt",
+    "BehaviorSealedEvaluationPolicy",
     "BehaviorSelectionPolicy",
     "BehaviorTrainingAudit",
     "CandidateBehaviorThresholds",
     "CausalBehaviorMetrics",
+    "DurableBehaviorCheckpoint",
+    "DurableBehaviorCheckpointCallback",
+    "DurableFactorStateSnapshot",
+    "DurableFactorTensorSnapshot",
     "GradientActivationAudit",
     "GuidedCandidateGateAudit",
     "GuidedFactorSourceBinding",
