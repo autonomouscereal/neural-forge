@@ -31,6 +31,10 @@ FRONTIER_SCHEMA = "neural-forge-exact-candidate-frontier-v1"
 RECORD_SCHEMA = "neural-forge-exact-candidate-record-v1"
 RUN_SCHEMA = "neural-forge-qwen-exact-target-native-stage-v1"
 PREREGISTRATION_SCHEMA = "neural-forge-qwen-exact-target-native-preregistration-v1"
+GUIDED_RUN_SCHEMA = "neural-forge-qwen-exact-target-native-guided-continuation-v1"
+GUIDED_PREREGISTRATION_SCHEMA = (
+    "neural-forge-qwen-exact-target-native-guided-continuation-preregistration-v1"
+)
 MAX_RETAINED_PER_CONTRACT = 3
 
 ArtifactKind = Literal["research-factor-pack", "accepted-standalone-child"]
@@ -38,11 +42,18 @@ TruthLabel = Literal["research-factor-only-candidate", "accepted-standalone"]
 FactorAuthenticator = Callable[[Path, int | None], Mapping[str, Any]]
 PreregistrationAuthenticator = Callable[[Path, str], Mapping[str, Any]]
 AcceptedChildAuthenticator = Callable[[Path, int], Mapping[str, Any]]
+MethodGateAuthenticator = Callable[
+    [Mapping[str, Any], Mapping[str, Any] | None],
+    tuple[bool, Mapping[str, Any]],
+]
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _FACTOR_FILENAME = "rejected_factor_pack.pt"
 _SELECTED_FACTOR_FILENAME = "selected_factor_pack.pt"
+_GUIDED_SELECTED_FACTOR_FILENAME = "selected_guided_factor_pack.pt"
 _CHILD_DIRECTORY = "accepted_child"
+_GUIDED_FACTOR_COUNT = 26
+_GUIDED_FACTOR_PARAMETERS = 28_868_608
 _BANNED_METRIC_WORDS = (
     "weight",
     "activation",
@@ -192,8 +203,7 @@ def _tree_records(root: Path) -> list[dict[str, Any]]:
                 os.name == "posix" and entry_device != root_device
             ):
                 raise ExactCandidateFrontierError(
-                    "Artifact tree crosses a nested mount or filesystem device: "
-                    f"{path}"
+                    f"Artifact tree crosses a nested mount or filesystem device: {path}"
                 )
             if is_directory:
                 visit(path)
@@ -416,6 +426,167 @@ def rollout_first_rank(metrics: Mapping[str, Any]) -> tuple[int, ...]:
         round(adjacent * 1_000_000),
         counts["longest_run_excess"],
         -counts["action_agreement_count"],
+    )
+
+
+_GUIDED_METHOD_CHECKS = (
+    "selected_step_acquired",
+    "candidate_has_one_lcp_at_least_4_rollout",
+    "candidate_repeat_fraction_nonregression_vs_step0",
+    "candidate_adjacent_repeat_fraction_nonregression_vs_step0",
+)
+
+_GUIDED_TERMINAL_COMMON_FIELDS = frozenset(
+    {
+        "schema",
+        "status",
+        "preregistration",
+        "preregistration_sha256",
+        "evaluation_contract_sha256",
+        "parent",
+        "target",
+        "compiler_split",
+        "splits",
+        "thresholds",
+        "guided_qkvo",
+        "source",
+        "audit",
+        "implementation_authentication",
+        "selection_domain",
+        "method_gate",
+        "internal_numeric_matching_can_promote",
+        "sealed_evaluation_locked_until_candidate_passes",
+        "models_loaded",
+        "gpu_work_launched",
+        "output_root",
+        "compiler_report",
+        "inherited_installation",
+        "source_v2_restore",
+        "guided_installation",
+        "last_completed_phase",
+        "trainer_evidence_sha256",
+        "trainer_evidence",
+        "factor_acquisition",
+        "selected_factor_pack",
+        "pre_bake_behavior_decisions",
+        "guided_method_decision",
+        "selection_used_internal_numeric_matching",
+        "standalone_compaction_passed",
+        "model_checkpoint_written",
+        "rollback_exact",
+        "retained_artifacts",
+    }
+)
+_GUIDED_TERMINAL_OPTIONAL_FIELDS = frozenset(
+    {
+        "compiled_child_cache",
+        "reason",
+        "rollback_state_sha256",
+        "guided_publication_handoff",
+        "publication",
+        "post_bake_behavior_decisions",
+        "post_bake_guided_method_decision",
+        "prepublication_native_restored",
+        "fresh_reload_certificate",
+        "fresh_reload_guided_method_gate",
+        "model_save_count",
+    }
+)
+_GUIDED_ACCEPTED_REQUIRED_FIELDS = frozenset(
+    {
+        "guided_publication_handoff",
+        "publication",
+        "post_bake_behavior_decisions",
+        "post_bake_guided_method_decision",
+        "fresh_reload_certificate",
+        "fresh_reload_guided_method_gate",
+        "model_save_count",
+    }
+)
+_GUIDED_REJECTED_REQUIRED_FIELDS = frozenset({"reason", "rollback_state_sha256"})
+
+
+def _validate_guided_terminal_report_schema(
+    report: Mapping[str, Any], status: str
+) -> None:
+    """Reject fields outside the real v1 runner's terminal report domains."""
+
+    fields = set(report)
+    allowed = _GUIDED_TERMINAL_COMMON_FIELDS | _GUIDED_TERMINAL_OPTIONAL_FIELDS
+    required = _GUIDED_TERMINAL_COMMON_FIELDS | (
+        _GUIDED_ACCEPTED_REQUIRED_FIELDS
+        if status == "accepted"
+        else _GUIDED_REJECTED_REQUIRED_FIELDS
+    )
+    if fields - allowed or required - fields:
+        raise ExactCandidateFrontierError(
+            "Guided terminal run report does not have the exact v1 field schema."
+        )
+    accepted_only = {
+        "fresh_reload_certificate",
+        "fresh_reload_guided_method_gate",
+        "model_save_count",
+    }
+    if status == "accepted":
+        if "reason" in fields or "rollback_state_sha256" in fields:
+            raise ExactCandidateFrontierError(
+                "Accepted guided terminal report contains rejected-only fields."
+            )
+    elif fields & accepted_only:
+        raise ExactCandidateFrontierError(
+            "Rejected guided terminal report contains accepted-only fields."
+        )
+
+
+def _dynamic_method_rank(decision: Mapping[str, Any] | None) -> tuple[int, ...]:
+    """Rank only authenticated output-behavior method checks.
+
+    The guided method gate is dynamic because its repetition ceilings are the
+    selected run's authenticated step-zero behavior, not fixed internal tensor
+    targets.  Only the four boolean output-behavior checks influence ranking.
+    Diagnostic magnitudes, weights, activations, and similarity values never do.
+    """
+
+    if decision is None:
+        return ()
+    checks = decision.get("checks")
+    if (
+        not isinstance(checks, Mapping)
+        or set(checks) != set(_GUIDED_METHOD_CHECKS)
+        or any(not isinstance(checks.get(name), bool) for name in _GUIDED_METHOD_CHECKS)
+        or not isinstance(decision.get("passed"), bool)
+        or decision.get("passed") is not all(bool(checks[name]) for name in checks)
+        or decision.get("internal_numeric_matching_consulted") is not False
+    ):
+        raise ExactCandidateFrontierError(
+            "Authenticated guided method decision is malformed."
+        )
+    declared = require_sha256(
+        decision.get("decision_sha256"), "guided_method_decision.decision_sha256"
+    )
+    payload = dict(decision)
+    payload.pop("decision_sha256", None)
+    if canonical_sha256(payload) != declared:
+        raise ExactCandidateFrontierError(
+            "Authenticated guided method decision hash does not verify."
+        )
+    # A complete method-positive result ranks first, then partial progress.  No
+    # numeric value from the decision is used in this key.
+    return (
+        -int(bool(decision["passed"])),
+        -sum(int(bool(checks[name])) for name in _GUIDED_METHOD_CHECKS),
+    )
+
+
+def behavior_rank(
+    metrics: Mapping[str, Any],
+    dynamic_method_decision: Mapping[str, Any] | None = None,
+) -> tuple[int, ...]:
+    """Return the complete behavior-only frontier key for one run schema."""
+
+    return (
+        *_dynamic_method_rank(dynamic_method_decision),
+        *rollout_first_rank(metrics),
     )
 
 
@@ -719,12 +890,20 @@ def _selected_factor_state(
 
 
 def _comparison_and_target_contracts(
-    report: Mapping[str, Any], preregistration: Mapping[str, Any]
+    report: Mapping[str, Any],
+    preregistration: Mapping[str, Any],
+    authenticated_preregistration: Mapping[str, Any],
 ) -> tuple[str, str, int]:
     evaluation = require_sha256(
         report.get("evaluation_contract_sha256"), "evaluation_contract_sha256"
     )
-    authentication = report.get("artifact_authentication")
+    guided = report.get("schema") == GUIDED_RUN_SCHEMA
+    retention = authenticated_preregistration.get("retention_authentication")
+    authentication = (
+        retention.get("artifact_authentication")
+        if guided and isinstance(retention, Mapping)
+        else report.get("artifact_authentication")
+    )
     if not isinstance(authentication, Mapping):
         raise ExactCandidateFrontierError(
             "Terminal report lacks artifact authentication."
@@ -733,8 +912,16 @@ def _comparison_and_target_contracts(
     blank = _stable_artifact_authentication(
         authentication.get("blank_target"), "blank_target"
     )
-    parent_binding = preregistration.get("parent")
-    blank_binding = preregistration.get("blank_target")
+    parent_binding = (
+        retention.get("parent")
+        if guided and isinstance(retention, Mapping)
+        else preregistration.get("parent")
+    )
+    blank_binding = (
+        retention.get("blank_target")
+        if guided and isinstance(retention, Mapping)
+        else preregistration.get("blank_target")
+    )
     if not isinstance(parent_binding, Mapping) or not isinstance(
         blank_binding, Mapping
     ):
@@ -759,9 +946,18 @@ def _comparison_and_target_contracts(
 
 
 def _protected_roots(
-    report: Mapping[str, Any], preregistration: Mapping[str, Any], prereg_path: Path
+    report: Mapping[str, Any],
+    preregistration: Mapping[str, Any],
+    prereg_path: Path,
+    authenticated_preregistration: Mapping[str, Any],
 ) -> dict[str, str]:
-    blank = preregistration.get("blank_target")
+    guided = report.get("schema") == GUIDED_RUN_SCHEMA
+    retention = authenticated_preregistration.get("retention_authentication")
+    blank = (
+        retention.get("blank_target")
+        if guided and isinstance(retention, Mapping)
+        else preregistration.get("blank_target")
+    )
     if not isinstance(blank, Mapping):
         raise ExactCandidateFrontierError("Preregistration lacks blank_target.")
     blank_path = _resolve_binding(
@@ -772,6 +968,12 @@ def _protected_roots(
     _assert_ordinary_directory(blank_path, "canonical blank target")
     result = {"canonical_blank": str(blank_path)}
     cache = report.get("compiler_cache")
+    if guided:
+        cache = (
+            {"root": retention.get("compiler_cache_root")}
+            if isinstance(retention, Mapping)
+            else None
+        )
     if cache is not None:
         if not isinstance(cache, Mapping):
             raise ExactCandidateFrontierError("compiler_cache report is malformed.")
@@ -780,7 +982,101 @@ def _protected_roots(
         )
         _assert_ordinary_directory(cache_path, "compiler cache")
         result["compiler_cache"] = str(cache_path)
+    if guided and isinstance(retention, Mapping):
+        sources = retention.get("protected_sources")
+        if not isinstance(sources, Mapping):
+            raise ExactCandidateFrontierError(
+                "Guided retention authentication lacks protected source paths."
+            )
+        for name, value in sources.items():
+            if not isinstance(name, str) or not name:
+                raise ExactCandidateFrontierError(
+                    "Guided protected source names must be nonempty strings."
+                )
+            path = _resolve_binding(
+                prereg_path.parent,
+                value,
+                f"retention_authentication.protected_sources.{name}",
+            )
+            _assert_ordinary_file(path, f"guided protected source {name}")
+            identity = file_sha256(path)
+            binding_identity = canonical_sha256({"path": str(path), "sha256": identity})
+            result[f"guided_{name}_{binding_identity[:16]}"] = str(path)
     return result
+
+
+def _validate_guided_retention_authentication(
+    value: Any,
+) -> Mapping[str, Any]:
+    expected = {
+        "artifact_authentication",
+        "parent",
+        "blank_target",
+        "compiler_cache_root",
+        "lexical_rank",
+        "source_v2_tensor_sha256s",
+        "protected_sources",
+    }
+    if not isinstance(value, Mapping) or set(value) != expected:
+        raise ExactCandidateFrontierError(
+            "Guided canonical preflight lacks the exact retention authentication."
+        )
+    authentication = value.get("artifact_authentication")
+    if not isinstance(authentication, Mapping) or set(authentication) < {
+        "parent",
+        "blank_target",
+    }:
+        raise ExactCandidateFrontierError(
+            "Guided retention artifact authentication is incomplete."
+        )
+    _stable_artifact_authentication(authentication.get("parent"), "parent")
+    _stable_artifact_authentication(authentication.get("blank_target"), "blank_target")
+    for name in ("parent", "blank_target"):
+        binding = value.get(name)
+        if (
+            not isinstance(binding, Mapping)
+            or not isinstance(binding.get("path"), str)
+            or not binding.get("path")
+            or _nonnegative_int(
+                binding.get("exact_unique_parameters"),
+                f"retention_authentication.{name}.exact_unique_parameters",
+            )
+            <= 0
+        ):
+            raise ExactCandidateFrontierError(
+                f"Guided retention {name} binding is malformed."
+            )
+    cache = value.get("compiler_cache_root")
+    if not isinstance(cache, str) or not cache:
+        raise ExactCandidateFrontierError(
+            "Guided retention compiler-cache root is malformed."
+        )
+    if (
+        _nonnegative_int(
+            value.get("lexical_rank"), "retention_authentication.lexical_rank"
+        )
+        <= 0
+    ):
+        raise ExactCandidateFrontierError("Guided retention lexical rank is malformed.")
+    source_hashes = value.get("source_v2_tensor_sha256s")
+    if (
+        not isinstance(source_hashes, Mapping)
+        or len(source_hashes) != 18
+        or any(not isinstance(name, str) or not name for name in source_hashes)
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided retention source v2 tensor hashes are incomplete."
+        )
+    for name, digest in source_hashes.items():
+        require_sha256(
+            digest, f"retention_authentication.source_v2_tensor_sha256s.{name}"
+        )
+    protected = value.get("protected_sources")
+    if not isinstance(protected, Mapping) or not protected:
+        raise ExactCandidateFrontierError(
+            "Guided retention protected source map is incomplete."
+        )
+    return value
 
 
 def _authenticate_canonical_preregistration(
@@ -817,20 +1113,19 @@ def _authenticate_canonical_preregistration(
         raise ExactCandidateFrontierError(
             "Canonical preregistration authenticator returned a non-mapping."
         )
-    if (
+    common_disagreement = (
         authenticated.get("status") != "preflight-passed"
         or authenticated.get("preregistration") != str(preregistration_path)
         or authenticated.get("preregistration_sha256") != preregistration_sha256
         or authenticated.get("evaluation_contract_sha256")
         != report.get("evaluation_contract_sha256")
-        or authenticated.get("artifact_authentication")
-        != report.get("artifact_authentication")
         or authenticated.get("implementation_authentication")
         != report.get("implementation_authentication")
         or authenticated.get("splits") != report.get("splits")
         or authenticated.get("compiler_split") != report.get("compiler_split")
         or authenticated.get("thresholds") != report.get("thresholds")
-    ):
+    )
+    if common_disagreement:
         raise ExactCandidateFrontierError(
             "Canonical preregistration preflight disagrees with the terminal report."
         )
@@ -839,23 +1134,65 @@ def _authenticate_canonical_preregistration(
         raise ExactCandidateFrontierError(
             "Canonical preflight lacks implementation authentication."
         )
-    runner_auth = source_authentication.get("runner")
-    trainer_auth = source_authentication.get("trainer")
-    if (
-        not isinstance(runner_auth, Mapping)
-        or runner_auth.get("sha256") != runner_sha
-        or not isinstance(trainer_auth, Mapping)
-        or trainer_auth.get("sha256") != trainer_sha
-        or trainer_auth.get("module") != trainer_module
-    ):
-        raise ExactCandidateFrontierError(
-            "Canonical runner/trainer source pins do not authenticate."
+    if report.get("schema") == GUIDED_RUN_SCHEMA:
+        if preregistration.get("schema") != GUIDED_PREREGISTRATION_SCHEMA:
+            raise ExactCandidateFrontierError(
+                "Guided terminal report uses the wrong preregistration schema."
+            )
+        for field in (
+            "parent",
+            "target",
+            "guided_qkvo",
+            "source",
+            "audit",
+            "selection_domain",
+            "method_gate",
+            "internal_numeric_matching_can_promote",
+            "sealed_evaluation_locked_until_candidate_passes",
+        ):
+            if authenticated.get(field) != report.get(field):
+                raise ExactCandidateFrontierError(
+                    "Guided canonical preflight disagrees with the terminal report."
+                )
+        if (
+            source_authentication.get("runner_sha256") != runner_sha
+            or source_authentication.get("trainer_sha256") != trainer_sha
+            or source_authentication.get("trainer_module") != trainer_module
+            or report.get("internal_numeric_matching_can_promote") is not False
+            or report.get("sealed_evaluation_locked_until_candidate_passes") is not True
+            or preregistration.get("method_gate") != report.get("method_gate")
+        ):
+            raise ExactCandidateFrontierError(
+                "Guided runner/trainer/method source pins do not authenticate."
+            )
+        _validate_guided_retention_authentication(
+            authenticated.get("retention_authentication")
         )
+    else:
+        if authenticated.get("artifact_authentication") != report.get(
+            "artifact_authentication"
+        ):
+            raise ExactCandidateFrontierError(
+                "Canonical preregistration preflight disagrees with the terminal report."
+            )
+        runner_auth = source_authentication.get("runner")
+        trainer_auth = source_authentication.get("trainer")
+        if (
+            not isinstance(runner_auth, Mapping)
+            or runner_auth.get("sha256") != runner_sha
+            or not isinstance(trainer_auth, Mapping)
+            or trainer_auth.get("sha256") != trainer_sha
+            or trainer_auth.get("module") != trainer_module
+        ):
+            raise ExactCandidateFrontierError(
+                "Canonical runner/trainer source pins do not authenticate."
+            )
     return authenticated
 
 
 @dataclass(frozen=True, slots=True)
 class TerminalCandidate:
+    terminal_run_schema: str
     run_root: Path
     run_report_path: Path
     run_report_sha256: str
@@ -869,6 +1206,7 @@ class TerminalCandidate:
     terminal_status: str
     terminal_reason: str | None
     candidate_metrics: Mapping[str, Any]
+    dynamic_method_gate_decision: Mapping[str, Any] | None
     rollout_first_rank_key: tuple[int, ...]
     selected_step: int
     selected_factor_state_sha256: str
@@ -904,6 +1242,7 @@ def authenticate_terminal_candidate(
     preregistration_authenticator: PreregistrationAuthenticator,
     factor_authenticator: FactorAuthenticator | None = None,
     accepted_child_authenticator: AcceptedChildAuthenticator | None = None,
+    method_gate_authenticator: MethodGateAuthenticator | None = None,
 ) -> TerminalCandidate:
     """Authenticate one run; accepted children require an independent reload."""
 
@@ -919,13 +1258,17 @@ def authenticate_terminal_candidate(
             "Terminal run report does not match the caller-provided external root."
         )
     report = strict_json(report_path)
-    if not isinstance(report, Mapping) or report.get("schema") != RUN_SCHEMA:
+    run_schema = report.get("schema") if isinstance(report, Mapping) else None
+    if run_schema not in {RUN_SCHEMA, GUIDED_RUN_SCHEMA}:
         raise ExactCandidateFrontierError("Unsupported terminal run report schema.")
+    guided = run_schema == GUIDED_RUN_SCHEMA
     status = report.get("status")
     if status not in {"rejected", "accepted"}:
         raise ExactCandidateFrontierError(
             "Only terminal rejected or accepted training runs are candidates."
         )
+    if guided:
+        _validate_guided_terminal_report_schema(report, status)
     prereg_path = _resolve_binding(
         report_path.parent,
         report.get("preregistration"),
@@ -947,15 +1290,18 @@ def authenticate_terminal_candidate(
             "Preregistration does not match both external and report roots."
         )
     preregistration = strict_json(prereg_path)
+    expected_preregistration_schema = (
+        GUIDED_PREREGISTRATION_SCHEMA if guided else PREREGISTRATION_SCHEMA
+    )
     if (
         not isinstance(preregistration, Mapping)
-        or preregistration.get("schema") != PREREGISTRATION_SCHEMA
+        or preregistration.get("schema") != expected_preregistration_schema
         or preregistration.get("sealed_before_model_access") is not True
     ):
         raise ExactCandidateFrontierError(
             "Preregistration schema or sealing attestation is invalid."
         )
-    _authenticate_canonical_preregistration(
+    authenticated_preregistration = _authenticate_canonical_preregistration(
         preregistration,
         prereg_path,
         prereg_sha,
@@ -985,9 +1331,38 @@ def authenticate_terminal_candidate(
         expected_rollout_count=expected_rollout_count,
         expected_horizon=expected_horizon,
     )
-    selected_rank = rollout_first_rank(selected_metrics)
+    dynamic_method_decision: Mapping[str, Any] | None = None
+    dynamic_method_passed: bool | None = None
+    if guided:
+        if method_gate_authenticator is None:
+            raise ExactCandidateFrontierError(
+                "A source-pinned guided method-gate authenticator is required."
+            )
+        authenticated_gate = method_gate_authenticator(evidence, None)
+        if (
+            not isinstance(authenticated_gate, tuple)
+            or len(authenticated_gate) != 2
+            or not isinstance(authenticated_gate[0], bool)
+            or not isinstance(authenticated_gate[1], Mapping)
+        ):
+            raise ExactCandidateFrontierError(
+                "Guided method-gate authenticator returned a malformed result."
+            )
+        dynamic_method_passed = authenticated_gate[0]
+        dynamic_method_decision = dict(authenticated_gate[1])
+        if (
+            report.get("guided_method_decision") != dynamic_method_decision
+            or dynamic_method_decision.get("passed") is not dynamic_method_passed
+            or dynamic_method_decision.get("thresholds")
+            != authenticated_preregistration.get("method_gate")
+        ):
+            raise ExactCandidateFrontierError(
+                "Guided terminal method decision does not authenticate."
+            )
+        _dynamic_method_rank(dynamic_method_decision)
+    selected_rank = behavior_rank(selected_metrics, dynamic_method_decision)
     step0_rank = rollout_first_rank(step0_metrics)
-    if not selected_rank < step0_rank:
+    if not rollout_first_rank(selected_metrics) < step0_rank:
         raise ExactCandidateFrontierError(
             "Selected candidate does not strictly improve the authenticated step-zero "
             "rollout-first behavior key."
@@ -1007,10 +1382,14 @@ def authenticate_terminal_candidate(
         raise ExactCandidateFrontierError(
             "Selected checkpoint, trainer evidence, and candidate decision disagree."
         )
+    expected_candidate_gate = bool(pre_decisions["candidate"]["passed"])
+    if guided:
+        expected_candidate_gate = expected_candidate_gate and bool(
+            dynamic_method_passed
+        )
     if (
         not isinstance(evidence.get("candidate_gate_passed"), bool)
-        or evidence.get("candidate_gate_passed")
-        is not pre_decisions["candidate"]["passed"]
+        or evidence.get("candidate_gate_passed") is not expected_candidate_gate
         or not isinstance(evidence.get("sealed_evaluation_unlocked"), bool)
         or evidence.get("sealed_evaluation_unlocked")
         is not bool(evidence.get("candidate_gate_passed"))
@@ -1019,9 +1398,11 @@ def authenticate_terminal_candidate(
             "Trainer gate/unlock evidence disagrees with candidate behavior."
         )
     comparison, target_contract, exact_parameters = _comparison_and_target_contracts(
-        report, preregistration
+        report, preregistration, authenticated_preregistration
     )
-    protected = _protected_roots(report, preregistration, prereg_path)
+    protected = _protected_roots(
+        report, preregistration, prereg_path, authenticated_preregistration
+    )
     reason = report.get("reason")
     if reason is not None and (not isinstance(reason, str) or not reason):
         raise ExactCandidateFrontierError("Terminal reason must be nonempty when set.")
@@ -1030,9 +1411,13 @@ def authenticate_terminal_candidate(
         *, fallback_reason: str | None = None
     ) -> TerminalCandidate:
         factor_field = (
-            "factor_pack"
-            if isinstance(report.get("factor_pack"), Mapping)
-            else "selected_factor_pack"
+            "selected_factor_pack"
+            if guided
+            else (
+                "factor_pack"
+                if isinstance(report.get("factor_pack"), Mapping)
+                else "selected_factor_pack"
+            )
         )
         factor = report.get(factor_field)
         if not isinstance(factor, Mapping):
@@ -1046,9 +1431,13 @@ def authenticate_terminal_candidate(
             f"run_report.{factor_field}.path",
         )
         allowed_names = (
-            {_FACTOR_FILENAME}
-            if status == "rejected"
-            else {_FACTOR_FILENAME, _SELECTED_FACTOR_FILENAME}
+            {_GUIDED_SELECTED_FACTOR_FILENAME}
+            if guided
+            else (
+                {_FACTOR_FILENAME}
+                if status == "rejected"
+                else {_FACTOR_FILENAME, _SELECTED_FACTOR_FILENAME}
+            )
         )
         if factor_path.parent != root or factor_path.name not in allowed_names:
             raise ExactCandidateFrontierError(
@@ -1066,6 +1455,16 @@ def authenticate_terminal_candidate(
             )
         lexical = preregistration.get("lexical_residual")
         lexical_rank = None
+        if guided:
+            retention = authenticated_preregistration.get("retention_authentication")
+            if not isinstance(retention, Mapping):
+                raise ExactCandidateFrontierError(
+                    "Guided retention authentication is missing."
+                )
+            lexical_rank = _nonnegative_int(
+                retention.get("lexical_rank"),
+                "retention_authentication.lexical_rank",
+            )
         if lexical is not None:
             if not isinstance(lexical, Mapping):
                 raise ExactCandidateFrontierError("lexical_residual is malformed.")
@@ -1094,13 +1493,77 @@ def authenticate_terminal_candidate(
             or not isinstance(envelope, Mapping)
             or not isinstance(envelope_reason, str)
             or not envelope_reason
-            or (status == "rejected" and envelope_reason != reason)
+            or (guided and envelope_reason != "selected")
+            or (not guided and status == "rejected" and envelope_reason != reason)
             or envelope.get("preregistration_sha256") != prereg_sha
             or envelope.get("evaluation_contract_sha256") != comparison
         ):
             raise ExactCandidateFrontierError(
                 "Factor topology/provenance does not match its terminal report."
             )
+        if guided:
+            retention = authenticated_preregistration.get("retention_authentication")
+            source_hashes = (
+                retention.get("source_v2_tensor_sha256s")
+                if isinstance(retention, Mapping)
+                else None
+            )
+            guided_binding = authenticated.get("guided_source_binding")
+            audit = authenticated_preregistration.get("audit")
+            source = authenticated_preregistration.get("source")
+            guided_installation = report.get("guided_installation")
+            installation_binding_fields = (
+                "inherited_installation_sha256",
+                "inherited_factor_state_sha256_at_install",
+                "adapter_site_indices_sha256",
+                "audit_site_indices_sha256",
+            )
+            if (
+                authenticated.get("factor_pack_schema")
+                != "neural-forge-rejected-target-native-guided-factor-pack-v1"
+                or authenticated.get("trainer_factor_pack_schema")
+                != "neural-forge-target-native-factor-pack-v3"
+                or authenticated.get("factor_count") != _GUIDED_FACTOR_COUNT
+                or authenticated.get("factor_parameters") != _GUIDED_FACTOR_PARAMETERS
+                or authenticated.get("lexical_rank") != lexical_rank
+                or not isinstance(guided_binding, Mapping)
+                or guided_binding.get("source_v2_tensor_sha256s") != source_hashes
+                or not isinstance(source, Mapping)
+                or guided_binding.get("source_v2_factor_state_sha256")
+                != source.get("factor_state_sha256")
+                or envelope.get("source_factor_state_sha256")
+                != source.get("factor_state_sha256")
+                or not isinstance(audit, Mapping)
+                or envelope.get("audit_report_self_sha256")
+                != audit.get("audit_report_self_sha256")
+                or envelope.get("audit_report_canonical_sha256")
+                != audit.get("audit_report_canonical_sha256")
+                or envelope.get("basis_envelope_file_sha256")
+                != audit.get("basis_envelope_file_sha256")
+                or envelope.get("basis_domain_artifact_sha256")
+                != audit.get("basis_domain_artifact_sha256")
+                or envelope.get("basis_payload_sha256")
+                != audit.get("basis_payload_sha256")
+                or guided_binding.get("audit_report_sha256")
+                != audit.get("audit_report_self_sha256")
+                or guided_binding.get("basis_envelope_file_sha256")
+                != audit.get("basis_envelope_file_sha256")
+                or guided_binding.get("basis_payload_sha256")
+                != audit.get("basis_payload_sha256")
+                or guided_binding.get("basis_manifest_sha256")
+                != audit.get("basis_manifest_sha256")
+                or guided_binding.get("source_basis_tensor_sha256s")
+                != audit.get("basis_tensor_sha256s")
+                or not isinstance(guided_installation, Mapping)
+                or any(
+                    guided_binding.get(name) != guided_installation.get(name)
+                    for name in installation_binding_fields
+                )
+            ):
+                raise ExactCandidateFrontierError(
+                    "Guided v3 factor sources do not match the authenticated "
+                    "preregistration chain."
+                )
         factor_protected = {
             **protected,
             f"source_run_{report_sha[:16]}": str(root),
@@ -1109,6 +1572,7 @@ def authenticate_terminal_candidate(
             f"source_prereg_{prereg_sha[:8]}_{report_sha[:8]}": str(prereg_path),
         }
         return TerminalCandidate(
+            terminal_run_schema=str(run_schema),
             run_root=root,
             run_report_path=report_path,
             run_report_sha256=report_sha,
@@ -1122,6 +1586,11 @@ def authenticate_terminal_candidate(
             terminal_status=status,
             terminal_reason=(reason if fallback_reason is None else fallback_reason),
             candidate_metrics=pre_metrics,
+            dynamic_method_gate_decision=(
+                None
+                if dynamic_method_decision is None
+                else dict(dynamic_method_decision)
+            ),
             rollout_first_rank_key=selected_rank,
             selected_step=selected_step,
             selected_factor_state_sha256=selected_sha,
@@ -1178,6 +1647,37 @@ def authenticate_terminal_candidate(
         rollout_count=expected_rollout_count,
         horizon=expected_horizon,
     )
+    post_dynamic_method_decision: Mapping[str, Any] | None = None
+    if guided:
+        assert method_gate_authenticator is not None
+        authenticated_post_gate = method_gate_authenticator(evidence, post_metrics)
+        if (
+            not isinstance(authenticated_post_gate, tuple)
+            or len(authenticated_post_gate) != 2
+            or authenticated_post_gate[0] is not True
+            or not isinstance(authenticated_post_gate[1], Mapping)
+        ):
+            raise ExactCandidateFrontierError(
+                "Accepted guided child lacks a passed post-bake method gate."
+            )
+        post_dynamic_method_decision = dict(authenticated_post_gate[1])
+        reload_gate = report.get("fresh_reload_guided_method_gate")
+        if (
+            report.get("guided_method_decision", {}).get("passed") is not True
+            or report.get("post_bake_guided_method_decision")
+            != post_dynamic_method_decision
+            or post_dynamic_method_decision.get("passed") is not True
+            or not isinstance(reload_gate, Mapping)
+            or reload_gate.get("passed") is not True
+            or reload_gate.get("internal_numeric_matching_consulted") is not False
+            or reload_gate.get("post_bake_decision_sha256")
+            != post_dynamic_method_decision.get("decision_sha256")
+            or reload_gate.get("state_bytes_match_pre_save") is not True
+        ):
+            raise ExactCandidateFrontierError(
+                "Accepted guided method/reload gates do not authenticate."
+            )
+        _dynamic_method_rank(post_dynamic_method_decision)
 
     def accepted_standalone_candidate() -> TerminalCandidate:
         certificate = report.get("fresh_reload_certificate")
@@ -1267,6 +1767,7 @@ def authenticate_terminal_candidate(
             f"source_prereg_{prereg_sha[:8]}_{report_sha[:8]}": str(prereg_path),
         }
         return TerminalCandidate(
+            terminal_run_schema=str(run_schema),
             run_root=root,
             run_report_path=report_path,
             run_report_sha256=report_sha,
@@ -1280,7 +1781,14 @@ def authenticate_terminal_candidate(
             terminal_status=status,
             terminal_reason=None,
             candidate_metrics=post_metrics,
-            rollout_first_rank_key=rollout_first_rank(post_metrics),
+            dynamic_method_gate_decision=(
+                None
+                if post_dynamic_method_decision is None
+                else dict(post_dynamic_method_decision)
+            ),
+            rollout_first_rank_key=behavior_rank(
+                post_metrics, post_dynamic_method_decision
+            ),
             selected_step=selected_step,
             selected_factor_state_sha256=selected_sha,
             content_identity_sha256=child_state_sha,
@@ -1393,6 +1901,7 @@ class ExactCandidateFrontier:
             "schema": FRONTIER_SCHEMA,
             "max_per_comparison_contract": self.max_per_contract,
             "ranking_policy": "candidate-output-rollout-first-acquisition",
+            "ranking_includes_authenticated_dynamic_method_gate": True,
             "ranking_uses_fit_or_sealed_metrics": False,
             "ranking_uses_internal_numeric_metrics": False,
             "best_accepted_standalone_fallback_slot": True,
@@ -1613,7 +2122,14 @@ class ExactCandidateFrontier:
             raise ExactCandidateFrontierError("Frontier record failed authentication.")
         rank = tuple(record["rollout_first_rank_key"])
         metrics = record.get("candidate_metrics")
-        if not isinstance(metrics, Mapping) or rank != rollout_first_rank(metrics):
+        method_decision = record.get("dynamic_method_gate_decision")
+        if method_decision is not None and not isinstance(method_decision, Mapping):
+            raise ExactCandidateFrontierError(
+                "Frontier record dynamic method decision is malformed."
+            )
+        if not isinstance(metrics, Mapping) or rank != behavior_rank(
+            metrics, method_decision
+        ):
             raise ExactCandidateFrontierError(
                 "Frontier record behavior ranking does not verify."
             )
@@ -1703,6 +2219,25 @@ class ExactCandidateFrontier:
         ):
             raise ExactCandidateFrontierError(
                 "Retained report comparison contract does not verify."
+            )
+        copied_schema = copied_report.get("schema")
+        declared_schema = record.get("terminal_run_schema", copied_schema)
+        if (
+            copied_schema not in {RUN_SCHEMA, GUIDED_RUN_SCHEMA}
+            or declared_schema != copied_schema
+            or (
+                copied_schema == GUIDED_RUN_SCHEMA
+                and copied_report.get(
+                    "post_bake_guided_method_decision"
+                    if record["truth_label"] == "accepted-standalone"
+                    else "guided_method_decision"
+                )
+                != method_decision
+            )
+            or (copied_schema == RUN_SCHEMA and method_decision is not None)
+        ):
+            raise ExactCandidateFrontierError(
+                "Retained report schema/dynamic method decision does not verify."
             )
         if research:
             factor_file = artifact / "factor_pack.pt"
@@ -1943,7 +2478,13 @@ class ExactCandidateFrontier:
             "truth_label": candidate.truth_label,
             "terminal_status": candidate.terminal_status,
             "terminal_reason": candidate.terminal_reason,
+            "terminal_run_schema": candidate.terminal_run_schema,
             "candidate_metrics": dict(candidate.candidate_metrics),
+            "dynamic_method_gate_decision": (
+                None
+                if candidate.dynamic_method_gate_decision is None
+                else dict(candidate.dynamic_method_gate_decision)
+            ),
             "rollout_first_rank_key": list(candidate.rollout_first_rank_key),
             "ranking_domain": "candidate-output-actions-and-free-rollouts-only",
             "selected_step": candidate.selected_step,
@@ -2215,11 +2756,15 @@ __all__ = [
     "ExactCandidateFrontier",
     "ExactCandidateFrontierError",
     "FactorAuthenticator",
+    "GUIDED_PREREGISTRATION_SCHEMA",
+    "GUIDED_RUN_SCHEMA",
     "MAX_RETAINED_PER_CONTRACT",
+    "MethodGateAuthenticator",
     "PreregistrationAuthenticator",
     "TerminalCandidate",
     "artifact_tree",
     "authenticate_terminal_candidate",
+    "behavior_rank",
     "canonical_sha256",
     "file_sha256",
     "rollout_first_rank",

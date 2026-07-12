@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import importlib.util
 import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -98,6 +100,7 @@ class _RunCase:
     factor_authenticator: frontier.FactorAuthenticator
     preregistration_authenticator: frontier.PreregistrationAuthenticator
     accepted_child_authenticator: frontier.AcceptedChildAuthenticator
+    method_gate_authenticator: frontier.MethodGateAuthenticator | None = None
 
     def candidate(
         self,
@@ -128,6 +131,7 @@ class _RunCase:
                 if include_child_authenticator
                 else None
             ),
+            method_gate_authenticator=self.method_gate_authenticator,
         )
 
 
@@ -397,6 +401,382 @@ def _make_run(
         factor_authenticator=authenticate,
         preregistration_authenticator=authenticate_preregistration,
         accepted_child_authenticator=authenticate_child,
+    )
+
+
+_GUIDED_METHOD_GATE = {
+    "minimum_selected_step": 1,
+    "minimum_candidate_lcp_at_least_4_count": 1,
+    "require_candidate_repeat_fraction_excess_nonregression_vs_step0": True,
+    "require_candidate_adjacent_repeat_fraction_excess_nonregression_vs_step0": True,
+}
+
+
+def _guided_decision(step0: dict, candidate: dict, *, selected_step: int = 8) -> dict:
+    checks = {
+        "selected_step_acquired": selected_step >= 1,
+        "candidate_has_one_lcp_at_least_4_rollout": (
+            candidate["lcp_at_least_4_count"] >= 1
+        ),
+        "candidate_repeat_fraction_nonregression_vs_step0": (
+            candidate["repeat_fraction_excess"] <= step0["repeat_fraction_excess"]
+        ),
+        "candidate_adjacent_repeat_fraction_nonregression_vs_step0": (
+            candidate["adjacent_repeat_fraction_excess"]
+            <= step0["adjacent_repeat_fraction_excess"]
+        ),
+    }
+    trainer_gate = {
+        "selected_step": selected_step,
+        "selected_step_is_promoted": checks["selected_step_acquired"],
+        "minimum_lcp_at_least_4_count": 1,
+        "observed_lcp_at_least_4_count": candidate["lcp_at_least_4_count"],
+        "baseline_repeat_fraction_excess": step0["repeat_fraction_excess"],
+        "candidate_repeat_fraction_excess": candidate["repeat_fraction_excess"],
+        "repeat_fraction_nonregression": checks[
+            "candidate_repeat_fraction_nonregression_vs_step0"
+        ],
+        "baseline_adjacent_repeat_fraction_excess": step0[
+            "adjacent_repeat_fraction_excess"
+        ],
+        "candidate_adjacent_repeat_fraction_excess": candidate[
+            "adjacent_repeat_fraction_excess"
+        ],
+        "adjacent_repeat_fraction_nonregression": checks[
+            "candidate_adjacent_repeat_fraction_nonregression_vs_step0"
+        ],
+        "passed": all(checks.values()),
+    }
+    decision = {
+        "passed": all(checks.values()),
+        "checks": checks,
+        "thresholds": dict(_GUIDED_METHOD_GATE),
+        "selected_step": selected_step,
+        "step0_metrics": {
+            name: step0[name]
+            for name in (
+                "lcp_at_least_4_count",
+                "repeat_fraction_excess",
+                "adjacent_repeat_fraction_excess",
+            )
+        },
+        "candidate_metrics": {
+            name: candidate[name]
+            for name in (
+                "lcp_at_least_4_count",
+                "repeat_fraction_excess",
+                "adjacent_repeat_fraction_excess",
+            )
+        },
+        "four_isolated_one_token_lcps_cannot_substitute": True,
+        "internal_numeric_matching_consulted": False,
+        "trainer_gate": trainer_gate,
+    }
+    decision["decision_sha256"] = frontier.canonical_sha256(decision)
+    return decision
+
+
+def _make_guided_run(
+    tmp_path: Path,
+    name: str,
+    *,
+    status: str = "rejected",
+    method_positive: bool = True,
+) -> _RunCase:
+    selected_metrics = _metrics(
+        lcp4=1 if method_positive else 0,
+        lcp=4 if method_positive else 3,
+        tokens=5,
+        actions=6,
+        repeat=0.2 if method_positive else 0.4,
+        adjacent=0.2 if method_positive else 0.4,
+    )
+    step0_metrics = _metrics(
+        lcp4=0,
+        lcp=0,
+        tokens=1,
+        actions=1,
+        repeat=0.3,
+        adjacent=0.3,
+    )
+    base = _make_run(
+        tmp_path,
+        name,
+        status=status,
+        metrics=selected_metrics,
+        step0_metrics=step0_metrics,
+        accepted_factor_fallback=status == "accepted",
+    )
+    run = base.run
+    old_prereg_path = run / "preregistration.json"
+    old_prereg = frontier.strict_json(old_prereg_path)
+    report_path = run / "run_report.json"
+    report = frontier.strict_json(report_path)
+    artifact_authentication = report.pop("artifact_authentication")
+    compiler_cache_root = report.pop("compiler_cache")["root"]
+    report.pop("behavior_decisions", None)
+    selected_sha = report["factor_acquisition"]["selected_factor_state_sha256"]
+    source_state_sha = _sha(f"{name}:source-v2-state")
+    source_hashes = {
+        f"source.factor.{index:02d}": _sha(f"{name}:source:{index}")
+        for index in range(18)
+    }
+    basis_hashes = {role: _sha(f"{name}:basis:{role}") for role in ("q", "k", "v", "o")}
+    audit = {
+        "audit_report_self_sha256": _sha(f"{name}:audit-self"),
+        "audit_report_canonical_sha256": _sha(f"{name}:audit-canonical"),
+        "basis_envelope_file_sha256": _sha(f"{name}:basis-envelope"),
+        "basis_domain_artifact_sha256": _sha(f"{name}:basis-domain"),
+        "basis_payload_sha256": _sha(f"{name}:basis-payload"),
+        "basis_manifest_sha256": _sha(f"{name}:basis-manifest"),
+        "basis_tensor_sha256s": basis_hashes,
+    }
+    installation_binding = {
+        "inherited_installation_sha256": _sha(f"{name}:inherited-installation"),
+        "inherited_factor_state_sha256_at_install": _sha(
+            f"{name}:inherited-factor-state-at-install"
+        ),
+        "adapter_site_indices_sha256": _sha(f"{name}:adapter-sites"),
+        "audit_site_indices_sha256": _sha(f"{name}:audit-sites"),
+    }
+    source = {
+        "factor_state_sha256": source_state_sha,
+        "source_evaluation_contract_sha256": _sha(f"{name}:source-evaluation"),
+    }
+    runner_sha = _sha(f"{name}:guided-runner")
+    trainer_sha = _sha(f"{name}:guided-trainer")
+    implementation = {
+        "runner_sha256": runner_sha,
+        "trainer_module": "neural_forge.hf_target_native_behavior_distillation",
+        "trainer_sha256": trainer_sha,
+        "builder_sha256": _sha(f"{name}:guided-builder"),
+        "base_runner_sha256": _sha(f"{name}:base-runner"),
+        "guided_adapter_sha256": _sha(f"{name}:guided-adapter"),
+        "progressive_bridge_sha256": _sha(f"{name}:bridge"),
+        "compiled_child_cache_sha256": _sha(f"{name}:cache-module"),
+    }
+    implementation_authentication = dict(implementation)
+    comparison_sha = _sha(f"{name}:guided-evaluation-contract")
+    report["evaluation_contract_sha256"] = comparison_sha
+    guided_prereg = {
+        "schema": frontier.GUIDED_PREREGISTRATION_SCHEMA,
+        "sealed_before_model_access": True,
+        "implementation": implementation,
+        "source": source,
+        "audit": audit,
+        "splits": report["splits"],
+        "thresholds": report["thresholds"],
+        "training": old_prereg["training"],
+        "method_gate": dict(_GUIDED_METHOD_GATE),
+        "runtime": {"dtype": "float16"},
+        "evaluation_contract_sha256": comparison_sha,
+    }
+    prereg_sha = _write_json(old_prereg_path, guided_prereg)
+    decision = _guided_decision(step0_metrics, selected_metrics)
+    report.update(
+        {
+            "schema": frontier.GUIDED_RUN_SCHEMA,
+            "preregistration_sha256": prereg_sha,
+            "parent": {
+                "path": old_prereg["parent"]["path"],
+                "exact_unique_parameters": old_prereg["parent"][
+                    "exact_unique_parameters"
+                ],
+            },
+            "target": {
+                "path": old_prereg["blank_target"]["path"],
+                "exact_unique_parameters": old_prereg["blank_target"][
+                    "exact_unique_parameters"
+                ],
+            },
+            "guided_qkvo": {
+                "new_factor_count": 8,
+                "combined_factor_count": 26,
+                "separate_product_no_regroup": True,
+            },
+            "source": source,
+            "audit": audit,
+            "implementation_authentication": implementation_authentication,
+            "selection_domain": "causal-output-actions-and-free-rollouts-only",
+            "method_gate": dict(_GUIDED_METHOD_GATE),
+            "internal_numeric_matching_can_promote": False,
+            "sealed_evaluation_locked_until_candidate_passes": True,
+            "guided_method_decision": decision,
+            "guided_installation": dict(installation_binding),
+            "models_loaded": True,
+            "gpu_work_launched": True,
+            "output_root": str(run),
+            "compiler_report": {"schema": "test-guided-compiler-report-v1"},
+            "inherited_installation": {
+                "installation_sha256": installation_binding[
+                    "inherited_installation_sha256"
+                ]
+            },
+            "source_v2_restore": {
+                "factor_state_sha256": source_state_sha,
+            },
+            "last_completed_phase": "guided-zero-left-installation",
+            "selection_used_internal_numeric_matching": False,
+        }
+    )
+    evidence = report["trainer_evidence"]
+    evidence["guided_candidate_gate"] = decision["trainer_gate"]
+    evidence["candidate_gate_passed"] = (
+        report["pre_bake_behavior_decisions"]["candidate"]["passed"]
+        and decision["passed"]
+    )
+    evidence["sealed_evaluation_unlocked"] = evidence["candidate_gate_passed"]
+    report["trainer_evidence_sha256"] = frontier.canonical_sha256(evidence)
+    old_factor = run / (
+        "selected_factor_pack.pt" if status == "accepted" else "rejected_factor_pack.pt"
+    )
+    guided_factor = run / "selected_guided_factor_pack.pt"
+    old_factor.replace(guided_factor)
+    report.pop("factor_pack", None)
+    report["selected_factor_pack"] = {
+        "path": str(guided_factor),
+        "sha256": frontier.file_sha256(guided_factor),
+    }
+    if status == "accepted":
+        post_decision = _guided_decision(step0_metrics, selected_metrics)
+        report["post_bake_guided_method_decision"] = post_decision
+        report["fresh_reload_guided_method_gate"] = {
+            "passed": True,
+            "post_bake_decision_sha256": post_decision["decision_sha256"],
+            "state_bytes_match_pre_save": True,
+            "internal_numeric_matching_consulted": False,
+        }
+        report.update(
+            {
+                "guided_publication_handoff": {
+                    "separate_product_no_regroup": True,
+                },
+                "publication": {"baked": True},
+                "model_save_count": 1,
+                "retained_artifacts": [
+                    "selected_guided_factor_pack.pt",
+                    "accepted_child",
+                    "run_report.json",
+                ],
+            }
+        )
+    else:
+        report.update(
+            {
+                "rollback_state_sha256": _sha(f"{name}:rollback-state"),
+                "retained_artifacts": [
+                    "selected_guided_factor_pack.pt",
+                    "run_report.json",
+                ],
+            }
+        )
+    report_sha = _write_json(report_path, report)
+
+    protected_dir = run / "guided_sources"
+    protected_dir.mkdir()
+    protected_sources: dict[str, str] = {}
+    for label in (
+        "source_run_report",
+        "source_factor_pack",
+        "audit_preregistration",
+        "audit_run_report",
+        "guided_basis_pack",
+    ):
+        path = protected_dir / f"{label}.bin"
+        path.write_bytes(label.encode())
+        protected_sources[label] = str(path)
+    retention_authentication = {
+        "artifact_authentication": artifact_authentication,
+        "parent": old_prereg["parent"],
+        "blank_target": old_prereg["blank_target"],
+        "compiler_cache_root": compiler_cache_root,
+        "lexical_rank": 32,
+        "source_v2_tensor_sha256s": source_hashes,
+        "protected_sources": protected_sources,
+    }
+    preflight = {
+        "status": "preflight-passed",
+        "preregistration": str(old_prereg_path),
+        "preregistration_sha256": prereg_sha,
+        "evaluation_contract_sha256": comparison_sha,
+        "implementation_authentication": implementation_authentication,
+        "splits": report["splits"],
+        "compiler_split": report["compiler_split"],
+        "thresholds": report["thresholds"],
+        "parent": report["parent"],
+        "target": report["target"],
+        "guided_qkvo": report["guided_qkvo"],
+        "source": source,
+        "audit": audit,
+        "selection_domain": report["selection_domain"],
+        "method_gate": report["method_gate"],
+        "internal_numeric_matching_can_promote": False,
+        "sealed_evaluation_locked_until_candidate_passes": True,
+        "retention_authentication": retention_authentication,
+    }
+
+    def authenticate_preregistration(path: Path, digest: str) -> dict:
+        assert path == old_prereg_path and digest == prereg_sha
+        return preflight
+
+    guided_binding = {
+        "source_v2_factor_state_sha256": source_state_sha,
+        "source_v2_tensor_sha256s": source_hashes,
+        "audit_report_sha256": audit["audit_report_self_sha256"],
+        "basis_envelope_file_sha256": audit["basis_envelope_file_sha256"],
+        "basis_payload_sha256": audit["basis_payload_sha256"],
+        "basis_manifest_sha256": audit["basis_manifest_sha256"],
+        "source_basis_tensor_sha256s": basis_hashes,
+        **installation_binding,
+    }
+
+    def authenticate_factor(path: Path, lexical_rank: int | None) -> dict:
+        assert path == guided_factor and lexical_rank == 32
+        return {
+            "factor_state_sha256": selected_sha,
+            "envelope_provenance": {
+                "reason": "selected",
+                "preregistration_sha256": prereg_sha,
+                "evaluation_contract_sha256": comparison_sha,
+                "source_factor_state_sha256": source_state_sha,
+                **{
+                    name: audit[name]
+                    for name in (
+                        "audit_report_self_sha256",
+                        "audit_report_canonical_sha256",
+                        "basis_envelope_file_sha256",
+                        "basis_domain_artifact_sha256",
+                        "basis_payload_sha256",
+                    )
+                },
+            },
+            "factor_pack_schema": (
+                "neural-forge-rejected-target-native-guided-factor-pack-v1"
+            ),
+            "trainer_factor_pack_schema": ("neural-forge-target-native-factor-pack-v3"),
+            "factor_count": 26,
+            "factor_parameters": 28_868_608,
+            "lexical_rank": 32,
+            "guided_source_binding": guided_binding,
+        }
+
+    def authenticate_method(_evidence: dict, metrics: dict | None):
+        selected = (
+            report.get("post_bake_guided_method_decision")
+            if metrics is not None
+            else decision
+        )
+        assert isinstance(selected, dict)
+        return bool(selected["passed"]), selected
+
+    return _RunCase(
+        run=run,
+        run_report_sha256=report_sha,
+        preregistration_sha256=prereg_sha,
+        factor_authenticator=authenticate_factor,
+        preregistration_authenticator=authenticate_preregistration,
+        accepted_child_authenticator=base.accepted_child_authenticator,
+        method_gate_authenticator=authenticate_method,
     )
 
 
@@ -878,3 +1258,384 @@ def test_conservative_v1_contains_no_recursive_delete_implementation() -> None:
     assert "rmtree" not in source
     assert "Remove-Item" not in source
     assert "rmtree" not in cli_source
+
+
+def test_guided_terminal_retains_exact_selected_pack_and_dynamic_behavior_rank(
+    tmp_path: Path,
+) -> None:
+    case = _make_guided_run(tmp_path, "guided-rejected")
+    candidate = case.candidate()
+    assert candidate.terminal_run_schema == frontier.GUIDED_RUN_SCHEMA
+    assert candidate.source_artifact.name == "selected_guided_factor_pack.pt"
+    assert candidate.truth_label == "research-factor-only-candidate"
+    assert candidate.dynamic_method_gate_decision is not None
+    assert candidate.dynamic_method_gate_decision["passed"] is True
+    assert candidate.rollout_first_rank_key[:2] == (-1, -4)
+    assert candidate.rollout_first_rank_key == frontier.behavior_rank(
+        candidate.candidate_metrics,
+        candidate.dynamic_method_gate_decision,
+    )
+    root = tmp_path / "guided-frontier"
+    frontier.ExactCandidateFrontier(root).register(candidate)
+    manifest = frontier.strict_json(root / "frontier_manifest.json")
+    assert len(manifest["records"]) == 1
+    assert manifest["records"][0]["terminal_run_schema"] == (frontier.GUIDED_RUN_SCHEMA)
+    assert manifest["records"][0]["dynamic_method_gate_decision"]["passed"] is True
+    assert frontier.ExactCandidateFrontier(root).inspect()["retained_record_count"] == 1
+
+
+def test_guided_method_and_v3_source_binding_tampering_fail_closed(
+    tmp_path: Path,
+) -> None:
+    case = _make_guided_run(tmp_path, "guided-tamper")
+    report_path = case.run / "run_report.json"
+    report = frontier.strict_json(report_path)
+    report["guided_method_decision"]["checks"][
+        "candidate_has_one_lcp_at_least_4_rollout"
+    ] = False
+    tampered_report_sha = _write_json(report_path, report)
+    with pytest.raises(
+        frontier.ExactCandidateFrontierError,
+        match="method decision does not authenticate",
+    ):
+        frontier.authenticate_terminal_candidate(
+            case.run,
+            expected_run_report_sha256=tampered_report_sha,
+            expected_preregistration_sha256=case.preregistration_sha256,
+            preregistration_authenticator=case.preregistration_authenticator,
+            factor_authenticator=case.factor_authenticator,
+            method_gate_authenticator=case.method_gate_authenticator,
+        )
+
+    source_case = _make_guided_run(tmp_path, "guided-source-tamper")
+
+    def forged_source_factor(path: Path, lexical_rank: int | None) -> dict:
+        authenticated = dict(source_case.factor_authenticator(path, lexical_rank))
+        binding = dict(authenticated["guided_source_binding"])
+        hashes = dict(binding["source_v2_tensor_sha256s"])
+        hashes[next(iter(hashes))] = "f" * 64
+        binding["source_v2_tensor_sha256s"] = hashes
+        authenticated["guided_source_binding"] = binding
+        return authenticated
+
+    with pytest.raises(
+        frontier.ExactCandidateFrontierError,
+        match="v3 factor sources",
+    ):
+        frontier.authenticate_terminal_candidate(
+            source_case.run,
+            expected_run_report_sha256=source_case.run_report_sha256,
+            expected_preregistration_sha256=source_case.preregistration_sha256,
+            preregistration_authenticator=(source_case.preregistration_authenticator),
+            factor_authenticator=forged_source_factor,
+            method_gate_authenticator=source_case.method_gate_authenticator,
+        )
+
+
+def test_guided_terminal_report_schema_rejects_unknown_fields(
+    tmp_path: Path,
+) -> None:
+    case = _make_guided_run(tmp_path, "guided-report-schema")
+    report_path = case.run / "run_report.json"
+    report = frontier.strict_json(report_path)
+    report["parent_state"] = {"must_not_be_retained": True}
+    report_sha = _write_json(report_path, report)
+    with pytest.raises(
+        frontier.ExactCandidateFrontierError,
+        match="exact v1 field schema",
+    ):
+        frontier.authenticate_terminal_candidate(
+            case.run,
+            expected_run_report_sha256=report_sha,
+            expected_preregistration_sha256=case.preregistration_sha256,
+            preregistration_authenticator=case.preregistration_authenticator,
+            factor_authenticator=case.factor_authenticator,
+            method_gate_authenticator=case.method_gate_authenticator,
+        )
+
+
+@pytest.mark.parametrize(
+    "binding_field",
+    (
+        "inherited_installation_sha256",
+        "inherited_factor_state_sha256_at_install",
+        "adapter_site_indices_sha256",
+        "audit_site_indices_sha256",
+    ),
+)
+def test_guided_runtime_installation_binding_tampering_fails_closed(
+    tmp_path: Path,
+    binding_field: str,
+) -> None:
+    case = _make_guided_run(tmp_path, f"guided-install-{binding_field}")
+
+    def forged_factor(path: Path, lexical_rank: int | None) -> dict:
+        # The factor authenticator is the trust boundary for the inner v3
+        # envelope.  Returning a new value here models a pack whose source
+        # binding and factor-state hashes were both recomputed around the
+        # forged installation-domain SHA.
+        authenticated = dict(case.factor_authenticator(path, lexical_rank))
+        binding = dict(authenticated["guided_source_binding"])
+        binding[binding_field] = _sha(f"forged:{binding_field}")
+        authenticated["guided_source_binding"] = binding
+        return authenticated
+
+    with pytest.raises(
+        frontier.ExactCandidateFrontierError,
+        match="v3 factor sources",
+    ):
+        frontier.authenticate_terminal_candidate(
+            case.run,
+            expected_run_report_sha256=case.run_report_sha256,
+            expected_preregistration_sha256=case.preregistration_sha256,
+            preregistration_authenticator=case.preregistration_authenticator,
+            factor_authenticator=forged_factor,
+            method_gate_authenticator=case.method_gate_authenticator,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "forged_value"),
+    (
+        ("factor_count", 25),
+        ("factor_parameters", 28_868_607),
+        ("lexical_rank", 31),
+    ),
+)
+def test_guided_exact_v3_topology_totals_fail_closed(
+    tmp_path: Path,
+    field: str,
+    forged_value: int,
+) -> None:
+    case = _make_guided_run(tmp_path, f"guided-total-{field}")
+
+    def forged_factor(path: Path, lexical_rank: int | None) -> dict:
+        authenticated = dict(case.factor_authenticator(path, lexical_rank))
+        authenticated[field] = forged_value
+        return authenticated
+
+    with pytest.raises(
+        frontier.ExactCandidateFrontierError,
+        match="v3 factor sources",
+    ):
+        frontier.authenticate_terminal_candidate(
+            case.run,
+            expected_run_report_sha256=case.run_report_sha256,
+            expected_preregistration_sha256=case.preregistration_sha256,
+            preregistration_authenticator=case.preregistration_authenticator,
+            factor_authenticator=forged_factor,
+            method_gate_authenticator=case.method_gate_authenticator,
+        )
+
+
+def test_guided_accepted_child_still_requires_independent_fresh_reload(
+    tmp_path: Path,
+) -> None:
+    case = _make_guided_run(tmp_path, "guided-accepted", status="accepted")
+    standalone = case.candidate()
+    assert standalone.truth_label == "accepted-standalone"
+    assert standalone.fresh_reload_verified is True
+    assert standalone.dynamic_method_gate_decision is not None
+    assert standalone.dynamic_method_gate_decision["passed"] is True
+
+    factor_fallback = case.candidate(include_child_authenticator=False)
+    assert factor_fallback.truth_label == "research-factor-only-candidate"
+    assert factor_fallback.source_artifact.name == "selected_guided_factor_pack.pt"
+    assert factor_fallback.deployment_accepted is False
+
+
+def test_legacy_and_guided_reports_remain_compatible_and_pruning_is_plan_only(
+    tmp_path: Path,
+) -> None:
+    manager = frontier.ExactCandidateFrontier(tmp_path / "mixed-frontier")
+    legacy = _make_run(tmp_path, "legacy-compatible")
+    guided = _make_guided_run(tmp_path, "guided-compatible")
+    manager.register(legacy.candidate())
+    manager.register(guided.candidate())
+    inspection = manager.inspect()
+    assert inspection["retained_record_count"] == 2
+    assert sorted(inspection["retained_per_contract"].values()) == [1, 1]
+    with pytest.raises(frontier.ExactCandidateFrontierError, match="unsupported"):
+        manager.apply_pending_prune()
+    assert legacy.run.is_dir() and guided.run.is_dir()
+
+
+def test_cli_strictly_authenticates_outer_guided_envelope_and_inner_v3_tensors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import torch
+
+    from neural_forge.hf_target_native_behavior_distillation import (
+        GuidedFactorSourceBinding,
+    )
+
+    spec = importlib.util.spec_from_file_location("retention_cli_guided_test", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    inherited_names = {
+        *(
+            f"qkvo.{role}_{side}"
+            for role in ("q", "k", "v", "o")
+            for side in ("left", "right")
+        ),
+        *(
+            f"gud.{role}_{side}"
+            for role in ("gate", "up", "down")
+            for side in ("left", "right")
+        ),
+        *(
+            f"lexical.{role}_{side}"
+            for role in ("embedding", "lm_head")
+            for side in ("left", "right")
+        ),
+    }
+
+    def tensor_sha(value: torch.Tensor) -> str:
+        return hashlib.sha256(value.detach().contiguous().numpy().tobytes()).hexdigest()
+
+    fake_stage = SimpleNamespace(
+        QKVO_SITE_COUNT=1,
+        QKVO_RANK=1,
+        TARGET_HIDDEN_SIZE=1,
+        TARGET_QUERY_GROUP_WIDTH=1,
+        TARGET_HEAD_DIM=1,
+        _expected_continuation_factor_shapes=lambda *, lexical_rank: {
+            name: (1,) for name in inherited_names
+        },
+        _factor_tensor_sha256=tensor_sha,
+        _canonical_sha256=frontier.canonical_sha256,
+    )
+
+    def require_sha(value, name):
+        return frontier.require_sha256(value, name)
+
+    fake_guided = SimpleNamespace(
+        FACTOR_ENVELOPE_SCHEMA=(
+            "neural-forge-rejected-target-native-guided-factor-pack-v1"
+        ),
+        TRAINER_FACTOR_PACK_V3_SCHEMA=("neural-forge-target-native-factor-pack-v3"),
+        GUIDED_TOTAL_FACTOR_COUNT=26,
+        GUIDED_TOTAL_FACTOR_PARAMETERS=26,
+        GUIDED_TRAINER_MODULE=("neural_forge.hf_target_native_behavior_distillation"),
+        stage=fake_stage,
+        _require_sha256=require_sha,
+        __file__=str(SCRIPT),
+    )
+    monkeypatch.setattr(module, "_load_guided_runner", lambda: fake_guided)
+    source_hashes = {name: _sha(f"source:{name}") for name in inherited_names}
+    basis_hashes = {role: _sha(f"basis:{role}") for role in ("q", "k", "v", "o")}
+    binding = GuidedFactorSourceBinding(
+        source_v2_factor_state_sha256=_sha("source-state"),
+        source_v2_tensor_sha256s=source_hashes,
+        audit_report_sha256=_sha("audit"),
+        basis_envelope_file_sha256=_sha("basis-envelope"),
+        basis_payload_sha256=_sha("basis-payload"),
+        basis_manifest_sha256=_sha("basis-manifest"),
+        source_basis_tensor_sha256s=basis_hashes,
+        inherited_installation_sha256=_sha("inherited-install"),
+        inherited_factor_state_sha256_at_install=_sha("inherited-state"),
+        adapter_site_indices_sha256=_sha("adapter-sites"),
+        audit_site_indices_sha256=_sha("audit-sites"),
+    )
+    guided_names = {
+        f"guided_qkvo.{role}_{side}"
+        for role in ("q", "k", "v", "o")
+        for side in ("left", "right")
+    }
+    names = tuple(sorted(inherited_names | guided_names))
+    test_shapes = {
+        name: ((1, 1, 1) if name in guided_names else (1,)) for name in names
+    }
+    tensors = {
+        name: torch.full(test_shapes[name], float(index + 1), dtype=torch.float32)
+        for index, name in enumerate(names)
+    }
+    rows = [
+        {
+            "name": name,
+            "shape": list(test_shapes[name]),
+            "dtype": "torch.float32",
+            "tensor_sha256": tensor_sha(tensors[name]),
+        }
+        for name in names
+    ]
+    state_preimage = {
+        "schema": fake_guided.TRAINER_FACTOR_PACK_V3_SCHEMA,
+        "lexical_rank": 32,
+        "factors": rows,
+        "guided_source_binding": binding.as_dict(),
+        "guided_source_binding_sha256": binding.binding_sha256,
+        "inherited_product_regrouped": False,
+        "guided_product_regrouped": False,
+    }
+    payload = {
+        **state_preimage,
+        "factor_count": 26,
+        "factor_state_sha256": frontier.canonical_sha256(state_preimage),
+        "parent_state_included": False,
+        "native_child_state_included": False,
+        "optimizer_state_included": False,
+        "factor_tensors": tensors,
+    }
+    envelope = {
+        "schema": fake_guided.FACTOR_ENVELOPE_SCHEMA,
+        "reason": "selected",
+        "preregistration_sha256": _sha("prereg"),
+        "evaluation_contract_sha256": _sha("evaluation"),
+        "source_factor_state_sha256": binding.source_v2_factor_state_sha256,
+        "audit_report_self_sha256": binding.audit_report_sha256,
+        "audit_report_canonical_sha256": _sha("audit-canonical"),
+        "basis_envelope_file_sha256": binding.basis_envelope_file_sha256,
+        "basis_domain_artifact_sha256": _sha("basis-domain"),
+        "basis_payload_sha256": binding.basis_payload_sha256,
+        "factor_pack": payload,
+        "contains_model_checkpoint": False,
+        "contains_parent_parameters": False,
+        "contains_activations_or_hidden_states": False,
+    }
+    authenticated = module._guided_source_pinned_factor_authentication(
+        envelope, 32, torch
+    )
+    assert authenticated["factor_count"] == 26
+    assert authenticated["factor_parameters"] == 26
+    assert authenticated["guided_source_binding"] == binding.as_dict()
+
+    tampered = copy.deepcopy(envelope)
+    tampered["factor_pack"]["factor_tensors"][names[0]][0] += 1.0
+    with pytest.raises(
+        frontier.ExactCandidateFrontierError,
+        match="manifest authentication",
+    ):
+        module._guided_source_pinned_factor_authentication(tampered, 32, torch)
+
+    oversized = copy.deepcopy(envelope)
+    oversized_name = names[0]
+    logical = oversized["factor_pack"]["factor_tensors"][oversized_name]
+    backing = torch.empty(logical.numel() + 1, dtype=torch.float32)
+    oversized_tensor = backing[: logical.numel()].view(logical.shape)
+    oversized_tensor.copy_(logical)
+    assert oversized_tensor.untyped_storage().nbytes() > (
+        oversized_tensor.numel() * oversized_tensor.element_size()
+    )
+    oversized["factor_pack"]["factor_tensors"][oversized_name] = oversized_tensor
+    oversized_rows = oversized["factor_pack"]["factors"]
+    oversized_row = next(row for row in oversized_rows if row["name"] == oversized_name)
+    oversized_row["tensor_sha256"] = tensor_sha(oversized_tensor)
+    oversized_preimage = {
+        "schema": fake_guided.TRAINER_FACTOR_PACK_V3_SCHEMA,
+        "lexical_rank": 32,
+        "factors": oversized_rows,
+        "guided_source_binding": binding.as_dict(),
+        "guided_source_binding_sha256": binding.binding_sha256,
+        "inherited_product_regrouped": False,
+        "guided_product_regrouped": False,
+    }
+    oversized["factor_pack"]["factor_state_sha256"] = frontier.canonical_sha256(
+        oversized_preimage
+    )
+    with pytest.raises(
+        frontier.ExactCandidateFrontierError,
+        match="exact owned storage",
+    ):
+        module._guided_source_pinned_factor_authentication(oversized, 32, torch)
