@@ -769,14 +769,14 @@ def plan_qwen3_target(
 
     tokenizer_length = _tokenizer_size(tokenizer) if tokenizer is not None else None
     if vocab_size is None:
-        if tokenizer_length is not None:
-            resolved_vocab = tokenizer_length
-        elif source_config is not None:
+        if source_config is not None:
             resolved_vocab = _exact_int(
                 _config_value(source_config, "vocab_size"),
                 "source_config.vocab_size",
                 positive=True,
             )
+        elif tokenizer_length is not None:
+            resolved_vocab = tokenizer_length
         else:
             raise Qwen3TargetError(
                 "vocab_size, tokenizer, or source_config with vocab_size is required."

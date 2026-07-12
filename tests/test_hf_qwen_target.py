@@ -29,6 +29,8 @@ def test_qwen_target_cli_exposes_budget_and_exact_shape_constraints() -> None:
             "blank-output",
             "--target-params",
             "600000000",
+            "--vocab-size",
+            "151936",
             "--hidden-sizes",
             "1024",
             "--intermediate-sizes",
@@ -47,6 +49,7 @@ def test_qwen_target_cli_exposes_budget_and_exact_shape_constraints() -> None:
     )
 
     assert args.target_params == 600_000_000
+    assert args.vocab_size == 151_936
     assert args.hidden_sizes == "1024"
     assert args.intermediate_sizes == "3072"
     assert args.layer_counts == "24"
@@ -241,6 +244,48 @@ def test_planning_is_deterministic_and_prefers_any_under_budget_shape() -> None:
     assert closest_absolute["absolute_budget_distance"] == 1
     assert first["report"]["ranking"]["under_budget_precedes_over_budget"] is True
     assert len(first["plan_sha256"]) == 64
+
+
+def test_source_config_vocab_preserves_reserved_rows_and_exact_progressive_target() -> (
+    None
+):
+    tokenizer = _TinyTokenizer(size=151_669)
+    source_config = transformers.Qwen3Config(
+        vocab_size=151_936,
+        hidden_size=1536,
+        intermediate_size=5120,
+        num_hidden_layers=30,
+        num_attention_heads=16,
+        num_key_value_heads=4,
+        head_dim=128,
+        tie_word_embeddings=False,
+        attention_bias=False,
+    )
+
+    plan = plan_qwen3_target(
+        1_410_567_168,
+        tokenizer=tokenizer,
+        source_config=source_config,
+        constraints={
+            "hidden_sizes": [1536],
+            "intermediate_sizes": [5120],
+            "layer_counts": [30],
+            "query_head_counts": [16],
+            "key_value_head_counts": [4],
+            "head_dims": [128],
+        },
+        tie_word_embeddings=False,
+    )
+
+    assert plan["config"]["vocab_size"] == 151_936
+    assert plan["parameter_count"] == 1_410_567_168
+    assert plan["under_budget"] is True
+    assert plan["report"]["vocab_provenance"] == {
+        "vocab_size": 151_936,
+        "tokenizer_supplied": True,
+        "tokenizer_length": 151_669,
+        "reserved_rows_beyond_tokenizer": 267,
+    }
 
 
 def test_no_under_budget_candidate_falls_back_to_closest_absolute() -> None:

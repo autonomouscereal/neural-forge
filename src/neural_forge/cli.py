@@ -1504,6 +1504,14 @@ def build_parser() -> argparse.ArgumentParser:
     qwen_target.add_argument("tokenizer_model")
     qwen_target.add_argument("output")
     qwen_target.add_argument("--target-params", type=int, required=True)
+    qwen_target.add_argument(
+        "--vocab-size",
+        type=int,
+        help=(
+            "Model vocabulary capacity. Defaults to source_config.vocab_size when "
+            "available, preserving reserved rows beyond the tokenizer length."
+        ),
+    )
     qwen_target.add_argument("--source-param-count", type=int)
     qwen_target.add_argument("--source-config")
     qwen_target.add_argument("--source-name")
@@ -4193,6 +4201,7 @@ def cmd_hf_qwen_build_target(args: argparse.Namespace) -> dict[str, object]:
     )
     plan = plan_qwen3_target(
         args.target_params,
+        vocab_size=args.vocab_size,
         tokenizer=tokenizer,
         constraints=constraints,
         tie_word_embeddings=args.tie_word_embeddings,
