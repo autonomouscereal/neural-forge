@@ -277,7 +277,52 @@ child. The simultaneous action/LCP/repetition gains and rank/top-5 regression
 support a narrower next test: retain the learned attention state and add a
 bakeable embedding/LM-head lexical residual to repair vocabulary ranking.
 
-## Next ordered execution
+### Lexical-attention continuation result
+
+The corrected continuation restored the exact selected 14-factor state above,
+required a hit from the same authenticated compiled-child cache, and added four
+rank-32 embedding/LM-head factors as an exact-zero functional extension. It
+completed all 48 optimizer steps. The fit gate rejected it, so the sealed split
+remained locked, no bake or checkpoint occurred, and the exact compiled child
+was restored.
+
+- run:
+  `/mnt/ai_data/neural-forge/runs/qwen_exact_target_native_stage1_step24_lexical_attention_continuation_hotpath_v2_20260712`;
+- report SHA-256:
+  `1a73192a103e3faffd529063a1bd1dbd87b847afff5ef1bc7792867168ec07b8`;
+- selected checkpoint: step 24; steps 24 and 32 were on the Pareto frontier;
+- fresh-candidate first-action/token agreement: `27/192 -> 31/192`
+  (`14.0625% -> 16.1458%`);
+- fresh-candidate LCP tokens: `26/192 -> 27/192`
+  (`13.5417% -> 14.0625%`);
+- parent-action mean log probability: `-6.4030 -> -6.2254`;
+- parent-action mean rank: `4,664.9 -> 3,910.9`;
+- parent-action top-5: `23.4375% -> 28.6458%`;
+- repetition excess: `0.5052 -> 0.3750`;
+- adjacent-repeat excess: `0.6667 -> 0.5298`;
+- exact candidate rollouts and LCP-at-least-four remained `0/24`;
+- selected fit behavior was `162/960` actions, `159/960` token matches,
+  `130/960` LCP tokens, and zero exact rollouts across 120 prompts;
+- all 18 QKVO/Gate/Up/Down/embedding/LM-head factors received finite nonzero
+  gradients across 48 backward observations;
+- the authenticated cache disposition was `hit`, exact rollback passed to
+  state `39c57212...a606e`, and sealed evaluation was not unlocked.
+
+Step 48 reached `36/192` actions and `38/192` token matches, but LCP and
+repetition regressed, so rollout-first selection correctly retained step 24.
+The lexical boundary repaired vocabulary ranking and reduced repetition on a
+fresh split, but it did not unlock multi-token autoregressive coherence.
+
+The selected 18-factor continuation is preserved at `rejected_factor_pack.pt`
+(file SHA-256
+`37869a624efe7fc68feeff55fca1470cf83464c446080be5fbc6aef3a0eff545`,
+factor-state SHA-256
+`bd3f2b305e160b1fe1aecb1d57e2a736b831b19cf1158aaf705d9023f42ed319`).
+It contains no parent, native child, optimizer state, activation, or hidden
+state. The live transaction used `21,741,568` temporary FP32 factor parameters;
+publication would still contain exactly `1,410,567,168` native parameters.
+
+## Completed lexical execution contract
 
 1. Require an authenticated hit from the already-published exact compiled-child
    cache; do not reconstruct or recompile the structural base.
@@ -325,8 +370,66 @@ forward. The source factor pack, compiled-child cache, behavior splits, and
 methodology were not changed. Hot-path validation is now cached against factor
 identity, storage, topology, and `Parameter._version`; optimizer updates and
 restores force a new full scan, while unchanged factors validate once. The
-corrected continuation must use a new source-pinned preregistration and retain
+corrected continuation used a new source-pinned preregistration and retained
 the same 120/24/32 behavior contract.
+
+## Selected-factor bottleneck audit
+
+The authenticated selected v2 pack contains 18 finite FP32 tensors and exactly
+`21,741,568` values. Every tensor hash and the declared factor-state hash
+`bd3f2b30...ed319` reproduce. Compared with its inherited state:
+
+- Q/K/V/O left factors moved `2.66%` to `4.05%` in global L2 norm, while their
+  right/input factors moved only `0.165%` to `0.299%`;
+- all six Gate/Up/Down factors are byte-identical to the inherited state;
+- the lexical embedding left factor remains exact zero and its right factor is
+  byte-identical to initialization;
+- the LM-head left factor learned, but its right factor moved only `2.98%` and
+  retained cosine `0.999557` with its random initialization;
+- every Q/K/V/O and Gate/Up/Down product has numerical rank `8/8`;
+- the rank-32 LM-head product is severely concentrated: entropy-effective rank
+  `4.5633`, stable rank `1.2637`, and smallest/largest singular ratio
+  `0.0004038`.
+
+This makes the next hypothesis narrower. The corrections are not failing to
+receive gradients, and simply planting more random anchors is not justified.
+They fill the available product rank while remaining nearly locked to their
+random input subspaces. Later checkpoints improved local log probability and
+rank but damaged LCP/repetition, which is consistent with locally useful
+directions outside the rollout-safe manifold. A direct output-Jacobian audit is
+required to test that inference before another training run.
+
+## Next ordered execution
+
+1. Reuse the same authenticated compiled-child cache and selected v2 factor
+   state. Do not reconstruct the child or restart any learned factor from zero.
+2. Compute a fit-only output-loss Jacobian audit at the selected live state.
+   For each tested projection, remove the portions represented by the inherited
+   left-column and right-row spaces. Require substantial residual-normal energy
+   and compare an equal-rank guided basis against a deterministic random-basis
+   control.
+3. Proceed only if the preregistered diagnostic passes: aggregate attention
+   normal-energy fraction at least `0.20`, guided capture at least `1.5x` the
+   random control, no child mutation, and exact step-zero logits/rollouts.
+4. If it passes, freeze the authenticated selected factors and add a separate
+   exact-zero residual tranche whose right/input directions are the leading
+   output-Jacobian directions orthogonal to the inherited manifold. Keep the
+   old and new products as separate multiplies so the inherited operation is
+   not numerically regrouped. Add roles only when their own diagnostic passes;
+   begin with Q/K/V/O because multi-token context is the remaining boundary.
+5. Use only fit data to construct the basis. Expand fit with the now-exposed
+   24-prompt candidate, create a new prompt/prefix-disjoint 24-prompt candidate,
+   and reuse the exact still-locked 32-prompt sealed split. Candidate and sealed
+   data cannot influence bases, rank, learning rates, or checkpoint selection.
+6. Require at least one fresh-candidate `LCP >= 4` and repetition
+   non-regression before calling the guided tranche methodologically positive.
+   Do not relax the standalone publication gates.
+7. On rejection, preserve the strongest authenticated factor/report evidence
+   and restore exactly. On acceptance, bake every inherited and new product,
+   save once, reload fresh, certify exactly `1,410,567,168` native parameters
+   with no adapter/parent/sidecar, and run broad parent-pass retention.
+8. After stage 1 passes, repeat the promoted transaction at `600,628,224` and
+   then `134,515,008`, with a new sealed gate at every stage.
 
 ## Truth boundary
 
