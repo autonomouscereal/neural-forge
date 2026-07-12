@@ -1005,6 +1005,12 @@ def _model_state_sha256(model: Any) -> str:
     return digest.hexdigest()
 
 
+def fingerprint_hf_compiler_model_state(model: Any) -> str:
+    """Return the exact model-state digest embedded in compiler reports."""
+
+    return _model_state_sha256(model)
+
+
 def _model_storage_byte_report(model: Any) -> dict[str, int]:
     parameter_unique: dict[tuple[Any, ...], int] = {}
     buffer_unique: dict[tuple[Any, ...], int] = {}
@@ -1202,4 +1208,5 @@ __all__ = [
     "compile_hf_parents_to_blank_child",
     "compile_multi_parent_blank_child",
     "fingerprint_hf_child_structure",
+    "fingerprint_hf_compiler_model_state",
 ]

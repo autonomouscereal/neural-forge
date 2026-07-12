@@ -24,10 +24,13 @@ import argparse
 import dataclasses
 import hashlib
 import importlib
+import importlib.metadata
 import importlib.util
+import inspect
 import json
 import math
 import os
+import platform
 import re
 import shutil
 import tempfile
@@ -51,6 +54,13 @@ from neural_forge.hf_canonical_kernel import (
     CanonicalRowIdentity,
     build_proportional_depth_cover,
 )
+from neural_forge.hf_compiled_child_cache import (
+    CompiledChildCacheIntegrityError,
+    CompilerIdentity,
+    load_compiled_child_cache,
+    publish_compiled_child_cache,
+    verify_compiled_child_cache,
+)
 from neural_forge.hf_dense_gqa_qkvo_residual_adapter import DenseGQASite
 from neural_forge.hf_factorized_vocab import exact_parameter_report
 from neural_forge.hf_parent_compiler import (
@@ -64,6 +74,7 @@ from neural_forge.hf_progressive_target_bridge import (
     QWEN3_4B_EXACT_PARAMETERS,
     certify_native_dense_gqa_target,
     default_qwen4b_progressive_target_plan,
+    install_exact_target_compiler_transaction,
     install_parent_compiler_result_target_native_transaction,
 )
 
@@ -72,6 +83,7 @@ RUN_SCHEMA = "neural-forge-qwen-exact-target-native-stage-v1"
 PREREGISTRATION_SCHEMA = "neural-forge-qwen-exact-target-native-preregistration-v1"
 SPLIT_SCHEMA = "neural-forge-target-native-behavior-split-v1"
 FACTOR_PACK_SCHEMA = "neural-forge-rejected-target-native-factor-pack-v1"
+TRAINER_FACTOR_PACK_SCHEMA = "neural-forge-target-native-factor-pack-v1"
 CANONICAL_TRAINER_MODULE = "neural_forge.hf_target_native_behavior_distillation"
 
 TARGET_LAYER_COUNT = 30
@@ -80,6 +92,8 @@ QKVO_SITE_COUNT = TARGET_LAYER_COUNT * TARGET_PHYSICAL_GROUPS
 QKVO_RANK = 8
 SWIGLU_LAYER_COUNT = TARGET_LAYER_COUNT
 SWIGLU_RANK = 8
+TARGET_NATIVE_FACTOR_COUNT = 14
+TARGET_NATIVE_FACTOR_PARAMETERS = 11_919_360
 CANONICAL_ATTENTION_IMPLEMENTATION = "eager"
 
 DEFAULT_BLANK_TARGET = Path(
@@ -292,6 +306,51 @@ class SplitBinding:
 
 
 @dataclass(frozen=True, slots=True)
+class ContinuationFactorBinding:
+    factor_pack_path: Path
+    factor_pack_sha256: str
+    source_run_report_path: Path
+    source_run_report_sha256: str
+    factor_state_sha256: str
+    compiler_report_sha256: str
+    compiled_state_sha256: str
+    source_preregistration_sha256: str
+    source_evaluation_contract_sha256: str
+    factor_payload: Mapping[str, Any]
+
+    def as_report(self) -> dict[str, Any]:
+        return {
+            "factor_pack_path": str(self.factor_pack_path),
+            "factor_pack_sha256": self.factor_pack_sha256,
+            "source_run_report_path": str(self.source_run_report_path),
+            "source_run_report_sha256": self.source_run_report_sha256,
+            "factor_state_sha256": self.factor_state_sha256,
+            "compiler_report_sha256": self.compiler_report_sha256,
+            "compiled_state_sha256": self.compiled_state_sha256,
+            "source_preregistration_sha256": self.source_preregistration_sha256,
+            "source_evaluation_contract_sha256": (
+                self.source_evaluation_contract_sha256
+            ),
+            "factor_only": True,
+            "authenticated_before_model_access": True,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class CompilerCacheBinding:
+    root: Path
+
+
+@dataclass(frozen=True, slots=True)
+class CompiledBase:
+    child_model: nn.Module
+    report: Mapping[str, Any]
+    compiler_report_sha256: str
+    compiled_state_sha256: str
+    cache_evidence: Mapping[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
 class BehaviorThresholds:
     minimum_action_accuracy: float
     minimum_exact_rollout_fraction: float
@@ -299,15 +358,27 @@ class BehaviorThresholds:
     minimum_lcp_fraction: float
     minimum_action_count: int
     minimum_rollout_count: int
+    maximum_repeat_fraction_excess: float = 1.0
+    maximum_adjacent_repeat_fraction_excess: float = 1.0
+    maximum_longest_run_excess: int = 2_147_483_647
 
     @classmethod
     def from_mapping(cls, value: Any, name: str) -> BehaviorThresholds:
         if not isinstance(value, Mapping):
             raise ExactTargetNativeStageError(f"{name} thresholds must be an object.")
         expected = {field.name for field in dataclasses.fields(cls)}
-        if set(value) != expected:
+        legacy = {
+            "minimum_action_accuracy",
+            "minimum_exact_rollout_fraction",
+            "minimum_token_match_fraction",
+            "minimum_lcp_fraction",
+            "minimum_action_count",
+            "minimum_rollout_count",
+        }
+        if frozenset(value) not in {frozenset(expected), frozenset(legacy)}:
             raise ExactTargetNativeStageError(
-                f"{name} thresholds must contain exactly {sorted(expected)}."
+                f"{name} thresholds must contain either {sorted(legacy)} or "
+                f"{sorted(expected)}."
             )
         fractions: dict[str, float] = {}
         for key in (
@@ -315,8 +386,10 @@ class BehaviorThresholds:
             "minimum_exact_rollout_fraction",
             "minimum_token_match_fraction",
             "minimum_lcp_fraction",
+            "maximum_repeat_fraction_excess",
+            "maximum_adjacent_repeat_fraction_excess",
         ):
-            raw = value[key]
+            raw = value.get(key, 1.0)
             if isinstance(raw, bool) or not isinstance(raw, (int, float)):
                 raise ExactTargetNativeStageError(f"{name}.{key} must be numeric.")
             number = float(raw)
@@ -324,11 +397,19 @@ class BehaviorThresholds:
                 raise ExactTargetNativeStageError(f"{name}.{key} must be in [0, 1].")
             fractions[key] = number
         counts: dict[str, int] = {}
-        for key in ("minimum_action_count", "minimum_rollout_count"):
-            raw = value[key]
-            if isinstance(raw, bool) or not isinstance(raw, int) or raw <= 0:
+        for key in (
+            "minimum_action_count",
+            "minimum_rollout_count",
+            "maximum_longest_run_excess",
+        ):
+            raw = value.get(key, 2_147_483_647)
+            if (
+                isinstance(raw, bool)
+                or not isinstance(raw, int)
+                or (raw < 0 if key == "maximum_longest_run_excess" else raw <= 0)
+            ):
                 raise ExactTargetNativeStageError(
-                    f"{name}.{key} must be a positive integer."
+                    f"{name}.{key} has an invalid integer bound."
                 )
             counts[key] = raw
         return cls(**fractions, **counts)
@@ -344,6 +425,7 @@ class AuthenticatedPreRegistration:
     parent: ArtifactBinding
     target: ArtifactBinding
     splits: Mapping[str, SplitBinding]
+    compiler_split: SplitBinding
     thresholds: Mapping[str, BehaviorThresholds]
     compiler: Mapping[str, Any]
     training: Mapping[str, Any]
@@ -351,6 +433,8 @@ class AuthenticatedPreRegistration:
     evaluation_contract_sha256: str
     artifact_authentication: Mapping[str, Any]
     implementation_authentication: Mapping[str, Any]
+    continuation: ContinuationFactorBinding | None
+    compiler_cache: CompilerCacheBinding | None
 
     def preflight_report(self) -> dict[str, Any]:
         return {
@@ -377,6 +461,12 @@ class AuthenticatedPreRegistration:
                 }
                 for name, split in self.splits.items()
             },
+            "compiler_split": {
+                "path": str(self.compiler_split.path),
+                "sha256": self.compiler_split.sha256,
+                "row_count": len(self.compiler_split.row_ids),
+                "reuses_behavior_fit": self.compiler_split is self.splits["fit"],
+            },
             "thresholds": {
                 name: threshold.as_dict() for name, threshold in self.thresholds.items()
             },
@@ -399,6 +489,18 @@ class AuthenticatedPreRegistration:
             "evaluation_contract_sha256": self.evaluation_contract_sha256,
             "artifact_authentication": dict(self.artifact_authentication),
             "implementation_authentication": dict(self.implementation_authentication),
+            "continuation": (
+                None if self.continuation is None else self.continuation.as_report()
+            ),
+            "compiler_cache": (
+                None
+                if self.compiler_cache is None
+                else {
+                    "root": str(self.compiler_cache.root),
+                    "content_addressed": True,
+                    "copied_into_run_output": False,
+                }
+            ),
             "models_loaded": False,
             "gpu_work_launched": False,
         }
@@ -600,6 +702,338 @@ def _load_split(
     )
 
 
+def _factor_tensor_sha256(value: Tensor) -> str:
+    detached = value.detach().cpu().contiguous()
+    digest = hashlib.sha256()
+    digest.update(str(detached.dtype).encode("ascii"))
+    digest.update(b"\0")
+    digest.update(repr(tuple(detached.shape)).encode("ascii"))
+    digest.update(b"\0")
+    digest.update(detached.reshape(-1).view(torch.uint8).numpy().tobytes())
+    return digest.hexdigest()
+
+
+def _authenticate_continuation_factor_payload(
+    value: Any,
+) -> tuple[Mapping[str, Any], str, Mapping[str, str]]:
+    if not isinstance(value, Mapping):
+        raise ExactTargetNativeStageError("Continuation factor file must be a mapping.")
+    expected_envelope = {
+        "schema",
+        "reason",
+        "preregistration_sha256",
+        "evaluation_contract_sha256",
+        "qkvo_site_count",
+        "qkvo_rank",
+        "swiglu_layer_count",
+        "swiglu_rank",
+        "factor_pack",
+        "contains_model_checkpoint",
+        "contains_parent_parameters",
+        "contains_activations_or_hidden_states",
+    }
+    if set(value) != expected_envelope or value.get("schema") != FACTOR_PACK_SCHEMA:
+        raise ExactTargetNativeStageError(
+            "Continuation factor envelope has an unsupported schema or fields."
+        )
+    if (
+        value.get("qkvo_site_count") != QKVO_SITE_COUNT
+        or value.get("qkvo_rank") != QKVO_RANK
+        or value.get("swiglu_layer_count") != SWIGLU_LAYER_COUNT
+        or value.get("swiglu_rank") != SWIGLU_RANK
+    ):
+        raise ExactTargetNativeStageError(
+            "Continuation factor envelope targets a different transaction topology."
+        )
+    if any(
+        value.get(name) is not False
+        for name in (
+            "contains_model_checkpoint",
+            "contains_parent_parameters",
+            "contains_activations_or_hidden_states",
+        )
+    ):
+        raise ExactTargetNativeStageError(
+            "Continuation artifact must contain target-native factors only."
+        )
+    reason = value.get("reason")
+    if not isinstance(reason, str) or not reason:
+        raise ExactTargetNativeStageError(
+            "Continuation factor envelope reason must be nonempty."
+        )
+    envelope_provenance = {
+        "reason": reason,
+        "preregistration_sha256": _require_sha256(
+            value.get("preregistration_sha256"),
+            "continuation.factor_envelope.preregistration_sha256",
+        ),
+        "evaluation_contract_sha256": _require_sha256(
+            value.get("evaluation_contract_sha256"),
+            "continuation.factor_envelope.evaluation_contract_sha256",
+        ),
+    }
+    payload = value.get("factor_pack")
+    expected_payload = {
+        "schema",
+        "factor_count",
+        "factors",
+        "factor_state_sha256",
+        "parent_state_included",
+        "native_child_state_included",
+        "optimizer_state_included",
+        "factor_tensors",
+    }
+    if (
+        not isinstance(payload, Mapping)
+        or set(payload) != expected_payload
+        or payload.get("schema") != TRAINER_FACTOR_PACK_SCHEMA
+        or payload.get("factor_count") != TARGET_NATIVE_FACTOR_COUNT
+        or any(
+            payload.get(name) is not False
+            for name in (
+                "parent_state_included",
+                "native_child_state_included",
+                "optimizer_state_included",
+            )
+        )
+    ):
+        raise ExactTargetNativeStageError(
+            "Continuation payload is not the exact factor-only trainer artifact."
+        )
+    rows = payload.get("factors")
+    tensors = payload.get("factor_tensors")
+    if not isinstance(rows, list) or not isinstance(tensors, Mapping):
+        raise ExactTargetNativeStageError("Continuation factor manifest is malformed.")
+    expected_names = tuple(
+        sorted(
+            {
+                *(
+                    f"qkvo.{role}_{side}"
+                    for role in ("q", "k", "v", "o")
+                    for side in ("left", "right")
+                ),
+                *(
+                    f"gud.{role}_{side}"
+                    for role in ("gate", "up", "down")
+                    for side in ("left", "right")
+                ),
+            }
+        )
+    )
+    if len(rows) != len(expected_names) or set(tensors) != set(expected_names):
+        raise ExactTargetNativeStageError(
+            "Continuation factor names do not match the complete QKVO/GUD topology."
+        )
+    canonical_rows: list[dict[str, Any]] = []
+    total_parameters = 0
+    for index, (expected_name, row) in enumerate(
+        zip(expected_names, rows, strict=True)
+    ):
+        if not isinstance(row, Mapping) or set(row) != {
+            "name",
+            "shape",
+            "dtype",
+            "tensor_sha256",
+        }:
+            raise ExactTargetNativeStageError(
+                f"Continuation factor manifest row {index} is malformed."
+            )
+        if row.get("name") != expected_name:
+            raise ExactTargetNativeStageError(
+                "Continuation factor manifest must use canonical sorted names."
+            )
+        tensor = tensors[expected_name]
+        if (
+            not isinstance(tensor, Tensor)
+            or tensor.layout != torch.strided
+            or tensor.device.type != "cpu"
+            or tensor.dtype != torch.float32
+            or not bool(torch.isfinite(tensor).all())
+        ):
+            raise ExactTargetNativeStageError(
+                f"Continuation factor {expected_name!r} is not finite CPU FP32."
+            )
+        detached = tensor.detach().contiguous()
+        digest = _factor_tensor_sha256(detached)
+        expected_row = {
+            "name": expected_name,
+            "shape": list(detached.shape),
+            "dtype": str(detached.dtype),
+            "tensor_sha256": digest,
+        }
+        if dict(row) != expected_row:
+            raise ExactTargetNativeStageError(
+                f"Continuation factor {expected_name!r} failed manifest authentication."
+            )
+        total_parameters += int(detached.numel())
+        canonical_rows.append(expected_row)
+    if total_parameters != TARGET_NATIVE_FACTOR_PARAMETERS:
+        raise ExactTargetNativeStageError(
+            "Continuation factor parameter count does not match exact stage 1."
+        )
+    state_sha = _require_sha256(
+        payload.get("factor_state_sha256"), "continuation.factor_state_sha256"
+    )
+    if _canonical_sha256(canonical_rows) != state_sha:
+        raise ExactTargetNativeStageError(
+            "Continuation factor-state hash does not authenticate its manifest."
+        )
+    return dict(payload), state_sha, envelope_provenance
+
+
+def _authenticate_continuation(
+    value: Any,
+    *,
+    base: Path,
+) -> ContinuationFactorBinding:
+    if not isinstance(value, Mapping) or set(value) != {
+        "factor_pack",
+        "source_run_report",
+        "expected_factor_state_sha256",
+        "expected_compiler_report_sha256",
+        "expected_compiled_state_sha256",
+    }:
+        raise ExactTargetNativeStageError(
+            "continuation must exactly bind the factor pack, source report, and states."
+        )
+
+    def file_binding(raw: Any, name: str) -> tuple[Path, str]:
+        if not isinstance(raw, Mapping) or set(raw) != {"path", "sha256"}:
+            raise ExactTargetNativeStageError(f"continuation.{name} is malformed.")
+        path = _resolve_path(base, raw.get("path"), f"continuation.{name}.path")
+        expected_sha = _require_sha256(raw.get("sha256"), f"continuation.{name}.sha256")
+        if not path.is_file() or _file_sha256(path) != expected_sha:
+            raise ExactTargetNativeStageError(
+                f"Authenticated continuation {name} hash mismatch."
+            )
+        return path, expected_sha
+
+    factor_path, factor_sha = file_binding(value["factor_pack"], "factor_pack")
+    report_path, report_sha = file_binding(
+        value["source_run_report"], "source_run_report"
+    )
+    try:
+        envelope = torch.load(factor_path, map_location="cpu", weights_only=True)
+    except (OSError, RuntimeError, TypeError, ValueError) as error:
+        raise ExactTargetNativeStageError(
+            "Cannot safely load the authenticated continuation factor pack."
+        ) from error
+    (
+        factor_payload,
+        factor_state_sha,
+        envelope_provenance,
+    ) = _authenticate_continuation_factor_payload(envelope)
+    expected_factor_state_sha = _require_sha256(
+        value.get("expected_factor_state_sha256"),
+        "continuation.expected_factor_state_sha256",
+    )
+    if factor_state_sha != expected_factor_state_sha:
+        raise ExactTargetNativeStageError(
+            "Continuation factor state differs from the preregistered state."
+        )
+    report = _strict_json(report_path)
+    if not isinstance(report, Mapping):
+        raise ExactTargetNativeStageError("Continuation source report is malformed.")
+    if (
+        report.get("status") != "rejected"
+        or report.get("rollback_exact") is not True
+        or report.get("model_checkpoint_written") is not False
+        or report.get("standalone_compaction_passed") is not False
+    ):
+        raise ExactTargetNativeStageError(
+            "Continuation source must be a rejected run with exact rollback."
+        )
+    if any(
+        envelope_provenance[name] != report.get(name)
+        for name in (
+            "reason",
+            "preregistration_sha256",
+            "evaluation_contract_sha256",
+        )
+    ):
+        raise ExactTargetNativeStageError(
+            "Continuation factor envelope provenance disagrees with its source report."
+        )
+    report_factor = report.get("factor_pack")
+    if (
+        not isinstance(report_factor, Mapping)
+        or report_factor.get("sha256") != factor_sha
+    ):
+        raise ExactTargetNativeStageError(
+            "Continuation source report does not authenticate the factor file."
+        )
+    trainer_evidence = report.get("trainer_evidence")
+    if not isinstance(trainer_evidence, Mapping) or _canonical_sha256(
+        trainer_evidence
+    ) != _require_sha256(
+        report.get("trainer_evidence_sha256"),
+        "continuation.source_run_report.trainer_evidence_sha256",
+    ):
+        raise ExactTargetNativeStageError(
+            "Continuation source trainer evidence hash does not verify."
+        )
+    manifest = (
+        trainer_evidence.get("factor_pack_manifest")
+        if isinstance(trainer_evidence, Mapping)
+        else None
+    )
+    acquisition = report.get("factor_acquisition")
+    if (
+        not isinstance(manifest, Mapping)
+        or manifest.get("factor_state_sha256") != factor_state_sha
+        or not isinstance(acquisition, Mapping)
+        or acquisition.get("selected_factor_state_sha256") != factor_state_sha
+        or acquisition.get("target_native_factors_acquired_behavior") is not True
+    ):
+        raise ExactTargetNativeStageError(
+            "Continuation source does not prove behavior-acquired selected factors."
+        )
+    compiler_report = report.get("compiler_report")
+    if not isinstance(compiler_report, Mapping):
+        raise ExactTargetNativeStageError(
+            "Continuation source report omits structural compiler evidence."
+        )
+    compiler_sha = _canonical_sha256(compiler_report)
+    expected_compiler_sha = _require_sha256(
+        value.get("expected_compiler_report_sha256"),
+        "continuation.expected_compiler_report_sha256",
+    )
+    if compiler_sha != expected_compiler_sha:
+        raise ExactTargetNativeStageError(
+            "Continuation compiler report differs from its preregistered digest."
+        )
+    compiled_state_sha = _require_sha256(
+        report.get("rollback_state_sha256"),
+        "continuation.source_run_report.rollback_state_sha256",
+    )
+    expected_compiled_sha = _require_sha256(
+        value.get("expected_compiled_state_sha256"),
+        "continuation.expected_compiled_state_sha256",
+    )
+    if compiled_state_sha != expected_compiled_sha:
+        raise ExactTargetNativeStageError(
+            "Continuation compiled-child state differs from its preregistered digest."
+        )
+    return ContinuationFactorBinding(
+        factor_pack_path=factor_path,
+        factor_pack_sha256=factor_sha,
+        source_run_report_path=report_path,
+        source_run_report_sha256=report_sha,
+        factor_state_sha256=factor_state_sha,
+        compiler_report_sha256=compiler_sha,
+        compiled_state_sha256=compiled_state_sha,
+        source_preregistration_sha256=_require_sha256(
+            report.get("preregistration_sha256"),
+            "continuation.source_run_report.preregistration_sha256",
+        ),
+        source_evaluation_contract_sha256=_require_sha256(
+            report.get("evaluation_contract_sha256"),
+            "continuation.source_run_report.evaluation_contract_sha256",
+        ),
+        factor_payload=factor_payload,
+    )
+
+
 def authenticate_preregistration(
     path: Path | str,
     expected_sha256: str,
@@ -619,13 +1053,18 @@ def authenticate_preregistration(
             "Preregistration must attest sealed_before_model_access=true."
         )
     implementation = raw.get("implementation")
-    if not isinstance(implementation, Mapping) or set(implementation) != {
+    required_implementation = {
         "runner_sha256",
         "trainer_module",
         "trainer_sha256",
-    }:
+    }
+    if raw.get("compiler_cache") is not None:
+        required_implementation.add("compiler_cache_sha256")
+    if not isinstance(implementation, Mapping) or set(implementation) != (
+        required_implementation
+    ):
         raise ExactTargetNativeStageError(
-            "implementation must pin runner_sha256, trainer_module, and trainer_sha256."
+            "implementation does not contain the exact required runtime source pins."
         )
     if implementation.get("trainer_module") != CANONICAL_TRAINER_MODULE:
         raise ExactTargetNativeStageError(
@@ -650,6 +1089,23 @@ def authenticate_preregistration(
         raise ExactTargetNativeStageError(
             "Preregistered runner/trainer source hash does not match the live code."
         )
+    cache_path: Path | None = None
+    cache_sha: str | None = None
+    if raw.get("compiler_cache") is not None:
+        cache_spec = importlib.util.find_spec("neural_forge.hf_compiled_child_cache")
+        if cache_spec is None or cache_spec.origin is None:
+            raise ExactTargetNativeStageError(
+                "Compiled-child cache implementation is unavailable."
+            )
+        cache_path = Path(cache_spec.origin).resolve()
+        cache_sha = _file_sha256(cache_path)
+        if cache_sha != _require_sha256(
+            implementation.get("compiler_cache_sha256"),
+            "implementation.compiler_cache_sha256",
+        ):
+            raise ExactTargetNativeStageError(
+                "Preregistered compiler-cache source hash does not match live code."
+            )
     implementation_authentication = {
         "runner": {"path": str(runner_path), "sha256": actual_runner_sha},
         "trainer": {
@@ -659,6 +1115,11 @@ def authenticate_preregistration(
         },
         "authenticated_before_model_access": True,
     }
+    if cache_path is not None and cache_sha is not None:
+        implementation_authentication["compiler_cache"] = {
+            "path": str(cache_path),
+            "sha256": cache_sha,
+        }
     base = prereg_path.parent
     parent = _artifact_binding(
         raw.get("parent"),
@@ -703,6 +1164,22 @@ def authenticate_preregistration(
                 raise ExactTargetNativeStageError(
                     f"Prompt identities overlap between {left} and {right}."
                 )
+    compiler_split_value = raw.get("compiler_split")
+    compiler_split = (
+        splits["fit"]
+        if compiler_split_value is None
+        else _load_split(compiler_split_value, name="fit", base=base)
+    )
+    for heldout_role in ("candidate", "sealed"):
+        heldout = splits[heldout_role]
+        if set(compiler_split.row_ids) & set(heldout.row_ids):
+            raise ExactTargetNativeStageError(
+                f"Compiler split row IDs overlap behavior {heldout_role}."
+            )
+        if set(compiler_split.prompt_sha256s) & set(heldout.prompt_sha256s):
+            raise ExactTargetNativeStageError(
+                f"Compiler split prompt identities overlap behavior {heldout_role}."
+            )
     threshold_values = raw.get("thresholds")
     if not isinstance(threshold_values, Mapping) or set(threshold_values) != {
         "fit",
@@ -742,9 +1219,34 @@ def authenticate_preregistration(
         "parent": _authenticate_artifact(parent),
         "blank_target": _authenticate_artifact(target),
         "split_sha256s": {name: split.sha256 for name, split in splits.items()},
+        "compiler_split_sha256": compiler_split.sha256,
     }
+    continuation_value = raw.get("continuation")
+    continuation = (
+        None
+        if continuation_value is None
+        else _authenticate_continuation(continuation_value, base=base)
+    )
+    cache_value = raw.get("compiler_cache")
+    compiler_cache: CompilerCacheBinding | None = None
+    if cache_value is not None:
+        if not isinstance(cache_value, Mapping) or set(cache_value) != {"root"}:
+            raise ExactTargetNativeStageError(
+                "compiler_cache must contain exactly its shared root path."
+            )
+        cache_root = _resolve_path(base, cache_value.get("root"), "compiler_cache.root")
+        if cache_root.exists() and (cache_root.is_symlink() or not cache_root.is_dir()):
+            raise ExactTargetNativeStageError(
+                "compiler_cache.root must be an ordinary directory when present."
+            )
+        compiler_cache = CompilerCacheBinding(root=cache_root)
+    if continuation is not None and compiler_cache is None:
+        raise ExactTargetNativeStageError(
+            "Authenticated continuation runs must use the shared structural cache."
+        )
     evaluation_contract = {
         "split_sha256s": authentication["split_sha256s"],
+        "compiler_split_sha256": compiler_split.sha256,
         "thresholds": {
             name: threshold.as_dict() for name, threshold in thresholds.items()
         },
@@ -757,7 +1259,7 @@ def authenticate_preregistration(
         "runtime_dtype": "float16",
         "runtime_attention_implementation": CANONICAL_ATTENTION_IMPLEMENTATION,
         "canonical_parent_evidence": {
-            "source_split": "fit-only-deterministic-partition",
+            "source_split": "authenticated-compiler-split-deterministic-partition",
             "candidate_split_used": False,
             "sealed_split_used": False,
             "compiler_options": dict(compiler),
@@ -769,6 +1271,7 @@ def authenticate_preregistration(
         parent=parent,
         target=target,
         splits=splits,
+        compiler_split=compiler_split,
         thresholds=thresholds,
         compiler=dict(compiler),
         training=dict(training),
@@ -776,6 +1279,8 @@ def authenticate_preregistration(
         evaluation_contract_sha256=_canonical_sha256(evaluation_contract),
         artifact_authentication=authentication,
         implementation_authentication=implementation_authentication,
+        continuation=continuation,
+        compiler_cache=compiler_cache,
     )
 
 
@@ -802,7 +1307,7 @@ def _compiler_fit_partitions(
 ) -> tuple[SplitBinding, SplitBinding]:
     """Partition only fit evidence; candidate and sealed remain untouched."""
 
-    source = contract.splits["fit"]
+    source = contract.compiler_split
     count = len(source.row_ids)
     validation_count = contract.compiler.get(
         "canonical_validation_count", max(1, count // 5)
@@ -852,8 +1357,8 @@ def _compiler_partition_report(
 ) -> dict[str, Any]:
     calibration, validation = _compiler_fit_partitions(contract)
     return {
-        "source_split": "fit",
-        "source_fit_artifact_sha256": contract.splits["fit"].sha256,
+        "source_split": "compiler_split",
+        "source_fit_artifact_sha256": contract.compiler_split.sha256,
         "calibration_row_count": len(calibration.row_ids),
         "calibration_row_ids_sha256": _canonical_sha256(list(calibration.row_ids)),
         "validation_row_count": len(validation.row_ids),
@@ -1131,6 +1636,19 @@ def _behavior_gate(
         "token_match_fraction",
         "lcp_fraction",
     }
+    repetition_required = (
+        thresholds.maximum_repeat_fraction_excess < 1.0
+        or thresholds.maximum_adjacent_repeat_fraction_excess < 1.0
+        or thresholds.maximum_longest_run_excess < 2_147_483_647
+    )
+    if repetition_required:
+        required.update(
+            {
+                "repeat_fraction_excess",
+                "adjacent_repeat_fraction_excess",
+                "longest_run_excess",
+            }
+        )
     if not required.issubset(payload):
         raise ExactTargetNativeStageError(
             f"Behavior metrics are missing {sorted(required - set(payload))}."
@@ -1146,7 +1664,11 @@ def _behavior_gate(
         "exact_rollout_fraction",
         "token_match_fraction",
         "lcp_fraction",
+        "repeat_fraction_excess",
+        "adjacent_repeat_fraction_excess",
     ):
+        if key not in payload:
+            continue
         value = payload[key]
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ExactTargetNativeStageError(
@@ -1157,6 +1679,14 @@ def _behavior_gate(
             raise ExactTargetNativeStageError(
                 f"Behavior metric {key} must be in [0, 1]."
             )
+    if "longest_run_excess" in payload and (
+        isinstance(payload["longest_run_excess"], bool)
+        or not isinstance(payload["longest_run_excess"], int)
+        or payload["longest_run_excess"] < 0
+    ):
+        raise ExactTargetNativeStageError(
+            "Behavior metric longest_run_excess must be a nonnegative integer."
+        )
 
     def consistent_fraction(
         numerator_name: str,
@@ -1215,6 +1745,16 @@ def _behavior_gate(
         >= thresholds.minimum_token_match_fraction,
         "minimum_lcp_fraction": float(payload["lcp_fraction"])
         >= thresholds.minimum_lcp_fraction,
+        "maximum_repeat_fraction_excess": float(
+            payload.get("repeat_fraction_excess", 0.0)
+        )
+        <= thresholds.maximum_repeat_fraction_excess,
+        "maximum_adjacent_repeat_fraction_excess": float(
+            payload.get("adjacent_repeat_fraction_excess", 0.0)
+        )
+        <= thresholds.maximum_adjacent_repeat_fraction_excess,
+        "maximum_longest_run_excess": int(payload.get("longest_run_excess", 0))
+        <= thresholds.maximum_longest_run_excess,
     }
     decision = {
         "passed": all(checks.values()),
@@ -1252,9 +1792,173 @@ class ProductionStageRuntime:
         self.parent_device_map = parent_device_map
         self.target_device_map = target_device_map
         self.trainer_module_name = trainer_module
+        self._compiler_identity: CompilerIdentity | None = None
+        self._compiler_cache_path: Path | None = None
+        self._verified_compiler_cache: Any | None = None
+        self._loaded_compiler_cache: Any | None = None
 
     def _torch_dtype(self) -> torch.dtype:
         return torch.float16
+
+    def _compiler_identity_for_contract(
+        self, contract: AuthenticatedPreRegistration
+    ) -> CompilerIdentity:
+        parent_tree = contract.artifact_authentication["parent"].get("tree")
+        target_tree = contract.artifact_authentication["blank_target"].get("tree")
+        if not isinstance(parent_tree, Mapping) or not isinstance(target_tree, Mapping):
+            raise ExactTargetNativeStageError(
+                "Shared compiler caching requires complete parent and blank-target "
+                "artifact tree bindings."
+            )
+        parent_tokenizer_path = contract.parent.path / "tokenizer.json"
+        if not parent_tokenizer_path.is_file():
+            raise ExactTargetNativeStageError(
+                "Compiler cache identity cannot bind the actual parent tokenizer."
+            )
+        tokenizer_sha = _file_sha256(parent_tokenizer_path)
+        calibration, validation = _compiler_fit_partitions(contract)
+        compiler_modules = (
+            "neural_forge.hf_arch_layout",
+            "neural_forge.hf_blank_bootstrap",
+            "neural_forge.hf_canonical_graph",
+            "neural_forge.hf_canonical_kernel",
+            "neural_forge.hf_parent_compiler",
+        )
+        implementation_hashes: dict[str, str] = {}
+        for module_name in compiler_modules:
+            module = importlib.import_module(module_name)
+            module_path = Path(str(module.__file__)).resolve()
+            implementation_hashes[module_name] = _file_sha256(module_path)
+        glue_functions = (
+            _prompt_token_ids,
+            _compiler_fit_partitions,
+            _tokenizer_fingerprint,
+            _capture_canonical_parent_split,
+            _compile_real_parent_evidence,
+        )
+        implementation_hashes["exact_stage_compiler_glue"] = _sha256_text(
+            "\n\n".join(inspect.getsource(value) for value in glue_functions)
+        )
+
+        def device_record(value: Any) -> dict[str, Any]:
+            result: dict[str, Any] = {"device_map": str(value)}
+            if str(value) == "auto" and torch.cuda.is_available():
+                result["visible_devices"] = [
+                    {
+                        "index": index,
+                        "name": torch.cuda.get_device_properties(index).name,
+                        "capability": list(torch.cuda.get_device_capability(index)),
+                        "total_memory": int(
+                            torch.cuda.get_device_properties(index).total_memory
+                        ),
+                    }
+                    for index in range(torch.cuda.device_count())
+                ]
+                return result
+            try:
+                device = torch.device(str(value))
+            except (RuntimeError, TypeError, ValueError):
+                return result
+            if device.type == "cuda" and torch.cuda.is_available():
+                index = (
+                    torch.cuda.current_device()
+                    if device.index is None
+                    else device.index
+                )
+                properties = torch.cuda.get_device_properties(index)
+                result.update(
+                    {
+                        "name": properties.name,
+                        "capability": [properties.major, properties.minor],
+                        "total_memory": int(properties.total_memory),
+                    }
+                )
+            return result
+
+        return CompilerIdentity(
+            parent_artifact_tree_sha256=str(parent_tree["tree_sha256"]),
+            blank_target_artifact_tree_sha256=str(target_tree["tree_sha256"]),
+            tokenizer_sha256=tokenizer_sha,
+            compiler_input_sha256s={
+                "compiler_split_artifact": contract.compiler_split.sha256,
+                "calibration_row_ids": _canonical_sha256(list(calibration.row_ids)),
+                "validation_row_ids": _canonical_sha256(list(validation.row_ids)),
+                "calibration_prompt_ids": _canonical_sha256(
+                    list(calibration.prompt_sha256s)
+                ),
+                "validation_prompt_ids": _canonical_sha256(
+                    list(validation.prompt_sha256s)
+                ),
+            },
+            compiler_implementation_sha256s=implementation_hashes,
+            compiler_options={
+                **dict(contract.compiler),
+                "target_exact_unique_parameters": QWEN3_1P4B_EXACT_PARAMETERS,
+                "target_layer_count": TARGET_LAYER_COUNT,
+                "trace_pooling": "last_valid",
+                "token_contract": "identity",
+            },
+            runtime={
+                "dtype": self.dtype,
+                "attention_implementation": CANONICAL_ATTENTION_IMPLEMENTATION,
+                "torch_version": torch.__version__,
+                "transformers_version": importlib.metadata.version("transformers"),
+                "cuda_version": torch.version.cuda,
+                "cudnn_version": torch.backends.cudnn.version(),
+                "cuda_matmul_allow_tf32": torch.backends.cuda.matmul.allow_tf32,
+                "cudnn_allow_tf32": torch.backends.cudnn.allow_tf32,
+                "deterministic_algorithms": torch.are_deterministic_algorithms_enabled(),
+                "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", ""),
+                "platform": platform.platform(),
+                "processor": platform.processor(),
+                "torch_build_config_sha256": _sha256_text(torch.__config__.show()),
+                "parent_device": device_record(self.parent_device_map),
+                "target_device": device_record(self.target_device_map),
+            },
+            seed=int(contract.compiler.get("compiler_seed", 0)),
+        )
+
+    def prepare_compiler_cache(
+        self, contract: AuthenticatedPreRegistration
+    ) -> Mapping[str, Any] | None:
+        binding = contract.compiler_cache
+        if binding is None:
+            return None
+        identity = self._compiler_identity_for_contract(contract)
+        cache_path = (binding.root / identity.compiler_identity_sha256).resolve()
+        try:
+            cache_path.relative_to(binding.root.resolve())
+        except ValueError as error:
+            raise ExactTargetNativeStageError(
+                "Derived compiler cache path escapes its authenticated root."
+            ) from error
+        self._compiler_identity = identity
+        self._compiler_cache_path = cache_path
+        if cache_path.exists():
+            try:
+                verified = verify_compiled_child_cache(
+                    cache_path,
+                    expected_identity=identity,
+                )
+            except CompiledChildCacheIntegrityError as error:
+                raise ExactTargetNativeStageError(
+                    "Existing shared compiler cache failed authentication."
+                ) from error
+            self._verified_compiler_cache = verified
+            disposition = "hit"
+            receipt_sha = verified.receipt.receipt_sha256
+        else:
+            self._verified_compiler_cache = None
+            disposition = "miss"
+            receipt_sha = None
+        return {
+            "disposition": disposition,
+            "path": str(cache_path),
+            "compiler_identity_sha256": identity.compiler_identity_sha256,
+            "receipt_sha256": receipt_sha,
+            "verified_before_model_access": disposition == "hit",
+            "copied_into_run_output": False,
+        }
 
     def load_models(
         self, contract: AuthenticatedPreRegistration
@@ -1274,14 +1978,38 @@ class ProductionStageRuntime:
             device_map=self.parent_device_map,
             attn_implementation=CANONICAL_ATTENTION_IMPLEMENTATION,
         ).eval()
-        target = AutoModelForCausalLM.from_pretrained(
-            contract.target.path,
-            local_files_only=True,
-            trust_remote_code=False,
-            torch_dtype=dtype,
-            device_map=self.target_device_map,
-            attn_implementation=CANONICAL_ATTENTION_IMPLEMENTATION,
-        ).eval()
+        if self._verified_compiler_cache is None:
+            target = AutoModelForCausalLM.from_pretrained(
+                contract.target.path,
+                local_files_only=True,
+                trust_remote_code=False,
+                torch_dtype=dtype,
+                device_map=self.target_device_map,
+                attn_implementation=CANONICAL_ATTENTION_IMPLEMENTATION,
+            ).eval()
+        else:
+            assert self._compiler_identity is not None
+            assert self._compiler_cache_path is not None
+
+            def load_cached(path: Path) -> nn.Module:
+                return AutoModelForCausalLM.from_pretrained(
+                    path,
+                    local_files_only=True,
+                    trust_remote_code=False,
+                    torch_dtype=dtype,
+                    device_map=self.target_device_map,
+                    attn_implementation=CANONICAL_ATTENTION_IMPLEMENTATION,
+                ).eval()
+
+            self._loaded_compiler_cache = load_compiled_child_cache(
+                self._compiler_cache_path,
+                expected_identity=self._compiler_identity,
+                model_loader=load_cached,
+                expected_receipt_sha256=(
+                    self._verified_compiler_cache.receipt.receipt_sha256
+                ),
+            )
+            target = self._loaded_compiler_cache.model
         tokenizer = AutoTokenizer.from_pretrained(
             contract.parent.path,
             local_files_only=True,
@@ -1318,8 +2046,112 @@ class ProductionStageRuntime:
         target: nn.Module,
         tokenizer: Any,
         contract: AuthenticatedPreRegistration,
-    ) -> HFParentCompilerResult:
-        return _compile_real_parent_evidence(parent, target, tokenizer, contract)
+    ) -> HFParentCompilerResult | CompiledBase:
+        if self._loaded_compiler_cache is not None:
+            report = dict(self._loaded_compiler_cache.compiler_report)
+            state_sha = self.state_sha256(target)
+            receipt = self._loaded_compiler_cache.receipt.as_dict()
+            return CompiledBase(
+                child_model=target,
+                report=report,
+                compiler_report_sha256=_canonical_sha256(report),
+                compiled_state_sha256=state_sha,
+                cache_evidence={
+                    "disposition": "hit",
+                    "path": str(self._loaded_compiler_cache.path),
+                    "compiler_identity_sha256": (
+                        self._loaded_compiler_cache.compiler_identity.compiler_identity_sha256
+                    ),
+                    "receipt_sha256": self._loaded_compiler_cache.receipt.receipt_sha256,
+                    "compiler_report_sha256": _canonical_sha256(report),
+                    "state_dict_sha256": receipt["model_state"]["state_dict_sha256"],
+                    "artifact_tree_sha256": receipt["artifact_tree"]["tree_sha256"],
+                    "verified_before_factor_install": True,
+                    "copied_into_run_output": False,
+                },
+            )
+        result = _compile_real_parent_evidence(parent, target, tokenizer, contract)
+        report = result.report.as_dict()
+        return CompiledBase(
+            child_model=result.child_model,
+            report=report,
+            compiler_report_sha256=_canonical_sha256(report),
+            compiled_state_sha256=self.state_sha256(result.child_model),
+            cache_evidence={
+                "disposition": "uncached-compile",
+                "copied_into_run_output": False,
+            },
+        )
+
+    def finalize_compiled_base(
+        self,
+        compiled: HFParentCompilerResult | CompiledBase,
+        contract: AuthenticatedPreRegistration,
+    ) -> HFParentCompilerResult | CompiledBase:
+        del contract
+        if not isinstance(compiled, CompiledBase):
+            return compiled
+        if compiled.cache_evidence.get("disposition") == "hit":
+            return compiled
+        if self._compiler_identity is None or self._compiler_cache_path is None:
+            return compiled
+        try:
+            from transformers import AutoModelForCausalLM
+        except ImportError as error:  # pragma: no cover
+            raise RuntimeError(
+                "Transformers is required for compiler caching."
+            ) from error
+
+        def save_model(model: nn.Module, path: Path) -> None:
+            model.save_pretrained(
+                path,
+                safe_serialization=True,
+                max_shard_size="10GB",
+            )
+
+        def load_cpu(path: Path) -> nn.Module:
+            return AutoModelForCausalLM.from_pretrained(
+                path,
+                local_files_only=True,
+                trust_remote_code=False,
+                torch_dtype=self._torch_dtype(),
+                device_map="cpu",
+                attn_implementation=CANONICAL_ATTENTION_IMPLEMENTATION,
+            ).eval()
+
+        receipt = publish_compiled_child_cache(
+            self._compiler_cache_path,
+            model=compiled.child_model,
+            compiler_report=compiled.report,
+            compiler_identity=self._compiler_identity,
+            model_saver=save_model,
+            model_loader=load_cpu,
+        )
+        verified = verify_compiled_child_cache(
+            self._compiler_cache_path,
+            expected_identity=self._compiler_identity,
+            expected_receipt_sha256=receipt.receipt_sha256,
+            expected_compiler_report_sha256=compiled.compiler_report_sha256,
+        )
+        receipt_payload = verified.receipt.as_dict()
+        return dataclasses.replace(
+            compiled,
+            cache_evidence={
+                "disposition": "published",
+                "path": str(verified.path),
+                "compiler_identity_sha256": (
+                    verified.compiler_identity.compiler_identity_sha256
+                ),
+                "receipt_sha256": verified.receipt.receipt_sha256,
+                "compiler_report_sha256": compiled.compiler_report_sha256,
+                "state_dict_sha256": receipt_payload["model_state"][
+                    "state_dict_sha256"
+                ],
+                "artifact_tree_sha256": receipt_payload["artifact_tree"]["tree_sha256"],
+                "verified_before_factor_install": True,
+                "copied_into_run_output": False,
+            },
+        )
 
     def state_sha256(self, model: nn.Module) -> str:
         return _state_dict_sha256(torch, model)
@@ -1333,6 +2165,18 @@ class ProductionStageRuntime:
         )
         if len(sites) != QKVO_SITE_COUNT:
             raise AssertionError("The exact QKVO site topology changed.")
+        if isinstance(compiled, CompiledBase):
+            return install_exact_target_compiler_transaction(
+                compiled.child_model,
+                exact_unique_parameters=QWEN3_1P4B_EXACT_PARAMETERS,
+                qkvo_sites=sites,
+                qkvo_rank=QKVO_RANK,
+                swiglu_layer_indices=tuple(range(TARGET_LAYER_COUNT)),
+                swiglu_rank=SWIGLU_RANK,
+                stage=stage,
+                initialization_seed=0,
+                parent_compiler_report_sha256=compiled.compiler_report_sha256,
+            )
         return install_parent_compiler_result_target_native_transaction(
             compiled,
             qkvo_sites=sites,
@@ -1383,6 +2227,8 @@ class ProductionStageRuntime:
             "candidate_thresholds": candidate_thresholds,
             "seed": contract.seed,
         }
+        if contract.continuation is not None:
+            kwargs["initial_factor_payload"] = contract.continuation.factor_payload
         result = trainer(**kwargs)
         result_type = getattr(module, "BehaviorDistillationResult")
         if type(result) is not result_type:
@@ -1540,6 +2386,23 @@ def _training_metric(training_result: Any, name: str) -> Any:
     return value
 
 
+def _compiled_report_dict(compiled: Any) -> dict[str, Any]:
+    value = getattr(compiled, "report", None)
+    if isinstance(value, Mapping):
+        return dict(value)
+    method = getattr(value, "as_dict", None)
+    if not callable(method):
+        raise ExactTargetNativeStageError(
+            "Structural compiler result has no auditable report mapping."
+        )
+    payload = method()
+    if not isinstance(payload, Mapping):
+        raise ExactTargetNativeStageError(
+            "Structural compiler report method returned a non-mapping."
+        )
+    return dict(payload)
+
+
 def _factor_envelope(
     factor_payload: Mapping[str, Any],
     contract: AuthenticatedPreRegistration,
@@ -1664,6 +2527,24 @@ def _factor_acquisition_claim(evidence: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _validate_continuation_compilation(
+    contract: AuthenticatedPreRegistration,
+    compiler_report: Mapping[str, Any],
+    compiled_state_sha256: str,
+) -> None:
+    continuation = contract.continuation
+    if continuation is None:
+        return
+    if _canonical_sha256(compiler_report) != continuation.compiler_report_sha256:
+        raise ExactTargetNativeStageError(
+            "Current structural compiler report differs from the continuation source."
+        )
+    if compiled_state_sha256 != continuation.compiled_state_sha256:
+        raise ExactTargetNativeStageError(
+            "Current compiled-child bytes differ from the continuation source."
+        )
+
+
 def _remove_published_child_tree(path: Path, output_root: Path) -> None:
     """Remove only this run's exact promoted path after report failure."""
 
@@ -1702,6 +2583,12 @@ def execute_authenticated_stage(
         "output_root": str(output),
     }
     try:
+        prepare_cache = getattr(runner, "prepare_compiler_cache", None)
+        if callable(prepare_cache):
+            cache_plan = prepare_cache(contract)
+            if cache_plan is not None:
+                report["compiled_child_cache"] = dict(cache_plan)
+                report["last_completed_phase"] = "compiler-cache-authentication"
         parent, target, tokenizer = runner.load_models(contract)
         report.update(
             {
@@ -1711,15 +2598,8 @@ def execute_authenticated_stage(
             }
         )
         compiled = runner.compile(parent, target, tokenizer, contract)
-        compiler_report = compiled.report.as_dict()
+        compiler_report = _compiled_report_dict(compiled)
         parent_evidence_partition = _compiler_partition_report(contract)
-        report.update(
-            {
-                "compiler_report": compiler_report,
-                "canonical_parent_evidence": parent_evidence_partition,
-                "last_completed_phase": "structural-compiler-bootstrap",
-            }
-        )
         if (
             compiler_report.get("bootstrap_accepted") is not True
             or compiler_report.get("target_budget_exact") is not True
@@ -1730,6 +2610,47 @@ def execute_authenticated_stage(
                 "Canonical parent compilation did not produce an accepted exact child."
             )
         compiled_state_sha = runner.state_sha256(compiled.child_model)
+        declared_compiled_state = getattr(compiled, "compiled_state_sha256", None)
+        if (
+            declared_compiled_state is not None
+            and declared_compiled_state != compiled_state_sha
+        ):
+            raise ExactTargetNativeStageError(
+                "Compiled-base state changed before factor installation."
+            )
+        _validate_continuation_compilation(
+            contract,
+            compiler_report,
+            compiled_state_sha,
+        )
+        # An immutable cache miss may be published only after the live compile
+        # has passed every structural and continuation-source compatibility gate.
+        finalize_compiled = getattr(runner, "finalize_compiled_base", None)
+        if callable(finalize_compiled):
+            finalized = finalize_compiled(compiled, contract)
+            finalized_report = _compiled_report_dict(finalized)
+            finalized_state_sha = runner.state_sha256(finalized.child_model)
+            if (
+                finalized_report != compiler_report
+                or finalized_state_sha != compiled_state_sha
+            ):
+                raise ExactTargetNativeStageError(
+                    "Compiler cache finalization changed the validated compiled base."
+                )
+            compiled = finalized
+        cache_evidence = getattr(compiled, "cache_evidence", None)
+        report.update(
+            {
+                "compiler_report": compiler_report,
+                "canonical_parent_evidence": parent_evidence_partition,
+                **(
+                    {}
+                    if not isinstance(cache_evidence, Mapping)
+                    else {"compiled_child_cache": dict(cache_evidence)}
+                ),
+                "last_completed_phase": "structural-compiler-bootstrap",
+            }
+        )
         transaction = runner.install_transaction(compiled)
         installation = transaction.installation_report()
         report.update(
@@ -1749,6 +2670,14 @@ def execute_authenticated_stage(
         report["last_completed_phase"] = "behavior-training-started"
         training_result = runner.train(transaction, parent, contract)
         evidence_sha, trainer_evidence = _trainer_evidence(training_result)
+        if contract.continuation is not None and (
+            trainer_evidence.get("continued_from_factor_pack") is not True
+            or trainer_evidence.get("initial_factor_state_sha256")
+            != contract.continuation.factor_state_sha256
+        ):
+            raise ExactTargetNativeStageError(
+                "Trainer did not prove restoration of the authenticated continuation."
+            )
         factor_acquisition = _factor_acquisition_claim(trainer_evidence)
         fit_passed, fit_decision = _behavior_gate(
             _training_metric(training_result, "fit_metrics"),

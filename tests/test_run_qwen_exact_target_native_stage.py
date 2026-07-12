@@ -150,6 +150,124 @@ class _Report:
         }
 
 
+def _continuation_contract_files(
+    tmp_path: Path,
+    monkeypatch,
+    *,
+    compiler_report: dict[str, object] | None = None,
+    envelope_reason: str = "fit-gate-rejected",
+) -> tuple[Path, str, str]:
+    monkeypatch.setattr(runner, "TARGET_NATIVE_FACTOR_PARAMETERS", 14)
+    path, _digest = _contract_files(tmp_path)
+    names = tuple(
+        sorted(
+            {
+                *(
+                    f"qkvo.{role}_{side}"
+                    for role in ("q", "k", "v", "o")
+                    for side in ("left", "right")
+                ),
+                *(
+                    f"gud.{role}_{side}"
+                    for role in ("gate", "up", "down")
+                    for side in ("left", "right")
+                ),
+            }
+        )
+    )
+    tensors = {
+        name: torch.tensor([float(index + 1)], dtype=torch.float32)
+        for index, name in enumerate(names)
+    }
+    rows = [
+        {
+            "name": name,
+            "shape": [1],
+            "dtype": "torch.float32",
+            "tensor_sha256": runner._factor_tensor_sha256(tensors[name]),
+        }
+        for name in names
+    ]
+    factor_state_sha = runner._canonical_sha256(rows)
+    source_prereg_sha = "1" * 64
+    source_evaluation_sha = "2" * 64
+    factor_payload = {
+        "schema": runner.TRAINER_FACTOR_PACK_SCHEMA,
+        "factor_count": 14,
+        "factors": rows,
+        "factor_state_sha256": factor_state_sha,
+        "parent_state_included": False,
+        "native_child_state_included": False,
+        "optimizer_state_included": False,
+        "factor_tensors": tensors,
+    }
+    envelope = {
+        "schema": runner.FACTOR_PACK_SCHEMA,
+        "reason": envelope_reason,
+        "preregistration_sha256": source_prereg_sha,
+        "evaluation_contract_sha256": source_evaluation_sha,
+        "qkvo_site_count": runner.QKVO_SITE_COUNT,
+        "qkvo_rank": runner.QKVO_RANK,
+        "swiglu_layer_count": runner.SWIGLU_LAYER_COUNT,
+        "swiglu_rank": runner.SWIGLU_RANK,
+        "factor_pack": factor_payload,
+        "contains_model_checkpoint": False,
+        "contains_parent_parameters": False,
+        "contains_activations_or_hidden_states": False,
+    }
+    factor_path = tmp_path / "source_factor_pack.pt"
+    torch.save(envelope, factor_path)
+    factor_file_sha = hashlib.sha256(factor_path.read_bytes()).hexdigest()
+    source_compiler_report = compiler_report or _Report().as_dict()
+    compiled_state_sha = hashlib.sha256(b"compiled").hexdigest()
+    trainer_evidence = {
+        "factor_pack_manifest": {"factor_state_sha256": factor_state_sha}
+    }
+    source_report = {
+        "status": "rejected",
+        "reason": "fit-gate-rejected",
+        "rollback_exact": True,
+        "model_checkpoint_written": False,
+        "standalone_compaction_passed": False,
+        "preregistration_sha256": source_prereg_sha,
+        "evaluation_contract_sha256": source_evaluation_sha,
+        "factor_pack": {"path": str(factor_path), "sha256": factor_file_sha},
+        "trainer_evidence": trainer_evidence,
+        "trainer_evidence_sha256": runner._canonical_sha256(trainer_evidence),
+        "factor_acquisition": {
+            "selected_factor_state_sha256": factor_state_sha,
+            "target_native_factors_acquired_behavior": True,
+        },
+        "compiler_report": source_compiler_report,
+        "rollback_state_sha256": compiled_state_sha,
+    }
+    source_report_path = tmp_path / "source_run_report.json"
+    source_report_sha = _write_json(source_report_path, source_report)
+    preregistration = json.loads(path.read_text(encoding="utf-8"))
+    cache_root = tmp_path / "compiler-cache"
+    cache_root.mkdir()
+    preregistration["compiler_cache"] = {"root": str(cache_root)}
+    preregistration["implementation"]["compiler_cache_sha256"] = runner._file_sha256(
+        Path(runner.__file__).resolve().parents[1]
+        / "src"
+        / "neural_forge"
+        / "hf_compiled_child_cache.py"
+    )
+    preregistration["continuation"] = {
+        "factor_pack": {"path": str(factor_path), "sha256": factor_file_sha},
+        "source_run_report": {
+            "path": str(source_report_path),
+            "sha256": source_report_sha,
+        },
+        "expected_factor_state_sha256": factor_state_sha,
+        "expected_compiler_report_sha256": runner._canonical_sha256(
+            source_compiler_report
+        ),
+        "expected_compiled_state_sha256": compiled_state_sha,
+    }
+    return path, _write_json(path, preregistration), factor_state_sha
+
+
 class _Transaction:
     def __init__(self, model) -> None:
         self.model = model
@@ -289,6 +407,114 @@ def test_preflight_authenticates_everything_without_loading_models(tmp_path) -> 
     assert report["models_loaded"] is False
     assert report["gpu_work_launched"] is False
     assert report["internal_numeric_matching_can_promote"] is False
+
+
+def test_continuation_factor_and_source_report_authenticate_before_models(
+    tmp_path, monkeypatch
+) -> None:
+    path, digest, factor_state_sha = _continuation_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+    assert contract.continuation is not None
+    assert contract.continuation.factor_state_sha256 == factor_state_sha
+    assert contract.continuation.factor_payload["factor_count"] == 14
+    assert (
+        contract.preflight_report()["continuation"]["authenticated_before_model_access"]
+        is True
+    )
+
+
+def test_continuation_rejects_factor_report_provenance_disagreement(
+    tmp_path, monkeypatch
+) -> None:
+    path, digest, _state = _continuation_contract_files(
+        tmp_path,
+        monkeypatch,
+        envelope_reason="candidate-gate-rejected",
+    )
+    with pytest.raises(
+        runner.ExactTargetNativeStageError, match="provenance disagrees"
+    ):
+        runner.authenticate_preregistration(path, digest)
+
+
+def test_continuation_compiler_mismatch_aborts_before_install(
+    tmp_path, monkeypatch
+) -> None:
+    source_compiler = {**_Report().as_dict(), "source_marker": "different"}
+    path, digest, _state = _continuation_contract_files(
+        tmp_path,
+        monkeypatch,
+        compiler_report=source_compiler,
+    )
+    contract = runner.authenticate_preregistration(path, digest)
+    runtime = _Runtime(
+        _TrainingResult(
+            fit_metrics=_metrics(),
+            candidate_metrics=_metrics(),
+            sealed_metrics=_metrics(),
+            candidate_gate_passed=True,
+            sealed_evaluation_unlocked=True,
+        )
+    )
+    runtime.install_calls = 0
+    runtime.finalize_calls = 0
+
+    def forbidden_install(_compiled):
+        runtime.install_calls += 1
+        raise AssertionError("installation must remain unreachable")
+
+    runtime.install_transaction = forbidden_install
+
+    def forbidden_finalize(_compiled, _contract):
+        runtime.finalize_calls += 1
+        raise AssertionError("cache publication must remain unreachable")
+
+    runtime.finalize_compiled_base = forbidden_finalize
+    with pytest.raises(runner.ExactTargetNativeStageError, match="compiler report"):
+        runner.execute_authenticated_stage(
+            contract, tmp_path / "compiler-mismatch", runtime=runtime
+    )
+    assert runtime.finalize_calls == 0
+    assert runtime.install_calls == 0
+
+
+def test_production_runtime_passes_authenticated_initial_factor_payload(
+    tmp_path, monkeypatch
+) -> None:
+    path, digest, factor_state_sha = _continuation_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+    captured: dict[str, object] = {}
+
+    class _Schedule:
+        def __init__(self, **values) -> None:
+            self.values = values
+
+    class _Threshold:
+        def __init__(self, **values) -> None:
+            self.values = values
+
+    class _Result:
+        pass
+
+    result = _Result()
+
+    def trainer(**kwargs):
+        captured.update(kwargs)
+        return result
+
+    module = SimpleNamespace(
+        load_behavior_domain_suite=lambda *args, **kwargs: (args, kwargs),
+        BehaviorDistillationSchedule=_Schedule,
+        CandidateBehaviorThresholds=_Threshold,
+        train_target_native_behavior_distillation=trainer,
+        BehaviorDistillationResult=_Result,
+    )
+    monkeypatch.setattr(runner.importlib, "import_module", lambda _name: module)
+    runtime = runner.ProductionStageRuntime()
+    assert runtime.train(object(), object(), contract) is result
+    initial = captured["initial_factor_payload"]
+    assert isinstance(initial, dict)
+    assert initial["factor_state_sha256"] == factor_state_sha
 
 
 def test_hash_mismatch_fails_before_any_model_access(tmp_path) -> None:

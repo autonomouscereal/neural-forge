@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 
 import pytest
 import torch
@@ -35,6 +36,7 @@ from neural_forge.hf_target_native_behavior_distillation import (
     capture_target_native_factor_state,
     load_behavior_domain_suite,
     restore_target_native_factor_state,
+    restore_target_native_factor_payload,
     select_behavior_checkpoint,
     train_target_native_behavior_distillation,
 )
@@ -249,6 +251,7 @@ def _selection_metrics(
         token_match_fraction=token_matches / 8,
         lcp_token_count=lcp_tokens,
         lcp_fraction=lcp_tokens / 8,
+        lcp_at_least_4_count=int(lcp_tokens >= 4),
         repeat_fraction_excess=0.0 if mean_logprob > -5.0 else 0.25,
         adjacent_repeat_fraction_excess=0.0 if mean_logprob > -5.0 else 0.25,
         longest_run_excess=0 if mean_logprob > -5.0 else 1,
@@ -304,6 +307,22 @@ def test_rollout_first_policy_acquires_behavior_without_strict_dominance() -> No
         select_behavior_checkpoint(
             (baseline, acquired), selection_policy="rollout-first-acquisition"
         ).step
+        == 0
+    )
+    safe_acquired = replace(
+        acquired,
+        metrics=_selection_metrics(
+            exact_rollouts=1,
+            action_agreements=3,
+            token_matches=3,
+            lcp_tokens=2,
+            mean_logprob=-2.0,
+        ),
+    )
+    assert (
+        select_behavior_checkpoint(
+            (baseline, safe_acquired), selection_policy="rollout-first-acquisition"
+        ).step
         == 1
     )
     schedule = BehaviorDistillationSchedule(
@@ -345,6 +364,135 @@ def test_rollout_first_policy_acquires_behavior_without_strict_dominance() -> No
         == 2
     )
 
+    repetitive_isolated_matches = BehaviorCheckpoint(
+        step=3,
+        metrics=_selection_metrics(
+            exact_rollouts=0,
+            action_agreements=8,
+            token_matches=7,
+            lcp_tokens=1,
+            mean_logprob=-10.0,
+        ),
+        factor_state_sha256="5" * 64,
+        pareto_safe_vs_step0=False,
+    )
+    assert (
+        select_behavior_checkpoint(
+            (baseline, repetitive_isolated_matches),
+            selection_policy="rollout-first-acquisition",
+        ).step
+        == 0
+    )
+
+
+def test_divergence_curriculum_and_staged_factor_rates_are_exact() -> None:
+    schedule = BehaviorDistillationSchedule(
+        steps=32,
+        learning_rate=3e-4,
+        fit_horizon=8,
+        parent_only_steps=8,
+        warmup_fit_horizon=4,
+        solved_prefix_loss_multiplier=0.5,
+        divergence_loss_multiplier=4.0,
+        post_divergence_loss_multiplier=2.0,
+        post_divergence_positions=1,
+        child_lane_starts_at_divergence=True,
+        max_child_lane_prefixes=3,
+        child_repeat_stop_run_length=3,
+        qk_learning_rate_scale=0.5,
+        vo_learning_rate_scale=1.0,
+        gud_learning_rate_scale=0.5,
+        right_factor_learning_rate_scale=0.25,
+        learning_rate_decay_step_1=8,
+        learning_rate_decay_scale_1=2.0 / 3.0,
+        learning_rate_decay_step_2=20,
+        learning_rate_decay_scale_2=0.5,
+        gud_frozen_steps=8,
+    )
+    parent = (1, 2, 3, 4, 5, 6, 7, 8)
+    child = (1, 9, 9, 9, 9, 9, 9, 9)
+    divergence = behavior_distillation._first_divergence(parent, child)
+    assert divergence == 1
+    assert behavior_distillation._divergence_position_weights(
+        len(parent), divergence, schedule
+    )[:4] == pytest.approx((0.5, 4.0, 2.0, 1.0))
+    assert behavior_distillation._child_lane_indices(child, divergence, schedule) == (
+        1,
+        2,
+        3,
+    )
+    assert behavior_distillation._factor_learning_rate(
+        "qkvo.q_left", schedule, step=1
+    ) == pytest.approx(1.5e-4)
+    assert behavior_distillation._factor_learning_rate(
+        "qkvo.v_right", schedule, step=9
+    ) == pytest.approx(5e-5)
+    assert behavior_distillation._factor_learning_rate(
+        "gud.gate_left", schedule, step=21
+    ) == pytest.approx(5e-5)
+    legacy_schedule = BehaviorDistillationSchedule(
+        steps=2,
+        learning_rate=1e-3,
+        fit_horizon=8,
+    )
+    assert behavior_distillation._child_lane_indices(
+        child, divergence, legacy_schedule
+    ) == tuple(range(8))
+
+
+def test_gud_freeze_skips_adam_state_until_thaw() -> None:
+    torch.manual_seed(109)
+    child = _StrictToyTarget()
+    parent = copy.deepcopy(child)
+    with torch.no_grad():
+        parent.lm_head.weight.copy_(torch.roll(parent.lm_head.weight, 3, dims=0))
+    transaction = _transaction(child)
+    domains = {
+        "fit": _domain("fit", [[1, 2]], "a" * 64),
+        "calibration": _domain("calibration", [[3, 4]], "b" * 64),
+        "sealed": _domain("sealed", [[5, 6]], "c" * 64),
+    }
+    schedule = BehaviorDistillationSchedule(
+        steps=3,
+        learning_rate=1e-3,
+        fit_horizon=1,
+        evaluation_horizon=1,
+        gud_frozen_steps=1,
+        top_k=2,
+    )
+    gud_ids = {
+        id(value)
+        for value in transaction.swiglu_handle.registry.parameters(recurse=False)
+    }
+    snapshots: list[dict[int, float | None]] = []
+
+    class _AuditedAdamW(torch.optim.AdamW):
+        def step(self, closure=None):
+            result = super().step(closure)
+            snapshot: dict[int, float | None] = {}
+            for group in self.param_groups:
+                for parameter in group["params"]:
+                    raw = self.state.get(parameter, {}).get("step")
+                    snapshot[id(parameter)] = None if raw is None else float(raw.item())
+            snapshots.append(snapshot)
+            return result
+
+    train_target_native_behavior_distillation(
+        transaction,
+        parent,
+        domains,
+        schedule,
+        optimizer_factory=lambda parameters: _AuditedAdamW(
+            parameters,
+            lr=schedule.learning_rate,
+            weight_decay=0.0,
+        ),
+    )
+    assert all(snapshots[0][parameter_id] is None for parameter_id in gud_ids)
+    assert all(snapshots[1][parameter_id] == 1.0 for parameter_id in gud_ids)
+    assert all(snapshots[2][parameter_id] == 2.0 for parameter_id in gud_ids)
+    transaction.rollback()
+
 
 def test_factor_state_capture_restore_is_exact_and_factor_only() -> None:
     torch.manual_seed(101)
@@ -364,6 +512,31 @@ def test_factor_state_capture_restore_is_exact_and_factor_only() -> None:
     assert capture_target_native_factor_state(transaction).factor_state_sha256 == (
         state.factor_state_sha256
     )
+    transaction.rollback()
+
+
+def test_factor_only_payload_restores_exact_continuation_and_rejects_tamper() -> None:
+    torch.manual_seed(107)
+    model = _StrictToyTarget()
+    transaction = _transaction(model)
+    with torch.no_grad():
+        for index, value in enumerate(transaction.output_trainable_parameters()):
+            value.add_(float(index + 1) / 1000.0)
+    selected = capture_target_native_factor_state(transaction)
+    payload = selected.as_payload()
+    with torch.no_grad():
+        for value in transaction.output_trainable_parameters():
+            value.zero_()
+    restored = restore_target_native_factor_payload(transaction, payload)
+    assert restored.factor_state_sha256 == selected.factor_state_sha256
+
+    tampered = selected.as_payload()
+    tampered["factor_tensors"][selected.names[0]].reshape(-1)[0] += 1.0
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="shape/dtype/hash authentication",
+    ):
+        restore_target_native_factor_payload(transaction, tampered)
     transaction.rollback()
 
 
@@ -480,6 +653,9 @@ def test_output_only_training_audits_all_factors_and_retains_step_zero() -> None
         parent.lm_head.weight.copy_(torch.roll(parent.lm_head.weight, 5, dims=0))
         parent.layers[0].self_attn.q_proj.weight.mul_(1.35)
     transaction = _transaction(child)
+    initial_factor_payload = capture_target_native_factor_state(
+        transaction
+    ).as_payload()
     domains = {
         "fit": _domain("fit", [[1, 2, 3], [4, 5, 6]], "1" * 64),
         "calibration": _domain("calibration", [[7, 8], [9, 10]], "2" * 64),
@@ -501,6 +677,7 @@ def test_output_only_training_audits_all_factors_and_retains_step_zero() -> None
         domains,
         schedule,
         seed=77,
+        initial_factor_payload=initial_factor_payload,
         optimizer_factory=lambda parameters: torch.optim.SGD(
             parameters, lr=schedule.learning_rate
         ),
@@ -530,6 +707,11 @@ def test_output_only_training_audits_all_factors_and_retains_step_zero() -> None
     evidence = result.evidence_payload()
     assert behavior_distillation._canonical_sha256(evidence) == result.evidence_sha256
     assert evidence["factor_pack_manifest"] == result.factor_pack.as_manifest()
+    assert evidence["continued_from_factor_pack"] is True
+    assert (
+        evidence["initial_factor_state_sha256"]
+        == (initial_factor_payload["factor_state_sha256"])
+    )
     assert (
         evidence["training_audit"]["gradient_activation"][
             "every_qkvo_gud_factor_gradient_activated"

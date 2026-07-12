@@ -20,6 +20,9 @@ PARENT=${PARENT:-/home/cereal/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Base
 TARGET=${TARGET:-/mnt/ai_data/neural-forge/canonical_blank_targets/qwen3_stage1_blank_1410567168_fp16_seed0}
 PREREG_DIR=${PREREG_DIR:-/mnt/ai_data/neural-forge/prereg/qwen_exact_target_native_stage1_20260712}
 OUTPUT_ROOT=${OUTPUT_ROOT:-/mnt/ai_data/neural-forge/runs/qwen_exact_target_native_stage1_first_run_20260712}
+CONTINUATION_SOURCE_REPORT=${CONTINUATION_SOURCE_REPORT:-}
+ORIGINAL_SPLIT_DIR=${ORIGINAL_SPLIT_DIR:-/mnt/ai_data/neural-forge/prereg/qwen_exact_target_native_stage1_fp32factors_eager_20260712}
+COMPILER_CACHE_ROOT=${COMPILER_CACHE_ROOT:-/mnt/ai_data/neural-forge/compiled_child_cache}
 
 ROOT=$(realpath -e "$ROOT")
 test "$ROOT" = "/home/cereal/model-surgery-lab/neural-forge-src"
@@ -33,10 +36,19 @@ export PYTHONPATH="$ROOT/src:$ROOT/experiments${PYTHONPATH:+:$PYTHONPATH}"
 
 if [[ ! -f "$PREREG_DIR/build_report.json" ]]; then
   test ! -e "$PREREG_DIR"
-  "$PYTHON" "$ROOT/experiments/prepare_qwen_exact_target_native_stage.py" \
-    --output-dir "$PREREG_DIR" \
-    --parent "$PARENT" \
+  PREPARE_ARGS=(
+    --output-dir "$PREREG_DIR"
+    --parent "$PARENT"
     --target "$TARGET"
+  )
+  if [[ -n "$CONTINUATION_SOURCE_REPORT" ]]; then
+    PREPARE_ARGS+=(
+      --continuation-source-report "$CONTINUATION_SOURCE_REPORT"
+      --original-split-dir "$ORIGINAL_SPLIT_DIR"
+      --compiler-cache-root "$COMPILER_CACHE_ROOT"
+    )
+  fi
+  "$PYTHON" "$ROOT/experiments/prepare_qwen_exact_target_native_stage.py" "${PREPARE_ARGS[@]}"
 fi
 
 PREREGISTRATION=$PREREG_DIR/preregistration.json

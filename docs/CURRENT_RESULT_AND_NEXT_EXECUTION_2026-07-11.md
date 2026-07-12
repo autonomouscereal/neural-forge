@@ -205,18 +205,56 @@ checkpoint staging. Its report proves:
 It is still blank and staging-only. Fresh-reload certification and a behavior
 transaction are required before it is a result.
 
+### First exact-stage transaction result
+
+The authenticated FP32-factor/eager transaction completed all 24 optimizer
+steps against the exact stage-1 target. It was correctly rejected and wrote no
+standalone checkpoint.
+
+- run:
+  `/mnt/ai_data/neural-forge/runs/qwen_exact_target_native_stage1_fp32factors_eager_20260712`;
+- report SHA-256:
+  `ff0bb2c78e29301b53a129a39753a81949b48495e19f3779c061943cf6b2bc58`;
+- structural count: `4,022,468,096 -> 1,410,567,168`, or `2.851667x`
+  and `64.9328%` fewer parameters;
+- selected checkpoint: step 16;
+- candidate first-action agreement: `5/96 -> 12/96` (`5.2083% -> 12.5%`);
+- parent-action mean rank: `18,630 -> 2,923.7`;
+- parent-action mean log probability: `-9.369 -> -6.5735`;
+- exact candidate rollouts: `0/12 -> 0/12`;
+- repetition excess: `0.3646 -> 0.7708`;
+- adjacent-repeat excess: `0.3452 -> 0.9762`;
+- all 14 QKVO/Gate/Up/Down factor tensors received finite nonzero gradients;
+- exact rollback passed; no model checkpoint was written.
+
+This proves real output-behavior acquisition inside the 64.93%-smaller
+structure, but not a useful standalone compaction. The blocker is now the
+autoregressive rollout frontier and repetitive attractor, not numerical weight
+matching, random-target spread, missing gradients, or the child architecture.
+
+The selected factor-only continuation is preserved at
+`rejected_factor_pack.pt` (file SHA-256
+`6958c061048e8ff7344148a92e4de2802b5e348fe3679b5982dcb6a0cb8900e1`,
+factor-state SHA-256
+`ba23bd7343c52cefb96b3219f5d3aecfb0015dd62c78e0a929b14c4184b474ae`).
+It contains no parent, native child, optimizer state, activation, or hidden
+state.
+
 ## Next ordered execution
 
-1. Fresh-reload and hash-certify the one exact `1,410,567,168` target; do not
-   generate another seed or reuse the three incorrect `1,409,746,944` targets.
-2. Compile the authenticated parent evidence into that target and record the
-   zero-recovery bootstrap baseline.
-3. Install all 120 target-local QKVO sites and all 30 Gate/Up/Down sites at
-   rank 8. The temporary factor total is `11,919,360`; the published delta is
-   zero after native bake.
-4. Optimize only parent causal output distributions/actions on fit plus
-   parent- and child-driven prefixes. Select on disjoint calibration actions
-   and free rollouts; open the sealed transaction gate once after lock.
+1. Reconstruct the exact authenticated structural base once, verify it against
+   the completed source report, and publish it to the shared content-addressed
+   compiler cache. Never recompile it for trainer-only changes.
+2. Restore the selected step-16 factor state before continuation step zero; do
+   not restart from zero factors and do not retain/reconstruct optimizer state.
+3. Run the staged 32-step residual-attention curriculum: parent-only horizon 4
+   warmup, then horizon 8 parent/child lanes focused at the first divergence;
+   lower Q/K and right-factor rates, freeze Gate/Up/Down for eight steps, and
+   penalize only teacher-relative repetition excess.
+4. Use 96 fit prompts (24 source replay + 72 fresh), 24 entirely fresh candidate
+   prompts, and 32 sealed prompts. The old candidate remains diagnostic-only.
+   A checkpoint is ineligible if any repetition diagnostic worsens from the
+   continuation start, even if one exact rollout improves.
 5. On rejection, retain only factor/report evidence and restore the child. On
    acceptance, bake, save once, reload fresh, certify the exact native state,
    and run broad parent-pass retention.

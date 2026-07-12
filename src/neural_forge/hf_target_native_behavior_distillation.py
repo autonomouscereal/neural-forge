@@ -299,6 +299,31 @@ class BehaviorDistillationSchedule:
     temperature: float = 1.0
     action_loss_weight: float = 1.0
     distribution_loss_weight: float = 1.0
+    action_margin_loss_weight: float = 0.0
+    action_margin: float = 1.0
+    repetition_excess_loss_weight: float = 0.0
+    repetition_window: int = 8
+    parent_lane_loss_weight: float = 1.0
+    child_lane_loss_weight: float = 1.0
+    parent_only_steps: int = 0
+    warmup_fit_horizon: int = 0
+    late_position_loss_multiplier: float = 1.0
+    solved_prefix_loss_multiplier: float = 1.0
+    divergence_loss_multiplier: float = 1.0
+    post_divergence_loss_multiplier: float = 1.0
+    post_divergence_positions: int = 2
+    child_lane_starts_at_divergence: bool = False
+    max_child_lane_prefixes: int = 0
+    child_repeat_stop_run_length: int = 0
+    qk_learning_rate_scale: float = 1.0
+    vo_learning_rate_scale: float = 1.0
+    gud_learning_rate_scale: float = 1.0
+    right_factor_learning_rate_scale: float = 1.0
+    learning_rate_decay_step_1: int = 0
+    learning_rate_decay_scale_1: float = 1.0
+    learning_rate_decay_step_2: int = 0
+    learning_rate_decay_scale_2: float = 1.0
+    gud_frozen_steps: int = 0
     top_k: int = 5
     gradient_clip_norm: float = 1.0
     max_prompt_tokens: int = 512
@@ -315,11 +340,16 @@ class BehaviorDistillationSchedule:
                 "rollout-first-acquisition."
             )
         object.__setattr__(self, "selection_policy", policy)
+        if not isinstance(self.child_lane_starts_at_divergence, bool):
+            raise TargetNativeBehaviorDistillationError(
+                "child_lane_starts_at_divergence must be boolean."
+            )
         integer_fields = (
             "steps",
             "fit_horizon",
             "evaluation_horizon",
             "fit_prompts_per_step",
+            "repetition_window",
             "top_k",
             "max_prompt_tokens",
             "max_train_prefixes",
@@ -334,22 +364,97 @@ class BehaviorDistillationSchedule:
             raise TargetNativeBehaviorDistillationError("steps exceeds 10,000.")
         if self.fit_horizon > 128 or self.evaluation_horizon > 128:
             raise TargetNativeBehaviorDistillationError("horizon exceeds 128 tokens.")
+        parent_only = _index(self.parent_only_steps, "parent_only_steps")
+        if parent_only >= self.steps:
+            raise TargetNativeBehaviorDistillationError(
+                "parent_only_steps must leave at least one child-on-policy step."
+            )
+        object.__setattr__(self, "parent_only_steps", parent_only)
+        warmup_horizon = _index(self.warmup_fit_horizon, "warmup_fit_horizon")
+        if warmup_horizon > self.fit_horizon:
+            raise TargetNativeBehaviorDistillationError(
+                "warmup_fit_horizon cannot exceed fit_horizon."
+            )
+        object.__setattr__(self, "warmup_fit_horizon", warmup_horizon)
+        post_positions = _index(
+            self.post_divergence_positions, "post_divergence_positions"
+        )
+        object.__setattr__(self, "post_divergence_positions", post_positions)
+        for name in ("max_child_lane_prefixes", "child_repeat_stop_run_length"):
+            value = _index(getattr(self, name), name)
+            object.__setattr__(self, name, value)
+        for name in (
+            "learning_rate_decay_step_1",
+            "learning_rate_decay_step_2",
+            "gud_frozen_steps",
+        ):
+            value = _index(getattr(self, name), name)
+            if value > self.steps:
+                raise TargetNativeBehaviorDistillationError(
+                    f"{name} cannot exceed steps."
+                )
+            object.__setattr__(self, name, value)
+        if (
+            self.learning_rate_decay_step_2
+            and self.learning_rate_decay_step_2 <= self.learning_rate_decay_step_1
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                "learning-rate decay steps must be strictly increasing."
+            )
         for name in (
             "learning_rate",
             "temperature",
             "action_loss_weight",
             "distribution_loss_weight",
+            "action_margin_loss_weight",
+            "action_margin",
+            "repetition_excess_loss_weight",
+            "parent_lane_loss_weight",
+            "child_lane_loss_weight",
+            "qk_learning_rate_scale",
+            "vo_learning_rate_scale",
+            "gud_learning_rate_scale",
+            "right_factor_learning_rate_scale",
+            "learning_rate_decay_scale_1",
+            "learning_rate_decay_scale_2",
             "gradient_clip_norm",
         ):
-            minimum = 0.0 if name.endswith("loss_weight") else 1e-12
+            minimum = (
+                0.0
+                if name.endswith("loss_weight") or name == "action_margin"
+                else 1e-12
+            )
             object.__setattr__(
                 self,
                 name,
                 _finite_float(getattr(self, name), name, minimum=minimum),
             )
+        object.__setattr__(
+            self,
+            "late_position_loss_multiplier",
+            _finite_float(
+                self.late_position_loss_multiplier,
+                "late_position_loss_multiplier",
+                minimum=1.0,
+            ),
+        )
+        for name in (
+            "solved_prefix_loss_multiplier",
+            "divergence_loss_multiplier",
+            "post_divergence_loss_multiplier",
+        ):
+            object.__setattr__(
+                self,
+                name,
+                _finite_float(getattr(self, name), name, minimum=1e-12),
+            )
         if self.action_loss_weight + self.distribution_loss_weight <= 0.0:
             raise TargetNativeBehaviorDistillationError(
                 "At least one output loss weight must be positive."
+            )
+        if self.parent_lane_loss_weight <= 0.0:
+            raise TargetNativeBehaviorDistillationError(
+                "parent_lane_loss_weight must be positive."
             )
         steps = tuple(
             _index(value, "checkpoint_step") for value in self.checkpoint_steps
@@ -389,6 +494,9 @@ class CandidateBehaviorThresholds:
     minimum_lcp_fraction: float = 0.0
     minimum_action_count: int = 1
     minimum_rollout_count: int = 1
+    maximum_repeat_fraction_excess: float = 1.0
+    maximum_adjacent_repeat_fraction_excess: float = 1.0
+    maximum_longest_run_excess: int = 2_147_483_647
 
     def __post_init__(self) -> None:
         for name in (
@@ -396,17 +504,27 @@ class CandidateBehaviorThresholds:
             "minimum_exact_rollout_fraction",
             "minimum_token_match_fraction",
             "minimum_lcp_fraction",
+            "maximum_repeat_fraction_excess",
+            "maximum_adjacent_repeat_fraction_excess",
         ):
             object.__setattr__(
                 self,
                 name,
                 _finite_float(getattr(self, name), name, minimum=0.0, maximum=1.0),
             )
-        for name in ("minimum_action_count", "minimum_rollout_count"):
+        for name in (
+            "minimum_action_count",
+            "minimum_rollout_count",
+            "maximum_longest_run_excess",
+        ):
             object.__setattr__(
                 self,
                 name,
-                _index(getattr(self, name), name, positive=True),
+                _index(
+                    getattr(self, name),
+                    name,
+                    positive=name != "maximum_longest_run_excess",
+                ),
             )
 
     def passes(self, metrics: CausalBehaviorMetrics) -> bool:
@@ -421,6 +539,10 @@ class CandidateBehaviorThresholds:
             and metrics.exact_rollout_fraction >= self.minimum_exact_rollout_fraction
             and metrics.token_match_fraction >= self.minimum_token_match_fraction
             and metrics.lcp_fraction >= self.minimum_lcp_fraction
+            and metrics.repeat_fraction_excess <= self.maximum_repeat_fraction_excess
+            and metrics.adjacent_repeat_fraction_excess
+            <= self.maximum_adjacent_repeat_fraction_excess
+            and metrics.longest_run_excess <= self.maximum_longest_run_excess
         )
 
     def as_dict(self) -> dict[str, float | int]:
@@ -447,6 +569,7 @@ class CausalBehaviorMetrics:
     token_match_fraction: float
     lcp_token_count: int
     lcp_fraction: float
+    lcp_at_least_4_count: int
     repeat_fraction_excess: float
     adjacent_repeat_fraction_excess: float
     longest_run_excess: int
@@ -475,6 +598,9 @@ class CausalBehaviorMetrics:
             token_match_fraction=greedy.exact_token_retention_rate,
             lcp_token_count=greedy.longest_common_prefix_tokens,
             lcp_fraction=greedy.longest_common_prefix_rate,
+            lcp_at_least_4_count=sum(
+                value.longest_common_prefix >= 4 for value in greedy.sequences
+            ),
             repeat_fraction_excess=greedy.candidate_repeat_fraction_excess,
             adjacent_repeat_fraction_excess=(
                 greedy.candidate_adjacent_repeat_fraction_excess
@@ -509,8 +635,12 @@ class CausalBehaviorMetrics:
 
         return (
             -self.exact_rollout_count,
-            -self.token_match_count,
+            -self.lcp_at_least_4_count,
             -self.lcp_token_count,
+            -self.token_match_count,
+            round(self.repeat_fraction_excess * 1_000_000),
+            round(self.adjacent_repeat_fraction_excess * 1_000_000),
+            self.longest_run_excess,
             -self.action_agreement_count,
         )
 
@@ -696,6 +826,121 @@ def restore_target_native_factor_state(
         )
 
 
+def restore_target_native_factor_payload(
+    transaction: ExactTargetCompilerTransaction,
+    payload: Mapping[str, Any],
+) -> TargetNativeFactorState:
+    """Authenticate and restore a persisted factor-only continuation pack."""
+
+    if not isinstance(payload, Mapping) or payload.get("schema") != (
+        BEHAVIOR_FACTOR_PACK_SCHEMA
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Persisted target-native factor payload has an unsupported schema."
+        )
+    if any(
+        payload.get(name) is not False
+        for name in (
+            "parent_state_included",
+            "native_child_state_included",
+            "optimizer_state_included",
+        )
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Continuation payload must contain factors only."
+        )
+    rows = payload.get("factors")
+    tensors = payload.get("factor_tensors")
+    declared_count = payload.get("factor_count")
+    declared_state_sha = payload.get("factor_state_sha256")
+    if (
+        not isinstance(rows, list)
+        or not isinstance(tensors, Mapping)
+        or isinstance(declared_count, bool)
+        or not isinstance(declared_count, int)
+        or declared_count <= 0
+        or not isinstance(declared_state_sha, str)
+        or len(declared_state_sha) != 64
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Persisted factor manifest is malformed."
+        )
+    entries = _factor_parameters(transaction)
+    expected_names = tuple(name for name, _value in entries)
+    if declared_count != len(entries) or len(rows) != len(entries):
+        raise TargetNativeBehaviorDistillationError(
+            "Persisted factor count does not match the live transaction."
+        )
+    row_by_name: dict[str, Mapping[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, Mapping):
+            raise TargetNativeBehaviorDistillationError(
+                "Persisted factor manifest rows must be objects."
+            )
+        name = row.get("name")
+        if not isinstance(name, str) or name in row_by_name:
+            raise TargetNativeBehaviorDistillationError(
+                "Persisted factor names must be unique strings."
+            )
+        row_by_name[name] = row
+    if set(row_by_name) != set(expected_names) or set(tensors) != set(expected_names):
+        raise TargetNativeBehaviorDistillationError(
+            "Persisted factor names do not match the live transaction."
+        )
+    ordered_tensors: list[Tensor] = []
+    ordered_hashes: list[str] = []
+    canonical_rows: list[dict[str, Any]] = []
+    for name, parameter in entries:
+        row = row_by_name[name]
+        value = tensors[name]
+        if not isinstance(value, Tensor):
+            raise TargetNativeBehaviorDistillationError(
+                f"Persisted factor {name!r} is not a tensor."
+            )
+        detached = value.detach().cpu().contiguous().clone()
+        digest = _tensor_sha256(detached)
+        expected_row = {
+            "name": name,
+            "shape": list(parameter.shape),
+            "dtype": str(parameter.dtype),
+            "tensor_sha256": digest,
+        }
+        if (
+            dict(row) != expected_row
+            or tuple(detached.shape) != tuple(parameter.shape)
+            or detached.dtype != parameter.dtype
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                f"Persisted factor {name!r} failed shape/dtype/hash authentication."
+            )
+        if not bool(torch.isfinite(detached).all()):
+            raise TargetNativeBehaviorDistillationError(
+                f"Persisted factor {name!r} contains NaN or infinity."
+            )
+        ordered_tensors.append(detached)
+        ordered_hashes.append(digest)
+        canonical_rows.append(expected_row)
+    if _canonical_sha256(canonical_rows) != declared_state_sha:
+        raise TargetNativeBehaviorDistillationError(
+            "Persisted factor-state hash does not authenticate its manifest."
+        )
+    state = TargetNativeFactorState(
+        names=expected_names,
+        tensors=tuple(ordered_tensors),
+        tensor_sha256s=tuple(ordered_hashes),
+        factor_state_sha256=declared_state_sha,
+        parameter_ids=tuple(id(value) for _name, value in entries),
+        parameter_data_ptrs=tuple(int(value.data_ptr()) for _name, value in entries),
+    )
+    restore_target_native_factor_state(transaction, state)
+    restored = capture_target_native_factor_state(transaction)
+    if restored.factor_state_sha256 != declared_state_sha:
+        raise TargetNativeBehaviorDistillationError(
+            "Persisted factor payload restore did not verify."
+        )
+    return restored
+
+
 @dataclass(frozen=True, slots=True)
 class GradientActivationAudit:
     factor_names: tuple[str, ...]
@@ -796,6 +1041,7 @@ class BehaviorDistillationResult:
     sealed_evaluation_unlocked: bool
     training_audit: BehaviorTrainingAudit
     factor_pack: TargetNativeFactorState
+    initial_factor_state_sha256: str | None
     domain_binding_sha256: str
     schedule_sha256: str
     evidence_sha256: str = field(init=False)
@@ -834,6 +1080,8 @@ class BehaviorDistillationResult:
             "sealed_evaluation_unlocked": self.sealed_evaluation_unlocked,
             "training_audit": self.training_audit.as_dict(),
             "factor_pack_manifest": self.factor_pack.as_manifest(),
+            "continued_from_factor_pack": self.initial_factor_state_sha256 is not None,
+            "initial_factor_state_sha256": self.initial_factor_state_sha256,
             "domain_binding_sha256": self.domain_binding_sha256,
             "schedule_sha256": self.schedule_sha256,
             "selection_uses_internal_numeric_targets": False,
@@ -852,8 +1100,9 @@ class BehaviorDistillationResult:
                 "every causal-output diagnostic must weakly preserve step0 and at "
                 "least one must improve"
                 if self.selection_policy == "strict-nonregression"
-                else "lexicographically maximize exact rollouts, positional token "
-                "matches, longest-common-prefix tokens, then action agreements"
+                else "lexicographically maximize exact rollouts, rollouts with at "
+                "least four LCP tokens, total LCP tokens, positional token matches; "
+                "then minimize repetition excess before maximizing action agreements"
             ),
             "sealed_used_for_selection": False,
             "internal_numeric_matching_used": False,
@@ -1200,9 +1449,11 @@ def select_behavior_checkpoint(
     behavior: a candidate must dominate it across every causal diagnostic.
     ``rollout-first-acquisition`` is appropriate for a blank stage: it ignores
     non-promoting diagnostics and lexicographically maximizes exact rollouts,
-    positional token matches, LCP tokens, and then parent-action agreements.  In
-    either policy, a metric tie retains the earlier checkpoint, including
-    step zero.
+    rollouts reaching at least four LCP tokens, total LCP tokens, and positional
+    matches; it then minimizes three repetition diagnostics before maximizing
+    parent-action agreements.  Any repetition regression from step zero is
+    ineligible, even when exact rollouts improve.  In either policy, a metric tie
+    retains the earlier checkpoint, including step zero.
     """
 
     values = tuple(checkpoints)
@@ -1231,6 +1482,15 @@ def select_behavior_checkpoint(
             key = (candidate.metrics.selection_key, candidate.step)
             selected_key = (selected.metrics.selection_key, selected.step)
         else:
+            if (
+                candidate.metrics.repeat_fraction_excess
+                > baseline.metrics.repeat_fraction_excess
+                or candidate.metrics.adjacent_repeat_fraction_excess
+                > baseline.metrics.adjacent_repeat_fraction_excess
+                or candidate.metrics.longest_run_excess
+                > baseline.metrics.longest_run_excess
+            ):
+                continue
             key = (candidate.metrics.rollout_first_acquisition_key, candidate.step)
             selected_key = (
                 selected.metrics.rollout_first_acquisition_key,
@@ -1245,6 +1505,9 @@ def _training_loss(
     parent_logits: Tensor,
     child_logits: Tensor,
     schedule: BehaviorDistillationSchedule,
+    *,
+    prefix: Sequence[int],
+    repetition_token_ids: Sequence[int] = (),
 ) -> Tensor:
     if tuple(parent_logits.shape) != tuple(child_logits.shape):
         raise TargetNativeBehaviorDistillationError(
@@ -1253,16 +1516,159 @@ def _training_loss(
     teacher = parent_logits.detach().to(device=child_logits.device, dtype=torch.float32)
     student = child_logits.to(dtype=torch.float32)
     temperature = schedule.temperature
+    teacher_probability = F.softmax(teacher / temperature, dim=-1)
+    student_log_probability = F.log_softmax(student / temperature, dim=-1)
     distribution = F.kl_div(
-        F.log_softmax(student / temperature, dim=-1),
-        F.softmax(teacher / temperature, dim=-1),
+        student_log_probability,
+        teacher_probability,
         reduction="batchmean",
     ) * (temperature * temperature)
-    action = F.cross_entropy(student, torch.argmax(teacher, dim=-1))
-    return (
+    teacher_action = torch.argmax(teacher, dim=-1)
+    action = F.cross_entropy(student, teacher_action)
+    weighted = (
         schedule.distribution_loss_weight * distribution
         + schedule.action_loss_weight * action
-    ) / (schedule.distribution_loss_weight + schedule.action_loss_weight)
+    )
+    total_weight = schedule.distribution_loss_weight + schedule.action_loss_weight
+    if schedule.action_margin_loss_weight > 0.0:
+        top_values, top_indices = torch.topk(student, k=2, dim=-1)
+        best_other = torch.where(
+            top_indices[:, 0] == teacher_action,
+            top_values[:, 1],
+            top_values[:, 0],
+        )
+        action_value = student.gather(1, teacher_action.unsqueeze(1)).squeeze(1)
+        margin = F.relu(schedule.action_margin - (action_value - best_other)).mean()
+        weighted = weighted + schedule.action_margin_loss_weight * margin
+        total_weight += schedule.action_margin_loss_weight
+    if schedule.repetition_excess_loss_weight > 0.0 and repetition_token_ids:
+        recent = tuple(
+            sorted(
+                {
+                    int(value)
+                    for value in repetition_token_ids
+                    if 0 <= int(value) < int(student.shape[-1])
+                    and int(value) != int(teacher_action.item())
+                }
+            )
+        )
+        if recent:
+            indices = torch.tensor(recent, dtype=torch.long, device=student.device)
+            student_probability = student_log_probability.exp()
+            student_mass = student_probability.index_select(-1, indices).sum(dim=-1)
+            teacher_mass = teacher_probability.index_select(-1, indices).sum(dim=-1)
+            repetition_excess = F.relu(student_mass - teacher_mass).mean()
+            weighted = (
+                weighted + schedule.repetition_excess_loss_weight * repetition_excess
+            )
+            total_weight += schedule.repetition_excess_loss_weight
+    return weighted / total_weight
+
+
+def _factor_learning_rate(
+    name: str,
+    schedule: BehaviorDistillationSchedule,
+    *,
+    step: int,
+) -> float:
+    if name.startswith(("qkvo.q_", "qkvo.k_")):
+        scale = schedule.qk_learning_rate_scale
+    elif name.startswith(("qkvo.v_", "qkvo.o_")):
+        scale = schedule.vo_learning_rate_scale
+    elif name.startswith("gud."):
+        scale = schedule.gud_learning_rate_scale
+    else:
+        raise TargetNativeBehaviorDistillationError(
+            f"No preregistered learning-rate group exists for factor {name!r}."
+        )
+    if name.endswith("_right"):
+        scale *= schedule.right_factor_learning_rate_scale
+    if schedule.learning_rate_decay_step_1 and step > (
+        schedule.learning_rate_decay_step_1
+    ):
+        scale *= schedule.learning_rate_decay_scale_1
+    if schedule.learning_rate_decay_step_2 and step > (
+        schedule.learning_rate_decay_step_2
+    ):
+        scale *= schedule.learning_rate_decay_scale_2
+    return schedule.learning_rate * scale
+
+
+def _first_divergence(parent_tokens: Sequence[int], child_tokens: Sequence[int]) -> int:
+    if len(parent_tokens) != len(child_tokens):
+        raise TargetNativeBehaviorDistillationError(
+            "Parent and child training rollouts have different horizons."
+        )
+    return next(
+        (
+            index
+            for index, (parent, child) in enumerate(
+                zip(parent_tokens, child_tokens, strict=True)
+            )
+            if int(parent) != int(child)
+        ),
+        len(parent_tokens),
+    )
+
+
+def _divergence_position_weights(
+    horizon: int,
+    divergence: int,
+    schedule: BehaviorDistillationSchedule,
+) -> tuple[float, ...]:
+    values: list[float] = []
+    for index in range(horizon):
+        if index < divergence:
+            focus = schedule.solved_prefix_loss_multiplier
+        elif index == divergence:
+            focus = schedule.divergence_loss_multiplier
+        elif index <= divergence + schedule.post_divergence_positions:
+            focus = schedule.post_divergence_loss_multiplier
+        else:
+            focus = 1.0
+        late = (
+            1.0
+            if horizon == 1
+            else 1.0
+            + (schedule.late_position_loss_multiplier - 1.0) * index / (horizon - 1)
+        )
+        values.append(focus * late)
+    return tuple(values)
+
+
+def _trailing_run_length(values: Sequence[int]) -> int:
+    if not values:
+        return 0
+    last = int(values[-1])
+    count = 0
+    for value in reversed(values):
+        if int(value) != last:
+            break
+        count += 1
+    return count
+
+
+def _child_lane_indices(
+    child_tokens: Sequence[int],
+    divergence: int,
+    schedule: BehaviorDistillationSchedule,
+) -> tuple[int, ...]:
+    selected: list[int] = []
+    start = divergence if schedule.child_lane_starts_at_divergence else 0
+    for index in range(start, len(child_tokens)):
+        if (
+            schedule.max_child_lane_prefixes
+            and len(selected) >= schedule.max_child_lane_prefixes
+        ):
+            break
+        if (
+            schedule.child_repeat_stop_run_length
+            and _trailing_run_length(child_tokens[:index])
+            >= schedule.child_repeat_stop_run_length
+        ):
+            break
+        selected.append(index)
+    return tuple(selected)
 
 
 def train_target_native_behavior_distillation(
@@ -1274,6 +1680,7 @@ def train_target_native_behavior_distillation(
     *,
     candidate_thresholds: CandidateBehaviorThresholds | None = None,
     optimizer_factory: Callable[[Iterable[nn.Parameter]], Optimizer] | None = None,
+    initial_factor_payload: Mapping[str, Any] | None = None,
 ) -> BehaviorDistillationResult:
     """Train, Pareto-select, restore, and optionally unlock sealed evaluation."""
 
@@ -1338,6 +1745,11 @@ def train_target_native_behavior_distillation(
     }
     domain_binding_sha256 = _canonical_sha256(domain_payload)
     schedule_sha256 = _canonical_sha256(schedule.as_dict())
+    initial_factor_state_sha256 = None
+    if initial_factor_payload is not None:
+        initial_factor_state_sha256 = restore_target_native_factor_payload(
+            transaction, initial_factor_payload
+        ).factor_state_sha256
     factor_entries = _factor_parameters(transaction)
     factor_names = tuple(name for name, _value in factor_entries)
     finite_gradients: set[str] = set()
@@ -1379,8 +1791,23 @@ def train_target_native_behavior_distillation(
         def default_optimizer_factory(
             parameters: Iterable[nn.Parameter],
         ) -> Optimizer:
+            parameter_ids = {id(value) for value in parameters}
+            grouped: dict[float, list[nn.Parameter]] = {}
+            for name, value in factor_entries:
+                if id(value) not in parameter_ids:
+                    raise TargetNativeBehaviorDistillationError(
+                        "Default optimizer received the wrong factor set."
+                    )
+                grouped.setdefault(
+                    _factor_learning_rate(name, schedule, step=1), []
+                ).append(value)
             return torch.optim.AdamW(
-                parameters, lr=schedule.learning_rate, weight_decay=0.0
+                [
+                    {"params": values, "lr": learning_rate}
+                    for learning_rate, values in sorted(grouped.items())
+                ],
+                lr=schedule.learning_rate,
+                weight_decay=0.0,
             )
 
         optimizer_factory = default_optimizer_factory
@@ -1420,15 +1847,37 @@ def train_target_native_behavior_distillation(
                 raise TargetNativeBehaviorDistillationError(
                     "Optimizer must contain exactly the temporary compiler factors."
                 )
-            if any(
-                _finite_float(group.get("lr"), "optimizer learning rate", minimum=0.0)
-                != schedule.learning_rate
+            optimizer_rate_by_parameter = {
+                id(value): _finite_float(
+                    group.get("lr"), "optimizer learning rate", minimum=0.0
+                )
                 for group in optimizer.param_groups
+                for value in group["params"]
+            }
+            if any(
+                optimizer_rate_by_parameter[id(value)]
+                != _factor_learning_rate(name, schedule, step=1)
+                for name, value in factor_entries
             ):
                 raise TargetNativeBehaviorDistillationError(
-                    "Optimizer learning rates must match the preregistered schedule."
+                    "Optimizer factor-group learning rates must match the "
+                    "preregistered schedule."
                 )
+            factor_name_by_id = {id(value): name for name, value in factor_entries}
             for step in range(1, schedule.steps + 1):
+                for group in optimizer.param_groups:
+                    expected_rates = {
+                        _factor_learning_rate(
+                            factor_name_by_id[id(value)], schedule, step=step
+                        )
+                        for value in group["params"]
+                    }
+                    if len(expected_rates) != 1:
+                        raise TargetNativeBehaviorDistillationError(
+                            "One optimizer group spans incompatible preregistered "
+                            "learning-rate schedules."
+                        )
+                    group["lr"] = expected_rates.pop()
                 optimizer.zero_grad(set_to_none=True)
                 selected_prompts = tuple(
                     fit.prompts[
@@ -1439,18 +1888,96 @@ def train_target_native_behavior_distillation(
                     ]
                     for offset in range(schedule.fit_prompts_per_step)
                 )
-                divisor = float(len(selected_prompts) * 2 * schedule.fit_horizon)
+                active_horizon = (
+                    schedule.warmup_fit_horizon
+                    if step <= schedule.parent_only_steps
+                    and schedule.warmup_fit_horizon
+                    else schedule.fit_horizon
+                )
+                training_plans: list[
+                    tuple[
+                        BehaviorPrompt,
+                        tuple[int, ...],
+                        tuple[Tensor, ...],
+                        tuple[int, ...],
+                        tuple[float, ...],
+                        tuple[int, ...],
+                    ]
+                ] = []
+                divisor = 0.0
                 for prompt in selected_prompts:
-                    parent_tokens, parent_rows = parent_greedy_cache[prompt.prompt_id]
+                    cached_parent_tokens, cached_parent_rows = parent_greedy_cache[
+                        prompt.prompt_id
+                    ]
+                    parent_tokens = cached_parent_tokens[:active_horizon]
+                    parent_rows = cached_parent_rows[:active_horizon]
                     child_tokens, _child_rows = _greedy_path(
-                        transaction.model, prompt.token_ids, schedule.fit_horizon
+                        transaction.model, prompt.token_ids, active_horizon
                     )
-                    child_forwards += schedule.fit_horizon
-                    for lane_index, lane_tokens in enumerate(
-                        (parent_tokens, child_tokens)
-                    ):
+                    child_forwards += active_horizon
+                    divergence = _first_divergence(parent_tokens, child_tokens)
+                    position_weights = _divergence_position_weights(
+                        active_horizon, divergence, schedule
+                    )
+                    child_indices: tuple[int, ...] = ()
+                    if step > schedule.parent_only_steps:
+                        child_indices = _child_lane_indices(
+                            child_tokens, divergence, schedule
+                        )
+                    divisor += schedule.parent_lane_loss_weight * sum(position_weights)
+                    divisor += schedule.child_lane_loss_weight * sum(
+                        position_weights[index] for index in child_indices
+                    )
+                    training_plans.append(
+                        (
+                            prompt,
+                            parent_tokens,
+                            parent_rows,
+                            child_tokens,
+                            position_weights,
+                            child_indices,
+                        )
+                    )
+                if divisor <= 0.0 or not math.isfinite(divisor):
+                    raise TargetNativeBehaviorDistillationError(
+                        "Divergence curriculum produced an invalid loss divisor."
+                    )
+                for (
+                    prompt,
+                    parent_tokens,
+                    parent_rows,
+                    child_tokens,
+                    position_weights,
+                    child_indices,
+                ) in training_plans:
+                    lane_specs = (
+                        (
+                            0,
+                            parent_tokens,
+                            tuple(range(len(parent_tokens))),
+                            schedule.parent_lane_loss_weight,
+                        ),
+                        (
+                            1,
+                            child_tokens,
+                            child_indices,
+                            schedule.child_lane_loss_weight,
+                        ),
+                    )
+                    for (
+                        lane_index,
+                        lane_tokens,
+                        active_indices,
+                        lane_weight,
+                    ) in lane_specs:
+                        if lane_weight == 0.0:
+                            continue
+                        active = set(active_indices)
                         prefix = prompt.token_ids
                         for lane_step, token in enumerate(lane_tokens):
+                            if lane_step not in active:
+                                prefix = (*prefix, int(token))
+                                continue
                             if lane_index == 0:
                                 parent_logits = parent_rows[lane_step]
                             else:
@@ -1463,8 +1990,32 @@ def train_target_native_behavior_distillation(
                                 transaction.model, prefix
                             )
                             child_forwards += 1
+                            repetition_tokens: tuple[int, ...] = ()
+                            if lane_index == 1:
+                                recent_child = lane_tokens[
+                                    max(
+                                        0, lane_step - schedule.repetition_window
+                                    ) : lane_step
+                                ]
+                                repetition_tokens = tuple(
+                                    sorted(
+                                        {
+                                            int(value)
+                                            for value in recent_child
+                                            if recent_child.count(value) >= 2
+                                        }
+                                    )
+                                )
                             (
-                                _training_loss(parent_logits, child_logits, schedule)
+                                _training_loss(
+                                    parent_logits,
+                                    child_logits,
+                                    schedule,
+                                    prefix=prefix,
+                                    repetition_token_ids=repetition_tokens,
+                                )
+                                * lane_weight
+                                * position_weights[lane_step]
                                 / divisor
                             ).backward()
                             if lane_index == 0:
@@ -1487,6 +2038,13 @@ def train_target_native_behavior_distillation(
                         "Output loss produced missing or non-finite compiler-factor "
                         f"gradients before the optimizer step: {invalid_gradients}."
                     )
+                if step <= schedule.gud_frozen_steps:
+                    for name, parameter in factor_entries:
+                        if name.startswith("gud.") and parameter.grad is not None:
+                            # ``None`` makes AdamW skip both the update and its
+                            # per-parameter step counter.  A zero gradient would
+                            # silently age moments/bias correction while frozen.
+                            parameter.grad = None
                 try:
                     total_gradient_norm = torch.nn.utils.clip_grad_norm_(
                         trainable,
@@ -1632,6 +2190,7 @@ def train_target_native_behavior_distillation(
         sealed_evaluation_unlocked=candidate_passed,
         training_audit=training_audit,
         factor_pack=factor_pack,
+        initial_factor_state_sha256=initial_factor_state_sha256,
         domain_binding_sha256=domain_binding_sha256,
         schedule_sha256=schedule_sha256,
     )
@@ -1658,6 +2217,7 @@ __all__ = [
     "evaluate_behavior_domain",
     "load_behavior_domain_suite",
     "restore_target_native_factor_state",
+    "restore_target_native_factor_payload",
     "select_behavior_checkpoint",
     "train_target_native_behavior_distillation",
 ]

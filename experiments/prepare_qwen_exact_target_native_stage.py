@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import run_qwen_exact_target_native_stage as stage
+import prepare_qwen_exact_target_native_continuation_splits as continuation_splits
 from neural_forge.hf_target_native_behavior_distillation import BehaviorPrompt
 
 
@@ -47,6 +48,7 @@ DEFAULT_PARENT = Path(
 DEFAULT_OUTPUT = Path(
     "/mnt/ai_data/neural-forge/prereg/qwen_exact_target_native_stage1_20260712"
 )
+DEFAULT_COMPILER_CACHE_ROOT = Path("/mnt/ai_data/neural-forge/compiled_child_cache")
 
 
 class StagePreparationError(RuntimeError):
@@ -476,23 +478,320 @@ def prepare_stage(
     return report
 
 
+def prepare_continuation_stage(
+    *,
+    output_dir: Path,
+    parent: Path,
+    target: Path,
+    source_run_report: Path,
+    original_split_dir: Path = continuation_splits.DEFAULT_ORIGINAL_SPLIT_DIR,
+    compiler_cache_root: Path = DEFAULT_COMPILER_CACHE_ROOT,
+    corpus_path: Path = DEFAULT_CORPUS,
+) -> dict[str, Any]:
+    """Seal a factor-resuming, cache-backed residual-attention continuation."""
+
+    output = output_dir.expanduser().resolve()
+    if output.exists():
+        raise StagePreparationError("output_dir must not already exist.")
+    parent = parent.expanduser().resolve()
+    target = target.expanduser().resolve()
+    source_report_path = source_run_report.expanduser().resolve()
+    original_split_root = original_split_dir.expanduser().resolve()
+    cache_root = compiler_cache_root.expanduser().resolve()
+    source_report = stage._strict_json(source_report_path)
+    if not isinstance(source_report, Mapping):
+        raise StagePreparationError("Continuation source run report is malformed.")
+    trainer_evidence = source_report.get("trainer_evidence")
+    if (
+        not isinstance(trainer_evidence, Mapping)
+        or trainer_evidence.get("sealed_evaluation_unlocked") is not False
+        or trainer_evidence.get("sealed_metrics") is not None
+    ):
+        raise StagePreparationError(
+            "Original sealed prompts were exposed by the source run and cannot be "
+            "reused as sealed continuation evidence."
+        )
+    factor_record = source_report.get("factor_pack")
+    if not isinstance(factor_record, Mapping):
+        raise StagePreparationError("Source report omits its retained factor pack.")
+    factor_path = Path(str(factor_record.get("path", ""))).expanduser().resolve()
+    factor_sha = stage._require_sha256(
+        factor_record.get("sha256"), "source_run_report.factor_pack.sha256"
+    )
+    if not factor_path.is_file() or stage._file_sha256(factor_path) != factor_sha:
+        raise StagePreparationError("Source factor pack is absent or changed.")
+    source_report_sha = stage._file_sha256(source_report_path)
+    source_compiler_report = source_report.get("compiler_report")
+    if not isinstance(source_compiler_report, Mapping):
+        raise StagePreparationError("Source report omits compiler evidence.")
+    source_factor_manifest = trainer_evidence.get("factor_pack_manifest")
+    if not isinstance(source_factor_manifest, Mapping):
+        raise StagePreparationError("Source report omits selected factor evidence.")
+    factor_state_sha = stage._require_sha256(
+        source_factor_manifest.get("factor_state_sha256"),
+        "source_run_report.factor_state_sha256",
+    )
+    compiled_state_sha = stage._require_sha256(
+        source_report.get("rollback_state_sha256"),
+        "source_run_report.rollback_state_sha256",
+    )
+
+    output.mkdir(parents=True)
+    split_output = output / "splits"
+    split_report = continuation_splits.prepare_continuation_splits(
+        output_dir=split_output,
+        original_split_dir=original_split_root,
+        corpus_path=corpus_path,
+        tokenizer_path=parent,
+    )
+    parent_tree = dict(stage._artifact_tree(parent))
+    target_tree = dict(stage._artifact_tree(target))
+    required = _default_target_required_files()
+    for relative, expected in required.items():
+        if stage._file_sha256(target / relative) != expected:
+            raise StagePreparationError(
+                f"Canonical target required-file hash changed: {relative}"
+            )
+    split_bindings = {
+        role: {
+            "path": str(split_output / f"{role}.json"),
+            "sha256": stage._file_sha256(split_output / f"{role}.json"),
+            "expected_count": continuation_splits.OUTPUT_COUNTS[role],
+        }
+        for role in ("fit", "candidate", "sealed")
+    }
+    compiler_split_path = original_split_root / "fit.json"
+    compiler_split_sha = continuation_splits.PINNED_ORIGINAL_SPLIT_SHA256S["fit"]
+    if stage._file_sha256(compiler_split_path) != compiler_split_sha:
+        raise StagePreparationError("Original exact compiler fit split changed.")
+    trainer_spec = importlib.util.find_spec(stage.CANONICAL_TRAINER_MODULE)
+    cache_spec = importlib.util.find_spec("neural_forge.hf_compiled_child_cache")
+    if (
+        trainer_spec is None
+        or trainer_spec.origin is None
+        or cache_spec is None
+        or cache_spec.origin is None
+    ):
+        raise StagePreparationError(
+            "Canonical trainer/cache implementation sources are unavailable."
+        )
+    thresholds = {
+        "fit": {
+            "minimum_action_accuracy": 0.65,
+            "minimum_exact_rollout_fraction": 0.25,
+            "minimum_token_match_fraction": 0.40,
+            "minimum_lcp_fraction": 0.30,
+            "minimum_action_count": 768,
+            "minimum_rollout_count": 96,
+            "maximum_repeat_fraction_excess": 0.20,
+            "maximum_adjacent_repeat_fraction_excess": 0.25,
+            "maximum_longest_run_excess": 2,
+        },
+        "candidate": {
+            "minimum_action_accuracy": 0.50,
+            "minimum_exact_rollout_fraction": 0.25,
+            "minimum_token_match_fraction": 0.50,
+            "minimum_lcp_fraction": 0.35,
+            "minimum_action_count": 192,
+            "minimum_rollout_count": 24,
+            "maximum_repeat_fraction_excess": 0.20,
+            "maximum_adjacent_repeat_fraction_excess": 0.25,
+            "maximum_longest_run_excess": 2,
+        },
+        "sealed": {
+            "minimum_action_accuracy": 0.60,
+            "minimum_exact_rollout_fraction": 0.1875,
+            "minimum_token_match_fraction": 0.35,
+            "minimum_lcp_fraction": 0.30,
+            "minimum_action_count": 256,
+            "minimum_rollout_count": 32,
+            "maximum_repeat_fraction_excess": 0.20,
+            "maximum_adjacent_repeat_fraction_excess": 0.25,
+            "maximum_longest_run_excess": 2,
+        },
+    }
+    training = {
+        "steps": 32,
+        "learning_rate": 3e-4,
+        "checkpoint_steps": [2, 4, 8, 12, 16, 24],
+        "fit_horizon": 8,
+        "evaluation_horizon": 8,
+        "fit_prompts_per_step": 8,
+        "temperature": 1.0,
+        "action_loss_weight": 1.0,
+        "distribution_loss_weight": 0.05,
+        "action_margin_loss_weight": 0.25,
+        "action_margin": 1.0,
+        "repetition_excess_loss_weight": 0.20,
+        "repetition_window": 8,
+        "parent_lane_loss_weight": 3.0,
+        "child_lane_loss_weight": 1.0,
+        "parent_only_steps": 8,
+        "warmup_fit_horizon": 4,
+        "late_position_loss_multiplier": 1.0,
+        "solved_prefix_loss_multiplier": 0.5,
+        "divergence_loss_multiplier": 4.0,
+        "post_divergence_loss_multiplier": 2.0,
+        "post_divergence_positions": 1,
+        "child_lane_starts_at_divergence": True,
+        "max_child_lane_prefixes": 3,
+        "child_repeat_stop_run_length": 3,
+        "qk_learning_rate_scale": 0.5,
+        "vo_learning_rate_scale": 1.0,
+        "gud_learning_rate_scale": 0.5,
+        "right_factor_learning_rate_scale": 0.25,
+        "learning_rate_decay_step_1": 8,
+        "learning_rate_decay_scale_1": 2.0 / 3.0,
+        "learning_rate_decay_step_2": 20,
+        "learning_rate_decay_scale_2": 0.5,
+        "gud_frozen_steps": 8,
+        "top_k": 5,
+        "gradient_clip_norm": 0.5,
+        "max_prompt_tokens": 128,
+        "max_train_prefixes": 4096,
+        "max_evaluation_prefixes": 12000,
+        "max_checkpoints": 8,
+        "selection_policy": "rollout-first-acquisition",
+    }
+    preregistration = {
+        "schema": stage.PREREGISTRATION_SCHEMA,
+        "sealed_before_model_access": True,
+        "seed": 0,
+        "implementation": {
+            "runner_sha256": stage._file_sha256(Path(stage.__file__).resolve()),
+            "trainer_module": stage.CANONICAL_TRAINER_MODULE,
+            "trainer_sha256": stage._file_sha256(Path(trainer_spec.origin)),
+            "compiler_cache_sha256": stage._file_sha256(Path(cache_spec.origin)),
+        },
+        "parent": {
+            "path": str(parent),
+            "exact_unique_parameters": stage.QWEN3_4B_EXACT_PARAMETERS,
+            "tree_sha256": parent_tree["tree_sha256"],
+        },
+        "blank_target": {
+            "path": str(target),
+            "exact_unique_parameters": stage.QWEN3_1P4B_EXACT_PARAMETERS,
+            "tree_sha256": target_tree["tree_sha256"],
+            "required_files": required,
+        },
+        "compiler_split": {
+            "path": str(compiler_split_path),
+            "sha256": compiler_split_sha,
+            "expected_count": continuation_splits.ORIGINAL_COUNTS["fit"],
+        },
+        "splits": split_bindings,
+        "thresholds": thresholds,
+        "compiler": {
+            "capture_batch_size": 1,
+            "max_prompt_tokens": 128,
+            "canonical_validation_count": 4,
+            "compiler_seed": 0,
+            "bootstrap_kwargs": {
+                "heldout_gate_policy": "output_only",
+                "max_operator_delta_ratio": 0.1,
+                "trace_pooling": "last_valid",
+            },
+            "candidate_split_used_during_bootstrap": False,
+            "sealed_split_used_during_bootstrap": False,
+        },
+        "training": training,
+        "compiler_cache": {"root": str(cache_root)},
+        "continuation": {
+            "factor_pack": {"path": str(factor_path), "sha256": factor_sha},
+            "source_run_report": {
+                "path": str(source_report_path),
+                "sha256": source_report_sha,
+            },
+            "expected_factor_state_sha256": factor_state_sha,
+            "expected_compiler_report_sha256": stage._canonical_sha256(
+                source_compiler_report
+            ),
+            "expected_compiled_state_sha256": compiled_state_sha,
+        },
+        "corpus_provenance": {
+            "source_sha256": continuation_splits.PINNED_CORPUS_SHA256,
+            "source_line_count": continuation_splits.PINNED_CORPUS_LINE_COUNT,
+            "continuation_split_build_content_sha256": split_report[
+                "build_content_sha256"
+            ],
+            "original_fit_replayed": 24,
+            "fresh_fit": 72,
+            "fresh_candidate": 24,
+            "original_sealed_unexposed_and_reused": 16,
+            "fresh_sealed": 16,
+            "old_candidate_diagnostic_only": True,
+        },
+        "runtime": {
+            "dtype": "float16",
+            "attention_implementation": stage.CANONICAL_ATTENTION_IMPLEMENTATION,
+            "explicit_execute_required": True,
+        },
+    }
+    prereg_path = output / "preregistration.json"
+    _write_json_exclusive(prereg_path, preregistration)
+    prereg_sha = stage._file_sha256(prereg_path)
+    authenticated = stage.authenticate_preregistration(prereg_path, prereg_sha)
+    report = {
+        "schema": BUILD_SCHEMA,
+        "mode": "authenticated-factor-continuation",
+        "preregistration": str(prereg_path),
+        "preregistration_sha256": prereg_sha,
+        "evaluation_contract_sha256": authenticated.evaluation_contract_sha256,
+        "compiler_split_sha256": compiler_split_sha,
+        "behavior_split_sha256s": {
+            role: split_bindings[role]["sha256"]
+            for role in ("fit", "candidate", "sealed")
+        },
+        "source_run_report_sha256": source_report_sha,
+        "source_factor_pack_sha256": factor_sha,
+        "source_factor_state_sha256": factor_state_sha,
+        "shared_compiler_cache_root": str(cache_root),
+        "model_weights_loaded": False,
+        "model_checkpoint_created": False,
+        "training_launched": False,
+        "ready_for_explicit_preflight": True,
+    }
+    _write_json_exclusive(output / "build_report.json", report)
+    return report
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--parent", type=Path, default=DEFAULT_PARENT)
     parser.add_argument("--target", type=Path, default=stage.DEFAULT_BLANK_TARGET)
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
+    parser.add_argument("--continuation-source-report", type=Path)
+    parser.add_argument(
+        "--original-split-dir",
+        type=Path,
+        default=continuation_splits.DEFAULT_ORIGINAL_SPLIT_DIR,
+    )
+    parser.add_argument(
+        "--compiler-cache-root", type=Path, default=DEFAULT_COMPILER_CACHE_ROOT
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    report = prepare_stage(
-        output_dir=args.output_dir,
-        parent=args.parent,
-        target=args.target,
-        corpus_path=args.corpus,
-    )
+    if args.continuation_source_report is None:
+        report = prepare_stage(
+            output_dir=args.output_dir,
+            parent=args.parent,
+            target=args.target,
+            corpus_path=args.corpus,
+        )
+    else:
+        report = prepare_continuation_stage(
+            output_dir=args.output_dir,
+            parent=args.parent,
+            target=args.target,
+            source_run_report=args.continuation_source_report,
+            original_split_dir=args.original_split_dir,
+            compiler_cache_root=args.compiler_cache_root,
+            corpus_path=args.corpus,
+        )
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 
