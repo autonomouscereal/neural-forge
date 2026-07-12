@@ -501,34 +501,98 @@ subspaces, and the output-guided directions are dramatically more informative
 than equal-rank random controls. It does not itself prove a coherent child;
 that requires the guided behavioral continuation below.
 
+### Guided residual-attention continuation result
+
+The authenticated 64-step guided Q/K/V/O continuation completed on the exact
+`1,410,567,168`-parameter child. An initial execution failed before step 1
+because JSON publication alphabetized the `per_role` mapping while the adapter
+incorrectly treated insertion order as semantic. The audit itself authorized
+all four roles. Commit `8c66e18` changed that gate to require the exact semantic
+role set independent of JSON key order, with missing/extra/substituted-role
+regressions, and the corrected run passed installation, all optimizer stages,
+all checkpoints, and exact rejection rollback.
+
+Corrected run evidence:
+
+- run:
+  `/mnt/ai_data/neural-forge/runs/qwen_exact_target_native_stage1_step24_guided_qkvo_continuation_schemafix_v2_20260712`;
+- run-report SHA-256:
+  `4eb8804ba257f27926fc8f0891145061f43eeb01710c4e4a94ac0ee3df4bb1d1`;
+- preregistration SHA-256:
+  `ca2dbce54592c99c669f3c2044cf0af2f36268fe35d50fbf151da8fdfebcc57f`;
+- terminal status/reason: `rejected` / `fit-gate-rejected`;
+- all `64` optimizer steps completed and every authorized factor received
+  finite nonzero output-loss gradients;
+- exact rollback restored
+  `39c57212e804280b67e9706fc2935a038c41c0f8491ab950af6b45f4a21a606e`;
+- no standalone checkpoint was written and sealed evaluation remained locked;
+- the retained selected step-0 v3 pack is `115,492,213` bytes, SHA-256
+  `2524d5224a09193f6561d9108576c422988ad267461df4c0e897d509433d32e9`;
+- trainer-evidence SHA-256:
+  `60610af5f17e110aab0ac5be37655b304ccb193707b9009dbda66d24e697c536`.
+
+The strict behavior-only selector retained step 0 because every trained
+checkpoint had `0/24` exact rollouts, `0/24` prompts with `LCP >= 4`, and at
+least a small aggregate-LCP regression. That does not mean training was flat:
+
+- step 0: action `29/192`, token `30/192`, LCP tokens `28/192`, mean parent
+  action rank `4026.5`, repeat excess `0.41146`, adjacent excess `0.57143`;
+- step 12: action `48/192`, token `50/192`, LCP tokens `26/192`;
+- step 40: best action `50/192` (`26.04%`, versus `15.10%` at step 0), token
+  `49/192`, LCP tokens `26/192`, mean rank `1062.60`;
+- step 56: action `46/192`, LCP tokens `24/192`, best degeneration control:
+  repeat excess `0.22396`, adjacent excess `0.35119`, longest-run excess `2`;
+- step 64: action `47/192`, token `40/192`, LCP tokens `27/192`, repeat excess
+  `0.23958`, adjacent excess `0.38095`.
+
+This is real first-action, ranking, and repetition progress from guided
+attention, but not trajectory coherence. The aggressive child remains
+incoherent. The run also exposed a retention defect relative to the project
+policy: steps 40/56/64 were authenticated only by factor-state hashes
+(`98b5a29d...c72b4`, `12b9428b...c9`, `1a045927...c3118`) and their tensors
+were not persisted because the strict selector restored step 0. The candidate
+frontier correctly refused to register the step-0 pack as behavior-acquired;
+the source run/report/pack remain preserved in place.
+
 ## Next ordered execution
 
-1. Reuse the same authenticated compiled-child cache and selected v2 factor
-   state. Do not reconstruct the child or restart any learned factor from zero.
-2. Consume the passed audit and basis pack by their exact hashes above. Reject
-   any report, tensor, manifest, source-state, cache, or topology mismatch.
-3. Freeze the authenticated selected factors and add a separate
-   exact-zero residual tranche whose right/input directions are the leading
-   output-Jacobian directions orthogonal to the inherited manifold. Keep the
-   old and new products as separate multiplies so the inherited operation is
-   not numerically regrouped. Install Q/K/V/O because each role passed its
-   independent authorization gate.
-4. Train the new guided left factors first while their authenticated right
-   bases remain frozen, then allow guided left/right refinement, then jointly
-   tune inherited and guided attention products at a lower inherited learning
-   rate. Keep Gate/Up/Down and lexical factors frozen during the initial guided
-   phases so the first result isolates the missing attention subspace.
-5. Use only fit data to construct the basis. Expand fit with the now-exposed
-   24-prompt candidate, create a new prompt/prefix-disjoint 24-prompt candidate,
-   and reuse the exact still-locked 32-prompt sealed split. Candidate and sealed
-   data cannot influence bases, rank, learning rates, or checkpoint selection.
-6. Require at least one fresh-candidate `LCP >= 4` and repetition
-   non-regression before calling the guided tranche methodologically positive.
-   Do not relax the standalone publication gates.
-7. On rejection, preserve the strongest authenticated factor/report evidence
-   and restore exactly. On acceptance, bake every inherited and new product,
-   save once, reload fresh, certify exactly `1,410,567,168` native parameters
-   with no adapter/parent/sidecar, and run broad parent-pass retention.
+1. Add a bounded checkpoint sink to the existing trainer/runner. At each
+   preregistered checkpoint, persist a content-addressed v3 factor pack only if
+   it enters the top-three behavior frontier. Keep strict standalone selection
+   unchanged. A rejection must retain the strongest research packs, then
+   restore exactly; it must not save only the strict selector's step 0.
+2. Deterministically replay the authenticated schedule on the same hardware
+   only far enough to reproduce and persist the proven step-40/56/64 states.
+   Require the exact historical factor-state and behavior-report hashes before
+   treating replay output as recovery; abort on any mismatch.
+3. Move the exposed 24-prompt candidate into fit (`144 -> 168`), create one new
+   prompt/prefix-disjoint 24-prompt candidate, and reuse the exact still-locked
+   32-prompt sealed split. Candidate and sealed data cannot select sites,
+   bases, ranks, schedules, or learning rates.
+4. Add candidate-only execution so a fixed finite arm tournament cannot open
+   sealed independently. Preregister all arms, run them against the same new
+   candidate, select at most one winner, and allow only that winner to access
+   sealed. Keep all existing standalone thresholds and post-bake/fresh-reload
+   gates.
+5. Run three bounded arms in parallel from preserved evidence:
+   - divergence-centered horizon-16 on-policy continuation from recovered step
+     40 (best actions/rank);
+   - the same continuation from recovered step 64 (near-step0 LCP with much
+     better repetition);
+   - a Jacobian-energy sparse-site guided tranche from the authenticated v2
+     source, selecting the smallest fit-only site set covering 80% of eligible
+     normal energy (8 to 60 sites per role).
+   Keep GUD and lexical factors frozen so the experiment tests trajectory
+   propagation and attention-site interference rather than readout repair.
+6. Require selected step greater than zero, at least one candidate rollout with
+   `LCP >= 4`, and repetition non-regression before any arm can win. Lexical
+   readout repair remains conditional on trajectory acquisition; do not run it
+   while all arms remain `LCP >= 4 == 0`.
+7. On the single winner, run sealed once. On rejection preserve the top-three
+   authenticated research packs and restore exactly. On acceptance bake every
+   inherited/new product, save once, reload fresh, certify exactly
+   `1,410,567,168` native parameters with no adapter/parent/sidecar, and run
+   broad parent-pass retention.
 8. After stage 1 passes, repeat the promoted transaction at `600,628,224` and
    then `134,515,008`, with a new sealed gate at every stage.
 
