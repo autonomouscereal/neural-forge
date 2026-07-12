@@ -24,3 +24,12 @@ def test_remote_adoption_pins_the_canonical_origin_and_branch() -> None:
     assert 'ORIGIN="https://github.com/autonomouscereal/neural-forge.git"' in text
     assert 'BRANCH="codex/lrc-blank-compression"' in text
     assert 'git config "branch.$BRANCH.remote" origin' in text
+
+
+def test_remote_adoption_supports_a_verified_secretless_git_bundle() -> None:
+    text = SCRIPT.read_text(encoding="utf-8")
+
+    assert 'MODE" == "--adopt-bundle"' in text
+    assert 'git bundle verify "$BUNDLE"' in text
+    assert 'git fetch "$BUNDLE" "refs/heads/$BRANCH"' in text
+    assert "refs/tags/*:refs/tags/*" in text

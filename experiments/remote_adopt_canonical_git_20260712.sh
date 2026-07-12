@@ -6,6 +6,7 @@ EXPECTED_ROOT="/home/cereal/model-surgery-lab/neural-forge-src"
 ORIGIN="https://github.com/autonomouscereal/neural-forge.git"
 BRANCH="codex/lrc-blank-compression"
 MODE="${1:---preflight}"
+BUNDLE="${2:-}"
 
 resolved="$(realpath "$ROOT")"
 if [[ "$resolved" != "$EXPECTED_ROOT" ]]; then
@@ -40,9 +41,17 @@ if [[ "$MODE" == "--preflight" ]]; then
   exit 0
 fi
 
-if [[ "$MODE" != "--adopt" ]]; then
-  printf 'usage: %s [--preflight|--adopt]\n' "$0" >&2
+if [[ "$MODE" != "--adopt" && "$MODE" != "--adopt-bundle" ]]; then
+  printf 'usage: %s [--preflight|--adopt|--adopt-bundle BUNDLE]\n' "$0" >&2
   exit 4
+fi
+
+if [[ "$MODE" == "--adopt-bundle" ]]; then
+  if [[ -z "$BUNDLE" || ! -f "$BUNDLE" ]]; then
+    printf 'refusing missing bundle: %s\n' "$BUNDLE" >&2
+    exit 6
+  fi
+  git bundle verify "$BUNDLE"
 fi
 
 cd "$ROOT"
@@ -61,9 +70,16 @@ else
   git remote add origin "$ORIGIN"
 fi
 
-git fetch origin "$BRANCH"
-git fetch origin --tags
-git update-ref "refs/heads/$BRANCH" FETCH_HEAD
+if [[ "$MODE" == "--adopt-bundle" ]]; then
+  git fetch "$BUNDLE" "refs/heads/$BRANCH"
+  source_commit="$(git rev-parse FETCH_HEAD)"
+  git fetch "$BUNDLE" 'refs/tags/*:refs/tags/*'
+else
+  git fetch origin "$BRANCH"
+  source_commit="$(git rev-parse FETCH_HEAD)"
+  git fetch origin --tags
+fi
+git update-ref "refs/heads/$BRANCH" "$source_commit"
 git symbolic-ref HEAD "refs/heads/$BRANCH"
 git read-tree HEAD
 git checkout-index --all --force
