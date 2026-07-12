@@ -23,7 +23,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
-from torch import nn
+from torch import Tensor, nn
 
 from neural_forge.hf_arch_layout import (
     DecoderLayout,
@@ -41,6 +41,13 @@ from neural_forge.hf_dense_gqa_qkvo_residual_adapter import (
     install_dense_gqa_qkvo_residual_adapter,
 )
 from neural_forge.hf_factorized_vocab import exact_parameter_report
+from neural_forge.hf_dense_swiglu_projection_residual_adapter import (
+    DenseSwiGLUProjectionResidualTopologyError,
+    DenseSwiGLUResidualProjection,
+    InstalledDenseSwiGLUProjectionResidualAdapter,
+    SparseDenseSwiGLUProjectionResidualRegistry,
+    install_dense_swiglu_projection_residual_adapter,
+)
 from neural_forge.hf_parent_compiler import (
     HFParentCompilerResult,
     fingerprint_hf_child_structure,
@@ -51,6 +58,15 @@ PROGRESSIVE_TARGET_PLAN_SCHEMA = "neural-forge-progressive-dense-gqa-plan-v1"
 NATIVE_TARGET_CERTIFICATE_SCHEMA = "neural-forge-native-dense-gqa-certificate-v1"
 EXACT_TARGET_QKVO_INSTALLATION_SCHEMA = "neural-forge-exact-target-qkvo-installation-v1"
 EXACT_TARGET_QKVO_PUBLICATION_SCHEMA = "neural-forge-exact-target-qkvo-publication-v1"
+EXACT_TARGET_COMPILER_TRANSACTION_INSTALLATION_SCHEMA = (
+    "neural-forge-exact-target-compiler-transaction-installation-v1"
+)
+EXACT_TARGET_COMPILER_TRANSACTION_PUBLICATION_SCHEMA = (
+    "neural-forge-exact-target-compiler-transaction-publication-v1"
+)
+EXACT_TARGET_COMPILER_OUTPUT_TRAINING_SCOPE_SCHEMA = (
+    "neural-forge-exact-target-compiler-output-training-scope-v1"
+)
 EXTERNAL_BEHAVIOR_GATE_SCHEMA = "neural-forge-external-behavior-gate-receipt-v1"
 
 QWEN3_4B_EXACT_PARAMETERS = 4_022_468_096
@@ -542,8 +558,10 @@ class NativeDenseGQACertificate:
     state_key_sha256: str
     state_key_count: int
     dense_qkvo_projection_count: int
+    dense_swiglu_projection_count: int
     geometry: DenseGQAGeometry
     projection_names: Mapping[str, str]
+    swiglu_projection_names: Mapping[str, str]
 
     def as_dict(self) -> dict[str, Any]:
         payload = {
@@ -555,9 +573,12 @@ class NativeDenseGQACertificate:
             "state_key_sha256": self.state_key_sha256,
             "state_key_count": self.state_key_count,
             "dense_qkvo_projection_count": self.dense_qkvo_projection_count,
+            "dense_swiglu_projection_count": self.dense_swiglu_projection_count,
             "geometry": self.geometry.as_dict(),
             "projection_names": dict(self.projection_names),
+            "swiglu_projection_names": dict(self.swiglu_projection_names),
             "all_qkvo_projections_are_exact_nn_linear": True,
+            "all_swiglu_projections_are_exact_nn_linear": True,
             "adapter_registry_count": 0,
             "adapter_projection_wrapper_count": 0,
             "adapter_parameter_count": 0,
@@ -576,18 +597,21 @@ class _DenseGQATopology:
     attention_modules: Mapping[int, nn.Module]
     projection_names: Mapping[str, str]
     projection_paths: tuple[str, ...]
+    mlp_modules: Mapping[int, nn.Module]
+    swiglu_projection_names: Mapping[str, str]
+    swiglu_projection_paths: tuple[str, ...]
 
 
 def _direct_projection_name(module_path: str, projection_path: str) -> str:
     prefix = f"{module_path}."
     if not projection_path.startswith(prefix):
         raise ProgressiveTargetBridgeError(
-            "QKVO projection path is not owned by its declared attention module."
+            "Projection path is not owned by its declared module."
         )
     name = projection_path[len(prefix) :]
     if not name.isidentifier():
         raise ProgressiveTargetBridgeError(
-            "QKVO publication requires direct attention-module projection fields."
+            "Native publication requires direct module projection fields."
         )
     return name
 
@@ -595,6 +619,8 @@ def _direct_projection_name(module_path: str, projection_path: str) -> str:
 def _resolve_dense_gqa_topology(
     model: nn.Module,
     layout: DecoderLayout | None,
+    *,
+    require_dense_swiglu: bool = False,
 ) -> _DenseGQATopology:
     resolved = build_decoder_layout(model) if layout is None else layout
     if not isinstance(resolved, DecoderLayout):
@@ -620,8 +646,11 @@ def _resolve_dense_gqa_topology(
         head_dim=first.head_dim,
     )
     modules: dict[int, nn.Module] = {}
+    mlp_modules: dict[int, nn.Module] = {}
     paths: list[str] = []
+    mlp_paths: list[str] = []
     names: dict[str, str] | None = None
+    mlp_names: dict[str, str] | None = None
     for block in resolved.blocks:
         attention = block.attention
         if (
@@ -663,13 +692,56 @@ def _resolve_dense_gqa_topology(
                     f"Target projection {path!r} is not an ordinary nn.Linear."
                 )
             paths.append(path)
+        if require_dense_swiglu:
+            mlp = block.mlp
+            if (
+                mlp.kind != "gated"
+                or mlp.gate_projection_path is None
+                or mlp.up_projection_path is None
+                or mlp.down_projection_path is None
+                or mlp.projection_weight_layout != "output_input"
+                or mlp.hidden_size != resolved.hidden_size
+                or mlp.intermediate_size != resolved.intermediate_size
+            ):
+                raise ProgressiveTargetBridgeError(
+                    "Every target layer must expose one native dense gated MLP."
+                )
+            mlp_module = resolve_module(model, mlp.module_path, family=resolved.family)
+            mlp_modules[block.index] = mlp_module
+            layer_mlp_paths = {
+                "gate": mlp.gate_projection_path,
+                "up": mlp.up_projection_path,
+                "down": mlp.down_projection_path,
+            }
+            layer_mlp_names = {
+                role: _direct_projection_name(mlp.module_path, path)
+                for role, path in layer_mlp_paths.items()
+            }
+            if mlp_names is None:
+                mlp_names = layer_mlp_names
+            elif mlp_names != layer_mlp_names:
+                raise ProgressiveTargetBridgeError(
+                    "Target layers use inconsistent Gate/Up/Down attribute names."
+                )
+            for path in layer_mlp_paths.values():
+                projection = resolve_module(model, path, family=resolved.family)
+                if type(projection) is not nn.Linear:
+                    raise ProgressiveTargetBridgeError(
+                        f"Target projection {path!r} is not an ordinary nn.Linear."
+                    )
+                mlp_paths.append(path)
     assert names is not None
+    if require_dense_swiglu:
+        assert mlp_names is not None
     return _DenseGQATopology(
         layout=resolved,
         geometry=geometry,
         attention_modules=modules,
         projection_names=names,
         projection_paths=tuple(paths),
+        mlp_modules=mlp_modules,
+        swiglu_projection_names={} if mlp_names is None else mlp_names,
+        swiglu_projection_paths=tuple(mlp_paths),
     )
 
 
@@ -732,13 +804,18 @@ def certify_native_dense_gqa_target(
     exact_unique_parameters: int,
     layout: DecoderLayout | None = None,
     stage: ProgressiveDenseGQAStage | None = None,
+    require_dense_swiglu: bool = False,
 ) -> NativeDenseGQACertificate:
     """Certify a loaded target has exact storage and no QKVO sidecar modules."""
 
     if not isinstance(model, nn.Module):
         raise ProgressiveTargetBridgeError("model must be torch.nn.Module.")
     expected = _positive_int(exact_unique_parameters, "exact_unique_parameters")
-    topology = _resolve_dense_gqa_topology(model, layout)
+    topology = _resolve_dense_gqa_topology(
+        model,
+        layout,
+        require_dense_swiglu=require_dense_swiglu,
+    )
     if stage is not None:
         if not isinstance(stage, ProgressiveDenseGQAStage):
             raise ProgressiveTargetBridgeError(
@@ -756,9 +833,21 @@ def certify_native_dense_gqa_target(
     forbidden_wrappers = sum(
         isinstance(module, DenseGQAQKVOResidualProjection) for module in model.modules()
     )
-    if forbidden_registry or forbidden_wrappers:
+    forbidden_mlp_registry = sum(
+        isinstance(module, SparseDenseSwiGLUProjectionResidualRegistry)
+        for module in model.modules()
+    )
+    forbidden_mlp_wrappers = sum(
+        isinstance(module, DenseSwiGLUResidualProjection) for module in model.modules()
+    )
+    if (
+        forbidden_registry
+        or forbidden_wrappers
+        or forbidden_mlp_registry
+        or forbidden_mlp_wrappers
+    ):
         raise ProgressiveTargetBridgeError(
-            "Target still contains a QKVO adapter registry or projection wrapper."
+            "Target still contains an adapter registry or projection wrapper."
         )
     counts = exact_parameter_report(model)
     actual = int(counts["unique_parameter_count"])
@@ -778,8 +867,10 @@ def certify_native_dense_gqa_target(
         state_key_sha256=_canonical_sha256(keys),
         state_key_count=len(keys),
         dense_qkvo_projection_count=len(topology.projection_paths),
+        dense_swiglu_projection_count=len(topology.swiglu_projection_paths),
         geometry=topology.geometry,
         projection_names=topology.projection_names,
+        swiglu_projection_names=topology.swiglu_projection_names,
     )
 
 
@@ -908,6 +999,309 @@ class ExactTargetQKVOPublicationSession:
             self.rollback()
 
 
+class ExactTargetCompilerOutputTrainingScope:
+    """Expose only combined QKVO and Gate/Up/Down factors to autograd."""
+
+    def __init__(self, transaction: ExactTargetCompilerTransaction) -> None:
+        self.transaction = transaction
+        self._base: tuple[tuple[nn.Parameter, bool, Tensor | None, int, int], ...] = ()
+        self._trainable: tuple[tuple[nn.Parameter, bool, Tensor | None], ...] = ()
+        self._modes: tuple[tuple[nn.Module, bool], ...] = ()
+        self._entered = False
+
+    def __enter__(self) -> tuple[nn.Parameter, ...]:
+        if self._entered:
+            raise ProgressiveTargetBridgeError(
+                "Compiler output-training scope cannot be re-entered."
+            )
+        self.transaction.assert_live()
+        trainable = self.transaction.output_trainable_parameters()
+        trainable_ids = {id(value) for value in trainable}
+        if len(trainable_ids) != len(trainable):
+            raise ProgressiveTargetBridgeError(
+                "Temporary compiler factors unexpectedly share parameters."
+            )
+        self._base = tuple(
+            (
+                value,
+                bool(value.requires_grad),
+                value.grad,
+                int(value._version),
+                int(value.data_ptr()),
+            )
+            for value in self.transaction.model.parameters()
+            if id(value) not in trainable_ids
+        )
+        self._trainable = tuple(
+            (value, bool(value.requires_grad), value.grad) for value in trainable
+        )
+        self._modes = tuple(
+            (module, bool(module.training))
+            for module in self.transaction.model.modules()
+        )
+        for value, *_rest in self._base:
+            value.requires_grad_(False)
+        for value, _requires_grad, _gradient in self._trainable:
+            value.requires_grad_(True)
+        self.transaction.model.eval()
+        self._entered = True
+        return trainable
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        del exc_type, exc, traceback
+        if not self._entered:
+            return
+        for value, requires_grad, gradient, _version, _pointer in self._base:
+            value.requires_grad_(requires_grad)
+            value.grad = gradient
+        for value, requires_grad, _gradient in self._trainable:
+            value.requires_grad_(requires_grad)
+        for module, training in self._modes:
+            module.training = training
+        self._entered = False
+        if any(
+            int(value._version) != version
+            or int(value.data_ptr()) != pointer
+            or value.grad is not gradient
+            for value, _requires_grad, gradient, version, pointer in self._base
+        ):
+            raise ProgressiveTargetBridgeError(
+                "A native child parameter changed during factor-only training."
+            )
+        self.transaction.assert_live()
+
+    def as_dict(self) -> dict[str, Any]:
+        self.transaction.assert_live()
+        payload = {
+            "schema": EXACT_TARGET_COMPILER_OUTPUT_TRAINING_SCOPE_SCHEMA,
+            "trainable_qkvo_factor_parameters": (
+                self.transaction.qkvo_handle.report.adapter_parameter_count
+            ),
+            "trainable_gate_up_down_factor_parameters": (
+                self.transaction.swiglu_handle.report.adapter_parameter_count
+            ),
+            "base_parameter_updates_allowed": False,
+            "accepted_objective_domain": (
+                "causal-model-output-actions-logits-and-free-rollouts"
+            ),
+            "weight_matching_allowed": False,
+            "activation_matching_allowed": False,
+            "hidden_state_matching_allowed": False,
+            "parent_runtime_reference_count": 0,
+            "optimizer_state_is_temporary": True,
+            "optimizer_state_published": False,
+        }
+        payload["training_scope_sha256"] = _canonical_sha256(payload)
+        return payload
+
+
+class ExactTargetCompilerTransaction:
+    """Atomic target-native QKVO plus Gate/Up/Down compiler transaction."""
+
+    def __init__(
+        self,
+        *,
+        model: nn.Module,
+        exact_unique_parameters: int,
+        topology: _DenseGQATopology,
+        native_before: NativeDenseGQACertificate,
+        qkvo_handle: InstalledDenseGQAQKVOResidualAdapter,
+        swiglu_handle: InstalledDenseSwiGLUProjectionResidualAdapter,
+        stage: ProgressiveDenseGQAStage | None,
+        parent_compiler_report_sha256: str | None,
+    ) -> None:
+        self.model = model
+        self.exact_unique_parameters = exact_unique_parameters
+        self.topology = topology
+        self.native_before = native_before
+        self.qkvo_handle = qkvo_handle
+        self.swiglu_handle = swiglu_handle
+        self.stage = stage
+        self.parent_compiler_report_sha256 = parent_compiler_report_sha256
+        self.publication_report: dict[str, Any] | None = None
+        self._zero_step_identity_at_installation = (
+            qkvo_handle.adapter_registry.starts_as_exact_zero_correction
+            and swiglu_handle.registry.starts_as_exact_zero_correction
+        )
+        if not self._zero_step_identity_at_installation:
+            raise ProgressiveTargetBridgeError(
+                "Compiler transaction did not start as an exact identity."
+            )
+
+    @property
+    def is_live(self) -> bool:
+        return self.qkvo_handle.is_applied and self.swiglu_handle.is_applied
+
+    @property
+    def starts_as_zero_step_identity(self) -> bool:
+        return self._zero_step_identity_at_installation
+
+    def assert_live(self) -> None:
+        self.qkvo_handle.assert_live()
+        self.swiglu_handle.assert_live()
+
+    def output_trainable_parameters(self) -> tuple[nn.Parameter, ...]:
+        self.assert_live()
+        return (
+            *self.qkvo_handle.output_trainable_parameters(),
+            *self.swiglu_handle.output_trainable_parameters(),
+        )
+
+    def output_training_scope(self) -> ExactTargetCompilerOutputTrainingScope:
+        return ExactTargetCompilerOutputTrainingScope(self)
+
+    def installation_report(self) -> dict[str, Any]:
+        self.assert_live()
+        qkvo = self.qkvo_handle.report
+        swiglu = self.swiglu_handle.report
+        temporary = qkvo.adapter_parameter_count + swiglu.adapter_parameter_count
+        installed = exact_parameter_report(self.model)["unique_parameter_count"]
+        if installed != self.exact_unique_parameters + temporary:
+            raise ProgressiveTargetBridgeError(
+                "Combined temporary factor accounting does not match the live model."
+            )
+        payload = {
+            "schema": EXACT_TARGET_COMPILER_TRANSACTION_INSTALLATION_SCHEMA,
+            "exact_native_parameters": self.exact_unique_parameters,
+            "temporary_qkvo_factor_parameters": qkvo.adapter_parameter_count,
+            "temporary_gate_up_down_factor_parameters": (
+                swiglu.adapter_parameter_count
+            ),
+            "temporary_factor_parameters": temporary,
+            "temporary_installed_parameters": installed,
+            "published_parameters_if_promoted": self.exact_unique_parameters,
+            "published_temporary_factor_parameters": 0,
+            "zero_step_identity": self.starts_as_zero_step_identity,
+            "native_before": self.native_before.as_dict(),
+            "dense_qkvo_installation": qkvo.as_dict(),
+            "dense_gate_up_down_installation": swiglu.as_dict(),
+            "stage": None if self.stage is None else self.stage.as_dict(),
+            "parent_compiler_report_sha256": self.parent_compiler_report_sha256,
+            "role_complete_attention_qkvo": True,
+            "role_complete_mlp_gate_up_down": True,
+            "target_native_factors_only": True,
+            "output_and_free_rollout_training_only": True,
+            "internal_numeric_matching_required": False,
+            "checkpoint_publication_allowed_while_installed": False,
+            "capability_proven": False,
+        }
+        payload["installation_transaction_sha256"] = _canonical_sha256(payload)
+        return payload
+
+    def rollback(self) -> NativeDenseGQACertificate:
+        if self.qkvo_handle.is_applied:
+            self.qkvo_handle.rollback()
+        if self.swiglu_handle.is_applied:
+            self.swiglu_handle.rollback()
+        restored = certify_native_dense_gqa_target(
+            self.model,
+            exact_unique_parameters=self.exact_unique_parameters,
+            layout=self.topology.layout,
+            stage=self.stage,
+            require_dense_swiglu=True,
+        )
+        if restored.as_dict() != self.native_before.as_dict():
+            raise ProgressiveTargetPublicationError(
+                "Compiler rollback did not restore the exact native child."
+            )
+        return restored
+
+    def _restore_failed_publication(self) -> None:
+        # QKVO is baked first.  If it is still live, reject it before removing
+        # the MLP factors because its installation baseline includes them.
+        if self.qkvo_handle.is_applied:
+            self.qkvo_handle.rollback()
+            if self.swiglu_handle.is_applied:
+                self.swiglu_handle.rollback()
+        else:
+            if self.swiglu_handle.is_baked:
+                self.swiglu_handle.restore_prepublication_native()
+            elif self.swiglu_handle.is_applied:
+                self.swiglu_handle.rollback()
+            if self.qkvo_handle.is_baked:
+                self.qkvo_handle.restore_prepublication_native(
+                    expected_model_parameter_count=self.exact_unique_parameters
+                )
+        restored = certify_native_dense_gqa_target(
+            self.model,
+            exact_unique_parameters=self.exact_unique_parameters,
+            layout=self.topology.layout,
+            stage=self.stage,
+            require_dense_swiglu=True,
+        )
+        if restored.as_dict() != self.native_before.as_dict():
+            raise ProgressiveTargetPublicationError(
+                "Failed publication could not restore the exact native child."
+            )
+
+    def bake_for_publication(
+        self,
+        behavior_gate: ExternalBehaviorGateReceipt,
+    ) -> dict[str, Any]:
+        if not isinstance(behavior_gate, ExternalBehaviorGateReceipt):
+            raise ProgressiveTargetPublicationError(
+                "behavior_gate must be ExternalBehaviorGateReceipt."
+            )
+        behavior_gate.require_publication_approval()
+        self.assert_live()
+        try:
+            qkvo_bake = self.qkvo_handle.bake_for_publication()
+            swiglu_bake = self.swiglu_handle.bake_for_publication()
+            native_after = certify_native_dense_gqa_target(
+                self.model,
+                exact_unique_parameters=self.exact_unique_parameters,
+                layout=self.topology.layout,
+                stage=self.stage,
+                require_dense_swiglu=True,
+            )
+            if (
+                native_after.structure_sha256 != self.native_before.structure_sha256
+                or native_after.state_key_sha256 != self.native_before.state_key_sha256
+                or native_after.state_key_count != self.native_before.state_key_count
+            ):
+                raise ProgressiveTargetPublicationError(
+                    "Combined bake did not restore native state-key topology."
+                )
+        except Exception:
+            self._restore_failed_publication()
+            raise
+        payload = {
+            "schema": EXACT_TARGET_COMPILER_TRANSACTION_PUBLICATION_SCHEMA,
+            "exact_unique_parameters": self.exact_unique_parameters,
+            "exact_budget_match": True,
+            "native_before": self.native_before.as_dict(),
+            "native_after": native_after.as_dict(),
+            "dense_qkvo_bake": qkvo_bake.as_dict(),
+            "dense_gate_up_down_bake": swiglu_bake.as_dict(),
+            "external_behavior_gate": behavior_gate.as_dict(),
+            "stage": None if self.stage is None else self.stage.as_dict(),
+            "parent_compiler_report_sha256": self.parent_compiler_report_sha256,
+            "published_adapter_parameter_count": 0,
+            "published_optimizer_parameter_count": 0,
+            "published_parent_runtime_reference_count": 0,
+            "published_source_sized_sidecar_parameter_count": 0,
+            "native_state_key_topology_restored": True,
+            "output_action_gate_required": True,
+            "free_running_rollout_gate_required": True,
+            "weight_or_activation_similarity_can_promote": False,
+            "behavior_gate_externally_attested": True,
+            "behavior_evidence_revalidated_by_this_module": False,
+            "capability_proven_by_this_module": False,
+            "save_reload_artifact_gate_still_required": True,
+        }
+        payload["publication_transaction_sha256"] = _canonical_sha256(payload)
+        self.publication_report = payload
+        return payload
+
+    def __enter__(self) -> ExactTargetCompilerTransaction:
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        del exc_type, exc, traceback
+        if self.is_live:
+            self.rollback()
+
+
 def install_exact_target_qkvo_bridge(
     model: nn.Module,
     *,
@@ -964,6 +1358,94 @@ def install_exact_target_qkvo_bridge(
     )
 
 
+def install_exact_target_compiler_transaction(
+    model: nn.Module,
+    *,
+    exact_unique_parameters: int,
+    qkvo_sites: Sequence[DenseGQASite],
+    qkvo_rank: int,
+    swiglu_layer_indices: Sequence[int],
+    swiglu_rank: int,
+    layout: DecoderLayout | None = None,
+    stage: ProgressiveDenseGQAStage | None = None,
+    qkvo_owner_name: str = "dense_gqa_qkvo_residual_registry",
+    swiglu_owner_name: str = "dense_swiglu_projection_residual_registry",
+    initialization_seed: int = 0,
+    parent_compiler_report_sha256: str | None = None,
+) -> ExactTargetCompilerTransaction:
+    """Open one exact-budget QKVO + Gate/Up/Down compiler transaction."""
+
+    expected = _positive_int(exact_unique_parameters, "exact_unique_parameters")
+    if parent_compiler_report_sha256 is not None:
+        parent_compiler_report_sha256 = _sha256(
+            parent_compiler_report_sha256,
+            "parent_compiler_report_sha256",
+        )
+    topology = _resolve_dense_gqa_topology(
+        model,
+        layout,
+        require_dense_swiglu=True,
+    )
+    native = certify_native_dense_gqa_target(
+        model,
+        exact_unique_parameters=expected,
+        layout=topology.layout,
+        stage=stage,
+        require_dense_swiglu=True,
+    )
+    try:
+        swiglu_handle = install_dense_swiglu_projection_residual_adapter(
+            model,
+            topology.mlp_modules,
+            layer_indices=swiglu_layer_indices,
+            hidden_size=topology.layout.hidden_size,
+            intermediate_size=topology.layout.intermediate_size,
+            rank=swiglu_rank,
+            projection_names=topology.swiglu_projection_names,
+            owner_name=swiglu_owner_name,
+            initialization_seed=initialization_seed,
+        )
+    except DenseSwiGLUProjectionResidualTopologyError as error:
+        raise ProgressiveTargetBridgeError(str(error)) from error
+    try:
+        qkvo_handle = install_dense_gqa_qkvo_residual_adapter(
+            model,
+            topology.attention_modules,
+            geometry=topology.geometry,
+            sites=qkvo_sites,
+            rank=qkvo_rank,
+            projection_names=topology.projection_names,
+            owner_name=qkvo_owner_name,
+            initialization_seed=initialization_seed + 1,
+        )
+        if (
+            swiglu_handle.report.model_parameter_count_before != expected
+            or qkvo_handle.report.model_parameter_count_before
+            != swiglu_handle.report.model_parameter_count_installed
+        ):
+            raise ProgressiveTargetBridgeError(
+                "Combined adapter installation disagrees with exact target accounting."
+            )
+    except Exception:
+        if "qkvo_handle" in locals() and qkvo_handle.is_applied:
+            qkvo_handle.rollback()
+        if swiglu_handle.is_applied:
+            swiglu_handle.rollback()
+        raise
+    transaction = ExactTargetCompilerTransaction(
+        model=model,
+        exact_unique_parameters=expected,
+        topology=topology,
+        native_before=native,
+        qkvo_handle=qkvo_handle,
+        swiglu_handle=swiglu_handle,
+        stage=stage,
+        parent_compiler_report_sha256=parent_compiler_report_sha256,
+    )
+    transaction.installation_report()
+    return transaction
+
+
 def install_parent_compiler_result_qkvo_bridge(
     result: HFParentCompilerResult,
     *,
@@ -1001,9 +1483,54 @@ def install_parent_compiler_result_qkvo_bridge(
     )
 
 
+def install_parent_compiler_result_target_native_transaction(
+    result: HFParentCompilerResult,
+    *,
+    qkvo_sites: Sequence[DenseGQASite],
+    qkvo_rank: int,
+    swiglu_layer_indices: Sequence[int],
+    swiglu_rank: int,
+    layout: DecoderLayout | None = None,
+    stage: ProgressiveDenseGQAStage | None = None,
+    qkvo_owner_name: str = "dense_gqa_qkvo_residual_registry",
+    swiglu_owner_name: str = "dense_swiglu_projection_residual_registry",
+    initialization_seed: int = 0,
+) -> ExactTargetCompilerTransaction:
+    """Attach the full target-native transaction to an accepted compilation."""
+
+    if not isinstance(result, HFParentCompilerResult):
+        raise ProgressiveTargetBridgeError("result must be HFParentCompilerResult.")
+    report = result.report
+    if (
+        not report.target_budget_exact
+        or not report.bootstrap_accepted
+        or report.target_unique_parameter_count != report.target_parameter_budget
+    ):
+        raise ProgressiveTargetBridgeError(
+            "Parent compiler result is not an accepted exact-budget child."
+        )
+    return install_exact_target_compiler_transaction(
+        result.child_model,
+        exact_unique_parameters=report.target_unique_parameter_count,
+        qkvo_sites=qkvo_sites,
+        qkvo_rank=qkvo_rank,
+        swiglu_layer_indices=swiglu_layer_indices,
+        swiglu_rank=swiglu_rank,
+        layout=layout,
+        stage=stage,
+        qkvo_owner_name=qkvo_owner_name,
+        swiglu_owner_name=swiglu_owner_name,
+        initialization_seed=initialization_seed,
+        parent_compiler_report_sha256=_canonical_sha256(report.as_dict()),
+    )
+
+
 __all__ = [
     "EXACT_TARGET_QKVO_INSTALLATION_SCHEMA",
     "EXACT_TARGET_QKVO_PUBLICATION_SCHEMA",
+    "EXACT_TARGET_COMPILER_OUTPUT_TRAINING_SCOPE_SCHEMA",
+    "EXACT_TARGET_COMPILER_TRANSACTION_INSTALLATION_SCHEMA",
+    "EXACT_TARGET_COMPILER_TRANSACTION_PUBLICATION_SCHEMA",
     "EXTERNAL_BEHAVIOR_GATE_SCHEMA",
     "NATIVE_TARGET_CERTIFICATE_SCHEMA",
     "PROGRESSIVE_TARGET_PLAN_SCHEMA",
@@ -1012,6 +1539,8 @@ __all__ = [
     "QWEN3_600M_EXACT_PARAMETERS",
     "SMOLLM2_135M_EXACT_PARAMETERS",
     "DenseGQATargetShape",
+    "ExactTargetCompilerOutputTrainingScope",
+    "ExactTargetCompilerTransaction",
     "ExactTargetQKVOPublicationSession",
     "ExternalBehaviorGateReceipt",
     "NativeDenseGQACertificate",
@@ -1022,5 +1551,7 @@ __all__ = [
     "certify_native_dense_gqa_target",
     "default_qwen4b_progressive_target_plan",
     "install_exact_target_qkvo_bridge",
+    "install_exact_target_compiler_transaction",
     "install_parent_compiler_result_qkvo_bridge",
+    "install_parent_compiler_result_target_native_transaction",
 ]

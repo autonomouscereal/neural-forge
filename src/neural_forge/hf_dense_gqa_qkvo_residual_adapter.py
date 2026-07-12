@@ -911,6 +911,7 @@ class InstalledDenseGQAQKVOResidualAdapter:
         self._projection_state_before = dict(projection_state_before)
         self._state: Literal["live", "rolled-back", "baked"] = "live"
         self._bake_report: DenseGQAQKVOBakeReport | None = None
+        self._published_projections: dict[tuple[int, ProjectionRole], nn.Linear] = {}
 
     @property
     def is_applied(self) -> bool:
@@ -1212,7 +1213,54 @@ class InstalledDenseGQAQKVOResidualAdapter:
         )
         self._state = "baked"
         self._bake_report = report
+        self._published_projections = published
         return report
+
+    def restore_prepublication_native(
+        self,
+        *,
+        expected_model_parameter_count: int | None = None,
+    ) -> None:
+        """Undo a bake while a larger atomic publication transaction fails.
+
+        Normal rejection still uses :meth:`rollback` before publication.  This
+        narrower escape hatch exists so a transaction that composes QKVO with
+        another independently baked native operator can restore the exact
+        pre-transaction child if the later bake or final certificate fails.
+        """
+
+        if self._state == "live":
+            self.rollback()
+            return
+        if self._state == "rolled-back":
+            return
+        for (layer_index, role), published in self._published_projections.items():
+            name = self.report.projection_names[role]
+            if (
+                getattr(self.attention_modules[layer_index], name, None)
+                is not published
+            ):
+                raise DenseGQAQKVOResidualTopologyError(
+                    "Published dense QKVO ownership changed; restoration is unsafe."
+                )
+        for (layer_index, role), original in self._original_projections.items():
+            name = self.report.projection_names[role]
+            setattr(self.attention_modules[layer_index], name, original)
+        self._assert_base_unchanged()
+        expected_count = (
+            self.report.model_parameter_count_before
+            if expected_model_parameter_count is None
+            else _index(
+                expected_model_parameter_count,
+                "expected_model_parameter_count",
+                positive=True,
+            )
+        )
+        if _unique_parameter_count(self.model) != expected_count:
+            raise DenseGQAQKVOResidualTopologyError(
+                "Prepublication QKVO restoration changed the native budget."
+            )
+        self._state = "rolled-back"
 
     def __enter__(self) -> InstalledDenseGQAQKVOResidualAdapter:
         return self
