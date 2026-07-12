@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Seal the real 52-prompt contract for exact target-native Qwen stage 1.
+"""Seal authenticated exact target-native Qwen stage contracts.
 
-The source is the existing 2,906-row canonical Neural Forge JSONL corpus.  No
-prompt text is synthesized or replicated.  Unique texts are placed in stable
-content-hash order, tokenized with the pinned Qwen tokenizer, and greedily
-selected only when their complete >=8-token prefix inventory is disjoint from
-all previously selected rows.  The first 24 become fit, the next 12 candidate,
-and the next 16 sealed.  Model weights are content-addressed but never loaded.
+The base mode derives the original 52-prompt contract from the existing
+2,906-row canonical Neural Forge corpus without synthesizing prompts.  The
+continuation modes reuse and authenticate terminal run evidence, retained
+factor packs, immutable behavior splits, and the compiled-child cache.  The
+output-Jacobian mode prepares a diagnostic-only contract and never loads model
+weights or starts training.
 """
 
 from __future__ import annotations
@@ -16,12 +16,22 @@ import hashlib
 import importlib.util
 import json
 import os
+import shutil
+import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+import torch
+
 import run_qwen_exact_target_native_stage as stage
 import prepare_qwen_exact_target_native_continuation_splits as continuation_splits
+from neural_forge.hf_compiled_child_cache import (
+    CACHE_RECEIPT_FILENAME,
+    CompiledChildCacheError,
+    CompilerIdentity,
+    verify_compiled_child_cache,
+)
 from neural_forge.hf_target_native_behavior_distillation import BehaviorPrompt
 
 
@@ -49,6 +59,8 @@ DEFAULT_OUTPUT = Path(
     "/mnt/ai_data/neural-forge/prereg/qwen_exact_target_native_stage1_20260712"
 )
 DEFAULT_COMPILER_CACHE_ROOT = Path("/mnt/ai_data/neural-forge/compiled_child_cache")
+OUTPUT_JACOBIAN_AUDIT_COUNTS = {"fit": 120, "candidate": 24, "sealed": 32}
+OUTPUT_JACOBIAN_AUDIT_MODE = "authenticated-output-jacobian-audit"
 
 
 class StagePreparationError(RuntimeError):
@@ -1164,6 +1176,944 @@ def prepare_lexical_continuation_stage(
     return report
 
 
+def _json_object_copy(value: Any, name: str) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise StagePreparationError(f"{name} must be a JSON object.")
+    try:
+        copied = json.loads(
+            json.dumps(
+                dict(value),
+                allow_nan=False,
+                ensure_ascii=True,
+                sort_keys=True,
+            )
+        )
+    except (TypeError, ValueError) as error:
+        raise StagePreparationError(f"{name} is not canonical JSON.") from error
+    if not isinstance(copied, dict):  # pragma: no cover - mapping invariant
+        raise StagePreparationError(f"{name} must remain a JSON object.")
+    return copied
+
+
+def _reported_path(value: Any, *, base: Path, name: str) -> Path:
+    if not isinstance(value, str) or not value.strip():
+        raise StagePreparationError(f"{name} must be a nonempty path string.")
+    path = Path(value).expanduser()
+    return (base / path).resolve() if not path.is_absolute() else path.resolve()
+
+
+def _historical_implementation_authentication(
+    source_preregistration: Mapping[str, Any],
+    source_report: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Verify the persisted preflight proof without equating old and live code."""
+
+    implementation = source_preregistration.get("implementation")
+    authentication = source_report.get("implementation_authentication")
+    source_fields = {
+        "runner_sha256": "runner",
+        "trainer_sha256": "trainer",
+        "compiler_cache_sha256": "compiler_cache",
+        "lexical_adapter_sha256": "lexical_adapter",
+        "progressive_bridge_sha256": "progressive_bridge",
+        "qkvo_adapter_sha256": "qkvo_adapter",
+        "swiglu_adapter_sha256": "swiglu_adapter",
+    }
+    expected_implementation_fields = {
+        "trainer_module",
+        *source_fields,
+    }
+    expected_authentication_fields = {
+        "authenticated_before_model_access",
+        *source_fields.values(),
+    }
+    if (
+        not isinstance(implementation, Mapping)
+        or set(implementation) != expected_implementation_fields
+        or implementation.get("trainer_module") != stage.CANONICAL_TRAINER_MODULE
+        or not isinstance(authentication, Mapping)
+        or set(authentication) != expected_authentication_fields
+        or authentication.get("authenticated_before_model_access") is not True
+    ):
+        raise StagePreparationError(
+            "Source preregistration does not contain its exact historical lexical "
+            "implementation proof."
+        )
+    for source_field, evidence_field in source_fields.items():
+        expected_sha = stage._require_sha256(
+            implementation.get(source_field),
+            f"source_preregistration.implementation.{source_field}",
+        )
+        evidence = authentication.get(evidence_field)
+        evidence_path = (
+            None
+            if not isinstance(evidence, Mapping)
+            else Path(str(evidence.get("path", ""))).expanduser()
+        )
+        if (
+            not isinstance(evidence, Mapping)
+            or evidence.get("sha256") != expected_sha
+            or evidence_path is None
+            or not evidence_path.is_absolute()
+            or evidence_path.is_symlink()
+            or not evidence_path.is_file()
+        ):
+            raise StagePreparationError(
+                f"Source implementation evidence {evidence_field!r} does not "
+                "authenticate its preregistered SHA-256."
+            )
+    trainer_evidence = authentication["trainer"]
+    if trainer_evidence.get("module") != stage.CANONICAL_TRAINER_MODULE:
+        raise StagePreparationError(
+            "Source trainer implementation evidence names the wrong module."
+        )
+    return _json_object_copy(
+        authentication, "source_report.implementation_authentication"
+    )
+
+
+def prepare_output_jacobian_audit_stage(
+    *,
+    output_dir: Path,
+    source_run_report: Path,
+) -> dict[str, Any]:
+    """Seal one model-free audit over the terminal lexical-v2 factor state."""
+
+    output = output_dir.expanduser().resolve()
+    if output.exists():
+        raise StagePreparationError("output_dir must not already exist.")
+    source_report_path = source_run_report.expanduser().resolve()
+    if not source_report_path.is_file():
+        raise StagePreparationError("Output-Jacobian source report does not exist.")
+    source_report_sha = stage._file_sha256(source_report_path)
+    source_report = stage._strict_json(source_report_path)
+    if not isinstance(source_report, Mapping):
+        raise StagePreparationError("Output-Jacobian source report is malformed.")
+
+    trainer_evidence = source_report.get("trainer_evidence")
+    pre_bake_decisions = source_report.get("pre_bake_behavior_decisions")
+    if (
+        source_report.get("schema") != stage.RUN_SCHEMA
+        or source_report.get("status") != "rejected"
+        or source_report.get("reason") != "fit-gate-rejected"
+        or source_report.get("rollback_exact") is not True
+        or source_report.get("model_checkpoint_written") is not False
+        or source_report.get("standalone_compaction_passed") is not False
+        or source_report.get("publication") is not None
+        or source_report.get("post_bake_behavior_decisions") is not None
+        or source_report.get("native_factor_bake_performed") not in {None, False}
+        or source_report.get("fresh_reload_certificate") is not None
+    ):
+        raise StagePreparationError(
+            "Output-Jacobian audit requires the terminal pre-bake fit-gate "
+            "rejection with exact rollback and no model checkpoint."
+        )
+    if (
+        not isinstance(trainer_evidence, Mapping)
+        or not isinstance(trainer_evidence.get("candidate_metrics"), Mapping)
+        or trainer_evidence.get("candidate_gate_passed") is not False
+        or trainer_evidence.get("sealed_evaluation_unlocked") is not False
+        or trainer_evidence.get("sealed_metrics") is not None
+        or not isinstance(pre_bake_decisions, Mapping)
+        or not isinstance(pre_bake_decisions.get("candidate"), Mapping)
+        or pre_bake_decisions["candidate"].get("passed") is not False
+        or pre_bake_decisions.get("sealed") is not None
+    ):
+        raise StagePreparationError(
+            "Source candidate must be evaluated and exposed while the sealed "
+            "domain remains locked."
+        )
+    trainer_evidence_sha = stage._require_sha256(
+        source_report.get("trainer_evidence_sha256"),
+        "source_run_report.trainer_evidence_sha256",
+    )
+    if stage._canonical_sha256(trainer_evidence) != trainer_evidence_sha:
+        raise StagePreparationError("Source trainer evidence hash does not verify.")
+
+    factor_record = source_report.get("factor_pack")
+    if not isinstance(factor_record, Mapping) or set(factor_record) != {
+        "path",
+        "sha256",
+    }:
+        raise StagePreparationError("Source report factor-pack binding is malformed.")
+    factor_path = _reported_path(
+        factor_record.get("path"),
+        base=source_report_path.parent,
+        name="source_run_report.factor_pack.path",
+    )
+    factor_sha = stage._require_sha256(
+        factor_record.get("sha256"), "source_run_report.factor_pack.sha256"
+    )
+    if not factor_path.is_file() or stage._file_sha256(factor_path) != factor_sha:
+        raise StagePreparationError("Source lexical-v2 factor pack is absent or changed.")
+    try:
+        envelope = torch.load(factor_path, map_location="cpu", weights_only=True)
+        (
+            factor_payload,
+            factor_state_sha,
+            envelope_provenance,
+            factor_envelope_schema,
+            trainer_factor_schema,
+            factor_lexical_rank,
+        ) = stage._authenticate_continuation_factor_payload(
+            envelope,
+            lexical_rank=stage.LEXICAL_RANK,
+        )
+    except (OSError, RuntimeError, TypeError, ValueError) as error:
+        raise StagePreparationError(
+            "Source factor pack is not an authenticated exact lexical-v2 payload."
+        ) from error
+    manifest = trainer_evidence.get("factor_pack_manifest")
+    expected_manifest_fields = {
+        "schema",
+        "factor_count",
+        "factors",
+        "factor_state_sha256",
+        "parent_state_included",
+        "native_child_state_included",
+        "optimizer_state_included",
+        "lexical_rank",
+    }
+    payload_manifest = {
+        key: value for key, value in factor_payload.items() if key != "factor_tensors"
+    }
+    if (
+        factor_envelope_schema != stage.FACTOR_PACK_V2_SCHEMA
+        or trainer_factor_schema != stage.TRAINER_FACTOR_PACK_V2_SCHEMA
+        or factor_lexical_rank != stage.LEXICAL_RANK
+        or not isinstance(manifest, Mapping)
+        or set(manifest) != expected_manifest_fields
+        or manifest.get("schema") != stage.TRAINER_FACTOR_PACK_V2_SCHEMA
+        or manifest.get("factor_count") != stage.LEXICAL_TARGET_NATIVE_FACTOR_COUNT
+        or manifest.get("lexical_rank") != stage.LEXICAL_RANK
+        or manifest.get("factor_state_sha256") != factor_state_sha
+        or any(
+            manifest.get(name) is not False
+            for name in (
+                "parent_state_included",
+                "native_child_state_included",
+                "optimizer_state_included",
+            )
+        )
+        or not isinstance(manifest.get("factors"), list)
+        or len(manifest["factors"]) != stage.LEXICAL_TARGET_NATIVE_FACTOR_COUNT
+        or dict(manifest) != payload_manifest
+    ):
+        raise StagePreparationError(
+            "Source trainer evidence and retained pack do not prove the exact "
+            "rank-32 18-factor v2 state."
+        )
+    factor_acquisition = source_report.get("factor_acquisition")
+    if (
+        not isinstance(factor_acquisition, Mapping)
+        or factor_acquisition.get("selected_factor_state_sha256")
+        != factor_state_sha
+        or factor_acquisition.get("target_native_factors_acquired_behavior") is not True
+    ):
+        raise StagePreparationError(
+            "Source report does not bind the retained v2 factors to behavior "
+            "acquisition."
+        )
+
+    source_prereg_path = _reported_path(
+        source_report.get("preregistration"),
+        base=source_report_path.parent,
+        name="source_run_report.preregistration",
+    )
+    source_prereg_sha = stage._require_sha256(
+        source_report.get("preregistration_sha256"),
+        "source_run_report.preregistration_sha256",
+    )
+    source_evaluation_sha = stage._require_sha256(
+        source_report.get("evaluation_contract_sha256"),
+        "source_run_report.evaluation_contract_sha256",
+    )
+    if (
+        not source_prereg_path.is_file()
+        or stage._file_sha256(source_prereg_path) != source_prereg_sha
+    ):
+        raise StagePreparationError(
+            "Terminal report's source preregistration path/SHA-256 does not verify."
+        )
+    source_prereg = stage._strict_json(source_prereg_path)
+    if not isinstance(source_prereg, Mapping):
+        raise StagePreparationError("Source preregistration is malformed.")
+    if (
+        source_prereg.get("schema") != stage.PREREGISTRATION_SCHEMA
+        or source_prereg.get("sealed_before_model_access") is not True
+        or "output_jacobian_audit" in source_prereg
+        or source_prereg.get("lexical_residual")
+        != {
+            "rank": stage.LEXICAL_RANK,
+            "vocab_size": stage.LEXICAL_VOCAB_SIZE,
+            "hidden_size": stage.LEXICAL_HIDDEN_SIZE,
+            "untied_required": True,
+        }
+    ):
+        raise StagePreparationError(
+            "Terminal source is not the exact lexical stage preregistration."
+        )
+
+    source_base = source_prereg_path.parent
+    try:
+        parent_binding = stage._artifact_binding(
+            source_prereg.get("parent"),
+            name="parent",
+            base=source_base,
+            expected_parameters=stage.QWEN3_4B_EXACT_PARAMETERS,
+        )
+        target_binding = stage._artifact_binding(
+            source_prereg.get("blank_target"),
+            name="blank_target",
+            base=source_base,
+            expected_parameters=stage.QWEN3_1P4B_EXACT_PARAMETERS,
+        )
+        parent_authentication = stage._authenticate_artifact(parent_binding)
+        target_authentication = stage._authenticate_artifact(target_binding)
+    except stage.ExactTargetNativeStageError as error:
+        raise StagePreparationError(
+            "Source parent/target artifact authentication failed."
+        ) from error
+    reported_parent = source_report.get("parent")
+    reported_target = source_report.get("target")
+    if (
+        not isinstance(reported_parent, Mapping)
+        or reported_parent.get("path") != str(parent_binding.path)
+        or reported_parent.get("exact_unique_parameters")
+        != stage.QWEN3_4B_EXACT_PARAMETERS
+        or not isinstance(reported_target, Mapping)
+        or reported_target.get("path") != str(target_binding.path)
+        or reported_target.get("exact_unique_parameters")
+        != stage.QWEN3_1P4B_EXACT_PARAMETERS
+    ):
+        raise StagePreparationError(
+            "Source report parent/target bindings disagree with its preregistration."
+        )
+    target_config = stage._strict_json(target_binding.path / "config.json")
+    if not isinstance(target_config, Mapping) or (
+        target_config.get("vocab_size") != stage.LEXICAL_VOCAB_SIZE
+        or target_config.get("hidden_size") != stage.LEXICAL_HIDDEN_SIZE
+        or target_config.get("tie_word_embeddings") is not False
+    ):
+        raise StagePreparationError(
+            "Source target is not the pinned untied lexical boundary."
+        )
+
+    raw_splits = source_prereg.get("splits")
+    reported_splits = source_report.get("splits")
+    if (
+        not isinstance(raw_splits, Mapping)
+        or set(raw_splits) != set(OUTPUT_JACOBIAN_AUDIT_COUNTS)
+        or not isinstance(reported_splits, Mapping)
+        or set(reported_splits) != set(OUTPUT_JACOBIAN_AUDIT_COUNTS)
+    ):
+        raise StagePreparationError("Source behavior split bindings are incomplete.")
+    authenticated_splits: dict[str, Any] = {}
+    split_bindings: dict[str, dict[str, Any]] = {}
+    for role, expected_count in OUTPUT_JACOBIAN_AUDIT_COUNTS.items():
+        try:
+            split = stage._load_split(raw_splits[role], name=role, base=source_base)
+        except stage.ExactTargetNativeStageError as error:
+            raise StagePreparationError(
+                f"Source {role} split failed content authentication."
+            ) from error
+        reported = reported_splits[role]
+        if (
+            len(split.row_ids) != expected_count
+            or not isinstance(reported, Mapping)
+            or set(reported) != {"path", "sha256", "row_count"}
+            or reported.get("path") != str(split.path)
+            or reported.get("sha256") != split.sha256
+            or reported.get("row_count") != expected_count
+        ):
+            raise StagePreparationError(
+                f"Source {role} split does not match its terminal {expected_count}-row "
+                "binding."
+            )
+        authenticated_splits[role] = split
+        split_bindings[role] = {
+            "path": str(split.path),
+            "sha256": split.sha256,
+            "expected_count": expected_count,
+        }
+    for left_index, left in enumerate(("fit", "candidate", "sealed")):
+        for right in ("fit", "candidate", "sealed")[left_index + 1 :]:
+            if (
+                set(authenticated_splits[left].row_ids)
+                & set(authenticated_splits[right].row_ids)
+                or set(authenticated_splits[left].prompt_sha256s)
+                & set(authenticated_splits[right].prompt_sha256s)
+            ):
+                raise StagePreparationError(
+                    f"Source split identities overlap between {left} and {right}."
+                )
+
+    raw_compiler_split = source_prereg.get("compiler_split")
+    if not isinstance(raw_compiler_split, Mapping):
+        raise StagePreparationError("Source preregistration omits compiler_split.")
+    try:
+        compiler_split = stage._load_split(
+            raw_compiler_split, name="fit", base=source_base
+        )
+    except stage.ExactTargetNativeStageError as error:
+        raise StagePreparationError(
+            "Source immutable compiler split failed authentication."
+        ) from error
+    reported_compiler_split = source_report.get("compiler_split")
+    if (
+        not isinstance(reported_compiler_split, Mapping)
+        or set(reported_compiler_split)
+        != {"path", "sha256", "row_count", "reuses_behavior_fit"}
+        or reported_compiler_split.get("path") != str(compiler_split.path)
+        or reported_compiler_split.get("sha256") != compiler_split.sha256
+        or reported_compiler_split.get("row_count") != len(compiler_split.row_ids)
+        or reported_compiler_split.get("reuses_behavior_fit") is not False
+    ):
+        raise StagePreparationError(
+            "Source compiler split disagrees with its terminal immutable binding."
+        )
+    for heldout_role in ("candidate", "sealed"):
+        heldout = authenticated_splits[heldout_role]
+        if (
+            set(compiler_split.row_ids) & set(heldout.row_ids)
+            or set(compiler_split.prompt_sha256s) & set(heldout.prompt_sha256s)
+        ):
+            raise StagePreparationError(
+                f"Compiler split overlaps behavior {heldout_role}."
+            )
+
+    thresholds = source_prereg.get("thresholds")
+    reported_thresholds = source_report.get("thresholds")
+    if (
+        not isinstance(thresholds, Mapping)
+        or set(thresholds) != {"fit", "candidate", "sealed"}
+        or not isinstance(reported_thresholds, Mapping)
+    ):
+        raise StagePreparationError("Source threshold bindings are incomplete.")
+    normalized_thresholds: dict[str, Any] = {}
+    for role in ("fit", "candidate", "sealed"):
+        try:
+            normalized_thresholds[role] = stage.BehaviorThresholds.from_mapping(
+                thresholds[role], f"source_preregistration.thresholds.{role}"
+            ).as_dict()
+        except stage.ExactTargetNativeStageError as error:
+            raise StagePreparationError(
+                f"Source {role} thresholds are malformed."
+            ) from error
+    if normalized_thresholds != dict(reported_thresholds):
+        raise StagePreparationError(
+            "Source report thresholds disagree with its preregistration."
+        )
+    compiler = _json_object_copy(source_prereg.get("compiler"), "source compiler")
+    training = _json_object_copy(source_prereg.get("training"), "source training")
+    if training.get("selection_policy") != "rollout-first-acquisition":
+        raise StagePreparationError("Source training selection policy changed.")
+    required_trainer_evidence = {
+        "checkpoints",
+        "selected_step",
+        "selection_policy",
+        "fit_metrics",
+        "candidate_metrics",
+        "sealed_metrics",
+        "training_audit",
+        "factor_pack_manifest",
+        "domain_binding_sha256",
+        "schedule_sha256",
+        "candidate_thresholds",
+        "candidate_gate_passed",
+        "sealed_evaluation_unlocked",
+    }
+    training_audit = trainer_evidence.get("training_audit")
+    gradient_audit = (
+        training_audit.get("gradient_activation")
+        if isinstance(training_audit, Mapping)
+        else None
+    )
+    manifest_factor_names = tuple(
+        str(row.get("name"))
+        for row in manifest["factors"]
+        if isinstance(row, Mapping)
+    )
+    expected_factor_name_set = set(manifest_factor_names)
+    output_only_false_fields = {
+        "weight_targets_used",
+        "activation_targets_used",
+        "hidden_state_targets_used",
+        "attention_map_targets_used",
+        "cache_value_targets_used",
+    }
+    if (
+        not required_trainer_evidence.issubset(trainer_evidence)
+        or trainer_evidence.get("internal_numeric_matching_used") is not False
+        or trainer_evidence.get("selection_uses_internal_numeric_targets") is not False
+        or trainer_evidence.get("selection_policy") != training["selection_policy"]
+        or trainer_evidence.get("candidate_thresholds")
+        != normalized_thresholds["candidate"]
+        or not isinstance(training_audit, Mapping)
+        or training_audit.get("optimizer_steps") != training.get("steps")
+        or not isinstance(training_audit.get("optimizer_class"), str)
+        or not str(training_audit.get("optimizer_class", "")).strip()
+        or any(
+            not isinstance(training_audit.get(name), int)
+            or isinstance(training_audit.get(name), bool)
+            or int(training_audit[name]) <= 0
+            for name in (
+                "parent_greedy_prefix_count",
+                "child_on_policy_prefix_count",
+                "parent_output_forward_count",
+                "child_output_forward_count",
+                "parent_greedy_cache_prompt_count",
+                "parent_greedy_cache_forward_count",
+            )
+        )
+        or training_audit.get("invariant_parent_greedy_rows_cached_once") is not True
+        or training_audit.get("teacher_signal")
+        != "parent-causal-output-logits-and-actions"
+        or training_audit.get("parent_greedy_prefix_training") is not True
+        or training_audit.get("child_greedy_on_policy_prefix_training") is not True
+        or any(training_audit.get(name) is not False for name in output_only_false_fields)
+        or not isinstance(gradient_audit, Mapping)
+        or set(gradient_audit.get("factor_names", ())) != expected_factor_name_set
+        or set(gradient_audit.get("finite_gradient_factor_names", ()))
+        != expected_factor_name_set
+        or set(gradient_audit.get("nonzero_gradient_factor_names", ()))
+        != expected_factor_name_set
+        or gradient_audit.get("backward_observation_count", 0) <= 0
+        or gradient_audit.get("every_qkvo_gud_factor_gradient_activated") is not True
+        or gradient_audit.get("every_lexical_factor_gradient_activated") is not True
+        or gradient_audit.get("every_combined_factor_gradient_activated") is not True
+        or gradient_audit.get("combined_factor_count")
+        != stage.LEXICAL_TARGET_NATIVE_FACTOR_COUNT
+    ):
+        raise StagePreparationError(
+            "Source trainer evidence does not prove complete output-only lexical-v2 "
+            "learning."
+        )
+    try:
+        fit_passed, fit_decision = stage._behavior_gate(
+            trainer_evidence.get("fit_metrics"),
+            stage.BehaviorThresholds.from_mapping(
+                thresholds["fit"], "source_preregistration.thresholds.fit"
+            ),
+        )
+        candidate_passed, candidate_decision = stage._behavior_gate(
+            trainer_evidence.get("candidate_metrics"),
+            stage.BehaviorThresholds.from_mapping(
+                thresholds["candidate"],
+                "source_preregistration.thresholds.candidate",
+            ),
+        )
+        recomputed_acquisition = stage._factor_acquisition_claim(trainer_evidence)
+    except stage.ExactTargetNativeStageError as error:
+        raise StagePreparationError(
+            "Source trainer behavior/acquisition evidence does not authenticate."
+        ) from error
+    expected_pre_bake_decisions = {
+        "fit": fit_decision,
+        "candidate": candidate_decision,
+        "sealed": None,
+    }
+    if (
+        fit_passed
+        or candidate_passed
+        or trainer_evidence.get("candidate_gate_passed") is not candidate_passed
+        or trainer_evidence.get("sealed_evaluation_unlocked") is not False
+        or trainer_evidence.get("sealed_metrics") is not None
+        or source_report.get("pre_bake_behavior_decisions")
+        != expected_pre_bake_decisions
+        or source_report.get("behavior_decisions") != expected_pre_bake_decisions
+        or source_report.get("factor_acquisition") != recomputed_acquisition
+        or recomputed_acquisition.get("selected_factor_state_sha256")
+        != factor_state_sha
+        or recomputed_acquisition.get("target_native_factors_acquired_behavior")
+        is not True
+    ):
+        raise StagePreparationError(
+            "Source fit/candidate decisions or selected checkpoint acquisition were "
+            "not reproduced exactly."
+        )
+    validation_count = compiler.get(
+        "canonical_validation_count", max(1, len(compiler_split.row_ids) // 5)
+    )
+    if (
+        isinstance(validation_count, bool)
+        or not isinstance(validation_count, int)
+        or validation_count <= 0
+        or validation_count >= len(compiler_split.row_ids)
+    ):
+        raise StagePreparationError(
+            "Source compiler validation partition is not reproducible."
+        )
+    boundary = len(compiler_split.row_ids) - validation_count
+    calibration_row_ids = list(compiler_split.row_ids[:boundary])
+    validation_row_ids = list(compiler_split.row_ids[boundary:])
+    expected_report_parent_evidence = {
+        "source_split": "compiler_split",
+        "source_fit_artifact_sha256": compiler_split.sha256,
+        "calibration_row_count": len(calibration_row_ids),
+        "calibration_row_ids_sha256": stage._canonical_sha256(calibration_row_ids),
+        "validation_row_count": len(validation_row_ids),
+        "validation_row_ids_sha256": stage._canonical_sha256(validation_row_ids),
+        "candidate_split_used": False,
+        "sealed_split_used": False,
+        "partition_fixed_before_model_access": True,
+    }
+    if source_report.get("canonical_parent_evidence") != (
+        expected_report_parent_evidence
+    ):
+        raise StagePreparationError(
+            "Source run report compiler partition evidence does not reproduce."
+        )
+    historical_evaluation_parent_evidence = {
+        "source_split": "authenticated-compiler-split-deterministic-partition",
+        "candidate_split_used": False,
+        "sealed_split_used": False,
+        "compiler_options": compiler,
+    }
+
+    historical_implementation = _historical_implementation_authentication(
+        source_prereg, source_report
+    )
+    computed_artifact_authentication = {
+        "parent": parent_authentication,
+        "blank_target": target_authentication,
+        "split_sha256s": {
+            role: authenticated_splits[role].sha256
+            for role in ("fit", "candidate", "sealed")
+        },
+        "compiler_split_sha256": compiler_split.sha256,
+    }
+    if source_report.get("artifact_authentication") != computed_artifact_authentication:
+        raise StagePreparationError(
+            "Source artifact authentication evidence does not reproduce."
+        )
+    lexical_residual = _json_object_copy(
+        source_prereg.get("lexical_residual"), "source lexical_residual"
+    )
+    source_evaluation_preimage = {
+        "split_sha256s": computed_artifact_authentication["split_sha256s"],
+        "compiler_split_sha256": compiler_split.sha256,
+        "thresholds": normalized_thresholds,
+        "selection_domain": "causal-output-actions-and-free-rollouts-only",
+        "qkvo_sites": stage.QKVO_SITE_COUNT,
+        "qkvo_rank": stage.QKVO_RANK,
+        "swiglu_layers": stage.SWIGLU_LAYER_COUNT,
+        "swiglu_rank": stage.SWIGLU_RANK,
+        "lexical_residual": lexical_residual,
+        "implementation": historical_implementation,
+        "runtime_dtype": "float16",
+        "runtime_attention_implementation": (
+            stage.CANONICAL_ATTENTION_IMPLEMENTATION
+        ),
+        "canonical_parent_evidence": historical_evaluation_parent_evidence,
+    }
+    if (
+        source_report.get("selection_domain")
+        != "causal-output-actions-and-free-rollouts-only"
+        or source_report.get("runtime_dtype") != "float16"
+        or source_report.get("runtime_attention_implementation")
+        != stage.CANONICAL_ATTENTION_IMPLEMENTATION
+        or source_report.get("lexical_residual") != lexical_residual
+        or stage._canonical_sha256(source_evaluation_preimage)
+        != source_evaluation_sha
+    ):
+        raise StagePreparationError(
+            "Source evaluation-contract SHA-256 does not reproduce from its "
+            "persisted preregistration evidence."
+        )
+
+    source_cache = source_prereg.get("compiler_cache")
+    report_cache_binding = source_report.get("compiler_cache")
+    cache_evidence = source_report.get("compiled_child_cache")
+    cache_fields = {
+        "compiler_identity_sha256": "expected_compiler_identity_sha256",
+        "receipt_sha256": "expected_receipt_sha256",
+        "compiler_report_sha256": "expected_compiler_report_sha256",
+        "state_dict_sha256": "expected_state_dict_sha256",
+        "artifact_tree_sha256": "expected_artifact_tree_sha256",
+    }
+    expected_cache_keys = {"root", "require_hit", *cache_fields.values()}
+    if (
+        not isinstance(source_cache, Mapping)
+        or set(source_cache) != expected_cache_keys
+        or source_cache.get("require_hit") is not True
+        or not isinstance(report_cache_binding, Mapping)
+        or set(report_cache_binding)
+        != {
+            *expected_cache_keys,
+            "content_addressed",
+            "copied_into_run_output",
+        }
+        or report_cache_binding.get("require_hit") is not True
+        or report_cache_binding.get("content_addressed") is not True
+        or report_cache_binding.get("copied_into_run_output") is not False
+        or not isinstance(cache_evidence, Mapping)
+        or cache_evidence.get("disposition") != "hit"
+        or cache_evidence.get("verified_before_factor_install") is not True
+    ):
+        raise StagePreparationError(
+            "Output-Jacobian source requires a verified immutable compiler-cache hit."
+        )
+    cache_root = _reported_path(
+        source_cache.get("root"), base=source_base, name="compiler_cache.root"
+    )
+    cache_path = _reported_path(
+        cache_evidence.get("path"),
+        base=source_report_path.parent,
+        name="compiled_child_cache.path",
+    )
+    if _reported_path(
+        report_cache_binding.get("root"),
+        base=source_report_path.parent,
+        name="source_run_report.compiler_cache.root",
+    ) != cache_root:
+        raise StagePreparationError(
+            "Source report and preregistration name different compiler-cache roots."
+        )
+    cache_hashes: dict[str, str] = {}
+    for evidence_name, prereg_name in cache_fields.items():
+        digest = stage._require_sha256(
+            cache_evidence.get(evidence_name),
+            f"source_run_report.compiled_child_cache.{evidence_name}",
+        )
+        if (
+            source_cache.get(prereg_name) != digest
+            or report_cache_binding.get(prereg_name) != digest
+        ):
+            raise StagePreparationError(
+                f"Source cache hash {evidence_name!r} disagrees with its "
+                "preregistration."
+            )
+        cache_hashes[evidence_name] = digest
+    source_compiler_report = source_report.get("compiler_report")
+    if not isinstance(source_compiler_report, Mapping):
+        raise StagePreparationError("Source compiler report is malformed.")
+    receipt_path = cache_path / CACHE_RECEIPT_FILENAME
+    try:
+        receipt_payload = stage._strict_json(receipt_path)
+        if not isinstance(receipt_payload, Mapping):
+            raise StagePreparationError("Cache receipt is not a JSON object.")
+        compiler_identity = CompilerIdentity.from_dict(
+            receipt_payload.get("compiler_identity")
+        )
+        verified_cache = verify_compiled_child_cache(
+            cache_path,
+            expected_identity=compiler_identity,
+            expected_receipt_sha256=cache_hashes["receipt_sha256"],
+            expected_compiler_report_sha256=cache_hashes[
+                "compiler_report_sha256"
+            ],
+            expected_state_dict_sha256=cache_hashes["state_dict_sha256"],
+        )
+    except (CompiledChildCacheError, stage.ExactTargetNativeStageError) as error:
+        raise StagePreparationError(
+            "Source compiler cache receipt/model artifacts failed public verification."
+        ) from error
+    verified_receipt = verified_cache.receipt.as_dict()
+    if (
+        cache_path.is_symlink()
+        or cache_root.is_symlink()
+        or not cache_path.is_dir()
+        or cache_path.parent != cache_root
+        or cache_path.name != cache_hashes["compiler_identity_sha256"]
+        or compiler_identity.compiler_identity_sha256
+        != cache_hashes["compiler_identity_sha256"]
+        or verified_cache.compiler_identity.as_dict() != compiler_identity.as_dict()
+        or verified_cache.receipt.receipt_sha256 != cache_hashes["receipt_sha256"]
+        or verified_receipt["compiler_report"]["canonical_sha256"]
+        != cache_hashes["compiler_report_sha256"]
+        or verified_receipt["model_state"]["state_dict_sha256"]
+        != cache_hashes["state_dict_sha256"]
+        or verified_receipt["artifact_tree"]["tree_sha256"]
+        != cache_hashes["artifact_tree_sha256"]
+        or dict(verified_cache.compiler_report) != dict(source_compiler_report)
+        or stage._canonical_sha256(source_compiler_report)
+        != cache_hashes["compiler_report_sha256"]
+    ):
+        raise StagePreparationError(
+            "Source compiler identity/receipt/report/state/tree claims disagree."
+        )
+
+    # This is the in-memory compiled tensor digest used by the runner after cache
+    # load.  It is intentionally a different hash domain from the serialized
+    # cache receipt's state_dict_sha256 and must remain a separate binding.
+    compiled_state_sha = stage._require_sha256(
+        source_report.get("rollback_state_sha256"),
+        "source_run_report.rollback_state_sha256",
+    )
+    if envelope_provenance != {
+        "reason": "fit-gate-rejected",
+        "preregistration_sha256": source_prereg_sha,
+        "evaluation_contract_sha256": source_evaluation_sha,
+    }:
+        raise StagePreparationError(
+            "Source factor envelope provenance disagrees with the terminal report."
+        )
+
+    module_specs = {
+        "trainer_sha256": stage.CANONICAL_TRAINER_MODULE,
+        "compiler_cache_sha256": "neural_forge.hf_compiled_child_cache",
+        "lexical_adapter_sha256": "neural_forge.hf_dense_lexical_residual_adapter",
+        "progressive_bridge_sha256": "neural_forge.hf_progressive_target_bridge",
+        "qkvo_adapter_sha256": (
+            "neural_forge.hf_dense_gqa_qkvo_residual_adapter"
+        ),
+        "swiglu_adapter_sha256": (
+            "neural_forge.hf_dense_swiglu_projection_residual_adapter"
+        ),
+        "output_jacobian_basis_sha256": stage.OUTPUT_JACOBIAN_BASIS_MODULE,
+        "output_jacobian_sketch_sha256": stage.OUTPUT_JACOBIAN_SKETCH_MODULE,
+        "qkvo_output_jacobian_audit_sha256": (
+            stage.QKVO_OUTPUT_JACOBIAN_AUDIT_MODULE
+        ),
+    }
+    implementation_hashes: dict[str, str] = {}
+    for field_name, module_name in module_specs.items():
+        spec = importlib.util.find_spec(module_name)
+        if spec is None or spec.origin is None:
+            raise StagePreparationError(
+                f"Required output-Jacobian module {module_name!r} is unavailable."
+            )
+        implementation_hashes[field_name] = stage._file_sha256(Path(spec.origin))
+
+    runtime = _json_object_copy(source_prereg.get("runtime"), "source runtime")
+    if runtime != {
+        "dtype": "float16",
+        "attention_implementation": stage.CANONICAL_ATTENTION_IMPLEMENTATION,
+        "explicit_execute_required": True,
+    }:
+        raise StagePreparationError("Source runtime contract is not the pinned stage.")
+    seed = source_prereg.get("seed")
+    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+        raise StagePreparationError("Source seed must be a nonnegative integer.")
+    normalized_parent = _json_object_copy(source_prereg["parent"], "source parent")
+    normalized_parent["path"] = str(parent_binding.path)
+    normalized_target = _json_object_copy(
+        source_prereg["blank_target"], "source blank_target"
+    )
+    normalized_target["path"] = str(target_binding.path)
+    normalized_cache = _json_object_copy(source_cache, "source compiler_cache")
+    normalized_cache["root"] = str(cache_root)
+    preregistration = {
+        "schema": stage.PREREGISTRATION_SCHEMA,
+        "sealed_before_model_access": True,
+        "seed": seed,
+        "implementation": {
+            "runner_sha256": stage._file_sha256(Path(stage.__file__).resolve()),
+            "trainer_module": stage.CANONICAL_TRAINER_MODULE,
+            **implementation_hashes,
+        },
+        "parent": normalized_parent,
+        "blank_target": normalized_target,
+        "compiler_split": {
+            "path": str(compiler_split.path),
+            "sha256": compiler_split.sha256,
+            "expected_count": len(compiler_split.row_ids),
+        },
+        "splits": split_bindings,
+        "thresholds": _json_object_copy(thresholds, "source thresholds"),
+        "compiler": compiler,
+        "training": training,
+        "lexical_residual": lexical_residual,
+        "compiler_cache": normalized_cache,
+        "continuation": {
+            "factor_pack": {"path": str(factor_path), "sha256": factor_sha},
+            "source_run_report": {
+                "path": str(source_report_path),
+                "sha256": source_report_sha,
+            },
+            "expected_factor_state_sha256": factor_state_sha,
+            "expected_compiler_report_sha256": cache_hashes[
+                "compiler_report_sha256"
+            ],
+            "expected_compiled_state_sha256": compiled_state_sha,
+        },
+        "output_jacobian_audit": {
+            "schema": stage.OUTPUT_JACOBIAN_AUDIT_SCHEMA,
+            "source_exposed_candidate_as_fit": True,
+            "basis_split_role": "candidate",
+            "prompt_count": 24,
+            "horizon": 8,
+            "lanes": ["parent-greedy", "child-greedy"],
+            "rank": 8,
+            "sketch_width": 16,
+            "min_normal_fraction": 0.20,
+            "min_guided_over_random_ratio": 1.50,
+            "max_bytes": 268_435_456,
+        },
+        **(
+            {}
+            if "corpus_provenance" not in source_prereg
+            else {
+                "corpus_provenance": _json_object_copy(
+                    source_prereg["corpus_provenance"],
+                    "source corpus_provenance",
+                )
+            }
+        ),
+        "runtime": runtime,
+    }
+    output.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(
+        tempfile.mkdtemp(
+            prefix=f".{output.name}.",
+            suffix=".staging",
+            dir=output.parent,
+        )
+    )
+    try:
+        staged_prereg_path = staging / "preregistration.json"
+        _write_json_exclusive(staged_prereg_path, preregistration)
+        prereg_sha = stage._file_sha256(staged_prereg_path)
+        authenticated = stage.authenticate_preregistration(
+            staged_prereg_path, prereg_sha
+        )
+        if authenticated.output_jacobian_audit is None:
+            raise StagePreparationError(
+                "Live model-free preflight did not authenticate the "
+                "output-Jacobian audit."
+            )
+        final_prereg_path = output / "preregistration.json"
+        report = {
+            "schema": BUILD_SCHEMA,
+            "mode": OUTPUT_JACOBIAN_AUDIT_MODE,
+            "preregistration": str(final_prereg_path),
+            "preregistration_sha256": prereg_sha,
+            "evaluation_contract_sha256": authenticated.evaluation_contract_sha256,
+            "source_run_report": str(source_report_path),
+            "source_run_report_sha256": source_report_sha,
+            "source_preregistration": str(source_prereg_path),
+            "source_preregistration_sha256": source_prereg_sha,
+            "source_evaluation_contract_sha256": source_evaluation_sha,
+            "source_factor_pack_sha256": factor_sha,
+            "source_factor_state_sha256": factor_state_sha,
+            "compiler_split_sha256": compiler_split.sha256,
+            "behavior_split_sha256s": {
+                role: split_bindings[role]["sha256"]
+                for role in ("fit", "candidate", "sealed")
+            },
+            "required_compiler_cache_identity_sha256": cache_hashes[
+                "compiler_identity_sha256"
+            ],
+            "source_candidate_exposed_as_fit": True,
+            "sealed_evaluation_remains_locked": True,
+            "audit_only": True,
+            "model_weights_loaded": False,
+            "model_checkpoint_created": False,
+            "training_launched": False,
+            "ready_for_explicit_preflight": True,
+        }
+        _write_json_exclusive(staging / "build_report.json", report)
+        if output.exists():
+            raise StagePreparationError("output_dir appeared during preparation.")
+        os.rename(staging, output)
+        return report
+    except BaseException:
+        if staging.exists():
+            shutil.rmtree(staging)
+        raise
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
@@ -1172,6 +2122,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
     parser.add_argument("--continuation-source-report", type=Path)
     parser.add_argument("--lexical-continuation-source-report", type=Path)
+    parser.add_argument("--output-jacobian-audit-source-report", type=Path)
     parser.add_argument(
         "--original-split-dir",
         type=Path,
@@ -1190,15 +2141,23 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if (
-        args.continuation_source_report is not None
-        and args.lexical_continuation_source_report is not None
-    ):
+    continuation_modes = (
+        args.continuation_source_report,
+        args.lexical_continuation_source_report,
+        args.output_jacobian_audit_source_report,
+    )
+    if sum(value is not None for value in continuation_modes) > 1:
         raise SystemExit(
-            "Choose either --continuation-source-report or "
-            "--lexical-continuation-source-report, not both."
+            "Choose at most one of --continuation-source-report, "
+            "--lexical-continuation-source-report, or "
+            "--output-jacobian-audit-source-report."
         )
-    if args.lexical_continuation_source_report is not None:
+    if args.output_jacobian_audit_source_report is not None:
+        report = prepare_output_jacobian_audit_stage(
+            output_dir=args.output_dir,
+            source_run_report=args.output_jacobian_audit_source_report,
+        )
+    elif args.lexical_continuation_source_report is not None:
         report = prepare_lexical_continuation_stage(
             output_dir=args.output_dir,
             parent=args.parent,
