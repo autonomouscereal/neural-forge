@@ -1,5 +1,13 @@
 # Neural Forge
 
+This repository is the canonical source tree for the folding project. Historical
+remote experiment copies, local deployment packets, the `chimera-omni` proof
+project, and the 2026 frontier-research corpus are preserved in this repository's
+Git object graph under immutable archive tags/refs; they are not competing active
+source trees. See
+[`docs/CANONICAL_SOURCE_CONSOLIDATION_2026-07-12.md`](docs/CANONICAL_SOURCE_CONSOLIDATION_2026-07-12.md)
+before creating a launcher, checkout, or experimental branch.
+
 Neural Forge is a small, working toolkit for neural checkpoint shape surgery:
 shrinking dense models with neuron merging, expanding models with
 function-preserving width/depth growth, and merging multiple models into a
@@ -28,6 +36,16 @@ A mechanically valid shape is not a successful fold. Promotion requires cached
 parent-relative behavior and generation benchmarks plus manual output inspection
 with zero-recovery results reported separately from any later cleanup training.
 
+The recovered project objective, evidence lineage, accepted incumbents, and
+closed retry lanes are recorded in
+[`docs/PROJECT_OBJECTIVE_AND_EXECUTION_CONTRACT_2026-07-10.md`](docs/PROJECT_OBJECTIVE_AND_EXECUTION_CONTRACT_2026-07-10.md)
+and
+[`docs/PROJECT_LINEAGE_AND_REUSE_MAP_2026-07-10.md`](docs/PROJECT_LINEAGE_AND_REUSE_MAP_2026-07-10.md).
+The experiment catalog and the active cache-aware folding branch are in
+[`docs/FOLDING_DIAGNOSIS_AND_EXPERIMENT_CATALOG_2026-07-11.md`](docs/FOLDING_DIAGNOSIS_AND_EXPERIMENT_CATALOG_2026-07-11.md)
+and
+[`docs/RESIDUAL_ATTENTION_FOLDING_2026-07-11.md`](docs/RESIDUAL_ATTENTION_FOLDING_2026-07-11.md).
+
 ## What works now
 
 - `shrink`: reduce hidden widths by clustering similar neurons, averaging incoming
@@ -53,6 +71,13 @@ with zero-recovery results reported separately from any later cleanup training.
 - `hf-qwen-pair-compose`: zero-gradient Qwen depth/width composition with exact
   singleton/pair donor coverage, activation-costed span selection, transactional
   path fits, and optional fixed-parent-anchor rollout refolding.
+- `experiments/run_qwen_unified_surgery.py`: resumable zero-recovery Qwen3
+  neuron/attention surgery from an executable codebook incumbent. It combines
+  sensitivity evidence, independent candidate validation, cached
+  parent-relative transaction gates, exact rollback, and a bounded Pareto
+  checkpoint frontier. Its byte target is the exact canonical four-file
+  checkpoint artifact; tokenizer assets and the Neural Forge runtime are
+  deliberately reported as separate deployment dependencies.
 - `hf-xfamily-vocab-merge` / `hf-sweep-xfamily`: constrained cross-family
   embedding/lm-head transplant through shared decoded-token anchors.
 - `hf-xfamily-mlp-merge` / `hf-sweep-xfamily-mlp`: constrained cross-family

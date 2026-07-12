@@ -130,6 +130,12 @@ def _features(
 
 def test_nonadjacent_qwen_nodes_score_on_demand_and_apply_role_projection() -> None:
     runtime = _runtime(neuron_use_scales=True)
+    registry_before = runtime.neuron_codebook.registry
+    buffer_devices_before = {
+        "assignments": registry_before.assignments.device,
+        "prototype_source_indices": registry_before.prototype_source_indices.device,
+        "_activation_code": registry_before._activation_code.device,
+    }
     source = (1, 5)
     target = (0, 0)
     features = _features(
@@ -165,6 +171,7 @@ def test_nonadjacent_qwen_nodes_score_on_demand_and_apply_role_projection() -> N
     assert result.target_reached
 
     after = qwen3_runtime_assignment_snapshot(runtime)
+    registry_after = runtime.neuron_codebook.registry
     assert runtime.neuron_codebook is not before_codebook
     assert after.prototype_count == before.prototype_count - 1
     assert after.assignment_source_indices[source[0]][source[1]] == (
@@ -176,12 +183,49 @@ def test_nonadjacent_qwen_nodes_score_on_demand_and_apply_role_projection() -> N
     )
     assert bridge.transactions[0].projection_coefficients == (projection,)
     assert all(parameter.grad is None for parameter in runtime.neuron_codebook.parameters())
+    assert {
+        "assignments": registry_after.assignments.device,
+        "prototype_source_indices": registry_after.prototype_source_indices.device,
+        "_activation_code": registry_after._activation_code.device,
+    } == buffer_devices_before
     work = runtime.neuron_codebook.registry.compaction_work
     assert work.full_registry_clone_count == 0
     assert work.copied_tensor_bytes <= work.result_tensor_bytes
     assert work.peak_live_tensor_bytes_bound == (
         work.source_tensor_bytes + work.result_tensor_bytes + work.maximum_staging_bytes
     )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_compacted_codebook_preserves_single_cuda_device() -> None:
+    runtime = _runtime(neuron_use_scales=True).to("cuda:0")
+    source = (1, 5)
+    target = (0, 0)
+    bridge = Qwen3AdaptiveSurgeryBridge(
+        runtime,
+        _features(runtime, projected_source=source, preferred_target=target),
+        projection_coefficients=(
+            Qwen3ProjectionCoefficients(source, target, 2.0, 3.0, 4.0),
+        ),
+    )
+    source_id = qwen3_neuron_node_id(*source)
+    target_id = qwen3_neuron_node_id(*target)
+
+    result = bridge.run(
+        qwen3_runtime_assignment_snapshot(runtime).tensor_bytes - 1,
+        max_attempts=1,
+        candidate_selector=lambda _context: {
+            "pairs": ((source_id, target_id),),
+        },
+    )
+
+    assert result.target_reached
+    devices = {
+        str(value.device)
+        for value in (*tuple(runtime.parameters()), *tuple(runtime.buffers()))
+        if value.device.type != "meta"
+    }
+    assert devices == {"cuda:0"}
 
 
 def test_projected_scale_setup_must_have_positive_amortized_physical_bytes() -> None:

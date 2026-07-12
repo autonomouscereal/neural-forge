@@ -2,7 +2,7 @@
 set -euo pipefail
 
 python=/home/cereal/model-surgery-lab/venv/bin/python
-repo=/home/cereal/model-surgery-lab/neural-forge-pivot
+repo=/home/cereal/model-surgery-lab/neural-forge-src
 source=/home/cereal/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Base/snapshots/906bfd4b4dc7f14ee4320094d8b41684abff8539
 tokenizer=/mnt/ai_data/neural-forge/tokenizers/qwen3_4b_bytebpe_8192_20260710
 suite=/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/behavior_suite_exactgen_20260702.json

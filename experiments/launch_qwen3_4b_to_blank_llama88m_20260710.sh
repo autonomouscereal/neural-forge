@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT=/home/cereal/model-surgery-lab/neural-forge-pivot
+ROOT=/home/cereal/model-surgery-lab/neural-forge-src
 RUN_ROOT=/mnt/ai_data/neural-forge/cross_family_blank_20260710
 TAG=${TAG:-qwen3_4b_to_blank_llama88m_structuralprior_gpu0_r3_20260710}
 RUN_DIR="$RUN_ROOT/$TAG"

@@ -38,6 +38,10 @@ from neural_forge.hf_feature_fold import (
     FeatureFoldMap,
     build_feature_fold_map,
 )
+from neural_forge.hf_multi_anchor_cluster import (
+    GatedMLPMultiAnchorPlan,
+    build_gated_mlp_multi_anchor_cluster_plan,
+)
 from neural_forge.hf_operator_adapter import (
     AttentionOperators,
     LinearOperator,
@@ -123,9 +127,16 @@ def bootstrap_blank_decoder_models(
         "activation_fold",
         "real_medoid",
         "activation_subset",
+        "multi_anchor",
     ] = (
         "activation_fold"
     ),
+    multi_anchor_anchors_per_source: int = 4,
+    multi_anchor_max_candidate_targets: int = 64,
+    multi_anchor_max_similarity_products: int = 64_000_000,
+    multi_anchor_max_projection_fits: int = 1_000_000,
+    multi_anchor_max_sparse_entries: int = 1_000_000,
+    multi_anchor_max_workspace_elements: int = 16_000_000,
     ridge: float = 1e-5,
     max_operator_delta_ratio: float = 4.0,
     heldout_gate_policy: Literal["all", "output_only"] = "all",
@@ -179,10 +190,11 @@ def bootstrap_blank_decoder_models(
         "activation_fold",
         "real_medoid",
         "activation_subset",
+        "multi_anchor",
     }:
         raise BlankBootstrapError(
-            "nonlinear_merge_method must be activation_fold, real_medoid, or "
-            "activation_subset."
+            "nonlinear_merge_method must be activation_fold, real_medoid, "
+            "activation_subset, or multi_anchor."
         )
     if vocab_row_norm_repair not in {"none", "source_l2"}:
         raise BlankBootstrapError("vocab_row_norm_repair must be none or source_l2.")
@@ -521,6 +533,12 @@ def bootstrap_blank_decoder_models(
                     else canonical_calibration[target_index + 1]
                 ),
                 nonlinear_merge_method,
+                multi_anchor_anchors_per_source,
+                multi_anchor_max_candidate_targets,
+                multi_anchor_max_similarity_products,
+                multi_anchor_max_projection_fits,
+                multi_anchor_max_sparse_entries,
+                multi_anchor_max_workspace_elements,
                 ridge,
                 max_operator_delta_ratio,
                 max_coordinate_rows,
@@ -1698,7 +1716,14 @@ def _fit_target_block(
         "activation_fold",
         "real_medoid",
         "activation_subset",
+        "multi_anchor",
     ],
+    multi_anchor_anchors_per_source: int,
+    multi_anchor_max_candidate_targets: int,
+    multi_anchor_max_similarity_products: int,
+    multi_anchor_max_projection_fits: int,
+    multi_anchor_max_sparse_entries: int,
+    multi_anchor_max_workspace_elements: int,
     ridge: float,
     max_operator_delta_ratio: float,
     max_coordinate_rows: int,
@@ -1746,6 +1771,7 @@ def _fit_target_block(
     selected_producer_method = nonlinear_merge_method in {
         "real_medoid",
         "activation_subset",
+        "multi_anchor",
     }
     head_norm_source_span = (
         (source_span[-1],) if selected_producer_method else source_span
@@ -2026,6 +2052,7 @@ def _fit_target_block(
     )
     mlp_medoid_plan: GatedMLPActivationClusterPlan | None = None
     mlp_subset_plan: GatedMLPActivationSubsetPlan | None = None
+    mlp_multi_anchor_plan: GatedMLPMultiAnchorPlan | None = None
     desired_gate = None
     desired_up = None
     desired_product = None
@@ -2102,6 +2129,56 @@ def _fit_target_block(
                 mlp_subset_plan.report.calibration.relative_l2_error
             ),
         }
+    elif nonlinear_merge_method == "multi_anchor":
+        if not gated_triplet_compatible or not swiglu_semantics_compatible:
+            raise BlankBootstrapError(
+                "Multi-anchor MLP transport requires SiLU-gated source and "
+                "target MLPs."
+            )
+        (
+            mlp_multi_anchor_plan,
+            mlp_prior_report,
+            desired_gate,
+            desired_up,
+            desired_product,
+        ) = _initialize_gated_mlp_multi_anchor_prior(
+            torch,
+            source_model,
+            target_model,
+            source_layout,
+            target_block_layout,
+            source_span,
+            source_blocks,
+            residual_coordinates,
+            ridge,
+            max_coordinate_rows,
+            anchors_per_source=multi_anchor_anchors_per_source,
+            max_candidate_targets=multi_anchor_max_candidate_targets,
+            max_similarity_products=multi_anchor_max_similarity_products,
+            max_projection_fits=multi_anchor_max_projection_fits,
+            max_sparse_entries=multi_anchor_max_sparse_entries,
+            max_workspace_elements=multi_anchor_max_workspace_elements,
+        )
+        reports[f"block.{target_index}.mlp.multi_anchor"] = (
+            mlp_multi_anchor_plan.report.as_dict()
+        )
+        reports[f"block.{target_index}.mlp.feature_fold"] = {
+            "method": "real-source-neuron-sparse-multi-anchor",
+            "source_neurons": mlp_multi_anchor_plan.source_neurons,
+            "target_neurons": mlp_multi_anchor_plan.target_neurons,
+            "anchors_per_source": mlp_multi_anchor_plan.anchors_per_source,
+            "candidate_pool_size": (
+                mlp_multi_anchor_plan.report.candidate_pool_size
+            ),
+            "full_source_coverage": (
+                mlp_multi_anchor_plan.report.full_source_coverage
+            ),
+            "no_producer_averaging": True,
+            "consumer_aggregation": "sparse-post-swiglu-ridge-index-add",
+            "calibration_relative_l2_error": (
+                mlp_multi_anchor_plan.report.post_swiglu_fit_relative_error
+            ),
+        }
     else:
         mlp_coordinates = build_feature_fold_map(
             mlp_feature_rows,
@@ -2157,7 +2234,9 @@ def _fit_target_block(
         reports[f"block.{target_index}.mlp.input"] = _fit_summary(input_fit)
     else:
         assert target_mlp.gate is not None and target_mlp.up is not None
-        selected_mlp_plan = mlp_medoid_plan or mlp_subset_plan
+        selected_mlp_plan = (
+            mlp_medoid_plan or mlp_subset_plan or mlp_multi_anchor_plan
+        )
         if selected_mlp_plan is not None:
             assert desired_gate is not None
             assert desired_up is not None
@@ -2167,19 +2246,31 @@ def _fit_target_block(
                 "method": (
                     "real-medoid-post-swiglu-anchor"
                     if mlp_medoid_plan is not None
-                    else "leverage-subset-post-swiglu-anchor"
+                    else (
+                        "leverage-subset-post-swiglu-anchor"
+                        if mlp_subset_plan is not None
+                        else "sparse-multi-anchor-post-swiglu-anchor"
+                    )
                 ),
                 "producer_averaging": False,
                 "gate_value_division": False,
                 "source_neurons": (
                     mlp_medoid_plan.source_neurons
                     if mlp_medoid_plan is not None
-                    else mlp_subset_plan.report.source_neurons
+                    else (
+                        mlp_subset_plan.report.source_neurons
+                        if mlp_subset_plan is not None
+                        else mlp_multi_anchor_plan.source_neurons
+                    )
                 ),
                 "target_neurons": (
                     mlp_medoid_plan.target_neurons
                     if mlp_medoid_plan is not None
-                    else mlp_subset_plan.report.target_neurons
+                    else (
+                        mlp_subset_plan.report.target_neurons
+                        if mlp_subset_plan is not None
+                        else mlp_multi_anchor_plan.target_neurons
+                    )
                 ),
             }
         else:
@@ -2248,12 +2339,16 @@ def _fit_target_block(
 
     current = current_trace()
     target_block = current.block
-    selected_mlp_plan = mlp_medoid_plan or mlp_subset_plan
+    selected_mlp_plan = mlp_medoid_plan or mlp_subset_plan or mlp_multi_anchor_plan
     if selected_mlp_plan is not None:
         producer_method = (
             "exact-coordinate-transformed-real-medoid-producer"
             if mlp_medoid_plan is not None
-            else "exact-coordinate-transformed-real-subset-producer"
+            else (
+                "exact-coordinate-transformed-real-subset-producer"
+                if mlp_subset_plan is not None
+                else "exact-coordinate-transformed-real-multi-anchor-producer"
+            )
         )
         reports[f"block.{target_index}.mlp.gate"] = _measurement_summary(
             measure_fit(target_block.mlp_gate_projection_output, desired_gate),
@@ -2312,7 +2407,11 @@ def _fit_target_block(
                 "initialization": (
                     "per-source-scalar-ls-medoid-consumer"
                     if mlp_medoid_plan is not None
-                    else "joint-leverage-subset-total-residual-consumer"
+                    else (
+                        "joint-leverage-subset-total-residual-consumer"
+                        if mlp_subset_plan is not None
+                        else "sparse-multi-anchor-post-swiglu-index-add"
+                    )
                 ),
                 "finalization": "joint-closed-form-ordered-span-endpoint-delta",
                 "producer_weights_preserved_exactly": True,
@@ -2337,7 +2436,11 @@ def _fit_target_block(
             else (
                 "joint-subset-residual-fit-then-joint-endpoint-fit"
                 if nonlinear_merge_method == "activation_subset"
-                else "sum"
+                else (
+                    "sparse-multi-anchor-index-add-then-joint-endpoint-fit"
+                    if nonlinear_merge_method == "multi_anchor"
+                    else "sum"
+                )
             )
         ),
         "structural_prior_feature_producers": (
@@ -2346,7 +2449,11 @@ def _fit_target_block(
             else (
                 "real-leverage-subset-copy"
                 if nonlinear_merge_method == "activation_subset"
-                else "mean"
+                else (
+                    "real-medoid-copy-sparse-multi-anchor-consumer"
+                    if nonlinear_merge_method == "multi_anchor"
+                    else "mean"
+                )
             )
         ),
         "nonlinear_merge_method": nonlinear_merge_method,
@@ -3732,6 +3839,204 @@ def _initialize_gated_mlp_real_medoid_prior(
         "contribution_signature": "direction-preserving-residual-sketch-4d",
         "full_source_coverage": plan.report.full_source_coverage,
         "no_producer_averaging": plan.report.invariants.no_producer_averaging,
+        "down_weight_norm": float(torch.linalg.vector_norm(merged.down.weight)),
+    }
+    return plan, report, desired_gate, desired_up, desired_post
+
+
+def _initialize_gated_mlp_multi_anchor_prior(
+    torch: Any,
+    source_model: Any,
+    target_model: Any,
+    source_layout: DecoderLayout,
+    target_block_layout: Any,
+    source_span: Sequence[int],
+    source_blocks: Sequence[DecoderBlockTrace],
+    residual_coordinates: Any,
+    ridge: float,
+    max_coordinate_rows: int,
+    *,
+    anchors_per_source: int,
+    max_candidate_targets: int,
+    max_similarity_products: int,
+    max_projection_fits: int,
+    max_sparse_entries: int,
+    max_workspace_elements: int,
+) -> tuple[GatedMLPMultiAnchorPlan, dict[str, Any], Any, Any, Any]:
+    """Copy real SwiGLU producers and sparsely compose every source consumer."""
+
+    source_operators = [
+        read_mlp_operators(source_model, source_layout.blocks[index])
+        for index in source_span
+    ]
+    if any(
+        operators.kind != "gated" or operators.gate is None or operators.up is None
+        for operators in source_operators
+    ):
+        raise BlankBootstrapError(
+            "Multi-anchor MLP transport requires complete gated source operators."
+        )
+    target = read_mlp_operators(target_model, target_block_layout)
+    if target.kind != "gated" or target.gate is None or target.up is None:
+        raise BlankBootstrapError(
+            "Multi-anchor MLP transport requires a complete gated target MLP."
+        )
+
+    gate_rows = []
+    up_rows = []
+    post_rows = []
+    for block in source_blocks:
+        if block.mlp_gate_projection_output is None:
+            raise BlankBootstrapError(
+                "Source trace is missing a gated MLP gate output."
+            )
+        if block.mlp_up_projection_output is None:
+            raise BlankBootstrapError("Source trace is missing a gated MLP up output.")
+        gate_rows.append(block.mlp_gate_projection_output)
+        up_rows.append(block.mlp_up_projection_output)
+        post_rows.append(block.down_projection_input)
+    gate_activations = torch.cat(gate_rows, dim=1)
+    up_activations = torch.cat(up_rows, dim=1)
+    post_activations = torch.cat(post_rows, dim=1)
+    sample_count = min(int(gate_activations.shape[0]), max_coordinate_rows)
+    sampled_gate = _evenly_sample_rows(torch, gate_activations, sample_count)
+    sampled_up = _evenly_sample_rows(torch, up_activations, sample_count)
+    sampled_post = _evenly_sample_rows(torch, post_activations, sample_count)
+
+    encoded_down_weights = [
+        _fold_producer_coordinates(
+            torch,
+            operators.down.weight,
+            residual_coordinates,
+        )
+        for operators in source_operators
+    ]
+    concatenated_down = torch.cat(encoded_down_weights, dim=1)
+    residual_sketch = _deterministic_residual_sketch(
+        torch,
+        int(concatenated_down.shape[0]),
+    )
+    consumer_direction_sketch = residual_sketch.T.matmul(
+        concatenated_down
+    ).T.contiguous()
+    contribution_rows = sampled_post.unsqueeze(
+        -1
+    ) * consumer_direction_sketch.unsqueeze(0)
+    source_neurons = int(gate_activations.shape[1])
+    plan = build_gated_mlp_multi_anchor_cluster_plan(
+        sampled_gate,
+        sampled_up,
+        sampled_post,
+        contribution_rows,
+        target_neurons=int(target_block_layout.mlp.intermediate_size),
+        consumer_directions=consumer_direction_sketch,
+        consumer_axis=0,
+        source_neurons=source_neurons,
+        anchors_per_source=anchors_per_source,
+        max_candidate_targets=max_candidate_targets,
+        ridge=max(ridge, 1e-12),
+        max_similarity_products=max_similarity_products,
+        max_projection_fits=max_projection_fits,
+        max_sparse_entries=max_sparse_entries,
+        max_workspace_elements=max_workspace_elements,
+    )
+
+    gate_sources = [operators.gate for operators in source_operators]
+    up_sources = [operators.up for operators in source_operators]
+    assert all(operator is not None for operator in gate_sources)
+    assert all(operator is not None for operator in up_sources)
+    gate_sources = [operator for operator in gate_sources if operator is not None]
+    up_sources = [operator for operator in up_sources if operator is not None]
+    gate_weight = plan.select_gate_producer(
+        torch.cat([operator.weight for operator in gate_sources], dim=0),
+        axis=0,
+    )
+    up_weight = plan.select_up_producer(
+        torch.cat([operator.weight for operator in up_sources], dim=0),
+        axis=0,
+    )
+    gate_bias = _concatenated_bias_for_target(
+        torch,
+        gate_sources,
+        target_has_bias=target.gate.bias is not None,
+    )
+    up_bias = _concatenated_bias_for_target(
+        torch,
+        up_sources,
+        target_has_bias=target.up.bias is not None,
+    )
+    down_bias = None
+    if target.down.bias is not None:
+        down_bias = torch.zeros(target.down.weight.shape[0], dtype=torch.float64)
+        for operators in source_operators:
+            source_bias = (
+                torch.zeros(operators.down.weight.shape[0], dtype=torch.float64)
+                if operators.down.bias is None
+                else operators.down.bias
+            )
+            down_bias.add_(
+                _fold_producer_bias(torch, source_bias, residual_coordinates)
+            )
+    merged = MLPOperators(
+        kind="gated",
+        input=None,
+        gate=LinearOperator(
+            path=target.gate.path,
+            weight=_fold_consumer_coordinates(
+                torch,
+                gate_weight,
+                residual_coordinates,
+            ),
+            bias=(
+                None
+                if gate_bias is None
+                else plan.select_gate_producer(gate_bias, axis=0)
+            ),
+        ),
+        up=LinearOperator(
+            path=target.up.path,
+            weight=_fold_consumer_coordinates(
+                torch,
+                up_weight,
+                residual_coordinates,
+            ),
+            bias=(
+                None
+                if up_bias is None
+                else plan.select_up_producer(up_bias, axis=0)
+            ),
+        ),
+        down=LinearOperator(
+            path=target.down.path,
+            weight=plan.aggregate_down_consumer(concatenated_down, axis=1),
+            bias=down_bias,
+        ),
+    )
+    write_mlp_operators(target_model, target_block_layout, merged)
+    desired_gate = plan.select_gate_producer(gate_activations, axis=1)
+    desired_up = plan.select_up_producer(up_activations, axis=1)
+    desired_post = plan.select_gate_producer(post_activations, axis=1)
+    report = {
+        "applied": True,
+        "method": "real-source-neuron-sparse-multi-anchor-consumer",
+        "source_layers": [int(index) for index in source_span],
+        "source_neurons": source_neurons,
+        "target_neurons": int(target_block_layout.mlp.intermediate_size),
+        "producer_aggregation": "none-real-medoid-copy",
+        "consumer_initialization": "sparse-post-swiglu-ridge-index-add",
+        "consumer_finalization": "joint-closed-form-ordered-span-endpoint-fit",
+        "contribution_signature": "direction-preserving-residual-sketch-4d",
+        "full_source_coverage": plan.report.full_source_coverage,
+        "no_producer_averaging": plan.report.invariants.no_producer_averaging,
+        "anchors_per_source": plan.anchors_per_source,
+        "candidate_pool_size": plan.report.candidate_pool_size,
+        "calibration_relative_l2_error": (
+            plan.report.post_swiglu_fit_relative_error
+        ),
+        "similarity_products": plan.report.similarity_products,
+        "projection_fit_count": plan.report.projection_fit_count,
+        "total_sparse_entries": plan.report.total_sparse_entries,
+        "materialized_full_source_target_matrix": False,
         "down_weight_norm": float(torch.linalg.vector_norm(merged.down.weight)),
     }
     return plan, report, desired_gate, desired_up, desired_post

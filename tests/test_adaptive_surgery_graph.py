@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
+import json
+import os
+import subprocess
+import sys
+import textwrap
+from dataclasses import FrozenInstanceError, replace
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -657,6 +663,16 @@ def test_arbitrary_tuple_ids_snapshots_and_registry_views_are_immutable() -> Non
     second_candidate = second.propose_candidates()[0]
     assert first_candidate.candidate_sha256 == second_candidate.candidate_sha256
 
+    swapped = replace(
+        first_candidate,
+        left_prototype=first_candidate.right_prototype,
+        right_prototype=first_candidate.left_prototype,
+        left_members=first_candidate.right_members,
+        right_members=first_candidate.left_members,
+    )
+    assert swapped.operation_sha256 == first_candidate.operation_sha256
+    assert swapped.candidate_sha256 != first_candidate.candidate_sha256
+
     snapshot = first.apply_one(first_candidate).snapshot
     assignments, source_indices = snapshot.registry_arrays()
     assert snapshot.node_ids == ids
@@ -676,6 +692,65 @@ def test_arbitrary_tuple_ids_snapshots_and_registry_views_are_immutable() -> Non
     assert registry["assignments_sha256"] == snapshot.assignments_sha256
     assert registry["provenance_sha256"] == snapshot.provenance_sha256
     assert len(registry["registry_sha256"]) == 64
+
+
+def test_candidate_discovery_is_cross_process_hashseed_deterministic() -> None:
+    root = Path(__file__).resolve().parents[1]
+    script = textwrap.dedent(
+        """
+        import json
+        import numpy as np
+        from neural_forge.adaptive_surgery_graph import AdaptiveSurgeryGraph, SurgeryNode
+
+        nodes = []
+        for index in range(24):
+            value = float((index * 17) % 29) / 29.0
+            feature = np.asarray([value, value * 0.25 + 0.125], dtype=np.float64)
+            nodes.append(SurgeryNode(
+                node_id=("node", index),
+                weight_features=feature,
+                activation_features=feature + 0.01,
+                rollout_jvp=feature - 0.02,
+                output_dual=feature * 1.5,
+                domain_features=[float(index % 3)],
+                importance=1.0 + index / 100.0,
+                parameter_byte_savings=128,
+            ))
+        # Iteration order deliberately depends on PYTHONHASHSEED. The graph must
+        # canonicalize these collections before they can affect discovery.
+        pinned = {("node", value) for value in (3, 11)}
+        soft = {key: 2.0 for key in {("node", value) for value in (5, 7, 19)}}
+        graph = AdaptiveSurgeryGraph(
+            nodes,
+            pinned_anchors=pinned,
+            soft_anchors=soft,
+            projection_count=7,
+            neighbor_window=3,
+            max_candidates=12,
+        )
+        candidates = graph.propose_candidates()
+        print(json.dumps({
+            "graph": graph.graph_sha256,
+            "exact": [item.candidate_sha256 for item in candidates],
+            "semantic": [item.operation_sha256 for item in candidates],
+        }, sort_keys=True))
+        """
+    )
+    outputs = []
+    for hash_seed in ("1", "777", "4294967295"):
+        environment = dict(os.environ)
+        environment["PYTHONHASHSEED"] = hash_seed
+        environment["PYTHONPATH"] = str(root / "src")
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            check=True,
+            capture_output=True,
+            text=True,
+            cwd=root,
+            env=environment,
+        )
+        outputs.append(json.loads(completed.stdout))
+    assert outputs[1:] == outputs[:-1]
 
 
 def test_all_action_record_kinds_are_valid_and_hashed() -> None:

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT=${ROOT:-/home/cereal/model-surgery-lab/neural-forge-pivot}
+ROOT=${ROOT:-/home/cereal/model-surgery-lab/neural-forge-src}
 RUN_ROOT=${RUN_ROOT:-/mnt/ai_data/neural-forge/qwen3_4b_compensated_20260710}
 PY=${PY:-/home/cereal/model-surgery-lab/venv/bin/python}
 GPU=${GPU:?Set GPU to a physical GPU UUID.}

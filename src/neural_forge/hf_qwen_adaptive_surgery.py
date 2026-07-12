@@ -1639,15 +1639,21 @@ def _adopt_neuron_registry(
     result.neuron_scales = None if scales is None else nn.Parameter(scales.detach())
     result.register_buffer(
         "assignments",
-        assignments.detach().to(device="cpu", dtype=torch.int32),
+        assignments.detach().to(
+            device=source.assignments.device,
+            dtype=torch.int32,
+        ),
     )
     result.register_buffer(
         "prototype_source_indices",
-        prototype_source_indices.detach().to(device="cpu", dtype=torch.int32),
+        prototype_source_indices.detach().to(
+            device=source.prototype_source_indices.device,
+            dtype=torch.int32,
+        ),
     )
     result.register_buffer(
         "_activation_code",
-        source._activation_code.detach().to(device="cpu").clone(),
+        source._activation_code.detach().clone(),
     )
     result.diagnostics = None
     result.input_width = source.input_width

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+
 import pytest
 
 
@@ -44,6 +47,34 @@ class _Tokenizer:
 
     def convert_ids_to_tokens(self, token_id: int) -> str:
         return self.tokens[token_id]
+
+
+def _canonical_sha256(value) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _checkpoint_contract(runtime: torch.nn.Module) -> dict[str, object]:
+    tokenizer = _Tokenizer()
+    return {
+        "tokenizer_name_or_path": "identity-test-tokenizer",
+        "vocab_size": len(tokenizer),
+        "vocab_sha256": _canonical_sha256(tokenizer.get_vocab()),
+        "special_token_ids": {
+            name: getattr(runtime.config, name, None)
+            for name in ("bos_token_id", "eos_token_id", "pad_token_id")
+        },
+        "parent_token_rows_sha256": _canonical_sha256(
+            [int(value) for value in runtime.parent_token_rows.tolist()]
+        ),
+    }
 
 
 def _runtime(
@@ -568,7 +599,7 @@ def test_ragged_qwen_checkpoint_roundtrip_is_exact_and_standalone(tmp_path) -> N
     manifest = save_qwen3_codebook_checkpoint(
         runtime,
         checkpoint,
-        tokenizer_contract={"kind": "identity-test-tokenizer", "vocab_size": 12},
+        tokenizer_contract=_checkpoint_contract(runtime),
     )
     restored = load_qwen3_codebook_checkpoint(checkpoint)
     restored_snapshot = qwen3_attention_runtime_snapshot(restored)

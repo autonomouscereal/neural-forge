@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo=/home/cereal/model-surgery-lab/neural-forge-pivot
+repo=/home/cereal/model-surgery-lab/neural-forge-src
 python=/home/cereal/model-surgery-lab/venv/bin/python
 source_model=/home/cereal/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Base/snapshots/906bfd4b4dc7f14ee4320094d8b41684abff8539
 calibration=/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/calibration_mix_plus_recovery_drills_20260702.jsonl

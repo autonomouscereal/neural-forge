@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ctypes
 import hashlib
+import importlib.metadata
 import json
 import math
 import operator
@@ -23,6 +24,7 @@ import os
 import platform
 import sys
 import threading
+import types
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -36,12 +38,29 @@ from neural_forge.hf_neuron_codebook import NeuronCodebookLayerView
 from neural_forge.hf_qwen_adaptive_surgery import Qwen3AdaptiveSurgeryFeature
 
 
-SENSITIVITY_SCHEMA = "neural-forge-qwen3-sensitivity-v2"
+SENSITIVITY_SCHEMA = "neural-forge-qwen3-sensitivity-v3"
 DIRECTIONAL_DIFFERENCE_METHOD = "zero_ablation_directional_difference_count_sketch"
 FINITE_DIFFERENCE_METHOD = DIRECTIONAL_DIFFERENCE_METHOD
 _ATTENTION_ROLES = ("q", "k", "v", "o")
 _MEBIBYTE = 1024 * 1024
 _RSS_SAMPLE_INTERVAL_SECONDS = 0.001
+_MLP_KERNEL_WORKSPACE_BOUND_BYTES = 32 * _MEBIBYTE
+_ORIGINAL_TENSOR_UNTYPED_STORAGE = Tensor.untyped_storage
+
+
+def _tensor_storage(value: Tensor) -> Any:
+    """Use the captured read-only storage accessor inside guarded callbacks."""
+
+    return _ORIGINAL_TENSOR_UNTYPED_STORAGE(value)
+
+
+def _tensor_version(value: Tensor) -> int:
+    """Return a stable sentinel for inference tensors without version counters."""
+
+    try:
+        return int(value._version)
+    except RuntimeError:
+        return -1
 
 
 class Qwen3SensitivityError(ValueError):
@@ -210,6 +229,10 @@ class Qwen3StateTensorFingerprint:
     device: str
     data_ptr: int
     version: int
+    stride: tuple[int, ...]
+    storage_offset: int
+    storage_nbytes: int
+    requires_grad: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,9 +263,11 @@ class Qwen3SensitivityFingerprints:
     calibration_row_fingerprints: tuple[str, ...]
     gate_row_fingerprints: tuple[str, ...]
     model_manifest: Qwen3ModelFingerprintManifest
-    model_hash_method: str = "sha256_merkle_exact_tensor_state_v3_full_rehash"
+    model_hash_method: str = "sha256_merkle_exact_tensor_state_v4_full_rehash"
     row_hash_method: str = "sha256_active_token_ids_and_position_ids"
     runtime_hash_method: str = "sha256_fail_closed_execution_environment_v1"
+    sketch_basis: str = ""
+    sketch_basis_hash_method: str = "sha256_semantic_measurement_basis_v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -573,7 +598,15 @@ def _process_peak_rss_bytes() -> int:
 
 
 def _cuda_devices(model_devices: Sequence[str]) -> tuple[str, ...]:
-    return tuple(item for item in model_devices if torch.device(item).type == "cuda")
+    return tuple(
+        sorted(
+            {
+                str(torch.device(item))
+                for item in model_devices
+                if torch.device(item).type == "cuda"
+            }
+        )
+    )
 
 
 def _reset_cuda_peak_stats(devices: Sequence[str]) -> None:
@@ -600,10 +633,11 @@ class _ResourceGuard:
     def __init__(
         self,
         limits: Qwen3SensitivityLimits,
-        model_devices: Sequence[str],
+        model_devices: Sequence[str] | None = None,
     ) -> None:
         self.limits = limits
-        self.cuda_devices = _cuda_devices(model_devices)
+        self.cuda_devices: tuple[str, ...] = ()
+        self._cuda_bound = False
         self.process_rss_start = _process_rss_bytes()
         self.process_lifetime_peak_start = _process_peak_rss_bytes()
         self.process_rss_peak = self.process_rss_start
@@ -612,15 +646,12 @@ class _ResourceGuard:
         self._stop_event = threading.Event()
         self._sampler_error: BaseException | None = None
         self._process_violation: str | None = None
+        self._cuda_violation: str | None = None
         self.stopped = False
-        if self.cuda_devices:
-            _reset_cuda_peak_stats(self.cuda_devices)
-        (
-            self.cuda_allocated_start,
-            self.cuda_reserved_start,
-            self.cuda_allocated_peak,
-            self.cuda_reserved_peak,
-        ) = _cuda_memory_snapshot(self.cuda_devices)
+        self.cuda_allocated_start = 0
+        self.cuda_reserved_start = 0
+        self.cuda_allocated_peak = 0
+        self.cuda_reserved_peak = 0
         self.checkpoints = 0
         self._sampler_thread = threading.Thread(
             target=self._sample_loop,
@@ -630,11 +661,34 @@ class _ResourceGuard:
         self._sampler_thread.start()
         try:
             self.checkpoint("resource_guard_start")
+            if model_devices is not None:
+                self.bind_cuda_devices(model_devices)
         except BaseException:
-            self._stop_event.set()
-            self._sampler_thread.join(timeout=2.0)
-            self.stopped = True
+            self._stop_sampler()
             raise
+
+    def bind_cuda_devices(self, model_devices: Sequence[str]) -> None:
+        """Bind CUDA accounting after the process sampler is already live."""
+
+        if self.stopped:
+            raise Qwen3SensitivityStateError(
+                "Cannot bind CUDA devices after the resource guard has stopped."
+            )
+        if self._cuda_bound:
+            raise Qwen3SensitivityStateError(
+                "CUDA devices can be bound to a resource guard only once."
+            )
+        self.cuda_devices = _cuda_devices(model_devices)
+        if self.cuda_devices:
+            _reset_cuda_peak_stats(self.cuda_devices)
+            (
+                self.cuda_allocated_start,
+                self.cuda_reserved_start,
+                self.cuda_allocated_peak,
+                self.cuda_reserved_peak,
+            ) = _cuda_memory_snapshot(self.cuda_devices)
+        self._cuda_bound = True
+        self.checkpoint("resource_guard_cuda_bound")
 
     @property
     def process_rss_peak_increase(self) -> int:
@@ -651,12 +705,14 @@ class _ResourceGuard:
     def _sample_process(self) -> None:
         rss = _process_rss_bytes()
         lifetime_peak = _process_peak_rss_bytes()
-        lifetime_growth = max(0, lifetime_peak - self.process_lifetime_peak_start)
+        new_lifetime_peak = (
+            lifetime_peak if lifetime_peak > self.process_lifetime_peak_start else 0
+        )
         with self._lock:
             self.process_rss_peak = max(
                 self.process_rss_peak,
                 rss,
-                self.process_rss_start + lifetime_growth,
+                new_lifetime_peak,
             )
             increase = self.process_rss_peak_increase
             maximum = self.limits.max_process_rss_increase_bytes
@@ -673,24 +729,30 @@ class _ResourceGuard:
             with self._lock:
                 self._sampler_error = exc
 
-    def _raise_sampler_failure(self, label: str) -> None:
+    def _raise_guard_failure(self, label: str) -> None:
         with self._lock:
             sampler_error = self._sampler_error
-            violation = self._process_violation
+            process_violation = self._process_violation
+            cuda_violation = self._cuda_violation
         if sampler_error is not None:
             raise Qwen3SensitivityStateError(
                 f"Process RSS sampler failed at {label!r}."
             ) from sampler_error
+        violation = process_violation or cuda_violation
         if violation is not None:
             raise Qwen3SensitivityLimitError(f"{violation} at checkpoint {label!r}.")
 
     def checkpoint(self, label: str) -> None:
         self.checkpoints += 1
         self._sample_process()
-        self._raise_sampler_failure(label)
-        current_allocated, current_reserved, peak_allocated, peak_reserved = (
-            _cuda_memory_snapshot(self.cuda_devices)
-        )
+        self._raise_guard_failure(label)
+        if self.cuda_devices:
+            current_allocated, current_reserved, peak_allocated, peak_reserved = (
+                _cuda_memory_snapshot(self.cuda_devices)
+            )
+        else:
+            current_allocated = current_reserved = 0
+            peak_allocated = peak_reserved = 0
         self.cuda_allocated_peak = max(
             self.cuda_allocated_peak,
             current_allocated,
@@ -715,14 +777,16 @@ class _ResourceGuard:
         )
         for resource, increase, maximum in checks:
             if increase > maximum:
-                raise Qwen3SensitivityLimitError(
-                    f"{resource} increase {increase} exceeded hard cap {maximum} "
-                    f"at checkpoint {label!r}."
-                )
+                with self._lock:
+                    if self._cuda_violation is None:
+                        self._cuda_violation = (
+                            f"{resource} increase {increase} exceeded hard cap "
+                            f"{maximum}"
+                        )
+                self._raise_guard_failure(label)
 
-    def close(self) -> None:
+    def _stop_sampler(self) -> None:
         if self.stopped:
-            self._raise_sampler_failure("resource_guard_close")
             return
         self._stop_event.set()
         self._sampler_thread.join(timeout=2.0)
@@ -730,8 +794,14 @@ class _ResourceGuard:
             raise Qwen3SensitivityStateError(
                 "Process RSS sampler did not stop within its lifecycle bound."
             )
-        self._sample_process()
         self.stopped = True
+
+    def close(self) -> None:
+        if self.stopped:
+            self._raise_guard_failure("resource_guard_close")
+            return
+        self._stop_sampler()
+        self._sample_process()
         self.checkpoint("resource_guard_close")
 
     def __enter__(self) -> _ResourceGuard:
@@ -811,6 +881,49 @@ def _sha256_string(value: str, name: str) -> str:
     return normalized
 
 
+def _model_state_tensors(model: nn.Module) -> dict[str, Tensor]:
+    """Read registered tensor state directly, without state-dict hook rewriting."""
+
+    state: dict[str, Tensor] = {}
+
+    def visit(module: nn.Module, prefix: str, ancestors: frozenset[int]) -> None:
+        identity = id(module)
+        if identity in ancestors:
+            raise Qwen3SensitivityStateError(
+                "Model module registration contains a cycle."
+            )
+        lineage = ancestors | {identity}
+        for name, value in module._parameters.items():
+            if value is None:
+                continue
+            qualified = f"{prefix}{name}"
+            if qualified in state or not isinstance(value, Tensor):
+                raise Qwen3SensitivityStateError(
+                    f"Invalid or duplicate registered parameter {qualified!r}."
+                )
+            state[qualified] = value
+        non_persistent = module._non_persistent_buffers_set
+        for name, value in module._buffers.items():
+            if value is None or name in non_persistent:
+                continue
+            qualified = f"{prefix}{name}"
+            if qualified in state or not isinstance(value, Tensor):
+                raise Qwen3SensitivityStateError(
+                    f"Invalid or duplicate registered buffer {qualified!r}."
+                )
+            state[qualified] = value
+        for name, child in module._modules.items():
+            if child is not None:
+                visit(child, f"{prefix}{name}.", lineage)
+
+    visit(model, "", frozenset())
+    if not state:
+        raise Qwen3SensitivityShapeError(
+            "Exact Qwen fingerprints require registered tensor state."
+        )
+    return state
+
+
 def _state_tensor_fingerprint(
     name: str,
     value: Tensor,
@@ -825,8 +938,12 @@ def _state_tensor_fingerprint(
         dtype=str(value.dtype),
         shape=tuple(int(item) for item in value.shape),
         device=str(value.device),
-        data_ptr=int(value.untyped_storage().data_ptr()) if int(value.numel()) else 0,
-        version=int(value._version),
+        data_ptr=int(_tensor_storage(value).data_ptr()) if int(value.numel()) else 0,
+        version=_tensor_version(value),
+        stride=tuple(int(item) for item in value.stride()),
+        storage_offset=int(value.storage_offset()),
+        storage_nbytes=int(_tensor_storage(value).nbytes()),
+        requires_grad=bool(value.requires_grad),
     )
 
 
@@ -844,6 +961,10 @@ def _model_fingerprint_root(
                     "sha256": item.sha256,
                     "dtype": item.dtype,
                     "shape": item.shape,
+                    "stride": item.stride,
+                    "storage_offset": item.storage_offset,
+                    "storage_nbytes": item.storage_nbytes,
+                    "requires_grad": item.requires_grad,
                 }
                 for item in tensors
             ],
@@ -876,7 +997,7 @@ def fingerprint_qwen3_model_manifest(
         )
     config_payload = config.to_dict() if hasattr(config, "to_dict") else vars(config)
     config_sha256 = hashlib.sha256(_canonical_json(config_payload)).hexdigest()
-    state = model.state_dict(keep_vars=True)
+    state = _model_state_tensors(model)
     names = tuple(sorted(state))
     if any(not isinstance(state[name], Tensor) for name in names):
         raise Qwen3SensitivityShapeError("Every model state entry must be a tensor.")
@@ -936,7 +1057,7 @@ def fingerprint_qwen3_model_manifest(
                 matched[prefix] += 1
                 directly_selected.add(name)
     selected_storage = {
-        int(state[name].untyped_storage().data_ptr())
+        int(_tensor_storage(state[name]).data_ptr())
         for name in directly_selected
         if int(state[name].numel())
     }
@@ -945,7 +1066,7 @@ def fingerprint_qwen3_model_manifest(
     reused = 0
     for name in names:
         value = state[name]
-        data_ptr = int(value.untyped_storage().data_ptr()) if int(value.numel()) else 0
+        data_ptr = int(_tensor_storage(value).data_ptr()) if int(value.numel()) else 0
         selected = name in directly_selected or (
             bool(data_ptr) and data_ptr in selected_storage
         )
@@ -1015,6 +1136,47 @@ def _verify_model_state_provenance(
             "Sensitivity collection mutated or replaced model state; the exact "
             "post-forward tensor rehash differs from the initial manifest."
         )
+
+
+def _finalize_model_integrity(
+    model: nn.Module,
+    manifest: Qwen3ModelFingerprintManifest,
+    inventory: tuple[tuple[str, str, int, int, str], ...],
+    *,
+    max_chunk_bytes: int,
+    guard: _ResourceGuard,
+) -> bool:
+    """Rehash every tensor and verify exact hook identity on every exit path."""
+
+    provenance_error: Exception | None = None
+    try:
+        _verify_model_state_provenance(
+            model,
+            manifest,
+            max_chunk_bytes=max_chunk_bytes,
+            checkpoint=guard.checkpoint,
+        )
+    except Exception as exc:
+        provenance_error = exc
+    final_inventory = _hook_inventory(model)
+    hooks_restored = final_inventory == inventory
+    if not hooks_restored:
+        removed = tuple(item for item in inventory if item not in final_inventory)
+        added = tuple(item for item in final_inventory if item not in inventory)
+        message = (
+            "Sensitivity collection changed the model hook inventory; "
+            f"removed={removed!r}, added={added!r}."
+        )
+        if provenance_error is not None:
+            message = (
+                "Sensitivity collection changed both exact model state and the "
+                f"model hook inventory; removed={removed!r}, added={added!r}."
+            )
+        raise Qwen3SensitivityStateError(message) from provenance_error
+    if provenance_error is not None:
+        raise provenance_error
+    guard.checkpoint("final_model_rehash_complete")
+    return True
 
 
 def _tensor_bytes(value: Tensor) -> bytes:
@@ -1343,47 +1505,171 @@ _HOOK_MAPPING_NAMES = (
     "_forward_hooks",
     "_backward_pre_hooks",
     "_backward_hooks",
+    "_state_dict_hooks",
+    "_state_dict_pre_hooks",
+    "_load_state_dict_pre_hooks",
+    "_load_state_dict_post_hooks",
+)
+_HOOK_OPTION_MAPPING_NAMES = (
+    "_forward_hooks_with_kwargs",
+    "_forward_hooks_always_called",
+    "_forward_pre_hooks_with_kwargs",
+)
+_GLOBAL_HOOK_MAPPING_NAMES = (
+    "_global_forward_pre_hooks",
+    "_global_forward_hooks",
+    "_global_backward_hooks",
 )
 
 
 def _hook_inventory(
     model: nn.Module,
-) -> tuple[tuple[str, str, tuple[int, ...]], ...]:
-    result: list[tuple[str, str, tuple[int, ...]]] = []
+) -> tuple[tuple[str, str, int, int, str], ...]:
+    def static_callable_sha256(hook: Any) -> str:
+        identity = _hook_callable_identity(hook)
+        return _sha256_json(
+            {
+                name: identity[name]
+                for name in ("type", "module", "qualname", "code_sha256")
+            }
+        )
+
+    result: list[tuple[str, str, int, int, str]] = []
     for module_name, module in model.named_modules():
         for mapping_name in _HOOK_MAPPING_NAMES:
             mapping = getattr(module, mapping_name, {})
-            keys = tuple(int(item) for item in mapping.keys())
-            if keys:
-                result.append((module_name, mapping_name, keys))
+            for key, hook in mapping.items():
+                result.append(
+                    (
+                        module_name,
+                        mapping_name,
+                        int(key),
+                        id(hook),
+                        static_callable_sha256(hook),
+                    )
+                )
+        for mapping_name in _HOOK_OPTION_MAPPING_NAMES:
+            mapping = getattr(module, mapping_name, {})
+            for key, value in mapping.items():
+                result.append(
+                    (
+                        module_name,
+                        mapping_name,
+                        int(key),
+                        id(value),
+                        hashlib.sha256(repr(value).encode()).hexdigest(),
+                    )
+                )
     module_runtime = torch.nn.modules.module
-    for mapping_name in (
-        "_global_forward_pre_hooks",
-        "_global_forward_hooks",
-        "_global_backward_hooks",
-    ):
+    for mapping_name in _GLOBAL_HOOK_MAPPING_NAMES:
         mapping = getattr(module_runtime, mapping_name, {})
-        keys = tuple(int(item) for item in mapping.keys())
-        if keys:
-            result.append(("<global>", mapping_name, keys))
-    return tuple(result)
+        for key, hook in mapping.items():
+            result.append(
+                (
+                    "<global>",
+                    mapping_name,
+                    int(key),
+                    id(hook),
+                    static_callable_sha256(hook),
+                )
+            )
+    return tuple(sorted(result))
+
+
+def _code_constant_identity(value: Any) -> Any:
+    if isinstance(value, types.CodeType):
+        return {"code": _code_identity_payload(value)}
+    if isinstance(value, tuple):
+        return {"tuple": [_code_constant_identity(item) for item in value]}
+    if isinstance(value, frozenset):
+        items = [_code_constant_identity(item) for item in value]
+        return {"frozenset": sorted(items, key=_canonical_json)}
+    if isinstance(value, bytes):
+        return {"bytes": value.hex()}
+    if (
+        value is None
+        or value is Ellipsis
+        or isinstance(
+            value,
+            (bool, int, float, complex, str),
+        )
+    ):
+        return {
+            "type": type(value).__qualname__,
+            "repr": repr(value),
+        }
+    return {
+        "type": f"{type(value).__module__}.{type(value).__qualname__}",
+        "repr": repr(value),
+    }
+
+
+def _code_identity_payload(code: types.CodeType) -> dict[str, Any]:
+    return {
+        "bytecode": code.co_code.hex(),
+        "constants": [_code_constant_identity(item) for item in code.co_consts],
+        "names": list(code.co_names),
+        "varnames": list(code.co_varnames),
+        "freevars": list(code.co_freevars),
+        "cellvars": list(code.co_cellvars),
+        "argcount": code.co_argcount,
+        "posonlyargcount": code.co_posonlyargcount,
+        "kwonlyargcount": code.co_kwonlyargcount,
+        "stacksize": code.co_stacksize,
+        "flags": code.co_flags,
+    }
 
 
 def _hook_callable_identity(value: Any) -> dict[str, Any]:
+    def opaque(item: Any) -> dict[str, Any]:
+        if item is None or isinstance(item, (bool, int, float, str)):
+            rendered = repr(item)
+        elif isinstance(item, Tensor):
+            rendered = repr(
+                (
+                    tuple(int(part) for part in item.shape),
+                    str(item.dtype),
+                    str(item.device),
+                    _tensor_version(item),
+                )
+            )
+        else:
+            rendered = f"object_id={id(item)}"
+        return {
+            "type": f"{type(item).__module__}.{type(item).__qualname__}",
+            "value_sha256": hashlib.sha256(rendered.encode()).hexdigest(),
+        }
+
     function = getattr(value, "__func__", value)
     code = getattr(function, "__code__", None)
     code_sha256 = None
     if code is not None:
-        digest = hashlib.sha256()
-        digest.update(code.co_code)
-        digest.update(repr(code.co_consts).encode("utf-8", errors="backslashreplace"))
-        digest.update(repr(code.co_names).encode("utf-8", errors="backslashreplace"))
-        code_sha256 = digest.hexdigest()
+        code_sha256 = _sha256_json(_code_identity_payload(code))
+    defaults = getattr(function, "__defaults__", None)
+    keyword_defaults = getattr(function, "__kwdefaults__", None)
+    closure = getattr(function, "__closure__", None)
+    bound_self = getattr(value, "__self__", None)
+    opaque_state = _sha256_json(
+        {
+            "defaults": [opaque(item) for item in defaults or ()],
+            "keyword_defaults": [
+                [name, opaque(item)]
+                for name, item in sorted((keyword_defaults or {}).items())
+            ],
+            "closure": (
+                [opaque(cell.cell_contents) for cell in closure]
+                if closure is not None
+                else None
+            ),
+            "bound_self": opaque(bound_self) if bound_self is not None else None,
+        }
+    )
     return {
         "type": f"{type(value).__module__}.{type(value).__qualname__}",
         "module": str(getattr(function, "__module__", "")),
         "qualname": str(getattr(function, "__qualname__", "")),
         "code_sha256": code_sha256,
+        "opaque_state_sha256": opaque_state,
     }
 
 
@@ -1401,12 +1687,18 @@ def _runtime_hook_identity(model: nn.Module) -> dict[str, Any]:
                         "callable": _hook_callable_identity(hook),
                     }
                 )
+        for mapping_name in _HOOK_OPTION_MAPPING_NAMES:
+            for key, value in getattr(module, mapping_name, {}).items():
+                records.append(
+                    {
+                        "module": module_name,
+                        "kind": mapping_name,
+                        "key": int(key),
+                        "value": repr(value),
+                    }
+                )
     module_runtime = torch.nn.modules.module
-    for mapping_name in (
-        "_global_forward_pre_hooks",
-        "_global_forward_hooks",
-        "_global_backward_hooks",
-    ):
+    for mapping_name in _GLOBAL_HOOK_MAPPING_NAMES:
         for key, hook in getattr(module_runtime, mapping_name, {}).items():
             records.append(
                 {
@@ -1416,11 +1708,85 @@ def _runtime_hook_identity(model: nn.Module) -> dict[str, Any]:
                     "callable": _hook_callable_identity(hook),
                 }
             )
+    ordered = sorted(records, key=lambda item: _canonical_json(item))
     return {
-        "records": records,
+        "records": ordered,
         "cross_runtime_reuse": not records,
         "cache_nonce": os.urandom(32).hex() if records else None,
     }
+
+
+def _distribution_version(name: str) -> str | None:
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def _autocast_identity(device_type: str) -> dict[str, Any]:
+    try:
+        enabled = bool(torch.is_autocast_enabled(device_type))
+        dtype = str(torch.get_autocast_dtype(device_type))
+    except (AttributeError, RuntimeError, TypeError):
+        enabled = bool(torch.is_autocast_enabled()) if device_type == "cuda" else False
+        dtype = None
+    return {"enabled": enabled, "dtype": dtype}
+
+
+def _optional_backend_flag(owner: Any, name: str) -> bool | None:
+    value = getattr(owner, name, None)
+    if value is None:
+        return None
+    try:
+        return bool(value() if callable(value) else value)
+    except (AttributeError, RuntimeError, TypeError):
+        return None
+
+
+def _cuda_driver_version() -> int | None:
+    """Query the loaded CUDA driver directly without invoking a subprocess."""
+
+    try:
+        library = (
+            ctypes.WinDLL("nvcuda.dll", use_last_error=True)
+            if os.name == "nt"
+            else ctypes.CDLL("libcuda.so.1")
+        )
+        query = library.cuDriverGetVersion
+        query.argtypes = (ctypes.POINTER(ctypes.c_int),)
+        query.restype = ctypes.c_int
+        version = ctypes.c_int()
+        if int(query(ctypes.byref(version))) != 0:
+            return None
+        return int(version.value)
+    except (AttributeError, OSError, TypeError, ValueError):
+        return None
+
+
+def _execution_implementation_identity(model: nn.Module, layout: _Layout) -> str:
+    callables: dict[str, Any] = {
+        "collector_forward": _forward,
+        "baseline": _baseline,
+        "measure_neurons": _measure_neurons,
+        "measure_attention": _measure_attention,
+        "model_forward": type(model).forward,
+    }
+    for index, layer in enumerate(layout.layers):
+        callables[f"layer_{index}_forward"] = type(layer).forward
+        callables[f"layer_{index}_attention_forward"] = type(layer.self_attn).forward
+        callables[f"layer_{index}_mlp_forward"] = type(layer.mlp).forward
+        callables[f"layer_{index}_q_norm_forward"] = type(
+            layer.self_attn.q_norm
+        ).forward
+        callables[f"layer_{index}_k_norm_forward"] = type(
+            layer.self_attn.k_norm
+        ).forward
+    return _sha256_json(
+        {
+            name: _hook_callable_identity(value)
+            for name, value in sorted(callables.items())
+        }
+    )
 
 
 def _runtime_identity(
@@ -1428,7 +1794,7 @@ def _runtime_identity(
     layout: _Layout,
     limits: Qwen3SensitivityLimits,
 ) -> dict[str, Any]:
-    state = model.state_dict(keep_vars=True)
+    state = _model_state_tensors(model)
     state_layout = sorted(
         {
             (str(value.device), str(value.dtype))
@@ -1441,38 +1807,85 @@ def _runtime_identity(
         device = torch.device(name)
         if device.type != "cuda":
             continue
-        index = device.index if device.index is not None else torch.cuda.current_device()
+        index = (
+            device.index if device.index is not None else torch.cuda.current_device()
+        )
         properties = torch.cuda.get_device_properties(index)
         cuda_devices.append(
             {
                 "logical_device": name,
+                "index": int(index),
                 "name": properties.name,
                 "capability": list(torch.cuda.get_device_capability(index)),
                 "total_memory": int(properties.total_memory),
+                "multi_processor_count": int(properties.multi_processor_count),
+                "uuid": str(getattr(properties, "uuid", "")) or None,
             }
         )
     uses_cuda = bool(cuda_devices)
+    cuda_driver_version = _cuda_driver_version() if uses_cuda else None
     cudnn_version = (
         int(torch.backends.cudnn.version())
         if uses_cuda and torch.backends.cudnn.is_available()
         else None
     )
+    hooks = _runtime_hook_identity(model)
+    packages = {
+        "torch": str(torch.__version__),
+        "transformers": _distribution_version("transformers"),
+        "numpy": _distribution_version("numpy"),
+        "flash_attn": _distribution_version("flash-attn"),
+        "triton": _distribution_version("triton"),
+    }
+    fail_closed_reasons: list[str] = []
+    if hooks["records"]:
+        fail_closed_reasons.append("active_hooks")
+    if packages["transformers"] is None:
+        fail_closed_reasons.append("unknown_transformers_version")
+    if uses_cuda and cuda_driver_version is None:
+        fail_closed_reasons.append("unknown_cuda_driver_version")
+    fail_closed_nonce = (
+        hooks["cache_nonce"] or os.urandom(32).hex() if fail_closed_reasons else None
+    )
+    sdp_flags = {
+        name: _optional_backend_flag(torch.backends.cuda, name) if uses_cuda else None
+        for name in (
+            "flash_sdp_enabled",
+            "mem_efficient_sdp_enabled",
+            "math_sdp_enabled",
+            "cudnn_sdp_enabled",
+        )
+    }
+    implementation_sha256 = _execution_implementation_identity(model, layout)
     return {
-        "schema": "neural-forge-qwen3-sensitivity-runtime-v1",
+        "schema": "neural-forge-qwen3-sensitivity-runtime-v2",
         "python": {
             "implementation": platform.python_implementation(),
             "version": platform.python_version(),
+            "cache_tag": sys.implementation.cache_tag,
         },
         "platform": {
             "system": platform.system(),
             "release": platform.release(),
+            "version": platform.version(),
             "machine": platform.machine(),
+            "processor": platform.processor(),
         },
+        "packages": packages,
         "torch": {
             "version": str(torch.__version__),
+            "git_version": getattr(torch.version, "git_version", None),
+            "debug": bool(getattr(torch.version, "debug", False)),
+            "build_config_sha256": hashlib.sha256(
+                torch.__config__.show().encode("utf-8")
+            ).hexdigest(),
             "cuda_version": torch.version.cuda,
+            "cuda_driver_version": cuda_driver_version,
             "cudnn_version": cudnn_version,
             "deterministic_algorithms": torch.are_deterministic_algorithms_enabled(),
+            "deterministic_warn_only": (
+                torch.is_deterministic_algorithms_warn_only_enabled()
+            ),
             "float32_matmul_precision": torch.get_float32_matmul_precision(),
             "cuda_matmul_allow_tf32": (
                 bool(torch.backends.cuda.matmul.allow_tf32) if uses_cuda else None
@@ -1486,32 +1899,79 @@ def _runtime_identity(
             "cudnn_deterministic": (
                 bool(torch.backends.cudnn.deterministic) if uses_cuda else None
             ),
+            "cuda_sdp_backends": sdp_flags,
+            "cuda_matmul_allow_fp16_reduced_precision_reduction": (
+                bool(torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction)
+                if uses_cuda
+                else None
+            ),
+            "cuda_matmul_allow_bf16_reduced_precision_reduction": (
+                bool(torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction)
+                if uses_cuda
+                else None
+            ),
+            "mkldnn_enabled": bool(torch.backends.mkldnn.enabled),
+            "mkldnn_deterministic": bool(
+                getattr(torch.backends.mkldnn, "deterministic", False)
+            ),
             "default_dtype": str(torch.get_default_dtype()),
+            "default_device": str(
+                torch.get_default_device()
+                if hasattr(torch, "get_default_device")
+                else "cpu"
+            ),
+            "num_threads": int(torch.get_num_threads()),
+            "num_interop_threads": int(torch.get_num_interop_threads()),
+            "autocast_cpu": _autocast_identity("cpu"),
+            "autocast_cuda": _autocast_identity("cuda") if uses_cuda else None,
         },
         "environment": {
             name: os.environ.get(name)
             for name in (
                 "CUBLAS_WORKSPACE_CONFIG",
                 "CUDA_VISIBLE_DEVICES",
+                "NVIDIA_TF32_OVERRIDE",
+                "OMP_NUM_THREADS",
+                "MKL_NUM_THREADS",
+                "TORCH_ALLOW_TF32_CUBLAS_OVERRIDE",
+                "TORCHINDUCTOR_FX_GRAPH_CACHE",
                 "PYTORCH_CUDA_ALLOC_CONF",
             )
         },
         "attention_backend": layout.attention_backend,
+        "attention_module_types": [
+            f"{type(layer.self_attn).__module__}.{type(layer.self_attn).__qualname__}"
+            for layer in layout.layers
+        ],
         "model_devices": list(layout.model_devices),
         "state_device_dtypes": [list(item) for item in state_layout],
+        "state_tensor_placements": [
+            [name, str(value.device), str(value.dtype)]
+            for name, value in sorted(state.items())
+        ],
         "input_device": str(layout.input_device),
         "activation_element_bytes": layout.activation_element_bytes,
         "cuda_devices": cuda_devices,
         "module_training_modes": [
             [name, bool(module.training)] for name, module in model.named_modules()
         ],
-        "hooks": _runtime_hook_identity(model),
+        "hooks": hooks,
+        "execution_implementation_sha256": implementation_sha256,
+        "cross_runtime_cache_reuse": {
+            "allowed": not fail_closed_reasons,
+            "fail_closed_reasons": fail_closed_reasons,
+            "fail_closed_nonce": fail_closed_nonce,
+        },
         "execution": {
             "inference_mode": True,
             "use_cache": False,
+            "logits_to_keep": "explicit_position_tensor",
+            "grad_enabled_at_entry": bool(torch.is_grad_enabled()),
             "codebook_channels_per_chunk": limits.max_codebook_channels_per_chunk,
             "candidate_chunk_size_cap": limits.candidate_chunk_size,
             "candidate_forward_row_cap": limits.max_candidate_forward_rows,
+            "fingerprint_chunk_bytes": limits.max_fingerprint_chunk_bytes,
+            "sketch_work_bytes": limits.max_sketch_work_bytes,
             "rss_sample_interval_seconds": _RSS_SAMPLE_INTERVAL_SECONDS,
         },
     }
@@ -2201,29 +2661,90 @@ def _mlp_forward_workspace_bound(
 ) -> tuple[int, int, int]:
     """Bound ordinary MLP temporaries and prepared-codebook materialization.
 
-    The codebook runtime gathers full logical gate/up/down matrices before each
-    layer forward. With scales enabled, one gathered matrix and its scaled
-    replacement coexist transiently, so four dense matrices are charged.
+    The activation term charges all ordinary dense MLP live values plus a
+    bounded GEMM workspace. The codebook term additionally charges complete
+    logical gate/up/down matrices. When scales are enabled, both every gathered
+    matrix and every scaled replacement are charged rather than assuming that
+    allocator reuse immediately returns the superseded storage.
     """
 
     expanded_tokens = batch.rows * repeats * batch.sequence_length
-    compute_bytes = max(4, layout.activation_element_bytes)
-    activation_workspace = expanded_tokens * (
-        4 * layout.intermediate_width + 2 * layout.hidden_size
-    ) * compute_bytes
-    dense_workspace = activation_workspace if "dense" in layout.mlp_modes else 0
+    dense_element_bytes = layout.activation_element_bytes
+    codebook_element_bytes = layout.activation_element_bytes
+    codebook_matrix_copies = 0
+    codebook_bias_copies = 0
+    for mode, layer in zip(layout.mlp_modes, layout.layers, strict=True):
+        if mode == "dense":
+            for projection_name in ("gate_proj", "up_proj", "down_proj"):
+                projection = getattr(layer.mlp, projection_name)
+                weight = getattr(projection, "weight", None)
+                if isinstance(weight, Tensor):
+                    dense_element_bytes = max(
+                        dense_element_bytes,
+                        int(weight.element_size()),
+                    )
+            continue
+        registry = layer.mlp.registry
+        materialized_tensors = (
+            registry.prototype_gate_weight,
+            registry.prototype_up_weight,
+            registry.prototype_down_weight,
+            registry.neuron_scales,
+        )
+        codebook_element_bytes = max(
+            codebook_element_bytes,
+            *(
+                int(value.element_size())
+                for value in materialized_tensors
+                if isinstance(value, Tensor)
+            ),
+        )
+        scaled = registry.neuron_scales is not None
+        codebook_matrix_copies = max(codebook_matrix_copies, 6 if scaled else 3)
+        bias_count = int(registry.prototype_gate_bias is not None) + int(
+            registry.prototype_up_bias is not None
+        )
+        codebook_bias_copies = max(
+            codebook_bias_copies,
+            bias_count * (2 if scaled else 1),
+        )
+
+    live_elements = expanded_tokens * (
+        5 * layout.intermediate_width + 3 * layout.hidden_size
+    )
+    dense_activation_workspace = live_elements * max(4, dense_element_bytes)
+    dense_workspace = (
+        dense_activation_workspace + _MLP_KERNEL_WORKSPACE_BOUND_BYTES
+        if "dense" in layout.mlp_modes
+        else 0
+    )
     codebook_materialization = 0
     codebook_workspace = 0
     if "codebook" in layout.mlp_modes:
-        matrix_elements = 4 * layout.hidden_size * layout.intermediate_width
+        matrix_elements = (
+            codebook_matrix_copies * layout.hidden_size * layout.intermediate_width
+        )
+        bias_elements = codebook_bias_copies * layout.intermediate_width
         index_elements = 2 * layout.intermediate_width
         codebook_materialization = (
-            matrix_elements * layout.activation_element_bytes + index_elements * 8
+            matrix_elements + bias_elements
+        ) * codebook_element_bytes + index_elements * 8
+        codebook_activation_workspace = live_elements * max(
+            4,
+            codebook_element_bytes,
         )
-        codebook_workspace = codebook_materialization + activation_workspace
-    return dense_workspace, codebook_materialization, max(
+        codebook_workspace = (
+            codebook_materialization
+            + codebook_activation_workspace
+            + _MLP_KERNEL_WORKSPACE_BOUND_BYTES
+        )
+    return (
         dense_workspace,
-        codebook_workspace,
+        codebook_materialization,
+        max(
+            dense_workspace,
+            codebook_workspace,
+        ),
     )
 
 
@@ -2281,6 +2802,34 @@ def _chunk_capacity(
         f"A single {kind} candidate would exceed max_collector_bytes="
         f"{limits.max_collector_bytes}."
     )
+
+
+def _enforce_forward_resource_preflight(
+    peak_bytes: int,
+    layout: _Layout,
+    limits: Qwen3SensitivityLimits,
+) -> None:
+    """Reject a predicted forward peak before any model execution begins."""
+
+    checks = [
+        (
+            "process RSS",
+            limits.max_process_rss_increase_bytes,
+        )
+    ]
+    if any(torch.device(name).type == "cuda" for name in layout.model_devices):
+        checks.extend(
+            (
+                ("CUDA allocated", limits.max_cuda_allocated_increase_bytes),
+                ("CUDA reserved", limits.max_cuda_reserved_increase_bytes),
+            )
+        )
+    for resource, maximum in checks:
+        if peak_bytes > maximum:
+            raise Qwen3SensitivityLimitError(
+                f"Predicted forward {resource} peak {peak_bytes} exceeds hard cap "
+                f"{maximum}; collection was refused before model execution."
+            )
 
 
 def _measure_neurons(
@@ -2542,6 +3091,10 @@ def _collect_qwen3_sensitivity_evidence_impl(
         raise Qwen3SensitivityShapeError(
             "limits must be a Qwen3SensitivityLimits instance."
         )
+    guard = _guard
+    if not isinstance(guard, _ResourceGuard) or guard.stopped:
+        raise Qwen3SensitivityStateError("A live resource guard is required.")
+    guard.checkpoint("collector_entry")
     dimension = _positive_int(sketch_dim, "sketch_dim")
     if dimension > active_limits.max_sketch_dim:
         raise Qwen3SensitivityLimitError(
@@ -2556,6 +3109,7 @@ def _collect_qwen3_sensitivity_evidence_impl(
         "attention_high_damage_anchor_count",
     )
     layout = _layout(model, active_limits)
+    guard.checkpoint("layout_discovery_complete")
     calibration = _batch(
         calibration_input_ids,
         calibration_attention_mask,
@@ -2572,6 +3126,7 @@ def _collect_qwen3_sensitivity_evidence_impl(
         max_rows=active_limits.max_gate_rows,
         limits=active_limits,
     )
+    guard.checkpoint("batch_preparation_complete")
     _strictly_disjoint(calibration, gate)
     positions = _score_indices(score_positions, calibration, active_limits)
     neurons = _refs(
@@ -2627,7 +3182,8 @@ def _collect_qwen3_sensitivity_evidence_impl(
     codebook_mlp_scratch = (
         (
             activation_rows * codebook_channels * 3
-            + codebook_channels * layout.hidden_size * 2
+            + codebook_channels * layout.hidden_size * 4
+            + codebook_channels * 4
         )
         * max(4, layout.activation_element_bytes)
         if "codebook" in layout.mlp_modes
@@ -2698,10 +3254,17 @@ def _collect_qwen3_sensitivity_evidence_impl(
         calibration,
         attention_chunk if attention else 1,
     )
-
-    guard = _guard
-    if not isinstance(guard, _ResourceGuard):
-        raise Qwen3SensitivityStateError("A live resource guard is required.")
+    predicted_forward_peak = max(
+        baseline_peak,
+        neuron_peak if neurons else baseline_peak,
+        attention_peak if attention else baseline_peak,
+    )
+    _enforce_forward_resource_preflight(
+        predicted_forward_peak,
+        layout,
+        active_limits,
+    )
+    guard.checkpoint("forward_resource_preflight_complete")
     inventory = _hook_inventory(model)
     runtime_payload = _runtime_identity(model, layout, active_limits)
     runtime_fingerprint = _sha256_json(runtime_payload)
@@ -2734,6 +3297,27 @@ def _collect_qwen3_sensitivity_evidence_impl(
         "changed_state_prefixes": model_manifest.changed_state_prefixes,
     }
     measurement_fingerprint = _sha256_json(measurement_payload)
+    # Random count-sketch signs are part of the mathematical measurement, not
+    # part of cache isolation.  Deriving them from ``runtime_fingerprint`` made
+    # harmless process/source provenance changes silently rotate the feature
+    # basis and therefore change candidate identities.  Keep the fail-closed
+    # runtime hash in ``measurement_fingerprint`` and the cache key, while
+    # deriving the sketch basis solely from semantic model/input/work content.
+    sketch_basis_fingerprint = _sha256_json(
+        {
+            "schema": "neural-forge-qwen3-sensitivity-sketch-basis-v1",
+            "model": model_fingerprint,
+            "calibration": calibration.fingerprint,
+            "score_positions": positions,
+            "neurons": [
+                [item.layer_index, item.neuron_index] for item in neurons
+            ],
+            "attention": [
+                [item.layer_index, item.group_index] for item in attention
+            ],
+            "sketch_dim": dimension,
+        }
+    )
     cache_fingerprint = _sha256_json(
         {
             "measurement": measurement_fingerprint,
@@ -2757,67 +3341,70 @@ def _collect_qwen3_sensitivity_evidence_impl(
         calibration_row_fingerprints=calibration.row_fingerprints,
         gate_row_fingerprints=gate.row_fingerprints,
         model_manifest=model_manifest,
+        sketch_basis=sketch_basis_fingerprint,
     )
     residual_seed = int(
-        hashlib.sha256(f"{measurement_fingerprint}:residual".encode()).hexdigest()[:15],
+        hashlib.sha256(
+            f"{sketch_basis_fingerprint}:residual".encode()
+        ).hexdigest()[:15],
         16,
     )
     logit_seed = int(
-        hashlib.sha256(f"{measurement_fingerprint}:logit".encode()).hexdigest()[:15],
+        hashlib.sha256(
+            f"{sketch_basis_fingerprint}:logit".encode()
+        ).hexdigest()[:15],
         16,
     )
 
-    with torch.inference_mode():
-        baseline = _baseline(
+    hooks_restored = False
+    try:
+        with torch.inference_mode():
+            baseline = _baseline(
+                model,
+                layout,
+                calibration,
+                positions,
+                residual_layers,
+                active_limits,
+                guard,
+            )
+            neuron_evidence, neuron_forwards = _measure_neurons(
+                model,
+                layout,
+                calibration,
+                positions,
+                neurons,
+                baseline,
+                chunk_size=neuron_chunk,
+                sketch_dim=dimension,
+                residual_seed=residual_seed,
+                logit_seed=logit_seed,
+                sketch_work_bytes=active_limits.max_sketch_work_bytes,
+                guard=guard,
+            )
+            attention_evidence, attention_forwards = _measure_attention(
+                model,
+                layout,
+                calibration,
+                positions,
+                attention,
+                baseline,
+                chunk_size=attention_chunk,
+                sketch_dim=dimension,
+                residual_seed=residual_seed,
+                logit_seed=logit_seed,
+                sketch_work_bytes=active_limits.max_sketch_work_bytes,
+                guard=guard,
+            )
+        guard.checkpoint("collection_complete")
+    finally:
+        hooks_restored = _finalize_model_integrity(
             model,
-            layout,
-            calibration,
-            positions,
-            residual_layers,
-            active_limits,
-            guard,
-        )
-        neuron_evidence, neuron_forwards = _measure_neurons(
-            model,
-            layout,
-            calibration,
-            positions,
-            neurons,
-            baseline,
-            chunk_size=neuron_chunk,
-            sketch_dim=dimension,
-            residual_seed=residual_seed,
-            logit_seed=logit_seed,
-            sketch_work_bytes=active_limits.max_sketch_work_bytes,
+            model_manifest,
+            inventory,
+            max_chunk_bytes=active_limits.max_fingerprint_chunk_bytes,
             guard=guard,
         )
-        attention_evidence, attention_forwards = _measure_attention(
-            model,
-            layout,
-            calibration,
-            positions,
-            attention,
-            baseline,
-            chunk_size=attention_chunk,
-            sketch_dim=dimension,
-            residual_seed=residual_seed,
-            logit_seed=logit_seed,
-            sketch_work_bytes=active_limits.max_sketch_work_bytes,
-            guard=guard,
-        )
-    guard.checkpoint("collection_complete")
-    hooks_restored = _hook_inventory(model) == inventory
-    if not hooks_restored:
-        raise Qwen3SensitivityStateError(
-            "Sensitivity collection changed the model hook inventory."
-        )
-    _verify_model_state_provenance(
-        model,
-        model_manifest,
-        max_chunk_bytes=active_limits.max_fingerprint_chunk_bytes,
-        checkpoint=guard.checkpoint,
-    )
-    guard.checkpoint("final_model_rehash_complete")
     anchor_masks = _anchors(
         layout,
         neuron_evidence,
@@ -2955,8 +3542,9 @@ def collect_qwen3_sensitivity_evidence(
         raise Qwen3SensitivityShapeError(
             "limits must be a Qwen3SensitivityLimits instance."
         )
-    guard = _ResourceGuard(active_limits, _guard_model_devices(model))
+    guard = _ResourceGuard(active_limits)
     try:
+        guard.bind_cuda_devices(_guard_model_devices(model))
         return _collect_qwen3_sensitivity_evidence_impl(
             model,
             calibration_input_ids,

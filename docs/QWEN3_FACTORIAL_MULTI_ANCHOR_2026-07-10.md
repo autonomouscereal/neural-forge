@@ -78,6 +78,22 @@ retained language-model behavior. Promotion requires installing the fold into
 the complete model and passing the parent-relative selection and untouched
 certification suites plus manual output review.
 
+### 256-neuron stress probe
+
+The same layer and data split were then tested at 256 removed neurons with up
+to eight anchors per dropped path. The bounded run performed 233,472 projection
+fits and 8,415,232 similarity products.
+
+| Method | Calibration layer relative L2 | Validation layer relative L2 | Fit time |
+| --- | ---: | ---: | ---: |
+| Pair compensation | 0.0351505 | 0.0248835 | 5.444 s |
+| Sparse multi-anchor compensation | 0.0167462 | 0.0100573 | 54.695 s |
+
+Multi-anchor validation error is `0.40418x` pair error, a `59.58%` reduction.
+The single-layer physical saving is `1,966,080` parameters. The stronger fit is
+about ten times slower at this stress size, so candidate-pool and anchor depth
+must remain explicitly bounded.
+
 ## Artifact locations
 
 - Attention-only run:
@@ -86,8 +102,85 @@ certification suites plus manual output review.
   `/mnt/ai_data/neural-forge/qwen3_4b_codebook_20260710/qwen3_4b_codebook_pn35_pa36_gpu0_r1_20260710`
 - Multi-anchor probe:
   `/mnt/ai_data/neural-forge/qwen3_4b_multi_anchor_probe_20260710/layer18_drop64_anchor4_gpu4_r1/report.json`
+- Multi-anchor stress probe:
+  `/mnt/ai_data/neural-forge/qwen3_4b_multi_anchor_probe_20260710/layer18_drop256_anchor8_gpu0_r3/report.json`
 - Extracted cached-parent manual rows:
   `/mnt/ai_data/neural-forge/qwen3_4b_codebook_20260710/parent_manual_output_extract_20260710.json`
 
-The MLP `p34` / attention `p36` control remains in progress and is intentionally
-not summarized before its full evaluation completes.
+## Completed p34 MLP boundary and compensated full-model controls
+
+The MLP `p34` / attention `p36` control completed after the earlier report was
+written. It has `3,872,362,496` parameters (`1.038763x` compression), PPL
+`9,132.495930`, behavior `0/1000`, exact generation `0/1000`, and choice
+`82/250`. This confirms that MLP capacity crosses a catastrophic boundary
+between `p35` and `p34`; the run is not an in-progress result and must not be
+queued again unchanged.
+
+The compensated pair and sparse multi-anchor methods were also installed into
+the full Qwen model. All runs used zero recovery and retained `400/400`
+parent-passing behavior plus `250/250` choice, but the strict untouched
+generation certification rejected every candidate:
+
+| Fold | Parameters saved | Child generation | Parent-pass losses | Result |
+| --- | ---: | ---: | ---: | --- |
+| Pair, 64 neurons | `491,520` | `385/1000` | `4` | rejected |
+| Multi-anchor, 64 neurons | `491,520` | `382/1000` | `7` | rejected |
+| Pair, 1 neuron | `7,680` | `386/1000` | `2` | rejected |
+| Multi-anchor, 1 neuron | `7,680` | `385/1000` | `2` | rejected |
+
+A later layer-specific pair run found a strictly better one-neuron frontier at
+layer 35. It saved `7,680` parameters, retained behavior `400/400` and choice
+`250/250`, and scored generation `384/1000` against a bound parent that also
+scored `384/1000`. There was one parent-pass loss and one gain, so retained
+parent generation was `383/384` (`99.7396%`) with no net pass-count loss. PPL
+was `882.565651`. The artifact was still refused publication solely because the
+old certification contract allowed zero lost IDs. The matched layer-18 search
+rejected all eight attempted proposals before publication.
+
+The drop-1 runs used a separately bound parent report that scored `384/1000`
+generation rather than the earlier cached `388/1000`. That parent variance,
+despite exact identity binding, means a zero-lost-ID rule is too brittle to act
+as the only frontier criterion. Multi-anchor remains a useful reusable local
+fit primitive, but its 52-60% layer-error improvement did not beat pair folding
+on full-model free-running generation. Future selection must retain the full
+parent-relative Pareto record and manual evidence rather than promote by local
+error or reject all net-positive candidates on one unstable exact-ID threshold.
+
+The layer-35 result is direct evidence for that change: it is not a target-size
+success, but it is Pareto-admissible under the project's approximately 90%
+fold-retention objective and should remain available as an uneven-allocation
+comparison point.
+
+### Late layer-specific controls
+
+The queued layer-34 and layer-33 pair controls finished after the first audit.
+Both passed their adaptive selection gates, removed one MLP path (`7,680`
+parameters), retained behavior `400/400` and choice `250/250`, and lost only one
+of the bound parent's `384` strict-generation passes (`383/384`, `99.7396%`).
+They also gained more strict passes than they lost:
+
+| Layer | Candidate generation | Losses | Gains | Net pass-count change | Publication under old zero-loss rule |
+| ---: | ---: | ---: | ---: | ---: | --- |
+| 35 | `384/1000` | 1 | 1 | 0 | refused |
+| 34 | `385/1000` | 1 | 2 | +1 | refused |
+| 33 | `386/1000` | 1 | 3 | +2 | refused |
+
+The layer-34 and layer-33 certification parents both scored `384/1000` on the
+bound run. Their candidates remained at behavior `400/1000` and choice
+`250/250`. These are three independent adjacent-layer examples showing that a
+zero-lost-ID publication rule discards high-retention, net-positive Pareto
+steps. They do not prove that the steps compose safely; composition still
+requires a refreshed parent-relative gate after each accepted transaction.
+
+The matched sparse multi-anchor layer-35 control rejected all eight candidates
+at the small gate. Each retained the small-gate behavior and choice items but
+lost the same generation item. That result closes the unchanged layer-35
+multi-anchor retry lane; the multi-anchor primitive remains available for
+different evidence/candidates, but its better local layer fit is not itself a
+reason to rerun those eight proposals.
+
+Artifact directories:
+
+- `/mnt/ai_data/neural-forge/qwen3_4b_compensated_20260710/qwen3_4b_pair_drop1_layer34_dev_reused_eval_20260710`
+- `/mnt/ai_data/neural-forge/qwen3_4b_compensated_20260710/qwen3_4b_pair_drop1_layer33_dev_reused_eval_20260710`
+- `/mnt/ai_data/neural-forge/qwen3_4b_compensated_20260710/qwen3_4b_multi_anchor_drop1_layer35_dev_reused_eval_20260710`

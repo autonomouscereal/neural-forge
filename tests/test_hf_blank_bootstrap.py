@@ -602,6 +602,54 @@ def test_real_medoid_bootstrap_copies_parent_circuits_with_full_coverage() -> No
     )
 
 
+def test_multi_anchor_bootstrap_uses_bounded_sparse_full_coverage() -> None:
+    result = bootstrap_blank_decoder_models(
+        _qwen3_source(),
+        _qwen3_target(head_dim=4),
+        _batch(588, batch_size=16),
+        validation_inputs=_batch(589, batch_size=16),
+        residual_map_method="pca",
+        nonlinear_merge_method="multi_anchor",
+        multi_anchor_anchors_per_source=3,
+        multi_anchor_max_candidate_targets=8,
+        max_coordinate_rows=24,
+        fit_full_lm_head=False,
+    )
+
+    for block_index, source_layer_count in ((0, 1), (1, 2)):
+        multi = result.fit_reports[f"block.{block_index}.mlp.multi_anchor"]
+        assert multi["source_neurons"] == 20 * source_layer_count
+        assert multi["target_neurons"] == 12
+        assert multi["anchors_per_source"] == 3
+        assert multi["candidate_pool_size"] == 8
+        assert multi["full_source_coverage"] is True
+        assert multi["producer_aggregation"] == "none"
+        assert multi["consumer_aggregation"] == (
+            "sparse-post-swiglu-ridge-index-add"
+        )
+        assert multi["materialized_full_source_target_matrix"] is False
+        assert multi["similarity_products"] <= multi["max_similarity_products"]
+        assert multi["projection_fit_count"] <= multi["max_projection_fits"]
+        assert multi["invariants"]["all_hold"] is True
+
+        prior = result.fit_reports[f"block.{block_index}.mlp.structural_prior"]
+        assert prior["consumer_initialization"] == (
+            "sparse-post-swiglu-ridge-index-add"
+        )
+        assert prior["candidate_pool_size"] == 8
+        span = result.fit_reports[f"block.{block_index}.span"]
+        assert span["nonlinear_merge_method"] == "multi_anchor"
+        assert span["structural_prior_residual_consumers"] == (
+            "sparse-multi-anchor-index-add-then-joint-endpoint-fit"
+        )
+        assert span["structural_prior_feature_producers"] == (
+            "real-medoid-copy-sparse-multi-anchor-consumer"
+        )
+
+    assert result.candidate_gate_metrics.final_state.finite is True
+    assert result.candidate_gate_metrics.logits.finite is True
+
+
 def test_real_medoid_final_model_keeps_selected_producer_weights(monkeypatch) -> None:
     source = _qwen3_source()
     target = _qwen3_target(head_dim=4)

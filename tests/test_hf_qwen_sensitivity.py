@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ctypes
+import threading
 from dataclasses import FrozenInstanceError, replace
 
 import pytest
@@ -84,6 +86,13 @@ def _gate_b() -> torch.Tensor:
     return torch.tensor([[19, 20, 21, 22]], dtype=torch.long)
 
 
+def _set_first_storage_byte(value: torch.Tensor, byte: int) -> None:
+    address = int(value.untyped_storage().data_ptr()) + (
+        int(value.storage_offset()) * int(value.element_size())
+    )
+    ctypes.c_ubyte.from_address(address).value = byte
+
+
 def _logits(model: torch.nn.Module, input_ids: torch.Tensor) -> torch.Tensor:
     with torch.inference_mode():
         return (
@@ -122,6 +131,22 @@ def _hook_inventory(model: torch.nn.Module) -> tuple[tuple[int, ...], ...]:
                 )
             )
     return tuple(result)
+
+
+def test_model_manifest_supports_registered_inference_tensors() -> None:
+    model = _tiny_qwen(seed=1770)
+    with torch.inference_mode():
+        inference_buffer = torch.arange(4, dtype=torch.float32)
+    model.register_buffer("inference_only_state", inference_buffer)
+
+    manifest = fingerprint_qwen3_model_manifest(model)
+    record = next(
+        item for item in manifest.tensors if item.name == "inference_only_state"
+    )
+
+    assert record.version == -1
+    assert record.storage_nbytes == inference_buffer.numel() * inference_buffer.element_size()
+    assert record.data_ptr == inference_buffer.untyped_storage().data_ptr()
 
 
 def _collect(
@@ -241,6 +266,24 @@ def test_hook_cleanup_is_atomic_when_candidate_forward_raises() -> None:
         rtol=0.0,
         atol=0.0,
     )
+
+
+def test_hook_callable_replacement_with_same_handle_is_detected() -> None:
+    model = _tiny_qwen(1794)
+    layer = model.model.layers[0]
+    handle = None
+
+    def replace_self(_module, _inputs, output):
+        assert handle is not None
+        layer._forward_hooks[handle.id] = lambda *_args: None
+        return output
+
+    handle = layer.register_forward_hook(replace_self)
+    try:
+        with pytest.raises(Qwen3SensitivityStateError, match="hook inventory"):
+            _collect(model)
+    finally:
+        handle.remove()
 
 
 def test_high_damage_and_user_exact_anchor_masks_are_immutable() -> None:
@@ -500,6 +543,57 @@ def test_incremental_refresh_matches_full_root_and_detects_undeclared_change() -
         )
 
 
+def test_incremental_refresh_detects_direct_raw_storage_mutation() -> None:
+    model = _tiny_qwen(1788)
+    parent = fingerprint_qwen3_model_manifest(model)
+    target = model.model.layers[1].mlp.up_proj.weight
+    pointer = target.untyped_storage().data_ptr()
+    version = target._version
+    original_byte = ctypes.c_ubyte.from_address(pointer).value
+
+    _set_first_storage_byte(target, (original_byte + 1) % 256)
+
+    assert target.untyped_storage().data_ptr() == pointer
+    assert target._version == version
+    with pytest.raises(Qwen3SensitivityStateError, match="Undeclared state mutation"):
+        fingerprint_qwen3_model_manifest(
+            model,
+            parent=parent,
+            changed_state_prefixes=("model.layers.0.",),
+            accepted_transaction_sha256="c" * 64,
+        )
+
+
+def test_incremental_collection_finally_rehashes_declared_changed_tensors() -> None:
+    model = _tiny_qwen(1795)
+    parent = fingerprint_qwen3_model_manifest(model)
+    target = model.model.layers[0].mlp.gate_proj.weight
+    with torch.no_grad():
+        target[0, 0].add_(0.125)
+    pointer = target.untyped_storage().data_ptr()
+    version = target._version
+    original_byte = ctypes.c_ubyte.from_address(pointer).value
+    changed_byte = (original_byte + 1) % 256
+
+    def mutate_declared_storage(_module, _inputs, output):
+        _set_first_storage_byte(target, changed_byte)
+        return output
+
+    handle = model.model.layers[0].register_forward_hook(mutate_declared_storage)
+    try:
+        with pytest.raises(Qwen3SensitivityStateError, match="exact post-forward"):
+            _collect(
+                model,
+                incremental_parent_manifest=parent,
+                changed_state_prefixes=("model.layers.0.",),
+                accepted_transaction_sha256="d" * 64,
+            )
+    finally:
+        handle.remove()
+    assert target.untyped_storage().data_ptr() == pointer
+    assert target._version == version
+
+
 def test_actual_rss_and_cuda_peak_guards_enforce_growth(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -544,11 +638,86 @@ def test_actual_rss_and_cuda_peak_guards_enforce_growth(
     assert not cuda_guard._sampler_thread.is_alive()
 
 
+def test_process_peak_uses_new_absolute_os_high_water_mark(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current = [1_000]
+    lifetime_peak = [5_000]
+    limits = Qwen3SensitivityLimits(max_process_rss_increase_bytes=2_000)
+    monkeypatch.setattr(sensitivity, "_process_rss_bytes", lambda: current[0])
+    monkeypatch.setattr(
+        sensitivity,
+        "_process_peak_rss_bytes",
+        lambda: lifetime_peak[0],
+    )
+    guard = sensitivity._ResourceGuard(limits, ())
+    lifetime_peak[0] = 6_000
+    with pytest.raises(Qwen3SensitivityLimitError, match="process RSS increase 5000"):
+        guard.checkpoint("new_os_high_water")
+    with pytest.raises(Qwen3SensitivityLimitError, match="process RSS increase 5000"):
+        guard.close()
+    assert guard.process_rss_peak == 6_000
+    assert guard.stopped
+
+
+def test_continuous_rss_sampler_retains_transient_spike_between_checkpoints(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    spike = threading.Event()
+    sampled = threading.Event()
+
+    def sampled_rss() -> int:
+        if (
+            threading.current_thread().name == "qwen3-sensitivity-rss-sampler"
+            and spike.is_set()
+        ):
+            sampled.set()
+            return 1_301
+        return 1_000
+
+    monkeypatch.setattr(sensitivity, "_process_rss_bytes", sampled_rss)
+    monkeypatch.setattr(sensitivity, "_process_peak_rss_bytes", lambda: 1_000)
+    guard = sensitivity._ResourceGuard(
+        Qwen3SensitivityLimits(max_process_rss_increase_bytes=300),
+        (),
+    )
+    spike.set()
+    assert sampled.wait(timeout=1.0)
+    spike.clear()
+    with pytest.raises(Qwen3SensitivityLimitError, match="process RSS"):
+        guard.close()
+    assert guard.process_rss_peak == 1_301
+    assert guard.stopped
+    assert not guard._sampler_thread.is_alive()
+
+
 def test_guard_starts_before_batch_clones_and_stops_after_collection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     original = sensitivity._batch
     observations: list[bool] = []
+    device_observations: list[bool] = []
+    layout_observations: list[bool] = []
+    original_devices = sensitivity._guard_model_devices
+    original_layout = sensitivity._layout
+
+    def checked_devices(model):
+        device_observations.append(
+            any(
+                thread.name == "qwen3-sensitivity-rss-sampler" and thread.is_alive()
+                for thread in sensitivity.threading.enumerate()
+            )
+        )
+        return original_devices(model)
+
+    def checked_layout(*args, **kwargs):
+        layout_observations.append(
+            any(
+                thread.name == "qwen3-sensitivity-rss-sampler" and thread.is_alive()
+                for thread in sensitivity.threading.enumerate()
+            )
+        )
+        return original_layout(*args, **kwargs)
 
     def checked_batch(*args, **kwargs):
         observations.append(
@@ -559,8 +728,12 @@ def test_guard_starts_before_batch_clones_and_stops_after_collection(
         )
         return original(*args, **kwargs)
 
+    monkeypatch.setattr(sensitivity, "_guard_model_devices", checked_devices)
+    monkeypatch.setattr(sensitivity, "_layout", checked_layout)
     monkeypatch.setattr(sensitivity, "_batch", checked_batch)
     evidence = _collect(_tiny_qwen(1783))
+    assert device_observations == [True]
+    assert layout_observations == [True]
     assert observations == [True, True]
     assert evidence.report.process_rss_sampler_stopped
 
@@ -583,6 +756,46 @@ def test_raw_storage_mutation_from_forward_hook_fails_exact_final_rehash() -> No
     assert target._version == version
 
 
+def test_direct_storage_mutation_and_forward_failure_still_run_final_rehash() -> None:
+    model = _tiny_qwen(1789)
+    target = model.model.layers[0].mlp.gate_proj.weight
+    pointer = target.untyped_storage().data_ptr()
+    version = target._version
+    original_byte = ctypes.c_ubyte.from_address(pointer).value
+    changed_byte = (original_byte + 1) % 256
+
+    def mutate_storage_then_raise(_module, _inputs, _output):
+        _set_first_storage_byte(target, changed_byte)
+        raise RuntimeError("adversarial forward failure")
+
+    handle = model.model.layers[0].register_forward_hook(mutate_storage_then_raise)
+    try:
+        with pytest.raises(Qwen3SensitivityStateError, match="exact post-forward"):
+            _collect(model)
+    finally:
+        handle.remove()
+    assert target.untyped_storage().data_ptr() == pointer
+    assert target._version == version
+
+
+def test_successful_collection_rehashes_every_state_tensor_twice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _tiny_qwen(1790)
+    expected = set(sensitivity._model_state_tensors(model))
+    observed: list[str] = []
+    original = sensitivity._state_tensor_fingerprint
+
+    def counted(name, value, chunk_bytes, checkpoint):
+        observed.append(name)
+        return original(name, value, chunk_bytes, checkpoint)
+
+    monkeypatch.setattr(sensitivity, "_state_tensor_fingerprint", counted)
+    _collect(model)
+    assert set(observed) == expected
+    assert all(observed.count(name) == 2 for name in expected)
+
+
 def test_runtime_fingerprint_binds_execution_settings_and_hooks() -> None:
     model = _tiny_qwen(1785)
     first = _collect(model)
@@ -593,21 +806,73 @@ def test_runtime_fingerprint_binds_execution_settings_and_hooks() -> None:
     assert first.fingerprints.model == second.fingerprints.model
     assert first.fingerprints.runtime != second.fingerprints.runtime
     assert first.fingerprints.cache != second.fingerprints.cache
+    assert first.fingerprints.sketch_basis == second.fingerprints.sketch_basis
+    assert first.neurons == second.neurons
+    assert first.attention_groups == second.attention_groups
     assert first.report.runtime_fingerprint == first.fingerprints.runtime
 
     layout = sensitivity._layout(model, Qwen3SensitivityLimits())
     runtime = sensitivity._runtime_identity(model, layout, Qwen3SensitivityLimits())
     assert runtime["attention_backend"]
     assert runtime["state_device_dtypes"] == [["cpu", "torch.float32"]]
+    assert runtime["state_tensor_placements"]
+    assert runtime["packages"]["transformers"]
+    assert runtime["platform"]["version"]
+    assert runtime["torch"]["build_config_sha256"]
+    assert runtime["execution_implementation_sha256"]
+    assert runtime["execution"]["codebook_channels_per_chunk"] == 128
     assert runtime["hooks"]["cross_runtime_reuse"]
+    assert runtime["cross_runtime_cache_reuse"]["allowed"]
+
+    alternate_name = "eager" if layout.attention_backend != "eager" else "sdpa"
+    alternate_backend = sensitivity._runtime_identity(
+        model,
+        replace(layout, attention_backend=alternate_name),
+        Qwen3SensitivityLimits(),
+    )
+    assert sensitivity._sha256_json(alternate_backend) != sensitivity._sha256_json(
+        runtime
+    )
 
     handle = model.model.layers[0].register_forward_hook(lambda *_args: None)
     try:
         hooked = sensitivity._runtime_identity(model, layout, Qwen3SensitivityLimits())
+        hooked_again = sensitivity._runtime_identity(
+            model,
+            layout,
+            Qwen3SensitivityLimits(),
+        )
     finally:
         handle.remove()
     assert not hooked["hooks"]["cross_runtime_reuse"]
     assert hooked["hooks"]["cache_nonce"]
+    assert not hooked["cross_runtime_cache_reuse"]["allowed"]
+    assert hooked["hooks"]["cache_nonce"] != hooked_again["hooks"]["cache_nonce"]
+    assert sensitivity._sha256_json(hooked) != sensitivity._sha256_json(hooked_again)
+
+
+def test_process_only_runtime_nonce_does_not_rotate_sketch_basis(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _tiny_qwen(1786)
+    original = sensitivity._runtime_identity
+    nonces = iter(("first-process", "second-process"))
+
+    def process_specific_runtime(*args, **kwargs):
+        payload = original(*args, **kwargs)
+        payload["test_process_nonce"] = next(nonces)
+        return payload
+
+    monkeypatch.setattr(sensitivity, "_runtime_identity", process_specific_runtime)
+    first = _collect(model)
+    second = _collect(model)
+
+    assert first.fingerprints.runtime != second.fingerprints.runtime
+    assert first.fingerprints.measurement != second.fingerprints.measurement
+    assert first.fingerprints.cache != second.fingerprints.cache
+    assert first.fingerprints.sketch_basis == second.fingerprints.sketch_basis
+    assert first.neurons == second.neurons
+    assert first.attention_groups == second.attention_groups
 
 
 def test_cpu_runtime_identity_does_not_initialize_cuda_or_cudnn(
@@ -649,11 +914,23 @@ def test_codebook_full_materialization_is_preflighted_before_forward(
         batch,
         1,
     )
-    expected = (
-        4 * layout.hidden_size * layout.intermediate_width
-        * layout.activation_element_bytes
-        + 2 * layout.intermediate_width * 8
+    registry = model.model.layers[0].mlp.registry
+    scaled = registry.neuron_scales is not None
+    matrix_copies = 6 if scaled else 3
+    bias_count = int(registry.prototype_gate_bias is not None) + int(
+        registry.prototype_up_bias is not None
     )
+    bias_copies = bias_count * (2 if scaled else 1)
+    element_bytes = max(
+        registry.prototype_gate_weight.element_size(),
+        registry.prototype_up_weight.element_size(),
+        registry.prototype_down_weight.element_size(),
+        registry.neuron_scales.element_size() if scaled else 0,
+    )
+    expected = (
+        matrix_copies * layout.hidden_size * layout.intermediate_width
+        + bias_copies * layout.intermediate_width
+    ) * element_bytes + 2 * layout.intermediate_width * 8
     assert dense == 0
     assert materialization == expected
     assert total > materialization
@@ -677,6 +954,121 @@ def test_codebook_full_materialization_is_preflighted_before_forward(
     with pytest.raises(Qwen3SensitivityLimitError, match="Baseline collector peak"):
         _collect(model, limits=tiny_limit)
     assert not forwarded
+
+
+def test_dense_mlp_and_individual_resource_caps_are_preflighted_before_forward(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _tiny_qwen(1791)
+    base_limits = Qwen3SensitivityLimits()
+    layout = sensitivity._layout(model, base_limits)
+    batch = sensitivity._batch(
+        _calibration_a(),
+        None,
+        None,
+        split_name="calibration",
+        max_rows=base_limits.max_calibration_rows,
+        limits=base_limits,
+    )
+    dense, materialization, total = sensitivity._mlp_forward_workspace_bound(
+        layout,
+        batch,
+        1,
+    )
+    expected_live = (
+        batch.rows
+        * batch.sequence_length
+        * (5 * layout.intermediate_width + 3 * layout.hidden_size)
+        * 4
+    )
+    assert dense >= expected_live + sensitivity._MLP_KERNEL_WORKSPACE_BOUND_BYTES
+    assert materialization == 0
+    assert total == dense
+
+    forwarded = False
+
+    def forbidden_forward(*_args, **_kwargs):
+        nonlocal forwarded
+        forwarded = True
+        raise AssertionError("resource preflight allowed a model forward")
+
+    monkeypatch.setattr(model, "forward", forbidden_forward)
+    limits = Qwen3SensitivityLimits(
+        max_collector_bytes=1024**3,
+        max_process_rss_increase_bytes=dense - 1,
+        max_cuda_allocated_increase_bytes=1024**3,
+        max_cuda_reserved_increase_bytes=1024**3,
+    )
+    with pytest.raises(
+        Qwen3SensitivityLimitError,
+        match="Predicted forward process RSS peak",
+    ):
+        _collect(model, limits=limits)
+    assert not forwarded
+
+
+def test_four_b_geometry_bounds_dense_temporaries_and_full_codebook_matrices() -> None:
+    limits = Qwen3SensitivityLimits(max_sequence_length=4096)
+    dense_model = _tiny_qwen(1792)
+    dense_layout = replace(
+        sensitivity._layout(dense_model, limits),
+        hidden_size=2_560,
+        intermediate_width=9_728,
+        activation_element_bytes=2,
+    )
+    ids = torch.ones((2, 2_048), dtype=torch.long)
+    large_batch = sensitivity._batch(
+        ids,
+        torch.ones_like(ids),
+        None,
+        split_name="calibration",
+        max_rows=limits.max_calibration_rows,
+        limits=limits,
+    )
+    dense, _, dense_total = sensitivity._mlp_forward_workspace_bound(
+        dense_layout,
+        large_batch,
+        1,
+    )
+    ordinary_live_values = (
+        2
+        * 2_048
+        * (5 * dense_layout.intermediate_width + 3 * dense_layout.hidden_size)
+        * 4
+    )
+    assert dense >= ordinary_live_values
+    assert dense_total == dense
+
+    codebook_model = _tiny_qwen(1793)
+    tokenizer = _Tokenizer()
+    prepare_qwen3_codebook_model(
+        codebook_model,
+        tokenizer,
+        tokenizer,
+        neuron_prototypes_per_neuron=2,
+        attention_prototypes_per_group=2,
+    )
+    codebook_layout = replace(
+        sensitivity._layout(codebook_model, limits),
+        hidden_size=2_560,
+        intermediate_width=9_728,
+        activation_element_bytes=2,
+    )
+    _, materialization, codebook_total = sensitivity._mlp_forward_workspace_bound(
+        codebook_layout,
+        large_batch,
+        1,
+    )
+    registry = codebook_model.model.layers[0].mlp.registry
+    copies = 6 if registry.neuron_scales is not None else 3
+    minimum_full_matrices = (
+        copies
+        * codebook_layout.hidden_size
+        * codebook_layout.intermediate_width
+        * registry.prototype_gate_weight.element_size()
+    )
+    assert materialization >= minimum_full_matrices
+    assert codebook_total > materialization
 
 
 def test_attention_workspace_bound_is_backend_aware() -> None:

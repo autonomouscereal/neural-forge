@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import gc
+import hashlib
 import weakref
 from dataclasses import dataclass
 
@@ -14,12 +15,17 @@ if not hasattr(transformers, "Qwen3Config"):
     pytest.skip("Transformers build has no Qwen3 support", allow_module_level=True)
 
 from neural_forge.hf_qwen_codebook_model import (  # noqa: E402
+    CHECKPOINT_SCHEMA,
+    LEGACY_CHECKPOINT_SCHEMAS,
     Qwen3CodebookError,
+    Qwen3CodebookStateError,
     load_qwen3_codebook_checkpoint,
+    plan_qwen3_codebook_artifact,
     prepare_qwen3_codebook_model,
     qwen3_codebook_parameter_report,
     save_qwen3_codebook_checkpoint,
 )
+import neural_forge.hf_qwen_codebook_model as codebook_model  # noqa: E402
 
 
 class _Tokenizer:
@@ -223,6 +229,31 @@ def _prepare(seed: int = 641) -> _PreparedRuntime:
         parent_tokenizer=parent_tokenizer,
         target_tokenizer=target_tokenizer,
     )
+
+
+def _checkpoint_contract(
+    runtime: torch.nn.Module,
+    tokenizer: _Tokenizer,
+    *,
+    name: str = "unit-test-tokenizer",
+) -> dict[str, object]:
+    parent_rows = runtime.parent_token_rows.detach().to(device="cpu").tolist()
+    return {
+        "tokenizer_name_or_path": name,
+        "vocab_size": len(tokenizer),
+        "vocab_sha256": hashlib.sha256(
+            codebook_model._canonical_json_bytes(tokenizer.get_vocab())
+        ).hexdigest(),
+        "special_token_ids": {
+            key: getattr(runtime.config, key, None)
+            for key in ("bos_token_id", "eos_token_id", "pad_token_id")
+        },
+        "parent_token_rows_sha256": hashlib.sha256(
+            codebook_model._canonical_json_bytes(
+                [int(value) for value in parent_rows]
+            )
+        ).hexdigest(),
+    }
 
 
 @pytest.fixture(scope="module")
@@ -484,11 +515,9 @@ def test_compact_checkpoint_reloads_without_dense_parent(tmp_path) -> None:
     manifest = save_qwen3_codebook_checkpoint(
         runtime,
         checkpoint,
-        tokenizer_contract={
-            "tokenizer_name_or_path": "unit-test",
-            "vocab_size": len(prepared_runtime.target_tokenizer),
-            "parent_token_rows_sha256": "unit-test",
-        },
+        tokenizer_contract=_checkpoint_contract(
+            runtime, prepared_runtime.target_tokenizer
+        ),
     )
     assert manifest["format"] == "safetensors"
     assert manifest["assignment_hashes"]
@@ -498,6 +527,11 @@ def test_compact_checkpoint_reloads_without_dense_parent(tmp_path) -> None:
     assert (checkpoint / "tokenizer_contract.json").is_file()
 
     reloaded = load_qwen3_codebook_checkpoint(checkpoint)
+    assert reloaded.neural_forge_tokenizer_contract == (
+        codebook_model._load_checkpoint_json(
+            checkpoint / "tokenizer_contract.json", "tokenizer contract"
+        )
+    )
     assert qwen3_codebook_parameter_report(reloaded) == qwen3_codebook_parameter_report(
         runtime
     )
@@ -521,6 +555,361 @@ def test_compact_checkpoint_reloads_without_dense_parent(tmp_path) -> None:
         )
     torch.testing.assert_close(actual, expected, rtol=0.0, atol=0.0)
     assert torch.equal(actual_generation, expected_generation)
+
+
+def test_checkpoint_finiteness_validation_is_detached_from_autograd(monkeypatch) -> None:
+    runtime = _prepare(999).runtime
+    original = torch.isfinite
+    observed_requires_grad: list[bool] = []
+
+    def audited_isfinite(value):
+        observed_requires_grad.append(bool(value.requires_grad))
+        return original(value)
+
+    monkeypatch.setattr(codebook_model.torch, "isfinite", audited_isfinite)
+    state = codebook_model._checkpoint_state(runtime)
+
+    assert state
+    assert observed_requires_grad
+    assert not any(observed_requires_grad)
+    assert all(not value.requires_grad for value in state.values())
+
+
+def test_artifact_plan_serializes_tied_embedding_once_and_matches_tree(tmp_path) -> None:
+    safetensors = pytest.importorskip("safetensors.torch")
+    runtime = _prepare(1001).runtime
+    tokenizer = _Tokenizer(
+        [
+            "token-0",
+            "token-1",
+            "token-2",
+            "token-5",
+            "token-7",
+            "token-9",
+            "token-11",
+        ]
+    )
+    contract = _checkpoint_contract(runtime, tokenizer)
+    plan = plan_qwen3_codebook_artifact(runtime, tokenizer_contract=contract)
+    checkpoint = tmp_path / "canonical"
+    manifest = save_qwen3_codebook_checkpoint(
+        runtime,
+        checkpoint,
+        tokenizer_contract=contract,
+    )
+    state = safetensors.load_file(str(checkpoint / "model.safetensors"))
+
+    assert "model.embed_tokens.weight" in state
+    assert "lm_head.weight" not in state
+    embedding_bytes = (
+        runtime.get_input_embeddings().weight.numel()
+        * runtime.get_input_embeddings().weight.element_size()
+    )
+    assert (
+        plan.logical_state_tensor_bytes - plan.safetensors_payload_bytes
+        == embedding_bytes
+    )
+    assert manifest["artifact_plan"] == plan.as_dict()
+    assert manifest["state_tensor_count"] == len(state)
+    assert manifest["canonical_tied_state"] == {
+        "serialized_key": "model.embed_tokens.weight",
+        "reconstructed_keys": ["lm_head.weight"],
+    }
+    assert sum(path.stat().st_size for path in checkpoint.iterdir()) == (
+        plan.artifact_total_bytes
+    )
+
+
+def test_artifact_plan_marks_unresolved_tokenizer_provenance() -> None:
+    prepared = _prepare(1003)
+    runtime = prepared.runtime
+    unresolved = plan_qwen3_codebook_artifact(runtime)
+    short = plan_qwen3_codebook_artifact(
+        runtime,
+        tokenizer_contract=_checkpoint_contract(
+            runtime, prepared.target_tokenizer, name="x"
+        ),
+    )
+    long = plan_qwen3_codebook_artifact(
+        runtime,
+        tokenizer_contract=_checkpoint_contract(
+            runtime, prepared.target_tokenizer, name="a" * 10_000
+        ),
+    )
+
+    assert unresolved.tokenizer_contract_resolved is False
+    assert short.tokenizer_contract_resolved is True
+    assert long.tokenizer_contract_resolved is True
+    assert unresolved.tokenizer_contract_sha256 != short.tokenizer_contract_sha256
+    assert short.tokenizer_contract_file_bytes < long.tokenizer_contract_file_bytes
+    assert short.artifact_total_bytes < long.artifact_total_bytes
+    assert unresolved.artifact_scope == "four-file-checkpoint-only"
+    assert unresolved.artifact_file_count == 4
+    assert unresolved.artifact_filenames == (
+        "model.safetensors",
+        "config.json",
+        "tokenizer_contract.json",
+        "manifest.json",
+    )
+    assert unresolved.includes_tokenizer_assets is False
+    assert unresolved.includes_runtime_dependencies is False
+    assert unresolved.standalone_deployable_bytes is None
+
+
+def test_checkpoint_save_requires_truthful_tokenizer_contract(tmp_path) -> None:
+    prepared = _prepare(1004)
+    runtime = prepared.runtime
+    valid = _checkpoint_contract(runtime, prepared.target_tokenizer)
+    invalid_contracts = []
+
+    missing_digest = dict(valid)
+    missing_digest.pop("vocab_sha256")
+    invalid_contracts.append(missing_digest)
+    invalid_contracts.append({**valid, "vocab_size": len(prepared.target_tokenizer) + 1})
+    invalid_contracts.append({**valid, "vocab_sha256": "A" * 64})
+    invalid_contracts.append({**valid, "tokenizer_name_or_path": "   "})
+    invalid_contracts.append({**valid, "parent_token_rows_sha256": "f" * 64})
+    wrong_special = copy.deepcopy(valid)
+    wrong_special["special_token_ids"]["bos_token_id"] = 9
+    invalid_contracts.append(wrong_special)
+    invalid_contracts.append({**valid, "unvalidated_extra": True})
+
+    for index, contract in enumerate(invalid_contracts):
+        destination = tmp_path / f"invalid-{index}"
+        with pytest.raises(Qwen3CodebookError, match="tokenizer_contract"):
+            save_qwen3_codebook_checkpoint(
+                runtime,
+                destination,
+                tokenizer_contract=contract,
+            )
+        assert not destination.exists()
+
+
+def test_checkpoint_save_refuses_nonempty_destination(tmp_path) -> None:
+    prepared = _prepare(10041)
+    destination = tmp_path / "occupied"
+    destination.mkdir()
+    marker = destination / "user-owned.txt"
+    marker.write_text("preserve", encoding="utf-8")
+
+    with pytest.raises(Qwen3CodebookError, match="empty directory"):
+        save_qwen3_codebook_checkpoint(
+            prepared.runtime,
+            destination,
+            tokenizer_contract=_checkpoint_contract(
+                prepared.runtime, prepared.target_tokenizer
+            ),
+        )
+    assert marker.read_text(encoding="utf-8") == "preserve"
+    assert {path.name for path in destination.iterdir()} == {marker.name}
+
+
+def test_loader_rejects_extra_checkpoint_files(tmp_path) -> None:
+    prepared = _prepare(10042)
+    destination = tmp_path / "extra-file"
+    save_qwen3_codebook_checkpoint(
+        prepared.runtime,
+        destination,
+        tokenizer_contract=_checkpoint_contract(
+            prepared.runtime, prepared.target_tokenizer
+        ),
+    )
+    (destination / "unplanned.bin").write_bytes(b"not part of the checkpoint")
+
+    with pytest.raises(Qwen3CodebookError, match="exactly its four planned files"):
+        load_qwen3_codebook_checkpoint(destination)
+
+
+def test_loader_rejects_tokenizer_contract_tamper_with_rehashed_plan(tmp_path) -> None:
+    prepared = _prepare(10043)
+    destination = tmp_path / "contract-tamper"
+    save_qwen3_codebook_checkpoint(
+        prepared.runtime,
+        destination,
+        tokenizer_contract=_checkpoint_contract(
+            prepared.runtime, prepared.target_tokenizer
+        ),
+    )
+    contract_path = destination / "tokenizer_contract.json"
+    manifest_path = destination / "manifest.json"
+    contract = codebook_model._load_checkpoint_json(contract_path, "contract")
+    contract["special_token_ids"]["bos_token_id"] = 9
+    codebook_model._atomic_write_json(contract_path, contract)
+    manifest = codebook_model._load_checkpoint_json(manifest_path, "manifest")
+    manifest["files"]["tokenizer_contract.json"] = codebook_model._sha256_file(
+        contract_path
+    )
+    artifact_plan = manifest["artifact_plan"]
+    artifact_plan["tokenizer_contract_sha256"] = hashlib.sha256(
+        codebook_model._canonical_json_bytes(contract)
+    ).hexdigest()
+    digest_payload = dict(artifact_plan)
+    digest_payload.pop("artifact_plan_sha256")
+    artifact_plan["artifact_plan_sha256"] = hashlib.sha256(
+        codebook_model._canonical_json_bytes(digest_payload)
+    ).hexdigest()
+    codebook_model._atomic_write_json(manifest_path, manifest)
+
+    with pytest.raises(Qwen3CodebookError, match="special_token_ids"):
+        load_qwen3_codebook_checkpoint(destination)
+
+
+def test_loader_recomputes_semantic_plan_after_valid_self_rehash(tmp_path) -> None:
+    prepared = _prepare(10044)
+    destination = tmp_path / "semantic-plan-tamper"
+    save_qwen3_codebook_checkpoint(
+        prepared.runtime,
+        destination,
+        tokenizer_contract=_checkpoint_contract(
+            prepared.runtime, prepared.target_tokenizer
+        ),
+    )
+    manifest_path = destination / "manifest.json"
+    manifest = codebook_model._load_checkpoint_json(manifest_path, "manifest")
+    artifact_plan = manifest["artifact_plan"]
+    artifact_plan["logical_state_tensor_bytes"] += 1
+    digest_payload = dict(artifact_plan)
+    digest_payload.pop("artifact_plan_sha256")
+    artifact_plan["artifact_plan_sha256"] = hashlib.sha256(
+        codebook_model._canonical_json_bytes(digest_payload)
+    ).hexdigest()
+    original_size = manifest_path.stat().st_size
+    codebook_model._atomic_write_json(manifest_path, manifest)
+    assert manifest_path.stat().st_size == original_size
+
+    with pytest.raises(Qwen3CodebookStateError, match="semantic artifact plan"):
+        load_qwen3_codebook_checkpoint(destination)
+
+
+def test_checkpoint_save_fails_closed_on_artifact_plan_drift(
+    tmp_path, monkeypatch
+) -> None:
+    pytest.importorskip("safetensors")
+    prepared = _prepare(1005)
+    runtime = prepared.runtime
+    load_file, real_save_file = codebook_model._safetensors_io()
+
+    def drifting_save_file(state, path, *, metadata):
+        real_save_file(state, path, metadata=metadata)
+        with open(path, "ab") as handle:
+            handle.write(b"unexpected-byte")
+
+    monkeypatch.setattr(
+        codebook_model,
+        "_safetensors_io",
+        lambda: (load_file, drifting_save_file),
+    )
+    checkpoint = tmp_path / "drift"
+    with pytest.raises(Qwen3CodebookStateError, match="drifted from the artifact plan"):
+        save_qwen3_codebook_checkpoint(
+            runtime,
+            checkpoint,
+            tokenizer_contract=_checkpoint_contract(
+                runtime, prepared.target_tokenizer
+            ),
+        )
+    assert not (checkpoint / "manifest.json").exists()
+
+
+def test_artifact_plan_matches_variable_prototype_shapes(tmp_path) -> None:
+    pytest.importorskip("safetensors")
+    tokenizer = _Tokenizer([f"token-{index}" for index in range(12)])
+    runtimes = (
+        prepare_qwen3_codebook_model(
+            _tiny_qwen3(1007),
+            tokenizer,
+            tokenizer,
+            attention_prototypes_per_group=1,
+            neuron_prototypes_per_neuron=1,
+        ),
+        prepare_qwen3_codebook_model(
+            _tiny_qwen3(1009),
+            tokenizer,
+            tokenizer,
+            attention_prototypes_per_group=2,
+            neuron_prototypes_per_neuron=2,
+        ).to(dtype=torch.bfloat16),
+    )
+    plans = []
+    for index, runtime in enumerate(runtimes):
+        contract = _checkpoint_contract(
+            runtime, tokenizer, name=f"shape-{index}"
+        )
+        plan = plan_qwen3_codebook_artifact(
+            runtime,
+            tokenizer_contract=contract,
+        )
+        checkpoint = tmp_path / f"shape-{index}"
+        manifest = save_qwen3_codebook_checkpoint(
+            runtime,
+            checkpoint,
+            tokenizer_contract=contract,
+        )
+        assert manifest["artifact_plan"] == plan.as_dict()
+        assert sum(path.stat().st_size for path in checkpoint.iterdir()) == (
+            plan.artifact_total_bytes
+        )
+        plans.append(plan)
+
+    assert plans[0].safetensors_payload_bytes != plans[1].safetensors_payload_bytes
+    assert plans[0].safetensors_header_sha256 != plans[1].safetensors_header_sha256
+
+
+@pytest.mark.parametrize("legacy_schema", sorted(LEGACY_CHECKPOINT_SCHEMAS))
+def test_loader_accepts_legacy_dual_tied_embedding_checkpoint(
+    tmp_path, legacy_schema: str
+) -> None:
+    safetensors = pytest.importorskip("safetensors.torch")
+    prepared = _prepare(1011)
+    runtime = prepared.runtime
+    checkpoint = tmp_path / "legacy"
+    manifest = save_qwen3_codebook_checkpoint(
+        runtime,
+        checkpoint,
+        tokenizer_contract=_checkpoint_contract(
+            runtime, prepared.target_tokenizer, name="legacy"
+        ),
+    )
+    state = safetensors.load_file(str(checkpoint / "model.safetensors"))
+    state["lm_head.weight"] = state["model.embed_tokens.weight"].clone()
+    if legacy_schema == codebook_model.LEGACY_V1_CHECKPOINT_SCHEMA:
+        metadata_bytes = sum(
+            int(state.pop(name).numel()) * torch.tensor(0, dtype=torch.int32).element_size()
+            for name in (
+                "attention_codebook.registry._registry_schema_version",
+                "attention_codebook.registry._registry_layout",
+            )
+        )
+        manifest["parameter_report"]["attention_index_bytes"] -= metadata_bytes
+        manifest["parameter_report"]["index_buffer_bytes"] -= metadata_bytes
+        manifest["parameter_report"]["index_bytes"] -= metadata_bytes
+    safetensors.save_file(
+        state,
+        str(checkpoint / "model.safetensors"),
+        metadata={"format": legacy_schema},
+    )
+    manifest["schema"] = legacy_schema
+    manifest.pop("artifact_plan")
+    manifest.pop("canonical_tied_state")
+    if legacy_schema == codebook_model.LEGACY_V1_CHECKPOINT_SCHEMA:
+        manifest.pop("attention_registry")
+    manifest["files"]["model.safetensors"] = codebook_model._sha256_file(
+        checkpoint / "model.safetensors"
+    )
+    manifest["state_key_sha256"] = hashlib.sha256(
+        codebook_model._canonical_json_bytes(sorted(state))
+    ).hexdigest()
+    manifest["state_tensor_count"] = len(state)
+    manifest["state_groups"] = codebook_model._checkpoint_grouped_keys(state)
+    codebook_model._atomic_write_json(checkpoint / "manifest.json", manifest)
+
+    restored = load_qwen3_codebook_checkpoint(checkpoint)
+    assert restored.get_input_embeddings().weight is restored.get_output_embeddings().weight
+    with torch.no_grad():
+        expected = runtime(torch.tensor([[1, 2, 3]]), use_cache=False).logits
+        actual = restored(torch.tensor([[1, 2, 3]]), use_cache=False).logits
+    torch.testing.assert_close(actual, expected, rtol=0.0, atol=0.0)
+    assert CHECKPOINT_SCHEMA != legacy_schema
 
 
 def test_full_depth_neuron_prototypes_reconstruct_and_reload_qwen_runtime() -> None:

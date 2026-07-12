@@ -13,4 +13,4 @@ export HEAD_DIM=128
 export EXACT_PARAMETER_BUDGET=134445568
 export MAX_OPERATOR_DELTA_RATIO=4
 
-exec bash /home/cereal/model-surgery-lab/neural-forge-pivot/experiments/launch_qwen3_4b_to_blank_llama88m_20260710.sh
+exec bash /home/cereal/model-surgery-lab/neural-forge-src/experiments/launch_qwen3_4b_to_blank_llama88m_20260710.sh

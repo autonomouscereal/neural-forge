@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-root=${ROOT:-/home/cereal/model-surgery-lab/neural-forge-pivot}
+root=${ROOT:-/home/cereal/model-surgery-lab/neural-forge-src}
 launcher="$root/experiments/launch_qwen3_4b_codebook_20260710.sh"
 
 GPU=GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561 \

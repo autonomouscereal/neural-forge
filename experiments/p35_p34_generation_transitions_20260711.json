@@ -1,0 +1,1507 @@
+{
+  "schema": "neural-forge-p35-p34-generation-transitions-v1",
+  "date": "2026-07-11",
+  "provenance": {
+    "p35_report": {
+      "path": "runs/qwen3_4b_codebook_p35_20260710/run_report.json",
+      "sha256": "eb6fbaee748e03a70a6e78f6e82a087f655fca38b0cbab2c41fb95d84451b9c8"
+    },
+    "p34_report": {
+      "path": "runs/qwen3_4b_codebook_p34_20260711/run_report.json",
+      "sha256": "2f9ef2a7887874b8e15119f304e272d889d93d71ae69ef205f46a100f5d5653b"
+    },
+    "shared_generation_suite_source": "/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/behavior_suite_exactgen_20260702.json",
+    "embedded_generation_inventory_count": 1000,
+    "embedded_generation_inventory_sha256": "048b27443a4313218a12f6c73db59616ced8542b184b3424752c963a6e9a398c",
+    "inventory_identity_verified_between_reports": true,
+    "matching_key": "candidate_eval.generation_diagnostics[].id",
+    "prompt_and_category_identity_required": true,
+    "case_rows_are_exact_source_prompt_text": true,
+    "transition_definition": {
+      "lost": "p35 passed and p34 failed",
+      "gained": "p35 failed and p34 passed",
+      "stable-pass": "p35 passed and p34 passed",
+      "stable-fail": "p35 failed and p34 failed"
+    }
+  },
+  "denominators": {
+    "shared_generation_cases": 1000,
+    "p35_passed": 633,
+    "p34_passed": 417,
+    "transitions": {
+      "lost": 228,
+      "gained": 12,
+      "stable-pass": 405,
+      "stable-fail": 355
+    },
+    "by_transition_and_category": {
+      "lost": {
+        "code": 125,
+        "math": 1,
+        "model-surgery": 15,
+        "tokenizer": 87
+      },
+      "gained": {
+        "math": 1,
+        "model-surgery": 11
+      },
+      "stable-pass": {
+        "code": 158,
+        "math": 141,
+        "model-surgery": 106
+      },
+      "stable-fail": {
+        "code": 2,
+        "commonsense": 143,
+        "model-surgery": 154,
+        "tokenizer": 56
+      }
+    }
+  },
+  "cases": {
+    "lost": [
+      {
+        "id": "generation_math_answer_0474",
+        "category": "math",
+        "prompt": "Question: What is 44 * 27? Answer with only the number.\nAnswer:",
+        "prompt_sha256": "0fa87b4b6f1400215cce11ab93773628c6e1cba3459eb7b7f39bb2cea2206512"
+      },
+      {
+        "id": "generation_model_merge_risk_0106",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0106.",
+        "prompt_sha256": "fe87517099d92a3bf4b6b1ea3e15eb6a24c7a84cb00cb78d727551f4ab50e3f5"
+      },
+      {
+        "id": "generation_model_merge_risk_0204",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0204.",
+        "prompt_sha256": "bd44f97782f2462e6c3532ce7aa1b652af6eee7ed814d65db8b3a81f07b1c11a"
+      },
+      {
+        "id": "generation_model_merge_risk_0302",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0302.",
+        "prompt_sha256": "bc0831552569641649df4bcddf4172e26a33c97a690dde1a61b4d3c0d184ea84"
+      },
+      {
+        "id": "generation_model_merge_risk_0309",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0309.",
+        "prompt_sha256": "09785238a5b9383cf2cbfed4d0bb288ccf3706609501a4a11d772812a173981f"
+      },
+      {
+        "id": "generation_model_merge_risk_0330",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0330.",
+        "prompt_sha256": "22893914f5b70645a5957cb58f9a162ec46187a13711eda0f131238b76670977"
+      },
+      {
+        "id": "generation_model_merge_risk_0400",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0400.",
+        "prompt_sha256": "c995f70de340881e6af516c57e1c4ce646ceabccceaa55a330d78da347fbf45c"
+      },
+      {
+        "id": "generation_model_merge_risk_0505",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0505.",
+        "prompt_sha256": "dff66231b48d3df66b4a859259fa0abba073624fc87252abca1ce7627c082cc2"
+      },
+      {
+        "id": "generation_model_merge_risk_0512",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0512.",
+        "prompt_sha256": "0a36e050d965c4b109515e842af7a877b271923bc14d1811560e2551685289e7"
+      },
+      {
+        "id": "generation_model_merge_risk_0603",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0603.",
+        "prompt_sha256": "cdd0b787d9629400d8185556f239aa7191bb96389064667dd34fcc3619fa6973"
+      },
+      {
+        "id": "generation_model_merge_risk_0610",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0610.",
+        "prompt_sha256": "0bc74e068b712c7a08d9752426c4666e80ab433c1adf4c76744162b8adb0258a"
+      },
+      {
+        "id": "generation_model_merge_risk_0617",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0617.",
+        "prompt_sha256": "2127d1c7e98acafb0bb4c17fb15054654869bd60b4c77978b80c6bdb2a43572c"
+      },
+      {
+        "id": "generation_model_merge_risk_0701",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0701.",
+        "prompt_sha256": "66c1daba5b337dbb8be3a61c642265d712e95b48199b96ec837574a7633ae8bd"
+      },
+      {
+        "id": "generation_model_merge_risk_0904",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0904.",
+        "prompt_sha256": "34d2e0bdff570429efb4a314e57fe616f36e6ab83c66cdc6d0e85b2844f19003"
+      },
+      {
+        "id": "generation_model_merge_risk_0911",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0911.",
+        "prompt_sha256": "36302528bc56c14fcb83e5c4b2b7a240b8211de754bb794ec344b8da86191d90"
+      },
+      {
+        "id": "generation_model_merge_risk_0995",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0995.",
+        "prompt_sha256": "efd87e802e2d5319dcd39e2bb66faf36d4019a5165bbbeb759028d04817df045"
+      },
+      {
+        "id": "generation_python_add_0009",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0009.",
+        "prompt_sha256": "54b79b28790862e04e8b9b18f447eb87434deeb73bac8ce63e09e2e943427c6c"
+      },
+      {
+        "id": "generation_python_add_0016",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0016.",
+        "prompt_sha256": "430d057437b3fefc51f4135374e51fc864247d184df8109dbd479ea2c85bb703"
+      },
+      {
+        "id": "generation_python_add_0023",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0023.",
+        "prompt_sha256": "006ad671a2894bba8dc0b40d7cf478897b4ccd68d613d3ac4dba4589965f27ae"
+      },
+      {
+        "id": "generation_python_add_0030",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0030.",
+        "prompt_sha256": "98f472be06e97c7e8fbb9838db054ac202e050a70efa00bc0f773c11a0f6d01d"
+      },
+      {
+        "id": "generation_python_add_0037",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0037.",
+        "prompt_sha256": "7f17d0ea2b9eb09eba1110901a262a19959de0766ff7caa64f74462dc33057a9"
+      },
+      {
+        "id": "generation_python_add_0044",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0044.",
+        "prompt_sha256": "4e61ba05622b54087368a49cd12684c969df9582434720ff9266ac3546101180"
+      },
+      {
+        "id": "generation_python_add_0051",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0051.",
+        "prompt_sha256": "d726cf5335d7d1d78445a6e29a2c6a36035444239a0ac787cbea392d788c3a35"
+      },
+      {
+        "id": "generation_python_add_0058",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0058.",
+        "prompt_sha256": "02fb043fd196e631896e8c7407ba945b042d414da7a13b6a0f422bbcea6fb5f8"
+      },
+      {
+        "id": "generation_python_add_0065",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0065.",
+        "prompt_sha256": "ecde7541d4f8adc51914fceef1be11e3afdfd32ff2e169ec33c1c9608727f6ee"
+      },
+      {
+        "id": "generation_python_add_0072",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0072.",
+        "prompt_sha256": "6ecf0a4bb87b89999bc55739f724988126cefbd840112fba0c39ded4a6926478"
+      },
+      {
+        "id": "generation_python_add_0079",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0079.",
+        "prompt_sha256": "b7041ac38c205f3c673e1c3780add0daa039f62d46c7bb05fafd58e8bdd895c0"
+      },
+      {
+        "id": "generation_python_add_0086",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0086.",
+        "prompt_sha256": "5a71cfc95cb2759ea3c5d892c58595d6b807cc5bbe7f263282cad31d6fabe8f0"
+      },
+      {
+        "id": "generation_python_add_0093",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0093.",
+        "prompt_sha256": "f7da242c80262d8ae380015ebff109fa83d99ce99af715919e86db74bc8ae1b9"
+      },
+      {
+        "id": "generation_python_add_0100",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0100.",
+        "prompt_sha256": "0b709728fa56ebf86b6c1cb7fcc2bd22abbeb10b1c8498ff7116f2451108904a"
+      },
+      {
+        "id": "generation_python_add_0107",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0107.",
+        "prompt_sha256": "880cfab08fd55f9b39ba39c3f40b2fd9cc4f25e369fccfe192d3b9e98b55f0b4"
+      },
+      {
+        "id": "generation_python_add_0114",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0114.",
+        "prompt_sha256": "358b2cb9e076f2b906a0113ba9d94caabe8a06d82788cea16d4e2611235fa9d7"
+      },
+      {
+        "id": "generation_python_add_0121",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0121.",
+        "prompt_sha256": "9e26b6aaa515fce29279a053a43877cb778433cac70d102f74b8b45202a47aad"
+      },
+      {
+        "id": "generation_python_add_0128",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0128.",
+        "prompt_sha256": "081a149b8a34cf7328b12c69861b624ff1353616e1a2cdfab862da3b5df6cda2"
+      },
+      {
+        "id": "generation_python_add_0135",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0135.",
+        "prompt_sha256": "597a2b4f79c111259604dc3faf6ec7c1dbce53be378e0d16bb0b701532fef6ed"
+      },
+      {
+        "id": "generation_python_add_0149",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0149.",
+        "prompt_sha256": "ef050f6a4b9f38b2a2c7657d7b30687f2c25e2811b81748fb1876689ba9a5739"
+      },
+      {
+        "id": "generation_python_add_0156",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0156.",
+        "prompt_sha256": "06a57a42d9c8a2af60e4f3db48bf1882a88049385ad6feb9c49fcecf49a967fb"
+      },
+      {
+        "id": "generation_python_add_0163",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0163.",
+        "prompt_sha256": "9f1b6d0ddc1e5ab85603f20f52accffec2f7f98ca9833249b62c535194fee839"
+      },
+      {
+        "id": "generation_python_add_0170",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0170.",
+        "prompt_sha256": "fdff0f11c6b76c4dd52a042f6404dc174a89e12780469c2ce0a7f7fbfe6dac34"
+      },
+      {
+        "id": "generation_python_add_0184",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0184.",
+        "prompt_sha256": "b4f6f6e7ebad249e4f318b0e053a08fbee4a0ed5467173057018fdaddba640f1"
+      },
+      {
+        "id": "generation_python_add_0191",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0191.",
+        "prompt_sha256": "cfc9202a292e8237b285977face985bd88bccf74de3692ba2603c20e5587f9e8"
+      },
+      {
+        "id": "generation_python_add_0198",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0198.",
+        "prompt_sha256": "2593a3f100194e4f7ed170a10df3ddbc82a52cfdc78c302f3cfebd4363d54182"
+      },
+      {
+        "id": "generation_python_add_0212",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0212.",
+        "prompt_sha256": "29e9d2d91ad7aed0340579e0b47713cc206faf15723c2b135cb9d25e6ed98b90"
+      },
+      {
+        "id": "generation_python_add_0219",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0219.",
+        "prompt_sha256": "eeaa104c3223deccbf5ee0e03319511b65032700f91b606007e9b8b65376de73"
+      },
+      {
+        "id": "generation_python_add_0226",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0226.",
+        "prompt_sha256": "35c393f651c76365e403bf9a7a05fcaeca5260be4e19c5c528741f37c12f767d"
+      },
+      {
+        "id": "generation_python_add_0240",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0240.",
+        "prompt_sha256": "6a2af3c0faf2fbeb13cc65b230c5a26e55e407545140ce9459985a919a45499c"
+      },
+      {
+        "id": "generation_python_add_0247",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0247.",
+        "prompt_sha256": "415190515659425079c582bc42e8cf0a28d808f4968795638b03171c5228e717"
+      },
+      {
+        "id": "generation_python_add_0254",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0254.",
+        "prompt_sha256": "e44bdd51a3da58aef340a0899a5ef41925924f7f481fe7d9be5cf07569bccc44"
+      },
+      {
+        "id": "generation_python_add_0261",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0261.",
+        "prompt_sha256": "7aac99dbbec539e5a96aaa625949a2603ef78cd909ae75c5d695ec1e221d9fd6"
+      },
+      {
+        "id": "generation_python_add_0268",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0268.",
+        "prompt_sha256": "8d870076b9931ae451f5af661468469253e6cacbb76e456c4ee741abd8764fea"
+      },
+      {
+        "id": "generation_python_add_0275",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0275.",
+        "prompt_sha256": "3f583c7aa3ba34ab1d94ec07ff2a1a41d7c377a1f84c66d39a26a1ffccc70c1d"
+      },
+      {
+        "id": "generation_python_add_0282",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0282.",
+        "prompt_sha256": "39078842a9d2cd75d750054723d4bf6a47e59cd50ccffe762aa34e88f44c4f4e"
+      },
+      {
+        "id": "generation_python_add_0289",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0289.",
+        "prompt_sha256": "e62fb2c4390707e8a356c98f7d33605dafb55b0ef6f8e93cb161f4435cf2f17e"
+      },
+      {
+        "id": "generation_python_add_0296",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0296.",
+        "prompt_sha256": "d65e2c1779b15155d593a42b9b76eae391bb39b48d83e148d82ab5f4d01be537"
+      },
+      {
+        "id": "generation_python_add_0303",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0303.",
+        "prompt_sha256": "2c0fa992a95687c5365b7b5344091a58aaf14084a3252e9a2a3a430920e5ac20"
+      },
+      {
+        "id": "generation_python_add_0310",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0310.",
+        "prompt_sha256": "ba35be7618a252d4f7cb6f8c6c022b8b46ab1da67a5e5b15668d842a51e4fdc7"
+      },
+      {
+        "id": "generation_python_add_0317",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0317.",
+        "prompt_sha256": "0807cd39580222fc47b08b2ebc2195d8d2f014f84a6018f84976434cb355f83d"
+      },
+      {
+        "id": "generation_python_add_0331",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0331.",
+        "prompt_sha256": "58e28a7db5d9eb64f1e8121ad5e88acb67da4328eee191d5de7ed8373ca773a0"
+      },
+      {
+        "id": "generation_python_add_0338",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0338.",
+        "prompt_sha256": "cdbdf84b32e08beb21cb89ebbcec5fe16f56b7a23353331236a75f9e11919424"
+      },
+      {
+        "id": "generation_python_add_0345",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0345.",
+        "prompt_sha256": "a504f3106a9ebca48392f589d6cf6f64db4a8e86ec708181dbe7ff4cdb191045"
+      },
+      {
+        "id": "generation_python_add_0352",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0352.",
+        "prompt_sha256": "0cda523cb4e45eb69429d720c9b7f6f3ac9007e1c591723e7818c831c45bf9d8"
+      },
+      {
+        "id": "generation_python_add_0359",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0359.",
+        "prompt_sha256": "b23135b6f5ff1b5dc0bbf707886881aec9586ec28c0abcc6dd4096c6c2ca5615"
+      },
+      {
+        "id": "generation_python_add_0366",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0366.",
+        "prompt_sha256": "91515209871cbe3f90ca65341d6a820b02a96ac4d24770200584b9cc37a69406"
+      },
+      {
+        "id": "generation_python_add_0373",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0373.",
+        "prompt_sha256": "505409a5a0d59da551468e7104ddc5479b79c6f088f334714c8102b624fa73a8"
+      },
+      {
+        "id": "generation_python_add_0380",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0380.",
+        "prompt_sha256": "9e291f90d904e914183b5904263ca7eb3eaa45cb4a0cff37e30725b4e54b37f3"
+      },
+      {
+        "id": "generation_python_add_0387",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0387.",
+        "prompt_sha256": "6c133c55996dfe68f815ccfebe417a5878a3a04f14b7756fb27b579e81ec4f2a"
+      },
+      {
+        "id": "generation_python_add_0394",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0394.",
+        "prompt_sha256": "3ed308513d80875c618e409c4bb2645d4de5b3467e68f82604f5f951e1898c3b"
+      },
+      {
+        "id": "generation_python_add_0401",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0401.",
+        "prompt_sha256": "4c9b046852d6fdeb6ab4b4929094e5403b217b21a70d9cf6fd13bcfd54a3840c"
+      },
+      {
+        "id": "generation_python_add_0408",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0408.",
+        "prompt_sha256": "91247eef4c209215f23ef1ecd40713d3ed0d1c7dae785b8ff8e16bded06ab25f"
+      },
+      {
+        "id": "generation_python_add_0415",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0415.",
+        "prompt_sha256": "17b0991ca92485da61db3110a6d687cfc171d29fff0371d1e1531b22edb87544"
+      },
+      {
+        "id": "generation_python_add_0429",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0429.",
+        "prompt_sha256": "0564645d4fcb5b867f746b974d70d1bd2749c272301015ed179132273b69ded1"
+      },
+      {
+        "id": "generation_python_add_0436",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0436.",
+        "prompt_sha256": "ea252b244c1c7f9d518157ed69613f2bb44039c0aa11d4529c222f67803946c3"
+      },
+      {
+        "id": "generation_python_add_0443",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0443.",
+        "prompt_sha256": "cef7565e810d59e4fbd5e115acfbfcf18548b53f6dff96e104e98192ed5fb793"
+      },
+      {
+        "id": "generation_python_add_0450",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0450.",
+        "prompt_sha256": "7b0b03b5562d552f796e45869ce091e6e20a8e97ce7154035bef443b6c295707"
+      },
+      {
+        "id": "generation_python_add_0457",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0457.",
+        "prompt_sha256": "e41f041fafef007fab88b05c85d65a4f6a049e85387f00ca78edfb08a098522b"
+      },
+      {
+        "id": "generation_python_add_0464",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0464.",
+        "prompt_sha256": "7074fd2f038d71a7aee4092c0b79c70f55195cfa389b31c224651861d6e82917"
+      },
+      {
+        "id": "generation_python_add_0471",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0471.",
+        "prompt_sha256": "2c67b0894e56b7ba06b16284f1c24f509f9a8ee3cbf7fed3e5fc1705f9178eec"
+      },
+      {
+        "id": "generation_python_add_0478",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0478.",
+        "prompt_sha256": "212e50f85611223eb2a1953229de87a44d55f5eeb6b68c211c3f954732ce27a8"
+      },
+      {
+        "id": "generation_python_add_0485",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0485.",
+        "prompt_sha256": "a25857665e8f1c4b7ad9b59b13252c7549fcf68969ad5854745617ed10d08c6d"
+      },
+      {
+        "id": "generation_python_add_0492",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0492.",
+        "prompt_sha256": "3e3f79a9969036d44fc8a5450980518b682c8d53361ed08779f6107aac04c412"
+      },
+      {
+        "id": "generation_python_add_0506",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0506.",
+        "prompt_sha256": "516bf9eb5964a2623af61ccb304cf31273583bd10ab81ba2e8b4d0ab73dea350"
+      },
+      {
+        "id": "generation_python_add_0513",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0513.",
+        "prompt_sha256": "a39d8be7c0f8d6206ad13d8b0f16c66d37faef0230eff9c1a5931d557c6fe770"
+      },
+      {
+        "id": "generation_python_add_0527",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0527.",
+        "prompt_sha256": "f0d1e416c23cef08ae5c2786248b234a0b857744e273243aaea1b8a231ff2c32"
+      },
+      {
+        "id": "generation_python_add_0534",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0534.",
+        "prompt_sha256": "547f40aed17f8641b01ae5e88826272327b3d576052e44a1d310effbe01a1506"
+      },
+      {
+        "id": "generation_python_add_0541",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0541.",
+        "prompt_sha256": "789093bdff933b4d82bc387a93d4553df16130f574b8ce09376ab70480a3b612"
+      },
+      {
+        "id": "generation_python_add_0548",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0548.",
+        "prompt_sha256": "e8e66a53ae45ad97c3bd236176026cb300aa6193f03fc60c710da66fcdc4c60d"
+      },
+      {
+        "id": "generation_python_add_0562",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0562.",
+        "prompt_sha256": "71abc791c14e78d9ae68318ca04caa793ecc98ddb71920eca81a4ebe8b077acd"
+      },
+      {
+        "id": "generation_python_add_0569",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0569.",
+        "prompt_sha256": "5c4bc92f96cbb4ca460a29887805087277df39b176df77ca16c3b1502f282df1"
+      },
+      {
+        "id": "generation_python_add_0576",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0576.",
+        "prompt_sha256": "adc140c7c8e5d99d762cd0b9fe8cd8798f15b2d87fc849c704750a60904e8675"
+      },
+      {
+        "id": "generation_python_add_0583",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0583.",
+        "prompt_sha256": "048985fceab561fd69c6029e9ff39ce514ac425bb41902d703701f49ea4388c6"
+      },
+      {
+        "id": "generation_python_add_0590",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0590.",
+        "prompt_sha256": "5bb08a01abae7de19bc88bea1763915f3e8d0094323cf1a254efb69017070cc3"
+      },
+      {
+        "id": "generation_python_add_0597",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0597.",
+        "prompt_sha256": "fc4fc9c18d4f3f0e129bdfbab20b864076312b0e3cac6a542e0e4564a862593b"
+      },
+      {
+        "id": "generation_python_add_0604",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0604.",
+        "prompt_sha256": "a1ebb11590c0fe8c18a29878723d361a775f9a93f305f6d76a3381b6255ab1d8"
+      },
+      {
+        "id": "generation_python_add_0611",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0611.",
+        "prompt_sha256": "e78d26caaddd9af5282ba48a0e8a4ba7271beab94e563c77079c1fbf90049e40"
+      },
+      {
+        "id": "generation_python_add_0618",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0618.",
+        "prompt_sha256": "e41a23275e34cebd2061da80879c72633fc0812a1b2e0b4da2faab91eb876e27"
+      },
+      {
+        "id": "generation_python_add_0625",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0625.",
+        "prompt_sha256": "9fac2ac81a3a26f2e981973efd2f73d3735735aafe6604fd4aa89d58a24845ea"
+      },
+      {
+        "id": "generation_python_add_0632",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0632.",
+        "prompt_sha256": "9b50b2cf62e206f27a83f1655e31e8cbc0e74fb4866baef38e48deefa95cda2c"
+      },
+      {
+        "id": "generation_python_add_0639",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0639.",
+        "prompt_sha256": "77de302feb16c9e8b0642e1bf8de0ded8748a27a2cd69091ab9b494c7d7c8d45"
+      },
+      {
+        "id": "generation_python_add_0646",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0646.",
+        "prompt_sha256": "2081a7522f690dd5a0a4ef20a6c39c5a9d22bd85dba81cb333886ff541ec4bfc"
+      },
+      {
+        "id": "generation_python_add_0653",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0653.",
+        "prompt_sha256": "a9ec61db2f193c6ac487b5500165956c4ef1d2217f137f19f727c94009608da7"
+      },
+      {
+        "id": "generation_python_add_0660",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0660.",
+        "prompt_sha256": "580fda60ac5948eb3f21f83888832df1e40736a2fa6ff76a9fe4e820558048cf"
+      },
+      {
+        "id": "generation_python_add_0667",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0667.",
+        "prompt_sha256": "b5550905f659a29798360ddc16f92381b523c340bd746d9edfba2b430714aadb"
+      },
+      {
+        "id": "generation_python_add_0674",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0674.",
+        "prompt_sha256": "d0fc50047166d06e7d5757c6ccc01ce7e73074c0930cb4ce217e6f53099dd7e2"
+      },
+      {
+        "id": "generation_python_add_0681",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0681.",
+        "prompt_sha256": "cae217a93d3ad81dd5ff53d233b258bba419ab59f988600ececd215bb3fe6d93"
+      },
+      {
+        "id": "generation_python_add_0688",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0688.",
+        "prompt_sha256": "1631172a6ed410260babad7b8eb8baece38cae97c2568c5b63d83b0743ad31af"
+      },
+      {
+        "id": "generation_python_add_0695",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0695.",
+        "prompt_sha256": "68b919874d1de85e8917bfeecf5413e1d3ccb5705862d24d6cc495cfa4afa241"
+      },
+      {
+        "id": "generation_python_add_0702",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0702.",
+        "prompt_sha256": "01e3a2d7f90e67f26839b56153134f2d5c30144aafe37e688c98ea29958cbada"
+      },
+      {
+        "id": "generation_python_add_0709",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0709.",
+        "prompt_sha256": "86bb2bcc6b451162fd312de63c61d344f692e3c76d2da72dfdf0e1eab1be5bfe"
+      },
+      {
+        "id": "generation_python_add_0716",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0716.",
+        "prompt_sha256": "8df901cf4fce21aee052ef4a5b7268585eca0e017bf26fb3210f41b94eb0b64e"
+      },
+      {
+        "id": "generation_python_add_0730",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0730.",
+        "prompt_sha256": "ee42d5f0636aae10fbe3834d7a8ce6760a086dd70d4d6e0d7a6b95ca039e5824"
+      },
+      {
+        "id": "generation_python_add_0737",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0737.",
+        "prompt_sha256": "c589bcb17981f2a03cf16795a2efd55d35f54f16a4bf2040c7bd2367d5d3c073"
+      },
+      {
+        "id": "generation_python_add_0751",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0751.",
+        "prompt_sha256": "c5e9f860700d104c78aea7c43debc107cedcb5796b59c666808fe74b97eac615"
+      },
+      {
+        "id": "generation_python_add_0758",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0758.",
+        "prompt_sha256": "e5521771b1de9fea3c4989dc5698dfabac354d8a8f8c58e04de24b889b9a2e30"
+      },
+      {
+        "id": "generation_python_add_0765",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0765.",
+        "prompt_sha256": "b59e2005bcc7e86425882fa4fd47671cb8c79053fbfeeb1152cb7da63fbe4988"
+      },
+      {
+        "id": "generation_python_add_0772",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0772.",
+        "prompt_sha256": "3c2b785a906f894ccfb0998e1a4c9a8839c50cfdbfc1374cf4383ff37b149177"
+      },
+      {
+        "id": "generation_python_add_0779",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0779.",
+        "prompt_sha256": "f6380c0c29030e8b2c5e51cd65b4fcb8e2b32ef060d54e916d1357488f30e401"
+      },
+      {
+        "id": "generation_python_add_0786",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0786.",
+        "prompt_sha256": "1d4a08cba2100155437409a7b8540aef1115eb2f15f082f92ab65003daa46ff8"
+      },
+      {
+        "id": "generation_python_add_0793",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0793.",
+        "prompt_sha256": "14064cea3fb0e84dff94a6e0521f588dc0f8687d598d9c8196c62fc737bf76cc"
+      },
+      {
+        "id": "generation_python_add_0800",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0800.",
+        "prompt_sha256": "bd732b8370a3e99642e67c604075e689aaa2daad1c7c1e4525cfc247a40f741c"
+      },
+      {
+        "id": "generation_python_add_0807",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0807.",
+        "prompt_sha256": "944b7060398363aaca44e427ffefdf53893571601d9a8835a2038daaf210fa6c"
+      },
+      {
+        "id": "generation_python_add_0814",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0814.",
+        "prompt_sha256": "16ccfd6e27af532ff36ff2986fd87f87c70c35dfe782fae2d3e25e69443fde47"
+      },
+      {
+        "id": "generation_python_add_0821",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0821.",
+        "prompt_sha256": "16dc1b2d84e69bddb14d2f911e1d06b2cbe1c0bb8ac4eecbda5ece05a7909a31"
+      },
+      {
+        "id": "generation_python_add_0828",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0828.",
+        "prompt_sha256": "98a0e98ecb7631826ffa19b65537372b05858653954f41b5d44669d72ae99e2a"
+      },
+      {
+        "id": "generation_python_add_0835",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0835.",
+        "prompt_sha256": "14385dcbcd4faf5a0d294196b233918a8b80833533340b43a0d0d81f55283fb5"
+      },
+      {
+        "id": "generation_python_add_0849",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0849.",
+        "prompt_sha256": "bcc90eba1383de6d33da16a2cb8545222b6dc17764b309f5454f05fa12b9dc52"
+      },
+      {
+        "id": "generation_python_add_0856",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0856.",
+        "prompt_sha256": "2041f42b93d687ead6b3f320dfbb10c3616b71de30fe7cb4a321d378ba1f195b"
+      },
+      {
+        "id": "generation_python_add_0863",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0863.",
+        "prompt_sha256": "e258f5d71944dbbaf1504110956825855db5834b24d77862cdbebd01aad85ce8"
+      },
+      {
+        "id": "generation_python_add_0870",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0870.",
+        "prompt_sha256": "a514e6fa13660548fd819b21cae07e90f7cb13a423d8a406b74973e11085f37e"
+      },
+      {
+        "id": "generation_python_add_0877",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0877.",
+        "prompt_sha256": "60a65843e17ef9195e168443ba4c9838cef4c4089d78b1d219239b414b3d0602"
+      },
+      {
+        "id": "generation_python_add_0884",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0884.",
+        "prompt_sha256": "b051c6d7b593757d669a7818a5f68e187d571663506420b5eff5ad5ca7503ce7"
+      },
+      {
+        "id": "generation_python_add_0891",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0891.",
+        "prompt_sha256": "ceccf6225f26f241079a689bd540f67e44bca74e902ea0de3deb19f142276832"
+      },
+      {
+        "id": "generation_python_add_0919",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0919.",
+        "prompt_sha256": "0508771a243e58336a617826212d0a7da656f709c37e423daeeccab18f334370"
+      },
+      {
+        "id": "generation_python_add_0926",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0926.",
+        "prompt_sha256": "64b0f2947338c0c726450f294a3a877e4c787d4a8f8e5fa1f128dc5e0ca4ac6b"
+      },
+      {
+        "id": "generation_python_add_0933",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0933.",
+        "prompt_sha256": "845564affcee1bf6916e1fdead41d6f4d2b6383fda56951c805ac2ae4fd5e1f9"
+      },
+      {
+        "id": "generation_python_add_0940",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0940.",
+        "prompt_sha256": "cacd2e2c10a6b925b1660b9ccc7ee5a42b238ff96d193782db0af8f9152c6021"
+      },
+      {
+        "id": "generation_python_add_0947",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0947.",
+        "prompt_sha256": "7a929998f513de83e9a2a9ac3be674998d9c2d3ca8ec1ef08e4e49fc6d7b057b"
+      },
+      {
+        "id": "generation_python_add_0954",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0954.",
+        "prompt_sha256": "82edce080479c991a7ef15e78817d7fa795ee62196eadd49633f13b75069e97d"
+      },
+      {
+        "id": "generation_python_add_0975",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0975.",
+        "prompt_sha256": "e7ea63991363de09f522454c5f830aa365b52f3f22feb6f3c805437f9574194d"
+      },
+      {
+        "id": "generation_python_add_0982",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0982.",
+        "prompt_sha256": "4a63da68472531f0534c0c081a0bd0b4b853703d1b0fb483b55e6870a033b5eb"
+      },
+      {
+        "id": "generation_python_add_0989",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0989.",
+        "prompt_sha256": "009c24c726a1bba0909d43f3f606b1795a48dfd17099ff0749d7c7916afac207"
+      },
+      {
+        "id": "generation_python_add_0996",
+        "category": "code",
+        "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0996.",
+        "prompt_sha256": "d65dc94ba3c3ff463cc7c489c7b86b17aae03daee84dd250582e74671095b85c"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0003",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0003.",
+        "prompt_sha256": "e6e8772e35e7957fb0cd5b627acc01da435214c35798dee6cc4fc0652e504ead"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0017",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0017.",
+        "prompt_sha256": "c2768c10fd3fac10450cba725d14a0e83b6fc4d233196b22464d3d058f0ab108"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0024",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0024.",
+        "prompt_sha256": "bd2ba1b6d121bb49e70e78fa6660a985f4cb34f59a0c77a3fde95dfd321c61d5"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0031",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0031.",
+        "prompt_sha256": "591f1c8cb0289f3442a5ef0175b36e319ae16120c3f4a940ffb9dc684f322253"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0038",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0038.",
+        "prompt_sha256": "035ad1216cf7db9fd46f19217bb2569ad19aed22738c4089f9029c03d1b396c7"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0052",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0052.",
+        "prompt_sha256": "26e7f1caa572cdecacc71b700b4caf612d7156ad9750e07eb391241512828dc5"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0059",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0059.",
+        "prompt_sha256": "e38996928f82f014c0515869905016ae9ec1fd07cbb42c22278b5e48555a454c"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0066",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0066.",
+        "prompt_sha256": "3c4e07baee636cd8305eb8a80a840adb6f5b3d69c51d7b6b9be1cb75cc52ede5"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0073",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0073.",
+        "prompt_sha256": "847b6b6b58d77841ccc76731cdddee143b303c357734581f5aa221805184ff02"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0087",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0087.",
+        "prompt_sha256": "244028f20c32b06ce96026215cdce8d39b930eb58e676b8ed9719753a7455643"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0094",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0094.",
+        "prompt_sha256": "0804d887005125125ca68f9109a469e5fa10fbeb28d0c628a1db8763fd3edcdc"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0115",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0115.",
+        "prompt_sha256": "dbe1cdc832934203954728b7793a254749b0868e72388399c3a8e75244403849"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0129",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0129.",
+        "prompt_sha256": "75d9e5233682f879b0398220d745673a62df15b05ea944c723bba365220f7af1"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0136",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0136.",
+        "prompt_sha256": "d4cab6e394637ca5f836e8cf226f24f7495ebfc327703c902972fe4c6bdc5d1d"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0150",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0150.",
+        "prompt_sha256": "dbe69885d66311ae2dc5c0f0f7508a1b34e0222bc585365973bbbd04e267ed36"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0157",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0157.",
+        "prompt_sha256": "6d80ece0490a2f9372fdd82410c2340d2405da8d9dc7330dc24867c5a83890d8"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0164",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0164.",
+        "prompt_sha256": "8d97dc0c09a3e1781ff979af635362113d1565d47ec96829287783fbf7c03357"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0171",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0171.",
+        "prompt_sha256": "e59579a8110c49cf9c31c99290390ecaaea58c8987855baa86f56d09b80ca803"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0178",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0178.",
+        "prompt_sha256": "5e1446456bb6ad615e8cf2db95aba5ac1057449f6fce9d18bbdfc6cce2d88a37"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0192",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0192.",
+        "prompt_sha256": "71b34d3eaf6af49d280ebc3021d9d49c47a77b3fd50b6344759af771c0760e5d"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0199",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0199.",
+        "prompt_sha256": "e6fbb9aa2b6025ccf5ee6a202bc97bead85d2a35d11416602fac4bed023301b4"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0213",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0213.",
+        "prompt_sha256": "027eefd82f1d8511c441d290dbe94dc17ff8f9cebbc271938decb5f8aac5a64e"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0220",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0220.",
+        "prompt_sha256": "08258d89eda9a63d4931f2ee7429eafd89210d87174cb629fea8348ba0f5dfab"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0227",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0227.",
+        "prompt_sha256": "f3cf4886a475969c3378c15eb07b0b5c5e3eadc21afd0024e2650725bb5f0ab5"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0234",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0234.",
+        "prompt_sha256": "f11d4d200d864501f54a3e33766ae88eb061ffba84d1c2ff475b6e430a6c40e6"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0241",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0241.",
+        "prompt_sha256": "9b04ae26e1af014e61ee7c0025599b06a6e1bab60dbe88b4bf323688056e66d8"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0248",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0248.",
+        "prompt_sha256": "7006c3885be83f0a5ee7db19881eec4dbb1d9aa2d7e99ec4eba67005a160b21f"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0255",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0255.",
+        "prompt_sha256": "428087c1a69c1d87830ae2f97ee69a85e76f08f8153a9d941e34f887927805e1"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0262",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0262.",
+        "prompt_sha256": "73b86cc93c0c58273f9dd45f3c6fba929133d45b6ffcb6bf571440899352f5c5"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0269",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0269.",
+        "prompt_sha256": "13a480180fda589d4c7b762d9cc0ef54833cf0d0b9a3d4a7837709d9c6ef7fc3"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0276",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0276.",
+        "prompt_sha256": "ab91636571b22fa6bf482c19423d7b2fc11110321c517cc616d2683057dc5d02"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0283",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0283.",
+        "prompt_sha256": "fec8983fe307ad29c0250b0cf1d63e317b32a2dc1f8b44b14ce3a14e1ca754f2"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0290",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0290.",
+        "prompt_sha256": "b7135adcf33a39fd87670ffd574877ec75fce104d50507d3eba1ea429f16bc69"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0297",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0297.",
+        "prompt_sha256": "1022a875c23176a10a62c1d78ce124fbd3cee9635d546d3a31224e60153438f5"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0311",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0311.",
+        "prompt_sha256": "1f33ef319cf77b80aab1f055857a380d540b7241d6474afce24a2664c8eec32e"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0318",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0318.",
+        "prompt_sha256": "71048fe2695c6ce1655e853c7d5f55a9095319232f917adb18cbf180c6062e55"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0325",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0325.",
+        "prompt_sha256": "3de37c90f9b8151299542cd250119eddf3c75c1ba8e45a3e7547e365691325b1"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0332",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0332.",
+        "prompt_sha256": "5ff5a11e9c8e46d230fe85cdc12cf6680644e922ad6177135ba5a42d8a8f04e7"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0339",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0339.",
+        "prompt_sha256": "2548782c2e223ee60465e7f0fb0845a74d1fcb386692578f47aa546988ad7d5b"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0346",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0346.",
+        "prompt_sha256": "2b3c948b5929c64c4ad1cdd11d58c11cb4f8a441a28487858b88a7e4b34ef780"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0353",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0353.",
+        "prompt_sha256": "5a929fe978a2af10eaaf167a3ac3b2d5c68a3d094097c91f3ee4d1c44c8de667"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0360",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0360.",
+        "prompt_sha256": "461f127fc7c2c86bb5a6e3d9f933a29d5b263c61a2ad8cc9ad5dc13cc5653bd9"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0367",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0367.",
+        "prompt_sha256": "e9b25553cd4592cfee5675847f8547cd4043dc4daddb9f90537b9898be8bbcc0"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0374",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0374.",
+        "prompt_sha256": "a8c599c9fc3cf9a428c10f8f48d752d685919a2848a289d84e80d8a28e31de0d"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0381",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0381.",
+        "prompt_sha256": "df79903610026cbbc12fb538684007fd5e6276d1f04e661f2332921a1a765191"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0388",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0388.",
+        "prompt_sha256": "1bba60154c62ac981b6e689b7a81a0d0f755eb26e4ac954fbced3015bed9411f"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0395",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0395.",
+        "prompt_sha256": "cf0a54ff1d4ddd08da890e84a7772098c9240011357b3e46280f8c7030898342"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0416",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0416.",
+        "prompt_sha256": "38bc5d3dadc259ef8137df1c0aa6ce6a8cb0ddc4df6eb643819f602b2cec2ed4"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0423",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0423.",
+        "prompt_sha256": "03c7d583a17589b23b9d0ab60deebb383c78e97243a9b721c1eed82b4ba4beb9"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0430",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0430.",
+        "prompt_sha256": "2d670d0977bfaba377207a374f02f2c726a4bc75162a5bd0cd5662ee62fe5771"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0437",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0437.",
+        "prompt_sha256": "29cb2839e94eb2e689d2db9f84f01018e1ee538b82f9ea5613545f490ec0ee71"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0451",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0451.",
+        "prompt_sha256": "6a5b519ae470abc8461479c16b9fabfc116a0c19b12a5c83bef9e4f0b8c564af"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0458",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0458.",
+        "prompt_sha256": "5426bd0244942682487be9b584af9de5cc18e4b09ded62881a098bfd124af60b"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0465",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0465.",
+        "prompt_sha256": "fddb634ecb597a0c9e63e693f566d4cad198fb6a48655f38b8ff74d1957eb617"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0493",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0493.",
+        "prompt_sha256": "910d276fd950cac3024a8310b3306ada5066a50bd80682c06d0f95efad8ebb17"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0514",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0514.",
+        "prompt_sha256": "b4efe3c3fdc75ea0f5d930e51722db28c87d280e4d0523076582934df431a608"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0521",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0521.",
+        "prompt_sha256": "eda5cd7db3c361e7b04f840a3f3edcdc551035c92c3ee32ccf97917357a8023c"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0528",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0528.",
+        "prompt_sha256": "a5ef35783cd0a27eb56f49e9ca74a310f24ebf51c874d05c57340eb78b821b48"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0535",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0535.",
+        "prompt_sha256": "8366fe9e0bd66fe75781b35ee785d8d95e262e5b5eb95ee28402d031338c77b0"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0542",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0542.",
+        "prompt_sha256": "92197a17b1731c48d5d8ce1d80399ebd5045dd7bdceb4d4aed1e10cf7695e9a5"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0549",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0549.",
+        "prompt_sha256": "7e17816d60ab4eb003756f9aa9c328e1877c7011f5ff25ceb0b73d2e97d8d8c9"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0563",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0563.",
+        "prompt_sha256": "e7c0493eebd8cb2fbd390f4dc550ca8a19753abc162895201df5f0af6ff5e9e9"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0570",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0570.",
+        "prompt_sha256": "7c93963248f5f5516364a55d89aaf44ea1783aeb622a980a52dcf4918d6686f8"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0577",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0577.",
+        "prompt_sha256": "02835f580560742ca5570cab3d56881459058bff2fc1001cd5a385962f4a716f"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0584",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0584.",
+        "prompt_sha256": "8dfa44e3777686c1bc51c5a11a17b860bff80b68ef5cbd418827b28df5d0fe81"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0591",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0591.",
+        "prompt_sha256": "1361a143bbf3093965b8525339c86cd4b72160d861b7091f13604ecc65f8322e"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0598",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0598.",
+        "prompt_sha256": "d577447248d50cdabe36d593fd19970418d9b105831e02dbcd99ca5dec10bff2"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0626",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0626.",
+        "prompt_sha256": "64de75de3a5ff4cf3018550534024b44e9a86096083663f464ce7c1e46bbdbb8"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0633",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0633.",
+        "prompt_sha256": "da9ed10e2d9dbb1deeabce2bfe9256bd22edfd5a68b1d6ed4c576d5579bb9e33"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0647",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0647.",
+        "prompt_sha256": "b829dce92986ab83ada6ef2ef2d20ee2354c70f6cfe3a728cd075d0dfd15eb84"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0661",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0661.",
+        "prompt_sha256": "381ef4a9ab37602519b82b75e21ae416cf22a6eff36a51413b68be42333c2212"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0668",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0668.",
+        "prompt_sha256": "05b08dfd45f7ae4255d726b293b3b58bc078600e5e503c9a8b97499b4c9087d0"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0696",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0696.",
+        "prompt_sha256": "33eff1b65ebb7d81963dab897440124b26e2dca03ba869dd03e70866eb6ef0f2"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0717",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0717.",
+        "prompt_sha256": "5f4374b3ed696c91cfac8e6e1ef886929a978be12849194175a6c7e4ad381747"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0724",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0724.",
+        "prompt_sha256": "28c07e4dbb1e2a681dda857496e25f208760c999886147b3a7a0e75afb37dab0"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0731",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0731.",
+        "prompt_sha256": "08940fe6ea84c17be05c9d4dd1f2d756f33c29fe7487bde3a9564ed05b509747"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0738",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0738.",
+        "prompt_sha256": "ed66e7fc00c97bfa4100395adab8aa092c5ac30d26052f53aaec5aa3433b8450"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0745",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0745.",
+        "prompt_sha256": "337fa2cd138495033ed5a2ae07fc9fc0222d8058406cae08a7f8cead8934a9a8"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0759",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0759.",
+        "prompt_sha256": "da31ba7f3d2fdacbe1e143c08f7e0c19a09d9ab4710e244f9ec163bbadbf3eb1"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0766",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0766.",
+        "prompt_sha256": "fe8e11f5bb2428ccce96f3e4d20031e995d5f0d5f3b1c4435776392abea4fde1"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0780",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0780.",
+        "prompt_sha256": "8e6486d5fe516f46d3a2f86158dadf139d68f18e9284b89fda05b156b85ee0b1"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0794",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0794.",
+        "prompt_sha256": "df4f764c7935bf409801a430317f15147e167ad26b840394d633c4f8c87d76f1"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0815",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0815.",
+        "prompt_sha256": "9374ffdb8d374a16524003715037b5c47143d7da83e7276db567fa493e5a7139"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0836",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0836.",
+        "prompt_sha256": "7db832c3bb242fca8dde2c79afafe10e11470f69ad217efdcaf225b307344b8f"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0920",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0920.",
+        "prompt_sha256": "4e93c511c16a49c7d561924ebfe9dbbc6f653fcbd7e0ee378b67e58d7eade720"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0927",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0927.",
+        "prompt_sha256": "c5c54e50a28dd343bf343b12e8289d0c13b7712acce556fd94141c050c985082"
+      },
+      {
+        "id": "generation_tokenizer_mismatch_0934",
+        "category": "tokenizer",
+        "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0934.",
+        "prompt_sha256": "09b6006095682d9dc8266a342d07c49d27b98561f216ddea13c2f9ba379fed4c"
+      }
+    ],
+    "gained": [
+      {
+        "id": "generation_math_answer_0026",
+        "category": "math",
+        "prompt": "Question: What is 24 * 29? Answer with only the number.\nAnswer:",
+        "prompt_sha256": "8c6a3daad1e633c1d56146bd0dc65f5591d5cc53016542e03a48a2cd057983f5"
+      },
+      {
+        "id": "generation_model_merge_risk_0001",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0001.",
+        "prompt_sha256": "280b889c1ac7c98d901933c15f22e272de4aa80f426ce523fc515575ff8dd5fa"
+      },
+      {
+        "id": "generation_model_merge_risk_0015",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0015.",
+        "prompt_sha256": "76c43f2e100c1b49084c37025780e175d3157cab115741f1107328369b5867bf"
+      },
+      {
+        "id": "generation_model_merge_risk_0078",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0078.",
+        "prompt_sha256": "5817682e5d7bc72e5da7a0a095dd24b5ba999250fabb399e74cd6c428dcd94ed"
+      },
+      {
+        "id": "generation_model_merge_risk_0099",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0099.",
+        "prompt_sha256": "8493ebd0262a48c1c02326baf66fe88156cd33b87d5190c8212efda698b914f5"
+      },
+      {
+        "id": "generation_model_merge_risk_0113",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0113.",
+        "prompt_sha256": "7f4300cb187b62e7674de2307225ae72103a86146c3e6a7b5ef07ec402e6ebfe"
+      },
+      {
+        "id": "generation_model_merge_risk_0155",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0155.",
+        "prompt_sha256": "71b398b97355c2871ab187299d83bc0de71b7ae27246449e03ed3ade82be60ff"
+      },
+      {
+        "id": "generation_model_merge_risk_0190",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0190.",
+        "prompt_sha256": "46a017909d26394f7a98eba8a1f82daa842dc5342137bd02a57b09eae8fc2482"
+      },
+      {
+        "id": "generation_model_merge_risk_0197",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0197.",
+        "prompt_sha256": "912f9f58ed0957b4fd692632b24d437cd3a97ad8f00a98b65621b29afc299bbc"
+      },
+      {
+        "id": "generation_model_merge_risk_0239",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0239.",
+        "prompt_sha256": "d21f0c055d82ca14267c69155236f3c36c217869d2c74e409b6db304cfcb848b"
+      },
+      {
+        "id": "generation_model_merge_risk_0484",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0484.",
+        "prompt_sha256": "e37a2c58fb0d27624afd9bd6e7b423272412a3a836674c4bbc19b04622f73902"
+      },
+      {
+        "id": "generation_model_merge_risk_0540",
+        "category": "model-surgery",
+        "prompt": "Give one risk when merging two language models.\nVariation id: 0540.",
+        "prompt_sha256": "90cb85ed5e79d7507af7f66b8d2cd084461e0128a9f04647de881707f1532f6f"
+      }
+    ]
+  }
+}

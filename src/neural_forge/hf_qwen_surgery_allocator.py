@@ -16,6 +16,7 @@ import math
 import operator
 import os
 import random
+import threading
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
@@ -54,6 +55,8 @@ from neural_forge.hf_qwen_attention_surgery import (
 )
 from neural_forge.hf_qwen_codebook_model import (
     Qwen3CodebookParameterReport,
+    canonicalize_qwen3_tokenizer_contract,
+    plan_qwen3_codebook_artifact,
     qwen3_codebook_parameter_report,
 )
 from neural_forge.hf_qwen_sensitivity import (
@@ -88,6 +91,22 @@ RefreshEvidence = Callable[..., Qwen3SensitivityEvidence]
 NeuronRefresh = Callable[..., Any]
 AttentionRefresh = Callable[..., Any]
 ProposalKind = Literal["neuron", "attention"]
+_BEHAVIORAL_GATE_KIND = "behavioral_parent_relative_v1"
+_MAX_CALLBACK_NUMPY_COPY_BYTES = 16 * 1024 * 1024
+_ORIGINAL_TENSOR_EXPORTS = {
+    name: getattr(torch.Tensor, name)
+    for name in (
+        "numpy",
+        "data_ptr",
+        "untyped_storage",
+        "storage",
+        "_typed_storage",
+        "__dlpack__",
+    )
+    if hasattr(torch.Tensor, name)
+}
+_ORIGINAL_UNTYPED_STORAGE = _ORIGINAL_TENSOR_EXPORTS["untyped_storage"]
+_CALLBACK_EXPORT_LOCK = threading.RLock()
 
 
 class Qwen3SurgeryAllocatorError(ValueError):
@@ -172,14 +191,102 @@ def _process_rss_bytes() -> int:
 
         return int(psutil.Process(os.getpid()).memory_info().rss)
     except (ImportError, OSError):
-        return 0
+        pass
+    if os.name == "nt":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class _ProcessMemoryCounters(ctypes.Structure):
+                _fields_ = (
+                    ("cb", wintypes.DWORD),
+                    ("PageFaultCount", wintypes.DWORD),
+                    ("PeakWorkingSetSize", ctypes.c_size_t),
+                    ("WorkingSetSize", ctypes.c_size_t),
+                    ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                    ("PagefileUsage", ctypes.c_size_t),
+                    ("PeakPagefileUsage", ctypes.c_size_t),
+                )
+
+            counters = _ProcessMemoryCounters()
+            counters.cb = ctypes.sizeof(counters)
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            psapi = ctypes.WinDLL("psapi", use_last_error=True)
+            kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+            psapi.GetProcessMemoryInfo.argtypes = (
+                wintypes.HANDLE,
+                ctypes.POINTER(_ProcessMemoryCounters),
+                wintypes.DWORD,
+            )
+            psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+            process = kernel32.GetCurrentProcess()
+            if psapi.GetProcessMemoryInfo(process, ctypes.byref(counters), counters.cb):
+                return int(counters.WorkingSetSize)
+        except (AttributeError, OSError, TypeError, ValueError):
+            pass
+    else:
+        try:
+            page_size = int(os.sysconf("SC_PAGE_SIZE"))
+            with open("/proc/self/statm", encoding="ascii") as handle:
+                resident_pages = int(handle.read().split()[1])
+            return resident_pages * page_size
+        except (OSError, ValueError, IndexError):
+            pass
+    raise Qwen3SurgeryAllocatorStateError(
+        "Process RSS measurement is unavailable; resource ceilings fail closed."
+    )
 
 
 def _storage_identity(value: Tensor) -> tuple[str, int]:
     if value.device.type == "meta":
         return "meta", id(value)
-    storage = value.untyped_storage()
+    storage = _ORIGINAL_UNTYPED_STORAGE(value)
     return str(value.device), int(getattr(storage, "_cdata", storage.data_ptr()))
+
+
+@contextmanager
+def _block_external_tensor_exports(
+    protected: frozenset[tuple[str, int]],
+):
+    """Reject raw-storage escape hatches while an in-process callback runs."""
+
+    with _CALLBACK_EXPORT_LOCK:
+        installed: list[tuple[str, Any, Any]] = []
+        for name, original in _ORIGINAL_TENSOR_EXPORTS.items():
+
+            def guarded(
+                value: Tensor,
+                *args: Any,
+                _name: str = name,
+                _original: Any = original,
+                **kwargs: Any,
+            ) -> Any:
+                if _storage_identity(value) in protected:
+                    if _name == "numpy":
+                        if _tensor_bytes(value) > _MAX_CALLBACK_NUMPY_COPY_BYTES:
+                            raise Qwen3SurgeryAllocatorStateError(
+                                "Evaluator/refresh callback NumPy export exceeds the "
+                                "bounded immutable-copy ceiling."
+                            )
+                        return _original(value, *args, **kwargs).copy()
+                    raise Qwen3SurgeryAllocatorStateError(
+                        "Evaluator/refresh callbacks cannot export live model "
+                        f"storage through Tensor.{_name}()."
+                    )
+                return _original(value, *args, **kwargs)
+
+            prior = getattr(torch.Tensor, name)
+            setattr(torch.Tensor, name, guarded)
+            installed.append((name, guarded, prior))
+        try:
+            yield
+        finally:
+            for name, guarded, prior in reversed(installed):
+                if getattr(torch.Tensor, name) is guarded:
+                    setattr(torch.Tensor, name, prior)
 
 
 def _tensor_version(value: Tensor) -> int | None:
@@ -277,6 +384,7 @@ def _capture_runtime_bindings(runtime: nn.Module) -> _RuntimeBindingCheckpoint:
                     data_alias=value.detach(),
                     version=_tensor_version(value),
                     requires_grad=bool(value.requires_grad),
+                    grad=value.grad,
                 )
             )
     return _RuntimeBindingCheckpoint(tuple(tensors), module_bindings)
@@ -331,12 +439,15 @@ def _restore_runtime_bindings(checkpoint: _RuntimeBindingCheckpoint) -> bool:
                     item.version is not None and _tensor_version(tensor) != item.version
                 )
                 or bool(tensor.requires_grad) != item.requires_grad
+                or tensor.grad is not item.grad
             ):
                 changed = True
             if _storage_identity(tensor) != _storage_identity(item.data_alias):
                 tensor.data = item.data_alias  # noqa: PGH003 - exact pointer restore
             if bool(tensor.requires_grad) != item.requires_grad:
                 tensor.requires_grad_(item.requires_grad)
+            if tensor.grad is not item.grad:
+                tensor.grad = item.grad
     return changed
 
 
@@ -384,7 +495,11 @@ def _isolated_callback_runtime(runtime: nn.Module):
     callback_error: BaseException | None = None
     changed = False
     try:
-        with torch.random.fork_rng(devices=devices, enabled=True), mutation_mode:
+        with (
+            torch.random.fork_rng(devices=devices, enabled=True),
+            mutation_mode,
+            _block_external_tensor_exports(protected),
+        ):
             yield _GuardedInferenceRuntime(runtime)
     except BaseException as error:
         callback_error = error
@@ -411,8 +526,75 @@ def _unique_named_tensors(
     return parameters, buffers
 
 
+def _registered_state_tensors(runtime: nn.Module) -> dict[str, Tensor]:
+    """Read registered state without state-dict hooks or tensor cloning."""
+
+    state: dict[str, Tensor] = {}
+
+    def visit(module: nn.Module, prefix: str, ancestors: frozenset[int]) -> None:
+        identity = id(module)
+        if identity in ancestors:
+            raise Qwen3SurgeryAllocatorStateError(
+                "Runtime module registration contains a cycle."
+            )
+        lineage = ancestors | {identity}
+        for name, value in module._parameters.items():
+            if value is None:
+                continue
+            qualified = f"{prefix}{name}"
+            if qualified in state or not isinstance(value, Tensor):
+                raise Qwen3SurgeryAllocatorStateError(
+                    f"Invalid or duplicate registered parameter {qualified!r}."
+                )
+            state[qualified] = value
+        non_persistent = module._non_persistent_buffers_set
+        for name, value in module._buffers.items():
+            if value is None or name in non_persistent:
+                continue
+            qualified = f"{prefix}{name}"
+            if qualified in state or not isinstance(value, Tensor):
+                raise Qwen3SurgeryAllocatorStateError(
+                    f"Invalid or duplicate registered buffer {qualified!r}."
+                )
+            state[qualified] = value
+        for name, child in module._modules.items():
+            if child is not None:
+                visit(child, f"{prefix}{name}.", lineage)
+
+    visit(runtime, "", frozenset())
+    if not state:
+        raise Qwen3SurgeryAllocatorStateError(
+            "Exact allocator state requires registered tensors."
+        )
+    return state
+
+
+def _model_manifest_root(
+    config_sha256: str, tensors: Sequence[Qwen3StateTensorFingerprint]
+) -> str:
+    return _sha256(
+        {
+            "schema": SENSITIVITY_SCHEMA,
+            "config_sha256": config_sha256,
+            "tensors": [
+                {
+                    "name": item.name,
+                    "sha256": item.sha256,
+                    "dtype": item.dtype,
+                    "shape": item.shape,
+                    "stride": item.stride,
+                    "storage_offset": item.storage_offset,
+                    "storage_nbytes": item.storage_nbytes,
+                    "requires_grad": item.requires_grad,
+                }
+                for item in tensors
+            ],
+        }
+    )
+
+
 def _runtime_version_sha256(runtime: nn.Module) -> str:
-    state = runtime.state_dict(keep_vars=True)
+    state = _registered_state_tensors(runtime)
     return _sha256(
         {
             "tensors": [
@@ -467,7 +649,7 @@ def _logical_model_manifest(runtime: nn.Module) -> Qwen3ModelFingerprintManifest
         )
     payload = config.to_dict() if hasattr(config, "to_dict") else vars(config)
     config_sha256 = hashlib.sha256(_canonical_json(payload)).hexdigest()
-    state = runtime.state_dict(keep_vars=True)
+    state = _registered_state_tensors(runtime)
     tensors = tuple(
         Qwen3StateTensorFingerprint(
             name=name,
@@ -476,29 +658,19 @@ def _logical_model_manifest(runtime: nn.Module) -> Qwen3ModelFingerprintManifest
             shape=tuple(int(item) for item in state[name].shape),
             device=str(state[name].device),
             data_ptr=(
-                int(state[name].untyped_storage().data_ptr())
+                int(_ORIGINAL_UNTYPED_STORAGE(state[name]).data_ptr())
                 if int(state[name].numel())
                 else 0
             ),
             version=_manifest_tensor_version(state[name]),
+            stride=tuple(int(item) for item in state[name].stride()),
+            storage_offset=int(state[name].storage_offset()),
+            storage_nbytes=int(_ORIGINAL_UNTYPED_STORAGE(state[name]).nbytes()),
+            requires_grad=bool(state[name].requires_grad),
         )
         for name in sorted(state)
     )
-    root = _sha256(
-        {
-            "schema": SENSITIVITY_SCHEMA,
-            "config_sha256": config_sha256,
-            "tensors": [
-                {
-                    "name": item.name,
-                    "sha256": item.sha256,
-                    "dtype": item.dtype,
-                    "shape": item.shape,
-                }
-                for item in tensors
-            ],
-        }
-    )
+    root = _model_manifest_root(config_sha256, tensors)
     return Qwen3ModelFingerprintManifest(
         root=root,
         config_sha256=config_sha256,
@@ -547,7 +719,7 @@ class Qwen3SurgeryAllocatorLimits:
 
 @dataclass(frozen=True, slots=True)
 class Qwen3UnifiedSurgeryAccounting:
-    """Exact current parameter and physical byte accounting."""
+    """Exact logical/runtime storage and canonical artifact accounting."""
 
     source_unique_parameters: int
     child_unique_parameters: int
@@ -563,6 +735,15 @@ class Qwen3UnifiedSurgeryAccounting:
     parameter_report_sha256: str
     neuron_registry_sha256: str
     attention_registry_sha256: str
+    logical_state_tensor_bytes: int = 0
+    runtime_registered_storage_bytes: int = 0
+    artifact_payload_bytes: int = 0
+    artifact_header_bytes: int = 0
+    artifact_config_bytes: int = 0
+    artifact_tokenizer_contract_bytes: int = 0
+    artifact_manifest_bytes: int = 0
+    artifact_plan_sha256: str = ""
+    artifact_tokenizer_contract_resolved: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         return {name: getattr(self, name) for name in self.__dataclass_fields__}
@@ -582,6 +763,12 @@ class Qwen3CandidateValidationDamage:
     marginal_damage: float
     metric_name: str = "parent_relative_candidate_marginal_damage"
     parent_relative: bool = True
+    parent_metric_value: float | None = None
+    candidate_metric_value: float | None = None
+    metric_direction: Literal["lower_is_better", "higher_is_better"] | None = None
+    parent_evaluation_fingerprint: str | None = None
+    candidate_evaluation_fingerprint: str | None = None
+    validation_sample_count: int | None = None
 
     def __post_init__(self) -> None:
         if self.kind not in {"neuron", "attention"}:
@@ -638,6 +825,92 @@ class Qwen3CandidateValidationDamage:
         )
         if not isinstance(self.metric_name, str) or not self.metric_name.strip():
             raise Qwen3SurgeryAllocatorShapeError("metric_name must be non-empty.")
+        measurement = (
+            self.parent_metric_value,
+            self.candidate_metric_value,
+            self.metric_direction,
+            self.parent_evaluation_fingerprint,
+            self.candidate_evaluation_fingerprint,
+            self.validation_sample_count,
+        )
+        if any(item is not None for item in measurement):
+            if any(item is None for item in measurement):
+                raise Qwen3SurgeryAllocatorShapeError(
+                    "Candidate-marginal validation requires complete parent and "
+                    "candidate measurements."
+                )
+            parent_value = _finite_nonnegative(
+                self.parent_metric_value, "parent_metric_value"
+            )
+            candidate_value = _finite_nonnegative(
+                self.candidate_metric_value, "candidate_metric_value"
+            )
+            if self.metric_direction not in {"lower_is_better", "higher_is_better"}:
+                raise Qwen3SurgeryAllocatorShapeError(
+                    "metric_direction must be lower_is_better or higher_is_better."
+                )
+            for name in (
+                "parent_evaluation_fingerprint",
+                "candidate_evaluation_fingerprint",
+            ):
+                digest = getattr(self, name)
+                if (
+                    not isinstance(digest, str)
+                    or len(digest) != 64
+                    or any(character not in "0123456789abcdef" for character in digest)
+                ):
+                    raise Qwen3SurgeryAllocatorShapeError(
+                        f"{name} must be a lowercase SHA-256 digest."
+                    )
+            if (
+                self.parent_evaluation_fingerprint
+                == self.candidate_evaluation_fingerprint
+            ):
+                raise Qwen3SurgeryAllocatorShapeError(
+                    "Parent and candidate evaluations require distinct provenance."
+                )
+            sample_count = _positive_int(
+                self.validation_sample_count, "validation_sample_count"
+            )
+            if sample_count != len(self.validation_row_fingerprints):
+                raise Qwen3SurgeryAllocatorShapeError(
+                    "validation_sample_count must match validation row provenance."
+                )
+            expected_damage = max(
+                0.0,
+                (
+                    candidate_value - parent_value
+                    if self.metric_direction == "lower_is_better"
+                    else parent_value - candidate_value
+                ),
+            )
+            if not math.isclose(
+                self.marginal_damage,
+                expected_damage,
+                rel_tol=1e-12,
+                abs_tol=1e-12,
+            ):
+                raise Qwen3SurgeryAllocatorShapeError(
+                    "marginal_damage must be computed from the independent parent "
+                    "and candidate validation measurements."
+                )
+            object.__setattr__(self, "parent_metric_value", parent_value)
+            object.__setattr__(self, "candidate_metric_value", candidate_value)
+            object.__setattr__(self, "validation_sample_count", sample_count)
+
+    @property
+    def has_complete_candidate_marginal_measurement(self) -> bool:
+        return all(
+            item is not None
+            for item in (
+                self.parent_metric_value,
+                self.candidate_metric_value,
+                self.metric_direction,
+                self.parent_evaluation_fingerprint,
+                self.candidate_evaluation_fingerprint,
+                self.validation_sample_count,
+            )
+        )
 
     @property
     def provenance_sha256(self) -> str:
@@ -655,6 +928,15 @@ class Qwen3CandidateValidationDamage:
             "marginal_damage": self.marginal_damage,
             "metric_name": self.metric_name,
             "parent_relative": self.parent_relative,
+            "parent_metric_value": self.parent_metric_value,
+            "candidate_metric_value": self.candidate_metric_value,
+            "metric_direction": self.metric_direction,
+            "parent_evaluation_fingerprint": self.parent_evaluation_fingerprint,
+            "candidate_evaluation_fingerprint": (self.candidate_evaluation_fingerprint),
+            "validation_sample_count": self.validation_sample_count,
+            "measurement_is_candidate_marginal": (
+                self.has_complete_candidate_marginal_measurement
+            ),
         }
 
 
@@ -701,6 +983,7 @@ class Qwen3UnifiedSurgeryProposal:
         return {
             "kind": self.kind,
             "candidate_sha256": self.candidate.candidate_sha256,
+            "candidate_operation_sha256": self.candidate.operation_sha256,
             "weighted_damage": self.weighted_damage,
             "measured_heldout_damage": self.measured_heldout_damage,
             "projection_damage": self.projection_damage,
@@ -726,7 +1009,7 @@ class Qwen3UnifiedSurgeryProposal:
 
 @dataclass(frozen=True, slots=True)
 class Qwen3MixedSurgeryBatch:
-    """A bounded mixed knapsack selection against one exact parent state."""
+    """An exact bounded Pareto selection against one parent state."""
 
     proposals: tuple[Qwen3UnifiedSurgeryProposal, ...]
     parent_state_sha256: str
@@ -752,6 +1035,10 @@ class Qwen3MixedSurgeryBatch:
     def batch_sha256(self) -> str:
         return _sha256(self.as_dict())
 
+    @property
+    def pareto_states_considered(self) -> int:
+        return self.knapsack_states_considered
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "proposal_sha256s": [item.proposal_sha256 for item in self.proposals],
@@ -765,6 +1052,7 @@ class Qwen3MixedSurgeryBatch:
             / max(self.physical_bytes_saved, 1),
             "proposal_work": self.proposal_work,
             "knapsack_states_considered": self.knapsack_states_considered,
+            "pareto_states_considered": self.pareto_states_considered,
             "score_is_behavioral_improvement": False,
         }
 
@@ -777,6 +1065,7 @@ class Qwen3UnifiedSurgeryEvaluationContext:
     transaction_index: int
     evidence_epoch: int
     parent_state_sha256: str
+    proposed_state_sha256: str
     batch: Qwen3MixedSurgeryBatch
     parent_accounting: Qwen3UnifiedSurgeryAccounting
     proposed_accounting: Qwen3UnifiedSurgeryAccounting
@@ -936,6 +1225,8 @@ class _AllocatorCheckpoint:
     evidence: Qwen3SensitivityEvidence | None
     candidate_validation: tuple[Qwen3CandidateValidationDamage, ...]
     accounting_cache: Qwen3UnifiedSurgeryAccounting | None
+    manifest_transfer_bytes: int
+    resource_peaks: tuple[int, int, int]
 
 
 @dataclass(frozen=True, slots=True)
@@ -944,6 +1235,7 @@ class _TensorBinding:
     data_alias: Tensor
     version: int | None
     requires_grad: bool
+    grad: Tensor | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1077,6 +1369,22 @@ def _decision(value: Any) -> EvaluationDecision:
     return EvaluationDecision(accepted, str(reason), metrics)
 
 
+def _behavioral_evaluation_fingerprint(metrics: Mapping[str, Any]) -> str:
+    return _sha256(
+        {
+            "evaluation_kind": metrics.get("evaluation_kind"),
+            "parent_state_sha256": metrics.get("parent_state_sha256"),
+            "candidate_state_sha256": metrics.get("candidate_state_sha256"),
+            "evaluation_suite_sha256": metrics.get("evaluation_suite_sha256"),
+            "parent_outputs_sha256": metrics.get("parent_outputs_sha256"),
+            "candidate_outputs_sha256": metrics.get("candidate_outputs_sha256"),
+            "behavioral_sample_count": metrics.get("behavioral_sample_count"),
+            "parent_behavior_score": metrics.get("parent_behavior_score"),
+            "candidate_behavior_score": metrics.get("candidate_behavior_score"),
+        }
+    )
+
+
 def _invoke_callback(callback: Callable[..., Any], context: Any) -> Any:
     callable_value = getattr(callback, "evaluate", callback)
     if not callable(callable_value):
@@ -1146,6 +1454,24 @@ def _neuron_features_from_evidence(
         (item.layer_index, item.neuron_index): item
         for item in evidence.to_adaptive_surgery_features()
     }
+    activation_widths = {
+        len(item.activation_features) for item in converted.values()
+    }
+    if len(activation_widths) > 1:
+        raise Qwen3SurgeryAllocatorShapeError(
+            "Measured neuron evidence has inconsistent activation dimensions."
+        )
+    activation_width = next(iter(activation_widths), 5)
+    domain_widths = {
+        len(item.domain_features)
+        for item in converted.values()
+        if item.domain_features is not None
+    }
+    if len(domain_widths) > 1:
+        raise Qwen3SurgeryAllocatorShapeError(
+            "Measured neuron evidence has inconsistent domain dimensions."
+        )
+    domain_width = next(iter(domain_widths), 0)
     snapshot = neuron_surgery.qwen3_runtime_assignment_snapshot(runtime)
     result: list[Qwen3AdaptiveSurgeryFeature] = []
     for node in snapshot.prototype_source_ids:
@@ -1154,13 +1480,28 @@ def _neuron_features_from_evidence(
             result.append(converted[(layer, neuron)])
             continue
         energy = evidence.neuron_activation_energy[layer][neuron]
+        layer_context = tuple(
+            value
+            for group in evidence.attention_role_activation_energy[layer]
+            for value in group
+        )
+        if domain_width and len(layer_context) > domain_width:
+            raise Qwen3SurgeryAllocatorShapeError(
+                "Unmeasured neuron layer context exceeds measured domain width."
+            )
+        domain = (
+            None
+            if domain_width == 0
+            else layer_context + (0.0,) * (domain_width - len(layer_context))
+        )
         result.append(
             Qwen3AdaptiveSurgeryFeature(
                 layer,
                 neuron,
-                activation=[energy],
-                jacobian=[0.0],
-                dual=[0.0],
+                activation=[energy, *([0.0] * (activation_width - 1))],
+                jacobian=None,
+                dual=None,
+                domain_features=domain,
                 importance=1.0,
                 anchor=(
                     "exact" if evidence.anchors.is_neuron_exact(layer, neuron) else None
@@ -1177,6 +1518,16 @@ def _attention_features_from_evidence(
         (item.node.layer_index, item.node.group_index): item
         for item in evidence.attention_groups
     }
+    domain_widths = {
+        len(item.residual_ablation_difference_sketch)
+        + len(item.logit_ablation_difference_sketch)
+        for item in measured.values()
+    }
+    if len(domain_widths) > 1:
+        raise Qwen3SurgeryAllocatorShapeError(
+            "Measured attention evidence has inconsistent sketch dimensions."
+        )
+    domain_width = next(iter(domain_widths), 0)
     snapshot = attention_surgery.qwen3_attention_runtime_snapshot(runtime)
     result: list[Qwen3AttentionSurgeryFeature] = []
     for node in snapshot.active_node_ids:
@@ -1184,9 +1535,10 @@ def _attention_features_from_evidence(
         item = measured.get((layer, group))
         roles = evidence.attention_role_activation_energy[layer][group]
         if item is None:
-            activation = roles
-            jvp: Sequence[float] = (0.0,)
-            output: Sequence[float] = (0.0,)
+            activation = (*roles, 0.0, 0.0, 0.0, 0.0)
+            domain: Sequence[float] | None = (
+                None if domain_width == 0 else (0.0,) * domain_width
+            )
             importance = 1.0
         else:
             activation = (
@@ -1196,15 +1548,9 @@ def _attention_features_from_evidence(
                 item.logit_kl,
                 item.top1_disagreement,
             )
-            jvp = getattr(
-                item,
-                "finite_difference_controllability",
-                getattr(item, "residual_directional_difference", (0.0,)),
-            )
-            output = getattr(
-                item,
-                "finite_difference_observability",
-                getattr(item, "logit_directional_difference", (0.0,)),
+            domain = (
+                *item.residual_ablation_difference_sketch,
+                *item.logit_ablation_difference_sketch,
             )
             importance = max(item.damage_score, 1e-12)
         result.append(
@@ -1212,8 +1558,9 @@ def _attention_features_from_evidence(
                 layer,
                 group,
                 activation=activation,
-                jvp=jvp,
-                output=output,
+                jvp=None,
+                output=None,
+                domain_features=domain,
                 importance=importance,
                 anchor=(
                     "exact"
@@ -1234,6 +1581,7 @@ class Qwen3UnifiedSurgeryAllocator:
         attention_bridge: Qwen3AttentionSurgeryBridge,
         *,
         sensitivity_evidence: Qwen3SensitivityEvidence | None = None,
+        artifact_tokenizer_contract: Mapping[str, Any] | None = None,
         limits: Qwen3SurgeryAllocatorLimits | None = None,
     ) -> None:
         if not isinstance(neuron_bridge, Qwen3AdaptiveSurgeryBridge):
@@ -1249,6 +1597,14 @@ class Qwen3UnifiedSurgeryAllocator:
                 "Both bridges must own the same prepared Qwen3 runtime."
             )
         self.runtime = neuron_bridge.runtime
+        self._artifact_tokenizer_contract_json: bytes | None = None
+        if artifact_tokenizer_contract is not None:
+            canonical_contract = canonicalize_qwen3_tokenizer_contract(
+                self.runtime, artifact_tokenizer_contract
+            )
+            self._artifact_tokenizer_contract_json = _canonical_json(
+                canonical_contract
+            )
         self.neuron_bridge = neuron_bridge
         self.attention_bridge = attention_bridge
         self.limits = limits or Qwen3SurgeryAllocatorLimits()
@@ -1281,6 +1637,7 @@ class Qwen3UnifiedSurgeryAllocator:
         evidence: Qwen3SensitivityEvidence,
         *,
         limits: Qwen3SurgeryAllocatorLimits | None = None,
+        artifact_tokenizer_contract: Mapping[str, Any] | None = None,
         neuron_bridge_options: Mapping[str, Any] | None = None,
         attention_bridge_options: Mapping[str, Any] | None = None,
     ) -> Qwen3UnifiedSurgeryAllocator:
@@ -1302,8 +1659,22 @@ class Qwen3UnifiedSurgeryAllocator:
                 **attention_options,
             ),
             sensitivity_evidence=evidence,
+            artifact_tokenizer_contract=artifact_tokenizer_contract,
             limits=limits,
         )
+
+    @property
+    def artifact_tokenizer_contract(self) -> dict[str, Any] | None:
+        """Return a detached copy of the immutable accounting contract."""
+
+        if self._artifact_tokenizer_contract_json is None:
+            return None
+        value = json.loads(self._artifact_tokenizer_contract_json.decode("ascii"))
+        if not isinstance(value, dict):
+            raise Qwen3SurgeryAllocatorStateError(
+                "Bound artifact tokenizer contract is not a JSON object."
+            )
+        return value
 
     @property
     def history(self) -> tuple[Qwen3UnifiedSurgeryTransaction, ...]:
@@ -1332,7 +1703,11 @@ class Qwen3UnifiedSurgeryAllocator:
         )
 
     def _validate_evidence_fingerprint(
-        self, evidence: Qwen3SensitivityEvidence
+        self,
+        evidence: Qwen3SensitivityEvidence,
+        *,
+        incremental_parent_root: str | None = None,
+        accepted_transaction_sha256: str | None = None,
     ) -> None:
         if not isinstance(evidence, Qwen3SensitivityEvidence):
             raise Qwen3SurgeryAllocatorShapeError(
@@ -1346,6 +1721,60 @@ class Qwen3UnifiedSurgeryAllocator:
             raise Qwen3SurgeryAllocatorStateError(
                 "Sensitivity evidence carries inconsistent model fingerprints."
             )
+        expected_names = tuple(item.name for item in expected.tensors)
+        if (
+            expected_names != tuple(sorted(expected_names))
+            or len(expected_names) != len(set(expected_names))
+            or expected.tensors_hashed != len(expected.tensors)
+            or _model_manifest_root(expected.config_sha256, expected.tensors)
+            != expected.root
+        ):
+            raise Qwen3SurgeryAllocatorStateError(
+                "Sensitivity evidence requires a complete, internally consistent "
+                "exact tensor manifest."
+            )
+        if expected.mode == "full":
+            if (
+                expected.parent_root is not None
+                or expected.accepted_transaction_sha256 is not None
+                or expected.changed_state_prefixes
+                or expected.tensors_reused != 0
+            ):
+                raise Qwen3SurgeryAllocatorStateError(
+                    "Full sensitivity manifests cannot carry incremental lineage."
+                )
+        elif expected.mode == "incremental":
+            for name, digest in (
+                ("parent_root", expected.parent_root),
+                (
+                    "accepted_transaction_sha256",
+                    expected.accepted_transaction_sha256,
+                ),
+            ):
+                if (
+                    not isinstance(digest, str)
+                    or len(digest) != 64
+                    or any(character not in "0123456789abcdef" for character in digest)
+                ):
+                    raise Qwen3SurgeryAllocatorStateError(
+                        f"Incremental manifest {name} is not an exact SHA-256 digest."
+                    )
+            if not expected.changed_state_prefixes:
+                raise Qwen3SurgeryAllocatorStateError(
+                    "Incremental sensitivity manifests require changed-state scopes."
+                )
+            if (
+                expected.parent_root != incremental_parent_root
+                or expected.accepted_transaction_sha256 != accepted_transaction_sha256
+            ):
+                raise Qwen3SurgeryAllocatorStateError(
+                    "Incremental sensitivity lineage does not match the accepted "
+                    "allocator edit."
+                )
+        else:
+            raise Qwen3SurgeryAllocatorStateError(
+                "Sensitivity evidence has an unsupported manifest mode."
+            )
         config = getattr(self.runtime, "config", None)
         payload = config.to_dict() if hasattr(config, "to_dict") else vars(config)
         if (
@@ -1355,12 +1784,13 @@ class Qwen3UnifiedSurgeryAllocator:
             raise Qwen3SurgeryAllocatorStateError(
                 "Sensitivity evidence config fingerprint does not match runtime."
             )
-        current = self.runtime.state_dict(keep_vars=True)
+        current = _registered_state_tensors(self.runtime)
         expected_by_name = {item.name: item for item in expected.tensors}
         if set(current) != set(expected_by_name):
             raise Qwen3SurgeryAllocatorStateError(
                 "Sensitivity evidence tensor manifest does not match runtime names."
             )
+        verified_views: dict[tuple[Any, ...], str] = {}
         for name in sorted(current):
             value = current[name]
             item = expected_by_name[name]
@@ -1368,26 +1798,44 @@ class Qwen3UnifiedSurgeryAllocator:
                 tuple(int(part) for part in value.shape) != item.shape
                 or str(value.dtype) != item.dtype
                 or str(value.device) != item.device
+                or tuple(int(part) for part in value.stride()) != item.stride
+                or int(value.storage_offset()) != item.storage_offset
+                or int(_ORIGINAL_UNTYPED_STORAGE(value).nbytes()) != item.storage_nbytes
+                or bool(value.requires_grad) != item.requires_grad
             ):
                 raise Qwen3SurgeryAllocatorStateError(
                     f"Sensitivity evidence tensor metadata changed for {name}."
                 )
-            pointer = int(value.untyped_storage().data_ptr()) if value.numel() else 0
+            pointer = (
+                int(_ORIGINAL_UNTYPED_STORAGE(value).data_ptr()) if value.numel() else 0
+            )
             if (
                 pointer == item.data_ptr
                 and _manifest_tensor_version(value) == item.version
             ):
                 continue
-            transfer = _tensor_bytes(value)
-            if (
-                self._manifest_transfer_bytes + transfer
-                > self.limits.max_manifest_transfer_bytes
-            ):
-                raise Qwen3SurgeryAllocatorStateError(
-                    "Incremental evidence verification exceeded its transfer ceiling."
-                )
-            self._manifest_transfer_bytes += transfer
-            if _logical_tensor_sha256(value) != item.sha256:
+            view_key = (
+                _storage_identity(value),
+                tuple(int(part) for part in value.shape),
+                tuple(int(part) for part in value.stride()),
+                int(value.storage_offset()),
+                str(value.dtype),
+            )
+            digest = verified_views.get(view_key)
+            if digest is None:
+                transfer = _tensor_bytes(value)
+                if (
+                    self._manifest_transfer_bytes + transfer
+                    > self.limits.max_manifest_transfer_bytes
+                ):
+                    raise Qwen3SurgeryAllocatorStateError(
+                        "Incremental evidence verification exceeded its transfer "
+                        "ceiling."
+                    )
+                self._manifest_transfer_bytes += transfer
+                digest = _logical_tensor_sha256(value)
+                verified_views[view_key] = digest
+            if digest != item.sha256:
                 raise Qwen3SurgeryAllocatorStateError(
                     f"Sensitivity evidence tensor fingerprint changed for {name}."
                 )
@@ -1408,30 +1856,26 @@ class Qwen3UnifiedSurgeryAllocator:
             if attention_snapshot is None
             else attention_snapshot
         )
-        parameters, buffers = _unique_named_tensors(self.runtime)
-        parameter_bytes = sum(_tensor_bytes(value) for value in parameters)
-        buffer_bytes = sum(_tensor_bytes(value) for value in buffers)
+        artifact_plan = plan_qwen3_codebook_artifact(
+            self.runtime,
+            tokenizer_contract=self.artifact_tokenizer_contract,
+        )
+        parameter_bytes = artifact_plan.runtime_parameter_storage_bytes
+        buffer_bytes = artifact_plan.persistent_buffer_storage_bytes
         neuron_registry = self.runtime.neuron_codebook.registry
         attention_registry = self.runtime.attention_codebook.registry
         scale_bytes = _tensor_bytes(neuron_registry.neuron_scales) + _tensor_bytes(
             attention_registry.role_scales
         )
-        metadata_payload = {
-            "schema": "neural-forge-qwen3-unified-surgery-v1",
-            "parameter_report": report.as_dict(),
-            "neuron_registry_sha256": neuron.registry_sha256,
-            "attention_registry_sha256": attention.registry_sha256,
-            "evidence_epoch": self._evidence_epoch,
-            "evidence_fingerprint": (
-                None if self._evidence is None else self._evidence.fingerprints.cache
-            ),
-        }
-        metadata_bytes = len(_canonical_json(metadata_payload))
+        metadata_bytes = (
+            artifact_plan.artifact_total_bytes
+            - artifact_plan.safetensors_payload_bytes
+        )
         if metadata_bytes > self.limits.max_metadata_bytes:
             raise Qwen3SurgeryAllocatorStateError(
                 "Bounded deployable metadata limit was exceeded."
             )
-        tensor_bytes = parameter_bytes + buffer_bytes
+        tensor_bytes = artifact_plan.safetensors_payload_bytes
         return Qwen3UnifiedSurgeryAccounting(
             source_unique_parameters=report.source_unique_parameter_count,
             child_unique_parameters=report.unique_parameter_count,
@@ -1443,10 +1887,27 @@ class Qwen3UnifiedSurgeryAllocator:
             index_bytes=report.index_buffer_bytes,
             scale_bytes=scale_bytes,
             metadata_bytes=metadata_bytes,
-            deployable_bytes=tensor_bytes + metadata_bytes,
+            deployable_bytes=artifact_plan.artifact_total_bytes,
             parameter_report_sha256=_sha256(report.as_dict()),
             neuron_registry_sha256=neuron.registry_sha256,
             attention_registry_sha256=attention.registry_sha256,
+            logical_state_tensor_bytes=(
+                artifact_plan.logical_state_tensor_bytes
+            ),
+            runtime_registered_storage_bytes=(
+                artifact_plan.runtime_registered_storage_bytes
+            ),
+            artifact_payload_bytes=artifact_plan.safetensors_payload_bytes,
+            artifact_header_bytes=artifact_plan.safetensors_header_bytes,
+            artifact_config_bytes=artifact_plan.config_file_bytes,
+            artifact_tokenizer_contract_bytes=(
+                artifact_plan.tokenizer_contract_file_bytes
+            ),
+            artifact_manifest_bytes=artifact_plan.manifest_file_bytes,
+            artifact_plan_sha256=artifact_plan.artifact_plan_sha256,
+            artifact_tokenizer_contract_resolved=(
+                artifact_plan.tokenizer_contract_resolved
+            ),
         )
 
     def accounting(self) -> Qwen3UnifiedSurgeryAccounting:
@@ -1520,6 +1981,8 @@ class Qwen3UnifiedSurgeryAllocator:
             evidence=self._evidence,
             candidate_validation=tuple(self._candidate_validation.values()),
             accounting_cache=self._accounting_cache,
+            manifest_transfer_bytes=self._manifest_transfer_bytes,
+            resource_peaks=self._resource_peaks,
         )
 
     def _restore_checkpoint(self, checkpoint: _AllocatorCheckpoint) -> None:
@@ -1575,6 +2038,8 @@ class Qwen3UnifiedSurgeryAllocator:
             for item in checkpoint.candidate_validation
         }
         self._accounting_cache = checkpoint.accounting_cache
+        self._manifest_transfer_bytes = checkpoint.manifest_transfer_bytes
+        self._resource_peaks = checkpoint.resource_peaks
         if qwen3_codebook_parameter_report(self.runtime) != checkpoint.report:
             raise Qwen3SurgeryAllocatorStateError(
                 "Outer rollback failed to restore the parameter report."
@@ -1612,6 +2077,11 @@ class Qwen3UnifiedSurgeryAllocator:
             if item.parent_state_sha256 != parent_state:
                 raise Qwen3SurgeryAllocatorStateError(
                     "Candidate validation was measured against a stale parent state."
+                )
+            if not item.has_complete_candidate_marginal_measurement:
+                raise Qwen3SurgeryAllocatorStateError(
+                    "Candidate validation cannot relabel discovery scores; install "
+                    "independent parent and candidate validation measurements."
                 )
             if expected_discovery is not None and (
                 item.discovery_fingerprint != expected_discovery
@@ -1661,6 +2131,7 @@ class Qwen3UnifiedSurgeryAllocator:
         )
         return (
             record is not None
+            and record.has_complete_candidate_marginal_measurement
             and record.parent_state_sha256 == parent_state_sha256
             and proposal.has_candidate_marginal_validation
             and proposal.validation_parent_state_sha256 == parent_state_sha256
@@ -1791,9 +2262,8 @@ class Qwen3UnifiedSurgeryAllocator:
     def _candidate_touches_exact(
         candidate: MergeCandidate, exact_nodes: frozenset[tuple[Any, ...]]
     ) -> bool:
-        return bool({tuple(node) for node in candidate.member_ids} & exact_nodes) or (
-            candidate.exact_anchor is not None
-            and tuple(candidate.exact_anchor) in exact_nodes
+        return candidate.exact_anchor is not None or bool(
+            {tuple(node) for node in candidate.member_ids} & exact_nodes
         )
 
     def discover_proposals(
@@ -1817,6 +2287,12 @@ class Qwen3UnifiedSurgeryAllocator:
         parent_state_sha256 = self._state_sha256()
         exact_neurons = self._exact_neuron_nodes()
         exact_attention = self._exact_attention_nodes()
+        active_neurons = frozenset(
+            tuple(item.node_id) for item in self.neuron_bridge.features
+        )
+        active_attention = frozenset(
+            tuple(item.node_id) for item in self.attention_bridge.features
+        )
 
         neuron_checkpoint = self.neuron_bridge._graph_checkpoint()
         try:
@@ -1829,6 +2305,13 @@ class Qwen3UnifiedSurgeryAllocator:
                     raise Qwen3SurgeryAllocatorShapeError(
                         "Explicit neuron pairs cannot touch exact anchors."
                     )
+                if (
+                    left == right
+                    or left not in active_neurons
+                    or right not in active_neurons
+                ):
+                    self._stale_explicit_pairs_skipped += 1
+                    continue
                 try:
                     candidate = self.neuron_bridge.graph.propose_candidate_for_pair(
                         left, right
@@ -1845,20 +2328,27 @@ class Qwen3UnifiedSurgeryAllocator:
             except SurgerySearchExhausted:
                 pass
             seen: set[str] = set()
+            retained = 0
             for candidate in neuron_candidates:
                 if self._candidate_touches_exact(candidate, exact_neurons):
                     continue
                 if candidate.candidate_sha256 in seen:
                     continue
                 seen.add(candidate.candidate_sha256)
-                proposals.append(
-                    self._neuron_proposal(
-                        candidate,
-                        explicit=candidate.candidate_sha256 in explicit_hashes,
-                        parent_state_sha256=parent_state_sha256,
-                    )
+                proposal = self._neuron_proposal(
+                    candidate,
+                    explicit=candidate.candidate_sha256 in explicit_hashes,
+                    parent_state_sha256=parent_state_sha256,
                 )
-                if len(seen) >= self.limits.max_proposals_per_modality:
+                if (
+                    candidate.candidate_sha256 in excluded_sha256s
+                    or proposal.proposal_sha256 in excluded_sha256s
+                    or proposal.prototype_bytes_saved <= 0
+                ):
+                    continue
+                proposals.append(proposal)
+                retained += 1
+                if retained >= self.limits.max_proposals_per_modality:
                     break
         finally:
             self.neuron_bridge._restore_graph_checkpoint(neuron_checkpoint)
@@ -1874,6 +2364,13 @@ class Qwen3UnifiedSurgeryAllocator:
                     raise Qwen3SurgeryAllocatorShapeError(
                         "Explicit attention pairs cannot touch exact anchors."
                     )
+                if (
+                    left == right
+                    or left not in active_attention
+                    or right not in active_attention
+                ):
+                    self._stale_explicit_pairs_skipped += 1
+                    continue
                 try:
                     candidate = self.attention_bridge.graph.propose_candidate_for_pair(
                         left, right
@@ -1892,20 +2389,27 @@ class Qwen3UnifiedSurgeryAllocator:
             except SurgerySearchExhausted:
                 pass
             seen = set()
+            retained = 0
             for candidate in attention_candidates:
                 if self._candidate_touches_exact(candidate, exact_attention):
                     continue
                 if candidate.candidate_sha256 in seen:
                     continue
                 seen.add(candidate.candidate_sha256)
-                proposals.append(
-                    self._attention_proposal(
-                        candidate,
-                        explicit=candidate.candidate_sha256 in explicit_hashes,
-                        parent_state_sha256=parent_state_sha256,
-                    )
+                proposal = self._attention_proposal(
+                    candidate,
+                    explicit=candidate.candidate_sha256 in explicit_hashes,
+                    parent_state_sha256=parent_state_sha256,
                 )
-                if len(seen) >= self.limits.max_proposals_per_modality:
+                if (
+                    candidate.candidate_sha256 in excluded_sha256s
+                    or proposal.proposal_sha256 in excluded_sha256s
+                    or proposal.prototype_bytes_saved <= 0
+                ):
+                    continue
+                proposals.append(proposal)
+                retained += 1
+                if retained >= self.limits.max_proposals_per_modality:
                     break
         finally:
             self.attention_bridge._restore_graph(
@@ -1972,16 +2476,19 @@ class Qwen3UnifiedSurgeryAllocator:
 
     @staticmethod
     def _dominates(left: _KnapsackState, right: _KnapsackState) -> bool:
+        # Savings are upper-bounded by the overshoot contract.  A state with more
+        # bytes cannot dominate one with fewer bytes because later additions may
+        # make only the smaller state feasible.  Prune only states whose future
+        # one-time setup behavior is therefore exactly equivalent.
         return (
-            left.physical_bytes >= right.physical_bytes
+            left.prototype_bytes == right.prototype_bytes
+            and left.neuron_scale_setup == right.neuron_scale_setup
+            and left.attention_scale_setup == right.attention_scale_setup
             and left.risk <= right.risk
-            and left.setup_bytes <= right.setup_bytes
             and left.occupied_neurons.issubset(right.occupied_neurons)
             and left.occupied_attention.issubset(right.occupied_attention)
             and (
-                left.physical_bytes > right.physical_bytes
-                or left.risk < right.risk
-                or left.setup_bytes < right.setup_bytes
+                left.risk < right.risk
                 or left.occupied_neurons != right.occupied_neurons
                 or left.occupied_attention != right.occupied_attention
             )
@@ -2023,16 +2530,10 @@ class Qwen3UnifiedSurgeryAllocator:
                 survivors.append(candidate)
                 frontier = survivors
             if len(frontier) > self.limits.max_knapsack_states:
-                frontier.sort(
-                    key=lambda item: (
-                        item.risk,
-                        max(item.physical_bytes - target, 0),
-                        -min(item.physical_bytes, target),
-                        item.setup_bytes,
-                        len(item.selected),
-                    )
+                raise Qwen3SurgeryAllocatorTargetError(
+                    "Exact Pareto selection exceeded its immutable retained-state "
+                    "ceiling; refusing an approximate risk claim."
                 )
-                frontier = frontier[: self.limits.max_knapsack_states]
         return frontier
 
     def select_batch(
@@ -2061,6 +2562,33 @@ class Qwen3UnifiedSurgeryAllocator:
             raise Qwen3SurgeryAllocatorTargetError(
                 "No bounded, parent-state candidate-marginal validation remains."
             )
+        if any(item.individual_physical_bytes_saved <= 0 for item in proposals):
+            raise Qwen3SurgeryAllocatorTargetError(
+                "Pareto selection requires positive measured physical savings for "
+                "every candidate."
+            )
+        allowed_overshoot = min(
+            self.limits.max_overshoot_bytes,
+            int(math.ceil(target * self.limits.max_overshoot_ratio)),
+        )
+        maximum_physical_bytes = target + allowed_overshoot
+        # Physical savings strictly increase when another positive candidate is
+        # added: prototypes add, while each modality's one-time scale setup is a
+        # maximum rather than a sum.  A candidate that already exceeds the
+        # permitted target window can therefore never belong to a feasible
+        # batch.  Remove it before exact subset enumeration so irrelevant large
+        # attention edits cannot exhaust the bounded Pareto search for a small
+        # neuron-only byte request.
+        proposals = tuple(
+            item
+            for item in proposals
+            if item.individual_physical_bytes_saved <= maximum_physical_bytes
+        )
+        if not proposals:
+            raise Qwen3SurgeryAllocatorTargetError(
+                "Every validated candidate individually exceeds the configured "
+                "target and overshoot window."
+            )
         empty = _KnapsackState((), frozenset(), frozenset(), 0, 0, 0, 0.0)
         states = [empty]
         considered = 1
@@ -2086,10 +2614,6 @@ class Qwen3UnifiedSurgeryAllocator:
             raise Qwen3SurgeryAllocatorTargetError(
                 "All bounded batches have non-positive true physical savings."
             )
-        allowed_overshoot = max(
-            self.limits.max_overshoot_bytes,
-            int(math.ceil(target * self.limits.max_overshoot_ratio)),
-        )
         meeting = [
             item
             for item in viable
@@ -2144,6 +2668,7 @@ class Qwen3UnifiedSurgeryAllocator:
     def _assert_parent_relative_gate(
         decision: EvaluationDecision,
         parent_state_sha256: str,
+        proposed_state_sha256: str,
         *,
         unsafe_allow_ungated_commit: bool,
     ) -> None:
@@ -2151,16 +2676,49 @@ class Qwen3UnifiedSurgeryAllocator:
             return
         metrics = dict(decision.metrics)
         fingerprint = metrics.get("evaluation_fingerprint")
+        digest_names = (
+            "evaluation_suite_sha256",
+            "parent_outputs_sha256",
+            "candidate_outputs_sha256",
+        )
+        digests_valid = all(
+            isinstance(metrics.get(name), str)
+            and len(metrics[name]) == 64
+            and not any(
+                character not in "0123456789abcdef" for character in metrics[name]
+            )
+            for name in digest_names
+        )
+        sample_count = metrics.get("behavioral_sample_count")
+        scores_valid = True
+        for name in ("parent_behavior_score", "candidate_behavior_score"):
+            value = metrics.get(name)
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                or float(value) < 0.0
+            ):
+                scores_valid = False
         if (
             metrics.get("parent_relative") is not True
+            or metrics.get("evaluation_kind") != _BEHAVIORAL_GATE_KIND
             or metrics.get("parent_state_sha256") != parent_state_sha256
+            or metrics.get("candidate_state_sha256") != proposed_state_sha256
+            or isinstance(sample_count, bool)
+            or not isinstance(sample_count, int)
+            or sample_count <= 0
+            or not digests_valid
+            or not scores_valid
             or not isinstance(fingerprint, str)
             or len(fingerprint) != 64
             or any(character not in "0123456789abcdef" for character in fingerprint)
+            or fingerprint != _behavioral_evaluation_fingerprint(metrics)
         ):
             raise Qwen3SurgeryAllocatorStateError(
                 "Accepted surgery requires an auditable parent-relative behavioral "
-                "gate with parent_state_sha256 and evaluation_fingerprint."
+                "gate binding the exact parent/candidate states, evaluation suite, "
+                "outputs, scores, sample count, and evaluation fingerprint."
             )
 
     def _record_resource_peaks(self, guard: _ResourceGuard) -> None:
@@ -2240,7 +2798,15 @@ class Qwen3UnifiedSurgeryAllocator:
         context: Qwen3UnifiedSurgeryRefreshContext,
     ) -> tuple[Qwen3SurgeryEvidenceRefresh, Qwen3AttentionEvidenceRefresh]:
         evidence = _invoke_callback(callback, context)
-        self._validate_evidence_fingerprint(evidence)
+        self._validate_evidence_fingerprint(
+            evidence,
+            incremental_parent_root=(
+                None
+                if self._evidence is None
+                else self._evidence.fingerprints.model_manifest.root
+            ),
+            accepted_transaction_sha256=context.batch.batch_sha256,
+        )
         neuron_features = self._preserve_neuron_policy(
             self.neuron_bridge.features,
             _neuron_features_from_evidence(self.runtime, evidence),
@@ -2537,12 +3103,14 @@ class Qwen3UnifiedSurgeryAllocator:
                 proposed_neuron.public, proposed_attention.snapshot
             )
             proposed_accounting = self.accounting()
+            proposed_digest = self._state_sha256()
             with _isolated_callback_runtime(self.runtime) as guarded_runtime:
                 context = Qwen3UnifiedSurgeryEvaluationContext(
                     runtime=guarded_runtime,
                     transaction_index=self._accepted_transactions + 1,
                     evidence_epoch=self._evidence_epoch,
                     parent_state_sha256=parent_digest,
+                    proposed_state_sha256=proposed_digest,
                     batch=batch,
                     parent_accounting=parent_accounting,
                     proposed_accounting=proposed_accounting,
@@ -2566,17 +3134,21 @@ class Qwen3UnifiedSurgeryAllocator:
             self._assert_parent_relative_gate(
                 decision,
                 parent_digest,
+                proposed_digest,
                 unsafe_allow_ungated_commit=unsafe_allow_ungated_commit,
             )
             resource_guard.sample()
             self._assert_zero_gradient()
-            if self.accounting() != proposed_accounting:
+            if (
+                self.accounting() != proposed_accounting
+                or self._state_sha256() != proposed_digest
+            ):
                 raise Qwen3SurgeryAllocatorStateError(
                     "The external evaluator mutated the tentative surgery state."
                 )
             if not decision.accepted:
                 self._restore_checkpoint(checkpoint)
-                self._record_resource_peaks(resource_guard)
+                resource_guard.sample()
                 if self._state_sha256() != parent_digest:
                     raise Qwen3SurgeryAllocatorStateError(
                         "Rejected mixed transaction did not restore exact state."
@@ -2637,13 +3209,24 @@ class Qwen3UnifiedSurgeryAllocator:
                         None,
                     )
                 else:
-                    with _isolated_callback_runtime(self.runtime):
-                        neuron_refresh = self.neuron_bridge._next_features(
-                            neuron_proposal.snapshot,
-                            neuron_proposal.transaction,
-                            proposed_neuron.public.tensor_bytes,
-                            refresh_neuron_features,
-                        )
+
+                    def guarded_neuron_refresh(live_context: Any) -> Any:
+                        with _isolated_callback_runtime(
+                            self.runtime
+                        ) as guarded_runtime:
+                            callback_context = replace(
+                                live_context, runtime=guarded_runtime
+                            )
+                            return _invoke_callback(
+                                refresh_neuron_features, callback_context
+                            )
+
+                    neuron_refresh = self.neuron_bridge._next_features(
+                        neuron_proposal.snapshot,
+                        neuron_proposal.transaction,
+                        proposed_neuron.public.tensor_bytes,
+                        guarded_neuron_refresh,
+                    )
                     resource_guard.sample()
                 if combined_refresh is not None:
                     self.neuron_bridge._feature_recomputations += 1
@@ -2682,12 +3265,23 @@ class Qwen3UnifiedSurgeryAllocator:
                         active,
                     )
                 else:
-                    with _isolated_callback_runtime(self.runtime):
-                        attention_refresh = self.attention_bridge._invoke_refresh(
-                            refresh_attention_features,
-                            attention_context,
-                            active,
-                        )
+
+                    def guarded_attention_refresh(live_context: Any) -> Any:
+                        with _isolated_callback_runtime(
+                            self.runtime
+                        ) as guarded_runtime:
+                            callback_context = replace(
+                                live_context, runtime=guarded_runtime
+                            )
+                            return _invoke_callback(
+                                refresh_attention_features, callback_context
+                            )
+
+                    attention_refresh = self.attention_bridge._invoke_refresh(
+                        guarded_attention_refresh,
+                        attention_context,
+                        active,
+                    )
                     resource_guard.sample()
                 if combined_refresh is not None:
                     self.attention_bridge._feature_refreshes += 1
@@ -2758,7 +3352,7 @@ class Qwen3UnifiedSurgeryAllocator:
             return transaction
         except Exception:
             self._restore_checkpoint(checkpoint)
-            self._record_resource_peaks(resource_guard)
+            resource_guard.sample()
             if self._state_sha256() != parent_digest:
                 raise Qwen3SurgeryAllocatorStateError(
                     "Mixed transaction exception rollback was not exact."

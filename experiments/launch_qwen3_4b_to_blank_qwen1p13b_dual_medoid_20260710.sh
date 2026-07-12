@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT=/home/cereal/model-surgery-lab/neural-forge-pivot
+ROOT=/home/cereal/model-surgery-lab/neural-forge-src
 RUN_ROOT=/mnt/ai_data/neural-forge/real_medoid_dual_20260710
 TAG=${TAG:-qwen3_4b_to_blank_qwen1p13b_dual_realmedoid_gpu4_r2_20260710}
 PY=/home/cereal/model-surgery-lab/venv/bin/python

@@ -8,4 +8,4 @@ export INTERMEDIATE_SIZE=1024
 export NUM_ATTENTION_HEADS=8
 export EXACT_PARAMETER_BUDGET=129720832
 
-exec bash /home/cereal/model-surgery-lab/neural-forge-pivot/experiments/launch_qwen3_4b_to_blank_llama88m_20260710.sh
+exec bash /home/cereal/model-surgery-lab/neural-forge-src/experiments/launch_qwen3_4b_to_blank_llama88m_20260710.sh

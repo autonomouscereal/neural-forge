@@ -1,0 +1,1026 @@
+"""Exact-budget progressive targets and target-native QKVO publication.
+
+This module connects three already-existing Neural Forge boundaries:
+
+* an explicit, target-sized dense GQA child;
+* the exact-size blank-child parent compiler; and
+* temporary output-trained Q/K/V/O residual factors that can be baked into
+  ordinary target ``nn.Linear`` weights.
+
+The bridge does not train factors and does not score behavior.  It requires an
+external behavior-gate receipt before publication, then proves the structural
+facts it can establish locally: the adapter registry is gone, every Q/K/V/O
+projection is native dense, the state-key topology is restored, and the unique
+parameter count is exactly the requested child budget.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from collections.abc import Mapping, Sequence
+from dataclasses import asdict, dataclass
+from typing import Any, Literal
+
+from torch import nn
+
+from neural_forge.hf_arch_layout import (
+    DecoderLayout,
+    build_decoder_layout,
+    resolve_module,
+)
+from neural_forge.hf_dense_gqa_qkvo_residual_adapter import (
+    DenseGQAAdapterOnlyOutputTrainingScope,
+    DenseGQAGeometry,
+    DenseGQAQKVOResidualProjection,
+    DenseGQAQKVOResidualTopologyError,
+    DenseGQASite,
+    InstalledDenseGQAQKVOResidualAdapter,
+    SparseDenseGQAQKVOResidualRegistry,
+    install_dense_gqa_qkvo_residual_adapter,
+)
+from neural_forge.hf_factorized_vocab import exact_parameter_report
+from neural_forge.hf_parent_compiler import (
+    HFParentCompilerResult,
+    fingerprint_hf_child_structure,
+)
+
+
+PROGRESSIVE_TARGET_PLAN_SCHEMA = "neural-forge-progressive-dense-gqa-plan-v1"
+NATIVE_TARGET_CERTIFICATE_SCHEMA = "neural-forge-native-dense-gqa-certificate-v1"
+EXACT_TARGET_QKVO_INSTALLATION_SCHEMA = "neural-forge-exact-target-qkvo-installation-v1"
+EXACT_TARGET_QKVO_PUBLICATION_SCHEMA = "neural-forge-exact-target-qkvo-publication-v1"
+EXTERNAL_BEHAVIOR_GATE_SCHEMA = "neural-forge-external-behavior-gate-receipt-v1"
+
+QWEN3_4B_EXACT_PARAMETERS = 4_022_468_096
+QWEN3_1P4B_EXACT_PARAMETERS = 1_410_567_168
+QWEN3_600M_EXACT_PARAMETERS = 600_628_224
+SMOLLM2_135M_EXACT_PARAMETERS = 134_515_008
+
+_HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+
+class ProgressiveTargetBridgeError(ValueError):
+    """The exact target or publication contract is invalid."""
+
+
+class ProgressiveTargetPublicationError(ProgressiveTargetBridgeError):
+    """A temporary QKVO correction cannot be published safely."""
+
+
+def _positive_int(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ProgressiveTargetBridgeError(f"{name} must be a positive integer.")
+    return value
+
+
+def _nonnegative_int(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ProgressiveTargetBridgeError(f"{name} must be a nonnegative integer.")
+    return value
+
+
+def _strict_bool(value: Any, name: str) -> bool:
+    if not isinstance(value, bool):
+        raise ProgressiveTargetBridgeError(f"{name} must be bool.")
+    return value
+
+
+def _sha256(value: Any, name: str) -> str:
+    if not isinstance(value, str):
+        raise ProgressiveTargetBridgeError(f"{name} must be a SHA-256 string.")
+    normalized = value.removeprefix("sha256:").lower()
+    if not _HEX_SHA256.fullmatch(normalized):
+        raise ProgressiveTargetBridgeError(f"{name} must be a SHA-256 string.")
+    return normalized
+
+
+def _canonical_sha256(value: Any) -> str:
+    try:
+        encoded = json.dumps(
+            value,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+    except (TypeError, ValueError) as error:
+        raise ProgressiveTargetBridgeError(
+            "Target provenance must be finite canonical JSON."
+        ) from error
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _unique_parameter_bytes(model: nn.Module) -> int:
+    unique: dict[tuple[Any, ...], int] = {}
+    for _, parameter in model.named_parameters(recurse=True, remove_duplicate=False):
+        key = (
+            parameter.device.type,
+            parameter.device.index,
+            str(parameter.dtype),
+            parameter.untyped_storage().data_ptr(),
+            parameter.storage_offset(),
+            tuple(parameter.shape),
+            tuple(parameter.stride()),
+        )
+        unique[key] = int(parameter.numel()) * int(parameter.element_size())
+    return sum(unique.values())
+
+
+@dataclass(frozen=True, slots=True)
+class DenseGQATargetShape:
+    """Closed-form storage shape for a native dense GQA/SwiGLU target.
+
+    The formula covers the current Qwen3 and SmolLM2/Llama progressive targets.
+    ``query_key_head_norms`` is explicit because Qwen3 stores one Q and K
+    RMSNorm vector of ``head_dim`` elements per layer, while SmolLM2 does not.
+    """
+
+    family: Literal["qwen3", "llama"]
+    vocab_size: int
+    hidden_size: int
+    intermediate_size: int
+    num_hidden_layers: int
+    num_attention_heads: int
+    num_key_value_heads: int
+    head_dim: int
+    tie_word_embeddings: bool
+    query_key_head_norms: bool
+    attention_bias: bool = False
+    mlp_bias: bool = False
+
+    def __post_init__(self) -> None:
+        if self.family not in {"qwen3", "llama"}:
+            raise ProgressiveTargetBridgeError(
+                "DenseGQATargetShape family must be qwen3 or llama."
+            )
+        for name in (
+            "vocab_size",
+            "hidden_size",
+            "intermediate_size",
+            "num_hidden_layers",
+            "num_attention_heads",
+            "num_key_value_heads",
+            "head_dim",
+        ):
+            object.__setattr__(self, name, _positive_int(getattr(self, name), name))
+        for name in (
+            "tie_word_embeddings",
+            "query_key_head_norms",
+            "attention_bias",
+            "mlp_bias",
+        ):
+            object.__setattr__(self, name, _strict_bool(getattr(self, name), name))
+        if self.num_attention_heads % self.num_key_value_heads:
+            raise ProgressiveTargetBridgeError(
+                "num_attention_heads must be divisible by num_key_value_heads."
+            )
+
+    @property
+    def geometry(self) -> DenseGQAGeometry:
+        return DenseGQAGeometry(
+            logical_layers=self.num_hidden_layers,
+            hidden_size=self.hidden_size,
+            query_heads=self.num_attention_heads,
+            key_value_heads=self.num_key_value_heads,
+            head_dim=self.head_dim,
+        )
+
+    def parameter_breakdown(self) -> dict[str, Any]:
+        hidden = self.hidden_size
+        intermediate = self.intermediate_size
+        query_width = self.num_attention_heads * self.head_dim
+        key_value_width = self.num_key_value_heads * self.head_dim
+        attention_weights = 2 * hidden * (query_width + key_value_width)
+        attention_biases = (
+            query_width + 2 * key_value_width + hidden if self.attention_bias else 0
+        )
+        query_key_norms = 2 * self.head_dim if self.query_key_head_norms else 0
+        mlp_weights = 3 * hidden * intermediate
+        mlp_biases = 2 * intermediate + hidden if self.mlp_bias else 0
+        decoder_norms = 2 * hidden
+        per_layer = (
+            attention_weights
+            + attention_biases
+            + query_key_norms
+            + mlp_weights
+            + mlp_biases
+            + decoder_norms
+        )
+        embedding = self.vocab_size * hidden
+        output_head_unique = 0 if self.tie_word_embeddings else embedding
+        decoder_layers = self.num_hidden_layers * per_layer
+        final_norm = hidden
+        total = embedding + output_head_unique + decoder_layers + final_norm
+        return {
+            "family": self.family,
+            "shape": self.as_dict(),
+            "derived": {
+                "query_width": query_width,
+                "key_value_width": key_value_width,
+                "queries_per_key_value_head": (
+                    self.num_attention_heads // self.num_key_value_heads
+                ),
+            },
+            "per_layer": {
+                "attention_weights": attention_weights,
+                "attention_biases": attention_biases,
+                "query_key_head_norms": query_key_norms,
+                "gated_mlp_weights": mlp_weights,
+                "mlp_biases": mlp_biases,
+                "decoder_norms": decoder_norms,
+                "total": per_layer,
+            },
+            "components": {
+                "token_embedding": embedding,
+                "output_head_unique": output_head_unique,
+                "decoder_layers": decoder_layers,
+                "final_norm": final_norm,
+            },
+            "total": total,
+        }
+
+    @property
+    def unique_parameter_count(self) -> int:
+        return int(self.parameter_breakdown()["total"])
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True, slots=True)
+class ProgressiveDenseGQAStage:
+    """One exact native target in the progressive compiler chain."""
+
+    name: str
+    shape: DenseGQATargetShape
+    exact_unique_parameters: int
+    tokenizer_transition: Literal["preserve", "canonical-byte-transition"]
+    purpose: str
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.name, str)
+            or not self.name
+            or not self.name.replace("_", "").replace("-", "").isalnum()
+        ):
+            raise ProgressiveTargetBridgeError("Stage name is not a safe identifier.")
+        if not isinstance(self.shape, DenseGQATargetShape):
+            raise ProgressiveTargetBridgeError(
+                "stage.shape must be DenseGQATargetShape."
+            )
+        object.__setattr__(
+            self,
+            "exact_unique_parameters",
+            _positive_int(self.exact_unique_parameters, "exact_unique_parameters"),
+        )
+        if self.tokenizer_transition not in {
+            "preserve",
+            "canonical-byte-transition",
+        }:
+            raise ProgressiveTargetBridgeError(
+                "Unsupported tokenizer transition policy."
+            )
+        if not isinstance(self.purpose, str) or not self.purpose.strip():
+            raise ProgressiveTargetBridgeError("Stage purpose cannot be empty.")
+        calculated = self.shape.unique_parameter_count
+        if calculated != self.exact_unique_parameters:
+            raise ProgressiveTargetBridgeError(
+                f"Stage {self.name!r} declares {self.exact_unique_parameters} "
+                f"parameters, but its native shape contains {calculated}."
+            )
+
+    @property
+    def geometry(self) -> DenseGQAGeometry:
+        return self.shape.geometry
+
+    def as_dict(self) -> dict[str, Any]:
+        payload = {
+            "name": self.name,
+            "exact_unique_parameters": self.exact_unique_parameters,
+            "tokenizer_transition": self.tokenizer_transition,
+            "purpose": self.purpose,
+            "shape": self.shape.as_dict(),
+            "parameter_breakdown": self.shape.parameter_breakdown(),
+            "native_dense_target": True,
+            "adapter_parameters_at_publication": 0,
+        }
+        payload["stage_sha256"] = _canonical_sha256(payload)
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class ProgressiveDenseGQAPlan:
+    """Exact monotone stage plan; behavior promotion remains external."""
+
+    source_name: str
+    source_unique_parameters: int
+    stages: tuple[ProgressiveDenseGQAStage, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.source_name, str) or not self.source_name.strip():
+            raise ProgressiveTargetBridgeError("source_name cannot be empty.")
+        object.__setattr__(
+            self,
+            "source_unique_parameters",
+            _positive_int(self.source_unique_parameters, "source_unique_parameters"),
+        )
+        values = tuple(self.stages)
+        if not values or any(
+            not isinstance(stage, ProgressiveDenseGQAStage) for stage in values
+        ):
+            raise ProgressiveTargetBridgeError(
+                "stages must contain ProgressiveDenseGQAStage values."
+            )
+        if len({stage.name for stage in values}) != len(values):
+            raise ProgressiveTargetBridgeError(
+                "Progressive stage names must be unique."
+            )
+        previous = self.source_unique_parameters
+        for stage in values:
+            if stage.exact_unique_parameters >= previous:
+                raise ProgressiveTargetBridgeError(
+                    "Progressive target counts must be strictly descending."
+                )
+            previous = stage.exact_unique_parameters
+        object.__setattr__(self, "stages", values)
+
+    @property
+    def final_unique_parameters(self) -> int:
+        return self.stages[-1].exact_unique_parameters
+
+    @property
+    def overall_compression_ratio(self) -> float:
+        return self.source_unique_parameters / self.final_unique_parameters
+
+    def as_dict(self) -> dict[str, Any]:
+        previous_name = self.source_name
+        previous_count = self.source_unique_parameters
+        stage_records = []
+        for stage in self.stages:
+            stage_records.append(
+                {
+                    **stage.as_dict(),
+                    "input_name": previous_name,
+                    "input_unique_parameters": previous_count,
+                    "single_stage_compression_ratio": (
+                        previous_count / stage.exact_unique_parameters
+                    ),
+                    "cumulative_compression_ratio": (
+                        self.source_unique_parameters / stage.exact_unique_parameters
+                    ),
+                    "behavior_gate_required_before_next_stage": True,
+                }
+            )
+            previous_name = stage.name
+            previous_count = stage.exact_unique_parameters
+        payload = {
+            "schema": PROGRESSIVE_TARGET_PLAN_SCHEMA,
+            "source": {
+                "name": self.source_name,
+                "unique_parameters": self.source_unique_parameters,
+            },
+            "stages": stage_records,
+            "final_unique_parameters": self.final_unique_parameters,
+            "overall_compression_ratio": self.overall_compression_ratio,
+            "minimum_25x_endpoint": self.overall_compression_ratio >= 25.0,
+            "every_stage_is_native_target_sized": True,
+            "every_stage_requires_parent_relative_behavior_promotion": True,
+            "capability_proven_by_plan": False,
+        }
+        payload["plan_sha256"] = _canonical_sha256(payload)
+        return payload
+
+
+def default_qwen4b_progressive_target_plan() -> ProgressiveDenseGQAPlan:
+    """Return the exact 4B -> 1.410B -> 600.628M -> 134.515M plan."""
+
+    return ProgressiveDenseGQAPlan(
+        source_name="Qwen3-4B-Base",
+        source_unique_parameters=QWEN3_4B_EXACT_PARAMETERS,
+        stages=(
+            ProgressiveDenseGQAStage(
+                name="qwen3_1p410b",
+                shape=DenseGQATargetShape(
+                    family="qwen3",
+                    vocab_size=151_936,
+                    hidden_size=1_536,
+                    intermediate_size=5_120,
+                    num_hidden_layers=30,
+                    num_attention_heads=16,
+                    num_key_value_heads=4,
+                    head_dim=128,
+                    tie_word_embeddings=False,
+                    query_key_head_norms=True,
+                ),
+                exact_unique_parameters=QWEN3_1P4B_EXACT_PARAMETERS,
+                tokenizer_transition="preserve",
+                purpose="first bounded same-tokenizer width/depth fold",
+            ),
+            ProgressiveDenseGQAStage(
+                name="qwen3_600m",
+                shape=DenseGQATargetShape(
+                    family="qwen3",
+                    vocab_size=151_936,
+                    hidden_size=1_024,
+                    intermediate_size=3_072,
+                    num_hidden_layers=24,
+                    num_attention_heads=8,
+                    num_key_value_heads=2,
+                    head_dim=128,
+                    tie_word_embeddings=False,
+                    query_key_head_norms=True,
+                ),
+                exact_unique_parameters=QWEN3_600M_EXACT_PARAMETERS,
+                tokenizer_transition="preserve",
+                purpose="second bounded same-tokenizer width/depth fold",
+            ),
+            ProgressiveDenseGQAStage(
+                name="smollm2_134m",
+                shape=DenseGQATargetShape(
+                    family="llama",
+                    vocab_size=49_152,
+                    hidden_size=576,
+                    intermediate_size=1_536,
+                    num_hidden_layers=30,
+                    num_attention_heads=9,
+                    num_key_value_heads=3,
+                    head_dim=64,
+                    tie_word_embeddings=True,
+                    query_key_head_norms=False,
+                ),
+                exact_unique_parameters=SMOLLM2_135M_EXACT_PARAMETERS,
+                tokenizer_transition="canonical-byte-transition",
+                purpose="29.9x standalone product-size endpoint",
+            ),
+        ),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ExternalBehaviorGateReceipt:
+    """External output/rollout evidence required to authorize dense baking.
+
+    The bridge validates the receipt's shape, not the referenced evaluation
+    file.  Consequently its reports say that behavior was externally attested,
+    never that this structural module independently proved capability.
+    """
+
+    evidence_sha256: str
+    evaluation_contract_sha256: str
+    heldout_action_count: int
+    free_running_rollout_count: int
+    passed: bool
+    internal_similarity_only: bool = False
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "evidence_sha256",
+            _sha256(self.evidence_sha256, "evidence_sha256"),
+        )
+        object.__setattr__(
+            self,
+            "evaluation_contract_sha256",
+            _sha256(
+                self.evaluation_contract_sha256,
+                "evaluation_contract_sha256",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "heldout_action_count",
+            _nonnegative_int(self.heldout_action_count, "heldout_action_count"),
+        )
+        object.__setattr__(
+            self,
+            "free_running_rollout_count",
+            _nonnegative_int(
+                self.free_running_rollout_count,
+                "free_running_rollout_count",
+            ),
+        )
+        object.__setattr__(self, "passed", _strict_bool(self.passed, "passed"))
+        object.__setattr__(
+            self,
+            "internal_similarity_only",
+            _strict_bool(self.internal_similarity_only, "internal_similarity_only"),
+        )
+
+    def require_publication_approval(self) -> None:
+        if not self.passed:
+            raise ProgressiveTargetPublicationError(
+                "The external behavior gate did not approve publication."
+            )
+        if self.internal_similarity_only:
+            raise ProgressiveTargetPublicationError(
+                "Internal numeric similarity cannot authorize publication."
+            )
+        if self.heldout_action_count <= 0 or self.free_running_rollout_count <= 0:
+            raise ProgressiveTargetPublicationError(
+                "Publication needs held-out actions and free-running rollouts."
+            )
+
+    def as_dict(self) -> dict[str, Any]:
+        payload = {
+            "schema": EXTERNAL_BEHAVIOR_GATE_SCHEMA,
+            **asdict(self),
+            "behavior_evidence_externally_attested": True,
+            "evidence_payload_revalidated_by_bridge": False,
+        }
+        payload["receipt_sha256"] = _canonical_sha256(payload)
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class NativeDenseGQACertificate:
+    exact_unique_parameters: int
+    logical_parameters: int
+    unique_learned_weight_bytes: int
+    structure_sha256: str
+    state_key_sha256: str
+    state_key_count: int
+    dense_qkvo_projection_count: int
+    geometry: DenseGQAGeometry
+    projection_names: Mapping[str, str]
+
+    def as_dict(self) -> dict[str, Any]:
+        payload = {
+            "schema": NATIVE_TARGET_CERTIFICATE_SCHEMA,
+            "exact_unique_parameters": self.exact_unique_parameters,
+            "logical_parameters": self.logical_parameters,
+            "unique_learned_weight_bytes": self.unique_learned_weight_bytes,
+            "structure_sha256": self.structure_sha256,
+            "state_key_sha256": self.state_key_sha256,
+            "state_key_count": self.state_key_count,
+            "dense_qkvo_projection_count": self.dense_qkvo_projection_count,
+            "geometry": self.geometry.as_dict(),
+            "projection_names": dict(self.projection_names),
+            "all_qkvo_projections_are_exact_nn_linear": True,
+            "adapter_registry_count": 0,
+            "adapter_projection_wrapper_count": 0,
+            "adapter_parameter_count": 0,
+            "parent_runtime_reference_count": 0,
+            "source_sized_sidecar_parameter_count": 0,
+            "capability_proven": False,
+        }
+        payload["certificate_sha256"] = _canonical_sha256(payload)
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class _DenseGQATopology:
+    layout: DecoderLayout
+    geometry: DenseGQAGeometry
+    attention_modules: Mapping[int, nn.Module]
+    projection_names: Mapping[str, str]
+    projection_paths: tuple[str, ...]
+
+
+def _direct_projection_name(module_path: str, projection_path: str) -> str:
+    prefix = f"{module_path}."
+    if not projection_path.startswith(prefix):
+        raise ProgressiveTargetBridgeError(
+            "QKVO projection path is not owned by its declared attention module."
+        )
+    name = projection_path[len(prefix) :]
+    if not name.isidentifier():
+        raise ProgressiveTargetBridgeError(
+            "QKVO publication requires direct attention-module projection fields."
+        )
+    return name
+
+
+def _resolve_dense_gqa_topology(
+    model: nn.Module,
+    layout: DecoderLayout | None,
+) -> _DenseGQATopology:
+    resolved = build_decoder_layout(model) if layout is None else layout
+    if not isinstance(resolved, DecoderLayout):
+        raise ProgressiveTargetBridgeError("layout must be DecoderLayout.")
+    if not resolved.blocks:
+        raise ProgressiveTargetBridgeError("Target decoder has no layers.")
+    if tuple(block.index for block in resolved.blocks) != tuple(
+        range(resolved.layer_count)
+    ):
+        raise ProgressiveTargetBridgeError(
+            "Target decoder block indices must be contiguous from zero."
+        )
+    first = resolved.blocks[0].attention
+    if first.projection_style != "split_qkv":
+        raise ProgressiveTargetBridgeError(
+            "Target-native QKVO baking requires split dense Q/K/V projections."
+        )
+    geometry = DenseGQAGeometry(
+        logical_layers=resolved.layer_count,
+        hidden_size=resolved.hidden_size,
+        query_heads=first.query_heads,
+        key_value_heads=first.key_value_heads,
+        head_dim=first.head_dim,
+    )
+    modules: dict[int, nn.Module] = {}
+    paths: list[str] = []
+    names: dict[str, str] | None = None
+    for block in resolved.blocks:
+        attention = block.attention
+        if (
+            attention.projection_style != "split_qkv"
+            or attention.hidden_size != geometry.hidden_size
+            or attention.query_heads != geometry.query_heads
+            or attention.key_value_heads != geometry.key_value_heads
+            or attention.head_dim != geometry.head_dim
+            or attention.projection_weight_layout != "output_input"
+            or attention.query_path is None
+            or attention.key_path is None
+            or attention.value_path is None
+        ):
+            raise ProgressiveTargetBridgeError(
+                "Every target layer must share one dense split-GQA geometry."
+            )
+        module = resolve_module(model, attention.module_path, family=resolved.family)
+        modules[block.index] = module
+        layer_paths = {
+            "q": attention.query_path,
+            "k": attention.key_path,
+            "v": attention.value_path,
+            "o": attention.output_path,
+        }
+        layer_names = {
+            role: _direct_projection_name(attention.module_path, path)
+            for role, path in layer_paths.items()
+        }
+        if names is None:
+            names = layer_names
+        elif names != layer_names:
+            raise ProgressiveTargetBridgeError(
+                "Target layers use inconsistent QKVO projection attribute names."
+            )
+        for path in layer_paths.values():
+            projection = resolve_module(model, path, family=resolved.family)
+            if type(projection) is not nn.Linear:
+                raise ProgressiveTargetBridgeError(
+                    f"Target projection {path!r} is not an ordinary nn.Linear."
+                )
+            paths.append(path)
+    assert names is not None
+    return _DenseGQATopology(
+        layout=resolved,
+        geometry=geometry,
+        attention_modules=modules,
+        projection_names=names,
+        projection_paths=tuple(paths),
+    )
+
+
+def _validate_stage_matches_layout(
+    stage: ProgressiveDenseGQAStage,
+    topology: _DenseGQATopology,
+) -> None:
+    shape = stage.shape
+    layout = topology.layout
+    first_attention = layout.blocks[0].attention
+    query_norm_present = first_attention.query_norm is not None
+    key_norm_present = first_attention.key_norm is not None
+    if query_norm_present != key_norm_present:
+        raise ProgressiveTargetBridgeError(
+            "Target must expose both Q/K head norms or neither."
+        )
+    checks = {
+        "family": (layout.family, shape.family),
+        "vocab_size": (layout.embeddings.vocab_size, shape.vocab_size),
+        "hidden_size": (layout.hidden_size, shape.hidden_size),
+        "intermediate_size": (layout.intermediate_size, shape.intermediate_size),
+        "num_hidden_layers": (layout.layer_count, shape.num_hidden_layers),
+        "num_attention_heads": (
+            first_attention.query_heads,
+            shape.num_attention_heads,
+        ),
+        "num_key_value_heads": (
+            first_attention.key_value_heads,
+            shape.num_key_value_heads,
+        ),
+        "head_dim": (first_attention.head_dim, shape.head_dim),
+        "tie_word_embeddings": (
+            layout.tie_word_embeddings,
+            shape.tie_word_embeddings,
+        ),
+        "attention_bias": (
+            first_attention.projection_bias,
+            shape.attention_bias,
+        ),
+        "mlp_bias": (layout.blocks[0].mlp.projection_bias, shape.mlp_bias),
+        "query_key_head_norms": (
+            query_norm_present,
+            shape.query_key_head_norms,
+        ),
+    }
+    mismatches = [
+        f"{name}: live={actual!r}, planned={planned!r}"
+        for name, (actual, planned) in checks.items()
+        if actual != planned
+    ]
+    if mismatches:
+        raise ProgressiveTargetBridgeError(
+            "Live child does not match its progressive stage: " + "; ".join(mismatches)
+        )
+
+
+def certify_native_dense_gqa_target(
+    model: nn.Module,
+    *,
+    exact_unique_parameters: int,
+    layout: DecoderLayout | None = None,
+    stage: ProgressiveDenseGQAStage | None = None,
+) -> NativeDenseGQACertificate:
+    """Certify a loaded target has exact storage and no QKVO sidecar modules."""
+
+    if not isinstance(model, nn.Module):
+        raise ProgressiveTargetBridgeError("model must be torch.nn.Module.")
+    expected = _positive_int(exact_unique_parameters, "exact_unique_parameters")
+    topology = _resolve_dense_gqa_topology(model, layout)
+    if stage is not None:
+        if not isinstance(stage, ProgressiveDenseGQAStage):
+            raise ProgressiveTargetBridgeError(
+                "stage must be ProgressiveDenseGQAStage."
+            )
+        if stage.exact_unique_parameters != expected:
+            raise ProgressiveTargetBridgeError(
+                "Stage count and requested exact count disagree."
+            )
+        _validate_stage_matches_layout(stage, topology)
+    forbidden_registry = sum(
+        isinstance(module, SparseDenseGQAQKVOResidualRegistry)
+        for module in model.modules()
+    )
+    forbidden_wrappers = sum(
+        isinstance(module, DenseGQAQKVOResidualProjection) for module in model.modules()
+    )
+    if forbidden_registry or forbidden_wrappers:
+        raise ProgressiveTargetBridgeError(
+            "Target still contains a QKVO adapter registry or projection wrapper."
+        )
+    counts = exact_parameter_report(model)
+    actual = int(counts["unique_parameter_count"])
+    if actual != expected:
+        raise ProgressiveTargetBridgeError(
+            f"Native target contains {actual} unique parameters, expected {expected}."
+        )
+    keys = tuple(sorted(model.state_dict()))
+    return NativeDenseGQACertificate(
+        exact_unique_parameters=actual,
+        logical_parameters=int(counts["logical_parameter_count"]),
+        unique_learned_weight_bytes=_unique_parameter_bytes(model),
+        structure_sha256=fingerprint_hf_child_structure(
+            model,
+            layout=topology.layout,
+        ),
+        state_key_sha256=_canonical_sha256(keys),
+        state_key_count=len(keys),
+        dense_qkvo_projection_count=len(topology.projection_paths),
+        geometry=topology.geometry,
+        projection_names=topology.projection_names,
+    )
+
+
+class ExactTargetQKVOPublicationSession:
+    """One temporary adapter transaction around an exact native child."""
+
+    def __init__(
+        self,
+        *,
+        model: nn.Module,
+        exact_unique_parameters: int,
+        topology: _DenseGQATopology,
+        native_before: NativeDenseGQACertificate,
+        handle: InstalledDenseGQAQKVOResidualAdapter,
+        stage: ProgressiveDenseGQAStage | None,
+        parent_compiler_report_sha256: str | None,
+    ) -> None:
+        self.model = model
+        self.exact_unique_parameters = exact_unique_parameters
+        self.topology = topology
+        self.native_before = native_before
+        self.handle = handle
+        self.stage = stage
+        self.parent_compiler_report_sha256 = parent_compiler_report_sha256
+        self.publication_report: dict[str, Any] | None = None
+
+    @property
+    def is_live(self) -> bool:
+        return self.handle.is_applied
+
+    def output_training_scope(self) -> DenseGQAAdapterOnlyOutputTrainingScope:
+        return self.handle.output_training_scope()
+
+    def rollback(self) -> NativeDenseGQACertificate:
+        self.handle.rollback()
+        restored = certify_native_dense_gqa_target(
+            self.model,
+            exact_unique_parameters=self.exact_unique_parameters,
+            layout=self.topology.layout,
+            stage=self.stage,
+        )
+        if restored.as_dict() != self.native_before.as_dict():
+            raise ProgressiveTargetPublicationError(
+                "QKVO rejection did not restore the exact native target."
+            )
+        return restored
+
+    def installation_report(self) -> dict[str, Any]:
+        payload = {
+            "schema": EXACT_TARGET_QKVO_INSTALLATION_SCHEMA,
+            "exact_unique_parameters_at_publication": self.exact_unique_parameters,
+            "temporary_installed_parameters": (
+                self.handle.report.model_parameter_count_installed
+            ),
+            "temporary_adapter_parameters": (
+                self.handle.report.adapter_parameter_count
+            ),
+            "native_before": self.native_before.as_dict(),
+            "dense_qkvo_installation": self.handle.report.as_dict(),
+            "stage": None if self.stage is None else self.stage.as_dict(),
+            "parent_compiler_report_sha256": self.parent_compiler_report_sha256,
+            "temporary_factors_may_be_output_trained": True,
+            "internal_numeric_matching_required": False,
+            "checkpoint_publication_allowed_while_installed": False,
+            "capability_proven": False,
+        }
+        payload["installation_bridge_sha256"] = _canonical_sha256(payload)
+        return payload
+
+    def bake_for_publication(
+        self,
+        behavior_gate: ExternalBehaviorGateReceipt,
+    ) -> dict[str, Any]:
+        if not isinstance(behavior_gate, ExternalBehaviorGateReceipt):
+            raise ProgressiveTargetPublicationError(
+                "behavior_gate must be ExternalBehaviorGateReceipt."
+            )
+        behavior_gate.require_publication_approval()
+        bake = self.handle.bake_for_publication()
+        native_after = certify_native_dense_gqa_target(
+            self.model,
+            exact_unique_parameters=self.exact_unique_parameters,
+            layout=self.topology.layout,
+            stage=self.stage,
+        )
+        if (
+            native_after.structure_sha256 != self.native_before.structure_sha256
+            or native_after.state_key_sha256 != self.native_before.state_key_sha256
+            or native_after.state_key_count != self.native_before.state_key_count
+        ):
+            raise ProgressiveTargetPublicationError(
+                "Dense QKVO bake did not restore the native target topology."
+            )
+        payload = {
+            "schema": EXACT_TARGET_QKVO_PUBLICATION_SCHEMA,
+            "exact_unique_parameters": self.exact_unique_parameters,
+            "exact_budget_match": True,
+            "native_before": self.native_before.as_dict(),
+            "native_after": native_after.as_dict(),
+            "dense_bake": bake.as_dict(),
+            "external_behavior_gate": behavior_gate.as_dict(),
+            "stage": None if self.stage is None else self.stage.as_dict(),
+            "parent_compiler_report_sha256": self.parent_compiler_report_sha256,
+            "published_adapter_parameter_count": 0,
+            "published_adapter_registry_count": 0,
+            "published_projection_wrapper_count": 0,
+            "published_adapter_flops_per_token": 0,
+            "published_parent_runtime_reference_count": 0,
+            "published_source_sized_sidecar_parameter_count": 0,
+            "native_state_key_topology_restored": True,
+            "behavior_gate_externally_attested": True,
+            "behavior_evidence_revalidated_by_this_module": False,
+            "capability_proven_by_this_module": False,
+            "save_reload_artifact_gate_still_required": True,
+        }
+        payload["publication_sha256"] = _canonical_sha256(payload)
+        self.publication_report = payload
+        return payload
+
+    def __enter__(self) -> ExactTargetQKVOPublicationSession:
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        del exc_type, exc, traceback
+        if self.handle.is_applied:
+            self.rollback()
+
+
+def install_exact_target_qkvo_bridge(
+    model: nn.Module,
+    *,
+    exact_unique_parameters: int,
+    sites: Sequence[DenseGQASite],
+    rank: int,
+    layout: DecoderLayout | None = None,
+    stage: ProgressiveDenseGQAStage | None = None,
+    owner_name: str = "dense_gqa_qkvo_residual_registry",
+    initialization_seed: int = 0,
+    parent_compiler_report_sha256: str | None = None,
+) -> ExactTargetQKVOPublicationSession:
+    """Install temporary QKVO factors only after exact target certification."""
+
+    expected = _positive_int(exact_unique_parameters, "exact_unique_parameters")
+    if parent_compiler_report_sha256 is not None:
+        parent_compiler_report_sha256 = _sha256(
+            parent_compiler_report_sha256,
+            "parent_compiler_report_sha256",
+        )
+    topology = _resolve_dense_gqa_topology(model, layout)
+    native = certify_native_dense_gqa_target(
+        model,
+        exact_unique_parameters=expected,
+        layout=topology.layout,
+        stage=stage,
+    )
+    try:
+        handle = install_dense_gqa_qkvo_residual_adapter(
+            model,
+            topology.attention_modules,
+            geometry=topology.geometry,
+            sites=sites,
+            rank=rank,
+            projection_names=topology.projection_names,
+            owner_name=owner_name,
+            initialization_seed=initialization_seed,
+        )
+    except DenseGQAQKVOResidualTopologyError as error:
+        raise ProgressiveTargetBridgeError(str(error)) from error
+    if handle.report.model_parameter_count_before != expected:
+        handle.rollback()
+        raise ProgressiveTargetBridgeError(
+            "Dense adapter installation disagrees with exact target accounting."
+        )
+    return ExactTargetQKVOPublicationSession(
+        model=model,
+        exact_unique_parameters=expected,
+        topology=topology,
+        native_before=native,
+        handle=handle,
+        stage=stage,
+        parent_compiler_report_sha256=parent_compiler_report_sha256,
+    )
+
+
+def install_parent_compiler_result_qkvo_bridge(
+    result: HFParentCompilerResult,
+    *,
+    sites: Sequence[DenseGQASite],
+    rank: int,
+    layout: DecoderLayout | None = None,
+    stage: ProgressiveDenseGQAStage | None = None,
+    owner_name: str = "dense_gqa_qkvo_residual_registry",
+    initialization_seed: int = 0,
+) -> ExactTargetQKVOPublicationSession:
+    """Attach the native QKVO transaction to an accepted parent compilation."""
+
+    if not isinstance(result, HFParentCompilerResult):
+        raise ProgressiveTargetBridgeError("result must be HFParentCompilerResult.")
+    report = result.report
+    if (
+        not report.target_budget_exact
+        or not report.bootstrap_accepted
+        or report.target_unique_parameter_count != report.target_parameter_budget
+    ):
+        raise ProgressiveTargetBridgeError(
+            "Parent compiler result is not an accepted exact-budget child."
+        )
+    report_payload = report.as_dict()
+    return install_exact_target_qkvo_bridge(
+        result.child_model,
+        exact_unique_parameters=report.target_unique_parameter_count,
+        sites=sites,
+        rank=rank,
+        layout=layout,
+        stage=stage,
+        owner_name=owner_name,
+        initialization_seed=initialization_seed,
+        parent_compiler_report_sha256=_canonical_sha256(report_payload),
+    )
+
+
+__all__ = [
+    "EXACT_TARGET_QKVO_INSTALLATION_SCHEMA",
+    "EXACT_TARGET_QKVO_PUBLICATION_SCHEMA",
+    "EXTERNAL_BEHAVIOR_GATE_SCHEMA",
+    "NATIVE_TARGET_CERTIFICATE_SCHEMA",
+    "PROGRESSIVE_TARGET_PLAN_SCHEMA",
+    "QWEN3_1P4B_EXACT_PARAMETERS",
+    "QWEN3_4B_EXACT_PARAMETERS",
+    "QWEN3_600M_EXACT_PARAMETERS",
+    "SMOLLM2_135M_EXACT_PARAMETERS",
+    "DenseGQATargetShape",
+    "ExactTargetQKVOPublicationSession",
+    "ExternalBehaviorGateReceipt",
+    "NativeDenseGQACertificate",
+    "ProgressiveDenseGQAPlan",
+    "ProgressiveDenseGQAStage",
+    "ProgressiveTargetBridgeError",
+    "ProgressiveTargetPublicationError",
+    "certify_native_dense_gqa_target",
+    "default_qwen4b_progressive_target_plan",
+    "install_exact_target_qkvo_bridge",
+    "install_parent_compiler_result_qkvo_bridge",
+]

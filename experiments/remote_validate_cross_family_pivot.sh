@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT=/home/cereal/model-surgery-lab/neural-forge-pivot
+ROOT=/home/cereal/model-surgery-lab/neural-forge-src
 PY=/home/cereal/model-surgery-lab/venv/bin/python
 export PYTHONPATH="$ROOT/src"
 

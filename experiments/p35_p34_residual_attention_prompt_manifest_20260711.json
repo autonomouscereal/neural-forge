@@ -1,0 +1,405 @@
+{
+  "schema": "neural-forge-p35-p34-residual-attention-prompt-manifest-v1",
+  "date": "2026-07-11",
+  "objective": "Behavior-first selection and held-out evaluation for residual-attention folding, using exact broad-suite prompts where p35->p34 behavior changed and positive controls where both models passed.",
+  "provenance": {
+    "p35_report": {
+      "path": "runs/qwen3_4b_codebook_p35_20260710/run_report.json",
+      "sha256": "eb6fbaee748e03a70a6e78f6e82a087f655fca38b0cbab2c41fb95d84451b9c8"
+    },
+    "p34_report": {
+      "path": "runs/qwen3_4b_codebook_p34_20260711/run_report.json",
+      "sha256": "2f9ef2a7887874b8e15119f304e272d889d93d71ae69ef205f46a100f5d5653b"
+    },
+    "transition_inventory": {
+      "path": "experiments/p35_p34_generation_transitions_20260711.json",
+      "sha256": "212ebf3d9350c1d48ad77a71616d39d5d163dd022a7ac95b9bb0d4c03f0b929a"
+    },
+    "shared_generation_suite_source": "/home/cereal/model-surgery-lab/neural-forge-src/runs/qwen4b_to_smollm135m_transport_random_20260627/behavior_suite_exactgen_20260702.json",
+    "embedded_generation_inventory_count": 1000,
+    "embedded_generation_inventory_sha256": "048b27443a4313218a12f6c73db59616ced8542b184b3424752c963a6e9a398c",
+    "current_tiny_v_probe_sets_excluded": [
+      {
+        "path": "experiments/p35_residual_attention_v_calibration_prompts_20260711.json",
+        "sha256": "8689154e8a94aa0c8a060e4a67f745345555db565ff1911f22fe3e22c9db9afa",
+        "prompt_count": 2,
+        "prompt_sha256s": [
+          "4df36a2be4d7c3df9f71a17e8940a2025b37ca51354a3753ce1966d0c3275b42",
+          "c9066eee369b37ead3312ed761c404d8730afa306226769776257a534ebba8dc"
+        ]
+      },
+      {
+        "path": "experiments/p35_residual_attention_v_heldout_prompts_20260711.json",
+        "sha256": "a1992b071be2e823ae42d2fcd2ae4b84c49510ceda33211225b7a5b0f3b412ae",
+        "prompt_count": 2,
+        "prompt_sha256s": [
+          "4fae604a2e329c4c6c75b1f679c49daa75ff33c3728b18f473e7ee2281ed985f",
+          "1b1723ac19f9de431394c625509aaba37004d2759583964850445de2e13eaa92"
+        ]
+      }
+    ]
+  },
+  "source_denominators": {
+    "shared_generation_cases": 1000,
+    "p35_passed": 633,
+    "p34_passed": 417,
+    "lost_by_category": {
+      "code": 125,
+      "math": 1,
+      "model-surgery": 15,
+      "tokenizer": 87
+    },
+    "gained_by_category": {
+      "math": 1,
+      "model-surgery": 11
+    },
+    "stable_pass_by_category": {
+      "code": 158,
+      "math": 141,
+      "model-surgery": 106
+    },
+    "stable_fail_by_category": {
+      "code": 2,
+      "commonsense": 143,
+      "model-surgery": 154,
+      "tokenizer": 56
+    }
+  },
+  "selection_contract": {
+    "seed": "neural-forge-residual-attention-behavior-first-20260711",
+    "rank_formula": "sha256(seed + NUL + split + NUL + selection_transition + NUL + source_category + NUL + family_or_* + NUL + id + NUL + exact_prompt)",
+    "rank_order": "ascending hexadecimal sha256",
+    "without_replacement_by_id": true,
+    "without_replacement_by_exact_prompt_text": true,
+    "calibration_selected_before_heldout": true,
+    "source_prompt_text_edited": false,
+    "degradation_target_definition": "p35 passed and p34 failed",
+    "stable_positive_control_definition": "p35 passed and p34 passed",
+    "math_loss_policy": "The sole math loss is reserved for heldout evaluation; calibration contains a stable-pass math control but no math degradation target.",
+    "tokenizer_control_policy": "No tokenizer stable-pass cases exist, so no false positive stable-positive tokenizer control is fabricated."
+  },
+  "sets": {
+    "calibration-selection": {
+      "prompt_file": {
+        "path": "experiments/p35_p34_residual_attention_calibration_selection_prompts_20260711.json",
+        "sha256": "a2eaea993c7f7f434e30744eeaf4b4da750b9a327d835deedb385dbaf154e406"
+      },
+      "count": 6,
+      "role_counts": {
+        "degradation-target": 3,
+        "stable-positive-control": 3
+      },
+      "degradation_target_categories": {
+        "code": 1,
+        "model-surgery": 1,
+        "tokenizer": 1
+      },
+      "stable_positive_control_categories": {
+        "code": 1,
+        "math": 1,
+        "model-surgery": 1
+      },
+      "entries": [
+        {
+          "index": 0,
+          "role": "degradation-target",
+          "transition": "lost",
+          "selection_transition": "lost",
+          "id": "generation_python_add_0569",
+          "category": "code",
+          "source_category": "code",
+          "family": "generation_python_add",
+          "family_constraint": null,
+          "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0569.",
+          "prompt_sha256": "5c4bc92f96cbb4ca460a29887805087277df39b176df77ca16c3b1502f282df1",
+          "selection_rank_sha256": "00a02f2069bf7bd651359165b31193c59b6bcd94ce3ad8f0b4d0f4ed93eeead8",
+          "p35_passed": true,
+          "p34_passed": false,
+          "p35_output_sha256": "8e0cb465c5b41160dc10eefd7f29d9d834140f3d93cddb8aa2885c938cf36275",
+          "p34_output_sha256": "56bfab7ffe597612ebf1c1f59328b802e529fdc3bb29866c5942f85f8a1b5481",
+          "behavior_binding_sha256": "185eb5f443ad3ecd2b60aa9614ef2f050fa8631ac9c8ce89a61a2bcd2306d0c2"
+        },
+        {
+          "index": 1,
+          "role": "degradation-target",
+          "transition": "lost",
+          "selection_transition": "lost",
+          "id": "generation_tokenizer_mismatch_0542",
+          "category": "tokenizer",
+          "source_category": "tokenizer",
+          "family": "generation_tokenizer_mismatch",
+          "family_constraint": null,
+          "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0542.",
+          "prompt_sha256": "92197a17b1731c48d5d8ce1d80399ebd5045dd7bdceb4d4aed1e10cf7695e9a5",
+          "selection_rank_sha256": "0b4e761eba9688409bd8710c4fc5fd93b465bc3630a5b2948159e0c5e421060b",
+          "p35_passed": true,
+          "p34_passed": false,
+          "p35_output_sha256": "32693ea18073075aaa58c5d285e5e672b149ec1ba15095c21b942d9a04d43a93",
+          "p34_output_sha256": "d575fda15518d8fb199ef3a5a81503f5d5332c03fcb482cf421d99052cbeb17d",
+          "behavior_binding_sha256": "99f4f95f3c14b7129cfc640592535fb6f37f79536e6843c02aa7bc4aac03cb2b"
+        },
+        {
+          "index": 2,
+          "role": "degradation-target",
+          "transition": "lost",
+          "selection_transition": "lost",
+          "id": "generation_model_merge_risk_0309",
+          "category": "model-surgery",
+          "source_category": "model_surgery",
+          "family": "generation_model_merge_risk",
+          "family_constraint": null,
+          "prompt": "Give one risk when merging two language models.\nVariation id: 0309.",
+          "prompt_sha256": "09785238a5b9383cf2cbfed4d0bb288ccf3706609501a4a11d772812a173981f",
+          "selection_rank_sha256": "065d3d73ea54a7d46236410b695eea6e1a88808718ac2859e72bb1cc45184856",
+          "p35_passed": true,
+          "p34_passed": false,
+          "p35_output_sha256": "d35f53213830e77d9a7f44457002fab8d4d307a63f0aec68f3f35623e91e7530",
+          "p34_output_sha256": "7e5ad59cd8a3d132c2900373b169fcf832f93e4846e0fe67b63744d889f31cbe",
+          "behavior_binding_sha256": "f70de0b98864e72d37bb2f042b3e838cccca77c400ef730153be0e50cfd637ea"
+        },
+        {
+          "index": 3,
+          "role": "stable-positive-control",
+          "transition": "stable-pass",
+          "selection_transition": "stable_pass",
+          "id": "generation_python_add_0233",
+          "category": "code",
+          "source_category": "code",
+          "family": "generation_python_add",
+          "family_constraint": "generation_python_add",
+          "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0233.",
+          "prompt_sha256": "a01db3a5dab1b433e49856d1f6b7b8eb36fd5f53d7b287c7eaa90e6b0b9dcbe8",
+          "selection_rank_sha256": "008d7f0d365a3bb2e06f1ceea321eb816aecd4ec94a0b44787f9bb9a6618895d",
+          "p35_passed": true,
+          "p34_passed": true,
+          "p35_output_sha256": "5df8555b4adb1642c783b30c8f4ee199fd7f2b814f669e9a268d57406160967b",
+          "p34_output_sha256": "5df8555b4adb1642c783b30c8f4ee199fd7f2b814f669e9a268d57406160967b",
+          "behavior_binding_sha256": "7e201e64d239e7a6033a9fa7f1be5ff9503593e528c11e062caa33c782b29f20"
+        },
+        {
+          "index": 4,
+          "role": "stable-positive-control",
+          "transition": "stable-pass",
+          "selection_transition": "stable_pass",
+          "id": "generation_math_answer_0467",
+          "category": "math",
+          "source_category": "math",
+          "family": "generation_math_answer",
+          "family_constraint": null,
+          "prompt": "Question: What is 36 + 8? Answer with only the number.\nAnswer:",
+          "prompt_sha256": "28111e67759aed78e7139e0c0cdc25ee2ffd604dfcc1b7346acd215735c6d826",
+          "selection_rank_sha256": "036cde6f66d2f4e015f2bbeea5c7edde274719a532c1c3b2e0edc213fa923e85",
+          "p35_passed": true,
+          "p34_passed": true,
+          "p35_output_sha256": "42058530c236668cd7e1ac5a71ac9376ab85d8f43def07ee7c8578620e0a86be",
+          "p34_output_sha256": "42058530c236668cd7e1ac5a71ac9376ab85d8f43def07ee7c8578620e0a86be",
+          "behavior_binding_sha256": "318fa300ccd5573401ba6052e9f6f4b7d6d6d07cbb54ff5098451e8b030a9ec9"
+        },
+        {
+          "index": 5,
+          "role": "stable-positive-control",
+          "transition": "stable-pass",
+          "selection_transition": "stable_pass",
+          "id": "generation_model_merge_risk_0890",
+          "category": "model-surgery",
+          "source_category": "model_surgery",
+          "family": "generation_model_merge_risk",
+          "family_constraint": null,
+          "prompt": "Give one risk when merging two language models.\nVariation id: 0890.",
+          "prompt_sha256": "61cd145407b0dee7c8c821a37ad0f6ca984036d862f0ebf2f612a29d510de707",
+          "selection_rank_sha256": "02ecb234e1502af7e3bf12031c2e454bdb8be99e795d38d5d626de40f5e68079",
+          "p35_passed": true,
+          "p34_passed": true,
+          "p35_output_sha256": "8af4a092046644626860ae7c799091dccc2550411114bc59e3a2bdf1cd35ccb7",
+          "p34_output_sha256": "4001ee216ab3d33ff57842fdb361afcf004ebfa8040005ee917b6b1aa439a2a5",
+          "behavior_binding_sha256": "a7f501759275c9738b2420cac11ee68ea164b0fe53bb92f695f4d3adb84584f4"
+        }
+      ]
+    },
+    "heldout-evaluation": {
+      "prompt_file": {
+        "path": "experiments/p35_p34_residual_attention_heldout_evaluation_prompts_20260711.json",
+        "sha256": "cebf98bdbdfc1154c45758cdeed25e15141b6aeb910f06fa6cf349efdaf6d04f"
+      },
+      "count": 8,
+      "role_counts": {
+        "degradation-target": 4,
+        "stable-positive-control": 4
+      },
+      "degradation_target_categories": {
+        "code": 1,
+        "math": 1,
+        "model-surgery": 1,
+        "tokenizer": 1
+      },
+      "stable_positive_control_categories": {
+        "code": 2,
+        "math": 1,
+        "model-surgery": 1
+      },
+      "entries": [
+        {
+          "index": 0,
+          "role": "degradation-target",
+          "transition": "lost",
+          "selection_transition": "lost",
+          "id": "generation_python_add_0345",
+          "category": "code",
+          "source_category": "code",
+          "family": "generation_python_add",
+          "family_constraint": null,
+          "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0345.",
+          "prompt_sha256": "a504f3106a9ebca48392f589d6cf6f64db4a8e86ec708181dbe7ff4cdb191045",
+          "selection_rank_sha256": "00328f2cfa550cc93069b9667662e3c19ccd230da5f3f000489bbce8bb325ef1",
+          "p35_passed": true,
+          "p34_passed": false,
+          "p35_output_sha256": "9889c8fafb80c29c26bdee5223adf8a6c6c091bf248aeab16655bfdb2b0d9040",
+          "p34_output_sha256": "b1e5d448410ff04bcd693d3e4404cc2084a206ec4adbec70db4e0effa9c680e4",
+          "behavior_binding_sha256": "29b1fdbc952a856bf256290d1d2dba715e788d46f1b376ef1e03377af3a80d20"
+        },
+        {
+          "index": 1,
+          "role": "degradation-target",
+          "transition": "lost",
+          "selection_transition": "lost",
+          "id": "generation_tokenizer_mismatch_0241",
+          "category": "tokenizer",
+          "source_category": "tokenizer",
+          "family": "generation_tokenizer_mismatch",
+          "family_constraint": null,
+          "prompt": "In one sentence, why can tokenizer mismatch hurt model stitching?\nVariation id: 0241.",
+          "prompt_sha256": "9b04ae26e1af014e61ee7c0025599b06a6e1bab60dbe88b4bf323688056e66d8",
+          "selection_rank_sha256": "016fd530fe192bf1c9aa04d8c63db0b0f5ca99105806d752648e7aba8b626fad",
+          "p35_passed": true,
+          "p34_passed": false,
+          "p35_output_sha256": "7f5d50ef7522c411f715afa6675aa56ab3159d1e05485ddb324692b4867aaae6",
+          "p34_output_sha256": "569aa7af1ecec6afe9ac40765f2e53ba748a55ca0b5ce6346e09a614b84a1680",
+          "behavior_binding_sha256": "e1eabbf8c593c089a7d993f2dc40f4e6b0385d528d6d9b6d4c159ab3ee5aa63d"
+        },
+        {
+          "index": 2,
+          "role": "degradation-target",
+          "transition": "lost",
+          "selection_transition": "lost",
+          "id": "generation_model_merge_risk_0995",
+          "category": "model-surgery",
+          "source_category": "model_surgery",
+          "family": "generation_model_merge_risk",
+          "family_constraint": null,
+          "prompt": "Give one risk when merging two language models.\nVariation id: 0995.",
+          "prompt_sha256": "efd87e802e2d5319dcd39e2bb66faf36d4019a5165bbbeb759028d04817df045",
+          "selection_rank_sha256": "002b5c49f3f297e994e4fcc7b5a712d6f0a15eaf3bcf454a8a56e0552a46b35d",
+          "p35_passed": true,
+          "p34_passed": false,
+          "p35_output_sha256": "e9ab44c0c80228db74ad5363e8a62e67c910b314eb6f0682cb06ca0f21c3bea4",
+          "p34_output_sha256": "456fdbf652a86c1112cbfe32f9abd1953ef37e6547436079a19d56db68674e4e",
+          "behavior_binding_sha256": "23f1b575d80ba92ff6258e4bb2f52631b38715bf485c26256a5142db4b79412f"
+        },
+        {
+          "index": 3,
+          "role": "degradation-target",
+          "transition": "lost",
+          "selection_transition": "lost",
+          "id": "generation_math_answer_0474",
+          "category": "math",
+          "source_category": "math",
+          "family": "generation_math_answer",
+          "family_constraint": null,
+          "prompt": "Question: What is 44 * 27? Answer with only the number.\nAnswer:",
+          "prompt_sha256": "0fa87b4b6f1400215cce11ab93773628c6e1cba3459eb7b7f39bb2cea2206512",
+          "selection_rank_sha256": "b685b8651c301a273528944e3b9e3910342c88be00cfc2db05519f62e64497c5",
+          "p35_passed": true,
+          "p34_passed": false,
+          "p35_output_sha256": "06f8e36208b6611d5541a3465e59dade460474a8b40c1f237b3e9c175a760c58",
+          "p34_output_sha256": "b8359954771ab92fb008dfcdcad3fbbc4e4426a3f5e3cde36959ff497cca9332",
+          "behavior_binding_sha256": "7ba92c2171393b3a8daa3bad4781f02ab64a57828964ee56d78c38e671efb224"
+        },
+        {
+          "index": 4,
+          "role": "stable-positive-control",
+          "transition": "stable-pass",
+          "selection_transition": "stable_pass",
+          "id": "generation_python_add_0744",
+          "category": "code",
+          "source_category": "code",
+          "family": "generation_python_add",
+          "family_constraint": "generation_python_add",
+          "prompt": "Write a tiny Python function that adds two numbers.\nVariation id: 0744.",
+          "prompt_sha256": "5a35e414d2fb1183f8ae17cd5cac3f0ed31a3ae45aed9b88dde3ba8fec882479",
+          "selection_rank_sha256": "09e849a4aae6012d0bccca1f7a5cc3b83d2f26a338547f703b8a4d14e3fd0c0c",
+          "p35_passed": true,
+          "p34_passed": true,
+          "p35_output_sha256": "d4df91ee146e923992cabd0303ce3c49f49596728e597d9051c4881dec744c81",
+          "p34_output_sha256": "f22a9aa0544da0ec88b0105ad5aa93e4f85e9b2afdadad30ee45b8f4481a18be",
+          "behavior_binding_sha256": "c51cf856bc8e8f7333ad182e8e5dff3f693cf541e5c5fe8aa453be6c1c3c97a3"
+        },
+        {
+          "index": 5,
+          "role": "stable-positive-control",
+          "transition": "stable-pass",
+          "selection_transition": "stable_pass",
+          "id": "generation_python_add_exact_0713",
+          "category": "code",
+          "source_category": "code",
+          "family": "generation_python_add_exact",
+          "family_constraint": "generation_python_add_exact",
+          "prompt": "Write a tiny Python function named add that returns a + b.\n```python\n",
+          "prompt_sha256": "761740d45983b18fc23b9bd3052a6da1e92b932fd85b90d438206abad238c127",
+          "selection_rank_sha256": "02a71727b5ad03a5b4f17cade4545f42c4271fc5b8d8c97ff32a523ccba959e1",
+          "p35_passed": true,
+          "p34_passed": true,
+          "p35_output_sha256": "4ace06ae2ad4ed1ec088de90b8f77e840c46790c21ef43b30b32cb40e99efd5b",
+          "p34_output_sha256": "4ace06ae2ad4ed1ec088de90b8f77e840c46790c21ef43b30b32cb40e99efd5b",
+          "behavior_binding_sha256": "4a2d529f619fbe0f2f4a5b708579ddc1d7258665d1ba36e5b11ca9dffaec3c46"
+        },
+        {
+          "index": 6,
+          "role": "stable-positive-control",
+          "transition": "stable-pass",
+          "selection_transition": "stable_pass",
+          "id": "generation_math_answer_0936",
+          "category": "math",
+          "source_category": "math",
+          "family": "generation_math_answer",
+          "family_constraint": null,
+          "prompt": "Question: What is 39 * 5? Answer with only the number.\nAnswer:",
+          "prompt_sha256": "9527d57734db1a6f70bbd953a783cfe13dd4b96d3e44115aab533be1f8d9e071",
+          "selection_rank_sha256": "005767fee8b7a704afbf885dae4a293dd1a8a04f11afcaebbf44742f1441c191",
+          "p35_passed": true,
+          "p34_passed": true,
+          "p35_output_sha256": "1c52b90867f0d54ec52726a9f4593d72d43d9134b1cf5f61b9e473ad3c5a41d3",
+          "p34_output_sha256": "1c52b90867f0d54ec52726a9f4593d72d43d9134b1cf5f61b9e473ad3c5a41d3",
+          "behavior_binding_sha256": "a648f8d2cf167e332338489a491f26cd485f33efd67ad00cb3c5f93515641eec"
+        },
+        {
+          "index": 7,
+          "role": "stable-positive-control",
+          "transition": "stable-pass",
+          "selection_transition": "stable_pass",
+          "id": "generation_model_merge_risk_0449",
+          "category": "model-surgery",
+          "source_category": "model_surgery",
+          "family": "generation_model_merge_risk",
+          "family_constraint": null,
+          "prompt": "Give one risk when merging two language models.\nVariation id: 0449.",
+          "prompt_sha256": "cacc3e8475b50a34c426405ef98d19e8cc9a6a651e1ea5519264d7786e1b5e13",
+          "selection_rank_sha256": "022f05903f1c6cc94666b4568f0527975be68fbefb6bc7c4894753fb56c33c0c",
+          "p35_passed": true,
+          "p34_passed": true,
+          "p35_output_sha256": "6f053e6ac23663b806e8bd0e3c03399a91c955d0b8eed7ef7bb4f5dac49a6941",
+          "p34_output_sha256": "643ea7e95a8c195bc6732bf1b7b2562af3e8866edd487185154f8c4df330f907",
+          "behavior_binding_sha256": "0754bcd5254a451269d07e16251b854e5e660968e115285302bd4209ae71f775"
+        }
+      ]
+    }
+  },
+  "disjointness": {
+    "calibration_heldout_id_overlap_count": 0,
+    "calibration_heldout_exact_prompt_overlap_count": 0,
+    "current_tiny_v_probe_exact_prompt_overlap_count": 0,
+    "current_tiny_v_probe_normalized_prompt_overlap_count": 0,
+    "all_selected_ids_unique": true,
+    "all_selected_exact_prompts_unique": true,
+    "all_selected_prompts_match_embedded_suite_text_exactly": true
+  }
+}

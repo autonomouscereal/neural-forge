@@ -788,6 +788,50 @@ class MergeCandidate:
         return _sha256(self.as_dict())
 
     @property
+    def operation_sha256(self) -> str:
+        """Hash only the executable cluster rewrite, not discovery evidence.
+
+        ``candidate_sha256`` remains the exact identity of the scored candidate:
+        it binds the parent snapshot, evidence, medoid search, and every score.
+        This second digest is deliberately narrower.  It lets audit code prove
+        that two independently discovered candidates describe the same cluster
+        rewrite without pretending that their evidence or scores are equal.
+        Callers must still verify ``candidate_sha256`` whenever exact discovery
+        identity is required.
+        """
+
+        source_groups = [
+            {
+                "prototype": _id_payload(prototype),
+                "members": [
+                    _id_payload(item)
+                    for item in sorted(members, key=_id_sort_key)
+                ],
+            }
+            for prototype, members in (
+                (self.left_prototype, self.left_members),
+                (self.right_prototype, self.right_members),
+            )
+        ]
+        source_groups.sort(key=_canonical_json_bytes)
+        return _sha256(
+            {
+                "kind": "real-medoid-merge-operation-v1",
+                "source_groups": source_groups,
+                "member_ids": [
+                    _id_payload(item)
+                    for item in sorted(self.member_ids, key=_id_sort_key)
+                ],
+                "resulting_medoid": _id_payload(self.resulting_medoid),
+                "exact_anchor": (
+                    None
+                    if self.exact_anchor is None
+                    else _id_payload(self.exact_anchor)
+                ),
+            }
+        )
+
+    @property
     def sources(self) -> tuple[NodeId, NodeId]:
         return self.left_prototype, self.right_prototype
 

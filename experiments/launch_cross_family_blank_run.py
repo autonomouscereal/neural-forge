@@ -189,6 +189,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         cross_tokenizer_trace_alignment=args.cross_tokenizer_trace_alignment,
         residual_map_method=args.residual_map_method,
         nonlinear_merge_method=args.nonlinear_merge_method,
+        multi_anchor_anchors_per_source=args.multi_anchor_anchors_per_source,
+        multi_anchor_max_candidate_targets=args.multi_anchor_max_candidate_targets,
+        multi_anchor_max_similarity_products=(
+            args.multi_anchor_max_similarity_products
+        ),
+        multi_anchor_max_projection_fits=args.multi_anchor_max_projection_fits,
+        multi_anchor_max_sparse_entries=args.multi_anchor_max_sparse_entries,
+        multi_anchor_max_workspace_elements=(
+            args.multi_anchor_max_workspace_elements
+        ),
         ridge=args.ridge,
         max_operator_delta_ratio=args.max_operator_delta_ratio,
         heldout_gate_policy=args.heldout_gate_policy,
@@ -334,8 +344,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--nonlinear-merge-method",
-        choices=["activation_fold", "real_medoid", "activation_subset"],
+        choices=[
+            "activation_fold",
+            "real_medoid",
+            "activation_subset",
+            "multi_anchor",
+        ],
         default="activation_fold",
+    )
+    parser.add_argument("--multi-anchor-anchors-per-source", type=int, default=4)
+    parser.add_argument("--multi-anchor-max-candidate-targets", type=int, default=64)
+    parser.add_argument(
+        "--multi-anchor-max-similarity-products", type=int, default=64_000_000
+    )
+    parser.add_argument(
+        "--multi-anchor-max-projection-fits", type=int, default=1_000_000
+    )
+    parser.add_argument(
+        "--multi-anchor-max-sparse-entries", type=int, default=1_000_000
+    )
+    parser.add_argument(
+        "--multi-anchor-max-workspace-elements", type=int, default=16_000_000
     )
     parser.add_argument("--ridge", type=float, default=1e-5)
     parser.add_argument("--max-operator-delta-ratio", type=float, default=4.0)

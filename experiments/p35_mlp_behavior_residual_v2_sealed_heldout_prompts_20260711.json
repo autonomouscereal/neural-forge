@@ -1,0 +1,10 @@
+[
+  "Write a Python function named rotate_left that moves the first list item to the end and returns the new list.\n```python\n",
+  "Write a Python function named count_vowels that returns the number of vowels in a string.\n```python\n",
+  "Question: What is 17 * 23? Answer with only the number.\nAnswer:",
+  "Question: A box holds 48 bolts split equally among 6 trays. How many bolts are in each tray? Answer with only the number.\nAnswer:",
+  "In one concise sentence, explain why the same text can produce different token boundaries in two tokenizers.",
+  "Name one behavior-level check to run after folding an attention head into a smaller model.",
+  "A glass falls and breaks on a kitchen floor. What is the safest immediate action? Answer in one sentence.",
+  "If every cedar is a tree and no tree is a fish, can any cedar be a fish? Answer yes or no, then give one short reason."
+]

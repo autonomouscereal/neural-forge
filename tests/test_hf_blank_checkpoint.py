@@ -262,6 +262,30 @@ def test_real_medoid_is_forwarded_to_model_bootstrap_and_reported(
         == "b" * 64
     )
 
+    captured.clear()
+    multi_report = _run(
+        _gpt2_source(),
+        tmp_path / "multi-anchor",
+        nonlinear_merge_method="multi_anchor",
+        multi_anchor_anchors_per_source=3,
+        multi_anchor_max_candidate_targets=7,
+        multi_anchor_max_similarity_products=12_345,
+        multi_anchor_max_projection_fits=2_345,
+        multi_anchor_max_sparse_entries=3_456,
+        multi_anchor_max_workspace_elements=45_678,
+    )
+    assert captured["nonlinear_merge_method"] == "multi_anchor"
+    assert captured["multi_anchor_anchors_per_source"] == 3
+    assert captured["multi_anchor_max_candidate_targets"] == 7
+    assert captured["multi_anchor_max_similarity_products"] == 12_345
+    assert captured["multi_anchor_max_projection_fits"] == 2_345
+    assert captured["multi_anchor_max_sparse_entries"] == 3_456
+    assert captured["multi_anchor_max_workspace_elements"] == 45_678
+    knobs = multi_report["bootstrap"]["knobs"]
+    assert knobs["nonlinear_merge_method"] == "multi_anchor"
+    assert knobs["multi_anchor_anchors_per_source"] == 3
+    assert knobs["multi_anchor_max_candidate_targets"] == 7
+
 
 def test_smaller_reordered_cross_tokenizer_checkpoint_is_exact_after_reload(
     tmp_path,

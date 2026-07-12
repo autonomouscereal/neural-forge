@@ -747,7 +747,14 @@ def bootstrap_blank_decoder_checkpoint(
         "activation_fold",
         "real_medoid",
         "activation_subset",
+        "multi_anchor",
     ] = "activation_fold",
+    multi_anchor_anchors_per_source: int = 4,
+    multi_anchor_max_candidate_targets: int = 64,
+    multi_anchor_max_similarity_products: int = 64_000_000,
+    multi_anchor_max_projection_fits: int = 1_000_000,
+    multi_anchor_max_sparse_entries: int = 1_000_000,
+    multi_anchor_max_workspace_elements: int = 16_000_000,
     ridge: float = 1e-5,
     max_operator_delta_ratio: float = 4.0,
     heldout_gate_policy: Literal["all", "output_only"] = "all",
@@ -787,11 +794,27 @@ def bootstrap_blank_decoder_checkpoint(
         "activation_fold",
         "real_medoid",
         "activation_subset",
+        "multi_anchor",
     }:
         raise BlankCheckpointError(
-            "nonlinear_merge_method must be activation_fold, real_medoid, or "
-            "activation_subset."
+            "nonlinear_merge_method must be activation_fold, real_medoid, "
+            "activation_subset, or multi_anchor."
         )
+    for name, value in (
+        ("multi_anchor_anchors_per_source", multi_anchor_anchors_per_source),
+        ("multi_anchor_max_candidate_targets", multi_anchor_max_candidate_targets),
+        (
+            "multi_anchor_max_similarity_products",
+            multi_anchor_max_similarity_products,
+        ),
+        ("multi_anchor_max_projection_fits", multi_anchor_max_projection_fits),
+        ("multi_anchor_max_sparse_entries", multi_anchor_max_sparse_entries),
+        (
+            "multi_anchor_max_workspace_elements",
+            multi_anchor_max_workspace_elements,
+        ),
+    ):
+        _positive_int(value, name)
     if cross_tokenizer_trace_alignment not in {"pooled", "target_token_rows"}:
         raise BlankCheckpointError(
             "cross_tokenizer_trace_alignment must be pooled or target_token_rows."
@@ -1074,6 +1097,12 @@ def bootstrap_blank_decoder_checkpoint(
         trace_pooling=trace_pooling,
         residual_map_method=residual_map_method,
         nonlinear_merge_method=nonlinear_merge_method,
+        multi_anchor_anchors_per_source=multi_anchor_anchors_per_source,
+        multi_anchor_max_candidate_targets=multi_anchor_max_candidate_targets,
+        multi_anchor_max_similarity_products=multi_anchor_max_similarity_products,
+        multi_anchor_max_projection_fits=multi_anchor_max_projection_fits,
+        multi_anchor_max_sparse_entries=multi_anchor_max_sparse_entries,
+        multi_anchor_max_workspace_elements=multi_anchor_max_workspace_elements,
         ridge=ridge,
         max_operator_delta_ratio=max_operator_delta_ratio,
         heldout_gate_policy=heldout_gate_policy,
@@ -1222,6 +1251,24 @@ def bootstrap_blank_decoder_checkpoint(
                 ),
                 "residual_map_method": residual_map_method,
                 "nonlinear_merge_method": nonlinear_merge_method,
+                "multi_anchor_anchors_per_source": (
+                    multi_anchor_anchors_per_source
+                ),
+                "multi_anchor_max_candidate_targets": (
+                    multi_anchor_max_candidate_targets
+                ),
+                "multi_anchor_max_similarity_products": (
+                    multi_anchor_max_similarity_products
+                ),
+                "multi_anchor_max_projection_fits": (
+                    multi_anchor_max_projection_fits
+                ),
+                "multi_anchor_max_sparse_entries": (
+                    multi_anchor_max_sparse_entries
+                ),
+                "multi_anchor_max_workspace_elements": (
+                    multi_anchor_max_workspace_elements
+                ),
                 "heldout_gate_policy": heldout_gate_policy,
                 "canonical_parent_kernel_supplied": (
                     canonical_calibration_boundaries is not None
