@@ -221,6 +221,15 @@ class SparseDenseSwiGLUProjectionResidualRegistry(nn.Module):
                 f"{role}_right",
                 nn.Parameter(right.to(device=device, dtype=dtype)),
             )
+        # Correction is called once per role/layer, so a full factor scan in
+        # that hot path would reread the entire registry many times during one
+        # model forward.  Parameter versions are incremented by normal
+        # in-place updates (including optimizer and state-restore ``copy_``
+        # operations).  Cache a scan only after a stable, complete validation;
+        # any ownership/storage/version change invalidates it.
+        self._finite_parameter_signature_cache: (
+            tuple[tuple[int, int, int], ...] | None
+        ) = None
         self.assert_finite()
 
     @property
@@ -248,14 +257,50 @@ class SparseDenseSwiGLUProjectionResidualRegistry(nn.Module):
     def output_trainable_parameters(self) -> tuple[nn.Parameter, ...]:
         return tuple(self.parameters())
 
-    def assert_finite(self) -> None:
+    @staticmethod
+    def _finite_parameter_signature(
+        parameters: Sequence[nn.Parameter],
+    ) -> tuple[tuple[int, int, int], ...]:
+        return tuple(
+            (id(value), int(value.data_ptr()), int(value._version))
+            for value in parameters
+        )
+
+    def _scan_all_factors_finite(self) -> None:
+        """Validate every factor and cache only one stable parameter version."""
+
+        parameters = tuple(self.parameters())
+        before = self._finite_parameter_signature(parameters)
         if any(
-            not bool(torch.isfinite(value.detach()).all())
-            for value in self.parameters()
+            not bool(torch.isfinite(value.detach()).all()) for value in parameters
         ):
+            self._finite_parameter_signature_cache = None
             raise DenseSwiGLUProjectionResidualError(
                 "SwiGLU projection factors contain NaN or infinity."
             )
+        after_parameters = tuple(self.parameters())
+        after = self._finite_parameter_signature(after_parameters)
+        if tuple(id(value) for value in after_parameters) != tuple(
+            id(value) for value in parameters
+        ) or after != before:
+            self._finite_parameter_signature_cache = None
+            raise DenseSwiGLUProjectionResidualError(
+                "SwiGLU projection factors changed during finite validation."
+            )
+        self._finite_parameter_signature_cache = after
+
+    def _assert_finite_if_versions_changed(self) -> None:
+        parameters = tuple(self.parameters())
+        if (
+            self._finite_parameter_signature(parameters)
+            != self._finite_parameter_signature_cache
+        ):
+            self._scan_all_factors_finite()
+
+    def assert_finite(self) -> None:
+        """Explicitly rescan every factor, independent of the hot-path cache."""
+
+        self._scan_all_factors_finite()
 
     def _row(self, layer_index: int) -> int:
         layer = _index(layer_index, "layer_index")
@@ -275,7 +320,7 @@ class SparseDenseSwiGLUProjectionResidualRegistry(nn.Module):
             raise DenseSwiGLUProjectionResidualTopologyError(
                 "Projection role must be gate, up, or down."
             )
-        self.assert_finite()
+        self._assert_finite_if_versions_changed()
         row = self._row(layer_index)
         right = getattr(self, f"{role}_right")[row]
         left = getattr(self, f"{role}_left")[row]

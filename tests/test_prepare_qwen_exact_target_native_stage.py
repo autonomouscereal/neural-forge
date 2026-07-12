@@ -318,6 +318,10 @@ def test_lexical_builder_seals_nonrestarting_schedule_and_required_cache_hit(
         "expected_count": 32,
     }
     assert preregistration["compiler_cache"]["require_hit"] is True
+    assert {
+        "qkvo_adapter_sha256",
+        "swiglu_adapter_sha256",
+    }.issubset(preregistration["implementation"])
     assert (
         preregistration["compiler_cache"]["expected_compiler_identity_sha256"]
         == identity_sha

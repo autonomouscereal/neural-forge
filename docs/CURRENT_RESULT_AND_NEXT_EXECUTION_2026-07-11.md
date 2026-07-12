@@ -316,6 +316,18 @@ baked child—not merely the live FP32 residual wrappers—to pass the same
 output/free-rollout behavior gates before its one allowed save and fresh
 reload certification.
 
+The first launch of that exact contract was intentionally stopped before the
+first optimizer step or checkpoint. Profiling exposed a pure execution bug:
+every token forward revalidated the complete factor registries independently
+at every Q/K/V/O, Gate/Up/Down, embedding, and LM-head hook. That performed
+about `1,306,198,016` redundant factor-element finiteness checks per child
+forward. The source factor pack, compiled-child cache, behavior splits, and
+methodology were not changed. Hot-path validation is now cached against factor
+identity, storage, topology, and `Parameter._version`; optimizer updates and
+restores force a new full scan, while unchanged factors validate once. The
+corrected continuation must use a new source-pinned preregistration and retain
+the same 120/24/32 behavior contract.
+
 ## Truth boundary
 
 There is now real proof of one-site behavioral compaction: `3,183,488` net

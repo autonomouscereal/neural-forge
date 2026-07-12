@@ -178,6 +178,116 @@ def test_registry_is_strictly_pointwise_over_sequence_positions() -> None:
     assert registry.as_dict()["cross_token_mixing_inside_adapter"] is False
 
 
+def test_repeated_projection_forwards_scan_factors_only_after_version_change(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = _active_registry()
+    scans = 0
+    scan = SparseDenseGQAQKVOResidualRegistry._scan_factor_finiteness
+
+    def count_scan(
+        self: SparseDenseGQAQKVOResidualRegistry,
+        items: tuple[tuple[str, nn.Parameter], ...],
+    ) -> None:
+        nonlocal scans
+        scans += 1
+        scan(self, items)
+
+    monkeypatch.setattr(
+        SparseDenseGQAQKVOResidualRegistry,
+        "_scan_factor_finiteness",
+        count_scan,
+    )
+    hidden = torch.randn(2, 3, 8)
+    base = torch.randn(2, 3, 8)
+
+    first = registry.apply_to_projection("q", hidden, base, layer_index=1)
+    for _ in range(4):
+        repeated = registry.apply_to_projection("q", hidden, base, layer_index=1)
+        assert torch.equal(repeated, first)
+    # Construction and _active_registry's in-place initialization happened
+    # before the spy.  Their changed versions cause exactly one lazy rescan.
+    assert scans == 1
+
+    with torch.no_grad():
+        registry.q_left.add_(0.125)
+    changed = registry.apply_to_projection("q", hidden, base, layer_index=1)
+    assert scans == 2
+    assert not torch.equal(changed, first)
+    assert torch.equal(
+        registry.apply_to_projection("q", hidden, base, layer_index=1),
+        changed,
+    )
+    assert scans == 2
+
+    optimizer = torch.optim.SGD(registry.parameters(), lr=1e-4)
+    optimizer.zero_grad()
+    changed.sum().backward()
+    optimizer.step()
+    optimized = registry.apply_to_projection("q", hidden, base, layer_index=1)
+    assert scans == 3
+
+    restored_state = {
+        name: value.detach().clone() for name, value in registry.state_dict().items()
+    }
+    registry.load_state_dict(restored_state, strict=True)
+    assert torch.equal(
+        registry.apply_to_projection("q", hidden, base, layer_index=1),
+        optimized,
+    )
+    assert scans == 4
+
+    registry.q_left = nn.Parameter(registry.q_left.detach().clone())
+    assert torch.equal(
+        registry.apply_to_projection("q", hidden, base, layer_index=1),
+        optimized,
+    )
+    assert scans == 5
+
+
+def test_in_place_nonfinite_factor_change_invalidates_cached_validation() -> None:
+    registry = _active_registry()
+    hidden = torch.randn(1, 8)
+    base = torch.randn(1, 8)
+    finite = registry.apply_to_projection("q", hidden, base, layer_index=1)
+    assert torch.isfinite(finite).all()
+
+    with torch.no_grad():
+        # A Q forward must reject poison in any factor, not only the role it
+        # happens to consume after the cached all-factor scan.
+        registry.k_right[0, 0, 0] = float("inf")
+    with pytest.raises(DenseGQAQKVOResidualError, match="k_right"):
+        registry.apply_to_projection("q", hidden, base, layer_index=1)
+
+    with torch.no_grad():
+        registry.k_right[0, 0, 0] = 1.0
+    restored = registry.apply_to_projection("q", hidden, base, layer_index=1)
+    assert torch.equal(restored, finite)
+
+
+def test_cached_site_lookup_preserves_authenticated_buffer_protection() -> None:
+    model = _DenseToyModel()
+    handle = _install(model)
+    registry = handle.adapter_registry
+    original_indices = registry.site_indices.detach().clone()
+    assert registry._site_rows(1) == ((0, 1),)
+
+    with torch.no_grad():
+        registry.site_indices[0, 1] = 0
+    # Forward dispatch remains bound to the validated installation sites, while
+    # the authenticated serialized buffer mutation still fails the live gate.
+    assert registry._site_rows(1) == ((0, 1),)
+    with pytest.raises(DenseGQAQKVOResidualTopologyError, match="site indices"):
+        handle.assert_live()
+    with pytest.raises(DenseGQAQKVOResidualTopologyError, match="site indices"):
+        handle.bake_for_publication()
+
+    with torch.no_grad():
+        registry.site_indices.copy_(original_indices)
+    handle.assert_live()
+    handle.rollback()
+
+
 class _RecordingNorm(nn.Module):
     def __init__(self) -> None:
         super().__init__()

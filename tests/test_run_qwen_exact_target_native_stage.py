@@ -639,6 +639,12 @@ def test_lexical_continuation_accepts_authenticated_v1_base_factor_pack(
             "progressive_bridge_sha256": runner._file_sha256(
                 source_root / "hf_progressive_target_bridge.py"
             ),
+            "qkvo_adapter_sha256": runner._file_sha256(
+                source_root / "hf_dense_gqa_qkvo_residual_adapter.py"
+            ),
+            "swiglu_adapter_sha256": runner._file_sha256(
+                source_root / "hf_dense_swiglu_projection_residual_adapter.py"
+            ),
         }
     )
     preregistration["lexical_residual"] = {

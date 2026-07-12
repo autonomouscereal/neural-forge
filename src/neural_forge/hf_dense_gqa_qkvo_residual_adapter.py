@@ -355,6 +355,19 @@ class SparseDenseGQAQKVOResidualRegistry(nn.Module):
         values = _validated_sites(sites, geometry)
         self.geometry = geometry
         self.rank = _index(rank, "rank", positive=True)
+        rows_by_layer: list[list[tuple[int, int]]] = [
+            [] for _ in range(geometry.logical_layers)
+        ]
+        for row_index, site in enumerate(values):
+            rows_by_layer[site.layer_index].append(
+                (row_index, site.physical_group)
+            )
+        # Forward dispatch must not copy the complete registry index from the
+        # accelerator for every projection.  The sites have already passed the
+        # sorted/unique/geometry checks above, so retain their derived lookup as
+        # immutable host metadata.  ``site_indices`` remains the authenticated,
+        # serialized buffer and is still hashed by the live/publication gates.
+        self._site_rows_by_layer = tuple(tuple(rows) for rows in rows_by_layer)
         self.register_buffer(
             "site_indices",
             torch.tensor(
@@ -403,6 +416,15 @@ class SparseDenseGQAQKVOResidualRegistry(nn.Module):
                 f"{role}_right",
                 nn.Parameter(right.to(device=device, dtype=dtype)),
             )
+        self._factor_parameter_names = tuple(
+            name for name, _value in self.named_parameters()
+        )
+        self._finite_parameter_signature_cache: (
+            tuple[
+                tuple[int, int, int, tuple[int, ...], torch.dtype, str], ...
+            ]
+            | None
+        ) = None
         self._assert_finite()
 
     @property
@@ -444,12 +466,64 @@ class SparseDenseGQAQKVOResidualRegistry(nn.Module):
 
         return tuple(self.parameters())
 
-    def _assert_finite(self) -> None:
-        for name, value in self.named_parameters():
+    def _factor_parameter_items(self) -> tuple[tuple[str, nn.Parameter], ...]:
+        items = tuple(self.named_parameters())
+        if tuple(name for name, _value in items) != self._factor_parameter_names:
+            raise DenseGQAQKVOResidualTopologyError(
+                "Adapter factor parameter topology changed."
+            )
+        return items
+
+    def _scan_factor_finiteness(
+        self,
+        items: tuple[tuple[str, nn.Parameter], ...],
+    ) -> None:
+        for name, value in items:
             if not bool(torch.isfinite(value.detach()).all()):
                 raise DenseGQAQKVOResidualError(
                     f"Adapter parameter {name!r} contains NaN or infinity."
                 )
+
+    @staticmethod
+    def _finite_parameter_signature(
+        items: tuple[tuple[str, nn.Parameter], ...],
+    ) -> tuple[
+        tuple[int, int, int, tuple[int, ...], torch.dtype, str], ...
+    ]:
+        return tuple(
+            (
+                id(value),
+                int(value.data_ptr()),
+                int(value._version),
+                tuple(value.shape),
+                value.dtype,
+                str(value.device),
+            )
+            for _name, value in items
+        )
+
+    def _assert_finite(self) -> None:
+        """Validate factors once per numeric parameter version.
+
+        PyTorch increments ``Parameter._version`` for optimizer updates,
+        authenticated ``copy_`` restores, and other ordinary in-place writes.
+        A complete factor scan is therefore necessary only after that compact
+        ownership/storage/version signature changes. Failed or unstable scans
+        are deliberately never cached.
+        """
+
+        items = self._factor_parameter_items()
+        before = self._finite_parameter_signature(items)
+        if before == self._finite_parameter_signature_cache:
+            return
+        self._scan_factor_finiteness(items)
+        after_items = self._factor_parameter_items()
+        after = self._finite_parameter_signature(after_items)
+        if after != before:
+            raise DenseGQAQKVOResidualError(
+                "Adapter factors changed during finite validation."
+            )
+        self._finite_parameter_signature_cache = after
 
     def _site_rows(self, layer_index: int) -> tuple[tuple[int, int], ...]:
         layer = _index(layer_index, "layer_index")
@@ -457,13 +531,7 @@ class SparseDenseGQAQKVOResidualRegistry(nn.Module):
             raise DenseGQAQKVOResidualTopologyError(
                 "layer_index is outside the target geometry."
             )
-        return tuple(
-            (row_index, int(group))
-            for row_index, (site_layer, group) in enumerate(
-                self.site_indices.detach().cpu().to(torch.int64).tolist()
-            )
-            if int(site_layer) == layer
-        )
+        return self._site_rows_by_layer[layer]
 
     def _correction(
         self,

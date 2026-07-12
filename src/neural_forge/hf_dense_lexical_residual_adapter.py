@@ -263,6 +263,9 @@ class DenseLexicalResidualRegistry(nn.Module):
             )
         )
         self.lm_head_right = nn.Parameter(nonzero_right(lm_head_device))
+        self._finite_validation_key: tuple[
+            tuple[str, int, int, int, tuple[int, ...], torch.dtype, str], ...
+        ] | None = None
         self.assert_finite()
 
     @property
@@ -291,12 +294,47 @@ class DenseLexicalResidualRegistry(nn.Module):
             self.lm_head_right,
         )
 
-    def assert_finite(self) -> None:
-        for name, value in self.named_parameters():
+    @staticmethod
+    def _factor_validation_key(
+        entries: tuple[tuple[str, nn.Parameter], ...],
+    ) -> tuple[
+        tuple[str, int, int, int, tuple[int, ...], torch.dtype, str], ...
+    ]:
+        return tuple(
+            (
+                name,
+                id(value),
+                int(value._version),
+                int(value.data_ptr()),
+                tuple(value.shape),
+                value.dtype,
+                str(value.device),
+            )
+            for name, value in entries
+        )
+
+    def _validate_factors_finite_full(
+        self,
+        entries: tuple[tuple[str, nn.Parameter], ...],
+    ) -> None:
+        for name, value in entries:
             if not bool(torch.isfinite(value.detach()).all()):
                 raise DenseLexicalResidualError(
                     f"Lexical residual factor {name!r} contains NaN or infinity."
                 )
+
+    def assert_finite(self) -> None:
+        entries = tuple(self.named_parameters())
+        before = self._factor_validation_key(entries)
+        if before == self._finite_validation_key:
+            return
+        self._validate_factors_finite_full(entries)
+        after = self._factor_validation_key(entries)
+        if after != before:
+            raise DenseLexicalResidualError(
+                "Lexical residual factors changed during finite validation."
+            )
+        self._finite_validation_key = after
 
     def embedding_correction(
         self,

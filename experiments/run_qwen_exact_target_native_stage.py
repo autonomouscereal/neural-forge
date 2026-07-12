@@ -1306,7 +1306,12 @@ def authenticate_preregistration(
         required_implementation.add("compiler_cache_sha256")
     if lexical_residual is not None:
         required_implementation.update(
-            {"lexical_adapter_sha256", "progressive_bridge_sha256"}
+            {
+                "lexical_adapter_sha256",
+                "progressive_bridge_sha256",
+                "qkvo_adapter_sha256",
+                "swiglu_adapter_sha256",
+            }
         )
     if not isinstance(implementation, Mapping) or set(implementation) != (
         required_implementation
@@ -1375,6 +1380,14 @@ def authenticate_preregistration(
                 "neural_forge.hf_dense_lexical_residual_adapter",
             ),
             ("progressive_bridge_sha256", "neural_forge.hf_progressive_target_bridge"),
+            (
+                "qkvo_adapter_sha256",
+                "neural_forge.hf_dense_gqa_qkvo_residual_adapter",
+            ),
+            (
+                "swiglu_adapter_sha256",
+                "neural_forge.hf_dense_swiglu_projection_residual_adapter",
+            ),
         ):
             spec = importlib.util.find_spec(module_name)
             if spec is None or spec.origin is None:

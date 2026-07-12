@@ -235,6 +235,65 @@ def test_factor_only_output_training_freezes_every_native_parameter() -> None:
     handle.rollback()
 
 
+def test_repeated_forwards_scan_full_factor_set_only_once(monkeypatch) -> None:
+    full_scans = 0
+    original = DenseLexicalResidualRegistry._validate_factors_finite_full
+
+    def counted_full_scan(self, entries) -> None:
+        nonlocal full_scans
+        full_scans += 1
+        original(self, entries)
+
+    monkeypatch.setattr(
+        DenseLexicalResidualRegistry,
+        "_validate_factors_finite_full",
+        counted_full_scan,
+    )
+    model = _ToyCausalLM().eval()
+    handle = _install(model)
+    input_ids = torch.tensor([[1, 2, 3, 4]])
+
+    first = model(input_ids).logits.detach().clone()
+    second = model(input_ids).logits.detach().clone()
+
+    assert torch.equal(first, second)
+    assert full_scans == 1
+    handle.rollback()
+
+
+def test_factor_version_change_rescans_and_rejects_nonfinite_update(
+    monkeypatch,
+) -> None:
+    full_scans = 0
+    original = DenseLexicalResidualRegistry._validate_factors_finite_full
+
+    def counted_full_scan(self, entries) -> None:
+        nonlocal full_scans
+        full_scans += 1
+        original(self, entries)
+
+    monkeypatch.setattr(
+        DenseLexicalResidualRegistry,
+        "_validate_factors_finite_full",
+        counted_full_scan,
+    )
+    model = _ToyCausalLM().eval()
+    handle = _install(model)
+    input_ids = torch.tensor([[1, 2, 3, 4]])
+    model(input_ids)
+    assert full_scans == 1
+
+    with torch.no_grad():
+        handle.adapter_registry.embedding_left.copy_(
+            torch.full_like(handle.adapter_registry.embedding_left, float("nan"))
+        )
+
+    with pytest.raises(DenseLexicalResidualError, match="NaN or infinity"):
+        model(input_ids)
+    assert full_scans == 2
+    handle.rollback()
+
+
 def test_nonfinite_factor_fails_forward_but_cannot_block_exact_rollback() -> None:
     model = _ToyCausalLM()
     original_embedding = model.backbone.embed_tokens
