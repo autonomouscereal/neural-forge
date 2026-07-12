@@ -42,6 +42,15 @@ OLD_CANDIDATE_DIAGNOSTIC_SCHEMA = (
     "neural-forge-exact-target-native-old-candidate-diagnostic-v1"
 )
 CONTINUATION_BUILD_SCHEMA = "neural-forge-exact-target-native-continuation-build-v1"
+LEXICAL_CONTINUATION_SELECTION_SCHEMA = (
+    "neural-forge-exact-target-native-lexical-continuation-selection-v1"
+)
+LEXICAL_CONTINUATION_MANIFEST_SCHEMA = (
+    "neural-forge-exact-target-native-lexical-continuation-manifest-v1"
+)
+LEXICAL_CONTINUATION_BUILD_SCHEMA = (
+    "neural-forge-exact-target-native-lexical-continuation-build-v1"
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ORIGINAL_SPLIT_DIR = Path(
@@ -61,6 +70,11 @@ DEFAULT_TOKENIZER = Path(
 DEFAULT_OUTPUT = Path(
     "/mnt/ai_data/neural-forge/prereg/qwen_exact_target_native_stage1_continuation_v1"
 )
+DEFAULT_RESIDUAL_ATTENTION_SPLIT_DIR = Path(
+    "/mnt/ai_data/neural-forge/prereg/"
+    "qwen_exact_target_native_stage1_step16_residual_attention_continuation_20260712/"
+    "splits"
+)
 
 PINNED_CORPUS_SHA256 = (
     "ba2dd1202752e2dd2b9b981c52501060ee367e220e5fb73ce7f8c320e2bbdd90"
@@ -78,6 +92,16 @@ PINNED_ORIGINAL_SPLIT_SHA256S = {
 ORIGINAL_COUNTS = {"fit": 24, "candidate": 12, "sealed": 16}
 FRESH_COUNTS = {"fit": 72, "candidate": 24, "sealed": 16}
 OUTPUT_COUNTS = {"fit": 96, "candidate": 24, "sealed": 32}
+PINNED_RESIDUAL_ATTENTION_SPLIT_SHA256S = {
+    "fit": "87464a236ddd39a768646ce7b432080e4e4cc1757505c70e9237a4bca8fe9439",
+    "candidate": "c7bb4bd50858c415fff782ef4ca02c1492c4192847274d7c519b09dda4623f7e",
+    "sealed": "a888ee4e74bbad8d17d2f3b0e4cfa36f4791f3946bfe1705547f6dc590891341",
+}
+PINNED_OLD_CANDIDATE_DIAGNOSTIC_SHA256 = (
+    "27881c06d3018c99dec53228d8230f920027067b9ddb92a931a1bd3b066de781"
+)
+RESIDUAL_ATTENTION_COUNTS = {"fit": 96, "candidate": 24, "sealed": 32}
+LEXICAL_CONTINUATION_COUNTS = {"fit": 120, "candidate": 24, "sealed": 32}
 MINIMUM_MEANINGFUL_PREFIX_TOKENS = 8
 MAX_PROMPT_TOKENS = 128
 _TOKEN_SEQUENCE_HASH_NAMESPACE = b"neural-forge-token-sequence-v1\0"
@@ -248,6 +272,7 @@ def _load_original_split(
     name: str,
     *,
     expected_sha256: str,
+    expected_count: int | None = None,
 ) -> _OriginalSplit:
     path = split_dir / f"{name}.json"
     expected = _sha256(expected_sha256, f"original_split_sha256s.{name}")
@@ -264,8 +289,13 @@ def _load_original_split(
         raise ContinuationSplitPreparationError(
             "Original sealed split lacks its pre-model seal."
         )
+    count = ORIGINAL_COUNTS[name] if expected_count is None else expected_count
+    if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+        raise ContinuationSplitPreparationError(
+            f"Expected {name} split count must be a positive integer."
+        )
     raw_prompts = payload.get("prompts")
-    if not isinstance(raw_prompts, list) or len(raw_prompts) != ORIGINAL_COUNTS[name]:
+    if not isinstance(raw_prompts, list) or len(raw_prompts) != count:
         raise ContinuationSplitPreparationError(
             f"Original exact {name} split count changed."
         )
@@ -534,6 +564,123 @@ def _select_fresh_domains(
     return selected, stats
 
 
+def _load_old_candidate_diagnostic(
+    split_dir: Path,
+    *,
+    expected_sha256: str,
+) -> tuple[_PromptRecord, ...]:
+    path = split_dir / "old_candidate_diagnostic.json"
+    expected = _sha256(
+        expected_sha256,
+        "old_candidate_diagnostic_sha256",
+    )
+    if not path.is_file() or _file_sha256(path) != expected:
+        raise ContinuationSplitPreparationError(
+            "Old candidate diagnostic artifact is absent or changed."
+        )
+    payload = _strict_json(path)
+    if (
+        payload.get("schema") != OLD_CANDIDATE_DIAGNOSTIC_SCHEMA
+        or payload.get("role") != "diagnostic-only"
+        or payload.get("eligible_for_fit") is not False
+        or payload.get("eligible_for_candidate_selection") is not False
+        or payload.get("eligible_for_checkpoint_promotion") is not False
+    ):
+        raise ContinuationSplitPreparationError(
+            "Old candidate diagnostic eligibility contract changed."
+        )
+    raw_prompts = payload.get("prompts")
+    if not isinstance(raw_prompts, list) or len(raw_prompts) != ORIGINAL_COUNTS[
+        "candidate"
+    ]:
+        raise ContinuationSplitPreparationError(
+            "Old candidate diagnostic prompt count changed."
+        )
+    prompts = tuple(
+        _prompt_record(value, f"old_candidate_diagnostic.prompts[{index}]")
+        for index, value in enumerate(raw_prompts)
+    )
+    if len({value.prompt_id for value in prompts}) != len(prompts):
+        raise ContinuationSplitPreparationError(
+            "Old candidate diagnostic contains duplicate prompts."
+        )
+    return prompts
+
+
+def _select_fresh_candidate(
+    records: Sequence[Mapping[str, Any]],
+    tokenizer: Any,
+    *,
+    excluded_prompts: Sequence[_PromptRecord],
+    max_prompt_tokens: int,
+    expected_count: int = LEXICAL_CONTINUATION_COUNTS["candidate"],
+) -> tuple[list[_PromptRecord], dict[str, Any]]:
+    if (
+        isinstance(max_prompt_tokens, bool)
+        or not isinstance(max_prompt_tokens, int)
+        or max_prompt_tokens < MINIMUM_MEANINGFUL_PREFIX_TOKENS
+    ):
+        raise ContinuationSplitPreparationError(
+            "max_prompt_tokens must be an integer of at least eight."
+        )
+    if (
+        isinstance(expected_count, bool)
+        or not isinstance(expected_count, int)
+        or expected_count <= 0
+    ):
+        raise ContinuationSplitPreparationError(
+            "Fresh candidate count must be a positive integer."
+        )
+    used_prompt_ids = {value.prompt_id for value in excluded_prompts}
+    used_prefixes = {
+        prefix for value in excluded_prompts for prefix in value.prefixes
+    }
+    selected: list[_PromptRecord] = []
+    stats: dict[str, Any] = {
+        "records_considered": 0,
+        "skipped_over_token_limit": 0,
+        "skipped_exact_prompt_collision": 0,
+        "skipped_meaningful_prefix_collision": 0,
+        "accepted": 0,
+        "completion_record_ordinal": None,
+    }
+    for record in records:
+        if len(selected) == expected_count:
+            break
+        stats["records_considered"] += 1
+        tokens = _tokenize(tokenizer, str(record["text"]))
+        if len(tokens) > max_prompt_tokens:
+            stats["skipped_over_token_limit"] += 1
+            continue
+        digest = _token_sequence_sha256(tokens)
+        prompt_id = f"prompt-{digest}"
+        prefixes = _meaningful_prefixes(tokens)
+        if prompt_id in used_prompt_ids:
+            stats["skipped_exact_prompt_collision"] += 1
+            continue
+        if prefixes & used_prefixes:
+            stats["skipped_meaningful_prefix_collision"] += 1
+            continue
+        selected.append(
+            _PromptRecord(
+                payload=_fresh_prompt_payload(record, tokens),
+                token_ids=tokens,
+                prompt_id=prompt_id,
+                prefixes=prefixes,
+            )
+        )
+        used_prompt_ids.add(prompt_id)
+        used_prefixes.update(prefixes)
+        stats["accepted"] += 1
+    if len(selected) != expected_count:
+        raise ContinuationSplitPreparationError(
+            "Could not select the required fresh lexical candidate prompts: "
+            f"{len(selected)!r}."
+        )
+    stats["completion_record_ordinal"] = stats["records_considered"]
+    return selected, stats
+
+
 def _component_sha256(prompts: Sequence[Mapping[str, Any]]) -> str:
     return _canonical_sha256([dict(value) for value in prompts])
 
@@ -553,6 +700,7 @@ def _split_payload(
     corpus_line_count: int,
     tokenizer_sha256: str,
     components: Sequence[Mapping[str, Any]],
+    selection_schema: str = CONTINUATION_SELECTION_SCHEMA,
 ) -> dict[str, Any]:
     payload = {
         "schema": SPLIT_SCHEMA,
@@ -566,7 +714,7 @@ def _split_payload(
             "original_exact_split_sha256s": dict(original_hashes),
         },
         "selection": {
-            "schema": CONTINUATION_SELECTION_SCHEMA,
+            "schema": selection_schema,
             "global_order": "source_prompt_sha256, then source_line_number",
             "components": [dict(value) for value in components],
             "cross_domain_minimum_prefix_tokens": (MINIMUM_MEANINGFUL_PREFIX_TOKENS),
@@ -843,6 +991,297 @@ def prepare_continuation_splits(
             "tokenizer_loaded": True,
             "training_launched": False,
             "checkpoint_created": False,
+            "ready_for_preregistration_binding": True,
+        },
+        "build_content_sha256",
+    )
+    _write_json_exclusive(output / "build_report.json", report)
+    return report
+
+
+def prepare_lexical_continuation_splits(
+    *,
+    output_dir: Path,
+    source_split_dir: Path = DEFAULT_RESIDUAL_ATTENTION_SPLIT_DIR,
+    corpus_path: Path = DEFAULT_CORPUS,
+    tokenizer_path: Path = DEFAULT_TOKENIZER,
+    source_split_sha256s: Mapping[str, str] | None = None,
+    old_candidate_diagnostic_sha256: str = (
+        PINNED_OLD_CANDIDATE_DIAGNOSTIC_SHA256
+    ),
+    corpus_sha256: str = PINNED_CORPUS_SHA256,
+    corpus_line_count: int = PINNED_CORPUS_LINE_COUNT,
+    tokenizer_json_sha256: str = PINNED_TOKENIZER_JSON_SHA256,
+    tokenizer_loader: Callable[[Path], Any] = _load_tokenizer,
+    max_prompt_tokens: int = MAX_PROMPT_TOKENS,
+) -> dict[str, Any]:
+    """Build the non-restarting lexical continuation behavior contract.
+
+    The prior 96-prompt fit domain and now-exposed 24-prompt candidate domain
+    become the 120-prompt training-only fit domain.  A new candidate is selected
+    only after excluding every prior fit/candidate/sealed prompt, every meaningful
+    prefix, and the historical diagnostic-only candidate.  The prior sealed file
+    is authenticated and referenced byte-for-byte; it is never copied or opened
+    by a model in this model-free builder.
+    """
+
+    output = output_dir.expanduser().resolve()
+    if output.exists():
+        raise ContinuationSplitPreparationError("output_dir must not already exist.")
+    source_root = source_split_dir.expanduser().resolve()
+    corpus = corpus_path.expanduser().resolve()
+    tokenizer_root = tokenizer_path.expanduser().resolve()
+    expected_source = dict(
+        PINNED_RESIDUAL_ATTENTION_SPLIT_SHA256S
+        if source_split_sha256s is None
+        else source_split_sha256s
+    )
+    if set(expected_source) != {"fit", "candidate", "sealed"}:
+        raise ContinuationSplitPreparationError(
+            "source_split_sha256s must contain fit, candidate, and sealed."
+        )
+    source = {
+        role: _load_original_split(
+            source_root,
+            role,
+            expected_sha256=expected_source[role],
+            expected_count=RESIDUAL_ATTENTION_COUNTS[role],
+        )
+        for role in ("fit", "candidate", "sealed")
+    }
+    _assert_globally_disjoint(
+        {role: split.prompts for role, split in source.items()},
+        label="Residual-attention continuation source",
+    )
+    diagnostic_sha = _sha256(
+        old_candidate_diagnostic_sha256,
+        "old_candidate_diagnostic_sha256",
+    )
+    diagnostic_prompts = _load_old_candidate_diagnostic(
+        source_root,
+        expected_sha256=diagnostic_sha,
+    )
+    _assert_globally_disjoint(
+        {
+            "source-fit": source["fit"].prompts,
+            "source-candidate": source["candidate"].prompts,
+            "source-sealed": source["sealed"].prompts,
+            "historical-candidate-diagnostic": diagnostic_prompts,
+        },
+        label="Lexical continuation historical isolation",
+    )
+
+    corpus_digest = _sha256(corpus_sha256, "corpus_sha256")
+    tokenizer_digest = _sha256(tokenizer_json_sha256, "tokenizer_json_sha256")
+    tokenizer_json = tokenizer_root / "tokenizer.json"
+    if not tokenizer_json.is_file() or _file_sha256(tokenizer_json) != tokenizer_digest:
+        raise ContinuationSplitPreparationError("Pinned tokenizer JSON hash changed.")
+    records = _load_corpus(
+        corpus,
+        expected_sha256=corpus_digest,
+        expected_line_count=corpus_line_count,
+    )
+    tokenizer = tokenizer_loader(tokenizer_root)
+    excluded = tuple(
+        [
+            *(prompt for split in source.values() for prompt in split.prompts),
+            *diagnostic_prompts,
+        ]
+    )
+    fresh_candidate, selection_stats = _select_fresh_candidate(
+        records,
+        tokenizer,
+        excluded_prompts=excluded,
+        max_prompt_tokens=max_prompt_tokens,
+    )
+
+    fit_records = (*source["fit"].prompts, *source["candidate"].prompts)
+    output_records = {
+        "fit": fit_records,
+        "candidate": tuple(fresh_candidate),
+        "sealed": source["sealed"].prompts,
+    }
+    if {role: len(values) for role, values in output_records.items()} != (
+        LEXICAL_CONTINUATION_COUNTS
+    ):
+        raise ContinuationSplitPreparationError(
+            "Lexical continuation output counts do not match the sealed contract."
+        )
+    _assert_globally_disjoint(
+        output_records,
+        label="Lexical continuation active contract",
+    )
+    _assert_globally_disjoint(
+        {
+            **output_records,
+            "historical-candidate-diagnostic": diagnostic_prompts,
+        },
+        label="Lexical continuation diagnostic isolation",
+    )
+
+    source_fit_payloads = [dict(value.payload) for value in source["fit"].prompts]
+    exposed_candidate_payloads = [
+        dict(value.payload) for value in source["candidate"].prompts
+    ]
+    fresh_candidate_payloads = [dict(value.payload) for value in fresh_candidate]
+    component_hashes = {
+        "prior_fit_training_replay": _component_sha256(source_fit_payloads),
+        "exposed_prior_candidate_training_only": _component_sha256(
+            exposed_candidate_payloads
+        ),
+        "fresh_candidate": _component_sha256(fresh_candidate_payloads),
+        "reused_locked_sealed": _component_sha256(
+            [dict(value.payload) for value in source["sealed"].prompts]
+        ),
+        "historical_candidate_diagnostic": _component_sha256(
+            [dict(value.payload) for value in diagnostic_prompts]
+        ),
+    }
+    split_payloads = {
+        "fit": _split_payload(
+            "fit",
+            [*source_fit_payloads, *exposed_candidate_payloads],
+            original_hashes=expected_source,
+            corpus_sha256=corpus_digest,
+            corpus_line_count=corpus_line_count,
+            tokenizer_sha256=tokenizer_digest,
+            components=(
+                {
+                    "name": "prior-fit-training-replay",
+                    "count": RESIDUAL_ATTENTION_COUNTS["fit"],
+                    "prompt_manifest_sha256": component_hashes[
+                        "prior_fit_training_replay"
+                    ],
+                },
+                {
+                    "name": "exposed-prior-candidate-training-only",
+                    "count": RESIDUAL_ATTENTION_COUNTS["candidate"],
+                    "prompt_manifest_sha256": component_hashes[
+                        "exposed_prior_candidate_training_only"
+                    ],
+                },
+            ),
+            selection_schema=LEXICAL_CONTINUATION_SELECTION_SCHEMA,
+        ),
+        "candidate": _split_payload(
+            "candidate",
+            fresh_candidate_payloads,
+            original_hashes=expected_source,
+            corpus_sha256=corpus_digest,
+            corpus_line_count=corpus_line_count,
+            tokenizer_sha256=tokenizer_digest,
+            components=(
+                {
+                    "name": "fresh-lexical-continuation-candidate",
+                    "count": LEXICAL_CONTINUATION_COUNTS["candidate"],
+                    "prompt_manifest_sha256": component_hashes["fresh_candidate"],
+                },
+            ),
+            selection_schema=LEXICAL_CONTINUATION_SELECTION_SCHEMA,
+        ),
+    }
+
+    output.mkdir(parents=True)
+    artifact_bindings: dict[str, dict[str, Any]] = {}
+    for role in ("fit", "candidate"):
+        filename = f"{role}.json"
+        path = output / filename
+        _write_json_exclusive(path, split_payloads[role])
+        artifact_bindings[role] = {
+            "filename": filename,
+            "sha256": _file_sha256(path),
+            "prompt_count": LEXICAL_CONTINUATION_COUNTS[role],
+            "split_content_sha256": split_payloads[role]["split_content_sha256"],
+            "source_artifact_reused": False,
+        }
+    artifact_bindings["sealed"] = {
+        "filename": "sealed.json",
+        "sha256": expected_source["sealed"],
+        "prompt_count": LEXICAL_CONTINUATION_COUNTS["sealed"],
+        "source_artifact_reused": True,
+        "copied_into_output": False,
+    }
+    artifact_bindings["historical_candidate_diagnostic"] = {
+        "filename": "old_candidate_diagnostic.json",
+        "sha256": diagnostic_sha,
+        "prompt_count": ORIGINAL_COUNTS["candidate"],
+        "usage": "diagnostic-only",
+        "copied_into_output": False,
+    }
+
+    manifest_payload = _content_bound(
+        {
+            "schema": LEXICAL_CONTINUATION_MANIFEST_SCHEMA,
+            "source_residual_attention_split_sha256s": dict(expected_source),
+            "old_candidate_diagnostic_sha256": diagnostic_sha,
+            "corpus": {
+                "sha256": corpus_digest,
+                "line_count": corpus_line_count,
+                "unique_text_count": len(records),
+            },
+            "tokenizer_json_sha256": tokenizer_digest,
+            "builder_sha256": _file_sha256(Path(__file__).resolve()),
+            "counts": {
+                "source": dict(RESIDUAL_ATTENTION_COUNTS),
+                "active_output": dict(LEXICAL_CONTINUATION_COUNTS),
+                "fresh_candidate": LEXICAL_CONTINUATION_COUNTS["candidate"],
+                "historical_candidate_diagnostic": ORIGINAL_COUNTS["candidate"],
+            },
+            "components": component_hashes,
+            "artifacts": artifact_bindings,
+            "selection": {
+                "schema": LEXICAL_CONTINUATION_SELECTION_SCHEMA,
+                "global_order": "source_prompt_sha256, then source_line_number",
+                "max_prompt_tokens": max_prompt_tokens,
+                "minimum_meaningful_prefix_tokens": (
+                    MINIMUM_MEANINGFUL_PREFIX_TOKENS
+                ),
+                "statistics": selection_stats,
+            },
+            "contract": {
+                "behavior_fit": "prior fit 96 + exposed prior candidate 24",
+                "active_candidate": "24 entirely fresh prompts",
+                "sealed": "exact prior locked 32-prompt artifact reused by hash",
+                "historical_candidate": "diagnostic-only",
+                "new_candidate_excludes_all_historical_prompts_and_prefixes": True,
+                "cross_active_split_exact_prompt_overlap": 0,
+                "cross_active_split_meaningful_prefix_overlap": 0,
+                "prior_candidate_eligible_only_for_training": True,
+                "sealed_artifact_copied_or_rewritten": False,
+            },
+            "model_access": {
+                "model_class_imported": False,
+                "model_created": False,
+                "model_weights_loaded": False,
+                "model_forward_calls": 0,
+                "tokenizer_loaded": True,
+            },
+        },
+        "manifest_content_sha256",
+    )
+    manifest_name = "lexical_continuation_manifest.json"
+    manifest_path = output / manifest_name
+    _write_json_exclusive(manifest_path, manifest_payload)
+    report = _content_bound(
+        {
+            "schema": LEXICAL_CONTINUATION_BUILD_SCHEMA,
+            "artifacts": artifact_bindings,
+            "lexical_continuation_manifest": {
+                "filename": manifest_name,
+                "sha256": _file_sha256(manifest_path),
+                "manifest_content_sha256": manifest_payload[
+                    "manifest_content_sha256"
+                ],
+            },
+            "model_accessed": False,
+            "model_class_imported": False,
+            "model_created": False,
+            "model_weights_loaded": False,
+            "model_forward_calls": 0,
+            "tokenizer_loaded": True,
+            "training_launched": False,
+            "checkpoint_created": False,
+            "sealed_artifact_reused_without_copy": True,
             "ready_for_preregistration_binding": True,
         },
         "build_content_sha256",

@@ -89,6 +89,12 @@ class _StrictToyTarget(nn.Module):
         self.lm_head = nn.Linear(8, 19, bias=False)
         self.internal_output_request_count = 0
 
+    def get_input_embeddings(self) -> nn.Embedding:
+        return self.embedding
+
+    def get_output_embeddings(self) -> nn.Linear:
+        return self.lm_head
+
     def forward(
         self,
         input_ids: Tensor,
@@ -213,7 +219,11 @@ def _domain(split: str, prompts: list[list[int]], artifact: str):
     )
 
 
-def _transaction(model: _StrictToyTarget):
+def _transaction(
+    model: _StrictToyTarget,
+    *,
+    lexical_rank: int | None = None,
+):
     return install_exact_target_compiler_transaction(
         model,
         exact_unique_parameters=exact_unique_parameter_count(model),
@@ -223,6 +233,7 @@ def _transaction(model: _StrictToyTarget):
         swiglu_rank=2,
         layout=_layout(),
         initialization_seed=31,
+        lexical_rank=lexical_rank,
     )
 
 
@@ -402,12 +413,18 @@ def test_divergence_curriculum_and_staged_factor_rates_are_exact() -> None:
         qk_learning_rate_scale=0.5,
         vo_learning_rate_scale=1.0,
         gud_learning_rate_scale=0.5,
+        lexical_embedding_learning_rate_scale=0.25,
+        lexical_head_learning_rate_scale=1.5,
         right_factor_learning_rate_scale=0.25,
+        lexical_right_factor_learning_rate_scale=0.2,
         learning_rate_decay_step_1=8,
         learning_rate_decay_scale_1=2.0 / 3.0,
         learning_rate_decay_step_2=20,
         learning_rate_decay_scale_2=0.5,
-        gud_frozen_steps=8,
+        qkvo_frozen_steps=8,
+        gud_frozen_steps=20,
+        lexical_embedding_frozen_steps=20,
+        lexical_head_frozen_steps=0,
     )
     parent = (1, 2, 3, 4, 5, 6, 7, 8)
     child = (1, 9, 9, 9, 9, 9, 9, 9)
@@ -430,6 +447,52 @@ def test_divergence_curriculum_and_staged_factor_rates_are_exact() -> None:
     assert behavior_distillation._factor_learning_rate(
         "gud.gate_left", schedule, step=21
     ) == pytest.approx(5e-5)
+    assert behavior_distillation._factor_learning_rate(
+        "lexical.embedding_right", schedule, step=1
+    ) == pytest.approx(1.5e-5)
+    assert behavior_distillation._factor_learning_rate(
+        "lexical.lm_head_left", schedule, step=1
+    ) == pytest.approx(4.5e-4)
+    assert (
+        behavior_distillation._factor_frozen("lexical.lm_head_left", schedule, step=1)
+        is False
+    )
+    assert behavior_distillation._factor_frozen("qkvo.q_left", schedule, step=8) is True
+    assert (
+        behavior_distillation._factor_frozen("qkvo.q_left", schedule, step=9) is False
+    )
+    assert (
+        behavior_distillation._factor_frozen("gud.gate_left", schedule, step=20) is True
+    )
+    assert (
+        behavior_distillation._factor_frozen(
+            "lexical.embedding_left", schedule, step=21
+        )
+        is False
+    )
+    three_decay = BehaviorDistillationSchedule(
+        steps=48,
+        learning_rate=1e-4,
+        learning_rate_decay_step_1=8,
+        learning_rate_decay_scale_1=0.75,
+        learning_rate_decay_step_2=24,
+        learning_rate_decay_scale_2=2.0 / 3.0,
+        learning_rate_decay_step_3=40,
+        learning_rate_decay_scale_3=0.5,
+    )
+    assert behavior_distillation._factor_learning_rate(
+        "lexical.lm_head_left", three_decay, step=1
+    ) == pytest.approx(1e-4)
+    assert behavior_distillation._factor_learning_rate(
+        "lexical.lm_head_left", three_decay, step=9
+    ) == pytest.approx(7.5e-5)
+    assert behavior_distillation._factor_learning_rate(
+        "lexical.lm_head_left", three_decay, step=25
+    ) == pytest.approx(5e-5)
+    assert behavior_distillation._factor_learning_rate(
+        "lexical.lm_head_left", three_decay, step=41
+    ) == pytest.approx(2.5e-5)
+    assert three_decay.as_dict()["learning_rate_decay_step_3"] == 40
     legacy_schedule = BehaviorDistillationSchedule(
         steps=2,
         learning_rate=1e-3,
@@ -501,7 +564,19 @@ def test_factor_state_capture_restore_is_exact_and_factor_only() -> None:
     state = capture_target_native_factor_state(transaction)
     assert len(state.names) == 14
     assert all(name.startswith(("qkvo.", "gud.")) for name in state.names)
-    assert state.as_manifest()["native_child_state_included"] is False
+    manifest = state.as_manifest()
+    assert manifest["schema"] == behavior_distillation.BEHAVIOR_FACTOR_PACK_SCHEMA
+    assert "lexical_rank" not in manifest
+    assert set(manifest) == {
+        "schema",
+        "factor_count",
+        "factors",
+        "factor_state_sha256",
+        "parent_state_included",
+        "native_child_state_included",
+        "optimizer_state_included",
+    }
+    assert manifest["native_child_state_included"] is False
     with torch.no_grad():
         transaction.qkvo_handle.adapter_registry.q_left.add_(0.125)
         transaction.swiglu_handle.registry.gate_left.sub_(0.25)
@@ -537,6 +612,110 @@ def test_factor_only_payload_restores_exact_continuation_and_rejects_tamper() ->
         match="shape/dtype/hash authentication",
     ):
         restore_target_native_factor_payload(transaction, tampered)
+
+    extra_field = selected.as_payload()
+    extra_field["lexical_rank"] = 2
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="exactly the schema fields",
+    ):
+        restore_target_native_factor_payload(transaction, extra_field)
+    transaction.rollback()
+
+
+def test_v1_pack_partially_restores_combined_transaction_without_touching_lexical() -> (
+    None
+):
+    torch.manual_seed(110)
+    source_model = _StrictToyTarget()
+    source_transaction = _transaction(source_model)
+    with torch.no_grad():
+        for index, (_name, value) in enumerate(
+            behavior_distillation._factor_parameters(source_transaction)
+        ):
+            value.add_(float(index + 1) / 1000.0)
+    source = capture_target_native_factor_state(source_transaction)
+    assert source.schema == behavior_distillation.BEHAVIOR_FACTOR_PACK_SCHEMA
+    assert len(source.names) == 14
+
+    combined_model = _StrictToyTarget()
+    combined_transaction = _transaction(combined_model, lexical_rank=2)
+    lexical_registry = combined_transaction.lexical_handle.registry
+    lexical_before = {
+        name: value.detach().clone()
+        for name, value in lexical_registry.named_parameters(recurse=False)
+    }
+    restored = restore_target_native_factor_payload(
+        combined_transaction, source.as_payload()
+    )
+    assert restored.schema == behavior_distillation.BEHAVIOR_FACTOR_PACK_V2_SCHEMA
+    assert restored.lexical_rank == 2
+    assert len(restored.names) == 18
+    assert restored.factor_state_sha256 != source.factor_state_sha256
+    combined_entries = dict(
+        behavior_distillation._factor_parameters(combined_transaction)
+    )
+    for name, value in zip(source.names, source.tensors, strict=True):
+        assert torch.equal(combined_entries[name].detach().cpu(), value)
+    assert all(
+        torch.equal(value.detach(), lexical_before[name])
+        for name, value in lexical_registry.named_parameters(recurse=False)
+    )
+
+    with torch.no_grad():
+        lexical_registry.embedding_left.reshape(-1)[0] = 0.25
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="untouched exact-zero lexical initialization",
+    ):
+        restore_target_native_factor_payload(combined_transaction, source.as_payload())
+    combined_transaction.rollback()
+    source_transaction.rollback()
+
+
+def test_v2_pack_restores_all_18_factors_and_binds_lexical_rank() -> None:
+    torch.manual_seed(111)
+    model = _StrictToyTarget()
+    transaction = _transaction(model, lexical_rank=3)
+    entries = behavior_distillation._factor_parameters(transaction)
+    with torch.no_grad():
+        for index, (_name, value) in enumerate(entries):
+            value.add_(float(index + 1) / 2000.0)
+    selected = capture_target_native_factor_state(transaction)
+    payload = selected.as_payload()
+    assert selected.schema == behavior_distillation.BEHAVIOR_FACTOR_PACK_V2_SCHEMA
+    assert selected.lexical_rank == 3
+    assert payload["schema"] == behavior_distillation.BEHAVIOR_FACTOR_PACK_V2_SCHEMA
+    assert payload["factor_count"] == 18
+    assert payload["lexical_rank"] == 3
+    assert {name for name in selected.names if name.startswith("lexical.")} == {
+        "lexical.embedding_left",
+        "lexical.embedding_right",
+        "lexical.lm_head_left",
+        "lexical.lm_head_right",
+    }
+
+    with torch.no_grad():
+        for _name, value in entries:
+            value.zero_()
+    restored = restore_target_native_factor_payload(transaction, payload)
+    assert restored.factor_state_sha256 == selected.factor_state_sha256
+    assert all(
+        torch.equal(actual.detach().cpu(), expected)
+        for (_name, actual), expected in zip(
+            behavior_distillation._factor_parameters(transaction),
+            selected.tensors,
+            strict=True,
+        )
+    )
+
+    wrong_rank = selected.as_payload()
+    wrong_rank["lexical_rank"] = 4
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="lexical rank",
+    ):
+        restore_target_native_factor_payload(transaction, wrong_rank)
     transaction.rollback()
 
 
@@ -713,6 +892,16 @@ def test_output_only_training_audits_all_factors_and_retains_step_zero() -> None
         == (initial_factor_payload["factor_state_sha256"])
     )
     assert (
+        evidence["source_factor_state_sha256"]
+        == (initial_factor_payload["factor_state_sha256"])
+    )
+    assert evidence["initial_factor_restore_mode"] == "full"
+    assert (
+        evidence["combined_step0_factor_state_sha256"]
+        == (initial_factor_payload["factor_state_sha256"])
+    )
+    assert evidence["lexical_initialization_unchanged"] is None
+    assert (
         evidence["training_audit"]["gradient_activation"][
             "every_qkvo_gud_factor_gradient_activated"
         ]
@@ -723,6 +912,99 @@ def test_output_only_training_audits_all_factors_and_retains_step_zero() -> None
     assert parent.internal_output_request_count == 0
     assert child.internal_output_request_count == 0
     transaction.rollback()
+
+
+def test_combined_training_restores_v1_then_audits_and_emits_v2_evidence() -> None:
+    torch.manual_seed(112)
+    source_model = _StrictToyTarget()
+    source_transaction = _transaction(source_model)
+    with torch.no_grad():
+        for index, value in enumerate(source_transaction.output_trainable_parameters()):
+            value.add_(float(index + 1) / 1000.0)
+    source_payload = capture_target_native_factor_state(source_transaction).as_payload()
+    source_sha = source_payload["factor_state_sha256"]
+
+    child = _StrictToyTarget()
+    parent = copy.deepcopy(child)
+    with torch.no_grad():
+        parent.lm_head.weight.copy_(torch.roll(parent.lm_head.weight, 4, dims=0))
+        parent.layers[1].self_attn.o_proj.weight.mul_(1.2)
+    transaction = _transaction(child, lexical_rank=2)
+    domains = {
+        "fit": _domain("fit", [[1, 2, 3], [4, 5, 6]], "a" * 64),
+        "calibration": _domain("calibration", [[7, 8], [9, 10]], "b" * 64),
+        "sealed": _domain("sealed", [[11, 12], [13, 14]], "c" * 64),
+    }
+    schedule = BehaviorDistillationSchedule(
+        steps=4,
+        learning_rate=0.03,
+        checkpoint_steps=(1, 2, 3),
+        fit_horizon=2,
+        evaluation_horizon=2,
+        fit_prompts_per_step=2,
+        qkvo_frozen_steps=1,
+        gud_frozen_steps=2,
+        lexical_embedding_frozen_steps=2,
+        lexical_head_frozen_steps=0,
+        top_k=3,
+        gradient_clip_norm=5.0,
+    )
+    result = train_target_native_behavior_distillation(
+        transaction,
+        parent,
+        domains,
+        schedule,
+        seed=13,
+        initial_factor_payload=source_payload,
+        optimizer_factory=lambda parameters: torch.optim.SGD(
+            parameters, lr=schedule.learning_rate
+        ),
+    )
+    audit = result.training_audit.gradient_activation
+    assert len(audit.factor_names) == 18
+    assert audit.complete is True
+    assert audit.qkvo_gud_complete is True
+    assert audit.lexical_complete is True
+    assert (
+        result.factor_pack.schema
+        == behavior_distillation.BEHAVIOR_FACTOR_PACK_V2_SCHEMA
+    )
+    assert result.factor_pack.lexical_rank == 2
+    assert result.factor_pack.as_manifest()["factor_count"] == 18
+    assert result.factor_pack.as_manifest()["lexical_rank"] == 2
+
+    evidence = result.evidence_payload()
+    combined_step0_sha = result.checkpoints[0].factor_state_sha256
+    assert evidence["source_factor_state_sha256"] == source_sha
+    assert evidence["initial_factor_state_sha256"] == source_sha
+    assert evidence["initial_factor_payload_schema"] == (
+        behavior_distillation.BEHAVIOR_FACTOR_PACK_SCHEMA
+    )
+    assert evidence["initial_factor_restore_mode"] == "qkvo-gud-partial"
+    assert evidence["combined_step0_factor_state_sha256"] == combined_step0_sha
+    assert combined_step0_sha != source_sha
+    assert evidence["lexical_initialization_state_sha256"]
+    assert evidence["lexical_initialization_unchanged"] is True
+    assert (
+        evidence["training_audit"]["gradient_activation"][
+            "every_qkvo_gud_factor_gradient_activated"
+        ]
+        is True
+    )
+    assert (
+        evidence["training_audit"]["gradient_activation"][
+            "every_lexical_factor_gradient_activated"
+        ]
+        is True
+    )
+    assert (
+        evidence["training_audit"]["gradient_activation"][
+            "every_combined_factor_gradient_activated"
+        ]
+        is True
+    )
+    transaction.rollback()
+    source_transaction.rollback()
 
 
 def test_disjointness_and_candidate_gate_keep_sealed_locked(monkeypatch) -> None:

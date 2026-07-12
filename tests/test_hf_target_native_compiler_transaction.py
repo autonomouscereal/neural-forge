@@ -7,6 +7,7 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
+import neural_forge.hf_progressive_target_bridge as target_bridge
 from neural_forge.hf_arch_layout import (
     AttentionLayout,
     DecoderBlockLayout,
@@ -18,6 +19,11 @@ from neural_forge.hf_arch_layout import (
     SERIAL_PRE_NORM_RESIDUAL,
 )
 from neural_forge.hf_dense_gqa_qkvo_residual_adapter import DenseGQASite
+from neural_forge.hf_dense_lexical_residual_adapter import (
+    DenseLexicalResidualEmbedding,
+    DenseLexicalResidualLMHead,
+    DenseLexicalResidualRegistry,
+)
 from neural_forge.hf_dense_swiglu_projection_residual_adapter import (
     DenseSwiGLUResidualProjection,
     SparseDenseSwiGLUProjectionResidualRegistry,
@@ -87,6 +93,12 @@ class _ToyTarget(nn.Module):
         for layer in self.layers:
             hidden = layer(hidden)
         return self.lm_head(self.norm(hidden))
+
+    def get_input_embeddings(self) -> nn.Module:
+        return self.embedding
+
+    def get_output_embeddings(self) -> nn.Module:
+        return self.lm_head
 
 
 def _layout() -> DecoderLayout:
@@ -202,6 +214,9 @@ def _activate(transaction: ExactTargetCompilerTransaction) -> None:
             )
         for role in ("gate", "up", "down"):
             getattr(transaction.swiglu_handle.registry, f"{role}_left").fill_(0.02)
+        if transaction.lexical_handle is not None:
+            transaction.lexical_handle.registry.embedding_left.fill_(0.01)
+            transaction.lexical_handle.registry.lm_head_left.fill_(0.012)
 
 
 def test_dense_swiglu_adapter_is_zero_identity_then_bakes_all_three_roles() -> None:
@@ -304,6 +319,250 @@ def test_combined_transaction_counts_temporary_state_and_publishes_exact_native(
     assert certificate.dense_swiglu_projection_count == 6
 
 
+def test_composite_lexical_transaction_counts_trains_and_publishes_exact_native() -> (
+    None
+):
+    torch.manual_seed(220)
+    model = _ToyTarget().eval()
+    layout = _layout()
+    inputs = torch.tensor([[1, 7, 11]])
+    baseline = model(inputs).detach().clone()
+    exact = exact_unique_parameter_count(model)
+    keys = tuple(sorted(model.state_dict()))
+    transaction = install_exact_target_compiler_transaction(
+        model,
+        exact_unique_parameters=exact,
+        qkvo_sites=(DenseGQASite(0, 0), DenseGQASite(1, 1)),
+        qkvo_rank=2,
+        swiglu_layer_indices=(0, 1),
+        swiglu_rank=2,
+        lexical_rank=2,
+        layout=layout,
+        initialization_seed=31,
+    )
+    assert transaction.lexical_handle is not None
+    assert torch.equal(model(inputs), baseline)
+    report = transaction.installation_report()
+    lexical_parameters = 2 * 2 * (19 + 8)
+    assert report["temporary_lexical_factor_parameters"] == lexical_parameters
+    assert report["dense_lexical_installation"]["rank"] == 2
+    assert report["role_complete_lexical_boundary"] is True
+    assert report["temporary_installed_parameters"] == (
+        exact + report["temporary_factor_parameters"]
+    )
+    assert exact_unique_parameter_count(model) == (
+        exact + report["temporary_factor_parameters"]
+    )
+    assert len(transaction.output_trainable_parameters()) == 18
+    scope = transaction.output_training_scope().as_dict()
+    assert scope["trainable_lexical_factor_parameters"] == lexical_parameters
+    assert scope["trainable_lexical_factor_tensor_count"] == 4
+    assert scope["role_complete_lexical_boundary"] is True
+
+    _activate(transaction)
+    live = model(inputs).detach().clone()
+    publication = transaction.bake_for_publication(_approval())
+    baked = model(inputs).detach().clone()
+    torch.testing.assert_close(baked, live, rtol=4e-5, atol=4e-5)
+    assert publication["dense_lexical_bake"]["affected_dense_matrix_count"] == 2
+    assert publication["published_lexical_adapter_parameter_count"] == 0
+    assert publication["role_complete_lexical_boundary"] is True
+    assert exact_unique_parameter_count(model) == exact
+    assert tuple(sorted(model.state_dict())) == keys
+    assert not any(
+        isinstance(
+            module,
+            (
+                DenseLexicalResidualEmbedding,
+                DenseLexicalResidualLMHead,
+                DenseLexicalResidualRegistry,
+            ),
+        )
+        for module in model.modules()
+    )
+
+
+def test_composite_success_bakes_lexical_then_qkvo_then_gud(monkeypatch) -> None:
+    model = _ToyTarget().eval()
+    transaction = install_exact_target_compiler_transaction(
+        model,
+        exact_unique_parameters=exact_unique_parameter_count(model),
+        qkvo_sites=(DenseGQASite(0, 0),),
+        qkvo_rank=1,
+        swiglu_layer_indices=(0,),
+        swiglu_rank=1,
+        lexical_rank=1,
+        layout=_layout(),
+    )
+    assert transaction.lexical_handle is not None
+    order: list[str] = []
+    lexical_bake = transaction.lexical_handle.bake_for_publication
+    qkvo_bake = transaction.qkvo_handle.bake_for_publication
+    gud_bake = transaction.swiglu_handle.bake_for_publication
+
+    def record_lexical_bake():
+        order.append("lexical")
+        return lexical_bake()
+
+    def record_qkvo_bake():
+        order.append("qkvo")
+        return qkvo_bake()
+
+    def record_gud_bake():
+        order.append("gud")
+        return gud_bake()
+
+    monkeypatch.setattr(
+        transaction.lexical_handle,
+        "bake_for_publication",
+        record_lexical_bake,
+    )
+    monkeypatch.setattr(
+        transaction.qkvo_handle,
+        "bake_for_publication",
+        record_qkvo_bake,
+    )
+    monkeypatch.setattr(
+        transaction.swiglu_handle,
+        "bake_for_publication",
+        record_gud_bake,
+    )
+
+    transaction.bake_for_publication(_approval())
+    assert order == ["lexical", "qkvo", "gud"]
+
+
+def test_composite_public_restore_unwinds_baked_handles_in_reverse_order(
+    monkeypatch,
+) -> None:
+    model = _ToyTarget().eval()
+    inputs = torch.tensor([[3, 8, 13]])
+    baseline = model(inputs).detach().clone()
+    exact = exact_unique_parameter_count(model)
+    keys = tuple(sorted(model.state_dict()))
+    transaction = install_exact_target_compiler_transaction(
+        model,
+        exact_unique_parameters=exact,
+        qkvo_sites=(DenseGQASite(0, 0),),
+        qkvo_rank=1,
+        swiglu_layer_indices=(0,),
+        swiglu_rank=1,
+        lexical_rank=1,
+        layout=_layout(),
+    )
+    assert transaction.lexical_handle is not None
+    _activate(transaction)
+    transaction.bake_for_publication(_approval())
+    order: list[str] = []
+    gud_restore = transaction.swiglu_handle.restore_prepublication_native
+    qkvo_restore = transaction.qkvo_handle.restore_prepublication_native
+    lexical_restore = transaction.lexical_handle.restore_prepublication_native
+
+    def record_gud_restore():
+        order.append("gud")
+        return gud_restore()
+
+    def record_qkvo_restore(*, expected_model_parameter_count=None):
+        order.append("qkvo")
+        return qkvo_restore(
+            expected_model_parameter_count=expected_model_parameter_count
+        )
+
+    def record_lexical_restore(*, expected_model_parameter_count=None):
+        order.append("lexical")
+        return lexical_restore(
+            expected_model_parameter_count=expected_model_parameter_count
+        )
+
+    monkeypatch.setattr(
+        transaction.swiglu_handle,
+        "restore_prepublication_native",
+        record_gud_restore,
+    )
+    monkeypatch.setattr(
+        transaction.qkvo_handle,
+        "restore_prepublication_native",
+        record_qkvo_restore,
+    )
+    monkeypatch.setattr(
+        transaction.lexical_handle,
+        "restore_prepublication_native",
+        record_lexical_restore,
+    )
+
+    restored = transaction.restore_prepublication_native()
+    assert order == ["gud", "qkvo", "lexical"]
+    assert restored.as_dict() == transaction.native_before.as_dict()
+    assert transaction.publication_report is None
+    assert exact_unique_parameter_count(model) == exact
+    assert tuple(sorted(model.state_dict())) == keys
+    assert torch.equal(model(inputs), baseline)
+
+
+def test_composite_publication_report_failure_restores_all_baked_handles(
+    monkeypatch,
+) -> None:
+    model = _ToyTarget().eval()
+    inputs = torch.tensor([[4, 9]])
+    baseline = model(inputs).detach().clone()
+    exact = exact_unique_parameter_count(model)
+    keys = tuple(sorted(model.state_dict()))
+    transaction = install_exact_target_compiler_transaction(
+        model,
+        exact_unique_parameters=exact,
+        qkvo_sites=(DenseGQASite(0, 0),),
+        qkvo_rank=1,
+        swiglu_layer_indices=(0,),
+        swiglu_rank=1,
+        lexical_rank=1,
+        layout=_layout(),
+    )
+    _activate(transaction)
+
+    def fail_gate_report(_self):
+        raise RuntimeError("synthetic outer publication report failure")
+
+    monkeypatch.setattr(ExternalBehaviorGateReceipt, "as_dict", fail_gate_report)
+    with pytest.raises(RuntimeError, match="outer publication report failure"):
+        transaction.bake_for_publication(_approval())
+
+    assert transaction.publication_report is None
+    assert exact_unique_parameter_count(model) == exact
+    assert tuple(sorted(model.state_dict())) == keys
+    assert torch.equal(model(inputs), baseline)
+
+
+def test_context_manager_restores_baked_transaction_after_later_save_failure() -> (
+    None
+):
+    model = _ToyTarget().eval()
+    inputs = torch.tensor([[5, 11]])
+    baseline = model(inputs).detach().clone()
+    exact = exact_unique_parameter_count(model)
+    keys = tuple(sorted(model.state_dict()))
+    transaction = install_exact_target_compiler_transaction(
+        model,
+        exact_unique_parameters=exact,
+        qkvo_sites=(DenseGQASite(0, 0),),
+        qkvo_rank=1,
+        swiglu_layer_indices=(0,),
+        swiglu_rank=1,
+        lexical_rank=1,
+        layout=_layout(),
+    )
+    _activate(transaction)
+
+    with pytest.raises(RuntimeError, match="synthetic artifact save failure"):
+        with transaction:
+            transaction.bake_for_publication(_approval())
+            raise RuntimeError("synthetic artifact save failure")
+
+    assert transaction.publication_report is None
+    assert exact_unique_parameter_count(model) == exact
+    assert tuple(sorted(model.state_dict())) == keys
+    assert torch.equal(model(inputs), baseline)
+
+
 def test_combined_rejection_rollback_is_bit_exact() -> None:
     torch.manual_seed(23)
     model = _ToyTarget().eval()
@@ -323,6 +582,30 @@ def test_combined_rejection_rollback_is_bit_exact() -> None:
     transaction.rollback()
     assert torch.equal(model(inputs), baseline)
     assert exact_unique_parameter_count(model) == exact
+
+
+def test_composite_lexical_rejection_rolls_back_in_reverse_install_order() -> None:
+    torch.manual_seed(230)
+    model = _ToyTarget().eval()
+    inputs = torch.tensor([[2, 9]])
+    baseline = model(inputs).detach().clone()
+    exact = exact_unique_parameter_count(model)
+    keys = tuple(sorted(model.state_dict()))
+    transaction = install_exact_target_compiler_transaction(
+        model,
+        exact_unique_parameters=exact,
+        qkvo_sites=(DenseGQASite(0, 1),),
+        qkvo_rank=1,
+        swiglu_layer_indices=(1,),
+        swiglu_rank=1,
+        lexical_rank=1,
+        layout=_layout(),
+    )
+    _activate(transaction)
+    transaction.rollback()
+    assert torch.equal(model(inputs), baseline)
+    assert exact_unique_parameter_count(model) == exact
+    assert tuple(sorted(model.state_dict())) == keys
 
 
 def test_gate_rejection_does_not_mutate_live_transaction() -> None:
@@ -376,6 +659,109 @@ def test_late_bake_failure_restores_native_child_atomically(monkeypatch) -> None
     assert torch.equal(model(inputs), baseline)
 
 
+def test_lexical_then_qkvo_bake_failure_restores_all_three_operators(
+    monkeypatch,
+) -> None:
+    torch.manual_seed(240)
+    model = _ToyTarget().eval()
+    inputs = torch.tensor([[5, 10]])
+    baseline = model(inputs).detach().clone()
+    exact = exact_unique_parameter_count(model)
+    keys = tuple(sorted(model.state_dict()))
+    transaction = install_exact_target_compiler_transaction(
+        model,
+        exact_unique_parameters=exact,
+        qkvo_sites=(DenseGQASite(1, 0),),
+        qkvo_rank=1,
+        swiglu_layer_indices=(0,),
+        swiglu_rank=1,
+        lexical_rank=1,
+        layout=_layout(),
+    )
+    assert transaction.lexical_handle is not None
+    _activate(transaction)
+
+    def fail_after_lexical_and_qkvo_bake():
+        raise RuntimeError("synthetic failure after lexical and qkvo bake")
+
+    monkeypatch.setattr(
+        transaction.swiglu_handle,
+        "bake_for_publication",
+        fail_after_lexical_and_qkvo_bake,
+    )
+    with pytest.raises(RuntimeError, match="after lexical and qkvo bake"):
+        transaction.bake_for_publication(_approval())
+    assert exact_unique_parameter_count(model) == exact
+    assert tuple(sorted(model.state_dict())) == keys
+    assert torch.equal(model(inputs), baseline)
+
+
+def test_lexical_install_failure_unwinds_qkvo_and_gud(monkeypatch) -> None:
+    torch.manual_seed(250)
+    model = _ToyTarget().eval()
+    inputs = torch.tensor([[6, 12]])
+    baseline = model(inputs).detach().clone()
+    exact = exact_unique_parameter_count(model)
+    keys = tuple(sorted(model.state_dict()))
+
+    def fail_lexical_install(*_args, **_kwargs):
+        raise RuntimeError("synthetic lexical installation failure")
+
+    monkeypatch.setattr(
+        target_bridge,
+        "install_dense_lexical_residual_adapter",
+        fail_lexical_install,
+    )
+    with pytest.raises(RuntimeError, match="lexical installation failure"):
+        install_exact_target_compiler_transaction(
+            model,
+            exact_unique_parameters=exact,
+            qkvo_sites=(DenseGQASite(0, 0),),
+            qkvo_rank=1,
+            swiglu_layer_indices=(0,),
+            swiglu_rank=1,
+            lexical_rank=1,
+            layout=_layout(),
+        )
+    assert exact_unique_parameter_count(model) == exact
+    assert tuple(sorted(model.state_dict())) == keys
+    assert torch.equal(model(inputs), baseline)
+
+
+def test_composite_installation_report_failure_unwinds_every_handle(
+    monkeypatch,
+) -> None:
+    torch.manual_seed(260)
+    model = _ToyTarget().eval()
+    inputs = torch.tensor([[7, 13]])
+    baseline = model(inputs).detach().clone()
+    exact = exact_unique_parameter_count(model)
+    keys = tuple(sorted(model.state_dict()))
+
+    def fail_report(_self):
+        raise RuntimeError("synthetic composite report failure")
+
+    monkeypatch.setattr(
+        ExactTargetCompilerTransaction,
+        "installation_report",
+        fail_report,
+    )
+    with pytest.raises(RuntimeError, match="composite report failure"):
+        install_exact_target_compiler_transaction(
+            model,
+            exact_unique_parameters=exact,
+            qkvo_sites=(DenseGQASite(0, 0),),
+            qkvo_rank=1,
+            swiglu_layer_indices=(0,),
+            swiglu_rank=1,
+            lexical_rank=1,
+            layout=_layout(),
+        )
+    assert exact_unique_parameter_count(model) == exact
+    assert tuple(sorted(model.state_dict())) == keys
+    assert torch.equal(model(inputs), baseline)
+
+
 @dataclass(frozen=True)
 class _AcceptedCompilerReport:
     count: int
@@ -414,9 +800,11 @@ def test_parent_compiler_result_enters_full_target_native_transaction() -> None:
         qkvo_rank=1,
         swiglu_layer_indices=(0,),
         swiglu_rank=1,
+        lexical_rank=1,
         layout=_layout(),
     )
     assert transaction.parent_compiler_report_sha256 is not None
+    assert transaction.lexical_handle is not None
     transaction.rollback()
 
 

@@ -240,30 +240,81 @@ factor-state SHA-256
 It contains no parent, native child, optimizer state, activation, or hidden
 state.
 
+### Residual-attention continuation result
+
+The preregistered continuation restored that exact selected state, loaded the
+same compiled child from the authenticated shared cache, and completed all 32
+scheduled steps on the real Qwen parent and exact-size child. It was rejected
+by the fit gate, rolled the child back exactly, kept the sealed split locked,
+and wrote no model checkpoint.
+
+- run:
+  `/mnt/ai_data/neural-forge/runs/qwen_exact_target_native_stage1_step16_residual_attention_continuation_20260712`;
+- report SHA-256:
+  `cc261ee91c20235e19633ce8627b634dd80af9e8dd4058fd584dafbca834d9c4`;
+- selected checkpoint: continuation step 24 from inherited step 0;
+- candidate first-action agreement: `24/192 -> 32/192`
+  (`12.5% -> 16.6667%`), a `33.3%` relative gain;
+- candidate longest-common-prefix tokens: `24/192 -> 31/192`
+  (`12.5% -> 16.1458%`), a `29.2%` relative gain;
+- parent-action mean log probability: `-6.7136 -> -6.3533`;
+- repetition excess: `0.7760 -> 0.515625`, a `33.6%` reduction;
+- adjacent-repeat excess: `0.9762 -> 0.64881`, a `33.5%` reduction;
+- exact candidate rollouts remained `0/24`, and LCP-at-least-four remained
+  `0/24`;
+- parent-action mean rank regressed `2,908.9 -> 4,744.7`, and top-5 agreement
+  moved `0.2917 -> 0.2813`;
+- all 14 QKVO/Gate/Up/Down factor tensors again received finite nonzero
+  gradients; exact rollback passed.
+
+The selected continuation evidence is preserved as
+`rejected_factor_pack.pt` (file SHA-256
+`ccda13cf9462228b729c5b8f54be73206a89a8769de35d4c57e63f34406c4612`,
+factor-state SHA-256
+`dff1e77fa0d769f0fca2932700b127b1367dd7060efd410876393bdbca69fc0d`).
+This is meaningful residual-attention progress, but not a promoted standalone
+child. The simultaneous action/LCP/repetition gains and rank/top-5 regression
+support a narrower next test: retain the learned attention state and add a
+bakeable embedding/LM-head lexical residual to repair vocabulary ranking.
+
 ## Next ordered execution
 
-1. Reconstruct the exact authenticated structural base once, verify it against
-   the completed source report, and publish it to the shared content-addressed
-   compiler cache. Never recompile it for trainer-only changes.
-2. Restore the selected step-16 factor state before continuation step zero; do
-   not restart from zero factors and do not retain/reconstruct optimizer state.
-3. Run the staged 32-step residual-attention curriculum: parent-only horizon 4
-   warmup, then horizon 8 parent/child lanes focused at the first divergence;
-   lower Q/K and right-factor rates, freeze Gate/Up/Down for eight steps, and
-   penalize only teacher-relative repetition excess.
-4. Use 96 fit prompts (24 source replay + 72 fresh), 24 entirely fresh candidate
-   prompts, and 32 sealed prompts. The old candidate remains diagnostic-only.
-   A checkpoint is ineligible if any repetition diagnostic worsens from the
-   continuation start, even if one exact rollout improves.
-5. On rejection, retain only factor/report evidence and restore the child. On
-   acceptance, bake, save once, reload fresh, certify the exact native state,
-   and run broad parent-pass retention.
+1. Require an authenticated hit from the already-published exact compiled-child
+   cache; do not reconstruct or recompile the structural base.
+2. Restore the selected continuation factor state
+   `dff1e77f...c69fc0d`; do not restart QKVO/Gate/Up/Down from zero and do not
+   reconstruct optimizer state.
+3. Add rank-32 bakeable lexical residual factors to the untied token embedding
+   and LM head inside the same atomic transaction. Start with an LM-head-only
+   ranking ablation, then rejoin QKVO at lower learning rates; unfreeze the
+   embedding and Gate/Up/Down only in the later phase.
+4. Train on the prior 96 fit prompts plus the now-exposed 24 candidate prompts.
+   Evaluate promotion on 24 entirely fresh candidate prompts. Reuse the exact
+   still-locked 32-prompt sealed split. Historical candidates are diagnostics,
+   never new promotion evidence.
+5. Select on free-running action/LCP/repetition behavior, not weight or hidden
+   similarity. On rejection, retain the strongest authenticated factor/report
+   evidence and restore exactly. On acceptance, bake all residuals, save once,
+   reload fresh, certify the exact native state, and run broad parent-pass
+   retention with no sidecar.
 6. Keep the p35 broad consumer as certification evidence for its already
    selected factor pack; do not make it another prerequisite method-development
    loop. Do not run the eight-site p34 or width-64 L1 branches ahead of the
    exact-target transaction.
 7. If the first stage passes, repeat the promoted transaction at `600,628,224`
    and then `134,515,008`, with a new sealed gate at every stage.
+
+The lexical continuation contains 18 temporary factor tensors: the inherited
+14 QKVO/Gate/Up/Down tensors plus four rank-32 embedding/LM-head tensors. The
+lexical portion is `9,822,208` FP32 parameters and the complete temporary
+transaction is `21,741,568` parameters. These are training-time factors only;
+the baked child retains exactly `1,410,567,168` parameters and no adapter
+state. The preregistered 48-step schedule is head-only through step 8,
+head+QKVO through step 24, then joint lexical/QKVO/Gate/Up/Down training, with
+a final half-rate consolidation after step 40. Acceptance requires the native
+baked child—not merely the live FP32 residual wrappers—to pass the same
+output/free-rollout behavior gates before its one allowed save and fresh
+reload certification.
 
 ## Truth boundary
 

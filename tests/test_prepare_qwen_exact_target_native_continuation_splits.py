@@ -168,6 +168,39 @@ def _prepare(inputs: dict[str, Any], output: Path) -> dict[str, Any]:
     return report
 
 
+def _prepare_lexical(
+    inputs: dict[str, Any],
+    source: Path,
+    output: Path,
+) -> dict[str, Any]:
+    source_hashes = {
+        role: _file_sha256(source / f"{role}.json")
+        for role in ("fit", "candidate", "sealed")
+    }
+    loader_calls: list[Path] = []
+
+    def load(path: Path) -> _Tokenizer:
+        loader_calls.append(path)
+        return inputs["tokenizer"]
+
+    report = builder.prepare_lexical_continuation_splits(
+        output_dir=output,
+        source_split_dir=source,
+        corpus_path=inputs["corpus"],
+        tokenizer_path=inputs["tokenizer_root"],
+        source_split_sha256s=source_hashes,
+        old_candidate_diagnostic_sha256=_file_sha256(
+            source / "old_candidate_diagnostic.json"
+        ),
+        corpus_sha256=inputs["corpus_sha256"],
+        corpus_line_count=inputs["corpus_count"],
+        tokenizer_json_sha256=inputs["tokenizer_sha256"],
+        tokenizer_loader=load,
+    )
+    assert loader_calls == [inputs["tokenizer_root"].resolve()]
+    return report
+
+
 def _prefixes(prompt: dict[str, Any]) -> set[tuple[int, ...]]:
     tokens = tuple(prompt["token_ids"])
     return {
@@ -441,6 +474,113 @@ def test_tamper_insufficient_corpus_and_existing_output_fail_closed(
         match="must not already exist",
     ):
         _prepare(inputs, output)
+
+
+def test_lexical_continuation_relabels_prior_candidate_and_reuses_sealed_exactly(
+    tmp_path: Path,
+) -> None:
+    inputs = _build_inputs(tmp_path / "inputs", fresh_count=260)
+    residual_attention = tmp_path / "residual-attention"
+    _prepare(inputs, residual_attention)
+    output = tmp_path / "lexical-continuation"
+    report = _prepare_lexical(inputs, residual_attention, output)
+
+    assert {path.name for path in output.iterdir()} == {
+        "fit.json",
+        "candidate.json",
+        "lexical_continuation_manifest.json",
+        "build_report.json",
+    }
+    prior_fit = json.loads(
+        (residual_attention / "fit.json").read_text(encoding="utf-8")
+    )
+    prior_candidate = json.loads(
+        (residual_attention / "candidate.json").read_text(encoding="utf-8")
+    )
+    prior_sealed_bytes = (residual_attention / "sealed.json").read_bytes()
+    fit = json.loads((output / "fit.json").read_text(encoding="utf-8"))
+    candidate = json.loads((output / "candidate.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (output / "lexical_continuation_manifest.json").read_text(encoding="utf-8")
+    )
+
+    assert len(fit["prompts"]) == 120
+    assert fit["prompts"][:96] == prior_fit["prompts"]
+    assert fit["prompts"][96:] == prior_candidate["prompts"]
+    assert len(candidate["prompts"]) == 24
+    assert not (output / "sealed.json").exists()
+    assert (residual_attention / "sealed.json").read_bytes() == prior_sealed_bytes
+    assert manifest["artifacts"]["sealed"] == {
+        "copied_into_output": False,
+        "filename": "sealed.json",
+        "prompt_count": 32,
+        "sha256": _file_sha256(residual_attention / "sealed.json"),
+        "source_artifact_reused": True,
+    }
+    assert manifest["contract"]["prior_candidate_eligible_only_for_training"] is True
+    assert manifest["contract"]["sealed_artifact_copied_or_rewritten"] is False
+    assert report["sealed_artifact_reused_without_copy"] is True
+
+    historical_prompts: list[dict[str, Any]] = []
+    for name in ("fit", "candidate", "sealed"):
+        historical_prompts.extend(
+            json.loads(
+                (residual_attention / f"{name}.json").read_text(encoding="utf-8")
+            )["prompts"]
+        )
+    historical_prompts.extend(
+        json.loads(
+            (residual_attention / "old_candidate_diagnostic.json").read_text(
+                encoding="utf-8"
+            )
+        )["prompts"]
+    )
+    historical_ids = {value["prompt_id"] for value in historical_prompts}
+    historical_prefixes = {
+        prefix for value in historical_prompts for prefix in _prefixes(value)
+    }
+    for prompt in candidate["prompts"]:
+        assert prompt["prompt_id"] not in historical_ids
+        assert not (_prefixes(prompt) & historical_prefixes)
+
+
+def test_lexical_continuation_is_deterministic_and_fails_closed_on_source_tamper(
+    tmp_path: Path,
+) -> None:
+    inputs = _build_inputs(tmp_path / "inputs", fresh_count=260)
+    residual_attention = tmp_path / "residual-attention"
+    _prepare(inputs, residual_attention)
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first_report = _prepare_lexical(inputs, residual_attention, first)
+    second_report = _prepare_lexical(inputs, residual_attention, second)
+    assert first_report == second_report
+    for path in first.iterdir():
+        assert path.read_bytes() == (second / path.name).read_bytes()
+
+    source_hashes = {
+        role: _file_sha256(residual_attention / f"{role}.json")
+        for role in ("fit", "candidate", "sealed")
+    }
+    with pytest.raises(
+        builder.ContinuationSplitPreparationError,
+        match="Original exact sealed split hash changed",
+    ):
+        builder.prepare_lexical_continuation_splits(
+            output_dir=tmp_path / "tampered",
+            source_split_dir=residual_attention,
+            corpus_path=inputs["corpus"],
+            tokenizer_path=inputs["tokenizer_root"],
+            source_split_sha256s={**source_hashes, "sealed": "0" * 64},
+            old_candidate_diagnostic_sha256=_file_sha256(
+                residual_attention / "old_candidate_diagnostic.json"
+            ),
+            corpus_sha256=inputs["corpus_sha256"],
+            corpus_line_count=inputs["corpus_count"],
+            tokenizer_json_sha256=inputs["tokenizer_sha256"],
+            tokenizer_loader=lambda _path: inputs["tokenizer"],
+        )
+    assert not (tmp_path / "tampered").exists()
 
 
 def test_builder_source_has_no_runner_trainer_or_model_dependency() -> None:

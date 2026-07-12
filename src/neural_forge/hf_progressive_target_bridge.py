@@ -40,6 +40,11 @@ from neural_forge.hf_dense_gqa_qkvo_residual_adapter import (
     SparseDenseGQAQKVOResidualRegistry,
     install_dense_gqa_qkvo_residual_adapter,
 )
+from neural_forge.hf_dense_lexical_residual_adapter import (
+    DenseLexicalResidualError,
+    InstalledDenseLexicalResidualAdapter,
+    install_dense_lexical_residual_adapter,
+)
 from neural_forge.hf_factorized_vocab import exact_parameter_report
 from neural_forge.hf_dense_swiglu_projection_residual_adapter import (
     DenseSwiGLUProjectionResidualTopologyError,
@@ -1000,7 +1005,7 @@ class ExactTargetQKVOPublicationSession:
 
 
 class ExactTargetCompilerOutputTrainingScope:
-    """Expose only combined QKVO and Gate/Up/Down factors to autograd."""
+    """Expose only combined QKVO, Gate/Up/Down, and lexical factors."""
 
     def __init__(self, transaction: ExactTargetCompilerTransaction) -> None:
         self.transaction = transaction
@@ -1097,12 +1102,22 @@ class ExactTargetCompilerOutputTrainingScope:
             "optimizer_state_is_temporary": True,
             "optimizer_state_published": False,
         }
+        if self.transaction.lexical_handle is not None:
+            payload.update(
+                {
+                    "trainable_lexical_factor_parameters": (
+                        self.transaction.lexical_handle.report.adapter_parameter_count
+                    ),
+                    "trainable_lexical_factor_tensor_count": 4,
+                    "role_complete_lexical_boundary": True,
+                }
+            )
         payload["training_scope_sha256"] = _canonical_sha256(payload)
         return payload
 
 
 class ExactTargetCompilerTransaction:
-    """Atomic target-native QKVO plus Gate/Up/Down compiler transaction."""
+    """Atomic target-native QKVO, Gate/Up/Down, and optional lexical transaction."""
 
     def __init__(
         self,
@@ -1115,6 +1130,7 @@ class ExactTargetCompilerTransaction:
         swiglu_handle: InstalledDenseSwiGLUProjectionResidualAdapter,
         stage: ProgressiveDenseGQAStage | None,
         parent_compiler_report_sha256: str | None,
+        lexical_handle: InstalledDenseLexicalResidualAdapter | None = None,
     ) -> None:
         self.model = model
         self.exact_unique_parameters = exact_unique_parameters
@@ -1122,12 +1138,17 @@ class ExactTargetCompilerTransaction:
         self.native_before = native_before
         self.qkvo_handle = qkvo_handle
         self.swiglu_handle = swiglu_handle
+        self.lexical_handle = lexical_handle
         self.stage = stage
         self.parent_compiler_report_sha256 = parent_compiler_report_sha256
         self.publication_report: dict[str, Any] | None = None
         self._zero_step_identity_at_installation = (
             qkvo_handle.adapter_registry.starts_as_exact_zero_correction
             and swiglu_handle.registry.starts_as_exact_zero_correction
+            and (
+                lexical_handle is None
+                or lexical_handle.registry.starts_as_exact_zero_correction
+            )
         )
         if not self._zero_step_identity_at_installation:
             raise ProgressiveTargetBridgeError(
@@ -1136,7 +1157,11 @@ class ExactTargetCompilerTransaction:
 
     @property
     def is_live(self) -> bool:
-        return self.qkvo_handle.is_applied and self.swiglu_handle.is_applied
+        return (
+            self.qkvo_handle.is_applied
+            and self.swiglu_handle.is_applied
+            and (self.lexical_handle is None or self.lexical_handle.is_applied)
+        )
 
     @property
     def starts_as_zero_step_identity(self) -> bool:
@@ -1145,19 +1170,26 @@ class ExactTargetCompilerTransaction:
     def assert_live(self) -> None:
         self.qkvo_handle.assert_live()
         self.swiglu_handle.assert_live()
+        if self.lexical_handle is not None:
+            self.lexical_handle.assert_live()
 
     def assert_structurally_live(self) -> None:
         """Validate transaction ownership while permitting poisoned factors."""
 
         self.qkvo_handle.assert_structurally_live()
         self.swiglu_handle.assert_structurally_live()
+        if self.lexical_handle is not None:
+            self.lexical_handle.assert_structurally_live()
 
     def output_trainable_parameters(self) -> tuple[nn.Parameter, ...]:
         self.assert_live()
-        return (
+        values = (
             *self.qkvo_handle.output_trainable_parameters(),
             *self.swiglu_handle.output_trainable_parameters(),
         )
+        if self.lexical_handle is not None:
+            values = (*values, *self.lexical_handle.output_trainable_parameters())
+        return values
 
     def output_training_scope(self) -> ExactTargetCompilerOutputTrainingScope:
         return ExactTargetCompilerOutputTrainingScope(self)
@@ -1166,7 +1198,12 @@ class ExactTargetCompilerTransaction:
         self.assert_live()
         qkvo = self.qkvo_handle.report
         swiglu = self.swiglu_handle.report
-        temporary = qkvo.adapter_parameter_count + swiglu.adapter_parameter_count
+        lexical = None if self.lexical_handle is None else self.lexical_handle.report
+        temporary = (
+            qkvo.adapter_parameter_count
+            + swiglu.adapter_parameter_count
+            + (0 if lexical is None else lexical.adapter_parameter_count)
+        )
         installed = exact_parameter_report(self.model)["unique_parameter_count"]
         if installed != self.exact_unique_parameters + temporary:
             raise ProgressiveTargetBridgeError(
@@ -1197,10 +1234,23 @@ class ExactTargetCompilerTransaction:
             "checkpoint_publication_allowed_while_installed": False,
             "capability_proven": False,
         }
+        if lexical is not None:
+            payload.update(
+                {
+                    "temporary_lexical_factor_parameters": (
+                        lexical.adapter_parameter_count
+                    ),
+                    "dense_lexical_installation": lexical.as_dict(),
+                    "role_complete_lexical_boundary": True,
+                    "lexical_embedding_and_lm_head_untied": True,
+                }
+            )
         payload["installation_transaction_sha256"] = _canonical_sha256(payload)
         return payload
 
     def rollback(self) -> NativeDenseGQACertificate:
+        if self.lexical_handle is not None and self.lexical_handle.is_applied:
+            self.lexical_handle.rollback()
         if self.qkvo_handle.is_applied:
             self.qkvo_handle.rollback()
         if self.swiglu_handle.is_applied:
@@ -1218,7 +1268,12 @@ class ExactTargetCompilerTransaction:
             )
         return restored
 
-    def _restore_failed_publication(self) -> None:
+    def _restore_failed_publication(self) -> NativeDenseGQACertificate:
+        # A lexical bake is first on the success path.  If it never completed,
+        # reject its live wrapper before the older transactions whose state-key
+        # topology formed its installation baseline.
+        if self.lexical_handle is not None and self.lexical_handle.is_applied:
+            self.lexical_handle.rollback()
         # QKVO is baked first.  If it is still live, reject it before removing
         # the MLP factors because its installation baseline includes them.
         if self.qkvo_handle.is_applied:
@@ -1234,6 +1289,13 @@ class ExactTargetCompilerTransaction:
                 self.qkvo_handle.restore_prepublication_native(
                     expected_model_parameter_count=self.exact_unique_parameters
                 )
+        # If lexical publication completed, restore it only after the older
+        # temporary operators have returned the model to its final native
+        # budget.  Its own installation baseline included both of them.
+        if self.lexical_handle is not None and self.lexical_handle.is_baked:
+            self.lexical_handle.restore_prepublication_native(
+                expected_model_parameter_count=self.exact_unique_parameters
+            )
         restored = certify_native_dense_gqa_target(
             self.model,
             exact_unique_parameters=self.exact_unique_parameters,
@@ -1245,6 +1307,14 @@ class ExactTargetCompilerTransaction:
             raise ProgressiveTargetPublicationError(
                 "Failed publication could not restore the exact native child."
             )
+        return restored
+
+    def restore_prepublication_native(self) -> NativeDenseGQACertificate:
+        """Undo live or already-baked factors after a later publication failure."""
+
+        restored = self._restore_failed_publication()
+        self.publication_report = None
+        return restored
 
     def bake_for_publication(
         self,
@@ -1257,6 +1327,11 @@ class ExactTargetCompilerTransaction:
         behavior_gate.require_publication_approval()
         self.assert_live()
         try:
+            lexical_bake = (
+                None
+                if self.lexical_handle is None
+                else self.lexical_handle.bake_for_publication()
+            )
             qkvo_bake = self.qkvo_handle.bake_for_publication()
             swiglu_bake = self.swiglu_handle.bake_for_publication()
             native_after = certify_native_dense_gqa_target(
@@ -1277,31 +1352,44 @@ class ExactTargetCompilerTransaction:
         except Exception:
             self._restore_failed_publication()
             raise
-        payload = {
-            "schema": EXACT_TARGET_COMPILER_TRANSACTION_PUBLICATION_SCHEMA,
-            "exact_unique_parameters": self.exact_unique_parameters,
-            "exact_budget_match": True,
-            "native_before": self.native_before.as_dict(),
-            "native_after": native_after.as_dict(),
-            "dense_qkvo_bake": qkvo_bake.as_dict(),
-            "dense_gate_up_down_bake": swiglu_bake.as_dict(),
-            "external_behavior_gate": behavior_gate.as_dict(),
-            "stage": None if self.stage is None else self.stage.as_dict(),
-            "parent_compiler_report_sha256": self.parent_compiler_report_sha256,
-            "published_adapter_parameter_count": 0,
-            "published_optimizer_parameter_count": 0,
-            "published_parent_runtime_reference_count": 0,
-            "published_source_sized_sidecar_parameter_count": 0,
-            "native_state_key_topology_restored": True,
-            "output_action_gate_required": True,
-            "free_running_rollout_gate_required": True,
-            "weight_or_activation_similarity_can_promote": False,
-            "behavior_gate_externally_attested": True,
-            "behavior_evidence_revalidated_by_this_module": False,
-            "capability_proven_by_this_module": False,
-            "save_reload_artifact_gate_still_required": True,
-        }
-        payload["publication_transaction_sha256"] = _canonical_sha256(payload)
+        try:
+            payload = {
+                "schema": EXACT_TARGET_COMPILER_TRANSACTION_PUBLICATION_SCHEMA,
+                "exact_unique_parameters": self.exact_unique_parameters,
+                "exact_budget_match": True,
+                "native_before": self.native_before.as_dict(),
+                "native_after": native_after.as_dict(),
+                "dense_qkvo_bake": qkvo_bake.as_dict(),
+                "dense_gate_up_down_bake": swiglu_bake.as_dict(),
+                "external_behavior_gate": behavior_gate.as_dict(),
+                "stage": None if self.stage is None else self.stage.as_dict(),
+                "parent_compiler_report_sha256": self.parent_compiler_report_sha256,
+                "published_adapter_parameter_count": 0,
+                "published_optimizer_parameter_count": 0,
+                "published_parent_runtime_reference_count": 0,
+                "published_source_sized_sidecar_parameter_count": 0,
+                "native_state_key_topology_restored": True,
+                "output_action_gate_required": True,
+                "free_running_rollout_gate_required": True,
+                "weight_or_activation_similarity_can_promote": False,
+                "behavior_gate_externally_attested": True,
+                "behavior_evidence_revalidated_by_this_module": False,
+                "capability_proven_by_this_module": False,
+                "save_reload_artifact_gate_still_required": True,
+            }
+            if lexical_bake is not None:
+                payload.update(
+                    {
+                        "dense_lexical_bake": lexical_bake.as_dict(),
+                        "published_lexical_adapter_parameter_count": 0,
+                        "native_lexical_state_key_topology_restored": True,
+                        "role_complete_lexical_boundary": True,
+                    }
+                )
+            payload["publication_transaction_sha256"] = _canonical_sha256(payload)
+        except Exception:
+            self._restore_failed_publication()
+            raise
         self.publication_report = payload
         return payload
 
@@ -1309,9 +1397,18 @@ class ExactTargetCompilerTransaction:
         return self
 
     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        failed = exc_type is not None
         del exc_type, exc, traceback
         if self.is_live:
             self.rollback()
+        elif failed and (
+            self.qkvo_handle.is_baked
+            or self.swiglu_handle.is_baked
+            or (
+                self.lexical_handle is not None and self.lexical_handle.is_baked
+            )
+        ):
+            self.restore_prepublication_native()
 
 
 def install_exact_target_qkvo_bridge(
@@ -1378,14 +1475,16 @@ def install_exact_target_compiler_transaction(
     qkvo_rank: int,
     swiglu_layer_indices: Sequence[int],
     swiglu_rank: int,
+    lexical_rank: int | None = None,
     layout: DecoderLayout | None = None,
     stage: ProgressiveDenseGQAStage | None = None,
     qkvo_owner_name: str = "dense_gqa_qkvo_residual_registry",
     swiglu_owner_name: str = "dense_swiglu_projection_residual_registry",
+    lexical_owner_name: str = "dense_lexical_residual_registry",
     initialization_seed: int = 0,
     parent_compiler_report_sha256: str | None = None,
 ) -> ExactTargetCompilerTransaction:
-    """Open one exact-budget QKVO + Gate/Up/Down compiler transaction."""
+    """Open one exact-budget target-native compiler-factor transaction."""
 
     expected = _positive_int(exact_unique_parameters, "exact_unique_parameters")
     if parent_compiler_report_sha256 is not None:
@@ -1438,7 +1537,42 @@ def install_exact_target_compiler_transaction(
             raise ProgressiveTargetBridgeError(
                 "Combined adapter installation disagrees with exact target accounting."
             )
+        lexical_handle = None
+        if lexical_rank is not None:
+            lexical_handle = install_dense_lexical_residual_adapter(
+                model,
+                rank=lexical_rank,
+                owner_name=lexical_owner_name,
+                initialization_seed=initialization_seed + 2,
+            )
+            if (
+                lexical_handle.report.model_parameter_count_before
+                != qkvo_handle.report.model_parameter_count_installed
+                or lexical_handle.report.model_parameter_count_installed
+                != (
+                    qkvo_handle.report.model_parameter_count_installed
+                    + lexical_handle.report.adapter_parameter_count
+                )
+            ):
+                raise ProgressiveTargetBridgeError(
+                    "Lexical adapter installation disagrees with combined accounting."
+                )
+    except DenseLexicalResidualError as error:
+        if "lexical_handle" in locals() and lexical_handle is not None:
+            if lexical_handle.is_applied:
+                lexical_handle.rollback()
+        if "qkvo_handle" in locals() and qkvo_handle.is_applied:
+            qkvo_handle.rollback()
+        if swiglu_handle.is_applied:
+            swiglu_handle.rollback()
+        raise ProgressiveTargetBridgeError(str(error)) from error
     except Exception:
+        if (
+            "lexical_handle" in locals()
+            and lexical_handle is not None
+            and lexical_handle.is_applied
+        ):
+            lexical_handle.rollback()
         if "qkvo_handle" in locals() and qkvo_handle.is_applied:
             qkvo_handle.rollback()
         if swiglu_handle.is_applied:
@@ -1451,11 +1585,17 @@ def install_exact_target_compiler_transaction(
         native_before=native,
         qkvo_handle=qkvo_handle,
         swiglu_handle=swiglu_handle,
+        lexical_handle=lexical_handle,
         stage=stage,
         parent_compiler_report_sha256=parent_compiler_report_sha256,
     )
-    transaction.installation_report()
-    return transaction
+    try:
+        transaction.installation_report()
+        return transaction
+    except Exception:
+        if transaction.is_live:
+            transaction.rollback()
+        raise
 
 
 def install_parent_compiler_result_qkvo_bridge(
@@ -1502,10 +1642,12 @@ def install_parent_compiler_result_target_native_transaction(
     qkvo_rank: int,
     swiglu_layer_indices: Sequence[int],
     swiglu_rank: int,
+    lexical_rank: int | None = None,
     layout: DecoderLayout | None = None,
     stage: ProgressiveDenseGQAStage | None = None,
     qkvo_owner_name: str = "dense_gqa_qkvo_residual_registry",
     swiglu_owner_name: str = "dense_swiglu_projection_residual_registry",
+    lexical_owner_name: str = "dense_lexical_residual_registry",
     initialization_seed: int = 0,
 ) -> ExactTargetCompilerTransaction:
     """Attach the full target-native transaction to an accepted compilation."""
@@ -1528,10 +1670,12 @@ def install_parent_compiler_result_target_native_transaction(
         qkvo_rank=qkvo_rank,
         swiglu_layer_indices=swiglu_layer_indices,
         swiglu_rank=swiglu_rank,
+        lexical_rank=lexical_rank,
         layout=layout,
         stage=stage,
         qkvo_owner_name=qkvo_owner_name,
         swiglu_owner_name=swiglu_owner_name,
+        lexical_owner_name=lexical_owner_name,
         initialization_seed=initialization_seed,
         parent_compiler_report_sha256=_canonical_sha256(report.as_dict()),
     )

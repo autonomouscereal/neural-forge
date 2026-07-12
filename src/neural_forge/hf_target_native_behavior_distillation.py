@@ -49,7 +49,28 @@ TARGET_NATIVE_BEHAVIOR_DISTILLATION_SCHEMA = (
 )
 BEHAVIOR_DOMAIN_SCHEMA = "neural-forge-behavior-domain-v1"
 BEHAVIOR_FACTOR_PACK_SCHEMA = "neural-forge-target-native-factor-pack-v1"
+BEHAVIOR_FACTOR_PACK_V2_SCHEMA = "neural-forge-target-native-factor-pack-v2"
 BEHAVIOR_CHECKPOINT_SCHEMA = "neural-forge-behavior-checkpoint-v1"
+
+_QKVO_GUD_FACTOR_NAMES = frozenset(
+    {
+        *(
+            f"qkvo.{role}_{side}"
+            for role in ("q", "k", "v", "o")
+            for side in ("left", "right")
+        ),
+        *(
+            f"gud.{role}_{side}"
+            for role in ("gate", "up", "down")
+            for side in ("left", "right")
+        ),
+    }
+)
+_LEXICAL_FACTOR_NAMES = frozenset(
+    f"lexical.{role}_{side}"
+    for role in ("embedding", "lm_head")
+    for side in ("left", "right")
+)
 
 BehaviorEvaluationSplit = Literal[
     "calibration-selection",
@@ -318,12 +339,20 @@ class BehaviorDistillationSchedule:
     qk_learning_rate_scale: float = 1.0
     vo_learning_rate_scale: float = 1.0
     gud_learning_rate_scale: float = 1.0
+    lexical_embedding_learning_rate_scale: float = 1.0
+    lexical_head_learning_rate_scale: float = 1.0
     right_factor_learning_rate_scale: float = 1.0
+    lexical_right_factor_learning_rate_scale: float = 1.0
     learning_rate_decay_step_1: int = 0
     learning_rate_decay_scale_1: float = 1.0
     learning_rate_decay_step_2: int = 0
     learning_rate_decay_scale_2: float = 1.0
+    learning_rate_decay_step_3: int = 0
+    learning_rate_decay_scale_3: float = 1.0
+    qkvo_frozen_steps: int = 0
     gud_frozen_steps: int = 0
+    lexical_embedding_frozen_steps: int = 0
+    lexical_head_frozen_steps: int = 0
     top_k: int = 5
     gradient_clip_norm: float = 1.0
     max_prompt_tokens: int = 512
@@ -386,7 +415,11 @@ class BehaviorDistillationSchedule:
         for name in (
             "learning_rate_decay_step_1",
             "learning_rate_decay_step_2",
+            "learning_rate_decay_step_3",
+            "qkvo_frozen_steps",
             "gud_frozen_steps",
+            "lexical_embedding_frozen_steps",
+            "lexical_head_frozen_steps",
         ):
             value = _index(getattr(self, name), name)
             if value > self.steps:
@@ -401,6 +434,13 @@ class BehaviorDistillationSchedule:
             raise TargetNativeBehaviorDistillationError(
                 "learning-rate decay steps must be strictly increasing."
             )
+        if self.learning_rate_decay_step_3 and (
+            not self.learning_rate_decay_step_2
+            or self.learning_rate_decay_step_3 <= self.learning_rate_decay_step_2
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                "The third learning-rate decay requires a smaller second decay step."
+            )
         for name in (
             "learning_rate",
             "temperature",
@@ -414,9 +454,13 @@ class BehaviorDistillationSchedule:
             "qk_learning_rate_scale",
             "vo_learning_rate_scale",
             "gud_learning_rate_scale",
+            "lexical_embedding_learning_rate_scale",
+            "lexical_head_learning_rate_scale",
             "right_factor_learning_rate_scale",
+            "lexical_right_factor_learning_rate_scale",
             "learning_rate_decay_scale_1",
             "learning_rate_decay_scale_2",
+            "learning_rate_decay_scale_3",
             "gradient_clip_norm",
         ):
             minimum = (
@@ -658,10 +702,12 @@ class TargetNativeFactorState:
     factor_state_sha256: str
     parameter_ids: tuple[int, ...] = ()
     parameter_data_ptrs: tuple[int, ...] = ()
+    schema: str = BEHAVIOR_FACTOR_PACK_SCHEMA
+    lexical_rank: int | None = None
 
     def as_manifest(self) -> dict[str, Any]:
-        return {
-            "schema": BEHAVIOR_FACTOR_PACK_SCHEMA,
+        result = {
+            "schema": self.schema,
             "factor_count": len(self.names),
             "factors": [
                 {
@@ -679,6 +725,11 @@ class TargetNativeFactorState:
             "native_child_state_included": False,
             "optimizer_state_included": False,
         }
+        if self.schema == BEHAVIOR_FACTOR_PACK_V2_SCHEMA:
+            result["lexical_rank"] = _index(
+                self.lexical_rank, "lexical_rank", positive=True
+            )
+        return result
 
     def as_payload(self) -> dict[str, Any]:
         return {
@@ -688,6 +739,91 @@ class TargetNativeFactorState:
                 for name, tensor in zip(self.names, self.tensors, strict=True)
             },
         }
+
+
+def _factor_manifest_rows(
+    names: Sequence[str],
+    tensors: Sequence[Tensor],
+    tensor_sha256s: Sequence[str],
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": name,
+            "shape": list(value.shape),
+            "dtype": str(value.dtype),
+            "tensor_sha256": digest,
+        }
+        for name, value, digest in zip(names, tensors, tensor_sha256s, strict=True)
+    ]
+
+
+def _factor_state_sha256(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    schema: str,
+    lexical_rank: int | None,
+) -> str:
+    if schema == BEHAVIOR_FACTOR_PACK_SCHEMA:
+        return _canonical_sha256(list(rows))
+    if schema == BEHAVIOR_FACTOR_PACK_V2_SCHEMA:
+        return _canonical_sha256(
+            {
+                "schema": schema,
+                "lexical_rank": _index(lexical_rank, "lexical_rank", positive=True),
+                "factors": list(rows),
+            }
+        )
+    raise TargetNativeBehaviorDistillationError(
+        f"Unsupported target-native factor-state schema {schema!r}."
+    )
+
+
+def _lexical_handle(
+    transaction: ExactTargetCompilerTransaction,
+    *,
+    require_finite: bool,
+) -> Any | None:
+    handle = getattr(transaction, "lexical_handle", None)
+    if handle is None:
+        return None
+    assertion_name = "assert_live" if require_finite else "assert_structurally_live"
+    assertion = getattr(handle, assertion_name, None)
+    if not callable(assertion):
+        raise TargetNativeBehaviorDistillationError(
+            "The optional lexical handle does not expose the required live-state "
+            "assertion."
+        )
+    assertion()
+    return handle
+
+
+def _lexical_registry(handle: Any) -> nn.Module:
+    registry = getattr(handle, "registry", None)
+    if registry is None:
+        registry = getattr(handle, "adapter_registry", None)
+    if not isinstance(registry, nn.Module):
+        raise TargetNativeBehaviorDistillationError(
+            "The optional lexical handle has no factor registry."
+        )
+    return registry
+
+
+def _lexical_rank(transaction: ExactTargetCompilerTransaction) -> int | None:
+    handle = getattr(transaction, "lexical_handle", None)
+    if handle is None:
+        return None
+    registry = _lexical_registry(handle)
+    rank = getattr(registry, "rank", None)
+    return _index(rank, "lexical_rank", positive=True)
+
+
+def _factor_pack_contract(
+    transaction: ExactTargetCompilerTransaction,
+) -> tuple[str, int | None]:
+    rank = _lexical_rank(transaction)
+    if rank is None:
+        return BEHAVIOR_FACTOR_PACK_SCHEMA, None
+    return BEHAVIOR_FACTOR_PACK_V2_SCHEMA, rank
 
 
 def _factor_parameters(
@@ -718,29 +854,28 @@ def _factor_parameters(
             recurse=False
         )
     )
-    expected_names = {
-        *(
-            f"qkvo.{role}_{side}"
-            for role in ("q", "k", "v", "o")
-            for side in ("left", "right")
-        ),
-        *(
-            f"gud.{role}_{side}"
-            for role in ("gate", "up", "down")
-            for side in ("left", "right")
-        ),
-    }
+    lexical = _lexical_handle(transaction, require_finite=require_finite)
+    expected_names = set(_QKVO_GUD_FACTOR_NAMES)
+    if lexical is not None:
+        registry = _lexical_registry(lexical)
+        entries += tuple(
+            (f"lexical.{name}", value)
+            for name, value in registry.named_parameters(recurse=False)
+        )
+        expected_names.update(_LEXICAL_FACTOR_NAMES)
     if {name for name, _value in entries} != expected_names:
         raise TargetNativeBehaviorDistillationError(
-            "Compiler transaction does not expose one complete QKVO/GUD factor set."
+            "Compiler transaction does not expose one complete target-native "
+            "factor set."
         )
-    # Read directly from the two transaction-owned registries.  The public
-    # transaction accessor deliberately finite-asserts, which is correct for
-    # ordinary training but would make it impossible to overwrite a poisoned
-    # disposable factor from a previously captured exact snapshot.
+    # The composite accessor includes the optional lexical registry.  Factor
+    # enumeration above remains structural so emergency restoration can use
+    # the non-finite-tolerant transaction assertion before overwriting a
+    # poisoned disposable factor.
     trainable = (
-        *transaction.qkvo_handle.adapter_registry.output_trainable_parameters(),
-        *transaction.swiglu_handle.registry.output_trainable_parameters(),
+        transaction.output_trainable_parameters()
+        if require_finite
+        else tuple(value for _name, value in entries)
     )
     if {id(value) for _name, value in entries} != {id(value) for value in trainable}:
         raise TargetNativeBehaviorDistillationError(
@@ -762,22 +897,19 @@ def capture_target_native_factor_state(
         )
     names = tuple(name for name, _value in entries)
     hashes = tuple(_tensor_sha256(value) for value in tensors)
-    payload = [
-        {
-            "name": name,
-            "shape": list(value.shape),
-            "dtype": str(value.dtype),
-            "tensor_sha256": digest,
-        }
-        for name, value, digest in zip(names, tensors, hashes, strict=True)
-    ]
+    schema, lexical_rank = _factor_pack_contract(transaction)
+    payload = _factor_manifest_rows(names, tensors, hashes)
     return TargetNativeFactorState(
         names=names,
         tensors=tensors,
         tensor_sha256s=hashes,
-        factor_state_sha256=_canonical_sha256(payload),
+        factor_state_sha256=_factor_state_sha256(
+            payload, schema=schema, lexical_rank=lexical_rank
+        ),
         parameter_ids=tuple(id(value) for _name, value in entries),
         parameter_data_ptrs=tuple(int(value.data_ptr()) for _name, value in entries),
+        schema=schema,
+        lexical_rank=lexical_rank,
     )
 
 
@@ -793,6 +925,11 @@ def restore_target_native_factor_state(
     if tuple(name for name, _value in entries) != state.names:
         raise TargetNativeBehaviorDistillationError(
             "Factor-state names do not match the live transaction."
+        )
+    expected_schema, expected_lexical_rank = _factor_pack_contract(transaction)
+    if state.schema != expected_schema or state.lexical_rank != expected_lexical_rank:
+        raise TargetNativeBehaviorDistillationError(
+            "Factor-state schema or lexical rank does not match the live transaction."
         )
     if (
         tuple(id(value) for _name, value in entries) != state.parameter_ids
@@ -826,17 +963,69 @@ def restore_target_native_factor_state(
         )
 
 
-def restore_target_native_factor_payload(
-    transaction: ExactTargetCompilerTransaction,
-    payload: Mapping[str, Any],
-) -> TargetNativeFactorState:
-    """Authenticate and restore a persisted factor-only continuation pack."""
+@dataclass(frozen=True, slots=True)
+class _FactorPayloadRestore:
+    source_factor_state_sha256: str
+    source_schema: str
+    combined_state: TargetNativeFactorState
+    restore_mode: Literal["full", "qkvo-gud-partial"]
+    lexical_initialization_state_sha256: str | None
+    lexical_initialization_unchanged: bool | None
 
-    if not isinstance(payload, Mapping) or payload.get("schema") != (
-        BEHAVIOR_FACTOR_PACK_SCHEMA
-    ):
+
+def _lexical_initialization_sha256(
+    entries: Sequence[tuple[str, nn.Parameter]],
+    *,
+    lexical_rank: int,
+) -> str:
+    if {name for name, _value in entries} != _LEXICAL_FACTOR_NAMES:
         raise TargetNativeBehaviorDistillationError(
-            "Persisted target-native factor payload has an unsupported schema."
+            "The live lexical factor set is incomplete."
+        )
+    for name, value in entries:
+        count = int(torch.count_nonzero(value.detach()).item())
+        if (name.endswith("_left") and count != 0) or (
+            name.endswith("_right") and count == 0
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                "A v1 continuation requires untouched exact-zero lexical "
+                "initialization."
+            )
+    tensors = tuple(value.detach().cpu().contiguous() for _name, value in entries)
+    hashes = tuple(_tensor_sha256(value) for value in tensors)
+    return _canonical_sha256(
+        {
+            "schema": "neural-forge-lexical-factor-initialization-v1",
+            "lexical_rank": _index(lexical_rank, "lexical_rank", positive=True),
+            "factors": _factor_manifest_rows(
+                tuple(name for name, _value in entries), tensors, hashes
+            ),
+        }
+    )
+
+
+def _authenticate_factor_payload_state(
+    payload: Mapping[str, Any],
+    entries: Sequence[tuple[str, nn.Parameter]],
+    *,
+    schema: str,
+    lexical_rank: int | None,
+) -> TargetNativeFactorState:
+    expected_payload_keys = {
+        "schema",
+        "factor_count",
+        "factors",
+        "factor_state_sha256",
+        "parent_state_included",
+        "native_child_state_included",
+        "optimizer_state_included",
+        "factor_tensors",
+    }
+    if schema == BEHAVIOR_FACTOR_PACK_V2_SCHEMA:
+        expected_payload_keys.add("lexical_rank")
+    if set(payload) != expected_payload_keys:
+        raise TargetNativeBehaviorDistillationError(
+            "Persisted factor payload does not contain exactly the schema fields."
         )
     if any(
         payload.get(name) is not False
@@ -849,33 +1038,40 @@ def restore_target_native_factor_payload(
         raise TargetNativeBehaviorDistillationError(
             "Continuation payload must contain factors only."
         )
+    if schema == BEHAVIOR_FACTOR_PACK_V2_SCHEMA and payload.get(
+        "lexical_rank"
+    ) != _index(lexical_rank, "lexical_rank", positive=True):
+        raise TargetNativeBehaviorDistillationError(
+            "Persisted lexical rank does not match the live transaction."
+        )
     rows = payload.get("factors")
     tensors = payload.get("factor_tensors")
     declared_count = payload.get("factor_count")
-    declared_state_sha = payload.get("factor_state_sha256")
+    declared_state_sha = _sha256(
+        payload.get("factor_state_sha256"), "factor_state_sha256"
+    )
     if (
         not isinstance(rows, list)
         or not isinstance(tensors, Mapping)
         or isinstance(declared_count, bool)
         or not isinstance(declared_count, int)
-        or declared_count <= 0
-        or not isinstance(declared_state_sha, str)
-        or len(declared_state_sha) != 64
+        or declared_count != len(entries)
+        or len(rows) != len(entries)
     ):
         raise TargetNativeBehaviorDistillationError(
-            "Persisted factor manifest is malformed."
+            "Persisted factor count or manifest is malformed."
         )
-    entries = _factor_parameters(transaction)
     expected_names = tuple(name for name, _value in entries)
-    if declared_count != len(entries) or len(rows) != len(entries):
-        raise TargetNativeBehaviorDistillationError(
-            "Persisted factor count does not match the live transaction."
-        )
     row_by_name: dict[str, Mapping[str, Any]] = {}
     for row in rows:
-        if not isinstance(row, Mapping):
+        if not isinstance(row, Mapping) or set(row) != {
+            "name",
+            "shape",
+            "dtype",
+            "tensor_sha256",
+        }:
             raise TargetNativeBehaviorDistillationError(
-                "Persisted factor manifest rows must be objects."
+                "Persisted factor manifest rows must contain exactly the v1 fields."
             )
         name = row.get("name")
         if not isinstance(name, str) or name in row_by_name:
@@ -885,7 +1081,7 @@ def restore_target_native_factor_payload(
         row_by_name[name] = row
     if set(row_by_name) != set(expected_names) or set(tensors) != set(expected_names):
         raise TargetNativeBehaviorDistillationError(
-            "Persisted factor names do not match the live transaction."
+            "Persisted factor names do not match the selected live factor set."
         )
     ordered_tensors: list[Tensor] = []
     ordered_hashes: list[str] = []
@@ -920,25 +1116,147 @@ def restore_target_native_factor_payload(
         ordered_tensors.append(detached)
         ordered_hashes.append(digest)
         canonical_rows.append(expected_row)
-    if _canonical_sha256(canonical_rows) != declared_state_sha:
+    if (
+        _factor_state_sha256(canonical_rows, schema=schema, lexical_rank=lexical_rank)
+        != declared_state_sha
+    ):
         raise TargetNativeBehaviorDistillationError(
             "Persisted factor-state hash does not authenticate its manifest."
         )
-    state = TargetNativeFactorState(
+    return TargetNativeFactorState(
         names=expected_names,
         tensors=tuple(ordered_tensors),
         tensor_sha256s=tuple(ordered_hashes),
         factor_state_sha256=declared_state_sha,
         parameter_ids=tuple(id(value) for _name, value in entries),
         parameter_data_ptrs=tuple(int(value.data_ptr()) for _name, value in entries),
+        schema=schema,
+        lexical_rank=lexical_rank,
     )
-    restore_target_native_factor_state(transaction, state)
-    restored = capture_target_native_factor_state(transaction)
-    if restored.factor_state_sha256 != declared_state_sha:
+
+
+def _copy_authenticated_factor_state(
+    transaction: ExactTargetCompilerTransaction,
+    entries: Sequence[tuple[str, nn.Parameter]],
+    state: TargetNativeFactorState,
+) -> None:
+    if (
+        tuple(name for name, _value in entries) != state.names
+        or tuple(id(value) for _name, value in entries) != state.parameter_ids
+        or tuple(int(value.data_ptr()) for _name, value in entries)
+        != state.parameter_data_ptrs
+    ):
         raise TargetNativeBehaviorDistillationError(
-            "Persisted factor payload restore did not verify."
+            "Persisted factor ownership changed before restore."
         )
-    return restored
+    with torch.no_grad():
+        for (_name, parameter), value in zip(entries, state.tensors, strict=True):
+            parameter.copy_(value.to(device=parameter.device))
+    transaction.assert_live()
+
+
+def _restore_target_native_factor_payload(
+    transaction: ExactTargetCompilerTransaction,
+    payload: Mapping[str, Any],
+) -> _FactorPayloadRestore:
+    if not isinstance(payload, Mapping):
+        raise TargetNativeBehaviorDistillationError(
+            "Persisted target-native factor payload must be a mapping."
+        )
+    schema = payload.get("schema")
+    if schema not in {
+        BEHAVIOR_FACTOR_PACK_SCHEMA,
+        BEHAVIOR_FACTOR_PACK_V2_SCHEMA,
+    }:
+        raise TargetNativeBehaviorDistillationError(
+            "Persisted target-native factor payload has an unsupported schema."
+        )
+    entries = _factor_parameters(transaction)
+    live_names = {name for name, _value in entries}
+    live_lexical_rank = _lexical_rank(transaction)
+    if schema == BEHAVIOR_FACTOR_PACK_V2_SCHEMA:
+        if live_names != _QKVO_GUD_FACTOR_NAMES | _LEXICAL_FACTOR_NAMES:
+            raise TargetNativeBehaviorDistillationError(
+                "A v2 factor pack requires the complete 18-factor lexical transaction."
+            )
+        state = _authenticate_factor_payload_state(
+            payload,
+            entries,
+            schema=schema,
+            lexical_rank=live_lexical_rank,
+        )
+        restore_target_native_factor_state(transaction, state)
+        combined = capture_target_native_factor_state(transaction)
+        if combined.factor_state_sha256 != state.factor_state_sha256:
+            raise TargetNativeBehaviorDistillationError(
+                "Persisted v2 factor payload restore did not verify."
+            )
+        return _FactorPayloadRestore(
+            source_factor_state_sha256=state.factor_state_sha256,
+            source_schema=schema,
+            combined_state=combined,
+            restore_mode="full",
+            lexical_initialization_state_sha256=None,
+            lexical_initialization_unchanged=None,
+        )
+
+    base_entries = tuple(
+        (name, value) for name, value in entries if name in _QKVO_GUD_FACTOR_NAMES
+    )
+    if {name for name, _value in base_entries} != _QKVO_GUD_FACTOR_NAMES:
+        raise TargetNativeBehaviorDistillationError(
+            "A v1 continuation requires the complete 14-factor QKVO/GUD set."
+        )
+    state = _authenticate_factor_payload_state(
+        payload,
+        base_entries,
+        schema=BEHAVIOR_FACTOR_PACK_SCHEMA,
+        lexical_rank=None,
+    )
+    if live_lexical_rank is None:
+        restore_target_native_factor_state(transaction, state)
+        combined = capture_target_native_factor_state(transaction)
+        return _FactorPayloadRestore(
+            source_factor_state_sha256=state.factor_state_sha256,
+            source_schema=schema,
+            combined_state=combined,
+            restore_mode="full",
+            lexical_initialization_state_sha256=None,
+            lexical_initialization_unchanged=None,
+        )
+
+    lexical_entries = tuple(
+        (name, value) for name, value in entries if name in _LEXICAL_FACTOR_NAMES
+    )
+    lexical_before = _lexical_initialization_sha256(
+        lexical_entries, lexical_rank=live_lexical_rank
+    )
+    _copy_authenticated_factor_state(transaction, base_entries, state)
+    lexical_after = _lexical_initialization_sha256(
+        lexical_entries, lexical_rank=live_lexical_rank
+    )
+    if lexical_after != lexical_before:
+        raise TargetNativeBehaviorDistillationError(
+            "Partial v1 restore changed lexical initialization."
+        )
+    combined = capture_target_native_factor_state(transaction)
+    return _FactorPayloadRestore(
+        source_factor_state_sha256=state.factor_state_sha256,
+        source_schema=schema,
+        combined_state=combined,
+        restore_mode="qkvo-gud-partial",
+        lexical_initialization_state_sha256=lexical_before,
+        lexical_initialization_unchanged=True,
+    )
+
+
+def restore_target_native_factor_payload(
+    transaction: ExactTargetCompilerTransaction,
+    payload: Mapping[str, Any],
+) -> TargetNativeFactorState:
+    """Authenticate and restore a v1 base-only or v2 combined continuation."""
+
+    return _restore_target_native_factor_payload(transaction, payload).combined_state
 
 
 @dataclass(frozen=True, slots=True)
@@ -956,13 +1274,37 @@ class GradientActivationAudit:
             and set(self.nonzero_gradient_factor_names) == expected
         )
 
+    @property
+    def qkvo_gud_complete(self) -> bool:
+        expected = set(self.factor_names) & _QKVO_GUD_FACTOR_NAMES
+        return (
+            expected == _QKVO_GUD_FACTOR_NAMES
+            and expected.issubset(self.finite_gradient_factor_names)
+            and expected.issubset(self.nonzero_gradient_factor_names)
+        )
+
+    @property
+    def lexical_complete(self) -> bool | None:
+        expected = set(self.factor_names) & _LEXICAL_FACTOR_NAMES
+        if not expected:
+            return None
+        return (
+            expected == _LEXICAL_FACTOR_NAMES
+            and expected.issubset(self.finite_gradient_factor_names)
+            and expected.issubset(self.nonzero_gradient_factor_names)
+        )
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "factor_names": list(self.factor_names),
             "finite_gradient_factor_names": list(self.finite_gradient_factor_names),
             "nonzero_gradient_factor_names": list(self.nonzero_gradient_factor_names),
             "backward_observation_count": self.backward_observation_count,
-            "every_qkvo_gud_factor_gradient_activated": self.complete,
+            # Retained verbatim for legacy report consumers.
+            "every_qkvo_gud_factor_gradient_activated": self.qkvo_gud_complete,
+            "every_lexical_factor_gradient_activated": self.lexical_complete,
+            "every_combined_factor_gradient_activated": self.complete,
+            "combined_factor_count": len(self.factor_names),
         }
 
 
@@ -1042,6 +1384,11 @@ class BehaviorDistillationResult:
     training_audit: BehaviorTrainingAudit
     factor_pack: TargetNativeFactorState
     initial_factor_state_sha256: str | None
+    initial_factor_payload_schema: str | None
+    initial_factor_restore_mode: Literal["full", "qkvo-gud-partial"] | None
+    combined_step0_factor_state_sha256: str
+    lexical_initialization_state_sha256: str | None
+    lexical_initialization_unchanged: bool | None
     domain_binding_sha256: str
     schedule_sha256: str
     evidence_sha256: str = field(init=False)
@@ -1081,7 +1428,17 @@ class BehaviorDistillationResult:
             "training_audit": self.training_audit.as_dict(),
             "factor_pack_manifest": self.factor_pack.as_manifest(),
             "continued_from_factor_pack": self.initial_factor_state_sha256 is not None,
+            "source_factor_state_sha256": self.initial_factor_state_sha256,
             "initial_factor_state_sha256": self.initial_factor_state_sha256,
+            "initial_factor_payload_schema": self.initial_factor_payload_schema,
+            "initial_factor_restore_mode": self.initial_factor_restore_mode,
+            "combined_step0_factor_state_sha256": (
+                self.combined_step0_factor_state_sha256
+            ),
+            "lexical_initialization_state_sha256": (
+                self.lexical_initialization_state_sha256
+            ),
+            "lexical_initialization_unchanged": (self.lexical_initialization_unchanged),
             "domain_binding_sha256": self.domain_binding_sha256,
             "schedule_sha256": self.schedule_sha256,
             "selection_uses_internal_numeric_targets": False,
@@ -1577,12 +1934,20 @@ def _factor_learning_rate(
         scale = schedule.vo_learning_rate_scale
     elif name.startswith("gud."):
         scale = schedule.gud_learning_rate_scale
+    elif name.startswith("lexical.embedding_"):
+        scale = schedule.lexical_embedding_learning_rate_scale
+    elif name.startswith("lexical.lm_head_"):
+        scale = schedule.lexical_head_learning_rate_scale
     else:
         raise TargetNativeBehaviorDistillationError(
             f"No preregistered learning-rate group exists for factor {name!r}."
         )
     if name.endswith("_right"):
-        scale *= schedule.right_factor_learning_rate_scale
+        scale *= (
+            schedule.lexical_right_factor_learning_rate_scale
+            if name.startswith("lexical.")
+            else schedule.right_factor_learning_rate_scale
+        )
     if schedule.learning_rate_decay_step_1 and step > (
         schedule.learning_rate_decay_step_1
     ):
@@ -1591,7 +1956,32 @@ def _factor_learning_rate(
         schedule.learning_rate_decay_step_2
     ):
         scale *= schedule.learning_rate_decay_scale_2
+    if schedule.learning_rate_decay_step_3 and step > (
+        schedule.learning_rate_decay_step_3
+    ):
+        scale *= schedule.learning_rate_decay_scale_3
     return schedule.learning_rate * scale
+
+
+def _factor_frozen(
+    name: str,
+    schedule: BehaviorDistillationSchedule,
+    *,
+    step: int,
+) -> bool:
+    if name.startswith("qkvo."):
+        frozen_steps = schedule.qkvo_frozen_steps
+    elif name.startswith("gud."):
+        frozen_steps = schedule.gud_frozen_steps
+    elif name.startswith("lexical.embedding_"):
+        frozen_steps = schedule.lexical_embedding_frozen_steps
+    elif name.startswith("lexical.lm_head_"):
+        frozen_steps = schedule.lexical_head_frozen_steps
+    else:
+        raise TargetNativeBehaviorDistillationError(
+            f"No preregistered freeze group exists for factor {name!r}."
+        )
+    return step <= frozen_steps
 
 
 def _first_divergence(parent_tokens: Sequence[int], child_tokens: Sequence[int]) -> int:
@@ -1746,10 +2136,25 @@ def train_target_native_behavior_distillation(
     domain_binding_sha256 = _canonical_sha256(domain_payload)
     schedule_sha256 = _canonical_sha256(schedule.as_dict())
     initial_factor_state_sha256 = None
+    initial_factor_payload_schema = None
+    initial_factor_restore_mode = None
+    lexical_initialization_state_sha256 = None
+    lexical_initialization_unchanged = None
+    restored_initial_state: TargetNativeFactorState | None = None
     if initial_factor_payload is not None:
-        initial_factor_state_sha256 = restore_target_native_factor_payload(
+        restore_result = _restore_target_native_factor_payload(
             transaction, initial_factor_payload
-        ).factor_state_sha256
+        )
+        initial_factor_state_sha256 = restore_result.source_factor_state_sha256
+        initial_factor_payload_schema = restore_result.source_schema
+        initial_factor_restore_mode = restore_result.restore_mode
+        lexical_initialization_state_sha256 = (
+            restore_result.lexical_initialization_state_sha256
+        )
+        lexical_initialization_unchanged = (
+            restore_result.lexical_initialization_unchanged
+        )
+        restored_initial_state = restore_result.combined_state
     factor_entries = _factor_parameters(transaction)
     factor_names = tuple(name for name, _value in factor_entries)
     finite_gradients: set[str] = set()
@@ -1763,6 +2168,15 @@ def train_target_native_behavior_distillation(
     parent_greedy_cache_forwards = 0
 
     step0_state = capture_target_native_factor_state(transaction)
+    if (
+        restored_initial_state is not None
+        and step0_state.factor_state_sha256
+        != restored_initial_state.factor_state_sha256
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Combined step-zero capture differs from the authenticated restored "
+            "continuation."
+        )
     step0_metrics = evaluate_behavior_domain(
         parent_model,
         transaction.model,
@@ -2038,13 +2452,15 @@ def train_target_native_behavior_distillation(
                         "Output loss produced missing or non-finite compiler-factor "
                         f"gradients before the optimizer step: {invalid_gradients}."
                     )
-                if step <= schedule.gud_frozen_steps:
-                    for name, parameter in factor_entries:
-                        if name.startswith("gud.") and parameter.grad is not None:
-                            # ``None`` makes AdamW skip both the update and its
-                            # per-parameter step counter.  A zero gradient would
-                            # silently age moments/bias correction while frozen.
-                            parameter.grad = None
+                for name, parameter in factor_entries:
+                    if (
+                        _factor_frozen(name, schedule, step=step)
+                        and parameter.grad is not None
+                    ):
+                        # ``None`` makes AdamW skip both the update and its
+                        # per-parameter step counter.  A zero gradient would
+                        # silently age moments/bias correction while frozen.
+                        parameter.grad = None
                 try:
                     total_gradient_norm = torch.nn.utils.clip_grad_norm_(
                         trainable,
@@ -2125,7 +2541,7 @@ def train_target_native_behavior_distillation(
         missing = sorted(set(factor_names) - nonzero_gradients)
         restore_target_native_factor_state(transaction, step0_state)
         raise TargetNativeBehaviorDistillationError(
-            "Not every QKVO/GUD factor received a finite nonzero output-loss "
+            "Not every target-native factor received a finite nonzero output-loss "
             f"gradient; inactive={missing}."
         )
 
@@ -2191,6 +2607,11 @@ def train_target_native_behavior_distillation(
         training_audit=training_audit,
         factor_pack=factor_pack,
         initial_factor_state_sha256=initial_factor_state_sha256,
+        initial_factor_payload_schema=initial_factor_payload_schema,
+        initial_factor_restore_mode=initial_factor_restore_mode,
+        combined_step0_factor_state_sha256=step0_state.factor_state_sha256,
+        lexical_initialization_state_sha256=(lexical_initialization_state_sha256),
+        lexical_initialization_unchanged=lexical_initialization_unchanged,
         domain_binding_sha256=domain_binding_sha256,
         schedule_sha256=schedule_sha256,
     )
@@ -2200,6 +2621,7 @@ __all__ = [
     "BEHAVIOR_CHECKPOINT_SCHEMA",
     "BEHAVIOR_DOMAIN_SCHEMA",
     "BEHAVIOR_FACTOR_PACK_SCHEMA",
+    "BEHAVIOR_FACTOR_PACK_V2_SCHEMA",
     "TARGET_NATIVE_BEHAVIOR_DISTILLATION_SCHEMA",
     "BehaviorCheckpoint",
     "BehaviorDistillationResult",

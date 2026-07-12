@@ -344,6 +344,26 @@ def test_prepublication_restore_returns_original_native_modules_exactly() -> Non
     )
 
 
+def test_prepublication_restore_rejects_wrong_count_before_module_swaps() -> None:
+    model = _ToyCausalLM().double()
+    native_count = lexical._unique_parameter_count(model)
+    handle = _install(model)
+    handle.bake_for_publication()
+    published_embedding = model.backbone.embed_tokens
+    published_head = model.lm_head
+
+    with pytest.raises(DenseLexicalResidualTopologyError, match="expected native"):
+        handle.restore_prepublication_native(
+            expected_model_parameter_count=native_count + 1
+        )
+
+    assert model.backbone.embed_tokens is published_embedding
+    assert model.lm_head is published_head
+    assert handle.is_baked
+    handle.restore_prepublication_native()
+    assert lexical._unique_parameter_count(model) == native_count
+
+
 def test_failed_bake_restores_live_wrappers_and_registry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -375,6 +395,37 @@ def test_failed_bake_restores_live_wrappers_and_registry(
     monkeypatch.setattr(lexical, "_unique_parameter_count", real_count)
     handle.assert_live()
     handle.rollback()
+
+
+def test_post_commit_bake_report_failure_restores_live_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _ToyCausalLM().double().eval()
+    input_ids = torch.tensor([[1, 3, 5]])
+    native_count = lexical._unique_parameter_count(model)
+    handle = _install(model)
+    with torch.no_grad():
+        handle.adapter_registry.embedding_left.fill_(0.07)
+        handle.adapter_registry.lm_head_left.fill_(0.09)
+    live = model(input_ids).logits.detach().clone()
+
+    def fail_report_hash(_keys) -> str:
+        raise RuntimeError("synthetic post-commit report failure")
+
+    monkeypatch.setattr(lexical, "_state_key_sha256", fail_report_hash)
+    with pytest.raises(RuntimeError, match="post-commit report failure"):
+        handle.bake_for_publication()
+
+    assert getattr(model, handle.report.owner_name) is handle.adapter_registry
+    assert model.backbone.embed_tokens is handle._installed_embedding
+    assert model.lm_head is handle._installed_lm_head
+    assert handle.is_applied
+    assert not handle.is_baked
+    handle.assert_live()
+    torch.testing.assert_close(model(input_ids).logits, live, rtol=0.0, atol=0.0)
+
+    handle.rollback()
+    assert lexical._unique_parameter_count(model) == native_count
 
 
 def test_base_mutation_and_live_wrapper_replacement_fail_closed() -> None:

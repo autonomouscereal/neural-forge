@@ -755,6 +755,409 @@ def prepare_continuation_stage(
     return report
 
 
+def prepare_lexical_continuation_stage(
+    *,
+    output_dir: Path,
+    parent: Path,
+    target: Path,
+    source_run_report: Path,
+    source_split_dir: Path = continuation_splits.DEFAULT_RESIDUAL_ATTENTION_SPLIT_DIR,
+    original_split_dir: Path = continuation_splits.DEFAULT_ORIGINAL_SPLIT_DIR,
+    compiler_cache_root: Path = DEFAULT_COMPILER_CACHE_ROOT,
+    corpus_path: Path = DEFAULT_CORPUS,
+) -> dict[str, Any]:
+    """Seal the cache-only lexical + residual-attention continuation."""
+
+    output = output_dir.expanduser().resolve()
+    if output.exists():
+        raise StagePreparationError("output_dir must not already exist.")
+    parent = parent.expanduser().resolve()
+    target = target.expanduser().resolve()
+    source_report_path = source_run_report.expanduser().resolve()
+    source_split_root = source_split_dir.expanduser().resolve()
+    original_split_root = original_split_dir.expanduser().resolve()
+    cache_root = compiler_cache_root.expanduser().resolve()
+    source_report = stage._strict_json(source_report_path)
+    if not isinstance(source_report, Mapping):
+        raise StagePreparationError("Lexical continuation source report is malformed.")
+    trainer_evidence = source_report.get("trainer_evidence")
+    if (
+        source_report.get("status") != "rejected"
+        or source_report.get("rollback_exact") is not True
+        or not isinstance(trainer_evidence, Mapping)
+        or trainer_evidence.get("sealed_evaluation_unlocked") is not False
+        or trainer_evidence.get("sealed_metrics") is not None
+    ):
+        raise StagePreparationError(
+            "Lexical continuation requires an exactly rolled-back source whose "
+            "sealed domain is still locked."
+        )
+    source_splits = source_report.get("splits")
+    if not isinstance(source_splits, Mapping) or set(source_splits) != {
+        "fit",
+        "candidate",
+        "sealed",
+    }:
+        raise StagePreparationError("Source report omits its behavior split bindings.")
+    for role in ("fit", "candidate", "sealed"):
+        binding = source_splits.get(role)
+        if (
+            not isinstance(binding, Mapping)
+            or binding.get("sha256")
+            != continuation_splits.PINNED_RESIDUAL_ATTENTION_SPLIT_SHA256S[role]
+            or binding.get("row_count")
+            != continuation_splits.RESIDUAL_ATTENTION_COUNTS[role]
+        ):
+            raise StagePreparationError(
+                f"Source report {role} split is not the pinned residual-attention "
+                "artifact."
+            )
+    factor_record = source_report.get("factor_pack")
+    if not isinstance(factor_record, Mapping):
+        raise StagePreparationError("Source report omits its retained factor pack.")
+    factor_path = Path(str(factor_record.get("path", ""))).expanduser().resolve()
+    factor_sha = stage._require_sha256(
+        factor_record.get("sha256"), "source_run_report.factor_pack.sha256"
+    )
+    if not factor_path.is_file() or stage._file_sha256(factor_path) != factor_sha:
+        raise StagePreparationError("Source factor pack is absent or changed.")
+    source_factor_manifest = trainer_evidence.get("factor_pack_manifest")
+    if not isinstance(source_factor_manifest, Mapping):
+        raise StagePreparationError("Source report omits selected factor evidence.")
+    factor_state_sha = stage._require_sha256(
+        source_factor_manifest.get("factor_state_sha256"),
+        "source_run_report.factor_state_sha256",
+    )
+    if source_factor_manifest.get("schema") not in {
+        None,
+        stage.TRAINER_FACTOR_PACK_SCHEMA,
+    }:
+        raise StagePreparationError(
+            "The first lexical continuation must start from a v1 QKVO/GUD pack."
+        )
+    source_compiler_report = source_report.get("compiler_report")
+    if not isinstance(source_compiler_report, Mapping):
+        raise StagePreparationError("Source report omits compiler evidence.")
+    compiler_report_sha = stage._canonical_sha256(source_compiler_report)
+    compiled_state_sha = stage._require_sha256(
+        source_report.get("rollback_state_sha256"),
+        "source_run_report.rollback_state_sha256",
+    )
+    cache_evidence = source_report.get("compiled_child_cache")
+    required_cache_fields = {
+        "compiler_identity_sha256",
+        "receipt_sha256",
+        "compiler_report_sha256",
+        "state_dict_sha256",
+        "artifact_tree_sha256",
+    }
+    if (
+        not isinstance(cache_evidence, Mapping)
+        or cache_evidence.get("disposition") not in {"published", "hit"}
+        or cache_evidence.get("verified_before_factor_install") is not True
+        or not required_cache_fields.issubset(cache_evidence)
+    ):
+        raise StagePreparationError(
+            "Lexical continuation requires the source's verified immutable cache hit."
+        )
+    cache_hashes = {
+        name: stage._require_sha256(
+            cache_evidence.get(name), f"source_run_report.compiled_child_cache.{name}"
+        )
+        for name in required_cache_fields
+    }
+    if cache_hashes["compiler_report_sha256"] != compiler_report_sha:
+        raise StagePreparationError(
+            "Source compiler report and immutable cache report hash disagree."
+        )
+    cache_path = Path(str(cache_evidence.get("path", ""))).expanduser().resolve()
+    if (
+        not cache_path.is_dir()
+        or cache_path.parent != cache_root
+        or cache_path.name != cache_hashes["compiler_identity_sha256"]
+    ):
+        raise StagePreparationError(
+            "Source compiler cache path does not match the requested shared root."
+        )
+
+    target_config = stage._strict_json(target / "config.json")
+    if not isinstance(target_config, Mapping) or (
+        target_config.get("vocab_size") != stage.LEXICAL_VOCAB_SIZE
+        or target_config.get("hidden_size") != stage.LEXICAL_HIDDEN_SIZE
+        or target_config.get("tie_word_embeddings") is not False
+    ):
+        raise StagePreparationError(
+            "Canonical target config is not the pinned untied lexical boundary."
+        )
+    parent_tree = dict(stage._artifact_tree(parent))
+    target_tree = dict(stage._artifact_tree(target))
+    required = _default_target_required_files()
+    for relative, expected in required.items():
+        if stage._file_sha256(target / relative) != expected:
+            raise StagePreparationError(
+                f"Canonical target required-file hash changed: {relative}"
+            )
+
+    output.mkdir(parents=True)
+    split_output = output / "splits"
+    split_report = continuation_splits.prepare_lexical_continuation_splits(
+        output_dir=split_output,
+        source_split_dir=source_split_root,
+        corpus_path=corpus_path,
+        tokenizer_path=parent,
+    )
+    split_bindings = {
+        "fit": {
+            "path": str(split_output / "fit.json"),
+            "sha256": stage._file_sha256(split_output / "fit.json"),
+            "expected_count": continuation_splits.LEXICAL_CONTINUATION_COUNTS["fit"],
+        },
+        "candidate": {
+            "path": str(split_output / "candidate.json"),
+            "sha256": stage._file_sha256(split_output / "candidate.json"),
+            "expected_count": continuation_splits.LEXICAL_CONTINUATION_COUNTS[
+                "candidate"
+            ],
+        },
+        "sealed": {
+            "path": str(source_split_root / "sealed.json"),
+            "sha256": continuation_splits.PINNED_RESIDUAL_ATTENTION_SPLIT_SHA256S[
+                "sealed"
+            ],
+            "expected_count": continuation_splits.LEXICAL_CONTINUATION_COUNTS[
+                "sealed"
+            ],
+        },
+    }
+    compiler_split_path = original_split_root / "fit.json"
+    compiler_split_sha = continuation_splits.PINNED_ORIGINAL_SPLIT_SHA256S["fit"]
+    if stage._file_sha256(compiler_split_path) != compiler_split_sha:
+        raise StagePreparationError("Original exact compiler fit split changed.")
+
+    module_specs = {
+        "trainer_sha256": stage.CANONICAL_TRAINER_MODULE,
+        "compiler_cache_sha256": "neural_forge.hf_compiled_child_cache",
+        "lexical_adapter_sha256": (
+            "neural_forge.hf_dense_lexical_residual_adapter"
+        ),
+        "progressive_bridge_sha256": "neural_forge.hf_progressive_target_bridge",
+    }
+    implementation_hashes: dict[str, str] = {}
+    for field_name, module_name in module_specs.items():
+        spec = importlib.util.find_spec(module_name)
+        if spec is None or spec.origin is None:
+            raise StagePreparationError(
+                f"Required lexical continuation module {module_name!r} is unavailable."
+            )
+        implementation_hashes[field_name] = stage._file_sha256(Path(spec.origin))
+
+    thresholds = {
+        "fit": {
+            "minimum_action_accuracy": 0.65,
+            "minimum_exact_rollout_fraction": 0.25,
+            "minimum_token_match_fraction": 0.40,
+            "minimum_lcp_fraction": 0.30,
+            "minimum_action_count": 960,
+            "minimum_rollout_count": 120,
+            "maximum_repeat_fraction_excess": 0.20,
+            "maximum_adjacent_repeat_fraction_excess": 0.25,
+            "maximum_longest_run_excess": 2,
+        },
+        "candidate": {
+            "minimum_action_accuracy": 0.50,
+            "minimum_exact_rollout_fraction": 0.25,
+            "minimum_token_match_fraction": 0.50,
+            "minimum_lcp_fraction": 0.35,
+            "minimum_action_count": 192,
+            "minimum_rollout_count": 24,
+            "maximum_repeat_fraction_excess": 0.20,
+            "maximum_adjacent_repeat_fraction_excess": 0.25,
+            "maximum_longest_run_excess": 2,
+        },
+        "sealed": {
+            "minimum_action_accuracy": 0.60,
+            "minimum_exact_rollout_fraction": 0.1875,
+            "minimum_token_match_fraction": 0.35,
+            "minimum_lcp_fraction": 0.30,
+            "minimum_action_count": 256,
+            "minimum_rollout_count": 32,
+            "maximum_repeat_fraction_excess": 0.20,
+            "maximum_adjacent_repeat_fraction_excess": 0.25,
+            "maximum_longest_run_excess": 2,
+        },
+    }
+    training = {
+        "steps": 48,
+        "learning_rate": 1e-4,
+        "checkpoint_steps": [2, 4, 8, 12, 16, 24, 32, 40, 48],
+        "fit_horizon": 8,
+        "evaluation_horizon": 8,
+        "fit_prompts_per_step": 12,
+        "temperature": 1.0,
+        "action_loss_weight": 1.0,
+        "distribution_loss_weight": 0.05,
+        "action_margin_loss_weight": 0.25,
+        "action_margin": 1.0,
+        "repetition_excess_loss_weight": 0.40,
+        "repetition_window": 8,
+        "parent_lane_loss_weight": 3.0,
+        "child_lane_loss_weight": 1.0,
+        "parent_only_steps": 8,
+        "warmup_fit_horizon": 4,
+        "late_position_loss_multiplier": 1.0,
+        "solved_prefix_loss_multiplier": 0.25,
+        "divergence_loss_multiplier": 6.0,
+        "post_divergence_loss_multiplier": 3.0,
+        "post_divergence_positions": 2,
+        "child_lane_starts_at_divergence": True,
+        "max_child_lane_prefixes": 3,
+        "child_repeat_stop_run_length": 3,
+        "qk_learning_rate_scale": 0.25,
+        "vo_learning_rate_scale": 0.50,
+        "gud_learning_rate_scale": 0.25,
+        "lexical_embedding_learning_rate_scale": 0.25,
+        "lexical_head_learning_rate_scale": 1.0,
+        "right_factor_learning_rate_scale": 0.25,
+        "lexical_right_factor_learning_rate_scale": 0.25,
+        "learning_rate_decay_step_1": 8,
+        "learning_rate_decay_scale_1": 0.75,
+        "learning_rate_decay_step_2": 24,
+        "learning_rate_decay_scale_2": 2.0 / 3.0,
+        "learning_rate_decay_step_3": 40,
+        "learning_rate_decay_scale_3": 0.5,
+        "qkvo_frozen_steps": 8,
+        "gud_frozen_steps": 24,
+        "lexical_embedding_frozen_steps": 24,
+        "lexical_head_frozen_steps": 0,
+        "top_k": 5,
+        "gradient_clip_norm": 0.5,
+        "max_prompt_tokens": 128,
+        "max_train_prefixes": 9216,
+        "max_evaluation_prefixes": 16000,
+        "max_checkpoints": 10,
+        "selection_policy": "rollout-first-acquisition",
+    }
+    preregistration = {
+        "schema": stage.PREREGISTRATION_SCHEMA,
+        "sealed_before_model_access": True,
+        "seed": 0,
+        "implementation": {
+            "runner_sha256": stage._file_sha256(Path(stage.__file__).resolve()),
+            "trainer_module": stage.CANONICAL_TRAINER_MODULE,
+            **implementation_hashes,
+        },
+        "parent": {
+            "path": str(parent),
+            "exact_unique_parameters": stage.QWEN3_4B_EXACT_PARAMETERS,
+            "tree_sha256": parent_tree["tree_sha256"],
+        },
+        "blank_target": {
+            "path": str(target),
+            "exact_unique_parameters": stage.QWEN3_1P4B_EXACT_PARAMETERS,
+            "tree_sha256": target_tree["tree_sha256"],
+            "required_files": required,
+        },
+        "compiler_split": {
+            "path": str(compiler_split_path),
+            "sha256": compiler_split_sha,
+            "expected_count": continuation_splits.ORIGINAL_COUNTS["fit"],
+        },
+        "splits": split_bindings,
+        "thresholds": thresholds,
+        "compiler": {
+            "capture_batch_size": 1,
+            "max_prompt_tokens": 128,
+            "canonical_validation_count": 4,
+            "compiler_seed": 0,
+            "bootstrap_kwargs": {
+                "heldout_gate_policy": "output_only",
+                "max_operator_delta_ratio": 0.1,
+                "trace_pooling": "last_valid",
+            },
+            "candidate_split_used_during_bootstrap": False,
+            "sealed_split_used_during_bootstrap": False,
+        },
+        "training": training,
+        "lexical_residual": {
+            "rank": stage.LEXICAL_RANK,
+            "vocab_size": stage.LEXICAL_VOCAB_SIZE,
+            "hidden_size": stage.LEXICAL_HIDDEN_SIZE,
+            "untied_required": True,
+        },
+        "compiler_cache": {
+            "root": str(cache_root),
+            "require_hit": True,
+            "expected_compiler_identity_sha256": cache_hashes[
+                "compiler_identity_sha256"
+            ],
+            "expected_receipt_sha256": cache_hashes["receipt_sha256"],
+            "expected_compiler_report_sha256": cache_hashes[
+                "compiler_report_sha256"
+            ],
+            "expected_state_dict_sha256": cache_hashes["state_dict_sha256"],
+            "expected_artifact_tree_sha256": cache_hashes[
+                "artifact_tree_sha256"
+            ],
+        },
+        "continuation": {
+            "factor_pack": {"path": str(factor_path), "sha256": factor_sha},
+            "source_run_report": {
+                "path": str(source_report_path),
+                "sha256": stage._file_sha256(source_report_path),
+            },
+            "expected_factor_state_sha256": factor_state_sha,
+            "expected_compiler_report_sha256": compiler_report_sha,
+            "expected_compiled_state_sha256": compiled_state_sha,
+        },
+        "corpus_provenance": {
+            "source_sha256": continuation_splits.PINNED_CORPUS_SHA256,
+            "source_line_count": continuation_splits.PINNED_CORPUS_LINE_COUNT,
+            "lexical_continuation_split_build_content_sha256": split_report[
+                "build_content_sha256"
+            ],
+            "prior_fit_training_replay": 96,
+            "exposed_prior_candidate_training_only": 24,
+            "fresh_candidate": 24,
+            "sealed_reused_by_exact_hash": 32,
+        },
+        "runtime": {
+            "dtype": "float16",
+            "attention_implementation": stage.CANONICAL_ATTENTION_IMPLEMENTATION,
+            "explicit_execute_required": True,
+        },
+    }
+    prereg_path = output / "preregistration.json"
+    _write_json_exclusive(prereg_path, preregistration)
+    prereg_sha = stage._file_sha256(prereg_path)
+    authenticated = stage.authenticate_preregistration(prereg_path, prereg_sha)
+    report = {
+        "schema": BUILD_SCHEMA,
+        "mode": "authenticated-lexical-attention-continuation",
+        "preregistration": str(prereg_path),
+        "preregistration_sha256": prereg_sha,
+        "evaluation_contract_sha256": authenticated.evaluation_contract_sha256,
+        "compiler_split_sha256": compiler_split_sha,
+        "behavior_split_sha256s": {
+            role: split_bindings[role]["sha256"]
+            for role in ("fit", "candidate", "sealed")
+        },
+        "source_run_report_sha256": stage._file_sha256(source_report_path),
+        "source_factor_pack_sha256": factor_sha,
+        "source_factor_state_sha256": factor_state_sha,
+        "lexical_rank": stage.LEXICAL_RANK,
+        "shared_compiler_cache_root": str(cache_root),
+        "required_compiler_cache_identity_sha256": cache_hashes[
+            "compiler_identity_sha256"
+        ],
+        "model_weights_loaded": False,
+        "model_checkpoint_created": False,
+        "training_launched": False,
+        "ready_for_explicit_preflight": True,
+    }
+    _write_json_exclusive(output / "build_report.json", report)
+    return report
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
@@ -762,6 +1165,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--target", type=Path, default=stage.DEFAULT_BLANK_TARGET)
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
     parser.add_argument("--continuation-source-report", type=Path)
+    parser.add_argument("--lexical-continuation-source-report", type=Path)
     parser.add_argument(
         "--original-split-dir",
         type=Path,
@@ -770,12 +1174,36 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--compiler-cache-root", type=Path, default=DEFAULT_COMPILER_CACHE_ROOT
     )
+    parser.add_argument(
+        "--source-split-dir",
+        type=Path,
+        default=continuation_splits.DEFAULT_RESIDUAL_ATTENTION_SPLIT_DIR,
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if args.continuation_source_report is None:
+    if (
+        args.continuation_source_report is not None
+        and args.lexical_continuation_source_report is not None
+    ):
+        raise SystemExit(
+            "Choose either --continuation-source-report or "
+            "--lexical-continuation-source-report, not both."
+        )
+    if args.lexical_continuation_source_report is not None:
+        report = prepare_lexical_continuation_stage(
+            output_dir=args.output_dir,
+            parent=args.parent,
+            target=args.target,
+            source_run_report=args.lexical_continuation_source_report,
+            source_split_dir=args.source_split_dir,
+            original_split_dir=args.original_split_dir,
+            compiler_cache_root=args.compiler_cache_root,
+            corpus_path=args.corpus,
+        )
+    elif args.continuation_source_report is None:
         report = prepare_stage(
             output_dir=args.output_dir,
             parent=args.parent,

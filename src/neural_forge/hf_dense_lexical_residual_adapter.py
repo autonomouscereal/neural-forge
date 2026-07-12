@@ -938,6 +938,26 @@ class InstalledDenseLexicalResidualAdapter:
                     "Baked lexical target did not return to its native parameter count."
                 )
             self._assert_original_state_keys()
+            published_keys = tuple(self.model.state_dict())
+            report = DenseLexicalResidualBakeReport(
+                vocab_size=self.report.vocab_size,
+                hidden_size=self.report.hidden_size,
+                rank=self.report.rank,
+                adapter_parameters_removed=self.report.adapter_parameter_count,
+                model_parameter_count_before_installation=(
+                    self.report.model_parameter_count_before
+                ),
+                model_parameter_count_before_bake=before_bake,
+                model_parameter_count_after_bake=after,
+                original_state_key_sha256=self.report.original_state_key_sha256,
+                published_state_key_sha256=_state_key_sha256(published_keys),
+                dense_delta_sha256=_canonical_sha256(manifest),
+                affected_dense_matrix_count=2,
+            )
+            self._published_embedding = published_embedding
+            self._published_lm_head = published_lm_head
+            self._state = "baked"
+            self._bake_report = report
         except Exception:
             if getattr(self.model, self.report.owner_name, None) is not self.registry:
                 if hasattr(self.model, self.report.owner_name):
@@ -945,32 +965,29 @@ class InstalledDenseLexicalResidualAdapter:
                 self.model.add_module(self.report.owner_name, self.registry)
             self._embedding_slot.replace(self._installed_embedding)
             self._lm_head_slot.replace(self._installed_lm_head)
+            self._published_embedding = None
+            self._published_lm_head = None
+            self._state = "live"
+            self._bake_report = None
             raise
-
-        published_keys = tuple(self.model.state_dict())
-        report = DenseLexicalResidualBakeReport(
-            vocab_size=self.report.vocab_size,
-            hidden_size=self.report.hidden_size,
-            rank=self.report.rank,
-            adapter_parameters_removed=self.report.adapter_parameter_count,
-            model_parameter_count_before_installation=(
-                self.report.model_parameter_count_before
-            ),
-            model_parameter_count_before_bake=before_bake,
-            model_parameter_count_after_bake=after,
-            original_state_key_sha256=self.report.original_state_key_sha256,
-            published_state_key_sha256=_state_key_sha256(published_keys),
-            dense_delta_sha256=_canonical_sha256(manifest),
-            affected_dense_matrix_count=2,
-        )
-        self._published_embedding = published_embedding
-        self._published_lm_head = published_lm_head
-        self._state = "baked"
-        self._bake_report = report
         return report
 
-    def restore_prepublication_native(self) -> None:
-        """Undo a bake while a surrounding publication transaction rejects."""
+    def restore_prepublication_native(
+        self,
+        *,
+        expected_model_parameter_count: int | None = None,
+    ) -> None:
+        """Undo a bake while a surrounding publication transaction rejects.
+
+        ``expected_model_parameter_count`` is a narrow composite-transaction
+        escape hatch.  A lexical adapter installed after other temporary
+        operators records their factors in its installation baseline.  If
+        those operators have already been restored when a later publication
+        failure unwinds, the surrounding transaction supplies the final native
+        count and assumes responsibility for the final global state-key
+        certificate.  Standalone restoration keeps the original strict count
+        and exact state-key check.
+        """
 
         if self._state == "live":
             self.rollback()
@@ -986,17 +1003,33 @@ class InstalledDenseLexicalResidualAdapter:
             raise DenseLexicalResidualTopologyError(
                 "Published lexical ownership changed; restoration is unsafe."
             )
-        self._embedding_slot.replace(self._original_embedding)
-        self._lm_head_slot.replace(self._original_lm_head)
-        self._assert_base_unchanged()
-        if (
-            _unique_parameter_count(self.model)
-            != self.report.model_parameter_count_before
-        ):
-            raise DenseLexicalResidualTopologyError(
-                "Prepublication lexical restoration changed the native budget."
+        expected_count = (
+            self.report.model_parameter_count_before
+            if expected_model_parameter_count is None
+            else _index(
+                expected_model_parameter_count,
+                "expected_model_parameter_count",
+                positive=True,
             )
-        self._assert_original_state_keys()
+        )
+        self._assert_base_unchanged()
+        if _unique_parameter_count(self.model) != expected_count:
+            raise DenseLexicalResidualTopologyError(
+                "Published lexical target does not match the expected native budget."
+            )
+        try:
+            self._embedding_slot.replace(self._original_embedding)
+            self._lm_head_slot.replace(self._original_lm_head)
+            if _unique_parameter_count(self.model) != expected_count:
+                raise DenseLexicalResidualTopologyError(
+                    "Prepublication lexical restoration changed the native budget."
+                )
+            if expected_model_parameter_count is None:
+                self._assert_original_state_keys()
+        except Exception:
+            self._embedding_slot.replace(self._published_embedding)
+            self._lm_head_slot.replace(self._published_lm_head)
+            raise
         self._state = "rolled-back"
 
     def __enter__(self) -> InstalledDenseLexicalResidualAdapter:
