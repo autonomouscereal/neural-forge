@@ -196,6 +196,69 @@ def _install_guided(handle):
     return combined, audit, pack, hashes
 
 
+def test_canonical_json_role_key_sorting_preserves_audit_authorization(
+    toy_stage1: None,
+) -> None:
+    """Exercise the real JSON boundary, which alphabetizes ``per_role``."""
+
+    del toy_stage1
+    model = _ToyModel()
+    inherited = _install_inherited(model)
+    audit, pack, hashes = _source_payload(inherited)
+    published_audit = json.loads(json.dumps(audit, sort_keys=True))
+
+    assert tuple(published_audit["per_role"]) == ("k", "o", "q", "v")
+    combined = install_guided_dense_gqa_qkvo_residual_tranche(
+        inherited,
+        audit_report=published_audit,
+        basis_pack=pack,
+        **hashes,
+    )
+    combined.assert_live()
+    combined.rollback()
+
+
+@pytest.mark.parametrize(
+    "per_role",
+    (
+        {role: {"passed": True} for role in ROLES if role != "q"},
+        {
+            **{role: {"passed": True} for role in ROLES},
+            "unauthorized": {"passed": True},
+        },
+        {
+            **{role: {"passed": True} for role in ROLES if role != "q"},
+            "unauthorized": {"passed": True},
+        },
+    ),
+    ids=("missing-role", "extra-role", "same-length-role-substitution"),
+)
+def test_audit_per_role_requires_exact_semantic_role_set(
+    toy_stage1: None,
+    per_role: dict[str, dict[str, bool]],
+) -> None:
+    del toy_stage1
+    model = _ToyModel()
+    inherited = _install_inherited(model)
+    audit, pack, hashes = _source_payload(inherited)
+    audit["per_role"] = per_role
+    audit.pop("report_sha256")
+    audit_sha256 = guided_qkvo._canonical_sha256(audit)
+    audit["report_sha256"] = audit_sha256
+
+    with pytest.raises(DenseGQAQKVOResidualTopologyError, match="all four"):
+        install_guided_dense_gqa_qkvo_residual_tranche(
+            inherited,
+            audit_report=audit,
+            basis_pack=pack,
+            **{
+                **hashes,
+                "expected_audit_report_sha256": audit_sha256,
+            },
+        )
+    inherited.rollback()
+
+
 def test_tensor_hash_is_byte_compatible_and_uses_bounded_staging() -> None:
     element_count = guided_qkvo._TENSOR_HASH_STAGING_BYTES // 4 + 17
     value = torch.arange(element_count, dtype=torch.float32)

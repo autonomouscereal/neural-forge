@@ -11,8 +11,8 @@ ROOT=${ROOT:-/home/cereal/model-surgery-lab/neural-forge-src}
 PYTHON=${PYTHON:-/home/cereal/model-surgery-lab/venv/bin/python}
 AUDIT_RUN_REPORT=${AUDIT_RUN_REPORT:-/mnt/ai_data/neural-forge/runs/qwen_exact_target_native_stage1_step24_output_jacobian_audit_20260712/run_report.json}
 AUDIT_PREREGISTRATION=${AUDIT_PREREGISTRATION:-/mnt/ai_data/neural-forge/prereg/qwen_exact_target_native_stage1_step24_output_jacobian_audit_20260712/preregistration.json}
-PREREG_DIR=${PREREG_DIR:-/mnt/ai_data/neural-forge/prereg/qwen_exact_target_native_stage1_step24_guided_qkvo_continuation_20260712}
-OUTPUT_ROOT=${OUTPUT_ROOT:-/mnt/ai_data/neural-forge/runs/qwen_exact_target_native_stage1_step24_guided_qkvo_continuation_20260712}
+PREREG_DIR=${PREREG_DIR:-/mnt/ai_data/neural-forge/prereg/qwen_exact_target_native_stage1_step24_guided_qkvo_continuation_schemafix_v2_20260712}
+OUTPUT_ROOT=${OUTPUT_ROOT:-/mnt/ai_data/neural-forge/runs/qwen_exact_target_native_stage1_step24_guided_qkvo_continuation_schemafix_v2_20260712}
 
 ROOT=$(realpath -e "$ROOT")
 test "$ROOT" = "/home/cereal/model-surgery-lab/neural-forge-src"

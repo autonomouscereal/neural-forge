@@ -1384,7 +1384,11 @@ def _authenticate_guided_qkvo_sources(
         or audit_report.get("authorized_roles") != roles
         or audit_report.get("installable_roles") != roles
         or not isinstance(per_role, Mapping)
-        or tuple(per_role) != tuple(roles)
+        # JSON publication uses sorted object keys, so authenticated semantic
+        # role identity must not depend on mapping insertion order.  Require
+        # the exact four-key set, then validate each role explicitly below.
+        or len(per_role) != len(roles)
+        or any(role not in per_role for role in roles)
         or any(
             not isinstance(per_role[role], Mapping)
             or per_role[role].get("passed") is not True
