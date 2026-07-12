@@ -34,11 +34,12 @@ import os
 import platform
 import re
 import shutil
+import subprocess
 import tempfile
 import weakref
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
 import torch
@@ -535,6 +536,7 @@ class AuthenticatedPreRegistration:
     compiler_cache: CompilerCacheBinding | None
     lexical_residual: LexicalResidualBinding | None
     output_jacobian_audit: OutputJacobianAuditBinding | None
+    historical_implementation_revision: str | None = None
 
     def preflight_report(self) -> dict[str, Any]:
         return {
@@ -1372,9 +1374,250 @@ def _output_jacobian_audit_binding(
     )
 
 
+_HISTORICAL_IMPLEMENTATION_BLOBS = {
+    "runner_sha256": (
+        "runner",
+        "experiments/run_qwen_exact_target_native_stage.py",
+    ),
+    "trainer_sha256": (
+        "trainer",
+        "src/neural_forge/hf_target_native_behavior_distillation.py",
+    ),
+    "compiler_cache_sha256": (
+        "compiler_cache",
+        "src/neural_forge/hf_compiled_child_cache.py",
+    ),
+    "lexical_adapter_sha256": (
+        "lexical_adapter",
+        "src/neural_forge/hf_dense_lexical_residual_adapter.py",
+    ),
+    "progressive_bridge_sha256": (
+        "progressive_bridge",
+        "src/neural_forge/hf_progressive_target_bridge.py",
+    ),
+    "qkvo_adapter_sha256": (
+        "qkvo_adapter",
+        "src/neural_forge/hf_dense_gqa_qkvo_residual_adapter.py",
+    ),
+    "swiglu_adapter_sha256": (
+        "swiglu_adapter",
+        "src/neural_forge/hf_dense_swiglu_projection_residual_adapter.py",
+    ),
+    "output_jacobian_basis_sha256": (
+        "output_jacobian_basis",
+        "src/neural_forge/hf_output_jacobian_orthogonal_basis.py",
+    ),
+    "output_jacobian_sketch_sha256": (
+        "output_jacobian_sketch",
+        "src/neural_forge/hf_output_jacobian_sketch.py",
+    ),
+    "qkvo_output_jacobian_audit_sha256": (
+        "qkvo_output_jacobian_audit",
+        "src/neural_forge/hf_qkvo_output_jacobian_audit.py",
+    ),
+}
+_HISTORICAL_IMPLEMENTATION_MODULES = {
+    "trainer": CANONICAL_TRAINER_MODULE,
+    "output_jacobian_basis": OUTPUT_JACOBIAN_BASIS_MODULE,
+    "output_jacobian_sketch": OUTPUT_JACOBIAN_SKETCH_MODULE,
+    "qkvo_output_jacobian_audit": QKVO_OUTPUT_JACOBIAN_AUDIT_MODULE,
+}
+
+
+def _historical_git_environment() -> dict[str, str]:
+    """Pin Git discovery to ``-C repo`` and ignore object replacement overlays."""
+
+    environment = dict(os.environ)
+    for name in (
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_COMMON_DIR",
+        "GIT_DIR",
+        "GIT_INDEX_FILE",
+        "GIT_NAMESPACE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_REPLACE_REF_BASE",
+        "GIT_WORK_TREE",
+    ):
+        environment.pop(name, None)
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
+    environment["GIT_OPTIONAL_LOCKS"] = "0"
+    return environment
+
+
+def _authenticate_historical_implementation_blobs(
+    implementation: Mapping[str, Any],
+    evidence: Any,
+    revision: Any,
+    *,
+    required_fields: set[str],
+) -> dict[str, Any]:
+    """Verify old source pins against one immutable commit without a worktree."""
+
+    if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+        raise ExactTargetNativeStageError(
+            "historical_git_revision must be a full lowercase commit SHA."
+        )
+    expected_evidence_keys = {
+        _HISTORICAL_IMPLEMENTATION_BLOBS[field][0]
+        for field in required_fields
+        if field != "trainer_module"
+    }
+    if not isinstance(evidence, Mapping) or set(evidence) != (
+        expected_evidence_keys | {"authenticated_before_model_access"}
+    ):
+        raise ExactTargetNativeStageError(
+            "Historical implementation evidence has missing or extra sources."
+        )
+    if evidence.get("authenticated_before_model_access") is not True:
+        raise ExactTargetNativeStageError(
+            "Historical implementation evidence lacks its pre-model attestation."
+        )
+    repo = Path(__file__).resolve().parents[1]
+    git_environment = _historical_git_environment()
+    try:
+        resolved_repo = (
+            subprocess.run(
+                [
+                    "git",
+                    "--no-replace-objects",
+                    "-C",
+                    str(repo),
+                    "rev-parse",
+                    "--show-toplevel",
+                ],
+                check=True,
+                capture_output=True,
+                env=git_environment,
+            )
+            .stdout.decode("utf-8")
+            .strip()
+        )
+        resolved = (
+            subprocess.run(
+                [
+                    "git",
+                    "--no-replace-objects",
+                    "-C",
+                    str(repo),
+                    "rev-parse",
+                    "--verify",
+                    f"{revision}^{{commit}}",
+                ],
+                check=True,
+                capture_output=True,
+                env=git_environment,
+            )
+            .stdout.decode("ascii")
+            .strip()
+        )
+    except (OSError, subprocess.CalledProcessError, UnicodeError) as error:
+        raise ExactTargetNativeStageError(
+            "Historical implementation commit is unavailable in this repository."
+        ) from error
+    if Path(resolved_repo).resolve() != repo:
+        raise ExactTargetNativeStageError(
+            "Historical implementation Git discovery escaped the source repository."
+        )
+    if resolved != revision:
+        raise ExactTargetNativeStageError(
+            "Historical implementation revision did not resolve exactly."
+        )
+    try:
+        subprocess.run(
+            [
+                "git",
+                "--no-replace-objects",
+                "-C",
+                str(repo),
+                "merge-base",
+                "--is-ancestor",
+                revision,
+                "HEAD",
+            ],
+            check=True,
+            capture_output=True,
+            env=git_environment,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise ExactTargetNativeStageError(
+            "Historical implementation commit is not an ancestor of current HEAD."
+        ) from error
+    for field in sorted(required_fields - {"trainer_module"}):
+        evidence_key, relative = _HISTORICAL_IMPLEMENTATION_BLOBS[field]
+        row = evidence.get(evidence_key)
+        declared = _require_sha256(implementation.get(field), f"implementation.{field}")
+        expected_row_keys = (
+            {"module", "path", "sha256"}
+            if evidence_key in _HISTORICAL_IMPLEMENTATION_MODULES
+            else {"path", "sha256"}
+        )
+        reported_path = row.get("path") if isinstance(row, Mapping) else None
+        normalized_path = (
+            None
+            if not isinstance(reported_path, str)
+            else reported_path.replace("\\", "/")
+        )
+        canonical_path = (
+            None if normalized_path is None else str(PurePosixPath(normalized_path))
+        )
+        absolute_path = bool(
+            normalized_path is not None
+            and (
+                PurePosixPath(normalized_path).is_absolute()
+                or re.match(r"^[A-Za-z]:/", normalized_path) is not None
+            )
+        )
+        if (
+            not isinstance(row, Mapping)
+            or set(row) != expected_row_keys
+            or row.get("sha256") != declared
+            or normalized_path is None
+            or canonical_path != normalized_path
+            or not absolute_path
+            or not normalized_path.endswith(f"/{relative}")
+            or (
+                evidence_key in _HISTORICAL_IMPLEMENTATION_MODULES
+                and row.get("module")
+                != _HISTORICAL_IMPLEMENTATION_MODULES[evidence_key]
+            )
+        ):
+            raise ExactTargetNativeStageError(
+                f"Historical evidence {evidence_key!r} disagrees with the preregistration."
+            )
+        try:
+            blob = subprocess.run(
+                [
+                    "git",
+                    "--no-replace-objects",
+                    "-C",
+                    str(repo),
+                    "show",
+                    f"{revision}:{relative}",
+                ],
+                check=True,
+                capture_output=True,
+                env=git_environment,
+            ).stdout
+        except (OSError, subprocess.CalledProcessError) as error:
+            raise ExactTargetNativeStageError(
+                f"Historical source blob {relative!r} is unavailable."
+            ) from error
+        if hashlib.sha256(blob).hexdigest() != declared:
+            raise ExactTargetNativeStageError(
+                f"Historical source blob {relative!r} failed its SHA-256 pin."
+            )
+    # This exact mapping was in the original evaluation-contract preimage.
+    # Preserve it byte-for-byte after independently verifying every source blob.
+    _canonical_json(dict(evidence))
+    return dict(evidence)
+
+
 def authenticate_preregistration(
     path: Path | str,
     expected_sha256: str,
+    *,
+    historical_git_revision: str | None = None,
+    historical_implementation_authentication: Mapping[str, Any] | None = None,
 ) -> AuthenticatedPreRegistration:
     """Authenticate the complete run contract before loading any model."""
 
@@ -1458,6 +1701,22 @@ def authenticate_preregistration(
         raise ExactTargetNativeStageError(
             "Only the canonical output/rollout trainer module is permitted."
         )
+    if (historical_git_revision is None) != (
+        historical_implementation_authentication is None
+    ):
+        raise ExactTargetNativeStageError(
+            "Historical revision and implementation evidence must be supplied together."
+        )
+    historical_authentication = (
+        None
+        if historical_git_revision is None
+        else _authenticate_historical_implementation_blobs(
+            implementation,
+            historical_implementation_authentication,
+            historical_git_revision,
+            required_fields=required_implementation,
+        )
+    )
     runner_sha = _require_sha256(
         implementation.get("runner_sha256"), "implementation.runner_sha256"
     )
@@ -1471,8 +1730,16 @@ def authenticate_preregistration(
             "Canonical output/rollout trainer module is unavailable."
         )
     trainer_path = Path(trainer_spec.origin).resolve()
-    actual_runner_sha = _file_sha256(runner_path)
-    actual_trainer_sha = _file_sha256(trainer_path)
+    actual_runner_sha = (
+        runner_sha
+        if historical_authentication is not None
+        else _file_sha256(runner_path)
+    )
+    actual_trainer_sha = (
+        trainer_sha
+        if historical_authentication is not None
+        else _file_sha256(trainer_path)
+    )
     if runner_sha != actual_runner_sha or trainer_sha != actual_trainer_sha:
         raise ExactTargetNativeStageError(
             "Preregistered runner/trainer source hash does not match the live code."
@@ -1486,7 +1753,14 @@ def authenticate_preregistration(
                 "Compiled-child cache implementation is unavailable."
             )
         cache_path = Path(cache_spec.origin).resolve()
-        cache_sha = _file_sha256(cache_path)
+        cache_sha = (
+            _require_sha256(
+                implementation.get("compiler_cache_sha256"),
+                "implementation.compiler_cache_sha256",
+            )
+            if historical_authentication is not None
+            else _file_sha256(cache_path)
+        )
         if cache_sha != _require_sha256(
             implementation.get("compiler_cache_sha256"),
             "implementation.compiler_cache_sha256",
@@ -1530,7 +1804,13 @@ def authenticate_preregistration(
                     f"Lexical continuation implementation {module_name!r} is unavailable."
                 )
             source_path = Path(spec.origin).resolve()
-            source_sha = _file_sha256(source_path)
+            source_sha = (
+                _require_sha256(
+                    implementation.get(field_name), f"implementation.{field_name}"
+                )
+                if historical_authentication is not None
+                else _file_sha256(source_path)
+            )
             if source_sha != _require_sha256(
                 implementation.get(field_name), f"implementation.{field_name}"
             ):
@@ -1564,7 +1844,13 @@ def authenticate_preregistration(
                     "unavailable."
                 )
             source_path = Path(spec.origin).resolve()
-            source_sha = _file_sha256(source_path)
+            source_sha = (
+                _require_sha256(
+                    implementation.get(field_name), f"implementation.{field_name}"
+                )
+                if historical_authentication is not None
+                else _file_sha256(source_path)
+            )
             if source_sha != _require_sha256(
                 implementation.get(field_name), f"implementation.{field_name}"
             ):
@@ -1577,6 +1863,8 @@ def authenticate_preregistration(
                 "path": str(source_path),
                 "sha256": source_sha,
             }
+    if historical_authentication is not None:
+        implementation_authentication = historical_authentication
     base = prereg_path.parent
     parent = _artifact_binding(
         raw.get("parent"),
@@ -1833,7 +2121,131 @@ def authenticate_preregistration(
         compiler_cache=compiler_cache,
         lexical_residual=lexical_residual,
         output_jacobian_audit=output_jacobian_audit,
+        historical_implementation_revision=historical_git_revision,
     )
+
+
+def _live_execution_implementation_snapshot(
+    contract: AuthenticatedPreRegistration,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Recompute canonical live source pins without touching model artifacts."""
+
+    runner_path = Path(__file__).resolve()
+    trainer_spec = importlib.util.find_spec(CANONICAL_TRAINER_MODULE)
+    if trainer_spec is None or trainer_spec.origin is None:
+        raise ExactTargetNativeStageError(
+            "Canonical output/rollout trainer module is unavailable."
+        )
+    trainer_path = Path(trainer_spec.origin).resolve()
+    trainer_sha = _file_sha256(trainer_path)
+    pins: dict[str, Any] = {
+        "runner_sha256": _file_sha256(runner_path),
+        "trainer_module": CANONICAL_TRAINER_MODULE,
+        "trainer_sha256": trainer_sha,
+    }
+    authentication: dict[str, Any] = {
+        "runner": {"path": str(runner_path), "sha256": pins["runner_sha256"]},
+        "trainer": {
+            "module": CANONICAL_TRAINER_MODULE,
+            "path": str(trainer_path),
+            "sha256": trainer_sha,
+        },
+        "authenticated_before_model_access": True,
+    }
+    if contract.compiler_cache is not None:
+        cache_spec = importlib.util.find_spec("neural_forge.hf_compiled_child_cache")
+        if cache_spec is None or cache_spec.origin is None:
+            raise ExactTargetNativeStageError(
+                "Compiled-child cache implementation is unavailable."
+            )
+        cache_path = Path(cache_spec.origin).resolve()
+        cache_sha = _file_sha256(cache_path)
+        pins["compiler_cache_sha256"] = cache_sha
+        authentication["compiler_cache"] = {
+            "path": str(cache_path),
+            "sha256": cache_sha,
+        }
+    if contract.lexical_residual is not None:
+        for field_name, module_name in (
+            (
+                "lexical_adapter_sha256",
+                "neural_forge.hf_dense_lexical_residual_adapter",
+            ),
+            ("progressive_bridge_sha256", "neural_forge.hf_progressive_target_bridge"),
+            (
+                "qkvo_adapter_sha256",
+                "neural_forge.hf_dense_gqa_qkvo_residual_adapter",
+            ),
+            (
+                "swiglu_adapter_sha256",
+                "neural_forge.hf_dense_swiglu_projection_residual_adapter",
+            ),
+        ):
+            spec = importlib.util.find_spec(module_name)
+            if spec is None or spec.origin is None:
+                raise ExactTargetNativeStageError(
+                    f"Lexical continuation implementation {module_name!r} is unavailable."
+                )
+            source_path = Path(spec.origin).resolve()
+            source_sha = _file_sha256(source_path)
+            pins[field_name] = source_sha
+            authentication[field_name.removesuffix("_sha256")] = {
+                "path": str(source_path),
+                "sha256": source_sha,
+            }
+    if contract.output_jacobian_audit is not None:
+        for field_name, module_name in (
+            ("output_jacobian_basis_sha256", OUTPUT_JACOBIAN_BASIS_MODULE),
+            ("output_jacobian_sketch_sha256", OUTPUT_JACOBIAN_SKETCH_MODULE),
+            (
+                "qkvo_output_jacobian_audit_sha256",
+                QKVO_OUTPUT_JACOBIAN_AUDIT_MODULE,
+            ),
+        ):
+            spec = importlib.util.find_spec(module_name)
+            if spec is None or spec.origin is None:
+                raise ExactTargetNativeStageError(
+                    f"Output-Jacobian audit implementation {module_name!r} is "
+                    "unavailable."
+                )
+            source_path = Path(spec.origin).resolve()
+            source_sha = _file_sha256(source_path)
+            pins[field_name] = source_sha
+            authentication[field_name.removesuffix("_sha256")] = {
+                "module": module_name,
+                "path": str(source_path),
+                "sha256": source_sha,
+            }
+    return pins, authentication
+
+
+def _assert_live_execution_implementation(
+    contract: AuthenticatedPreRegistration,
+) -> None:
+    """Fail closed if an evidence-only or stale source contract reaches execution."""
+
+    if contract.historical_implementation_revision is not None:
+        raise ExactTargetNativeStageError(
+            "Historical implementation authentication is replay-only and cannot execute."
+        )
+    if _file_sha256(contract.path) != contract.file_sha256:
+        raise ExactTargetNativeStageError(
+            "Preregistration changed between authentication and execution."
+        )
+    raw = _strict_json(contract.path)
+    if not isinstance(raw, Mapping) or raw.get("schema") != PREREGISTRATION_SCHEMA:
+        raise ExactTargetNativeStageError(
+            "Execution requires the canonical live preregistration schema."
+        )
+    live_pins, live_authentication = _live_execution_implementation_snapshot(contract)
+    if raw.get("implementation") != live_pins:
+        raise ExactTargetNativeStageError(
+            "Preregistered implementation pins no longer match live execution code."
+        )
+    if contract.implementation_authentication != live_authentication:
+        raise ExactTargetNativeStageError(
+            "Authenticated implementation mapping no longer matches live execution code."
+        )
 
 
 def _model_input_device(model: nn.Module) -> torch.device:
@@ -2897,7 +3309,9 @@ class ProductionStageRuntime:
                 "factor state."
             )
         try:
-            restored_tensor_refs = tuple(weakref.ref(value) for value in restored_tensors)
+            restored_tensor_refs = tuple(
+                weakref.ref(value) for value in restored_tensors
+            )
         except TypeError as error:
             raise ExactTargetNativeStageError(
                 "The restored factor clone cannot prove release before the audit."
@@ -3549,8 +3963,7 @@ def _output_jacobian_audit_artifacts(
     expected_site_indices_sha256 = _canonical_sha256(expected_site_indices)
     if (
         canonical_report.get("site_indices") != expected_site_indices
-        or canonical_report.get("site_indices_sha256")
-        != expected_site_indices_sha256
+        or canonical_report.get("site_indices_sha256") != expected_site_indices_sha256
     ):
         raise ExactTargetNativeStageError(
             "Output-Jacobian report site order/hash is not the canonical 120-site "
@@ -3600,17 +4013,11 @@ def _output_jacobian_audit_artifacts(
             )
     pass1_authenticator_sha = _require_sha256(
         canonical_report.get("pass1_full_element_replay_authenticator_sha256"),
-        (
-            "output_jacobian_audit_report."
-            "pass1_full_element_replay_authenticator_sha256"
-        ),
+        ("output_jacobian_audit_report.pass1_full_element_replay_authenticator_sha256"),
     )
     pass2_authenticator_sha = _require_sha256(
         canonical_report.get("pass2_full_element_replay_authenticator_sha256"),
-        (
-            "output_jacobian_audit_report."
-            "pass2_full_element_replay_authenticator_sha256"
-        ),
+        ("output_jacobian_audit_report.pass2_full_element_replay_authenticator_sha256"),
     )
     if pass1_authenticator_sha != pass2_authenticator_sha:
         raise ExactTargetNativeStageError(
@@ -3645,12 +4052,10 @@ def _output_jacobian_audit_artifacts(
         )
     factor_numel = sum(int(value.numel()) for value in factor_tensors.values())
     factor_nbytes = sum(
-        int(value.numel() * value.element_size())
-        for value in factor_tensors.values()
+        int(value.numel() * value.element_size()) for value in factor_tensors.values()
     )
     largest_factor_nbytes = max(
-        int(value.numel() * value.element_size())
-        for value in factor_tensors.values()
+        int(value.numel() * value.element_size()) for value in factor_tensors.values()
     )
     if (
         not isinstance(factor_capture, Mapping)
@@ -3721,9 +4126,7 @@ def _output_jacobian_audit_artifacts(
             "malformed its zero-cache recomputation evidence."
         )
     expected_callback_count = 2 * replay_blocks * QKVO_SITE_COUNT
-    pass_authenticators = hotpath.get(
-        "pass_full_element_replay_authenticator_sha256"
-    )
+    pass_authenticators = hotpath.get("pass_full_element_replay_authenticator_sha256")
     callback_source_audit = hotpath.get("callback_source_audit")
     callback_sources = (
         callback_source_audit.get("target_source_sha256")
@@ -3755,12 +4158,9 @@ def _output_jacobian_audit_artifacts(
     )
     if (
         type(hotpath.get("wrapper_gradient_callback_count")) is not int
-        or hotpath.get("wrapper_gradient_callback_count")
-        != expected_callback_count
+        or hotpath.get("wrapper_gradient_callback_count") != expected_callback_count
         or hotpath.get("callback_sync_evidence") != "callback_source_audit"
-        or type(
-            hotpath.get("pass_boundary_device_to_host_transfer_call_count")
-        )
+        or type(hotpath.get("pass_boundary_device_to_host_transfer_call_count"))
         is not int
         or hotpath.get("pass_boundary_device_to_host_transfer_call_count") != 2
         or type(hotpath.get("fingerprint_records_hashed")) is not int
@@ -3771,8 +4171,7 @@ def _output_jacobian_audit_artifacts(
         or set(pass_authenticators) != {"pass1", "pass2"}
         or pass_authenticators.get("pass1") != pass1_authenticator_sha
         or pass_authenticators.get("pass2") != pass2_authenticator_sha
-        or hotpath.get("replay_authenticator_kind")
-        != QKVO_REPLAY_AUTHENTICATOR_KIND
+        or hotpath.get("replay_authenticator_kind") != QKVO_REPLAY_AUTHENTICATOR_KIND
         or hotpath.get("replay_authenticator_binds_every_element") is not True
         or hotpath.get("replay_authenticator_is_collision_free") is not False
         or hotpath.get("replay_authenticator_projection_lanes")
@@ -3836,45 +4235,25 @@ def _output_jacobian_audit_artifacts(
     fingerprint_host_upper = memory_int(
         "deferred_fingerprint_host_staging_upper_bound_bytes", minimum=1
     )
-    coefficient_bytes = memory_int(
-        "replay_authenticator_coefficient_bytes", minimum=1
-    )
-    hash_staging_limit = memory_int(
-        "tensor_hash_cpu_staging_limit_bytes", minimum=1
-    )
+    coefficient_bytes = memory_int("replay_authenticator_coefficient_bytes", minimum=1)
+    hash_staging_limit = memory_int("tensor_hash_cpu_staging_limit_bytes", minimum=1)
     final_pack_bytes = memory_int("final_guided_cpu_pack_bytes", minimum=1)
-    basis_payload_clone_bytes = memory_int(
-        "basis_payload_cpu_clone_bytes", minimum=1
-    )
-    cached_parent_logit_rows = memory_int(
-        "replay_plan_cached_parent_logit_row_count"
-    )
-    cached_parent_logit_bytes = memory_int(
-        "replay_plan_cached_parent_logit_bytes"
-    )
-    cached_child_logit_rows = memory_int(
-        "replay_plan_cached_child_logit_row_count"
-    )
-    cached_child_logit_bytes = memory_int(
-        "replay_plan_cached_child_logit_bytes"
-    )
+    basis_payload_clone_bytes = memory_int("basis_payload_cpu_clone_bytes", minimum=1)
+    cached_parent_logit_rows = memory_int("replay_plan_cached_parent_logit_row_count")
+    cached_parent_logit_bytes = memory_int("replay_plan_cached_parent_logit_bytes")
+    cached_child_logit_rows = memory_int("replay_plan_cached_child_logit_row_count")
+    cached_child_logit_bytes = memory_int("replay_plan_cached_child_logit_bytes")
     cached_replay_tensor_count = memory_int("replay_plan_cached_tensor_count")
     cached_replay_tensor_bytes = memory_int("replay_plan_cached_tensor_bytes")
-    token_path_scalar_bytes = memory_int(
-        "token_path_scalar_transient_bytes", minimum=1
-    )
+    token_path_scalar_bytes = memory_int("token_path_scalar_transient_bytes", minimum=1)
     memory_peak = memory_int("accounted_auxiliary_peak_bytes", minimum=1)
     memory_limit = memory_int("max_auxiliary_bytes", minimum=1)
     phase1_persistent = memory_int("phase1_actual_persistent_bytes", minimum=1)
-    phase1_transient = memory_int(
-        "phase1_actual_max_batch_transient_bytes", minimum=1
-    )
+    phase1_transient = memory_int("phase1_actual_max_batch_transient_bytes", minimum=1)
     phase1_wrapper = memory_int("phase1_wrapper_hook_transient_bytes", minimum=1)
     phase1_peak = memory_int("phase1_actual_peak_bytes", minimum=1)
     phase2_persistent = memory_int("phase2_actual_persistent_bytes", minimum=1)
-    phase2_transient = memory_int(
-        "phase2_actual_max_batch_transient_bytes", minimum=1
-    )
+    phase2_transient = memory_int("phase2_actual_max_batch_transient_bytes", minimum=1)
     phase2_wrapper = memory_int("phase2_wrapper_hook_transient_bytes", minimum=1)
     phase2_peak = memory_int("phase2_actual_peak_bytes", minimum=1)
     actual_replay_blocks = memory_int("actual_replay_blocks", minimum=1)
@@ -3885,13 +4264,9 @@ def _output_jacobian_audit_artifacts(
         "actual_replay_authenticator_coefficient_bytes", minimum=1
     )
     actual_pack_bytes = memory_int("actual_final_guided_cpu_pack_bytes", minimum=1)
-    observed_hash_staging = memory_int(
-        "maximum_observed_tensor_hash_cpu_staging_bytes"
-    )
+    observed_hash_staging = memory_int("maximum_observed_tensor_hash_cpu_staging_bytes")
     factor_state_total_nbytes = memory_int("factor_state_total_nbytes", minimum=1)
-    retained_factor_clone_bytes = memory_int(
-        "factor_state_retained_cpu_clone_bytes"
-    )
+    retained_factor_clone_bytes = memory_int("factor_state_retained_cpu_clone_bytes")
     capture_overlap_bytes = memory_int(
         "factor_state_before_after_capture_overlap_bytes"
     )
@@ -3905,10 +4280,7 @@ def _output_jacobian_audit_artifacts(
         * 4
     )
     expected_actual_fingerprint = (
-        replay_blocks
-        * QKVO_SITE_COUNT
-        * QKVO_FINGERPRINT_VALUES_PER_WRAPPER
-        * 4
+        replay_blocks * QKVO_SITE_COUNT * QKVO_FINGERPRINT_VALUES_PER_WRAPPER * 4
     )
     planned_peak = sum(
         (
@@ -3997,8 +4369,7 @@ def _output_jacobian_audit_artifacts(
         or actual_fingerprint != expected_actual_fingerprint
         or actual_fingerprint > fingerprint_upper
         or actual_coefficient_bytes != coefficient_bytes
-        or hotpath.get("replay_authenticator_coefficient_bytes")
-        != coefficient_bytes
+        or hotpath.get("replay_authenticator_coefficient_bytes") != coefficient_bytes
         or hash_staging_limit != QKVO_TENSOR_HASH_STAGING_LIMIT_BYTES
         or observed_hash_staging > hash_staging_limit
         or observed_hash_staging
@@ -4016,8 +4387,7 @@ def _output_jacobian_audit_artifacts(
         or phase2_peak != recomputed_phase2_peak
         or memory.get("manual_plan_covers_phase1") != 1
         or memory.get("manual_plan_covers_phase2") != 1
-        or memory.get("finalized_result_tensors_retained_on_accumulator_device")
-        != 0
+        or memory.get("finalized_result_tensors_retained_on_accumulator_device") != 0
         or memory.get("all_sketches_drained_after_finalize") != 1
         or memory.get("factor_state_capture_mode") != QKVO_FACTOR_CAPTURE_MODE
         or factor_state_total_nbytes != factor_nbytes
@@ -4036,8 +4406,7 @@ def _output_jacobian_audit_artifacts(
         or not isinstance(per_role, Mapping)
         or set(per_role) != {"q", "k", "v", "o"}
         or any(
-            not isinstance(per_role.get(role), Mapping)
-            for role in ("q", "k", "v", "o")
+            not isinstance(per_role.get(role), Mapping) for role in ("q", "k", "v", "o")
         )
     ):
         raise ExactTargetNativeStageError(
@@ -4063,17 +4432,14 @@ def _output_jacobian_audit_artifacts(
                 f"Output-Jacobian {evidence_name} gate metrics are malformed or "
                 "non-finite."
             )
-        expected_normal_gate = (
-            float(normal_fraction) >= binding.min_normal_fraction
-        )
+        expected_normal_gate = float(normal_fraction) >= binding.min_normal_fraction
         expected_ratio_gate = (
             float(capture_ratio) >= binding.min_guided_over_random_ratio
         )
         expected_passed = expected_normal_gate and expected_ratio_gate
         if (
             metrics.get("normal_fraction_gate_passed") is not expected_normal_gate
-            or metrics.get("guided_over_random_gate_passed")
-            is not expected_ratio_gate
+            or metrics.get("guided_over_random_gate_passed") is not expected_ratio_gate
             or metrics.get("passed") is not expected_passed
         ):
             raise ExactTargetNativeStageError(
@@ -4191,11 +4557,9 @@ def _output_jacobian_audit_artifacts(
         )
     if (
         basis_payload.get("site_indices") != expected_site_indices
-        or basis_payload.get("site_indices_sha256")
-        != expected_site_indices_sha256
+        or basis_payload.get("site_indices_sha256") != expected_site_indices_sha256
         or basis_payload.get("site_indices") != canonical_report.get("site_indices")
-        or basis_payload.get("diagnostic_passed_roles")
-        != derived_diagnostic_roles
+        or basis_payload.get("diagnostic_passed_roles") != derived_diagnostic_roles
         or basis_payload.get("diagnostic_passed_roles")
         != canonical_report.get("diagnostic_passed_roles")
         or basis_payload.get("authorized_roles") != expected_installable_roles
@@ -4339,6 +4703,7 @@ def execute_authenticated_stage(
 ) -> dict[str, Any]:
     """Execute one authenticated transaction; never launch from preflight."""
 
+    _assert_live_execution_implementation(contract)
     runner = ProductionStageRuntime() if runtime is None else runtime
     output = Path(output_root).expanduser().resolve()
     if output.exists():

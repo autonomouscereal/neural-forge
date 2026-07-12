@@ -1273,7 +1273,16 @@ class ExactTargetCompilerTransaction:
         # reject its live wrapper before the older transactions whose state-key
         # topology formed its installation baseline.
         if self.lexical_handle is not None and self.lexical_handle.is_applied:
-            self.lexical_handle.rollback()
+            suspend_guided = getattr(
+                self.qkvo_handle,
+                "suspend_guided_registry_owner_for_nested_publication",
+                None,
+            )
+            if callable(suspend_guided) and self.qkvo_handle.is_applied:
+                with suspend_guided():
+                    self.lexical_handle.rollback()
+            else:
+                self.lexical_handle.rollback()
         # QKVO is baked first.  If it is still live, reject it before removing
         # the MLP factors because its installation baseline includes them.
         if self.qkvo_handle.is_applied:
@@ -1327,11 +1336,21 @@ class ExactTargetCompilerTransaction:
         behavior_gate.require_publication_approval()
         self.assert_live()
         try:
-            lexical_bake = (
-                None
-                if self.lexical_handle is None
-                else self.lexical_handle.bake_for_publication()
+            suspend_guided = getattr(
+                self.qkvo_handle,
+                "suspend_guided_registry_owner_for_nested_publication",
+                None,
             )
+            if self.lexical_handle is None:
+                lexical_bake = None
+                guided_registry_suspended_for_lexical_bake = False
+            elif callable(suspend_guided):
+                with suspend_guided():
+                    lexical_bake = self.lexical_handle.bake_for_publication()
+                guided_registry_suspended_for_lexical_bake = True
+            else:
+                lexical_bake = self.lexical_handle.bake_for_publication()
+                guided_registry_suspended_for_lexical_bake = False
             qkvo_bake = self.qkvo_handle.bake_for_publication()
             swiglu_bake = self.swiglu_handle.bake_for_publication()
             native_after = certify_native_dense_gqa_target(
@@ -1384,6 +1403,9 @@ class ExactTargetCompilerTransaction:
                         "published_lexical_adapter_parameter_count": 0,
                         "native_lexical_state_key_topology_restored": True,
                         "role_complete_lexical_boundary": True,
+                        "guided_registry_suspended_for_lexical_bake": (
+                            guided_registry_suspended_for_lexical_bake
+                        ),
                     }
                 )
             payload["publication_transaction_sha256"] = _canonical_sha256(payload)
@@ -1404,9 +1426,7 @@ class ExactTargetCompilerTransaction:
         elif failed and (
             self.qkvo_handle.is_baked
             or self.swiglu_handle.is_baked
-            or (
-                self.lexical_handle is not None and self.lexical_handle.is_baked
-            )
+            or (self.lexical_handle is not None and self.lexical_handle.is_baked)
         ):
             self.restore_prepublication_native()
 

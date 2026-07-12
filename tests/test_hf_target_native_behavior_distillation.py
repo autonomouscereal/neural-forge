@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 
 import neural_forge.hf_target_native_behavior_distillation as behavior_distillation
+import neural_forge.hf_dense_gqa_qkvo_residual_adapter as guided_qkvo
 from neural_forge.hf_arch_layout import (
     AttentionLayout,
     DecoderBlockLayout,
@@ -503,6 +504,387 @@ def test_divergence_curriculum_and_staged_factor_rates_are_exact() -> None:
     ) == tuple(range(8))
 
 
+def test_legacy_schedule_canonical_hash_is_unchanged_by_guided_extension() -> None:
+    schedule = BehaviorDistillationSchedule(steps=2, learning_rate=1e-3)
+    assert not any(name.startswith("guided") for name in schedule.as_dict())
+    assert behavior_distillation._canonical_sha256(schedule.as_dict()) == (
+        "da96ebef088cfab8813aaba8571f0afe4c48f8e472494a78c6b7874612f42105"
+    )
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="guided_continuation_enabled",
+    ):
+        BehaviorDistillationSchedule(
+            steps=64,
+            learning_rate=1e-3,
+            guided_lexical_head_unlock_step=41,
+        )
+
+
+def test_guided_schedule_has_exact_three_phase_trainability_counts() -> None:
+    schedule = BehaviorDistillationSchedule(
+        steps=64,
+        learning_rate=4e-4,
+        guided_continuation_enabled=True,
+        guided_qk_learning_rate_scale=1.0,
+        guided_vo_learning_rate_scale=1.25,
+        guided_right_factor_learning_rate_scale=0.5,
+        guided_joint_inherited_learning_rate_scale=0.2,
+        guided_lexical_head_unlock_step=41,
+    )
+    names = tuple(
+        sorted(
+            behavior_distillation._QKVO_GUD_FACTOR_NAMES
+            | behavior_distillation._LEXICAL_FACTOR_NAMES
+            | behavior_distillation._GUIDED_QKVO_FACTOR_NAMES
+        )
+    )
+    entries = tuple((name, nn.Parameter(torch.zeros(()))) for name in names)
+
+    assert len(entries) == behavior_distillation.GUIDED_COMBINED_FACTOR_TENSOR_COUNT
+    assert behavior_distillation._guided_training_stage(1) == "guided-left"
+    assert behavior_distillation._guided_training_stage(9) == "guided"
+    assert behavior_distillation._guided_training_stage(25) == "joint"
+    authorized = {
+        step: behavior_distillation._authorized_factor_names(
+            entries,
+            schedule,
+            step=step,
+            guided_continuation=True,
+        )
+        for step in (1, 8, 9, 24, 25, 40, 41, 64)
+    }
+    assert [len(authorized[step]) for step in (1, 8)] == [4, 4]
+    assert [len(authorized[step]) for step in (9, 24)] == [8, 8]
+    assert [len(authorized[step]) for step in (25, 40)] == [16, 16]
+    assert [len(authorized[step]) for step in (41, 64)] == [18, 18]
+    assert all(
+        name.startswith("guided_qkvo.") and name.endswith("_left")
+        for name in authorized[1]
+    )
+    assert not any(
+        name.startswith(("gud.", "lexical.embedding_")) for name in authorized[64]
+    )
+    assert behavior_distillation._factor_learning_rate(
+        "qkvo.q_left",
+        schedule,
+        step=25,
+        guided_continuation=True,
+    ) == pytest.approx(8e-5)
+    assert behavior_distillation._factor_learning_rate(
+        "guided_qkvo.v_right",
+        schedule,
+        step=9,
+        guided_continuation=True,
+    ) == pytest.approx(2.5e-4)
+
+
+def test_guided_method_gate_requires_one_contiguous_lcp4_and_repeat_safety() -> None:
+    baseline = _selection_metrics(
+        exact_rollouts=0,
+        action_agreements=2,
+        token_matches=2,
+        lcp_tokens=1,
+        mean_logprob=-1.0,
+    )
+    four_isolated_one_token_matches = replace(
+        baseline,
+        lcp_token_count=4,
+        lcp_fraction=0.5,
+        lcp_at_least_4_count=0,
+    )
+    isolated_gate = behavior_distillation._guided_candidate_gate(
+        selected_step=24,
+        step0_metrics=baseline,
+        candidate_metrics=four_isolated_one_token_matches,
+    )
+    assert isolated_gate.observed_lcp_at_least_4_count == 0
+    assert isolated_gate.passed is False
+
+    contiguous_but_repetitive = replace(
+        four_isolated_one_token_matches,
+        lcp_at_least_4_count=1,
+        repeat_fraction_excess=baseline.repeat_fraction_excess + 0.01,
+    )
+    repeat_gate = behavior_distillation._guided_candidate_gate(
+        selected_step=24,
+        step0_metrics=baseline,
+        candidate_metrics=contiguous_but_repetitive,
+    )
+    assert repeat_gate.repeat_fraction_nonregression is False
+    assert repeat_gate.passed is False
+
+    safe = replace(
+        contiguous_but_repetitive,
+        repeat_fraction_excess=baseline.repeat_fraction_excess,
+        adjacent_repeat_fraction_excess=(baseline.adjacent_repeat_fraction_excess),
+    )
+    assert (
+        behavior_distillation._guided_candidate_gate(
+            selected_step=24,
+            step0_metrics=baseline,
+            candidate_metrics=safe,
+        ).passed
+        is True
+    )
+    assert (
+        behavior_distillation._guided_candidate_gate(
+            selected_step=0,
+            step0_metrics=baseline,
+            candidate_metrics=safe,
+        ).passed
+        is False
+    )
+
+
+def test_v3_pack_authenticates_26_tensors_and_rejects_source_tamper() -> None:
+    inherited_names = tuple(
+        sorted(
+            behavior_distillation._QKVO_GUD_FACTOR_NAMES
+            | behavior_distillation._LEXICAL_FACTOR_NAMES
+        )
+    )
+    guided_names = tuple(sorted(behavior_distillation._GUIDED_QKVO_FACTOR_NAMES))
+    names = tuple(sorted((*inherited_names, *guided_names)))
+    entries = tuple(
+        (
+            name,
+            nn.Parameter(torch.full((2,), float(index + 1), dtype=torch.float32)),
+        )
+        for index, name in enumerate(names)
+    )
+    source_v2_hashes = {
+        name: behavior_distillation._tensor_sha256(value)
+        for name, value in entries
+        if name in inherited_names
+    }
+    basis_hashes = {
+        role: behavior_distillation._tensor_sha256(
+            dict(entries)[f"guided_qkvo.{role}_right"]
+        )
+        for role in ("q", "k", "v", "o")
+    }
+    binding = behavior_distillation.GuidedFactorSourceBinding(
+        source_v2_factor_state_sha256="1" * 64,
+        source_v2_tensor_sha256s=tuple(source_v2_hashes.items()),
+        audit_report_sha256="2" * 64,
+        basis_envelope_file_sha256="3" * 64,
+        basis_payload_sha256="4" * 64,
+        basis_manifest_sha256="5" * 64,
+        source_basis_tensor_sha256s=tuple(basis_hashes.items()),
+        inherited_installation_sha256="6" * 64,
+        inherited_factor_state_sha256_at_install="7" * 64,
+        adapter_site_indices_sha256="8" * 64,
+        audit_site_indices_sha256="a" * 64,
+    )
+    tensors = tuple(value.detach().cpu().clone() for _name, value in entries)
+    hashes = tuple(behavior_distillation._tensor_sha256(value) for value in tensors)
+    rows = behavior_distillation._factor_manifest_rows(names, tensors, hashes)
+    state = behavior_distillation.TargetNativeFactorState(
+        names=names,
+        tensors=tensors,
+        tensor_sha256s=hashes,
+        factor_state_sha256=behavior_distillation._factor_state_sha256(
+            rows,
+            schema=behavior_distillation.BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            lexical_rank=3,
+            guided_source_binding=binding,
+        ),
+        parameter_ids=tuple(id(value) for _name, value in entries),
+        parameter_data_ptrs=tuple(int(value.data_ptr()) for _name, value in entries),
+        schema=behavior_distillation.BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+        lexical_rank=3,
+        guided_source_binding=binding,
+    )
+    payload = state.as_payload()
+    assert payload["factor_count"] == 26
+    assert payload["inherited_product_regrouped"] is False
+    assert payload["guided_product_regrouped"] is False
+    authenticated = behavior_distillation._authenticate_factor_payload_state(
+        payload,
+        entries,
+        schema=behavior_distillation.BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+        lexical_rank=3,
+        expected_guided_source_binding=binding,
+    )
+    assert authenticated.factor_state_sha256 == state.factor_state_sha256
+
+    tampered = copy.deepcopy(payload)
+    tampered_binding_payload = dict(tampered["guided_source_binding"])
+    tampered_source_hashes = dict(tampered_binding_payload["source_v2_tensor_sha256s"])
+    tampered_source_hashes[inherited_names[0]] = "9" * 64
+    tampered_binding_payload["source_v2_tensor_sha256s"] = tampered_source_hashes
+    tampered_binding = behavior_distillation.GuidedFactorSourceBinding(
+        **tampered_binding_payload
+    )
+    tampered["guided_source_binding"] = tampered_binding.as_dict()
+    tampered["guided_source_binding_sha256"] = tampered_binding.binding_sha256
+    tampered["factor_state_sha256"] = behavior_distillation._factor_state_sha256(
+        tampered["factors"],
+        schema=behavior_distillation.BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+        lexical_rank=3,
+        guided_source_binding=tampered_binding,
+    )
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="preregistered sources",
+    ):
+        behavior_distillation._authenticate_factor_payload_state(
+            tampered,
+            entries,
+            schema=behavior_distillation.BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            lexical_rank=3,
+            expected_guided_source_binding=binding,
+        )
+
+    tensor_tamper = copy.deepcopy(payload)
+    tensor_tamper["factor_tensors"][names[0]][0] += 1.0
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="shape/dtype/hash authentication",
+    ):
+        behavior_distillation._authenticate_factor_payload_state(
+            tensor_tamper,
+            entries,
+            schema=behavior_distillation.BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            lexical_rank=3,
+            expected_guided_source_binding=binding,
+        )
+
+
+def test_guided_source_authentication_binds_live_v2_and_exact_basis_bytes() -> None:
+    class _ExactGuidedRegistry(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            shapes = {
+                "q_left": (120, 512, 8),
+                "q_right": (120, 8, 1536),
+                "k_left": (120, 128, 8),
+                "k_right": (120, 8, 1536),
+                "v_left": (120, 128, 8),
+                "v_right": (120, 8, 1536),
+                "o_left": (120, 1536, 8),
+                "o_right": (120, 8, 512),
+            }
+            for name, shape in shapes.items():
+                value = torch.zeros(shape, dtype=torch.float32)
+                if name.endswith("_right"):
+                    value.reshape(-1)[::257] = 0.125
+                setattr(self, name, nn.Parameter(value))
+
+    torch.manual_seed(173)
+    child = _StrictToyTarget()
+    transaction = _transaction(child, lexical_rank=2)
+    source_v2_state = capture_target_native_factor_state(transaction)
+    registry = _ExactGuidedRegistry()
+    child.add_module("_test_guided_registry", registry)
+
+    source_basis_hashes = {
+        role: guided_qkvo._tensor_sha256(getattr(registry, f"{role}_right"))
+        for role in ("q", "k", "v", "o")
+    }
+    assert all(
+        source_basis_hashes[role]
+        == behavior_distillation._output_jacobian_tensor_sha256(
+            getattr(registry, f"{role}_right")
+        )
+        != behavior_distillation._tensor_sha256(getattr(registry, f"{role}_right"))
+        for role in ("q", "k", "v", "o")
+    )
+
+    class _GuidedTranche:
+        inherited_handle = transaction.qkvo_handle
+        guided_registry = registry
+        training_stage = "joint"
+
+        @staticmethod
+        def assert_live():
+            return None
+
+        @staticmethod
+        def assert_structurally_live():
+            return None
+
+        def set_training_stage(self, stage):
+            assert stage == "joint"
+            for value in self.inherited_handle.adapter_registry.parameters(
+                recurse=False
+            ):
+                value.requires_grad_(True)
+            for value in self.guided_registry.parameters(recurse=False):
+                value.requires_grad_(True)
+
+        def output_trainable_parameters(self):
+            return (
+                *self.inherited_handle.adapter_registry.parameters(recurse=False),
+                *self.guided_registry.parameters(recurse=False),
+            )
+
+        @staticmethod
+        def factor_source_binding():
+            return {
+                "audit_report_sha256": "1" * 64,
+                "basis_envelope_file_sha256": "2" * 64,
+                "basis_payload_sha256": "3" * 64,
+                "basis_manifest_sha256": "4" * 64,
+                "source_basis_tensor_sha256s": source_basis_hashes,
+                "inherited_installation_sha256": "5" * 64,
+                "inherited_factor_state_sha256_at_install": "6" * 64,
+                "inherited_handle_identity": id(transaction.qkvo_handle),
+                "inherited_registry_identity": id(
+                    transaction.qkvo_handle.adapter_registry
+                ),
+                "adapter_site_indices_sha256": "7" * 64,
+                "audit_site_indices_sha256": "8" * 64,
+            }
+
+    tranche = _GuidedTranche()
+    entries = behavior_distillation._factor_parameters(
+        transaction,
+        guided_tranche=tranche,
+    )
+    embedding_requires_grad = child.embedding.weight.requires_grad
+    with behavior_distillation._GuidedCombinedOutputTrainingScope(
+        transaction,
+        tranche,
+        entries,
+    ) as trainable:
+        assert len(trainable) == 26
+        assert {id(value) for value in trainable} == {
+            id(value) for _name, value in entries
+        }
+        assert child.embedding.weight.requires_grad is False
+    assert child.embedding.weight.requires_grad is embedding_requires_grad
+
+    binding = behavior_distillation.authenticate_guided_factor_sources(
+        transaction,
+        tranche,
+        source_v2_state,
+    )
+    assert binding.source_v2_factor_state_sha256 == (
+        source_v2_state.factor_state_sha256
+    )
+    assert len(binding.source_v2_tensor_sha256s) == 18
+    assert len(binding.source_basis_tensor_sha256s) == 4
+    assert sum(value.numel() for value in registry.parameters()) == (
+        behavior_distillation.GUIDED_QKVO_PARAMETER_COUNT
+    )
+
+    with torch.no_grad():
+        registry.k_right.reshape(-1)[0] += 1.0
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="does not byte-match",
+    ):
+        behavior_distillation.authenticate_guided_factor_sources(
+            transaction,
+            tranche,
+            source_v2_state,
+        )
+    delattr(child, "_test_guided_registry")
+    transaction.rollback()
+
+
 def test_gud_freeze_skips_adam_state_until_thaw() -> None:
     torch.manual_seed(109)
     child = _StrictToyTarget()
@@ -908,6 +1290,12 @@ def test_output_only_training_audits_all_factors_and_retains_step_zero() -> None
         is True
     )
     assert evidence["internal_numeric_matching_used"] is False
+    assert not any(name.startswith("guided_") for name in evidence)
+    assert "selected_factor_pack_retained_on_acceptance" not in evidence
+    assert (
+        "every_authorized_factor_gradient_activated"
+        not in (evidence["training_audit"]["gradient_activation"])
+    )
     assert result.as_dict()["evidence_payload"] == evidence
     assert parent.internal_output_request_count == 0
     assert child.internal_output_request_count == 0

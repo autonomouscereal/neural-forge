@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import subprocess
 import sys
 import weakref
 from collections.abc import Mapping
@@ -1049,9 +1050,7 @@ class _AuditRuntime(_Runtime):
         self.passed = passed
         self.fail = fail
         self.diagnostic_roles = (
-            ("q", "k", "v", "o")
-            if diagnostic_roles is None
-            else diagnostic_roles
+            ("q", "k", "v", "o") if diagnostic_roles is None else diagnostic_roles
         )
 
     def run_output_jacobian_audit(self, transaction, parent, contract):
@@ -1192,6 +1191,122 @@ def test_preflight_authenticates_everything_without_loading_models(tmp_path) -> 
     assert report["gpu_work_launched"] is False
     assert report["internal_numeric_matching_can_promote"] is False
     assert "output_jacobian_audit" not in report
+
+
+def test_live_authentication_default_remains_unmarked_and_revalidates(
+    tmp_path: Path,
+) -> None:
+    path, digest = _contract_files(tmp_path)
+    contract = runner.authenticate_preregistration(path, digest)
+
+    assert contract.historical_implementation_revision is None
+    assert "historical_implementation_revision" not in contract.preflight_report()
+    runner._assert_live_execution_implementation(contract)
+
+
+def test_historical_replay_contract_cannot_execute_or_create_output(
+    tmp_path: Path,
+) -> None:
+    path, digest = _contract_files(tmp_path)
+    contract = replace(
+        runner.authenticate_preregistration(path, digest),
+        historical_implementation_revision=("e57d0b21da2c5d9d815375b35acfcb9305b12259"),
+    )
+    output = tmp_path / "historical-must-not-execute"
+
+    with pytest.raises(runner.ExactTargetNativeStageError, match="replay-only"):
+        runner.execute_authenticated_stage(
+            contract,
+            output,
+            runtime=SimpleNamespace(),
+        )
+
+    assert not output.exists()
+
+
+def test_clearing_historical_marker_cannot_bypass_live_source_revalidation(
+    tmp_path: Path,
+) -> None:
+    path, digest = _contract_files(tmp_path)
+    live = runner.authenticate_preregistration(path, digest)
+    historical_mapping = {
+        **live.implementation_authentication,
+        "runner": {
+            **live.implementation_authentication["runner"],
+            "sha256": "0" * 64,
+        },
+    }
+    marker_stripped = replace(
+        live,
+        historical_implementation_revision=None,
+        implementation_authentication=historical_mapping,
+    )
+    output = tmp_path / "stripped-marker-must-not-execute"
+
+    with pytest.raises(
+        runner.ExactTargetNativeStageError,
+        match="mapping no longer matches live execution code",
+    ):
+        runner.execute_authenticated_stage(
+            marker_stripped,
+            output,
+            runtime=SimpleNamespace(),
+        )
+
+    assert not output.exists()
+
+
+def test_historical_e57_blob_auth_requires_absolute_exact_tracked_paths() -> None:
+    revision = "e57d0b21da2c5d9d815375b35acfcb9305b12259"
+    implementation: dict[str, object] = {
+        "trainer_module": runner.CANONICAL_TRAINER_MODULE,
+    }
+    evidence: dict[str, object] = {"authenticated_before_model_access": True}
+    required_fields = {"runner_sha256", "trainer_module", "trainer_sha256"}
+    for field in ("runner_sha256", "trainer_sha256"):
+        key, relative = runner._HISTORICAL_IMPLEMENTATION_BLOBS[field]
+        blob = subprocess.run(
+            ["git", "-C", str(EXPERIMENTS.parent), "show", f"{revision}:{relative}"],
+            check=True,
+            capture_output=True,
+        ).stdout
+        digest = hashlib.sha256(blob).hexdigest()
+        implementation[field] = digest
+        row: dict[str, object] = {
+            "path": f"C:/historical/neural-forge/{relative}",
+            "sha256": digest,
+        }
+        if key in runner._HISTORICAL_IMPLEMENTATION_MODULES:
+            row["module"] = runner._HISTORICAL_IMPLEMENTATION_MODULES[key]
+        evidence[key] = row
+
+    assert (
+        runner._authenticate_historical_implementation_blobs(
+            implementation,
+            evidence,
+            revision,
+            required_fields=required_fields,
+        )
+        == evidence
+    )
+
+    relative_evidence = {
+        **evidence,
+        "runner": {
+            **evidence["runner"],
+            "path": "experiments/run_qwen_exact_target_native_stage.py",
+        },
+    }
+    with pytest.raises(
+        runner.ExactTargetNativeStageError,
+        match="Historical evidence 'runner'",
+    ):
+        runner._authenticate_historical_implementation_blobs(
+            implementation,
+            relative_evidence,
+            revision,
+            required_fields=required_fields,
+        )
 
 
 def test_output_jacobian_preflight_authenticates_contract_and_sources(
@@ -1365,14 +1480,11 @@ def test_output_jacobian_execute_is_audit_only_and_rolls_back_exactly(
         ["q", "k", "v", "o"] if passed else []
     )
     assert (
-        envelope["basis_pack"][
-            "installer_must_ignore_unauthorized_role_tensors"
-        ]
+        envelope["basis_pack"]["installer_must_ignore_unauthorized_role_tensors"]
         is True
     )
     assert (
-        envelope["basis_pack"]["all_four_role_tensors_retained_for_diagnostics"]
-        is True
+        envelope["basis_pack"]["all_four_role_tensors_retained_for_diagnostics"] is True
     )
 
 
@@ -1608,13 +1720,13 @@ def test_output_jacobian_rejects_probabilistic_replay_authenticator_disagreement
         payload["pass2_full_element_replay_authenticator_sha256"] = "7" * 64
         payload["hotpath_instrumentation"][
             "pass_full_element_replay_authenticator_sha256"
-        ]["pass2"] = (
-            "7" * 64
-        )
+        ]["pass2"] = "7" * 64
 
     runtime = _MutatedAuditRuntime(report_mutator=mutate)
     output = tmp_path / "audit-probabilistic-replay"
-    with pytest.raises(runner.ExactTargetNativeStageError, match="probabilistic replay"):
+    with pytest.raises(
+        runner.ExactTargetNativeStageError, match="probabilistic replay"
+    ):
         runner.execute_authenticated_stage(contract, output, runtime=runtime)
     assert not (output / "guided_basis_pack.pt").exists()
 
@@ -1839,9 +1951,7 @@ def test_output_jacobian_rejects_non_clone_free_execution_attestation(
 
     class _BadCloneLifecycleRuntime(_AuditRuntime):
         def run_output_jacobian_audit(self, transaction, parent, contract):
-            execution = super().run_output_jacobian_audit(
-                transaction, parent, contract
-            )
+            execution = super().run_output_jacobian_audit(transaction, parent, contract)
             return replace(execution, **{field: bad_value})
 
     runtime = _BadCloneLifecycleRuntime()
@@ -1927,9 +2037,7 @@ def test_output_jacobian_rejects_decision_that_disagrees_with_metrics(
 
     class _BadDecisionRuntime(_AuditRuntime):
         def run_output_jacobian_audit(self, transaction, parent, contract):
-            execution = super().run_output_jacobian_audit(
-                transaction, parent, contract
-            )
+            execution = super().run_output_jacobian_audit(transaction, parent, contract)
             return replace(
                 execution,
                 result=_AuditResult(
@@ -2121,9 +2229,7 @@ def test_production_runtime_output_jacobian_uses_public_full_restore_and_only_ca
     result = _CanonicalAuditResult()
 
     def audit(*args):
-        assert all(
-            reference() is None for reference in captured["restore_clone_refs"]
-        )
+        assert all(reference() is None for reference in captured["restore_clone_refs"])
         captured["clone_free_during_audit"] = True
         captured["audit"] = args
         return result

@@ -18,8 +18,10 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any, Literal
 
 import torch
@@ -28,6 +30,7 @@ from torch import Tensor, nn
 
 
 ProjectionRole = Literal["q", "k", "v", "o"]
+GuidedQKVOTrainingStage = Literal["guided-left", "guided", "joint"]
 
 DENSE_GQA_QKVO_ACCOUNTING_SCHEMA = "neural-forge-dense-gqa-qkvo-residual-accounting-v1"
 DENSE_GQA_QKVO_REGISTRY_SCHEMA = "neural-forge-dense-gqa-qkvo-residual-registry-v1"
@@ -38,6 +41,34 @@ DENSE_GQA_QKVO_TRAINING_SCOPE_SCHEMA = (
     "neural-forge-dense-gqa-qkvo-output-training-scope-v1"
 )
 DENSE_GQA_QKVO_BAKE_SCHEMA = "neural-forge-dense-gqa-qkvo-bake-v1"
+GUIDED_DENSE_GQA_QKVO_REGISTRY_SCHEMA = (
+    "neural-forge-guided-dense-gqa-qkvo-residual-registry-v1"
+)
+GUIDED_DENSE_GQA_QKVO_INSTALLATION_SCHEMA = (
+    "neural-forge-guided-dense-gqa-qkvo-residual-installation-v1"
+)
+GUIDED_DENSE_GQA_QKVO_BAKE_SCHEMA = (
+    "neural-forge-guided-dense-gqa-qkvo-residual-bake-v1"
+)
+QKVO_OUTPUT_JACOBIAN_AUDIT_V2_SCHEMA = "neural-forge-qkvo-output-jacobian-audit-v2"
+GUIDED_QKVO_RIGHT_BASIS_V2_SCHEMA = "neural-forge-guided-qkvo-right-basis-v2"
+
+_GUIDED_STAGE1_LOGICAL_LAYERS = 30
+_GUIDED_STAGE1_HIDDEN_SIZE = 1536
+_GUIDED_STAGE1_QUERY_HEADS = 16
+_GUIDED_STAGE1_KEY_VALUE_HEADS = 4
+_GUIDED_STAGE1_HEAD_DIM = 128
+_GUIDED_STAGE1_RANK = 8
+_GUIDED_STAGE1_SITE_COUNT = 120
+_GUIDED_STAGE1_RIGHT_PARAMETER_COUNT = 4_915_200
+_GUIDED_STAGE1_PARAMETER_COUNT = 7_127_040
+_TENSOR_HASH_STAGING_BYTES = 4 * 1024 * 1024
+_GUIDED_BASIS_NAMES: dict[ProjectionRole, str] = {
+    "q": "q_orthogonal_right",
+    "k": "k_orthogonal_right",
+    "v": "v_orthogonal_right",
+    "o": "o_orthogonal_right",
+}
 
 
 class DenseGQAQKVOResidualError(RuntimeError):
@@ -87,17 +118,130 @@ def _canonical_sha256(value: Any) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _tensor_sha256(value: Tensor) -> str:
+def _tensor_sha256(
+    value: Tensor,
+    *,
+    staging_observer: Callable[[int], None] | None = None,
+) -> str:
     if not isinstance(value, Tensor):
         raise DenseGQAQKVOResidualTopologyError("Expected a tensor to hash.")
-    detached = value.detach().contiguous().cpu()
+    detached = value.detach()
+    if detached.layout != torch.strided or detached.device.type == "meta":
+        raise DenseGQAQKVOResidualTopologyError(
+            "Tensor hashing requires a dense non-meta tensor."
+        )
+    if not detached.is_contiguous():
+        tensor_nbytes = int(detached.numel() * detached.element_size())
+        if detached.device.type != "cpu" or tensor_nbytes > _TENSOR_HASH_STAGING_BYTES:
+            raise DenseGQAQKVOResidualTopologyError(
+                "Large or accelerator tensor hashing requires contiguous storage."
+            )
+        detached = detached.contiguous()
     digest = hashlib.sha256()
     digest.update(str(detached.dtype).encode("ascii"))
     digest.update(
         json.dumps(list(detached.shape), separators=(",", ":")).encode("ascii")
     )
-    digest.update(detached.view(torch.uint8).numpy().tobytes())
+    flat = detached.view(-1)
+    elements_per_chunk = max(
+        1,
+        _TENSOR_HASH_STAGING_BYTES // max(1, detached.element_size()),
+    )
+    for start in range(0, int(flat.numel()), elements_per_chunk):
+        staged = flat[start : start + elements_per_chunk].to(device="cpu").contiguous()
+        staged_nbytes = int(staged.numel() * staged.element_size())
+        if staged_nbytes > _TENSOR_HASH_STAGING_BYTES:
+            raise DenseGQAQKVOResidualTopologyError(
+                "Tensor hash staging exceeded its hard chunk bound."
+            )
+        if staging_observer is not None:
+            staging_observer(staged_nbytes)
+        digest.update(memoryview(staged.view(torch.uint8).numpy()))
     return digest.hexdigest()
+
+
+def _required_sha256(value: Any, name: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise DenseGQAQKVOResidualTopologyError(
+            f"{name} must be a lowercase SHA-256 digest."
+        )
+    return value
+
+
+def _qkvo_factor_state_sha256(
+    registry: SparseDenseGQAQKVOResidualRegistry,
+) -> str:
+    return _canonical_sha256(
+        [
+            {
+                "name": name,
+                "shape": list(value.shape),
+                "dtype": str(value.dtype),
+                "sha256": _tensor_sha256(value),
+            }
+            for name, value in registry.named_parameters(recurse=False)
+        ]
+    )
+
+
+def _guided_stage1_sites() -> tuple[DenseGQASite, ...]:
+    return tuple(
+        DenseGQASite(layer_index, physical_group)
+        for layer_index in range(_GUIDED_STAGE1_LOGICAL_LAYERS)
+        for physical_group in range(_GUIDED_STAGE1_KEY_VALUE_HEADS)
+    )
+
+
+def _guided_basis_tensor_manifest(
+    tensors: Mapping[str, Tensor],
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": name,
+            "shape": list(value.shape),
+            "dtype": str(value.dtype),
+            "tensor_sha256": _tensor_sha256(value),
+            "numel": int(value.numel()),
+            "nbytes": int(value.numel() * value.element_size()),
+        }
+        for name, value in tensors.items()
+    ]
+
+
+def guided_qkvo_basis_payload_sha256(basis_pack: Mapping[str, Any]) -> str:
+    """Hash a v2 basis payload without relying on ``torch.save`` bytes.
+
+    The pack's tensors are represented by an ordered, content-addressed
+    manifest.  This makes the digest stable across serialization containers
+    while still binding every tensor byte and every non-tensor metadata field.
+    Installation independently revalidates the producer's manifest as well.
+    """
+
+    if not isinstance(basis_pack, Mapping):
+        raise DenseGQAQKVOResidualTopologyError("basis_pack must be a mapping.")
+    factor_tensors = basis_pack.get("factor_tensors")
+    if not isinstance(factor_tensors, Mapping):
+        raise DenseGQAQKVOResidualTopologyError(
+            "The guided basis pack has no factor_tensors mapping."
+        )
+    names = tuple(_GUIDED_BASIS_NAMES.values())
+    if set(factor_tensors) != set(names) or any(
+        not isinstance(factor_tensors[name], Tensor) for name in names
+    ):
+        raise DenseGQAQKVOResidualTopologyError(
+            "The guided basis pack tensor names or order changed."
+        )
+    metadata = {
+        key: value for key, value in basis_pack.items() if key != "factor_tensors"
+    }
+    metadata["factor_tensors_manifest_for_pack_sha256"] = _guided_basis_tensor_manifest(
+        {name: factor_tensors[name] for name in names}
+    )
+    return _canonical_sha256(metadata)
 
 
 def _unique_parameter_count(module: nn.Module) -> int:
@@ -359,9 +503,7 @@ class SparseDenseGQAQKVOResidualRegistry(nn.Module):
             [] for _ in range(geometry.logical_layers)
         ]
         for row_index, site in enumerate(values):
-            rows_by_layer[site.layer_index].append(
-                (row_index, site.physical_group)
-            )
+            rows_by_layer[site.layer_index].append((row_index, site.physical_group))
         # Forward dispatch must not copy the complete registry index from the
         # accelerator for every projection.  The sites have already passed the
         # sorted/unique/geometry checks above, so retain their derived lookup as
@@ -420,10 +562,7 @@ class SparseDenseGQAQKVOResidualRegistry(nn.Module):
             name for name, _value in self.named_parameters()
         )
         self._finite_parameter_signature_cache: (
-            tuple[
-                tuple[int, int, int, tuple[int, ...], torch.dtype, str], ...
-            ]
-            | None
+            tuple[tuple[int, int, int, tuple[int, ...], torch.dtype, str], ...] | None
         ) = None
         self._assert_finite()
 
@@ -487,9 +626,7 @@ class SparseDenseGQAQKVOResidualRegistry(nn.Module):
     @staticmethod
     def _finite_parameter_signature(
         items: tuple[tuple[str, nn.Parameter], ...],
-    ) -> tuple[
-        tuple[int, int, int, tuple[int, ...], torch.dtype, str], ...
-    ]:
+    ) -> tuple[tuple[int, int, int, tuple[int, ...], torch.dtype, str], ...]:
         return tuple(
             (
                 id(value),
@@ -665,6 +802,156 @@ class SparseDenseGQAQKVOResidualRegistry(nn.Module):
         return payload
 
 
+class GuidedSparseDenseGQAQKVOResidualRegistry(SparseDenseGQAQKVOResidualRegistry):
+    """A second QKVO product whose right rows come from the v2 audit.
+
+    This is intentionally a distinct module.  Its factors are never stacked,
+    concatenated, factorized, or otherwise regrouped with the inherited
+    rank-eight product.
+    """
+
+    def __init__(
+        self,
+        sites: Sequence[DenseGQASite],
+        *,
+        geometry: DenseGQAGeometry,
+        rank: int,
+        guided_right_rows: Mapping[ProjectionRole, Tensor],
+        source_basis_tensor_sha256s: Mapping[ProjectionRole, str],
+        audit_report_sha256: str,
+        basis_envelope_file_sha256: str,
+        basis_payload_sha256: str,
+        basis_manifest_sha256: str,
+        dtype: torch.dtype,
+        device: torch.device | str,
+    ) -> None:
+        if (
+            not isinstance(guided_right_rows, Mapping)
+            or tuple(guided_right_rows) != self._ROLES
+        ):
+            raise DenseGQAQKVOResidualTopologyError(
+                "guided_right_rows must be ordered Q, K, V, O rows."
+            )
+        if (
+            not isinstance(source_basis_tensor_sha256s, Mapping)
+            or tuple(source_basis_tensor_sha256s) != self._ROLES
+        ):
+            raise DenseGQAQKVOResidualTopologyError(
+                "Source basis hashes must be ordered Q, K, V, O digests."
+            )
+        values = _validated_sites(sites, geometry)
+        rank_value = _index(rank, "rank", positive=True)
+        expected_input_width = {
+            "q": geometry.hidden_size,
+            "k": geometry.hidden_size,
+            "v": geometry.hidden_size,
+            "o": geometry.query_group_width,
+        }
+        authenticated_rows: dict[ProjectionRole, Tensor] = {}
+        authenticated_hashes: dict[ProjectionRole, str] = {}
+        for role in self._ROLES:
+            value = guided_right_rows[role]
+            expected_shape = (
+                len(values),
+                rank_value,
+                expected_input_width[role],
+            )
+            if (
+                not isinstance(value, Tensor)
+                or value.device.type != "cpu"
+                or value.dtype != torch.float32
+                or not value.is_contiguous()
+                or tuple(value.shape) != expected_shape
+                or not bool(torch.isfinite(value).all())
+            ):
+                raise DenseGQAQKVOResidualTopologyError(
+                    f"Guided {role.upper()} right rows must be finite contiguous "
+                    f"CPU FP32 with shape {expected_shape}."
+                )
+            digest = _tensor_sha256(value)
+            expected_digest = _required_sha256(
+                source_basis_tensor_sha256s[role],
+                f"source {role} basis tensor SHA-256",
+            )
+            if digest != expected_digest:
+                raise DenseGQAQKVOResidualTopologyError(
+                    f"Guided {role.upper()} right rows failed source authentication."
+                )
+            authenticated_rows[role] = value
+            authenticated_hashes[role] = digest
+        super().__init__(
+            values,
+            geometry=geometry,
+            rank=rank_value,
+            dtype=dtype,
+            device=device,
+            initialization_seed=0,
+        )
+        with torch.no_grad():
+            for role in self._ROLES:
+                getattr(self, f"{role}_right").copy_(
+                    authenticated_rows[role].to(device=device, dtype=dtype)
+                )
+        self.audit_report_sha256 = _required_sha256(
+            audit_report_sha256, "audit_report_sha256"
+        )
+        self.basis_envelope_file_sha256 = _required_sha256(
+            basis_envelope_file_sha256, "basis_envelope_file_sha256"
+        )
+        self.basis_payload_sha256 = _required_sha256(
+            basis_payload_sha256, "basis_payload_sha256"
+        )
+        self.basis_manifest_sha256 = _required_sha256(
+            basis_manifest_sha256, "basis_manifest_sha256"
+        )
+        self.source_basis_tensor_sha256s = dict(authenticated_hashes)
+        self._assert_finite()
+        if not self.starts_as_exact_zero_correction:
+            raise DenseGQAQKVOResidualTopologyError(
+                "The guided left factors must start at exact zero."
+            )
+        if any(
+            _tensor_sha256(getattr(self, f"{role}_right")) != authenticated_hashes[role]
+            for role in self._ROLES
+        ):
+            raise DenseGQAQKVOResidualTopologyError(
+                "Device installation changed an authenticated guided right basis."
+            )
+
+    def as_dict(self) -> dict[str, Any]:
+        role_parameters = {
+            role: int(
+                getattr(self, f"{role}_left").numel()
+                + getattr(self, f"{role}_right").numel()
+            )
+            for role in self._ROLES
+        }
+        payload = {
+            "schema": GUIDED_DENSE_GQA_QKVO_REGISTRY_SCHEMA,
+            "geometry": self.geometry.as_dict(),
+            "site_indices": self.site_indices.detach().cpu().tolist(),
+            "rank": self.rank,
+            "site_count": self.site_count,
+            "learned_parameter_count": self.learned_parameter_count,
+            "role_parameter_counts": role_parameters,
+            "zero_guided_left_initialization": (self.starts_as_exact_zero_correction),
+            "authenticated_guided_right_initialization": True,
+            "audit_report_sha256": self.audit_report_sha256,
+            "basis_envelope_file_sha256": self.basis_envelope_file_sha256,
+            "basis_payload_sha256": self.basis_payload_sha256,
+            "basis_manifest_sha256": self.basis_manifest_sha256,
+            "source_basis_tensor_sha256s": dict(self.source_basis_tensor_sha256s),
+            "separate_from_inherited_registry": True,
+            "old_and_guided_factors_concatenated": False,
+            "old_and_guided_factors_regrouped": False,
+            "target_shaped_factors_only": True,
+            "parent_runtime_references": 0,
+            "cross_token_mixing_inside_adapter": False,
+        }
+        payload["registry_sha256"] = _canonical_sha256(payload)
+        return payload
+
+
 class DenseGQAQKVOResidualProjection(nn.Module):
     """Linear-compatible target projection plus a sparse correction view."""
 
@@ -686,6 +973,7 @@ class DenseGQAQKVOResidualProjection(nn.Module):
                 "Projection role must be q, k, v, or o."
             )
         object.__setattr__(self, "_adapter_registry", adapter_registry)
+        object.__setattr__(self, "_guided_adapter_registry", None)
         self.base_projection = base_projection
         self.layer_index = _index(layer_index, "layer_index")
         self.role = role
@@ -698,6 +986,47 @@ class DenseGQAQKVOResidualProjection(nn.Module):
         return self._adapter_registry
 
     @property
+    def guided_adapter_registry(
+        self,
+    ) -> GuidedSparseDenseGQAQKVOResidualRegistry | None:
+        return self._guided_adapter_registry
+
+    def _attach_guided_registry(
+        self,
+        registry: GuidedSparseDenseGQAQKVOResidualRegistry,
+    ) -> None:
+        if not isinstance(registry, GuidedSparseDenseGQAQKVOResidualRegistry):
+            raise DenseGQAQKVOResidualTopologyError(
+                "Only an authenticated guided QKVO registry can be attached."
+            )
+        if self._guided_adapter_registry is not None:
+            raise DenseGQAQKVOResidualTopologyError(
+                "A guided QKVO tranche is already attached."
+            )
+        if (
+            registry.geometry != self.adapter_registry.geometry
+            or registry.rank != self.adapter_registry.rank
+            or not torch.equal(
+                registry.site_indices.detach().cpu(),
+                self.adapter_registry.site_indices.detach().cpu(),
+            )
+        ):
+            raise DenseGQAQKVOResidualTopologyError(
+                "Guided and inherited QKVO registry topology differs."
+            )
+        object.__setattr__(self, "_guided_adapter_registry", registry)
+
+    def _detach_guided_registry(
+        self,
+        registry: GuidedSparseDenseGQAQKVOResidualRegistry,
+    ) -> None:
+        if self._guided_adapter_registry is not registry:
+            raise DenseGQAQKVOResidualTopologyError(
+                "The attached guided QKVO registry changed."
+            )
+        object.__setattr__(self, "_guided_adapter_registry", None)
+
+    @property
     def weight(self) -> Tensor:
         return self.base_projection.weight
 
@@ -708,17 +1037,26 @@ class DenseGQAQKVOResidualProjection(nn.Module):
     def forward(self, inputs: Tensor) -> Tensor:
         base_output = self.base_projection(inputs)
         if self.role == "o":
-            return self.adapter_registry.apply_to_output(
+            result = self.adapter_registry.apply_to_output(
                 inputs,
                 base_output,
                 layer_index=self.layer_index,
             )
-        return self.adapter_registry.apply_to_projection(
-            self.role,
-            inputs,
-            base_output,
-            layer_index=self.layer_index,
+            if self.guided_adapter_registry is not None:
+                result = self.guided_adapter_registry.apply_to_output(
+                    inputs,
+                    result,
+                    layer_index=self.layer_index,
+                )
+            return result
+        result = self.adapter_registry.apply_to_projection(
+            self.role, inputs, base_output, layer_index=self.layer_index
         )
+        if self.guided_adapter_registry is not None:
+            result = self.guided_adapter_registry.apply_to_projection(
+                self.role, inputs, result, layer_index=self.layer_index
+            )
+        return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -814,6 +1152,372 @@ class DenseGQAQKVOBakeReport:
         }
         payload["bake_sha256"] = _canonical_sha256(payload)
         return payload
+
+
+@dataclass(frozen=True, slots=True)
+class GuidedDenseGQAQKVOResidualInstallationReport:
+    """Authenticated installation evidence for old plus guided products."""
+
+    sites: tuple[DenseGQASite, ...]
+    geometry: DenseGQAGeometry
+    rank: int
+    factor_dtype: str
+    owner_name: str
+    projection_names: Mapping[str, str]
+    inherited_adapter_parameter_count: int
+    guided_adapter_parameter_count: int
+    adapter_parameter_count: int
+    model_parameter_count_before: int
+    model_parameter_count_before_guided_installation: int
+    model_parameter_count_installed: int
+    adapter_site_indices_sha256: str
+    audit_site_indices_sha256: str
+    base_projection_state_sha256: str
+    audit_report_sha256: str
+    basis_envelope_file_sha256: str
+    basis_payload_sha256: str
+    basis_manifest_sha256: str
+    source_basis_tensor_sha256s: Mapping[str, str]
+    inherited_installation_sha256: str
+    inherited_factor_state_sha256_at_install: str
+    inherited_handle_identity: int
+    inherited_registry_identity: int
+
+    def as_dict(self) -> dict[str, Any]:
+        payload = {
+            "schema": GUIDED_DENSE_GQA_QKVO_INSTALLATION_SCHEMA,
+            "sites": [site.as_dict() for site in self.sites],
+            "geometry": self.geometry.as_dict(),
+            "rank": self.rank,
+            "factor_dtype": self.factor_dtype,
+            "owner_name": self.owner_name,
+            "projection_names": dict(self.projection_names),
+            "inherited_adapter_parameter_count": (
+                self.inherited_adapter_parameter_count
+            ),
+            "guided_adapter_parameter_count": self.guided_adapter_parameter_count,
+            "adapter_parameter_count": self.adapter_parameter_count,
+            "model_parameter_count_before": self.model_parameter_count_before,
+            "model_parameter_count_before_guided_installation": (
+                self.model_parameter_count_before_guided_installation
+            ),
+            "model_parameter_count_installed": self.model_parameter_count_installed,
+            "adapter_site_indices_sha256": self.adapter_site_indices_sha256,
+            "audit_site_indices_sha256": self.audit_site_indices_sha256,
+            "base_projection_state_sha256": self.base_projection_state_sha256,
+            "audit_report_sha256": self.audit_report_sha256,
+            "basis_envelope_file_sha256": self.basis_envelope_file_sha256,
+            "basis_payload_sha256": self.basis_payload_sha256,
+            "basis_manifest_sha256": self.basis_manifest_sha256,
+            "source_basis_tensor_sha256s": dict(self.source_basis_tensor_sha256s),
+            "inherited_installation_sha256": self.inherited_installation_sha256,
+            "inherited_factor_state_sha256_at_install": (
+                self.inherited_factor_state_sha256_at_install
+            ),
+            "inherited_handle_identity": self.inherited_handle_identity,
+            "inherited_registry_identity": self.inherited_registry_identity,
+            "initial_training_stage": "guided-left",
+            "forward_product_order": ["inherited", "guided"],
+            "bake_product_order": ["inherited", "guided"],
+            "factor_concatenation_used": False,
+            "factor_regrouping_used": False,
+            "zero_guided_left_preserves_inherited_function_exactly": True,
+            "q_correction_boundary": ("dense-projection-output-before-q-norm-and-rope"),
+            "k_correction_boundary": (
+                "dense-projection-output-before-k-norm-rope-and-cache-append"
+            ),
+            "v_correction_boundary": ("dense-projection-output-before-cache-append"),
+            "o_correction_boundary": (
+                "post-softmax-physical-group-context-before-residual-add"
+            ),
+            "pointwise_causal_operator": True,
+            "cache_sidecar_required": False,
+            "parent_runtime_reference_count": 0,
+            "bake_to_plain_dense_weights_supported": True,
+            "checkpoint_saved": False,
+            "candidate_committed": False,
+        }
+        payload["installation_sha256"] = _canonical_sha256(payload)
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class GuidedDenseGQAQKVOBakeReport:
+    """Publication evidence for the sequential inherited/guided bake."""
+
+    sites: tuple[DenseGQASite, ...]
+    geometry: DenseGQAGeometry
+    rank: int
+    inherited_adapter_parameters_removed: int
+    guided_adapter_parameters_removed: int
+    adapter_parameters_removed: int
+    model_parameter_count_before_installation: int
+    model_parameter_count_before_bake: int
+    model_parameter_count_after_bake: int
+    inherited_dense_delta_sha256: str
+    guided_dense_delta_sha256: str
+    sequential_dense_delta_sha256: str
+    affected_slice_count: int
+
+    def as_dict(self) -> dict[str, Any]:
+        payload = {
+            "schema": GUIDED_DENSE_GQA_QKVO_BAKE_SCHEMA,
+            "sites": [site.as_dict() for site in self.sites],
+            "geometry": self.geometry.as_dict(),
+            "rank": self.rank,
+            "inherited_adapter_parameters_removed": (
+                self.inherited_adapter_parameters_removed
+            ),
+            "guided_adapter_parameters_removed": (
+                self.guided_adapter_parameters_removed
+            ),
+            "adapter_parameters_removed": self.adapter_parameters_removed,
+            "model_parameter_count_before_installation": (
+                self.model_parameter_count_before_installation
+            ),
+            "model_parameter_count_before_bake": self.model_parameter_count_before_bake,
+            "model_parameter_count_after_bake": self.model_parameter_count_after_bake,
+            "inherited_dense_delta_sha256": self.inherited_dense_delta_sha256,
+            "guided_dense_delta_sha256": self.guided_dense_delta_sha256,
+            "sequential_dense_delta_sha256": self.sequential_dense_delta_sha256,
+            "dense_delta_sha256": self.sequential_dense_delta_sha256,
+            "affected_slice_count": self.affected_slice_count,
+            "bake_rule": [
+                "dense_weight += inherited_left @ inherited_right",
+                "dense_weight += guided_left @ guided_right",
+            ],
+            "factor_concatenation_used": False,
+            "factor_regrouping_used": False,
+            "published_projection_type": "torch.nn.Linear",
+            "published_adapter_parameter_count": 0,
+            "published_parameter_delta_vs_original_dense_target": 0,
+            "published_adapter_flops_per_token": 0,
+            "inherited_registry_removed": True,
+            "guided_registry_removed": True,
+            "projection_wrappers_removed": True,
+            "parent_runtime_reference_count": 0,
+            "source_sized_sidecar_retained": False,
+            "functional_publication_gate_still_required": True,
+        }
+        payload["bake_sha256"] = _canonical_sha256(payload)
+        return payload
+
+
+def _authenticate_guided_qkvo_sources(
+    inherited_handle: InstalledDenseGQAQKVOResidualAdapter,
+    *,
+    audit_report: Mapping[str, Any],
+    basis_pack: Mapping[str, Any],
+    expected_audit_report_sha256: str,
+    expected_basis_envelope_file_sha256: str,
+    expected_basis_payload_sha256: str,
+    expected_basis_manifest_sha256: str,
+) -> tuple[
+    dict[ProjectionRole, Tensor],
+    dict[ProjectionRole, str],
+    str,
+    str,
+    str,
+    str,
+]:
+    """Fail closed on both v2 payloads and their external hash pins."""
+
+    if not isinstance(inherited_handle, InstalledDenseGQAQKVOResidualAdapter):
+        raise DenseGQAQKVOResidualTopologyError(
+            "Guided installation requires the live inherited QKVO handle."
+        )
+    inherited_handle.assert_live()
+    report_sha256 = _required_sha256(
+        expected_audit_report_sha256, "expected_audit_report_sha256"
+    )
+    envelope_file_sha256 = _required_sha256(
+        expected_basis_envelope_file_sha256,
+        "expected_basis_envelope_file_sha256",
+    )
+    payload_sha256 = _required_sha256(
+        expected_basis_payload_sha256, "expected_basis_payload_sha256"
+    )
+    manifest_sha256 = _required_sha256(
+        expected_basis_manifest_sha256,
+        "expected_basis_manifest_sha256",
+    )
+    if not isinstance(audit_report, Mapping):
+        raise DenseGQAQKVOResidualTopologyError("audit_report must be a mapping.")
+    report = dict(audit_report)
+    embedded_report_sha256 = report.pop("report_sha256", None)
+    if (
+        audit_report.get("schema") != QKVO_OUTPUT_JACOBIAN_AUDIT_V2_SCHEMA
+        or embedded_report_sha256 != report_sha256
+        or _canonical_sha256(report) != report_sha256
+    ):
+        raise DenseGQAQKVOResidualTopologyError(
+            "The output-Jacobian audit v2 report failed hash authentication."
+        )
+    expected_sites = _guided_stage1_sites()
+    expected_site_indices = [
+        [site.layer_index, site.physical_group] for site in expected_sites
+    ]
+    expected_site_indices_sha256 = _canonical_sha256(expected_site_indices)
+    if (
+        inherited_handle.report.geometry
+        != DenseGQAGeometry(
+            logical_layers=_GUIDED_STAGE1_LOGICAL_LAYERS,
+            hidden_size=_GUIDED_STAGE1_HIDDEN_SIZE,
+            query_heads=_GUIDED_STAGE1_QUERY_HEADS,
+            key_value_heads=_GUIDED_STAGE1_KEY_VALUE_HEADS,
+            head_dim=_GUIDED_STAGE1_HEAD_DIM,
+        )
+        or inherited_handle.report.rank != _GUIDED_STAGE1_RANK
+        or inherited_handle.report.sites != expected_sites
+        or audit_report.get("site_count") != _GUIDED_STAGE1_SITE_COUNT
+        or audit_report.get("site_indices") != expected_site_indices
+        or audit_report.get("site_indices_sha256") != expected_site_indices_sha256
+    ):
+        raise DenseGQAQKVOResidualTopologyError(
+            "The guided audit is not the ordered 120-site stage-one topology."
+        )
+    roles = list(SparseDenseGQAQKVOResidualRegistry._ROLES)
+    per_role = audit_report.get("per_role")
+    if (
+        audit_report.get("passed") is not True
+        or audit_report.get("diagnostic_passed_roles") != roles
+        or audit_report.get("authorized_roles") != roles
+        or audit_report.get("installable_roles") != roles
+        or not isinstance(per_role, Mapping)
+        or tuple(per_role) != tuple(roles)
+        or any(
+            not isinstance(per_role[role], Mapping)
+            or per_role[role].get("passed") is not True
+            for role in roles
+        )
+        or audit_report.get("installer_must_ignore_unauthorized_role_tensors")
+        is not True
+        or audit_report.get("all_four_role_tensors_retained_for_diagnostics")
+        is not True
+    ):
+        raise DenseGQAQKVOResidualTopologyError(
+            "The audit did not authorize all four installable QKVO roles."
+        )
+    if not isinstance(basis_pack, Mapping):
+        raise DenseGQAQKVOResidualTopologyError("basis_pack must be a mapping.")
+    expected_pack_keys = {
+        "schema",
+        "factor_state_sha256",
+        "site_indices",
+        "site_indices_sha256",
+        "basis_manifest_sha256",
+        "tensor_count",
+        "total_numel",
+        "total_nbytes",
+        "factors",
+        "factor_tensors",
+        "diagnostic_passed_roles",
+        "authorized_roles",
+        "installable_roles",
+        "authorized_for_training",
+        "installer_must_ignore_unauthorized_role_tensors",
+        "all_four_role_tensors_retained_for_diagnostics",
+        "contains_model_state",
+        "contains_parent_state",
+        "contains_optimizer_state",
+        "contains_gradients",
+        "contains_activations",
+        "contains_hidden_states",
+    }
+    if set(basis_pack) != expected_pack_keys:
+        raise DenseGQAQKVOResidualTopologyError(
+            "The basis pack contains missing, extra, or unauthorized payload fields."
+        )
+    if guided_qkvo_basis_payload_sha256(basis_pack) != payload_sha256:
+        raise DenseGQAQKVOResidualTopologyError(
+            "The guided basis payload failed its canonical SHA-256 pin."
+        )
+    if (
+        basis_pack.get("schema") != GUIDED_QKVO_RIGHT_BASIS_V2_SCHEMA
+        or basis_pack.get("factor_state_sha256")
+        != audit_report.get("factor_state_sha256_before")
+        or basis_pack.get("site_indices") != expected_site_indices
+        or basis_pack.get("site_indices_sha256") != expected_site_indices_sha256
+        or basis_pack.get("diagnostic_passed_roles") != roles
+        or basis_pack.get("authorized_roles") != roles
+        or basis_pack.get("installable_roles") != roles
+        or basis_pack.get("authorized_for_training") is not True
+        or basis_pack.get("installer_must_ignore_unauthorized_role_tensors") is not True
+        or basis_pack.get("all_four_role_tensors_retained_for_diagnostics") is not True
+        or any(
+            basis_pack.get(name) is not False
+            for name in (
+                "contains_model_state",
+                "contains_parent_state",
+                "contains_optimizer_state",
+                "contains_gradients",
+                "contains_activations",
+                "contains_hidden_states",
+            )
+        )
+    ):
+        raise DenseGQAQKVOResidualTopologyError(
+            "The guided basis v2 authorization contract is malformed."
+        )
+    factor_tensors = basis_pack.get("factor_tensors")
+    factor_names = tuple(_GUIDED_BASIS_NAMES.values())
+    if not isinstance(factor_tensors, Mapping) or set(factor_tensors) != set(
+        factor_names
+    ):
+        raise DenseGQAQKVOResidualTopologyError(
+            "The basis pack must contain only ordered Q/K/V/O diagnostic tensors."
+        )
+    typed_tensors: dict[str, Tensor] = {}
+    for name in factor_names:
+        value = factor_tensors[name]
+        if not isinstance(value, Tensor):
+            raise DenseGQAQKVOResidualTopologyError(
+                f"Basis factor {name!r} is not a tensor."
+            )
+        typed_tensors[name] = value
+    manifest = _guided_basis_tensor_manifest(typed_tensors)
+    computed_manifest_sha256 = _canonical_sha256(manifest)
+    if (
+        computed_manifest_sha256 != manifest_sha256
+        or basis_pack.get("basis_manifest_sha256") != manifest_sha256
+        or audit_report.get("basis_manifest_sha256") != manifest_sha256
+        or basis_pack.get("factors") != manifest
+        or audit_report.get("basis_manifest") != manifest
+        or basis_pack.get("tensor_count") != 4
+        or basis_pack.get("total_numel") != _GUIDED_STAGE1_RIGHT_PARAMETER_COUNT
+        or basis_pack.get("total_nbytes") != _GUIDED_STAGE1_RIGHT_PARAMETER_COUNT * 4
+    ):
+        raise DenseGQAQKVOResidualTopologyError(
+            "The guided basis tensor manifest failed authentication."
+        )
+    inherited_factor_sha256 = _qkvo_factor_state_sha256(
+        inherited_handle.adapter_registry
+    )
+    if (
+        audit_report.get("inherited_qkvo_state_sha256_before")
+        != inherited_factor_sha256
+        or audit_report.get("inherited_qkvo_state_sha256_after")
+        != inherited_factor_sha256
+    ):
+        raise DenseGQAQKVOResidualTopologyError(
+            "The live inherited QKVO factors differ from the audited product."
+        )
+    guided_rows = {
+        role: typed_tensors[_GUIDED_BASIS_NAMES[role]]
+        for role in SparseDenseGQAQKVOResidualRegistry._ROLES
+    }
+    tensor_sha256s = {
+        role: manifest[index]["tensor_sha256"]
+        for index, role in enumerate(SparseDenseGQAQKVOResidualRegistry._ROLES)
+    }
+    return (
+        guided_rows,
+        tensor_sha256s,
+        report_sha256,
+        envelope_file_sha256,
+        payload_sha256,
+        manifest_sha256,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1347,6 +2051,696 @@ class InstalledDenseGQAQKVOResidualAdapter:
             self.rollback()
 
 
+def _dense_updates_for_registry(
+    registry: SparseDenseGQAQKVOResidualRegistry,
+    *,
+    geometry: DenseGQAGeometry,
+    projections: Mapping[tuple[int, ProjectionRole], nn.Linear],
+) -> list[tuple[int, ProjectionRole, slice, slice, Tensor]]:
+    updates: list[tuple[int, ProjectionRole, slice, slice, Tensor]] = []
+    sites = registry.site_indices.detach().cpu().tolist()
+    for row_index, (raw_layer, raw_group) in enumerate(sites):
+        layer = int(raw_layer)
+        physical_group = int(raw_group)
+        for role in SparseDenseGQAQKVOResidualRegistry._ROLES:
+            delta = registry.dense_delta(role, row_index).detach()
+            if role == "q":
+                start = physical_group * geometry.query_group_width
+                row_slice = slice(start, start + geometry.query_group_width)
+                column_slice = slice(0, geometry.hidden_size)
+            elif role in {"k", "v"}:
+                start = physical_group * geometry.head_dim
+                row_slice = slice(start, start + geometry.head_dim)
+                column_slice = slice(0, geometry.hidden_size)
+            else:
+                start = physical_group * geometry.query_group_width
+                row_slice = slice(0, geometry.hidden_size)
+                column_slice = slice(start, start + geometry.query_group_width)
+            projection = projections[(layer, role)]
+            expected = projection.weight[row_slice, column_slice]
+            if tuple(delta.shape) != tuple(expected.shape):
+                raise DenseGQAQKVOResidualTopologyError(
+                    "Materialized guided correction has the wrong target slice shape."
+                )
+            updates.append(
+                (
+                    layer,
+                    role,
+                    row_slice,
+                    column_slice,
+                    delta.to(
+                        device=projection.weight.device,
+                        dtype=projection.weight.dtype,
+                    ),
+                )
+            )
+    return updates
+
+
+class InstalledGuidedDenseGQAQKVOResidualTranche:
+    """Transaction-compatible owner of inherited plus guided QKVO products."""
+
+    _STAGES: tuple[GuidedQKVOTrainingStage, ...] = (
+        "guided-left",
+        "guided",
+        "joint",
+    )
+
+    def __init__(
+        self,
+        *,
+        inherited_handle: InstalledDenseGQAQKVOResidualAdapter,
+        guided_registry: GuidedSparseDenseGQAQKVOResidualRegistry,
+        report: GuidedDenseGQAQKVOResidualInstallationReport,
+        inherited_requires_grad: Mapping[str, bool],
+    ) -> None:
+        self.inherited_handle = inherited_handle
+        self.guided_registry = guided_registry
+        self.report = report
+        self.model = inherited_handle.model
+        self.attention_modules = inherited_handle.attention_modules
+        self._inherited_requires_grad = dict(inherited_requires_grad)
+        self._state: Literal["live", "rolled-back-guided", "rolled-back", "baked"] = (
+            "live"
+        )
+        self._training_stage: GuidedQKVOTrainingStage = "guided-left"
+        self._guided_right_training_started = False
+        self._bake_report: GuidedDenseGQAQKVOBakeReport | None = None
+        self._published_projections: dict[tuple[int, ProjectionRole], nn.Linear] = {}
+        self._source_binding = MappingProxyType(
+            {
+                "audit_report_sha256": report.audit_report_sha256,
+                "basis_envelope_file_sha256": (report.basis_envelope_file_sha256),
+                "basis_payload_sha256": report.basis_payload_sha256,
+                "basis_manifest_sha256": report.basis_manifest_sha256,
+                "source_basis_tensor_sha256s": MappingProxyType(
+                    dict(report.source_basis_tensor_sha256s)
+                ),
+                "inherited_installation_sha256": (report.inherited_installation_sha256),
+                "inherited_factor_state_sha256_at_install": (
+                    report.inherited_factor_state_sha256_at_install
+                ),
+                "inherited_handle_identity": report.inherited_handle_identity,
+                "inherited_registry_identity": report.inherited_registry_identity,
+                "adapter_site_indices_sha256": (report.adapter_site_indices_sha256),
+                "audit_site_indices_sha256": report.audit_site_indices_sha256,
+            }
+        )
+        self._set_requires_grad_for_stage("guided-left")
+
+    @property
+    def adapter_registry(self) -> SparseDenseGQAQKVOResidualRegistry:
+        """Compatibility alias for the inherited transaction registry."""
+
+        return self.inherited_handle.adapter_registry
+
+    @property
+    def is_applied(self) -> bool:
+        return self._state == "live"
+
+    @property
+    def is_baked(self) -> bool:
+        return self._state == "baked"
+
+    @property
+    def bake_report(self) -> GuidedDenseGQAQKVOBakeReport | None:
+        return self._bake_report
+
+    @property
+    def training_stage(self) -> GuidedQKVOTrainingStage:
+        return self._training_stage
+
+    def factor_source_binding(self) -> Mapping[str, Any]:
+        return self._source_binding
+
+    def _set_requires_grad_for_stage(self, stage: GuidedQKVOTrainingStage) -> None:
+        inherited_trainable = stage == "joint"
+        for _name, value in self.adapter_registry.named_parameters(recurse=False):
+            value.requires_grad_(inherited_trainable)
+        guided_right_trainable = stage in {"guided", "joint"}
+        for name, value in self.guided_registry.named_parameters(recurse=False):
+            value.requires_grad_(name.endswith("_left") or guided_right_trainable)
+
+    def set_training_stage(
+        self, stage: GuidedQKVOTrainingStage
+    ) -> tuple[nn.Parameter, ...]:
+        self.assert_live()
+        if stage not in self._STAGES:
+            raise DenseGQAQKVOResidualTrainingError(
+                "Guided QKVO stage must be guided-left, guided, or joint."
+            )
+        current_index = self._STAGES.index(self._training_stage)
+        requested_index = self._STAGES.index(stage)
+        if requested_index < current_index:
+            raise DenseGQAQKVOResidualTrainingError(
+                "Guided QKVO training stages cannot move backward."
+            )
+        self._training_stage = stage
+        if stage in {"guided", "joint"}:
+            self._guided_right_training_started = True
+        self._set_requires_grad_for_stage(stage)
+        return self.output_trainable_parameters()
+
+    def output_trainable_parameters(self) -> tuple[nn.Parameter, ...]:
+        self.assert_live()
+        inherited = tuple(self.adapter_registry.parameters(recurse=False))
+        guided = tuple(self.guided_registry.parameters(recurse=False))
+        if self._training_stage == "guided-left":
+            result = tuple(
+                value
+                for name, value in self.guided_registry.named_parameters(recurse=False)
+                if name.endswith("_left")
+            )
+        elif self._training_stage == "guided":
+            result = guided
+        else:
+            result = (*inherited, *guided)
+        if not result or any(not value.requires_grad for value in result):
+            raise DenseGQAQKVOResidualTrainingError(
+                "The guided QKVO trainable stage is internally inconsistent."
+            )
+        return result
+
+    def _assert_unique_guided_owner(self) -> None:
+        paths = [
+            name
+            for name, module in self.model.named_modules(remove_duplicate=False)
+            if module is self.guided_registry
+        ]
+        if paths != [self.report.owner_name]:
+            raise DenseGQAQKVOResidualTopologyError(
+                "Guided QKVO registry must have exactly one registered owner."
+            )
+
+    def assert_structurally_live(
+        self,
+    ) -> GuidedDenseGQAQKVOResidualInstallationReport:
+        if self._state != "live":
+            raise DenseGQAQKVOResidualTopologyError(
+                "The guided QKVO tranche is no longer live."
+            )
+        if (
+            id(self.inherited_handle) != self.report.inherited_handle_identity
+            or id(self.adapter_registry) != self.report.inherited_registry_identity
+        ):
+            raise DenseGQAQKVOResidualTopologyError(
+                "The inherited QKVO handle identity changed."
+            )
+        self.inherited_handle.assert_structurally_live()
+        if (
+            getattr(self.model, self.report.owner_name, None)
+            is not self.guided_registry
+        ):
+            raise DenseGQAQKVOResidualTopologyError(
+                "Model lost the guided QKVO registry owner."
+            )
+        self._assert_unique_guided_owner()
+        for installed in self.inherited_handle._installed_views.values():
+            if installed.guided_adapter_registry is not self.guided_registry:
+                raise DenseGQAQKVOResidualTopologyError(
+                    "A projection lost the separate guided QKVO product."
+                )
+        if _tensor_sha256(self.guided_registry.site_indices) != (
+            self.report.adapter_site_indices_sha256
+        ):
+            raise DenseGQAQKVOResidualTopologyError("Guided QKVO site indices changed.")
+        if (
+            self._training_stage != "joint"
+            and _qkvo_factor_state_sha256(self.adapter_registry)
+            != self.report.inherited_factor_state_sha256_at_install
+        ):
+            raise DenseGQAQKVOResidualTopologyError(
+                "The inherited product changed before joint training was enabled."
+            )
+        if not self._guided_right_training_started and any(
+            _tensor_sha256(getattr(self.guided_registry, f"{role}_right"))
+            != self.report.source_basis_tensor_sha256s[role]
+            for role in SparseDenseGQAQKVOResidualRegistry._ROLES
+        ):
+            raise DenseGQAQKVOResidualTopologyError(
+                "A guided right basis changed during guided-left-only training."
+            )
+        return self.report
+
+    def assert_live(self) -> GuidedDenseGQAQKVOResidualInstallationReport:
+        self.assert_structurally_live()
+        self.adapter_registry._assert_finite()
+        self.guided_registry._assert_finite()
+        return self.report
+
+    def output_training_scope(
+        self,
+        stage: GuidedQKVOTrainingStage | None = None,
+    ) -> GuidedDenseGQAQKVOOutputTrainingScope:
+        if stage is not None:
+            self.set_training_stage(stage)
+        return GuidedDenseGQAQKVOOutputTrainingScope(self)
+
+    @contextmanager
+    def suspend_guided_registry_owner_for_nested_publication(
+        self,
+    ) -> Iterator[None]:
+        """Temporarily hide only the new registry from a legacy nested bake.
+
+        The inherited compiler transaction installed its lexical adapter after
+        the original QKVO product.  Consequently the lexical adapter's exact
+        state-key and parameter-count baseline cannot include this later
+        guided registry.  Publication still has to bake lexical first.  This
+        narrow scope unregisters only the authenticated guided owner while the
+        lexical adapter restores its legacy baseline, then immediately
+        re-registers the *same* registry before the sequential old+guided QKVO
+        bake.  Projection wrappers retain their non-owning references, and no
+        forward pass or checkpoint is permitted at this intermediate boundary.
+        """
+
+        self.assert_live()
+        owner_name = self.report.owner_name
+        if getattr(self.model, owner_name, None) is not self.guided_registry:
+            raise DenseGQAQKVOResidualTopologyError(
+                "Guided registry owner changed before nested publication."
+            )
+        guided_state_sha256 = _qkvo_factor_state_sha256(self.guided_registry)
+        guided_parameter_ownership = tuple(
+            (
+                name,
+                id(value),
+                int(value.data_ptr()),
+                bool(value.requires_grad),
+            )
+            for name, value in self.guided_registry.named_parameters(recurse=False)
+        )
+        before = _unique_parameter_count(self.model)
+        delattr(self.model, owner_name)
+        suspended = _unique_parameter_count(self.model)
+        if suspended != before - self.report.guided_adapter_parameter_count:
+            self.model.add_module(owner_name, self.guided_registry)
+            raise DenseGQAQKVOResidualAccountingError(
+                "Suspending the guided registry changed the wrong parameter count."
+            )
+        if any(
+            module is self.guided_registry
+            for _name, module in self.model.named_modules(remove_duplicate=False)
+        ):
+            self.model.add_module(owner_name, self.guided_registry)
+            raise DenseGQAQKVOResidualTopologyError(
+                "Guided registry retained an undeclared registered owner."
+            )
+        try:
+            yield
+        finally:
+            if hasattr(self.model, owner_name):
+                raise DenseGQAQKVOResidualTopologyError(
+                    "Guided registry owner path was occupied during nested publication."
+                )
+            before_restore = _unique_parameter_count(self.model)
+            self.model.add_module(owner_name, self.guided_registry)
+            if (
+                _unique_parameter_count(self.model)
+                != before_restore + self.report.guided_adapter_parameter_count
+                or tuple(
+                    (
+                        name,
+                        id(value),
+                        int(value.data_ptr()),
+                        bool(value.requires_grad),
+                    )
+                    for name, value in self.guided_registry.named_parameters(
+                        recurse=False
+                    )
+                )
+                != guided_parameter_ownership
+                or _qkvo_factor_state_sha256(self.guided_registry)
+                != guided_state_sha256
+            ):
+                raise DenseGQAQKVOResidualTopologyError(
+                    "Nested publication did not restore the exact guided registry."
+                )
+            self.assert_live()
+
+    def rollback_guided_only(
+        self,
+    ) -> InstalledDenseGQAQKVOResidualAdapter:
+        """Remove only the new tranche and leave the inherited product live."""
+
+        if self._state == "rolled-back-guided":
+            return self.inherited_handle
+        if self._state != "live":
+            raise DenseGQAQKVOResidualTopologyError(
+                "Only a live guided tranche can be removed independently."
+            )
+        self.assert_structurally_live()
+        count_before_removal = _unique_parameter_count(self.model)
+        for installed in self.inherited_handle._installed_views.values():
+            installed._detach_guided_registry(self.guided_registry)
+        if getattr(self.model, self.report.owner_name, None) is self.guided_registry:
+            delattr(self.model, self.report.owner_name)
+        elif hasattr(self.model, self.report.owner_name):
+            raise DenseGQAQKVOResidualTopologyError(
+                "Guided QKVO registry owner changed during rollback."
+            )
+        for name, value in self.adapter_registry.named_parameters(recurse=False):
+            value.requires_grad_(self._inherited_requires_grad[name])
+        if (
+            _unique_parameter_count(self.model)
+            != count_before_removal - self.report.guided_adapter_parameter_count
+        ):
+            raise DenseGQAQKVOResidualTopologyError(
+                "Guided-only rollback parameter accounting failed."
+            )
+        self.inherited_handle.assert_live()
+        self._state = "rolled-back-guided"
+        return self.inherited_handle
+
+    def rollback(self) -> None:
+        """Reject the combined candidate and restore the exact native child."""
+
+        if self._state == "rolled-back":
+            return
+        if self._state == "baked":
+            raise DenseGQAQKVOResidualTopologyError(
+                "A published guided bake cannot use live rollback."
+            )
+        if self._state == "live":
+            self.rollback_guided_only()
+        if self.inherited_handle.is_applied:
+            self.inherited_handle.rollback()
+        self._state = "rolled-back"
+
+    @staticmethod
+    def _delta_manifest(
+        updates: Sequence[tuple[int, ProjectionRole, slice, slice, Tensor]],
+    ) -> tuple[list[dict[str, Any]], str]:
+        manifest = [
+            {
+                "layer_index": layer,
+                "role": role,
+                "shape": list(delta.shape),
+                "sha256": _tensor_sha256(delta),
+            }
+            for layer, role, _rows, _columns, delta in updates
+        ]
+        return manifest, _canonical_sha256(manifest)
+
+    def bake_for_publication(self) -> GuidedDenseGQAQKVOBakeReport:
+        """Bake inherited first, guided second, then remove both sidecars."""
+
+        self.assert_live()
+        before_bake_count = _unique_parameter_count(self.model)
+        original = self.inherited_handle._original_projections
+        inherited_updates = _dense_updates_for_registry(
+            self.adapter_registry,
+            geometry=self.report.geometry,
+            projections=original,
+        )
+        guided_updates = _dense_updates_for_registry(
+            self.guided_registry,
+            geometry=self.report.geometry,
+            projections=original,
+        )
+        expected_updates = 4 * len(self.report.sites)
+        if (
+            len(inherited_updates) != expected_updates
+            or len(guided_updates) != expected_updates
+        ):
+            raise DenseGQAQKVOResidualTopologyError(
+                "Sequential QKVO bake did not produce four updates per site."
+            )
+        inherited_manifest, inherited_sha256 = self._delta_manifest(inherited_updates)
+        guided_manifest, guided_sha256 = self._delta_manifest(guided_updates)
+        sequential_sha256 = _canonical_sha256(
+            {
+                "order": ["inherited", "guided"],
+                "inherited": inherited_manifest,
+                "guided": guided_manifest,
+            }
+        )
+        published: dict[tuple[int, ProjectionRole], nn.Linear] = {}
+        try:
+            with torch.no_grad():
+                for key, base in original.items():
+                    replacement = nn.Linear(
+                        base.in_features,
+                        base.out_features,
+                        bias=base.bias is not None,
+                        device=base.weight.device,
+                        dtype=base.weight.dtype,
+                    )
+                    replacement.weight.copy_(base.weight)
+                    replacement.weight.requires_grad_(bool(base.weight.requires_grad))
+                    if base.bias is not None:
+                        assert replacement.bias is not None
+                        replacement.bias.copy_(base.bias)
+                        replacement.bias.requires_grad_(bool(base.bias.requires_grad))
+                    replacement.train(base.training)
+                    published[key] = replacement
+                # The two loops are deliberately separate.  Their floating
+                # point addition order is part of the publication contract.
+                for layer, role, rows, columns, delta in inherited_updates:
+                    published[(layer, role)].weight[rows, columns].add_(delta)
+                for layer, role, rows, columns, delta in guided_updates:
+                    published[(layer, role)].weight[rows, columns].add_(delta)
+            if any(
+                not bool(torch.isfinite(projection.weight).all())
+                or (
+                    projection.bias is not None
+                    and not bool(torch.isfinite(projection.bias).all())
+                )
+                for projection in published.values()
+            ):
+                raise DenseGQAQKVOResidualError(
+                    "Sequential QKVO bake produced a non-finite projection."
+                )
+            for (layer_index, role), replacement in published.items():
+                name = self.report.projection_names[role]
+                setattr(self.attention_modules[layer_index], name, replacement)
+            if getattr(self.model, self.report.owner_name, None) is not (
+                self.guided_registry
+            ):
+                raise DenseGQAQKVOResidualTopologyError(
+                    "Guided registry owner changed during publication."
+                )
+            delattr(self.model, self.report.owner_name)
+            old_owner_name = self.inherited_handle.report.owner_name
+            if getattr(self.model, old_owner_name, None) is not self.adapter_registry:
+                raise DenseGQAQKVOResidualTopologyError(
+                    "Inherited registry owner changed during publication."
+                )
+            delattr(self.model, old_owner_name)
+            after_count = _unique_parameter_count(self.model)
+            if after_count != self.report.model_parameter_count_before:
+                raise DenseGQAQKVOResidualAccountingError(
+                    "Sequential QKVO bake did not restore the inherited native budget."
+                )
+            if any(
+                type(
+                    getattr(
+                        self.attention_modules[layer],
+                        self.report.projection_names[role],
+                    )
+                )
+                is not nn.Linear
+                for layer, role in original
+            ):
+                raise DenseGQAQKVOResidualTopologyError(
+                    "Sequential QKVO publication left a projection wrapper."
+                )
+        except Exception:
+            old_owner_name = self.inherited_handle.report.owner_name
+            if getattr(self.model, old_owner_name, None) is not self.adapter_registry:
+                if hasattr(self.model, old_owner_name):
+                    delattr(self.model, old_owner_name)
+                self.model.add_module(old_owner_name, self.adapter_registry)
+            if getattr(self.model, self.report.owner_name, None) is not (
+                self.guided_registry
+            ):
+                if hasattr(self.model, self.report.owner_name):
+                    delattr(self.model, self.report.owner_name)
+                self.model.add_module(self.report.owner_name, self.guided_registry)
+            for (
+                layer_index,
+                role,
+            ), installed in self.inherited_handle._installed_views.items():
+                setattr(
+                    self.attention_modules[layer_index],
+                    self.report.projection_names[role],
+                    installed,
+                )
+            raise
+        for installed in self.inherited_handle._installed_views.values():
+            installed._detach_guided_registry(self.guided_registry)
+        report = GuidedDenseGQAQKVOBakeReport(
+            sites=self.report.sites,
+            geometry=self.report.geometry,
+            rank=self.report.rank,
+            inherited_adapter_parameters_removed=(
+                self.report.inherited_adapter_parameter_count
+            ),
+            guided_adapter_parameters_removed=(
+                self.report.guided_adapter_parameter_count
+            ),
+            adapter_parameters_removed=self.report.adapter_parameter_count,
+            model_parameter_count_before_installation=(
+                self.report.model_parameter_count_before
+            ),
+            model_parameter_count_before_bake=before_bake_count,
+            model_parameter_count_after_bake=after_count,
+            inherited_dense_delta_sha256=inherited_sha256,
+            guided_dense_delta_sha256=guided_sha256,
+            sequential_dense_delta_sha256=sequential_sha256,
+            affected_slice_count=len(inherited_updates) + len(guided_updates),
+        )
+        inherited_report = DenseGQAQKVOBakeReport(
+            sites=self.inherited_handle.report.sites,
+            geometry=self.inherited_handle.report.geometry,
+            rank=self.inherited_handle.report.rank,
+            adapter_parameters_removed=(
+                self.inherited_handle.report.adapter_parameter_count
+            ),
+            model_parameter_count_before_installation=(
+                self.inherited_handle.report.model_parameter_count_before
+            ),
+            model_parameter_count_before_bake=before_bake_count,
+            model_parameter_count_after_bake=after_count,
+            dense_delta_sha256=inherited_sha256,
+            affected_slice_count=len(inherited_updates),
+        )
+        self.inherited_handle._state = "baked"
+        self.inherited_handle._bake_report = inherited_report
+        self.inherited_handle._published_projections = published
+        self._published_projections = published
+        self._bake_report = report
+        self._state = "baked"
+        return report
+
+    def restore_prepublication_native(
+        self,
+        *,
+        expected_model_parameter_count: int | None = None,
+    ) -> None:
+        """Undo a successful combined bake after a later publication failure."""
+
+        if self._state == "live":
+            self.rollback()
+            return
+        if self._state in {"rolled-back", "rolled-back-guided"}:
+            return
+        for (layer_index, role), published in self._published_projections.items():
+            name = self.report.projection_names[role]
+            if (
+                getattr(self.attention_modules[layer_index], name, None)
+                is not published
+            ):
+                raise DenseGQAQKVOResidualTopologyError(
+                    "Published guided QKVO ownership changed; restoration is unsafe."
+                )
+        for (
+            layer_index,
+            role,
+        ), original in self.inherited_handle._original_projections.items():
+            setattr(
+                self.attention_modules[layer_index],
+                self.report.projection_names[role],
+                original,
+            )
+        self.inherited_handle._assert_base_unchanged()
+        expected = (
+            self.inherited_handle.report.model_parameter_count_before
+            if expected_model_parameter_count is None
+            else _index(
+                expected_model_parameter_count,
+                "expected_model_parameter_count",
+                positive=True,
+            )
+        )
+        if _unique_parameter_count(self.model) != expected:
+            raise DenseGQAQKVOResidualTopologyError(
+                "Prepublication guided QKVO restoration changed the native budget."
+            )
+        # Both handles intentionally share this map while a successful bake is
+        # still rollback-capable.  Once native restoration succeeds, retaining
+        # it would keep a complete off-model copy of every baked Q/K/V/O
+        # projection alive.  Clear both attributes explicitly so this failure
+        # path owns no hidden dense clone.
+        self._published_projections.clear()
+        self.inherited_handle._published_projections.clear()
+        self.inherited_handle._state = "rolled-back"
+        self._state = "rolled-back"
+
+    def __enter__(self) -> InstalledGuidedDenseGQAQKVOResidualTranche:
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        del exc_type, exc, traceback
+        if self._state == "live":
+            self.rollback()
+
+
+class GuidedDenseGQAQKVOOutputTrainingScope:
+    """Freeze every unselected parameter for one guided training stage."""
+
+    def __init__(self, handle: InstalledGuidedDenseGQAQKVOResidualTranche) -> None:
+        if not isinstance(handle, InstalledGuidedDenseGQAQKVOResidualTranche):
+            raise DenseGQAQKVOResidualTrainingError(
+                "Guided training scope requires a live guided handle."
+            )
+        self.handle = handle
+        self._frozen: tuple[
+            tuple[nn.Parameter, bool, Tensor | None, int, int], ...
+        ] = ()
+        self._module_modes: tuple[tuple[nn.Module, bool], ...] = ()
+        self._entered = False
+
+    def __enter__(self) -> tuple[nn.Parameter, ...]:
+        if self._entered:
+            raise DenseGQAQKVOResidualTrainingError(
+                "Guided output training scope cannot be re-entered."
+            )
+        trainable = self.handle.output_trainable_parameters()
+        trainable_ids = {id(value) for value in trainable}
+        self._frozen = tuple(
+            (
+                value,
+                bool(value.requires_grad),
+                value.grad,
+                int(value._version),
+                int(value.data_ptr()),
+            )
+            for value in self.handle.model.parameters()
+            if id(value) not in trainable_ids
+        )
+        self._module_modes = tuple(
+            (module, bool(module.training)) for module in self.handle.model.modules()
+        )
+        for value, _requires_grad, _gradient, _version, _pointer in self._frozen:
+            value.requires_grad_(False)
+        self.handle.model.eval()
+        self._entered = True
+        return trainable
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        del exc_type, exc, traceback
+        if not self._entered:
+            return
+        for value, requires_grad, gradient, _version, _pointer in self._frozen:
+            value.requires_grad_(requires_grad)
+            if value.grad is not gradient:
+                value.grad = gradient
+        for module, training in self._module_modes:
+            module.training = training
+        self._entered = False
+        if any(
+            int(value._version) != version
+            or int(value.data_ptr()) != pointer
+            or value.grad is not gradient
+            or bool(value.requires_grad) != requires_grad
+            for value, requires_grad, gradient, version, pointer in self._frozen
+        ):
+            raise DenseGQAQKVOResidualTrainingError(
+                "An unselected parameter changed inside guided QKVO training."
+            )
+        self.handle.assert_live()
+
+
 class DenseGQAAdapterOnlyOutputTrainingScope:
     """Freeze the dense target and expose only sparse factors to autograd."""
 
@@ -1582,12 +2976,191 @@ def install_dense_gqa_qkvo_residual_adapter(
         raise
 
 
+def install_guided_dense_gqa_qkvo_residual_tranche(
+    inherited_handle: InstalledDenseGQAQKVOResidualAdapter,
+    *,
+    audit_report: Mapping[str, Any],
+    basis_pack: Mapping[str, Any],
+    expected_audit_report_sha256: str,
+    expected_basis_envelope_file_sha256: str,
+    expected_basis_payload_sha256: str,
+    expected_basis_manifest_sha256: str,
+    owner_name: str = "guided_dense_gqa_qkvo_residual_registry",
+) -> InstalledGuidedDenseGQAQKVOResidualTranche:
+    """Install the authenticated exact-zero guided stage-one QKVO product.
+
+    ``expected_basis_envelope_file_sha256`` belongs to the outer torch artifact and
+    must be verified by the artifact contract before this nested payload is
+    passed here.  The independently recomputed payload and tensor-manifest
+    hashes prevent that external file hash from being conflated with a
+    different serialization domain.
+    """
+
+    if not isinstance(inherited_handle, InstalledDenseGQAQKVOResidualAdapter):
+        raise DenseGQAQKVOResidualTopologyError(
+            "inherited_handle must be a live dense QKVO handle."
+        )
+    inherited_handle.assert_live()
+    model = inherited_handle.model
+    if (
+        not isinstance(owner_name, str)
+        or not owner_name.isidentifier()
+        or hasattr(model, owner_name)
+        or owner_name == inherited_handle.report.owner_name
+    ):
+        raise DenseGQAQKVOResidualTopologyError(
+            "owner_name must be a distinct unused model attribute identifier."
+        )
+    (
+        guided_rows,
+        source_tensor_sha256s,
+        report_sha256,
+        envelope_file_sha256,
+        payload_sha256,
+        manifest_sha256,
+    ) = _authenticate_guided_qkvo_sources(
+        inherited_handle,
+        audit_report=audit_report,
+        basis_pack=basis_pack,
+        expected_audit_report_sha256=expected_audit_report_sha256,
+        expected_basis_envelope_file_sha256=(expected_basis_envelope_file_sha256),
+        expected_basis_payload_sha256=expected_basis_payload_sha256,
+        expected_basis_manifest_sha256=expected_basis_manifest_sha256,
+    )
+    registry = inherited_handle.adapter_registry
+    inherited_parameters = tuple(registry.named_parameters(recurse=False))
+    if not inherited_parameters:
+        raise DenseGQAQKVOResidualTopologyError(
+            "The inherited QKVO registry has no factors."
+        )
+    dtype_devices = {
+        (value.dtype, value.device) for _name, value in inherited_parameters
+    }
+    if len(dtype_devices) != 1:
+        raise DenseGQAQKVOResidualTopologyError(
+            "Inherited QKVO factors must share one dtype and device."
+        )
+    factor_dtype, device = next(iter(dtype_devices))
+    if factor_dtype != torch.float32:
+        raise DenseGQAQKVOResidualTopologyError(
+            "The exact guided stage-one tranche requires FP32 temporary factors."
+        )
+    inherited_factor_sha256 = _qkvo_factor_state_sha256(registry)
+    inherited_requires_grad = {
+        name: bool(value.requires_grad) for name, value in inherited_parameters
+    }
+    before_count = _unique_parameter_count(model)
+    guided_registry = GuidedSparseDenseGQAQKVOResidualRegistry(
+        inherited_handle.report.sites,
+        geometry=inherited_handle.report.geometry,
+        rank=inherited_handle.report.rank,
+        guided_right_rows=guided_rows,
+        source_basis_tensor_sha256s=source_tensor_sha256s,
+        audit_report_sha256=report_sha256,
+        basis_envelope_file_sha256=envelope_file_sha256,
+        basis_payload_sha256=payload_sha256,
+        basis_manifest_sha256=manifest_sha256,
+        dtype=factor_dtype,
+        device=device,
+    )
+    if (
+        guided_registry.learned_parameter_count != _GUIDED_STAGE1_PARAMETER_COUNT
+        or sum(
+            int(getattr(guided_registry, f"{role}_right").numel())
+            for role in SparseDenseGQAQKVOResidualRegistry._ROLES
+        )
+        != _GUIDED_STAGE1_RIGHT_PARAMETER_COUNT
+    ):
+        raise DenseGQAQKVOResidualAccountingError(
+            "The guided stage-one tranche is not exactly 7,127,040 parameters."
+        )
+    attached: list[DenseGQAQKVOResidualProjection] = []
+    try:
+        model.add_module(owner_name, guided_registry)
+        for installed in inherited_handle._installed_views.values():
+            installed._attach_guided_registry(guided_registry)
+            attached.append(installed)
+        installed_count = _unique_parameter_count(model)
+        if installed_count != before_count + _GUIDED_STAGE1_PARAMETER_COUNT:
+            raise DenseGQAQKVOResidualAccountingError(
+                "Guided installation count is not inherited plus 7,127,040."
+            )
+        if _qkvo_factor_state_sha256(registry) != inherited_factor_sha256:
+            raise DenseGQAQKVOResidualTopologyError(
+                "Guided installation changed the inherited rank-eight factors."
+            )
+        inherited_payload = inherited_handle.report.as_dict()
+        report = GuidedDenseGQAQKVOResidualInstallationReport(
+            sites=inherited_handle.report.sites,
+            geometry=inherited_handle.report.geometry,
+            rank=inherited_handle.report.rank,
+            factor_dtype=str(factor_dtype),
+            owner_name=owner_name,
+            projection_names=dict(inherited_handle.report.projection_names),
+            inherited_adapter_parameter_count=(
+                inherited_handle.report.adapter_parameter_count
+            ),
+            guided_adapter_parameter_count=_GUIDED_STAGE1_PARAMETER_COUNT,
+            adapter_parameter_count=(
+                inherited_handle.report.adapter_parameter_count
+                + _GUIDED_STAGE1_PARAMETER_COUNT
+            ),
+            model_parameter_count_before=(
+                inherited_handle.report.model_parameter_count_before
+            ),
+            model_parameter_count_before_guided_installation=before_count,
+            model_parameter_count_installed=installed_count,
+            adapter_site_indices_sha256=(
+                inherited_handle.report.adapter_site_indices_sha256
+            ),
+            audit_site_indices_sha256=str(audit_report["site_indices_sha256"]),
+            base_projection_state_sha256=(
+                inherited_handle.report.base_projection_state_sha256
+            ),
+            audit_report_sha256=report_sha256,
+            basis_envelope_file_sha256=envelope_file_sha256,
+            basis_payload_sha256=payload_sha256,
+            basis_manifest_sha256=manifest_sha256,
+            source_basis_tensor_sha256s=dict(source_tensor_sha256s),
+            inherited_installation_sha256=str(inherited_payload["installation_sha256"]),
+            inherited_factor_state_sha256_at_install=(inherited_factor_sha256),
+            inherited_handle_identity=id(inherited_handle),
+            inherited_registry_identity=id(registry),
+        )
+        handle = InstalledGuidedDenseGQAQKVOResidualTranche(
+            inherited_handle=inherited_handle,
+            guided_registry=guided_registry,
+            report=report,
+            inherited_requires_grad=inherited_requires_grad,
+        )
+        handle.assert_live()
+        return handle
+    except Exception:
+        for installed in reversed(attached):
+            if installed.guided_adapter_registry is guided_registry:
+                installed._detach_guided_registry(guided_registry)
+        if getattr(model, owner_name, None) is guided_registry:
+            delattr(model, owner_name)
+        for name, value in inherited_parameters:
+            value.requires_grad_(inherited_requires_grad[name])
+        if _unique_parameter_count(model) != before_count:
+            raise DenseGQAQKVOResidualTopologyError(
+                "Failed guided installation could not restore exact accounting."
+            )
+        raise
+
+
 __all__ = [
     "DENSE_GQA_QKVO_ACCOUNTING_SCHEMA",
     "DENSE_GQA_QKVO_BAKE_SCHEMA",
     "DENSE_GQA_QKVO_INSTALLATION_SCHEMA",
     "DENSE_GQA_QKVO_REGISTRY_SCHEMA",
     "DENSE_GQA_QKVO_TRAINING_SCOPE_SCHEMA",
+    "GUIDED_DENSE_GQA_QKVO_BAKE_SCHEMA",
+    "GUIDED_DENSE_GQA_QKVO_INSTALLATION_SCHEMA",
+    "GUIDED_DENSE_GQA_QKVO_REGISTRY_SCHEMA",
+    "GUIDED_QKVO_RIGHT_BASIS_V2_SCHEMA",
+    "QKVO_OUTPUT_JACOBIAN_AUDIT_V2_SCHEMA",
     "DenseGQAAdapterOnlyOutputTrainingScope",
     "DenseGQAGeometry",
     "DenseGQAQKVOBakeReport",
@@ -1599,7 +3172,15 @@ __all__ = [
     "DenseGQAQKVOResidualTopologyError",
     "DenseGQAQKVOResidualTrainingError",
     "DenseGQASite",
+    "GuidedDenseGQAQKVOBakeReport",
+    "GuidedDenseGQAQKVOOutputTrainingScope",
+    "GuidedDenseGQAQKVOResidualInstallationReport",
+    "GuidedQKVOTrainingStage",
+    "GuidedSparseDenseGQAQKVOResidualRegistry",
     "InstalledDenseGQAQKVOResidualAdapter",
+    "InstalledGuidedDenseGQAQKVOResidualTranche",
     "SparseDenseGQAQKVOResidualRegistry",
+    "guided_qkvo_basis_payload_sha256",
     "install_dense_gqa_qkvo_residual_adapter",
+    "install_guided_dense_gqa_qkvo_residual_tranche",
 ]
