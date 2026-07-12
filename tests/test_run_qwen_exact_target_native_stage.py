@@ -410,6 +410,39 @@ def test_sealed_access_before_candidate_gate_fails_closed(tmp_path) -> None:
     assert runtime.transaction.rolled_back is True
 
 
+def test_training_failure_report_retains_completed_gpu_and_compiler_phases(
+    tmp_path,
+) -> None:
+    class _FailingTrainingRuntime(_Runtime):
+        def train(self, transaction, parent, contract):
+            del transaction, parent, contract
+            raise RuntimeError("injected training failure")
+
+    path, digest = _contract_files(tmp_path)
+    contract = runner.authenticate_preregistration(path, digest)
+    runtime = _FailingTrainingRuntime(
+        _TrainingResult(
+            fit_metrics=_metrics(),
+            candidate_metrics=_metrics(),
+            sealed_metrics=_metrics(),
+            candidate_gate_passed=True,
+            sealed_evaluation_unlocked=True,
+        )
+    )
+    output = tmp_path / "training-failure"
+    with pytest.raises(RuntimeError, match="injected training failure"):
+        runner.execute_authenticated_stage(contract, output, runtime=runtime)
+    report = json.loads((output / "run_report.json").read_text(encoding="utf-8"))
+    assert report["status"] == "failed"
+    assert report["models_loaded"] is True
+    assert report["gpu_work_launched"] is True
+    assert report["last_completed_phase"] == "behavior-training-started"
+    assert report["compiler_report"]["bootstrap_accepted"] is True
+    assert report["installation"]["zero_step_identity"] is True
+    assert report["rollback_error"] is None
+    assert runtime.transaction.rolled_back is True
+
+
 def test_post_publish_report_failure_removes_exact_accepted_child(
     tmp_path, monkeypatch
 ) -> None:

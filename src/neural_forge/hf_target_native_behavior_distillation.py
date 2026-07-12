@@ -526,6 +526,8 @@ class TargetNativeFactorState:
     tensors: tuple[Tensor, ...]
     tensor_sha256s: tuple[str, ...]
     factor_state_sha256: str
+    parameter_ids: tuple[int, ...] = ()
+    parameter_data_ptrs: tuple[int, ...] = ()
 
     def as_manifest(self) -> dict[str, Any]:
         return {
@@ -560,12 +562,21 @@ class TargetNativeFactorState:
 
 def _factor_parameters(
     transaction: ExactTargetCompilerTransaction,
+    *,
+    require_finite: bool = True,
 ) -> tuple[tuple[str, nn.Parameter], ...]:
     if not isinstance(transaction, ExactTargetCompilerTransaction):
         raise TargetNativeBehaviorDistillationError(
             "transaction must be ExactTargetCompilerTransaction."
         )
-    transaction.assert_live()
+    if not transaction.is_live:
+        raise TargetNativeBehaviorDistillationError(
+            "Compiler transaction is no longer structurally live."
+        )
+    if require_finite:
+        transaction.assert_live()
+    else:
+        transaction.assert_structurally_live()
     entries = tuple(
         (f"qkvo.{name}", value)
         for name, value in transaction.qkvo_handle.adapter_registry.named_parameters(
@@ -593,7 +604,14 @@ def _factor_parameters(
         raise TargetNativeBehaviorDistillationError(
             "Compiler transaction does not expose one complete QKVO/GUD factor set."
         )
-    trainable = transaction.output_trainable_parameters()
+    # Read directly from the two transaction-owned registries.  The public
+    # transaction accessor deliberately finite-asserts, which is correct for
+    # ordinary training but would make it impossible to overwrite a poisoned
+    # disposable factor from a previously captured exact snapshot.
+    trainable = (
+        *transaction.qkvo_handle.adapter_registry.output_trainable_parameters(),
+        *transaction.swiglu_handle.registry.output_trainable_parameters(),
+    )
     if {id(value) for _name, value in entries} != {id(value) for value in trainable}:
         raise TargetNativeBehaviorDistillationError(
             "Named factors disagree with the compiler training scope."
@@ -628,6 +646,8 @@ def capture_target_native_factor_state(
         tensors=tensors,
         tensor_sha256s=hashes,
         factor_state_sha256=_canonical_sha256(payload),
+        parameter_ids=tuple(id(value) for _name, value in entries),
+        parameter_data_ptrs=tuple(int(value.data_ptr()) for _name, value in entries),
     )
 
 
@@ -639,10 +659,18 @@ def restore_target_native_factor_state(
         raise TargetNativeBehaviorDistillationError(
             "state must be TargetNativeFactorState."
         )
-    entries = _factor_parameters(transaction)
+    entries = _factor_parameters(transaction, require_finite=False)
     if tuple(name for name, _value in entries) != state.names:
         raise TargetNativeBehaviorDistillationError(
             "Factor-state names do not match the live transaction."
+        )
+    if (
+        tuple(id(value) for _name, value in entries) != state.parameter_ids
+        or tuple(int(value.data_ptr()) for _name, value in entries)
+        != state.parameter_data_ptrs
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Factor-state parameter ownership or storage changed before restore."
         )
     for (name, parameter), value, digest in zip(
         entries, state.tensors, state.tensor_sha256s, strict=True
@@ -701,6 +729,8 @@ class BehaviorTrainingAudit:
     child_on_policy_prefix_count: int
     parent_output_forward_count: int
     child_output_forward_count: int
+    parent_greedy_cache_prompt_count: int
+    parent_greedy_cache_forward_count: int
     gradient_activation: GradientActivationAudit
 
     def as_dict(self) -> dict[str, Any]:
@@ -711,6 +741,11 @@ class BehaviorTrainingAudit:
             "child_on_policy_prefix_count": self.child_on_policy_prefix_count,
             "parent_output_forward_count": self.parent_output_forward_count,
             "child_output_forward_count": self.child_output_forward_count,
+            "parent_greedy_cache_prompt_count": (self.parent_greedy_cache_prompt_count),
+            "parent_greedy_cache_forward_count": (
+                self.parent_greedy_cache_forward_count
+            ),
+            "invariant_parent_greedy_rows_cached_once": True,
             "gradient_activation": self.gradient_activation.as_dict(),
             "teacher_signal": "parent-causal-output-logits-and-actions",
             "parent_greedy_prefix_training": True,
@@ -1313,6 +1348,7 @@ def train_target_native_behavior_distillation(
     child_prefixes = 0
     parent_forwards = 0
     child_forwards = 0
+    parent_greedy_cache_forwards = 0
 
     step0_state = capture_target_native_factor_state(transaction)
     step0_metrics = evaluate_behavior_domain(
@@ -1354,6 +1390,18 @@ def train_target_native_behavior_distillation(
     )
     try:
         parent_model.eval()
+        parent_greedy_cache: dict[str, tuple[tuple[int, ...], tuple[Tensor, ...]]] = {}
+        for prompt in fit.prompts:
+            tokens, rows = _greedy_path(
+                parent_model, prompt.token_ids, schedule.fit_horizon
+            )
+            if len(tokens) != schedule.fit_horizon or len(rows) != len(tokens):
+                raise TargetNativeBehaviorDistillationError(
+                    "Invariant parent greedy cache has an invalid horizon."
+                )
+            parent_greedy_cache[prompt.prompt_id] = (tokens, rows)
+            parent_forwards += schedule.fit_horizon
+            parent_greedy_cache_forwards += schedule.fit_horizon
         with transaction.output_training_scope() as trainable:
             optimizer = optimizer_factory(trainable)
             if not isinstance(optimizer, Optimizer):
@@ -1393,27 +1441,27 @@ def train_target_native_behavior_distillation(
                 )
                 divisor = float(len(selected_prompts) * 2 * schedule.fit_horizon)
                 for prompt in selected_prompts:
-                    parent_tokens, _parent_rows = _greedy_path(
-                        parent_model, prompt.token_ids, schedule.fit_horizon
-                    )
+                    parent_tokens, parent_rows = parent_greedy_cache[prompt.prompt_id]
                     child_tokens, _child_rows = _greedy_path(
                         transaction.model, prompt.token_ids, schedule.fit_horizon
                     )
-                    parent_forwards += schedule.fit_horizon
                     child_forwards += schedule.fit_horizon
                     for lane_index, lane_tokens in enumerate(
                         (parent_tokens, child_tokens)
                     ):
                         prefix = prompt.token_ids
-                        for token in lane_tokens:
-                            with torch.no_grad():
-                                parent_logits = _last_causal_logits(
-                                    parent_model, prefix
-                                )
+                        for lane_step, token in enumerate(lane_tokens):
+                            if lane_index == 0:
+                                parent_logits = parent_rows[lane_step]
+                            else:
+                                with torch.no_grad():
+                                    parent_logits = _last_causal_logits(
+                                        parent_model, prefix
+                                    )
+                                parent_forwards += 1
                             child_logits = _last_causal_logits(
                                 transaction.model, prefix
                             )
-                            parent_forwards += 1
                             child_forwards += 1
                             (
                                 _training_loss(parent_logits, child_logits, schedule)
@@ -1425,13 +1473,36 @@ def train_target_native_behavior_distillation(
                                 child_prefixes += 1
                             prefix = (*prefix, int(token))
                 gradient_observations += 1
+                invalid_gradients: list[str] = []
                 for name, parameter in factor_entries:
                     gradient = parameter.grad
-                    if gradient is not None and bool(torch.isfinite(gradient).all()):
-                        finite_gradients.add(name)
-                        if int(torch.count_nonzero(gradient).item()) > 0:
-                            nonzero_gradients.add(name)
-                torch.nn.utils.clip_grad_norm_(trainable, schedule.gradient_clip_norm)
+                    if gradient is None or not bool(torch.isfinite(gradient).all()):
+                        invalid_gradients.append(name)
+                        continue
+                    finite_gradients.add(name)
+                    if int(torch.count_nonzero(gradient).item()) > 0:
+                        nonzero_gradients.add(name)
+                if invalid_gradients:
+                    raise TargetNativeBehaviorDistillationError(
+                        "Output loss produced missing or non-finite compiler-factor "
+                        f"gradients before the optimizer step: {invalid_gradients}."
+                    )
+                try:
+                    total_gradient_norm = torch.nn.utils.clip_grad_norm_(
+                        trainable,
+                        schedule.gradient_clip_norm,
+                        error_if_nonfinite=True,
+                    )
+                except RuntimeError as error:
+                    raise TargetNativeBehaviorDistillationError(
+                        "Compiler-factor gradient norm became non-finite before the "
+                        "optimizer step."
+                    ) from error
+                if not bool(torch.isfinite(total_gradient_norm).all()):
+                    raise TargetNativeBehaviorDistillationError(
+                        "Compiler-factor gradient norm became non-finite before the "
+                        "optimizer step."
+                    )
                 optimizer.step()
                 if any(
                     not bool(torch.isfinite(value.detach()).all())
@@ -1472,9 +1543,15 @@ def train_target_native_behavior_distillation(
                         selected_metrics = metrics
             optimizer.state.clear()
             optimizer.zero_grad(set_to_none=True)
-    except Exception:
+    except Exception as training_error:
         if transaction.is_live:
-            restore_target_native_factor_state(transaction, step0_state)
+            try:
+                restore_target_native_factor_state(transaction, step0_state)
+            except Exception as restore_error:
+                training_error.add_note(
+                    f"Exact step-zero factor restoration also failed: {restore_error!r}"
+                )
+                raise training_error from restore_error
         raise
     finally:
         for module, mode in parent_modes:
@@ -1537,6 +1614,8 @@ def train_target_native_behavior_distillation(
         child_on_policy_prefix_count=child_prefixes,
         parent_output_forward_count=parent_forwards,
         child_output_forward_count=child_forwards,
+        parent_greedy_cache_prompt_count=len(parent_greedy_cache),
+        parent_greedy_cache_forward_count=parent_greedy_cache_forwards,
         gradient_activation=gradient_audit,
     )
     return BehaviorDistillationResult(

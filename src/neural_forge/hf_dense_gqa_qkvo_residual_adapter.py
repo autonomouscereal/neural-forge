@@ -32,7 +32,7 @@ ProjectionRole = Literal["q", "k", "v", "o"]
 DENSE_GQA_QKVO_ACCOUNTING_SCHEMA = "neural-forge-dense-gqa-qkvo-residual-accounting-v1"
 DENSE_GQA_QKVO_REGISTRY_SCHEMA = "neural-forge-dense-gqa-qkvo-residual-registry-v1"
 DENSE_GQA_QKVO_INSTALLATION_SCHEMA = (
-    "neural-forge-dense-gqa-qkvo-residual-installation-v1"
+    "neural-forge-dense-gqa-qkvo-residual-installation-v2"
 )
 DENSE_GQA_QKVO_TRAINING_SCOPE_SCHEMA = (
     "neural-forge-dense-gqa-qkvo-output-training-scope-v1"
@@ -658,6 +658,7 @@ class DenseGQAQKVOResidualInstallationReport:
     sites: tuple[DenseGQASite, ...]
     geometry: DenseGQAGeometry
     rank: int
+    factor_dtype: str
     owner_name: str
     projection_names: Mapping[str, str]
     adapter_parameter_count: int
@@ -673,6 +674,7 @@ class DenseGQAQKVOResidualInstallationReport:
             "sites": [site.as_dict() for site in self.sites],
             "geometry": self.geometry.as_dict(),
             "rank": self.rank,
+            "factor_dtype": self.factor_dtype,
             "owner_name": self.owner_name,
             "projection_names": dict(self.projection_names),
             "adapter_parameter_count": self.adapter_parameter_count,
@@ -958,7 +960,9 @@ class InstalledDenseGQAQKVOResidualAdapter:
                 "Dense QKVO registry must have exactly one registered owner."
             )
 
-    def assert_live(self) -> DenseGQAQKVOResidualInstallationReport:
+    def assert_structurally_live(self) -> DenseGQAQKVOResidualInstallationReport:
+        """Validate ownership/base topology without reading disposable values."""
+
         if self._state != "live":
             raise DenseGQAQKVOResidualTopologyError(
                 "Dense QKVO adapter is no longer live."
@@ -984,8 +988,12 @@ class InstalledDenseGQAQKVOResidualAdapter:
             self.report.adapter_site_indices_sha256
         ):
             raise DenseGQAQKVOResidualTopologyError("Dense QKVO site indices changed.")
-        self.adapter_registry._assert_finite()
         self._assert_base_unchanged()
+        return self.report
+
+    def assert_live(self) -> DenseGQAQKVOResidualInstallationReport:
+        self.assert_structurally_live()
+        self.adapter_registry._assert_finite()
         return self.report
 
     def output_training_scope(self) -> DenseGQAAdapterOnlyOutputTrainingScope:
@@ -1416,11 +1424,17 @@ def install_dense_gqa_qkvo_residual_adapter(
         )
     _assert_unaliased_bake_weights(model, original)
     dtype, device = next(iter(dtype_devices))
+    # Temporary factors are optimizer state, not published model weights.  AdamW
+    # keeps its moments in the parameter dtype, and an FP16 epsilon such as 1e-8
+    # underflows to zero.  Keep all temporary factor parameters and optimizer
+    # math in FP32 when the native child is low precision; corrections are cast
+    # back to the dense projection dtype at the residual boundary and at bake.
+    factor_dtype = torch.float32 if dtype in {torch.float16, torch.bfloat16} else dtype
     registry = SparseDenseGQAQKVOResidualRegistry(
         site_values,
         geometry=geometry,
         rank=rank,
-        dtype=dtype,
+        dtype=factor_dtype,
         device=device,
         initialization_seed=initialization_seed,
     )
@@ -1460,7 +1474,7 @@ def install_dense_gqa_qkvo_residual_adapter(
             head_dim=geometry.head_dim,
             rank=rank,
             site_count=len(site_values),
-            checkpoint_element_size=torch.tensor([], dtype=dtype).element_size(),
+            checkpoint_element_size=torch.tensor([], dtype=factor_dtype).element_size(),
             schema_buffer_bytes=registry.schema_buffer_bytes,
         )
         if accounting.adapter_parameters != registry.learned_parameter_count:
@@ -1471,6 +1485,7 @@ def install_dense_gqa_qkvo_residual_adapter(
             sites=site_values,
             geometry=geometry,
             rank=_index(rank, "rank", positive=True),
+            factor_dtype=str(factor_dtype),
             owner_name=owner_name,
             projection_names=dict(names),
             adapter_parameter_count=registry.learned_parameter_count,

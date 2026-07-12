@@ -18,7 +18,10 @@ from neural_forge.hf_arch_layout import (
     PositionLayout,
     SERIAL_PRE_NORM_RESIDUAL,
 )
-from neural_forge.hf_dense_gqa_qkvo_residual_adapter import DenseGQASite
+from neural_forge.hf_dense_gqa_qkvo_residual_adapter import (
+    DenseGQAQKVOResidualError,
+    DenseGQASite,
+)
 from neural_forge.hf_factorized_vocab import exact_unique_parameter_count
 from neural_forge.hf_progressive_target_bridge import (
     install_exact_target_compiler_transaction,
@@ -364,6 +367,111 @@ def test_factor_state_capture_restore_is_exact_and_factor_only() -> None:
     transaction.rollback()
 
 
+def test_low_precision_child_uses_fp32_factors_and_adam_moments() -> None:
+    torch.manual_seed(104)
+    model = _StrictToyTarget().to(dtype=torch.float16)
+    transaction = _transaction(model)
+    factors = transaction.output_trainable_parameters()
+    installation = transaction.installation_report()
+    assert factors
+    assert {value.dtype for value in factors} == {torch.float32}
+    assert installation["dense_qkvo_installation"]["factor_dtype"] == ("torch.float32")
+    assert installation["dense_gate_up_down_installation"]["factor_dtype"] == (
+        "torch.float32"
+    )
+
+    optimizer = torch.optim.AdamW(factors, lr=1e-3, weight_decay=0.0, eps=1e-8)
+    for index, value in enumerate(factors):
+        value.grad = torch.zeros_like(value)
+        if index % 2:
+            value.grad.reshape(-1)[0] = 1e-4
+    optimizer.step()
+
+    assert all(bool(torch.isfinite(value).all()) for value in factors)
+    moment_dtypes = {
+        state_value.dtype
+        for value in factors
+        for state_value in optimizer.state[value].values()
+        if isinstance(state_value, Tensor) and state_value.is_floating_point()
+    }
+    assert moment_dtypes == {torch.float32}
+    transaction.rollback()
+
+
+def test_poisoned_factor_snapshot_restore_and_combined_rollback_are_exact() -> None:
+    torch.manual_seed(105)
+    model = _StrictToyTarget()
+    exact = exact_unique_parameter_count(model)
+    transaction = _transaction(model)
+    step0 = capture_target_native_factor_state(transaction)
+    with torch.no_grad():
+        transaction.qkvo_handle.adapter_registry.q_left.reshape(-1)[0] = torch.nan
+        transaction.swiglu_handle.registry.gate_left.reshape(-1)[0] = torch.inf
+    with pytest.raises(DenseGQAQKVOResidualError, match="NaN|infinity"):
+        transaction.assert_live()
+
+    restore_target_native_factor_state(transaction, step0)
+    transaction.assert_live()
+    assert capture_target_native_factor_state(transaction).factor_state_sha256 == (
+        step0.factor_state_sha256
+    )
+
+    with torch.no_grad():
+        transaction.qkvo_handle.adapter_registry.k_left.reshape(-1)[0] = torch.nan
+        transaction.swiglu_handle.registry.up_left.reshape(-1)[0] = torch.inf
+    transaction.rollback()
+    assert exact_unique_parameter_count(model) == exact
+
+
+def test_poisoning_optimizer_preserves_original_error_and_restores_step_zero() -> None:
+    class _PoisoningOptimizer(torch.optim.Optimizer):
+        def __init__(self, parameters, *, lr: float) -> None:
+            super().__init__(parameters, {"lr": lr})
+
+        @torch.no_grad()
+        def step(self, closure=None):
+            del closure
+            self.param_groups[0]["params"][0].reshape(-1)[0] = torch.nan
+
+    torch.manual_seed(106)
+    child = _StrictToyTarget()
+    parent = copy.deepcopy(child)
+    with torch.no_grad():
+        parent.lm_head.weight.copy_(torch.roll(parent.lm_head.weight, 3, dims=0))
+    transaction = _transaction(child)
+    step0 = capture_target_native_factor_state(transaction)
+    domains = {
+        "fit": _domain("fit", [[1, 2, 3]], "a" * 64),
+        "calibration": _domain("calibration", [[4, 5, 6]], "b" * 64),
+        "sealed": _domain("sealed", [[7, 8, 9]], "c" * 64),
+    }
+    schedule = BehaviorDistillationSchedule(
+        steps=1,
+        learning_rate=1e-3,
+        fit_horizon=1,
+        evaluation_horizon=1,
+        top_k=2,
+    )
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="Optimizer produced non-finite compiler factors",
+    ):
+        train_target_native_behavior_distillation(
+            transaction,
+            parent,
+            domains,
+            schedule,
+            optimizer_factory=lambda parameters: _PoisoningOptimizer(
+                parameters, lr=schedule.learning_rate
+            ),
+        )
+    transaction.assert_live()
+    assert capture_target_native_factor_state(transaction).factor_state_sha256 == (
+        step0.factor_state_sha256
+    )
+    transaction.rollback()
+
+
 def test_output_only_training_audits_all_factors_and_retains_step_zero() -> None:
     torch.manual_seed(102)
     child = _StrictToyTarget()
@@ -408,6 +516,9 @@ def test_output_only_training_audits_all_factors_and_retains_step_zero() -> None
     )
     assert result.training_audit.parent_greedy_prefix_count == 12
     assert result.training_audit.child_on_policy_prefix_count == 12
+    assert result.training_audit.parent_greedy_cache_prompt_count == 2
+    assert result.training_audit.parent_greedy_cache_forward_count == 4
+    assert result.training_audit.parent_output_forward_count == 16
     assert result.training_audit.gradient_activation.complete is True
     assert len(result.training_audit.gradient_activation.factor_names) == 14
     assert result.candidate_metrics.action_count == 4

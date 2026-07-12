@@ -1048,7 +1048,8 @@ class ExactTargetCompilerOutputTrainingScope:
         return trainable
 
     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
-        del exc_type, exc, traceback
+        failed = exc_type is not None
+        del exc, traceback
         if not self._entered:
             return
         for value, requires_grad, gradient, _version, _pointer in self._base:
@@ -1068,7 +1069,12 @@ class ExactTargetCompilerOutputTrainingScope:
             raise ProgressiveTargetBridgeError(
                 "A native child parameter changed during factor-only training."
             )
-        self.transaction.assert_live()
+        # Preserve the original training exception even when a disposable
+        # factor was poisoned.  The trainer can now restore its exact captured
+        # factor state before the usual full finite/live assertion.  A clean
+        # scope exit still enforces the complete invariant here.
+        if not failed:
+            self.transaction.assert_live()
 
     def as_dict(self) -> dict[str, Any]:
         self.transaction.assert_live()
@@ -1139,6 +1145,12 @@ class ExactTargetCompilerTransaction:
     def assert_live(self) -> None:
         self.qkvo_handle.assert_live()
         self.swiglu_handle.assert_live()
+
+    def assert_structurally_live(self) -> None:
+        """Validate transaction ownership while permitting poisoned factors."""
+
+        self.qkvo_handle.assert_structurally_live()
+        self.swiglu_handle.assert_structurally_live()
 
     def output_trainable_parameters(self) -> tuple[nn.Parameter, ...]:
         self.assert_live()

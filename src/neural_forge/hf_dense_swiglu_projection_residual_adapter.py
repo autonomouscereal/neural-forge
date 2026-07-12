@@ -33,7 +33,7 @@ DENSE_SWIGLU_PROJECTION_RESIDUAL_ACCOUNTING_SCHEMA = (
     "neural-forge-dense-swiglu-projection-residual-accounting-v1"
 )
 DENSE_SWIGLU_PROJECTION_RESIDUAL_INSTALLATION_SCHEMA = (
-    "neural-forge-dense-swiglu-projection-residual-installation-v1"
+    "neural-forge-dense-swiglu-projection-residual-installation-v2"
 )
 DENSE_SWIGLU_PROJECTION_RESIDUAL_BAKE_SCHEMA = (
     "neural-forge-dense-swiglu-projection-residual-bake-v1"
@@ -352,6 +352,7 @@ class DenseSwiGLUProjectionResidualInstallationReport:
     hidden_size: int
     intermediate_size: int
     rank: int
+    factor_dtype: str
     owner_name: str
     projection_names: Mapping[str, str]
     adapter_parameter_count: int
@@ -367,6 +368,7 @@ class DenseSwiGLUProjectionResidualInstallationReport:
             "hidden_size": self.hidden_size,
             "intermediate_size": self.intermediate_size,
             "rank": self.rank,
+            "factor_dtype": self.factor_dtype,
             "owner_name": self.owner_name,
             "projection_names": dict(self.projection_names),
             "adapter_parameter_count": self.adapter_parameter_count,
@@ -536,7 +538,11 @@ class InstalledDenseSwiGLUProjectionResidualAdapter:
                     "A dense SwiGLU base parameter changed during the transaction."
                 )
 
-    def assert_live(self) -> DenseSwiGLUProjectionResidualInstallationReport:
+    def assert_structurally_live(
+        self,
+    ) -> DenseSwiGLUProjectionResidualInstallationReport:
+        """Validate ownership/base topology without reading disposable values."""
+
         if self._state != "live":
             raise DenseSwiGLUProjectionResidualTopologyError(
                 "Dense SwiGLU residual adapter is no longer live."
@@ -555,8 +561,12 @@ class InstalledDenseSwiGLUProjectionResidualAdapter:
                 raise DenseSwiGLUProjectionResidualTopologyError(
                     "A live SwiGLU projection wrapper was replaced."
                 )
-        self.registry.assert_finite()
         self._assert_base_unchanged()
+        return self.report
+
+    def assert_live(self) -> DenseSwiGLUProjectionResidualInstallationReport:
+        self.assert_structurally_live()
+        self.registry.assert_finite()
         return self.report
 
     def output_training_scope(
@@ -571,7 +581,25 @@ class InstalledDenseSwiGLUProjectionResidualAdapter:
             raise DenseSwiGLUProjectionResidualTopologyError(
                 "Use restore_prepublication_native for a partially published bake."
             )
-        self.assert_live()
+        # Factors are disposable transaction state.  Rollback must remain able
+        # to remove them after a failed optimizer update, including when they
+        # contain NaN/Inf.  Validate ownership and the immutable dense base, but
+        # intentionally do not finite-assert the factors themselves.
+        if getattr(self.model, self.report.owner_name, None) is not self.registry:
+            raise DenseSwiGLUProjectionResidualTopologyError(
+                "Model lost the SwiGLU residual registry owner."
+            )
+        for (layer, role), view in self._installed.items():
+            if (
+                getattr(
+                    self.mlp_modules[layer], self.report.projection_names[role], None
+                )
+                is not view
+            ):
+                raise DenseSwiGLUProjectionResidualTopologyError(
+                    "A live SwiGLU projection wrapper was replaced."
+                )
+        self._assert_base_unchanged()
         for (layer, role), original in self._originals.items():
             setattr(
                 self.mlp_modules[layer], self.report.projection_names[role], original
@@ -585,6 +613,16 @@ class InstalledDenseSwiGLUProjectionResidualAdapter:
             raise DenseSwiGLUProjectionResidualTopologyError(
                 "SwiGLU rollback parameter accounting failed."
             )
+        for (layer, role), original in self._originals.items():
+            if (
+                getattr(
+                    self.mlp_modules[layer], self.report.projection_names[role], None
+                )
+                is not original
+            ):
+                raise DenseSwiGLUProjectionResidualTopologyError(
+                    "SwiGLU projection rollback failed."
+                )
         self._state = "rolled-back"
 
     def bake_for_publication(self) -> DenseSwiGLUProjectionResidualBakeReport:
@@ -856,12 +894,18 @@ def install_dense_swiglu_projection_residual_adapter(
                 f"Layer {layer} {role} weight is aliased; native bake is unsafe."
             )
     dtype, device = next(iter(dtype_devices))
+    # These factors are transient optimizer parameters.  FP16 AdamW stores its
+    # moments in FP16 as well, where the usual 1e-8 epsilon becomes exact zero
+    # and zero/tiny gradients can create NaNs on the first update.  Train the
+    # factors in FP32 and cast only their residual output/native bake to the
+    # child weight dtype.
+    factor_dtype = torch.float32 if dtype in {torch.float16, torch.bfloat16} else dtype
     registry = SparseDenseSwiGLUProjectionResidualRegistry(
         selected,
         hidden_size=hidden,
         intermediate_size=intermediate,
         rank=rank,
-        dtype=dtype,
+        dtype=factor_dtype,
         device=device,
         initialization_seed=initialization_seed,
     )
@@ -901,6 +945,7 @@ def install_dense_swiglu_projection_residual_adapter(
             hidden_size=hidden,
             intermediate_size=intermediate,
             rank=_index(rank, "rank", positive=True),
+            factor_dtype=str(factor_dtype),
             owner_name=owner_name,
             projection_names=names,
             adapter_parameter_count=registry.learned_parameter_count,

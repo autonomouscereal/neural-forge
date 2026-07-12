@@ -1703,9 +1703,23 @@ def execute_authenticated_stage(
     }
     try:
         parent, target, tokenizer = runner.load_models(contract)
+        report.update(
+            {
+                "models_loaded": True,
+                "gpu_work_launched": True,
+                "last_completed_phase": "authenticated-model-load",
+            }
+        )
         compiled = runner.compile(parent, target, tokenizer, contract)
         compiler_report = compiled.report.as_dict()
         parent_evidence_partition = _compiler_partition_report(contract)
+        report.update(
+            {
+                "compiler_report": compiler_report,
+                "canonical_parent_evidence": parent_evidence_partition,
+                "last_completed_phase": "structural-compiler-bootstrap",
+            }
+        )
         if (
             compiler_report.get("bootstrap_accepted") is not True
             or compiler_report.get("target_budget_exact") is not True
@@ -1718,6 +1732,12 @@ def execute_authenticated_stage(
         compiled_state_sha = runner.state_sha256(compiled.child_model)
         transaction = runner.install_transaction(compiled)
         installation = transaction.installation_report()
+        report.update(
+            {
+                "installation": installation,
+                "last_completed_phase": "target-native-factor-installation",
+            }
+        )
         if (
             installation.get("zero_step_identity") is not True
             or installation.get("temporary_qkvo_factor_parameters", 0) <= 0
@@ -1726,6 +1746,7 @@ def execute_authenticated_stage(
             raise ExactTargetNativeStageError(
                 "Combined rank-eight transaction did not install as exact identity."
             )
+        report["last_completed_phase"] = "behavior-training-started"
         training_result = runner.train(transaction, parent, contract)
         evidence_sha, trainer_evidence = _trainer_evidence(training_result)
         factor_acquisition = _factor_acquisition_claim(trainer_evidence)
