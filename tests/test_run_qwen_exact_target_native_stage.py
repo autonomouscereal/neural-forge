@@ -4,8 +4,9 @@ import hashlib
 import json
 import math
 import sys
+import weakref
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -635,6 +636,7 @@ class _AuditGateReport:
     seed: int
     factor_state_sha256: str
     basis_manifest_sha256: str
+    diagnostic_roles: tuple[str, ...] | None = None
 
     def to_dict(self):
         config = {
@@ -649,14 +651,175 @@ class _AuditGateReport:
             "max_bytes": 268_435_456,
         }
         native_sha = hashlib.sha256(b"compiled").hexdigest()
+        site_indices = [
+            [layer, group]
+            for layer in range(runner.TARGET_LAYER_COUNT)
+            for group in range(runner.TARGET_PHYSICAL_GROUPS)
+        ]
+        diagnostic_roles = (
+            ("q", "k", "v", "o")
+            if self.diagnostic_roles is None
+            else self.diagnostic_roles
+        )
+        final_passed = self.passed and bool(diagnostic_roles)
+        installable_roles = diagnostic_roles if final_passed else ()
+        replay_blocks = 32
+        callback_count = 2 * replay_blocks * runner.QKVO_SITE_COUNT
+        authenticator_sha = "8" * 64
+        coefficient_sha = "9" * 64
+        maximum_replay_blocks = 24 * 8 * 2
+        fingerprint_upper = (
+            maximum_replay_blocks
+            * runner.QKVO_SITE_COUNT
+            * runner.QKVO_FINGERPRINT_VALUES_PER_WRAPPER
+            * 4
+        )
+        actual_fingerprint = (
+            replay_blocks
+            * runner.QKVO_SITE_COUNT
+            * runner.QKVO_FINGERPRINT_VALUES_PER_WRAPPER
+            * 4
+        )
+        persistent_upper = 128_778_240
+        largest_operation = 3_437_664
+        wrapper_transient = 4_354_944
+        coefficient_bytes = 17_694_720
+        hash_staging_limit = runner.QKVO_TENSOR_HASH_STAGING_LIMIT_BYTES
+        final_pack_bytes = 19_660_800
+        token_path_scalar_bytes = runner.QKVO_TOKEN_PATH_SCALAR_TRANSIENT_BYTES
+        phase1_persistent = 120_000_000
+        phase1_transient = 3_000_000
+        phase1_peak = sum(
+            (
+                phase1_persistent,
+                phase1_transient,
+                wrapper_transient,
+                fingerprint_upper,
+                fingerprint_upper,
+                coefficient_bytes,
+                hash_staging_limit,
+                token_path_scalar_bytes,
+            )
+        )
+        phase2_persistent = 110_000_000
+        phase2_transient = 2_500_000
+        phase2_peak = sum(
+            (
+                phase2_persistent,
+                phase2_transient,
+                wrapper_transient,
+                2 * actual_fingerprint,
+                coefficient_bytes,
+                hash_staging_limit,
+                token_path_scalar_bytes,
+            )
+        )
+        accounted_peak = sum(
+            (
+                persistent_upper,
+                largest_operation,
+                wrapper_transient,
+                fingerprint_upper,
+                fingerprint_upper,
+                coefficient_bytes,
+                hash_staging_limit,
+                final_pack_bytes,
+                final_pack_bytes,
+                token_path_scalar_bytes,
+            )
+        )
+        memory_scope = {
+            "bounded": "audit-explicit-auxiliary-tensors-only",
+            "includes": [
+                "sketch-accumulators-and-bases",
+                "deferred-replay-authenticator-buffers",
+                "replay-authenticator-coefficients",
+                "bounded-tensor-hash-staging",
+                "final-guided-cpu-pack",
+                "basis-payload-cpu-clone",
+                "token-path-planning-and-replay-argmax-scalar",
+            ],
+            "excludes": [
+                "parent-and-child-model-weights",
+                "caller-owned-authenticated-continuation-factor-payload",
+                "standard-forward-backward-autograd-activations",
+                "framework-allocator-reservations-and-overhead",
+                "python-object-overhead",
+            ],
+        }
+        factor_shapes = runner._expected_continuation_factor_shapes(
+            lexical_rank=runner.LEXICAL_RANK
+        )
+        factor_numel = sum(math.prod(shape) for shape in factor_shapes.values())
+        factor_nbytes = factor_numel * 4
+        largest_factor_nbytes = max(
+            math.prod(shape) * 4 for shape in factor_shapes.values()
+        )
+        observed_hash_staging = hash_staging_limit
+        memory = {
+            "persistent_upper_bound_bytes": persistent_upper,
+            "largest_single_operation_bytes": largest_operation,
+            "wrapper_hook_transient_bytes": wrapper_transient,
+            "maximum_replay_blocks": maximum_replay_blocks,
+            "deferred_fingerprint_buffer_upper_bound_bytes": fingerprint_upper,
+            "deferred_fingerprint_host_staging_upper_bound_bytes": fingerprint_upper,
+            "replay_authenticator_coefficient_bytes": coefficient_bytes,
+            "tensor_hash_cpu_staging_limit_bytes": hash_staging_limit,
+            "final_guided_cpu_pack_bytes": final_pack_bytes,
+            "basis_payload_cpu_clone_bytes": final_pack_bytes,
+            "replay_plan_cached_parent_logit_row_count": 0,
+            "replay_plan_cached_parent_logit_bytes": 0,
+            "replay_plan_cached_child_logit_row_count": 0,
+            "replay_plan_cached_child_logit_bytes": 0,
+            "replay_plan_cached_tensor_count": 0,
+            "replay_plan_cached_tensor_bytes": 0,
+            "token_path_scalar_transient_bytes": token_path_scalar_bytes,
+            "accounted_auxiliary_peak_bytes": accounted_peak,
+            "max_auxiliary_bytes": 268_435_456,
+            "memory_scope": memory_scope,
+            "phase1_actual_persistent_bytes": phase1_persistent,
+            "phase1_actual_max_batch_transient_bytes": phase1_transient,
+            "phase1_wrapper_hook_transient_bytes": wrapper_transient,
+            "phase1_actual_peak_bytes": phase1_peak,
+            "manual_plan_covers_phase1": 1,
+            "actual_replay_blocks": replay_blocks,
+            "actual_deferred_fingerprint_buffer_bytes": actual_fingerprint,
+            "phase2_actual_persistent_bytes": phase2_persistent,
+            "phase2_actual_max_batch_transient_bytes": phase2_transient,
+            "phase2_wrapper_hook_transient_bytes": wrapper_transient,
+            "phase2_actual_peak_bytes": phase2_peak,
+            "manual_plan_covers_phase2": 1,
+            "actual_replay_authenticator_coefficient_bytes": coefficient_bytes,
+            "actual_final_guided_cpu_pack_bytes": final_pack_bytes,
+            "finalized_result_tensors_retained_on_accumulator_device": 0,
+            "all_sketches_drained_after_finalize": 1,
+            "maximum_observed_tensor_hash_cpu_staging_bytes": observed_hash_staging,
+            "factor_state_capture_mode": runner.QKVO_FACTOR_CAPTURE_MODE,
+            "factor_state_total_nbytes": factor_nbytes,
+            "factor_state_retained_cpu_clone_bytes": 0,
+            "factor_state_before_after_capture_overlap_bytes": 0,
+        }
+        callback_sources = {"collector.backward_hook": "a" * 64}
+
+        def gate_metrics(role_passed: bool) -> dict[str, object]:
+            return {
+                "normal_fraction": 0.25 if role_passed else 0.10,
+                "guided_over_random_ratio": 2.0 if role_passed else 1.0,
+                "normal_fraction_gate_passed": role_passed,
+                "guided_over_random_gate_passed": role_passed,
+                "passed": role_passed,
+            }
+
         payload = {
             "schema": runner.OUTPUT_JACOBIAN_AUDIT_SCHEMA,
-            "passed": self.passed,
+            "passed": final_passed,
             "config": config,
             "config_sha256": runner._canonical_sha256(config),
             "site_count": 120,
             "role_count": 4,
             "sketch_count": 480,
+            "site_indices": site_indices,
+            "site_indices_sha256": runner._canonical_sha256(site_indices),
             "basis_prompt_count": 24,
             "basis_source_role": "source-exposed-candidate",
             "source_exposed_candidate_as_fit": True,
@@ -669,30 +832,110 @@ class _AuditGateReport:
             "hooks_removed": True,
             "active_hook_count_after": 0,
             "transaction_live_after": True,
+            "rollback_compatible_after": True,
             "native_state_sha256_before": native_sha,
             "native_state_sha256_after": native_sha,
             "inherited_qkvo_state_sha256_before": "5" * 64,
             "inherited_qkvo_state_sha256_after": "5" * 64,
             "factor_state_sha256_before": self.factor_state_sha256,
             "factor_state_sha256_after": self.factor_state_sha256,
+            "factor_state_capture": {
+                "mode": runner.QKVO_FACTOR_CAPTURE_MODE,
+                "factor_count": len(factor_shapes),
+                "total_numel": factor_numel,
+                "total_nbytes": factor_nbytes,
+                "largest_factor_nbytes": largest_factor_nbytes,
+                "retained_cpu_clone_bytes_before_sketch": 0,
+                "retained_cpu_clone_bytes_after_audit": 0,
+                "maximum_observed_hash_staging_bytes": observed_hash_staging,
+                "hash_staging_limit_bytes": hash_staging_limit,
+                "before_after_captures_overlap": False,
+            },
             "factor_parameter_versions_sha256_before": "7" * 64,
             "factor_parameter_versions_sha256_after": "7" * 64,
             "factor_gradients_cleared": True,
             "pass1_replay_sha256": "6" * 64,
             "pass2_replay_sha256": "6" * 64,
-            "replay_match": True,
-            "accounted_global_peak_bytes": 1024,
-            "max_bytes": 268_435_456,
-            "aggregate": {
-                "normal_fraction": 0.25 if self.passed else 0.10,
-                "guided_over_random_ratio": 2.0 if self.passed else 1.0,
-                "normal_fraction_gate_passed": self.passed,
-                "guided_over_random_gate_passed": self.passed,
-                "passed": self.passed,
+            "pass1_full_element_replay_authenticator_sha256": authenticator_sha,
+            "pass2_full_element_replay_authenticator_sha256": authenticator_sha,
+            "probabilistic_replay_authenticator_match": True,
+            "replay_authentication_kind": runner.QKVO_REPLAY_AUTHENTICATOR_KIND,
+            "replay_authentication_binds_every_element": True,
+            "replay_authentication_is_collision_free": False,
+            "replay_authentication_projection_lanes": (
+                runner.QKVO_REPLAY_PROJECTION_LANES
+            ),
+            "replay_loss_block_count": replay_blocks,
+            "replay_plan_evidence": {
+                "mode": "token-paths-only-no-cached-logit-tensors",
+                "prompt_count": 24,
+                "cached_parent_logit_row_count": 0,
+                "cached_parent_logit_bytes": 0,
+                "cached_child_logit_row_count": 0,
+                "cached_child_logit_bytes": 0,
+                "cached_tensor_count": 0,
+                "cached_tensor_bytes": 0,
+                "token_path_scalar_transient_bytes": token_path_scalar_bytes,
+                "parent_logits_recomputed_under_no_grad": True,
+                "parent_logits_sha256_in_replay_evidence": True,
+                "parent_logit_recomputations_per_pass": replay_blocks,
+                "parent_logit_recomputations_total": 2 * replay_blocks,
             },
+            "accounted_auxiliary_peak_bytes": accounted_peak,
+            "max_auxiliary_bytes": 268_435_456,
+            "memory_scope": memory_scope,
+            "memory_accounting": memory,
+            "hotpath_instrumentation": {
+                "wrapper_gradient_callback_count": callback_count,
+                "callback_sync_evidence": "callback_source_audit",
+                "pass_boundary_device_to_host_transfer_call_count": 2,
+                "fingerprint_records_hashed": callback_count,
+                "fingerprint_values_per_wrapper": (
+                    runner.QKVO_FINGERPRINT_VALUES_PER_WRAPPER
+                ),
+                "pass_full_element_replay_authenticator_sha256": {
+                    "pass1": authenticator_sha,
+                    "pass2": authenticator_sha,
+                },
+                "replay_authenticator_kind": runner.QKVO_REPLAY_AUTHENTICATOR_KIND,
+                "replay_authenticator_binds_every_element": True,
+                "replay_authenticator_is_collision_free": False,
+                "replay_authenticator_projection_lanes": (
+                    runner.QKVO_REPLAY_PROJECTION_LANES
+                ),
+                "replay_authenticator_seed": int.from_bytes(
+                    hashlib.sha256(
+                        (
+                            f"{runner.OUTPUT_JACOBIAN_AUDIT_SCHEMA}:{self.seed}:"
+                            "full-element-replay-authenticator"
+                        ).encode("ascii")
+                    ).digest()[:8],
+                    "little",
+                )
+                % (2**63),
+                "replay_authenticator_coefficient_sha256": coefficient_sha,
+                "replay_authenticator_coefficient_bytes": coefficient_bytes,
+                "callback_source_audit": {
+                    "kind": runner.QKVO_CALLBACK_SOURCE_AUDIT_KIND,
+                    "target_count": len(callback_sources),
+                    "target_source_sha256": callback_sources,
+                    "call_graph_sha256": runner._canonical_sha256(callback_sources),
+                    "banned_host_sync_primitive_count": 0,
+                    "runtime_cuda_profiler_used": False,
+                    "limitation": "source audit only",
+                },
+            },
+            "aggregate": gate_metrics(self.passed),
             "per_role": {
-                role: {"gate_passed": self.passed} for role in ("q", "k", "v", "o")
+                role: gate_metrics(role in diagnostic_roles)
+                for role in ("q", "k", "v", "o")
             },
+            "diagnostic_passed_roles": list(diagnostic_roles),
+            "authorized_roles": list(installable_roles),
+            "installable_roles": list(installable_roles),
+            "role_authorization_policy": runner.QKVO_ROLE_AUTHORIZATION_POLICY,
+            "installer_must_ignore_unauthorized_role_tensors": True,
+            "all_four_role_tensors_retained_for_diagnostics": True,
             "basis_manifest_sha256": self.basis_manifest_sha256,
         }
         payload["report_sha256"] = runner._canonical_sha256(payload)
@@ -709,7 +952,11 @@ class _AuditResult:
 
 
 def _fake_basis_pack(
-    factor_state_sha256: str, *, authorized_for_training: bool
+    factor_state_sha256: str,
+    *,
+    authorized_for_training: bool,
+    diagnostic_roles: tuple[str, ...] = ("q", "k", "v", "o"),
+    installable_roles: tuple[str, ...] = ("q", "k", "v", "o"),
 ) -> dict[str, object]:
     specs = (
         ("q_orthogonal_right", (120, 8, 1536)),
@@ -732,6 +979,18 @@ def _fake_basis_pack(
     return {
         "schema": runner.GUIDED_QKVO_RIGHT_BASIS_SCHEMA,
         "factor_state_sha256": factor_state_sha256,
+        "site_indices": [
+            [layer, group]
+            for layer in range(runner.TARGET_LAYER_COUNT)
+            for group in range(runner.TARGET_PHYSICAL_GROUPS)
+        ],
+        "site_indices_sha256": runner._canonical_sha256(
+            [
+                [layer, group]
+                for layer in range(runner.TARGET_LAYER_COUNT)
+                for group in range(runner.TARGET_PHYSICAL_GROUPS)
+            ]
+        ),
         "basis_manifest_sha256": runner._canonical_sha256(factors),
         "tensor_count": 4,
         "total_numel": 4_915_200,
@@ -744,7 +1003,12 @@ def _fake_basis_pack(
         "contains_gradients": False,
         "contains_activations": False,
         "contains_hidden_states": False,
+        "diagnostic_passed_roles": list(diagnostic_roles),
+        "authorized_roles": list(installable_roles),
+        "installable_roles": list(installable_roles),
         "authorized_for_training": authorized_for_training,
+        "installer_must_ignore_unauthorized_role_tensors": True,
+        "all_four_role_tensors_retained_for_diagnostics": True,
     }
 
 
@@ -763,7 +1027,13 @@ class _AuditTransaction(_Transaction):
 
 
 class _AuditRuntime(_Runtime):
-    def __init__(self, *, passed: bool = True, fail: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        passed: bool = True,
+        fail: bool = False,
+        diagnostic_roles: tuple[str, ...] | None = None,
+    ) -> None:
         super().__init__(
             _TrainingResult(
                 fit_metrics=_metrics(),
@@ -778,6 +1048,11 @@ class _AuditRuntime(_Runtime):
         self.train_calls = 0
         self.passed = passed
         self.fail = fail
+        self.diagnostic_roles = (
+            ("q", "k", "v", "o")
+            if diagnostic_roles is None
+            else diagnostic_roles
+        )
 
     def run_output_jacobian_audit(self, transaction, parent, contract):
         assert transaction is self.transaction
@@ -787,9 +1062,18 @@ class _AuditRuntime(_Runtime):
         if self.fail:
             raise RuntimeError("injected Jacobian audit failure")
         assert contract.continuation is not None
+        continuation_tensors = contract.continuation.factor_payload["factor_tensors"]
+        restored_clone_bytes = sum(
+            int(value.numel() * value.element_size())
+            for value in continuation_tensors.values()
+        )
+        final_passed = self.passed and bool(self.diagnostic_roles)
+        installable_roles = self.diagnostic_roles if final_passed else ()
         basis_payload = _fake_basis_pack(
             contract.continuation.factor_state_sha256,
-            authorized_for_training=self.passed,
+            authorized_for_training=final_passed,
+            diagnostic_roles=self.diagnostic_roles,
+            installable_roles=installable_roles,
         )
         return runner.OutputJacobianAuditExecution(
             result=_AuditResult(
@@ -798,12 +1082,23 @@ class _AuditRuntime(_Runtime):
                     contract.seed,
                     contract.continuation.factor_state_sha256,
                     str(basis_payload["basis_manifest_sha256"]),
+                    self.diagnostic_roles,
                 ),
                 basis_payload,
             ),
             restore_mode="full",
             restored_factor_state_sha256=(contract.continuation.factor_state_sha256),
             restored_factor_schema=runner.TRAINER_FACTOR_PACK_V2_SCHEMA,
+            restored_factor_lexical_rank=runner.LEXICAL_RANK,
+            restored_state_clone_tensor_count=len(continuation_tensors),
+            restored_state_clone_cpu_bytes=restored_clone_bytes,
+            restored_state_released_before_audit=True,
+            live_target_native_factor_state_clone_tensor_count_during_audit=0,
+            live_target_native_factor_state_clone_cpu_bytes_during_audit=0,
+            post_audit_full_factor_capture_helper_called=False,
+            post_audit_factor_verification_mode=(
+                "audit-v2-streamed-before-after-factor-evidence"
+            ),
         )
 
     def train(self, transaction, parent, contract):
@@ -818,6 +1113,67 @@ class _AuditRuntime(_Runtime):
     def save_reload_certify(self, model, tokenizer, output_root):
         del model, tokenizer, output_root
         raise AssertionError("audit-only branch must never publish a checkpoint")
+
+
+class _MutatedAuditReport:
+    def __init__(self, source, mutator) -> None:
+        self.source = source
+        self.mutator = mutator
+
+    def to_dict(self):
+        payload = self.source.to_dict()
+        payload.pop("report_sha256")
+        self.mutator(payload)
+        payload["report_sha256"] = runner._canonical_sha256(payload)
+        return payload
+
+
+class _MutatedAuditRuntime(_AuditRuntime):
+    def __init__(
+        self,
+        *,
+        report_mutator=None,
+        basis_mutator=None,
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.report_mutator = report_mutator
+        self.basis_mutator = basis_mutator
+
+    def run_output_jacobian_audit(self, transaction, parent, contract):
+        execution = super().run_output_jacobian_audit(transaction, parent, contract)
+        report = execution.result.report
+        if self.report_mutator is not None:
+            report = _MutatedAuditReport(report, self.report_mutator)
+        basis_payload = dict(execution.result.basis_payload)
+        if self.basis_mutator is not None:
+            self.basis_mutator(basis_payload)
+        return runner.OutputJacobianAuditExecution(
+            result=_AuditResult(report, basis_payload),
+            restore_mode=execution.restore_mode,
+            restored_factor_state_sha256=execution.restored_factor_state_sha256,
+            restored_factor_schema=execution.restored_factor_schema,
+            restored_factor_lexical_rank=execution.restored_factor_lexical_rank,
+            restored_state_clone_tensor_count=(
+                execution.restored_state_clone_tensor_count
+            ),
+            restored_state_clone_cpu_bytes=execution.restored_state_clone_cpu_bytes,
+            restored_state_released_before_audit=(
+                execution.restored_state_released_before_audit
+            ),
+            live_target_native_factor_state_clone_tensor_count_during_audit=(
+                execution.live_target_native_factor_state_clone_tensor_count_during_audit
+            ),
+            live_target_native_factor_state_clone_cpu_bytes_during_audit=(
+                execution.live_target_native_factor_state_clone_cpu_bytes_during_audit
+            ),
+            post_audit_full_factor_capture_helper_called=(
+                execution.post_audit_full_factor_capture_helper_called
+            ),
+            post_audit_factor_verification_mode=(
+                execution.post_audit_factor_verification_mode
+            ),
+        )
 
 
 def test_preflight_authenticates_everything_without_loading_models(tmp_path) -> None:
@@ -947,11 +1303,27 @@ def test_output_jacobian_execute_is_audit_only_and_rolls_back_exactly(
     assert report["output_jacobian_audit_report_sha256"] == runner._canonical_sha256(
         report["output_jacobian_audit_report"]
     )
+    assert contract.continuation is not None
+    continuation_tensors = contract.continuation.factor_payload["factor_tensors"]
+    expected_restore_clone_bytes = sum(
+        int(value.numel() * value.element_size())
+        for value in continuation_tensors.values()
+    )
     assert report["output_jacobian_restore"] == {
         "mode": "full",
         "factor_pack_schema": runner.TRAINER_FACTOR_PACK_V2_SCHEMA,
         "factor_state_sha256": factor_state_sha,
+        "lexical_rank": runner.LEXICAL_RANK,
+        "restored_state_clone_tensor_count": len(continuation_tensors),
+        "restored_state_clone_cpu_bytes": expected_restore_clone_bytes,
+        "restored_state_released_before_audit": True,
         "matches_authenticated_continuation": True,
+    }
+    assert report["output_jacobian_factor_verification"] == {
+        "live_target_native_factor_state_clone_tensor_count_during_audit": 0,
+        "live_target_native_factor_state_clone_cpu_bytes_during_audit": 0,
+        "post_audit_full_factor_capture_helper_called": False,
+        "mode": "audit-v2-streamed-before-after-factor-evidence",
     }
     assert report["sealed_not_accessed"] is True
     assert report["training_started"] is False
@@ -985,6 +1357,398 @@ def test_output_jacobian_execute_is_audit_only_and_rolls_back_exactly(
     assert envelope["contains_optimizer_state"] is False
     assert envelope["contains_activations_or_hidden_states"] is False
     assert envelope["basis_pack"]["authorized_for_training"] is passed
+    assert envelope["basis_pack"]["diagnostic_passed_roles"] == ["q", "k", "v", "o"]
+    assert envelope["basis_pack"]["authorized_roles"] == (
+        ["q", "k", "v", "o"] if passed else []
+    )
+    assert envelope["basis_pack"]["installable_roles"] == (
+        ["q", "k", "v", "o"] if passed else []
+    )
+    assert (
+        envelope["basis_pack"][
+            "installer_must_ignore_unauthorized_role_tensors"
+        ]
+        is True
+    )
+    assert (
+        envelope["basis_pack"]["all_four_role_tensors_retained_for_diagnostics"]
+        is True
+    )
+
+
+def test_output_jacobian_accepts_partial_role_authorization_and_retains_diagnostics(
+    tmp_path, monkeypatch
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+    runtime = _AuditRuntime(passed=True, diagnostic_roles=("q", "v"))
+    output = tmp_path / "audit-partial-roles"
+
+    report = runner.execute_authenticated_stage(contract, output, runtime=runtime)
+
+    assert report["status"] == "diagnostic-passed"
+    assert report["output_jacobian_audit_report"]["diagnostic_passed_roles"] == [
+        "q",
+        "v",
+    ]
+    assert report["output_jacobian_audit_report"]["authorized_roles"] == ["q", "v"]
+    assert report["output_jacobian_audit_report"]["installable_roles"] == ["q", "v"]
+    envelope = torch.load(
+        output / "guided_basis_pack.pt", map_location="cpu", weights_only=True
+    )
+    basis = envelope["basis_pack"]
+    assert basis["authorized_for_training"] is True
+    assert basis["diagnostic_passed_roles"] == ["q", "v"]
+    assert basis["authorized_roles"] == ["q", "v"]
+    assert basis["installable_roles"] == ["q", "v"]
+    assert set(basis["factor_tensors"]) == {
+        "q_orthogonal_right",
+        "k_orthogonal_right",
+        "v_orthogonal_right",
+        "o_orthogonal_right",
+    }
+    assert basis["installer_must_ignore_unauthorized_role_tensors"] is True
+    assert basis["all_four_role_tensors_retained_for_diagnostics"] is True
+
+
+def test_output_jacobian_aggregate_pass_with_zero_roles_is_diagnostic_rejection(
+    tmp_path, monkeypatch
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+    runtime = _AuditRuntime(passed=True, diagnostic_roles=())
+    output = tmp_path / "audit-zero-roles"
+
+    report = runner.execute_authenticated_stage(contract, output, runtime=runtime)
+
+    audit = report["output_jacobian_audit_report"]
+    assert audit["aggregate"]["passed"] is True
+    assert audit["diagnostic_passed_roles"] == []
+    assert audit["authorized_roles"] == []
+    assert audit["installable_roles"] == []
+    assert audit["passed"] is False
+    assert report["status"] == "diagnostic-rejected"
+    envelope = torch.load(
+        output / "guided_basis_pack.pt", map_location="cpu", weights_only=True
+    )
+    assert envelope["basis_pack"]["authorized_for_training"] is False
+
+
+def test_output_jacobian_global_rejection_retains_diagnostics_but_installs_nothing(
+    tmp_path, monkeypatch
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+    runtime = _AuditRuntime(passed=False, diagnostic_roles=("q", "v"))
+    output = tmp_path / "audit-global-reject-diagnostic-roles"
+
+    report = runner.execute_authenticated_stage(contract, output, runtime=runtime)
+
+    audit = report["output_jacobian_audit_report"]
+    assert audit["passed"] is False
+    assert audit["diagnostic_passed_roles"] == ["q", "v"]
+    assert audit["authorized_roles"] == []
+    assert audit["installable_roles"] == []
+    envelope = torch.load(
+        output / "guided_basis_pack.pt", map_location="cpu", weights_only=True
+    )
+    basis = envelope["basis_pack"]
+    assert basis["authorized_for_training"] is False
+    assert basis["diagnostic_passed_roles"] == ["q", "v"]
+    assert basis["authorized_roles"] == []
+    assert basis["installable_roles"] == []
+
+
+@pytest.mark.parametrize("tamper", ("order", "hash"))
+def test_output_jacobian_rejects_noncanonical_site_order_or_hash(
+    tmp_path, monkeypatch, tamper
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+
+    def mutate(payload):
+        if tamper == "order":
+            sites = payload["site_indices"]
+            sites[0], sites[1] = sites[1], sites[0]
+            payload["site_indices_sha256"] = runner._canonical_sha256(sites)
+        else:
+            payload["site_indices_sha256"] = "0" * 64
+
+    runtime = _MutatedAuditRuntime(report_mutator=mutate)
+    output = tmp_path / f"audit-site-{tamper}"
+    with pytest.raises(runner.ExactTargetNativeStageError, match="site order/hash"):
+        runner.execute_authenticated_stage(contract, output, runtime=runtime)
+    assert not (output / "guided_basis_pack.pt").exists()
+
+
+@pytest.mark.parametrize("tamper", ("order", "hash"))
+def test_output_jacobian_rejects_basis_site_order_or_hash_tamper(
+    tmp_path, monkeypatch, tamper
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+
+    def mutate_basis(payload):
+        if tamper == "order":
+            sites = payload["site_indices"]
+            sites[0], sites[1] = sites[1], sites[0]
+            payload["site_indices_sha256"] = runner._canonical_sha256(sites)
+        else:
+            payload["site_indices_sha256"] = "0" * 64
+
+    runtime = _MutatedAuditRuntime(basis_mutator=mutate_basis)
+    output = tmp_path / f"audit-basis-site-{tamper}"
+    with pytest.raises(runner.ExactTargetNativeStageError, match="basis site order"):
+        runner.execute_authenticated_stage(contract, output, runtime=runtime)
+    assert not (output / "guided_basis_pack.pt").exists()
+
+
+def test_output_jacobian_rejects_unauthorized_basis_role_metadata(
+    tmp_path, monkeypatch
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+
+    def mutate_basis(payload):
+        payload["authorized_roles"] = ["q", "k", "v"]
+
+    runtime = _MutatedAuditRuntime(
+        passed=True,
+        diagnostic_roles=("q", "v"),
+        basis_mutator=mutate_basis,
+    )
+    output = tmp_path / "audit-unauthorized-basis-role"
+    with pytest.raises(
+        runner.ExactTargetNativeStageError, match="installer authorization metadata"
+    ):
+        runner.execute_authenticated_stage(contract, output, runtime=runtime)
+    assert not (output / "guided_basis_pack.pt").exists()
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    (
+        ("role_authorization_policy", "install-everything"),
+        ("installer_must_ignore_unauthorized_role_tensors", False),
+        ("all_four_role_tensors_retained_for_diagnostics", False),
+    ),
+)
+def test_output_jacobian_rejects_report_role_policy_tamper(
+    tmp_path, monkeypatch, field, bad_value
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+
+    def mutate(payload):
+        payload[field] = bad_value
+
+    runtime = _MutatedAuditRuntime(report_mutator=mutate)
+    output = tmp_path / f"audit-role-policy-{field}"
+    with pytest.raises(runner.ExactTargetNativeStageError, match="installer"):
+        runner.execute_authenticated_stage(contract, output, runtime=runtime)
+    assert not (output / "guided_basis_pack.pt").exists()
+
+
+@pytest.mark.parametrize("surface", ("report", "basis"))
+def test_output_jacobian_rejects_v1_audit_and_basis_schemas(
+    tmp_path, monkeypatch, surface
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+
+    def mutate_report(payload):
+        payload["schema"] = "neural-forge-qkvo-output-jacobian-audit-v1"
+
+    def mutate_basis(payload):
+        payload["schema"] = "neural-forge-guided-qkvo-right-basis-v1"
+
+    runtime = _MutatedAuditRuntime(
+        report_mutator=mutate_report if surface == "report" else None,
+        basis_mutator=mutate_basis if surface == "basis" else None,
+    )
+    output = tmp_path / f"audit-v1-{surface}"
+    with pytest.raises(runner.ExactTargetNativeStageError, match="schema|lifecycle"):
+        runner.execute_authenticated_stage(contract, output, runtime=runtime)
+    assert not (output / "guided_basis_pack.pt").exists()
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    (
+        ("normal_fraction", 0.19),
+        ("guided_over_random_ratio", 1.49),
+        ("normal_fraction_gate_passed", False),
+        ("guided_over_random_gate_passed", False),
+        ("passed", False),
+    ),
+)
+def test_output_jacobian_rejects_per_role_gate_tamper(
+    tmp_path, monkeypatch, field, bad_value
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+
+    def mutate(payload):
+        payload["per_role"]["q"][field] = bad_value
+
+    runtime = _MutatedAuditRuntime(report_mutator=mutate)
+    output = tmp_path / f"audit-role-gate-{field}"
+    with pytest.raises(runner.ExactTargetNativeStageError, match="per-role q"):
+        runner.execute_authenticated_stage(contract, output, runtime=runtime)
+    assert not (output / "guided_basis_pack.pt").exists()
+
+
+def test_output_jacobian_rejects_probabilistic_replay_authenticator_disagreement(
+    tmp_path, monkeypatch
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+
+    def mutate(payload):
+        payload["pass2_full_element_replay_authenticator_sha256"] = "7" * 64
+        payload["hotpath_instrumentation"][
+            "pass_full_element_replay_authenticator_sha256"
+        ]["pass2"] = (
+            "7" * 64
+        )
+
+    runtime = _MutatedAuditRuntime(report_mutator=mutate)
+    output = tmp_path / "audit-probabilistic-replay"
+    with pytest.raises(runner.ExactTargetNativeStageError, match="probabilistic replay"):
+        runner.execute_authenticated_stage(contract, output, runtime=runtime)
+    assert not (output / "guided_basis_pack.pt").exists()
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    (
+        ("cached_parent_logit_row_count", 1),
+        ("cached_parent_logit_bytes", 4),
+        ("cached_child_logit_row_count", 1),
+        ("cached_child_logit_bytes", 4),
+        ("cached_tensor_count", 1),
+        ("cached_tensor_bytes", 4),
+        ("parent_logits_recomputed_under_no_grad", False),
+    ),
+)
+def test_output_jacobian_rejects_cached_replay_logit_evidence(
+    tmp_path, monkeypatch, field, bad_value
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+
+    def mutate(payload):
+        payload["replay_plan_evidence"][field] = bad_value
+
+    runtime = _MutatedAuditRuntime(report_mutator=mutate)
+    output = tmp_path / f"audit-cached-replay-logits-{field}"
+    with pytest.raises(runner.ExactTargetNativeStageError, match="cached logit"):
+        runner.execute_authenticated_stage(contract, output, runtime=runtime)
+    assert not (output / "guided_basis_pack.pt").exists()
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    (
+        ("callback_sync_evidence", "unverified"),
+        ("pass_boundary_device_to_host_transfer_call_count", 3),
+        ("wrapper_gradient_callback_count", 7_679),
+        ("fingerprint_records_hashed", 7_679),
+        ("replay_authenticator_binds_every_element", False),
+        ("replay_authenticator_is_collision_free", True),
+        ("replay_authenticator_projection_lanes", 1),
+    ),
+)
+def test_output_jacobian_rejects_hotpath_instrumentation_tamper(
+    tmp_path, monkeypatch, field, bad_value
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+
+    def mutate(payload):
+        payload["hotpath_instrumentation"][field] = bad_value
+
+    runtime = _MutatedAuditRuntime(report_mutator=mutate)
+    output = tmp_path / f"audit-hotpath-{field}"
+    with pytest.raises(runner.ExactTargetNativeStageError, match="hot-path"):
+        runner.execute_authenticated_stage(contract, output, runtime=runtime)
+    assert not (output / "guided_basis_pack.pt").exists()
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    (
+        ("finalized_result_tensors_retained_on_accumulator_device", 1),
+        ("all_sketches_drained_after_finalize", 0),
+        ("actual_final_guided_cpu_pack_bytes", 19_660_796),
+        ("basis_payload_cpu_clone_bytes", 19_660_796),
+        ("accounted_auxiliary_peak_bytes", 1024),
+        ("actual_deferred_fingerprint_buffer_bytes", 8_110_084),
+        ("maximum_observed_tensor_hash_cpu_staging_bytes", 4_194_308),
+        ("factor_state_retained_cpu_clone_bytes", 4),
+        ("replay_plan_cached_parent_logit_bytes", 4),
+        ("replay_plan_cached_child_logit_row_count", 1),
+        ("replay_plan_cached_tensor_count", 1),
+        ("token_path_scalar_transient_bytes", 16),
+    ),
+)
+def test_output_jacobian_rejects_memory_accounting_tamper(
+    tmp_path, monkeypatch, field, bad_value
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+
+    def mutate(payload):
+        payload["memory_accounting"][field] = bad_value
+
+    runtime = _MutatedAuditRuntime(report_mutator=mutate)
+    output = tmp_path / f"audit-memory-{field}"
+    with pytest.raises(runner.ExactTargetNativeStageError, match="auxiliary-memory"):
+        runner.execute_authenticated_stage(contract, output, runtime=runtime)
+    assert not (output / "guided_basis_pack.pt").exists()
+
+
+def test_output_jacobian_rejects_self_consistent_fake_1024_byte_peak(
+    tmp_path, monkeypatch
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+
+    def mutate(payload):
+        payload["accounted_auxiliary_peak_bytes"] = 1024
+        payload["memory_accounting"]["accounted_auxiliary_peak_bytes"] = 1024
+
+    runtime = _MutatedAuditRuntime(report_mutator=mutate)
+    output = tmp_path / "audit-fake-1024-byte-peak"
+    with pytest.raises(runner.ExactTargetNativeStageError, match="auxiliary-memory"):
+        runner.execute_authenticated_stage(contract, output, runtime=runtime)
+    assert not (output / "guided_basis_pack.pt").exists()
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    (
+        ("retained_cpu_clone_bytes_before_sketch", 4),
+        ("retained_cpu_clone_bytes_after_audit", 4),
+        ("hash_staging_limit_bytes", 4_194_308),
+        ("maximum_observed_hash_staging_bytes", 4_194_308),
+        ("before_after_captures_overlap", True),
+    ),
+)
+def test_output_jacobian_rejects_factor_capture_bound_tamper(
+    tmp_path, monkeypatch, field, bad_value
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+
+    def mutate(payload):
+        payload["factor_state_capture"][field] = bad_value
+
+    runtime = _MutatedAuditRuntime(report_mutator=mutate)
+    output = tmp_path / f"audit-factor-capture-{field}"
+    with pytest.raises(runner.ExactTargetNativeStageError, match="factor capture"):
+        runner.execute_authenticated_stage(contract, output, runtime=runtime)
+    assert not (output / "guided_basis_pack.pt").exists()
 
 
 def test_output_jacobian_failure_is_atomic_and_restores_compiled_state(
@@ -1043,11 +1807,9 @@ def test_output_jacobian_rejects_unproven_restore_before_pack_write(
     class _BadRestoreRuntime(_AuditRuntime):
         def run_output_jacobian_audit(self, transaction, parent, contract):
             execution = super().run_output_jacobian_audit(transaction, parent, contract)
-            return runner.OutputJacobianAuditExecution(
-                result=execution.result,
-                restore_mode="full",
+            return replace(
+                execution,
                 restored_factor_state_sha256="0" * 64,
-                restored_factor_schema=execution.restored_factor_schema,
             )
 
     runtime = _BadRestoreRuntime()
@@ -1055,6 +1817,37 @@ def test_output_jacobian_rejects_unproven_restore_before_pack_write(
     with pytest.raises(runner.ExactTargetNativeStageError, match="full authenticated"):
         runner.execute_authenticated_stage(contract, output, runtime=runtime)
     assert runtime.train_calls == 0
+    assert runtime.transaction.restored_prepublication is True
+    assert not (output / "guided_basis_pack.pt").exists()
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    (
+        ("restored_state_released_before_audit", False),
+        ("live_target_native_factor_state_clone_tensor_count_during_audit", 1),
+        ("live_target_native_factor_state_clone_cpu_bytes_during_audit", 4),
+        ("post_audit_full_factor_capture_helper_called", True),
+        ("post_audit_factor_verification_mode", "full-cpu-recapture"),
+    ),
+)
+def test_output_jacobian_rejects_non_clone_free_execution_attestation(
+    tmp_path, monkeypatch, field, bad_value
+) -> None:
+    path, digest, _state = _audit_contract_files(tmp_path, monkeypatch)
+    contract = runner.authenticate_preregistration(path, digest)
+
+    class _BadCloneLifecycleRuntime(_AuditRuntime):
+        def run_output_jacobian_audit(self, transaction, parent, contract):
+            execution = super().run_output_jacobian_audit(
+                transaction, parent, contract
+            )
+            return replace(execution, **{field: bad_value})
+
+    runtime = _BadCloneLifecycleRuntime()
+    output = tmp_path / f"audit-bad-clone-lifecycle-{field}"
+    with pytest.raises(runner.ExactTargetNativeStageError, match="clone-free"):
+        runner.execute_authenticated_stage(contract, output, runtime=runtime)
     assert runtime.transaction.restored_prepublication is True
     assert not (output / "guided_basis_pack.pt").exists()
 
@@ -1099,14 +1892,12 @@ def test_output_jacobian_rejects_false_lifecycle_attestation(
     class _BadReportRuntime(_AuditRuntime):
         def run_output_jacobian_audit(self, transaction, parent, contract):
             execution = super().run_output_jacobian_audit(transaction, parent, contract)
-            return runner.OutputJacobianAuditExecution(
+            return replace(
+                execution,
                 result=_AuditResult(
                     _TamperedReport(execution.result.report),
                     execution.result.basis_payload,
                 ),
-                restore_mode=execution.restore_mode,
-                restored_factor_state_sha256=(execution.restored_factor_state_sha256),
-                restored_factor_schema=execution.restored_factor_schema,
             )
 
     runtime = _BadReportRuntime()
@@ -1139,16 +1930,12 @@ def test_output_jacobian_rejects_decision_that_disagrees_with_metrics(
             execution = super().run_output_jacobian_audit(
                 transaction, parent, contract
             )
-            return runner.OutputJacobianAuditExecution(
+            return replace(
+                execution,
                 result=_AuditResult(
                     _TamperedDecision(execution.result.report),
                     execution.result.basis_payload,
                 ),
-                restore_mode=execution.restore_mode,
-                restored_factor_state_sha256=(
-                    execution.restored_factor_state_sha256
-                ),
-                restored_factor_schema=execution.restored_factor_schema,
             )
 
     runtime = _BadDecisionRuntime()
@@ -1280,15 +2067,38 @@ def test_production_runtime_output_jacobian_uses_public_full_restore_and_only_ca
         def __init__(self, **values) -> None:
             captured["schedule"] = values
 
+    class _FactorClone:
+        def __init__(self, numel: int, element_size: int) -> None:
+            self._numel = numel
+            self._element_size = element_size
+
+        def numel(self) -> int:
+            return self._numel
+
+        def element_size(self) -> int:
+            return self._element_size
+
     def restore(actual_transaction, payload):
         assert actual_transaction is transaction
         assert payload["factor_state_sha256"] == factor_state_sha
         captured["restore"] = True
+        clones = tuple(
+            _FactorClone(int(value.numel()), int(value.element_size()))
+            for value in payload["factor_tensors"].values()
+        )
+        captured["restore_clone_refs"] = tuple(weakref.ref(value) for value in clones)
         return SimpleNamespace(
             factor_state_sha256=factor_state_sha,
             schema=runner.TRAINER_FACTOR_PACK_V2_SCHEMA,
             lexical_rank=runner.LEXICAL_RANK,
+            tensors=clones,
         )
+
+    def forbidden_capture(_actual_transaction):
+        captured["capture_helper_calls"] = (
+            int(captured.get("capture_helper_calls", 0)) + 1
+        )
+        raise AssertionError("audit mode must not recapture the full factor state")
 
     def loader(name, payload, *, artifact_sha256):
         captured["loads"].append((name, payload, artifact_sha256))
@@ -1296,15 +2106,7 @@ def test_production_runtime_output_jacobian_uses_public_full_restore_and_only_ca
 
     trainer_module = SimpleNamespace(
         restore_target_native_factor_payload=restore,
-        capture_target_native_factor_state=lambda actual_transaction: (
-            SimpleNamespace(
-                factor_state_sha256=factor_state_sha,
-                schema=runner.TRAINER_FACTOR_PACK_V2_SCHEMA,
-                lexical_rank=runner.LEXICAL_RANK,
-            )
-            if actual_transaction is transaction
-            else (_ for _ in ()).throw(AssertionError("wrong transaction"))
-        ),
+        capture_target_native_factor_state=forbidden_capture,
         load_behavior_domain_suite=loader,
         BehaviorDistillationSchedule=_Schedule,
     )
@@ -1319,6 +2121,10 @@ def test_production_runtime_output_jacobian_uses_public_full_restore_and_only_ca
     result = _CanonicalAuditResult()
 
     def audit(*args):
+        assert all(
+            reference() is None for reference in captured["restore_clone_refs"]
+        )
+        captured["clone_free_during_audit"] = True
         captured["audit"] = args
         return result
 
@@ -1340,6 +2146,8 @@ def test_production_runtime_output_jacobian_uses_public_full_restore_and_only_ca
     execution = runtime.run_output_jacobian_audit(transaction, parent, contract)
 
     assert captured["restore"] is True
+    assert captured["clone_free_during_audit"] is True
+    assert captured.get("capture_helper_calls", 0) == 0
     assert captured["loads"] == [
         (
             "fit",
@@ -1370,6 +2178,16 @@ def test_production_runtime_output_jacobian_uses_public_full_restore_and_only_ca
     assert execution.result is result
     assert execution.restore_mode == "full"
     assert execution.restored_factor_state_sha256 == factor_state_sha
+    assert execution.restored_factor_lexical_rank == runner.LEXICAL_RANK
+    assert execution.restored_state_released_before_audit is True
+    assert (
+        execution.live_target_native_factor_state_clone_tensor_count_during_audit == 0
+    )
+    assert execution.live_target_native_factor_state_clone_cpu_bytes_during_audit == 0
+    assert execution.post_audit_full_factor_capture_helper_called is False
+    assert execution.post_audit_factor_verification_mode == (
+        "audit-v2-streamed-before-after-factor-evidence"
+    )
 
 
 def test_production_post_bake_evaluator_uses_authenticated_suite_and_schedule(

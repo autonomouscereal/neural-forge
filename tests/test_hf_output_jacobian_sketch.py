@@ -29,6 +29,15 @@ def _identity(index: int, fingerprint: str | None = None) -> OutputJacobianBlock
     )
 
 
+def _identity_chain(identities: Sequence[OutputJacobianBlockIdentity]) -> str:
+    digest = hashlib.sha256(
+        b"neural-forge-output-jacobian-sketch-v2:ordered-block-identities-v1"
+    )
+    for identity in identities:
+        digest.update(bytes.fromhex(identity.sha256()))
+    return digest.hexdigest()
+
+
 def _problem() -> tuple[list[tuple[torch.Tensor, torch.Tensor]], torch.Tensor, torch.Tensor]:
     generator = torch.Generator(device="cpu").manual_seed(417)
     delta = torch.randn((19, 7), generator=generator)
@@ -485,7 +494,7 @@ def test_phase_and_replay_count_errors() -> None:
         accumulator.finalize()
 
 
-def test_block_identity_authenticates_content_and_order_without_tensor_hashing() -> None:
+def test_block_identity_authenticates_declared_fingerprint_and_order() -> None:
     blocks, _, _ = _problem()
     accumulator = TwoPassOutputJacobianSketch(_spec())
     with pytest.raises(TypeError, match="block_identity"):
@@ -500,7 +509,7 @@ def test_block_identity_authenticates_content_and_order_without_tensor_hashing()
             inputs,
             block_identity=_identity(index, wrong_fingerprint),
         )
-    with pytest.raises(OutputJacobianSketchPhaseError, match="does not authenticate"):
+    with pytest.raises(OutputJacobianSketchPhaseError, match="do not authenticate"):
         accumulator.finalize()
 
     reordered = TwoPassOutputJacobianSketch(_spec())
@@ -513,8 +522,53 @@ def test_block_identity_authenticates_content_and_order_without_tensor_hashing()
             inputs,
             block_identity=_identity(1 - index),
         )
-    with pytest.raises(OutputJacobianSketchPhaseError, match="does not authenticate"):
+    with pytest.raises(OutputJacobianSketchPhaseError, match="do not authenticate"):
         reordered.finalize()
+
+
+def test_prevalidated_hotpath_preserves_math_and_binds_deferred_identity() -> None:
+    blocks, left, right = _problem()
+    identities = [_identity(index) for index in range(len(blocks))]
+    expected_chain = _identity_chain(identities)
+    regular = sketch_output_jacobian(blocks, _spec(), left, right)
+
+    deferred = TwoPassOutputJacobianSketch(_spec(), left, right)
+    for delta, inputs in blocks:
+        deferred.add_prevalidated_pass1(delta, inputs)
+    deferred.bind_prevalidated_identity_chain(1, expected_chain)
+    deferred.finish_pass1()
+    for delta, inputs in blocks:
+        deferred.add_prevalidated_pass2(delta, inputs)
+    deferred.bind_prevalidated_identity_chain(2, expected_chain)
+    result = deferred.finalize()
+
+    assert torch.equal(result.guided_right_rows, regular.guided_right_rows)
+    assert torch.equal(result.random_right_rows, regular.random_right_rows)
+    assert result.report.raw_frobenius_sq_estimate == pytest.approx(
+        regular.report.raw_frobenius_sq_estimate
+    )
+    assert result.report.normal_frobenius_sq_estimate == pytest.approx(
+        regular.report.normal_frobenius_sq_estimate
+    )
+    assert result.report.pass1_block_identity_chain_sha256 == expected_chain
+    assert result.report.pass2_block_identity_chain_sha256 == expected_chain
+
+
+def test_prevalidated_hotpath_defers_but_does_not_weaken_finite_failure() -> None:
+    blocks, _, _ = _problem()
+    delta, inputs = blocks[0]
+    poisoned = delta.clone()
+    poisoned[0, 0] = torch.nan
+    accumulator = TwoPassOutputJacobianSketch(_spec())
+    accumulator.add_prevalidated_pass1(poisoned, inputs)
+    accumulator.bind_prevalidated_identity_chain(1, _identity_chain((_identity(0),)))
+    with pytest.raises(OutputJacobianSketchFiniteError, match="pass-one accumulator"):
+        accumulator.finish_pass1()
+
+    unbound = TwoPassOutputJacobianSketch(_spec())
+    unbound.add_prevalidated_pass1(delta, inputs)
+    with pytest.raises(OutputJacobianSketchPhaseError, match="deferred"):
+        unbound.finish_pass1()
 
 
 def test_exact_identity_hashes_canonical_tensor_content() -> None:
@@ -574,7 +628,7 @@ def test_one_shot_rehashes_exact_content_on_the_second_pass() -> None:
                 current[0, 0] += 1.0
             return current, inputs
 
-    with pytest.raises(OutputJacobianSketchPhaseError, match="does not authenticate"):
+    with pytest.raises(OutputJacobianSketchPhaseError, match="do not authenticate"):
         sketch_output_jacobian(
             MutatingReplay(),
             OutputJacobianSketchSpec(

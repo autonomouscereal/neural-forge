@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import gc
 import hashlib
 import importlib
 import importlib.metadata
@@ -34,6 +35,7 @@ import platform
 import re
 import shutil
 import tempfile
+import weakref
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -90,9 +92,23 @@ CANONICAL_TRAINER_MODULE = "neural_forge.hf_target_native_behavior_distillation"
 OUTPUT_JACOBIAN_BASIS_MODULE = "neural_forge.hf_output_jacobian_orthogonal_basis"
 OUTPUT_JACOBIAN_SKETCH_MODULE = "neural_forge.hf_output_jacobian_sketch"
 QKVO_OUTPUT_JACOBIAN_AUDIT_MODULE = "neural_forge.hf_qkvo_output_jacobian_audit"
-OUTPUT_JACOBIAN_AUDIT_SCHEMA = "neural-forge-qkvo-output-jacobian-audit-v1"
+OUTPUT_JACOBIAN_AUDIT_SCHEMA = "neural-forge-qkvo-output-jacobian-audit-v2"
 GUIDED_BASIS_PACK_SCHEMA = "neural-forge-guided-qkvo-basis-pack-v1"
-GUIDED_QKVO_RIGHT_BASIS_SCHEMA = "neural-forge-guided-qkvo-right-basis-v1"
+GUIDED_QKVO_RIGHT_BASIS_SCHEMA = "neural-forge-guided-qkvo-right-basis-v2"
+QKVO_ROLE_AUTHORIZATION_POLICY = (
+    "installers-must-ignore-all-tensors-for-roles-not-listed-in-authorized_roles"
+)
+QKVO_REPLAY_AUTHENTICATOR_KIND = (
+    "seeded-fp32-full-element-order-sensitive-random-projection-v1"
+)
+QKVO_CALLBACK_SOURCE_AUDIT_KIND = (
+    "source-audited-complete-python-callback-call-graph-v1"
+)
+QKVO_FACTOR_CAPTURE_MODE = "streamed-live-manifest-no-full-cpu-clone"
+QKVO_REPLAY_PROJECTION_LANES = 16
+QKVO_FINGERPRINT_VALUES_PER_WRAPPER = 44
+QKVO_TENSOR_HASH_STAGING_LIMIT_BYTES = 4 * 1024 * 1024
+QKVO_TOKEN_PATH_SCALAR_TRANSIENT_BYTES = 8
 
 TARGET_LAYER_COUNT = 30
 TARGET_PHYSICAL_GROUPS = 4
@@ -413,6 +429,14 @@ class OutputJacobianAuditExecution:
     restore_mode: Literal["full"]
     restored_factor_state_sha256: str
     restored_factor_schema: str
+    restored_factor_lexical_rank: int
+    restored_state_clone_tensor_count: int
+    restored_state_clone_cpu_bytes: int
+    restored_state_released_before_audit: bool
+    live_target_native_factor_state_clone_tensor_count_during_audit: int
+    live_target_native_factor_state_clone_cpu_bytes_during_audit: int
+    post_audit_full_factor_capture_helper_called: bool
+    post_audit_factor_verification_mode: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -2839,14 +2863,59 @@ class ProductionStageRuntime:
         restored_sha = getattr(restored_state, "factor_state_sha256", None)
         restored_schema = getattr(restored_state, "schema", None)
         restored_lexical_rank = getattr(restored_state, "lexical_rank", None)
+        restored_tensors = getattr(restored_state, "tensors", None)
+        continuation_tensors = continuation.factor_payload.get("factor_tensors")
+        if (
+            not isinstance(restored_tensors, tuple)
+            or not restored_tensors
+            or not isinstance(continuation_tensors, Mapping)
+            or not continuation_tensors
+        ):
+            raise ExactTargetNativeStageError(
+                "The public trainer restore did not expose its releasable CPU factor "
+                "clone."
+            )
+        restored_clone_tensor_count = len(restored_tensors)
+        restored_clone_cpu_bytes = sum(
+            int(value.numel() * value.element_size()) for value in restored_tensors
+        )
+        expected_clone_cpu_bytes = sum(
+            int(value.numel() * value.element_size())
+            for value in continuation_tensors.values()
+        )
         if (
             restored_sha != continuation.factor_state_sha256
             or restored_schema != TRAINER_FACTOR_PACK_V2_SCHEMA
             or restored_lexical_rank != LEXICAL_RANK
+            or restored_clone_tensor_count != len(continuation_tensors)
+            or restored_clone_tensor_count
+            != continuation.factor_payload.get("factor_count")
+            or restored_clone_cpu_bytes != expected_clone_cpu_bytes
         ):
             raise ExactTargetNativeStageError(
                 "The public trainer restore did not prove the full authenticated v2 "
                 "factor state."
+            )
+        try:
+            restored_tensor_refs = tuple(weakref.ref(value) for value in restored_tensors)
+        except TypeError as error:
+            raise ExactTargetNativeStageError(
+                "The restored factor clone cannot prove release before the audit."
+            ) from error
+        del restored_tensors, restored_state
+        gc.collect()
+        live_restore_clones = tuple(
+            reference() for reference in restored_tensor_refs if reference() is not None
+        )
+        live_restore_clone_tensor_count = len(live_restore_clones)
+        live_restore_clone_cpu_bytes = sum(
+            int(value.numel() * value.element_size()) for value in live_restore_clones
+        )
+        del live_restore_clones, restored_tensor_refs
+        if live_restore_clone_tensor_count != 0 or live_restore_clone_cpu_bytes != 0:
+            raise ExactTargetNativeStageError(
+                "The restored TargetNativeFactorState CPU clone remained live before "
+                "the output-Jacobian audit."
             )
         loader = getattr(trainer_module, "load_behavior_domain_suite")
         source = contract.splits[binding.basis_split_role]
@@ -2892,23 +2961,25 @@ class ProductionStageRuntime:
                 "The source-pinned output-Jacobian audit returned a noncanonical "
                 "result."
             )
-        capture = getattr(trainer_module, "capture_target_native_factor_state")
-        state_after_audit = capture(transaction)
-        if (
-            getattr(state_after_audit, "factor_state_sha256", None)
-            != continuation.factor_state_sha256
-            or getattr(state_after_audit, "schema", None)
-            != TRAINER_FACTOR_PACK_V2_SCHEMA
-            or getattr(state_after_audit, "lexical_rank", None) != LEXICAL_RANK
-        ):
-            raise ExactTargetNativeStageError(
-                "Output-Jacobian audit changed the authenticated live factor state."
-            )
         return OutputJacobianAuditExecution(
             result=result,
             restore_mode="full",
             restored_factor_state_sha256=restored_sha,
             restored_factor_schema=restored_schema,
+            restored_factor_lexical_rank=restored_lexical_rank,
+            restored_state_clone_tensor_count=restored_clone_tensor_count,
+            restored_state_clone_cpu_bytes=restored_clone_cpu_bytes,
+            restored_state_released_before_audit=True,
+            live_target_native_factor_state_clone_tensor_count_during_audit=(
+                live_restore_clone_tensor_count
+            ),
+            live_target_native_factor_state_clone_cpu_bytes_during_audit=(
+                live_restore_clone_cpu_bytes
+            ),
+            post_audit_full_factor_capture_helper_called=False,
+            post_audit_factor_verification_mode=(
+                "audit-v2-streamed-before-after-factor-evidence"
+            ),
         )
 
     def evaluate_baked_behavior(
@@ -3301,15 +3372,40 @@ def _output_jacobian_audit_artifacts(
             "envelope."
         )
     continuation = contract.continuation
+    continuation_factor_tensors = (
+        continuation.factor_payload.get("factor_tensors")
+        if continuation is not None
+        else None
+    )
+    expected_restore_clone_bytes = (
+        sum(
+            int(value.numel() * value.element_size())
+            for value in continuation_factor_tensors.values()
+        )
+        if isinstance(continuation_factor_tensors, Mapping)
+        else -1
+    )
     if (
         continuation is None
         or execution.restore_mode != "full"
         or execution.restored_factor_schema != TRAINER_FACTOR_PACK_V2_SCHEMA
         or execution.restored_factor_state_sha256 != continuation.factor_state_sha256
+        or execution.restored_factor_lexical_rank != LEXICAL_RANK
+        or not isinstance(continuation_factor_tensors, Mapping)
+        or execution.restored_state_clone_tensor_count
+        != continuation.factor_payload.get("factor_count")
+        or execution.restored_state_clone_cpu_bytes != expected_restore_clone_bytes
+        or execution.restored_state_released_before_audit is not True
+        or execution.live_target_native_factor_state_clone_tensor_count_during_audit
+        != 0
+        or execution.live_target_native_factor_state_clone_cpu_bytes_during_audit != 0
+        or execution.post_audit_full_factor_capture_helper_called is not False
+        or execution.post_audit_factor_verification_mode
+        != "audit-v2-streamed-before-after-factor-evidence"
     ):
         raise ExactTargetNativeStageError(
             "Output-Jacobian execution did not prove a full authenticated v2 "
-            "factor restore."
+            "factor restore followed by clone-free streamed audit verification."
         )
     report_object = getattr(execution.result, "report", None)
     report_method = getattr(report_object, "to_dict", None)
@@ -3335,6 +3431,8 @@ def _output_jacobian_audit_artifacts(
         "site_count",
         "role_count",
         "sketch_count",
+        "site_indices",
+        "site_indices_sha256",
         "basis_prompt_count",
         "basis_source_role",
         "source_exposed_candidate_as_fit",
@@ -3347,22 +3445,41 @@ def _output_jacobian_audit_artifacts(
         "hooks_removed",
         "active_hook_count_after",
         "transaction_live_after",
+        "rollback_compatible_after",
         "native_state_sha256_before",
         "native_state_sha256_after",
         "inherited_qkvo_state_sha256_before",
         "inherited_qkvo_state_sha256_after",
         "factor_state_sha256_before",
         "factor_state_sha256_after",
+        "factor_state_capture",
         "factor_parameter_versions_sha256_before",
         "factor_parameter_versions_sha256_after",
         "factor_gradients_cleared",
         "pass1_replay_sha256",
         "pass2_replay_sha256",
-        "replay_match",
-        "accounted_global_peak_bytes",
-        "max_bytes",
+        "pass1_full_element_replay_authenticator_sha256",
+        "pass2_full_element_replay_authenticator_sha256",
+        "probabilistic_replay_authenticator_match",
+        "replay_authentication_kind",
+        "replay_authentication_binds_every_element",
+        "replay_authentication_is_collision_free",
+        "replay_authentication_projection_lanes",
+        "replay_loss_block_count",
+        "replay_plan_evidence",
+        "accounted_auxiliary_peak_bytes",
+        "max_auxiliary_bytes",
+        "memory_scope",
+        "memory_accounting",
+        "hotpath_instrumentation",
         "aggregate",
         "per_role",
+        "diagnostic_passed_roles",
+        "authorized_roles",
+        "installable_roles",
+        "role_authorization_policy",
+        "installer_must_ignore_unauthorized_role_tensors",
+        "all_four_role_tensors_retained_for_diagnostics",
         "basis_manifest_sha256",
         "report_sha256",
     }
@@ -3408,9 +3525,14 @@ def _output_jacobian_audit_artifacts(
         "hooks_removed": True,
         "active_hook_count_after": 0,
         "transaction_live_after": True,
+        "rollback_compatible_after": True,
         "factor_gradients_cleared": True,
-        "replay_match": True,
-        "max_bytes": binding.max_bytes,
+        "probabilistic_replay_authenticator_match": True,
+        "replay_authentication_kind": QKVO_REPLAY_AUTHENTICATOR_KIND,
+        "replay_authentication_binds_every_element": True,
+        "replay_authentication_is_collision_free": False,
+        "replay_authentication_projection_lanes": QKVO_REPLAY_PROJECTION_LANES,
+        "max_auxiliary_bytes": binding.max_bytes,
     }
     if any(
         _canonical_json(canonical_report.get(name)) != _canonical_json(value)
@@ -3418,6 +3540,33 @@ def _output_jacobian_audit_artifacts(
     ):
         raise ExactTargetNativeStageError(
             "Output-Jacobian report failed an audit-only lifecycle attestation."
+        )
+    expected_site_indices = [
+        [layer, group]
+        for layer in range(TARGET_LAYER_COUNT)
+        for group in range(TARGET_PHYSICAL_GROUPS)
+    ]
+    expected_site_indices_sha256 = _canonical_sha256(expected_site_indices)
+    if (
+        canonical_report.get("site_indices") != expected_site_indices
+        or canonical_report.get("site_indices_sha256")
+        != expected_site_indices_sha256
+    ):
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian report site order/hash is not the canonical 120-site "
+            "layer-major physical-group order."
+        )
+    if (
+        canonical_report.get("role_authorization_policy")
+        != QKVO_ROLE_AUTHORIZATION_POLICY
+        or canonical_report.get("installer_must_ignore_unauthorized_role_tensors")
+        is not True
+        or canonical_report.get("all_four_role_tensors_retained_for_diagnostics")
+        is not True
+    ):
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian report does not enforce the exact per-role installer "
+            "authorization policy."
         )
     if not isinstance(canonical_report.get("passed"), bool):
         raise ExactTargetNativeStageError(
@@ -3449,13 +3598,86 @@ def _output_jacobian_audit_artifacts(
             raise ExactTargetNativeStageError(
                 "Output-Jacobian audit changed authenticated state or replay inputs."
             )
+    pass1_authenticator_sha = _require_sha256(
+        canonical_report.get("pass1_full_element_replay_authenticator_sha256"),
+        (
+            "output_jacobian_audit_report."
+            "pass1_full_element_replay_authenticator_sha256"
+        ),
+    )
+    pass2_authenticator_sha = _require_sha256(
+        canonical_report.get("pass2_full_element_replay_authenticator_sha256"),
+        (
+            "output_jacobian_audit_report."
+            "pass2_full_element_replay_authenticator_sha256"
+        ),
+    )
+    if pass1_authenticator_sha != pass2_authenticator_sha:
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian full-element probabilistic replay authenticators "
+            "differ between passes."
+        )
     if canonical_report["factor_state_sha256_before"] != (
         continuation.factor_state_sha256
     ):
         raise ExactTargetNativeStageError(
             "Output-Jacobian audit did not retain the restored continuation state."
         )
-    peak = canonical_report.get("accounted_global_peak_bytes")
+
+    factor_capture = canonical_report.get("factor_state_capture")
+    expected_factor_capture_fields = {
+        "mode",
+        "factor_count",
+        "total_numel",
+        "total_nbytes",
+        "largest_factor_nbytes",
+        "retained_cpu_clone_bytes_before_sketch",
+        "retained_cpu_clone_bytes_after_audit",
+        "maximum_observed_hash_staging_bytes",
+        "hash_staging_limit_bytes",
+        "before_after_captures_overlap",
+    }
+    factor_tensors = continuation.factor_payload.get("factor_tensors")
+    if not isinstance(factor_tensors, Mapping) or not factor_tensors:
+        raise ExactTargetNativeStageError(
+            "Authenticated continuation factor tensors are unavailable for audit "
+            "capture parity."
+        )
+    factor_numel = sum(int(value.numel()) for value in factor_tensors.values())
+    factor_nbytes = sum(
+        int(value.numel() * value.element_size())
+        for value in factor_tensors.values()
+    )
+    largest_factor_nbytes = max(
+        int(value.numel() * value.element_size())
+        for value in factor_tensors.values()
+    )
+    if (
+        not isinstance(factor_capture, Mapping)
+        or set(factor_capture) != expected_factor_capture_fields
+        or factor_capture.get("mode") != QKVO_FACTOR_CAPTURE_MODE
+        or factor_capture.get("factor_count") != len(factor_tensors)
+        or factor_capture.get("factor_count")
+        != continuation.factor_payload.get("factor_count")
+        or factor_capture.get("total_numel") != factor_numel
+        or factor_capture.get("total_nbytes") != factor_nbytes
+        or factor_capture.get("largest_factor_nbytes") != largest_factor_nbytes
+        or factor_capture.get("retained_cpu_clone_bytes_before_sketch") != 0
+        or factor_capture.get("retained_cpu_clone_bytes_after_audit") != 0
+        or factor_capture.get("before_after_captures_overlap") is not False
+        or factor_capture.get("hash_staging_limit_bytes")
+        != QKVO_TENSOR_HASH_STAGING_LIMIT_BYTES
+        or type(factor_capture.get("maximum_observed_hash_staging_bytes")) is not int
+        or factor_capture.get("maximum_observed_hash_staging_bytes") < 0
+        or factor_capture.get("maximum_observed_hash_staging_bytes")
+        > QKVO_TENSOR_HASH_STAGING_LIMIT_BYTES
+    ):
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian streamed factor capture does not match the "
+            "authenticated continuation or bounded hash staging."
+        )
+
+    peak = canonical_report.get("accounted_auxiliary_peak_bytes")
     if (
         isinstance(peak, bool)
         or not isinstance(peak, int)
@@ -3463,7 +3685,349 @@ def _output_jacobian_audit_artifacts(
         or peak > binding.max_bytes
     ):
         raise ExactTargetNativeStageError(
-            "Output-Jacobian audit exceeded or malformed its global byte ceiling."
+            "Output-Jacobian audit exceeded or malformed its auxiliary byte ceiling."
+        )
+    replay_blocks = canonical_report.get("replay_loss_block_count")
+    replay_plan = canonical_report.get("replay_plan_evidence")
+    hotpath = canonical_report.get("hotpath_instrumentation")
+    if (
+        isinstance(replay_blocks, bool)
+        or not isinstance(replay_blocks, int)
+        or replay_blocks <= 0
+        or not isinstance(replay_plan, Mapping)
+        or not isinstance(hotpath, Mapping)
+    ):
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian hot-path replay accounting is malformed."
+        )
+    expected_replay_plan = {
+        "mode": "token-paths-only-no-cached-logit-tensors",
+        "prompt_count": binding.prompt_count,
+        "cached_parent_logit_row_count": 0,
+        "cached_parent_logit_bytes": 0,
+        "cached_child_logit_row_count": 0,
+        "cached_child_logit_bytes": 0,
+        "cached_tensor_count": 0,
+        "cached_tensor_bytes": 0,
+        "token_path_scalar_transient_bytes": QKVO_TOKEN_PATH_SCALAR_TRANSIENT_BYTES,
+        "parent_logits_recomputed_under_no_grad": True,
+        "parent_logits_sha256_in_replay_evidence": True,
+        "parent_logit_recomputations_per_pass": replay_blocks,
+        "parent_logit_recomputations_total": 2 * replay_blocks,
+    }
+    if _canonical_json(replay_plan) != _canonical_json(expected_replay_plan):
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian replay planning retained cached logit tensors or "
+            "malformed its zero-cache recomputation evidence."
+        )
+    expected_callback_count = 2 * replay_blocks * QKVO_SITE_COUNT
+    pass_authenticators = hotpath.get(
+        "pass_full_element_replay_authenticator_sha256"
+    )
+    callback_source_audit = hotpath.get("callback_source_audit")
+    callback_sources = (
+        callback_source_audit.get("target_source_sha256")
+        if isinstance(callback_source_audit, Mapping)
+        else None
+    )
+    if isinstance(callback_sources, Mapping):
+        for name, value in callback_sources.items():
+            if not isinstance(name, str) or not name:
+                raise ExactTargetNativeStageError(
+                    "Output-Jacobian callback source audit has a malformed target."
+                )
+            _require_sha256(
+                value,
+                f"output_jacobian_audit_report.callback_source_audit.{name}",
+            )
+    expected_projection_seed = int.from_bytes(
+        hashlib.sha256(
+            (
+                f"{OUTPUT_JACOBIAN_AUDIT_SCHEMA}:{contract.seed}:"
+                "full-element-replay-authenticator"
+            ).encode("ascii")
+        ).digest()[:8],
+        "little",
+    ) % (2**63)
+    _require_sha256(
+        hotpath.get("replay_authenticator_coefficient_sha256"),
+        "output_jacobian_audit_report.replay_authenticator_coefficient_sha256",
+    )
+    if (
+        type(hotpath.get("wrapper_gradient_callback_count")) is not int
+        or hotpath.get("wrapper_gradient_callback_count")
+        != expected_callback_count
+        or hotpath.get("callback_sync_evidence") != "callback_source_audit"
+        or type(
+            hotpath.get("pass_boundary_device_to_host_transfer_call_count")
+        )
+        is not int
+        or hotpath.get("pass_boundary_device_to_host_transfer_call_count") != 2
+        or type(hotpath.get("fingerprint_records_hashed")) is not int
+        or hotpath.get("fingerprint_records_hashed") != expected_callback_count
+        or hotpath.get("fingerprint_values_per_wrapper")
+        != QKVO_FINGERPRINT_VALUES_PER_WRAPPER
+        or not isinstance(pass_authenticators, Mapping)
+        or set(pass_authenticators) != {"pass1", "pass2"}
+        or pass_authenticators.get("pass1") != pass1_authenticator_sha
+        or pass_authenticators.get("pass2") != pass2_authenticator_sha
+        or hotpath.get("replay_authenticator_kind")
+        != QKVO_REPLAY_AUTHENTICATOR_KIND
+        or hotpath.get("replay_authenticator_binds_every_element") is not True
+        or hotpath.get("replay_authenticator_is_collision_free") is not False
+        or hotpath.get("replay_authenticator_projection_lanes")
+        != QKVO_REPLAY_PROJECTION_LANES
+        or hotpath.get("replay_authenticator_seed") != expected_projection_seed
+        or not isinstance(callback_source_audit, Mapping)
+        or callback_source_audit.get("kind") != QKVO_CALLBACK_SOURCE_AUDIT_KIND
+        or type(callback_source_audit.get("target_count")) is not int
+        or callback_source_audit.get("target_count") <= 0
+        or not isinstance(callback_sources, Mapping)
+        or callback_source_audit.get("target_count") != len(callback_sources)
+        or callback_source_audit.get("call_graph_sha256")
+        != _canonical_sha256(callback_sources)
+        or callback_source_audit.get("banned_host_sync_primitive_count") != 0
+        or callback_source_audit.get("runtime_cuda_profiler_used") is not False
+    ):
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian hot-path instrumentation does not authenticate its "
+            "source-audited callback path and full-element probabilistic replay."
+        )
+    memory = canonical_report.get("memory_accounting")
+    expected_memory_scope = {
+        "bounded": "audit-explicit-auxiliary-tensors-only",
+        "includes": [
+            "sketch-accumulators-and-bases",
+            "deferred-replay-authenticator-buffers",
+            "replay-authenticator-coefficients",
+            "bounded-tensor-hash-staging",
+            "final-guided-cpu-pack",
+            "basis-payload-cpu-clone",
+            "token-path-planning-and-replay-argmax-scalar",
+        ],
+        "excludes": [
+            "parent-and-child-model-weights",
+            "caller-owned-authenticated-continuation-factor-payload",
+            "standard-forward-backward-autograd-activations",
+            "framework-allocator-reservations-and-overhead",
+            "python-object-overhead",
+        ],
+    }
+    if not isinstance(memory, Mapping):
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian auxiliary-memory accounting is malformed."
+        )
+
+    def memory_int(name: str, *, minimum: int = 0) -> int:
+        value = memory.get(name)
+        if type(value) is not int or value < minimum:
+            raise ExactTargetNativeStageError(
+                f"Output-Jacobian auxiliary-memory field {name!r} is malformed."
+            )
+        return value
+
+    persistent_upper = memory_int("persistent_upper_bound_bytes", minimum=1)
+    largest_operation = memory_int("largest_single_operation_bytes", minimum=1)
+    wrapper_upper = memory_int("wrapper_hook_transient_bytes", minimum=1)
+    maximum_replay_blocks = memory_int("maximum_replay_blocks", minimum=1)
+    fingerprint_upper = memory_int(
+        "deferred_fingerprint_buffer_upper_bound_bytes", minimum=1
+    )
+    fingerprint_host_upper = memory_int(
+        "deferred_fingerprint_host_staging_upper_bound_bytes", minimum=1
+    )
+    coefficient_bytes = memory_int(
+        "replay_authenticator_coefficient_bytes", minimum=1
+    )
+    hash_staging_limit = memory_int(
+        "tensor_hash_cpu_staging_limit_bytes", minimum=1
+    )
+    final_pack_bytes = memory_int("final_guided_cpu_pack_bytes", minimum=1)
+    basis_payload_clone_bytes = memory_int(
+        "basis_payload_cpu_clone_bytes", minimum=1
+    )
+    cached_parent_logit_rows = memory_int(
+        "replay_plan_cached_parent_logit_row_count"
+    )
+    cached_parent_logit_bytes = memory_int(
+        "replay_plan_cached_parent_logit_bytes"
+    )
+    cached_child_logit_rows = memory_int(
+        "replay_plan_cached_child_logit_row_count"
+    )
+    cached_child_logit_bytes = memory_int(
+        "replay_plan_cached_child_logit_bytes"
+    )
+    cached_replay_tensor_count = memory_int("replay_plan_cached_tensor_count")
+    cached_replay_tensor_bytes = memory_int("replay_plan_cached_tensor_bytes")
+    token_path_scalar_bytes = memory_int(
+        "token_path_scalar_transient_bytes", minimum=1
+    )
+    memory_peak = memory_int("accounted_auxiliary_peak_bytes", minimum=1)
+    memory_limit = memory_int("max_auxiliary_bytes", minimum=1)
+    phase1_persistent = memory_int("phase1_actual_persistent_bytes", minimum=1)
+    phase1_transient = memory_int(
+        "phase1_actual_max_batch_transient_bytes", minimum=1
+    )
+    phase1_wrapper = memory_int("phase1_wrapper_hook_transient_bytes", minimum=1)
+    phase1_peak = memory_int("phase1_actual_peak_bytes", minimum=1)
+    phase2_persistent = memory_int("phase2_actual_persistent_bytes", minimum=1)
+    phase2_transient = memory_int(
+        "phase2_actual_max_batch_transient_bytes", minimum=1
+    )
+    phase2_wrapper = memory_int("phase2_wrapper_hook_transient_bytes", minimum=1)
+    phase2_peak = memory_int("phase2_actual_peak_bytes", minimum=1)
+    actual_replay_blocks = memory_int("actual_replay_blocks", minimum=1)
+    actual_fingerprint = memory_int(
+        "actual_deferred_fingerprint_buffer_bytes", minimum=1
+    )
+    actual_coefficient_bytes = memory_int(
+        "actual_replay_authenticator_coefficient_bytes", minimum=1
+    )
+    actual_pack_bytes = memory_int("actual_final_guided_cpu_pack_bytes", minimum=1)
+    observed_hash_staging = memory_int(
+        "maximum_observed_tensor_hash_cpu_staging_bytes"
+    )
+    factor_state_total_nbytes = memory_int("factor_state_total_nbytes", minimum=1)
+    retained_factor_clone_bytes = memory_int(
+        "factor_state_retained_cpu_clone_bytes"
+    )
+    capture_overlap_bytes = memory_int(
+        "factor_state_before_after_capture_overlap_bytes"
+    )
+    expected_maximum_replay_blocks = (
+        binding.prompt_count * binding.horizon * len(binding.lanes)
+    )
+    expected_fingerprint_upper = (
+        expected_maximum_replay_blocks
+        * QKVO_SITE_COUNT
+        * QKVO_FINGERPRINT_VALUES_PER_WRAPPER
+        * 4
+    )
+    expected_actual_fingerprint = (
+        replay_blocks
+        * QKVO_SITE_COUNT
+        * QKVO_FINGERPRINT_VALUES_PER_WRAPPER
+        * 4
+    )
+    planned_peak = sum(
+        (
+            persistent_upper,
+            largest_operation,
+            wrapper_upper,
+            fingerprint_upper,
+            fingerprint_host_upper,
+            coefficient_bytes,
+            hash_staging_limit,
+            final_pack_bytes,
+            basis_payload_clone_bytes,
+            token_path_scalar_bytes,
+        )
+    )
+    recomputed_phase1_peak = sum(
+        (
+            phase1_persistent,
+            phase1_transient,
+            phase1_wrapper,
+            fingerprint_upper,
+            fingerprint_host_upper,
+            coefficient_bytes,
+            hash_staging_limit,
+            token_path_scalar_bytes,
+        )
+    )
+    recomputed_phase2_peak = sum(
+        (
+            phase2_persistent,
+            phase2_transient,
+            phase2_wrapper,
+            2 * actual_fingerprint,
+            coefficient_bytes,
+            hash_staging_limit,
+            token_path_scalar_bytes,
+        )
+    )
+    recomputed_peak = max(planned_peak, recomputed_phase1_peak, recomputed_phase2_peak)
+    live_auxiliary_allocations = (
+        persistent_upper,
+        largest_operation,
+        wrapper_upper,
+        fingerprint_upper,
+        fingerprint_host_upper,
+        coefficient_bytes,
+        hash_staging_limit,
+        final_pack_bytes,
+        basis_payload_clone_bytes,
+        token_path_scalar_bytes,
+        phase1_persistent,
+        phase1_transient,
+        phase1_wrapper,
+        phase2_persistent,
+        phase2_transient,
+        phase2_wrapper,
+        actual_fingerprint,
+        actual_coefficient_bytes,
+        actual_pack_bytes,
+        observed_hash_staging,
+    )
+    if (
+        _canonical_json(memory.get("memory_scope"))
+        != _canonical_json(expected_memory_scope)
+        or _canonical_json(canonical_report.get("memory_scope"))
+        != _canonical_json(expected_memory_scope)
+        or memory_peak != peak
+        or memory_limit != binding.max_bytes
+        or memory_peak != recomputed_peak
+        or memory_peak > binding.max_bytes
+        or any(value > memory_peak for value in live_auxiliary_allocations)
+        or cached_parent_logit_rows != 0
+        or cached_parent_logit_bytes != 0
+        or cached_child_logit_rows != 0
+        or cached_child_logit_bytes != 0
+        or cached_replay_tensor_count != 0
+        or cached_replay_tensor_bytes != 0
+        or token_path_scalar_bytes != QKVO_TOKEN_PATH_SCALAR_TRANSIENT_BYTES
+        or replay_plan.get("token_path_scalar_transient_bytes")
+        != token_path_scalar_bytes
+        or maximum_replay_blocks != expected_maximum_replay_blocks
+        or actual_replay_blocks != replay_blocks
+        or actual_replay_blocks > maximum_replay_blocks
+        or fingerprint_upper != expected_fingerprint_upper
+        or fingerprint_host_upper != fingerprint_upper
+        or actual_fingerprint != expected_actual_fingerprint
+        or actual_fingerprint > fingerprint_upper
+        or actual_coefficient_bytes != coefficient_bytes
+        or hotpath.get("replay_authenticator_coefficient_bytes")
+        != coefficient_bytes
+        or hash_staging_limit != QKVO_TENSOR_HASH_STAGING_LIMIT_BYTES
+        or observed_hash_staging > hash_staging_limit
+        or observed_hash_staging
+        != factor_capture.get("maximum_observed_hash_staging_bytes")
+        or final_pack_bytes != 19_660_800
+        or actual_pack_bytes != final_pack_bytes
+        or basis_payload_clone_bytes != final_pack_bytes
+        or phase1_persistent > persistent_upper
+        or phase2_persistent > persistent_upper
+        or phase1_transient > largest_operation
+        or phase2_transient > largest_operation
+        or phase1_wrapper != wrapper_upper
+        or phase2_wrapper != wrapper_upper
+        or phase1_peak != recomputed_phase1_peak
+        or phase2_peak != recomputed_phase2_peak
+        or memory.get("manual_plan_covers_phase1") != 1
+        or memory.get("manual_plan_covers_phase2") != 1
+        or memory.get("finalized_result_tensors_retained_on_accumulator_device")
+        != 0
+        or memory.get("all_sketches_drained_after_finalize") != 1
+        or memory.get("factor_state_capture_mode") != QKVO_FACTOR_CAPTURE_MODE
+        or factor_state_total_nbytes != factor_nbytes
+        or retained_factor_clone_bytes != 0
+        or capture_overlap_bytes != 0
+    ):
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian auxiliary-memory accounting does not recompute to its "
+            "declared peak, exact drained pack, actual/upper bounds, or streamed "
+            "factor/hash-capture limits."
         )
     aggregate = canonical_report.get("aggregate")
     per_role = canonical_report.get("per_role")
@@ -3471,39 +4035,79 @@ def _output_jacobian_audit_artifacts(
         not isinstance(aggregate, Mapping)
         or not isinstance(per_role, Mapping)
         or set(per_role) != {"q", "k", "v", "o"}
+        or any(
+            not isinstance(per_role.get(role), Mapping)
+            for role in ("q", "k", "v", "o")
+        )
     ):
         raise ExactTargetNativeStageError(
             "Output-Jacobian report omits aggregate or per-role gate evidence."
         )
-    normal_fraction = aggregate.get("normal_fraction")
-    capture_ratio = aggregate.get("guided_over_random_ratio")
-    if (
-        isinstance(normal_fraction, bool)
-        or not isinstance(normal_fraction, (int, float))
-        or not math.isfinite(float(normal_fraction))
-        or float(normal_fraction) < 0.0
-        or isinstance(capture_ratio, bool)
-        or not isinstance(capture_ratio, (int, float))
-        or not math.isfinite(float(capture_ratio))
-        or float(capture_ratio) < 0.0
-    ):
-        raise ExactTargetNativeStageError(
-            "Output-Jacobian aggregate gate metrics are malformed or non-finite."
+
+    def validate_gate_metrics(
+        metrics: Mapping[str, Any], *, evidence_name: str
+    ) -> bool:
+        normal_fraction = metrics.get("normal_fraction")
+        capture_ratio = metrics.get("guided_over_random_ratio")
+        if (
+            isinstance(normal_fraction, bool)
+            or not isinstance(normal_fraction, (int, float))
+            or not math.isfinite(float(normal_fraction))
+            or float(normal_fraction) < 0.0
+            or isinstance(capture_ratio, bool)
+            or not isinstance(capture_ratio, (int, float))
+            or not math.isfinite(float(capture_ratio))
+            or float(capture_ratio) < 0.0
+        ):
+            raise ExactTargetNativeStageError(
+                f"Output-Jacobian {evidence_name} gate metrics are malformed or "
+                "non-finite."
+            )
+        expected_normal_gate = (
+            float(normal_fraction) >= binding.min_normal_fraction
         )
-    expected_normal_gate = float(normal_fraction) >= binding.min_normal_fraction
-    expected_ratio_gate = (
-        float(capture_ratio) >= binding.min_guided_over_random_ratio
-    )
-    expected_passed = expected_normal_gate and expected_ratio_gate
+        expected_ratio_gate = (
+            float(capture_ratio) >= binding.min_guided_over_random_ratio
+        )
+        expected_passed = expected_normal_gate and expected_ratio_gate
+        if (
+            metrics.get("normal_fraction_gate_passed") is not expected_normal_gate
+            or metrics.get("guided_over_random_gate_passed")
+            is not expected_ratio_gate
+            or metrics.get("passed") is not expected_passed
+        ):
+            raise ExactTargetNativeStageError(
+                f"Output-Jacobian {evidence_name} decision disagrees with the "
+                "authenticated thresholds."
+            )
+        return expected_passed
+
+    aggregate_passed = validate_gate_metrics(aggregate, evidence_name="aggregate")
+    ordered_roles = ("q", "k", "v", "o")
+    derived_diagnostic_roles = [
+        role
+        for role in ordered_roles
+        if validate_gate_metrics(per_role[role], evidence_name=f"per-role {role}")
+    ]
+    diagnostic_passed_roles = canonical_report.get("diagnostic_passed_roles")
+    authorized_roles = canonical_report.get("authorized_roles")
+    installable_roles = canonical_report.get("installable_roles")
+    expected_passed = aggregate_passed and bool(derived_diagnostic_roles)
+    expected_installable_roles = derived_diagnostic_roles if expected_passed else []
+    if diagnostic_passed_roles != derived_diagnostic_roles:
+        raise ExactTargetNativeStageError(
+            "Output-Jacobian ordered diagnostic role evidence disagrees with its "
+            "per-role gates."
+        )
     if (
-        aggregate.get("normal_fraction_gate_passed") is not expected_normal_gate
-        or aggregate.get("guided_over_random_gate_passed") is not expected_ratio_gate
-        or aggregate.get("passed") is not expected_passed
+        aggregate.get("passed") is not aggregate_passed
         or canonical_report.get("passed") is not expected_passed
+        or authorized_roles != expected_installable_roles
+        or installable_roles != expected_installable_roles
     ):
         raise ExactTargetNativeStageError(
             "Output-Jacobian decision disagrees with the authenticated aggregate "
-            "thresholds."
+            "thresholds, diagnostic roles, or global installability gate."
         )
     _require_sha256(
         canonical_report.get("basis_manifest_sha256"),
@@ -3536,6 +4140,8 @@ def _output_jacobian_audit_artifacts(
         "schema",
         "factor_state_sha256",
         "basis_manifest_sha256",
+        "site_indices",
+        "site_indices_sha256",
         "tensor_count",
         "total_numel",
         "total_nbytes",
@@ -3548,6 +4154,11 @@ def _output_jacobian_audit_artifacts(
         "contains_activations",
         "contains_hidden_states",
         "authorized_for_training",
+        "diagnostic_passed_roles",
+        "authorized_roles",
+        "installable_roles",
+        "installer_must_ignore_unauthorized_role_tensors",
+        "all_four_role_tensors_retained_for_diagnostics",
     }
     if set(basis_payload) != expected_pack_fields:
         raise ExactTargetNativeStageError(
@@ -3577,6 +4188,30 @@ def _output_jacobian_audit_artifacts(
     ):
         raise ExactTargetNativeStageError(
             "Guided basis training authorization disagrees with the diagnostic gate."
+        )
+    if (
+        basis_payload.get("site_indices") != expected_site_indices
+        or basis_payload.get("site_indices_sha256")
+        != expected_site_indices_sha256
+        or basis_payload.get("site_indices") != canonical_report.get("site_indices")
+        or basis_payload.get("diagnostic_passed_roles")
+        != derived_diagnostic_roles
+        or basis_payload.get("diagnostic_passed_roles")
+        != canonical_report.get("diagnostic_passed_roles")
+        or basis_payload.get("authorized_roles") != expected_installable_roles
+        or basis_payload.get("authorized_roles")
+        != canonical_report.get("authorized_roles")
+        or basis_payload.get("installable_roles") != expected_installable_roles
+        or basis_payload.get("installable_roles")
+        != canonical_report.get("installable_roles")
+        or basis_payload.get("installer_must_ignore_unauthorized_role_tensors")
+        is not True
+        or basis_payload.get("all_four_role_tensors_retained_for_diagnostics")
+        is not True
+    ):
+        raise ExactTargetNativeStageError(
+            "Guided basis site order or per-role installer authorization metadata "
+            "disagrees with its authenticated audit report."
         )
     if basis_payload.get("factor_state_sha256") != (continuation.factor_state_sha256):
         raise ExactTargetNativeStageError(
@@ -3879,7 +4514,29 @@ def execute_authenticated_stage(
                         "factor_state_sha256": (
                             audit_execution.restored_factor_state_sha256
                         ),
+                        "lexical_rank": audit_execution.restored_factor_lexical_rank,
+                        "restored_state_clone_tensor_count": (
+                            audit_execution.restored_state_clone_tensor_count
+                        ),
+                        "restored_state_clone_cpu_bytes": (
+                            audit_execution.restored_state_clone_cpu_bytes
+                        ),
+                        "restored_state_released_before_audit": (
+                            audit_execution.restored_state_released_before_audit
+                        ),
                         "matches_authenticated_continuation": True,
+                    },
+                    "output_jacobian_factor_verification": {
+                        "live_target_native_factor_state_clone_tensor_count_during_audit": (
+                            audit_execution.live_target_native_factor_state_clone_tensor_count_during_audit
+                        ),
+                        "live_target_native_factor_state_clone_cpu_bytes_during_audit": (
+                            audit_execution.live_target_native_factor_state_clone_cpu_bytes_during_audit
+                        ),
+                        "post_audit_full_factor_capture_helper_called": (
+                            audit_execution.post_audit_full_factor_capture_helper_called
+                        ),
+                        "mode": audit_execution.post_audit_factor_verification_mode,
                     },
                     "guided_basis_pack": {
                         "path": str(basis_path),

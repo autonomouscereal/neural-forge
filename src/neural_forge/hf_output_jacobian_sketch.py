@@ -27,7 +27,7 @@ import torch
 from torch import Tensor
 
 
-OUTPUT_JACOBIAN_SKETCH_SCHEMA = "neural-forge-output-jacobian-sketch-v1"
+OUTPUT_JACOBIAN_SKETCH_SCHEMA = "neural-forge-output-jacobian-sketch-v2"
 MINIMUM_NORMAL_FRACTION = 0.20
 MINIMUM_GUIDED_OVER_RANDOM_RATIO = 1.50
 
@@ -350,8 +350,9 @@ class OutputJacobianBlockIdentity:
     """Replay identity without requiring each site to hash full GPU tensors.
 
     ``semantic_identity`` binds stable model/prompt/prefix/site metadata.  The
-    numeric fingerprint is a cryptographic digest computed once by the
-    enclosing wrapper (or an exact tensor digest in the one-shot helper).
+    numeric fingerprint is a digest of the caller's declared numeric
+    authenticator (or an exact tensor digest in the one-shot helper).  Generic
+    streaming identities do not imply collision-free tensor authentication.
     Exact D/X hashes are optional for streaming hook integrations and are
     always populated by :func:`sketch_output_jacobian`.
     """
@@ -515,6 +516,9 @@ class TwoPassOutputJacobianSketch:
         self._pass1_identity_chain = hashlib.sha256(identity_header)
         self._pass2_identity_chain = hashlib.sha256(identity_header)
         self._pass1_identity_sha256 = ""
+        self._pass2_identity_sha256 = ""
+        self._pass1_prevalidated = False
+        self._pass2_prevalidated = False
 
         left, right, latent_rank = self._validate_factors(
             inherited_left, inherited_right
@@ -851,19 +855,47 @@ class TwoPassOutputJacobianSketch:
         return int(delta.shape[0])
 
     def _prepare_block(
-        self, delta: Tensor, inputs: Tensor, *, pass_number: int
+        self,
+        delta: Tensor,
+        inputs: Tensor,
+        *,
+        pass_number: int,
     ) -> tuple[Tensor, Tensor]:
+        self._reserve_block(delta, inputs, pass_number=pass_number)
+        if not bool(torch.isfinite(delta.detach()).all()):
+            raise OutputJacobianSketchFiniteError("D is non-finite.")
+        if not bool(torch.isfinite(inputs.detach()).all()):
+            raise OutputJacobianSketchFiniteError("X is non-finite.")
+        return self._convert_prevalidated_block(delta, inputs)
+
+    def _reserve_block(
+        self,
+        delta: Tensor,
+        inputs: Tensor,
+        *,
+        pass_number: int,
+    ) -> None:
         rows = self._inspect_block(delta, inputs)
         self._require_bytes(
             self._block_transient_bytes(rows, pass_number),
             f"pass-{'one' if pass_number == 1 else 'two'} batch",
         )
-        # The reservation above covers scan masks and conversion/projection
-        # temporaries.  No tensor value is read before that fail-closed gate.
-        if not bool(torch.isfinite(delta.detach()).all()):
-            raise OutputJacobianSketchFiniteError("D is non-finite.")
-        if not bool(torch.isfinite(inputs.detach()).all()):
-            raise OutputJacobianSketchFiniteError("X is non-finite.")
+
+    def _prepare_prevalidated_block(
+        self,
+        delta: Tensor,
+        inputs: Tensor,
+        *,
+        pass_number: int,
+    ) -> tuple[Tensor, Tensor]:
+        self._reserve_block(delta, inputs, pass_number=pass_number)
+        return self._convert_prevalidated_block(delta, inputs)
+
+    def _convert_prevalidated_block(
+        self,
+        delta: Tensor,
+        inputs: Tensor,
+    ) -> tuple[Tensor, Tensor]:
         return (
             delta.detach().to(device=self._device, dtype=torch.float32),
             inputs.detach().to(device=self._device, dtype=torch.float32),
@@ -973,12 +1005,13 @@ class TwoPassOutputJacobianSketch:
         """Accumulate range and Hutchinson probes from one finite row batch."""
 
         self._require_phase("pass1")
+        if self._pass1_prevalidated:
+            raise OutputJacobianSketchPhaseError(
+                "Validated and deferred-identity pass-one ingestion cannot be mixed."
+            )
         identity = self._checked_block_identity(block_identity)
         d, x = self._prepare_block(delta, inputs, pass_number=1)
-        rows = int(d.shape[0])
-        normal_d, normal_x = self._normal_blocks(d, x)
-        self._raw_y.add_(x.T @ (d @ self._omega))
-        self._normal_y.add_(normal_x.T @ (normal_d @ self._omega))
+        self._accumulate_pass1(d, x)
         if not bool(torch.isfinite(self._raw_y).all()):
             raise OutputJacobianSketchFiniteError(
                 "The raw pass-one accumulator became non-finite."
@@ -987,9 +1020,69 @@ class TwoPassOutputJacobianSketch:
             raise OutputJacobianSketchFiniteError(
                 "The normal pass-one accumulator became non-finite."
             )
+        self._extend_identity_chain(self._pass1_identity_chain, identity)
+
+    def add_prevalidated_pass1(self, delta: Tensor, inputs: Tensor) -> None:
+        """Accumulate a block whose full wrapper tensors are validated later.
+
+        This hot-path entry point is reserved for integrations which authenticate
+        full-wrapper finiteness and ordered numeric fingerprints in one bounded
+        pass-level transfer.  Shape, dtype, device, byte-ceiling, and phase checks
+        still occur before accumulation.  It cannot be mixed with per-block
+        identities.
+        """
+
+        self._require_phase("pass1")
+        if self._pass1_blocks and not self._pass1_prevalidated:
+            raise OutputJacobianSketchPhaseError(
+                "Validated and per-block-identity pass-one ingestion cannot be mixed."
+            )
+        self._pass1_prevalidated = True
+        d, x = self._prepare_prevalidated_block(
+            delta,
+            inputs,
+            pass_number=1,
+        )
+        self._accumulate_pass1(d, x)
+
+    def _accumulate_pass1(self, d: Tensor, x: Tensor) -> None:
+        rows = int(d.shape[0])
+        normal_d, normal_x = self._normal_blocks(d, x)
+        self._raw_y.add_(x.T @ (d @ self._omega))
+        self._normal_y.add_(normal_x.T @ (normal_d @ self._omega))
         self._pass1_samples += rows
         self._pass1_blocks += 1
-        self._extend_identity_chain(self._pass1_identity_chain, identity)
+
+    def bind_prevalidated_identity_chain(
+        self, pass_number: int, chain_sha256: str
+    ) -> None:
+        """Bind a deferred, ordered block-identity chain before a transition."""
+
+        digest = _canonical_sha256(chain_sha256, "chain_sha256")
+        if isinstance(pass_number, bool) or pass_number not in (1, 2):
+            raise OutputJacobianSketchShapeError("pass_number must be 1 or 2.")
+        expected_phase: SketchPhase = "pass1" if pass_number == 1 else "pass2"
+        self._require_phase(expected_phase)
+        prevalidated = (
+            self._pass1_prevalidated if pass_number == 1 else self._pass2_prevalidated
+        )
+        block_count = self._pass1_blocks if pass_number == 1 else self._pass2_blocks
+        if not prevalidated or block_count <= 0:
+            raise OutputJacobianSketchPhaseError(
+                "A deferred identity chain requires nonempty prevalidated ingestion."
+            )
+        if pass_number == 1:
+            if self._pass1_identity_sha256:
+                raise OutputJacobianSketchPhaseError(
+                    "The pass-one deferred identity chain is already bound."
+                )
+            self._pass1_identity_sha256 = digest
+        else:
+            if self._pass2_identity_sha256:
+                raise OutputJacobianSketchPhaseError(
+                    "The pass-two deferred identity chain is already bound."
+                )
+            self._pass2_identity_sha256 = digest
 
     def _complement_basis(
         self,
@@ -1072,7 +1165,13 @@ class TwoPassOutputJacobianSketch:
             raise OutputJacobianSketchPhaseError(
                 "At least one pass-one batch is required."
             )
-        self._pass1_identity_sha256 = self._pass1_identity_chain.hexdigest()
+        if self._pass1_prevalidated:
+            if not self._pass1_identity_sha256:
+                raise OutputJacobianSketchPhaseError(
+                    "Pass one lacks its deferred block-identity chain."
+                )
+        else:
+            self._pass1_identity_sha256 = self._pass1_identity_chain.hexdigest()
         transition_bytes = (
             64 * self.spec.in_features * self.spec.sketch_width
             + 32
@@ -1081,15 +1180,25 @@ class TwoPassOutputJacobianSketch:
             + 32 * self.spec.sketch_width * self.spec.sketch_width
         )
         self._require_bytes(transition_bytes, "pass-one FP64 QR transition")
+        raw_y_cpu = self._raw_y.detach().to(device="cpu").contiguous()
+        normal_y_cpu = self._normal_y.detach().to(device="cpu").contiguous()
+        if not bool(torch.isfinite(raw_y_cpu).all()):
+            raise OutputJacobianSketchFiniteError(
+                "The raw pass-one accumulator became non-finite."
+            )
+        if not bool(torch.isfinite(normal_y_cpu).all()):
+            raise OutputJacobianSketchFiniteError(
+                "The normal pass-one accumulator became non-finite."
+            )
         self._raw_frobenius_sq = float(
-            self._raw_y.to(device="cpu", dtype=torch.float64).square().sum().item()
+            raw_y_cpu.to(dtype=torch.float64).square().sum().item()
             / self.spec.sketch_width
         )
         self._normal_frobenius_sq = float(
-            self._normal_y.to(device="cpu", dtype=torch.float64).square().sum().item()
+            normal_y_cpu.to(dtype=torch.float64).square().sum().item()
             / self.spec.sketch_width
         )
-        self._pass1_normal_hash = _tensor_sha256(self._normal_y)
+        self._pass1_normal_hash = _tensor_sha256(normal_y_cpu)
         self._q = self._complement_basis(
             self._normal_y,
             self._range_width,
@@ -1136,16 +1245,13 @@ class TwoPassOutputJacobianSketch:
         """Replay one batch to accumulate guided and random-control cores."""
 
         self._require_phase("pass2")
+        if self._pass2_prevalidated:
+            raise OutputJacobianSketchPhaseError(
+                "Validated and deferred-identity pass-two ingestion cannot be mixed."
+            )
         identity = self._checked_block_identity(block_identity)
         d, x = self._prepare_block(delta, inputs, pass_number=2)
-        rows = int(d.shape[0])
-        normal_d, normal_x = self._normal_blocks(d, x)
-        assert self._q is not None
-        assert self._control is not None
-        assert self._b is not None
-        assert self._random_b is not None
-        self._b.add_(normal_d.T @ (normal_x @ self._q))
-        self._random_b.add_(normal_d.T @ (normal_x @ self._control))
+        self._accumulate_pass2(d, x)
         if not bool(torch.isfinite(self._b).all()):
             raise OutputJacobianSketchFiniteError(
                 "The guided pass-two accumulator became non-finite."
@@ -1154,9 +1260,35 @@ class TwoPassOutputJacobianSketch:
             raise OutputJacobianSketchFiniteError(
                 "The random pass-two accumulator became non-finite."
             )
+        self._extend_identity_chain(self._pass2_identity_chain, identity)
+
+    def add_prevalidated_pass2(self, delta: Tensor, inputs: Tensor) -> None:
+        """Replay a block under pass-level finite/identity validation."""
+
+        self._require_phase("pass2")
+        if self._pass2_blocks and not self._pass2_prevalidated:
+            raise OutputJacobianSketchPhaseError(
+                "Validated and per-block-identity pass-two ingestion cannot be mixed."
+            )
+        self._pass2_prevalidated = True
+        d, x = self._prepare_prevalidated_block(
+            delta,
+            inputs,
+            pass_number=2,
+        )
+        self._accumulate_pass2(d, x)
+
+    def _accumulate_pass2(self, d: Tensor, x: Tensor) -> None:
+        rows = int(d.shape[0])
+        normal_d, normal_x = self._normal_blocks(d, x)
+        assert self._q is not None
+        assert self._control is not None
+        assert self._b is not None
+        assert self._random_b is not None
+        self._b.add_(normal_d.T @ (normal_x @ self._q))
+        self._random_b.add_(normal_d.T @ (normal_x @ self._control))
         self._pass2_samples += rows
         self._pass2_blocks += 1
-        self._extend_identity_chain(self._pass2_identity_chain, identity)
 
     def finalize(self) -> OutputJacobianSketchResult:
         """Return canonical rank-by-input guided and random control rows."""
@@ -1169,10 +1301,17 @@ class TwoPassOutputJacobianSketch:
             raise OutputJacobianSketchPhaseError(
                 "Pass two must replay the same row and block counts as pass one."
             )
-        pass2_identity_sha256 = self._pass2_identity_chain.hexdigest()
+        if self._pass2_prevalidated:
+            if not self._pass2_identity_sha256:
+                raise OutputJacobianSketchPhaseError(
+                    "Pass two lacks its deferred block-identity chain."
+                )
+            pass2_identity_sha256 = self._pass2_identity_sha256
+        else:
+            pass2_identity_sha256 = self._pass2_identity_chain.hexdigest()
         if pass2_identity_sha256 != self._pass1_identity_sha256:
             raise OutputJacobianSketchPhaseError(
-                "Pass two block content or order does not authenticate against "
+                "Pass two block identities or order do not authenticate against "
                 "pass one."
             )
         assert self._q is not None
@@ -1191,8 +1330,18 @@ class TwoPassOutputJacobianSketch:
             + 12 * self.spec.rank * self.spec.in_features
         )
         self._require_bytes(finalize_bytes, "final FP64 SVD")
+        b_cpu = self._b.detach().to(device="cpu").contiguous()
+        random_b_cpu = self._random_b.detach().to(device="cpu").contiguous()
+        if not bool(torch.isfinite(b_cpu).all()):
+            raise OutputJacobianSketchFiniteError(
+                "The guided pass-two accumulator became non-finite."
+            )
+        if not bool(torch.isfinite(random_b_cpu).all()):
+            raise OutputJacobianSketchFiniteError(
+                "The random pass-two accumulator became non-finite."
+            )
         _, singular, vh = torch.linalg.svd(
-            self._b.to(device="cpu", dtype=torch.float64), full_matrices=False
+            b_cpu.to(dtype=torch.float64), full_matrices=False
         )
         if not bool(torch.isfinite(singular).all()):
             raise OutputJacobianSketchFiniteError(
@@ -1261,7 +1410,7 @@ class TwoPassOutputJacobianSketch:
             singular[: self.spec.rank].square().sum().item()
         )
         random_energy = float(
-            self._random_b.to(device="cpu", dtype=torch.float64).square().sum().item()
+            random_b_cpu.to(dtype=torch.float64).square().sum().item()
         )
         raw_scale = max(
             self._raw_frobenius_sq,
@@ -1340,8 +1489,8 @@ class TwoPassOutputJacobianSketch:
             "pass1_normal_sketch_sha256": self._pass1_normal_hash,
             "range_basis_sha256": _tensor_sha256(self._q),
             "random_control_sha256": _tensor_sha256(self._control),
-            "pass2_guided_core_sha256": _tensor_sha256(self._b),
-            "pass2_random_core_sha256": _tensor_sha256(self._random_b),
+            "pass2_guided_core_sha256": _tensor_sha256(b_cpu),
+            "pass2_random_core_sha256": _tensor_sha256(random_b_cpu),
             "guided_right_rows_sha256": _tensor_sha256(guided_rows),
             "random_right_rows_sha256": _tensor_sha256(random_rows),
             "pass1_block_identity_chain_sha256": (
