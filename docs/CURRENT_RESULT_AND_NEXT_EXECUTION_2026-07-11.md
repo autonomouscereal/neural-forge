@@ -47,6 +47,29 @@ The first target remains an exact `134,515,008`-parameter child (at least
 - Fold-only Qwen frontier: p35, `3,995,570,176` parameters.
 - Raw Qwen3-4B source: `4,022,468,096` parameters.
 
+## Current intelligence and coherence boundary
+
+The strongest aggressive exact-stage child is not coherent yet. At its
+selected lexical-attention state it matches `31/192` fresh candidate first
+actions (`16.15%`) and `27/192` candidate LCP tokens, with `0/24` exact
+eight-token rollouts and `0/24` prompts reaching `LCP >= 4`. This is measurable
+parent-derived lexical/phrase reflex, not sustained reasoning or useful chat.
+
+Two different frontiers must not be conflated with that result:
+
+- the recovery-assisted `134,515,008`-parameter child is coherent and useful on
+  its project suite: generation `200/200`, behavior `161/200`, choice `40/64`,
+  and code/tokenizer/commonsense/model-surgery `40/40` each, but math only
+  `1/40`; recovery-assisted usefulness does not prove donor-transfer causality;
+- the clean fold-only p35 attention child is highly coherent and close to the
+  parent on its gate: behavior `400/400`, choice `250/250`, strict generation
+  `372/388`; it removes only `26,897,920` parameters, about `0.67%` of the
+  source, so it is a real but mild compaction.
+
+The missing intersection is still: aggressive reduction, coherent free-running
+behavior, and attributable parent-derived function in one standalone artifact.
+The output-Jacobian-guided tranche below directly targets that boundary.
+
 ## Residual-attention findings
 
 ### Rejected approaches
@@ -414,24 +437,74 @@ rank but damaged LCP/repetition, which is consistent with locally useful
 directions outside the rollout-safe manifold. A direct output-Jacobian audit is
 required to test that inference before another training run.
 
+### Authenticated output-Jacobian audit result
+
+That preregistered diagnostic has now run against the real parent, exact
+`1,410,567,168`-parameter child, authenticated compiled-child cache, and
+selected v2 factor state. It passed decisively without an optimizer step,
+factor update, bake, or checkpoint publication.
+
+- preregistration:
+  `/mnt/ai_data/neural-forge/prereg/qwen_exact_target_native_stage1_step24_output_jacobian_audit_20260712`;
+- preregistration SHA-256:
+  `ee3fc282b25f28dc9c8452df9196f16b63cd7e19b1868e4c9e2e2dd4fed6718e`;
+- run:
+  `/mnt/ai_data/neural-forge/runs/qwen_exact_target_native_stage1_step24_output_jacobian_audit_20260712`;
+- run-report SHA-256:
+  `5f95a8db4b1e62574279a87e1497902cdd8221f004cd4826323985365f35d77c`;
+- terminal status/reason:
+  `diagnostic-passed` / `output-jacobian-audit-passed`;
+- aggregate normal-energy fraction: `0.7091664`, versus the preregistered
+  `0.20` gate;
+- aggregate guided/random capture ratio: `92.85442`, versus the
+  preregistered `1.5` gate;
+- guided-basis pack SHA-256:
+  `68d4ccf6b9a1cbac711cec15d8aedd6848b2fa087a3e62a20cbeb54c571916ad`;
+- guided-basis manifest SHA-256:
+  `b3bd1619aa226892d893dc3981097484201e3aa7231db7ab6c6f9cc44b3e6e8e`;
+- four role tensors, `4,915,200` FP32 values total: Q/K/V each
+  `[120, 8, 1536]`, O `[120, 8, 512]`.
+
+Every attention role independently passed: Q normal fraction `0.90957` and
+guided/random ratio `200.13`; K `0.80522` and `204.62`; V `0.62588` and
+`184.24`; O `0.82414` and `62.36`. All four roles are therefore authorized for
+the guided tranche. The randomized energy estimator can exceed one, so its
+`1.0405` aggregate guided-capture estimate is not described as a literal
+deterministic percentage.
+
+The execution replayed 263 blocks per pass and 63,120 wrapper callbacks,
+recomputed parent logits under `no_grad`, retained token paths rather than
+cached full-vocabulary logits, authenticated every D/X element through 16
+probabilistic lanes, and stayed below the 256 MiB auxiliary-memory cap. The
+probabilistic authenticator is explicitly not collision-free; its value is
+reproducible execution evidence, not a cryptographic tensor digest. Before and
+after native, factor, inherited-source, replay, and cache identities matched;
+hooks and gradients were removed; exact rollback returned to
+`39c57212e804280b67e9706fc2935a038c41c0f8491ab950af6b45f4a21a606e`.
+
+This validates the narrow hypothesis: most behavior-useful output-gradient
+energy at the selected state lies outside the inherited random Q/K/V/O row
+subspaces, and the output-guided directions are dramatically more informative
+than equal-rank random controls. It does not itself prove a coherent child;
+that requires the guided behavioral continuation below.
+
 ## Next ordered execution
 
 1. Reuse the same authenticated compiled-child cache and selected v2 factor
    state. Do not reconstruct the child or restart any learned factor from zero.
-2. Compute a fit-only output-loss Jacobian audit at the selected live state.
-   For each tested projection, remove the portions represented by the inherited
-   left-column and right-row spaces. Require substantial residual-normal energy
-   and compare an equal-rank guided basis against a deterministic random-basis
-   control.
-3. Proceed only if the preregistered diagnostic passes: aggregate attention
-   normal-energy fraction at least `0.20`, guided capture at least `1.5x` the
-   random control, no child mutation, and exact step-zero logits/rollouts.
-4. If it passes, freeze the authenticated selected factors and add a separate
+2. Consume the passed audit and basis pack by their exact hashes above. Reject
+   any report, tensor, manifest, source-state, cache, or topology mismatch.
+3. Freeze the authenticated selected factors and add a separate
    exact-zero residual tranche whose right/input directions are the leading
    output-Jacobian directions orthogonal to the inherited manifold. Keep the
    old and new products as separate multiplies so the inherited operation is
-   not numerically regrouped. Add roles only when their own diagnostic passes;
-   begin with Q/K/V/O because multi-token context is the remaining boundary.
+   not numerically regrouped. Install Q/K/V/O because each role passed its
+   independent authorization gate.
+4. Train the new guided left factors first while their authenticated right
+   bases remain frozen, then allow guided left/right refinement, then jointly
+   tune inherited and guided attention products at a lower inherited learning
+   rate. Keep Gate/Up/Down and lexical factors frozen during the initial guided
+   phases so the first result isolates the missing attention subspace.
 5. Use only fit data to construct the basis. Expand fit with the now-exposed
    24-prompt candidate, create a new prompt/prefix-disjoint 24-prompt candidate,
    and reuse the exact still-locked 32-prompt sealed split. Candidate and sealed
