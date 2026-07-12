@@ -57,14 +57,27 @@ parent-derived lexical/phrase reflex, not sustained reasoning or useful chat.
 
 Two different frontiers must not be conflated with that result:
 
-- the recovery-assisted `134,515,008`-parameter child is coherent and useful on
-  its project suite: generation `200/200`, behavior `161/200`, choice `40/64`,
-  and code/tokenizer/commonsense/model-surgery `40/40` each, but math only
-  `1/40`; recovery-assisted usefulness does not prove donor-transfer causality;
-- the clean fold-only p35 attention child is highly coherent and close to the
-  parent on its gate: behavior `400/400`, choice `250/250`, strict generation
-  `372/388`; it removes only `26,897,920` parameters, about `0.67%` of the
-  source, so it is a real but mild compaction.
+- the recovery-assisted `134,515,008`-parameter child is selectively coherent
+  on its narrow project suite: generation `200/200`, behavior `161/200`, choice
+  `40/64`, and code/tokenizer/commonsense/model-surgery `40/40` each, but math
+  only `1/40`. It can emit an executable two-argument Python add function and
+  sensible short pruning/tokenizer answers, but observed arithmetic includes
+  `6+4 -> 4`, `41*30 -> 1250`, and `35+27 -> 85`, and broader manual outputs
+  include off-topic continuations. Broader retests reached behavior/generation/
+  choice `803/1000`, `861/1000`, `150/250` for this checkpoint; another
+  recovered 134M lane reached `804/1000`, `926/1000`, `154/250`. Recovery
+  trained all child parameters, so usefulness does not prove donor-transfer
+  causality or reduced training requirement;
+- the clean fold-only p35 attention child is the strongest coherent result. It
+  retains useful raw-Qwen3-4B-base behavior including correct `41+30 -> 71`, an
+  executable Python add function, and coherent merge-risk/pruning/tokenizer
+  answers. Its broad totals are behavior `400/1000`, generation health
+  `633/1000`, and choice `250/250`; it retains `372/388` strict generations
+  that the parent passed. The often-cited `400/400` behavior number is a
+  parent-pass retention denominator, not broad accuracy. Some prompts still
+  produce zero loops, prompt echoes, or unrelated answers. It removes only
+  `26,897,920` parameters, about `0.67%` of the source, so it is genuine but
+  mild zero-recovery compaction.
 
 The missing intersection is still: aggressive reduction, coherent free-running
 behavior, and attributable parent-derived function in one standalone artifact.
