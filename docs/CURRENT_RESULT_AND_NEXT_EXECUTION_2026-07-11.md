@@ -182,25 +182,50 @@ The final child is SmolLM2/Llama style:
 - tied vocabulary `49,152`;
 - exact total `134,515,008` (`29.903489x`).
 
-The target bridge can install temporary target-sized Q/K/V/O residuals,
-require external held-out actions plus free rollouts, then bake into plain
-`nn.Linear` projections with unchanged state-key topology, exact count, and no
-adapter/parent/source-width sidecar. This proves publication structure, not
-useful behavior at the target sizes.
+The target bridge now installs one atomic temporary transaction containing
+target-sized Q/K/V/O plus role-complete Gate/Up/Down residuals. It freezes the
+native child, exposes only those factors to an output/free-rollout optimizer,
+requires external held-out actions plus free rollouts, and bakes all seven
+roles into plain `nn.Linear` projections. Rejection and partial-publication
+failure restore the exact pre-transaction child. Publication restores the
+original state keys and parameter count with no adapter, optimizer, parent, or
+source-width sidecar. This proves publication structure, not useful behavior.
+
+The first exact FP16 seed-0 stage target has now been materialized once in
+checkpoint staging. Its report proves:
+
+- vocabulary capacity `151,936`, tokenizer length `151,669`, reserved rows
+  `267`;
+- h1536/i5120/L30/Q16/KV4/d128, untied embeddings/head;
+- exact unique parameters `1,410,567,168`;
+- source-to-child ratio `2.851667x`;
+- `model.safetensors` SHA-256
+  `4147674b29180d75e8f5bb518b5fc69349d475bb5c8bd49a8f5e7e0ecf364a45`.
+
+It is still blank and staging-only. Fresh-reload certification and a behavior
+transaction are required before it is a result.
 
 ## Next ordered execution
 
-1. Finish audit of the authenticated broad-resume consumer.
-2. Run the one-site QKVO candidate against the preserved fresh P40 baseline's
-   dynamic decontaminated zero-loss subset.
-3. Only if step 2 passes, run the full broad candidate regression and then the
-   all-eight ragged attention experiment.
-4. Stop iterating on L1 width-64 MLP residuals. Next MLP work must change the
-   capacity/location operator (for example output-gradient-selected layers or
-   target-reserved multi-layer paths), not merely the selector.
-5. Compose promoted attention and MLP operators into the exact
-   `1.410B -> 600.628M -> 134.515M` native ladder, with a fresh held-out seal at
-   every algorithm-changing run.
+1. Fresh-reload and hash-certify the one exact `1,410,567,168` target; do not
+   generate another seed or reuse the three incorrect `1,409,746,944` targets.
+2. Compile the authenticated parent evidence into that target and record the
+   zero-recovery bootstrap baseline.
+3. Install all 120 target-local QKVO sites and all 30 Gate/Up/Down sites at
+   rank 8. The temporary factor total is `11,919,360`; the published delta is
+   zero after native bake.
+4. Optimize only parent causal output distributions/actions on fit plus
+   parent- and child-driven prefixes. Select on disjoint calibration actions
+   and free rollouts; open the sealed transaction gate once after lock.
+5. On rejection, retain only factor/report evidence and restore the child. On
+   acceptance, bake, save once, reload fresh, certify the exact native state,
+   and run broad parent-pass retention.
+6. Keep the p35 broad consumer as certification evidence for its already
+   selected factor pack; do not make it another prerequisite method-development
+   loop. Do not run the eight-site p34 or width-64 L1 branches ahead of the
+   exact-target transaction.
+7. If the first stage passes, repeat the promoted transaction at `600,628,224`
+   and then `134,515,008`, with a new sealed gate at every stage.
 
 ## Truth boundary
 

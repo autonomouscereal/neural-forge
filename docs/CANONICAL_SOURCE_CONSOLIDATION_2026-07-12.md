@@ -94,10 +94,17 @@ Before launching an experiment:
 5. Treat a new runner name as insufficient novelty. Its mechanism, target,
    training signal, and promotion gate must differ from closed experiments.
 
-The old copied directories can be retired only after the active commit and
-archive refs/tags have been pushed, the remote canonical checkout has been
-updated, and its source hash/test audit passes. Checkpoint staging and run
-artifact directories are outside this source-retirement action.
+That retirement is complete. The two adjacent local Git worktrees and eight
+remote source copies were removed only after their pushed archive tags were
+verified. Unique ignored research/media data moved inode-for-inode under
+`runs/legacy-projects`; remote run evidence moved under
+`runs/legacy-source-copies`. The local receipt SHA-256 is
+`26e3b8eb1242aeaee624e1eaaf8c61713b3ace6610f5b80205653551756b5f09` and
+the remote receipt SHA-256 is
+`eaa7d55e54b1eb1d4aad17b3f06bfeaf6f837598ada1813ee13d1032071ca268`.
+The selected residual-attention evidence remains available through the
+canonical run path, and its eight authentication tests pass after retirement.
+Checkpoint staging and model artifacts were outside the deletion set.
 
 ## Execution frontier after consolidation
 
