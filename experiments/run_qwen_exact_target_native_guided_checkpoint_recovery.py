@@ -52,6 +52,7 @@ EXPECTED_RUNTIME = {
     "dtype": "float16",
     "attention_implementation": "eager",
     "explicit_execute_required": True,
+    "cuda_device_order": "PCI_BUS_ID",
     "cuda_visible_devices": "4,6",
     "parent_device_map": "cuda:0",
     "target_device_map": "cuda:1",
@@ -782,6 +783,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args.output_root is None:
         raise SystemExit("--output-root is required with --execute.")
+    if os.environ.get("CUDA_DEVICE_ORDER") != EXPECTED_RUNTIME["cuda_device_order"]:
+        raise SystemExit("CUDA_DEVICE_ORDER must be exactly PCI_BUS_ID for recovery.")
     if os.environ.get("CUDA_VISIBLE_DEVICES") != EXPECTED_RUNTIME["cuda_visible_devices"]:
         raise SystemExit("CUDA_VISIBLE_DEVICES must be exactly 4,6 for recovery.")
     result = execute_authenticated_guided_checkpoint_recovery(
