@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import replace
+from types import MappingProxyType
 
 import pytest
 import torch
@@ -263,24 +264,30 @@ class _TinyGuidedTranche:
         self.guided_registry = registry
         self.training_stage = "guided-left"
         self._stages = ("guided-left", "guided", "joint")
-        self._source_binding = {
-            "audit_report_sha256": "1" * 64,
-            "basis_envelope_file_sha256": "2" * 64,
-            "basis_payload_sha256": "3" * 64,
-            "basis_manifest_sha256": "4" * 64,
-            "source_basis_tensor_sha256s": {
-                role: behavior_distillation._output_jacobian_tensor_sha256(
-                    getattr(registry, f"{role}_right")
-                )
-                for role in ("q", "k", "v", "o")
-            },
-            "inherited_installation_sha256": "5" * 64,
-            "inherited_factor_state_sha256_at_install": "6" * 64,
-            "inherited_handle_identity": id(transaction.qkvo_handle),
-            "inherited_registry_identity": id(transaction.qkvo_handle.adapter_registry),
-            "adapter_site_indices_sha256": "7" * 64,
-            "audit_site_indices_sha256": "8" * 64,
-        }
+        self._source_binding = MappingProxyType(
+            {
+                "audit_report_sha256": "1" * 64,
+                "basis_envelope_file_sha256": "2" * 64,
+                "basis_payload_sha256": "3" * 64,
+                "basis_manifest_sha256": "4" * 64,
+                "source_basis_tensor_sha256s": MappingProxyType(
+                    {
+                        role: behavior_distillation._output_jacobian_tensor_sha256(
+                            getattr(registry, f"{role}_right")
+                        )
+                        for role in ("q", "k", "v", "o")
+                    }
+                ),
+                "inherited_installation_sha256": "5" * 64,
+                "inherited_factor_state_sha256_at_install": "6" * 64,
+                "inherited_handle_identity": id(transaction.qkvo_handle),
+                "inherited_registry_identity": id(
+                    transaction.qkvo_handle.adapter_registry
+                ),
+                "adapter_site_indices_sha256": "7" * 64,
+                "audit_site_indices_sha256": "8" * 64,
+            }
+        )
 
     def assert_live(self):
         return None
@@ -964,6 +971,11 @@ def test_guided_v3_pack_resumes_exact_authenticated_step_zero(
         _zero_state,
         recovered_state,
     ) = _tiny_guided_v3_case(monkeypatch)
+    assert isinstance(tranche.factor_source_binding(), MappingProxyType)
+    assert isinstance(
+        tranche.factor_source_binding()["source_basis_tensor_sha256s"],
+        MappingProxyType,
+    )
     durable = []
     result = train_target_native_behavior_distillation(
         transaction,
