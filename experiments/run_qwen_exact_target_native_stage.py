@@ -3481,13 +3481,13 @@ class ProductionStageRuntime:
         before_key_sha = _canonical_sha256(list(before_keys))
         before_state_sha = _state_dict_sha256(torch, model)
         stage = default_qwen4b_progressive_target_plan().stages[0]
-        model.save_pretrained(
-            staging,
-            safe_serialization=True,
-            max_shard_size="10GB",
-        )
-        tokenizer.save_pretrained(staging)
         try:
+            model.save_pretrained(
+                staging,
+                safe_serialization=True,
+                max_shard_size="10GB",
+            )
+            tokenizer.save_pretrained(staging)
             reloaded = AutoModelForCausalLM.from_pretrained(
                 staging,
                 local_files_only=True,

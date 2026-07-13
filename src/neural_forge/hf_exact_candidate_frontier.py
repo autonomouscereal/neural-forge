@@ -32,8 +32,14 @@ RECORD_SCHEMA = "neural-forge-exact-candidate-record-v1"
 RUN_SCHEMA = "neural-forge-qwen-exact-target-native-stage-v1"
 PREREGISTRATION_SCHEMA = "neural-forge-qwen-exact-target-native-preregistration-v1"
 GUIDED_RUN_SCHEMA = "neural-forge-qwen-exact-target-native-guided-continuation-v1"
+GUIDED_WINNER_PUBLICATION_RUN_SCHEMA = (
+    "neural-forge-qwen-guided-winner-publication-v1"
+)
 GUIDED_PREREGISTRATION_SCHEMA = (
     "neural-forge-qwen-exact-target-native-guided-continuation-preregistration-v1"
+)
+GUIDED_WINNER_PUBLICATION_PREREGISTRATION_SCHEMA = (
+    "neural-forge-qwen-guided-winner-publication-preregistration-v1"
 )
 MAX_RETAINED_PER_CONTRACT = 3
 
@@ -1234,6 +1240,636 @@ class TerminalCandidate:
         )
 
 
+_WINNER_PUBLICATION_METHOD_CHECKS = {
+    "winner_is_post_step_zero",
+    "candidate_has_one_lcp_at_least_4_rollout",
+    "tournament_later_state_required_pareto_safety_vs_step_zero",
+}
+
+
+def _valid_winner_publication_method_decision(
+    value: Any,
+    *,
+    winner_step: int | None = None,
+    candidate_metrics: Mapping[str, Any] | None = None,
+) -> bool:
+    if not isinstance(value, Mapping) or set(value) != {
+        "passed",
+        "checks",
+        "winner_step",
+        "candidate_lcp_at_least_4_count",
+        "internal_numeric_matching_consulted",
+        "decision_sha256",
+    }:
+        return False
+    checks = value.get("checks")
+    decision_sha = value.get("decision_sha256")
+    valid = bool(
+        isinstance(checks, Mapping)
+        and set(checks) == _WINNER_PUBLICATION_METHOD_CHECKS
+        and all(checks.get(name) is True for name in _WINNER_PUBLICATION_METHOD_CHECKS)
+        and value.get("passed") is True
+        and value.get("internal_numeric_matching_consulted") is False
+        and _nonnegative_int(value.get("winner_step"), "winner_step") > 0
+        and _nonnegative_int(
+            value.get("candidate_lcp_at_least_4_count"),
+            "candidate_lcp_at_least_4_count",
+        )
+        > 0
+        and isinstance(decision_sha, str)
+        and decision_sha
+        == canonical_sha256(
+            {name: item for name, item in value.items() if name != "decision_sha256"}
+        )
+    )
+    if not valid:
+        return False
+    if winner_step is not None and value.get("winner_step") != winner_step:
+        return False
+    if candidate_metrics is not None:
+        try:
+            lcp_count = _nonnegative_int(
+                candidate_metrics.get("lcp_at_least_4_count"),
+                "candidate_metrics.lcp_at_least_4_count",
+            )
+        except ExactCandidateFrontierError:
+            return False
+        if value.get("candidate_lcp_at_least_4_count") != lcp_count:
+            return False
+    return True
+
+
+_BEHAVIOR_GATE_CHECKS = {
+    "minimum_action_count",
+    "minimum_action_accuracy",
+    "minimum_rollout_count",
+    "minimum_exact_rollout_fraction",
+    "minimum_token_match_fraction",
+    "minimum_lcp_fraction",
+    "maximum_repeat_fraction_excess",
+    "maximum_adjacent_repeat_fraction_excess",
+    "maximum_longest_run_excess",
+}
+
+
+def _valid_winner_publication_behavior_decision(
+    value: Any,
+    *,
+    expected_metrics: Mapping[str, Any] | None,
+    expected_thresholds: Mapping[str, Any],
+) -> bool:
+    if not isinstance(value, Mapping) or set(value) != {
+        "passed",
+        "checks",
+        "metrics",
+        "thresholds",
+        "selection_inputs",
+        "internal_numeric_matching_consulted",
+        "decision_sha256",
+    }:
+        return False
+    checks = value.get("checks")
+    metrics = value.get("metrics")
+    thresholds = value.get("thresholds")
+    if (
+        not isinstance(checks, Mapping)
+        or set(checks) != _BEHAVIOR_GATE_CHECKS
+        or not isinstance(metrics, Mapping)
+        or not isinstance(thresholds, Mapping)
+        or canonical_json(thresholds) != canonical_json(expected_thresholds)
+        or (
+            expected_metrics is not None
+            and canonical_json(metrics) != canonical_json(expected_metrics)
+        )
+        or value.get("internal_numeric_matching_consulted") is not False
+        or value.get("decision_sha256")
+        != canonical_sha256(
+            {name: item for name, item in value.items() if name != "decision_sha256"}
+        )
+    ):
+        return False
+    required_metric_names = {
+        "action_count",
+        "action_accuracy",
+        "rollout_count",
+        "exact_rollout_fraction",
+        "token_match_fraction",
+        "lcp_fraction",
+    }
+    threshold_names = set(_BEHAVIOR_GATE_CHECKS)
+    if not required_metric_names.issubset(metrics) or set(thresholds) != threshold_names:
+        return False
+    repetition_required = (
+        float(thresholds["maximum_repeat_fraction_excess"]) < 1.0
+        or float(thresholds["maximum_adjacent_repeat_fraction_excess"]) < 1.0
+        or int(thresholds["maximum_longest_run_excess"]) < 2_147_483_647
+    )
+    selection_inputs = set(required_metric_names)
+    if repetition_required:
+        selection_inputs.update(
+            {
+                "repeat_fraction_excess",
+                "adjacent_repeat_fraction_excess",
+                "longest_run_excess",
+            }
+        )
+    if value.get("selection_inputs") != sorted(selection_inputs):
+        return False
+    try:
+        expected_checks = {
+            "minimum_action_count": int(metrics["action_count"])
+            >= int(thresholds["minimum_action_count"]),
+            "minimum_action_accuracy": float(metrics["action_accuracy"])
+            >= float(thresholds["minimum_action_accuracy"]),
+            "minimum_rollout_count": int(metrics["rollout_count"])
+            >= int(thresholds["minimum_rollout_count"]),
+            "minimum_exact_rollout_fraction": float(
+                metrics["exact_rollout_fraction"]
+            )
+            >= float(thresholds["minimum_exact_rollout_fraction"]),
+            "minimum_token_match_fraction": float(metrics["token_match_fraction"])
+            >= float(thresholds["minimum_token_match_fraction"]),
+            "minimum_lcp_fraction": float(metrics["lcp_fraction"])
+            >= float(thresholds["minimum_lcp_fraction"]),
+            "maximum_repeat_fraction_excess": float(
+                metrics.get("repeat_fraction_excess", 0.0)
+            )
+            <= float(thresholds["maximum_repeat_fraction_excess"]),
+            "maximum_adjacent_repeat_fraction_excess": float(
+                metrics.get("adjacent_repeat_fraction_excess", 0.0)
+            )
+            <= float(thresholds["maximum_adjacent_repeat_fraction_excess"]),
+            "maximum_longest_run_excess": int(
+                metrics.get("longest_run_excess", 0)
+            )
+            <= int(thresholds["maximum_longest_run_excess"]),
+        }
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return False
+    return bool(
+        dict(checks) == expected_checks
+        and all(expected_checks.values())
+        and value.get("passed") is True
+    )
+
+
+def _winner_publication_source_thresholds(
+    preregistration: Mapping[str, Any], preregistration_path: Path
+) -> tuple[dict[str, Mapping[str, Any]], Path, str]:
+    source_guided = preregistration.get("source_guided")
+    if not isinstance(source_guided, Mapping):
+        raise ExactCandidateFrontierError(
+            "Winner publication source-guided binding is absent."
+        )
+    source_path = _resolve_binding(
+        preregistration_path.parent,
+        source_guided.get("preregistration"),
+        "source_guided.preregistration",
+    )
+    _assert_ordinary_file(source_path, "source guided preregistration")
+    source_sha = require_sha256(
+        source_guided.get("preregistration_sha256"),
+        "source_guided.preregistration_sha256",
+    )
+    source_payload = strict_json(source_path)
+    thresholds = source_payload.get("thresholds") if isinstance(source_payload, Mapping) else None
+    if (
+        file_sha256(source_path) != source_sha
+        or not isinstance(source_payload, Mapping)
+        or source_payload.get("evaluation_contract_sha256")
+        != source_guided.get("evaluation_contract_sha256")
+        or not isinstance(thresholds, Mapping)
+        or set(thresholds) != {"fit", "candidate", "sealed"}
+        or any(not isinstance(thresholds.get(name), Mapping) for name in thresholds)
+    ):
+        raise ExactCandidateFrontierError(
+            "Winner publication source-guided thresholds failed authentication."
+        )
+    return (
+        {name: dict(thresholds[name]) for name in ("fit", "candidate", "sealed")},
+        source_path,
+        source_sha,
+    )
+
+
+def _valid_retained_winner_publication_behavior(
+    report: Mapping[str, Any],
+    preregistration: Mapping[str, Any],
+    preregistration_path: Path,
+) -> bool:
+    try:
+        thresholds, _source_path, _source_sha = (
+            _winner_publication_source_thresholds(
+                preregistration,
+                preregistration_path,
+            )
+        )
+        winner = preregistration.get("winner")
+        pre = report.get("pre_bake_behavior_decisions")
+        post = report.get("post_bake_behavior_decisions")
+        if (
+            not isinstance(winner, Mapping)
+            or not isinstance(winner.get("metrics"), Mapping)
+            or not isinstance(pre, Mapping)
+            or not isinstance(post, Mapping)
+            or not isinstance(pre.get("candidate"), Mapping)
+            or not isinstance(pre.get("sealed"), Mapping)
+            or not isinstance(post.get("fit"), Mapping)
+            or not isinstance(post.get("candidate"), Mapping)
+        ):
+            return False
+        step = _nonnegative_int(winner.get("step"), "winner.step")
+        return bool(
+            step > 0
+            and pre.get("fit") is None
+            and post.get("sealed") is None
+            and report.get("pre_sealed_candidate_decision") == pre["candidate"]
+            and _valid_winner_publication_behavior_decision(
+                pre["candidate"],
+                expected_metrics=winner["metrics"],
+                expected_thresholds=thresholds["candidate"],
+            )
+            and _valid_winner_publication_behavior_decision(
+                pre["sealed"],
+                expected_metrics=None,
+                expected_thresholds=thresholds["sealed"],
+            )
+            and _valid_winner_publication_behavior_decision(
+                post["fit"],
+                expected_metrics=None,
+                expected_thresholds=thresholds["fit"],
+            )
+            and _valid_winner_publication_behavior_decision(
+                post["candidate"],
+                expected_metrics=None,
+                expected_thresholds=thresholds["candidate"],
+            )
+            and _valid_winner_publication_method_decision(
+                report.get("guided_method_decision"),
+                winner_step=step,
+                candidate_metrics=pre["candidate"]["metrics"],
+            )
+            and _valid_winner_publication_method_decision(
+                report.get("post_bake_guided_method_decision"),
+                winner_step=step,
+                candidate_metrics=post["candidate"]["metrics"],
+            )
+        )
+    except (ExactCandidateFrontierError, KeyError, TypeError, ValueError):
+        return False
+
+
+def _authenticate_guided_winner_publication_candidate(
+    root: Path,
+    report_path: Path,
+    report: Mapping[str, Any],
+    report_sha: str,
+    *,
+    expected_preregistration_sha256: str,
+    preregistration_authenticator: PreregistrationAuthenticator,
+    accepted_child_authenticator: AcceptedChildAuthenticator | None,
+) -> TerminalCandidate:
+    """Authenticate the one-shot-sealed winner schema without weakening legacy."""
+
+    if (
+        report.get("status") != "accepted"
+        or report.get("standalone_compaction_passed") is not True
+        or report.get("model_checkpoint_written") is not True
+        or report.get("rollback_exact") is not None
+        or report.get("sealed_forward_count") != 1
+        or report.get("sealed_marker_consumed") is not True
+        or report.get("post_bake_sealed_forward_count") != 0
+    ):
+        raise ExactCandidateFrontierError(
+            "Winner publication lacks terminal one-shot standalone evidence."
+        )
+    prereg_path = _resolve_binding(
+        report_path.parent,
+        report.get("preregistration"),
+        "run_report.preregistration",
+    )
+    _assert_ordinary_file(prereg_path, "winner publication preregistration")
+    prereg_sha = file_sha256(prereg_path)
+    if (
+        prereg_sha
+        != require_sha256(
+            expected_preregistration_sha256,
+            "expected_preregistration_sha256",
+        )
+        or prereg_sha
+        != require_sha256(
+            report.get("preregistration_sha256"),
+            "preregistration_sha256",
+        )
+    ):
+        raise ExactCandidateFrontierError(
+            "Winner publication preregistration external roots disagree."
+        )
+    preregistration = strict_json(prereg_path)
+    if (
+        not isinstance(preregistration, Mapping)
+        or preregistration.get("schema")
+        != GUIDED_WINNER_PUBLICATION_PREREGISTRATION_SCHEMA
+        or preregistration.get("model_free_preregistration") is not True
+        or preregistration.get("publication_authorized_before_sealed_pass")
+        is not False
+    ):
+        raise ExactCandidateFrontierError(
+            "Winner publication preregistration is not model-free/sealed."
+        )
+    authenticated = preregistration_authenticator(prereg_path, prereg_sha)
+    if not isinstance(authenticated, Mapping):
+        raise ExactCandidateFrontierError(
+            "Winner publication preregistration authenticator returned no mapping."
+        )
+    comparison = require_sha256(
+        report.get("semantic_contract_sha256"),
+        "semantic_contract_sha256",
+    )
+    if (
+        preregistration.get("semantic_contract_sha256") != comparison
+        or authenticated.get("semantic_contract_sha256") != comparison
+    ):
+        raise ExactCandidateFrontierError(
+            "Winner publication semantic contract failed authentication."
+        )
+    winner = preregistration.get("winner")
+    if not isinstance(winner, Mapping):
+        raise ExactCandidateFrontierError("Winner publication lost winner provenance.")
+    selected_step = _nonnegative_int(winner.get("step"), "winner.step")
+    if selected_step <= 0:
+        raise ExactCandidateFrontierError(
+            "Winner publication may not promote a step-zero baseline."
+        )
+    winner_metrics = winner.get("metrics")
+    if not isinstance(winner_metrics, Mapping):
+        raise ExactCandidateFrontierError(
+            "Winner publication preregistration lost candidate metrics."
+        )
+    thresholds, source_guided_path, source_guided_sha = (
+        _winner_publication_source_thresholds(preregistration, prereg_path)
+    )
+    selected_sha = require_sha256(
+        report.get("runtime_rebound_factor_state_sha256"),
+        "runtime_rebound_factor_state_sha256",
+    )
+    if (
+        report.get("winner_portable_factor_state_sha256")
+        != winner.get("portable_factor_state_sha256")
+    ):
+        raise ExactCandidateFrontierError(
+            "Winner publication factor provenance is invalid."
+        )
+    pre = report.get("pre_bake_behavior_decisions")
+    post = report.get("post_bake_behavior_decisions")
+    sealed = report.get("sealed_evaluation")
+    pre_method = report.get("guided_method_decision")
+    post_method = report.get("post_bake_guided_method_decision")
+    if (
+        not isinstance(pre, Mapping)
+        or pre.get("fit") is not None
+        or not isinstance(pre.get("candidate"), Mapping)
+        or not isinstance(pre.get("sealed"), Mapping)
+        or not isinstance(post, Mapping)
+        or not isinstance(post.get("fit"), Mapping)
+        or not isinstance(post.get("candidate"), Mapping)
+        or post.get("sealed") is not None
+        or not _valid_winner_publication_behavior_decision(
+            pre["candidate"],
+            expected_metrics=winner_metrics,
+            expected_thresholds=thresholds["candidate"],
+        )
+        or report.get("pre_sealed_candidate_decision") != pre["candidate"]
+        or not _valid_winner_publication_behavior_decision(
+            pre["sealed"],
+            expected_metrics=None,
+            expected_thresholds=thresholds["sealed"],
+        )
+        or not _valid_winner_publication_behavior_decision(
+            post["fit"],
+            expected_metrics=None,
+            expected_thresholds=thresholds["fit"],
+        )
+        or not _valid_winner_publication_behavior_decision(
+            post["candidate"],
+            expected_metrics=None,
+            expected_thresholds=thresholds["candidate"],
+        )
+        or not _valid_winner_publication_method_decision(
+            pre_method,
+            winner_step=selected_step,
+            candidate_metrics=pre["candidate"]["metrics"],
+        )
+        or not _valid_winner_publication_method_decision(
+            post_method,
+            winner_step=selected_step,
+            candidate_metrics=post["candidate"]["metrics"],
+        )
+        or not isinstance(sealed, Mapping)
+        or sealed.get("forward_count") != 1
+        or sealed.get("one_shot_marker_consumed") is not True
+        or sealed.get("post_bake_sealed_forward_count") != 0
+    ):
+        raise ExactCandidateFrontierError(
+            "Winner publication behavior gates violate one-shot sealed policy."
+        )
+    marker_receipt = sealed.get("marker_receipt")
+    if (
+        not isinstance(marker_receipt, Mapping)
+        or marker_receipt.get("exclusive_create_succeeded") is not True
+        or marker_receipt.get("sealed_forward_limit") != 1
+        or marker_receipt.get("preregistration_sha256") != prereg_sha
+        or marker_receipt.get("semantic_contract_sha256") != comparison
+    ):
+        raise ExactCandidateFrontierError(
+            "Winner publication sealed marker receipt is unauthenticated."
+        )
+    marker_path = _resolve_binding(
+        report_path.parent,
+        marker_receipt.get("marker"),
+        "sealed_evaluation.marker_receipt.marker",
+    )
+    if marker_path.parent != prereg_path.parent:
+        raise ExactCandidateFrontierError(
+            "Winner publication sealed marker escaped its preregistration root."
+        )
+    _assert_ordinary_file(marker_path, "winner publication sealed marker")
+    marker_sha = require_sha256(
+        marker_receipt.get("marker_file_sha256"),
+        "sealed_evaluation.marker_receipt.marker_file_sha256",
+    )
+    marker_payload = strict_json(marker_path)
+    if (
+        file_sha256(marker_path) != marker_sha
+        or not isinstance(marker_payload, Mapping)
+        or marker_payload.get("schema")
+        != "neural-forge-guided-sealed-consumption-v1"
+        or marker_payload.get("status") != "consumed-before-forward"
+        or marker_payload.get("preregistration_sha256") != prereg_sha
+        or marker_payload.get("semantic_contract_sha256") != comparison
+        or marker_payload.get("sealed_forward_limit") != 1
+        or any(
+            marker_payload.get(name) != marker_receipt.get(name)
+            for name in marker_payload
+        )
+    ):
+        raise ExactCandidateFrontierError(
+            "Winner publication sealed marker bytes no longer authenticate."
+        )
+    post_metrics = post["candidate"].get("metrics")
+    if not isinstance(post_metrics, Mapping):
+        raise ExactCandidateFrontierError(
+            "Winner publication post-bake candidate metrics are absent."
+        )
+    reload_gate = report.get("fresh_reload_guided_method_gate")
+    if (
+        not isinstance(reload_gate, Mapping)
+        or reload_gate.get("passed") is not True
+        or reload_gate.get("post_bake_decision_sha256")
+        != post_method.get("decision_sha256")
+        or reload_gate.get("state_bytes_match_pre_save") is not True
+        or reload_gate.get("candidate_behavior_certified_before_save") is not True
+        or reload_gate.get("serialized_bytes_equal_behavior_certified_bytes")
+        is not True
+        or reload_gate.get("internal_numeric_matching_consulted") is not False
+    ):
+        raise ExactCandidateFrontierError(
+            "Winner publication reload behavior certificate is incomplete."
+        )
+    certificate = report.get("fresh_reload_certificate")
+    independent_report = report.get("independent_reload_certificate")
+    required_true = (
+        "fresh_reload_performed",
+        "exact_budget_match",
+        "state_keys_match_pre_save",
+        "state_bytes_match_pre_save",
+    )
+    if not isinstance(certificate, Mapping) or any(
+        certificate.get(name) is not True for name in required_true
+    ):
+        raise ExactCandidateFrontierError(
+            "Winner publication lacks its fresh-reload certificate."
+        )
+    exact_parameters = _nonnegative_int(
+        certificate.get("exact_unique_parameters"),
+        "fresh_reload_certificate.exact_unique_parameters",
+    )
+    if (
+        exact_parameters <= 0
+        or certificate.get("published_adapter_parameter_count") != 0
+        or certificate.get("published_parent_runtime_reference_count") != 0
+        or certificate.get("published_source_sized_sidecar_parameter_count") != 0
+        or not isinstance(independent_report, Mapping)
+    ):
+        raise ExactCandidateFrontierError(
+            "Winner publication certificate is not exact and parent-free."
+        )
+    child_path = _resolve_binding(
+        report_path.parent,
+        certificate.get("path"),
+        "fresh_reload_certificate.path",
+    )
+    if child_path.parent != root or child_path.name != _CHILD_DIRECTORY:
+        raise ExactCandidateFrontierError(
+            "Winner publication child is not the canonical direct artifact."
+        )
+    _assert_ordinary_directory(child_path, "accepted child")
+    tree = artifact_tree(child_path)
+    declared_tree = certificate.get("artifact_tree")
+    if not isinstance(declared_tree, Mapping) or any(
+        declared_tree.get(name) != tree[name]
+        for name in ("file_count", "total_bytes", "tree_sha256")
+    ):
+        raise ExactCandidateFrontierError(
+            "Winner publication child tree differs from its certificate."
+        )
+    child_state_sha = require_sha256(
+        certificate.get("state_dict_sha256"),
+        "fresh_reload_certificate.state_dict_sha256",
+    )
+    if accepted_child_authenticator is None:
+        raise ExactCandidateFrontierError(
+            "Winner publication requires independent fresh-load authentication."
+        )
+    independent = accepted_child_authenticator(child_path, exact_parameters)
+    if not isinstance(independent, Mapping):
+        raise ExactCandidateFrontierError(
+            "Independent child authenticator returned a non-mapping."
+        )
+    independent_tree = independent.get("artifact_tree")
+    if (
+        canonical_json(independent) != canonical_json(independent_report)
+        or independent.get("fresh_reload_performed") is not True
+        or independent.get("loaded_from_candidate_path") is not True
+        or independent.get("exact_unique_parameters") != exact_parameters
+        or independent.get("state_dict_sha256") != child_state_sha
+        or independent.get("published_adapter_parameter_count") != 0
+        or independent.get("parent_runtime_reference_count") != 0
+        or independent.get("source_sized_sidecar_parameter_count") != 0
+        or not isinstance(independent_tree, Mapping)
+        or any(
+            independent_tree.get(name) != tree[name]
+            for name in ("file_count", "total_bytes", "tree_sha256")
+        )
+    ):
+        raise ExactCandidateFrontierError(
+            "Winner publication independent reload no longer verifies."
+        )
+    protected = {
+        f"source_run_{report_sha[:16]}": str(root),
+        f"source_child_{tree['tree_sha256'][:16]}": str(child_path),
+        f"source_report_{report_sha[:16]}": str(report_path),
+        f"source_prereg_{prereg_sha[:16]}": str(prereg_path),
+        f"source_guided_prereg_{source_guided_sha[:16]}": str(source_guided_path),
+        f"sealed_marker_{marker_sha[:16]}": str(marker_path),
+    }
+    source_guided = preregistration.get("source_guided")
+    target_contract = require_sha256(
+        source_guided.get("evaluation_contract_sha256")
+        if isinstance(source_guided, Mapping)
+        else None,
+        "source_guided.evaluation_contract_sha256",
+    )
+    return TerminalCandidate(
+        terminal_run_schema=GUIDED_WINNER_PUBLICATION_RUN_SCHEMA,
+        run_root=root,
+        run_report_path=report_path,
+        run_report_sha256=report_sha,
+        preregistration_path=prereg_path,
+        preregistration_sha256=prereg_sha,
+        comparison_contract_sha256=comparison,
+        target_contract_sha256=target_contract,
+        exact_unique_parameters=exact_parameters,
+        artifact_kind="accepted-standalone-child",
+        truth_label="accepted-standalone",
+        terminal_status="accepted",
+        terminal_reason=None,
+        candidate_metrics=dict(post_metrics),
+        # This schema's method gate is authenticated above, but its three
+        # tournament/publication checks are not the legacy guided rank contract.
+        # Keep frontier ordering purely output-behavior based.
+        dynamic_method_gate_decision=None,
+        rollout_first_rank_key=rollout_first_rank(post_metrics),
+        selected_step=selected_step,
+        selected_factor_state_sha256=selected_sha,
+        content_identity_sha256=child_state_sha,
+        source_artifact=child_path,
+        source_artifact_identity_sha256=str(tree["tree_sha256"]),
+        source_artifact_tree=tree,
+        fresh_reload_verified=True,
+        fresh_reload_certificate_sha256=canonical_sha256(
+            {
+                "run_certificate": dict(certificate),
+                "independent_authentication": dict(independent),
+            }
+        ),
+        independent_child_authentication=dict(independent),
+        standalone_compaction_passed=True,
+        deployment_accepted=True,
+        protected_roots=protected,
+    )
+
+
 def authenticate_terminal_candidate(
     run_root: Path | str,
     *,
@@ -1259,6 +1895,16 @@ def authenticate_terminal_candidate(
         )
     report = strict_json(report_path)
     run_schema = report.get("schema") if isinstance(report, Mapping) else None
+    if run_schema == GUIDED_WINNER_PUBLICATION_RUN_SCHEMA:
+        return _authenticate_guided_winner_publication_candidate(
+            root,
+            report_path,
+            report,
+            report_sha,
+            expected_preregistration_sha256=expected_preregistration_sha256,
+            preregistration_authenticator=preregistration_authenticator,
+            accepted_child_authenticator=accepted_child_authenticator,
+        )
     if run_schema not in {RUN_SCHEMA, GUIDED_RUN_SCHEMA}:
         raise ExactCandidateFrontierError("Unsupported terminal run report schema.")
     guided = run_schema == GUIDED_RUN_SCHEMA
@@ -2212,8 +2858,10 @@ class ExactCandidateFrontier:
                 "Retained report/preregistration evidence hashes do not verify."
             )
         copied_report = strict_json(report_copy)
+        copied_preregistration = strict_json(preregistration_copy)
         if (
             not isinstance(copied_report, Mapping)
+            or not isinstance(copied_preregistration, Mapping)
             or copied_report.get("evaluation_contract_sha256")
             != record["comparison_contract_sha256"]
         ):
@@ -2223,7 +2871,12 @@ class ExactCandidateFrontier:
         copied_schema = copied_report.get("schema")
         declared_schema = record.get("terminal_run_schema", copied_schema)
         if (
-            copied_schema not in {RUN_SCHEMA, GUIDED_RUN_SCHEMA}
+            copied_schema
+            not in {
+                RUN_SCHEMA,
+                GUIDED_RUN_SCHEMA,
+                GUIDED_WINNER_PUBLICATION_RUN_SCHEMA,
+            }
             or declared_schema != copied_schema
             or (
                 copied_schema == GUIDED_RUN_SCHEMA
@@ -2233,6 +2886,17 @@ class ExactCandidateFrontier:
                     else "guided_method_decision"
                 )
                 != method_decision
+            )
+            or (
+                copied_schema == GUIDED_WINNER_PUBLICATION_RUN_SCHEMA
+                and (
+                    method_decision is not None
+                    or not _valid_retained_winner_publication_behavior(
+                        copied_report,
+                        copied_preregistration,
+                        preregistration_copy,
+                    )
+                )
             )
             or (copied_schema == RUN_SCHEMA and method_decision is not None)
         ):
@@ -2758,6 +3422,8 @@ __all__ = [
     "FactorAuthenticator",
     "GUIDED_PREREGISTRATION_SCHEMA",
     "GUIDED_RUN_SCHEMA",
+    "GUIDED_WINNER_PUBLICATION_PREREGISTRATION_SCHEMA",
+    "GUIDED_WINNER_PUBLICATION_RUN_SCHEMA",
     "MAX_RETAINED_PER_CONTRACT",
     "MethodGateAuthenticator",
     "PreregistrationAuthenticator",
