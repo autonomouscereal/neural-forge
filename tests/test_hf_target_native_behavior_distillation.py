@@ -238,6 +238,181 @@ def _transaction(
     )
 
 
+class _TinyGuidedRegistry(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        for role_index, role in enumerate(("q", "k", "v", "o"), start=1):
+            setattr(
+                self,
+                f"{role}_left",
+                nn.Parameter(torch.zeros(3, dtype=torch.float32)),
+            )
+            setattr(
+                self,
+                f"{role}_right",
+                nn.Parameter(
+                    torch.tensor([0.125, -0.0625, 0.03125], dtype=torch.float32)
+                    * role_index
+                ),
+            )
+
+
+class _TinyGuidedTranche:
+    def __init__(self, transaction, registry: _TinyGuidedRegistry) -> None:
+        self.inherited_handle = transaction.qkvo_handle
+        self.guided_registry = registry
+        self.training_stage = "guided-left"
+        self._stages = ("guided-left", "guided", "joint")
+        self._source_binding = {
+            "audit_report_sha256": "1" * 64,
+            "basis_envelope_file_sha256": "2" * 64,
+            "basis_payload_sha256": "3" * 64,
+            "basis_manifest_sha256": "4" * 64,
+            "source_basis_tensor_sha256s": {
+                role: behavior_distillation._output_jacobian_tensor_sha256(
+                    getattr(registry, f"{role}_right")
+                )
+                for role in ("q", "k", "v", "o")
+            },
+            "inherited_installation_sha256": "5" * 64,
+            "inherited_factor_state_sha256_at_install": "6" * 64,
+            "inherited_handle_identity": id(transaction.qkvo_handle),
+            "inherited_registry_identity": id(transaction.qkvo_handle.adapter_registry),
+            "adapter_site_indices_sha256": "7" * 64,
+            "audit_site_indices_sha256": "8" * 64,
+        }
+
+    def assert_live(self):
+        return None
+
+    def assert_structurally_live(self):
+        return None
+
+    def factor_source_binding(self):
+        return self._source_binding
+
+    def set_training_stage(self, stage):
+        if self._stages.index(stage) < self._stages.index(self.training_stage):
+            raise RuntimeError("guided training stages cannot move backward")
+        self.training_stage = stage
+        inherited_trainable = stage == "joint"
+        for value in self.inherited_handle.adapter_registry.parameters(recurse=False):
+            value.requires_grad_(inherited_trainable)
+        guided_right_trainable = stage in {"guided", "joint"}
+        for name, value in self.guided_registry.named_parameters(recurse=False):
+            value.requires_grad_(name.endswith("_left") or guided_right_trainable)
+        return self.output_trainable_parameters()
+
+    def output_trainable_parameters(self):
+        inherited = tuple(
+            self.inherited_handle.adapter_registry.parameters(recurse=False)
+        )
+        guided = tuple(self.guided_registry.parameters(recurse=False))
+        if self.training_stage == "guided-left":
+            return tuple(
+                value
+                for name, value in self.guided_registry.named_parameters(recurse=False)
+                if name.endswith("_left")
+            )
+        if self.training_stage == "guided":
+            return guided
+        return (*inherited, *guided)
+
+
+def _tiny_guided_v3_case(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(behavior_distillation, "GUIDED_QKVO_PARAMETER_COUNT", 24)
+    monkeypatch.setattr(behavior_distillation, "GUIDED_CONTINUATION_STEPS", 1)
+    monkeypatch.setattr(behavior_distillation, "GUIDED_LEFT_ONLY_END_STEP", 0)
+    monkeypatch.setattr(behavior_distillation, "GUIDED_ONLY_END_STEP", 0)
+    monkeypatch.setattr(behavior_distillation, "GUIDED_JOINT_START_STEP", 1)
+
+    torch.manual_seed(176)
+    child = _StrictToyTarget()
+    parent = copy.deepcopy(child)
+    with torch.no_grad():
+        parent.lm_head.weight.copy_(torch.roll(parent.lm_head.weight, 2, dims=0))
+    transaction = _transaction(child, lexical_rank=2)
+    registry = _TinyGuidedRegistry()
+    child.add_module("_tiny_guided_registry", registry)
+    tranche = _TinyGuidedTranche(transaction, registry)
+    source_v2_state = capture_target_native_factor_state(transaction)
+    binding = behavior_distillation.authenticate_guided_factor_sources(
+        transaction,
+        tranche,
+        source_v2_state,
+    )
+    zero_state = capture_target_native_factor_state(
+        transaction,
+        guided_tranche=tranche,
+        guided_source_binding=binding,
+    )
+    recovered_tensors = tuple(
+        tensor + torch.full_like(tensor, (index + 1) * 1e-4)
+        for index, tensor in enumerate(zero_state.tensors)
+    )
+    recovered_hashes = tuple(
+        behavior_distillation._tensor_sha256(tensor) for tensor in recovered_tensors
+    )
+    recovered_rows = behavior_distillation._factor_manifest_rows(
+        zero_state.names,
+        recovered_tensors,
+        recovered_hashes,
+    )
+    recovered_state = replace(
+        zero_state,
+        tensors=recovered_tensors,
+        tensor_sha256s=recovered_hashes,
+        factor_state_sha256=behavior_distillation._factor_state_sha256(
+            recovered_rows,
+            schema=behavior_distillation.BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            lexical_rank=zero_state.lexical_rank,
+            guided_source_binding=binding,
+        ),
+    )
+
+    def add_guided_product(_module, _inputs, output):
+        correction = sum(
+            (
+                getattr(registry, f"{role}_left") * getattr(registry, f"{role}_right")
+            ).sum()
+            for role in ("q", "k", "v", "o")
+        )
+        channel = torch.linspace(
+            -1.0,
+            1.0,
+            output.shape[-1],
+            device=output.device,
+            dtype=output.dtype,
+        )
+        return output + correction.to(dtype=output.dtype) * channel
+
+    hook = child.register_forward_hook(add_guided_product)
+    domains = {
+        "fit": _domain("fit", [[1, 2, 3]], "a" * 64),
+        "calibration": _domain("calibration", [[4, 5, 6]], "b" * 64),
+        "sealed": _domain("sealed", [[7, 8, 9]], "c" * 64),
+    }
+    schedule = BehaviorDistillationSchedule(
+        steps=1,
+        learning_rate=0.01,
+        fit_horizon=1,
+        evaluation_horizon=1,
+        top_k=2,
+        guided_continuation_enabled=True,
+    )
+    return (
+        child,
+        parent,
+        transaction,
+        tranche,
+        hook,
+        domains,
+        schedule,
+        zero_state,
+        recovered_state,
+    )
+
+
 def _selection_metrics(
     *,
     exact_rollouts: int,
@@ -773,6 +948,232 @@ def test_v3_pack_authenticates_26_tensors_and_rejects_source_tamper() -> None:
             lexical_rank=3,
             expected_guided_source_binding=binding,
         )
+
+
+def test_guided_v3_pack_resumes_exact_authenticated_step_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        child,
+        parent,
+        transaction,
+        tranche,
+        hook,
+        domains,
+        schedule,
+        _zero_state,
+        recovered_state,
+    ) = _tiny_guided_v3_case(monkeypatch)
+    durable = []
+    result = train_target_native_behavior_distillation(
+        transaction,
+        parent,
+        domains,
+        schedule,
+        initial_factor_payload=recovered_state.as_payload(),
+        guided_tranche=tranche,
+        durable_checkpoint_callback=lambda event: durable.append(event),
+    )
+    assert result.initial_factor_state_sha256 == recovered_state.factor_state_sha256
+    assert (
+        result.initial_factor_payload_schema
+        == behavior_distillation.BEHAVIOR_FACTOR_PACK_V3_SCHEMA
+    )
+    assert result.initial_factor_restore_mode == "guided-v3-full"
+    assert durable[0].step == 0
+    assert (
+        durable[0].factor_state.factor_state_sha256
+        == recovered_state.factor_state_sha256
+    )
+    assert (
+        result.checkpoints[0].factor_state_sha256 == recovered_state.factor_state_sha256
+    )
+    hook.remove()
+    delattr(child, "_tiny_guided_registry")
+    transaction.rollback()
+
+
+def test_guided_v3_pack_rebinds_only_cross_process_installation_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        child,
+        parent,
+        transaction,
+        tranche,
+        hook,
+        domains,
+        schedule,
+        _zero_state,
+        recovered_state,
+    ) = _tiny_guided_v3_case(monkeypatch)
+    live_binding = recovered_state.guided_source_binding
+    assert isinstance(live_binding, behavior_distillation.GuidedFactorSourceBinding)
+    historical_binding_payload = live_binding.as_dict()
+    historical_binding_payload["inherited_installation_sha256"] = "9" * 64
+    historical_binding = behavior_distillation.GuidedFactorSourceBinding(
+        **historical_binding_payload
+    )
+    historical_state = replace(
+        recovered_state,
+        guided_source_binding=historical_binding,
+        factor_state_sha256=behavior_distillation._factor_state_sha256(
+            behavior_distillation._factor_manifest_rows(
+                recovered_state.names,
+                recovered_state.tensors,
+                recovered_state.tensor_sha256s,
+            ),
+            schema=behavior_distillation.BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            lexical_rank=recovered_state.lexical_rank,
+            guided_source_binding=historical_binding,
+        ),
+    )
+    durable = []
+    result = train_target_native_behavior_distillation(
+        transaction,
+        parent,
+        domains,
+        schedule,
+        initial_factor_payload=historical_state.as_payload(),
+        guided_tranche=tranche,
+        durable_checkpoint_callback=lambda event: durable.append(event),
+    )
+    assert historical_state.factor_state_sha256 != recovered_state.factor_state_sha256
+    assert result.initial_factor_state_sha256 == recovered_state.factor_state_sha256
+    assert durable[0].factor_state.factor_state_sha256 == (
+        recovered_state.factor_state_sha256
+    )
+    assert durable[0].factor_state.guided_source_binding == live_binding
+    hook.remove()
+    delattr(child, "_tiny_guided_registry")
+    transaction.rollback()
+
+
+@pytest.mark.parametrize("tamper", ["binding", "tensor", "foreign-tranche"])
+def test_guided_v3_tamper_fails_before_optimizer(
+    monkeypatch: pytest.MonkeyPatch,
+    tamper: str,
+) -> None:
+    (
+        child,
+        parent,
+        transaction,
+        tranche,
+        hook,
+        domains,
+        schedule,
+        zero_state,
+        recovered_state,
+    ) = _tiny_guided_v3_case(monkeypatch)
+    payload = copy.deepcopy(recovered_state.as_payload())
+    if tamper == "binding":
+        binding_payload = dict(payload["guided_source_binding"])
+        binding_payload["audit_report_sha256"] = "f" * 64
+        binding = behavior_distillation.GuidedFactorSourceBinding(**binding_payload)
+        payload["guided_source_binding"] = binding.as_dict()
+        payload["guided_source_binding_sha256"] = binding.binding_sha256
+        payload["factor_state_sha256"] = behavior_distillation._factor_state_sha256(
+            payload["factors"],
+            schema=behavior_distillation.BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            lexical_rank=recovered_state.lexical_rank,
+            guided_source_binding=binding,
+        )
+    elif tamper == "tensor":
+        payload["factor_tensors"][recovered_state.names[0]].reshape(-1)[0] += 1.0
+    else:
+        tranche.inherited_handle = object()
+
+    optimizer_calls = 0
+
+    def optimizer_factory(parameters):
+        nonlocal optimizer_calls
+        optimizer_calls += 1
+        return torch.optim.AdamW(parameters, lr=schedule.learning_rate)
+
+    with pytest.raises((TargetNativeBehaviorDistillationError, AttributeError)):
+        train_target_native_behavior_distillation(
+            transaction,
+            parent,
+            domains,
+            schedule,
+            initial_factor_payload=payload,
+            guided_tranche=tranche,
+            optimizer_factory=optimizer_factory,
+        )
+    assert optimizer_calls == 0
+    if tamper != "foreign-tranche":
+        assert (
+            capture_target_native_factor_state(
+                transaction,
+                guided_tranche=tranche,
+                guided_source_binding=zero_state.guided_source_binding,
+            ).factor_state_sha256
+            == zero_state.factor_state_sha256
+        )
+    hook.remove()
+    delattr(child, "_tiny_guided_registry")
+    transaction.rollback()
+
+
+def test_guided_v3_training_failure_restores_exact_recovered_step_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        child,
+        parent,
+        transaction,
+        tranche,
+        hook,
+        domains,
+        schedule,
+        _zero_state,
+        recovered_state,
+    ) = _tiny_guided_v3_case(monkeypatch)
+
+    def fail_after_step(step: int) -> None:
+        raise RuntimeError(f"stop after {step}")
+
+    with pytest.raises(RuntimeError, match="stop after 1"):
+        train_target_native_behavior_distillation(
+            transaction,
+            parent,
+            domains,
+            schedule,
+            initial_factor_payload=recovered_state.as_payload(),
+            guided_tranche=tranche,
+            post_optimizer_step_callback=fail_after_step,
+        )
+    assert (
+        capture_target_native_factor_state(
+            transaction,
+            guided_tranche=tranche,
+            guided_source_binding=recovered_state.guided_source_binding,
+        ).factor_state_sha256
+        == recovered_state.factor_state_sha256
+    )
+    hook.remove()
+    delattr(child, "_tiny_guided_registry")
+    transaction.rollback()
+
+
+def test_v2_toy_factor_pack_hash_and_restore_evidence_remain_legacy_exact() -> None:
+    torch.manual_seed(175)
+    child = _StrictToyTarget()
+    transaction = _transaction(child, lexical_rank=2)
+    historical = capture_target_native_factor_state(transaction)
+    assert historical.factor_state_sha256 == (
+        "cfda1512ec46a8b43c33821e66c5744a38c61c6387dd31f5e34ef8bf2d7d3530"
+    )
+    restored = behavior_distillation._restore_target_native_factor_payload(
+        transaction,
+        historical.as_payload(),
+    )
+    assert restored.source_factor_state_sha256 == historical.factor_state_sha256
+    assert (
+        restored.source_schema == behavior_distillation.BEHAVIOR_FACTOR_PACK_V2_SCHEMA
+    )
+    assert restored.restore_mode == "full"
+    transaction.rollback()
 
 
 def test_guided_source_authentication_binds_live_v2_and_exact_basis_bytes() -> None:

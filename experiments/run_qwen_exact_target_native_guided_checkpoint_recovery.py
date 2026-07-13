@@ -34,6 +34,9 @@ from neural_forge.hf_guided_checkpoint_recovery import (
     canonical_sha256,
     file_sha256,
 )
+from neural_forge.hf_target_native_behavior_distillation import (
+    GuidedFactorSourceBinding,
+)
 
 
 RECOVERY_PREREGISTRATION_SCHEMA = (
@@ -195,6 +198,35 @@ def _checkpoint_expectations(
     return tuple(values)
 
 
+def _historical_guided_source_binding(
+    evidence: Mapping[str, Any],
+) -> GuidedFactorSourceBinding:
+    raw = evidence.get("guided_source_binding")
+    if not isinstance(raw, Mapping):
+        raise GuidedCheckpointRecoveryRunError(
+            "Historical trainer evidence omits its guided source binding."
+        )
+    try:
+        binding = GuidedFactorSourceBinding(**dict(raw))
+    except (TypeError, ValueError, RuntimeError) as error:
+        raise GuidedCheckpointRecoveryRunError(
+            "Historical guided source binding failed trainer authentication."
+        ) from error
+    manifest = evidence.get("factor_pack_manifest")
+    if (
+        evidence.get("guided_source_binding_sha256") != binding.binding_sha256
+        or canonical_json_bytes(raw) != canonical_json_bytes(binding.as_dict())
+        or not isinstance(manifest, Mapping)
+        or canonical_json_bytes(manifest.get("guided_source_binding"))
+        != canonical_json_bytes(binding.as_dict())
+        or manifest.get("guided_source_binding_sha256") != binding.binding_sha256
+    ):
+        raise GuidedCheckpointRecoveryRunError(
+            "Historical guided source binding differs across trainer evidence."
+        )
+    return binding
+
+
 def build_recovery_preregistration_payload(
     *,
     current_guided_preregistration: Path,
@@ -220,7 +252,9 @@ def build_recovery_preregistration_payload(
         historical_guided_run_report_sha256,
         "historical_guided_run_report_sha256",
     )
-    current_raw = _bound_json(current_path, current_sha, "current guided preregistration")
+    current_raw = _bound_json(
+        current_path, current_sha, "current guided preregistration"
+    )
     current_build_path = current_path.with_name("build_report.json")
     if current_build_path.is_symlink() or not current_build_path.is_file():
         raise GuidedCheckpointRecoveryRunError(
@@ -288,7 +322,9 @@ def build_recovery_preregistration_payload(
         "candidate",
         "sealed",
     }:
-        raise GuidedCheckpointRecoveryRunError("Historical split bindings are malformed.")
+        raise GuidedCheckpointRecoveryRunError(
+            "Historical split bindings are malformed."
+        )
     split_semantics: dict[str, Any] = {}
     for name in ("fit", "candidate", "sealed"):
         row = historical_split_rows[name]
@@ -320,6 +356,7 @@ def build_recovery_preregistration_payload(
             "Historical trainer evidence failed canonical authentication."
         )
     expectations = _checkpoint_expectations(evidence, training)
+    historical_source_binding = _historical_guided_source_binding(evidence)
     if (
         historical_report.get("preregistration_sha256") != historical_prereg_sha
         or historical_report.get("status") != EXPECTED_HISTORICAL_STATUS
@@ -373,6 +410,8 @@ def build_recovery_preregistration_payload(
             "rollback_state_sha256": EXPECTED_ROLLBACK_STATE_SHA256,
             "training_audit": dict(evidence["training_audit"]),
             "checkpoint_rows": [dict(value) for value in evidence["checkpoints"]],
+            "guided_source_binding": historical_source_binding.as_dict(),
+            "guided_source_binding_sha256": historical_source_binding.binding_sha256,
         },
         "checkpoint_expectations": [value.as_dict() for value in expectations],
         "retained_steps": list(RETAINED_STEPS),
@@ -401,9 +440,7 @@ def build_recovery_preregistration_payload(
             "research_only_not_standalone": True,
         },
     }
-    payload["semantic_contract_sha256"] = canonical_sha256(
-        payload["semantic_contract"]
-    )
+    payload["semantic_contract_sha256"] = canonical_sha256(payload["semantic_contract"])
     payload["checkpoint_expectations_sha256"] = canonical_sha256(
         payload["checkpoint_expectations"]
     )
@@ -416,6 +453,7 @@ class AuthenticatedGuidedCheckpointRecovery:
     file_sha256: str
     current_contract: guided.AuthenticatedGuidedContinuation
     expectations: tuple[HistoricalCheckpointExpectation, ...]
+    historical_guided_source_binding: GuidedFactorSourceBinding
     retained_steps: tuple[int, ...]
     raw: Mapping[str, Any]
 
@@ -496,20 +534,22 @@ def authenticate_recovery_preregistration(
             "rollback_state_sha256",
             "training_audit",
             "checkpoint_rows",
+            "guided_source_binding",
+            "guided_source_binding_sha256",
         },
         "historical_guided",
     )
-    builder_path = Path(__file__).resolve().with_name(
-        "prepare_qwen_exact_target_native_guided_checkpoint_recovery.py"
+    builder_path = (
+        Path(__file__)
+        .resolve()
+        .with_name("prepare_qwen_exact_target_native_guided_checkpoint_recovery.py")
     )
     expected_payload, current = build_recovery_preregistration_payload(
         current_guided_preregistration=Path(str(current_row["preregistration"])),
         current_guided_preregistration_sha256=str(
             current_row["preregistration_sha256"]
         ),
-        historical_guided_preregistration=Path(
-            str(historical_row["preregistration"])
-        ),
+        historical_guided_preregistration=Path(str(historical_row["preregistration"])),
         historical_guided_preregistration_sha256=str(
             historical_row["preregistration_sha256"]
         ),
@@ -531,11 +571,26 @@ def authenticate_recovery_preregistration(
         )
         for value in raw["checkpoint_expectations"]
     )
+    historical_source_binding = _historical_guided_source_binding(
+        {
+            "guided_source_binding": historical_row["guided_source_binding"],
+            "guided_source_binding_sha256": historical_row[
+                "guided_source_binding_sha256"
+            ],
+            "factor_pack_manifest": {
+                "guided_source_binding": historical_row["guided_source_binding"],
+                "guided_source_binding_sha256": historical_row[
+                    "guided_source_binding_sha256"
+                ],
+            },
+        }
+    )
     return AuthenticatedGuidedCheckpointRecovery(
         path=source,
         file_sha256=expected_sha,
         current_contract=current,
         expectations=expectations,
+        historical_guided_source_binding=historical_source_binding,
         retained_steps=tuple(int(value) for value in raw["retained_steps"]),
         raw=raw,
     )
@@ -600,24 +655,40 @@ class RecoveryProductionGuidedRuntime(guided.ProductionGuidedRuntime):
 
 
 def _validate_terminal_report(
-    report: Mapping[str, Any], contract: AuthenticatedGuidedCheckpointRecovery
-) -> tuple[str, list[Mapping[str, Any]]]:
+    report: Mapping[str, Any],
+    contract: AuthenticatedGuidedCheckpointRecovery,
+    sink: GuidedCheckpointRecoverySink,
+) -> tuple[str, str, list[Mapping[str, Any]]]:
     historical = contract.raw["historical_guided"]
     evidence = report.get("trainer_evidence")
-    evidence_sha = report.get("trainer_evidence_sha256")
+    runtime_evidence_sha = report.get("trainer_evidence_sha256")
+    if not isinstance(evidence, Mapping) or not isinstance(runtime_evidence_sha, str):
+        raise GuidedCheckpointRecoveryRunError(
+            "Guided replay terminal evidence is absent."
+        )
+    if canonical_sha256(evidence) != runtime_evidence_sha:
+        raise GuidedCheckpointRecoveryRunError(
+            "Guided replay runtime trainer evidence failed self-authentication."
+        )
+    try:
+        normalized_evidence = sink.normalize_runtime_trainer_evidence(evidence)
+    except Exception as error:
+        raise GuidedCheckpointRecoveryRunError(
+            "Guided replay runtime identities could not be normalized."
+        ) from error
+    historical_evidence_sha = historical["trainer_evidence_sha256"]
     if (
-        not isinstance(evidence, Mapping)
-        or evidence_sha != historical["trainer_evidence_sha256"]
-        or canonical_sha256(evidence) != evidence_sha
-        or evidence.get("schedule_sha256") != historical["schedule_sha256"]
-        or evidence.get("domain_binding_sha256") != historical["domain_binding_sha256"]
-        or evidence.get("selected_step") != EXPECTED_HISTORICAL_SELECTED_STEP
-        or canonical_json_bytes(evidence.get("training_audit"))
+        canonical_sha256(normalized_evidence) != historical_evidence_sha
+        or normalized_evidence.get("schedule_sha256") != historical["schedule_sha256"]
+        or normalized_evidence.get("domain_binding_sha256")
+        != historical["domain_binding_sha256"]
+        or normalized_evidence.get("selected_step") != EXPECTED_HISTORICAL_SELECTED_STEP
+        or canonical_json_bytes(normalized_evidence.get("training_audit"))
         != canonical_json_bytes(historical["training_audit"])
-        or canonical_json_bytes(evidence.get("checkpoints"))
+        or canonical_json_bytes(normalized_evidence.get("checkpoints"))
         != canonical_json_bytes(historical["checkpoint_rows"])
-        or evidence.get("sealed_metrics") is not None
-        or evidence.get("sealed_evaluation_unlocked") is not False
+        or normalized_evidence.get("sealed_metrics") is not None
+        or normalized_evidence.get("sealed_evaluation_unlocked") is not False
         or report.get("status") != EXPECTED_HISTORICAL_STATUS
         or report.get("reason") != EXPECTED_HISTORICAL_REASON
         or report.get("rollback_exact") is not True
@@ -632,7 +703,11 @@ def _validate_terminal_report(
         raise GuidedCheckpointRecoveryRunError(
             "Guided replay unexpectedly accessed sealed evaluation."
         )
-    return str(evidence_sha), list(evidence["checkpoints"])
+    return (
+        str(historical_evidence_sha),
+        str(runtime_evidence_sha),
+        list(normalized_evidence["checkpoints"]),
+    )
 
 
 def execute_authenticated_guided_checkpoint_recovery(
@@ -647,7 +722,9 @@ def execute_authenticated_guided_checkpoint_recovery(
     parent_device_map: str = "cuda:0",
     target_device_map: str = "cuda:1",
 ) -> dict[str, Any]:
-    refreshed = authenticate_recovery_preregistration(contract.path, contract.file_sha256)
+    refreshed = authenticate_recovery_preregistration(
+        contract.path, contract.file_sha256
+    )
     if canonical_json_bytes(refreshed.raw) != canonical_json_bytes(contract.raw):
         raise GuidedCheckpointRecoveryRunError(
             "Recovery sources changed immediately before execution."
@@ -679,6 +756,7 @@ def execute_authenticated_guided_checkpoint_recovery(
         source_run_report_sha256=(
             refreshed.current_contract.artifacts.source_run_report_sha256
         ),
+        historical_guided_source_binding=(refreshed.historical_guided_source_binding),
     )
     report: dict[str, Any] = {
         **refreshed.preflight_report(),
@@ -702,11 +780,12 @@ def execute_authenticated_guided_checkpoint_recovery(
                 runtime=runtime,
             )
         )
-        evidence_sha, checkpoint_rows = _validate_terminal_report(
-            guided_report, refreshed
+        evidence_sha, runtime_evidence_sha, checkpoint_rows = _validate_terminal_report(
+            guided_report, refreshed, sink
         )
         publication = sink.finalize(
             trainer_evidence_sha256=evidence_sha,
+            runtime_trainer_evidence_sha256=runtime_evidence_sha,
             terminal_checkpoint_rows=checkpoint_rows,
         )
         publication_complete = True
@@ -727,6 +806,19 @@ def execute_authenticated_guided_checkpoint_recovery(
         stage._atomic_json(output / "run_report.json", report)
         return report
     except BaseException as error:
+        failure_diagnostic = sink.failure_diagnostic
+        failure_diagnostic_path = output / "recovery_failure_diagnostic.json"
+        if failure_diagnostic is not None:
+            try:
+                stage._atomic_json(
+                    failure_diagnostic_path,
+                    dict(failure_diagnostic),
+                )
+            except BaseException as diagnostic_error:
+                error.add_note(
+                    "Recovery failure diagnostic persistence also failed: "
+                    f"{diagnostic_error!r}"
+                )
         sink.cleanup()
         if publication_complete and research_output.exists():
             if (
@@ -749,6 +841,19 @@ def execute_authenticated_guided_checkpoint_recovery(
             "error": str(error),
             "research_tree_published": False,
             "sink_state": sink.state,
+            "recovery_failure_diagnostic": (
+                None if failure_diagnostic is None else dict(failure_diagnostic)
+            ),
+            "recovery_failure_diagnostic_path": (
+                str(failure_diagnostic_path)
+                if failure_diagnostic_path.is_file()
+                else None
+            ),
+            "recovery_failure_diagnostic_file_sha256": (
+                file_sha256(failure_diagnostic_path)
+                if failure_diagnostic_path.is_file()
+                else None
+            ),
         }
         try:
             stage._atomic_json(output / "run_report.json", failure)
@@ -785,7 +890,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise SystemExit("--output-root is required with --execute.")
     if os.environ.get("CUDA_DEVICE_ORDER") != EXPECTED_RUNTIME["cuda_device_order"]:
         raise SystemExit("CUDA_DEVICE_ORDER must be exactly PCI_BUS_ID for recovery.")
-    if os.environ.get("CUDA_VISIBLE_DEVICES") != EXPECTED_RUNTIME["cuda_visible_devices"]:
+    if (
+        os.environ.get("CUDA_VISIBLE_DEVICES")
+        != EXPECTED_RUNTIME["cuda_visible_devices"]
+    ):
         raise SystemExit("CUDA_VISIBLE_DEVICES must be exactly 4,6 for recovery.")
     result = execute_authenticated_guided_checkpoint_recovery(
         contract,

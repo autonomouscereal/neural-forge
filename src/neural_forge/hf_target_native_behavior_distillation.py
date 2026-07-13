@@ -55,9 +55,7 @@ BEHAVIOR_FACTOR_PACK_SCHEMA = "neural-forge-target-native-factor-pack-v1"
 BEHAVIOR_FACTOR_PACK_V2_SCHEMA = "neural-forge-target-native-factor-pack-v2"
 BEHAVIOR_FACTOR_PACK_V3_SCHEMA = "neural-forge-target-native-factor-pack-v3"
 BEHAVIOR_CHECKPOINT_SCHEMA = "neural-forge-behavior-checkpoint-v1"
-DURABLE_BEHAVIOR_CHECKPOINT_SCHEMA = (
-    "neural-forge-durable-behavior-checkpoint-v1"
-)
+DURABLE_BEHAVIOR_CHECKPOINT_SCHEMA = "neural-forge-durable-behavior-checkpoint-v1"
 
 GUIDED_QKVO_PARAMETER_COUNT = 7_127_040
 GUIDED_QKVO_FACTOR_TENSOR_COUNT = 8
@@ -2014,6 +2012,185 @@ def restore_target_native_factor_payload(
     ).combined_state
 
 
+def _authenticate_retained_guided_source_snapshots(
+    *,
+    source_v2_state: TargetNativeFactorState,
+    basis_snapshots: Sequence[tuple[str, Tensor, str]],
+    expected_binding: GuidedFactorSourceBinding,
+    guided_tranche: Any,
+    source_accessor_sha256: str,
+) -> None:
+    """Reauthenticate pre-restore v2/basis clones after a full v3 restore."""
+
+    rows = _factor_manifest_rows(
+        source_v2_state.names,
+        source_v2_state.tensors,
+        source_v2_state.tensor_sha256s,
+    )
+    if (
+        source_v2_state.schema != BEHAVIOR_FACTOR_PACK_V2_SCHEMA
+        or any(
+            _tensor_sha256(tensor) != digest
+            for tensor, digest in zip(
+                source_v2_state.tensors,
+                source_v2_state.tensor_sha256s,
+                strict=True,
+            )
+        )
+        or _factor_state_sha256(
+            rows,
+            schema=BEHAVIOR_FACTOR_PACK_V2_SCHEMA,
+            lexical_rank=source_v2_state.lexical_rank,
+        )
+        != expected_binding.source_v2_factor_state_sha256
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Retained inherited v2 source bytes changed during v3 restoration."
+        )
+    expected_basis_hashes = dict(expected_binding.source_basis_tensor_sha256s)
+    if {role for role, _tensor, _digest in basis_snapshots} != set(
+        expected_basis_hashes
+    ) or any(
+        digest != expected_basis_hashes[role]
+        or _output_jacobian_tensor_sha256(tensor) != digest
+        for role, tensor, digest in basis_snapshots
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Retained guided audit-basis bytes changed during v3 restoration."
+        )
+    source_accessor = getattr(guided_tranche, "factor_source_binding", None)
+    if not callable(source_accessor) or _canonical_sha256(source_accessor()) != _sha256(
+        source_accessor_sha256, "source_accessor_sha256"
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Guided source accessor changed during v3 restoration."
+        )
+
+
+def _restore_guided_v3_initial_factor_payload(
+    transaction: ExactTargetCompilerTransaction,
+    guided_tranche: Any,
+    payload: Mapping[str, Any],
+) -> tuple[_FactorPayloadRestore, GuidedFactorSourceBinding]:
+    """Authenticate zero-installed sources, then restore one complete v3 pack."""
+
+    source_v2_state = capture_target_native_factor_state(transaction)
+    expected_binding = authenticate_guided_factor_sources(
+        transaction,
+        guided_tranche,
+        source_v2_state,
+    )
+    zero_state = capture_target_native_factor_state(
+        transaction,
+        guided_tranche=guided_tranche,
+        guided_source_binding=expected_binding,
+    )
+    entries = dict(_factor_parameters(transaction, guided_tranche=guided_tranche))
+    expected_basis_hashes = dict(expected_binding.source_basis_tensor_sha256s)
+    basis_snapshots = tuple(
+        (
+            role,
+            entries[f"guided_qkvo.{role}_right"].detach().cpu().contiguous().clone(),
+            expected_basis_hashes[role],
+        )
+        for role in ("q", "k", "v", "o")
+    )
+    source_accessor = getattr(guided_tranche, "factor_source_binding")
+    source_accessor_sha256 = _canonical_sha256(source_accessor())
+    try:
+        # A recovered full pack may contain trained inherited and right-guided
+        # factors.  The installed tranche only permits those bytes once its
+        # monotonic runtime state has reached ``joint``.  Authenticate the
+        # payload while the zero installation is still guarded, then advance
+        # the runtime immediately before the existing full restore path.
+        origin_state = _authenticate_factor_payload_state(
+            payload,
+            tuple(entries.items()),
+            schema=BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            lexical_rank=_lexical_rank(transaction),
+        )
+        origin_binding = origin_state.guided_source_binding
+        if not isinstance(origin_binding, GuidedFactorSourceBinding):
+            raise TargetNativeBehaviorDistillationError(
+                "Persisted v3 pack has no authenticated origin binding."
+            )
+        origin_portable = origin_binding.as_dict()
+        runtime_portable = expected_binding.as_dict()
+        origin_portable.pop("inherited_installation_sha256")
+        runtime_portable.pop("inherited_installation_sha256")
+        if origin_portable != runtime_portable:
+            raise TargetNativeBehaviorDistillationError(
+                "Persisted v3 guided source binding disagrees with the "
+                "preregistered sources outside its runtime installation receipt."
+            )
+        runtime_payload = dict(payload)
+        runtime_payload["guided_source_binding"] = expected_binding.as_dict()
+        runtime_payload["guided_source_binding_sha256"] = (
+            expected_binding.binding_sha256
+        )
+        runtime_payload["factor_state_sha256"] = _factor_state_sha256(
+            payload["factors"],
+            schema=BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            lexical_rank=_lexical_rank(transaction),
+            guided_source_binding=expected_binding,
+        )
+        _authenticate_factor_payload_state(
+            runtime_payload,
+            tuple(entries.items()),
+            schema=BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            lexical_rank=_lexical_rank(transaction),
+            expected_guided_source_binding=expected_binding,
+        )
+        set_training_stage = getattr(guided_tranche, "set_training_stage", None)
+        if not callable(set_training_stage):
+            raise TargetNativeBehaviorDistillationError(
+                "guided_tranche does not expose its authenticated training-stage "
+                "transition."
+            )
+        set_training_stage("joint")
+        restored = _restore_target_native_factor_payload(
+            transaction,
+            runtime_payload,
+            guided_tranche=guided_tranche,
+            expected_guided_source_binding=expected_binding,
+        )
+        if (
+            restored.source_schema != BEHAVIOR_FACTOR_PACK_V3_SCHEMA
+            or restored.restore_mode != "guided-v3-full"
+            or restored.combined_state.factor_state_sha256
+            != _sha256(
+                runtime_payload.get("factor_state_sha256"),
+                "runtime factor_state_sha256",
+            )
+            or restored.combined_state.guided_source_binding != expected_binding
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                "Guided v3 initial factor restore did not recover its exact step zero."
+            )
+        _authenticate_retained_guided_source_snapshots(
+            source_v2_state=source_v2_state,
+            basis_snapshots=basis_snapshots,
+            expected_binding=expected_binding,
+            guided_tranche=guided_tranche,
+            source_accessor_sha256=source_accessor_sha256,
+        )
+        return restored, expected_binding
+    except BaseException as error:
+        try:
+            restore_target_native_factor_state(
+                transaction,
+                zero_state,
+                guided_tranche=guided_tranche,
+            )
+        except Exception as restore_error:
+            error.add_note(
+                "Exact zero-installed guided restoration also failed: "
+                f"{restore_error!r}"
+            )
+            raise error from restore_error
+        raise
+
+
 @dataclass(frozen=True, slots=True)
 class GradientActivationAudit:
     factor_names: tuple[str, ...]
@@ -2450,9 +2627,7 @@ def _durable_behavior_checkpoint(
                 shape=tuple(detached.shape),
                 dtype=str(detached.dtype),
                 tensor_sha256=digest,
-                raw_bytes=(
-                    detached.reshape(-1).view(torch.uint8).numpy().tobytes()
-                ),
+                raw_bytes=(detached.reshape(-1).view(torch.uint8).numpy().tobytes()),
             )
         )
     return DurableBehaviorCheckpoint(
@@ -3017,9 +3192,7 @@ def _normalize_domains(
 ) -> Mapping[str, BehaviorDomainSuite]:
     sealed_enabled = sealed_evaluation_policy == "candidate-gated"
     expected_roles = (
-        ("fit", "calibration", "sealed")
-        if sealed_enabled
-        else ("fit", "calibration")
+        ("fit", "calibration", "sealed") if sealed_enabled else ("fit", "calibration")
     )
     if isinstance(domains, Mapping):
         values = dict(domains)
@@ -3601,13 +3774,15 @@ def train_target_native_behavior_distillation(
             raise TargetNativeBehaviorDistillationError(
                 "A guided continuation must use exactly 64 optimizer steps."
             )
-        if (
-            not isinstance(initial_factor_payload, Mapping)
-            or initial_factor_payload.get("schema") != BEHAVIOR_FACTOR_PACK_V2_SCHEMA
-        ):
+        if not isinstance(
+            initial_factor_payload, Mapping
+        ) or initial_factor_payload.get("schema") not in {
+            BEHAVIOR_FACTOR_PACK_V2_SCHEMA,
+            BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+        }:
             raise TargetNativeBehaviorDistillationError(
                 "A guided continuation must begin from one authenticated complete "
-                "v2 factor payload."
+                "v2 or v3 factor payload."
             )
     threshold = candidate_thresholds or CandidateBehaviorThresholds()
     if not isinstance(threshold, CandidateBehaviorThresholds):
@@ -3666,9 +3841,21 @@ def train_target_native_behavior_distillation(
     restored_initial_state: TargetNativeFactorState | None = None
     guided_source_binding: GuidedFactorSourceBinding | None = None
     if initial_factor_payload is not None:
-        restore_result = _restore_target_native_factor_payload(
-            transaction, initial_factor_payload
-        )
+        if (
+            guided_continuation
+            and initial_factor_payload.get("schema") == BEHAVIOR_FACTOR_PACK_V3_SCHEMA
+        ):
+            restore_result, guided_source_binding = (
+                _restore_guided_v3_initial_factor_payload(
+                    transaction,
+                    guided_tranche,
+                    initial_factor_payload,
+                )
+            )
+        else:
+            restore_result = _restore_target_native_factor_payload(
+                transaction, initial_factor_payload
+            )
         initial_factor_state_sha256 = restore_result.source_factor_state_sha256
         initial_factor_payload_schema = restore_result.source_schema
         initial_factor_restore_mode = restore_result.restore_mode
@@ -3679,7 +3866,7 @@ def train_target_native_behavior_distillation(
             restore_result.lexical_initialization_unchanged
         )
         restored_initial_state = restore_result.combined_state
-        if guided_continuation:
+        if guided_continuation and guided_source_binding is None:
             guided_source_binding = authenticate_guided_factor_sources(
                 transaction,
                 guided_tranche,
@@ -3732,6 +3919,15 @@ def train_target_native_behavior_distillation(
             raise TargetNativeBehaviorDistillationError(
                 "The inherited v2 tensor subset changed while the guided product "
                 "was installed."
+            )
+        if (
+            initial_factor_payload_schema == BEHAVIOR_FACTOR_PACK_V3_SCHEMA
+            and step0_state.factor_state_sha256
+            != restored_initial_state.factor_state_sha256
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                "Combined guided step zero differs from the authenticated restored "
+                "v3 continuation."
             )
     step0_metrics = evaluate_behavior_domain(
         parent_model,
@@ -3883,7 +4079,13 @@ def train_target_native_behavior_distillation(
                 optimizer.zero_grad(set_to_none=True)
                 if guided_continuation:
                     stage = _guided_training_stage(step)
-                    guided_tranche.set_training_stage(stage)
+                    runtime_stage = (
+                        "joint"
+                        if initial_factor_payload_schema
+                        == BEHAVIOR_FACTOR_PACK_V3_SCHEMA
+                        else stage
+                    )
+                    guided_tranche.set_training_stage(runtime_stage)
                     authorized_names = _authorized_factor_names(
                         factor_entries,
                         schedule,
@@ -4243,10 +4445,7 @@ def train_target_native_behavior_distillation(
             guided_candidate_gate is None or guided_candidate_gate.passed
         )
         sealed_metrics = None
-        if (
-            candidate_passed
-            and schedule.sealed_evaluation_policy == "candidate-gated"
-        ):
+        if candidate_passed and schedule.sealed_evaluation_policy == "candidate-gated":
             if sealed is None:
                 raise TargetNativeBehaviorDistillationError(
                     "Candidate-gated sealed evaluation requires a sealed suite."
@@ -4291,8 +4490,7 @@ def train_target_native_behavior_distillation(
         candidate_thresholds=threshold,
         candidate_gate_passed=candidate_passed,
         sealed_evaluation_unlocked=(
-            candidate_passed
-            and schedule.sealed_evaluation_policy == "candidate-gated"
+            candidate_passed and schedule.sealed_evaluation_policy == "candidate-gated"
         ),
         training_audit=training_audit,
         factor_pack=factor_pack,

@@ -214,6 +214,13 @@ def _split(name: str, marker: int) -> stage.SplitBinding:
 
 def _historical_evidence(events) -> dict[str, object]:
     training = _training()
+    binding = _binding()
+    factor_payload = events[0].factor_state.as_factor_payload()
+    factor_manifest = {
+        name: value
+        for name, value in factor_payload.items()
+        if name != "factor_tensors"
+    }
     return {
         "schedule_sha256": sink_module.canonical_sha256(training),
         "domain_binding_sha256": _digest("domain"),
@@ -224,6 +231,12 @@ def _historical_evidence(events) -> dict[str, object]:
         "sealed_evaluation_unlocked": False,
         "candidate_gate_passed": False,
         "internal_numeric_matching_used": False,
+        "guided_source_binding": binding.as_dict(),
+        "guided_source_binding_sha256": binding.binding_sha256,
+        "combined_step0_factor_state_sha256": (
+            events[0].factor_state.factor_state_sha256
+        ),
+        "factor_pack_manifest": factor_manifest,
     }
 
 
@@ -424,6 +437,8 @@ def _authenticated_contract(tmp_path: Path, events):
             "domain_binding_sha256": evidence["domain_binding_sha256"],
             "training_audit": evidence["training_audit"],
             "checkpoint_rows": evidence["checkpoints"],
+            "guided_source_binding": _binding().as_dict(),
+            "guided_source_binding_sha256": _binding().binding_sha256,
         },
         "current_guided": {},
         "execution_runtime": recovery.EXPECTED_RUNTIME,
@@ -438,6 +453,7 @@ def _authenticated_contract(tmp_path: Path, events):
             artifacts=SimpleNamespace(source_run_report_sha256=_digest("source-run"))
         ),
         expectations=expectations,
+        historical_guided_source_binding=_binding(),
         retained_steps=(40, 56, 64),
         raw=raw,
     )
@@ -463,7 +479,9 @@ def _guided_report(events, contract, *, reason="fit-gate-rejected", sealed=None)
     }
 
 
-def _fake_executor(events, *, missing_step=None, reason="fit-gate-rejected", sealed=None):
+def _fake_executor(
+    events, *, missing_step=None, reason="fit-gate-rejected", sealed=None
+):
     def execute(contract, output, *, runtime):
         output.mkdir(parents=True)
         for event in events:
@@ -541,6 +559,47 @@ def test_missing_checkpoint_or_terminal_mismatch_prevents_publication(
         )
     assert not (output / "recovered_research").exists()
     assert json.loads((output / "run_report.json").read_text())["status"] == "failed"
+
+
+def test_wrapper_persists_sink_diagnostic_before_owned_staging_cleanup(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    events = _events()
+    contract = _authenticated_contract(tmp_path, events)
+    monkeypatch.setattr(
+        recovery, "authenticate_recovery_preregistration", lambda *_args: contract
+    )
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "4,6")
+    diagnostic = {
+        "schema": "fixture-observed-vs-expected-v1",
+        "observed_runtime_factor_state_sha256": _digest("observed"),
+        "expected_factor_state_sha256": _digest("expected"),
+    }
+    diagnostic["diagnostic_sha256"] = sink_module.canonical_sha256(diagnostic)
+
+    def fail_with_diagnostic(_contract, _output, *, runtime):
+        runtime.recovery_sink._failure_diagnostic = dict(diagnostic)
+        runtime.recovery_sink._state = "failed"
+        raise RuntimeError("authenticated fixture failure")
+
+    output = tmp_path / "diagnostic-run"
+    with pytest.raises(RuntimeError, match="authenticated fixture failure"):
+        recovery.execute_authenticated_guided_checkpoint_recovery(
+            contract,
+            output,
+            runtime_factory=_runtime_factory,
+            guided_executor=fail_with_diagnostic,
+        )
+    diagnostic_path = output / "recovery_failure_diagnostic.json"
+    assert json.loads(diagnostic_path.read_text(encoding="utf-8")) == diagnostic
+    failure = json.loads((output / "run_report.json").read_text(encoding="utf-8"))
+    assert failure["recovery_failure_diagnostic"] == diagnostic
+    assert failure["recovery_failure_diagnostic_file_sha256"] == (
+        sink_module.file_sha256(diagnostic_path)
+    )
+    assert failure["sink_state"] == "failed"
+    assert not (output / "recovered_research").exists()
 
 
 def test_runtime_copies_exact_schedule_and_wires_callback(monkeypatch) -> None:

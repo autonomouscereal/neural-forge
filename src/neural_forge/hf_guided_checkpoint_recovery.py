@@ -47,6 +47,9 @@ GUIDED_CHECKPOINT_CANDIDATE_SCHEMA = (
 GUIDED_CHECKPOINT_RESEARCH_MANIFEST_SCHEMA = (
     "neural-forge-guided-checkpoint-research-manifest-v1"
 )
+GUIDED_CHECKPOINT_PORTABLE_FACTOR_IDENTITY_SCHEMA = (
+    "neural-forge-guided-checkpoint-portable-factor-identity-v1"
+)
 
 _FACTOR_PACK_FILENAME = "factor_pack.pt"
 _CANDIDATE_RECORD_FILENAME = "candidate_record.json"
@@ -109,6 +112,7 @@ _V3_FACTOR_PAYLOAD_FIELDS = {
     "guided_product_regrouped",
     "factor_tensors",
 }
+_RUNTIME_SOURCE_BINDING_FIELDS = frozenset({"inherited_installation_sha256"})
 
 
 class GuidedCheckpointRecoveryError(RuntimeError):
@@ -205,6 +209,106 @@ def _tensor_sha256(value: Tensor) -> str:
     for start in range(0, int(flat.numel()), 1 << 20):
         digest.update(memoryview(flat[start : start + (1 << 20)].numpy()))
     return digest.hexdigest()
+
+
+def _source_binding(value: Any, name: str) -> GuidedFactorSourceBinding:
+    if isinstance(value, GuidedFactorSourceBinding):
+        return value
+    if not isinstance(value, Mapping):
+        raise GuidedCheckpointRecoveryAuthenticationError(
+            f"{name} must be a complete guided source binding."
+        )
+    try:
+        return GuidedFactorSourceBinding(**dict(value))
+    except (TypeError, ValueError, RuntimeError) as error:
+        raise GuidedCheckpointRecoveryAuthenticationError(
+            f"{name} failed trainer authentication."
+        ) from error
+
+
+def portable_guided_source_binding(
+    binding: GuidedFactorSourceBinding,
+) -> dict[str, Any]:
+    """Return content provenance without the process-local installation receipt.
+
+    ``inherited_installation_sha256`` authenticates a *live installation* and
+    includes process-local tensor ownership state.  Every content-bearing input
+    to that installation remains bound here; only the runtime receipt itself is
+    intentionally kept outside portable checkpoint identity.
+    """
+
+    value = _source_binding(binding, "guided source binding")
+    payload = value.as_dict()
+    for name in _RUNTIME_SOURCE_BINDING_FIELDS:
+        payload.pop(name)
+    return payload
+
+
+def portable_guided_source_binding_sha256(
+    binding: GuidedFactorSourceBinding,
+) -> str:
+    return canonical_sha256(
+        {
+            "schema": GUIDED_CHECKPOINT_PORTABLE_FACTOR_IDENTITY_SCHEMA,
+            "portable_guided_source_binding": portable_guided_source_binding(binding),
+            "runtime_fields_excluded": sorted(_RUNTIME_SOURCE_BINDING_FIELDS),
+        }
+    )
+
+
+def _legacy_v3_factor_state_sha256(
+    payload: Mapping[str, Any],
+    binding: GuidedFactorSourceBinding,
+) -> str:
+    """Reproduce the trainer's legacy v3 digest for exact historical evidence."""
+
+    return canonical_sha256(
+        {
+            "schema": BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            "lexical_rank": payload.get("lexical_rank"),
+            "factors": payload.get("factors"),
+            "guided_source_binding": binding.as_dict(),
+            "guided_source_binding_sha256": binding.binding_sha256,
+            "inherited_product_regrouped": False,
+            "guided_product_regrouped": False,
+        }
+    )
+
+
+def portable_v3_factor_state_sha256(
+    payload: Mapping[str, Any],
+    binding: GuidedFactorSourceBinding | None = None,
+) -> str:
+    """Content address for a v3 state that is stable across live processes."""
+
+    source = _source_binding(
+        payload.get("guided_source_binding") if binding is None else binding,
+        "portable factor source binding",
+    )
+    return canonical_sha256(
+        {
+            "schema": GUIDED_CHECKPOINT_PORTABLE_FACTOR_IDENTITY_SCHEMA,
+            "legacy_factor_pack_schema": BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            "lexical_rank": payload.get("lexical_rank"),
+            "factors": payload.get("factors"),
+            "portable_guided_source_binding_sha256": (
+                portable_guided_source_binding_sha256(source)
+            ),
+            "inherited_product_regrouped": False,
+            "guided_product_regrouped": False,
+        }
+    )
+
+
+def _rebind_v3_factor_payload(
+    payload: Mapping[str, Any],
+    binding: GuidedFactorSourceBinding,
+) -> dict[str, Any]:
+    rebound = dict(payload)
+    rebound["guided_source_binding"] = binding.as_dict()
+    rebound["guided_source_binding_sha256"] = binding.binding_sha256
+    rebound["factor_state_sha256"] = _legacy_v3_factor_state_sha256(rebound, binding)
+    return rebound
 
 
 def _write_all(handle: Any, payload: bytes) -> None:
@@ -385,6 +489,11 @@ class _ObservedCheckpoint:
     metrics_sha256: str
     metrics_report_sha256: str
     factor_state_sha256: str
+    runtime_factor_state_sha256: str
+    legacy_rebound_factor_state_sha256: str
+    portable_factor_state_sha256: str
+    runtime_guided_source_binding_sha256: str
+    runtime_inherited_installation_sha256: str
     durable_checkpoint_sha256: str
     historical_checkpoint_sha256: str | None
     expectation_sha256: str
@@ -399,6 +508,17 @@ class _ObservedCheckpoint:
             "metrics_sha256": self.metrics_sha256,
             "metrics_report_sha256": self.metrics_report_sha256,
             "factor_state_sha256": self.factor_state_sha256,
+            "runtime_factor_state_sha256": self.runtime_factor_state_sha256,
+            "legacy_rebound_factor_state_sha256": (
+                self.legacy_rebound_factor_state_sha256
+            ),
+            "portable_factor_state_sha256": self.portable_factor_state_sha256,
+            "runtime_guided_source_binding_sha256": (
+                self.runtime_guided_source_binding_sha256
+            ),
+            "runtime_inherited_installation_sha256": (
+                self.runtime_inherited_installation_sha256
+            ),
             "durable_checkpoint_sha256": self.durable_checkpoint_sha256,
             "historical_checkpoint_sha256": self.historical_checkpoint_sha256,
             "durable_checkpoint_sha256_historically_prebound": (
@@ -423,6 +543,7 @@ class GuidedCheckpointRecoverySink:
         recovery_preregistration_sha256: str,
         recovery_report_sha256: str,
         source_run_report_sha256: str,
+        historical_guided_source_binding: GuidedFactorSourceBinding,
     ) -> None:
         values = tuple(expectations)
         if not values or any(
@@ -472,10 +593,18 @@ class GuidedCheckpointRecoverySink:
         self.source_run_report_sha256 = _sha256(
             source_run_report_sha256, "source_run_report_sha256"
         )
+        self.historical_guided_source_binding = _source_binding(
+            historical_guided_source_binding,
+            "historical guided source binding",
+        )
+        self.portable_guided_source_binding_sha256 = (
+            portable_guided_source_binding_sha256(self.historical_guided_source_binding)
+        )
         self._expectation_by_step = {value.step: value for value in values}
         self._observed: list[_ObservedCheckpoint] = []
         self._observed_steps: set[int] = set()
         self._retained_step_to_factor: dict[int, str] = {}
+        self._failure_diagnostic: dict[str, Any] | None = None
         self._state: Literal["collecting", "finalized", "failed", "cleaned"] = (
             "collecting"
         )
@@ -499,6 +628,14 @@ class GuidedCheckpointRecoverySink:
         """Expose the current owned root for monitoring, never for cleanup input."""
 
         return self._staging_root
+
+    @property
+    def failure_diagnostic(self) -> Mapping[str, Any] | None:
+        """Return immutable observed-vs-expected evidence captured before cleanup."""
+
+        if self._failure_diagnostic is None:
+            return None
+        return MappingProxyType(dict(self._failure_diagnostic))
 
     def _assert_collecting(self) -> None:
         if self._state != "collecting":
@@ -680,10 +817,6 @@ class GuidedCheckpointRecoverySink:
             event.factor_state.factor_state_sha256,
             "event.factor_state_sha256",
         )
-        if factor_sha != expectation.factor_state_sha256:
-            raise GuidedCheckpointRecoveryAuthenticationError(
-                "Durable callback factor-state SHA differs from historical evidence."
-            )
         try:
             factor_payload = event.factor_state.as_factor_payload()
         except Exception as error:
@@ -694,6 +827,71 @@ class GuidedCheckpointRecoverySink:
             factor_payload,
             expected_factor_state_sha256=factor_sha,
         )
+        runtime_binding = _source_binding(
+            factor_payload.get("guided_source_binding"),
+            "runtime guided source binding",
+        )
+        portable_binding_matches = canonical_json_bytes(
+            portable_guided_source_binding(runtime_binding)
+        ) == canonical_json_bytes(
+            portable_guided_source_binding(self.historical_guided_source_binding)
+        )
+        legacy_rebound_payload = _rebind_v3_factor_payload(
+            factor_payload,
+            self.historical_guided_source_binding,
+        )
+        legacy_rebound_sha = _sha256(
+            legacy_rebound_payload["factor_state_sha256"],
+            "legacy rebound factor state",
+        )
+        portable_factor_sha = portable_v3_factor_state_sha256(
+            factor_payload,
+            runtime_binding,
+        )
+        if not portable_binding_matches or (
+            legacy_rebound_sha != expectation.factor_state_sha256
+        ):
+            self._failure_diagnostic = {
+                "schema": "neural-forge-guided-checkpoint-recovery-failure-v1",
+                "step": expectation.step,
+                "failure": "historical-factor-state-mismatch",
+                "expected_factor_state_sha256": expectation.factor_state_sha256,
+                "observed_runtime_factor_state_sha256": factor_sha,
+                "observed_legacy_rebound_factor_state_sha256": legacy_rebound_sha,
+                "observed_portable_factor_state_sha256": portable_factor_sha,
+                "portable_source_binding_matches": portable_binding_matches,
+                "historical_guided_source_binding_sha256": (
+                    self.historical_guided_source_binding.binding_sha256
+                ),
+                "runtime_guided_source_binding_sha256": (
+                    runtime_binding.binding_sha256
+                ),
+                "historical_inherited_installation_sha256": (
+                    self.historical_guided_source_binding.inherited_installation_sha256
+                ),
+                "runtime_inherited_installation_sha256": (
+                    runtime_binding.inherited_installation_sha256
+                ),
+                "portable_guided_source_binding_sha256": (
+                    self.portable_guided_source_binding_sha256
+                ),
+                "runtime_only_binding_fields": sorted(_RUNTIME_SOURCE_BINDING_FIELDS),
+            }
+            self._failure_diagnostic["diagnostic_sha256"] = canonical_sha256(
+                self._failure_diagnostic
+            )
+            raise GuidedCheckpointRecoveryAuthenticationError(
+                "Durable callback tensors do not reproduce the historical legacy "
+                "factor-state SHA under its authenticated source binding."
+            )
+        # Store the recovered bytes in their authenticated historical hash
+        # domain; retain the current installation receipt only as runtime
+        # evidence on the observed callback.
+        factor_payload = legacy_rebound_payload
+        factor_manifest, factor_manifest_sha = self._validate_v3_factor_payload(
+            factor_payload,
+            expected_factor_state_sha256=expectation.factor_state_sha256,
+        )
         if not isinstance(event.pareto_safe_vs_step0, bool):
             raise GuidedCheckpointRecoveryAuthenticationError(
                 "Durable callback Pareto safety flag is not boolean."
@@ -703,7 +901,14 @@ class GuidedCheckpointRecoverySink:
             metrics=MappingProxyType(dict(metrics)),
             metrics_sha256=metrics_sha,
             metrics_report_sha256=report_sha,
-            factor_state_sha256=factor_sha,
+            factor_state_sha256=expectation.factor_state_sha256,
+            runtime_factor_state_sha256=factor_sha,
+            legacy_rebound_factor_state_sha256=legacy_rebound_sha,
+            portable_factor_state_sha256=portable_factor_sha,
+            runtime_guided_source_binding_sha256=runtime_binding.binding_sha256,
+            runtime_inherited_installation_sha256=(
+                runtime_binding.inherited_installation_sha256
+            ),
             durable_checkpoint_sha256=durable_checkpoint_sha,
             historical_checkpoint_sha256=(expectation.expected_checkpoint_sha256),
             expectation_sha256=expectation.expectation_sha256,
@@ -722,6 +927,7 @@ class GuidedCheckpointRecoverySink:
         self,
         *,
         factor_state_sha256: str,
+        portable_factor_state_sha256: str,
         factor_manifest_sha256: str,
         factor_pack_file_sha256: str,
         factor_pack_size_bytes: int,
@@ -733,6 +939,13 @@ class GuidedCheckpointRecoverySink:
             "recovery_report_sha256": self.recovery_report_sha256,
             "source_run_report_sha256": self.source_run_report_sha256,
             "factor_state_sha256": factor_state_sha256,
+            "portable_factor_state_sha256": portable_factor_state_sha256,
+            "portable_guided_source_binding_sha256": (
+                self.portable_guided_source_binding_sha256
+            ),
+            "runtime_identity_excluded_from_portable_content": sorted(
+                _RUNTIME_SOURCE_BINDING_FIELDS
+            ),
             "factor_pack_relative_path": _FACTOR_PACK_FILENAME,
             "factor_pack_manifest_sha256": factor_manifest_sha256,
             "factor_pack_file_sha256": factor_pack_file_sha256,
@@ -783,6 +996,8 @@ class GuidedCheckpointRecoverySink:
                 )
             if (
                 record.get("factor_state_sha256") != factor_sha
+                or record.get("portable_factor_state_sha256")
+                != observed.portable_factor_state_sha256
                 or record.get("factor_pack_manifest_sha256") != factor_manifest_sha256
                 or record.get("factor_pack_file_sha256") != file_sha256(pack_path)
                 or record.get("factor_pack_size_bytes") != pack_path.stat().st_size
@@ -804,6 +1019,7 @@ class GuidedCheckpointRecoverySink:
                 )
             updated = self._candidate_record(
                 factor_state_sha256=factor_sha,
+                portable_factor_state_sha256=(observed.portable_factor_state_sha256),
                 factor_manifest_sha256=factor_manifest_sha256,
                 factor_pack_file_sha256=str(record["factor_pack_file_sha256"]),
                 factor_pack_size_bytes=int(record["factor_pack_size_bytes"]),
@@ -844,6 +1060,7 @@ class GuidedCheckpointRecoverySink:
             pack_file_sha = file_sha256(pack_path)
             record = self._candidate_record(
                 factor_state_sha256=factor_sha,
+                portable_factor_state_sha256=(observed.portable_factor_state_sha256),
                 factor_manifest_sha256=factor_manifest_sha256,
                 factor_pack_file_sha256=pack_file_sha,
                 factor_pack_size_bytes=pack_path.stat().st_size,
@@ -913,13 +1130,18 @@ class GuidedCheckpointRecoverySink:
                     f"Terminal checkpoint row {index} has an unsupported schema."
                 )
             value = dict(row)
+            runtime_factor_sha = value.get("factor_state_sha256")
             if (
                 value.get("schema") != BEHAVIOR_CHECKPOINT_SCHEMA
                 or value.get("step") != observed.step
                 or canonical_json_bytes(value.get("metrics"))
                 != canonical_json_bytes(dict(observed.metrics))
                 or canonical_sha256(value.get("metrics")) != observed.metrics_sha256
-                or value.get("factor_state_sha256") != observed.factor_state_sha256
+                or runtime_factor_sha
+                not in {
+                    observed.factor_state_sha256,
+                    observed.runtime_factor_state_sha256,
+                }
                 or value.get("pareto_safe_vs_step0")
                 is not observed.pareto_safe_vs_step0
                 or not isinstance(value.get("pareto_frontier"), bool)
@@ -931,9 +1153,116 @@ class GuidedCheckpointRecoverySink:
                 raise GuidedCheckpointRecoveryAuthenticationError(
                     f"Terminal checkpoint row {index} differs from its callback."
                 )
+            value["factor_state_sha256"] = observed.factor_state_sha256
             canonical_json_bytes(value)
             canonical_rows.append(value)
         return canonical_rows, canonical_sha256(canonical_rows)
+
+    def normalize_runtime_trainer_evidence(
+        self,
+        evidence: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Translate only runtime-bound v3 identities to the historical domain.
+
+        All checkpoint tensor bytes were already authenticated by callbacks.
+        This method therefore changes no metric, tensor manifest row, schedule,
+        or training audit; it only substitutes the authenticated historical
+        binding and the legacy digests reconstructed from that binding.
+        """
+
+        if not isinstance(evidence, Mapping):
+            raise GuidedCheckpointRecoveryAuthenticationError(
+                "Runtime trainer evidence must be a mapping."
+            )
+        expected_steps = tuple(value.step for value in self.expectations)
+        if tuple(value.step for value in self._observed) != expected_steps:
+            raise GuidedCheckpointRecoveryOrderError(
+                "Runtime trainer evidence cannot normalize before all callbacks."
+            )
+        try:
+            normalized = json.loads(canonical_json_bytes(dict(evidence)))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise GuidedCheckpointRecoveryAuthenticationError(
+                "Runtime trainer evidence could not be cloned canonically."
+            ) from error
+        runtime_binding = _source_binding(
+            normalized.get("guided_source_binding"),
+            "runtime trainer guided source binding",
+        )
+        observed_binding_shas = {
+            value.runtime_guided_source_binding_sha256 for value in self._observed
+        }
+        if (
+            observed_binding_shas != {runtime_binding.binding_sha256}
+            or canonical_json_bytes(portable_guided_source_binding(runtime_binding))
+            != canonical_json_bytes(
+                portable_guided_source_binding(self.historical_guided_source_binding)
+            )
+            or normalized.get("guided_source_binding_sha256")
+            != runtime_binding.binding_sha256
+        ):
+            raise GuidedCheckpointRecoveryAuthenticationError(
+                "Runtime trainer source binding differs from callback provenance."
+            )
+        terminal_rows, _terminal_sha = self._authenticate_terminal_rows(
+            normalized.get("checkpoints")
+        )
+        normalized["checkpoints"] = terminal_rows
+
+        step0 = self._observed[0]
+        if normalized.get("combined_step0_factor_state_sha256") not in {
+            step0.factor_state_sha256,
+            step0.runtime_factor_state_sha256,
+        }:
+            raise GuidedCheckpointRecoveryAuthenticationError(
+                "Runtime trainer step-zero identity differs from its callback."
+            )
+        normalized["combined_step0_factor_state_sha256"] = step0.factor_state_sha256
+
+        selected_step = _step(normalized.get("selected_step"), "selected step")
+        selected = next(
+            (value for value in self._observed if value.step == selected_step),
+            None,
+        )
+        factor_manifest = normalized.get("factor_pack_manifest")
+        if selected is None or not isinstance(factor_manifest, Mapping):
+            raise GuidedCheckpointRecoveryAuthenticationError(
+                "Runtime trainer selected factor manifest is absent."
+            )
+        manifest_binding = _source_binding(
+            factor_manifest.get("guided_source_binding"),
+            "runtime selected factor binding",
+        )
+        if (
+            manifest_binding != runtime_binding
+            or factor_manifest.get("guided_source_binding_sha256")
+            != runtime_binding.binding_sha256
+            or factor_manifest.get("factor_state_sha256")
+            not in {
+                selected.factor_state_sha256,
+                selected.runtime_factor_state_sha256,
+            }
+        ):
+            raise GuidedCheckpointRecoveryAuthenticationError(
+                "Runtime selected factor manifest differs from callback provenance."
+            )
+        rebound_manifest = _rebind_v3_factor_payload(
+            factor_manifest,
+            self.historical_guided_source_binding,
+        )
+        if rebound_manifest["factor_state_sha256"] != selected.factor_state_sha256:
+            raise GuidedCheckpointRecoveryAuthenticationError(
+                "Runtime selected tensor manifest does not reproduce its historical "
+                "legacy identity."
+            )
+        normalized["factor_pack_manifest"] = rebound_manifest
+        normalized["guided_source_binding"] = (
+            self.historical_guided_source_binding.as_dict()
+        )
+        normalized["guided_source_binding_sha256"] = (
+            self.historical_guided_source_binding.binding_sha256
+        )
+        return normalized
 
     def _retained_artifact_rows(self) -> list[dict[str, Any]]:
         expected_factors = {
@@ -983,6 +1312,7 @@ class GuidedCheckpointRecoverySink:
             )
             if (
                 record.get("factor_state_sha256") != factor_sha
+                or not isinstance(record.get("portable_factor_state_sha256"), str)
                 or record.get("retained_steps") != list(steps)
                 or record.get("event_count") != len(steps)
                 or record.get("factor_pack_file_sha256") != file_sha256(pack_path)
@@ -994,6 +1324,9 @@ class GuidedCheckpointRecoverySink:
             rows.append(
                 {
                     "factor_state_sha256": factor_sha,
+                    "portable_factor_state_sha256": record[
+                        "portable_factor_state_sha256"
+                    ],
                     "retained_steps": list(steps),
                     "directory": f"{_RETAINED_DIRECTORY}/{factor_sha}",
                     "factor_pack": (
@@ -1018,6 +1351,7 @@ class GuidedCheckpointRecoverySink:
         self,
         *,
         trainer_evidence_sha256: str,
+        runtime_trainer_evidence_sha256: str | None = None,
         terminal_checkpoint_rows: Sequence[Mapping[str, Any]],
     ) -> GuidedCheckpointRecoveryPublication:
         self._assert_collecting()
@@ -1032,6 +1366,14 @@ class GuidedCheckpointRecoverySink:
                     f"Recovery cannot finalize with missing callbacks {missing}."
                 )
             evidence_sha = _sha256(trainer_evidence_sha256, "trainer_evidence_sha256")
+            runtime_evidence_sha = (
+                evidence_sha
+                if runtime_trainer_evidence_sha256 is None
+                else _sha256(
+                    runtime_trainer_evidence_sha256,
+                    "runtime_trainer_evidence_sha256",
+                )
+            )
             terminal_rows, terminal_rows_sha = self._authenticate_terminal_rows(
                 terminal_checkpoint_rows
             )
@@ -1050,6 +1392,10 @@ class GuidedCheckpointRecoverySink:
                 "recovery_report_sha256": self.recovery_report_sha256,
                 "source_run_report_sha256": self.source_run_report_sha256,
                 "trainer_evidence_sha256": evidence_sha,
+                "runtime_trainer_evidence_sha256": runtime_evidence_sha,
+                "trainer_evidence_runtime_identity_normalized": (
+                    runtime_evidence_sha != evidence_sha
+                ),
                 "terminal_checkpoint_rows": terminal_rows,
                 "terminal_checkpoint_rows_sha256": terminal_rows_sha,
                 "expected_steps": list(expected_steps),
@@ -1064,6 +1410,15 @@ class GuidedCheckpointRecoverySink:
                 "maximum_retained_steps": _MAX_RETAINED_STEPS,
                 "retained_artifacts": retained_artifacts,
                 "deduplicated_by_factor_state_sha256": True,
+                "portable_guided_source_binding_sha256": (
+                    self.portable_guided_source_binding_sha256
+                ),
+                "historical_guided_source_binding_sha256": (
+                    self.historical_guided_source_binding.binding_sha256
+                ),
+                "runtime_identity_excluded_from_portable_content": sorted(
+                    _RUNTIME_SOURCE_BINDING_FIELDS
+                ),
                 "historical_durable_checkpoint_sha_required": False,
                 "replay_durable_checkpoint_sha_self_authenticated": True,
                 "all_expected_callbacks_seen": True,
@@ -1103,8 +1458,61 @@ class GuidedCheckpointRecoverySink:
             raise
 
 
+def rebind_recovered_v3_factor_payload(
+    payload: Mapping[str, Any],
+    runtime_guided_source_binding: GuidedFactorSourceBinding,
+) -> dict[str, Any]:
+    """Authenticate and rebind a retained v3 pack for a new live process.
+
+    The stored pack remains byte-for-byte in its historical legacy hash domain.
+    This function first authenticates that pack, proves all content-bearing
+    source fields equal the caller's separately authenticated live binding, and
+    only then returns a cloned payload whose legacy digest is valid for that
+    runtime installation.  Tensor bytes are never rewritten.
+    """
+
+    if not isinstance(payload, Mapping):
+        raise GuidedCheckpointRecoveryAuthenticationError(
+            "Recovered v3 factor payload must be a mapping."
+        )
+    source_binding = _source_binding(
+        payload.get("guided_source_binding"),
+        "retained historical guided source binding",
+    )
+    expected_source_sha = _sha256(
+        payload.get("factor_state_sha256"),
+        "retained historical factor state",
+    )
+    GuidedCheckpointRecoverySink._validate_v3_factor_payload(
+        payload,
+        expected_factor_state_sha256=expected_source_sha,
+    )
+    runtime_binding = _source_binding(
+        runtime_guided_source_binding,
+        "runtime guided source binding",
+    )
+    if canonical_json_bytes(portable_guided_source_binding(source_binding)) != (
+        canonical_json_bytes(portable_guided_source_binding(runtime_binding))
+    ):
+        raise GuidedCheckpointRecoveryAuthenticationError(
+            "Retained pack source content differs from the live runtime sources."
+        )
+    portable_before = portable_v3_factor_state_sha256(payload, source_binding)
+    rebound = _rebind_v3_factor_payload(payload, runtime_binding)
+    GuidedCheckpointRecoverySink._validate_v3_factor_payload(
+        rebound,
+        expected_factor_state_sha256=str(rebound["factor_state_sha256"]),
+    )
+    if portable_v3_factor_state_sha256(rebound, runtime_binding) != portable_before:
+        raise GuidedCheckpointRecoveryAuthenticationError(
+            "Runtime rebinding changed portable factor content identity."
+        )
+    return rebound
+
+
 __all__ = [
     "GUIDED_CHECKPOINT_CANDIDATE_SCHEMA",
+    "GUIDED_CHECKPOINT_PORTABLE_FACTOR_IDENTITY_SCHEMA",
     "GUIDED_CHECKPOINT_RECOVERY_SCHEMA",
     "GUIDED_CHECKPOINT_RESEARCH_MANIFEST_SCHEMA",
     "GuidedCheckpointRecoveryAuthenticationError",
@@ -1118,4 +1526,8 @@ __all__ = [
     "canonical_json_bytes",
     "canonical_sha256",
     "file_sha256",
+    "portable_guided_source_binding",
+    "portable_guided_source_binding_sha256",
+    "portable_v3_factor_state_sha256",
+    "rebind_recovered_v3_factor_payload",
 ]

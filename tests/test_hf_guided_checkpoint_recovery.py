@@ -83,6 +83,19 @@ def _source_binding() -> GuidedFactorSourceBinding:
     )
 
 
+def _runtime_binding(
+    source: GuidedFactorSourceBinding,
+    *,
+    installation_label: str = "runtime-installation",
+    audit_label: str | None = None,
+) -> GuidedFactorSourceBinding:
+    payload = source.as_dict()
+    payload["inherited_installation_sha256"] = _digest(installation_label)
+    if audit_label is not None:
+        payload["audit_report_sha256"] = _digest(audit_label)
+    return GuidedFactorSourceBinding(**payload)
+
+
 def _factor_state(seed: int) -> DurableFactorStateSnapshot:
     binding = _source_binding()
     snapshots: list[DurableFactorTensorSnapshot] = []
@@ -124,6 +137,34 @@ def _factor_state(seed: int) -> DurableFactorStateSnapshot:
         tensors=tuple(snapshots),
         factor_state_sha256=factor_sha,
         lexical_rank=4,
+        guided_source_binding=binding,
+    )
+
+
+def _state_with_binding(
+    source: DurableFactorStateSnapshot,
+    binding: GuidedFactorSourceBinding,
+) -> DurableFactorStateSnapshot:
+    rows = [
+        {
+            "name": value.name,
+            "shape": list(value.shape),
+            "dtype": value.dtype,
+            "tensor_sha256": value.tensor_sha256,
+        }
+        for value in source.tensors
+    ]
+    factor_sha = behavior._factor_state_sha256(
+        rows,
+        schema=BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+        lexical_rank=source.lexical_rank,
+        guided_source_binding=binding,
+    )
+    return DurableFactorStateSnapshot(
+        schema=source.schema,
+        tensors=source.tensors,
+        factor_state_sha256=factor_sha,
+        lexical_rank=source.lexical_rank,
         guided_source_binding=binding,
     )
 
@@ -239,6 +280,7 @@ def _sink(
         recovery_preregistration_sha256=RECOVERY_PREREG_SHA,
         recovery_report_sha256=RECOVERY_REPORT_SHA,
         source_run_report_sha256=SOURCE_RUN_SHA,
+        historical_guided_source_binding=_source_binding(),
     )
 
 
@@ -498,6 +540,7 @@ def test_constructor_rejects_more_than_three_or_noncanonical_retained_steps(
         "recovery_preregistration_sha256": RECOVERY_PREREG_SHA,
         "recovery_report_sha256": RECOVERY_REPORT_SHA,
         "source_run_report_sha256": SOURCE_RUN_SHA,
+        "historical_guided_source_binding": _source_binding(),
     }
     with pytest.raises(GuidedCheckpointRecoveryOrderError, match="one to three"):
         GuidedCheckpointRecoverySink(
@@ -593,3 +636,129 @@ def test_cleanup_is_idempotent_and_never_removes_published_output(
     existing.mkdir()
     with pytest.raises(GuidedCheckpointRecoveryPublicationError, match="absent"):
         _sink(existing, events, retained_steps=(40,))
+
+
+def test_cross_process_recovery_reconstructs_legacy_identity_and_rebinds_pack(
+    tmp_path: Path,
+) -> None:
+    historical_events = _fixture_events()
+    historical_binding = _source_binding()
+    live_binding = _runtime_binding(historical_binding)
+    runtime_events = tuple(
+        _event(
+            event.step,
+            _state_with_binding(event.factor_state, live_binding),
+            metrics=event.metrics,
+        )
+        for event in historical_events
+    )
+    output = tmp_path / "cross-process"
+    sink = GuidedCheckpointRecoverySink(
+        output,
+        expectations=tuple(_expectation(event) for event in historical_events),
+        retained_steps=(40, 56, 64),
+        recovery_preregistration_sha256=RECOVERY_PREREG_SHA,
+        recovery_report_sha256=RECOVERY_REPORT_SHA,
+        source_run_report_sha256=SOURCE_RUN_SHA,
+        historical_guided_source_binding=historical_binding,
+    )
+    for event in runtime_events:
+        sink(event)
+    publication = sink.finalize(
+        trainer_evidence_sha256=_digest("historical-evidence"),
+        runtime_trainer_evidence_sha256=_digest("runtime-evidence"),
+        terminal_checkpoint_rows=tuple(
+            _terminal_row(event) for event in runtime_events
+        ),
+    )
+
+    manifest = json.loads(publication.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["trainer_evidence_runtime_identity_normalized"] is True
+    assert all(
+        row["runtime_factor_state_sha256"]
+        != row["legacy_rebound_factor_state_sha256"]
+        == row["factor_state_sha256"]
+        for row in manifest["observed_events"]
+    )
+    historical = historical_events[1]
+    retained = (
+        output
+        / "retained"
+        / historical.factor_state.factor_state_sha256
+        / "factor_pack.pt"
+    )
+    pack = torch.load(retained, map_location="cpu", weights_only=True)
+    assert pack["guided_source_binding_sha256"] == historical_binding.binding_sha256
+    rebound = recovery.rebind_recovered_v3_factor_payload(pack, live_binding)
+    assert rebound["factor_state_sha256"] == (
+        runtime_events[1].factor_state.factor_state_sha256
+    )
+    assert recovery.portable_v3_factor_state_sha256(pack) == (
+        recovery.portable_v3_factor_state_sha256(rebound)
+    )
+
+
+def test_cross_process_recovery_rejects_source_drift_and_retains_diagnostic(
+    tmp_path: Path,
+) -> None:
+    historical = _fixture_events()
+    drifted_binding = _runtime_binding(
+        _source_binding(),
+        audit_label="different-audit",
+    )
+    runtime = _event(
+        historical[0].step,
+        _state_with_binding(historical[0].factor_state, drifted_binding),
+        metrics=historical[0].metrics,
+    )
+    sink = GuidedCheckpointRecoverySink(
+        tmp_path / "source-drift",
+        expectations=tuple(_expectation(event) for event in historical),
+        retained_steps=(40,),
+        recovery_preregistration_sha256=RECOVERY_PREREG_SHA,
+        recovery_report_sha256=RECOVERY_REPORT_SHA,
+        source_run_report_sha256=SOURCE_RUN_SHA,
+        historical_guided_source_binding=_source_binding(),
+    )
+    with pytest.raises(
+        GuidedCheckpointRecoveryAuthenticationError,
+        match="historical legacy",
+    ):
+        sink(runtime)
+    diagnostic = sink.failure_diagnostic
+    assert diagnostic is not None
+    assert diagnostic["portable_source_binding_matches"] is False
+    assert diagnostic["observed_runtime_factor_state_sha256"] == (
+        runtime.factor_state.factor_state_sha256
+    )
+    assert diagnostic["observed_legacy_rebound_factor_state_sha256"] == (
+        historical[0].factor_state.factor_state_sha256
+    )
+    declared = diagnostic["diagnostic_sha256"]
+    assert (
+        recovery.canonical_sha256(
+            {
+                name: value
+                for name, value in diagnostic.items()
+                if name != "diagnostic_sha256"
+            }
+        )
+        == declared
+    )
+    assert sink.state == "failed"
+    assert sink.staging_root is None
+
+
+def test_portable_rebind_rejects_live_source_content_drift() -> None:
+    state = _factor_state(40)
+    pack = state.as_factor_payload()
+    drifted = _runtime_binding(
+        _source_binding(),
+        installation_label="another-process",
+        audit_label="tampered-audit",
+    )
+    with pytest.raises(
+        GuidedCheckpointRecoveryAuthenticationError,
+        match="source content differs",
+    ):
+        recovery.rebind_recovered_v3_factor_payload(pack, drifted)
