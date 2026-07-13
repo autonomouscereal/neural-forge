@@ -72,10 +72,38 @@ CHECKPOINT_STEPS = (0, 2, 4, 8, 12, 16, 24, 32, 40, 48, 56, 64)
 SPLIT_COUNTS = {"fit": 168, "candidate": 24, "sealed": 32}
 MAX_RETAINED_STATES = 3
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+EXPECTED_CUDA_DEVICE_ORDER = "PCI_BUS_ID"
+EXPECTED_CUDA_VISIBLE_DEVICES = "4,6"
+EXPECTED_PARENT_DEVICE_MAP = "cuda:0"
+EXPECTED_TARGET_DEVICE_MAP = "cuda:1"
+EXPECTED_PARENT_DEVICE_NAME = "NVIDIA GeForce RTX 3090"
+EXPECTED_TARGET_DEVICE_NAME = "Quadro RTX 8000"
+EXPECTED_PARENT_COMPUTE_CAPABILITY = (8, 6)
+EXPECTED_TARGET_COMPUTE_CAPABILITY = (7, 5)
 
 
 class CandidateTournamentError(RuntimeError):
     """A tournament contract, reset, callback, or candidate-only gate failed."""
+
+
+def candidate_tournament_runtime_contract() -> dict[str, Any]:
+    """Return the one admissible production GPU/runtime contract."""
+
+    return {
+        "dtype": "float16",
+        "attention_implementation": stage.CANONICAL_ATTENTION_IMPLEMENTATION,
+        "cuda_device_order": EXPECTED_CUDA_DEVICE_ORDER,
+        "cuda_visible_devices": EXPECTED_CUDA_VISIBLE_DEVICES,
+        "parent_device_map": EXPECTED_PARENT_DEVICE_MAP,
+        "parent_device_name": EXPECTED_PARENT_DEVICE_NAME,
+        "parent_compute_capability": list(EXPECTED_PARENT_COMPUTE_CAPABILITY),
+        "target_device_map": EXPECTED_TARGET_DEVICE_MAP,
+        "target_device_name": EXPECTED_TARGET_DEVICE_NAME,
+        "target_compute_capability": list(EXPECTED_TARGET_COMPUTE_CAPABILITY),
+        "exact_source_reset_between_arms": True,
+        "durable_callback_every_arm": True,
+        "mask_verify_after_each_optimizer_step": True,
+    }
 
 
 def _sha256(value: Any, name: str) -> str:
@@ -275,6 +303,7 @@ class AuthenticatedCandidateTournament:
     site_mask_file_sha256: str
     arms: tuple[TournamentArm, ...]
     schedule: BehaviorDistillationSchedule
+    runtime: Mapping[str, Any]
     implementation: Mapping[str, str]
     evaluation_contract_sha256: str
 
@@ -308,6 +337,7 @@ class AuthenticatedCandidateTournament:
             },
             "arms": [value.as_dict() for value in self.arms],
             "training": self.schedule.as_dict(),
+            "runtime": dict(self.runtime),
             "implementation": dict(self.implementation),
             "models_loaded": False,
             "gpu_work_launched": False,
@@ -643,22 +673,10 @@ def authenticate_candidate_tournament_preregistration(
         raise CandidateTournamentError("Behavior-only selection contract changed.")
     runtime = _strict(
         prereg["runtime"],
-        {
-            "dtype",
-            "attention_implementation",
-            "exact_source_reset_between_arms",
-            "durable_callback_every_arm",
-            "mask_verify_after_each_optimizer_step",
-        },
+        set(candidate_tournament_runtime_contract()),
         "runtime",
     )
-    expected_runtime = {
-        "dtype": "float16",
-        "attention_implementation": stage.CANONICAL_ATTENTION_IMPLEMENTATION,
-        "exact_source_reset_between_arms": True,
-        "durable_callback_every_arm": True,
-        "mask_verify_after_each_optimizer_step": True,
-    }
+    expected_runtime = candidate_tournament_runtime_contract()
     if dict(runtime) != expected_runtime:
         raise CandidateTournamentError("Tournament runtime contract changed.")
     prepare_path = (
@@ -711,9 +729,78 @@ def authenticate_candidate_tournament_preregistration(
         site_mask_file_sha256=mask_sha,
         arms=arms,
         schedule=schedule,
+        runtime=expected_runtime,
         implementation=expected_implementation,
         evaluation_contract_sha256=evaluation_sha,
     )
+
+
+def validate_candidate_tournament_cuda_preflight(
+    contract: AuthenticatedCandidateTournament,
+    *,
+    dtype: str,
+    parent_device_map: str,
+    target_device_map: str,
+    torch_module: Any = torch,
+    environ: Mapping[str, str] = os.environ,
+) -> dict[str, Any]:
+    """Authenticate the exact logical GPU mapping without loading either model."""
+
+    if type(contract) is not AuthenticatedCandidateTournament:
+        raise CandidateTournamentError(
+            "CUDA preflight requires an authenticated tournament contract."
+        )
+    expected = dict(contract.runtime)
+    if (
+        dtype != expected["dtype"]
+        or parent_device_map != expected["parent_device_map"]
+        or target_device_map != expected["target_device_map"]
+        or environ.get("CUDA_DEVICE_ORDER") != expected["cuda_device_order"]
+        or environ.get("CUDA_VISIBLE_DEVICES") != expected["cuda_visible_devices"]
+    ):
+        raise CandidateTournamentError(
+            "Tournament CLI runtime or CUDA visibility differs from preregistration."
+        )
+    cuda = getattr(torch_module, "cuda", None)
+    if (
+        cuda is None
+        or not callable(getattr(cuda, "is_available", None))
+        or not cuda.is_available()
+        or not callable(getattr(cuda, "device_count", None))
+        or cuda.device_count() != 2
+    ):
+        raise CandidateTournamentError(
+            "Tournament preflight requires exactly two visible CUDA devices."
+        )
+    observed = []
+    for logical_index, role in ((0, "parent"), (1, "target")):
+        name = cuda.get_device_name(logical_index)
+        capability = tuple(cuda.get_device_capability(logical_index))
+        if (
+            name != expected[f"{role}_device_name"]
+            or list(capability) != expected[f"{role}_compute_capability"]
+        ):
+            raise CandidateTournamentError(
+                f"Logical CUDA {logical_index} is not the preregistered {role} GPU."
+            )
+        observed.append(
+            {
+                "role": role,
+                "logical_index": logical_index,
+                "device_map": expected[f"{role}_device_map"],
+                "name": name,
+                "compute_capability": list(capability),
+            }
+        )
+    return {
+        "status": "passed",
+        "cuda_device_order": environ["CUDA_DEVICE_ORDER"],
+        "cuda_visible_devices": environ["CUDA_VISIBLE_DEVICES"],
+        "devices": observed,
+        "models_loaded": False,
+        "model_forward_calls": 0,
+        "gpu_kernel_work_launched": False,
+    }
 
 
 @dataclass(slots=True)
@@ -990,8 +1077,31 @@ class ArmExecution:
 class ProductionCandidateTournamentRuntime(guided.ProductionGuidedRuntime):
     """Load/compile once; install, authenticate, train, and roll back each arm."""
 
-    def __init__(self, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
+    def __init__(
+        self,
+        *,
+        dtype: str = "float16",
+        parent_device_map: str = EXPECTED_PARENT_DEVICE_MAP,
+        target_device_map: str = EXPECTED_TARGET_DEVICE_MAP,
+        cuda_preflight_report: Mapping[str, Any] | None = None,
+    ) -> None:
+        if (
+            dtype != "float16"
+            or parent_device_map != EXPECTED_PARENT_DEVICE_MAP
+            or target_device_map != EXPECTED_TARGET_DEVICE_MAP
+        ):
+            raise CandidateTournamentError(
+                "Production tournament runtime must use the preregistered FP16 "
+                "3090/RTX8000 logical device mapping."
+            )
+        super().__init__(
+            dtype=dtype,
+            parent_device_map=parent_device_map,
+            target_device_map=target_device_map,
+        )
+        self.cuda_preflight_report = (
+            None if cuda_preflight_report is None else dict(cuda_preflight_report)
+        )
         self.parent: Any = None
         self.compiled: Any = None
         self.compiled_state_sha256: str | None = None
@@ -1011,13 +1121,16 @@ class ProductionCandidateTournamentRuntime(guided.ProductionGuidedRuntime):
         self.compiled = compiled
         self.compiled_state_sha256 = compiled_sha
         del target, tokenizer
-        return {
+        report = {
             "compiler_report": compiler_report,
             "compiled_state_sha256": compiled_sha,
             "compiler_cache": cache,
             "models_loaded": True,
             "gpu_work_launched": True,
         }
+        if self.cuda_preflight_report is not None:
+            report["cuda_preflight"] = dict(self.cuda_preflight_report)
+        return report
 
     def run_arm(
         self,
@@ -1181,14 +1294,31 @@ def execute_candidate_tournament(
     output = Path(output_root).expanduser().resolve()
     if output.exists():
         raise CandidateTournamentError("output_root must not already exist.")
+    cuda_preflight = None
+    if runtime is None:
+        cuda_preflight = validate_candidate_tournament_cuda_preflight(
+            contract,
+            dtype=str(contract.runtime["dtype"]),
+            parent_device_map=str(contract.runtime["parent_device_map"]),
+            target_device_map=str(contract.runtime["target_device_map"]),
+        )
+        runner = ProductionCandidateTournamentRuntime(
+            dtype=str(contract.runtime["dtype"]),
+            parent_device_map=str(contract.runtime["parent_device_map"]),
+            target_device_map=str(contract.runtime["target_device_map"]),
+            cuda_preflight_report=cuda_preflight,
+        )
+    else:
+        runner = runtime
     output.mkdir(parents=True)
-    runner = ProductionCandidateTournamentRuntime() if runtime is None else runtime
     report: dict[str, Any] = {
         **contract.preflight_report(),
         "status": "running",
         "output_root": str(output),
         "arm_executions": [],
     }
+    if cuda_preflight is not None:
+        report["cuda_preflight"] = cuda_preflight
     sink = TournamentTopThreeSink(
         output, evaluation_contract_sha256=contract.evaluation_contract_sha256
     )
@@ -1300,6 +1430,9 @@ def build_parser() -> argparse.ArgumentParser:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--preflight", action="store_true")
     mode.add_argument("--execute", action="store_true")
+    parser.add_argument("--dtype", choices=("float16",), default="float16")
+    parser.add_argument("--parent-device-map", default=EXPECTED_PARENT_DEVICE_MAP)
+    parser.add_argument("--target-device-map", default=EXPECTED_TARGET_DEVICE_MAP)
     return parser
 
 
@@ -1308,12 +1441,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     contract = authenticate_candidate_tournament_preregistration(
         args.preregistration, args.preregistration_sha256
     )
+    cuda_preflight = validate_candidate_tournament_cuda_preflight(
+        contract,
+        dtype=args.dtype,
+        parent_device_map=args.parent_device_map,
+        target_device_map=args.target_device_map,
+    )
     if args.preflight:
-        print(json.dumps(contract.preflight_report(), indent=2, sort_keys=True))
+        report = contract.preflight_report()
+        report["cuda_preflight"] = cuda_preflight
+        print(json.dumps(report, indent=2, sort_keys=True))
         return 0
     if args.output_root is None:
         raise CandidateTournamentError("--execute requires --output-root.")
-    report = execute_candidate_tournament(contract, args.output_root)
+    runtime = ProductionCandidateTournamentRuntime(
+        dtype=args.dtype,
+        parent_device_map=args.parent_device_map,
+        target_device_map=args.target_device_map,
+        cuda_preflight_report=cuda_preflight,
+    )
+    report = execute_candidate_tournament(contract, args.output_root, runtime=runtime)
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 

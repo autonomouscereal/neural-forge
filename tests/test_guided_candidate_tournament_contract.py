@@ -222,6 +222,115 @@ def test_schedule_is_exact_candidate_only_contract() -> None:
     assert schedule.sealed_evaluation_policy == "disabled"
 
 
+def test_runtime_contract_and_cli_pin_the_3090_rtx8000_mapping() -> None:
+    runtime = tournament.candidate_tournament_runtime_contract()
+    assert runtime["dtype"] == "float16"
+    assert runtime["cuda_device_order"] == "PCI_BUS_ID"
+    assert runtime["cuda_visible_devices"] == "4,6"
+    assert runtime["parent_device_map"] == "cuda:0"
+    assert runtime["parent_device_name"] == "NVIDIA GeForce RTX 3090"
+    assert runtime["parent_compute_capability"] == [8, 6]
+    assert runtime["target_device_map"] == "cuda:1"
+    assert runtime["target_device_name"] == "Quadro RTX 8000"
+    assert runtime["target_compute_capability"] == [7, 5]
+    args = tournament.build_parser().parse_args(
+        [
+            "--preregistration",
+            "prereg.json",
+            "--preregistration-sha256",
+            _digest("prereg"),
+            "--preflight",
+        ]
+    )
+    assert args.dtype == "float16"
+    assert args.parent_device_map == "cuda:0"
+    assert args.target_device_map == "cuda:1"
+
+
+class _FakeCuda:
+    def is_available(self) -> bool:
+        return True
+
+    def device_count(self) -> int:
+        return 2
+
+    def get_device_name(self, index: int) -> str:
+        return "NVIDIA GeForce RTX 3090" if index == 0 else "Quadro RTX 8000"
+
+    def get_device_capability(self, index: int) -> tuple[int, int]:
+        return (8, 6) if index == 0 else (7, 5)
+
+
+def test_cuda_preflight_authenticates_devices_without_loading_models(
+    tmp_path: Path,
+) -> None:
+    contract = _fake_authenticated_contract(tmp_path)
+    report = tournament.validate_candidate_tournament_cuda_preflight(
+        contract,
+        dtype="float16",
+        parent_device_map="cuda:0",
+        target_device_map="cuda:1",
+        torch_module=SimpleNamespace(cuda=_FakeCuda()),
+        environ={
+            "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
+            "CUDA_VISIBLE_DEVICES": "4,6",
+        },
+    )
+    assert report["status"] == "passed"
+    assert report["models_loaded"] is False
+    assert report["model_forward_calls"] == 0
+    assert report["gpu_kernel_work_launched"] is False
+    assert [row["name"] for row in report["devices"]] == [
+        "NVIDIA GeForce RTX 3090",
+        "Quadro RTX 8000",
+    ]
+
+
+def test_cuda_preflight_fails_closed_on_visibility_or_device_drift(
+    tmp_path: Path,
+) -> None:
+    contract = _fake_authenticated_contract(tmp_path)
+    with pytest.raises(tournament.CandidateTournamentError, match="visibility"):
+        tournament.validate_candidate_tournament_cuda_preflight(
+            contract,
+            dtype="float16",
+            parent_device_map="cuda:0",
+            target_device_map="cuda:1",
+            torch_module=SimpleNamespace(cuda=_FakeCuda()),
+            environ={
+                "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
+                "CUDA_VISIBLE_DEVICES": "0,1",
+            },
+        )
+
+    class WrongCuda(_FakeCuda):
+        def get_device_name(self, index: int) -> str:
+            return "Tesla P40" if index == 1 else super().get_device_name(index)
+
+    with pytest.raises(tournament.CandidateTournamentError, match="Logical CUDA 1"):
+        tournament.validate_candidate_tournament_cuda_preflight(
+            contract,
+            dtype="float16",
+            parent_device_map="cuda:0",
+            target_device_map="cuda:1",
+            torch_module=SimpleNamespace(cuda=WrongCuda()),
+            environ={
+                "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
+                "CUDA_VISIBLE_DEVICES": "4,6",
+            },
+        )
+
+
+def test_production_runtime_rejects_auto_device_maps() -> None:
+    runtime = tournament.ProductionCandidateTournamentRuntime()
+    assert runtime.parent_device_map == "cuda:0"
+    assert runtime.target_device_map == "cuda:1"
+    with pytest.raises(tournament.CandidateTournamentError, match="3090/RTX8000"):
+        tournament.ProductionCandidateTournamentRuntime(
+            parent_device_map="auto", target_device_map="auto"
+        )
+
+
 def test_rank_is_rollout_first_and_rejects_internal_metrics() -> None:
     weak = _metrics(8).as_dict()
     strong = _metrics(64).as_dict()
@@ -505,6 +614,7 @@ def _fake_authenticated_contract(
         site_mask_file_sha256=_digest("mask-file"),
         arms=_fake_arms(),
         schedule=tournament.candidate_tournament_schedule(),
+        runtime=tournament.candidate_tournament_runtime_contract(),
         implementation={
             "runner_sha256": _digest("runner"),
             "builder_sha256": _digest("builder"),

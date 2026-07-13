@@ -435,13 +435,7 @@ def prepare_candidate_tournament(
             "sealed_disabled": True,
             "stop_after_candidate_winner": True,
         }
-        runtime = {
-            "dtype": "float16",
-            "attention_implementation": stage.CANONICAL_ATTENTION_IMPLEMENTATION,
-            "exact_source_reset_between_arms": True,
-            "durable_callback_every_arm": True,
-            "mask_verify_after_each_optimizer_step": True,
-        }
+        runtime = tournament.candidate_tournament_runtime_contract()
         implementation = {
             "runner_sha256": stage._file_sha256(Path(tournament.__file__).resolve()),
             "builder_sha256": stage._file_sha256(Path(__file__).resolve()),
