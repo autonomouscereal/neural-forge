@@ -716,7 +716,22 @@ class GradientSiteMaskGuard:
             result.index_fill_(0, rows, 0)
             return result
 
-        return parameter.register_hook(mask_gradient)
+        # Production enters this guard during ``guided-left`` while every
+        # guided-right factor is intentionally frozen.  PyTorch refuses
+        # ``register_hook`` on a Tensor whose current ``requires_grad`` flag is
+        # false, but a hook registered while a leaf Parameter is enabled
+        # remains attached across a later false -> true stage transition.
+        # Temporarily enable only for registration and restore the exact flag
+        # before returning (including every failure path); the guard must not
+        # itself advance the tranche's training stage.
+        requires_grad = parameter.requires_grad
+        if not requires_grad:
+            parameter.requires_grad_(True)
+        try:
+            return parameter.register_hook(mask_gradient)
+        finally:
+            if parameter.requires_grad is not requires_grad:
+                parameter.requires_grad_(requires_grad)
 
     def __enter__(self) -> GradientSiteMaskGuard:
         if self._entered or self._closed:

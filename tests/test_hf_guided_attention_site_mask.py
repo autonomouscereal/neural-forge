@@ -359,6 +359,83 @@ def test_gradient_hooks_mask_unselected_rows_and_optimizer_preserves_sources() -
     assert _hook_count(registry) == 0
 
 
+def test_frozen_right_hooks_survive_later_stage_enable_without_advancing_stage() -> None:
+    mask = _mask(_audit_report())
+    registry = _registry(mask)
+    right_parameters = {role: getattr(registry, f"{role}_right") for role in ROLES}
+    for parameter in right_parameters.values():
+        parameter.requires_grad_(False)
+    ownership = {
+        name: (id(value), int(value.data_ptr()), int(value._version))
+        for name, value in registry.named_parameters(recurse=False)
+    }
+
+    with GradientSiteMaskGuard(registry, mask) as guard:
+        assert guard.active_hook_count == 8
+        assert all(not value.requires_grad for value in right_parameters.values())
+        assert ownership == {
+            name: (id(value), int(value.data_ptr()), int(value._version))
+            for name, value in registry.named_parameters(recurse=False)
+        }
+
+        # This is the real guided-left -> guided transition owned by the
+        # tranche, after guard entry.  Hooks registered while temporarily
+        # enabled must remain effective now that gradients are authorized.
+        for parameter in right_parameters.values():
+            parameter.requires_grad_(True)
+        optimizer = torch.optim.SGD(registry.parameters(), lr=0.05)
+        optimizer.zero_grad(set_to_none=True)
+        sum(value.sum() for value in registry.parameters()).backward()
+        for role in ROLES:
+            selected = set(mask.for_role(role).selected_site_rows)
+            unselected = [row for row in range(120) if row not in selected]
+            selected_rows = sorted(selected)
+            gradient = right_parameters[role].grad
+            assert gradient is not None
+            assert torch.count_nonzero(gradient[unselected]).item() == 0
+            assert torch.all(gradient[selected_rows] == 1)
+        optimizer.step()
+        guard.verify_step()
+
+    assert all(value.requires_grad for value in right_parameters.values())
+    assert _hook_count(registry) == 0
+
+
+def test_partial_entry_failure_restores_frozen_flags_storage_and_hooks() -> None:
+    mask = _mask(_audit_report())
+    registry = _registry(mask)
+    for role in ROLES:
+        getattr(registry, f"{role}_right").requires_grad_(False)
+    role = "k"
+    selected = set(mask.for_role(role).selected_site_rows)
+    row = next(value for value in range(120) if value not in selected)
+    with torch.no_grad():
+        getattr(registry, f"{role}_left")[row].add_(1.0)
+    before = {
+        name: (
+            id(value),
+            int(value.data_ptr()),
+            int(value._version),
+            value.requires_grad,
+            value.detach().clone(),
+        )
+        for name, value in registry.named_parameters(recurse=False)
+    }
+
+    with pytest.raises(GradientSiteMaskGuardError, match="Unselected K"):
+        with GradientSiteMaskGuard(registry, mask):
+            pass
+
+    assert _hook_count(registry) == 0
+    for name, value in registry.named_parameters(recurse=False):
+        identity, pointer, version, requires_grad, tensor = before[name]
+        assert id(value) == identity
+        assert int(value.data_ptr()) == pointer
+        assert int(value._version) == version
+        assert value.requires_grad is requires_grad
+        assert torch.equal(value, tensor)
+
+
 @pytest.mark.parametrize("side", ("left", "right"))
 def test_unselected_direct_mutation_is_detected_and_hooks_are_removed(side: str) -> None:
     mask = _mask(_audit_report())
