@@ -3,6 +3,7 @@ from __future__ import annotations
 # ruff: noqa: E402
 
 import hashlib
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,6 +21,12 @@ import prepare_qwen_exact_target_native_guided_candidate_tournament as prepare
 import run_qwen_exact_target_native_guided_candidate_tournament as tournament
 import run_qwen_exact_target_native_stage as stage
 from neural_forge.hf_exact_candidate_frontier import ExactCandidateFrontierError
+from neural_forge.hf_guided_checkpoint_recovery import (
+    GUIDED_CHECKPOINT_CANDIDATE_SCHEMA,
+    canonical_sha256,
+    portable_guided_source_binding_sha256,
+    portable_v3_factor_state_sha256,
+)
 from neural_forge.hf_target_native_behavior_distillation import (
     BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
     BehaviorCheckpoint,
@@ -33,8 +40,16 @@ import neural_forge.hf_target_native_behavior_distillation as behavior
 
 
 QKVO_GUD_NAMES = {
-    *(f"qkvo.{role}_{side}" for role in ("q", "k", "v", "o") for side in ("left", "right")),
-    *(f"gud.{role}_{side}" for role in ("gate", "up", "down") for side in ("left", "right")),
+    *(
+        f"qkvo.{role}_{side}"
+        for role in ("q", "k", "v", "o")
+        for side in ("left", "right")
+    ),
+    *(
+        f"gud.{role}_{side}"
+        for role in ("gate", "up", "down")
+        for side in ("left", "right")
+    ),
 }
 LEXICAL_NAMES = {
     f"lexical.{role}_{side}"
@@ -316,27 +331,186 @@ def test_model_free_builder_writes_fit168_fresh24_and_reuses_sealed32(
     assert tokenizer_loads == 1
 
 
-class _FakeContract:
-    def __init__(self) -> None:
-        self.evaluation_contract_sha256 = _digest("evaluation")
-        self.arms = (
-            tournament.TournamentArm(
-                tournament.ARM_IDS[0], "v3", _digest("initial-40"), False
-            ),
-            tournament.TournamentArm(
-                tournament.ARM_IDS[1], "v3", _digest("initial-64"), False
-            ),
-            tournament.TournamentArm(
-                tournament.ARM_IDS[2], "v2", _digest("initial-v2"), True
-            ),
+def _write_real_recovery_record(
+    root: Path, *, step: int, seed: int
+) -> tuple[Path, Path, dict[str, Any]]:
+    root.mkdir()
+    payload = _factor_state(seed).as_factor_payload()
+    pack = root / "factor_pack.pt"
+    torch.save(payload, pack)
+    factor_sha = payload["factor_state_sha256"]
+    portable_sha = portable_v3_factor_state_sha256(payload)
+    event = {
+        "step": step,
+        "factor_state_sha256": factor_sha,
+        "portable_factor_state_sha256": portable_sha,
+    }
+    record = {
+        "schema": GUIDED_CHECKPOINT_CANDIDATE_SCHEMA,
+        "recovery_preregistration_sha256": _digest("recovery-prereg"),
+        "recovery_report_sha256": _digest("recovery-report"),
+        "source_run_report_sha256": _digest("source-report"),
+        "factor_state_sha256": factor_sha,
+        "portable_factor_state_sha256": portable_sha,
+        "portable_guided_source_binding_sha256": (
+            portable_guided_source_binding_sha256(payload["guided_source_binding"])
+        ),
+        "runtime_identity_excluded_from_portable_content": [
+            "inherited_installation_sha256"
+        ],
+        "factor_pack_relative_path": pack.name,
+        "factor_pack_manifest_sha256": _digest("manifest"),
+        "factor_pack_file_sha256": stage._file_sha256(pack),
+        "factor_pack_size_bytes": pack.stat().st_size,
+        "events": [event],
+        "event_count": 1,
+        "retained_steps": [step],
+        "content_address": factor_sha,
+        "historical_durable_checkpoint_sha_required": False,
+        "replay_durable_checkpoint_sha_self_authenticated": True,
+        "contains_parent_state": False,
+        "contains_native_child_state": False,
+        "contains_optimizer_state": False,
+        "contains_model_checkpoint": False,
+    }
+    record["candidate_record_sha256"] = canonical_sha256(record)
+    record_path = root / "candidate_record.json"
+    record_path.write_text(
+        json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return pack, record_path, payload
+
+
+def test_real_recovery_candidate_record_round_trips_without_top_level_step(
+    tmp_path: Path,
+) -> None:
+    pack, record, payload = _write_real_recovery_record(
+        tmp_path / "retained", step=40, seed=40
+    )
+    binding = prepare._recovered_binding(
+        pack_path=pack,
+        recovery_record_path=record,
+        expected_step=40,
+    )
+    assert "step" not in stage._strict_json(record)
+    assert binding["portable_factor_state_sha256"] == portable_v3_factor_state_sha256(
+        payload
+    )
+    source = _source_binding()
+    restored = tournament._load_v3_initial_state(
+        binding,
+        base=tmp_path,
+        arm_id=tournament.ARM_IDS[0],
+        expected_step=40,
+        expected_source_v2_sha256=source.source_v2_factor_state_sha256,
+        expected_source_v2_tensor_sha256s=dict(source.source_v2_tensor_sha256s),
+        expected_audit_sha256=source.audit_report_sha256,
+        expected_basis_sha256=source.basis_envelope_file_sha256,
+        expected_basis_payload_sha256=source.basis_payload_sha256,
+        expected_basis_manifest_sha256=source.basis_manifest_sha256,
+        expected_basis_tensor_sha256s=dict(source.source_basis_tensor_sha256s),
+    )
+    assert restored.factor_state_sha256 == payload["factor_state_sha256"]
+    assert restored.portable_factor_state_sha256 == portable_v3_factor_state_sha256(
+        payload
+    )
+
+
+def test_recovery_record_rejects_a_rehashed_wrong_retained_step(tmp_path: Path) -> None:
+    pack, record_path, _payload = _write_real_recovery_record(
+        tmp_path / "retained", step=40, seed=40
+    )
+    record = dict(stage._strict_json(record_path))
+    record["retained_steps"] = [64]
+    record["candidate_record_sha256"] = canonical_sha256(
+        {
+            name: value
+            for name, value in record.items()
+            if name != "candidate_record_sha256"
+        }
+    )
+    record_path.write_text(
+        json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    with pytest.raises(
+        prepare.CandidateTournamentPreparationError, match="retained step 40"
+    ):
+        prepare._recovered_binding(
+            pack_path=pack,
+            recovery_record_path=record_path,
+            expected_step=40,
         )
 
-    def preflight_report(self) -> dict[str, Any]:
-        return {
-            "schema": tournament.RUN_SCHEMA,
-            "status": "preflight-passed",
-            "sealed_suite_supplied_to_trainer": False,
-        }
+
+def test_sink_ranks_step_zero_and_rejects_unsafe_later_state(tmp_path: Path) -> None:
+    output = tmp_path / "sink"
+    output.mkdir()
+    sink = tournament.TournamentTopThreeSink(
+        output, evaluation_contract_sha256=_digest("evaluation")
+    )
+    callback = sink.callback_for_arm(tournament.ARM_IDS[0], 0)
+    step_zero = _event(0, 0)
+    callback(step_zero)
+    unsafe = DurableBehaviorCheckpoint(
+        step=2,
+        metrics=_metrics(200),
+        factor_state=_factor_state(200),
+        pareto_safe_vs_step0=False,
+    )
+    callback(unsafe)
+    frontier = stage._strict_json(output / "candidate_frontier.json")
+    assert frontier["step_zero_ranked"] is True
+    assert frontier["later_states_require_pareto_safety_vs_step_zero"] is True
+    assert frontier["retained_count"] == 1
+    assert frontier["retained"][0]["step"] == 0
+
+
+def _fake_arms() -> tuple[tournament.TournamentArm, ...]:
+    return (
+        tournament.TournamentArm(
+            tournament.ARM_IDS[0],
+            "v3",
+            _digest("initial-40"),
+            _digest("portable-initial-40"),
+            False,
+        ),
+        tournament.TournamentArm(
+            tournament.ARM_IDS[1],
+            "v3",
+            _digest("initial-64"),
+            _digest("portable-initial-64"),
+            False,
+        ),
+        tournament.TournamentArm(
+            tournament.ARM_IDS[2], "v2", _digest("initial-v2"), None, True
+        ),
+    )
+
+
+def _fake_authenticated_contract(
+    tmp_path: Path,
+) -> tournament.AuthenticatedCandidateTournament:
+    prereg = tmp_path / "fake-preregistration.json"
+    prereg.write_text("{}\n", encoding="utf-8")
+    mask = tmp_path / "mask.json"
+    mask.write_text("{}\n", encoding="utf-8")
+    return tournament.AuthenticatedCandidateTournament(
+        path=prereg,
+        file_sha256=_digest("fake-preregistration"),
+        source=SimpleNamespace(file_sha256=_digest("source")),
+        splits={},
+        initial_states={},
+        site_mask=SimpleNamespace(mask_contract_sha256=_digest("mask"), role_masks=()),
+        site_mask_path=mask,
+        site_mask_file_sha256=_digest("mask-file"),
+        arms=_fake_arms(),
+        schedule=tournament.candidate_tournament_schedule(),
+        implementation={
+            "runner_sha256": _digest("runner"),
+            "builder_sha256": _digest("builder"),
+        },
+        evaluation_contract_sha256=_digest("evaluation"),
+    )
 
 
 class _FakeRuntime:
@@ -359,7 +533,7 @@ class _FakeRuntime:
         checkpoints = []
         for step in tournament.CHECKPOINT_STEPS:
             event = _event(arm_index, step)
-            if self.duplicate_state is not None and step > 0:
+            if self.duplicate_state is not None:
                 event = DurableBehaviorCheckpoint(
                     step=step,
                     metrics=event.metrics,
@@ -385,11 +559,21 @@ class _FakeRuntime:
             sealed_evaluation_policy="disabled",
             evidence_sha256=_digest(f"evidence:{arm.arm_id}"),
         )
+        runtime_initial = (
+            _digest(f"runtime-initial:{arm.arm_id}")
+            if arm.initial_portable_factor_state_sha256 is not None
+            else arm.initial_factor_state_sha256
+        )
         return tournament.ArmExecution(
             result=result,
             reset_state_sha256=self.compiled_sha,
             rollback_state_sha256=self.compiled_sha,
-            initial_factor_state_sha256=arm.initial_factor_state_sha256,
+            stored_initial_factor_state_sha256=arm.initial_factor_state_sha256,
+            portable_initial_factor_state_sha256=(
+                arm.initial_portable_factor_state_sha256
+            ),
+            runtime_rebound_initial_factor_state_sha256=runtime_initial,
+            trainer_initial_factor_state_sha256=runtime_initial,
             site_mask_enabled=arm.site_mask_enabled,
             post_optimizer_mask_verification_count=64 if arm.site_mask_enabled else 0,
             sealed_forward_count=0,
@@ -401,13 +585,24 @@ class _FakeRuntime:
 
 def test_tournament_retains_top_three_selects_one_winner_and_never_uses_sealed(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    contract = _FakeContract()
+    contract = _fake_authenticated_contract(tmp_path)
+    authentications = 0
+
+    def authenticate(path: Path, digest: str) -> Any:
+        nonlocal authentications
+        authentications += 1
+        assert path == contract.path
+        assert digest == contract.file_sha256
+        return contract
+
+    monkeypatch.setattr(
+        tournament, "authenticate_candidate_tournament_preregistration", authenticate
+    )
     runtime = _FakeRuntime()
     output = tmp_path / "tournament"
-    report = tournament.execute_candidate_tournament(
-        contract, output, runtime=runtime
-    )
+    report = tournament.execute_candidate_tournament(contract, output, runtime=runtime)
     assert report["status"] == "candidate-winner-selected"
     assert report["sealed_forward_count"] == 0
     assert report["sealed_evaluation_accessed"] is False
@@ -415,6 +610,8 @@ def test_tournament_retains_top_three_selects_one_winner_and_never_uses_sealed(
     assert report["publication_attempted"] is False
     assert len(report["top_three_factor_state_sha256s"]) == 3
     assert len(set(report["top_three_factor_state_sha256s"])) == 3
+    assert len(report["top_three_portable_factor_state_sha256s"]) == 3
+    assert len(set(report["top_three_portable_factor_state_sha256s"])) == 3
     assert (output / "winner_selection.json").is_file()
     assert len(list((output / "retained").glob("*/factor_pack.pt"))) == 3
     assert [value[0] for value in runtime.calls] == list(tournament.ARM_IDS)
@@ -423,21 +620,36 @@ def test_tournament_retains_top_three_selects_one_winner_and_never_uses_sealed(
     ]
     assert [value[2] for value in runtime.calls] == [False, False, True]
     assert runtime.closed is True
+    assert authentications == 1
     assert all(row["sealed_forward_count"] == 0 for row in report["arm_executions"])
-    assert report["arm_executions"][-1][
-        "post_optimizer_mask_verification_count"
-    ] == 64
+    assert report["arm_executions"][-1]["post_optimizer_mask_verification_count"] == 64
 
 
 def test_tournament_fails_closed_when_three_distinct_states_do_not_exist(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runtime = _FakeRuntime(deduplicate=True)
     output = tmp_path / "no-winner"
+    contract = _fake_authenticated_contract(tmp_path)
+    monkeypatch.setattr(
+        tournament,
+        "authenticate_candidate_tournament_preregistration",
+        lambda *_args: contract,
+    )
     with pytest.raises(tournament.CandidateTournamentError):
-        tournament.execute_candidate_tournament(
-            _FakeContract(), output, runtime=runtime
-        )
+        tournament.execute_candidate_tournament(contract, output, runtime=runtime)
     assert not (output / "winner_selection.json").exists()
     assert (output / "run_report.json").is_file()
     assert runtime.closed is True
+
+
+def test_execute_rejects_a_fake_contract_before_creating_output(tmp_path: Path) -> None:
+    output = tmp_path / "fake-contract"
+    with pytest.raises(tournament.CandidateTournamentError, match="authenticated"):
+        tournament.execute_candidate_tournament(
+            SimpleNamespace(path=tmp_path / "fake", file_sha256=_digest("fake")),
+            output,
+            runtime=_FakeRuntime(),
+        )
+    assert not output.exists()

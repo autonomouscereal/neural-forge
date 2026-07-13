@@ -29,8 +29,11 @@ from neural_forge.hf_guided_attention_site_mask import (
     build_guided_attention_site_mask,
 )
 from neural_forge.hf_guided_checkpoint_recovery import (
+    GUIDED_CHECKPOINT_CANDIDATE_SCHEMA,
     GuidedCheckpointRecoverySink,
     canonical_sha256,
+    portable_guided_source_binding_sha256,
+    portable_v3_factor_state_sha256,
 )
 from neural_forge.hf_target_native_behavior_distillation import (
     BEHAVIOR_FACTOR_PACK_V2_SCHEMA,
@@ -51,9 +54,12 @@ class CandidateTournamentPreparationError(RuntimeError):
 
 
 def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
-    encoded = json.dumps(
-        dict(payload), allow_nan=False, ensure_ascii=True, indent=2, sort_keys=True
-    ) + "\n"
+    encoded = (
+        json.dumps(
+            dict(payload), allow_nan=False, ensure_ascii=True, indent=2, sort_keys=True
+        )
+        + "\n"
+    )
     with path.open("x", encoding="utf-8", newline="\n") as handle:
         handle.write(encoded)
         handle.flush()
@@ -66,9 +72,7 @@ def _prompt_records(binding: stage.SplitBinding) -> tuple[Any, ...]:
         raise CandidateTournamentPreparationError("Source prompt list is absent.")
     try:
         return tuple(
-            split_tools._prompt_record(
-                value, f"source.{binding.name}.prompts[{index}]"
-            )
+            split_tools._prompt_record(value, f"source.{binding.name}.prompts[{index}]")
             for index, value in enumerate(prompts)
         )
     except split_tools.ContinuationSplitPreparationError as error:
@@ -136,7 +140,9 @@ def prepare_tournament_splits(
     try:
         split_tools._assert_globally_disjoint(active, label="guided tournament active")
     except split_tools.ContinuationSplitPreparationError as error:
-        raise CandidateTournamentPreparationError("Active split hygiene failed.") from error
+        raise CandidateTournamentPreparationError(
+            "Active split hygiene failed."
+        ) from error
     old_hashes = {name: old[name].sha256 for name in old}
     fit_prompts = [dict(value.payload) for value in active["fit"]]
     candidate_prompts = [dict(value.payload) for value in active["candidate"]]
@@ -218,22 +224,39 @@ def prepare_tournament_splits(
 def _recovered_binding(
     *, pack_path: Path, recovery_record_path: Path, expected_step: int
 ) -> dict[str, Any]:
-    pack = pack_path.expanduser().resolve()
-    record_path = recovery_record_path.expanduser().resolve()
-    if pack.is_symlink() or record_path.is_symlink():
+    raw_pack = pack_path.expanduser()
+    raw_record = recovery_record_path.expanduser()
+    if raw_pack.is_symlink() or raw_record.is_symlink():
         raise CandidateTournamentPreparationError("Recovery inputs cannot be symlinks.")
+    pack = raw_pack.resolve()
+    record_path = raw_record.resolve()
+    if not pack.is_file() or not record_path.is_file():
+        raise CandidateTournamentPreparationError("Recovery inputs are absent.")
     record = stage._strict_json(record_path)
-    if not isinstance(record, Mapping) or record.get("step") != expected_step:
-        raise CandidateTournamentPreparationError(
-            f"Recovered record is not step {expected_step}."
+    if not isinstance(record, Mapping):
+        raise CandidateTournamentPreparationError("Recovered record is not a mapping.")
+    record_sha = record.get("candidate_record_sha256")
+    if (
+        not isinstance(record_sha, str)
+        or canonical_sha256(
+            {
+                name: value
+                for name, value in record.items()
+                if name != "candidate_record_sha256"
+            }
         )
+        != record_sha
+    ):
+        raise CandidateTournamentPreparationError("Recovered record self-hash changed.")
     factor_sha = record.get("factor_state_sha256")
     if not isinstance(factor_sha, str):
         raise CandidateTournamentPreparationError("Recovery record lacks factor SHA.")
     try:
         loaded = torch.load(pack, map_location="cpu", weights_only=True)
     except (OSError, RuntimeError, TypeError, ValueError) as error:
-        raise CandidateTournamentPreparationError("Cannot safely load v3 recovery.") from error
+        raise CandidateTournamentPreparationError(
+            "Cannot safely load v3 recovery."
+        ) from error
     payload: Any = loaded
     if isinstance(loaded, Mapping) and isinstance(loaded.get("factor_pack"), Mapping):
         payload = loaded["factor_pack"]
@@ -244,11 +267,56 @@ def _recovered_binding(
             payload, expected_factor_state_sha256=factor_sha
         )
     except Exception as error:
-        raise CandidateTournamentPreparationError("Recovered v3 pack is invalid.") from error
+        raise CandidateTournamentPreparationError(
+            "Recovered v3 pack is invalid."
+        ) from error
+    portable_sha = portable_v3_factor_state_sha256(payload)
+    events = record.get("events")
+    retained_steps = record.get("retained_steps")
+    matching_events = (
+        [
+            event
+            for event in events
+            if isinstance(event, Mapping) and event.get("step") == expected_step
+        ]
+        if isinstance(events, list)
+        else []
+    )
+    pack_sha = stage._file_sha256(pack)
+    if (
+        record.get("schema") != GUIDED_CHECKPOINT_CANDIDATE_SCHEMA
+        or record.get("factor_state_sha256") != factor_sha
+        or record.get("portable_factor_state_sha256") != portable_sha
+        or record.get("portable_guided_source_binding_sha256")
+        != portable_guided_source_binding_sha256(payload["guided_source_binding"])
+        or record.get("runtime_identity_excluded_from_portable_content")
+        != ["inherited_installation_sha256"]
+        or record.get("content_address") != factor_sha
+        or record.get("contains_parent_state") is not False
+        or record.get("contains_native_child_state") is not False
+        or record.get("contains_optimizer_state") is not False
+        or record.get("contains_model_checkpoint") is not False
+        or record.get("factor_pack_relative_path") != pack.name
+        or record_path.parent / str(record.get("factor_pack_relative_path")) != pack
+        or record.get("factor_pack_file_sha256") != pack_sha
+        or record.get("factor_pack_size_bytes") != pack.stat().st_size
+        or not isinstance(events, list)
+        or record.get("event_count") != len(events)
+        or retained_steps
+        != [event.get("step") for event in events if isinstance(event, Mapping)]
+        or expected_step not in retained_steps
+        or len(matching_events) != 1
+        or matching_events[0].get("factor_state_sha256") != factor_sha
+        or matching_events[0].get("portable_factor_state_sha256") != portable_sha
+    ):
+        raise CandidateTournamentPreparationError(
+            f"Recovered record does not authenticate retained step {expected_step}."
+        )
     return {
         "path": str(pack),
-        "sha256": stage._file_sha256(pack),
+        "sha256": pack_sha,
         "factor_state_sha256": factor_sha,
+        "portable_factor_state_sha256": portable_sha,
         "source_step": expected_step,
         "recovery_record": {
             "path": str(record_path),
@@ -321,23 +389,30 @@ def prepare_candidate_tournament(
             {
                 "arm_id": tournament.ARM_IDS[0],
                 "initial_schema": BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
-                "initial_factor_state_sha256": initial_states[
+                "initial_factor_state_sha256": initial_states[tournament.ARM_IDS[0]][
+                    "factor_state_sha256"
+                ],
+                "initial_portable_factor_state_sha256": initial_states[
                     tournament.ARM_IDS[0]
-                ]["factor_state_sha256"],
+                ]["portable_factor_state_sha256"],
                 "site_mask_enabled": False,
             },
             {
                 "arm_id": tournament.ARM_IDS[1],
                 "initial_schema": BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
-                "initial_factor_state_sha256": initial_states[
+                "initial_factor_state_sha256": initial_states[tournament.ARM_IDS[1]][
+                    "factor_state_sha256"
+                ],
+                "initial_portable_factor_state_sha256": initial_states[
                     tournament.ARM_IDS[1]
-                ]["factor_state_sha256"],
+                ]["portable_factor_state_sha256"],
                 "site_mask_enabled": False,
             },
             {
                 "arm_id": tournament.ARM_IDS[2],
                 "initial_schema": BEHAVIOR_FACTOR_PACK_V2_SCHEMA,
                 "initial_factor_state_sha256": continuation.factor_state_sha256,
+                "initial_portable_factor_state_sha256": None,
                 "site_mask_enabled": True,
             },
         ]
@@ -354,6 +429,9 @@ def prepare_candidate_tournament(
                 "action_agreement_count",
             ],
             "retain_distinct_full_v3_states": 3,
+            "distinct_identity": "portable-v3-factor-content",
+            "rank_step_zero": True,
+            "later_states_require_pareto_safety_vs_step_zero": True,
             "sealed_disabled": True,
             "stop_after_candidate_winner": True,
         }
@@ -363,6 +441,10 @@ def prepare_candidate_tournament(
             "exact_source_reset_between_arms": True,
             "durable_callback_every_arm": True,
             "mask_verify_after_each_optimizer_step": True,
+        }
+        implementation = {
+            "runner_sha256": stage._file_sha256(Path(tournament.__file__).resolve()),
+            "builder_sha256": stage._file_sha256(Path(__file__).resolve()),
         }
         schedule = tournament.candidate_tournament_schedule().as_dict()
         preimage = {
@@ -374,6 +456,7 @@ def prepare_candidate_tournament(
                 name: {
                     "file": value["sha256"],
                     "factor": value["factor_state_sha256"],
+                    "portable_factor": value["portable_factor_state_sha256"],
                     "record": value["recovery_record"]["sha256"],
                 }
                 for name, value in initial_states.items()
@@ -384,6 +467,7 @@ def prepare_candidate_tournament(
             "training": schedule,
             "selection": selection,
             "runtime": runtime,
+            "implementation": implementation,
         }
         prereg = {
             "schema": tournament.PREREGISTRATION_SCHEMA,
@@ -402,6 +486,7 @@ def prepare_candidate_tournament(
             "training": schedule,
             "selection": selection,
             "runtime": runtime,
+            "implementation": implementation,
             "evaluation_contract_sha256": canonical_sha256(preimage),
         }
         prereg_path = staging / "preregistration.json"
