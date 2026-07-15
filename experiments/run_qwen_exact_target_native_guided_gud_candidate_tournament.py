@@ -1479,6 +1479,7 @@ def _authenticate_historical_v1_winner_payload(
         row = _strict(raw, required_winner, f"historical v3 retained[{index}]")
         row_metrics = row.get("metrics")
         arm_index = row.get("arm_index")
+        step = row.get("step")
         portable = _sha256(
             row.get("portable_factor_state_sha256"),
             f"historical v3 retained[{index}].portable_factor_state_sha256",
@@ -1488,7 +1489,9 @@ def _authenticate_historical_v1_winner_payload(
             or isinstance(arm_index, bool)
             or not 0 <= arm_index < len(v3_tournament.ARM_IDS)
             or row.get("arm_id") != v3_tournament.ARM_IDS[arm_index]
-            or row.get("step") not in v3_tournament.CHECKPOINT_STEPS
+            or not isinstance(step, int)
+            or isinstance(step, bool)
+            or step not in v3_tournament.CHECKPOINT_STEPS
             or not isinstance(row_metrics, Mapping)
             or row.get("rank")
             != list(v3_tournament.tournament_behavior_rank(row_metrics))
@@ -1531,6 +1534,19 @@ def _authenticate_historical_v1_winner_payload(
             )
         retained_rows.append(row)
 
+    retained_orders = [
+        (
+            *row["rank"],
+            row["arm_index"],
+            row["step"],
+            row["portable_factor_state_sha256"],
+        )
+        for row in retained_rows
+    ]
+    if retained_orders != sorted(retained_orders):
+        raise GuidedGUDCandidateTournamentError(
+            "Historical v3 retained frontier is not in authenticated total order."
+        )
     runtime_ids = [row["runtime_factor_state_sha256"] for row in retained_rows]
     portable_ids = [row["portable_factor_state_sha256"] for row in retained_rows]
     if (
