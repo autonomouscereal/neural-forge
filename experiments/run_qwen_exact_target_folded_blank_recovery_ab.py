@@ -1,0 +1,1502 @@
+#!/usr/bin/env python3
+"""Authenticate a sealed-free folded-vs-blank recovery A/B scaffold.
+
+Preregistration and preflight are deliberately model-free.  They authenticate
+one retained v4 candidate factor state, the exact compiled blank cache that
+candidate started from, a frozen replay bank, and one recovery plan shared
+byte-for-byte by both arms.  Folded materialization authentication is stricter:
+an explicit production callback bundle must independently fresh-reload the
+atomic experimental child artifact before zero-step evaluation or training.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib.util
+import inspect
+import json
+import re
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from types import MappingProxyType
+from typing import Any
+
+import materialize_qwen3_stage1_blank_target as blank
+import run_qwen_exact_target_native_guided_gud_candidate_tournament as tournament
+import run_qwen_exact_target_native_guided_gud_winner_publication as publication
+import run_qwen_exact_target_native_stage as stage
+from neural_forge.hf_compiled_child_cache import (
+    CACHE_RECEIPT_FILENAME,
+    CompilerIdentity,
+    verify_compiled_child_cache,
+)
+from neural_forge import hf_recovery
+from neural_forge import hf_progressive_target_bridge as progressive_bridge
+from neural_forge.hf_recovery import recover_cross_tokenizer_causal_lm
+from neural_forge.hf_guided_checkpoint_recovery import (
+    canonical_json_bytes,
+    canonical_sha256,
+)
+from neural_forge.hf_experimental_child_artifact import (
+    ARTIFACT_RECEIPT_FILENAME,
+    BRIDGE_REPORT_FILENAME,
+    ExperimentalChildArtifactError,
+    ExperimentalChildArtifactExpectations,
+    verify_experimental_child_artifact,
+)
+from neural_forge.hf_progressive_target_bridge import (
+    EXACT_TARGET_EXPERIMENTAL_RECOVERY_MATERIALIZATION_SCHEMA,
+    EXPERIMENTAL_RECOVERY_CONTRACT_SCHEMA,
+    EXPERIMENTAL_RECOVERY_MATERIALIZATION_RECEIPT_SCHEMA,
+)
+
+
+PREREGISTRATION_SCHEMA = (
+    "neural-forge-qwen-exact-target-folded-blank-recovery-ab-preregistration-v1"
+)
+RUN_SCHEMA = "neural-forge-qwen-exact-target-folded-blank-recovery-ab-run-v1"
+REPLAY_SCHEMA = "neural-forge-frozen-recovery-replay-bank-v1"
+PLAN_SCHEMA = "neural-forge-folded-blank-recovery-plan-v1"
+MATERIALIZATION_RECEIPT_SCHEMA = (
+    "neural-forge-folded-blank-recovery-materialization-receipt-v1"
+)
+ZERO_STEP_RECEIPT_SCHEMA = "neural-forge-folded-blank-recovery-zero-step-receipt-v1"
+BUILD_FILENAME = "prepare_qwen_exact_target_folded_blank_recovery_ab.py"
+ARM_IDS = ("folded", "blank")
+EXACT_UNIQUE_PARAMETERS = 1_410_567_168
+MAX_RETAINED_CHECKPOINTS_PER_ARM = 3
+MAX_TOTAL_RETAINED_CHECKPOINTS = 6
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_FORBIDDEN_RECOVERY_KWARGS = {
+    "source_model",
+    "candidate_model",
+    "output_dir",
+    "calibration_texts",
+    "behavior_eval_suite",
+    "precomputed_teacher_generated_texts",
+    "on_policy_replay_bank",
+    "stepwise_replay_bank",
+    "behavior_checkpoint_observer",
+}
+
+
+class FoldedBlankRecoveryABError(RuntimeError):
+    """The retained candidate, neutral blank, or symmetric A/B contract failed."""
+
+
+@dataclass(frozen=True, slots=True)
+class FoldedArtifactVerificationHooks:
+    """Explicit production callbacks required for one independent folded reload."""
+
+    model_loader: Callable[[Path], Any]
+    native_certifier: Callable[[Any], Mapping[str, Any] | Any]
+    runtime_auditor: Callable[[Any, Path], Mapping[str, Any]]
+    dense_state_hasher: Callable[[Any], str] | None = None
+
+    def __post_init__(self) -> None:
+        required = (
+            self.model_loader,
+            self.native_certifier,
+            self.runtime_auditor,
+        )
+        if any(not callable(value) for value in required) or (
+            self.dense_state_hasher is not None
+            and not callable(self.dense_state_hasher)
+        ):
+            raise FoldedBlankRecoveryABError(
+                "Folded artifact verification hooks must all be callable."
+            )
+
+
+def _sha256(value: Any, name: str) -> str:
+    if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
+        raise FoldedBlankRecoveryABError(f"{name} must be a lowercase SHA-256.")
+    return value
+
+
+def _strict(value: Any, fields: set[str], name: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping) or set(value) != fields:
+        actual = sorted(value) if isinstance(value, Mapping) else type(value).__name__
+        raise FoldedBlankRecoveryABError(
+            f"{name} fields changed; expected={sorted(fields)!r}, actual={actual!r}."
+        )
+    return value
+
+
+def _bound_json(path: Path | str, expected_sha256: str, name: str) -> dict[str, Any]:
+    source = publication._bound_file(path, expected_sha256, name)
+    payload = stage._strict_json(source)
+    if not isinstance(payload, dict):
+        raise FoldedBlankRecoveryABError(f"{name} must contain one JSON object.")
+    canonical_json_bytes(payload)
+    return payload
+
+
+def _module_file(module_name: str) -> Path:
+    spec = importlib.util.find_spec(module_name)
+    if spec is None or spec.origin is None:
+        raise FoldedBlankRecoveryABError(
+            f"Required implementation module {module_name!r} is absent."
+        )
+    return Path(spec.origin).resolve()
+
+
+def _implementation_hashes(*, builder_path: Path) -> dict[str, str]:
+    builder = publication._resolve(
+        builder_path,
+        base=Path.cwd(),
+        name="A/B builder implementation",
+    )
+    if not builder.is_file():
+        raise FoldedBlankRecoveryABError("A/B builder implementation is absent.")
+    return {
+        "runner_sha256": stage._file_sha256(Path(__file__).resolve()),
+        "builder_sha256": stage._file_sha256(builder),
+        "v4_candidate_tournament_runner_sha256": stage._file_sha256(
+            Path(tournament.__file__).resolve()
+        ),
+        "v4_candidate_authenticator_sha256": stage._file_sha256(
+            Path(publication.__file__).resolve()
+        ),
+        "exact_stage_runner_sha256": stage._file_sha256(Path(stage.__file__).resolve()),
+        "compiled_blank_cache_sha256": stage._file_sha256(
+            _module_file("neural_forge.hf_compiled_child_cache")
+        ),
+        "progressive_bridge_sha256": stage._file_sha256(
+            _module_file("neural_forge.hf_progressive_target_bridge")
+        ),
+        "recovery_implementation_sha256": stage._file_sha256(
+            _module_file("neural_forge.hf_recovery")
+        ),
+        "blank_materializer_sha256": stage._file_sha256(Path(blank.__file__).resolve()),
+        "checkpoint_authenticator_sha256": stage._file_sha256(
+            _module_file("neural_forge.hf_guided_checkpoint_recovery")
+        ),
+        "factor_authenticator_sha256": stage._file_sha256(
+            _module_file("neural_forge.hf_target_native_behavior_distillation")
+        ),
+    }
+
+
+def _collect_sha256_roots(value: Any, *, path: str = "$") -> dict[str, str]:
+    roots: dict[str, str] = {}
+    if isinstance(value, Mapping):
+        for key in sorted(value, key=str):
+            roots.update(_collect_sha256_roots(value[key], path=f"{path}.{str(key)}"))
+    elif isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            roots.update(_collect_sha256_roots(item, path=f"{path}[{index}]"))
+    elif isinstance(value, str) and _SHA256.fullmatch(value):
+        roots[path] = value
+    return roots
+
+
+@dataclass(frozen=True, slots=True)
+class _V4CandidateBinding:
+    contract: tournament.AuthenticatedGuidedGUDCandidateTournament
+    preregistration_path: Path
+    preregistration_sha256: str
+    preregistration: Mapping[str, Any]
+    run_report_path: Path
+    run_report_sha256: str
+    run_report: Mapping[str, Any]
+    winner_selection_path: Path
+    winner_selection_sha256: str
+    winner_selection: Mapping[str, Any]
+    winner: Mapping[str, Any]
+    factor_payload: Mapping[str, Any]
+
+
+def _authenticate_v4_candidate(
+    *,
+    tournament_preregistration: Path,
+    tournament_preregistration_sha256: str,
+    tournament_run_report: Path,
+    tournament_run_report_sha256: str,
+    winner_selection: Path,
+    winner_selection_sha256: str,
+) -> _V4CandidateBinding:
+    prereg_path = publication._bound_file(
+        tournament_preregistration,
+        tournament_preregistration_sha256,
+        "v4 candidate tournament preregistration",
+    )
+    prereg_sha = _sha256(
+        tournament_preregistration_sha256,
+        "v4 candidate tournament preregistration SHA",
+    )
+    prereg = _bound_json(prereg_path, prereg_sha, "v4 candidate preregistration")
+    try:
+        contract = tournament.authenticate_guided_gud_candidate_preregistration(
+            prereg_path,
+            prereg_sha,
+        )
+    except Exception as error:
+        raise FoldedBlankRecoveryABError(
+            "V4 candidate tournament failed transitive authentication."
+        ) from error
+    run_path = publication._bound_file(
+        tournament_run_report,
+        tournament_run_report_sha256,
+        "v4 candidate tournament run report",
+    )
+    run_sha = _sha256(tournament_run_report_sha256, "v4 run report SHA")
+    run_report = _bound_json(run_path, run_sha, "v4 candidate run report")
+    winner_path = publication._bound_file(
+        winner_selection,
+        winner_selection_sha256,
+        "v4 retained winner selection",
+    )
+    winner_sha = _sha256(winner_selection_sha256, "v4 winner selection SHA")
+    winner_payload = _bound_json(
+        winner_path,
+        winner_sha,
+        "v4 retained winner selection",
+    )
+    try:
+        winner, factor_payload = publication._winner_payload(
+            contract,
+            run_report,
+            winner_payload,
+        )
+    except Exception as error:
+        raise FoldedBlankRecoveryABError(
+            "Retained v4 factor pack/frontier failed full candidate authentication."
+        ) from error
+    if (
+        run_report.get("sealed_forward_count") != 0
+        or run_report.get("sealed_evaluation_accessed") is not False
+        or run_report.get("publication_attempted") is not False
+        or winner_payload.get("candidate_only") is not True
+        or winner_payload.get("sealed_evaluation_accessed") is not False
+        or winner_payload.get("publication_attempted") is not False
+    ):
+        raise FoldedBlankRecoveryABError(
+            "A/B source must remain at the sealed-free candidate boundary."
+        )
+    return _V4CandidateBinding(
+        contract=contract,
+        preregistration_path=prereg_path,
+        preregistration_sha256=prereg_sha,
+        preregistration=MappingProxyType(dict(prereg)),
+        run_report_path=run_path,
+        run_report_sha256=run_sha,
+        run_report=MappingProxyType(dict(run_report)),
+        winner_selection_path=winner_path,
+        winner_selection_sha256=winner_sha,
+        winner_selection=MappingProxyType(dict(winner_payload)),
+        winner=MappingProxyType(dict(winner)),
+        factor_payload=MappingProxyType(dict(factor_payload)),
+    )
+
+
+def _compiled_blank_binding(v4: _V4CandidateBinding) -> dict[str, Any]:
+    try:
+        guided_source = v4.contract.source.tournament_contract.source
+        cache = guided_source.execution_contract.compiler_cache
+    except AttributeError as error:
+        raise FoldedBlankRecoveryABError(
+            "V4 source does not expose its transitive compiled blank cache."
+        ) from error
+    required_pins = (
+        "expected_compiler_identity_sha256",
+        "expected_receipt_sha256",
+        "expected_compiler_report_sha256",
+        "expected_state_dict_sha256",
+        "expected_artifact_tree_sha256",
+    )
+    if (
+        cache is None
+        or cache.require_hit is not True
+        or any(getattr(cache, name, None) is None for name in required_pins)
+    ):
+        raise FoldedBlankRecoveryABError(
+            "V4 source does not require one fully pinned compiled blank cache hit."
+        )
+    identity_sha = _sha256(
+        cache.expected_compiler_identity_sha256,
+        "compiled blank identity SHA",
+    )
+    cache_path = (cache.root / identity_sha).resolve()
+    receipt_path = cache_path / CACHE_RECEIPT_FILENAME
+    receipt_raw = stage._strict_json(receipt_path)
+    if not isinstance(receipt_raw, Mapping):
+        raise FoldedBlankRecoveryABError("Compiled blank receipt is malformed.")
+    try:
+        identity = CompilerIdentity.from_dict(receipt_raw["compiler_identity"])
+        verified = verify_compiled_child_cache(
+            cache_path,
+            expected_identity=identity,
+            expected_receipt_sha256=cache.expected_receipt_sha256,
+            expected_compiler_report_sha256=(cache.expected_compiler_report_sha256),
+            expected_state_dict_sha256=cache.expected_state_dict_sha256,
+        )
+    except Exception as error:
+        raise FoldedBlankRecoveryABError(
+            "Compiled blank cache failed model-free fresh-reload receipt verification."
+        ) from error
+    receipt = verified.receipt.as_dict()
+    state = receipt.get("model_state")
+    tree = receipt.get("artifact_tree")
+    if (
+        identity.compiler_identity_sha256 != identity_sha
+        or not isinstance(state, Mapping)
+        or not isinstance(tree, Mapping)
+        or state.get("unique_parameter_count") != EXACT_UNIQUE_PARAMETERS
+        or state.get("logical_parameter_count") != EXACT_UNIQUE_PARAMETERS
+        or receipt.get("fresh_reload_verified") is not True
+        or tree.get("tree_sha256") != cache.expected_artifact_tree_sha256
+    ):
+        raise FoldedBlankRecoveryABError(
+            "Compiled blank is not the exact untied 1,410,567,168 state."
+        )
+    config_path = cache_path / "config.json"
+    config = stage._strict_json(config_path)
+    if not isinstance(config, Mapping) or any(
+        config.get(name) != expected
+        for name, expected in blank.CANONICAL_CONFIG.items()
+    ):
+        raise FoldedBlankRecoveryABError(
+            "Compiled blank config differs from the exact stage-1 Qwen shape."
+        )
+    return {
+        "cache_path": str(cache_path),
+        "compiler_identity_sha256": identity_sha,
+        "receipt_sha256": verified.receipt.receipt_sha256,
+        "compiler_report_sha256": cache.expected_compiler_report_sha256,
+        "artifact_tree": dict(tree),
+        "artifact_tree_sha256": tree["tree_sha256"],
+        "state": dict(state),
+        "state_dict_sha256": state["state_dict_sha256"],
+        "compiler_state_sha256": state["compiler_state_sha256"],
+        "state_key_sha256": state["state_key_sha256"],
+        "state_manifest_sha256": state["state_manifest_sha256"],
+        "parameter_topology_sha256": state["parameter_topology_sha256"],
+        "buffer_topology_sha256": state["buffer_topology_sha256"],
+        "config_file_sha256": stage._file_sha256(config_path),
+        "config_payload_sha256": canonical_sha256(config),
+        "config": {name: config[name] for name in blank.CANONICAL_CONFIG},
+        "exact_unique_parameters": EXACT_UNIQUE_PARAMETERS,
+        "fresh_reload_verified": True,
+        "model_loaded_for_authentication": False,
+        "capability_proven": False,
+        "publication_receipt": False,
+    }
+
+
+def _nonblank_texts(value: Any, name: str) -> tuple[str, ...]:
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence) or not value:
+        raise FoldedBlankRecoveryABError(f"{name} must be a nonempty text list.")
+    if any(not isinstance(item, str) for item in value):
+        raise FoldedBlankRecoveryABError(f"{name} must contain only strings.")
+    result = tuple(value)
+    if any(not item.strip() for item in result):
+        raise FoldedBlankRecoveryABError(f"{name} contains a blank text.")
+    return result
+
+
+def _ordered_texts_sha256(texts: Sequence[str]) -> str:
+    digest = hashlib.sha256()
+    digest.update(len(texts).to_bytes(8, byteorder="big", signed=False))
+    for text in texts:
+        encoded = str(text).encode("utf-8")
+        digest.update(len(encoded).to_bytes(8, byteorder="big", signed=False))
+        digest.update(encoded)
+    return digest.hexdigest()
+
+
+def _ordered_replay_bank_sha256(bank: Sequence[Sequence[str]]) -> str:
+    digest = hashlib.sha256()
+    digest.update(len(bank).to_bytes(8, byteorder="big", signed=False))
+    for batch in bank:
+        digest.update(len(batch).to_bytes(8, byteorder="big", signed=False))
+        digest.update(bytes.fromhex(_ordered_texts_sha256(batch)))
+    return digest.hexdigest()
+
+
+def _frozen_stepwise_replay_bank(
+    value: Any,
+) -> tuple[hf_recovery._FrozenStepwiseReplayEvent, ...]:
+    try:
+        return hf_recovery._freeze_stepwise_replay_bank(value)
+    except (TypeError, ValueError) as error:
+        raise FoldedBlankRecoveryABError(
+            "stepwise_replay_bank is not a valid immutable token replay bank."
+        ) from error
+
+
+def _replay_binding(path: Path, expected_sha256: str) -> dict[str, Any]:
+    source = publication._bound_file(path, expected_sha256, "frozen replay bank")
+    file_sha = _sha256(expected_sha256, "frozen replay bank SHA")
+    raw = _bound_json(source, file_sha, "frozen replay bank")
+    replay_fields = {
+        "schema",
+        "status",
+        "calibration_texts",
+        "precomputed_teacher_generated_texts",
+        "on_policy_replay_bank",
+        "behavior_eval_suite",
+        "frozen_before_preregistration",
+        "contains_sealed_data",
+        "publication_authorized",
+        "replay_payload_sha256",
+    }
+    if not isinstance(raw, Mapping) or set(raw) not in {
+        frozenset(replay_fields),
+        frozenset(replay_fields | {"stepwise_replay_bank"}),
+    }:
+        raise FoldedBlankRecoveryABError(
+            "frozen replay bank fields changed or are incomplete."
+        )
+    body = dict(raw)
+    embedded = _sha256(body.pop("replay_payload_sha256"), "replay payload SHA")
+    calibration = _nonblank_texts(raw["calibration_texts"], "calibration_texts")
+    teacher = _nonblank_texts(
+        raw["precomputed_teacher_generated_texts"],
+        "precomputed_teacher_generated_texts",
+    )
+    bank_raw = raw["on_policy_replay_bank"]
+    if isinstance(bank_raw, (str, bytes)) or not isinstance(bank_raw, Sequence):
+        raise FoldedBlankRecoveryABError("on_policy_replay_bank must be a list.")
+    bank = tuple(
+        _nonblank_texts(event, f"on_policy_replay_bank[{index}]")
+        for index, event in enumerate(bank_raw)
+    )
+    stepwise_bank = _frozen_stepwise_replay_bank(raw.get("stepwise_replay_bank", ()))
+    suite = raw["behavior_eval_suite"]
+    if not isinstance(suite, Mapping) or not suite:
+        raise FoldedBlankRecoveryABError("behavior_eval_suite must be an object.")
+    if (
+        raw.get("schema") != REPLAY_SCHEMA
+        or raw.get("status") != "frozen"
+        or raw.get("frozen_before_preregistration") is not True
+        or raw.get("contains_sealed_data") is not False
+        or raw.get("publication_authorized") is not False
+        or not isinstance(suite.get("split"), str)
+        or suite.get("split", "").strip().casefold() != "candidate"
+        or suite.get("sealed_data_accessed") is not False
+        or canonical_sha256(body) != embedded
+    ):
+        raise FoldedBlankRecoveryABError(
+            "Replay bank is not frozen, sealed-free, and self-authenticating."
+        )
+    event_rows = [
+        {
+            "event_index": index,
+            "text_count": len(event),
+            "ordered_text_sha256": _ordered_texts_sha256(event),
+        }
+        for index, event in enumerate(bank)
+    ]
+    stepwise_event_rows = [
+        {
+            "event_index": index,
+            "optimizer_step": event.step,
+            "row_count": len(event.rows),
+            "prompt_token_count": sum(len(row.prompt_input_ids) for row in event.rows),
+            "rollout_token_count": sum(
+                len(row.rollout_input_ids) for row in event.rows
+            ),
+            "continuation_token_count": sum(
+                len(row.rollout_input_ids) - len(row.prompt_input_ids)
+                for row in event.rows
+            ),
+            "event_sha256": hf_recovery._stepwise_replay_event_sha256(event),
+        }
+        for index, event in enumerate(stepwise_bank)
+    ]
+    return {
+        "path": str(source),
+        "file_sha256": file_sha,
+        "payload_sha256": embedded,
+        "calibration_text_count": len(calibration),
+        "calibration_texts_sha256": _ordered_texts_sha256(calibration),
+        "teacher_generated_text_count": len(teacher),
+        "teacher_generated_texts_sha256": _ordered_texts_sha256(teacher),
+        "on_policy_event_count": len(bank),
+        "on_policy_events": event_rows,
+        "on_policy_replay_bank_sha256": _ordered_replay_bank_sha256(bank),
+        "stepwise_event_count": len(stepwise_bank),
+        "stepwise_event_steps": [event.step for event in stepwise_bank],
+        "stepwise_events": stepwise_event_rows,
+        "stepwise_replay_bank_schema": hf_recovery._STEPWISE_REPLAY_SCHEMA,
+        "stepwise_replay_bank_sha256": (
+            hf_recovery._stepwise_replay_bank_sha256(stepwise_bank)
+        ),
+        "stepwise_replay_bank_supplied": "stepwise_replay_bank" in raw,
+        "behavior_eval_suite_sha256": canonical_sha256(suite),
+        "frozen_before_preregistration": True,
+        "contains_sealed_data": False,
+        "publication_authorized": False,
+    }
+
+
+def _plan_binding(path: Path, expected_sha256: str) -> dict[str, Any]:
+    source = publication._bound_file(path, expected_sha256, "recovery plan")
+    file_sha = _sha256(expected_sha256, "recovery plan SHA")
+    raw = _bound_json(source, file_sha, "recovery plan")
+    _strict(
+        raw,
+        {
+            "schema",
+            "status",
+            "recovery_kwargs",
+            "seeds",
+            "checkpoint_steps",
+            "retained_checkpoint_steps",
+            "zero_step_before_optimizer",
+            "reset_rng_before_each_arm",
+            "publication_authorized",
+            "sealed_data_accessed",
+            "plan_payload_sha256",
+        },
+        "recovery plan",
+    )
+    body = dict(raw)
+    embedded = _sha256(body.pop("plan_payload_sha256"), "plan payload SHA")
+    kwargs = raw["recovery_kwargs"]
+    seeds = raw["seeds"]
+    checkpoints = raw["checkpoint_steps"]
+    retained = raw["retained_checkpoint_steps"]
+    if not isinstance(kwargs, Mapping) or not kwargs:
+        raise FoldedBlankRecoveryABError("recovery_kwargs must be nonempty.")
+    supported_recovery_kwargs = set(
+        inspect.signature(recover_cross_tokenizer_causal_lm).parameters
+    )
+    unknown_recovery_kwargs = set(kwargs) - supported_recovery_kwargs
+    if unknown_recovery_kwargs:
+        raise FoldedBlankRecoveryABError(
+            "recovery_kwargs contains unsupported names: "
+            f"{sorted(unknown_recovery_kwargs)!r}."
+        )
+    if set(kwargs).intersection(_FORBIDDEN_RECOVERY_KWARGS):
+        raise FoldedBlankRecoveryABError(
+            "recovery_kwargs cannot replace frozen A/B data/model/output inputs."
+        )
+    steps = kwargs.get("steps")
+    interval = kwargs.get("on_policy_interval")
+    stepwise_weight = kwargs.get("stepwise_donor_kd_weight", 0.0)
+    if (
+        isinstance(steps, bool)
+        or not isinstance(steps, int)
+        or steps <= 0
+        or isinstance(interval, bool)
+        or not isinstance(interval, int)
+        or interval <= 0
+        or kwargs.get("adamw_foreach") is not False
+        or kwargs.get("local_files_only") is not True
+        or kwargs.get("trust_remote_code", False) is not False
+        or kwargs.get("save_best_loss", False) is not False
+        or kwargs.get("save_best_behavior", False) is not False
+        or isinstance(stepwise_weight, bool)
+        or not isinstance(stepwise_weight, (int, float))
+        or float(stepwise_weight) < 0.0
+    ):
+        raise FoldedBlankRecoveryABError(
+            "Recovery plan must pin positive steps/interval, local-only trusted "
+            "model loading, AdamW foreach=False, no implicit best-checkpoint "
+            "retention, and a nonnegative stepwise donor weight."
+        )
+    if (
+        not isinstance(checkpoints, list)
+        or not checkpoints
+        or any(
+            isinstance(step, bool) or not isinstance(step, int) for step in checkpoints
+        )
+        or checkpoints != sorted(set(checkpoints))
+        or checkpoints[0] != 0
+        or checkpoints[-1] != steps
+        or kwargs.get("behavior_eval_checkpoint_steps") != checkpoints
+        or not isinstance(retained, list)
+        or retained != sorted(set(retained))
+        or any(step not in checkpoints or step == 0 for step in retained)
+        or len(retained) > MAX_RETAINED_CHECKPOINTS_PER_ARM
+    ):
+        raise FoldedBlankRecoveryABError(
+            "Checkpoint schedule/retention is not exact, ordered, and capped."
+        )
+    _strict(seeds, {"python", "torch", "cuda", "data_order"}, "seeds")
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value < 0
+        for value in seeds.values()
+    ):
+        raise FoldedBlankRecoveryABError("Every recovery seed must be nonnegative.")
+    if (
+        raw.get("schema") != PLAN_SCHEMA
+        or raw.get("status") != "preregistered"
+        or raw.get("zero_step_before_optimizer") is not True
+        or raw.get("reset_rng_before_each_arm") is not True
+        or raw.get("publication_authorized") is not False
+        or raw.get("sealed_data_accessed") is not False
+        or canonical_sha256(body) != embedded
+    ):
+        raise FoldedBlankRecoveryABError(
+            "Recovery plan is not a sealed-free self-authenticating A/B plan."
+        )
+    on_policy_enabled = any(
+        float(kwargs.get(name, 0.0)) > 0.0
+        for name in (
+            "on_policy_anchor_kd_weight",
+            "on_policy_unlikelihood_weight",
+            "on_policy_hidden_kd_weight",
+        )
+    )
+    events = (
+        [step for step in range(1, steps + 1) if step == 1 or step % interval == 0]
+        if on_policy_enabled
+        else []
+    )
+    stepwise_events = list(range(1, steps + 1)) if float(stepwise_weight) > 0.0 else []
+    return {
+        "path": str(source),
+        "file_sha256": file_sha,
+        "payload_sha256": embedded,
+        "recovery_kwargs": dict(kwargs),
+        "recovery_kwargs_sha256": canonical_sha256(kwargs),
+        "seeds": dict(seeds),
+        "seeds_sha256": canonical_sha256(seeds),
+        "checkpoint_steps": list(checkpoints),
+        "checkpoint_steps_sha256": canonical_sha256(checkpoints),
+        "retained_checkpoint_steps": list(retained),
+        "maximum_retained_checkpoints_per_arm": MAX_RETAINED_CHECKPOINTS_PER_ARM,
+        "maximum_total_retained_checkpoints": MAX_TOTAL_RETAINED_CHECKPOINTS,
+        "on_policy_event_steps": events,
+        "on_policy_event_count": len(events),
+        "stepwise_donor_kd_weight": float(stepwise_weight),
+        "stepwise_event_steps": stepwise_events,
+        "stepwise_event_count": len(stepwise_events),
+        "stepwise_replay_bank_required": bool(stepwise_events),
+        "zero_step_before_optimizer": True,
+        "reset_rng_before_each_arm": True,
+        "adamw_foreach": False,
+        "local_files_only": True,
+        "trust_remote_code": False,
+        "dynamic_stepwise_donor_generation_forbidden": True,
+        "publication_authorized": False,
+        "sealed_data_accessed": False,
+    }
+
+
+def build_recovery_ab_preregistration_payload(
+    *,
+    tournament_preregistration: Path,
+    tournament_preregistration_sha256: str,
+    tournament_run_report: Path,
+    tournament_run_report_sha256: str,
+    winner_selection: Path,
+    winner_selection_sha256: str,
+    replay_bank: Path,
+    replay_bank_sha256: str,
+    recovery_plan: Path,
+    recovery_plan_sha256: str,
+    builder_path: Path,
+) -> tuple[dict[str, Any], _V4CandidateBinding]:
+    v4 = _authenticate_v4_candidate(
+        tournament_preregistration=tournament_preregistration,
+        tournament_preregistration_sha256=tournament_preregistration_sha256,
+        tournament_run_report=tournament_run_report,
+        tournament_run_report_sha256=tournament_run_report_sha256,
+        winner_selection=winner_selection,
+        winner_selection_sha256=winner_selection_sha256,
+    )
+    compiled_blank = _compiled_blank_binding(v4)
+    replay = _replay_binding(replay_bank, replay_bank_sha256)
+    plan = _plan_binding(recovery_plan, recovery_plan_sha256)
+    if replay["on_policy_event_count"] != plan["on_policy_event_count"]:
+        raise FoldedBlankRecoveryABError(
+            "Frozen on-policy replay event count differs from the recovery schedule."
+        )
+    if (
+        replay["stepwise_event_count"] != plan["stepwise_event_count"]
+        or replay["stepwise_event_steps"] != plan["stepwise_event_steps"]
+    ):
+        raise FoldedBlankRecoveryABError(
+            "Frozen stepwise replay bank must contain exactly one ordered event "
+            "per scheduled stepwise donor optimizer step."
+        )
+    implementation = _implementation_hashes(builder_path=builder_path)
+    shared = {
+        "replay_bank_file_sha256": replay["file_sha256"],
+        "replay_bank_payload_sha256": replay["payload_sha256"],
+        "calibration_texts_sha256": replay["calibration_texts_sha256"],
+        "teacher_generated_texts_sha256": replay["teacher_generated_texts_sha256"],
+        "on_policy_replay_bank_sha256": replay["on_policy_replay_bank_sha256"],
+        "behavior_eval_suite_sha256": replay["behavior_eval_suite_sha256"],
+        "recovery_plan_file_sha256": plan["file_sha256"],
+        "recovery_plan_payload_sha256": plan["payload_sha256"],
+        "recovery_kwargs_sha256": plan["recovery_kwargs_sha256"],
+        "seeds_sha256": plan["seeds_sha256"],
+        "checkpoint_steps_sha256": plan["checkpoint_steps_sha256"],
+        "stepwise_replay_bank_schema": replay["stepwise_replay_bank_schema"],
+        "stepwise_replay_bank_sha256": replay["stepwise_replay_bank_sha256"],
+        "stepwise_event_count": replay["stepwise_event_count"],
+        "stepwise_replay_bank_required": plan["stepwise_replay_bank_required"],
+        "same_stepwise_replay_bank_required_for_both_arms": True,
+        "zero_step_before_optimizer": True,
+        "reset_rng_before_each_arm": True,
+        "adamw_foreach": False,
+        "local_files_only": True,
+        "trust_remote_code": False,
+        "dynamic_stepwise_donor_generation_forbidden": True,
+    }
+    shared_sha = canonical_sha256(shared)
+    factor_source_binding = {
+        "factor_pack_sha256": v4.winner["factor_pack_sha256"],
+        "portable_factor_state_sha256": v4.winner["portable_factor_state_sha256"],
+        "runtime_factor_state_sha256": v4.winner["runtime_factor_state_sha256"],
+        "candidate_frontier_sha256": v4.winner["candidate_frontier"]["sha256"],
+        "winner_selection_sha256": v4.winner_selection_sha256,
+    }
+    factor_source_binding_sha = canonical_sha256(factor_source_binding)
+    arms = [
+        {
+            "arm_id": "folded",
+            "initialization": "retained-v4-factor-materialization",
+            "source_portable_factor_state_sha256": v4.winner[
+                "portable_factor_state_sha256"
+            ],
+            "source_factor_pack_sha256": v4.winner["factor_pack_sha256"],
+            "expected_initial_state_sha256": None,
+            "shared_execution_contract_sha256": shared_sha,
+        },
+        {
+            "arm_id": "blank",
+            "initialization": "authenticated-compiled-blank-state",
+            "source_portable_factor_state_sha256": None,
+            "source_factor_pack_sha256": None,
+            "expected_initial_state_sha256": compiled_blank["state_dict_sha256"],
+            "shared_execution_contract_sha256": shared_sha,
+        },
+    ]
+    source_roots = {
+        "v4_preregistration": _collect_sha256_roots(v4.preregistration),
+        "v4_run_report": _collect_sha256_roots(v4.run_report),
+        "v4_winner_selection": _collect_sha256_roots(v4.winner_selection),
+        "v4_winner": _collect_sha256_roots(v4.winner),
+        "compiled_blank": _collect_sha256_roots(compiled_blank),
+        "replay_bank": _collect_sha256_roots(replay),
+        "recovery_plan": _collect_sha256_roots(plan),
+        "implementation": _collect_sha256_roots(implementation),
+    }
+    payload = {
+        "schema": PREREGISTRATION_SCHEMA,
+        "status": "experimental-unaccepted",
+        "v4_candidate": {
+            "tournament_preregistration": str(v4.preregistration_path),
+            "tournament_preregistration_sha256": v4.preregistration_sha256,
+            "tournament_run_report": str(v4.run_report_path),
+            "tournament_run_report_sha256": v4.run_report_sha256,
+            "winner_selection": str(v4.winner_selection_path),
+            "winner_selection_sha256": v4.winner_selection_sha256,
+            "evaluation_contract_sha256": v4.contract.evaluation_contract_sha256,
+            "winner": dict(v4.winner),
+            "factor_pack_schema": str(v4.factor_payload.get("schema", "")),
+            "factor_source_binding": factor_source_binding,
+            "factor_source_binding_sha256": factor_source_binding_sha,
+            "candidate_only": True,
+            "sealed_evaluation_accessed": False,
+            "publication_attempted": False,
+        },
+        "compiled_blank": compiled_blank,
+        "replay_bank": replay,
+        "recovery_plan": plan,
+        "shared_execution_contract": shared,
+        "shared_execution_contract_sha256": shared_sha,
+        "arms": arms,
+        "transitive_sha256_roots": source_roots,
+        "transitive_sha256_roots_sha256": canonical_sha256(source_roots),
+        "implementation": implementation,
+        "exact_unique_parameters": EXACT_UNIQUE_PARAMETERS,
+        "exact_parameter_count_required_for_both_arms": True,
+        "identical_config_and_topology_required_for_both_arms": True,
+        "identical_schedule_seeds_checkpoints_for_both_arms": True,
+        "symmetric_frozen_replay_bank": True,
+        "model_free_preregistration": True,
+        "model_weights_loaded": False,
+        "gpu_work_launched": False,
+        "training_launched": False,
+        "materialization_launched": False,
+        "zero_step_evaluation_launched": False,
+        "sealed_data_accessed": False,
+        "publication_authorized": False,
+        "accepted_artifact": False,
+        "maximum_retained_checkpoints_per_arm": MAX_RETAINED_CHECKPOINTS_PER_ARM,
+        "maximum_total_retained_checkpoints": MAX_TOTAL_RETAINED_CHECKPOINTS,
+        "production_model_hook_implemented": False,
+        "explicit_production_hook_required": True,
+    }
+    payload["semantic_contract_sha256"] = canonical_sha256(
+        {
+            key: payload[key]
+            for key in (
+                "v4_candidate",
+                "compiled_blank",
+                "replay_bank",
+                "recovery_plan",
+                "shared_execution_contract",
+                "arms",
+                "transitive_sha256_roots_sha256",
+                "implementation",
+                "exact_unique_parameters",
+            )
+        }
+    )
+    return payload, v4
+
+
+@dataclass(frozen=True, slots=True)
+class AuthenticatedFoldedBlankRecoveryAB:
+    path: Path
+    file_sha256: str
+    v4: _V4CandidateBinding
+    raw: Mapping[str, Any]
+
+    def materialization_plan(self) -> dict[str, Any]:
+        return {
+            "schema": RUN_SCHEMA,
+            "status": "materialization-planned",
+            "preregistration": str(self.path),
+            "preregistration_sha256": self.file_sha256,
+            "semantic_contract_sha256": self.raw["semantic_contract_sha256"],
+            "arms": [dict(value) for value in self.raw["arms"]],
+            "exact_unique_parameters": EXACT_UNIQUE_PARAMETERS,
+            "compiled_blank_state_sha256": self.raw["compiled_blank"][
+                "state_dict_sha256"
+            ],
+            "folded_factor_state_sha256": self.raw["v4_candidate"]["winner"][
+                "portable_factor_state_sha256"
+            ],
+            "fresh_copy_per_arm_required": True,
+            "zero_step_before_optimizer": True,
+            "model_weights_loaded": False,
+            "gpu_work_launched": False,
+            "materialization_launched": False,
+            "sealed_data_accessed": False,
+            "publication_authorized": False,
+            "accepted_artifact": False,
+        }
+
+    def preflight_report(self) -> dict[str, Any]:
+        return {
+            **self.materialization_plan(),
+            "status": "preflight-passed",
+            "shared_execution_contract": dict(self.raw["shared_execution_contract"]),
+            "replay_bank": dict(self.raw["replay_bank"]),
+            "recovery_plan": dict(self.raw["recovery_plan"]),
+            "maximum_retained_checkpoints_per_arm": (MAX_RETAINED_CHECKPOINTS_PER_ARM),
+            "maximum_total_retained_checkpoints": MAX_TOTAL_RETAINED_CHECKPOINTS,
+            "production_model_hook_implemented": False,
+            "explicit_production_hook_required": True,
+        }
+
+
+def authenticate_recovery_ab_preregistration(
+    path: Path | str,
+    expected_sha256: str,
+) -> AuthenticatedFoldedBlankRecoveryAB:
+    source = publication._bound_file(
+        path, expected_sha256, "recovery A/B preregistration"
+    )
+    expected = _sha256(expected_sha256, "recovery A/B preregistration SHA")
+    raw = _bound_json(source, expected, "recovery A/B preregistration")
+    expected_fields = {
+        "schema",
+        "status",
+        "v4_candidate",
+        "compiled_blank",
+        "replay_bank",
+        "recovery_plan",
+        "shared_execution_contract",
+        "shared_execution_contract_sha256",
+        "arms",
+        "transitive_sha256_roots",
+        "transitive_sha256_roots_sha256",
+        "implementation",
+        "exact_unique_parameters",
+        "exact_parameter_count_required_for_both_arms",
+        "identical_config_and_topology_required_for_both_arms",
+        "identical_schedule_seeds_checkpoints_for_both_arms",
+        "symmetric_frozen_replay_bank",
+        "model_free_preregistration",
+        "model_weights_loaded",
+        "gpu_work_launched",
+        "training_launched",
+        "materialization_launched",
+        "zero_step_evaluation_launched",
+        "sealed_data_accessed",
+        "publication_authorized",
+        "accepted_artifact",
+        "maximum_retained_checkpoints_per_arm",
+        "maximum_total_retained_checkpoints",
+        "production_model_hook_implemented",
+        "explicit_production_hook_required",
+        "semantic_contract_sha256",
+    }
+    _strict(raw, expected_fields, "recovery A/B preregistration")
+    v4_row = raw.get("v4_candidate")
+    replay_row = raw.get("replay_bank")
+    plan_row = raw.get("recovery_plan")
+    if not all(isinstance(value, Mapping) for value in (v4_row, replay_row, plan_row)):
+        raise FoldedBlankRecoveryABError("Recovery A/B source rows are malformed.")
+    builder_path = Path(__file__).resolve().with_name(BUILD_FILENAME)
+    expected_payload, v4 = build_recovery_ab_preregistration_payload(
+        tournament_preregistration=Path(str(v4_row["tournament_preregistration"])),
+        tournament_preregistration_sha256=str(
+            v4_row["tournament_preregistration_sha256"]
+        ),
+        tournament_run_report=Path(str(v4_row["tournament_run_report"])),
+        tournament_run_report_sha256=str(v4_row["tournament_run_report_sha256"]),
+        winner_selection=Path(str(v4_row["winner_selection"])),
+        winner_selection_sha256=str(v4_row["winner_selection_sha256"]),
+        replay_bank=Path(str(replay_row["path"])),
+        replay_bank_sha256=str(replay_row["file_sha256"]),
+        recovery_plan=Path(str(plan_row["path"])),
+        recovery_plan_sha256=str(plan_row["file_sha256"]),
+        builder_path=builder_path,
+    )
+    if canonical_json_bytes(raw) != canonical_json_bytes(expected_payload):
+        raise FoldedBlankRecoveryABError(
+            "Recovery A/B preregistration differs from freshly authenticated roots."
+        )
+    return AuthenticatedFoldedBlankRecoveryAB(
+        path=source,
+        file_sha256=expected,
+        v4=v4,
+        raw=MappingProxyType(dict(raw)),
+    )
+
+
+def _self_hashed_receipt(
+    value: Any,
+    *,
+    fields: set[str],
+    name: str,
+) -> Mapping[str, Any]:
+    row = _strict(value, fields | {"receipt_sha256"}, name)
+    body = dict(row)
+    claimed = _sha256(body.pop("receipt_sha256"), f"{name}.receipt_sha256")
+    if canonical_sha256(body) != claimed:
+        raise FoldedBlankRecoveryABError(f"{name} self-hash changed.")
+    return row
+
+
+def _authenticate_folded_artifact_publication(
+    contract: AuthenticatedFoldedBlankRecoveryAB,
+    row: Mapping[str, Any],
+    *,
+    initial_state_sha256: str,
+    hooks: FoldedArtifactVerificationHooks,
+) -> dict[str, Any]:
+    publication_root = row.get("artifact_publication_root")
+    artifact_receipt_sha256 = row.get("artifact_receipt_sha256")
+    if not isinstance(publication_root, str) or not publication_root.strip():
+        raise FoldedBlankRecoveryABError(
+            "Folded materialization must bind one atomic artifact publication root."
+        )
+    if type(hooks) is not FoldedArtifactVerificationHooks:
+        raise FoldedBlankRecoveryABError(
+            "Folded materialization requires explicit fresh-reload verification hooks."
+        )
+    expected_artifact_receipt_sha = _sha256(
+        artifact_receipt_sha256,
+        "folded experimental child artifact receipt SHA",
+    )
+    blank_row = contract.raw["compiled_blank"]
+    expectations = ExperimentalChildArtifactExpectations(
+        preregistration_sha256=contract.file_sha256,
+        shared_execution_contract_sha256=contract.raw[
+            "shared_execution_contract_sha256"
+        ],
+        config_payload_sha256=blank_row["config_payload_sha256"],
+        state_key_sha256=blank_row["state_key_sha256"],
+        parameter_topology_sha256=blank_row["parameter_topology_sha256"],
+        buffer_topology_sha256=blank_row["buffer_topology_sha256"],
+        exact_unique_parameters=EXACT_UNIQUE_PARAMETERS,
+        exact_logical_parameters=EXACT_UNIQUE_PARAMETERS,
+        arm_id="folded",
+    )
+    try:
+        verified = verify_experimental_child_artifact(
+            Path(publication_root),
+            expectations=expectations,
+            expected_receipt_sha256=expected_artifact_receipt_sha,
+            model_loader=hooks.model_loader,
+            native_certifier=hooks.native_certifier,
+            runtime_auditor=hooks.runtime_auditor,
+            dense_state_hasher=hooks.dense_state_hasher,
+        )
+    except ExperimentalChildArtifactError as error:
+        raise FoldedBlankRecoveryABError(
+            "Folded experimental child artifact failed independent fresh reload."
+        ) from error
+    except Exception as error:
+        raise FoldedBlankRecoveryABError(
+            "Folded experimental child artifact verifier failed closed."
+        ) from error
+    expected_root = Path(publication_root).expanduser().resolve(strict=False)
+    artifact_receipt = verified.receipt.as_dict()
+    report = dict(verified.bridge_report)
+    report_path = verified.publication_path / BRIDGE_REPORT_FILENAME
+    report_record = artifact_receipt.get("bridge_report")
+    artifact_record = artifact_receipt.get("artifact")
+    fingerprint = artifact_receipt.get("fresh_reload_model_state_fingerprint")
+    if (
+        verified.publication_path != expected_root
+        or verified.receipt.receipt_sha256 != expected_artifact_receipt_sha
+        or not (verified.publication_path / ARTIFACT_RECEIPT_FILENAME).is_file()
+        or not isinstance(report_record, Mapping)
+        or not isinstance(artifact_record, Mapping)
+        or not isinstance(fingerprint, Mapping)
+        or artifact_receipt.get("fresh_reload_state_dict_sha256")
+        != initial_state_sha256
+        or fingerprint.get("state_dict_sha256") != initial_state_sha256
+        or fingerprint.get("state_key_sha256") != blank_row["state_key_sha256"]
+        or fingerprint.get("parameter_topology_sha256")
+        != blank_row["parameter_topology_sha256"]
+        or fingerprint.get("buffer_topology_sha256")
+        != blank_row["buffer_topology_sha256"]
+        or report_record.get("materialized_bridge_state_sha256")
+        != artifact_receipt.get("fresh_reload_bridge_state_sha256")
+        or artifact_receipt.get("fresh_reload_performed") is not True
+        or artifact_receipt.get("artifact_tree_unchanged_by_fresh_reload") is not True
+    ):
+        raise FoldedBlankRecoveryABError(
+            "Folded artifact receipt does not bind the fresh-reloaded initial state."
+        )
+    try:
+        canonical_report_bytes = progressive_bridge._canonical_json_report_bytes(
+            report,
+            hash_field="materialization_transaction_sha256",
+        )
+    except Exception as error:
+        raise FoldedBlankRecoveryABError(
+            "Folded materialization report is not a canonical bridge transaction."
+        ) from error
+    if report_path.read_bytes() != canonical_report_bytes or report_record.get(
+        "file_sha256"
+    ) != stage._file_sha256(report_path):
+        raise FoldedBlankRecoveryABError(
+            "Folded artifact does not contain the exact canonical bridge report bytes."
+        )
+    transaction_body = dict(report)
+    transaction_sha = _sha256(
+        transaction_body.pop("materialization_transaction_sha256", None),
+        "folded materialization transaction SHA",
+    )
+    if canonical_sha256(transaction_body) != transaction_sha:
+        raise FoldedBlankRecoveryABError(
+            "Folded materialization report transaction hash changed."
+        )
+
+    experiment_contract = _strict(
+        report.get("experimental_recovery_contract"),
+        {
+            "schema",
+            "recovery_ab_preregistration_sha256",
+            "recovery_ab_semantic_contract_sha256",
+            "shared_execution_contract_sha256",
+            "factor_state_sha256",
+            "factor_payload_schema",
+            "native_child_state_sha256",
+            "blank_control_state_sha256",
+            "compiled_blank_cache_state_dict_sha256",
+            "restored_runtime_factor_state_sha256",
+            "restored_portable_factor_state_sha256",
+            "bridge_native_child_state_sha256",
+            "bridge_live_factor_state_sha256",
+            "exact_unique_parameters",
+            "publication_authorized",
+            "sealed_data_accessed",
+        },
+        "folded materialization experiment contract",
+    )
+    embedded_receipt = _self_hashed_receipt(
+        report.get("experimental_recovery_receipt"),
+        fields={
+            "schema",
+            "experiment_contract_sha256",
+            "factor_state_sha256",
+            "live_factor_state_sha256",
+            "native_child_state_sha256",
+            "exact_unique_parameters",
+            "factor_payload_schema",
+            "status",
+            "publication_authorized",
+            "sealed_data_accessed",
+            "behavior_capability_proven",
+            "recovery_training_required",
+            "external_experiment_contract_revalidated_by_bridge",
+            "external_factor_pack_revalidated_by_bridge",
+            "live_factor_tensor_state_revalidated_by_bridge",
+            "native_child_state_revalidated_by_bridge",
+        },
+        name="folded bridge materialization receipt",
+    )
+    winner = contract.raw["v4_candidate"]["winner"]
+    expected_factor_schema = contract.raw["v4_candidate"]["factor_pack_schema"]
+    evidence_sha = _sha256(
+        row.get("materialization_evidence_sha256"),
+        "folded materialization evidence SHA",
+    )
+    bridge_native_sha = _sha256(
+        row.get("bridge_native_child_state_sha256"),
+        "folded bridge native child state SHA",
+    )
+    bridge_live_factor_sha = _sha256(
+        row.get("bridge_live_factor_state_sha256"),
+        "folded bridge live factor state SHA",
+    )
+    materialized_bridge_sha = _sha256(
+        row.get("materialized_bridge_state_sha256"),
+        "folded materialized bridge state SHA",
+    )
+    if (
+        report.get("schema")
+        != EXACT_TARGET_EXPERIMENTAL_RECOVERY_MATERIALIZATION_SCHEMA
+        or report.get("status") != "experimental-unaccepted"
+        or report.get("exact_unique_parameters") != EXACT_UNIQUE_PARAMETERS
+        or report.get("exact_budget_match") is not True
+        or report.get("materialized_native_state_sha256") != materialized_bridge_sha
+        or report.get("native_child_state_sha256") != bridge_native_sha
+        or report.get("live_factor_state_sha256") != bridge_live_factor_sha
+        or report.get("materialized_registered_adapter_parameter_count") != 0
+        or report.get("materialized_optimizer_parameter_count") != 0
+        or report.get("materialized_registered_source_sized_sidecar_parameter_count")
+        != 0
+        or report.get("standalone_structure_materialized") is not True
+        or report.get("serialization_only_context") is not True
+        or report.get("serialized_state_must_match_materialized_state_sha256")
+        is not True
+        or report.get("fresh_reload_and_recovery_required") is not True
+        or report.get("publication_authorized") is not False
+        or report.get("accepted_artifact") is not False
+        or report.get("sealed_data_accessed") is not False
+        or report.get("behavior_capability_proven") is not False
+        or report.get("external_factor_pack_revalidated_by_bridge") is not False
+        or report.get("external_factor_pack_receipt_bound") is not False
+        or report.get("contract_factor_state_sha256_is_external_label_only") is not True
+        or report.get("live_factor_state_sha256_is_bridge_authenticated") is not True
+        or experiment_contract.get("schema") != EXPERIMENTAL_RECOVERY_CONTRACT_SCHEMA
+        or experiment_contract.get("recovery_ab_preregistration_sha256")
+        != contract.file_sha256
+        or experiment_contract.get("recovery_ab_semantic_contract_sha256")
+        != contract.raw["semantic_contract_sha256"]
+        or experiment_contract.get("shared_execution_contract_sha256")
+        != contract.raw["shared_execution_contract_sha256"]
+        or experiment_contract.get("factor_state_sha256")
+        != winner["portable_factor_state_sha256"]
+        or experiment_contract.get("factor_payload_schema") != expected_factor_schema
+        or experiment_contract.get("native_child_state_sha256") != bridge_native_sha
+        or experiment_contract.get("blank_control_state_sha256") != bridge_native_sha
+        or experiment_contract.get("compiled_blank_cache_state_dict_sha256")
+        != blank_row["state_dict_sha256"]
+        or experiment_contract.get("restored_runtime_factor_state_sha256")
+        != winner["runtime_factor_state_sha256"]
+        or experiment_contract.get("restored_portable_factor_state_sha256")
+        != winner["portable_factor_state_sha256"]
+        or experiment_contract.get("bridge_native_child_state_sha256")
+        != bridge_native_sha
+        or experiment_contract.get("bridge_live_factor_state_sha256")
+        != bridge_live_factor_sha
+        or experiment_contract.get("exact_unique_parameters") != EXACT_UNIQUE_PARAMETERS
+        or experiment_contract.get("publication_authorized") is not False
+        or experiment_contract.get("sealed_data_accessed") is not False
+        or embedded_receipt.get("schema")
+        != EXPERIMENTAL_RECOVERY_MATERIALIZATION_RECEIPT_SCHEMA
+        or embedded_receipt.get("experiment_contract_sha256")
+        != canonical_sha256(experiment_contract)
+        or embedded_receipt.get("factor_state_sha256")
+        != winner["portable_factor_state_sha256"]
+        or embedded_receipt.get("live_factor_state_sha256") != bridge_live_factor_sha
+        or embedded_receipt.get("native_child_state_sha256") != bridge_native_sha
+        or embedded_receipt.get("exact_unique_parameters") != EXACT_UNIQUE_PARAMETERS
+        or embedded_receipt.get("factor_payload_schema") != expected_factor_schema
+        or embedded_receipt.get("status") != "experimental-unaccepted"
+        or embedded_receipt.get("publication_authorized") is not False
+        or embedded_receipt.get("sealed_data_accessed") is not False
+        or embedded_receipt.get("behavior_capability_proven") is not False
+        or embedded_receipt.get("recovery_training_required") is not True
+        or embedded_receipt.get("external_experiment_contract_revalidated_by_bridge")
+        is not False
+        or embedded_receipt.get("external_factor_pack_revalidated_by_bridge")
+        is not False
+        or embedded_receipt.get("live_factor_tensor_state_revalidated_by_bridge")
+        is not True
+        or embedded_receipt.get("native_child_state_revalidated_by_bridge") is not True
+        or embedded_receipt.get("receipt_sha256") != evidence_sha
+        or row.get("materialization_transaction_sha256") != transaction_sha
+    ):
+        raise FoldedBlankRecoveryABError(
+            "Folded materialization report does not bind the authenticated factor, "
+            "blank state, A/B contract, and dense materialized bytes."
+        )
+    return {
+        "publication_root": str(verified.publication_path),
+        "artifact_receipt_path": str(
+            verified.publication_path / ARTIFACT_RECEIPT_FILENAME
+        ),
+        "artifact_receipt_sha256": expected_artifact_receipt_sha,
+        "artifact_tree_sha256": artifact_record["tree"]["tree_sha256"],
+        "bridge_report_path": str(report_path),
+        "bridge_report_file_sha256": report_record["file_sha256"],
+        "transaction_sha256": transaction_sha,
+        "evidence_sha256": evidence_sha,
+        "materialized_bridge_state_sha256": materialized_bridge_sha,
+        "fresh_reload_state_dict_sha256": initial_state_sha256,
+        "bridge_native_child_state_sha256": bridge_native_sha,
+        "bridge_live_factor_state_sha256": bridge_live_factor_sha,
+        "fresh_reload_performed": True,
+        "artifact_tree_unchanged_by_fresh_reload": True,
+    }
+
+
+def authenticate_materialization_receipts(
+    contract: AuthenticatedFoldedBlankRecoveryAB,
+    receipts: Mapping[str, Any],
+    *,
+    folded_artifact_hooks: FoldedArtifactVerificationHooks,
+) -> dict[str, Any]:
+    if type(contract) is not AuthenticatedFoldedBlankRecoveryAB or set(receipts) != set(
+        ARM_IDS
+    ):
+        raise FoldedBlankRecoveryABError(
+            "Materialization requires the canonical contract and both exact arms."
+        )
+    fields = {
+        "schema",
+        "status",
+        "arm_id",
+        "initial_state_sha256",
+        "exact_unique_parameters",
+        "config_payload_sha256",
+        "parameter_topology_sha256",
+        "buffer_topology_sha256",
+        "shared_execution_contract_sha256",
+        "source_portable_factor_state_sha256",
+        "source_factor_pack_sha256",
+        "factor_source_binding_sha256",
+        "factor_pack_authenticated_separately",
+        "materialization_evidence_sha256",
+        "materialization_transaction_sha256",
+        "artifact_publication_root",
+        "artifact_receipt_sha256",
+        "bridge_native_child_state_sha256",
+        "bridge_live_factor_state_sha256",
+        "materialized_bridge_state_sha256",
+        "optimizer_steps",
+        "sealed_data_accessed",
+        "publication_authorized",
+        "accepted_artifact",
+    }
+    normalized: dict[str, dict[str, Any]] = {}
+    report_bindings: dict[str, dict[str, Any] | None] = {}
+    blank_row = contract.raw["compiled_blank"]
+    winner = contract.raw["v4_candidate"]["winner"]
+    for arm_id in ARM_IDS:
+        row = _self_hashed_receipt(
+            receipts[arm_id],
+            fields=fields,
+            name=f"{arm_id} materialization receipt",
+        )
+        initial_sha = _sha256(row["initial_state_sha256"], "initial state SHA")
+        expected_portable = (
+            winner["portable_factor_state_sha256"] if arm_id == "folded" else None
+        )
+        expected_pack = winner["factor_pack_sha256"] if arm_id == "folded" else None
+        expected_source_binding = (
+            contract.raw["v4_candidate"]["factor_source_binding_sha256"]
+            if arm_id == "folded"
+            else None
+        )
+        evidence_sha = _sha256(
+            row["materialization_evidence_sha256"],
+            f"{arm_id} materialization evidence SHA",
+        )
+        transaction_sha = row["materialization_transaction_sha256"]
+        report_binding = None
+        if arm_id == "folded":
+            report_binding = _authenticate_folded_artifact_publication(
+                contract,
+                row,
+                initial_state_sha256=initial_sha,
+                hooks=folded_artifact_hooks,
+            )
+        if (
+            row.get("schema") != MATERIALIZATION_RECEIPT_SCHEMA
+            or row.get("status") != "experimental-unaccepted"
+            or row.get("arm_id") != arm_id
+            or row.get("exact_unique_parameters") != EXACT_UNIQUE_PARAMETERS
+            or row.get("config_payload_sha256") != blank_row["config_payload_sha256"]
+            or row.get("parameter_topology_sha256")
+            != blank_row["parameter_topology_sha256"]
+            or row.get("buffer_topology_sha256") != blank_row["buffer_topology_sha256"]
+            or row.get("shared_execution_contract_sha256")
+            != contract.raw["shared_execution_contract_sha256"]
+            or row.get("source_portable_factor_state_sha256") != expected_portable
+            or row.get("source_factor_pack_sha256") != expected_pack
+            or row.get("factor_source_binding_sha256") != expected_source_binding
+            or row.get("factor_pack_authenticated_separately")
+            is not (arm_id == "folded")
+            or (arm_id == "blank" and evidence_sha != blank_row["receipt_sha256"])
+            or (arm_id == "blank" and transaction_sha is not None)
+            or (
+                arm_id == "blank"
+                and row.get("bridge_native_child_state_sha256") is not None
+            )
+            or (
+                arm_id == "blank"
+                and row.get("bridge_live_factor_state_sha256") is not None
+            )
+            or (
+                arm_id == "blank"
+                and row.get("materialized_bridge_state_sha256") is not None
+            )
+            or (arm_id == "blank" and row.get("artifact_publication_root") is not None)
+            or (arm_id == "blank" and row.get("artifact_receipt_sha256") is not None)
+            or row.get("optimizer_steps") != 0
+            or row.get("sealed_data_accessed") is not False
+            or row.get("publication_authorized") is not False
+            or row.get("accepted_artifact") is not False
+            or (arm_id == "blank" and initial_sha != blank_row["state_dict_sha256"])
+            or (arm_id == "folded" and initial_sha == blank_row["state_dict_sha256"])
+        ):
+            raise FoldedBlankRecoveryABError(
+                f"{arm_id} materialization receipt violates the symmetric contract."
+            )
+        normalized[arm_id] = dict(row)
+        report_bindings[arm_id] = report_binding
+    return {
+        "schema": RUN_SCHEMA,
+        "status": "materialization-authenticated",
+        "preregistration_sha256": contract.file_sha256,
+        "receipts": normalized,
+        "authenticated_materialization_reports": report_bindings,
+        "folded_and_blank_initial_states_distinct": (
+            normalized["folded"]["initial_state_sha256"]
+            != normalized["blank"]["initial_state_sha256"]
+        ),
+        "optimizer_steps": 0,
+        "folded_artifact_independent_fresh_reload_verified": True,
+        "model_loading_performed_by_this_authenticator": True,
+        "sealed_data_accessed": False,
+        "publication_authorized": False,
+        "accepted_artifact": False,
+    }
+
+
+def authenticate_zero_step_receipts(
+    contract: AuthenticatedFoldedBlankRecoveryAB,
+    materialization: Mapping[str, Any],
+    receipts: Mapping[str, Any],
+    *,
+    folded_artifact_hooks: FoldedArtifactVerificationHooks,
+) -> dict[str, Any]:
+    if type(contract) is not AuthenticatedFoldedBlankRecoveryAB or set(receipts) != set(
+        ARM_IDS
+    ):
+        raise FoldedBlankRecoveryABError(
+            "Zero-step authentication requires both materialized A/B arms."
+        )
+    embedded_materialization_receipts = materialization.get("receipts")
+    if not isinstance(embedded_materialization_receipts, Mapping):
+        raise FoldedBlankRecoveryABError(
+            "Zero-step materialization evidence does not contain both receipts."
+        )
+    expected_materialization = authenticate_materialization_receipts(
+        contract,
+        embedded_materialization_receipts,
+        folded_artifact_hooks=folded_artifact_hooks,
+    )
+    if canonical_json_bytes(materialization) != canonical_json_bytes(
+        expected_materialization
+    ):
+        raise FoldedBlankRecoveryABError(
+            "Zero-step materialization wrapper differs from fresh authentication."
+        )
+    fields = {
+        "schema",
+        "status",
+        "arm_id",
+        "initial_state_sha256",
+        "shared_execution_contract_sha256",
+        "replay_bank_payload_sha256",
+        "checkpoint_step",
+        "optimizer_steps",
+        "metrics",
+        "metrics_sha256",
+        "evaluator_implementation_sha256",
+        "sealed_data_accessed",
+        "publication_authorized",
+        "accepted_artifact",
+    }
+    normalized: dict[str, dict[str, Any]] = {}
+    for arm_id in ARM_IDS:
+        row = _self_hashed_receipt(
+            receipts[arm_id],
+            fields=fields,
+            name=f"{arm_id} zero-step receipt",
+        )
+        metrics = row.get("metrics")
+        if (
+            row.get("schema") != ZERO_STEP_RECEIPT_SCHEMA
+            or row.get("status") != "experimental-unaccepted"
+            or row.get("arm_id") != arm_id
+            or row.get("initial_state_sha256")
+            != materialization["receipts"][arm_id]["initial_state_sha256"]
+            or row.get("shared_execution_contract_sha256")
+            != contract.raw["shared_execution_contract_sha256"]
+            or row.get("replay_bank_payload_sha256")
+            != contract.raw["replay_bank"]["payload_sha256"]
+            or row.get("checkpoint_step") != 0
+            or row.get("optimizer_steps") != 0
+            or not isinstance(metrics, Mapping)
+            or not metrics
+            or row.get("metrics_sha256") != canonical_sha256(metrics)
+            or row.get("evaluator_implementation_sha256")
+            != contract.raw["implementation"]["recovery_implementation_sha256"]
+            or row.get("sealed_data_accessed") is not False
+            or row.get("publication_authorized") is not False
+            or row.get("accepted_artifact") is not False
+        ):
+            raise FoldedBlankRecoveryABError(
+                f"{arm_id} zero-step receipt violates the symmetric contract."
+            )
+        normalized[arm_id] = dict(row)
+    return {
+        "schema": RUN_SCHEMA,
+        "status": "zero-step-authenticated",
+        "preregistration_sha256": contract.file_sha256,
+        "materialization_receipts": dict(materialization["receipts"]),
+        "zero_step_receipts": normalized,
+        "next_action": "explicit-production-recovery-hook-required",
+        "training_launched": False,
+        "optimizer_steps": 0,
+        "maximum_retained_checkpoints_per_arm": (MAX_RETAINED_CHECKPOINTS_PER_ARM),
+        "maximum_total_retained_checkpoints": MAX_TOTAL_RETAINED_CHECKPOINTS,
+        "sealed_data_accessed": False,
+        "publication_authorized": False,
+        "accepted_artifact": False,
+    }
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--preregistration", type=Path, required=True)
+    parser.add_argument("--preregistration-sha256", required=True)
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    contract = authenticate_recovery_ab_preregistration(
+        args.preregistration,
+        args.preregistration_sha256,
+    )
+    print(json.dumps(contract.preflight_report(), indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
