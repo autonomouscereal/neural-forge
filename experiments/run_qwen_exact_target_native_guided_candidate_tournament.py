@@ -60,9 +60,9 @@ PREREGISTRATION_SCHEMA = (
     "neural-forge-qwen-exact-target-native-guided-candidate-tournament-"
     "preregistration-v1"
 )
-RUN_SCHEMA = "neural-forge-qwen-exact-target-native-guided-candidate-tournament-v1"
-WINNER_SCHEMA = "neural-forge-guided-candidate-tournament-winner-v1"
-FRONTIER_SCHEMA = "neural-forge-guided-candidate-tournament-frontier-v1"
+RUN_SCHEMA = "neural-forge-qwen-exact-target-native-guided-candidate-tournament-v2"
+WINNER_SCHEMA = "neural-forge-guided-candidate-tournament-winner-v2"
+FRONTIER_SCHEMA = "neural-forge-guided-candidate-tournament-frontier-v2"
 ARM_IDS = (
     "step40-v3-trajectory",
     "step64-v3-trajectory",
@@ -71,6 +71,16 @@ ARM_IDS = (
 CHECKPOINT_STEPS = (0, 2, 4, 8, 12, 16, 24, 32, 40, 48, 56, 64)
 SPLIT_COUNTS = {"fit": 168, "candidate": 24, "sealed": 32}
 MAX_RETAINED_STATES = 3
+EXPECTED_CALLBACK_COUNT = len(ARM_IDS) * len(CHECKPOINT_STEPS)
+FINAL_CALLBACK_DISPOSITIONS = frozenset(
+    {
+        "retained-top-three",
+        "not-retained-rank-cutoff",
+        "ineligible-non-pareto",
+        "duplicate-retained-state",
+        "error-inconsistent-duplicate",
+    }
+)
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 EXPECTED_CUDA_DEVICE_ORDER = "PCI_BUS_ID"
 EXPECTED_CUDA_VISIBLE_DEVICES = "4,6"
@@ -814,6 +824,7 @@ class _RetainedState:
     checkpoint_sha256: str
     metrics: Mapping[str, Any]
     pack_path: Path
+    pack_sha256: str
 
     @property
     def total_order(self) -> tuple[Any, ...]:
@@ -835,7 +846,7 @@ class _RetainedState:
             "checkpoint_sha256": self.checkpoint_sha256,
             "metrics": dict(self.metrics),
             "factor_pack": str(self.pack_path),
-            "factor_pack_sha256": stage._file_sha256(self.pack_path),
+            "factor_pack_sha256": self.pack_sha256,
         }
 
 
@@ -854,6 +865,69 @@ class TournamentTopThreeSink:
         self._retained: dict[str, _RetainedState] = {}
         self._events: dict[str, list[DurableBehaviorCheckpoint]] = {}
         self._completed: set[str] = set()
+        self._observed_callbacks: list[dict[str, Any]] = []
+        self._write_frontier()
+
+    def _append_pending_observation(
+        self,
+        *,
+        arm_id: str,
+        arm_index: int,
+        event: DurableBehaviorCheckpoint,
+        metrics: Mapping[str, Any],
+        rank: tuple[int, ...],
+        runtime_digest: str,
+        portable_digest: str,
+    ) -> dict[str, Any]:
+        observation: dict[str, Any] = {
+            "ordinal": len(self._observed_callbacks),
+            "arm_id": arm_id,
+            "arm_index": arm_index,
+            "step": event.step,
+            "checkpoint_sha256": event.checkpoint_sha256,
+            "runtime_factor_state_sha256": runtime_digest,
+            "portable_factor_state_sha256": portable_digest,
+            "pareto_safe_vs_step0": event.pareto_safe_vs_step0,
+            "metrics": dict(metrics),
+            "metrics_sha256": canonical_sha256(metrics),
+            "rank": list(rank),
+            "eligible_for_retention": (event.step == 0 or event.pareto_safe_vs_step0),
+            "disposition": "observed-pending",
+            "retained_after_callback": None,
+            "factor_pack_created": None,
+            "evicted_portable_factor_state_sha256s": None,
+            "terminal_verified": False,
+            "terminal_pareto_safe_vs_step0": None,
+        }
+        self._observed_callbacks.append(observation)
+        self._write_frontier()
+        return observation
+
+    def _finalize_observation(
+        self,
+        observation: dict[str, Any],
+        *,
+        disposition: str,
+        retained_after_callback: bool,
+        factor_pack_created: bool,
+        evicted: Sequence[str] = (),
+    ) -> None:
+        if (
+            observation.get("disposition") != "observed-pending"
+            or disposition not in FINAL_CALLBACK_DISPOSITIONS
+        ):
+            raise CandidateTournamentError(
+                "Callback observation cannot transition to that disposition."
+            )
+        observation.update(
+            {
+                "disposition": disposition,
+                "retained_after_callback": retained_after_callback,
+                "factor_pack_created": factor_pack_created,
+                "evicted_portable_factor_state_sha256s": list(evicted),
+            }
+        )
+        self._write_frontier()
 
     def callback_for_arm(
         self, arm_id: str, arm_index: int
@@ -877,10 +951,6 @@ class TournamentTopThreeSink:
                 raise CandidateTournamentError(
                     f"{arm_id} callback order expected {expected_step}, got {event.step}."
                 )
-            events.append(event)
-            if event.step != 0 and not event.pareto_safe_vs_step0:
-                self._write_frontier()
-                return
             payload = event.factor_state.as_factor_payload()
             try:
                 GuidedCheckpointRecoverySink._validate_v3_factor_payload(
@@ -895,19 +965,45 @@ class TournamentTopThreeSink:
             rank = tournament_behavior_rank(metrics)
             runtime_digest = event.factor_state.factor_state_sha256
             digest = portable_v3_factor_state_sha256(payload)
+            events.append(event)
+            observation = self._append_pending_observation(
+                arm_id=arm_id,
+                arm_index=arm_index,
+                event=event,
+                metrics=metrics,
+                rank=rank,
+                runtime_digest=runtime_digest,
+                portable_digest=digest,
+            )
+            if event.step != 0 and not event.pareto_safe_vs_step0:
+                self._finalize_observation(
+                    observation,
+                    disposition="ineligible-non-pareto",
+                    retained_after_callback=False,
+                    factor_pack_created=False,
+                )
+                return
             previous = self._retained.get(digest)
             if previous is not None:
                 if previous.rank != rank or dict(previous.metrics) != metrics:
+                    self._finalize_observation(
+                        observation,
+                        disposition="error-inconsistent-duplicate",
+                        retained_after_callback=False,
+                        factor_pack_created=False,
+                    )
                     raise CandidateTournamentError(
                         "One portable factor state produced inconsistent candidate behavior."
                     )
-                self._write_frontier()
+                self._finalize_observation(
+                    observation,
+                    disposition="duplicate-retained-state",
+                    retained_after_callback=True,
+                    factor_pack_created=False,
+                )
                 return
             directory = self.retained_root / digest
-            directory.mkdir(exist_ok=True)
             pack_path = directory / "factor_pack.pt"
-            if not pack_path.exists():
-                _atomic_torch_save(pack_path, payload)
             candidate = _RetainedState(
                 arm_id=arm_id,
                 arm_index=arm_index,
@@ -918,12 +1014,26 @@ class TournamentTopThreeSink:
                 checkpoint_sha256=event.checkpoint_sha256,
                 metrics=metrics,
                 pack_path=pack_path,
+                pack_sha256="",
             )
-            self._retained[digest] = candidate
-            keep = sorted(self._retained.values(), key=lambda value: value.total_order)[
-                :MAX_RETAINED_STATES
-            ]
+            keep = sorted(
+                (*self._retained.values(), candidate),
+                key=lambda value: value.total_order,
+            )[:MAX_RETAINED_STATES]
             keep_hashes = {value.portable_factor_state_sha256 for value in keep}
+            if digest not in keep_hashes:
+                self._finalize_observation(
+                    observation,
+                    disposition="not-retained-rank-cutoff",
+                    retained_after_callback=False,
+                    factor_pack_created=False,
+                )
+                return
+            directory.mkdir()
+            _atomic_torch_save(pack_path, payload)
+            candidate.pack_sha256 = stage._file_sha256(pack_path)
+            self._retained[digest] = candidate
+            evicted_digests: list[str] = []
             for evicted in tuple(self._retained):
                 if evicted not in keep_hashes:
                     owned = self.retained_root / evicted
@@ -933,11 +1043,18 @@ class TournamentTopThreeSink:
                         )
                     shutil.rmtree(owned)
                     del self._retained[evicted]
+                    evicted_digests.append(evicted)
             _atomic_json(
                 directory / "candidate_record.json",
                 candidate.as_dict(),
-            ) if digest in self._retained else None
-            self._write_frontier()
+            )
+            self._finalize_observation(
+                observation,
+                disposition="retained-top-three",
+                retained_after_callback=True,
+                factor_pack_created=True,
+                evicted=evicted_digests,
+            )
 
         return callback
 
@@ -964,9 +1081,23 @@ class TournamentTopThreeSink:
             if (
                 event.factor_state.factor_state_sha256 != row.factor_state_sha256
                 or event.metrics.as_dict() != row.metrics.as_dict()
+                or event.pareto_safe_vs_step0 != row.pareto_safe_vs_step0
             ):
                 raise CandidateTournamentError("Terminal checkpoint evidence changed.")
+        observations = [
+            value for value in self._observed_callbacks if value["arm_id"] == arm_id
+        ]
+        if len(observations) != len(CHECKPOINT_STEPS) or any(
+            value["disposition"] == "observed-pending" for value in observations
+        ):
+            raise CandidateTournamentError(
+                "Arm terminal verification found incomplete callback evidence."
+            )
+        for observation, row in zip(observations, terminal, strict=True):
+            observation["terminal_verified"] = True
+            observation["terminal_pareto_safe_vs_step0"] = row.pareto_safe_vs_step0
         self._completed.add(arm_id)
+        self._write_frontier()
 
     def _write_frontier(self) -> None:
         ordered = sorted(self._retained.values(), key=lambda value: value.total_order)
@@ -976,24 +1107,60 @@ class TournamentTopThreeSink:
             "completed_arms": [name for name in ARM_IDS if name in self._completed],
             "retained_count": len(ordered),
             "retained": [value.as_dict() for value in ordered],
+            "observed_callback_count": len(self._observed_callbacks),
+            "pending_callback_count": sum(
+                value["disposition"] == "observed-pending"
+                for value in self._observed_callbacks
+            ),
+            "observed_callbacks": [dict(value) for value in self._observed_callbacks],
             "distinct_full_v3_states_only": True,
             "portable_content_identity_used": True,
             "step_zero_ranked": True,
             "later_states_require_pareto_safety_vs_step_zero": True,
             "sealed_metrics_used": False,
             "internal_numeric_matching_used": False,
+            "callback_metrics_are_durable_without_factor_pack_retention": True,
+            "maximum_retained_factor_packs": MAX_RETAINED_STATES,
         }
         _atomic_json(self.output_root / "candidate_frontier.json", payload)
+
+    def frontier_binding(self) -> dict[str, Any]:
+        path = self.output_root / "candidate_frontier.json"
+        if not path.is_file():
+            raise CandidateTournamentError("Candidate frontier is absent.")
+        return {
+            "schema": FRONTIER_SCHEMA,
+            "path": str(path),
+            "sha256": stage._file_sha256(path),
+            "observed_callback_count": len(self._observed_callbacks),
+            "pending_callback_count": sum(
+                value["disposition"] == "observed-pending"
+                for value in self._observed_callbacks
+            ),
+            "completed_arms": [name for name in ARM_IDS if name in self._completed],
+        }
 
     def finalize(self) -> tuple[dict[str, Any], tuple[_RetainedState, ...]]:
         if self._completed != set(ARM_IDS):
             raise CandidateTournamentError("Cannot select a winner before all arms.")
+        if len(self._observed_callbacks) != EXPECTED_CALLBACK_COUNT or any(
+            value["disposition"] == "observed-pending"
+            or value["disposition"] not in FINAL_CALLBACK_DISPOSITIONS
+            or value["terminal_verified"] is not True
+            or value["terminal_pareto_safe_vs_step0"] != value["pareto_safe_vs_step0"]
+            for value in self._observed_callbacks
+        ):
+            raise CandidateTournamentError(
+                "Cannot select a winner from incomplete callback evidence."
+            )
         ordered = tuple(
             sorted(self._retained.values(), key=lambda value: value.total_order)
         )
         if len(ordered) != MAX_RETAINED_STATES:
             raise CandidateTournamentError("Tournament produced no complete top three.")
         winner = ordered[0]
+        self._write_frontier()
+        frontier_binding = self.frontier_binding()
         payload = {
             "schema": WINNER_SCHEMA,
             "evaluation_contract_sha256": self.evaluation_contract_sha256,
@@ -1009,11 +1176,11 @@ class TournamentTopThreeSink:
             "model_checkpoint_written": False,
             "publication_attempted": False,
             "stop_reason": "candidate-winner-selected-before-sealed",
+            "candidate_frontier": frontier_binding,
         }
         _atomic_json(
             self.output_root / "winner_selection.json", payload, exclusive=True
         )
-        self._write_frontier()
         return payload, ordered
 
 
@@ -1383,6 +1550,16 @@ def execute_candidate_tournament(
         winner, retained = sink.finalize()
         if not (output / "winner_selection.json").is_file():
             raise CandidateTournamentError("Winner was not durably selected.")
+        frontier_binding = sink.frontier_binding()
+        if (
+            winner.get("candidate_frontier") != frontier_binding
+            or frontier_binding["observed_callback_count"] != EXPECTED_CALLBACK_COUNT
+            or frontier_binding["pending_callback_count"] != 0
+            or frontier_binding["completed_arms"] != list(ARM_IDS)
+        ):
+            raise CandidateTournamentError(
+                "Winner is not bound to the complete callback frontier."
+            )
         report.update(
             {
                 "status": "candidate-winner-selected",
@@ -1398,11 +1575,16 @@ def execute_candidate_tournament(
                 "model_checkpoint_written": False,
                 "publication_attempted": False,
                 "stop_after_candidate_winner": True,
+                "candidate_frontier": frontier_binding,
             }
         )
         _atomic_json(output / "run_report.json", report, exclusive=True)
         return report
     except BaseException as error:
+        try:
+            failure_frontier = sink.frontier_binding()
+        except Exception:
+            failure_frontier = None
         failure = {
             **report,
             "status": "failed",
@@ -1412,6 +1594,7 @@ def execute_candidate_tournament(
             "sealed_evaluation_accessed": False,
             "model_checkpoint_written": False,
             "publication_attempted": False,
+            "candidate_frontier": failure_frontier,
         }
         if not (output / "run_report.json").exists():
             _atomic_json(output / "run_report.json", failure, exclusive=True)

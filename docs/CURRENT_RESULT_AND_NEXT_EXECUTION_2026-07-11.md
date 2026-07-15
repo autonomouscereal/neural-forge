@@ -603,3 +603,7 @@ parameters removed with improved disjoint held-out actions and rollouts, plus
 an exact tiny replay artifact. There is not yet broad certification, an
 all-eight live result, or a standalone `134,515,008` useful child. Do not
 describe structural plans or rejected MLP runs as those missing proofs.
+
+The authenticated completion of the three-arm tournament, its no-publication
+decision, and the next guided-GUD continuation are recorded in
+`RESIDUAL_ATTENTION_TOURNAMENT_AND_GUIDED_GUD_2026-07-15.md`.

@@ -33,13 +33,13 @@ RUN_SCHEMA = "neural-forge-qwen-exact-target-native-stage-v1"
 PREREGISTRATION_SCHEMA = "neural-forge-qwen-exact-target-native-preregistration-v1"
 GUIDED_RUN_SCHEMA = "neural-forge-qwen-exact-target-native-guided-continuation-v1"
 GUIDED_WINNER_PUBLICATION_RUN_SCHEMA = (
-    "neural-forge-qwen-guided-winner-publication-v1"
+    "neural-forge-qwen-guided-winner-publication-v2"
 )
 GUIDED_PREREGISTRATION_SCHEMA = (
     "neural-forge-qwen-exact-target-native-guided-continuation-preregistration-v1"
 )
 GUIDED_WINNER_PUBLICATION_PREREGISTRATION_SCHEMA = (
-    "neural-forge-qwen-guided-winner-publication-preregistration-v1"
+    "neural-forge-qwen-guided-winner-publication-preregistration-v2"
 )
 MAX_RETAINED_PER_CONTRACT = 3
 
@@ -1299,6 +1299,85 @@ def _valid_winner_publication_method_decision(
     return True
 
 
+def _valid_winner_publication_pareto_admission(
+    winner: Any,
+    semantic_contract: Any,
+) -> bool:
+    if not isinstance(winner, Mapping) or not isinstance(semantic_contract, Mapping):
+        return False
+    admission = winner.get("tournament_pareto_admission")
+    required = {
+        "passed",
+        "winner_arm_id",
+        "winner_step",
+        "winner_callback_ordinal",
+        "step_zero_callback_ordinal",
+        "declared_pareto_safe_vs_step0",
+        "objectives_equal_to_step_zero",
+        "dominates_step_zero",
+        "winner_metrics_sha256",
+        "step_zero_metrics_sha256",
+        "recomputed_from_authenticated_output_metrics",
+        "internal_numeric_matching_consulted",
+        "decision_sha256",
+    }
+    if not isinstance(admission, Mapping) or set(admission) != required:
+        return False
+    try:
+        decision_sha = require_sha256(
+            admission.get("decision_sha256"),
+            "winner.tournament_pareto_admission.decision_sha256",
+        )
+        winner_metrics_sha = require_sha256(
+            admission.get("winner_metrics_sha256"),
+            "winner.tournament_pareto_admission.winner_metrics_sha256",
+        )
+        require_sha256(
+            admission.get("step_zero_metrics_sha256"),
+            "winner.tournament_pareto_admission.step_zero_metrics_sha256",
+        )
+        winner_step = _nonnegative_int(winner.get("step"), "winner.step")
+        admission_step = _nonnegative_int(
+            admission.get("winner_step"), "pareto_admission.winner_step"
+        )
+        winner_ordinal = _nonnegative_int(
+            admission.get("winner_callback_ordinal"),
+            "pareto_admission.winner_callback_ordinal",
+        )
+        step_zero_ordinal = _nonnegative_int(
+            admission.get("step_zero_callback_ordinal"),
+            "pareto_admission.step_zero_callback_ordinal",
+        )
+    except ExactCandidateFrontierError:
+        return False
+    equal = admission.get("objectives_equal_to_step_zero") is True
+    dominates = admission.get("dominates_step_zero") is True
+    metrics = winner.get("metrics")
+    return bool(
+        winner_step > 0
+        and admission_step == winner_step
+        and admission.get("winner_arm_id") == winner.get("arm_id")
+        and winner_ordinal != step_zero_ordinal
+        and admission.get("passed") is True
+        and admission.get("declared_pareto_safe_vs_step0") is True
+        and (equal or dominates)
+        and not (equal and dominates)
+        and admission.get("recomputed_from_authenticated_output_metrics") is True
+        and admission.get("internal_numeric_matching_consulted") is False
+        and isinstance(metrics, Mapping)
+        and winner_metrics_sha == canonical_sha256(metrics)
+        and winner.get("metrics_sha256") == winner_metrics_sha
+        and semantic_contract.get(
+            "tournament_pareto_admission_decision_sha256"
+        )
+        == decision_sha
+        and decision_sha
+        == canonical_sha256(
+            {name: item for name, item in admission.items() if name != "decision_sha256"}
+        )
+    )
+
+
 _BEHAVIOR_GATE_CHECKS = {
     "minimum_action_count",
     "minimum_action_accuracy",
@@ -1470,6 +1549,10 @@ def _valid_retained_winner_publication_behavior(
         if (
             not isinstance(winner, Mapping)
             or not isinstance(winner.get("metrics"), Mapping)
+            or not _valid_winner_publication_pareto_admission(
+                winner,
+                preregistration.get("semantic_contract"),
+            )
             or not isinstance(pre, Mapping)
             or not isinstance(post, Mapping)
             or not isinstance(pre.get("candidate"), Mapping)
@@ -1605,6 +1688,13 @@ def _authenticate_guided_winner_publication_candidate(
     if not isinstance(winner_metrics, Mapping):
         raise ExactCandidateFrontierError(
             "Winner publication preregistration lost candidate metrics."
+        )
+    if not _valid_winner_publication_pareto_admission(
+        winner,
+        preregistration.get("semantic_contract"),
+    ):
+        raise ExactCandidateFrontierError(
+            "Winner publication Pareto admission is unauthenticated."
         )
     thresholds, source_guided_path, source_guided_sha = (
         _winner_publication_source_thresholds(preregistration, prereg_path)

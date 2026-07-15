@@ -16,6 +16,7 @@ import gc
 import importlib
 import importlib.util
 import json
+import math
 import os
 import re
 from collections.abc import Mapping, Sequence
@@ -40,15 +41,16 @@ from neural_forge.hf_guided_checkpoint_recovery import (
 from neural_forge.hf_progressive_target_bridge import ExternalBehaviorGateReceipt
 from neural_forge.hf_target_native_behavior_distillation import (
     BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+    CausalBehaviorMetrics,
     authenticate_guided_factor_sources,
     capture_target_native_factor_state,
 )
 
 
 PREREGISTRATION_SCHEMA = (
-    "neural-forge-qwen-guided-winner-publication-preregistration-v1"
+    "neural-forge-qwen-guided-winner-publication-preregistration-v2"
 )
-RUN_SCHEMA = "neural-forge-qwen-guided-winner-publication-v1"
+RUN_SCHEMA = "neural-forge-qwen-guided-winner-publication-v2"
 SEALED_CONSUMPTION_SCHEMA = "neural-forge-guided-sealed-consumption-v1"
 BUILD_FILENAME = "prepare_qwen_exact_target_native_guided_winner_publication.py"
 EXPECTED_SPLIT_COUNTS = {"fit": 168, "candidate": 24, "sealed": 32}
@@ -164,6 +166,412 @@ def _split_semantics(binding: stage.SplitBinding) -> dict[str, Any]:
     }
 
 
+def _frontier_metrics(value: Any, name: str) -> CausalBehaviorMetrics:
+    fields = set(CausalBehaviorMetrics.__dataclass_fields__)
+    if not isinstance(value, Mapping) or set(value) != fields:
+        raise GuidedWinnerPublicationError(f"{name} has a malformed metric schema.")
+    integer_fields = {
+        "action_count",
+        "action_agreement_count",
+        "parent_action_worst_rank",
+        "rollout_count",
+        "exact_rollout_count",
+        "rollout_token_count",
+        "token_match_count",
+        "lcp_token_count",
+        "lcp_at_least_4_count",
+        "longest_run_excess",
+    }
+    numeric_fields = fields - integer_fields - {"split", "report_sha256"}
+    if any(
+        isinstance(value[field], bool) or not isinstance(value[field], int)
+        for field in integer_fields
+    ) or any(
+        isinstance(value[field], bool)
+        or not isinstance(value[field], (int, float))
+        or not math.isfinite(float(value[field]))
+        for field in numeric_fields
+    ):
+        raise GuidedWinnerPublicationError(f"{name} contains invalid metric types.")
+    if value["split"] != "calibration-selection":
+        raise GuidedWinnerPublicationError(f"{name} is not candidate-only behavior.")
+    _sha256(value["report_sha256"], f"{name}.report_sha256")
+    if (
+        value["action_count"] <= 0
+        or value["rollout_count"] <= 0
+        or value["rollout_token_count"] <= 0
+        or not 0 <= value["action_agreement_count"] <= value["action_count"]
+        or not 0 <= value["exact_rollout_count"] <= value["rollout_count"]
+        or not 0 <= value["token_match_count"] <= value["rollout_token_count"]
+        or not 0 <= value["lcp_token_count"] <= value["rollout_token_count"]
+        or value["lcp_token_count"] > value["token_match_count"]
+        or not 0 <= value["lcp_at_least_4_count"] <= value["rollout_count"]
+        or value["parent_action_worst_rank"] < 1
+        or value["longest_run_excess"] < 0
+    ):
+        raise GuidedWinnerPublicationError(f"{name} contains impossible metric counts.")
+    ratios = (
+        ("action_accuracy", "action_agreement_count", "action_count"),
+        ("exact_rollout_fraction", "exact_rollout_count", "rollout_count"),
+        ("token_match_fraction", "token_match_count", "rollout_token_count"),
+        ("lcp_fraction", "lcp_token_count", "rollout_token_count"),
+    )
+    if any(
+        not math.isclose(
+            float(value[fraction]),
+            value[numerator] / value[denominator],
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        )
+        for fraction, numerator, denominator in ratios
+    ):
+        raise GuidedWinnerPublicationError(f"{name} contains inconsistent fractions.")
+    return CausalBehaviorMetrics(**dict(value))
+
+
+def _authenticated_frontier_binding(
+    contract: tournament.AuthenticatedCandidateTournament,
+    run_report: Mapping[str, Any],
+    winner_selection: Mapping[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    raw = winner_selection.get("candidate_frontier")
+    required = {
+        "schema",
+        "path",
+        "sha256",
+        "observed_callback_count",
+        "pending_callback_count",
+        "completed_arms",
+    }
+    if (
+        not isinstance(raw, Mapping)
+        or set(raw) != required
+        or canonical_json_bytes(raw)
+        != canonical_json_bytes(run_report.get("candidate_frontier"))
+        or raw.get("schema") != tournament.FRONTIER_SCHEMA
+        or raw.get("observed_callback_count") != tournament.EXPECTED_CALLBACK_COUNT
+        or raw.get("pending_callback_count") != 0
+        or raw.get("completed_arms") != list(tournament.ARM_IDS)
+    ):
+        raise GuidedWinnerPublicationError(
+            "Tournament winner is not bound to a complete callback frontier."
+        )
+    path = _resolve(raw["path"], base=contract.path.parent, name="candidate frontier")
+    digest = _sha256(raw["sha256"], "candidate_frontier.sha256")
+    frontier = _bound_json(path, digest, "candidate frontier")
+    observations = frontier.get("observed_callbacks")
+    retained = frontier.get("retained")
+    frontier_fields = {
+        "schema",
+        "evaluation_contract_sha256",
+        "completed_arms",
+        "retained_count",
+        "retained",
+        "observed_callback_count",
+        "pending_callback_count",
+        "observed_callbacks",
+        "distinct_full_v3_states_only",
+        "portable_content_identity_used",
+        "step_zero_ranked",
+        "later_states_require_pareto_safety_vs_step_zero",
+        "sealed_metrics_used",
+        "internal_numeric_matching_used",
+        "callback_metrics_are_durable_without_factor_pack_retention",
+        "maximum_retained_factor_packs",
+    }
+    if (
+        set(frontier) != frontier_fields
+        or frontier.get("schema") != tournament.FRONTIER_SCHEMA
+        or frontier.get("evaluation_contract_sha256")
+        != contract.evaluation_contract_sha256
+        or frontier.get("completed_arms") != list(tournament.ARM_IDS)
+        or frontier.get("observed_callback_count") != tournament.EXPECTED_CALLBACK_COUNT
+        or frontier.get("pending_callback_count") != 0
+        or not isinstance(observations, list)
+        or len(observations) != tournament.EXPECTED_CALLBACK_COUNT
+        or not isinstance(retained, list)
+        or frontier.get("retained_count") != tournament.MAX_RETAINED_STATES
+        or len(retained) != tournament.MAX_RETAINED_STATES
+        or frontier.get("sealed_metrics_used") is not False
+        or frontier.get("internal_numeric_matching_used") is not False
+        or frontier.get("callback_metrics_are_durable_without_factor_pack_retention")
+        is not True
+        or frontier.get("maximum_retained_factor_packs")
+        != tournament.MAX_RETAINED_STATES
+        or frontier.get("distinct_full_v3_states_only") is not True
+        or frontier.get("portable_content_identity_used") is not True
+        or frontier.get("step_zero_ranked") is not True
+        or frontier.get("later_states_require_pareto_safety_vs_step_zero") is not True
+    ):
+        raise GuidedWinnerPublicationError(
+            "Candidate frontier is incomplete, unlocked, or malformed."
+        )
+    observation_fields = {
+        "ordinal",
+        "arm_id",
+        "arm_index",
+        "step",
+        "checkpoint_sha256",
+        "runtime_factor_state_sha256",
+        "portable_factor_state_sha256",
+        "pareto_safe_vs_step0",
+        "metrics",
+        "metrics_sha256",
+        "rank",
+        "eligible_for_retention",
+        "disposition",
+        "retained_after_callback",
+        "factor_pack_created",
+        "evicted_portable_factor_state_sha256s",
+        "terminal_verified",
+        "terminal_pareto_safe_vs_step0",
+    }
+    active: dict[str, dict[str, Any]] = {}
+    metric_objects: dict[int, CausalBehaviorMetrics] = {}
+    for ordinal, row in enumerate(observations):
+        expected_arm_index = ordinal // len(tournament.CHECKPOINT_STEPS)
+        expected_step = tournament.CHECKPOINT_STEPS[
+            ordinal % len(tournament.CHECKPOINT_STEPS)
+        ]
+        expected_arm = tournament.ARM_IDS[expected_arm_index]
+        if (
+            not isinstance(row, Mapping)
+            or set(row) != observation_fields
+            or row.get("ordinal") != ordinal
+            or row.get("arm_id") != expected_arm
+            or row.get("arm_index") != expected_arm_index
+            or row.get("step") != expected_step
+            or row.get("disposition") not in tournament.FINAL_CALLBACK_DISPOSITIONS
+            or row.get("disposition") == "error-inconsistent-duplicate"
+            or not isinstance(row.get("pareto_safe_vs_step0"), bool)
+            or (expected_step == 0 and row.get("pareto_safe_vs_step0") is not True)
+            or row.get("terminal_verified") is not True
+            or row.get("terminal_pareto_safe_vs_step0")
+            != row.get("pareto_safe_vs_step0")
+            or not isinstance(row.get("metrics"), Mapping)
+            or row.get("metrics_sha256") != canonical_sha256(row["metrics"])
+            or not isinstance(row.get("rank"), list)
+            or not isinstance(row.get("eligible_for_retention"), bool)
+            or not isinstance(row.get("retained_after_callback"), bool)
+            or not isinstance(row.get("factor_pack_created"), bool)
+            or not isinstance(row.get("evicted_portable_factor_state_sha256s"), list)
+        ):
+            raise GuidedWinnerPublicationError(
+                "Candidate frontier contains unauthenticated callback evidence."
+            )
+        for field in (
+            "checkpoint_sha256",
+            "runtime_factor_state_sha256",
+            "portable_factor_state_sha256",
+        ):
+            _sha256(row[field], f"candidate_frontier[{ordinal}].{field}")
+        if any(
+            not isinstance(value, str) or _SHA256.fullmatch(value) is None
+            for value in row["evicted_portable_factor_state_sha256s"]
+        ):
+            raise GuidedWinnerPublicationError(
+                "Candidate frontier contains an invalid eviction identity."
+            )
+        metrics = _frontier_metrics(row["metrics"], f"callback[{ordinal}]")
+        metric_objects[ordinal] = metrics
+        rank = tuple(tournament.tournament_behavior_rank(row["metrics"]))
+        eligible = expected_step == 0 or row["pareto_safe_vs_step0"]
+        if row["rank"] != list(rank) or row["eligible_for_retention"] is not eligible:
+            raise GuidedWinnerPublicationError(
+                "Candidate frontier rank or retention eligibility was forged."
+            )
+        portable = row["portable_factor_state_sha256"]
+        disposition = row["disposition"]
+        evicted = row["evicted_portable_factor_state_sha256s"]
+        if not eligible:
+            if (
+                disposition != "ineligible-non-pareto"
+                or row["retained_after_callback"] is not False
+                or row["factor_pack_created"] is not False
+                or evicted
+            ):
+                raise GuidedWinnerPublicationError(
+                    "Candidate frontier non-Pareto disposition was forged."
+                )
+            continue
+        previous = active.get(portable)
+        if previous is not None:
+            if (
+                disposition != "duplicate-retained-state"
+                or row["retained_after_callback"] is not True
+                or row["factor_pack_created"] is not False
+                or evicted
+                or previous["rank"] != row["rank"]
+                or previous["metrics"] != row["metrics"]
+            ):
+                raise GuidedWinnerPublicationError(
+                    "Candidate frontier duplicate-state disposition was forged."
+                )
+            continue
+        candidate_order = (*rank, expected_arm_index, expected_step, portable)
+        keep = sorted(
+            (
+                *((value["order"], key) for key, value in active.items()),
+                (candidate_order, portable),
+            ),
+            key=lambda value: value[0],
+        )[: tournament.MAX_RETAINED_STATES]
+        keep_hashes = {value[1] for value in keep}
+        if portable not in keep_hashes:
+            if (
+                disposition != "not-retained-rank-cutoff"
+                or row["retained_after_callback"] is not False
+                or row["factor_pack_created"] is not False
+                or evicted
+            ):
+                raise GuidedWinnerPublicationError(
+                    "Candidate frontier rank-cutoff disposition was forged."
+                )
+            continue
+        active[portable] = {
+            "order": candidate_order,
+            "observation": dict(row),
+            "rank": list(row["rank"]),
+            "metrics": dict(row["metrics"]),
+        }
+        expected_evicted = [key for key in tuple(active) if key not in keep_hashes]
+        if (
+            disposition != "retained-top-three"
+            or row["retained_after_callback"] is not True
+            or row["factor_pack_created"] is not True
+            or evicted != expected_evicted
+        ):
+            raise GuidedWinnerPublicationError(
+                "Candidate frontier top-three disposition was forged."
+            )
+        for evicted_digest in expected_evicted:
+            del active[evicted_digest]
+    retained_fields = {
+        "arm_id",
+        "arm_index",
+        "step",
+        "rank",
+        "runtime_factor_state_sha256",
+        "portable_factor_state_sha256",
+        "checkpoint_sha256",
+        "metrics",
+        "factor_pack",
+        "factor_pack_sha256",
+    }
+    ordered_active = sorted(active.items(), key=lambda value: value[1]["order"])
+    if len(ordered_active) != tournament.MAX_RETAINED_STATES:
+        raise GuidedWinnerPublicationError("Candidate frontier did not reconstruct.")
+    retained_observations: list[Mapping[str, Any]] = []
+    for index, (portable, state) in enumerate(ordered_active):
+        row = retained[index]
+        observation = state["observation"]
+        if (
+            not isinstance(row, Mapping)
+            or set(row) != retained_fields
+            or row["portable_factor_state_sha256"] != portable
+            or row["arm_id"] != observation["arm_id"]
+            or row["arm_index"] != observation["arm_index"]
+            or row["step"] != observation["step"]
+            or row["rank"] != observation["rank"]
+            or row["runtime_factor_state_sha256"]
+            != observation["runtime_factor_state_sha256"]
+            or row["checkpoint_sha256"] != observation["checkpoint_sha256"]
+            or row["metrics"] != observation["metrics"]
+        ):
+            raise GuidedWinnerPublicationError(
+                "Retained frontier state differs from its callback evidence."
+            )
+        pack_path = _resolve(
+            row["factor_pack"],
+            base=contract.path.parent,
+            name=f"candidate frontier retained[{index}] factor pack",
+        )
+        pack_sha = _sha256(
+            row["factor_pack_sha256"], f"retained[{index}].factor_pack_sha256"
+        )
+        _bound_file(pack_path, pack_sha, f"retained[{index}] factor pack")
+        retained_observations.append(observation)
+    forbidden_keys = {
+        "factor_payload",
+        "factor_state",
+        "factor_tensors",
+        "model",
+        "model_state",
+        "optimizer",
+        "optimizer_state",
+        "parent",
+        "parent_state",
+        "model_checkpoint",
+        "sealed_metrics",
+    }
+
+    def contains_forbidden(value: Any) -> bool:
+        if isinstance(value, Mapping):
+            return any(
+                str(key) in forbidden_keys or contains_forbidden(item)
+                for key, item in value.items()
+            )
+        if isinstance(value, (list, tuple)):
+            return any(contains_forbidden(item) for item in value)
+        return False
+
+    if contains_forbidden(frontier):
+        raise GuidedWinnerPublicationError(
+            "Candidate frontier contains forbidden model or sealed state."
+        )
+    winner_observation = retained_observations[0]
+    step_zero_matches = [
+        (ordinal, row)
+        for ordinal, row in enumerate(observations)
+        if row["arm_id"] == winner_observation["arm_id"] and row["step"] == 0
+    ]
+    if len(step_zero_matches) != 1:
+        raise GuidedWinnerPublicationError(
+            "Winner does not have exactly one authenticated step-zero baseline."
+        )
+    step_zero_ordinal, step_zero = step_zero_matches[0]
+    winner_ordinal = int(winner_observation["ordinal"])
+    winner_metrics = metric_objects[winner_ordinal]
+    step_zero_metrics = metric_objects[step_zero_ordinal]
+    pairs = tuple(
+        zip(
+            winner_metrics.pareto_objectives,
+            step_zero_metrics.pareto_objectives,
+            strict=True,
+        )
+    )
+    objectives_equal = all(left == right for left, right in pairs)
+    dominates_step_zero = all(left >= right for left, right in pairs) and any(
+        left > right for left, right in pairs
+    )
+    declared_safe = winner_observation["pareto_safe_vs_step0"] is True
+    independently_safe = objectives_equal or dominates_step_zero
+    admission = {
+        "passed": declared_safe and independently_safe,
+        "winner_arm_id": winner_observation["arm_id"],
+        "winner_step": winner_observation["step"],
+        "winner_callback_ordinal": winner_ordinal,
+        "step_zero_callback_ordinal": step_zero_ordinal,
+        "declared_pareto_safe_vs_step0": declared_safe,
+        "objectives_equal_to_step_zero": objectives_equal,
+        "dominates_step_zero": dominates_step_zero,
+        "winner_metrics_sha256": winner_observation["metrics_sha256"],
+        "step_zero_metrics_sha256": step_zero["metrics_sha256"],
+        "recomputed_from_authenticated_output_metrics": True,
+        "internal_numeric_matching_consulted": False,
+    }
+    admission["decision_sha256"] = canonical_sha256(admission)
+    binding = {
+        "schema": tournament.FRONTIER_SCHEMA,
+        "path": str(path),
+        "sha256": digest,
+        "observed_callback_count": tournament.EXPECTED_CALLBACK_COUNT,
+        "pending_callback_count": 0,
+        "completed_arms": list(tournament.ARM_IDS),
+    }
+    return binding, admission
+
+
 def _winner_payload(
     contract: tournament.AuthenticatedCandidateTournament,
     run_report: Mapping[str, Any],
@@ -198,18 +606,55 @@ def _winner_payload(
         "factor_pack",
         "factor_pack_sha256",
     }
+    required_selection = {
+        "schema",
+        "evaluation_contract_sha256",
+        "winner",
+        "top_three_factor_state_sha256s",
+        "top_three_portable_factor_state_sha256s",
+        "candidate_only",
+        "sealed_evaluation_accessed",
+        "model_checkpoint_written",
+        "publication_attempted",
+        "stop_reason",
+        "candidate_frontier",
+    }
     if (
-        winner_selection.get("schema") != tournament.WINNER_SCHEMA
+        set(winner_selection) != required_selection
+        or winner_selection.get("schema") != tournament.WINNER_SCHEMA
         or winner_selection.get("evaluation_contract_sha256")
         != contract.evaluation_contract_sha256
         or winner_selection.get("candidate_only") is not True
         or winner_selection.get("sealed_evaluation_accessed") is not False
         or winner_selection.get("model_checkpoint_written") is not False
         or winner_selection.get("publication_attempted") is not False
+        or winner_selection.get("stop_reason")
+        != "candidate-winner-selected-before-sealed"
         or not isinstance(winner, Mapping)
         or set(winner) != required_winner
     ):
         raise GuidedWinnerPublicationError("Winner selection is malformed or unlocked.")
+    frontier_binding, pareto_admission = _authenticated_frontier_binding(
+        contract,
+        run_report,
+        winner_selection,
+    )
+    frontier = _bound_json(
+        Path(frontier_binding["path"]),
+        frontier_binding["sha256"],
+        "candidate frontier",
+    )
+    retained = frontier["retained"]
+    if (
+        canonical_json_bytes(retained[0]) != canonical_json_bytes(winner)
+        or [row.get("runtime_factor_state_sha256") for row in retained]
+        != winner_selection.get("top_three_factor_state_sha256s")
+        or [row.get("portable_factor_state_sha256") for row in retained]
+        != winner_selection.get("top_three_portable_factor_state_sha256s")
+    ):
+        raise GuidedWinnerPublicationError(
+            "Winner selection differs from the authenticated callback frontier."
+        )
     factor_path = _resolve(
         winner["factor_pack"],
         base=contract.path.parent,
@@ -262,6 +707,8 @@ def _winner_payload(
             "metrics_sha256": canonical_sha256(metrics),
             "factor_pack": str(factor_path),
             "factor_pack_sha256": factor_sha,
+            "candidate_frontier": frontier_binding,
+            "tournament_pareto_admission": pareto_admission,
         },
         dict(loaded),
     )
@@ -364,6 +811,13 @@ def build_winner_publication_preregistration_payload(
         ),
         "winner_portable_factor_state_sha256": winner["portable_factor_state_sha256"],
         "winner_candidate_metrics_sha256": winner["metrics_sha256"],
+        "candidate_frontier_sha256": winner["candidate_frontier"]["sha256"],
+        "observed_callback_count": winner["candidate_frontier"][
+            "observed_callback_count"
+        ],
+        "tournament_pareto_admission_decision_sha256": winner[
+            "tournament_pareto_admission"
+        ]["decision_sha256"],
         "splits": splits,
         "sealed_forward_limit": 1,
         "post_bake_split_order": ["fit", "candidate"],
@@ -380,6 +834,7 @@ def build_winner_publication_preregistration_payload(
             "run_report_sha256": run_sha,
             "winner_selection": str(winner_path),
             "winner_selection_sha256": winner_sha,
+            "candidate_frontier": dict(winner["candidate_frontier"]),
         },
         "source_guided": {
             "preregistration": str(source.source.path),
@@ -476,6 +931,7 @@ def authenticate_winner_publication_preregistration(
             "run_report_sha256",
             "winner_selection",
             "winner_selection_sha256",
+            "candidate_frontier",
         },
         "tournament",
     )
@@ -845,7 +1301,9 @@ def execute_winner_publication(
         method_passed, method_decision = _method_gate(
             candidate_metrics,
             winner_step=int(refreshed.winner["step"]),
-            tournament_pareto_admission=True,
+            tournament_pareto_admission=bool(
+                refreshed.winner["tournament_pareto_admission"]["passed"]
+            ),
         )
         report["pre_sealed_candidate_decision"] = candidate_decision
         report["guided_method_decision"] = method_decision
@@ -1002,7 +1460,9 @@ def execute_winner_publication(
         post_method_passed, post_method_decision = _method_gate(
             post_candidate_metrics,
             winner_step=int(refreshed.winner["step"]),
-            tournament_pareto_admission=True,
+            tournament_pareto_admission=bool(
+                refreshed.winner["tournament_pareto_admission"]["passed"]
+            ),
         )
         report["post_bake_behavior_decisions"] = post_decisions
         report["post_bake_guided_method_decision"] = post_method_decision

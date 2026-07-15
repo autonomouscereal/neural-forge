@@ -231,8 +231,7 @@ def _contract(tmp_path: Path) -> publication.AuthenticatedWinnerPublication:
             {
                 "evaluation_contract_sha256": source_evaluation,
                 "thresholds": {
-                    name: _thresholds()
-                    for name in ("fit", "candidate", "sealed")
+                    name: _thresholds() for name in ("fit", "candidate", "sealed")
                 },
             },
             sort_keys=True,
@@ -241,14 +240,41 @@ def _contract(tmp_path: Path) -> publication.AuthenticatedWinnerPublication:
         encoding="utf-8",
     )
     portable = _digest("portable-winner")
+    metrics = _metrics()
+    pareto_admission = {
+        "passed": True,
+        "winner_arm_id": publication.tournament.ARM_IDS[0],
+        "winner_step": 16,
+        "winner_callback_ordinal": 1,
+        "step_zero_callback_ordinal": 0,
+        "declared_pareto_safe_vs_step0": True,
+        "objectives_equal_to_step_zero": False,
+        "dominates_step_zero": True,
+        "winner_metrics_sha256": publication.canonical_sha256(metrics),
+        "step_zero_metrics_sha256": _digest("step-zero-metrics"),
+        "recomputed_from_authenticated_output_metrics": True,
+        "internal_numeric_matching_consulted": False,
+    }
+    pareto_admission["decision_sha256"] = publication.canonical_sha256(
+        pareto_admission
+    )
     winner = {
+        "arm_id": publication.tournament.ARM_IDS[0],
         "step": 16,
-        "metrics": _metrics(),
+        "metrics": metrics,
+        "metrics_sha256": publication.canonical_sha256(metrics),
         "portable_factor_state_sha256": portable,
+        "tournament_pareto_admission": pareto_admission,
+    }
+    semantic_contract = {
+        "tournament_pareto_admission_decision_sha256": pareto_admission[
+            "decision_sha256"
+        ]
     }
     prereg_payload = {
         "schema": publication.PREREGISTRATION_SCHEMA,
         "semantic_contract_sha256": semantic,
+        "semantic_contract": semantic_contract,
         "model_free_preregistration": True,
         "publication_authorized_before_sealed_pass": False,
         "source_guided": {
@@ -436,6 +462,18 @@ def test_model_free_preregistration_binds_exact_sealed32_and_tamper_fails(
         "portable_factor_state_sha256": _digest("portable-winner"),
         "metrics": _metrics(),
         "metrics_sha256": publication.canonical_sha256(_metrics()),
+        "candidate_frontier": {
+            "schema": publication.tournament.FRONTIER_SCHEMA,
+            "path": str(tmp_path / "candidate_frontier.json"),
+            "sha256": _digest("candidate-frontier"),
+            "observed_callback_count": publication.tournament.EXPECTED_CALLBACK_COUNT,
+            "pending_callback_count": 0,
+            "completed_arms": list(publication.tournament.ARM_IDS),
+        },
+        "tournament_pareto_admission": {
+            "passed": True,
+            "decision_sha256": _digest("pareto-admission"),
+        },
     }
     monkeypatch.setattr(
         publication.tournament,
@@ -487,6 +525,15 @@ def test_model_free_preregistration_binds_exact_sealed32_and_tamper_fails(
     assert payload["model_weights_loaded"] is False
     assert payload["gpu_work_launched"] is False
     assert payload["publication_authorized_before_sealed_pass"] is False
+    assert payload["tournament"]["candidate_frontier"] == winner["candidate_frontier"]
+    assert (
+        payload["semantic_contract"]["candidate_frontier_sha256"]
+        == winner["candidate_frontier"]["sha256"]
+    )
+    assert (
+        payload["semantic_contract"]["tournament_pareto_admission_decision_sha256"]
+        == winner["tournament_pareto_admission"]["decision_sha256"]
+    )
     assert not (tmp_path / "sealed_consumption.json").exists()
 
     with pytest.raises(
@@ -661,9 +708,9 @@ def test_builder_uses_owned_sibling_staging_and_atomic_final_rename(
     assert replacements[-1][0].parent == output.parent
     assert replacements[-1][0].name.startswith(f".{output.name}.")
     assert report["preregistration"] == str(output / "preregistration.json")
-    assert json.loads((output / "build_report.json").read_text())["preregistration"] == str(
-        output / "preregistration.json"
-    )
+    assert json.loads((output / "build_report.json").read_text())[
+        "preregistration"
+    ] == str(output / "preregistration.json")
     assert authenticated_paths[-1] == output / "preregistration.json"
     assert not list(tmp_path.glob(f".{output.name}.*.staging"))
 
@@ -754,6 +801,38 @@ def test_winner_publication_is_candidate_first_and_sealed_exactly_once(
     assert (tmp_path / "run" / "accepted_child").is_dir()
 
 
+def test_authenticated_false_pareto_admission_blocks_sealed_access(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    execution_patches: None,
+) -> None:
+    del execution_patches
+    contract = _contract(tmp_path)
+    contract.winner["tournament_pareto_admission"]["passed"] = False
+    monkeypatch.setattr(
+        publication,
+        "authenticate_winner_publication_preregistration",
+        lambda *_a: contract,
+    )
+    events: list[str] = []
+    runtime = _FakeRuntime(events)
+
+    report = _execute(contract, tmp_path / "pareto-rejected", runtime)
+
+    assert report["status"] == "rejected"
+    assert report["reason"] == "winner-candidate-recheck-rejected"
+    assert report["guided_method_decision"]["passed"] is False
+    assert (
+        report["guided_method_decision"]["checks"][
+            "tournament_later_state_required_pareto_safety_vs_step_zero"
+        ]
+        is False
+    )
+    assert report["sealed_forward_count"] == 0
+    assert "evaluate-sealed" not in events
+    assert not (tmp_path / "sealed_consumption.json").exists()
+
+
 def test_consumed_marker_blocks_rerun_before_model_access(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -841,9 +920,7 @@ def test_runtime_or_base_setup_failure_leaves_no_output_root(
         monkeypatch.setattr(
             publication.dataclasses,
             "replace",
-            lambda *_a, **_kw: (_ for _ in ()).throw(
-                RuntimeError("base setup failed")
-            ),
+            lambda *_a, **_kw: (_ for _ in ()).throw(RuntimeError("base setup failed")),
         )
         runtime = _FakeRuntime([])
     output = tmp_path / "setup-failure-run"
@@ -1039,9 +1116,7 @@ def test_frontier_rejects_forged_behavior_and_method_receipts(
             expected_run_report_sha256=file_sha256(report_path),
             expected_preregistration_sha256=contract.file_sha256,
             preregistration_authenticator=lambda *_a: {
-                "semantic_contract_sha256": contract.raw[
-                    "semantic_contract_sha256"
-                ]
+                "semantic_contract_sha256": contract.raw["semantic_contract_sha256"]
             },
             accepted_child_authenticator=lambda *_a: report[
                 "independent_reload_certificate"

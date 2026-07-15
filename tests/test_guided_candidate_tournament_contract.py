@@ -19,6 +19,7 @@ if str(EXPERIMENTS) not in sys.path:
 import prepare_qwen_exact_target_native_continuation_splits as split_tools
 import prepare_qwen_exact_target_native_guided_candidate_tournament as prepare
 import run_qwen_exact_target_native_guided_candidate_tournament as tournament
+import run_qwen_exact_target_native_guided_winner_publication as publication
 import run_qwen_exact_target_native_stage as stage
 from neural_forge.hf_exact_candidate_frontier import ExactCandidateFrontierError
 from neural_forge.hf_guided_checkpoint_recovery import (
@@ -165,7 +166,18 @@ def _event(arm_index: int, step: int) -> DurableBehaviorCheckpoint:
         step=step,
         metrics=_metrics(score),
         factor_state=_factor_state(arm_index * 1000 + step),
-        pareto_safe_vs_step0=step > 0,
+        pareto_safe_vs_step0=True,
+    )
+
+
+def _scored_event(
+    *, step: int, score: int, seed: int, pareto_safe: bool
+) -> DurableBehaviorCheckpoint:
+    return DurableBehaviorCheckpoint(
+        step=step,
+        metrics=_metrics(score),
+        factor_state=_factor_state(seed),
+        pareto_safe_vs_step0=pareto_safe,
     )
 
 
@@ -574,6 +586,254 @@ def test_sink_ranks_step_zero_and_rejects_unsafe_later_state(tmp_path: Path) -> 
     assert frontier["retained"][0]["step"] == 0
 
 
+def test_non_pareto_callback_is_durable_without_creating_an_extra_pack(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "non-pareto"
+    output.mkdir()
+    sink = tournament.TournamentTopThreeSink(
+        output, evaluation_contract_sha256=_digest("evaluation")
+    )
+    callback = sink.callback_for_arm(tournament.ARM_IDS[0], 0)
+    callback(_scored_event(step=0, score=10, seed=10, pareto_safe=False))
+    frontier_path = output / "candidate_frontier.json"
+    before = frontier_path.read_bytes()
+    packs_before = tuple((output / "retained").glob("*/factor_pack.pt"))
+
+    unsafe = _scored_event(step=2, score=200, seed=200, pareto_safe=False)
+    callback(unsafe)
+
+    after = frontier_path.read_bytes()
+    frontier = stage._strict_json(frontier_path)
+    observation = frontier["observed_callbacks"][-1]
+    assert after != before
+    assert frontier["observed_callback_count"] == 2
+    assert frontier["pending_callback_count"] == 0
+    assert observation["checkpoint_sha256"] == unsafe.checkpoint_sha256
+    assert observation["metrics"] == unsafe.metrics.as_dict()
+    assert observation["metrics_sha256"] == canonical_sha256(unsafe.metrics.as_dict())
+    assert observation["disposition"] == "ineligible-non-pareto"
+    assert observation["factor_pack_created"] is False
+    assert observation["retained_after_callback"] is False
+    assert tuple((output / "retained").glob("*/factor_pack.pt")) == packs_before
+
+
+def test_true_duplicate_records_both_callback_identities_with_one_pack(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "duplicate"
+    output.mkdir()
+    sink = tournament.TournamentTopThreeSink(
+        output, evaluation_contract_sha256=_digest("evaluation")
+    )
+    callback = sink.callback_for_arm(tournament.ARM_IDS[0], 0)
+    first = _scored_event(step=0, score=20, seed=20, pareto_safe=False)
+    duplicate = DurableBehaviorCheckpoint(
+        step=2,
+        metrics=first.metrics,
+        factor_state=first.factor_state,
+        pareto_safe_vs_step0=True,
+    )
+
+    callback(first)
+    callback(duplicate)
+
+    frontier = stage._strict_json(output / "candidate_frontier.json")
+    observations = frontier["observed_callbacks"]
+    assert [(row["ordinal"], row["step"]) for row in observations] == [
+        (0, 0),
+        (1, 2),
+    ]
+    assert observations[0]["checkpoint_sha256"] != observations[1]["checkpoint_sha256"]
+    assert (
+        observations[0]["portable_factor_state_sha256"]
+        == observations[1]["portable_factor_state_sha256"]
+    )
+    assert observations[0]["metrics_sha256"] == observations[1]["metrics_sha256"]
+    assert observations[0]["disposition"] == "retained-top-three"
+    assert observations[1]["disposition"] == "duplicate-retained-state"
+    assert observations[0]["factor_pack_created"] is True
+    assert observations[1]["factor_pack_created"] is False
+    assert len(list((output / "retained").glob("*/factor_pack.pt"))) == 1
+
+
+def test_rank_cutoff_writes_no_pack_and_later_better_state_records_eviction(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "rank-cutoff"
+    output.mkdir()
+    sink = tournament.TournamentTopThreeSink(
+        output, evaluation_contract_sha256=_digest("evaluation")
+    )
+    callback = sink.callback_for_arm(tournament.ARM_IDS[0], 0)
+    initial = (
+        _scored_event(step=0, score=30, seed=30, pareto_safe=False),
+        _scored_event(step=2, score=20, seed=20, pareto_safe=True),
+        _scored_event(step=4, score=10, seed=10, pareto_safe=True),
+    )
+    observed_pack_counts = []
+    for event in initial:
+        callback(event)
+        observed_pack_counts.append(
+            len(list((output / "retained").glob("*/factor_pack.pt")))
+        )
+    evicted_digest = portable_v3_factor_state_sha256(
+        initial[-1].factor_state.as_factor_payload()
+    )
+
+    fourth = _scored_event(step=8, score=0, seed=0, pareto_safe=True)
+    fourth_digest = portable_v3_factor_state_sha256(
+        fourth.factor_state.as_factor_payload()
+    )
+    callback(fourth)
+    observed_pack_counts.append(
+        len(list((output / "retained").glob("*/factor_pack.pt")))
+    )
+    cutoff_frontier = stage._strict_json(output / "candidate_frontier.json")
+    cutoff = cutoff_frontier["observed_callbacks"][-1]
+    assert cutoff["disposition"] == "not-retained-rank-cutoff"
+    assert cutoff["factor_pack_created"] is False
+    assert not (output / "retained" / fourth_digest).exists()
+
+    better = _scored_event(step=12, score=200, seed=200, pareto_safe=True)
+    callback(better)
+    observed_pack_counts.append(
+        len(list((output / "retained").glob("*/factor_pack.pt")))
+    )
+    frontier = stage._strict_json(output / "candidate_frontier.json")
+    retained = frontier["observed_callbacks"][-1]
+    assert retained["disposition"] == "retained-top-three"
+    assert retained["factor_pack_created"] is True
+    assert retained["evicted_portable_factor_state_sha256s"] == [evicted_digest]
+    assert not (output / "retained" / evicted_digest).exists()
+    assert max(observed_pack_counts) <= tournament.MAX_RETAINED_STATES
+    assert len(list((output / "retained").glob("*/factor_pack.pt"))) == 3
+
+
+def test_terminal_pareto_mismatch_is_rejected(tmp_path: Path) -> None:
+    output = tmp_path / "terminal-pareto-mismatch"
+    output.mkdir()
+    sink = tournament.TournamentTopThreeSink(
+        output, evaluation_contract_sha256=_digest("evaluation")
+    )
+    arm_id = tournament.ARM_IDS[0]
+    callback = sink.callback_for_arm(arm_id, 0)
+    events = tuple(_event(0, step) for step in tournament.CHECKPOINT_STEPS)
+    for event in events:
+        callback(event)
+    terminal = tuple(
+        BehaviorCheckpoint(
+            step=event.step,
+            metrics=event.metrics,
+            factor_state_sha256=event.factor_state.factor_state_sha256,
+            pareto_safe_vs_step0=(
+                False
+                if event.step == tournament.CHECKPOINT_STEPS[1]
+                else event.pareto_safe_vs_step0
+            ),
+        )
+        for event in events
+    )
+    result = SimpleNamespace(
+        checkpoints=terminal,
+        sealed_metrics=None,
+        sealed_evaluation_unlocked=False,
+        sealed_evaluation_policy="disabled",
+    )
+
+    with pytest.raises(
+        tournament.CandidateTournamentError,
+        match="Terminal checkpoint evidence changed",
+    ):
+        sink.complete_arm(arm_id, result)
+
+    frontier = stage._strict_json(output / "candidate_frontier.json")
+    assert frontier["completed_arms"] == []
+    assert not any(row["terminal_verified"] for row in frontier["observed_callbacks"])
+
+
+def test_serialized_frontier_has_no_model_optimizer_or_factor_tensor_payloads(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "hash-only-frontier"
+    output.mkdir()
+    sink = tournament.TournamentTopThreeSink(
+        output, evaluation_contract_sha256=_digest("evaluation")
+    )
+    callback = sink.callback_for_arm(tournament.ARM_IDS[0], 0)
+    callback(_scored_event(step=0, score=10, seed=10, pareto_safe=False))
+    callback(_scored_event(step=2, score=11, seed=11, pareto_safe=False))
+    frontier = stage._strict_json(output / "candidate_frontier.json")
+    forbidden_keys = {
+        "factor_payload",
+        "factor_state",
+        "model",
+        "model_state",
+        "optimizer",
+        "optimizer_state",
+        "parent",
+        "raw_bytes",
+        "sealed_metric_payload",
+        "sealed_metrics",
+        "tensor",
+        "tensors",
+    }
+    observed_keys: set[str] = set()
+
+    def walk(value: Any) -> None:
+        assert not isinstance(value, torch.Tensor)
+        if isinstance(value, dict):
+            for key, child in value.items():
+                observed_keys.add(str(key).lower())
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    walk(frontier)
+    assert observed_keys.isdisjoint(forbidden_keys)
+    assert frontier["sealed_metrics_used"] is False
+    assert all(
+        row["metrics"]["split"] == "calibration-selection"
+        for row in frontier["observed_callbacks"]
+    )
+
+
+def test_final_frontier_write_failure_leaves_pending_observation_and_no_winner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = tmp_path / "frontier-write-failure"
+    output.mkdir()
+    sink = tournament.TournamentTopThreeSink(
+        output, evaluation_contract_sha256=_digest("evaluation")
+    )
+    original_atomic_json = tournament._atomic_json
+    frontier_writes = 0
+
+    def fail_final_frontier_write(
+        path: Path, payload: Any, *, exclusive: bool = False
+    ) -> None:
+        nonlocal frontier_writes
+        if path.name == "candidate_frontier.json":
+            frontier_writes += 1
+            if frontier_writes == 2:
+                raise OSError("injected final frontier write failure")
+        original_atomic_json(path, payload, exclusive=exclusive)
+
+    monkeypatch.setattr(tournament, "_atomic_json", fail_final_frontier_write)
+    callback = sink.callback_for_arm(tournament.ARM_IDS[0], 0)
+    with pytest.raises(OSError, match="injected final frontier write failure"):
+        callback(_scored_event(step=0, score=10, seed=10, pareto_safe=False))
+
+    frontier = stage._strict_json(output / "candidate_frontier.json")
+    assert frontier_writes == 2
+    assert frontier["observed_callback_count"] == 1
+    assert frontier["pending_callback_count"] == 1
+    assert frontier["observed_callbacks"][0]["disposition"] == "observed-pending"
+    assert not (output / "winner_selection.json").exists()
+
+
 def _fake_arms() -> tuple[tournament.TournamentArm, ...]:
     return (
         tournament.TournamentArm(
@@ -693,6 +953,13 @@ class _FakeRuntime:
         self.closed = True
 
 
+class _PartialFailureRuntime(_FakeRuntime):
+    def run_arm(self, _contract: Any, arm: Any, callback: Any) -> Any:
+        arm_index = tournament.ARM_IDS.index(arm.arm_id)
+        callback(_event(arm_index, tournament.CHECKPOINT_STEPS[0]))
+        raise RuntimeError("injected partial runtime failure")
+
+
 def test_tournament_retains_top_three_selects_one_winner_and_never_uses_sealed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -733,6 +1000,143 @@ def test_tournament_retains_top_three_selects_one_winner_and_never_uses_sealed(
     assert authentications == 1
     assert all(row["sealed_forward_count"] == 0 for row in report["arm_executions"])
     assert report["arm_executions"][-1]["post_optimizer_mask_verification_count"] == 64
+    frontier_path = output / "candidate_frontier.json"
+    frontier = stage._strict_json(frontier_path)
+    winner = stage._strict_json(output / "winner_selection.json")
+    durable_report = stage._strict_json(output / "run_report.json")
+    assert frontier["observed_callback_count"] == tournament.EXPECTED_CALLBACK_COUNT
+    assert frontier["pending_callback_count"] == 0
+    assert frontier["completed_arms"] == list(tournament.ARM_IDS)
+    assert [row["ordinal"] for row in frontier["observed_callbacks"]] == list(
+        range(tournament.EXPECTED_CALLBACK_COUNT)
+    )
+    assert all(
+        row["disposition"] in tournament.FINAL_CALLBACK_DISPOSITIONS
+        and row["terminal_verified"] is True
+        and row["terminal_pareto_safe_vs_step0"] == row["pareto_safe_vs_step0"]
+        for row in frontier["observed_callbacks"]
+    )
+    expected_binding = {
+        "schema": tournament.FRONTIER_SCHEMA,
+        "path": str(frontier_path),
+        "sha256": stage._file_sha256(frontier_path),
+        "observed_callback_count": tournament.EXPECTED_CALLBACK_COUNT,
+        "pending_callback_count": 0,
+        "completed_arms": list(tournament.ARM_IDS),
+    }
+    assert winner["candidate_frontier"] == expected_binding
+    assert report["candidate_frontier"] == expected_binding
+    assert durable_report["candidate_frontier"] == expected_binding
+    assert durable_report["winner_selection"]["candidate_frontier"] == expected_binding
+    authenticated_binding, admission = publication._authenticated_frontier_binding(
+        contract,
+        durable_report,
+        winner,
+    )
+    assert authenticated_binding == expected_binding
+    assert admission["passed"] is True
+    assert admission["declared_pareto_safe_vs_step0"] is True
+    assert admission["dominates_step_zero"] is True
+    assert admission["recomputed_from_authenticated_output_metrics"] is True
+
+
+def test_partial_runtime_failure_binds_the_durable_frontier_in_run_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract = _fake_authenticated_contract(tmp_path)
+    monkeypatch.setattr(
+        tournament,
+        "authenticate_candidate_tournament_preregistration",
+        lambda *_args: contract,
+    )
+    runtime = _PartialFailureRuntime()
+    output = tmp_path / "partial-runtime-failure"
+
+    with pytest.raises(RuntimeError, match="injected partial runtime failure"):
+        tournament.execute_candidate_tournament(contract, output, runtime=runtime)
+
+    frontier_path = output / "candidate_frontier.json"
+    frontier = stage._strict_json(frontier_path)
+    report = stage._strict_json(output / "run_report.json")
+    expected_binding = {
+        "schema": tournament.FRONTIER_SCHEMA,
+        "path": str(frontier_path),
+        "sha256": stage._file_sha256(frontier_path),
+        "observed_callback_count": 1,
+        "pending_callback_count": 0,
+        "completed_arms": [],
+    }
+    assert report["status"] == "failed"
+    assert report["error_type"] == "RuntimeError"
+    assert report["candidate_frontier"] == expected_binding
+    assert frontier["observed_callback_count"] == 1
+    assert frontier["pending_callback_count"] == 0
+    assert frontier["observed_callbacks"][0]["disposition"] == "retained-top-three"
+    assert frontier["observed_callbacks"][0]["terminal_verified"] is False
+    assert not (output / "winner_selection.json").exists()
+    assert runtime.closed is True
+
+
+def test_publication_recomputes_pareto_admission_against_same_arm_step_zero(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract = _fake_authenticated_contract(tmp_path)
+    monkeypatch.setattr(
+        tournament,
+        "authenticate_candidate_tournament_preregistration",
+        lambda *_args: contract,
+    )
+    output = tmp_path / "pareto-authentication"
+    tournament.execute_candidate_tournament(
+        contract,
+        output,
+        runtime=_FakeRuntime(),
+    )
+    frontier_path = output / "candidate_frontier.json"
+    frontier = stage._strict_json(frontier_path)
+    winner_selection = stage._strict_json(output / "winner_selection.json")
+    report = stage._strict_json(output / "run_report.json")
+    winner = winner_selection["winner"]
+    step_zero = next(
+        row
+        for row in frontier["observed_callbacks"]
+        if row["arm_id"] == winner["arm_id"] and row["step"] == 0
+    )
+    step_zero["metrics"]["parent_action_mean_logprob"] = -1.0
+    step_zero["metrics_sha256"] = canonical_sha256(step_zero["metrics"])
+    tournament._atomic_json(frontier_path, frontier)
+    binding = {
+        **winner_selection["candidate_frontier"],
+        "sha256": stage._file_sha256(frontier_path),
+    }
+    winner_selection["candidate_frontier"] = binding
+    report["candidate_frontier"] = binding
+
+    authenticated_binding, admission = publication._authenticated_frontier_binding(
+        contract,
+        report,
+        winner_selection,
+    )
+    method_passed, method_decision = publication._method_gate(
+        CausalBehaviorMetrics(**winner["metrics"]),
+        winner_step=winner["step"],
+        tournament_pareto_admission=admission["passed"],
+    )
+
+    assert authenticated_binding == binding
+    assert admission["declared_pareto_safe_vs_step0"] is True
+    assert admission["objectives_equal_to_step_zero"] is False
+    assert admission["dominates_step_zero"] is False
+    assert admission["passed"] is False
+    assert method_passed is False
+    assert (
+        method_decision["checks"][
+            "tournament_later_state_required_pareto_safety_vs_step_zero"
+        ]
+        is False
+    )
 
 
 def test_tournament_fails_closed_when_three_distinct_states_do_not_exist(
