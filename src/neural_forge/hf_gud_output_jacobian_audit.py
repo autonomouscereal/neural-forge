@@ -35,6 +35,7 @@ from neural_forge.balanced_krylov import (
 from neural_forge.hf_output_jacobian_sketch import (
     OutputJacobianBlockIdentity,
     OutputJacobianSketchError,
+    OutputJacobianSketchResult,
     OutputJacobianSketchSpec,
     TwoPassOutputJacobianSketch,
 )
@@ -564,15 +565,35 @@ def role_local_input_vjp(
     if rows <= 0:
         raise GUDOutputJacobianAuditShapeError("output_delta cannot be empty.")
     with torch.no_grad():
-        result = delta.detach() @ weight.detach()
-        if latent:
-            result = result + (delta.detach() @ left.detach()) @ right.detach()
+        result = role_local_input_vjp_prevalidated(
+            delta.detach(), weight.detach(), left.detach(), right.detach()
+        )
     if tuple(result.shape) != (rows, input_width):
         raise GUDOutputJacobianAuditShapeError(
             "Role-local input VJP has the wrong derived shape."
         )
     if not bool(torch.isfinite(result).all()):
         raise GUDOutputJacobianAuditFiniteError("Role-local input VJP is non-finite.")
+    return result
+
+
+def role_local_input_vjp_prevalidated(
+    output_delta: Tensor,
+    base_weight: Tensor,
+    inherited_left: Tensor,
+    inherited_right: Tensor,
+) -> Tensor:
+    """Hot-path local VJP after a collector has validated metadata.
+
+    Unlike :func:`role_local_input_vjp`, this helper intentionally contains no
+    finite scan or host synchronization.  Production replay collectors can
+    call it from an output-gradient hook and authenticate/fail-close at the
+    pass boundary.
+    """
+
+    result = output_delta @ base_weight
+    if int(inherited_left.shape[1]):
+        result = result + (output_delta @ inherited_left) @ inherited_right
     return result
 
 
@@ -1060,6 +1081,40 @@ def _balanced_envelope(
     return envelope
 
 
+def finalize_streaming_gud_envelope(
+    activation_row_sketch: Tensor,
+    sensitivity_row_sketch: Tensor,
+    inherited_right: Tensor,
+    config: GUDOutputJacobianAuditConfig,
+) -> Tensor:
+    """Finalize bounded pass-one row sketches into a CPU FP64 envelope."""
+
+    activations = _validate_matrix_metadata(
+        activation_row_sketch, "activation_row_sketch"
+    )
+    sensitivities = _validate_matrix_metadata(
+        sensitivity_row_sketch, "sensitivity_row_sketch"
+    )
+    inherited = _validate_matrix_metadata(
+        inherited_right, "inherited_right", allow_empty_axis=True
+    )
+    if (
+        int(activations.shape[1]) != int(sensitivities.shape[1])
+        or int(inherited.shape[1]) != int(activations.shape[1])
+    ):
+        raise GUDOutputJacobianAuditShapeError(
+            "Streaming row sketches and inherited right factors must share width."
+        )
+    occupied = _row_orthonormal_basis(inherited, require_rows=0)
+    return _balanced_envelope(
+        (activations,),
+        (sensitivities,),
+        (),
+        occupied,
+        config,
+    )
+
+
 def _reduced_groups(
     values: Sequence[Tensor], envelope: Tensor
 ) -> tuple[np.ndarray, ...]:
@@ -1368,6 +1423,205 @@ def _build_site(
     )
 
 
+def finalize_streamed_gud_site_basis(
+    *,
+    layer_index: int,
+    role_spec: GUDRoleSpec,
+    inherited_right: Tensor,
+    output_jacobian_result: OutputJacobianSketchResult,
+    balanced_envelope: Tensor,
+    reduced_activation_rows: Tensor,
+    reduced_sensitivity_rows: Tensor,
+    config: GUDOutputJacobianAuditConfig,
+    source_manifest: Mapping[str, Any],
+    memory_plan_sha256: str,
+) -> GUDSiteBasisResult:
+    """Finalize one site from real streaming replay evidence.
+
+    The replay owner supplies a completed two-pass sketch, a pass-one envelope,
+    and only bounded pass-two coordinates.  No full-width replay table is
+    reconstructed here.
+    """
+
+    layer = _nonnegative_int(layer_index, "layer_index")
+    if not isinstance(role_spec, GUDRoleSpec):
+        raise GUDOutputJacobianAuditShapeError("role_spec has the wrong type.")
+    if not isinstance(output_jacobian_result, OutputJacobianSketchResult):
+        raise GUDOutputJacobianAuditShapeError(
+            "output_jacobian_result has the wrong type."
+        )
+    if not isinstance(config, GUDOutputJacobianAuditConfig):
+        raise GUDOutputJacobianAuditShapeError("config has the wrong type.")
+    if (
+        not isinstance(memory_plan_sha256, str)
+        or len(memory_plan_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in memory_plan_sha256)
+    ):
+        raise GUDOutputJacobianAuditShapeError(
+            "memory_plan_sha256 must be a lowercase SHA-256 digest."
+        )
+    if not isinstance(source_manifest, Mapping):
+        raise GUDOutputJacobianAuditShapeError("source_manifest must be a mapping.")
+    envelope = _validate_matrix_metadata(
+        balanced_envelope, "balanced_envelope"
+    ).detach().to(device="cpu", dtype=torch.float64).contiguous()
+    activations = _validate_matrix_metadata(
+        reduced_activation_rows, "reduced_activation_rows"
+    ).detach().to(device="cpu", dtype=torch.float64).contiguous()
+    sensitivities = _validate_matrix_metadata(
+        reduced_sensitivity_rows, "reduced_sensitivity_rows"
+    ).detach().to(device="cpu", dtype=torch.float64).contiguous()
+    envelope_width = int(envelope.shape[0])
+    if (
+        int(envelope.shape[1]) != role_spec.input_width
+        or int(activations.shape[1]) != envelope_width
+        or int(sensitivities.shape[1]) != envelope_width
+        or envelope_width < config.rank
+    ):
+        raise GUDOutputJacobianAuditShapeError(
+            "Streamed balanced evidence disagrees with the role/envelope geometry."
+        )
+    for name, value in (
+        ("balanced_envelope", envelope),
+        ("reduced_activation_rows", activations),
+        ("reduced_sensitivity_rows", sensitivities),
+    ):
+        if not bool(torch.isfinite(value).all()):
+            raise GUDOutputJacobianAuditFiniteError(f"{name} is non-finite.")
+    envelope_gram_error = float(
+        (
+            envelope @ envelope.T
+            - torch.eye(envelope_width, dtype=torch.float64)
+        )
+        .abs()
+        .max()
+    )
+    if envelope_gram_error > 1e-10:
+        raise GUDOutputJacobianAuditRankError(
+            "The streamed balanced envelope is not row-orthonormal."
+        )
+    occupied = _row_orthonormal_basis(inherited_right, require_rows=0)
+    occupied_error = (
+        float((envelope @ occupied.T).abs().max()) if occupied.numel() else 0.0
+    )
+    if occupied_error > 1e-10:
+        raise GUDOutputJacobianAuditRankError(
+            "The streamed envelope overlaps inherited right-row space."
+        )
+    try:
+        balanced_basis = build_balanced_krylov_basis(
+            activations.numpy().copy(),
+            rank=config.rank,
+            output_sensitivities=sensitivities.numpy().copy(),
+            center=False,
+            allow_svd_fallback=False,
+        )
+    except BalancedKrylovError as error:
+        raise GUDOutputJacobianAuditRankError(
+            "The streamed center=False balanced evidence is uncertifiable."
+        ) from error
+    lifted_balanced = envelope.T @ torch.from_numpy(
+        np.array(balanced_basis.decoder, dtype=np.float64, order="C", copy=True)
+    )
+    jacobian_rows = _project_candidate(
+        output_jacobian_result.guided_right_rows, occupied, config.rank
+    )
+    balanced_rows = _project_candidate(lifted_balanced.T, occupied, config.rank)
+    random_rows = _project_candidate(
+        output_jacobian_result.random_right_rows, occupied, config.rank
+    )
+    hybrid_rows = _project_candidate(
+        _procrustes_hybrid(jacobian_rows, balanced_rows), occupied, config.rank
+    )
+    candidates: dict[CandidateKind, Tensor] = {
+        "output-jacobian": jacobian_rows,
+        "balanced": balanced_rows,
+        "procrustes-hybrid": hybrid_rows,
+        "random-control": random_rows,
+    }
+    repeated = {
+        "output-jacobian": _project_candidate(
+            output_jacobian_result.guided_right_rows, occupied, config.rank
+        ),
+        "balanced": _project_candidate(lifted_balanced.T, occupied, config.rank),
+        "procrustes-hybrid": _project_candidate(
+            _procrustes_hybrid(jacobian_rows, balanced_rows), occupied, config.rank
+        ),
+        "random-control": _project_candidate(
+            output_jacobian_result.random_right_rows, occupied, config.rank
+        ),
+    }
+    if any(
+        not torch.equal(candidates[kind], repeated[kind])
+        for kind in _CANDIDATE_ORDER
+    ):
+        raise GUDOutputJacobianAuditDeterminismError(
+            "Repeated streamed candidate construction produced different bytes."
+        )
+    candidate_manifest = _candidate_manifest(candidates, config)
+    source_payload = dict(source_manifest)
+    source_manifest_sha256 = _canonical_sha256(source_payload)
+    report_payload: dict[str, Any] = {
+        "schema": GUD_OUTPUT_JACOBIAN_AUDIT_SCHEMA,
+        "candidate_schema": GUD_CANDIDATE_BASIS_SCHEMA,
+        "collection_mode": "streamed-real-model-loss-replay",
+        "layer_index": layer,
+        "role": role_spec.role,
+        "role_spec": role_spec.to_dict(),
+        "config_sha256": config.sha256(),
+        "source_manifest": source_payload,
+        "source_manifest_sha256": source_manifest_sha256,
+        "output_jacobian_dependency_report": (
+            output_jacobian_result.report.to_dict()
+        ),
+        "balanced_dependency_report": balanced_basis.report.as_dict(),
+        "balanced_centered": False,
+        "balanced_envelope_width": envelope_width,
+        "balanced_envelope": _tensor_fingerprint(
+            envelope,
+            "balanced_envelope",
+            chunk_bytes=config.fingerprint_chunk_bytes,
+        ),
+        "reduced_activation_rows": _tensor_fingerprint(
+            activations,
+            "reduced_activation_rows",
+            chunk_bytes=config.fingerprint_chunk_bytes,
+        ),
+        "reduced_sensitivity_rows": _tensor_fingerprint(
+            sensitivities,
+            "reduced_sensitivity_rows",
+            chunk_bytes=config.fingerprint_chunk_bytes,
+        ),
+        "candidate_manifest": candidate_manifest,
+        "candidate_manifest_sha256": _canonical_sha256(candidate_manifest),
+        "candidate_order": list(_CANDIDATE_ORDER),
+        "equal_rank_random_control": True,
+        "all_candidates_projected_out_of_inherited_right_row_space": True,
+        "all_candidates_row_orthonormal": True,
+        "role_local_input_vjp_formula": (
+            "D@W_base + (D@L_inherited)@R_inherited"
+        ),
+        "role_local_input_vjp_precision": source_payload.get(
+            "role_local_input_vjp_precision",
+            "uniform-source-dtype",
+        ),
+        "full_width_replay_table_stored": False,
+        "internal_weight_matching_used": False,
+        "activation_target_matching_used": False,
+        "optimizer_created": False,
+        "determinism_verified_by_exact_repeat": True,
+        "memory_plan_sha256": memory_plan_sha256,
+    }
+    report_payload["report_sha256"] = _canonical_sha256(report_payload)
+    return GUDSiteBasisResult(
+        output_jacobian_right_rows=jacobian_rows,
+        balanced_right_rows=balanced_rows,
+        procrustes_hybrid_right_rows=hybrid_rows,
+        random_control_right_rows=random_rows,
+        report=GUDSiteAuditReport(MappingProxyType(dict(report_payload))),
+    )
+
+
 def audit_gud_site_basis(
     site: GUDSiteAuditInput,
     role_spec: GUDRoleSpec,
@@ -1491,8 +1745,11 @@ __all__ = [
     "GUDStageGeometry",
     "audit_gud_site_basis",
     "audit_gud_stage_bases",
+    "finalize_streamed_gud_site_basis",
+    "finalize_streaming_gud_envelope",
     "ordered_gud_role_specs",
     "plan_gud_auxiliary_memory",
     "role_local_input_vjp",
+    "role_local_input_vjp_prevalidated",
     "validate_qwen_30_layer_stage_geometry",
 ]
