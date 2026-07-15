@@ -41,7 +41,53 @@ GUIDED_PREREGISTRATION_SCHEMA = (
 GUIDED_WINNER_PUBLICATION_PREREGISTRATION_SCHEMA = (
     "neural-forge-qwen-guided-winner-publication-preregistration-v2"
 )
+GUIDED_GUD_WINNER_PUBLICATION_RUN_SCHEMA = (
+    "neural-forge-qwen-guided-gud-winner-publication-v1"
+)
+GUIDED_GUD_WINNER_PUBLICATION_PREREGISTRATION_SCHEMA = (
+    "neural-forge-qwen-guided-gud-winner-publication-preregistration-v1"
+)
+GUIDED_GUD_TOURNAMENT_PREREGISTRATION_SCHEMA = (
+    "neural-forge-qwen-exact-target-native-guided-gud-candidate-tournament-"
+    "preregistration-v1"
+)
+GUIDED_CANDIDATE_TOURNAMENT_PREREGISTRATION_SCHEMA = (
+    "neural-forge-qwen-exact-target-native-guided-candidate-tournament-"
+    "preregistration-v1"
+)
+GUIDED_GUD_SEALED_CONSUMPTION_SCHEMA = (
+    "neural-forge-guided-gud-sealed-consumption-v1"
+)
+EXACT_TARGET_COMPILER_TRANSACTION_INSTALLATION_SCHEMA = (
+    "neural-forge-exact-target-compiler-transaction-installation-v1"
+)
+EXACT_TARGET_COMPILER_TRANSACTION_PUBLICATION_SCHEMA = (
+    "neural-forge-exact-target-compiler-transaction-publication-v1"
+)
+EXTERNAL_BEHAVIOR_GATE_SCHEMA = "neural-forge-external-behavior-gate-receipt-v1"
+GUIDED_QKVO_INSTALLATION_SCHEMA = (
+    "neural-forge-guided-dense-gqa-qkvo-residual-installation-v1"
+)
+GUIDED_QKVO_BAKE_SCHEMA = "neural-forge-guided-dense-gqa-qkvo-residual-bake-v1"
+DENSE_QKVO_INSTALLATION_SCHEMA = (
+    "neural-forge-dense-gqa-qkvo-residual-installation-v2"
+)
+GUIDED_GUD_INSTALLATION_SCHEMA = (
+    "neural-forge-guided-dense-swiglu-projection-residual-installation-v1"
+)
+GUIDED_GUD_BAKE_SCHEMA = (
+    "neural-forge-guided-dense-swiglu-projection-residual-bake-v1"
+)
+DENSE_GUD_INSTALLATION_SCHEMA = (
+    "neural-forge-dense-swiglu-projection-residual-installation-v2"
+)
+LEXICAL_BAKE_SCHEMA = "neural-forge-dense-lexical-residual-bake-v1"
+SOURCE_V2_FACTOR_SCHEMA = "neural-forge-target-native-factor-pack-v2"
 MAX_RETAINED_PER_CONTRACT = 3
+QWEN3_1P4B_EXACT_PARAMETERS = 1_410_567_168
+GUIDED_QKVO_FACTOR_PARAMETERS = 7_127_040
+GUIDED_GUD_FACTOR_PARAMETERS = 4_792_320
+SOURCE_V2_FACTOR_COUNT = 18
 
 ArtifactKind = Literal["research-factor-pack", "accepted-standalone-child"]
 TruthLabel = Literal["research-factor-only-candidate", "accepted-standalone"]
@@ -1531,6 +1577,772 @@ def _winner_publication_source_thresholds(
     )
 
 
+def _bound_publication_file(
+    *,
+    base: Path,
+    path_value: Any,
+    sha_value: Any,
+    name: str,
+) -> tuple[Path, str]:
+    path = _resolve_binding(base, path_value, name)
+    _assert_ordinary_file(path, name)
+    expected = require_sha256(sha_value, f"{name}.sha256")
+    if file_sha256(path) != expected:
+        raise ExactCandidateFrontierError(f"{name} bytes changed.")
+    return path, expected
+
+
+def _bound_publication_mapping(
+    value: Any,
+    *,
+    base: Path,
+    name: str,
+) -> tuple[Path, str]:
+    if not isinstance(value, Mapping):
+        raise ExactCandidateFrontierError(f"{name} binding is absent.")
+    return _bound_publication_file(
+        base=base,
+        path_value=value.get("path"),
+        sha_value=value.get("sha256"),
+        name=name,
+    )
+
+
+def _bound_publication_splits(
+    value: Any,
+    *,
+    base: Path,
+    name: str,
+) -> dict[str, tuple[Path, str]]:
+    if not isinstance(value, Mapping) or set(value) != {
+        "fit",
+        "candidate",
+        "sealed",
+    }:
+        raise ExactCandidateFrontierError(f"{name} split bindings are incomplete.")
+    return {
+        split: _bound_publication_mapping(
+            value[split],
+            base=base,
+            name=f"{name} {split} split",
+        )
+        for split in ("fit", "candidate", "sealed")
+    }
+
+
+def _authenticate_self_hashed_mapping(
+    value: Any,
+    *,
+    schema: str,
+    hash_field: str,
+    name: str,
+) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping) or value.get("schema") != schema:
+        raise ExactCandidateFrontierError(f"{name} schema is absent or changed.")
+    expected = require_sha256(value.get(hash_field), f"{name}.{hash_field}")
+    preimage = {key: item for key, item in value.items() if key != hash_field}
+    if canonical_sha256(preimage) != expected:
+        raise ExactCandidateFrontierError(f"{name} self-hash changed.")
+    return value
+
+
+def _authenticated_sha_mapping(
+    value: Any,
+    *,
+    expected_names: set[str],
+    name: str,
+) -> dict[str, str]:
+    if not isinstance(value, Mapping) or set(value) != expected_names:
+        raise ExactCandidateFrontierError(f"{name} SHA mapping is incomplete.")
+    return {
+        key: require_sha256(value[key], f"{name}.{key}")
+        for key in sorted(expected_names)
+    }
+
+
+def _guided_gud_winner_publication_source_thresholds(
+    preregistration: Mapping[str, Any],
+    preregistration_path: Path,
+) -> tuple[
+    dict[str, Mapping[str, Any]],
+    str,
+    dict[str, tuple[Path, str]],
+    dict[str, Any],
+]:
+    """Authenticate the publication -> v4 -> v3 -> guided threshold chain."""
+
+    semantic = preregistration.get("semantic_contract")
+    tournament_row = preregistration.get("tournament")
+    source_v3 = preregistration.get("source_v3")
+    winner = preregistration.get("winner")
+    if (
+        not isinstance(semantic, Mapping)
+        or not isinstance(tournament_row, Mapping)
+        or not isinstance(source_v3, Mapping)
+        or not isinstance(winner, Mapping)
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD publication source bindings are incomplete."
+        )
+    comparison = require_sha256(
+        preregistration.get("semantic_contract_sha256"),
+        "semantic_contract_sha256",
+    )
+    if canonical_sha256(semantic) != comparison:
+        raise ExactCandidateFrontierError(
+            "Guided-GUD publication semantic contract self-hash changed."
+        )
+    target_contract = require_sha256(
+        semantic.get("guided_gud_tournament_evaluation_contract_sha256"),
+        "semantic_contract.guided_gud_tournament_evaluation_contract_sha256",
+    )
+    source_v3_contract = require_sha256(
+        semantic.get("source_v3_tournament_evaluation_contract_sha256"),
+        "semantic_contract.source_v3_tournament_evaluation_contract_sha256",
+    )
+    if (
+        semantic.get("winner_portable_v4_factor_state_sha256")
+        != winner.get("portable_factor_state_sha256")
+        or semantic.get("winner_candidate_metrics_sha256")
+        != winner.get("metrics_sha256")
+        or semantic.get("candidate_frontier_sha256")
+        != (
+            winner.get("candidate_frontier", {}).get("sha256")
+            if isinstance(winner.get("candidate_frontier"), Mapping)
+            else None
+        )
+        or semantic.get("splits") != preregistration.get("splits")
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD publication semantic winner/split binding changed."
+        )
+
+    v4_prereg_path, v4_prereg_sha = _bound_publication_file(
+        base=preregistration_path.parent,
+        path_value=tournament_row.get("preregistration"),
+        sha_value=tournament_row.get("preregistration_sha256"),
+        name="guided-GUD tournament preregistration",
+    )
+    v4_run_path, v4_run_sha = _bound_publication_file(
+        base=preregistration_path.parent,
+        path_value=tournament_row.get("run_report"),
+        sha_value=tournament_row.get("run_report_sha256"),
+        name="guided-GUD tournament run report",
+    )
+    v4_winner_path, v4_winner_sha = _bound_publication_file(
+        base=preregistration_path.parent,
+        path_value=tournament_row.get("winner_selection"),
+        sha_value=tournament_row.get("winner_selection_sha256"),
+        name="guided-GUD tournament winner selection",
+    )
+    v4_frontier_path, v4_frontier_sha = _bound_publication_mapping(
+        tournament_row.get("candidate_frontier"),
+        base=preregistration_path.parent,
+        name="guided-GUD candidate frontier",
+    )
+    if tournament_row.get("candidate_frontier") != winner.get("candidate_frontier"):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD publication winner/frontier bindings disagree."
+        )
+
+    v4_preregistration = strict_json(v4_prereg_path)
+    if (
+        not isinstance(v4_preregistration, Mapping)
+        or v4_preregistration.get("schema")
+        != GUIDED_GUD_TOURNAMENT_PREREGISTRATION_SCHEMA
+        or v4_preregistration.get("sealed_before_model_access") is not True
+        or v4_preregistration.get("evaluation_contract_sha256") != target_contract
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD tournament preregistration chain failed authentication."
+        )
+    source_v3_winner = v4_preregistration.get("source_v3_winner")
+    if not isinstance(source_v3_winner, Mapping):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD tournament lost its source-v3 winner binding."
+        )
+    publication_splits = _bound_publication_splits(
+        preregistration.get("splits"),
+        base=preregistration_path.parent,
+        name="guided-GUD publication",
+    )
+    v4_splits = _bound_publication_splits(
+        v4_preregistration.get("splits"),
+        base=v4_prereg_path.parent,
+        name="guided-GUD tournament",
+    )
+    if publication_splits != v4_splits:
+        raise ExactCandidateFrontierError(
+            "Guided-GUD publication and tournament split roots disagree."
+        )
+    v4_basis_path, v4_basis_sha = _bound_publication_mapping(
+        v4_preregistration.get("basis_bundle"),
+        base=v4_prereg_path.parent,
+        name="guided-GUD basis bundle",
+    )
+    v4_site_mask_path, v4_site_mask_sha = _bound_publication_mapping(
+        v4_preregistration.get("site_mask"),
+        base=v4_prereg_path.parent,
+        name="guided-GUD site mask",
+    )
+
+    v3_prereg_path, v3_prereg_sha = _bound_publication_file(
+        base=preregistration_path.parent,
+        path_value=source_v3.get("tournament_preregistration"),
+        sha_value=source_v3.get("tournament_preregistration_sha256"),
+        name="source-v3 tournament preregistration",
+    )
+    v4_source_v3_path, v4_source_v3_sha = _bound_publication_mapping(
+        source_v3_winner.get("tournament_preregistration"),
+        base=v4_prereg_path.parent,
+        name="guided-GUD source-v3 tournament preregistration",
+    )
+    if v4_source_v3_path != v3_prereg_path or v4_source_v3_sha != v3_prereg_sha:
+        raise ExactCandidateFrontierError(
+            "Guided-GUD publication and tournament source-v3 roots disagree."
+        )
+    source_v3_run_path, source_v3_run_sha = _bound_publication_file(
+        base=preregistration_path.parent,
+        path_value=source_v3.get("tournament_run_report"),
+        sha_value=source_v3.get("tournament_run_report_sha256"),
+        name="source-v3 tournament run report",
+    )
+    v4_source_v3_run_path, v4_source_v3_run_sha = _bound_publication_mapping(
+        source_v3_winner.get("tournament_run_report"),
+        base=v4_prereg_path.parent,
+        name="guided-GUD source-v3 tournament run report",
+    )
+    source_v3_winner_path, source_v3_winner_sha = _bound_publication_file(
+        base=preregistration_path.parent,
+        path_value=source_v3.get("winner_selection"),
+        sha_value=source_v3.get("winner_selection_sha256"),
+        name="source-v3 winner selection",
+    )
+    v4_source_v3_winner_path, v4_source_v3_winner_sha = (
+        _bound_publication_mapping(
+            source_v3_winner.get("winner_selection"),
+            base=v4_prereg_path.parent,
+            name="guided-GUD source-v3 winner selection",
+        )
+    )
+    source_v3_frontier_path, source_v3_frontier_sha = (
+        _bound_publication_mapping(
+            source_v3.get("candidate_frontier"),
+            base=preregistration_path.parent,
+            name="source-v3 candidate frontier",
+        )
+    )
+    if (
+        (v4_source_v3_run_path, v4_source_v3_run_sha)
+        != (source_v3_run_path, source_v3_run_sha)
+        or (v4_source_v3_winner_path, v4_source_v3_winner_sha)
+        != (source_v3_winner_path, source_v3_winner_sha)
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD publication and tournament source-v3 evidence disagree."
+        )
+    source_v3_factor_path, source_v3_factor_sha = _bound_publication_file(
+        base=preregistration_path.parent,
+        path_value=source_v3.get("factor_pack"),
+        sha_value=source_v3.get("factor_pack_sha256"),
+        name="source-v3 factor pack",
+    )
+    expected_source_v3 = source_v3_winner.get("expected_winner")
+    if (
+        not isinstance(expected_source_v3, Mapping)
+        or source_v3.get("runtime_factor_state_sha256")
+        != expected_source_v3.get("runtime_factor_state_sha256")
+        or source_v3.get("portable_factor_state_sha256")
+        != expected_source_v3.get("portable_factor_state_sha256")
+        or source_v3_factor_sha
+        != expected_source_v3.get("factor_pack_file_sha256")
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD source-v3 factor identities disagree."
+        )
+    require_sha256(
+        source_v3.get("runtime_factor_state_sha256"),
+        "source_v3.runtime_factor_state_sha256",
+    )
+    require_sha256(
+        source_v3.get("portable_factor_state_sha256"),
+        "source_v3.portable_factor_state_sha256",
+    )
+    if (
+        semantic.get("source_v3_run_report_sha256") != source_v3_run_sha
+        or semantic.get("source_v3_winner_selection_sha256")
+        != source_v3_winner_sha
+        or semantic.get("source_v3_candidate_frontier_sha256")
+        != source_v3_frontier_sha
+        or semantic.get("source_v3_factor_pack_file_sha256")
+        != source_v3_factor_sha
+        or semantic.get("winner_basis_bundle_file_sha256") != v4_basis_sha
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD publication transitive source semantics changed."
+        )
+
+    v3_preregistration = strict_json(v3_prereg_path)
+    if (
+        not isinstance(v3_preregistration, Mapping)
+        or v3_preregistration.get("schema")
+        != GUIDED_CANDIDATE_TOURNAMENT_PREREGISTRATION_SCHEMA
+        or v3_preregistration.get("sealed_before_model_access") is not True
+        or v3_preregistration.get("evaluation_contract_sha256")
+        != source_v3_contract
+    ):
+        raise ExactCandidateFrontierError(
+            "Source-v3 tournament preregistration chain failed authentication."
+        )
+    v3_splits = _bound_publication_splits(
+        v3_preregistration.get("splits"),
+        base=v3_prereg_path.parent,
+        name="source-v3 tournament",
+    )
+    v3_site_mask_path, v3_site_mask_sha = _bound_publication_mapping(
+        v3_preregistration.get("site_mask"),
+        base=v3_prereg_path.parent,
+        name="source-v3 site mask",
+    )
+    guided_prereg_path, guided_prereg_sha = _bound_publication_mapping(
+        v3_preregistration.get("source_guided"),
+        base=v3_prereg_path.parent,
+        name="source guided preregistration",
+    )
+    guided_preregistration = strict_json(guided_prereg_path)
+    thresholds = (
+        guided_preregistration.get("thresholds")
+        if isinstance(guided_preregistration, Mapping)
+        else None
+    )
+    if (
+        not isinstance(guided_preregistration, Mapping)
+        or guided_preregistration.get("schema") != GUIDED_PREREGISTRATION_SCHEMA
+        or not isinstance(
+            guided_preregistration.get("evaluation_contract_sha256"), str
+        )
+        or require_sha256(
+            guided_preregistration.get("evaluation_contract_sha256"),
+            "source_guided.evaluation_contract_sha256",
+        )
+        != guided_preregistration.get("evaluation_contract_sha256")
+        or not isinstance(thresholds, Mapping)
+        or set(thresholds) != {"fit", "candidate", "sealed"}
+        or any(not isinstance(thresholds.get(name), Mapping) for name in thresholds)
+    ):
+        raise ExactCandidateFrontierError(
+            "Source guided behavior thresholds failed authentication."
+        )
+    guided_source = guided_preregistration.get("source")
+    guided_audit = guided_preregistration.get("audit")
+    if not isinstance(guided_source, Mapping) or not isinstance(
+        guided_audit, Mapping
+    ):
+        raise ExactCandidateFrontierError(
+            "Source guided provenance roots are incomplete."
+        )
+    guided_splits = _bound_publication_splits(
+        guided_preregistration.get("splits"),
+        base=guided_prereg_path.parent,
+        name="source guided continuation",
+    )
+    guided_source_run_path, guided_source_run_sha = _bound_publication_mapping(
+        guided_source.get("run_report"),
+        base=guided_prereg_path.parent,
+        name="source guided input run report",
+    )
+    guided_source_factor_path, guided_source_factor_sha = (
+        _bound_publication_mapping(
+            guided_source.get("factor_pack"),
+            base=guided_prereg_path.parent,
+            name="source guided input factor pack",
+        )
+    )
+    guided_audit_prereg_path, guided_audit_prereg_sha = (
+        _bound_publication_mapping(
+            guided_audit.get("preregistration"),
+            base=guided_prereg_path.parent,
+            name="source guided audit preregistration",
+        )
+    )
+    guided_audit_run_path, guided_audit_run_sha = _bound_publication_mapping(
+        guided_audit.get("run_report"),
+        base=guided_prereg_path.parent,
+        name="source guided audit run report",
+    )
+    guided_basis_path, guided_basis_sha = _bound_publication_mapping(
+        guided_audit.get("guided_basis_pack"),
+        base=guided_prereg_path.parent,
+        name="source guided basis pack",
+    )
+
+    source_v2_factor_state_sha = require_sha256(
+        guided_source.get("factor_state_sha256"),
+        "source_guided.source.factor_state_sha256",
+    )
+    compiler_report_sha = require_sha256(
+        guided_source.get("compiler_report_sha256"),
+        "source_guided.source.compiler_report_sha256",
+    )
+    guided_qkvo_audit_sha = require_sha256(
+        guided_audit.get("audit_report_self_sha256"),
+        "source_guided.audit.audit_report_self_sha256",
+    )
+    guided_qkvo_basis_file_sha = require_sha256(
+        guided_audit.get("basis_envelope_file_sha256"),
+        "source_guided.audit.basis_envelope_file_sha256",
+    )
+    guided_qkvo_payload_sha = require_sha256(
+        guided_audit.get("basis_payload_sha256"),
+        "source_guided.audit.basis_payload_sha256",
+    )
+    guided_qkvo_manifest_sha = require_sha256(
+        guided_audit.get("basis_manifest_sha256"),
+        "source_guided.audit.basis_manifest_sha256",
+    )
+    guided_qkvo_tensor_shas = _authenticated_sha_mapping(
+        guided_audit.get("basis_tensor_sha256s"),
+        expected_names={"q", "k", "v", "o"},
+        name="source_guided.audit.basis_tensor_sha256s",
+    )
+    guided_gud_audit_sha = require_sha256(
+        semantic.get("winner_basis_audit_report_sha256"),
+        "semantic_contract.winner_basis_audit_report_sha256",
+    )
+    guided_gud_payload_sha = require_sha256(
+        semantic.get("winner_basis_payload_sha256"),
+        "semantic_contract.winner_basis_payload_sha256",
+    )
+    guided_gud_manifest_sha = require_sha256(
+        semantic.get("winner_basis_manifest_sha256"),
+        "semantic_contract.winner_basis_manifest_sha256",
+    )
+    guided_gud_tensor_shas = _authenticated_sha_mapping(
+        semantic.get("winner_source_basis_tensor_sha256s"),
+        expected_names={"gate", "up", "down"},
+        name="semantic_contract.winner_source_basis_tensor_sha256s",
+    )
+    if guided_basis_sha != guided_qkvo_basis_file_sha:
+        raise ExactCandidateFrontierError(
+            "Source guided basis file provenance changed."
+        )
+
+    winner_factor_path, winner_factor_sha = _bound_publication_file(
+        base=preregistration_path.parent,
+        path_value=winner.get("factor_pack"),
+        sha_value=winner.get("factor_pack_sha256"),
+        name="guided-GUD winner factor pack",
+    )
+    protected = {
+        "v4_tournament_preregistration": (v4_prereg_path, v4_prereg_sha),
+        "v4_tournament_run_report": (v4_run_path, v4_run_sha),
+        "v4_tournament_winner": (v4_winner_path, v4_winner_sha),
+        "v4_candidate_frontier": (v4_frontier_path, v4_frontier_sha),
+        "v4_winner_factor_pack": (winner_factor_path, winner_factor_sha),
+        "source_v3_tournament_preregistration": (v3_prereg_path, v3_prereg_sha),
+        "source_v3_tournament_run_report": (source_v3_run_path, source_v3_run_sha),
+        "source_v3_winner_selection": (
+            source_v3_winner_path,
+            source_v3_winner_sha,
+        ),
+        "source_v3_candidate_frontier": (
+            source_v3_frontier_path,
+            source_v3_frontier_sha,
+        ),
+        "source_v3_factor_pack": (source_v3_factor_path, source_v3_factor_sha),
+        "source_v3_site_mask": (v3_site_mask_path, v3_site_mask_sha),
+        "source_guided_preregistration": (guided_prereg_path, guided_prereg_sha),
+        "source_guided_input_run_report": (
+            guided_source_run_path,
+            guided_source_run_sha,
+        ),
+        "source_guided_input_factor_pack": (
+            guided_source_factor_path,
+            guided_source_factor_sha,
+        ),
+        "source_guided_audit_preregistration": (
+            guided_audit_prereg_path,
+            guided_audit_prereg_sha,
+        ),
+        "source_guided_audit_run_report": (
+            guided_audit_run_path,
+            guided_audit_run_sha,
+        ),
+        "source_guided_basis_pack": (guided_basis_path, guided_basis_sha),
+        "v4_basis_bundle": (v4_basis_path, v4_basis_sha),
+        "v4_site_mask": (v4_site_mask_path, v4_site_mask_sha),
+    }
+    for split, binding in v4_splits.items():
+        protected[f"v4_split_{split}"] = binding
+    for split, binding in v3_splits.items():
+        protected[f"source_v3_split_{split}"] = binding
+    for split, binding in guided_splits.items():
+        protected[f"source_guided_split_{split}"] = binding
+    provenance = {
+        "compiler_report_sha256": compiler_report_sha,
+        "source_v2_factor_state_sha256": source_v2_factor_state_sha,
+        "guided_qkvo": {
+            "audit_report_sha256": guided_qkvo_audit_sha,
+            "basis_envelope_file_sha256": guided_qkvo_basis_file_sha,
+            "basis_payload_sha256": guided_qkvo_payload_sha,
+            "basis_manifest_sha256": guided_qkvo_manifest_sha,
+            "source_basis_tensor_sha256s": guided_qkvo_tensor_shas,
+        },
+        "guided_gud": {
+            "audit_report_sha256": guided_gud_audit_sha,
+            "basis_envelope_file_sha256": v4_basis_sha,
+            "basis_payload_sha256": guided_gud_payload_sha,
+            "basis_manifest_sha256": guided_gud_manifest_sha,
+            "source_basis_tensor_sha256s": guided_gud_tensor_shas,
+        },
+    }
+    return (
+        {name: dict(thresholds[name]) for name in ("fit", "candidate", "sealed")},
+        target_contract,
+        protected,
+        provenance,
+    )
+
+
+def _authenticate_guided_gud_publication_provenance(
+    report: Mapping[str, Any],
+    *,
+    comparison: str,
+    provenance: Mapping[str, Any],
+) -> None:
+    """Authenticate the compiler-to-dual-bake receipt chain for v4 only."""
+
+    compiler_sha = require_sha256(
+        provenance.get("compiler_report_sha256"),
+        "publication_provenance.compiler_report_sha256",
+    )
+    compiler_report = report.get("compiler_report")
+    if (
+        not isinstance(compiler_report, Mapping)
+        or canonical_sha256(compiler_report) != compiler_sha
+        or compiler_report.get("bootstrap_accepted") is not True
+        or compiler_report.get("target_budget_exact") is not True
+        or compiler_report.get("target_unique_parameter_count")
+        != QWEN3_1P4B_EXACT_PARAMETERS
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD compiler report provenance is absent or changed."
+        )
+
+    inherited = _authenticate_self_hashed_mapping(
+        report.get("inherited_installation"),
+        schema=EXACT_TARGET_COMPILER_TRANSACTION_INSTALLATION_SCHEMA,
+        hash_field="installation_transaction_sha256",
+        name="guided-GUD inherited installation",
+    )
+    dense_qkvo = _authenticate_self_hashed_mapping(
+        inherited.get("dense_qkvo_installation"),
+        schema=DENSE_QKVO_INSTALLATION_SCHEMA,
+        hash_field="installation_sha256",
+        name="guided-GUD inherited QKVO installation",
+    )
+    dense_gud = _authenticate_self_hashed_mapping(
+        inherited.get("dense_gate_up_down_installation"),
+        schema=DENSE_GUD_INSTALLATION_SCHEMA,
+        hash_field="installation_sha256",
+        name="guided-GUD inherited GUD installation",
+    )
+    lexical_parameters = _nonnegative_int(
+        inherited.get("temporary_lexical_factor_parameters"),
+        "inherited_installation.temporary_lexical_factor_parameters",
+    )
+    if (
+        inherited.get("exact_native_parameters")
+        != QWEN3_1P4B_EXACT_PARAMETERS
+        or inherited.get("published_parameters_if_promoted")
+        != QWEN3_1P4B_EXACT_PARAMETERS
+        or inherited.get("zero_step_identity") is not True
+        or inherited.get("parent_compiler_report_sha256") != compiler_sha
+        or lexical_parameters <= 0
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD inherited installation provenance is invalid."
+        )
+
+    source_v2_sha = require_sha256(
+        provenance.get("source_v2_factor_state_sha256"),
+        "publication_provenance.source_v2_factor_state_sha256",
+    )
+    source_restore = report.get("source_v2_restore")
+    if (
+        not isinstance(source_restore, Mapping)
+        or source_restore.get("schema") != SOURCE_V2_FACTOR_SCHEMA
+        or source_restore.get("factor_state_sha256") != source_v2_sha
+        or source_restore.get("factor_count") != SOURCE_V2_FACTOR_COUNT
+        or source_restore.get(
+            "temporary_restore_clone_released_before_guided_install"
+        )
+        is not True
+        or source_restore.get("full_tensor_or_model_clone_retained") is not False
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD source-v2 restore provenance is absent or changed."
+        )
+
+    qkvo_expected = provenance.get("guided_qkvo")
+    gud_expected = provenance.get("guided_gud")
+    if not isinstance(qkvo_expected, Mapping) or not isinstance(
+        gud_expected, Mapping
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD guided source provenance is incomplete."
+        )
+    qkvo_install = _authenticate_self_hashed_mapping(
+        report.get("guided_qkvo_installation"),
+        schema=GUIDED_QKVO_INSTALLATION_SCHEMA,
+        hash_field="installation_sha256",
+        name="guided QKVO installation",
+    )
+    gud_install = _authenticate_self_hashed_mapping(
+        report.get("guided_gud_installation"),
+        schema=GUIDED_GUD_INSTALLATION_SCHEMA,
+        hash_field="installation_sha256",
+        name="guided GUD installation",
+    )
+    provenance_fields = (
+        "audit_report_sha256",
+        "basis_envelope_file_sha256",
+        "basis_payload_sha256",
+        "basis_manifest_sha256",
+        "source_basis_tensor_sha256s",
+    )
+    if (
+        qkvo_install.get("guided_adapter_parameter_count")
+        != GUIDED_QKVO_FACTOR_PARAMETERS
+        or qkvo_install.get("inherited_installation_sha256")
+        != dense_qkvo.get("installation_sha256")
+        or qkvo_install.get("factor_concatenation_used") is not False
+        or qkvo_install.get("factor_regrouping_used") is not False
+        or qkvo_install.get("zero_guided_left_preserves_inherited_function_exactly")
+        is not True
+        or any(qkvo_install.get(name) != qkvo_expected.get(name) for name in provenance_fields)
+        or gud_install.get("guided_adapter_parameter_count")
+        != GUIDED_GUD_FACTOR_PARAMETERS
+        or gud_install.get("inherited_installation_sha256")
+        != dense_gud.get("installation_sha256")
+        or gud_install.get("factor_concatenation_used") is not False
+        or gud_install.get("factor_regrouping_used") is not False
+        or gud_install.get("zero_guided_left_preserves_inherited_function_exactly")
+        is not True
+        or any(gud_install.get(name) != gud_expected.get(name) for name in provenance_fields)
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD guided installation provenance is invalid."
+        )
+
+    publication = _authenticate_self_hashed_mapping(
+        report.get("publication"),
+        schema=EXACT_TARGET_COMPILER_TRANSACTION_PUBLICATION_SCHEMA,
+        hash_field="publication_transaction_sha256",
+        name="guided-GUD publication transaction",
+    )
+    external_gate = _authenticate_self_hashed_mapping(
+        publication.get("external_behavior_gate"),
+        schema=EXTERNAL_BEHAVIOR_GATE_SCHEMA,
+        hash_field="receipt_sha256",
+        name="guided-GUD external behavior gate",
+    )
+    qkvo_bake = _authenticate_self_hashed_mapping(
+        publication.get("dense_qkvo_bake"),
+        schema=GUIDED_QKVO_BAKE_SCHEMA,
+        hash_field="bake_sha256",
+        name="guided QKVO publication bake",
+    )
+    gud_bake = _authenticate_self_hashed_mapping(
+        publication.get("dense_gate_up_down_bake"),
+        schema=GUIDED_GUD_BAKE_SCHEMA,
+        hash_field="bake_sha256",
+        name="guided GUD publication bake",
+    )
+    lexical_bake = _authenticate_self_hashed_mapping(
+        publication.get("dense_lexical_bake"),
+        schema=LEXICAL_BAKE_SCHEMA,
+        hash_field="bake_sha256",
+        name="guided-GUD lexical publication bake",
+    )
+    qkvo_inherited = _nonnegative_int(
+        qkvo_install.get("inherited_adapter_parameter_count"),
+        "guided_qkvo_installation.inherited_adapter_parameter_count",
+    )
+    gud_inherited = _nonnegative_int(
+        gud_install.get("inherited_adapter_parameter_count"),
+        "guided_gud_installation.inherited_adapter_parameter_count",
+    )
+    if (
+        qkvo_install.get("adapter_parameter_count")
+        != qkvo_inherited + GUIDED_QKVO_FACTOR_PARAMETERS
+        or gud_install.get("adapter_parameter_count")
+        != gud_inherited + GUIDED_GUD_FACTOR_PARAMETERS
+        or qkvo_bake.get("inherited_adapter_parameters_removed") != qkvo_inherited
+        or qkvo_bake.get("guided_adapter_parameters_removed")
+        != GUIDED_QKVO_FACTOR_PARAMETERS
+        or qkvo_bake.get("adapter_parameters_removed")
+        != qkvo_install.get("adapter_parameter_count")
+        or gud_bake.get("inherited_adapter_parameters_removed") != gud_inherited
+        or gud_bake.get("guided_adapter_parameters_removed")
+        != GUIDED_GUD_FACTOR_PARAMETERS
+        or gud_bake.get("adapter_parameters_removed")
+        != gud_install.get("adapter_parameter_count")
+        or lexical_bake.get("adapter_parameters_removed") != lexical_parameters
+        or gud_bake.get("model_parameter_count_after_bake")
+        != QWEN3_1P4B_EXACT_PARAMETERS
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD dual-bake parameter accounting is invalid."
+        )
+    bake_flags = (
+        qkvo_bake.get("factor_concatenation_used") is False
+        and qkvo_bake.get("factor_regrouping_used") is False
+        and qkvo_bake.get("inherited_registry_removed") is True
+        and qkvo_bake.get("guided_registry_removed") is True
+        and qkvo_bake.get("projection_wrappers_removed") is True
+        and gud_bake.get("factor_concatenation_used") is False
+        and gud_bake.get("factor_regrouping_used") is False
+        and gud_bake.get("inherited_registry_removed") is True
+        and gud_bake.get("guided_registry_removed") is True
+        and gud_bake.get("projection_wrappers_removed") is True
+    )
+    evidence_sha = require_sha256(
+        report.get("external_behavior_gate_evidence_sha256"),
+        "external_behavior_gate_evidence_sha256",
+    )
+    if (
+        publication.get("exact_unique_parameters")
+        != QWEN3_1P4B_EXACT_PARAMETERS
+        or publication.get("exact_budget_match") is not True
+        or publication.get("parent_compiler_report_sha256") != compiler_sha
+        or publication.get("published_adapter_parameter_count") != 0
+        or publication.get("published_parent_runtime_reference_count") != 0
+        or publication.get("published_source_sized_sidecar_parameter_count") != 0
+        or publication.get("nested_publication_bake_order")
+        != [
+            "lexical",
+            "qkvo-inherited-then-guided",
+            "gate-up-down-inherited-then-guided",
+        ]
+        or publication.get("guided_registry_suspended_for_lexical_bake") is not True
+        or publication.get(
+            "guided_gate_up_down_registry_suspended_for_lexical_bake"
+        )
+        is not True
+        or publication.get("guided_gate_up_down_registry_suspended_for_qkvo_bake")
+        is not True
+        or external_gate.get("evidence_sha256") != evidence_sha
+        or external_gate.get("evaluation_contract_sha256") != comparison
+        or external_gate.get("passed") is not True
+        or external_gate.get("internal_similarity_only") is not False
+        or not bake_flags
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD publication transaction provenance is invalid."
+        )
+
+
 def _valid_retained_winner_publication_behavior(
     report: Mapping[str, Any],
     preregistration: Mapping[str, Any],
@@ -1594,6 +2406,168 @@ def _valid_retained_winner_publication_behavior(
             )
             and _valid_winner_publication_method_decision(
                 report.get("post_bake_guided_method_decision"),
+                winner_step=step,
+                candidate_metrics=post["candidate"]["metrics"],
+            )
+        )
+    except (ExactCandidateFrontierError, KeyError, TypeError, ValueError):
+        return False
+
+
+def _valid_retained_guided_gud_winner_publication_behavior(
+    report: Mapping[str, Any],
+    preregistration: Mapping[str, Any],
+    preregistration_path: Path,
+) -> bool:
+    try:
+        thresholds, _target_contract, _protected, source_provenance = (
+            _guided_gud_winner_publication_source_thresholds(
+                preregistration,
+                preregistration_path,
+            )
+        )
+        winner = preregistration.get("winner")
+        pre = report.get("pre_bake_behavior_decisions")
+        post = report.get("post_bake_behavior_decisions")
+        sealed = report.get("sealed_evaluation")
+        if (
+            not isinstance(winner, Mapping)
+            or not isinstance(winner.get("metrics"), Mapping)
+            or not _valid_winner_publication_pareto_admission(
+                winner,
+                preregistration.get("semantic_contract"),
+            )
+            or not isinstance(pre, Mapping)
+            or not isinstance(post, Mapping)
+            or not isinstance(pre.get("candidate"), Mapping)
+            or not isinstance(pre.get("sealed"), Mapping)
+            or not isinstance(post.get("fit"), Mapping)
+            or not isinstance(post.get("candidate"), Mapping)
+            or not isinstance(sealed, Mapping)
+        ):
+            return False
+        step = _nonnegative_int(winner.get("step"), "winner.step")
+        comparison = require_sha256(
+            preregistration.get("semantic_contract_sha256"),
+            "semantic_contract_sha256",
+        )
+        winner_portable = require_sha256(
+            winner.get("portable_factor_state_sha256"),
+            "winner.portable_factor_state_sha256",
+        )
+        _authenticate_guided_gud_publication_provenance(
+            report,
+            comparison=comparison,
+            provenance=source_provenance,
+        )
+        sealed_binding = preregistration.get("sealed_consumption")
+        marker_receipt = sealed.get("marker_receipt")
+        split_rows = preregistration.get("splits")
+        sealed_split = (
+            split_rows.get("sealed") if isinstance(split_rows, Mapping) else None
+        )
+        if (
+            not isinstance(sealed_binding, Mapping)
+            or sealed_binding.get("schema")
+            != GUIDED_GUD_SEALED_CONSUMPTION_SCHEMA
+            or not isinstance(marker_receipt, Mapping)
+            or not isinstance(sealed_split, Mapping)
+        ):
+            return False
+        marker_path = _resolve_binding(
+            preregistration_path.parent,
+            marker_receipt.get("marker"),
+            "retained sealed marker",
+        )
+        declared_marker = _resolve_binding(
+            preregistration_path.parent,
+            sealed_binding.get("marker"),
+            "retained declared sealed marker",
+        )
+        if (
+            marker_path != declared_marker
+            or marker_path.name != "sealed_consumption.json"
+        ):
+            return False
+        _assert_ordinary_file(marker_path, "retained guided-GUD sealed marker")
+        marker_sha = require_sha256(
+            marker_receipt.get("marker_file_sha256"),
+            "retained marker_file_sha256",
+        )
+        marker_expected = {
+            "schema": GUIDED_GUD_SEALED_CONSUMPTION_SCHEMA,
+            "status": "consumed-before-forward",
+            "preregistration_sha256": file_sha256(preregistration_path),
+            "semantic_contract_sha256": comparison,
+            "winner_portable_v4_factor_state_sha256": winner_portable,
+            "sealed_split_sha256": sealed_split.get("sha256"),
+            "sealed_forward_limit": 1,
+            "output_root": report.get("output_root"),
+        }
+        marker_payload = strict_json(marker_path)
+        return bool(
+            step > 0
+            and report.get("status") == "accepted"
+            and report.get("standalone_compaction_passed") is True
+            and report.get("exact_unique_parameters")
+            == QWEN3_1P4B_EXACT_PARAMETERS
+            and report.get("published_adapter_parameter_count") == 0
+            and report.get("published_parent_runtime_reference_count") == 0
+            and report.get("published_source_sized_sidecar_parameter_count") == 0
+            and pre.get("fit") is None
+            and post.get("sealed") is None
+            and report.get("sealed_forward_count") == 1
+            and report.get("post_bake_sealed_forward_count") == 0
+            and report.get("sealed_used_for_reranking") is False
+            and sealed.get("forward_count") == 1
+            and sealed.get("one_shot_marker_consumed") is True
+            and sealed.get("post_bake_sealed_forward_count") == 0
+            and sealed.get("acceptance_only") is True
+            and sealed.get("reranking_forbidden") is True
+            and marker_receipt.get("exclusive_create_succeeded") is True
+            and marker_receipt.get("sealed_forward_limit") == 1
+            and marker_receipt.get("preregistration_sha256")
+            == file_sha256(preregistration_path)
+            and marker_receipt.get("semantic_contract_sha256") == comparison
+            and marker_receipt.get("winner_portable_v4_factor_state_sha256")
+            == winner_portable
+            and marker_receipt.get("sealed_split_sha256")
+            == sealed_split.get("sha256")
+            and marker_receipt.get("output_root") == report.get("output_root")
+            and file_sha256(marker_path) == marker_sha
+            and marker_payload == marker_expected
+            and all(
+                marker_receipt.get(name) == value
+                for name, value in marker_expected.items()
+            )
+            and report.get("pre_sealed_candidate_decision") == pre["candidate"]
+            and _valid_winner_publication_behavior_decision(
+                pre["candidate"],
+                expected_metrics=winner["metrics"],
+                expected_thresholds=thresholds["candidate"],
+            )
+            and _valid_winner_publication_behavior_decision(
+                pre["sealed"],
+                expected_metrics=None,
+                expected_thresholds=thresholds["sealed"],
+            )
+            and _valid_winner_publication_behavior_decision(
+                post["fit"],
+                expected_metrics=None,
+                expected_thresholds=thresholds["fit"],
+            )
+            and _valid_winner_publication_behavior_decision(
+                post["candidate"],
+                expected_metrics=None,
+                expected_thresholds=thresholds["candidate"],
+            )
+            and _valid_winner_publication_method_decision(
+                report.get("guided_candidate_method_decision"),
+                winner_step=step,
+                candidate_metrics=pre["candidate"]["metrics"],
+            )
+            and _valid_winner_publication_method_decision(
+                report.get("post_bake_guided_candidate_method_decision"),
                 winner_step=step,
                 candidate_metrics=post["candidate"]["metrics"],
             )
@@ -1960,6 +2934,460 @@ def _authenticate_guided_winner_publication_candidate(
     )
 
 
+def _authenticate_guided_gud_winner_publication_candidate(
+    root: Path,
+    report_path: Path,
+    report: Mapping[str, Any],
+    report_sha: str,
+    *,
+    expected_preregistration_sha256: str,
+    preregistration_authenticator: PreregistrationAuthenticator,
+    accepted_child_authenticator: AcceptedChildAuthenticator | None,
+) -> TerminalCandidate:
+    """Authenticate a v4 QKVO+GUD one-shot publication and exact child."""
+
+    if (
+        report.get("status") != "accepted"
+        or report.get("standalone_compaction_passed") is not True
+        or report.get("model_checkpoint_written") is not True
+        or report.get("model_save_count") != 1
+        or report.get("rollback_exact") is not None
+        or report.get("sealed_forward_count") != 1
+        or report.get("sealed_marker_consumed") is not True
+        or report.get("post_bake_sealed_forward_count") != 0
+        or report.get("sealed_evaluation_accessed") is not True
+        or report.get("winner_locked_before_sealed") is not True
+        or report.get("sealed_used_for_acceptance_only") is not True
+        or report.get("sealed_used_for_reranking") is not False
+        or report.get("exact_unique_parameters") != QWEN3_1P4B_EXACT_PARAMETERS
+        or report.get("published_adapter_parameter_count") != 0
+        or report.get("published_parent_runtime_reference_count") != 0
+        or report.get("published_source_sized_sidecar_parameter_count") != 0
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD publication lacks terminal one-shot exact-child evidence."
+        )
+    prereg_path = _resolve_binding(
+        report_path.parent,
+        report.get("preregistration"),
+        "run_report.preregistration",
+    )
+    _assert_ordinary_file(prereg_path, "guided-GUD publication preregistration")
+    prereg_sha = file_sha256(prereg_path)
+    if (
+        prereg_sha
+        != require_sha256(
+            expected_preregistration_sha256,
+            "expected_preregistration_sha256",
+        )
+        or prereg_sha
+        != require_sha256(
+            report.get("preregistration_sha256"),
+            "preregistration_sha256",
+        )
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD publication preregistration external roots disagree."
+        )
+    preregistration = strict_json(prereg_path)
+    if (
+        not isinstance(preregistration, Mapping)
+        or preregistration.get("schema")
+        != GUIDED_GUD_WINNER_PUBLICATION_PREREGISTRATION_SCHEMA
+        or preregistration.get("model_free_preregistration") is not True
+        or preregistration.get("model_weights_loaded") is not False
+        or preregistration.get("gpu_work_launched") is not False
+        or preregistration.get("publication_authorized_before_sealed_pass")
+        is not False
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD publication preregistration is not model-free/sealed."
+        )
+    authenticated = preregistration_authenticator(prereg_path, prereg_sha)
+    if (
+        not isinstance(authenticated, Mapping)
+        or canonical_json(authenticated) != canonical_json(preregistration)
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD canonical preregistration authentication disagrees."
+        )
+    comparison = require_sha256(
+        report.get("semantic_contract_sha256"),
+        "semantic_contract_sha256",
+    )
+    if (
+        preregistration.get("semantic_contract_sha256") != comparison
+        or report.get("evaluation_contract_sha256") != comparison
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD publication semantic contract failed authentication."
+        )
+    winner = preregistration.get("winner")
+    if not isinstance(winner, Mapping) or report.get("winner") != winner:
+        raise ExactCandidateFrontierError(
+            "Guided-GUD publication lost its locked winner provenance."
+        )
+    selected_step = _nonnegative_int(winner.get("step"), "winner.step")
+    winner_metrics = winner.get("metrics")
+    if (
+        selected_step <= 0
+        or not isinstance(winner_metrics, Mapping)
+        or winner.get("metrics_sha256") != canonical_sha256(winner_metrics)
+        or not _valid_winner_publication_pareto_admission(
+            winner,
+            preregistration.get("semantic_contract"),
+        )
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD publication winner/Pareto admission is unauthenticated."
+        )
+    thresholds, target_contract, source_evidence, source_provenance = (
+        _guided_gud_winner_publication_source_thresholds(
+            preregistration,
+            prereg_path,
+        )
+    )
+    require_sha256(
+        report.get("runtime_rebound_v4_factor_state_sha256"),
+        "runtime_rebound_v4_factor_state_sha256",
+    )
+    require_sha256(
+        report.get("runtime_rebound_v3_factor_state_sha256"),
+        "runtime_rebound_v3_factor_state_sha256",
+    )
+    winner_portable_sha = require_sha256(
+        winner.get("portable_factor_state_sha256"),
+        "winner.portable_factor_state_sha256",
+    )
+    require_sha256(
+        winner.get("runtime_factor_state_sha256"),
+        "winner.runtime_factor_state_sha256",
+    )
+    if report.get("winner_portable_v4_factor_state_sha256") != winner_portable_sha:
+        raise ExactCandidateFrontierError(
+            "Guided-GUD publication v4 factor provenance is invalid."
+        )
+    selected_sha = winner_portable_sha
+
+    pre = report.get("pre_bake_behavior_decisions")
+    post = report.get("post_bake_behavior_decisions")
+    sealed = report.get("sealed_evaluation")
+    pre_method = report.get("guided_candidate_method_decision")
+    post_method = report.get("post_bake_guided_candidate_method_decision")
+    if (
+        not isinstance(pre, Mapping)
+        or pre.get("fit") is not None
+        or not isinstance(pre.get("candidate"), Mapping)
+        or not isinstance(pre.get("sealed"), Mapping)
+        or not isinstance(post, Mapping)
+        or not isinstance(post.get("fit"), Mapping)
+        or not isinstance(post.get("candidate"), Mapping)
+        or post.get("sealed") is not None
+        or not _valid_winner_publication_behavior_decision(
+            pre["candidate"],
+            expected_metrics=winner_metrics,
+            expected_thresholds=thresholds["candidate"],
+        )
+        or report.get("pre_sealed_candidate_decision") != pre["candidate"]
+        or not _valid_winner_publication_behavior_decision(
+            pre["sealed"],
+            expected_metrics=None,
+            expected_thresholds=thresholds["sealed"],
+        )
+        or not _valid_winner_publication_behavior_decision(
+            post["fit"],
+            expected_metrics=None,
+            expected_thresholds=thresholds["fit"],
+        )
+        or not _valid_winner_publication_behavior_decision(
+            post["candidate"],
+            expected_metrics=None,
+            expected_thresholds=thresholds["candidate"],
+        )
+        or not _valid_winner_publication_method_decision(
+            pre_method,
+            winner_step=selected_step,
+            candidate_metrics=pre["candidate"]["metrics"],
+        )
+        or not _valid_winner_publication_method_decision(
+            post_method,
+            winner_step=selected_step,
+            candidate_metrics=post["candidate"]["metrics"],
+        )
+        or not isinstance(sealed, Mapping)
+        or sealed.get("forward_count") != 1
+        or sealed.get("one_shot_marker_consumed") is not True
+        or sealed.get("post_bake_sealed_forward_count") != 0
+        or sealed.get("acceptance_only") is not True
+        or sealed.get("reranking_forbidden") is not True
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD publication behavior gates violate one-shot sealed policy."
+        )
+
+    sealed_binding = preregistration.get("sealed_consumption")
+    marker_receipt = sealed.get("marker_receipt")
+    split_rows = preregistration.get("splits")
+    sealed_split = (
+        split_rows.get("sealed") if isinstance(split_rows, Mapping) else None
+    )
+    if (
+        not isinstance(sealed_binding, Mapping)
+        or sealed_binding.get("schema") != GUIDED_GUD_SEALED_CONSUMPTION_SCHEMA
+        or sealed_binding.get("must_be_absent_at_preflight") is not True
+        or sealed_binding.get("exclusive_create_immediately_before_forward")
+        is not True
+        or sealed_binding.get("maximum_forward_count") != 1
+        or not isinstance(marker_receipt, Mapping)
+        or marker_receipt.get("exclusive_create_succeeded") is not True
+        or marker_receipt.get("sealed_forward_limit") != 1
+        or marker_receipt.get("preregistration_sha256") != prereg_sha
+        or marker_receipt.get("semantic_contract_sha256") != comparison
+        or marker_receipt.get("winner_portable_v4_factor_state_sha256")
+        != winner_portable_sha
+        or not isinstance(sealed_split, Mapping)
+        or marker_receipt.get("sealed_split_sha256") != sealed_split.get("sha256")
+        or marker_receipt.get("output_root") != str(root)
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD publication sealed marker receipt is unauthenticated."
+        )
+    marker_path = _resolve_binding(
+        report_path.parent,
+        marker_receipt.get("marker"),
+        "sealed_evaluation.marker_receipt.marker",
+    )
+    declared_marker_path = _resolve_binding(
+        prereg_path.parent,
+        sealed_binding.get("marker"),
+        "sealed_consumption.marker",
+    )
+    if (
+        marker_path != declared_marker_path
+        or marker_path.parent != prereg_path.parent
+        or marker_path.name != "sealed_consumption.json"
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD sealed marker escaped its preregistration root."
+        )
+    _assert_ordinary_file(marker_path, "guided-GUD publication sealed marker")
+    marker_sha = require_sha256(
+        marker_receipt.get("marker_file_sha256"),
+        "sealed_evaluation.marker_receipt.marker_file_sha256",
+    )
+    marker_payload = strict_json(marker_path)
+    marker_expected = {
+        "schema": GUIDED_GUD_SEALED_CONSUMPTION_SCHEMA,
+        "status": "consumed-before-forward",
+        "preregistration_sha256": prereg_sha,
+        "semantic_contract_sha256": comparison,
+        "winner_portable_v4_factor_state_sha256": winner_portable_sha,
+        "sealed_split_sha256": sealed_split.get("sha256"),
+        "sealed_forward_limit": 1,
+        "output_root": str(root),
+    }
+    if (
+        file_sha256(marker_path) != marker_sha
+        or marker_payload != marker_expected
+        or any(
+            marker_receipt.get(name) != value
+            for name, value in marker_expected.items()
+        )
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD publication sealed marker bytes no longer authenticate."
+        )
+
+    gate_evidence = report.get("external_behavior_gate_evidence")
+    if (
+        not isinstance(gate_evidence, Mapping)
+        or report.get("external_behavior_gate_evidence_sha256")
+        != canonical_sha256(gate_evidence)
+        or gate_evidence.get("preregistration_sha256") != prereg_sha
+        or gate_evidence.get("winner_portable_v4_factor_state_sha256")
+        != winner_portable_sha
+        or gate_evidence.get("candidate_decision_sha256")
+        != pre["candidate"].get("decision_sha256")
+        or gate_evidence.get("method_decision_sha256")
+        != pre_method.get("decision_sha256")
+        or gate_evidence.get("sealed_decision_sha256")
+        != pre["sealed"].get("decision_sha256")
+        or gate_evidence.get("sealed_marker_file_sha256") != marker_sha
+        or gate_evidence.get("winner_locked_before_sealed") is not True
+        or gate_evidence.get("sealed_used_for_reranking") is not False
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD external behavior-gate evidence is unauthenticated."
+        )
+    _authenticate_guided_gud_publication_provenance(
+        report,
+        comparison=comparison,
+        provenance=source_provenance,
+    )
+    handoff = report.get("guided_v4_publication_handoff")
+    if (
+        not isinstance(handoff, Mapping)
+        or handoff.get("handoff_complete") is not True
+        or handoff.get("transaction_qkvo_handle_is_guided_composite") is not True
+        or handoff.get("transaction_gud_handle_is_guided_composite") is not True
+        or handoff.get("old_only_publication_paths_disabled") is not True
+        or handoff.get("sequential_dense_bake")
+        != [
+            "lexical",
+            "inherited-and-guided-qkvo",
+            "inherited-and-guided-gud",
+        ]
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD dual-composite publication handoff is incomplete."
+        )
+
+    post_metrics = post["candidate"].get("metrics")
+    if not isinstance(post_metrics, Mapping):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD post-bake candidate metrics are absent."
+        )
+    reload_gate = report.get("fresh_reload_guided_v4_method_gate")
+    if (
+        not isinstance(reload_gate, Mapping)
+        or reload_gate.get("passed") is not True
+        or reload_gate.get("post_bake_decision_sha256")
+        != post_method.get("decision_sha256")
+        or reload_gate.get("state_bytes_match_pre_save") is not True
+        or reload_gate.get("candidate_behavior_certified_before_save") is not True
+        or reload_gate.get("serialized_bytes_equal_behavior_certified_bytes")
+        is not True
+        or reload_gate.get("internal_numeric_matching_consulted") is not False
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD reload behavior certificate is incomplete."
+        )
+    certificate = report.get("fresh_reload_certificate")
+    independent_report = report.get("independent_reload_certificate")
+    required_true = (
+        "fresh_reload_performed",
+        "exact_budget_match",
+        "state_keys_match_pre_save",
+        "state_bytes_match_pre_save",
+    )
+    if not isinstance(certificate, Mapping) or any(
+        certificate.get(name) is not True for name in required_true
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD publication lacks its fresh-reload certificate."
+        )
+    exact_parameters = _nonnegative_int(
+        certificate.get("exact_unique_parameters"),
+        "fresh_reload_certificate.exact_unique_parameters",
+    )
+    if (
+        exact_parameters != QWEN3_1P4B_EXACT_PARAMETERS
+        or certificate.get("published_adapter_parameter_count") != 0
+        or certificate.get("published_parent_runtime_reference_count") != 0
+        or certificate.get("published_source_sized_sidecar_parameter_count") != 0
+        or not isinstance(independent_report, Mapping)
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD certificate is not exact and parent-free."
+        )
+    child_path = _resolve_binding(
+        report_path.parent,
+        certificate.get("path"),
+        "fresh_reload_certificate.path",
+    )
+    if child_path.parent != root or child_path.name != _CHILD_DIRECTORY:
+        raise ExactCandidateFrontierError(
+            "Guided-GUD child is not the canonical direct artifact."
+        )
+    _assert_ordinary_directory(child_path, "guided-GUD accepted child")
+    tree = artifact_tree(child_path)
+    declared_tree = certificate.get("artifact_tree")
+    if not isinstance(declared_tree, Mapping) or any(
+        declared_tree.get(name) != tree[name]
+        for name in ("file_count", "total_bytes", "tree_sha256")
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD child tree differs from its certificate."
+        )
+    child_state_sha = require_sha256(
+        certificate.get("state_dict_sha256"),
+        "fresh_reload_certificate.state_dict_sha256",
+    )
+    if accepted_child_authenticator is None:
+        raise ExactCandidateFrontierError(
+            "Guided-GUD publication requires independent fresh-load authentication."
+        )
+    independent = accepted_child_authenticator(child_path, exact_parameters)
+    if not isinstance(independent, Mapping):
+        raise ExactCandidateFrontierError(
+            "Independent guided-GUD child authenticator returned a non-mapping."
+        )
+    independent_tree = independent.get("artifact_tree")
+    if (
+        canonical_json(independent) != canonical_json(independent_report)
+        or independent.get("fresh_reload_performed") is not True
+        or independent.get("loaded_from_candidate_path") is not True
+        or independent.get("exact_unique_parameters") != exact_parameters
+        or independent.get("state_dict_sha256") != child_state_sha
+        or independent.get("published_adapter_parameter_count") != 0
+        or independent.get("parent_runtime_reference_count") != 0
+        or independent.get("source_sized_sidecar_parameter_count") != 0
+        or not isinstance(independent_tree, Mapping)
+        or any(
+            independent_tree.get(name) != tree[name]
+            for name in ("file_count", "total_bytes", "tree_sha256")
+        )
+    ):
+        raise ExactCandidateFrontierError(
+            "Guided-GUD independent reload no longer verifies."
+        )
+
+    protected = {
+        f"source_run_{report_sha[:16]}": str(root),
+        f"source_child_{tree['tree_sha256'][:16]}": str(child_path),
+        f"source_report_{report_sha[:16]}": str(report_path),
+        f"source_prereg_{prereg_sha[:16]}": str(prereg_path),
+        f"sealed_marker_{marker_sha[:16]}": str(marker_path),
+    }
+    for label, (path, digest) in source_evidence.items():
+        protected[f"{label}_{digest[:16]}"] = str(path)
+    return TerminalCandidate(
+        terminal_run_schema=GUIDED_GUD_WINNER_PUBLICATION_RUN_SCHEMA,
+        run_root=root,
+        run_report_path=report_path,
+        run_report_sha256=report_sha,
+        preregistration_path=prereg_path,
+        preregistration_sha256=prereg_sha,
+        comparison_contract_sha256=comparison,
+        target_contract_sha256=target_contract,
+        exact_unique_parameters=exact_parameters,
+        artifact_kind="accepted-standalone-child",
+        truth_label="accepted-standalone",
+        terminal_status="accepted",
+        terminal_reason=None,
+        candidate_metrics=dict(post_metrics),
+        dynamic_method_gate_decision=None,
+        rollout_first_rank_key=rollout_first_rank(post_metrics),
+        selected_step=selected_step,
+        selected_factor_state_sha256=selected_sha,
+        content_identity_sha256=child_state_sha,
+        source_artifact=child_path,
+        source_artifact_identity_sha256=str(tree["tree_sha256"]),
+        source_artifact_tree=tree,
+        fresh_reload_verified=True,
+        fresh_reload_certificate_sha256=canonical_sha256(
+            {
+                "run_certificate": dict(certificate),
+                "independent_authentication": dict(independent),
+            }
+        ),
+        independent_child_authentication=dict(independent),
+        standalone_compaction_passed=True,
+        deployment_accepted=True,
+        protected_roots=protected,
+    )
+
+
 def authenticate_terminal_candidate(
     run_root: Path | str,
     *,
@@ -1985,6 +3413,16 @@ def authenticate_terminal_candidate(
         )
     report = strict_json(report_path)
     run_schema = report.get("schema") if isinstance(report, Mapping) else None
+    if run_schema == GUIDED_GUD_WINNER_PUBLICATION_RUN_SCHEMA:
+        return _authenticate_guided_gud_winner_publication_candidate(
+            root,
+            report_path,
+            report,
+            report_sha,
+            expected_preregistration_sha256=expected_preregistration_sha256,
+            preregistration_authenticator=preregistration_authenticator,
+            accepted_child_authenticator=accepted_child_authenticator,
+        )
     if run_schema == GUIDED_WINNER_PUBLICATION_RUN_SCHEMA:
         return _authenticate_guided_winner_publication_candidate(
             root,
@@ -2966,6 +4404,7 @@ class ExactCandidateFrontier:
                 RUN_SCHEMA,
                 GUIDED_RUN_SCHEMA,
                 GUIDED_WINNER_PUBLICATION_RUN_SCHEMA,
+                GUIDED_GUD_WINNER_PUBLICATION_RUN_SCHEMA,
             }
             or declared_schema != copied_schema
             or (
@@ -2982,6 +4421,17 @@ class ExactCandidateFrontier:
                 and (
                     method_decision is not None
                     or not _valid_retained_winner_publication_behavior(
+                        copied_report,
+                        copied_preregistration,
+                        preregistration_copy,
+                    )
+                )
+            )
+            or (
+                copied_schema == GUIDED_GUD_WINNER_PUBLICATION_RUN_SCHEMA
+                and (
+                    method_decision is not None
+                    or not _valid_retained_guided_gud_winner_publication_behavior(
                         copied_report,
                         copied_preregistration,
                         preregistration_copy,
@@ -3512,6 +4962,8 @@ __all__ = [
     "FactorAuthenticator",
     "GUIDED_PREREGISTRATION_SCHEMA",
     "GUIDED_RUN_SCHEMA",
+    "GUIDED_GUD_WINNER_PUBLICATION_PREREGISTRATION_SCHEMA",
+    "GUIDED_GUD_WINNER_PUBLICATION_RUN_SCHEMA",
     "GUIDED_WINNER_PUBLICATION_PREREGISTRATION_SCHEMA",
     "GUIDED_WINNER_PUBLICATION_RUN_SCHEMA",
     "MAX_RETAINED_PER_CONTRACT",

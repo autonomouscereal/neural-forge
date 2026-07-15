@@ -21,6 +21,7 @@ from typing import Any
 from neural_forge.hf_exact_candidate_frontier import (
     ExactCandidateFrontier,
     ExactCandidateFrontierError,
+    GUIDED_GUD_WINNER_PUBLICATION_PREREGISTRATION_SCHEMA,
     GUIDED_PREREGISTRATION_SCHEMA,
     GUIDED_WINNER_PUBLICATION_PREREGISTRATION_SCHEMA,
     authenticate_terminal_candidate,
@@ -102,6 +103,40 @@ def _load_guided_winner_publication_runner() -> Any:
     if spec is None or spec.loader is None:
         raise ExactCandidateFrontierError(
             "Cannot load the guided winner-publication runner for retention "
+            "authentication."
+        )
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    sibling_path = str(path.parent)
+    inserted_sibling_path = sibling_path not in sys.path
+    if inserted_sibling_path:
+        sys.path.insert(0, sibling_path)
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(spec.name, None)
+        raise
+    finally:
+        if inserted_sibling_path:
+            sys.path.remove(sibling_path)
+    return module
+
+
+def _load_guided_gud_winner_publication_runner() -> Any:
+    path = (
+        Path(__file__)
+        .resolve()
+        .with_name(
+            "run_qwen_exact_target_native_guided_gud_winner_publication.py"
+        )
+    )
+    spec = importlib.util.spec_from_file_location(
+        "neural_forge_guided_gud_winner_publication_runner_for_retention",
+        path,
+    )
+    if spec is None or spec.loader is None:
+        raise ExactCandidateFrontierError(
+            "Cannot load the guided-GUD winner-publication runner for retention "
             "authentication."
         )
     module = importlib.util.module_from_spec(spec)
@@ -406,6 +441,24 @@ def _canonical_preregistration_authenticator(
     preregistration_path: Path, preregistration_sha256: str
 ) -> Mapping[str, Any]:
     raw = strict_json(preregistration_path)
+    if (
+        isinstance(raw, Mapping)
+        and raw.get("schema")
+        == GUIDED_GUD_WINNER_PUBLICATION_PREREGISTRATION_SCHEMA
+    ):
+        publication = _load_guided_gud_winner_publication_runner()
+        contract = publication.authenticate_winner_publication_preregistration(
+            preregistration_path,
+            preregistration_sha256,
+        )
+        authenticated = contract.raw
+        if not isinstance(authenticated, Mapping):
+            raise ExactCandidateFrontierError(
+                "Guided-GUD publication authenticator returned no raw contract."
+            )
+        # A consumed marker must make execution preflight fail, but it does not
+        # invalidate immutable preregistration evidence during terminal retention.
+        return dict(authenticated)
     if (
         isinstance(raw, Mapping)
         and raw.get("schema")
