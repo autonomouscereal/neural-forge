@@ -273,7 +273,7 @@ def _replay_result(
             "role": role,
             "shape": list(packs[method][role].shape),
             "dtype": str(packs[method][role].dtype),
-            "sha256": tournament.gud_adapter._tensor_sha256(packs[method][role]),
+            "sha256": replay._tensor_sha256(packs[method][role]),
         }
         for method in tournament.BASIS_METHODS
         for role in tournament.GUD_ROLES
@@ -394,6 +394,61 @@ def test_replay_basis_roundtrip_and_tensor_tamper_fails(
     assert bundle.source_v3_state_unchanged is True
 
     raw = torch.load(bundle.path, map_location="cpu", weights_only=True)
+    replay_manifest = result.report.to_dict()["basis_pack_manifest"]
+    installer_manifest = []
+    for method in tournament.BASIS_METHODS:
+        for role in tournament.GUD_ROLES:
+            value = raw["guided_right_rows"][method][role]
+            replay_digest = behavior._output_jacobian_tensor_sha256(value)
+            installer_digest = tournament.gud_adapter._tensor_sha256(value)
+            matching = next(
+                row
+                for row in replay_manifest
+                if row["candidate"] == method and row["role"] == role
+            )
+            assert matching["sha256"] == replay_digest
+            assert raw["source_basis_tensor_sha256s"][method][role] == (
+                installer_digest
+            )
+            assert replay_digest != installer_digest
+            installer_manifest.append(
+                {
+                    "candidate": method,
+                    "role": role,
+                    "shape": list(value.shape),
+                    "dtype": str(value.dtype),
+                    "sha256": installer_digest,
+                }
+            )
+    assert bundle.replay_basis_manifest_sha256 == tournament.canonical_sha256(
+        replay_manifest
+    )
+    assert bundle.basis_manifest_sha256 == tournament.canonical_sha256(
+        installer_manifest
+    )
+
+    installation_probe = (
+        tournament.gud_adapter.GuidedSparseDenseSwiGLUProjectionResidualRegistry(
+            range(4),
+            hidden_size=3,
+            intermediate_size=5,
+            rank=1,
+            guided_right_rows=bundle.rows_for("balanced"),
+            source_basis_tensor_sha256s=(
+                bundle.source_basis_tensor_sha256s["balanced"]
+            ),
+            audit_report_sha256=bundle.audit_report_sha256,
+            basis_envelope_file_sha256=bundle.file_sha256,
+            basis_payload_sha256=bundle.payload_sha256,
+            basis_manifest_sha256=bundle.basis_manifest_sha256,
+            dtype=torch.float32,
+            device="cpu",
+        )
+    )
+    assert installation_probe.source_basis_tensor_sha256s == (
+        bundle.source_basis_tensor_sha256s["balanced"]
+    )
+
     tampered = copy.deepcopy(raw)
     tampered["guided_right_rows"]["balanced"]["gate"][0, 0, 0] += 1.0
     path = tmp_path / "tampered.pt"

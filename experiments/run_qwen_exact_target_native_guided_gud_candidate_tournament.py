@@ -457,7 +457,10 @@ def guided_gud_basis_bundle_from_audit(
         hashes[method] = {
             role: gud_adapter._tensor_sha256(per_role[role]) for role in GUD_ROLES
         }
-    manifest = [
+    # The replay producer and the guided-GUD installer deliberately bind the
+    # same tensor bytes in different historical hash domains.  Authenticate
+    # both domains here instead of comparing either digest to the other.
+    installer_manifest = [
         {
             "candidate": method,
             "role": role,
@@ -468,10 +471,24 @@ def guided_gud_basis_bundle_from_audit(
         for method in BASIS_METHODS
         for role in GUD_ROLES
     ]
-    manifest_sha = canonical_sha256(manifest)
+    installer_manifest_sha = canonical_sha256(installer_manifest)
+    replay_manifest = [
+        {
+            "candidate": method,
+            "role": role,
+            "shape": list(rows[method][role].shape),
+            "dtype": str(rows[method][role].dtype),
+            "sha256": behavior._output_jacobian_tensor_sha256(
+                rows[method][role]
+            ),
+        }
+        for method in BASIS_METHODS
+        for role in GUD_ROLES
+    ]
+    replay_manifest_sha = canonical_sha256(replay_manifest)
     if (
-        replay_report.get("basis_pack_manifest") != manifest
-        or replay_report.get("basis_pack_manifest_sha256") != manifest_sha
+        replay_report.get("basis_pack_manifest") != replay_manifest
+        or replay_report.get("basis_pack_manifest_sha256") != replay_manifest_sha
     ):
         raise GuidedGUDCandidateTournamentError(
             "Replay basis tensors differ from the authenticated pack manifest."
@@ -502,7 +519,8 @@ def guided_gud_basis_bundle_from_audit(
         "source_guided_qkvo_binding_sha256": binding_sha,
         "source_v3_state_unchanged": True,
         "source_basis_tensor_sha256s": hashes,
-        "basis_manifest_sha256": manifest_sha,
+        "basis_manifest_sha256": installer_manifest_sha,
+        "replay_basis_manifest_sha256": replay_manifest_sha,
         "tensor_count": tensor_count,
         "total_numel": total_numel,
         "total_nbytes": total_nbytes,
@@ -530,6 +548,7 @@ class AuthenticatedGuidedGUDBasisBundle:
     audit_report_sha256: str
     replay_audit_report: Mapping[str, Any]
     basis_manifest_sha256: str
+    replay_basis_manifest_sha256: str
     audit_source_v3_runtime_factor_state_sha256_before: str
     audit_source_v3_runtime_factor_state_sha256_after: str
     source_v3_portable_factor_state_sha256: str
@@ -585,6 +604,7 @@ def authenticate_guided_gud_basis_bundle(
         "source_v3_state_unchanged",
         "source_basis_tensor_sha256s",
         "basis_manifest_sha256",
+        "replay_basis_manifest_sha256",
         "tensor_count",
         "total_numel",
         "total_nbytes",
@@ -792,7 +812,7 @@ def authenticate_guided_gud_basis_bundle(
         or payload["total_nbytes"] != total_nbytes
     ):
         raise GuidedGUDCandidateTournamentError("Basis tensor accounting changed.")
-    manifest = [
+    installer_manifest = [
         {
             "candidate": method,
             "role": role,
@@ -803,11 +823,26 @@ def authenticate_guided_gud_basis_bundle(
         for method in BASIS_METHODS
         for role in GUD_ROLES
     ]
-    manifest_sha = canonical_sha256(manifest)
+    installer_manifest_sha = canonical_sha256(installer_manifest)
+    replay_manifest = [
+        {
+            "candidate": method,
+            "role": role,
+            "shape": list(authenticated_rows[method][role].shape),
+            "dtype": str(authenticated_rows[method][role].dtype),
+            "sha256": behavior._output_jacobian_tensor_sha256(
+                authenticated_rows[method][role]
+            ),
+        }
+        for method in BASIS_METHODS
+        for role in GUD_ROLES
+    ]
+    replay_manifest_sha = canonical_sha256(replay_manifest)
     if (
-        replay_report.get("basis_pack_manifest") != manifest
-        or replay_report.get("basis_pack_manifest_sha256") != manifest_sha
-        or payload["basis_manifest_sha256"] != manifest_sha
+        replay_report.get("basis_pack_manifest") != replay_manifest
+        or replay_report.get("basis_pack_manifest_sha256") != replay_manifest_sha
+        or payload["replay_basis_manifest_sha256"] != replay_manifest_sha
+        or payload["basis_manifest_sha256"] != installer_manifest_sha
     ):
         raise GuidedGUDCandidateTournamentError("Basis pack manifest changed.")
     return AuthenticatedGuidedGUDBasisBundle(
@@ -817,6 +852,9 @@ def authenticate_guided_gud_basis_bundle(
         audit_report_sha256=audit_sha,
         replay_audit_report=dict(replay_report),
         basis_manifest_sha256=str(payload["basis_manifest_sha256"]),
+        replay_basis_manifest_sha256=str(
+            payload["replay_basis_manifest_sha256"]
+        ),
         audit_source_v3_runtime_factor_state_sha256_before=runtime_before,
         audit_source_v3_runtime_factor_state_sha256_after=runtime_after,
         source_v3_portable_factor_state_sha256=portable_sha,
@@ -2025,6 +2063,9 @@ class AuthenticatedGuidedGUDCandidateTournament:
                 "payload_sha256": self.basis.payload_sha256,
                 "audit_report_sha256": self.basis.audit_report_sha256,
                 "basis_manifest_sha256": self.basis.basis_manifest_sha256,
+                "replay_basis_manifest_sha256": (
+                    self.basis.replay_basis_manifest_sha256
+                ),
                 "methods": list(BASIS_METHODS),
             },
             "site_mask": {
@@ -2102,6 +2143,7 @@ def guided_gud_evaluation_preimage(
         "basis_payload_sha256": basis.payload_sha256,
         "audit_report_sha256": basis.audit_report_sha256,
         "basis_manifest_sha256": basis.basis_manifest_sha256,
+        "replay_basis_manifest_sha256": basis.replay_basis_manifest_sha256,
         "site_mask_file_sha256": _sha256(
             mask_file_sha256,
             "mask_file_sha256",
