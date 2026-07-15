@@ -20,6 +20,7 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping, Sequence
+from contextlib import ExitStack
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
@@ -1248,11 +1249,49 @@ class ExactTargetCompilerTransaction:
         payload["installation_transaction_sha256"] = _canonical_sha256(payload)
         return payload
 
+    @staticmethod
+    def _enter_guided_owner_suspensions(
+        stack: ExitStack,
+        handles: Sequence[tuple[str, Any]],
+    ) -> tuple[str, ...]:
+        """Hide later guided owners while an older transaction restores its baseline."""
+
+        entered: list[str] = []
+        identities: set[int] = set()
+        for name, handle in handles:
+            if id(handle) in identities or not bool(
+                getattr(handle, "is_applied", False)
+            ):
+                continue
+            identities.add(id(handle))
+            suspend = getattr(
+                handle,
+                "suspend_guided_registry_owner_for_nested_publication",
+                None,
+            )
+            if callable(suspend):
+                stack.enter_context(suspend())
+                entered.append(name)
+        return tuple(entered)
+
     def rollback(self) -> NativeDenseGQACertificate:
         if self.lexical_handle is not None and self.lexical_handle.is_applied:
-            self.lexical_handle.rollback()
+            with ExitStack() as stack:
+                self._enter_guided_owner_suspensions(
+                    stack,
+                    (
+                        ("qkvo", self.qkvo_handle),
+                        ("gate-up-down", self.swiglu_handle),
+                    ),
+                )
+                self.lexical_handle.rollback()
         if self.qkvo_handle.is_applied:
-            self.qkvo_handle.rollback()
+            with ExitStack() as stack:
+                self._enter_guided_owner_suspensions(
+                    stack,
+                    (("gate-up-down", self.swiglu_handle),),
+                )
+                self.qkvo_handle.rollback()
         if self.swiglu_handle.is_applied:
             self.swiglu_handle.rollback()
         restored = certify_native_dense_gqa_target(
@@ -1273,20 +1312,24 @@ class ExactTargetCompilerTransaction:
         # reject its live wrapper before the older transactions whose state-key
         # topology formed its installation baseline.
         if self.lexical_handle is not None and self.lexical_handle.is_applied:
-            suspend_guided = getattr(
-                self.qkvo_handle,
-                "suspend_guided_registry_owner_for_nested_publication",
-                None,
-            )
-            if callable(suspend_guided) and self.qkvo_handle.is_applied:
-                with suspend_guided():
-                    self.lexical_handle.rollback()
-            else:
+            with ExitStack() as stack:
+                self._enter_guided_owner_suspensions(
+                    stack,
+                    (
+                        ("qkvo", self.qkvo_handle),
+                        ("gate-up-down", self.swiglu_handle),
+                    ),
+                )
                 self.lexical_handle.rollback()
         # QKVO is baked first.  If it is still live, reject it before removing
         # the MLP factors because its installation baseline includes them.
         if self.qkvo_handle.is_applied:
-            self.qkvo_handle.rollback()
+            with ExitStack() as stack:
+                self._enter_guided_owner_suspensions(
+                    stack,
+                    (("gate-up-down", self.swiglu_handle),),
+                )
+                self.qkvo_handle.rollback()
             if self.swiglu_handle.is_applied:
                 self.swiglu_handle.rollback()
         else:
@@ -1336,22 +1379,25 @@ class ExactTargetCompilerTransaction:
         behavior_gate.require_publication_approval()
         self.assert_live()
         try:
-            suspend_guided = getattr(
-                self.qkvo_handle,
-                "suspend_guided_registry_owner_for_nested_publication",
-                None,
-            )
             if self.lexical_handle is None:
                 lexical_bake = None
-                guided_registry_suspended_for_lexical_bake = False
-            elif callable(suspend_guided):
-                with suspend_guided():
-                    lexical_bake = self.lexical_handle.bake_for_publication()
-                guided_registry_suspended_for_lexical_bake = True
+                lexical_suspensions: tuple[str, ...] = ()
             else:
-                lexical_bake = self.lexical_handle.bake_for_publication()
-                guided_registry_suspended_for_lexical_bake = False
-            qkvo_bake = self.qkvo_handle.bake_for_publication()
+                with ExitStack() as stack:
+                    lexical_suspensions = self._enter_guided_owner_suspensions(
+                        stack,
+                        (
+                            ("qkvo", self.qkvo_handle),
+                            ("gate-up-down", self.swiglu_handle),
+                        ),
+                    )
+                    lexical_bake = self.lexical_handle.bake_for_publication()
+            with ExitStack() as stack:
+                qkvo_suspensions = self._enter_guided_owner_suspensions(
+                    stack,
+                    (("gate-up-down", self.swiglu_handle),),
+                )
+                qkvo_bake = self.qkvo_handle.bake_for_publication()
             swiglu_bake = self.swiglu_handle.bake_for_publication()
             native_after = certify_native_dense_gqa_target(
                 self.model,
@@ -1404,8 +1450,24 @@ class ExactTargetCompilerTransaction:
                         "native_lexical_state_key_topology_restored": True,
                         "role_complete_lexical_boundary": True,
                         "guided_registry_suspended_for_lexical_bake": (
-                            guided_registry_suspended_for_lexical_bake
+                            "qkvo" in lexical_suspensions
                         ),
+                    }
+                )
+            if "gate-up-down" in (*lexical_suspensions, *qkvo_suspensions):
+                payload.update(
+                    {
+                        "guided_gate_up_down_registry_suspended_for_lexical_bake": (
+                            "gate-up-down" in lexical_suspensions
+                        ),
+                        "guided_gate_up_down_registry_suspended_for_qkvo_bake": (
+                            "gate-up-down" in qkvo_suspensions
+                        ),
+                        "nested_publication_bake_order": [
+                            "lexical",
+                            "qkvo-inherited-then-guided",
+                            "gate-up-down-inherited-then-guided",
+                        ],
                     }
                 )
             payload["publication_transaction_sha256"] = _canonical_sha256(payload)

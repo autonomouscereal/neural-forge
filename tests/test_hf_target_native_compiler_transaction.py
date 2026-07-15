@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 import pytest
@@ -432,6 +433,180 @@ def test_composite_success_bakes_lexical_then_qkvo_then_gud(monkeypatch) -> None
     assert order == ["lexical", "qkvo", "gud"]
 
 
+def test_two_guided_owners_are_nested_around_older_publication_baselines(
+    monkeypatch,
+) -> None:
+    model = _ToyTarget().eval()
+    transaction = install_exact_target_compiler_transaction(
+        model,
+        exact_unique_parameters=exact_unique_parameter_count(model),
+        qkvo_sites=(DenseGQASite(0, 0),),
+        qkvo_rank=1,
+        swiglu_layer_indices=(0,),
+        swiglu_rank=1,
+        lexical_rank=1,
+        layout=_layout(),
+    )
+    assert transaction.lexical_handle is not None
+    events: list[str] = []
+
+    class _GuidedOwnerProxy:
+        def __init__(self, name, handle) -> None:
+            self.name = name
+            self.handle = handle
+            self.suspended = False
+            self.required_suspension = None
+
+        def __getattr__(self, name):
+            return getattr(self.handle, name)
+
+        @property
+        def is_applied(self) -> bool:
+            return self.handle.is_applied
+
+        @property
+        def is_baked(self) -> bool:
+            return self.handle.is_baked
+
+        @contextmanager
+        def suspend_guided_registry_owner_for_nested_publication(self):
+            assert self.is_applied
+            assert self.suspended is False
+            events.append(f"enter-{self.name}")
+            self.suspended = True
+            try:
+                yield
+            finally:
+                self.suspended = False
+                events.append(f"exit-{self.name}")
+
+        def bake_for_publication(self):
+            if self.required_suspension is not None:
+                assert self.required_suspension.suspended is True
+            events.append(f"bake-{self.name}")
+            return self.handle.bake_for_publication()
+
+    qkvo = _GuidedOwnerProxy("qkvo", transaction.qkvo_handle)
+    gud = _GuidedOwnerProxy("gate-up-down", transaction.swiglu_handle)
+    qkvo.required_suspension = gud
+    transaction.qkvo_handle = qkvo
+    transaction.swiglu_handle = gud
+    lexical_bake = transaction.lexical_handle.bake_for_publication
+
+    def assert_nested_lexical_bake():
+        assert qkvo.suspended is True
+        assert gud.suspended is True
+        events.append("bake-lexical")
+        return lexical_bake()
+
+    monkeypatch.setattr(
+        transaction.lexical_handle,
+        "bake_for_publication",
+        assert_nested_lexical_bake,
+    )
+
+    publication = transaction.bake_for_publication(_approval())
+
+    assert events == [
+        "enter-qkvo",
+        "enter-gate-up-down",
+        "bake-lexical",
+        "exit-gate-up-down",
+        "exit-qkvo",
+        "enter-gate-up-down",
+        "bake-qkvo",
+        "exit-gate-up-down",
+        "bake-gate-up-down",
+    ]
+    assert (
+        publication["guided_gate_up_down_registry_suspended_for_lexical_bake"] is True
+    )
+    assert publication["guided_gate_up_down_registry_suspended_for_qkvo_bake"] is True
+    assert publication["nested_publication_bake_order"] == [
+        "lexical",
+        "qkvo-inherited-then-guided",
+        "gate-up-down-inherited-then-guided",
+    ]
+
+
+def test_two_guided_owners_are_nested_during_direct_rejection(monkeypatch) -> None:
+    model = _ToyTarget().eval()
+    exact = exact_unique_parameter_count(model)
+    transaction = install_exact_target_compiler_transaction(
+        model,
+        exact_unique_parameters=exact,
+        qkvo_sites=(DenseGQASite(0, 0),),
+        qkvo_rank=1,
+        swiglu_layer_indices=(0,),
+        swiglu_rank=1,
+        lexical_rank=1,
+        layout=_layout(),
+    )
+    assert transaction.lexical_handle is not None
+    events: list[str] = []
+    suspended = {"qkvo": False, "gate-up-down": False}
+
+    @contextmanager
+    def suspend(name):
+        events.append(f"enter-{name}")
+        suspended[name] = True
+        try:
+            yield
+        finally:
+            suspended[name] = False
+            events.append(f"exit-{name}")
+
+    monkeypatch.setattr(
+        transaction.qkvo_handle,
+        "suspend_guided_registry_owner_for_nested_publication",
+        lambda: suspend("qkvo"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        transaction.swiglu_handle,
+        "suspend_guided_registry_owner_for_nested_publication",
+        lambda: suspend("gate-up-down"),
+        raising=False,
+    )
+    lexical_rollback = transaction.lexical_handle.rollback
+    qkvo_rollback = transaction.qkvo_handle.rollback
+    gud_rollback = transaction.swiglu_handle.rollback
+
+    def nested_lexical_rollback():
+        assert all(suspended.values())
+        events.append("rollback-lexical")
+        return lexical_rollback()
+
+    def nested_qkvo_rollback():
+        assert suspended["gate-up-down"] is True
+        events.append("rollback-qkvo")
+        return qkvo_rollback()
+
+    def record_gud_rollback():
+        assert not any(suspended.values())
+        events.append("rollback-gate-up-down")
+        return gud_rollback()
+
+    monkeypatch.setattr(transaction.lexical_handle, "rollback", nested_lexical_rollback)
+    monkeypatch.setattr(transaction.qkvo_handle, "rollback", nested_qkvo_rollback)
+    monkeypatch.setattr(transaction.swiglu_handle, "rollback", record_gud_rollback)
+
+    restored = transaction.rollback()
+
+    assert restored.exact_unique_parameters == exact
+    assert events == [
+        "enter-qkvo",
+        "enter-gate-up-down",
+        "rollback-lexical",
+        "exit-gate-up-down",
+        "exit-qkvo",
+        "enter-gate-up-down",
+        "rollback-qkvo",
+        "exit-gate-up-down",
+        "rollback-gate-up-down",
+    ]
+
+
 def test_composite_public_restore_unwinds_baked_handles_in_reverse_order(
     monkeypatch,
 ) -> None:
@@ -532,9 +707,7 @@ def test_composite_publication_report_failure_restores_all_baked_handles(
     assert torch.equal(model(inputs), baseline)
 
 
-def test_context_manager_restores_baked_transaction_after_later_save_failure() -> (
-    None
-):
+def test_context_manager_restores_baked_transaction_after_later_save_failure() -> None:
     model = _ToyTarget().eval()
     inputs = torch.tensor([[5, 11]])
     baseline = model(inputs).detach().clone()
