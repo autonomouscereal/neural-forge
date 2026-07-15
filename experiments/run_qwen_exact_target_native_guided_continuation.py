@@ -19,10 +19,12 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import gc
+import hashlib
 import importlib
 import importlib.util
 import json
 import re
+import subprocess
 import weakref
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -46,6 +48,27 @@ TRAINER_FACTOR_PACK_V3_SCHEMA = "neural-forge-target-native-factor-pack-v3"
 GUIDED_TRAINER_MODULE = stage.CANONICAL_TRAINER_MODULE
 GUIDED_ADAPTER_MODULE = "neural_forge.hf_dense_gqa_qkvo_residual_adapter"
 GUIDED_BUILDER_FILENAME = "prepare_qwen_exact_target_native_guided_continuation.py"
+GUIDED_HISTORICAL_IMPLEMENTATION_PATHS = {
+    "runner_sha256": (
+        "experiments/run_qwen_exact_target_native_guided_continuation.py"
+    ),
+    "builder_sha256": (
+        "experiments/prepare_qwen_exact_target_native_guided_continuation.py"
+    ),
+    "base_runner_sha256": "experiments/run_qwen_exact_target_native_stage.py",
+    "trainer_sha256": (
+        "src/neural_forge/hf_target_native_behavior_distillation.py"
+    ),
+    "guided_adapter_sha256": (
+        "src/neural_forge/hf_dense_gqa_qkvo_residual_adapter.py"
+    ),
+    "progressive_bridge_sha256": (
+        "src/neural_forge/hf_progressive_target_bridge.py"
+    ),
+    "compiled_child_cache_sha256": (
+        "src/neural_forge/hf_compiled_child_cache.py"
+    ),
+}
 GUIDED_FACTOR_COUNT = 8
 GUIDED_FACTOR_PARAMETERS = 7_127_040
 GUIDED_TOTAL_FACTOR_COUNT = (
@@ -639,7 +662,122 @@ def _authenticate_persisted_audit(
     )
 
 
-def _authenticate_implementation(value: Any) -> dict[str, Any]:
+def _authenticate_historical_git_blob_pins(
+    implementation: Mapping[str, Any],
+    revision: Any,
+    *,
+    paths: Mapping[str, str],
+) -> None:
+    """Authenticate declared source hashes against one ancestor commit tree."""
+
+    if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+        raise GuidedContinuationError(
+            "Historical implementation revision must be a full lowercase commit SHA."
+        )
+    if set(paths) != set(implementation) - {"trainer_module"}:
+        raise GuidedContinuationError(
+            "Historical implementation path map does not cover the exact source pins."
+        )
+    repo = Path(__file__).resolve().parents[1]
+    environment = stage._historical_git_environment()
+    try:
+        resolved_repo = (
+            subprocess.run(
+                [
+                    "git",
+                    "--no-replace-objects",
+                    "-C",
+                    str(repo),
+                    "rev-parse",
+                    "--show-toplevel",
+                ],
+                check=True,
+                capture_output=True,
+                env=environment,
+            )
+            .stdout.decode("utf-8")
+            .strip()
+        )
+        resolved_revision = (
+            subprocess.run(
+                [
+                    "git",
+                    "--no-replace-objects",
+                    "-C",
+                    str(repo),
+                    "rev-parse",
+                    "--verify",
+                    f"{revision}^{{commit}}",
+                ],
+                check=True,
+                capture_output=True,
+                env=environment,
+            )
+            .stdout.decode("ascii")
+            .strip()
+        )
+    except (OSError, subprocess.CalledProcessError, UnicodeError) as error:
+        raise GuidedContinuationError(
+            "Historical implementation commit is unavailable in this repository."
+        ) from error
+    if Path(resolved_repo).resolve() != repo or resolved_revision != revision:
+        raise GuidedContinuationError(
+            "Historical implementation commit did not resolve exactly in this repository."
+        )
+    try:
+        subprocess.run(
+            [
+                "git",
+                "--no-replace-objects",
+                "-C",
+                str(repo),
+                "merge-base",
+                "--is-ancestor",
+                revision,
+                "HEAD",
+            ],
+            check=True,
+            capture_output=True,
+            env=environment,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise GuidedContinuationError(
+            "Historical implementation commit is not an ancestor of current HEAD."
+        ) from error
+    for field, relative_path in sorted(paths.items()):
+        declared = _require_sha256(
+            implementation.get(field), f"implementation.{field}"
+        )
+        try:
+            blob = subprocess.run(
+                [
+                    "git",
+                    "--no-replace-objects",
+                    "-C",
+                    str(repo),
+                    "cat-file",
+                    "blob",
+                    f"{revision}:{relative_path}",
+                ],
+                check=True,
+                capture_output=True,
+                env=environment,
+            ).stdout
+        except (OSError, subprocess.CalledProcessError) as error:
+            raise GuidedContinuationError(
+                f"Historical implementation path {relative_path!r} is unavailable."
+            ) from error
+        if hashlib.sha256(blob).hexdigest() != declared:
+            raise GuidedContinuationError(
+                f"Historical implementation path {relative_path!r} failed its SHA-256 pin."
+            )
+
+
+def _authenticate_implementation(
+    value: Any,
+    *,
+    historical_git_revision: str | None = None,
+) -> dict[str, Any]:
     row = _strict_keys(
         value,
         {
@@ -654,6 +792,15 @@ def _authenticate_implementation(value: Any) -> dict[str, Any]:
         },
         "implementation",
     )
+    if row.get("trainer_module") != GUIDED_TRAINER_MODULE:
+        raise GuidedContinuationError("Guided trainer module changed.")
+    if historical_git_revision is not None:
+        _authenticate_historical_git_blob_pins(
+            row,
+            historical_git_revision,
+            paths=GUIDED_HISTORICAL_IMPLEMENTATION_PATHS,
+        )
+        return dict(row)
     expected = {
         "runner_sha256": stage._file_sha256(Path(__file__).resolve()),
         "builder_sha256": stage._file_sha256(
@@ -833,7 +980,10 @@ def _guided_evaluation_preimage(
 
 
 def authenticate_guided_preregistration(
-    path: Path | str, expected_sha256: str
+    path: Path | str,
+    expected_sha256: str,
+    *,
+    historical_git_revision: str | None = None,
 ) -> AuthenticatedGuidedContinuation:
     prereg_path = Path(path).expanduser().resolve()
     expected = _require_sha256(expected_sha256, "preregistration_sha256")
@@ -879,7 +1029,14 @@ def authenticate_guided_preregistration(
         "explicit_execute_required": True,
     }:
         raise GuidedContinuationError("Guided runtime contract changed.")
-    implementation = _authenticate_implementation(prereg.get("implementation"))
+    implementation = (
+        _authenticate_implementation(prereg.get("implementation"))
+        if historical_git_revision is None
+        else _authenticate_implementation(
+            prereg.get("implementation"),
+            historical_git_revision=historical_git_revision,
+        )
+    )
     source_contract, artifacts = _authenticate_persisted_audit(
         prereg.get("audit"), prereg.get("source"), base=prereg_path.parent
     )

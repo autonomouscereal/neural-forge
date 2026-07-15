@@ -90,6 +90,15 @@ EXPECTED_PARENT_DEVICE_NAME = "NVIDIA GeForce RTX 3090"
 EXPECTED_TARGET_DEVICE_NAME = "Quadro RTX 8000"
 EXPECTED_PARENT_COMPUTE_CAPABILITY = (8, 6)
 EXPECTED_TARGET_COMPUTE_CAPABILITY = (7, 5)
+HISTORICAL_V3_SOURCE_COMMIT = "565aad1b618df3f65dc5b9a25d25eb1a0f90ef5b"
+HISTORICAL_TOURNAMENT_IMPLEMENTATION_PATHS = {
+    "runner_sha256": (
+        "experiments/run_qwen_exact_target_native_guided_candidate_tournament.py"
+    ),
+    "builder_sha256": (
+        "experiments/prepare_qwen_exact_target_native_guided_candidate_tournament.py"
+    ),
+}
 
 
 class CandidateTournamentError(RuntimeError):
@@ -508,8 +517,47 @@ def _load_v3_initial_state(
     )
 
 
+def _authenticate_tournament_implementation(
+    value: Any,
+    *,
+    historical_git_revision: str | None = None,
+) -> dict[str, Any]:
+    implementation = _strict(
+        value,
+        set(HISTORICAL_TOURNAMENT_IMPLEMENTATION_PATHS),
+        "implementation",
+    )
+    if historical_git_revision is not None:
+        try:
+            guided._authenticate_historical_git_blob_pins(
+                implementation,
+                historical_git_revision,
+                paths=HISTORICAL_TOURNAMENT_IMPLEMENTATION_PATHS,
+            )
+        except guided.GuidedContinuationError as error:
+            raise CandidateTournamentError(
+                "Historical tournament implementation authentication failed."
+            ) from error
+        return dict(implementation)
+    prepare_path = (
+        Path(__file__)
+        .with_name("prepare_qwen_exact_target_native_guided_candidate_tournament.py")
+        .resolve()
+    )
+    live = {
+        "runner_sha256": stage._file_sha256(Path(__file__).resolve()),
+        "builder_sha256": stage._file_sha256(prepare_path),
+    }
+    if dict(implementation) != live:
+        raise CandidateTournamentError("Tournament implementation hashes changed.")
+    return live
+
+
 def authenticate_candidate_tournament_preregistration(
-    path: Path | str, expected_sha256: str
+    path: Path | str,
+    expected_sha256: str,
+    *,
+    historical_git_revision: str | None = None,
 ) -> AuthenticatedCandidateTournament:
     prereg_path = Path(path).expanduser().resolve()
     expected = _sha256(expected_sha256, "preregistration_sha256")
@@ -546,7 +594,15 @@ def authenticate_candidate_tournament_preregistration(
     source_path, source_sha = _file_binding(
         prereg["source_guided"], base=prereg_path.parent, name="source_guided"
     )
-    source = guided.authenticate_guided_preregistration(source_path, source_sha)
+    source = (
+        guided.authenticate_guided_preregistration(source_path, source_sha)
+        if historical_git_revision is None
+        else guided.authenticate_guided_preregistration(
+            source_path,
+            source_sha,
+            historical_git_revision=historical_git_revision,
+        )
+    )
     split_rows = _strict(prereg["splits"], {"fit", "candidate", "sealed"}, "splits")
     try:
         splits = {
@@ -689,22 +745,10 @@ def authenticate_candidate_tournament_preregistration(
     expected_runtime = candidate_tournament_runtime_contract()
     if dict(runtime) != expected_runtime:
         raise CandidateTournamentError("Tournament runtime contract changed.")
-    prepare_path = (
-        Path(__file__)
-        .with_name("prepare_qwen_exact_target_native_guided_candidate_tournament.py")
-        .resolve()
-    )
-    expected_implementation = {
-        "runner_sha256": stage._file_sha256(Path(__file__).resolve()),
-        "builder_sha256": stage._file_sha256(prepare_path),
-    }
-    implementation = _strict(
+    expected_implementation = _authenticate_tournament_implementation(
         prereg["implementation"],
-        set(expected_implementation),
-        "implementation",
+        historical_git_revision=historical_git_revision,
     )
-    if dict(implementation) != expected_implementation:
-        raise CandidateTournamentError("Tournament implementation hashes changed.")
     preimage = {
         "source_guided_preregistration_sha256": source.file_sha256,
         "split_sha256s": {name: value.sha256 for name, value in splits.items()},

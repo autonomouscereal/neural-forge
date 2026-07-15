@@ -1335,6 +1335,7 @@ def authenticate_v3_winner_source(
         contract = v3_tournament.authenticate_candidate_tournament_preregistration(
             prereg_path,
             prereg_sha,
+            historical_git_revision=v3_tournament.HISTORICAL_V3_SOURCE_COMMIT,
         )
         run_report = stage._strict_json(run_path)
         winner_selection = stage._strict_json(winner_path)
