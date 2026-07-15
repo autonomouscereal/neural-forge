@@ -11,6 +11,7 @@ from torch import Tensor, nn
 
 import neural_forge.hf_target_native_behavior_distillation as behavior_distillation
 import neural_forge.hf_dense_gqa_qkvo_residual_adapter as guided_qkvo
+import neural_forge.hf_dense_swiglu_projection_residual_adapter as guided_gud
 from neural_forge.hf_arch_layout import (
     AttentionLayout,
     DecoderBlockLayout,
@@ -22,8 +23,15 @@ from neural_forge.hf_arch_layout import (
     SERIAL_PRE_NORM_RESIDUAL,
 )
 from neural_forge.hf_dense_gqa_qkvo_residual_adapter import (
+    GUIDED_QKVO_RIGHT_BASIS_V2_SCHEMA,
+    QKVO_OUTPUT_JACOBIAN_AUDIT_V2_SCHEMA,
     DenseGQAQKVOResidualError,
     DenseGQASite,
+    guided_qkvo_basis_payload_sha256,
+    install_guided_dense_gqa_qkvo_residual_tranche,
+)
+from neural_forge.hf_dense_swiglu_projection_residual_adapter import (
+    install_guided_dense_swiglu_projection_residual_tranche,
 )
 from neural_forge.hf_factorized_vocab import exact_unique_parameter_count
 from neural_forge.hf_progressive_target_bridge import (
@@ -239,6 +247,172 @@ def _transaction(
     )
 
 
+def _real_guided_v4_transaction(
+    model: _StrictToyTarget,
+):
+    return install_exact_target_compiler_transaction(
+        model,
+        exact_unique_parameters=exact_unique_parameter_count(model),
+        qkvo_sites=tuple(
+            DenseGQASite(layer, group) for layer in range(2) for group in range(2)
+        ),
+        qkvo_rank=2,
+        swiglu_layer_indices=(0, 1),
+        swiglu_rank=2,
+        layout=_layout(),
+        initialization_seed=31,
+        lexical_rank=2,
+    )
+
+
+def _install_real_guided_qkvo(transaction, monkeypatch: pytest.MonkeyPatch):
+    geometry = transaction.qkvo_handle.report.geometry
+    sites = transaction.qkvo_handle.report.sites
+    accounting = guided_qkvo.DenseGQAQKVOResidualAccounting.build(
+        logical_layers=geometry.logical_layers,
+        hidden_size=geometry.hidden_size,
+        query_heads=geometry.query_heads,
+        key_value_heads=geometry.key_value_heads,
+        head_dim=geometry.head_dim,
+        rank=transaction.qkvo_handle.report.rank,
+        site_count=len(sites),
+    )
+    right_parameter_count = (
+        len(sites)
+        * transaction.qkvo_handle.report.rank
+        * (geometry.hidden_size * 3 + geometry.query_group_width)
+    )
+    patches = {
+        "_GUIDED_STAGE1_LOGICAL_LAYERS": geometry.logical_layers,
+        "_GUIDED_STAGE1_HIDDEN_SIZE": geometry.hidden_size,
+        "_GUIDED_STAGE1_QUERY_HEADS": geometry.query_heads,
+        "_GUIDED_STAGE1_KEY_VALUE_HEADS": geometry.key_value_heads,
+        "_GUIDED_STAGE1_HEAD_DIM": geometry.head_dim,
+        "_GUIDED_STAGE1_RANK": transaction.qkvo_handle.report.rank,
+        "_GUIDED_STAGE1_SITE_COUNT": len(sites),
+        "_GUIDED_STAGE1_RIGHT_PARAMETER_COUNT": right_parameter_count,
+        "_GUIDED_STAGE1_PARAMETER_COUNT": accounting.adapter_parameters,
+    }
+    for name, value in patches.items():
+        monkeypatch.setattr(guided_qkvo, name, value)
+    monkeypatch.setattr(
+        behavior_distillation,
+        "GUIDED_QKVO_PARAMETER_COUNT",
+        accounting.adapter_parameters,
+    )
+    generator = torch.Generator(device="cpu")
+    generator.manual_seed(871)
+    factor_tensors = {
+        "q_orthogonal_right": torch.randn(
+            len(sites),
+            transaction.qkvo_handle.report.rank,
+            geometry.hidden_size,
+            generator=generator,
+        ),
+        "k_orthogonal_right": torch.randn(
+            len(sites),
+            transaction.qkvo_handle.report.rank,
+            geometry.hidden_size,
+            generator=generator,
+        ),
+        "v_orthogonal_right": torch.randn(
+            len(sites),
+            transaction.qkvo_handle.report.rank,
+            geometry.hidden_size,
+            generator=generator,
+        ),
+        "o_orthogonal_right": torch.randn(
+            len(sites),
+            transaction.qkvo_handle.report.rank,
+            geometry.query_group_width,
+            generator=generator,
+        ),
+    }
+    manifest = guided_qkvo._guided_basis_tensor_manifest(factor_tensors)
+    manifest_sha = guided_qkvo._canonical_sha256(manifest)
+    site_indices = [[site.layer_index, site.physical_group] for site in sites]
+    site_sha = guided_qkvo._canonical_sha256(site_indices)
+    inherited_sha = guided_qkvo._qkvo_factor_state_sha256(
+        transaction.qkvo_handle.adapter_registry
+    )
+    roles = ("q", "k", "v", "o")
+    audit = {
+        "schema": QKVO_OUTPUT_JACOBIAN_AUDIT_V2_SCHEMA,
+        "passed": True,
+        "site_count": len(sites),
+        "site_indices": site_indices,
+        "site_indices_sha256": site_sha,
+        "factor_state_sha256_before": "2" * 64,
+        "inherited_qkvo_state_sha256_before": inherited_sha,
+        "inherited_qkvo_state_sha256_after": inherited_sha,
+        "diagnostic_passed_roles": list(roles),
+        "authorized_roles": list(roles),
+        "installable_roles": list(roles),
+        "per_role": {role: {"passed": True} for role in roles},
+        "installer_must_ignore_unauthorized_role_tensors": True,
+        "all_four_role_tensors_retained_for_diagnostics": True,
+        "basis_manifest": manifest,
+        "basis_manifest_sha256": manifest_sha,
+    }
+    audit_sha = guided_qkvo._canonical_sha256(audit)
+    audit["report_sha256"] = audit_sha
+    pack = {
+        "schema": GUIDED_QKVO_RIGHT_BASIS_V2_SCHEMA,
+        "factor_state_sha256": "2" * 64,
+        "site_indices": site_indices,
+        "site_indices_sha256": site_sha,
+        "basis_manifest_sha256": manifest_sha,
+        "tensor_count": 4,
+        "total_numel": sum(value.numel() for value in factor_tensors.values()),
+        "total_nbytes": sum(
+            value.numel() * value.element_size() for value in factor_tensors.values()
+        ),
+        "factors": manifest,
+        "factor_tensors": factor_tensors,
+        "diagnostic_passed_roles": list(roles),
+        "authorized_roles": list(roles),
+        "installable_roles": list(roles),
+        "authorized_for_training": True,
+        "installer_must_ignore_unauthorized_role_tensors": True,
+        "all_four_role_tensors_retained_for_diagnostics": True,
+        "contains_model_state": False,
+        "contains_parent_state": False,
+        "contains_optimizer_state": False,
+        "contains_gradients": False,
+        "contains_activations": False,
+        "contains_hidden_states": False,
+    }
+    return install_guided_dense_gqa_qkvo_residual_tranche(
+        transaction.qkvo_handle,
+        audit_report=audit,
+        basis_pack=pack,
+        expected_audit_report_sha256=audit_sha,
+        expected_basis_envelope_file_sha256="a" * 64,
+        expected_basis_payload_sha256=guided_qkvo_basis_payload_sha256(pack),
+        expected_basis_manifest_sha256=manifest_sha,
+    )
+
+
+def _install_real_guided_gud(transaction):
+    generator = torch.Generator(device="cpu")
+    generator.manual_seed(947)
+    rows = {
+        "gate": torch.randn(2, 2, 8, generator=generator),
+        "up": torch.randn(2, 2, 8, generator=generator),
+        "down": torch.randn(2, 2, 12, generator=generator),
+    }
+    hashes = {role: guided_gud._tensor_sha256(value) for role, value in rows.items()}
+    return install_guided_dense_swiglu_projection_residual_tranche(
+        transaction.swiglu_handle,
+        guided_right_rows=rows,
+        source_basis_tensor_sha256s=hashes,
+        expected_audit_report_sha256="1" * 64,
+        expected_basis_envelope_file_sha256="2" * 64,
+        expected_basis_payload_sha256="3" * 64,
+        expected_basis_manifest_sha256="4" * 64,
+    )
+
+
 class _TinyGuidedRegistry(nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -314,6 +488,88 @@ class _TinyGuidedTranche:
         inherited = tuple(
             self.inherited_handle.adapter_registry.parameters(recurse=False)
         )
+        guided = tuple(self.guided_registry.parameters(recurse=False))
+        if self.training_stage == "guided-left":
+            return tuple(
+                value
+                for name, value in self.guided_registry.named_parameters(recurse=False)
+                if name.endswith("_left")
+            )
+        if self.training_stage == "guided":
+            return guided
+        return (*inherited, *guided)
+
+
+class _TinyGuidedGUDRegistry(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        for role_index, role in enumerate(("gate", "up", "down"), start=1):
+            setattr(
+                self,
+                f"{role}_left",
+                nn.Parameter(torch.zeros(3, dtype=torch.float32)),
+            )
+            setattr(
+                self,
+                f"{role}_right",
+                nn.Parameter(
+                    torch.tensor([0.09375, -0.046875, 0.0234375]) * role_index
+                ),
+            )
+
+
+class _TinyGuidedGUDTranche:
+    def __init__(self, transaction, registry: _TinyGuidedGUDRegistry) -> None:
+        self.inherited_handle = transaction.swiglu_handle
+        self.guided_registry = registry
+        self.training_stage = "guided-left"
+        self._stages = ("guided-left", "guided", "joint")
+        self._source_binding = MappingProxyType(
+            {
+                "audit_report_sha256": "a" * 64,
+                "basis_envelope_file_sha256": "b" * 64,
+                "basis_payload_sha256": "c" * 64,
+                "basis_manifest_sha256": "d" * 64,
+                "source_basis_tensor_sha256s": MappingProxyType(
+                    {
+                        role: behavior_distillation._guided_gud_basis_tensor_sha256(
+                            getattr(registry, f"{role}_right")
+                        )
+                        for role in ("gate", "up", "down")
+                    }
+                ),
+                "inherited_installation_sha256": "e" * 64,
+                "inherited_factor_state_sha256_at_install": "f" * 64,
+                "inherited_handle_identity": id(transaction.swiglu_handle),
+                "inherited_registry_identity": id(transaction.swiglu_handle.registry),
+                "adapter_site_indices_sha256": "a" * 64,
+                "audit_site_indices_sha256": "b" * 64,
+            }
+        )
+
+    def assert_live(self):
+        return None
+
+    def assert_structurally_live(self):
+        return None
+
+    def factor_source_binding(self):
+        return self._source_binding
+
+    def set_training_stage(self, stage):
+        if self._stages.index(stage) < self._stages.index(self.training_stage):
+            raise RuntimeError("guided-GUD training stages cannot move backward")
+        self.training_stage = stage
+        inherited_trainable = stage == "joint"
+        for value in self.inherited_handle.registry.parameters(recurse=False):
+            value.requires_grad_(inherited_trainable)
+        right_trainable = stage in {"guided", "joint"}
+        for name, value in self.guided_registry.named_parameters(recurse=False):
+            value.requires_grad_(name.endswith("_left") or right_trainable)
+        return self.output_trainable_parameters()
+
+    def output_trainable_parameters(self):
+        inherited = tuple(self.inherited_handle.registry.parameters(recurse=False))
         guided = tuple(self.guided_registry.parameters(recurse=False))
         if self.training_stage == "guided-left":
             return tuple(
@@ -417,6 +673,127 @@ def _tiny_guided_v3_case(monkeypatch: pytest.MonkeyPatch):
         schedule,
         zero_state,
         recovered_state,
+    )
+
+
+def _tiny_guided_v4_case(monkeypatch: pytest.MonkeyPatch):
+    values = _tiny_guided_v3_case(monkeypatch)
+    (
+        child,
+        parent,
+        transaction,
+        guided_tranche,
+        qkvo_hook,
+        domains,
+        schedule,
+        zero_v3_state,
+        recovered_v3_state,
+    ) = values
+    monkeypatch.setattr(behavior_distillation, "GUIDED_CONTINUATION_STEPS", 3)
+    monkeypatch.setattr(behavior_distillation, "GUIDED_LEFT_ONLY_END_STEP", 1)
+    monkeypatch.setattr(behavior_distillation, "GUIDED_ONLY_END_STEP", 2)
+    monkeypatch.setattr(behavior_distillation, "GUIDED_JOINT_START_STEP", 3)
+    gud_registry = _TinyGuidedGUDRegistry()
+    child.add_module("_tiny_guided_gud_registry", gud_registry)
+    gud_tranche = _TinyGuidedGUDTranche(transaction, gud_registry)
+
+    def add_guided_gud_product(_module, _inputs, output):
+        correction = sum(
+            (
+                getattr(gud_registry, f"{role}_left")
+                * getattr(gud_registry, f"{role}_right")
+            ).sum()
+            for role in ("gate", "up", "down")
+        )
+        channel = torch.linspace(
+            1.0,
+            -1.0,
+            output.shape[-1],
+            device=output.device,
+            dtype=output.dtype,
+        )
+        return output + correction.to(dtype=output.dtype) * channel
+
+    gud_hook = child.register_forward_hook(add_guided_gud_product)
+    return (
+        child,
+        parent,
+        transaction,
+        guided_tranche,
+        gud_tranche,
+        qkvo_hook,
+        gud_hook,
+        domains,
+        replace(schedule, steps=3, checkpoint_steps=(1, 2)),
+        zero_v3_state,
+        recovered_v3_state,
+    )
+
+
+def _real_guided_v4_case(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(behavior_distillation, "GUIDED_CONTINUATION_STEPS", 3)
+    monkeypatch.setattr(behavior_distillation, "GUIDED_LEFT_ONLY_END_STEP", 1)
+    monkeypatch.setattr(behavior_distillation, "GUIDED_ONLY_END_STEP", 2)
+    monkeypatch.setattr(behavior_distillation, "GUIDED_JOINT_START_STEP", 3)
+    torch.manual_seed(1051)
+    child = _StrictToyTarget()
+    parent = copy.deepcopy(child)
+    with torch.no_grad():
+        parent.lm_head.weight.copy_(torch.roll(parent.lm_head.weight, 2, dims=0))
+    transaction = _real_guided_v4_transaction(child)
+    source_v2 = capture_target_native_factor_state(transaction)
+    qkvo_tranche = _install_real_guided_qkvo(transaction, monkeypatch)
+    qkvo_binding = behavior_distillation.authenticate_guided_factor_sources(
+        transaction,
+        qkvo_tranche,
+        source_v2,
+    )
+    qkvo_tranche.set_training_stage("joint")
+    entries = behavior_distillation._factor_parameters(
+        transaction,
+        guided_tranche=qkvo_tranche,
+    )
+    with torch.no_grad():
+        for index, (_name, value) in enumerate(entries, start=1):
+            value.add_(torch.full_like(value, index * 1e-5))
+    recovered_v3 = capture_target_native_factor_state(
+        transaction,
+        guided_tranche=qkvo_tranche,
+        guided_source_binding=qkvo_binding,
+    )
+    payload = recovered_v3.as_payload()
+    restored = restore_target_native_factor_payload(
+        transaction,
+        payload,
+        guided_tranche=qkvo_tranche,
+        expected_guided_source_binding=qkvo_binding,
+    )
+    assert restored.factor_state_sha256 == recovered_v3.factor_state_sha256
+    gud_tranche = _install_real_guided_gud(transaction)
+    domains = {
+        "fit": _domain("fit", [[1, 2, 3]], "a" * 64),
+        "calibration": _domain("calibration", [[4, 5, 6]], "b" * 64),
+        "sealed": _domain("sealed", [[7, 8, 9]], "c" * 64),
+    }
+    schedule = BehaviorDistillationSchedule(
+        steps=3,
+        learning_rate=0.01,
+        checkpoint_steps=(1, 2),
+        fit_horizon=1,
+        evaluation_horizon=1,
+        top_k=2,
+        guided_continuation_enabled=True,
+    )
+    return (
+        child,
+        parent,
+        transaction,
+        qkvo_tranche,
+        gud_tranche,
+        domains,
+        schedule,
+        payload,
+        recovered_v3,
     )
 
 
@@ -762,6 +1139,51 @@ def test_guided_schedule_has_exact_three_phase_trainability_counts() -> None:
     ) == pytest.approx(2.5e-4)
 
 
+def test_guided_gud_v4_schedule_has_exact_3_6_22_authorized_tensors() -> None:
+    schedule = BehaviorDistillationSchedule(
+        steps=64,
+        learning_rate=4e-4,
+        guided_continuation_enabled=True,
+    )
+    names = tuple(
+        sorted(
+            behavior_distillation._QKVO_GUD_FACTOR_NAMES
+            | behavior_distillation._LEXICAL_FACTOR_NAMES
+            | behavior_distillation._GUIDED_QKVO_FACTOR_NAMES
+            | behavior_distillation._GUIDED_GUD_FACTOR_NAMES
+        )
+    )
+    entries = tuple((name, nn.Parameter(torch.zeros(()))) for name in names)
+    authorized = {
+        step: behavior_distillation._authorized_factor_names(
+            entries,
+            schedule,
+            step=step,
+            guided_continuation=True,
+            guided_gud_continuation=True,
+        )
+        for step in (1, 8, 9, 24, 25, 64)
+    }
+    assert len(entries) == behavior_distillation.GUIDED_GUD_COMBINED_FACTOR_TENSOR_COUNT
+    assert [len(authorized[step]) for step in (1, 8)] == [3, 3]
+    assert [len(authorized[step]) for step in (9, 24)] == [6, 6]
+    assert [len(authorized[step]) for step in (25, 64)] == [22, 22]
+    assert all(
+        name.startswith("guided_gud.") and name.endswith("_left")
+        for name in authorized[1]
+    )
+    assert set(authorized[25]) == (
+        behavior_distillation._GUIDED_GUD_FACTOR_NAMES
+        | behavior_distillation._GUIDED_QKVO_FACTOR_NAMES
+        | {
+            name
+            for name in behavior_distillation._QKVO_GUD_FACTOR_NAMES
+            if name.startswith("qkvo.")
+        }
+    )
+    assert not any(name.startswith(("gud.", "lexical.")) for name in authorized[64])
+
+
 def test_guided_method_gate_requires_one_contiguous_lcp4_and_repeat_safety() -> None:
     baseline = _selection_metrics(
         exact_rollouts=0,
@@ -954,6 +1376,160 @@ def test_v3_pack_authenticates_26_tensors_and_rejects_source_tamper() -> None:
             schema=behavior_distillation.BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
             lexical_rank=3,
             expected_guided_source_binding=binding,
+        )
+
+
+def test_v4_pack_authenticates_32_tensors_durable_bytes_and_nested_sources() -> None:
+    v3_names = tuple(
+        sorted(
+            behavior_distillation._QKVO_GUD_FACTOR_NAMES
+            | behavior_distillation._LEXICAL_FACTOR_NAMES
+            | behavior_distillation._GUIDED_QKVO_FACTOR_NAMES
+        )
+    )
+    names = tuple(sorted((*v3_names, *behavior_distillation._GUIDED_GUD_FACTOR_NAMES)))
+    entries = tuple(
+        (
+            name,
+            nn.Parameter(torch.full((2,), (index + 1) / 32, dtype=torch.float32)),
+        )
+        for index, name in enumerate(names)
+    )
+    entry_by_name = dict(entries)
+    qkvo_binding = behavior_distillation.GuidedFactorSourceBinding(
+        source_v2_factor_state_sha256="1" * 64,
+        source_v2_tensor_sha256s=tuple(
+            (name, behavior_distillation._tensor_sha256(entry_by_name[name]))
+            for name in sorted(
+                behavior_distillation._QKVO_GUD_FACTOR_NAMES
+                | behavior_distillation._LEXICAL_FACTOR_NAMES
+            )
+        ),
+        audit_report_sha256="2" * 64,
+        basis_envelope_file_sha256="3" * 64,
+        basis_payload_sha256="4" * 64,
+        basis_manifest_sha256="5" * 64,
+        source_basis_tensor_sha256s=tuple(
+            (
+                role,
+                behavior_distillation._tensor_sha256(
+                    entry_by_name[f"guided_qkvo.{role}_right"]
+                ),
+            )
+            for role in ("q", "k", "v", "o")
+        ),
+        inherited_installation_sha256="6" * 64,
+        inherited_factor_state_sha256_at_install="7" * 64,
+        adapter_site_indices_sha256="8" * 64,
+        audit_site_indices_sha256="9" * 64,
+    )
+    v3_tensors = tuple(entry_by_name[name].detach().clone() for name in v3_names)
+    v3_hashes = tuple(
+        behavior_distillation._tensor_sha256(value) for value in v3_tensors
+    )
+    v3_rows = behavior_distillation._factor_manifest_rows(
+        v3_names, v3_tensors, v3_hashes
+    )
+    v3_sha = behavior_distillation._factor_state_sha256(
+        v3_rows,
+        schema=behavior_distillation.BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+        lexical_rank=3,
+        guided_source_binding=qkvo_binding,
+    )
+    gud_binding = behavior_distillation.GuidedGUDFactorSourceBinding(
+        source_v3_factor_state_sha256=v3_sha,
+        source_v3_factor_manifest_sha256=behavior_distillation._canonical_sha256(
+            v3_rows
+        ),
+        source_v3_tensor_sha256s=tuple(zip(v3_names, v3_hashes, strict=True)),
+        source_v3_lexical_rank=3,
+        source_guided_qkvo_binding=qkvo_binding,
+        audit_report_sha256="a" * 64,
+        basis_envelope_file_sha256="b" * 64,
+        basis_payload_sha256="c" * 64,
+        basis_manifest_sha256="d" * 64,
+        source_basis_tensor_sha256s=tuple(
+            (
+                role,
+                behavior_distillation._guided_gud_basis_tensor_sha256(
+                    entry_by_name[f"guided_gud.{role}_right"]
+                ),
+            )
+            for role in ("gate", "up", "down")
+        ),
+        inherited_installation_sha256="e" * 64,
+        inherited_factor_state_sha256_at_install="f" * 64,
+        adapter_site_indices_sha256="a" * 64,
+        audit_site_indices_sha256="b" * 64,
+    )
+    tensors = tuple(value.detach().clone() for _name, value in entries)
+    hashes = tuple(behavior_distillation._tensor_sha256(value) for value in tensors)
+    rows = behavior_distillation._factor_manifest_rows(names, tensors, hashes)
+    state = behavior_distillation.TargetNativeFactorState(
+        names=names,
+        tensors=tensors,
+        tensor_sha256s=hashes,
+        factor_state_sha256=behavior_distillation._factor_state_sha256(
+            rows,
+            schema=behavior_distillation.BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
+            lexical_rank=3,
+            guided_source_binding=qkvo_binding,
+            guided_gud_source_binding=gud_binding,
+        ),
+        parameter_ids=tuple(id(value) for _name, value in entries),
+        parameter_data_ptrs=tuple(int(value.data_ptr()) for _name, value in entries),
+        schema=behavior_distillation.BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
+        lexical_rank=3,
+        guided_source_binding=qkvo_binding,
+        guided_gud_source_binding=gud_binding,
+    )
+    payload = state.as_payload()
+    assert payload["factor_count"] == 32
+    assert payload["guided_gud_product_regrouped"] is False
+    authenticated = behavior_distillation._authenticate_factor_payload_state(
+        payload,
+        entries,
+        schema=behavior_distillation.BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
+        lexical_rank=3,
+        expected_guided_source_binding=qkvo_binding,
+        expected_guided_gud_source_binding=gud_binding,
+    )
+    assert authenticated.factor_state_sha256 == state.factor_state_sha256
+    durable = behavior_distillation._durable_behavior_checkpoint(
+        step=9,
+        metrics=_selection_metrics(
+            exact_rollouts=0,
+            action_agreements=2,
+            token_matches=3,
+            lcp_tokens=2,
+            mean_logprob=-4.0,
+        ),
+        state=state,
+        pareto_safe_vs_step0=True,
+    )
+    assert durable.factor_state.schema == (
+        behavior_distillation.BEHAVIOR_FACTOR_PACK_V4_SCHEMA
+    )
+    assert len(durable.factor_state.tensors) == 32
+    assert durable.factor_state.as_factor_payload()["factor_state_sha256"] == (
+        state.factor_state_sha256
+    )
+
+    tampered = copy.deepcopy(payload)
+    nested = dict(tampered["guided_gud_source_binding"])
+    nested["source_v3_content_sha256"] = "0" * 64
+    tampered["guided_gud_source_binding"] = nested
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="source binding",
+    ):
+        behavior_distillation._authenticate_factor_payload_state(
+            tampered,
+            entries,
+            schema=behavior_distillation.BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
+            lexical_rank=3,
+            expected_guided_source_binding=qkvo_binding,
+            expected_guided_gud_source_binding=gud_binding,
         )
 
 
@@ -1166,6 +1742,307 @@ def test_guided_v3_training_failure_restores_exact_recovered_step_zero(
     hook.remove()
     delattr(child, "_tiny_guided_registry")
     transaction.rollback()
+
+
+def test_guided_gud_v4_trains_3_6_22_and_emits_full_durable_states(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        child,
+        parent,
+        transaction,
+        guided_tranche,
+        gud_tranche,
+        qkvo_hook,
+        gud_hook,
+        domains,
+        schedule,
+        _zero_v3_state,
+        recovered_v3_state,
+    ) = _tiny_guided_v4_case(monkeypatch)
+    events = []
+    result = train_target_native_behavior_distillation(
+        transaction,
+        parent,
+        domains,
+        schedule,
+        initial_factor_payload=recovered_v3_state.as_payload(),
+        guided_tranche=guided_tranche,
+        guided_gud_tranche=gud_tranche,
+        durable_checkpoint_callback=events.append,
+    )
+    assert result.initial_factor_payload_schema == (
+        behavior_distillation.BEHAVIOR_FACTOR_PACK_V3_SCHEMA
+    )
+    assert result.initial_factor_restore_mode == "guided-v3-to-v4"
+    assert result.factor_pack.schema == (
+        behavior_distillation.BEHAVIOR_FACTOR_PACK_V4_SCHEMA
+    )
+    assert result.factor_pack.as_manifest()["factor_count"] == 32
+    assert [event.step for event in events] == [0, 1, 2, 3]
+    assert all(
+        event.factor_state.schema
+        == behavior_distillation.BEHAVIOR_FACTOR_PACK_V4_SCHEMA
+        and len(event.factor_state.tensors) == 32
+        for event in events
+    )
+    stage_counts = [
+        len(names)
+        for _stage, names in result.training_audit.gradient_activation.stage_authorized_factor_names
+    ]
+    assert stage_counts == [3, 6, 22]
+    assert len(result.training_audit.gradient_activation.authorized_factor_names) == 22
+    binding = result.guided_gud_source_binding
+    assert isinstance(binding, behavior_distillation.GuidedGUDFactorSourceBinding)
+    step1 = {
+        value.name: value.materialize_tensor()
+        for value in events[1].factor_state.tensors
+    }
+    assert all(
+        behavior_distillation._guided_gud_basis_tensor_sha256(
+            step1[f"guided_gud.{role}_right"]
+        )
+        == digest
+        for role, digest in binding.source_basis_tensor_sha256s
+    )
+    step2_hashes = {
+        value.name: value.tensor_sha256 for value in events[2].factor_state.tensors
+    }
+    assert all(
+        step2_hashes[name] == digest
+        for name, digest in binding.source_v3_tensor_sha256s
+    )
+    assert result.evidence_payload()["guided_gud_schedule"][
+        "authorized_tensor_counts"
+    ] == [3, 6, 22]
+
+    qkvo_hook.remove()
+    gud_hook.remove()
+    delattr(child, "_tiny_guided_gud_registry")
+    delattr(child, "_tiny_guided_registry")
+    transaction.rollback()
+
+
+def test_guided_gud_v4_failure_rolls_back_exact_32_factor_step_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        child,
+        parent,
+        transaction,
+        guided_tranche,
+        gud_tranche,
+        qkvo_hook,
+        gud_hook,
+        domains,
+        schedule,
+        _zero_v3_state,
+        recovered_v3_state,
+    ) = _tiny_guided_v4_case(monkeypatch)
+    events = []
+
+    def fail_after_step(step: int) -> None:
+        if step == 2:
+            raise RuntimeError("stop v4 after step 2")
+
+    with pytest.raises(RuntimeError, match="stop v4 after step 2"):
+        train_target_native_behavior_distillation(
+            transaction,
+            parent,
+            domains,
+            schedule,
+            initial_factor_payload=recovered_v3_state.as_payload(),
+            guided_tranche=guided_tranche,
+            guided_gud_tranche=gud_tranche,
+            durable_checkpoint_callback=events.append,
+            post_optimizer_step_callback=fail_after_step,
+        )
+    assert [event.step for event in events] == [0, 1]
+    step0 = events[0].factor_state
+    restored = capture_target_native_factor_state(
+        transaction,
+        guided_tranche=guided_tranche,
+        guided_source_binding=step0.guided_source_binding,
+        guided_gud_tranche=gud_tranche,
+        guided_gud_source_binding=step0.guided_gud_source_binding,
+    )
+    assert restored.factor_state_sha256 == step0.factor_state_sha256
+
+    qkvo_hook.remove()
+    gud_hook.remove()
+    delattr(child, "_tiny_guided_gud_registry")
+    delattr(child, "_tiny_guided_registry")
+    transaction.rollback()
+
+
+def test_real_guided_adapters_accept_prerestored_v3_handoff_and_train_v4(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        child,
+        parent,
+        transaction,
+        qkvo_tranche,
+        gud_tranche,
+        domains,
+        schedule,
+        payload,
+        recovered_v3,
+    ) = _real_guided_v4_case(monkeypatch)
+    pretrain_v3_hashes = {
+        name: behavior_distillation._tensor_sha256(value)
+        for name, value in behavior_distillation._factor_parameters(
+            transaction,
+            guided_tranche=qkvo_tranche,
+        )
+    }
+    events = []
+    result = train_target_native_behavior_distillation(
+        transaction,
+        parent,
+        domains,
+        schedule,
+        initial_factor_payload=payload,
+        guided_tranche=qkvo_tranche,
+        guided_gud_tranche=gud_tranche,
+        durable_checkpoint_callback=events.append,
+    )
+    assert result.initial_factor_state_sha256 == recovered_v3.factor_state_sha256
+    assert result.initial_factor_restore_mode == "guided-v3-to-v4"
+    assert result.combined_step0_factor_state_sha256 == (
+        events[0].factor_state.factor_state_sha256
+    )
+    assert dict(result.guided_gud_source_binding.source_v3_tensor_sha256s) == (
+        pretrain_v3_hashes
+    )
+    assert [
+        len(names)
+        for _stage, names in result.training_audit.gradient_activation.stage_authorized_factor_names
+    ] == [3, 6, 22]
+    assert [event.step for event in events] == [0, 1, 2, 3]
+    assert all(
+        event.factor_state.schema
+        == behavior_distillation.BEHAVIOR_FACTOR_PACK_V4_SCHEMA
+        and len(event.factor_state.tensors) == 32
+        for event in events
+    )
+
+    gud_tranche.rollback_guided_only()
+    qkvo_tranche.rollback_guided_only()
+    transaction.rollback()
+    assert exact_unique_parameter_count(child) == exact_unique_parameter_count(parent)
+
+
+def test_real_guided_prerestored_v4_failure_restores_step_zero_and_rolls_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        child,
+        parent,
+        transaction,
+        qkvo_tranche,
+        gud_tranche,
+        domains,
+        schedule,
+        payload,
+        _recovered_v3,
+    ) = _real_guided_v4_case(monkeypatch)
+    events = []
+
+    def fail_after_joint_step(step: int) -> None:
+        if step == 3:
+            raise RuntimeError("stop real v4 after joint step")
+
+    with pytest.raises(RuntimeError, match="stop real v4 after joint step"):
+        train_target_native_behavior_distillation(
+            transaction,
+            parent,
+            domains,
+            schedule,
+            initial_factor_payload=payload,
+            guided_tranche=qkvo_tranche,
+            guided_gud_tranche=gud_tranche,
+            durable_checkpoint_callback=events.append,
+            post_optimizer_step_callback=fail_after_joint_step,
+        )
+    assert [event.step for event in events] == [0, 1, 2]
+    step0 = events[0].factor_state
+    restored = capture_target_native_factor_state(
+        transaction,
+        guided_tranche=qkvo_tranche,
+        guided_source_binding=step0.guided_source_binding,
+        guided_gud_tranche=gud_tranche,
+        guided_gud_source_binding=step0.guided_gud_source_binding,
+    )
+    assert restored.factor_state_sha256 == step0.factor_state_sha256
+
+    gud_tranche.rollback_guided_only()
+    qkvo_tranche.rollback_guided_only()
+    transaction.rollback()
+    assert exact_unique_parameter_count(child) == exact_unique_parameter_count(parent)
+
+
+def test_real_guided_prerestored_mismatch_fails_before_any_factor_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        child,
+        parent,
+        transaction,
+        qkvo_tranche,
+        gud_tranche,
+        domains,
+        schedule,
+        payload,
+        _recovered_v3,
+    ) = _real_guided_v4_case(monkeypatch)
+    before = {
+        name: behavior_distillation._tensor_sha256(value)
+        for name, value in behavior_distillation._factor_parameters(
+            transaction,
+            guided_tranche=qkvo_tranche,
+            guided_gud_tranche=gud_tranche,
+        )
+    }
+    tampered = copy.deepcopy(payload)
+    first_name = tampered["factors"][0]["name"]
+    tampered["factor_tensors"][first_name].reshape(-1)[0] += 1.0
+    optimizer_calls = 0
+
+    def optimizer_factory(parameters):
+        nonlocal optimizer_calls
+        optimizer_calls += 1
+        return torch.optim.AdamW(parameters, lr=schedule.learning_rate)
+
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="shape/dtype/hash authentication",
+    ):
+        train_target_native_behavior_distillation(
+            transaction,
+            parent,
+            domains,
+            schedule,
+            initial_factor_payload=tampered,
+            guided_tranche=qkvo_tranche,
+            guided_gud_tranche=gud_tranche,
+            optimizer_factory=optimizer_factory,
+        )
+    after = {
+        name: behavior_distillation._tensor_sha256(value)
+        for name, value in behavior_distillation._factor_parameters(
+            transaction,
+            guided_tranche=qkvo_tranche,
+            guided_gud_tranche=gud_tranche,
+        )
+    }
+    assert optimizer_calls == 0
+    assert after == before
+
+    gud_tranche.rollback_guided_only()
+    qkvo_tranche.rollback_guided_only()
+    transaction.rollback()
+    assert exact_unique_parameter_count(child) == exact_unique_parameter_count(parent)
 
 
 def test_v2_toy_factor_pack_hash_and_restore_evidence_remain_legacy_exact() -> None:

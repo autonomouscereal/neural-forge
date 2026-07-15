@@ -54,12 +54,15 @@ BEHAVIOR_DOMAIN_SCHEMA = "neural-forge-behavior-domain-v1"
 BEHAVIOR_FACTOR_PACK_SCHEMA = "neural-forge-target-native-factor-pack-v1"
 BEHAVIOR_FACTOR_PACK_V2_SCHEMA = "neural-forge-target-native-factor-pack-v2"
 BEHAVIOR_FACTOR_PACK_V3_SCHEMA = "neural-forge-target-native-factor-pack-v3"
+BEHAVIOR_FACTOR_PACK_V4_SCHEMA = "neural-forge-target-native-factor-pack-v4"
 BEHAVIOR_CHECKPOINT_SCHEMA = "neural-forge-behavior-checkpoint-v1"
 DURABLE_BEHAVIOR_CHECKPOINT_SCHEMA = "neural-forge-durable-behavior-checkpoint-v1"
 
 GUIDED_QKVO_PARAMETER_COUNT = 7_127_040
 GUIDED_QKVO_FACTOR_TENSOR_COUNT = 8
 GUIDED_COMBINED_FACTOR_TENSOR_COUNT = 26
+GUIDED_GUD_FACTOR_TENSOR_COUNT = 6
+GUIDED_GUD_COMBINED_FACTOR_TENSOR_COUNT = 32
 GUIDED_LEFT_ONLY_END_STEP = 8
 GUIDED_ONLY_END_STEP = 24
 GUIDED_JOINT_START_STEP = 25
@@ -87,6 +90,11 @@ _LEXICAL_FACTOR_NAMES = frozenset(
 _GUIDED_QKVO_FACTOR_NAMES = frozenset(
     f"guided_qkvo.{role}_{side}"
     for role in ("q", "k", "v", "o")
+    for side in ("left", "right")
+)
+_GUIDED_GUD_FACTOR_NAMES = frozenset(
+    f"guided_gud.{role}_{side}"
+    for role in ("gate", "up", "down")
     for side in ("left", "right")
 )
 BehaviorEvaluationSplit = Literal[
@@ -262,6 +270,24 @@ def _output_jacobian_tensor_sha256(value: Tensor) -> str:
         staged = flat[start : start + elements_per_chunk].to(device="cpu").contiguous()
         digest.update(memoryview(staged.view(torch.uint8).numpy()))
     return digest.hexdigest()
+
+
+def _guided_gud_basis_tensor_sha256(value: Tensor) -> str:
+    """Hash a GUD right basis in the SwiGLU installer's provenance domain."""
+
+    if not isinstance(value, Tensor):
+        raise TargetNativeBehaviorDistillationError(
+            "Guided-GUD basis hashing requires a tensor."
+        )
+    contiguous = value.detach().cpu().contiguous()
+    header = json.dumps(
+        {"dtype": str(contiguous.dtype), "shape": list(contiguous.shape)},
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("ascii")
+    return hashlib.sha256(
+        header + b"\0" + contiguous.view(torch.uint8).numpy().tobytes()
+    ).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -950,6 +976,187 @@ class GuidedFactorSourceBinding:
         }
 
 
+def _portable_guided_factor_source_binding(
+    binding: GuidedFactorSourceBinding,
+) -> dict[str, Any]:
+    """Return the content-bearing v3 source fields used by nested v4 identity."""
+
+    if not isinstance(binding, GuidedFactorSourceBinding):
+        raise TargetNativeBehaviorDistillationError(
+            "Portable guided source identity requires an authenticated binding."
+        )
+    payload = binding.as_dict()
+    payload.pop("inherited_installation_sha256")
+    return payload
+
+
+@dataclass(frozen=True, slots=True)
+class GuidedGUDFactorSourceBinding:
+    """Immutable v3 + output-Jacobian GUD provenance for one v4 continuation.
+
+    The legacy v3 digest and nested QKVO binding retain their live-installation
+    receipts for exact rollback.  ``source_v3_content_sha256`` separately binds
+    the same source tensor manifest and the portable QKVO provenance so recovery
+    can prove identical content across processes without treating object/storage
+    identity as model content.
+    """
+
+    source_v3_factor_state_sha256: str
+    source_v3_factor_manifest_sha256: str
+    source_v3_tensor_sha256s: tuple[tuple[str, str], ...]
+    source_v3_lexical_rank: int
+    source_guided_qkvo_binding: GuidedFactorSourceBinding
+    audit_report_sha256: str
+    basis_envelope_file_sha256: str
+    basis_payload_sha256: str
+    basis_manifest_sha256: str
+    source_basis_tensor_sha256s: tuple[tuple[str, str], ...]
+    inherited_installation_sha256: str
+    inherited_factor_state_sha256_at_install: str
+    adapter_site_indices_sha256: str
+    audit_site_indices_sha256: str
+    source_v3_content_sha256: str = field(init=False)
+    binding_sha256: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        for name in (
+            "source_v3_factor_state_sha256",
+            "source_v3_factor_manifest_sha256",
+            "audit_report_sha256",
+            "basis_envelope_file_sha256",
+            "basis_payload_sha256",
+            "basis_manifest_sha256",
+            "inherited_installation_sha256",
+            "inherited_factor_state_sha256_at_install",
+            "adapter_site_indices_sha256",
+            "audit_site_indices_sha256",
+        ):
+            object.__setattr__(self, name, _sha256(getattr(self, name), name))
+        lexical_rank = _index(
+            self.source_v3_lexical_rank,
+            "source_v3_lexical_rank",
+            positive=True,
+        )
+        object.__setattr__(self, "source_v3_lexical_rank", lexical_rank)
+        if not isinstance(self.source_guided_qkvo_binding, GuidedFactorSourceBinding):
+            raise TargetNativeBehaviorDistillationError(
+                "A guided-GUD source requires the authenticated source QKVO binding."
+            )
+        source_hashes = GuidedFactorSourceBinding._normalize_hash_rows(
+            self.source_v3_tensor_sha256s,
+            "source_v3_tensor_sha256s",
+            expected_names=(
+                _QKVO_GUD_FACTOR_NAMES
+                | _LEXICAL_FACTOR_NAMES
+                | _GUIDED_QKVO_FACTOR_NAMES
+            ),
+        )
+        basis_hashes = GuidedFactorSourceBinding._normalize_hash_rows(
+            self.source_basis_tensor_sha256s,
+            "source_basis_tensor_sha256s",
+            expected_names={"gate", "up", "down"},
+        )
+        object.__setattr__(self, "source_v3_tensor_sha256s", source_hashes)
+        object.__setattr__(self, "source_basis_tensor_sha256s", basis_hashes)
+        content_sha = _canonical_sha256(
+            {
+                "schema": "neural-forge-guided-gud-source-content-v1",
+                "source_v3_factor_manifest_sha256": (
+                    self.source_v3_factor_manifest_sha256
+                ),
+                "source_v3_tensor_sha256s": dict(source_hashes),
+                "source_v3_lexical_rank": lexical_rank,
+                "portable_source_guided_qkvo_binding": (
+                    _portable_guided_factor_source_binding(
+                        self.source_guided_qkvo_binding
+                    )
+                ),
+            }
+        )
+        object.__setattr__(self, "source_v3_content_sha256", content_sha)
+        object.__setattr__(self, "binding_sha256", _canonical_sha256(self.as_dict()))
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "source_v3_factor_state_sha256": self.source_v3_factor_state_sha256,
+            "source_v3_factor_manifest_sha256": (self.source_v3_factor_manifest_sha256),
+            "source_v3_tensor_sha256s": dict(self.source_v3_tensor_sha256s),
+            "source_v3_lexical_rank": self.source_v3_lexical_rank,
+            "source_guided_qkvo_binding": self.source_guided_qkvo_binding.as_dict(),
+            "source_guided_qkvo_binding_sha256": (
+                self.source_guided_qkvo_binding.binding_sha256
+            ),
+            "source_v3_content_sha256": self.source_v3_content_sha256,
+            "audit_report_sha256": self.audit_report_sha256,
+            "basis_envelope_file_sha256": self.basis_envelope_file_sha256,
+            "basis_payload_sha256": self.basis_payload_sha256,
+            "basis_manifest_sha256": self.basis_manifest_sha256,
+            "source_basis_tensor_sha256s": dict(self.source_basis_tensor_sha256s),
+            "inherited_installation_sha256": self.inherited_installation_sha256,
+            "inherited_factor_state_sha256_at_install": (
+                self.inherited_factor_state_sha256_at_install
+            ),
+            "adapter_site_indices_sha256": self.adapter_site_indices_sha256,
+            "audit_site_indices_sha256": self.audit_site_indices_sha256,
+        }
+
+
+def _guided_gud_source_binding_from_payload(
+    value: Any,
+) -> GuidedGUDFactorSourceBinding:
+    expected_keys = {
+        "source_v3_factor_state_sha256",
+        "source_v3_factor_manifest_sha256",
+        "source_v3_tensor_sha256s",
+        "source_v3_lexical_rank",
+        "source_guided_qkvo_binding",
+        "source_guided_qkvo_binding_sha256",
+        "source_v3_content_sha256",
+        "audit_report_sha256",
+        "basis_envelope_file_sha256",
+        "basis_payload_sha256",
+        "basis_manifest_sha256",
+        "source_basis_tensor_sha256s",
+        "inherited_installation_sha256",
+        "inherited_factor_state_sha256_at_install",
+        "adapter_site_indices_sha256",
+        "audit_site_indices_sha256",
+    }
+    if not isinstance(value, Mapping) or set(value) != expected_keys:
+        raise TargetNativeBehaviorDistillationError(
+            "Persisted v4 guided-GUD source binding has an unsupported schema."
+        )
+    raw = dict(value)
+    nested_raw = raw.pop("source_guided_qkvo_binding")
+    nested_sha = raw.pop("source_guided_qkvo_binding_sha256")
+    declared_content_sha = raw.pop("source_v3_content_sha256")
+    if not isinstance(nested_raw, Mapping):
+        raise TargetNativeBehaviorDistillationError(
+            "Persisted v4 guided-GUD source has no nested QKVO binding."
+        )
+    try:
+        nested = GuidedFactorSourceBinding(**dict(nested_raw))
+        result = GuidedGUDFactorSourceBinding(
+            source_guided_qkvo_binding=nested,
+            **raw,
+        )
+    except (TypeError, ValueError, RuntimeError) as error:
+        raise TargetNativeBehaviorDistillationError(
+            "Persisted v4 guided-GUD source binding failed authentication."
+        ) from error
+    if (
+        nested_sha != nested.binding_sha256
+        or declared_content_sha != result.source_v3_content_sha256
+        or _canonical_sha256(nested_raw) != nested.binding_sha256
+        or _canonical_sha256(value) != result.binding_sha256
+        or dict(value) != result.as_dict()
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Persisted v4 guided-GUD source binding hash does not authenticate."
+        )
+    return result
+
+
 @dataclass(frozen=True, slots=True)
 class TargetNativeFactorState:
     """A CPU clone of only the temporary target-native factor tensors."""
@@ -963,6 +1170,7 @@ class TargetNativeFactorState:
     schema: str = BEHAVIOR_FACTOR_PACK_SCHEMA
     lexical_rank: int | None = None
     guided_source_binding: GuidedFactorSourceBinding | None = None
+    guided_gud_source_binding: GuidedGUDFactorSourceBinding | None = None
 
     def as_manifest(self) -> dict[str, Any]:
         result = {
@@ -987,11 +1195,15 @@ class TargetNativeFactorState:
         if self.schema in {
             BEHAVIOR_FACTOR_PACK_V2_SCHEMA,
             BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
         }:
             result["lexical_rank"] = _index(
                 self.lexical_rank, "lexical_rank", positive=True
             )
-        if self.schema == BEHAVIOR_FACTOR_PACK_V3_SCHEMA:
+        if self.schema in {
+            BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
+        }:
             if not isinstance(self.guided_source_binding, GuidedFactorSourceBinding):
                 raise TargetNativeBehaviorDistillationError(
                     "A v3 factor state requires authenticated guided sources."
@@ -1002,6 +1214,27 @@ class TargetNativeFactorState:
             )
             result["inherited_product_regrouped"] = False
             result["guided_product_regrouped"] = False
+        if self.schema == BEHAVIOR_FACTOR_PACK_V4_SCHEMA:
+            if not isinstance(
+                self.guided_gud_source_binding, GuidedGUDFactorSourceBinding
+            ):
+                raise TargetNativeBehaviorDistillationError(
+                    "A v4 factor state requires authenticated guided-GUD sources."
+                )
+            if (
+                self.guided_gud_source_binding.source_guided_qkvo_binding
+                != self.guided_source_binding
+            ):
+                raise TargetNativeBehaviorDistillationError(
+                    "A v4 factor state's nested and top-level QKVO bindings differ."
+                )
+            result["guided_gud_source_binding"] = (
+                self.guided_gud_source_binding.as_dict()
+            )
+            result["guided_gud_source_binding_sha256"] = (
+                self.guided_gud_source_binding.binding_sha256
+            )
+            result["guided_gud_product_regrouped"] = False
         return result
 
     def as_payload(self) -> dict[str, Any]:
@@ -1036,6 +1269,7 @@ def _factor_state_sha256(
     schema: str,
     lexical_rank: int | None,
     guided_source_binding: GuidedFactorSourceBinding | None = None,
+    guided_gud_source_binding: GuidedGUDFactorSourceBinding | None = None,
 ) -> str:
     if schema == BEHAVIOR_FACTOR_PACK_SCHEMA:
         return _canonical_sha256(list(rows))
@@ -1061,6 +1295,30 @@ def _factor_state_sha256(
                 "guided_source_binding_sha256": (guided_source_binding.binding_sha256),
                 "inherited_product_regrouped": False,
                 "guided_product_regrouped": False,
+            }
+        )
+    if schema == BEHAVIOR_FACTOR_PACK_V4_SCHEMA:
+        if not isinstance(guided_source_binding, GuidedFactorSourceBinding) or not (
+            isinstance(guided_gud_source_binding, GuidedGUDFactorSourceBinding)
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                "A v4 factor-state hash requires both authenticated guided source "
+                "bindings."
+            )
+        return _canonical_sha256(
+            {
+                "schema": schema,
+                "lexical_rank": _index(lexical_rank, "lexical_rank", positive=True),
+                "factors": list(rows),
+                "guided_source_binding": guided_source_binding.as_dict(),
+                "guided_source_binding_sha256": (guided_source_binding.binding_sha256),
+                "guided_gud_source_binding": guided_gud_source_binding.as_dict(),
+                "guided_gud_source_binding_sha256": (
+                    guided_gud_source_binding.binding_sha256
+                ),
+                "inherited_product_regrouped": False,
+                "guided_product_regrouped": False,
+                "guided_gud_product_regrouped": False,
             }
         )
     raise TargetNativeBehaviorDistillationError(
@@ -1110,8 +1368,16 @@ def _lexical_rank(transaction: ExactTargetCompilerTransaction) -> int | None:
 def _factor_pack_contract(
     transaction: ExactTargetCompilerTransaction,
     guided_tranche: Any | None = None,
+    guided_gud_tranche: Any | None = None,
 ) -> tuple[str, int | None]:
     rank = _lexical_rank(transaction)
+    if guided_gud_tranche is not None:
+        if guided_tranche is None or rank is None:
+            raise TargetNativeBehaviorDistillationError(
+                "A guided-GUD v4 continuation requires the complete v3 QKVO "
+                "continuation and inherited lexical transaction."
+            )
+        return BEHAVIOR_FACTOR_PACK_V4_SCHEMA, rank
     if guided_tranche is not None:
         if rank is None:
             raise TargetNativeBehaviorDistillationError(
@@ -1129,6 +1395,7 @@ def _factor_parameters(
     *,
     require_finite: bool = True,
     guided_tranche: Any | None = None,
+    guided_gud_tranche: Any | None = None,
 ) -> tuple[tuple[str, nn.Parameter], ...]:
     if not isinstance(transaction, ExactTargetCompilerTransaction):
         raise TargetNativeBehaviorDistillationError(
@@ -1179,6 +1446,10 @@ def _factor_parameters(
     if {id(value) for _name, value in entries} != {id(value) for value in trainable}:
         raise TargetNativeBehaviorDistillationError(
             "Named factors disagree with the compiler training scope."
+        )
+    if guided_gud_tranche is not None and guided_tranche is None:
+        raise TargetNativeBehaviorDistillationError(
+            "guided_gud_tranche requires the recovered guided QKVO tranche."
         )
     if guided_tranche is not None:
         assertion_name = "assert_live" if require_finite else "assert_structurally_live"
@@ -1244,6 +1515,76 @@ def _factor_parameters(
             raise TargetNativeBehaviorDistillationError(
                 "The guided continuation must expose exactly 26 factor tensors."
             )
+    if guided_gud_tranche is not None:
+        assertion_name = "assert_live" if require_finite else "assert_structurally_live"
+        assertion = getattr(guided_gud_tranche, assertion_name, None)
+        if not callable(assertion):
+            raise TargetNativeBehaviorDistillationError(
+                "guided_gud_tranche does not expose the required live-state assertion."
+            )
+        assertion()
+        inherited_handle = getattr(guided_gud_tranche, "inherited_handle", None)
+        if inherited_handle is not transaction.swiglu_handle:
+            raise TargetNativeBehaviorDistillationError(
+                "guided_gud_tranche is not bound to this transaction's inherited "
+                "Gate/Up/Down product."
+            )
+        registry = getattr(guided_gud_tranche, "guided_registry", None)
+        if registry is None:
+            registry = getattr(guided_gud_tranche, "registry", None)
+        if not isinstance(registry, nn.Module):
+            raise TargetNativeBehaviorDistillationError(
+                "guided_gud_tranche has no guided factor registry."
+            )
+        guided_gud_entries = tuple(
+            (f"guided_gud.{name}", value)
+            for name, value in registry.named_parameters(recurse=False)
+        )
+        if {name for name, _value in guided_gud_entries} != _GUIDED_GUD_FACTOR_NAMES:
+            raise TargetNativeBehaviorDistillationError(
+                "guided_gud_tranche does not expose exactly six separate "
+                "Gate/Up/Down left/right factors."
+            )
+        if any(
+            not isinstance(value, nn.Parameter) for _name, value in guided_gud_entries
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                "Every guided-GUD factor must be an nn.Parameter."
+            )
+        if {value.dtype for _name, value in guided_gud_entries} != {torch.float32}:
+            raise TargetNativeBehaviorDistillationError(
+                "Every guided-GUD factor must use FP32."
+            )
+        if any(int(value.numel()) <= 0 for _name, value in guided_gud_entries):
+            raise TargetNativeBehaviorDistillationError(
+                "Every guided-GUD factor must be non-empty."
+            )
+        if require_finite and any(
+            not bool(torch.isfinite(value.detach()).all())
+            for _name, value in guided_gud_entries
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                "A guided-GUD factor contains NaN or infinity."
+            )
+        if {id(value) for _name, value in entries} & {
+            id(value) for _name, value in guided_gud_entries
+        }:
+            raise TargetNativeBehaviorDistillationError(
+                "The v3 source and guided-GUD product unexpectedly share parameters."
+            )
+        entries += guided_gud_entries
+        expected_v4_names = (
+            _QKVO_GUD_FACTOR_NAMES
+            | _LEXICAL_FACTOR_NAMES
+            | _GUIDED_QKVO_FACTOR_NAMES
+            | _GUIDED_GUD_FACTOR_NAMES
+        )
+        if {name for name, _value in entries} != expected_v4_names or len(
+            entries
+        ) != GUIDED_GUD_COMBINED_FACTOR_TENSOR_COUNT:
+            raise TargetNativeBehaviorDistillationError(
+                "The guided-GUD continuation must expose exactly 32 factor tensors."
+            )
     return tuple(sorted(entries, key=lambda item: item[0]))
 
 
@@ -1264,6 +1605,7 @@ def _live_factor_bindings(
     transaction: ExactTargetCompilerTransaction,
     *,
     guided_tranche: Any | None,
+    guided_gud_tranche: Any | None = None,
 ) -> tuple[_LiveFactorBinding, ...]:
     """Capture live factor owners without exposing them to the callback event."""
 
@@ -1281,6 +1623,15 @@ def _live_factor_bindings(
                 "guided_tranche has no guided factor registry."
             )
         registries.append(("guided_qkvo", guided_registry))
+    if guided_gud_tranche is not None:
+        guided_gud_registry = getattr(guided_gud_tranche, "guided_registry", None)
+        if guided_gud_registry is None:
+            guided_gud_registry = getattr(guided_gud_tranche, "registry", None)
+        if not isinstance(guided_gud_registry, nn.Module):
+            raise TargetNativeBehaviorDistillationError(
+                "guided_gud_tranche has no guided factor registry."
+            )
+        registries.append(("guided_gud", guided_gud_registry))
 
     owners: dict[str, tuple[nn.Module, str, nn.Parameter]] = {}
     for prefix, registry in registries:
@@ -1292,7 +1643,11 @@ def _live_factor_bindings(
                 )
             owners[qualified_name] = (registry, parameter_name, parameter)
 
-    entries = _factor_parameters(transaction, guided_tranche=guided_tranche)
+    entries = _factor_parameters(
+        transaction,
+        guided_tranche=guided_tranche,
+        guided_gud_tranche=guided_gud_tranche,
+    )
     if set(owners) != {name for name, _parameter in entries}:
         raise TargetNativeBehaviorDistillationError(
             "Live factor ownership does not match the canonical factor set."
@@ -1469,13 +1824,187 @@ def authenticate_guided_factor_sources(
     )
 
 
+def authenticate_guided_gud_factor_sources(
+    transaction: ExactTargetCompilerTransaction,
+    guided_tranche: Any,
+    guided_gud_tranche: Any,
+    source_v3_state: TargetNativeFactorState,
+) -> GuidedGUDFactorSourceBinding:
+    """Bind a complete recovered v3 state and installed GUD right bases."""
+
+    expected_v3_names = (
+        _QKVO_GUD_FACTOR_NAMES | _LEXICAL_FACTOR_NAMES | _GUIDED_QKVO_FACTOR_NAMES
+    )
+    source_binding = getattr(source_v3_state, "guided_source_binding", None)
+    if (
+        not isinstance(source_v3_state, TargetNativeFactorState)
+        or source_v3_state.schema != BEHAVIOR_FACTOR_PACK_V3_SCHEMA
+        or len(source_v3_state.names) != GUIDED_COMBINED_FACTOR_TENSOR_COUNT
+        or len(source_v3_state.tensors) != GUIDED_COMBINED_FACTOR_TENSOR_COUNT
+        or len(source_v3_state.tensor_sha256s) != GUIDED_COMBINED_FACTOR_TENSOR_COUNT
+        or set(source_v3_state.names) != expected_v3_names
+        or not isinstance(source_binding, GuidedFactorSourceBinding)
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "A guided-GUD continuation requires one authenticated complete v3 "
+            "source factor state."
+        )
+    source_rows = _factor_manifest_rows(
+        source_v3_state.names,
+        source_v3_state.tensors,
+        source_v3_state.tensor_sha256s,
+    )
+    if (
+        any(
+            _tensor_sha256(tensor) != digest
+            for tensor, digest in zip(
+                source_v3_state.tensors,
+                source_v3_state.tensor_sha256s,
+                strict=True,
+            )
+        )
+        or _factor_state_sha256(
+            source_rows,
+            schema=BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            lexical_rank=source_v3_state.lexical_rank,
+            guided_source_binding=source_binding,
+        )
+        != source_v3_state.factor_state_sha256
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "The recovered v3 source state failed byte authentication."
+        )
+    entries = _factor_parameters(
+        transaction,
+        guided_tranche=guided_tranche,
+        guided_gud_tranche=guided_gud_tranche,
+    )
+    entry_by_name = dict(entries)
+    source_hash_by_name = dict(
+        zip(
+            source_v3_state.names,
+            source_v3_state.tensor_sha256s,
+            strict=True,
+        )
+    )
+    if any(
+        _tensor_sha256(entry_by_name[name]) != digest
+        for name, digest in source_hash_by_name.items()
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "The live recovered v3 factors differ from the guided-GUD source snapshot."
+        )
+    source_accessor = getattr(guided_gud_tranche, "factor_source_binding", None)
+    if not callable(source_accessor):
+        source_accessor = getattr(
+            guided_gud_tranche, "guided_factor_source_binding", None
+        )
+    if not callable(source_accessor):
+        raise TargetNativeBehaviorDistillationError(
+            "guided_gud_tranche does not expose authenticated factor-source binding."
+        )
+    raw = source_accessor()
+    expected_keys = {
+        "audit_report_sha256",
+        "basis_envelope_file_sha256",
+        "basis_payload_sha256",
+        "basis_manifest_sha256",
+        "source_basis_tensor_sha256s",
+        "inherited_installation_sha256",
+        "inherited_factor_state_sha256_at_install",
+        "inherited_handle_identity",
+        "inherited_registry_identity",
+        "adapter_site_indices_sha256",
+        "audit_site_indices_sha256",
+    }
+    production_expected_keys = expected_keys - {
+        "adapter_site_indices_sha256",
+        "audit_site_indices_sha256",
+    } | {"adapter_layer_indices_sha256"}
+    if not isinstance(raw, Mapping) or set(raw) not in {
+        frozenset(expected_keys),
+        frozenset(production_expected_keys),
+    }:
+        raise TargetNativeBehaviorDistillationError(
+            "guided_gud_tranche factor-source binding has an unsupported schema."
+        )
+    inherited_registry = getattr(transaction.swiglu_handle, "registry", None)
+    if raw.get("inherited_handle_identity") != id(transaction.swiglu_handle) or raw.get(
+        "inherited_registry_identity"
+    ) != id(inherited_registry):
+        raise TargetNativeBehaviorDistillationError(
+            "guided_gud_tranche source binding does not own this inherited GUD product."
+        )
+    basis_hashes = GuidedFactorSourceBinding._normalize_hash_rows(
+        raw.get("source_basis_tensor_sha256s"),
+        "guided_gud source_basis_tensor_sha256s",
+        expected_names={"gate", "up", "down"},
+    )
+    basis_by_name = dict(basis_hashes)
+    for role in ("gate", "up", "down"):
+        right = entry_by_name[f"guided_gud.{role}_right"]
+        if _guided_gud_basis_tensor_sha256(right) != basis_by_name[role]:
+            raise TargetNativeBehaviorDistillationError(
+                f"Installed guided-GUD {role} right factor does not byte-match "
+                "its authenticated audit basis."
+            )
+        left = entry_by_name[f"guided_gud.{role}_left"]
+        if int(torch.count_nonzero(left.detach()).item()) != 0:
+            raise TargetNativeBehaviorDistillationError(
+                "Guided-GUD left factors must remain exact zero until source "
+                "authentication completes."
+            )
+    adapter_indices_sha256 = raw.get(
+        "adapter_site_indices_sha256",
+        raw.get("adapter_layer_indices_sha256"),
+    )
+    audit_indices_sha256 = raw.get(
+        "audit_site_indices_sha256",
+        adapter_indices_sha256,
+    )
+    return GuidedGUDFactorSourceBinding(
+        source_v3_factor_state_sha256=source_v3_state.factor_state_sha256,
+        source_v3_factor_manifest_sha256=_canonical_sha256(source_rows),
+        source_v3_tensor_sha256s=tuple(
+            zip(
+                source_v3_state.names,
+                source_v3_state.tensor_sha256s,
+                strict=True,
+            )
+        ),
+        source_v3_lexical_rank=_index(
+            source_v3_state.lexical_rank,
+            "source_v3_lexical_rank",
+            positive=True,
+        ),
+        source_guided_qkvo_binding=source_binding,
+        audit_report_sha256=raw.get("audit_report_sha256"),
+        basis_envelope_file_sha256=raw.get("basis_envelope_file_sha256"),
+        basis_payload_sha256=raw.get("basis_payload_sha256"),
+        basis_manifest_sha256=raw.get("basis_manifest_sha256"),
+        source_basis_tensor_sha256s=basis_hashes,
+        inherited_installation_sha256=raw.get("inherited_installation_sha256"),
+        inherited_factor_state_sha256_at_install=raw.get(
+            "inherited_factor_state_sha256_at_install"
+        ),
+        adapter_site_indices_sha256=adapter_indices_sha256,
+        audit_site_indices_sha256=audit_indices_sha256,
+    )
+
+
 def capture_target_native_factor_state(
     transaction: ExactTargetCompilerTransaction,
     *,
     guided_tranche: Any | None = None,
     guided_source_binding: GuidedFactorSourceBinding | None = None,
+    guided_gud_tranche: Any | None = None,
+    guided_gud_source_binding: GuidedGUDFactorSourceBinding | None = None,
 ) -> TargetNativeFactorState:
-    entries = _factor_parameters(transaction, guided_tranche=guided_tranche)
+    entries = _factor_parameters(
+        transaction,
+        guided_tranche=guided_tranche,
+        guided_gud_tranche=guided_gud_tranche,
+    )
     tensors = tuple(
         value.detach().cpu().contiguous().clone() for _name, value in entries
     )
@@ -1485,16 +2014,38 @@ def capture_target_native_factor_state(
         )
     names = tuple(name for name, _value in entries)
     hashes = tuple(_tensor_sha256(value) for value in tensors)
-    schema, lexical_rank = _factor_pack_contract(transaction, guided_tranche)
-    if schema == BEHAVIOR_FACTOR_PACK_V3_SCHEMA and not isinstance(
-        guided_source_binding, GuidedFactorSourceBinding
+    schema, lexical_rank = _factor_pack_contract(
+        transaction, guided_tranche, guided_gud_tranche
+    )
+    if schema in {
+        BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+        BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
+    } and not isinstance(guided_source_binding, GuidedFactorSourceBinding):
+        raise TargetNativeBehaviorDistillationError(
+            "Capturing a v3/v4 state requires authenticated guided source binding."
+        )
+    if (
+        schema
+        not in {
+            BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
+        }
+        and guided_source_binding is not None
     ):
         raise TargetNativeBehaviorDistillationError(
-            "Capturing a v3 state requires authenticated guided source binding."
+            "Guided source binding is only valid for a v3/v4 factor state."
         )
-    if schema != BEHAVIOR_FACTOR_PACK_V3_SCHEMA and guided_source_binding is not None:
+    if schema == BEHAVIOR_FACTOR_PACK_V4_SCHEMA and not isinstance(
+        guided_gud_source_binding, GuidedGUDFactorSourceBinding
+    ):
         raise TargetNativeBehaviorDistillationError(
-            "Guided source binding is only valid for a v3 factor state."
+            "Capturing a v4 state requires authenticated guided-GUD source binding."
+        )
+    if schema != BEHAVIOR_FACTOR_PACK_V4_SCHEMA and (
+        guided_gud_source_binding is not None
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Guided-GUD source binding is only valid for a v4 factor state."
         )
     payload = _factor_manifest_rows(names, tensors, hashes)
     return TargetNativeFactorState(
@@ -1506,12 +2057,14 @@ def capture_target_native_factor_state(
             schema=schema,
             lexical_rank=lexical_rank,
             guided_source_binding=guided_source_binding,
+            guided_gud_source_binding=guided_gud_source_binding,
         ),
         parameter_ids=tuple(id(value) for _name, value in entries),
         parameter_data_ptrs=tuple(int(value.data_ptr()) for _name, value in entries),
         schema=schema,
         lexical_rank=lexical_rank,
         guided_source_binding=guided_source_binding,
+        guided_gud_source_binding=guided_gud_source_binding,
     )
 
 
@@ -1520,6 +2073,7 @@ def restore_target_native_factor_state(
     state: TargetNativeFactorState,
     *,
     guided_tranche: Any | None = None,
+    guided_gud_tranche: Any | None = None,
 ) -> None:
     if not isinstance(state, TargetNativeFactorState):
         raise TargetNativeBehaviorDistillationError(
@@ -1529,13 +2083,14 @@ def restore_target_native_factor_state(
         transaction,
         require_finite=False,
         guided_tranche=guided_tranche,
+        guided_gud_tranche=guided_gud_tranche,
     )
     if tuple(name for name, _value in entries) != state.names:
         raise TargetNativeBehaviorDistillationError(
             "Factor-state names do not match the live transaction."
         )
     expected_schema, expected_lexical_rank = _factor_pack_contract(
-        transaction, guided_tranche
+        transaction, guided_tranche, guided_gud_tranche
     )
     if state.schema != expected_schema or state.lexical_rank != expected_lexical_rank:
         raise TargetNativeBehaviorDistillationError(
@@ -1566,11 +2121,15 @@ def restore_target_native_factor_state(
     transaction.assert_live()
     if guided_tranche is not None:
         guided_tranche.assert_live()
+    if guided_gud_tranche is not None:
+        guided_gud_tranche.assert_live()
     if (
         capture_target_native_factor_state(
             transaction,
             guided_tranche=guided_tranche,
             guided_source_binding=state.guided_source_binding,
+            guided_gud_tranche=guided_gud_tranche,
+            guided_gud_source_binding=state.guided_gud_source_binding,
         ).factor_state_sha256
         != state.factor_state_sha256
     ):
@@ -1584,7 +2143,13 @@ class _FactorPayloadRestore:
     source_factor_state_sha256: str
     source_schema: str
     combined_state: TargetNativeFactorState
-    restore_mode: Literal["full", "qkvo-gud-partial", "guided-v3-full"]
+    restore_mode: Literal[
+        "full",
+        "qkvo-gud-partial",
+        "guided-v3-full",
+        "guided-v3-to-v4",
+        "guided-v4-full",
+    ]
     lexical_initialization_state_sha256: str | None
     lexical_initialization_unchanged: bool | None
 
@@ -1627,6 +2192,7 @@ def _authenticate_factor_payload_state(
     schema: str,
     lexical_rank: int | None,
     expected_guided_source_binding: GuidedFactorSourceBinding | None = None,
+    expected_guided_gud_source_binding: GuidedGUDFactorSourceBinding | None = None,
 ) -> TargetNativeFactorState:
     expected_payload_keys = {
         "schema",
@@ -1641,16 +2207,29 @@ def _authenticate_factor_payload_state(
     if schema in {
         BEHAVIOR_FACTOR_PACK_V2_SCHEMA,
         BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+        BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
     }:
         expected_payload_keys.add("lexical_rank")
     guided_source_binding = None
-    if schema == BEHAVIOR_FACTOR_PACK_V3_SCHEMA:
+    if schema in {
+        BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+        BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
+    }:
         expected_payload_keys.update(
             {
                 "guided_source_binding",
                 "guided_source_binding_sha256",
                 "inherited_product_regrouped",
                 "guided_product_regrouped",
+            }
+        )
+    guided_gud_source_binding = None
+    if schema == BEHAVIOR_FACTOR_PACK_V4_SCHEMA:
+        expected_payload_keys.update(
+            {
+                "guided_gud_source_binding",
+                "guided_gud_source_binding_sha256",
+                "guided_gud_product_regrouped",
             }
         )
     if set(payload) != expected_payload_keys:
@@ -1671,13 +2250,17 @@ def _authenticate_factor_payload_state(
     if schema in {
         BEHAVIOR_FACTOR_PACK_V2_SCHEMA,
         BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+        BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
     } and payload.get("lexical_rank") != _index(
         lexical_rank, "lexical_rank", positive=True
     ):
         raise TargetNativeBehaviorDistillationError(
             "Persisted lexical rank does not match the live transaction."
         )
-    if schema == BEHAVIOR_FACTOR_PACK_V3_SCHEMA:
+    if schema in {
+        BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+        BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
+    }:
         raw_binding = payload.get("guided_source_binding")
         expected_binding_keys = {
             "source_v2_factor_state_sha256",
@@ -1696,7 +2279,7 @@ def _authenticate_factor_payload_state(
             expected_binding_keys
         ):
             raise TargetNativeBehaviorDistillationError(
-                "Persisted v3 guided source binding has an unsupported schema."
+                "Persisted v3/v4 guided source binding has an unsupported schema."
             )
         guided_source_binding = GuidedFactorSourceBinding(
             **dict(raw_binding),
@@ -1705,26 +2288,60 @@ def _authenticate_factor_payload_state(
             guided_source_binding.binding_sha256
         ):
             raise TargetNativeBehaviorDistillationError(
-                "Persisted v3 guided source binding hash does not authenticate."
+                "Persisted v3/v4 guided source binding hash does not authenticate."
             )
         if (
             payload.get("inherited_product_regrouped") is not False
             or payload.get("guided_product_regrouped") is not False
         ):
             raise TargetNativeBehaviorDistillationError(
-                "A v3 pack may not regroup inherited and guided products."
+                "A v3/v4 pack may not regroup inherited and guided products."
             )
         if (
             expected_guided_source_binding is not None
             and guided_source_binding != expected_guided_source_binding
         ):
             raise TargetNativeBehaviorDistillationError(
-                "Persisted v3 guided source binding disagrees with the "
+                "Persisted v3/v4 guided source binding disagrees with the "
                 "preregistered sources."
             )
     elif expected_guided_source_binding is not None:
         raise TargetNativeBehaviorDistillationError(
-            "Expected guided source binding is only valid for a v3 payload."
+            "Expected guided source binding is only valid for a v3/v4 payload."
+        )
+    if schema == BEHAVIOR_FACTOR_PACK_V4_SCHEMA:
+        guided_gud_source_binding = _guided_gud_source_binding_from_payload(
+            payload.get("guided_gud_source_binding")
+        )
+        if payload.get("guided_gud_source_binding_sha256") != (
+            guided_gud_source_binding.binding_sha256
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                "Persisted v4 guided-GUD source binding hash does not authenticate."
+            )
+        if payload.get("guided_gud_product_regrouped") is not False:
+            raise TargetNativeBehaviorDistillationError(
+                "A v4 pack may not regroup the guided-GUD product."
+            )
+        if (
+            guided_gud_source_binding.source_guided_qkvo_binding
+            != guided_source_binding
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                "Persisted v4 nested QKVO binding differs from its top-level "
+                "guided binding."
+            )
+        if (
+            expected_guided_gud_source_binding is not None
+            and guided_gud_source_binding != expected_guided_gud_source_binding
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                "Persisted v4 guided-GUD source binding disagrees with the "
+                "preregistered sources."
+            )
+    elif expected_guided_gud_source_binding is not None:
+        raise TargetNativeBehaviorDistillationError(
+            "Expected guided-GUD source binding is only valid for a v4 payload."
         )
     rows = payload.get("factors")
     tensors = payload.get("factor_tensors")
@@ -1804,6 +2421,7 @@ def _authenticate_factor_payload_state(
             schema=schema,
             lexical_rank=lexical_rank,
             guided_source_binding=guided_source_binding,
+            guided_gud_source_binding=guided_gud_source_binding,
         )
         != declared_state_sha
     ):
@@ -1820,6 +2438,7 @@ def _authenticate_factor_payload_state(
         schema=schema,
         lexical_rank=lexical_rank,
         guided_source_binding=guided_source_binding,
+        guided_gud_source_binding=guided_gud_source_binding,
     )
 
 
@@ -1849,6 +2468,8 @@ def _restore_target_native_factor_payload(
     *,
     guided_tranche: Any | None = None,
     expected_guided_source_binding: GuidedFactorSourceBinding | None = None,
+    guided_gud_tranche: Any | None = None,
+    expected_guided_gud_source_binding: GuidedGUDFactorSourceBinding | None = None,
 ) -> _FactorPayloadRestore:
     if not isinstance(payload, Mapping):
         raise TargetNativeBehaviorDistillationError(
@@ -1859,6 +2480,7 @@ def _restore_target_native_factor_payload(
         BEHAVIOR_FACTOR_PACK_SCHEMA,
         BEHAVIOR_FACTOR_PACK_V2_SCHEMA,
         BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+        BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
     }:
         raise TargetNativeBehaviorDistillationError(
             "Persisted target-native factor payload has an unsupported schema."
@@ -1867,6 +2489,12 @@ def _restore_target_native_factor_payload(
         raise TargetNativeBehaviorDistillationError(
             "Restoring a v3 factor pack requires its live guided tranche."
         )
+    if schema == BEHAVIOR_FACTOR_PACK_V4_SCHEMA and (
+        guided_tranche is None or guided_gud_tranche is None
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Restoring a v4 factor pack requires both live guided tranches."
+        )
     if schema == BEHAVIOR_FACTOR_PACK_V3_SCHEMA and not isinstance(
         expected_guided_source_binding, GuidedFactorSourceBinding
     ):
@@ -1874,20 +2502,100 @@ def _restore_target_native_factor_payload(
             "Restoring a v3 factor pack requires its preregistered guided source "
             "binding."
         )
-    if schema != BEHAVIOR_FACTOR_PACK_V3_SCHEMA and (
-        expected_guided_source_binding is not None
+    if schema == BEHAVIOR_FACTOR_PACK_V4_SCHEMA and (
+        not isinstance(expected_guided_source_binding, GuidedFactorSourceBinding)
+        or not isinstance(
+            expected_guided_gud_source_binding, GuidedGUDFactorSourceBinding
+        )
     ):
         raise TargetNativeBehaviorDistillationError(
-            "Expected guided source binding is only valid for a v3 payload."
+            "Restoring a v4 factor pack requires both preregistered guided source "
+            "bindings."
+        )
+    if schema not in {
+        BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+        BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
+    } and (expected_guided_source_binding is not None):
+        raise TargetNativeBehaviorDistillationError(
+            "Expected guided source binding is only valid for a v3/v4 payload."
+        )
+    if schema != BEHAVIOR_FACTOR_PACK_V4_SCHEMA and (
+        expected_guided_gud_source_binding is not None
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Expected guided-GUD source binding is only valid for a v4 payload."
         )
     entries = _factor_parameters(
         transaction,
         guided_tranche=(
-            guided_tranche if schema == BEHAVIOR_FACTOR_PACK_V3_SCHEMA else None
+            guided_tranche
+            if schema
+            in {BEHAVIOR_FACTOR_PACK_V3_SCHEMA, BEHAVIOR_FACTOR_PACK_V4_SCHEMA}
+            else None
+        ),
+        guided_gud_tranche=(
+            guided_gud_tranche if schema == BEHAVIOR_FACTOR_PACK_V4_SCHEMA else None
         ),
     )
     live_names = {name for name, _value in entries}
     live_lexical_rank = _lexical_rank(transaction)
+    if schema == BEHAVIOR_FACTOR_PACK_V4_SCHEMA:
+        expected_names = (
+            _QKVO_GUD_FACTOR_NAMES
+            | _LEXICAL_FACTOR_NAMES
+            | _GUIDED_QKVO_FACTOR_NAMES
+            | _GUIDED_GUD_FACTOR_NAMES
+        )
+        if live_names != expected_names or len(entries) != (
+            GUIDED_GUD_COMBINED_FACTOR_TENSOR_COUNT
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                "A v4 factor pack requires the complete separate 32-factor "
+                "guided-GUD transaction."
+            )
+        state = _authenticate_factor_payload_state(
+            payload,
+            entries,
+            schema=schema,
+            lexical_rank=live_lexical_rank,
+            expected_guided_source_binding=expected_guided_source_binding,
+            expected_guided_gud_source_binding=(expected_guided_gud_source_binding),
+        )
+        for tranche, name in (
+            (guided_tranche, "guided_tranche"),
+            (guided_gud_tranche, "guided_gud_tranche"),
+        ):
+            set_stage = getattr(tranche, "set_training_stage", None)
+            if not callable(set_stage):
+                raise TargetNativeBehaviorDistillationError(
+                    f"{name} does not expose its authenticated joint-stage transition."
+                )
+            set_stage("joint")
+        restore_target_native_factor_state(
+            transaction,
+            state,
+            guided_tranche=guided_tranche,
+            guided_gud_tranche=guided_gud_tranche,
+        )
+        combined = capture_target_native_factor_state(
+            transaction,
+            guided_tranche=guided_tranche,
+            guided_source_binding=state.guided_source_binding,
+            guided_gud_tranche=guided_gud_tranche,
+            guided_gud_source_binding=state.guided_gud_source_binding,
+        )
+        if combined.factor_state_sha256 != state.factor_state_sha256:
+            raise TargetNativeBehaviorDistillationError(
+                "Persisted v4 factor payload restore did not verify."
+            )
+        return _FactorPayloadRestore(
+            source_factor_state_sha256=state.factor_state_sha256,
+            source_schema=schema,
+            combined_state=combined,
+            restore_mode="guided-v4-full",
+            lexical_initialization_state_sha256=None,
+            lexical_initialization_unchanged=None,
+        )
     if schema == BEHAVIOR_FACTOR_PACK_V3_SCHEMA:
         expected_names = (
             _QKVO_GUD_FACTOR_NAMES | _LEXICAL_FACTOR_NAMES | _GUIDED_QKVO_FACTOR_NAMES
@@ -2010,14 +2718,18 @@ def restore_target_native_factor_payload(
     *,
     guided_tranche: Any | None = None,
     expected_guided_source_binding: GuidedFactorSourceBinding | None = None,
+    guided_gud_tranche: Any | None = None,
+    expected_guided_gud_source_binding: GuidedGUDFactorSourceBinding | None = None,
 ) -> TargetNativeFactorState:
-    """Authenticate and restore a v1, v2, or separate-product v3 continuation."""
+    """Authenticate and restore a v1-v4 separate-product continuation."""
 
     return _restore_target_native_factor_payload(
         transaction,
         payload,
         guided_tranche=guided_tranche,
         expected_guided_source_binding=expected_guided_source_binding,
+        guided_gud_tranche=guided_gud_tranche,
+        expected_guided_gud_source_binding=expected_guided_gud_source_binding,
     ).combined_state
 
 
@@ -2198,6 +2910,235 @@ def _restore_guided_v3_initial_factor_payload(
             )
             raise error from restore_error
         raise
+
+
+def _restore_guided_v3_to_v4_initial_factor_payload(
+    transaction: ExactTargetCompilerTransaction,
+    guided_tranche: Any,
+    guided_gud_tranche: Any,
+    payload: Mapping[str, Any],
+) -> tuple[
+    _FactorPayloadRestore,
+    GuidedFactorSourceBinding,
+    GuidedGUDFactorSourceBinding,
+]:
+    """Restore the retained v3 source, authenticate GUD zero install, form v4."""
+
+    if getattr(guided_tranche, "training_stage", None) == "joint":
+        restored, guided_source_binding = (
+            _authenticate_prerestored_guided_v3_initial_factor_payload(
+                transaction,
+                guided_tranche,
+                payload,
+            )
+        )
+        guided_gud_source_binding = authenticate_guided_gud_factor_sources(
+            transaction,
+            guided_tranche,
+            guided_gud_tranche,
+            restored.combined_state,
+        )
+        combined = capture_target_native_factor_state(
+            transaction,
+            guided_tranche=guided_tranche,
+            guided_source_binding=guided_source_binding,
+            guided_gud_tranche=guided_gud_tranche,
+            guided_gud_source_binding=guided_gud_source_binding,
+        )
+        return (
+            replace(restored, combined_state=combined),
+            guided_source_binding,
+            guided_gud_source_binding,
+        )
+    if getattr(guided_gud_tranche, "report", None) is not None:
+        raise TargetNativeBehaviorDistillationError(
+            "A production guided-GUD continuation requires the v3 payload to be "
+            "authenticated and restored before guided-GUD installation."
+        )
+
+    source_v2_state = capture_target_native_factor_state(transaction)
+    zero_qkvo_binding = authenticate_guided_factor_sources(
+        transaction,
+        guided_tranche,
+        source_v2_state,
+    )
+    zero_v3_state = capture_target_native_factor_state(
+        transaction,
+        guided_tranche=guided_tranche,
+        guided_source_binding=zero_qkvo_binding,
+    )
+    try:
+        restored, guided_source_binding = _restore_guided_v3_initial_factor_payload(
+            transaction,
+            guided_tranche,
+            payload,
+        )
+        source_v3_state = restored.combined_state
+        guided_gud_source_binding = authenticate_guided_gud_factor_sources(
+            transaction,
+            guided_tranche,
+            guided_gud_tranche,
+            source_v3_state,
+        )
+        combined = capture_target_native_factor_state(
+            transaction,
+            guided_tranche=guided_tranche,
+            guided_source_binding=guided_source_binding,
+            guided_gud_tranche=guided_gud_tranche,
+            guided_gud_source_binding=guided_gud_source_binding,
+        )
+        combined_hashes = dict(
+            zip(combined.names, combined.tensor_sha256s, strict=True)
+        )
+        if any(
+            combined_hashes.get(name) != digest
+            for name, digest in guided_gud_source_binding.source_v3_tensor_sha256s
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                "Installing the guided-GUD product changed its authenticated v3 "
+                "source bytes."
+            )
+        return (
+            _FactorPayloadRestore(
+                source_factor_state_sha256=restored.source_factor_state_sha256,
+                source_schema=BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+                combined_state=combined,
+                restore_mode="guided-v3-to-v4",
+                lexical_initialization_state_sha256=None,
+                lexical_initialization_unchanged=None,
+            ),
+            guided_source_binding,
+            guided_gud_source_binding,
+        )
+    except BaseException as error:
+        try:
+            restore_target_native_factor_state(
+                transaction,
+                zero_v3_state,
+                guided_tranche=guided_tranche,
+            )
+        except Exception as restore_error:
+            error.add_note(
+                "Exact zero-installed QKVO restoration after v4 setup also "
+                f"failed: {restore_error!r}"
+            )
+            raise error from restore_error
+        raise
+
+
+def _authenticate_prerestored_guided_v3_initial_factor_payload(
+    transaction: ExactTargetCompilerTransaction,
+    guided_tranche: Any,
+    payload: Mapping[str, Any],
+) -> tuple[_FactorPayloadRestore, GuidedFactorSourceBinding]:
+    """Prove a caller-restored v3 handoff without mutating one live factor."""
+
+    if not isinstance(payload, Mapping) or payload.get("schema") != (
+        BEHAVIOR_FACTOR_PACK_V3_SCHEMA
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "A pre-restored guided-GUD handoff requires one complete v3 payload."
+        )
+    if getattr(guided_tranche, "training_stage", None) != "joint":
+        raise TargetNativeBehaviorDistillationError(
+            "A pre-restored v3 handoff requires the live QKVO joint stage."
+        )
+    entries = _factor_parameters(transaction, guided_tranche=guided_tranche)
+    authenticated = _authenticate_factor_payload_state(
+        payload,
+        entries,
+        schema=BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+        lexical_rank=_lexical_rank(transaction),
+    )
+    binding = authenticated.guided_source_binding
+    if not isinstance(binding, GuidedFactorSourceBinding):
+        raise TargetNativeBehaviorDistillationError(
+            "The pre-restored v3 payload has no authenticated QKVO source binding."
+        )
+    source_accessor = getattr(guided_tranche, "factor_source_binding", None)
+    if not callable(source_accessor):
+        raise TargetNativeBehaviorDistillationError(
+            "The live guided QKVO tranche exposes no source binding."
+        )
+    raw = source_accessor()
+    expected_raw = {
+        "audit_report_sha256": binding.audit_report_sha256,
+        "basis_envelope_file_sha256": binding.basis_envelope_file_sha256,
+        "basis_payload_sha256": binding.basis_payload_sha256,
+        "basis_manifest_sha256": binding.basis_manifest_sha256,
+        "source_basis_tensor_sha256s": dict(binding.source_basis_tensor_sha256s),
+        "inherited_installation_sha256": binding.inherited_installation_sha256,
+        "inherited_factor_state_sha256_at_install": (
+            binding.inherited_factor_state_sha256_at_install
+        ),
+        "inherited_handle_identity": id(transaction.qkvo_handle),
+        "inherited_registry_identity": id(transaction.qkvo_handle.adapter_registry),
+        "adapter_site_indices_sha256": binding.adapter_site_indices_sha256,
+        "audit_site_indices_sha256": binding.audit_site_indices_sha256,
+    }
+    if not isinstance(raw, Mapping) or _canonical_sha256(raw) != _canonical_sha256(
+        expected_raw
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "The live guided QKVO source binding differs from the supplied v3 "
+            "runtime binding."
+        )
+    live = capture_target_native_factor_state(
+        transaction,
+        guided_tranche=guided_tranche,
+        guided_source_binding=binding,
+    )
+    if (
+        live.names != authenticated.names
+        or live.tensor_sha256s != authenticated.tensor_sha256s
+        or live.factor_state_sha256 != authenticated.factor_state_sha256
+        or live.parameter_ids != authenticated.parameter_ids
+        or live.parameter_data_ptrs != authenticated.parameter_data_ptrs
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "The live 26-factor v3 state does not exactly equal the supplied "
+            "authenticated payload."
+        )
+    return (
+        _FactorPayloadRestore(
+            source_factor_state_sha256=authenticated.factor_state_sha256,
+            source_schema=BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            combined_state=live,
+            restore_mode="guided-v3-to-v4",
+            lexical_initialization_state_sha256=None,
+            lexical_initialization_unchanged=None,
+        ),
+        binding,
+    )
+
+
+def _assert_guided_gud_frozen_sources(
+    factor_entries: Sequence[tuple[str, nn.Parameter]],
+    binding: GuidedGUDFactorSourceBinding,
+    *,
+    step: int,
+) -> None:
+    """Prove right bases/source-v3 bytes stay exact until their unlock steps."""
+
+    entry_by_name = dict(factor_entries)
+    if step <= GUIDED_LEFT_ONLY_END_STEP:
+        for role, digest in binding.source_basis_tensor_sha256s:
+            if (
+                _guided_gud_basis_tensor_sha256(
+                    entry_by_name[f"guided_gud.{role}_right"]
+                )
+                != digest
+            ):
+                raise TargetNativeBehaviorDistillationError(
+                    "A guided-GUD right basis changed before its step-9 unlock."
+                )
+    if step <= GUIDED_ONLY_END_STEP:
+        for name, digest in binding.source_v3_tensor_sha256s:
+            if _tensor_sha256(entry_by_name[name]) != digest:
+                raise TargetNativeBehaviorDistillationError(
+                    "A recovered v3 source factor changed before its step-25 "
+                    "joint unlock."
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -2435,6 +3376,7 @@ class DurableFactorStateSnapshot:
     factor_state_sha256: str
     lexical_rank: int | None = None
     guided_source_binding: GuidedFactorSourceBinding | None = None
+    guided_gud_source_binding: GuidedGUDFactorSourceBinding | None = None
 
     def __post_init__(self) -> None:
         schema = str(self.schema)
@@ -2442,6 +3384,7 @@ class DurableFactorStateSnapshot:
             BEHAVIOR_FACTOR_PACK_SCHEMA,
             BEHAVIOR_FACTOR_PACK_V2_SCHEMA,
             BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
         }:
             raise TargetNativeBehaviorDistillationError(
                 f"Unsupported durable factor-state schema {schema!r}."
@@ -2462,30 +3405,62 @@ class DurableFactorStateSnapshot:
         if schema in {
             BEHAVIOR_FACTOR_PACK_V2_SCHEMA,
             BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
         }:
             expected_names.update(_LEXICAL_FACTOR_NAMES)
-        if schema == BEHAVIOR_FACTOR_PACK_V3_SCHEMA:
+        if schema in {
+            BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
+        }:
             expected_names.update(_GUIDED_QKVO_FACTOR_NAMES)
+        if schema == BEHAVIOR_FACTOR_PACK_V4_SCHEMA:
+            expected_names.update(_GUIDED_GUD_FACTOR_NAMES)
         if set(names) != expected_names:
             raise TargetNativeBehaviorDistillationError(
                 "Durable factor names/count do not match the factor-pack schema."
             )
         lexical_rank = self.lexical_rank
         if schema == BEHAVIOR_FACTOR_PACK_SCHEMA:
-            if lexical_rank is not None or self.guided_source_binding is not None:
+            if (
+                lexical_rank is not None
+                or self.guided_source_binding is not None
+                or self.guided_gud_source_binding is not None
+            ):
                 raise TargetNativeBehaviorDistillationError(
                     "A v1 durable factor state cannot carry lexical or guided metadata."
                 )
         else:
             lexical_rank = _index(lexical_rank, "lexical_rank", positive=True)
-        if schema == BEHAVIOR_FACTOR_PACK_V3_SCHEMA:
+        if schema in {
+            BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
+        }:
             if not isinstance(self.guided_source_binding, GuidedFactorSourceBinding):
                 raise TargetNativeBehaviorDistillationError(
-                    "A v3 durable factor state requires guided source binding."
+                    "A v3/v4 durable factor state requires guided source binding."
                 )
         elif self.guided_source_binding is not None:
             raise TargetNativeBehaviorDistillationError(
-                "Guided source binding is valid only for a v3 durable factor state."
+                "Guided source binding is valid only for a v3/v4 durable factor state."
+            )
+        if schema == BEHAVIOR_FACTOR_PACK_V4_SCHEMA:
+            if not isinstance(
+                self.guided_gud_source_binding, GuidedGUDFactorSourceBinding
+            ):
+                raise TargetNativeBehaviorDistillationError(
+                    "A v4 durable factor state requires guided-GUD source binding."
+                )
+            if (
+                self.guided_gud_source_binding.source_guided_qkvo_binding
+                != self.guided_source_binding
+            ):
+                raise TargetNativeBehaviorDistillationError(
+                    "A v4 durable factor state's nested and top-level QKVO "
+                    "bindings differ."
+                )
+        elif self.guided_gud_source_binding is not None:
+            raise TargetNativeBehaviorDistillationError(
+                "Guided-GUD source binding is valid only for a v4 durable factor state."
             )
         rows = [
             {
@@ -2501,6 +3476,7 @@ class DurableFactorStateSnapshot:
             schema=schema,
             lexical_rank=lexical_rank,
             guided_source_binding=self.guided_source_binding,
+            guided_gud_source_binding=self.guided_gud_source_binding,
         )
         digest = _sha256(self.factor_state_sha256, "factor_state_sha256")
         if expected != digest:
@@ -2525,6 +3501,7 @@ class DurableFactorStateSnapshot:
         if self.schema in {
             BEHAVIOR_FACTOR_PACK_V2_SCHEMA,
             BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
         }:
             result["lexical_rank"] = self.lexical_rank
         if self.guided_source_binding is not None:
@@ -2534,6 +3511,14 @@ class DurableFactorStateSnapshot:
             )
             result["inherited_product_regrouped"] = False
             result["guided_product_regrouped"] = False
+        if self.guided_gud_source_binding is not None:
+            result["guided_gud_source_binding"] = (
+                self.guided_gud_source_binding.as_dict()
+            )
+            result["guided_gud_source_binding_sha256"] = (
+                self.guided_gud_source_binding.binding_sha256
+            )
+            result["guided_gud_product_regrouped"] = False
         return result
 
     def materialize_factor_state(self) -> TargetNativeFactorState:
@@ -2553,6 +3538,7 @@ class DurableFactorStateSnapshot:
             schema=self.schema,
             lexical_rank=self.lexical_rank,
             guided_source_binding=self.guided_source_binding,
+            guided_gud_source_binding=self.guided_gud_source_binding,
         )
         if state.as_manifest()["factor_state_sha256"] != self.factor_state_sha256:
             raise TargetNativeBehaviorDistillationError(
@@ -2648,6 +3634,7 @@ def _durable_behavior_checkpoint(
             factor_state_sha256=state.factor_state_sha256,
             lexical_rank=state.lexical_rank,
             guided_source_binding=state.guided_source_binding,
+            guided_gud_source_binding=state.guided_gud_source_binding,
         ),
         pareto_safe_vs_step0=pareto_safe_vs_step0,
     )
@@ -2659,6 +3646,8 @@ def _invoke_durable_checkpoint_callback(
     transaction: ExactTargetCompilerTransaction,
     guided_tranche: Any | None,
     guided_source_binding: GuidedFactorSourceBinding | None,
+    guided_gud_tranche: Any | None,
+    guided_gud_source_binding: GuidedGUDFactorSourceBinding | None,
     step: int,
     metrics: CausalBehaviorMetrics,
     state: TargetNativeFactorState,
@@ -2679,6 +3668,7 @@ def _invoke_durable_checkpoint_callback(
     bindings = _live_factor_bindings(
         transaction,
         guided_tranche=guided_tranche,
+        guided_gud_tranche=guided_gud_tranche,
     )
     callback_error: BaseException | None = None
     try:
@@ -2697,6 +3687,8 @@ def _invoke_durable_checkpoint_callback(
         transaction,
         guided_tranche=guided_tranche,
         guided_source_binding=guided_source_binding,
+        guided_gud_tranche=guided_gud_tranche,
+        guided_gud_source_binding=guided_gud_source_binding,
     )
     if (
         ownership_changed
@@ -2704,6 +3696,7 @@ def _invoke_durable_checkpoint_callback(
         or live_state.schema != state.schema
         or live_state.lexical_rank != state.lexical_rank
         or live_state.guided_source_binding != state.guided_source_binding
+        or live_state.guided_gud_source_binding != state.guided_gud_source_binding
         or live_state.parameter_ids != state.parameter_ids
         or live_state.parameter_data_ptrs != state.parameter_data_ptrs
         or live_state.factor_state_sha256 != state.factor_state_sha256
@@ -2792,7 +3785,14 @@ class BehaviorDistillationResult:
     initial_factor_state_sha256: str | None
     initial_factor_payload_schema: str | None
     initial_factor_restore_mode: (
-        Literal["full", "qkvo-gud-partial", "guided-v3-full"] | None
+        Literal[
+            "full",
+            "qkvo-gud-partial",
+            "guided-v3-full",
+            "guided-v3-to-v4",
+            "guided-v4-full",
+        ]
+        | None
     )
     combined_step0_factor_state_sha256: str
     lexical_initialization_state_sha256: str | None
@@ -2800,6 +3800,7 @@ class BehaviorDistillationResult:
     domain_binding_sha256: str
     schedule_sha256: str
     guided_source_binding: GuidedFactorSourceBinding | None = None
+    guided_gud_source_binding: GuidedGUDFactorSourceBinding | None = None
     guided_candidate_gate: GuidedCandidateGateAudit | None = None
     sealed_evaluation_policy: BehaviorSealedEvaluationPolicy = "candidate-gated"
     evidence_sha256: str = field(init=False)
@@ -2810,6 +3811,15 @@ class BehaviorDistillationResult:
                 "Guided source binding and candidate gate evidence must be "
                 "present together."
             )
+        if self.guided_gud_source_binding is not None:
+            if self.guided_source_binding is None or (
+                self.guided_gud_source_binding.source_guided_qkvo_binding
+                != self.guided_source_binding
+            ):
+                raise TargetNativeBehaviorDistillationError(
+                    "Guided-GUD evidence requires its identical nested QKVO source "
+                    "binding."
+                )
         if self.sealed_evaluation_policy not in {"candidate-gated", "disabled"}:
             raise TargetNativeBehaviorDistillationError(
                 "Result has an unsupported sealed-evaluation policy."
@@ -2899,6 +3909,28 @@ class BehaviorDistillationResult:
                             "inherited-transaction-rollback",
                         ],
                         "accepted_publication_owned_by_runner": True,
+                    },
+                }
+            )
+        if self.guided_gud_source_binding is not None:
+            payload.update(
+                {
+                    "guided_gud_source_binding": (
+                        self.guided_gud_source_binding.as_dict()
+                    ),
+                    "guided_gud_source_binding_sha256": (
+                        self.guided_gud_source_binding.binding_sha256
+                    ),
+                    "guided_gud_schedule": {
+                        "steps_1_through_8": "guided-gud-left-only",
+                        "steps_9_through_24": "guided-gud-left-and-right-only",
+                        "steps_25_through_64": (
+                            "guided-gud-plus-retained-inherited-and-guided-qkvo"
+                        ),
+                        "authorized_tensor_counts": [3, 6, 22],
+                        "legacy_gud_frozen": True,
+                        "lexical_frozen": True,
+                        "guided_gud_product_regrouped": False,
                     },
                 }
             )
@@ -3403,6 +4435,7 @@ def _factor_learning_rate(
     *,
     step: int,
     guided_continuation: bool = False,
+    guided_gud_continuation: bool = False,
 ) -> float:
     if name.startswith(("guided_qkvo.q_", "guided_qkvo.k_")):
         scale = schedule.guided_qk_learning_rate_scale
@@ -3412,7 +4445,7 @@ def _factor_learning_rate(
         scale = schedule.qk_learning_rate_scale
     elif name.startswith(("qkvo.v_", "qkvo.o_")):
         scale = schedule.vo_learning_rate_scale
-    elif name.startswith("gud."):
+    elif name.startswith(("gud.", "guided_gud.")):
         scale = schedule.gud_learning_rate_scale
     elif name.startswith("lexical.embedding_"):
         scale = schedule.lexical_embedding_learning_rate_scale
@@ -3426,6 +4459,8 @@ def _factor_learning_rate(
         if name.startswith("lexical."):
             scale *= schedule.lexical_right_factor_learning_rate_scale
         elif name.startswith("guided_qkvo."):
+            scale *= schedule.guided_right_factor_learning_rate_scale
+        elif name.startswith("guided_gud."):
             scale *= schedule.guided_right_factor_learning_rate_scale
         else:
             scale *= schedule.right_factor_learning_rate_scale
@@ -3456,7 +4491,22 @@ def _factor_frozen(
     *,
     step: int,
     guided_continuation: bool = False,
+    guided_gud_continuation: bool = False,
 ) -> bool:
+    if guided_gud_continuation:
+        if not guided_continuation:
+            raise TargetNativeBehaviorDistillationError(
+                "Guided-GUD freezing requires guided continuation mode."
+            )
+        if name.startswith("guided_gud."):
+            return name.endswith("_right") and step <= GUIDED_LEFT_ONLY_END_STEP
+        if name.startswith(("qkvo.", "guided_qkvo.")):
+            return step <= GUIDED_ONLY_END_STEP
+        if name.startswith(("gud.", "lexical.")):
+            return True
+        raise TargetNativeBehaviorDistillationError(
+            f"No guided-GUD freeze group exists for factor {name!r}."
+        )
     if guided_continuation:
         if name.startswith("guided_qkvo."):
             return name.endswith("_right") and step <= GUIDED_LEFT_ONLY_END_STEP
@@ -3508,6 +4558,7 @@ def _authorized_factor_names(
     *,
     step: int,
     guided_continuation: bool,
+    guided_gud_continuation: bool = False,
 ) -> tuple[str, ...]:
     return tuple(
         name
@@ -3517,21 +4568,24 @@ def _authorized_factor_names(
             schedule,
             step=step,
             guided_continuation=guided_continuation,
+            guided_gud_continuation=guided_gud_continuation,
         )
     )
 
 
 class _GuidedCombinedOutputTrainingScope:
-    """Freeze native weights while exposing all 26 separate compiler factors."""
+    """Freeze native weights while exposing the complete v3 or v4 factor set."""
 
     def __init__(
         self,
         transaction: ExactTargetCompilerTransaction,
         guided_tranche: Any,
         factor_entries: Sequence[tuple[str, nn.Parameter]],
+        guided_gud_tranche: Any | None = None,
     ) -> None:
         self.transaction = transaction
         self.guided_tranche = guided_tranche
+        self.guided_gud_tranche = guided_gud_tranche
         self.factor_entries = tuple(factor_entries)
         self._base: tuple[tuple[nn.Parameter, bool, Tensor | None, int, int], ...] = ()
         self._factors: tuple[tuple[nn.Parameter, bool, Tensor | None], ...] = ()
@@ -3545,9 +4599,12 @@ class _GuidedCombinedOutputTrainingScope:
             )
         self.transaction.assert_live()
         self.guided_tranche.assert_live()
+        if self.guided_gud_tranche is not None:
+            self.guided_gud_tranche.assert_live()
         current = _factor_parameters(
             self.transaction,
             guided_tranche=self.guided_tranche,
+            guided_gud_tranche=self.guided_gud_tranche,
         )
         if tuple((name, id(value)) for name, value in current) != tuple(
             (name, id(value)) for name, value in self.factor_entries
@@ -3558,11 +4615,17 @@ class _GuidedCombinedOutputTrainingScope:
         factors = tuple(value for _name, value in self.factor_entries)
         factor_ids = {id(value) for value in factors}
         model_parameters = tuple(self.transaction.model.parameters())
-        if len(factor_ids) != GUIDED_COMBINED_FACTOR_TENSOR_COUNT or not (
+        expected_count = (
+            GUIDED_GUD_COMBINED_FACTOR_TENSOR_COUNT
+            if self.guided_gud_tranche is not None
+            else GUIDED_COMBINED_FACTOR_TENSOR_COUNT
+        )
+        if len(factor_ids) != expected_count or not (
             factor_ids.issubset({id(value) for value in model_parameters})
         ):
             raise TargetNativeBehaviorDistillationError(
-                "The model does not own exactly all 26 guided continuation "
+                f"The model does not own exactly all {expected_count} guided "
+                "continuation "
                 "factor tensors."
             )
         self._base = tuple(
@@ -3641,6 +4704,45 @@ class _GuidedCombinedOutputTrainingScope:
                     "The post-training guided composite is not live with exactly "
                     "the joint inherited/guided QKVO factors trainable."
                 )
+            if self.guided_gud_tranche is not None:
+                final_gud_stage = getattr(
+                    self.guided_gud_tranche, "training_stage", None
+                )
+                set_gud_stage = getattr(
+                    self.guided_gud_tranche, "set_training_stage", None
+                )
+                gud_output_parameters = getattr(
+                    self.guided_gud_tranche, "output_trainable_parameters", None
+                )
+                if (
+                    final_gud_stage != "joint"
+                    or not callable(set_gud_stage)
+                    or not callable(gud_output_parameters)
+                ):
+                    raise TargetNativeBehaviorDistillationError(
+                        "A clean 64-step guided-GUD run must exit in the joint stage."
+                    )
+                set_gud_stage(final_gud_stage)
+                final_gud_trainable = tuple(gud_output_parameters())
+                self.guided_gud_tranche.assert_live()
+                guided_gud_ids = {
+                    id(value)
+                    for name, value in self.factor_entries
+                    if name.startswith("guided_gud.")
+                }
+                allowed_gud_ids = {
+                    id(value)
+                    for name, value in self.factor_entries
+                    if name.startswith(("gud.", "guided_gud."))
+                }
+                observed_gud_ids = {id(value) for value in final_gud_trainable}
+                if not guided_gud_ids.issubset(observed_gud_ids) or not (
+                    observed_gud_ids.issubset(allowed_gud_ids)
+                ):
+                    raise TargetNativeBehaviorDistillationError(
+                        "The post-training guided-GUD composite does not expose its "
+                        "complete separate guided product."
+                    )
 
 
 def _first_divergence(parent_tokens: Sequence[int], child_tokens: Sequence[int]) -> int:
@@ -3731,6 +4833,7 @@ def train_target_native_behavior_distillation(
     optimizer_factory: Callable[[Iterable[nn.Parameter]], Optimizer] | None = None,
     initial_factor_payload: Mapping[str, Any] | None = None,
     guided_tranche: Any | None = None,
+    guided_gud_tranche: Any | None = None,
     durable_checkpoint_callback: DurableBehaviorCheckpointCallback | None = None,
     post_optimizer_step_callback: Callable[[int], None] | None = None,
 ) -> BehaviorDistillationResult:
@@ -3774,6 +4877,11 @@ def train_target_native_behavior_distillation(
             "post_optimizer_step_callback must be callable or None."
         )
     guided_continuation = guided_tranche is not None
+    guided_gud_continuation = guided_gud_tranche is not None
+    if guided_gud_continuation and not guided_continuation:
+        raise TargetNativeBehaviorDistillationError(
+            "guided_gud_tranche requires guided_tranche."
+        )
     if guided_continuation != schedule.guided_continuation_enabled:
         raise TargetNativeBehaviorDistillationError(
             "guided_tranche and guided_continuation_enabled must be supplied together."
@@ -3792,6 +4900,13 @@ def train_target_native_behavior_distillation(
             raise TargetNativeBehaviorDistillationError(
                 "A guided continuation must begin from one authenticated complete "
                 "v2 or v3 factor payload."
+            )
+        if guided_gud_continuation and initial_factor_payload.get("schema") != (
+            BEHAVIOR_FACTOR_PACK_V3_SCHEMA
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                "A guided-GUD v4 continuation must begin from one authenticated "
+                "complete v3 factor payload."
             )
     threshold = candidate_thresholds or CandidateBehaviorThresholds()
     if not isinstance(threshold, CandidateBehaviorThresholds):
@@ -3849,8 +4964,20 @@ def train_target_native_behavior_distillation(
     lexical_initialization_unchanged = None
     restored_initial_state: TargetNativeFactorState | None = None
     guided_source_binding: GuidedFactorSourceBinding | None = None
+    guided_gud_source_binding: GuidedGUDFactorSourceBinding | None = None
     if initial_factor_payload is not None:
-        if (
+        if guided_gud_continuation:
+            (
+                restore_result,
+                guided_source_binding,
+                guided_gud_source_binding,
+            ) = _restore_guided_v3_to_v4_initial_factor_payload(
+                transaction,
+                guided_tranche,
+                guided_gud_tranche,
+                initial_factor_payload,
+            )
+        elif (
             guided_continuation
             and initial_factor_payload.get("schema") == BEHAVIOR_FACTOR_PACK_V3_SCHEMA
         ):
@@ -3884,6 +5011,7 @@ def train_target_native_behavior_distillation(
     factor_entries = _factor_parameters(
         transaction,
         guided_tranche=guided_tranche,
+        guided_gud_tranche=guided_gud_tranche,
     )
     factor_names = tuple(name for name, _value in factor_entries)
     finite_gradients: set[str] = set()
@@ -3902,6 +5030,8 @@ def train_target_native_behavior_distillation(
         transaction,
         guided_tranche=guided_tranche,
         guided_source_binding=guided_source_binding,
+        guided_gud_tranche=guided_gud_tranche,
+        guided_gud_source_binding=guided_gud_source_binding,
     )
     if (
         restored_initial_state is not None
@@ -3930,7 +5060,8 @@ def train_target_native_behavior_distillation(
                 "was installed."
             )
         if (
-            initial_factor_payload_schema == BEHAVIOR_FACTOR_PACK_V3_SCHEMA
+            not guided_gud_continuation
+            and initial_factor_payload_schema == BEHAVIOR_FACTOR_PACK_V3_SCHEMA
             and step0_state.factor_state_sha256
             != restored_initial_state.factor_state_sha256
         ):
@@ -3981,6 +5112,7 @@ def train_target_native_behavior_distillation(
                             schedule,
                             step=1,
                             guided_continuation=guided_continuation,
+                            guided_gud_continuation=guided_gud_continuation,
                         ),
                     }
                 )
@@ -4002,6 +5134,8 @@ def train_target_native_behavior_distillation(
             transaction=transaction,
             guided_tranche=guided_tranche,
             guided_source_binding=guided_source_binding,
+            guided_gud_tranche=guided_gud_tranche,
+            guided_gud_source_binding=guided_gud_source_binding,
             step=0,
             metrics=step0_metrics,
             state=step0_state,
@@ -4024,6 +5158,7 @@ def train_target_native_behavior_distillation(
                 transaction,
                 guided_tranche,
                 factor_entries,
+                guided_gud_tranche,
             )
             if guided_continuation
             else transaction.output_training_scope()
@@ -4060,6 +5195,7 @@ def train_target_native_behavior_distillation(
                     schedule,
                     step=1,
                     guided_continuation=guided_continuation,
+                    guided_gud_continuation=guided_gud_continuation,
                 )
                 for name, value in factor_entries
             ):
@@ -4076,6 +5212,7 @@ def train_target_native_behavior_distillation(
                             schedule,
                             step=step,
                             guided_continuation=guided_continuation,
+                            guided_gud_continuation=guided_gud_continuation,
                         )
                         for value in group["params"]
                     }
@@ -4095,11 +5232,14 @@ def train_target_native_behavior_distillation(
                         else stage
                     )
                     guided_tranche.set_training_stage(runtime_stage)
+                    if guided_gud_continuation:
+                        guided_gud_tranche.set_training_stage(stage)
                     authorized_names = _authorized_factor_names(
                         factor_entries,
                         schedule,
                         step=step,
                         guided_continuation=True,
+                        guided_gud_continuation=guided_gud_continuation,
                     )
                     if (
                         not stage_authorized
@@ -4263,6 +5403,7 @@ def train_target_native_behavior_distillation(
                             schedule,
                             step=step,
                             guided_continuation=True,
+                            guided_gud_continuation=guided_gud_continuation,
                         )
                     )
                     if guided_continuation
@@ -4292,6 +5433,7 @@ def train_target_native_behavior_distillation(
                             schedule,
                             step=step,
                             guided_continuation=guided_continuation,
+                            guided_gud_continuation=guided_gud_continuation,
                         )
                         and parameter.grad is not None
                     ):
@@ -4325,6 +5467,12 @@ def train_target_native_behavior_distillation(
                     )
                 if post_optimizer_step_callback is not None:
                     post_optimizer_step_callback(step)
+                if guided_gud_continuation:
+                    _assert_guided_gud_frozen_sources(
+                        factor_entries,
+                        guided_gud_source_binding,
+                        step=step,
+                    )
                 if step in schedule.normalized_checkpoint_steps:
                     metrics = evaluate_behavior_domain(
                         parent_model,
@@ -4338,6 +5486,8 @@ def train_target_native_behavior_distillation(
                         transaction,
                         guided_tranche=guided_tranche,
                         guided_source_binding=guided_source_binding,
+                        guided_gud_tranche=guided_gud_tranche,
+                        guided_gud_source_binding=guided_gud_source_binding,
                     )
                     safe = (
                         metrics.pareto_objectives == step0_metrics.pareto_objectives
@@ -4348,6 +5498,8 @@ def train_target_native_behavior_distillation(
                         transaction=transaction,
                         guided_tranche=guided_tranche,
                         guided_source_binding=guided_source_binding,
+                        guided_gud_tranche=guided_gud_tranche,
+                        guided_gud_source_binding=guided_gud_source_binding,
                         step=step,
                         metrics=metrics,
                         state=state,
@@ -4378,6 +5530,7 @@ def train_target_native_behavior_distillation(
                     transaction,
                     step0_state,
                     guided_tranche=guided_tranche,
+                    guided_gud_tranche=guided_gud_tranche,
                 )
             except Exception as restore_error:
                 training_error.add_note(
@@ -4408,6 +5561,7 @@ def train_target_native_behavior_distillation(
             transaction,
             step0_state,
             guided_tranche=guided_tranche,
+            guided_gud_tranche=guided_gud_tranche,
         )
         raise TargetNativeBehaviorDistillationError(
             "Not every target-native factor received a finite nonzero output-loss "
@@ -4425,11 +5579,14 @@ def train_target_native_behavior_distillation(
             transaction,
             selected_state,
             guided_tranche=guided_tranche,
+            guided_gud_tranche=guided_gud_tranche,
         )
         factor_pack = capture_target_native_factor_state(
             transaction,
             guided_tranche=guided_tranche,
             guided_source_binding=guided_source_binding,
+            guided_gud_tranche=guided_gud_tranche,
+            guided_gud_source_binding=guided_gud_source_binding,
         )
         if factor_pack.factor_state_sha256 != selected_state.factor_state_sha256:
             raise TargetNativeBehaviorDistillationError(
@@ -4473,6 +5630,7 @@ def train_target_native_behavior_distillation(
                 transaction,
                 step0_state,
                 guided_tranche=guided_tranche,
+                guided_gud_tranche=guided_gud_tranche,
             )
         raise
 
@@ -4512,6 +5670,7 @@ def train_target_native_behavior_distillation(
         domain_binding_sha256=domain_binding_sha256,
         schedule_sha256=schedule_sha256,
         guided_source_binding=guided_source_binding,
+        guided_gud_source_binding=guided_gud_source_binding,
         guided_candidate_gate=guided_candidate_gate,
         sealed_evaluation_policy=schedule.sealed_evaluation_policy,
     )
@@ -4523,8 +5682,11 @@ __all__ = [
     "BEHAVIOR_FACTOR_PACK_SCHEMA",
     "BEHAVIOR_FACTOR_PACK_V2_SCHEMA",
     "BEHAVIOR_FACTOR_PACK_V3_SCHEMA",
+    "BEHAVIOR_FACTOR_PACK_V4_SCHEMA",
     "DURABLE_BEHAVIOR_CHECKPOINT_SCHEMA",
     "GUIDED_COMBINED_FACTOR_TENSOR_COUNT",
+    "GUIDED_GUD_COMBINED_FACTOR_TENSOR_COUNT",
+    "GUIDED_GUD_FACTOR_TENSOR_COUNT",
     "GUIDED_CONTINUATION_STEPS",
     "GUIDED_JOINT_START_STEP",
     "GUIDED_LEFT_ONLY_END_STEP",
@@ -4549,10 +5711,12 @@ __all__ = [
     "GradientActivationAudit",
     "GuidedCandidateGateAudit",
     "GuidedFactorSourceBinding",
+    "GuidedGUDFactorSourceBinding",
     "GuidedTrainingStage",
     "TargetNativeBehaviorDistillationError",
     "TargetNativeFactorState",
     "authenticate_guided_factor_sources",
+    "authenticate_guided_gud_factor_sources",
     "capture_target_native_factor_state",
     "evaluate_behavior_domain",
     "load_behavior_domain_suite",

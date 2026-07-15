@@ -34,9 +34,11 @@ from torch import Tensor
 from neural_forge.hf_target_native_behavior_distillation import (
     BEHAVIOR_CHECKPOINT_SCHEMA,
     BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+    BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
     CausalBehaviorMetrics,
     DurableBehaviorCheckpoint,
     GuidedFactorSourceBinding,
+    GuidedGUDFactorSourceBinding,
 )
 
 
@@ -82,9 +84,15 @@ _GUIDED_QKVO_FACTOR_NAMES = frozenset(
     for role in ("q", "k", "v", "o")
     for side in ("left", "right")
 )
+_GUIDED_GUD_FACTOR_NAMES = frozenset(
+    f"guided_gud.{role}_{side}"
+    for role in ("gate", "up", "down")
+    for side in ("left", "right")
+)
 _V3_FACTOR_NAMES = (
     _QKVO_GUD_FACTOR_NAMES | _LEXICAL_FACTOR_NAMES | _GUIDED_QKVO_FACTOR_NAMES
 )
+_V4_FACTOR_NAMES = _V3_FACTOR_NAMES | _GUIDED_GUD_FACTOR_NAMES
 
 _METRIC_FIELDS = frozenset(CausalBehaviorMetrics.__dataclass_fields__)
 _TERMINAL_CHECKPOINT_FIELDS = {
@@ -111,6 +119,11 @@ _V3_FACTOR_PAYLOAD_FIELDS = {
     "inherited_product_regrouped",
     "guided_product_regrouped",
     "factor_tensors",
+}
+_V4_FACTOR_PAYLOAD_FIELDS = _V3_FACTOR_PAYLOAD_FIELDS | {
+    "guided_gud_source_binding",
+    "guided_gud_source_binding_sha256",
+    "guided_gud_product_regrouped",
 }
 _RUNTIME_SOURCE_BINDING_FIELDS = frozenset({"inherited_installation_sha256"})
 
@@ -226,6 +239,64 @@ def _source_binding(value: Any, name: str) -> GuidedFactorSourceBinding:
         ) from error
 
 
+def _guided_gud_source_binding(
+    value: Any,
+    name: str,
+) -> GuidedGUDFactorSourceBinding:
+    if isinstance(value, GuidedGUDFactorSourceBinding):
+        return value
+    if not isinstance(value, Mapping):
+        raise GuidedCheckpointRecoveryAuthenticationError(
+            f"{name} must be a complete guided-GUD source binding."
+        )
+    raw = dict(value)
+    expected = {
+        "source_v3_factor_state_sha256",
+        "source_v3_factor_manifest_sha256",
+        "source_v3_tensor_sha256s",
+        "source_v3_lexical_rank",
+        "source_guided_qkvo_binding",
+        "source_guided_qkvo_binding_sha256",
+        "source_v3_content_sha256",
+        "audit_report_sha256",
+        "basis_envelope_file_sha256",
+        "basis_payload_sha256",
+        "basis_manifest_sha256",
+        "source_basis_tensor_sha256s",
+        "inherited_installation_sha256",
+        "inherited_factor_state_sha256_at_install",
+        "adapter_site_indices_sha256",
+        "audit_site_indices_sha256",
+    }
+    if set(raw) != expected:
+        raise GuidedCheckpointRecoveryAuthenticationError(
+            f"{name} has an unsupported schema."
+        )
+    nested_raw = raw.pop("source_guided_qkvo_binding")
+    nested_sha = raw.pop("source_guided_qkvo_binding_sha256")
+    content_sha = raw.pop("source_v3_content_sha256")
+    try:
+        nested = _source_binding(nested_raw, f"{name} nested QKVO binding")
+        result = GuidedGUDFactorSourceBinding(
+            source_guided_qkvo_binding=nested,
+            **raw,
+        )
+    except (TypeError, ValueError, RuntimeError) as error:
+        raise GuidedCheckpointRecoveryAuthenticationError(
+            f"{name} failed trainer authentication."
+        ) from error
+    if (
+        nested_sha != nested.binding_sha256
+        or content_sha != result.source_v3_content_sha256
+        or canonical_json_bytes(value) != canonical_json_bytes(result.as_dict())
+        or canonical_sha256(value) != result.binding_sha256
+    ):
+        raise GuidedCheckpointRecoveryAuthenticationError(
+            f"{name} failed binding authentication."
+        )
+    return result
+
+
 def portable_guided_source_binding(
     binding: GuidedFactorSourceBinding,
 ) -> dict[str, Any]:
@@ -252,6 +323,44 @@ def portable_guided_source_binding_sha256(
             "schema": GUIDED_CHECKPOINT_PORTABLE_FACTOR_IDENTITY_SCHEMA,
             "portable_guided_source_binding": portable_guided_source_binding(binding),
             "runtime_fields_excluded": sorted(_RUNTIME_SOURCE_BINDING_FIELDS),
+        }
+    )
+
+
+def portable_guided_gud_source_binding(
+    binding: GuidedGUDFactorSourceBinding,
+) -> dict[str, Any]:
+    """Return v4 GUD provenance without either process-local receipt domain."""
+
+    value = _guided_gud_source_binding(binding, "guided-GUD source binding")
+    payload = value.as_dict()
+    payload.pop("inherited_installation_sha256")
+    # The legacy v3 digest and nested binding SHA include QKVO's runtime-only
+    # installation receipt.  Stable content remains independently bound by the
+    # full tensor manifest/content SHA and portable nested source binding.
+    payload.pop("source_v3_factor_state_sha256")
+    payload.pop("source_guided_qkvo_binding_sha256")
+    payload["source_guided_qkvo_binding"] = portable_guided_source_binding(
+        value.source_guided_qkvo_binding
+    )
+    return payload
+
+
+def portable_guided_gud_source_binding_sha256(
+    binding: GuidedGUDFactorSourceBinding,
+) -> str:
+    return canonical_sha256(
+        {
+            "schema": GUIDED_CHECKPOINT_PORTABLE_FACTOR_IDENTITY_SCHEMA,
+            "portable_guided_gud_source_binding": (
+                portable_guided_gud_source_binding(binding)
+            ),
+            "runtime_fields_excluded": [
+                "guided_gud.inherited_installation_sha256",
+                "guided_gud.source_v3_factor_state_sha256",
+                "guided_gud.source_guided_qkvo_binding_sha256",
+                "guided_qkvo.inherited_installation_sha256",
+            ],
         }
     )
 
@@ -296,6 +405,69 @@ def portable_v3_factor_state_sha256(
             ),
             "inherited_product_regrouped": False,
             "guided_product_regrouped": False,
+        }
+    )
+
+
+def _legacy_v4_factor_state_sha256(
+    payload: Mapping[str, Any],
+    guided_binding: GuidedFactorSourceBinding,
+    guided_gud_binding: GuidedGUDFactorSourceBinding,
+) -> str:
+    return canonical_sha256(
+        {
+            "schema": BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
+            "lexical_rank": payload.get("lexical_rank"),
+            "factors": payload.get("factors"),
+            "guided_source_binding": guided_binding.as_dict(),
+            "guided_source_binding_sha256": guided_binding.binding_sha256,
+            "guided_gud_source_binding": guided_gud_binding.as_dict(),
+            "guided_gud_source_binding_sha256": guided_gud_binding.binding_sha256,
+            "inherited_product_regrouped": False,
+            "guided_product_regrouped": False,
+            "guided_gud_product_regrouped": False,
+        }
+    )
+
+
+def portable_v4_factor_state_sha256(
+    payload: Mapping[str, Any],
+    guided_binding: GuidedFactorSourceBinding | None = None,
+    guided_gud_binding: GuidedGUDFactorSourceBinding | None = None,
+) -> str:
+    """Content address for a v4 state stable across both live installations."""
+
+    guided = _source_binding(
+        payload.get("guided_source_binding")
+        if guided_binding is None
+        else guided_binding,
+        "portable v4 guided source binding",
+    )
+    guided_gud = _guided_gud_source_binding(
+        payload.get("guided_gud_source_binding")
+        if guided_gud_binding is None
+        else guided_gud_binding,
+        "portable v4 guided-GUD source binding",
+    )
+    if guided_gud.source_guided_qkvo_binding != guided:
+        raise GuidedCheckpointRecoveryAuthenticationError(
+            "Portable v4 source bindings do not share one nested QKVO binding."
+        )
+    return canonical_sha256(
+        {
+            "schema": GUIDED_CHECKPOINT_PORTABLE_FACTOR_IDENTITY_SCHEMA,
+            "legacy_factor_pack_schema": BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
+            "lexical_rank": payload.get("lexical_rank"),
+            "factors": payload.get("factors"),
+            "portable_guided_source_binding_sha256": (
+                portable_guided_source_binding_sha256(guided)
+            ),
+            "portable_guided_gud_source_binding_sha256": (
+                portable_guided_gud_source_binding_sha256(guided_gud)
+            ),
+            "inherited_product_regrouped": False,
+            "guided_product_regrouped": False,
+            "guided_gud_product_regrouped": False,
         }
     )
 
@@ -771,6 +943,114 @@ class GuidedCheckpointRecoverySink:
                 raise GuidedCheckpointRecoveryAuthenticationError(
                     f"Durable v3 factor {name!r} failed tensor authentication."
                 )
+        manifest = {
+            name: value for name, value in payload.items() if name != "factor_tensors"
+        }
+        return manifest, canonical_sha256(manifest)
+
+    @staticmethod
+    def _validate_v4_factor_payload(
+        payload: Mapping[str, Any],
+        *,
+        expected_factor_state_sha256: str,
+    ) -> tuple[dict[str, Any], str]:
+        if set(payload) != _V4_FACTOR_PAYLOAD_FIELDS:
+            raise GuidedCheckpointRecoveryAuthenticationError(
+                "Durable factor payload is not the exact v4 schema."
+            )
+        guided_binding = _source_binding(
+            payload.get("guided_source_binding"),
+            "durable v4 guided source binding",
+        )
+        guided_gud_binding = _guided_gud_source_binding(
+            payload.get("guided_gud_source_binding"),
+            "durable v4 guided-GUD source binding",
+        )
+        if (
+            payload.get("schema") != BEHAVIOR_FACTOR_PACK_V4_SCHEMA
+            or payload.get("factor_count") != len(_V4_FACTOR_NAMES)
+            or payload.get("factor_state_sha256") != expected_factor_state_sha256
+            or any(
+                payload.get(name) is not False
+                for name in (
+                    "parent_state_included",
+                    "native_child_state_included",
+                    "optimizer_state_included",
+                    "inherited_product_regrouped",
+                    "guided_product_regrouped",
+                    "guided_gud_product_regrouped",
+                )
+            )
+            or isinstance(payload.get("lexical_rank"), bool)
+            or not isinstance(payload.get("lexical_rank"), int)
+            or payload.get("lexical_rank") <= 0
+            or payload.get("guided_source_binding_sha256")
+            != guided_binding.binding_sha256
+            or payload.get("guided_gud_source_binding_sha256")
+            != guided_gud_binding.binding_sha256
+            or guided_gud_binding.source_guided_qkvo_binding != guided_binding
+            or canonical_json_bytes(payload.get("guided_source_binding"))
+            != canonical_json_bytes(guided_binding.as_dict())
+            or canonical_json_bytes(payload.get("guided_gud_source_binding"))
+            != canonical_json_bytes(guided_gud_binding.as_dict())
+        ):
+            raise GuidedCheckpointRecoveryAuthenticationError(
+                "Durable v4 factor payload metadata failed authentication."
+            )
+        rows = payload.get("factors")
+        tensors = payload.get("factor_tensors")
+        if (
+            not isinstance(rows, list)
+            or not isinstance(tensors, Mapping)
+            or len(rows) != len(_V4_FACTOR_NAMES)
+            or set(tensors) != _V4_FACTOR_NAMES
+        ):
+            raise GuidedCheckpointRecoveryAuthenticationError(
+                "Durable v4 factor payload is not the complete 32-factor state."
+            )
+        by_name: dict[str, Mapping[str, Any]] = {}
+        for row in rows:
+            if not isinstance(row, Mapping) or set(row) != {
+                "name",
+                "shape",
+                "dtype",
+                "tensor_sha256",
+            }:
+                raise GuidedCheckpointRecoveryAuthenticationError(
+                    "Durable v4 factor manifest row is malformed."
+                )
+            name = row.get("name")
+            if not isinstance(name, str) or name in by_name:
+                raise GuidedCheckpointRecoveryAuthenticationError(
+                    "Durable v4 factor names must be unique strings."
+                )
+            by_name[name] = row
+        if set(by_name) != _V4_FACTOR_NAMES:
+            raise GuidedCheckpointRecoveryAuthenticationError(
+                "Durable v4 factor manifest does not contain exactly 32 factors."
+            )
+        for name in sorted(_V4_FACTOR_NAMES):
+            tensor = tensors[name]
+            row = by_name[name]
+            if (
+                not isinstance(tensor, Tensor)
+                or list(tensor.shape) != row.get("shape")
+                or str(tensor.dtype) != row.get("dtype")
+                or _tensor_sha256(tensor)
+                != _sha256(row.get("tensor_sha256"), f"factor {name} SHA")
+                or not bool(torch.isfinite(tensor.detach()).all())
+            ):
+                raise GuidedCheckpointRecoveryAuthenticationError(
+                    f"Durable v4 factor {name!r} failed tensor authentication."
+                )
+        if _legacy_v4_factor_state_sha256(
+            payload,
+            guided_binding,
+            guided_gud_binding,
+        ) != _sha256(expected_factor_state_sha256, "expected v4 factor state"):
+            raise GuidedCheckpointRecoveryAuthenticationError(
+                "Durable v4 factor-state SHA failed manifest/source authentication."
+            )
         manifest = {
             name: value for name, value in payload.items() if name != "factor_tensors"
         }
@@ -1510,6 +1790,82 @@ def rebind_recovered_v3_factor_payload(
     return rebound
 
 
+def rebind_recovered_v4_factor_payload(
+    payload: Mapping[str, Any],
+    runtime_guided_source_binding: GuidedFactorSourceBinding,
+    runtime_guided_gud_source_binding: GuidedGUDFactorSourceBinding,
+) -> dict[str, Any]:
+    """Authenticate and rebind both live-installation receipts in a v4 pack."""
+
+    if not isinstance(payload, Mapping):
+        raise GuidedCheckpointRecoveryAuthenticationError(
+            "Recovered v4 factor payload must be a mapping."
+        )
+    historical_guided = _source_binding(
+        payload.get("guided_source_binding"),
+        "retained historical guided source binding",
+    )
+    historical_gud = _guided_gud_source_binding(
+        payload.get("guided_gud_source_binding"),
+        "retained historical guided-GUD source binding",
+    )
+    expected_source_sha = _sha256(
+        payload.get("factor_state_sha256"),
+        "retained historical v4 factor state",
+    )
+    GuidedCheckpointRecoverySink._validate_v4_factor_payload(
+        payload,
+        expected_factor_state_sha256=expected_source_sha,
+    )
+    runtime_guided = _source_binding(
+        runtime_guided_source_binding,
+        "runtime guided source binding",
+    )
+    runtime_gud = _guided_gud_source_binding(
+        runtime_guided_gud_source_binding,
+        "runtime guided-GUD source binding",
+    )
+    if runtime_gud.source_guided_qkvo_binding != runtime_guided:
+        raise GuidedCheckpointRecoveryAuthenticationError(
+            "Runtime guided-GUD binding is not nested over the runtime QKVO binding."
+        )
+    if canonical_json_bytes(portable_guided_source_binding(historical_guided)) != (
+        canonical_json_bytes(portable_guided_source_binding(runtime_guided))
+    ) or canonical_json_bytes(
+        portable_guided_gud_source_binding(historical_gud)
+    ) != canonical_json_bytes(portable_guided_gud_source_binding(runtime_gud)):
+        raise GuidedCheckpointRecoveryAuthenticationError(
+            "Retained v4 pack source content differs from the live runtime sources."
+        )
+    portable_before = portable_v4_factor_state_sha256(
+        payload,
+        historical_guided,
+        historical_gud,
+    )
+    rebound = dict(payload)
+    rebound["guided_source_binding"] = runtime_guided.as_dict()
+    rebound["guided_source_binding_sha256"] = runtime_guided.binding_sha256
+    rebound["guided_gud_source_binding"] = runtime_gud.as_dict()
+    rebound["guided_gud_source_binding_sha256"] = runtime_gud.binding_sha256
+    rebound["factor_state_sha256"] = _legacy_v4_factor_state_sha256(
+        rebound,
+        runtime_guided,
+        runtime_gud,
+    )
+    GuidedCheckpointRecoverySink._validate_v4_factor_payload(
+        rebound,
+        expected_factor_state_sha256=str(rebound["factor_state_sha256"]),
+    )
+    if (
+        portable_v4_factor_state_sha256(rebound, runtime_guided, runtime_gud)
+        != portable_before
+    ):
+        raise GuidedCheckpointRecoveryAuthenticationError(
+            "Runtime v4 rebinding changed portable factor content identity."
+        )
+    return rebound
+
+
 __all__ = [
     "GUIDED_CHECKPOINT_CANDIDATE_SCHEMA",
     "GUIDED_CHECKPOINT_PORTABLE_FACTOR_IDENTITY_SCHEMA",
@@ -1528,6 +1884,10 @@ __all__ = [
     "file_sha256",
     "portable_guided_source_binding",
     "portable_guided_source_binding_sha256",
+    "portable_guided_gud_source_binding",
+    "portable_guided_gud_source_binding_sha256",
     "portable_v3_factor_state_sha256",
+    "portable_v4_factor_state_sha256",
     "rebind_recovered_v3_factor_payload",
+    "rebind_recovered_v4_factor_payload",
 ]

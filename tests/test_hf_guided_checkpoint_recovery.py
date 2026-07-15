@@ -20,12 +20,14 @@ from neural_forge.hf_guided_checkpoint_recovery import (
 )
 from neural_forge.hf_target_native_behavior_distillation import (
     BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+    BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
     BehaviorCheckpoint,
     CausalBehaviorMetrics,
     DurableBehaviorCheckpoint,
     DurableFactorStateSnapshot,
     DurableFactorTensorSnapshot,
     GuidedFactorSourceBinding,
+    GuidedGUDFactorSourceBinding,
 )
 
 
@@ -56,6 +58,12 @@ GUIDED_NAMES = {
     for side in ("left", "right")
 }
 V3_NAMES = tuple(sorted(QKVO_GUD_NAMES | LEXICAL_NAMES | GUIDED_NAMES))
+GUIDED_GUD_NAMES = {
+    f"guided_gud.{role}_{side}"
+    for role in ("gate", "up", "down")
+    for side in ("left", "right")
+}
+V4_NAMES = tuple(sorted((*V3_NAMES, *GUIDED_GUD_NAMES)))
 
 
 def _digest(label: str) -> str:
@@ -166,6 +174,92 @@ def _state_with_binding(
         factor_state_sha256=factor_sha,
         lexical_rank=source.lexical_rank,
         guided_source_binding=binding,
+    )
+
+
+def _guided_gud_binding(
+    source_v3: DurableFactorStateSnapshot,
+    guided_binding: GuidedFactorSourceBinding,
+    *,
+    installation_label: str = "guided-gud-installation",
+) -> GuidedGUDFactorSourceBinding:
+    rows = [
+        {
+            "name": value.name,
+            "shape": list(value.shape),
+            "dtype": value.dtype,
+            "tensor_sha256": value.tensor_sha256,
+        }
+        for value in source_v3.tensors
+    ]
+    return GuidedGUDFactorSourceBinding(
+        source_v3_factor_state_sha256=source_v3.factor_state_sha256,
+        source_v3_factor_manifest_sha256=behavior._canonical_sha256(rows),
+        source_v3_tensor_sha256s=tuple(
+            (value.name, value.tensor_sha256) for value in source_v3.tensors
+        ),
+        source_v3_lexical_rank=source_v3.lexical_rank,
+        source_guided_qkvo_binding=guided_binding,
+        audit_report_sha256=_digest("guided-gud-audit"),
+        basis_envelope_file_sha256=_digest("guided-gud-envelope"),
+        basis_payload_sha256=_digest("guided-gud-payload"),
+        basis_manifest_sha256=_digest("guided-gud-manifest"),
+        source_basis_tensor_sha256s=tuple(
+            (role, _digest(f"guided-gud-basis:{role}"))
+            for role in ("gate", "up", "down")
+        ),
+        inherited_installation_sha256=_digest(installation_label),
+        inherited_factor_state_sha256_at_install=_digest("guided-gud-inherited"),
+        adapter_site_indices_sha256=_digest("guided-gud-adapter-sites"),
+        audit_site_indices_sha256=_digest("guided-gud-audit-sites"),
+    )
+
+
+def _v4_factor_state(seed: int) -> DurableFactorStateSnapshot:
+    source_v3 = _factor_state(seed)
+    binding = source_v3.guided_source_binding
+    assert isinstance(binding, GuidedFactorSourceBinding)
+    gud_binding = _guided_gud_binding(source_v3, binding)
+    snapshots = list(source_v3.tensors)
+    for index, name in enumerate(sorted(GUIDED_GUD_NAMES), start=len(snapshots)):
+        tensor = torch.tensor(
+            [float(seed), float(index), float(seed + index + 1)],
+            dtype=torch.float32,
+        )
+        digest = behavior._tensor_sha256(tensor)
+        snapshots.append(
+            DurableFactorTensorSnapshot(
+                name=name,
+                shape=tuple(tensor.shape),
+                dtype=str(tensor.dtype),
+                tensor_sha256=digest,
+                raw_bytes=tensor.view(torch.uint8).numpy().tobytes(),
+            )
+        )
+    snapshots.sort(key=lambda value: value.name)
+    rows = [
+        {
+            "name": value.name,
+            "shape": list(value.shape),
+            "dtype": value.dtype,
+            "tensor_sha256": value.tensor_sha256,
+        }
+        for value in snapshots
+    ]
+    factor_sha = behavior._factor_state_sha256(
+        rows,
+        schema=BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
+        lexical_rank=source_v3.lexical_rank,
+        guided_source_binding=binding,
+        guided_gud_source_binding=gud_binding,
+    )
+    return DurableFactorStateSnapshot(
+        schema=BEHAVIOR_FACTOR_PACK_V4_SCHEMA,
+        tensors=tuple(snapshots),
+        factor_state_sha256=factor_sha,
+        lexical_rank=source_v3.lexical_rank,
+        guided_source_binding=binding,
+        guided_gud_source_binding=gud_binding,
     )
 
 
@@ -762,3 +856,84 @@ def test_portable_rebind_rejects_live_source_content_drift() -> None:
         match="source content differs",
     ):
         recovery.rebind_recovered_v3_factor_payload(pack, drifted)
+
+
+def test_v4_portable_rebind_changes_only_two_runtime_receipt_domains() -> None:
+    state = _v4_factor_state(40)
+    pack = state.as_factor_payload()
+    historical_guided = state.guided_source_binding
+    historical_gud = state.guided_gud_source_binding
+    assert isinstance(historical_guided, GuidedFactorSourceBinding)
+    assert isinstance(historical_gud, GuidedGUDFactorSourceBinding)
+    recovery.GuidedCheckpointRecoverySink._validate_v4_factor_payload(
+        pack,
+        expected_factor_state_sha256=state.factor_state_sha256,
+    )
+    portable_before = recovery.portable_v4_factor_state_sha256(pack)
+
+    runtime_guided = _runtime_binding(
+        historical_guided,
+        installation_label="v4-runtime-qkvo-installation",
+    )
+    source_v3 = DurableFactorStateSnapshot(
+        schema=BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+        tensors=tuple(value for value in state.tensors if value.name in set(V3_NAMES)),
+        factor_state_sha256=behavior._factor_state_sha256(
+            [
+                {
+                    "name": value.name,
+                    "shape": list(value.shape),
+                    "dtype": value.dtype,
+                    "tensor_sha256": value.tensor_sha256,
+                }
+                for value in state.tensors
+                if value.name in set(V3_NAMES)
+            ],
+            schema=BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            lexical_rank=state.lexical_rank,
+            guided_source_binding=runtime_guided,
+        ),
+        lexical_rank=state.lexical_rank,
+        guided_source_binding=runtime_guided,
+    )
+    runtime_gud = _guided_gud_binding(
+        source_v3,
+        runtime_guided,
+        installation_label="v4-runtime-gud-installation",
+    )
+    rebound = recovery.rebind_recovered_v4_factor_payload(
+        pack,
+        runtime_guided,
+        runtime_gud,
+    )
+    assert rebound["factor_state_sha256"] != pack["factor_state_sha256"]
+    assert rebound["factor_tensors"].keys() == pack["factor_tensors"].keys()
+    assert all(
+        torch.equal(rebound["factor_tensors"][name], pack["factor_tensors"][name])
+        for name in V4_NAMES
+    )
+    assert recovery.portable_v4_factor_state_sha256(rebound) == portable_before
+
+    drifted_payload = runtime_gud.as_dict()
+    drifted_payload["audit_report_sha256"] = _digest("foreign-gud-audit")
+    for computed in (
+        "source_guided_qkvo_binding_sha256",
+        "source_v3_content_sha256",
+    ):
+        drifted_payload.pop(computed)
+    drifted_nested = GuidedFactorSourceBinding(
+        **drifted_payload.pop("source_guided_qkvo_binding")
+    )
+    drifted_gud = GuidedGUDFactorSourceBinding(
+        source_guided_qkvo_binding=drifted_nested,
+        **drifted_payload,
+    )
+    with pytest.raises(
+        GuidedCheckpointRecoveryAuthenticationError,
+        match="source content differs",
+    ):
+        recovery.rebind_recovered_v4_factor_payload(
+            pack,
+            runtime_guided,
+            drifted_gud,
+        )
