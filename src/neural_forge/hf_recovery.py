@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
 import shutil
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Sequence
+from types import MappingProxyType
+from typing import Any, Callable, Mapping, NamedTuple, Sequence
 
 from neural_forge.hf_tools import (
     BEHAVIOR_PROBES,
@@ -17,7 +19,6 @@ from neural_forge.hf_tools import (
     _category_breakdown_summary,
     _decoder_layer_container,
     _dtype_from_name,
-    _generate_text,
     _generate_text_batch,
     _generation_health,
     _load_eval_suite,
@@ -113,6 +114,242 @@ def _recovery_behavior_eval_suite_report(suite: dict[str, Any] | None) -> dict[s
         "behavior_probe_count": len(suite.get("behavior_probes", [])),
         "generation_prompt_count": len(suite.get("generation_prompts", [])),
     }
+
+
+def _freeze_ordered_recovery_texts(texts: Sequence[str], *, field_name: str) -> tuple[str, ...]:
+    if isinstance(texts, (str, bytes)):
+        raise TypeError(f"{field_name} must be a sequence of strings, not one string.")
+    frozen: list[str] = []
+    for index, text in enumerate(texts):
+        if not isinstance(text, str):
+            raise TypeError(f"{field_name}[{index}] must be a string.")
+        if not text.strip():
+            raise ValueError(f"{field_name}[{index}] must not be blank.")
+        frozen.append(text)
+    return tuple(frozen)
+
+
+def _ordered_recovery_texts_sha256(texts: Sequence[str]) -> str:
+    digest = hashlib.sha256()
+    digest.update(len(texts).to_bytes(8, byteorder="big", signed=False))
+    for text in texts:
+        encoded = str(text).encode("utf-8")
+        digest.update(len(encoded).to_bytes(8, byteorder="big", signed=False))
+        digest.update(encoded)
+    return digest.hexdigest()
+
+
+def _freeze_ordered_replay_bank(
+    bank: Sequence[Sequence[str]],
+    *,
+    field_name: str,
+) -> tuple[tuple[str, ...], ...]:
+    if isinstance(bank, (str, bytes)):
+        raise TypeError(f"{field_name} must be a sequence of text batches.")
+    frozen: list[tuple[str, ...]] = []
+    for index, batch in enumerate(bank):
+        frozen_batch = _freeze_ordered_recovery_texts(
+            batch,
+            field_name=f"{field_name}[{index}]",
+        )
+        if not frozen_batch:
+            raise ValueError(f"{field_name}[{index}] must contain at least one text.")
+        frozen.append(frozen_batch)
+    return tuple(frozen)
+
+
+def _freeze_on_policy_replay_bank(
+    bank: Sequence[Sequence[str]],
+) -> tuple[tuple[str, ...], ...]:
+    return _freeze_ordered_replay_bank(bank, field_name="on_policy_replay_bank")
+
+
+def _on_policy_replay_bank_sha256(bank: Sequence[Sequence[str]]) -> str:
+    digest = hashlib.sha256()
+    digest.update(len(bank).to_bytes(8, byteorder="big", signed=False))
+    for batch in bank:
+        batch_digest = bytes.fromhex(_ordered_recovery_texts_sha256(batch))
+        digest.update(len(batch).to_bytes(8, byteorder="big", signed=False))
+        digest.update(batch_digest)
+    return digest.hexdigest()
+
+
+_STEPWISE_REPLAY_SCHEMA = "neural-forge.stepwise-token-replay.v1"
+_STEPWISE_REPLAY_PREFLIGHT_SCHEMA = "neural-forge.stepwise-token-replay-preflight.v1"
+
+
+class _FrozenStepwiseReplayRow(NamedTuple):
+    prompt_input_ids: tuple[int, ...]
+    rollout_input_ids: tuple[int, ...]
+
+
+class _FrozenStepwiseReplayEvent(NamedTuple):
+    step: int
+    rows: tuple[_FrozenStepwiseReplayRow, ...]
+
+
+def _freeze_stepwise_token_ids(value: Any, *, field_name: str) -> tuple[int, ...]:
+    if isinstance(value, (str, bytes, Mapping)) or not isinstance(value, Sequence):
+        raise TypeError(f"{field_name} must be a sequence of integer token IDs.")
+    frozen: list[int] = []
+    for index, token_id in enumerate(value):
+        if isinstance(token_id, bool) or not isinstance(token_id, int):
+            raise TypeError(f"{field_name}[{index}] must be an integer token ID.")
+        if token_id < 0:
+            raise ValueError(f"{field_name}[{index}] must be non-negative.")
+        frozen.append(int(token_id))
+    if not frozen:
+        raise ValueError(f"{field_name} must contain at least one token ID.")
+    return tuple(frozen)
+
+
+def _freeze_stepwise_replay_bank(
+    bank: Sequence[Mapping[str, Any]],
+) -> tuple[_FrozenStepwiseReplayEvent, ...]:
+    if isinstance(bank, (str, bytes, Mapping)) or not isinstance(bank, Sequence):
+        raise TypeError("stepwise_replay_bank must be a sequence of token replay event mappings.")
+    frozen_events: list[_FrozenStepwiseReplayEvent] = []
+    for event_index, event in enumerate(bank):
+        event_name = f"stepwise_replay_bank[{event_index}]"
+        if not isinstance(event, Mapping):
+            raise TypeError(f"{event_name} must be a mapping with step and rows fields.")
+        if set(event) != {"step", "rows"}:
+            raise ValueError(f"{event_name} must contain exactly the step and rows fields.")
+        step = event["step"]
+        if isinstance(step, bool) or not isinstance(step, int):
+            raise TypeError(f"{event_name}.step must be an integer.")
+        if step <= 0:
+            raise ValueError(f"{event_name}.step must be positive.")
+        rows = event["rows"]
+        if isinstance(rows, (str, bytes, Mapping)) or not isinstance(rows, Sequence):
+            raise TypeError(f"{event_name}.rows must be a sequence of token replay row mappings.")
+        if not rows:
+            raise ValueError(f"{event_name}.rows must contain at least one replay row.")
+        frozen_rows: list[_FrozenStepwiseReplayRow] = []
+        for row_index, row in enumerate(rows):
+            row_name = f"{event_name}.rows[{row_index}]"
+            if not isinstance(row, Mapping):
+                raise TypeError(
+                    f"{row_name} must be a mapping with prompt_input_ids and rollout_input_ids fields."
+                )
+            if set(row) != {"prompt_input_ids", "rollout_input_ids"}:
+                raise ValueError(
+                    f"{row_name} must contain exactly prompt_input_ids and rollout_input_ids."
+                )
+            prompt_input_ids = _freeze_stepwise_token_ids(
+                row["prompt_input_ids"],
+                field_name=f"{row_name}.prompt_input_ids",
+            )
+            rollout_input_ids = _freeze_stepwise_token_ids(
+                row["rollout_input_ids"],
+                field_name=f"{row_name}.rollout_input_ids",
+            )
+            if len(rollout_input_ids) <= len(prompt_input_ids):
+                raise ValueError(f"{row_name} must contain at least one continuation token.")
+            if rollout_input_ids[: len(prompt_input_ids)] != prompt_input_ids:
+                raise ValueError(f"{row_name}.prompt_input_ids must be an exact rollout prefix.")
+            frozen_rows.append(
+                _FrozenStepwiseReplayRow(
+                    prompt_input_ids=prompt_input_ids,
+                    rollout_input_ids=rollout_input_ids,
+                )
+            )
+        frozen_events.append(_FrozenStepwiseReplayEvent(step=int(step), rows=tuple(frozen_rows)))
+    return tuple(frozen_events)
+
+
+def _update_stepwise_replay_digest_ids(digest: Any, token_ids: Sequence[int]) -> None:
+    digest.update(len(token_ids).to_bytes(8, byteorder="big", signed=False))
+    for token_id in token_ids:
+        digest.update(int(token_id).to_bytes(8, byteorder="big", signed=False))
+
+
+def _stepwise_replay_event_sha256(event: _FrozenStepwiseReplayEvent) -> str:
+    digest = hashlib.sha256()
+    digest.update(_STEPWISE_REPLAY_SCHEMA.encode("utf-8"))
+    digest.update(int(event.step).to_bytes(8, byteorder="big", signed=False))
+    digest.update(len(event.rows).to_bytes(8, byteorder="big", signed=False))
+    for row in event.rows:
+        _update_stepwise_replay_digest_ids(digest, row.prompt_input_ids)
+        _update_stepwise_replay_digest_ids(digest, row.rollout_input_ids)
+    return digest.hexdigest()
+
+
+def _stepwise_replay_bank_sha256(bank: Sequence[_FrozenStepwiseReplayEvent]) -> str:
+    digest = hashlib.sha256()
+    digest.update(_STEPWISE_REPLAY_SCHEMA.encode("utf-8"))
+    digest.update(len(bank).to_bytes(8, byteorder="big", signed=False))
+    for event in bank:
+        digest.update(bytes.fromhex(_stepwise_replay_event_sha256(event)))
+    return digest.hexdigest()
+
+
+def _stepwise_replay_preflight_sha256(summary: Mapping[str, Any]) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            summary,
+            allow_nan=False,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _normalize_behavior_checkpoint_steps(
+    checkpoint_steps: Sequence[int] | None,
+    *,
+    steps: int,
+) -> tuple[int, ...] | None:
+    if checkpoint_steps is None:
+        return None
+    if isinstance(checkpoint_steps, (str, bytes)):
+        raise TypeError("behavior_eval_checkpoint_steps must be a sequence of integers.")
+    normalized: list[int] = []
+    previous = -1
+    for index, step in enumerate(checkpoint_steps):
+        if isinstance(step, bool) or not isinstance(step, int):
+            raise TypeError(f"behavior_eval_checkpoint_steps[{index}] must be an integer.")
+        if step < 0 or step > steps:
+            raise ValueError(f"behavior_eval_checkpoint_steps[{index}] must be in [0, {steps}].")
+        if step <= previous:
+            raise ValueError("behavior_eval_checkpoint_steps must be strictly increasing and unique.")
+        normalized.append(int(step))
+        previous = int(step)
+    return tuple(normalized)
+
+
+def _deep_readonly_recovery_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return MappingProxyType({str(key): _deep_readonly_recovery_value(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_deep_readonly_recovery_value(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return frozenset(_deep_readonly_recovery_value(item) for item in value)
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    raise TypeError(f"Recovery checkpoint observer values must be JSON-like, got {type(value).__name__}.")
+
+
+def _notify_recovery_checkpoint_observer(
+    observer: Callable[[Mapping[str, Any]], None] | None,
+    *,
+    operation: str,
+    checkpoint_index: int,
+    behavior_entry: Mapping[str, Any],
+) -> None:
+    if observer is None:
+        return
+    event = _deep_readonly_recovery_value(
+        {
+            "schema": "neural-forge.recovery-behavior-checkpoint-observer.v1",
+            "operation": operation,
+            "checkpoint_index": int(checkpoint_index),
+            "step": int(behavior_entry["step"]),
+            "behavior": dict(behavior_entry),
+        }
+    )
+    observer(event)
 
 
 def recover_causal_lm(
@@ -637,6 +874,7 @@ def recover_cross_tokenizer_causal_lm(
     candidate_torch_dtype: str = "float32",
     device: str = "cuda:0",
     trust_remote_code: bool = False,
+    local_files_only: bool = False,
     calibration_texts: Sequence[str] | None = None,
     calibration_order: str = "original",
     response_loss_mode: str = "none",
@@ -676,6 +914,12 @@ def recover_cross_tokenizer_causal_lm(
     behavior_max_probes: int = 6,
     behavior_eval_suite: str | Path | dict[str, Any] | None = None,
     behavior_max_generation_prompts: int | None = None,
+    precomputed_teacher_generated_texts: Sequence[str] | None = None,
+    on_policy_replay_bank: Sequence[Sequence[str]] | None = None,
+    behavior_eval_checkpoint_steps: Sequence[int] | None = None,
+    behavior_checkpoint_observer: Callable[[Mapping[str, Any]], None] | None = None,
+    adamw_foreach: bool | None = None,
+    stepwise_replay_bank: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Recover a cross-tokenizer folded child against donor anchor logits.
 
@@ -686,6 +930,8 @@ def recover_cross_tokenizer_causal_lm(
     anchor vocabulary. Candidate-token LM loss remains available as a stabilizer.
     """
 
+    if not isinstance(local_files_only, bool):
+        raise TypeError("local_files_only must be a bool.")
     if steps < 0:
         raise ValueError("steps must be non-negative.")
     if batch_size <= 0:
@@ -835,6 +1081,60 @@ def recover_cross_tokenizer_causal_lm(
         raise ValueError("behavior_max_generation_prompts must be positive when provided.")
     if calibration_order not in {"original", "domain-balanced"}:
         raise ValueError("calibration_order must be original or domain-balanced.")
+    if behavior_checkpoint_observer is not None and not callable(behavior_checkpoint_observer):
+        raise TypeError("behavior_checkpoint_observer must be callable when provided.")
+    if adamw_foreach is not None and not isinstance(adamw_foreach, bool):
+        raise TypeError("adamw_foreach must be a bool or None.")
+
+    normalized_behavior_checkpoint_steps = _normalize_behavior_checkpoint_steps(
+        behavior_eval_checkpoint_steps,
+        steps=int(steps),
+    )
+    frozen_teacher_generated_texts = (
+        None
+        if precomputed_teacher_generated_texts is None
+        else _freeze_ordered_recovery_texts(
+            precomputed_teacher_generated_texts,
+            field_name="precomputed_teacher_generated_texts",
+        )
+    )
+    frozen_on_policy_replay_bank = (
+        None if on_policy_replay_bank is None else _freeze_on_policy_replay_bank(on_policy_replay_bank)
+    )
+    frozen_stepwise_replay_bank = (
+        None
+        if stepwise_replay_bank is None
+        else _freeze_stepwise_replay_bank(stepwise_replay_bank)
+    )
+    on_policy_enabled = bool(
+        on_policy_anchor_kd_weight > 0
+        or on_policy_unlikelihood_weight > 0
+        or on_policy_hidden_kd_weight > 0
+    )
+    scheduled_on_policy_steps = tuple(
+        step
+        for step in range(1, int(steps) + 1)
+        if on_policy_enabled and (step == 1 or step % int(on_policy_interval) == 0)
+    )
+    if frozen_on_policy_replay_bank is not None and len(frozen_on_policy_replay_bank) != len(
+        scheduled_on_policy_steps
+    ):
+        raise ValueError(
+            "on_policy_replay_bank must contain exactly one ordered text batch per scheduled "
+            f"on-policy event ({len(scheduled_on_policy_steps)} required, "
+            f"got {len(frozen_on_policy_replay_bank)})."
+        )
+    scheduled_stepwise_steps = tuple(
+        range(1, int(steps) + 1)
+    ) if stepwise_donor_kd_weight > 0 else ()
+    if frozen_stepwise_replay_bank is not None:
+        replay_steps = tuple(event.step for event in frozen_stepwise_replay_bank)
+        if replay_steps != scheduled_stepwise_steps:
+            raise ValueError(
+                "stepwise_replay_bank must contain exactly one ordered token replay event for each "
+                f"stepwise donor KD optimizer step (expected steps {scheduled_stepwise_steps}, "
+                f"got {replay_steps})."
+            )
 
     from neural_forge.hf_xfamily import _canonical_token
     from neural_forge.hf_xfamily import _canonical_token_map
@@ -842,8 +1142,16 @@ def recover_cross_tokenizer_causal_lm(
     torch, transformers = _torch_and_transformers()
     dtype = _dtype_from_name(torch, torch_dtype)
     candidate_dtype = _dtype_from_name(torch, candidate_torch_dtype)
-    source_tokenizer = transformers.AutoTokenizer.from_pretrained(source_model, trust_remote_code=trust_remote_code)
-    candidate_tokenizer = transformers.AutoTokenizer.from_pretrained(candidate_model, trust_remote_code=trust_remote_code)
+    source_tokenizer = transformers.AutoTokenizer.from_pretrained(
+        source_model,
+        trust_remote_code=trust_remote_code,
+        local_files_only=local_files_only,
+    )
+    candidate_tokenizer = transformers.AutoTokenizer.from_pretrained(
+        candidate_model,
+        trust_remote_code=trust_remote_code,
+        local_files_only=local_files_only,
+    )
     if source_tokenizer.pad_token_id is None and source_tokenizer.eos_token_id is not None:
         source_tokenizer.pad_token = source_tokenizer.eos_token
     if candidate_tokenizer.pad_token_id is None and candidate_tokenizer.eos_token_id is not None:
@@ -913,6 +1221,7 @@ def recover_cross_tokenizer_causal_lm(
         torch_dtype=dtype,
         device_map=None,
         trust_remote_code=trust_remote_code,
+        local_files_only=local_files_only,
         **attention_load_kwargs,
     )
     candidate = transformers.AutoModelForCausalLM.from_pretrained(
@@ -920,11 +1229,16 @@ def recover_cross_tokenizer_causal_lm(
         torch_dtype=candidate_dtype,
         device_map=None,
         trust_remote_code=trust_remote_code,
+        local_files_only=local_files_only,
         **attention_load_kwargs,
     )
     reference = None
     if reference_kd_weight > 0:
-        reference_tokenizer = transformers.AutoTokenizer.from_pretrained(reference_model, trust_remote_code=trust_remote_code)
+        reference_tokenizer = transformers.AutoTokenizer.from_pretrained(
+            reference_model,
+            trust_remote_code=trust_remote_code,
+            local_files_only=local_files_only,
+        )
         if hasattr(reference_tokenizer, "get_vocab") and hasattr(candidate_tokenizer, "get_vocab"):
             if reference_tokenizer.get_vocab() != candidate_tokenizer.get_vocab():
                 raise ValueError("reference_model tokenizer must match candidate tokenizer for reference KD.")
@@ -933,6 +1247,7 @@ def recover_cross_tokenizer_causal_lm(
             torch_dtype=dtype,
             device_map=None,
             trust_remote_code=trust_remote_code,
+            local_files_only=local_files_only,
         )
     print("xfamily_recover phase=model_load_done", flush=True)
     source.to(device)
@@ -981,7 +1296,13 @@ def recover_cross_tokenizer_causal_lm(
         reverse_hidden_projection = reverse_hidden_projection_report["map"].to(device=device, dtype=torch.float32)
 
     trainable_params = _set_train_scope(candidate, train_scope)
-    optimizer = torch.optim.AdamW([p for p in candidate.parameters() if p.requires_grad], lr=lr)
+    optimizer_kwargs: dict[str, Any] = {"lr": lr}
+    if adamw_foreach is not None:
+        optimizer_kwargs["foreach"] = bool(adamw_foreach)
+    optimizer = torch.optim.AdamW(
+        [p for p in candidate.parameters() if p.requires_grad],
+        **optimizer_kwargs,
+    )
     texts = _order_recovery_texts(calibration_texts or RECOVERY_TEXTS, calibration_order)
     if not texts:
         raise ValueError("Need at least one recovery text.")
@@ -1009,22 +1330,104 @@ def recover_cross_tokenizer_causal_lm(
         response_loss_mode=response_loss_mode,
         append_eos=append_eos,
     )
+    stepwise_replay_preflight: dict[str, Any] | None = None
+    if frozen_stepwise_replay_bank is not None:
+        prompt_max_length = max(2, int(max_length) - int(stepwise_donor_max_new_tokens))
+        candidate_vocab_limit = _stepwise_replay_vocab_limit(candidate, candidate_tokenizer)
+        preflight_events: list[dict[str, Any]] = []
+        for event_index, event in enumerate(frozen_stepwise_replay_bank):
+            batch_index = (int(event.step) - 1) % len(batches)
+            _source_batch, scheduled_candidate_batch = batches[batch_index]
+            scheduled_raw_texts = tuple(
+                str(text)
+                for text in scheduled_candidate_batch.get(
+                    "raw_texts",
+                    scheduled_candidate_batch.get("texts", ()),
+                )
+            )
+            scheduled_prompts = tuple(
+                prompt
+                for prompt in (
+                    _on_policy_prompt_text(text, response_loss_mode)
+                    for text in scheduled_raw_texts
+                )
+                if prompt.strip()
+            )
+            generated, generated_mask, prompt_lengths, rollout_lengths = (
+                _validated_stepwise_replay_tensors(
+                    torch,
+                    candidate,
+                    candidate_tokenizer,
+                    scheduled_prompts,
+                    event,
+                    prompt_max_length=prompt_max_length,
+                    max_new_tokens=int(stepwise_donor_max_new_tokens),
+                    max_length=int(max_length),
+                    device=device,
+                )
+            )
+            del generated, generated_mask
+            continuation_counts = [
+                rollout_length - prompt_length
+                for prompt_length, rollout_length in zip(
+                    prompt_lengths,
+                    rollout_lengths,
+                    strict=True,
+                )
+            ]
+            preflight_events.append(
+                {
+                    "event_index": int(event_index),
+                    "optimizer_step": int(event.step),
+                    "scheduled_batch_index": int(batch_index),
+                    "row_count": len(event.rows),
+                    "raw_text_count": len(scheduled_raw_texts),
+                    "raw_texts_sha256": _ordered_recovery_texts_sha256(scheduled_raw_texts),
+                    "prompt_texts_sha256": _ordered_recovery_texts_sha256(scheduled_prompts),
+                    "prompt_token_counts": prompt_lengths,
+                    "rollout_token_counts": rollout_lengths,
+                    "continuation_token_counts": continuation_counts,
+                    "kd_position_count": sum(continuation_counts),
+                    "event_sha256": _stepwise_replay_event_sha256(event),
+                }
+            )
+        preflight_body = {
+            "schema": _STEPWISE_REPLAY_PREFLIGHT_SCHEMA,
+            "status": "validated",
+            "event_count": len(frozen_stepwise_replay_bank),
+            "replay_bank_sha256": _stepwise_replay_bank_sha256(frozen_stepwise_replay_bank),
+            "candidate_vocab_limit": int(candidate_vocab_limit),
+            "prompt_max_length": int(prompt_max_length),
+            "stepwise_donor_max_new_tokens": int(stepwise_donor_max_new_tokens),
+            "max_length": int(max_length),
+            "events": preflight_events,
+        }
+        stepwise_replay_preflight = {
+            **preflight_body,
+            "sha256": _stepwise_replay_preflight_sha256(preflight_body),
+        }
     teacher_generated_texts: list[str] = []
+    teacher_generated_text_source = "disabled"
     teacher_generated_batches: list[dict[str, Any]] = []
     if teacher_generate_lm_weight > 0:
-        teacher_generated_texts = _teacher_generated_lm_texts(
-            torch,
-            source,
-            source_tokenizer,
-            texts,
-            response_loss_mode,
-            max_new_tokens=teacher_generate_max_new_tokens,
-            max_length=max_length,
-            batch_size=batch_size,
-            device=device,
-        )
+        if frozen_teacher_generated_texts is not None:
+            teacher_generated_texts = list(frozen_teacher_generated_texts)
+            teacher_generated_text_source = "precomputed"
+        else:
+            teacher_generated_texts = _teacher_generated_lm_texts(
+                torch,
+                source,
+                source_tokenizer,
+                texts,
+                response_loss_mode,
+                max_new_tokens=teacher_generate_max_new_tokens,
+                max_length=max_length,
+                batch_size=batch_size,
+                device=device,
+            )
+            teacher_generated_text_source = "donor-generated"
         if not teacher_generated_texts:
-            raise ValueError("teacher_generate_lm_weight requested but donor generation produced no training texts.")
+            raise ValueError("teacher_generate_lm_weight requested but no teacher-generated training texts were supplied.")
         teacher_generated_batches = _make_batches(
             candidate_tokenizer,
             teacher_generated_texts,
@@ -1044,17 +1447,36 @@ def recover_cross_tokenizer_causal_lm(
     teacher_rank_counts = []
     on_policy_counts = []
     on_policy_hidden_counts = []
+    on_policy_replay_consumption: list[dict[str, Any]] = []
+    on_policy_replay_event_index = 0
+    stepwise_replay_consumption: list[dict[str, Any]] = []
+    stepwise_replay_event_index = 0
     interval = int(report_interval or max(1, steps // 10))
     best_loss = None
     best_step = None
     best_state = None
     behavior_interval = int(behavior_eval_interval or interval)
+    if normalized_behavior_checkpoint_steps is not None:
+        effective_behavior_checkpoint_steps = normalized_behavior_checkpoint_steps
+    elif save_best_behavior or behavior_checkpoint_observer is not None:
+        effective_behavior_checkpoint_steps = tuple(
+            [0]
+            + [
+                step
+                for step in range(1, int(steps) + 1)
+                if step == 1 or step % behavior_interval == 0 or step == int(steps)
+            ]
+        )
+    else:
+        effective_behavior_checkpoint_steps = ()
+    behavior_checkpoint_step_set = set(effective_behavior_checkpoint_steps)
     behavior_history: list[dict[str, Any]] = []
+    behavior_checkpoint_observer_calls = 0
     best_behavior_summary = None
     best_behavior_loss = None
     best_behavior_step = None
     best_behavior_state = None
-    if save_best_behavior:
+    if 0 in behavior_checkpoint_step_set:
         print(
             f"xfamily_recover phase=behavior_eval step=0 probes={int(behavior_max_probes)} "
             f"generation_prompts={len(generation_prompts) if generation_prompts is not None else len(GENERATION_PROMPTS)}",
@@ -1079,10 +1501,21 @@ def recover_cross_tokenizer_causal_lm(
         behavior_entry = _behavior_history_entry(0, None, behavior_summary)
         behavior_history.append(behavior_entry)
         _print_behavior_checkpoint("xfamily_recover_behavior", behavior_entry)
-        best_behavior_summary = dict(behavior_entry)
-        best_behavior_loss = math.inf
-        best_behavior_step = 0
-        best_behavior_state = {key: value.detach().cpu().clone() for key, value in candidate.state_dict().items()}
+        _notify_recovery_checkpoint_observer(
+            behavior_checkpoint_observer,
+            operation="recover_cross_tokenizer_causal_lm",
+            checkpoint_index=len(behavior_history) - 1,
+            behavior_entry=behavior_entry,
+        )
+        if behavior_checkpoint_observer is not None:
+            behavior_checkpoint_observer_calls += 1
+        if save_best_behavior:
+            best_behavior_summary = dict(behavior_entry)
+            best_behavior_loss = math.inf
+            best_behavior_step = 0
+            best_behavior_state = {
+                key: value.detach().cpu().clone() for key, value in candidate.state_dict().items()
+            }
     for step in range(1, steps + 1):
         source_batch, candidate_batch = batches[(step - 1) % len(batches)]
         optimizer.zero_grad(set_to_none=True)
@@ -1281,9 +1714,24 @@ def recover_cross_tokenizer_causal_lm(
             )
             teacher_rank_counts.append(int(teacher_rank_count))
             loss = loss + float(teacher_rank_weight) * teacher_rank
+        is_on_policy_step = bool(
+            on_policy_enabled and (step == 1 or step % int(on_policy_interval) == 0)
+        )
+        on_policy_replay_texts: tuple[str, ...] | None = None
+        if is_on_policy_step and frozen_on_policy_replay_bank is not None:
+            on_policy_replay_texts = frozen_on_policy_replay_bank[on_policy_replay_event_index]
+            on_policy_replay_consumption.append(
+                {
+                    "event_index": int(on_policy_replay_event_index),
+                    "step": int(step),
+                    "text_count": len(on_policy_replay_texts),
+                    "ordered_text_sha256": _ordered_recovery_texts_sha256(on_policy_replay_texts),
+                }
+            )
+            on_policy_replay_event_index += 1
         if (
             (on_policy_anchor_kd_weight > 0 or on_policy_unlikelihood_weight > 0)
-            and (step == 1 or step % int(on_policy_interval) == 0)
+            and is_on_policy_step
         ):
             on_policy_loss, on_policy_count = _cross_tokenizer_on_policy_rollout_loss(
                 torch,
@@ -1302,12 +1750,13 @@ def recover_cross_tokenizer_causal_lm(
                 on_policy_anchor_kd_weight,
                 on_policy_unlikelihood_weight,
                 unlikelihood_window,
+                rollout_texts=on_policy_replay_texts,
             )
             on_policy_counts.append(int(on_policy_count))
             loss = loss + on_policy_loss
         on_policy_hidden_loss = None
         on_policy_hidden_count = 0
-        if on_policy_hidden_kd_weight > 0 and (step == 1 or step % int(on_policy_interval) == 0):
+        if on_policy_hidden_kd_weight > 0 and is_on_policy_step:
             on_policy_hidden_loss, on_policy_hidden_count = _cross_tokenizer_on_policy_hidden_loss(
                 torch,
                 source,
@@ -1323,6 +1772,7 @@ def recover_cross_tokenizer_causal_lm(
                 hidden_layer,
                 hidden_kd_metric,
                 span_max_pairs,
+                rollout_texts=on_policy_replay_texts,
             )
             on_policy_hidden_counts.append(int(on_policy_hidden_count))
             loss = loss + float(on_policy_hidden_kd_weight) * on_policy_hidden_loss
@@ -1350,6 +1800,27 @@ def recover_cross_tokenizer_causal_lm(
                 or projected_vocab_valid is None
             ):
                 raise ValueError("projected vocab maps are required when stepwise donor KD is positive.")
+            stepwise_replay_event: _FrozenStepwiseReplayEvent | None = None
+            if frozen_stepwise_replay_bank is not None:
+                stepwise_replay_event = frozen_stepwise_replay_bank[stepwise_replay_event_index]
+                if stepwise_replay_event.step != int(step):
+                    raise RuntimeError("Frozen stepwise token replay event order diverged during training.")
+                stepwise_replay_consumption.append(
+                    {
+                        "event_index": int(stepwise_replay_event_index),
+                        "step": int(step),
+                        "row_count": len(stepwise_replay_event.rows),
+                        "prompt_token_counts": [
+                            len(row.prompt_input_ids) for row in stepwise_replay_event.rows
+                        ],
+                        "continuation_token_counts": [
+                            len(row.rollout_input_ids) - len(row.prompt_input_ids)
+                            for row in stepwise_replay_event.rows
+                        ],
+                        "event_sha256": _stepwise_replay_event_sha256(stepwise_replay_event),
+                    }
+                )
+                stepwise_replay_event_index += 1
             stepwise_donor_loss, stepwise_donor_count = _cross_tokenizer_stepwise_prefix_kd_loss(
                 torch,
                 source,
@@ -1366,7 +1837,19 @@ def recover_cross_tokenizer_causal_lm(
                 projected_vocab_weights,
                 projected_vocab_valid,
                 temperature,
+                replay_event=stepwise_replay_event,
             )
+            if stepwise_replay_event is not None:
+                expected_stepwise_positions = sum(
+                    len(row.rollout_input_ids) - len(row.prompt_input_ids)
+                    for row in stepwise_replay_event.rows
+                )
+                if int(stepwise_donor_count) != int(expected_stepwise_positions):
+                    raise RuntimeError(
+                        "Frozen stepwise token replay did not produce exactly one KD position per "
+                        "continuation token."
+                    )
+                stepwise_replay_consumption[-1]["kd_position_count"] = int(stepwise_donor_count)
             loss = loss + float(stepwise_donor_kd_weight) * stepwise_donor_loss
         if not bool(torch.isfinite(loss).detach().cpu()):
             raise RuntimeError(f"Non-finite cross-tokenizer recovery loss at step {step}; aborting before save.")
@@ -1433,7 +1916,7 @@ def recover_cross_tokenizer_causal_lm(
                 best_loss = loss_value
                 best_step = int(step)
                 best_state = {key: value.detach().cpu().clone() for key, value in candidate.state_dict().items()}
-        if save_best_behavior and (step == 1 or step % behavior_interval == 0 or step == steps):
+        if step in behavior_checkpoint_step_set:
             loss_value = float(loss.detach().cpu())
             print(
                 f"xfamily_recover phase=behavior_eval step={int(step)} probes={int(behavior_max_probes)} "
@@ -1459,13 +1942,34 @@ def recover_cross_tokenizer_causal_lm(
             behavior_entry = _behavior_history_entry(step, loss_value, behavior_summary)
             behavior_history.append(behavior_entry)
             _print_behavior_checkpoint("xfamily_recover_behavior", behavior_entry)
-            if _behavior_checkpoint_is_better(behavior_entry, best_behavior_summary, best_behavior_loss):
+            _notify_recovery_checkpoint_observer(
+                behavior_checkpoint_observer,
+                operation="recover_cross_tokenizer_causal_lm",
+                checkpoint_index=len(behavior_history) - 1,
+                behavior_entry=behavior_entry,
+            )
+            if behavior_checkpoint_observer is not None:
+                behavior_checkpoint_observer_calls += 1
+            if save_best_behavior and _behavior_checkpoint_is_better(
+                behavior_entry,
+                best_behavior_summary,
+                best_behavior_loss,
+            ):
                 best_behavior_summary = dict(behavior_entry)
                 best_behavior_loss = loss_value
                 best_behavior_step = int(step)
                 best_behavior_state = {
                     key: value.detach().cpu().clone() for key, value in candidate.state_dict().items()
                 }
+
+    if frozen_on_policy_replay_bank is not None and on_policy_replay_event_index != len(
+        frozen_on_policy_replay_bank
+    ):
+        raise RuntimeError("Frozen on-policy replay bank was not consumed exactly once in scheduled order.")
+    if frozen_stepwise_replay_bank is not None and stepwise_replay_event_index != len(
+        frozen_stepwise_replay_bank
+    ):
+        raise RuntimeError("Frozen stepwise replay bank was not consumed exactly once in scheduled order.")
 
     if save_best_behavior and best_behavior_state is not None:
         candidate.load_state_dict(best_behavior_state)
@@ -1530,17 +2034,55 @@ def recover_cross_tokenizer_causal_lm(
         "teacher_generate_lm_weight": teacher_generate_lm_weight,
         "teacher_generate_max_new_tokens": teacher_generate_max_new_tokens,
         "teacher_generate_loss_mode": teacher_generate_loss_mode,
+        "teacher_generated_text_source": teacher_generated_text_source,
         "teacher_generated_text_count": len(teacher_generated_texts),
         "teacher_generated_text_samples": teacher_generated_texts[:3],
+        "teacher_generated_ordered_text_sha256": (
+            _ordered_recovery_texts_sha256(teacher_generated_texts)
+            if teacher_generated_texts
+            else None
+        ),
         "calibration_order": calibration_order,
         "calibration_domain_counts": calibration_domain_counts,
         "stepwise_donor_kd_weight": stepwise_donor_kd_weight,
         "stepwise_donor_max_new_tokens": stepwise_donor_max_new_tokens,
+        "stepwise_scheduled_steps": list(scheduled_stepwise_steps),
+        "stepwise_replay_bank_schema": (
+            _STEPWISE_REPLAY_SCHEMA if frozen_stepwise_replay_bank is not None else None
+        ),
+        "stepwise_replay_bank_supplied": frozen_stepwise_replay_bank is not None,
+        "stepwise_replay_bank_event_count": (
+            0 if frozen_stepwise_replay_bank is None else len(frozen_stepwise_replay_bank)
+        ),
+        "stepwise_replay_bank_sha256": (
+            None
+            if frozen_stepwise_replay_bank is None
+            else _stepwise_replay_bank_sha256(frozen_stepwise_replay_bank)
+        ),
+        "stepwise_replay_preflight": stepwise_replay_preflight,
+        "stepwise_replay_consumption": stepwise_replay_consumption,
+        "stepwise_dynamic_candidate_generation": bool(
+            stepwise_donor_kd_weight > 0 and frozen_stepwise_replay_bank is None
+        ),
         "on_policy_anchor_kd_weight": on_policy_anchor_kd_weight,
         "on_policy_unlikelihood_weight": on_policy_unlikelihood_weight,
         "on_policy_hidden_kd_weight": on_policy_hidden_kd_weight,
         "on_policy_max_new_tokens": on_policy_max_new_tokens,
         "on_policy_interval": on_policy_interval,
+        "on_policy_scheduled_steps": list(scheduled_on_policy_steps),
+        "on_policy_replay_bank_supplied": frozen_on_policy_replay_bank is not None,
+        "on_policy_replay_bank_event_count": (
+            0 if frozen_on_policy_replay_bank is None else len(frozen_on_policy_replay_bank)
+        ),
+        "on_policy_replay_bank_sha256": (
+            None
+            if frozen_on_policy_replay_bank is None
+            else _on_policy_replay_bank_sha256(frozen_on_policy_replay_bank)
+        ),
+        "on_policy_replay_consumption": on_policy_replay_consumption,
+        "on_policy_dynamic_candidate_generation": bool(
+            on_policy_enabled and frozen_on_policy_replay_bank is None
+        ),
         "on_policy_count_observed": on_policy_counts,
         "on_policy_hidden_count_observed": on_policy_hidden_counts,
         "append_eos": bool(append_eos),
@@ -1549,11 +2091,16 @@ def recover_cross_tokenizer_causal_lm(
         "entropy_aware_kd_threshold": entropy_aware_kd_threshold,
         "entropy_aware_kd_sharpness": entropy_aware_kd_sharpness,
         "report_interval": interval,
+        "adamw_foreach": adamw_foreach,
+        "adamw_foreach_explicit": adamw_foreach is not None,
         "save_best_loss": save_best_loss,
         "best_loss": best_loss,
         "best_step": best_step,
         "save_best_behavior": bool(save_best_behavior),
         "behavior_eval_interval": behavior_interval,
+        "behavior_eval_checkpoint_steps": list(effective_behavior_checkpoint_steps),
+        "behavior_checkpoint_observer_calls": int(behavior_checkpoint_observer_calls),
+        "behavior_checkpoint_observer_read_only_payload": behavior_checkpoint_observer is not None,
         "behavior_max_new_tokens": int(behavior_max_new_tokens),
         "behavior_max_probes": int(behavior_max_probes),
         "behavior_eval_suite": _recovery_behavior_eval_suite_report(behavior_suite),
@@ -1581,6 +2128,7 @@ def recover_cross_tokenizer_causal_lm(
         "train_scope": train_scope,
         "torch_dtype": torch_dtype,
         "candidate_torch_dtype": candidate_torch_dtype,
+        "local_files_only": bool(local_files_only),
         "trainable_param_count": trainable_params,
         "calibration_text_count": len(texts),
         "eval_overlap_count": eval_overlap_count,
@@ -1638,7 +2186,6 @@ def calibrate_cross_tokenizer_lm_head(
         raise ValueError("projected_vocab_max_source_tokens must be positive.")
 
     from neural_forge.hf_xfamily import _canonical_token
-    from neural_forge.hf_xfamily import _canonical_token_map
 
     torch, transformers = _torch_and_transformers()
     source_dtype = _dtype_from_name(torch, torch_dtype)
@@ -5799,6 +6346,8 @@ def _cross_tokenizer_on_policy_rollout_loss(
     anchor_kd_weight: float,
     unlikelihood_weight: float,
     unlikelihood_window: int,
+    *,
+    rollout_texts: Sequence[str] | None = None,
 ):
     if anchor_kd_weight < 0 or unlikelihood_weight < 0:
         raise ValueError("on-policy loss weights must be non-negative.")
@@ -5807,54 +6356,63 @@ def _cross_tokenizer_on_policy_rollout_loss(
     if anchor_kd_weight == 0 and unlikelihood_weight == 0:
         param = next(candidate_model.parameters())
         return torch.zeros((), dtype=param.dtype, device=param.device), 0
-    prompts = [_on_policy_prompt_text(str(text), response_loss_mode) for text in texts]
-    prompts = [prompt for prompt in prompts if prompt.strip()]
-    if not prompts:
-        param = next(candidate_model.parameters())
-        return torch.zeros((), dtype=param.dtype, device=param.device), 0
+    if rollout_texts is None:
+        prompts = [_on_policy_prompt_text(str(text), response_loss_mode) for text in texts]
+        prompts = [prompt for prompt in prompts if prompt.strip()]
+        if not prompts:
+            param = next(candidate_model.parameters())
+            return torch.zeros((), dtype=param.dtype, device=param.device), 0
 
-    prompt_max_length = max(2, int(max_length) - int(max_new_tokens))
-    with _temporary_padding_side(candidate_tokenizer, "left"):
-        encoded = candidate_tokenizer(
-            prompts,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=prompt_max_length,
-        )
-    encoded = {key: value.to(device) for key, value in encoded.items()}
-    pad_id = candidate_tokenizer.pad_token_id
-    if pad_id is None:
-        pad_id = candidate_tokenizer.eos_token_id
-    was_training = candidate_model.training
-    try:
-        candidate_model.eval()
+        prompt_max_length = max(2, int(max_length) - int(max_new_tokens))
         with _temporary_padding_side(candidate_tokenizer, "left"):
-            with torch.no_grad():
-                generated = candidate_model.generate(
-                    **encoded,
-                    max_new_tokens=int(max_new_tokens),
-                    do_sample=False,
-                    pad_token_id=pad_id,
-                    eos_token_id=candidate_tokenizer.eos_token_id,
-                )
-    finally:
-        if was_training:
-            candidate_model.train()
-    rollout_texts = [
-        candidate_tokenizer.decode(row.tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=False)
-        for row in generated.detach().cpu()
-    ]
-    rollout_texts = [text for text in rollout_texts if text.strip()]
-    if not rollout_texts:
+            encoded = candidate_tokenizer(
+                prompts,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=prompt_max_length,
+            )
+        encoded = {key: value.to(device) for key, value in encoded.items()}
+        pad_id = candidate_tokenizer.pad_token_id
+        if pad_id is None:
+            pad_id = candidate_tokenizer.eos_token_id
+        was_training = candidate_model.training
+        try:
+            candidate_model.eval()
+            with _temporary_padding_side(candidate_tokenizer, "left"):
+                with torch.no_grad():
+                    generated = candidate_model.generate(
+                        **encoded,
+                        max_new_tokens=int(max_new_tokens),
+                        do_sample=False,
+                        pad_token_id=pad_id,
+                        eos_token_id=candidate_tokenizer.eos_token_id,
+                    )
+        finally:
+            if was_training:
+                candidate_model.train()
+        resolved_rollout_texts = [
+            candidate_tokenizer.decode(
+                row.tolist(),
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
+            )
+            for row in generated.detach().cpu()
+        ]
+        resolved_rollout_texts = [text for text in resolved_rollout_texts if text.strip()]
+    else:
+        resolved_rollout_texts = list(
+            _freeze_ordered_recovery_texts(rollout_texts, field_name="rollout_texts")
+        )
+    if not resolved_rollout_texts:
         param = next(candidate_model.parameters())
         return torch.zeros((), dtype=param.dtype, device=param.device), 0
 
     paired = _make_paired_batches(
         source_tokenizer,
         candidate_tokenizer,
-        rollout_texts,
-        batch_size=len(rollout_texts),
+        resolved_rollout_texts,
+        batch_size=len(resolved_rollout_texts),
         max_length=max_length,
         device=device,
         include_offsets=False,
@@ -5927,7 +6485,7 @@ def _cross_tokenizer_on_policy_rollout_loss(
             window=unlikelihood_window,
             exclude_current_label=False,
         )
-    return total, len(rollout_texts)
+    return total, len(resolved_rollout_texts)
 
 
 def _cross_tokenizer_on_policy_hidden_loss(
@@ -5945,6 +6503,8 @@ def _cross_tokenizer_on_policy_hidden_loss(
     hidden_layer: str,
     hidden_kd_metric: str,
     span_max_pairs: int,
+    *,
+    rollout_texts: Sequence[str] | None = None,
 ):
     if max_new_tokens <= 0:
         raise ValueError("max_new_tokens must be positive.")
@@ -5961,55 +6521,64 @@ def _cross_tokenizer_on_policy_hidden_loss(
 
     from neural_forge.hf_xfamily import _canonical_token
 
-    prompts = [_on_policy_prompt_text(str(text), response_loss_mode) for text in texts]
-    prompts = [prompt for prompt in prompts if prompt.strip()]
-    if not prompts:
-        param = next(candidate_model.parameters())
-        return torch.zeros((), dtype=param.dtype, device=param.device), 0
+    if rollout_texts is None:
+        prompts = [_on_policy_prompt_text(str(text), response_loss_mode) for text in texts]
+        prompts = [prompt for prompt in prompts if prompt.strip()]
+        if not prompts:
+            param = next(candidate_model.parameters())
+            return torch.zeros((), dtype=param.dtype, device=param.device), 0
 
-    prompt_max_length = max(2, int(max_length) - int(max_new_tokens))
-    with _temporary_padding_side(candidate_tokenizer, "left"):
-        encoded = candidate_tokenizer(
-            prompts,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=prompt_max_length,
-        )
-    encoded = {key: value.to(device) for key, value in encoded.items()}
-    pad_id = candidate_tokenizer.pad_token_id
-    if pad_id is None:
-        pad_id = candidate_tokenizer.eos_token_id
-    was_training = candidate_model.training
-    try:
-        candidate_model.eval()
+        prompt_max_length = max(2, int(max_length) - int(max_new_tokens))
         with _temporary_padding_side(candidate_tokenizer, "left"):
-            with torch.no_grad():
-                generated = candidate_model.generate(
-                    **encoded,
-                    max_new_tokens=int(max_new_tokens),
-                    do_sample=False,
-                    pad_token_id=pad_id,
-                    eos_token_id=candidate_tokenizer.eos_token_id,
-                )
-    finally:
-        if was_training:
-            candidate_model.train()
+            encoded = candidate_tokenizer(
+                prompts,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=prompt_max_length,
+            )
+        encoded = {key: value.to(device) for key, value in encoded.items()}
+        pad_id = candidate_tokenizer.pad_token_id
+        if pad_id is None:
+            pad_id = candidate_tokenizer.eos_token_id
+        was_training = candidate_model.training
+        try:
+            candidate_model.eval()
+            with _temporary_padding_side(candidate_tokenizer, "left"):
+                with torch.no_grad():
+                    generated = candidate_model.generate(
+                        **encoded,
+                        max_new_tokens=int(max_new_tokens),
+                        do_sample=False,
+                        pad_token_id=pad_id,
+                        eos_token_id=candidate_tokenizer.eos_token_id,
+                    )
+        finally:
+            if was_training:
+                candidate_model.train()
 
-    rollout_texts = [
-        candidate_tokenizer.decode(row.tolist(), skip_special_tokens=True, clean_up_tokenization_spaces=False)
-        for row in generated.detach().cpu()
-    ]
-    rollout_texts = [text for text in rollout_texts if text.strip()]
-    if not rollout_texts:
+        resolved_rollout_texts = [
+            candidate_tokenizer.decode(
+                row.tolist(),
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
+            )
+            for row in generated.detach().cpu()
+        ]
+        resolved_rollout_texts = [text for text in resolved_rollout_texts if text.strip()]
+    else:
+        resolved_rollout_texts = list(
+            _freeze_ordered_recovery_texts(rollout_texts, field_name="rollout_texts")
+        )
+    if not resolved_rollout_texts:
         param = next(candidate_model.parameters())
         return torch.zeros((), dtype=param.dtype, device=param.device), 0
 
     paired = _make_paired_batches(
         source_tokenizer,
         candidate_tokenizer,
-        rollout_texts,
-        batch_size=len(rollout_texts),
+        resolved_rollout_texts,
+        batch_size=len(resolved_rollout_texts),
         max_length=max_length,
         device=device,
         include_offsets=True,
@@ -6062,7 +6631,7 @@ def _cross_tokenizer_on_policy_hidden_loss(
             hidden_layer,
             hidden_kd_metric,
         ),
-        len(rollout_texts),
+        len(resolved_rollout_texts),
     )
 
 
@@ -6155,6 +6724,122 @@ def _teacher_generated_lm_texts(
     return generated_texts
 
 
+def _stepwise_replay_vocab_limit(candidate_model, candidate_tokenizer) -> int:
+    try:
+        tokenizer_limit = int(len(candidate_tokenizer))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Candidate tokenizer must expose a positive vocabulary size for token replay.") from exc
+    if tokenizer_limit <= 0:
+        raise ValueError("Candidate tokenizer must expose a positive vocabulary size for token replay.")
+    embedding_limit = tokenizer_limit
+    get_input_embeddings = getattr(candidate_model, "get_input_embeddings", None)
+    if callable(get_input_embeddings):
+        embeddings = get_input_embeddings()
+        num_embeddings = getattr(embeddings, "num_embeddings", None)
+        if num_embeddings is not None:
+            embedding_limit = int(num_embeddings)
+            if embedding_limit <= 0:
+                raise ValueError("Candidate input embedding vocabulary must be positive for token replay.")
+    return min(tokenizer_limit, embedding_limit)
+
+
+def _validated_stepwise_replay_tensors(
+    torch,
+    candidate_model,
+    candidate_tokenizer,
+    prompts: Sequence[str],
+    replay_event: _FrozenStepwiseReplayEvent,
+    *,
+    prompt_max_length: int,
+    max_new_tokens: int,
+    max_length: int,
+    device: str,
+):
+    if len(replay_event.rows) != len(prompts):
+        raise ValueError(
+            "Frozen stepwise token replay event must contain exactly one row per current prompt "
+            f"({len(prompts)} required, got {len(replay_event.rows)})."
+        )
+    with _temporary_padding_side(candidate_tokenizer, "left"):
+        encoded_prompts = candidate_tokenizer(
+            list(prompts),
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=prompt_max_length,
+        )
+    prompt_attention_mask = encoded_prompts.get("attention_mask")
+    if prompt_attention_mask is None:
+        raise ValueError("Candidate tokenizer must return attention_mask for exact stepwise token replay.")
+    prompt_input_ids = encoded_prompts["input_ids"].detach().cpu()
+    prompt_attention_mask = prompt_attention_mask.detach().cpu().bool()
+    if int(prompt_input_ids.shape[0]) != len(prompts):
+        raise ValueError("Candidate tokenizer returned the wrong prompt batch size for token replay.")
+
+    vocab_limit = _stepwise_replay_vocab_limit(candidate_model, candidate_tokenizer)
+    prompt_lengths: list[int] = []
+    rollout_lengths: list[int] = []
+    for row_index, replay_row in enumerate(replay_event.rows):
+        runtime_prompt_ids = tuple(
+            int(token_id)
+            for token_id in prompt_input_ids[row_index][prompt_attention_mask[row_index]].tolist()
+        )
+        if runtime_prompt_ids != replay_row.prompt_input_ids:
+            raise ValueError(
+                "Frozen stepwise token replay prompt IDs do not match the current runtime prompt "
+                f"at step {replay_event.step}, row {row_index}."
+            )
+        if len(replay_row.prompt_input_ids) > int(prompt_max_length):
+            raise ValueError(
+                f"Frozen stepwise token replay prompt at row {row_index} exceeds prompt_max_length."
+            )
+        continuation_count = len(replay_row.rollout_input_ids) - len(replay_row.prompt_input_ids)
+        if continuation_count <= 0:
+            raise ValueError(
+                f"Frozen stepwise token replay row {row_index} must contain a continuation token."
+            )
+        if continuation_count > int(max_new_tokens):
+            raise ValueError(
+                f"Frozen stepwise token replay row {row_index} exceeds max_new_tokens."
+            )
+        if len(replay_row.rollout_input_ids) > int(max_length):
+            raise ValueError(f"Frozen stepwise token replay row {row_index} exceeds max_length.")
+        for field_name, token_ids in (
+            ("prompt_input_ids", replay_row.prompt_input_ids),
+            ("rollout_input_ids", replay_row.rollout_input_ids),
+        ):
+            for token_index, token_id in enumerate(token_ids):
+                if token_id >= vocab_limit:
+                    raise ValueError(
+                        f"Frozen stepwise token replay row {row_index} {field_name}[{token_index}] "
+                        f"is outside the candidate vocabulary [0, {vocab_limit})."
+                    )
+        prompt_lengths.append(len(replay_row.prompt_input_ids))
+        rollout_lengths.append(len(replay_row.rollout_input_ids))
+
+    pad_id = candidate_tokenizer.pad_token_id
+    if pad_id is None:
+        pad_id = candidate_tokenizer.eos_token_id
+    if pad_id is None:
+        pad_id = 0
+    if isinstance(pad_id, bool) or not isinstance(pad_id, int) or not 0 <= int(pad_id) < vocab_limit:
+        raise ValueError("Candidate tokenizer padding ID is outside the candidate vocabulary.")
+    rollout_width = max(rollout_lengths)
+    generated = torch.full(
+        (len(replay_event.rows), rollout_width),
+        int(pad_id),
+        dtype=torch.long,
+        device=device,
+    )
+    generated_mask = torch.zeros_like(generated, dtype=torch.long, device=device)
+    for row_index, replay_row in enumerate(replay_event.rows):
+        row_ids = torch.tensor(replay_row.rollout_input_ids, dtype=torch.long, device=device)
+        row_length = len(replay_row.rollout_input_ids)
+        generated[row_index, :row_length] = row_ids
+        generated_mask[row_index, :row_length] = 1
+    return generated, generated_mask, prompt_lengths, rollout_lengths
+
+
 def _cross_tokenizer_stepwise_prefix_kd_loss(
     torch,
     source_model,
@@ -6171,6 +6856,8 @@ def _cross_tokenizer_stepwise_prefix_kd_loss(
     projected_vocab_weights,
     projected_vocab_valid,
     temperature: float,
+    *,
+    replay_event: _FrozenStepwiseReplayEvent | None = None,
 ):
     if response_loss_mode not in {"none", "auto", "assistant", "answer"}:
         raise ValueError("response_loss_mode must be none, auto, assistant, or answer.")
@@ -6190,52 +6877,73 @@ def _cross_tokenizer_stepwise_prefix_kd_loss(
     if pad_id is None:
         pad_id = candidate_tokenizer.eos_token_id
     prompt_max_length = max(2, int(max_length) - int(max_new_tokens))
-    with _temporary_padding_side(candidate_tokenizer, "left"):
-        encoded = candidate_tokenizer(
-            prompts,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=prompt_max_length,
-        )
-    encoded = {key: value.to(device) for key, value in encoded.items()}
-    prompt_width = int(encoded["input_ids"].shape[1])
-    prompt_lengths = torch.full(
-        (int(encoded["input_ids"].shape[0]),),
-        prompt_width,
-        dtype=torch.long,
-        device=device,
-    )
-    was_training = candidate_model.training
-    try:
-        candidate_model.eval()
+    if replay_event is None:
         with _temporary_padding_side(candidate_tokenizer, "left"):
-            with torch.no_grad():
-                generated = candidate_model.generate(
-                    **encoded,
-                    max_new_tokens=int(max_new_tokens),
-                    do_sample=False,
-                    pad_token_id=pad_id,
-                    eos_token_id=candidate_tokenizer.eos_token_id,
-                )
-    finally:
-        if was_training:
-            candidate_model.train()
+            encoded = candidate_tokenizer(
+                prompts,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=prompt_max_length,
+            )
+        encoded = {key: value.to(device) for key, value in encoded.items()}
+        prompt_width = int(encoded["input_ids"].shape[1])
+        prompt_lengths = torch.full(
+            (int(encoded["input_ids"].shape[0]),),
+            prompt_width,
+            dtype=torch.long,
+            device=device,
+        )
+        was_training = candidate_model.training
+        try:
+            candidate_model.eval()
+            with _temporary_padding_side(candidate_tokenizer, "left"):
+                with torch.no_grad():
+                    generated = candidate_model.generate(
+                        **encoded,
+                        max_new_tokens=int(max_new_tokens),
+                        do_sample=False,
+                        pad_token_id=pad_id,
+                        eos_token_id=candidate_tokenizer.eos_token_id,
+                    )
+        finally:
+            if was_training:
+                candidate_model.train()
+        generated = generated.to(device)
+        generated_mask = torch.ones_like(generated, dtype=torch.long, device=device)
+        prompt_lengths_cpu = [int(item) for item in prompt_lengths.detach().cpu().tolist()]
+    else:
+        generated, generated_mask, prompt_lengths_cpu, row_lengths = (
+            _validated_stepwise_replay_tensors(
+                torch,
+                candidate_model,
+                candidate_tokenizer,
+                prompts,
+                replay_event,
+                prompt_max_length=prompt_max_length,
+                max_new_tokens=max_new_tokens,
+                max_length=max_length,
+                device=device,
+            )
+        )
 
-    generated = generated.to(device)
-    generated_mask = torch.ones_like(generated, dtype=torch.long, device=device)
-    row_lengths: list[int] = []
-    prompt_lengths_cpu = [int(item) for item in prompt_lengths.detach().cpu().tolist()]
+    if replay_event is None:
+        row_lengths: list[int] = []
     generated_cpu = generated.detach().cpu()
-    for batch_idx, row in enumerate(generated_cpu):
-        ids = [int(item) for item in row.tolist()]
-        length = len(ids)
-        if pad_id is not None:
-            while length > prompt_lengths_cpu[batch_idx] and length > 0 and ids[length - 1] == int(pad_id):
-                length -= 1
-        row_lengths.append(max(0, length))
-        if length < int(generated.shape[1]):
-            generated_mask[batch_idx, length:] = 0
+    if replay_event is None:
+        for batch_idx, row in enumerate(generated_cpu):
+            ids = [int(item) for item in row.tolist()]
+            length = len(ids)
+            if pad_id is not None:
+                while (
+                    length > prompt_lengths_cpu[batch_idx]
+                    and length > 0
+                    and ids[length - 1] == int(pad_id)
+                ):
+                    length -= 1
+            row_lengths.append(max(0, length))
+            if length < int(generated.shape[1]):
+                generated_mask[batch_idx, length:] = 0
 
     student = candidate_model(
         input_ids=generated,
@@ -6265,10 +6973,19 @@ def _cross_tokenizer_stepwise_prefix_kd_loss(
                 clean_up_tokenization_spaces=False,
             )
             if not prefix.strip():
+                if replay_event is not None:
+                    raise ValueError(
+                        "Frozen stepwise token replay produced a blank decoded teacher prefix "
+                        f"at step {replay_event.step}, row {batch_idx}, position {logit_pos}."
+                    )
                 continue
             prefix_texts.append(prefix)
             row_positions.append((batch_idx, logit_pos))
     if not row_positions:
+        if replay_event is not None:
+            raise ValueError(
+                f"Frozen stepwise token replay event at step {replay_event.step} produced no KD positions."
+            )
         param = next(candidate_model.parameters())
         return torch.zeros((), dtype=param.dtype, device=param.device), 0
 
