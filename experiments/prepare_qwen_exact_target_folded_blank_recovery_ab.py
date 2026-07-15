@@ -118,9 +118,9 @@ def prepare_recovery_ab(
             "preregistration_sha256": preregistration_sha,
             "semantic_contract_sha256": payload["semantic_contract_sha256"],
             "v4_candidate_only": True,
-            "winner_portable_factor_state_sha256": payload["v4_candidate"][
-                "winner"
-            ]["portable_factor_state_sha256"],
+            "winner_portable_factor_state_sha256": payload["v4_candidate"]["winner"][
+                "portable_factor_state_sha256"
+            ],
             "compiled_blank_state_sha256": payload["compiled_blank"][
                 "state_dict_sha256"
             ],
@@ -145,8 +145,8 @@ def prepare_recovery_ab(
             "sealed_data_accessed": False,
             "publication_authorized": False,
             "accepted_artifact": False,
-            "production_model_hook_implemented": False,
-            "explicit_production_hook_required": True,
+            "production_model_hook_implemented": True,
+            "explicit_production_hook_required": False,
             "ready_for_explicit_preflight": True,
         }
         stage._atomic_json(staging / "build_report.json", report)

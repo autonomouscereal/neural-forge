@@ -15,6 +15,7 @@ from safetensors.torch import load_file, save_file
 from torch import nn
 
 from neural_forge import hf_experimental_child_artifact as child_artifact
+from neural_forge import hf_teacher_token_replay as teacher_replay
 from neural_forge.hf_compiled_child_cache import model_state_fingerprint
 from neural_forge.hf_progressive_target_bridge import _dense_model_state_sha256
 
@@ -159,35 +160,6 @@ def _folded_materialization_context(report_bytes: bytes) -> Iterator[bytes]:
     yield report_bytes
 
 
-def _replay_payload() -> dict[str, Any]:
-    return _with_hash(
-        {
-            "schema": runner.REPLAY_SCHEMA,
-            "status": "frozen",
-            "calibration_texts": ["alpha prompt", "beta prompt"],
-            "precomputed_teacher_generated_texts": [
-                "alpha prompt teacher answer",
-                "beta prompt teacher answer",
-            ],
-            "on_policy_replay_bank": [
-                ["event one exact text"],
-                ["event two exact text"],
-                ["event three exact text"],
-            ],
-            "behavior_eval_suite": {
-                "schema": "neural-forge-recovery-eval-suite-v1",
-                "split": "candidate",
-                "sealed_data_accessed": False,
-                "prompts": [{"id": "candidate-1", "text": "2+2="}],
-            },
-            "frozen_before_preregistration": True,
-            "contains_sealed_data": False,
-            "publication_authorized": False,
-        },
-        "replay_payload_sha256",
-    )
-
-
 def _stepwise_token_event(step: int) -> dict[str, Any]:
     prompt = [100 + step, 200 + step]
     return {
@@ -201,6 +173,182 @@ def _stepwise_token_event(step: int) -> dict[str, Any]:
     }
 
 
+def _tokenizer_fingerprint(label: str) -> dict[str, Any]:
+    body = {
+        "class": f"tests.{label}Tokenizer",
+        "tokenizer_length": 1024,
+        "vocabulary_entry_count": 1024,
+        "full_vocabulary_stream_sha256": _digest(f"{label}-vocabulary"),
+        "backend_tokenizer_json_sha256": _digest(f"{label}-backend"),
+        "special_token_ids": {
+            "bos_token_id": 1,
+            "eos_token_id": 2,
+            "pad_token_id": 0,
+            "unk_token_id": 3,
+            "sep_token_id": None,
+            "cls_token_id": None,
+            "mask_token_id": None,
+            "all_special_ids": [0, 1, 2, 3],
+        },
+        "padding_side": "left",
+        "truncation_side": "right",
+    }
+    return {**body, "sha256": teacher_replay._canonical_sha256(body)}
+
+
+def _source_model_fingerprint() -> dict[str, Any]:
+    model_class = "tests.SourceModel"
+    state_body = {
+        "schema": teacher_replay.MODEL_STATE_FINGERPRINT_SCHEMA,
+        "model_class": model_class,
+        "state_dict_sha256": _digest("teacher-source-state"),
+        "compiler_state_sha256": _digest("teacher-source-compiler-state"),
+        "state_key_sha256": _digest("teacher-source-state-keys"),
+        "state_manifest_sha256": _digest("teacher-source-manifest"),
+        "state_key_count": 12,
+        "logical_state_elements": 4096,
+        "unique_parameter_count": 4000,
+        "logical_parameter_count": 4000,
+        "parameter_topology_sha256": _digest("teacher-source-parameter-topology"),
+        "buffer_topology_sha256": _digest("teacher-source-buffer-topology"),
+        "all_state_tensors_finite": True,
+    }
+    state = {**state_body, "sha256": teacher_replay._canonical_sha256(state_body)}
+    body = {
+        "class": model_class,
+        "model_state_fingerprint": state,
+        "config_sha256": _digest("teacher-source-config"),
+        "generation_config_sha256": _digest("teacher-source-generation-config"),
+    }
+    return {**body, "sha256": teacher_replay._canonical_sha256(body)}
+
+
+def _teacher_replay_payload() -> dict[str, Any]:
+    calibration = ["alpha prompt", "beta prompt"]
+    teacher_texts = [
+        "alpha prompt teacher answer",
+        "beta prompt teacher answer",
+    ]
+    on_policy = [
+        ["event one exact text"],
+        ["event two exact text"],
+        ["event three exact text"],
+    ]
+    stepwise = [_stepwise_token_event(step) for step in range(1, 5)]
+    parameters = {
+        "steps": 4,
+        "batch_size": 1,
+        "max_length": 128,
+        "response_loss_mode": "auto",
+        "calibration_order": "original",
+        "stepwise_donor_max_new_tokens": 16,
+        "on_policy_max_new_tokens": 24,
+        "teacher_generate_max_new_tokens": 48,
+        "on_policy_interval": 2,
+        "device": "cuda:1",
+    }
+    source_tokenizer = _tokenizer_fingerprint("Source")
+    candidate_tokenizer = _tokenizer_fingerprint("Candidate")
+    source_model = _source_model_fingerprint()
+    frozen_stepwise = runner.hf_recovery._freeze_stepwise_replay_bank(stepwise)
+    frozen_on_policy = runner.hf_recovery._freeze_on_policy_replay_bank(on_policy)
+    body = {
+        "schema": teacher_replay.TEACHER_TOKEN_REPLAY_SCHEMA,
+        "status": "frozen",
+        "calibration_texts": calibration,
+        "stepwise_scheduled_steps": [1, 2, 3, 4],
+        "on_policy_scheduled_steps": [1, 2, 4],
+        "stepwise_replay_bank": stepwise,
+        "on_policy_replay_bank": on_policy,
+        "precomputed_teacher_generated_texts": teacher_texts,
+        "tokenizer_fingerprints": {
+            "source": source_tokenizer,
+            "candidate": candidate_tokenizer,
+        },
+        "source_model_fingerprint": source_model,
+        "parameters": parameters,
+        "provenance_sha256": {
+            "calibration_texts": (
+                runner.hf_recovery._ordered_recovery_texts_sha256(calibration)
+            ),
+            "parameters": teacher_replay._canonical_sha256(parameters),
+            "source_tokenizer": source_tokenizer["sha256"],
+            "candidate_tokenizer": candidate_tokenizer["sha256"],
+            "source_model": source_model["sha256"],
+            "source_model_state": source_model["model_state_fingerprint"][
+                "state_dict_sha256"
+            ],
+            "stepwise_replay_bank": (
+                runner.hf_recovery._stepwise_replay_bank_sha256(frozen_stepwise)
+            ),
+            "on_policy_replay_bank": (
+                runner.hf_recovery._on_policy_replay_bank_sha256(frozen_on_policy)
+            ),
+            "precomputed_teacher_generated_texts": (
+                runner.hf_recovery._ordered_recovery_texts_sha256(teacher_texts)
+            ),
+        },
+    }
+    return {**body, "payload_sha256": teacher_replay._canonical_sha256(body)}
+
+
+def _replay_payload() -> dict[str, Any]:
+    frozen_teacher = _teacher_replay_payload()
+    teacher_source_body = {
+        "schema": runner.TEACHER_SOURCE_ARTIFACT_SCHEMA,
+        "expected_parent_artifact_tree_sha256": _digest("parent-artifact-tree"),
+        "actual_parent_artifact_tree_sha256": _digest("parent-artifact-tree"),
+        "artifact_tree_file_count": 5,
+        "artifact_tree_total_bytes": 8192,
+        "tree_match_verified_before_model_load": True,
+        "source_model_state_dict_sha256": frozen_teacher["source_model_fingerprint"][
+            "model_state_fingerprint"
+        ]["state_dict_sha256"],
+    }
+    return _with_hash(
+        {
+            "schema": runner.REPLAY_SCHEMA,
+            "status": "frozen",
+            "teacher_token_replay": frozen_teacher,
+            "teacher_source_artifact": {
+                **teacher_source_body,
+                "sha256": runner.canonical_sha256(teacher_source_body),
+            },
+            "behavior_eval_suite": {
+                "schema": "neural-forge-recovery-eval-suite-v1",
+                "split": "candidate",
+                "sealed_data_accessed": False,
+                "contains_sealed_data": False,
+                "publication_authorized": False,
+                "suite": {
+                    "text_evals": [],
+                    "choice_probes": [],
+                    "generation_prompts": [
+                        {
+                            "id": "candidate-generation-1",
+                            "prompt": "Continue this sentence clearly:",
+                            "relevance_rules": [],
+                        }
+                    ],
+                    "behavior_probes": [
+                        {
+                            "id": "candidate-math-1",
+                            "prompt": "2+2=",
+                            "kind": "contains",
+                            "answer": "4",
+                            "category": "math",
+                        }
+                    ],
+                },
+            },
+            "frozen_before_preregistration": True,
+            "contains_sealed_data": False,
+            "publication_authorized": False,
+        },
+        "replay_payload_sha256",
+    )
+
+
 def _plan_payload() -> dict[str, Any]:
     return _with_hash(
         {
@@ -209,9 +357,17 @@ def _plan_payload() -> dict[str, Any]:
             "recovery_kwargs": {
                 "steps": 4,
                 "batch_size": 1,
+                "max_length": 128,
+                "response_loss_mode": "auto",
+                "calibration_order": "original",
+                "stepwise_donor_max_new_tokens": 16,
+                "on_policy_max_new_tokens": 24,
+                "teacher_generate_max_new_tokens": 48,
+                "device": "cuda:6",
                 "lr": 1e-5,
                 "on_policy_interval": 2,
                 "on_policy_anchor_kd_weight": 1.0,
+                "stepwise_donor_kd_weight": 0.75,
                 "behavior_eval_checkpoint_steps": [0, 2, 4],
                 "adamw_foreach": False,
                 "local_files_only": True,
@@ -227,6 +383,9 @@ def _plan_payload() -> dict[str, Any]:
             },
             "checkpoint_steps": [0, 2, 4],
             "retained_checkpoint_steps": [2, 4],
+            "teacher_token_replay_payload_sha256": _teacher_replay_payload()[
+                "payload_sha256"
+            ],
             "zero_step_before_optimizer": True,
             "reset_rng_before_each_arm": True,
             "publication_authorized": False,
@@ -240,6 +399,7 @@ def _blank_binding() -> dict[str, Any]:
     return {
         "cache_path": "/authenticated/cache/identity",
         "compiler_identity_sha256": _digest("compiler-identity"),
+        "parent_artifact_tree_sha256": _digest("parent-artifact-tree"),
         "receipt_sha256": _digest("cache-receipt"),
         "compiler_report_sha256": _digest("compiler-report"),
         "artifact_tree": {
@@ -404,17 +564,24 @@ def test_prereg_binds_candidate_blank_code_data_and_symmetric_schedule(
     )
     assert payload["recovery_plan"]["on_policy_event_steps"] == [1, 2, 4]
     assert payload["replay_bank"]["on_policy_event_count"] == 3
-    assert payload["replay_bank"]["stepwise_event_count"] == 0
-    assert payload["recovery_plan"]["stepwise_donor_kd_weight"] == 0.0
-    assert payload["recovery_plan"]["stepwise_replay_bank_required"] is False
+    assert payload["replay_bank"]["stepwise_event_count"] == 4
+    assert payload["recovery_plan"]["stepwise_donor_kd_weight"] == 0.75
+    assert payload["recovery_plan"]["stepwise_replay_bank_required"] is True
+    assert payload["replay_bank"]["source_model_state_dict_sha256"] == _digest(
+        "teacher-source-state"
+    )
     assert payload["recovery_plan"]["adamw_foreach"] is False
+    assert payload["recovery_plan"]["recovery_kwargs"]["device"] == "cuda:6"
+    assert (
+        payload["replay_bank"]["teacher_token_replay_parameters"]["device"] == "cuda:1"
+    )
     assert payload["maximum_retained_checkpoints_per_arm"] == 3
     assert payload["maximum_total_retained_checkpoints"] == 6
     roots = payload["transitive_sha256_roots"]
     assert _digest("v3-root") in roots["v4_preregistration"].values()
     assert _digest("basis-root") in roots["v4_preregistration"].values()
     assert _digest("mask-root") in roots["v4_preregistration"].values()
-    assert payload["production_model_hook_implemented"] is False
+    assert payload["production_model_hook_implemented"] is True
 
 
 def test_authentication_rebuilds_every_bound_source_and_rejects_drift(
@@ -429,7 +596,7 @@ def test_authentication_rebuilds_every_bound_source_and_rejects_drift(
 
     replay_path = contract_inputs["paths"]["replay_bank"]
     replay = json.loads(replay_path.read_text(encoding="utf-8"))
-    replay["calibration_texts"][0] = "tampered"
+    replay["teacher_token_replay"]["calibration_texts"][0] = "tampered"
     _write_json(replay_path, replay)
     with pytest.raises(Exception, match="absent or changed"):
         runner.authenticate_recovery_ab_preregistration(path, digest)
@@ -449,12 +616,15 @@ def test_candidate_boundary_and_replay_schedule_fail_closed(
     contract_inputs["hashes"]["run"] = _write_json(run_path, run)
     replay_path = contract_inputs["paths"]["replay_bank"]
     replay = _replay_payload()
-    replay["on_policy_replay_bank"].pop()
+    replay["teacher_token_replay"]["on_policy_replay_bank"].pop()
     body = dict(replay)
     body.pop("replay_payload_sha256")
     replay["replay_payload_sha256"] = runner.canonical_sha256(body)
     contract_inputs["hashes"]["replay"] = _write_json(replay_path, replay)
-    with pytest.raises(runner.FoldedBlankRecoveryABError, match="event count"):
+    with pytest.raises(
+        runner.FoldedBlankRecoveryABError,
+        match="Teacher-token replay",
+    ):
         _build(contract_inputs)
 
 
@@ -499,12 +669,15 @@ def test_replay_and_plan_reject_non_text_or_unknown_recovery_inputs(
 ) -> None:
     replay_path = contract_inputs["paths"]["replay_bank"]
     replay = _replay_payload()
-    replay["calibration_texts"][0] = 7
+    replay["teacher_token_replay"]["calibration_texts"][0] = 7
     replay_body = dict(replay)
     replay_body.pop("replay_payload_sha256")
     replay["replay_payload_sha256"] = runner.canonical_sha256(replay_body)
     contract_inputs["hashes"]["replay"] = _write_json(replay_path, replay)
-    with pytest.raises(runner.FoldedBlankRecoveryABError, match="only strings"):
+    with pytest.raises(
+        runner.FoldedBlankRecoveryABError,
+        match="Teacher-token replay",
+    ):
         _build(contract_inputs)
 
     contract_inputs["hashes"]["replay"] = _write_json(
@@ -550,15 +723,104 @@ def test_recovery_plan_requires_local_only_non_remote_loading(
         _build(contract_inputs)
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("max_length", 127),
+        ("response_loss_mode", "none"),
+        ("calibration_order", "domain-balanced"),
+        ("stepwise_donor_max_new_tokens", 15),
+        ("on_policy_max_new_tokens", 23),
+        ("teacher_generate_max_new_tokens", 47),
+    ],
+)
+def test_recovery_plan_must_exactly_match_frozen_teacher_replay_parameters(
+    contract_inputs,
+    field: str,
+    value: Any,
+) -> None:
+    plan_path = contract_inputs["paths"]["recovery_plan"]
+    plan = _plan_payload()
+    plan["recovery_kwargs"][field] = value
+    plan_body = dict(plan)
+    plan_body.pop("plan_payload_sha256")
+    plan["plan_payload_sha256"] = runner.canonical_sha256(plan_body)
+    contract_inputs["hashes"]["plan"] = _write_json(plan_path, plan)
+
+    with pytest.raises(
+        runner.FoldedBlankRecoveryABError,
+        match="Frozen teacher replay parameters differ",
+    ):
+        _build(contract_inputs)
+
+
+def test_replay_rejects_tampered_teacher_tensor_provenance(
+    contract_inputs,
+) -> None:
+    replay_path = contract_inputs["paths"]["replay_bank"]
+    replay = _replay_payload()
+    replay["teacher_token_replay"]["source_model_fingerprint"][
+        "model_state_fingerprint"
+    ]["state_dict_sha256"] = _digest("different-source-state")
+    replay_body = dict(replay)
+    replay_body.pop("replay_payload_sha256")
+    replay["replay_payload_sha256"] = runner.canonical_sha256(replay_body)
+    contract_inputs["hashes"]["replay"] = _write_json(replay_path, replay)
+
+    with pytest.raises(
+        runner.FoldedBlankRecoveryABError,
+        match="Teacher-token replay",
+    ):
+        _build(contract_inputs)
+
+
+def test_teacher_source_artifact_must_match_compiled_parent_lineage(
+    contract_inputs,
+) -> None:
+    replay_path = contract_inputs["paths"]["replay_bank"]
+    replay = _replay_payload()
+    source = replay["teacher_source_artifact"]
+    source["expected_parent_artifact_tree_sha256"] = _digest("wrong-parent-tree")
+    source["actual_parent_artifact_tree_sha256"] = _digest("wrong-parent-tree")
+    source_body = dict(source)
+    source_body.pop("sha256")
+    source["sha256"] = runner.canonical_sha256(source_body)
+    replay_body = dict(replay)
+    replay_body.pop("replay_payload_sha256")
+    replay["replay_payload_sha256"] = runner.canonical_sha256(replay_body)
+    contract_inputs["hashes"]["replay"] = _write_json(replay_path, replay)
+
+    with pytest.raises(
+        runner.FoldedBlankRecoveryABError,
+        match="canonical parent",
+    ):
+        _build(contract_inputs)
+
+
+def test_recovery_plan_must_bind_exact_teacher_replay_payload(
+    contract_inputs,
+) -> None:
+    plan_path = contract_inputs["paths"]["recovery_plan"]
+    plan = _plan_payload()
+    plan["teacher_token_replay_payload_sha256"] = _digest("wrong-teacher-replay")
+    plan_body = dict(plan)
+    plan_body.pop("plan_payload_sha256")
+    plan["plan_payload_sha256"] = runner.canonical_sha256(plan_body)
+    contract_inputs["hashes"]["plan"] = _write_json(plan_path, plan)
+
+    with pytest.raises(
+        runner.FoldedBlankRecoveryABError,
+        match="exact frozen teacher-token replay",
+    ):
+        _build(contract_inputs)
+
+
 def test_stepwise_donor_requires_one_frozen_ordered_event_per_optimizer_step(
     contract_inputs,
 ) -> None:
     replay_path = contract_inputs["paths"]["replay_bank"]
     plan_path = contract_inputs["paths"]["recovery_plan"]
     replay = _replay_payload()
-    replay["stepwise_replay_bank"] = [
-        _stepwise_token_event(step) for step in range(1, 5)
-    ]
     replay_body = dict(replay)
     replay_body.pop("replay_payload_sha256")
     replay["replay_payload_sha256"] = runner.canonical_sha256(replay_body)
@@ -583,7 +845,7 @@ def test_stepwise_donor_requires_one_frozen_ordered_event_per_optimizer_step(
         == runner.hf_recovery._STEPWISE_REPLAY_SCHEMA
     )
     frozen = runner.hf_recovery._freeze_stepwise_replay_bank(
-        replay["stepwise_replay_bank"]
+        replay["teacher_token_replay"]["stepwise_replay_bank"]
     )
     assert shared["stepwise_replay_bank_sha256"] == (
         runner.hf_recovery._stepwise_replay_bank_sha256(frozen)
@@ -592,25 +854,25 @@ def test_stepwise_donor_requires_one_frozen_ordered_event_per_optimizer_step(
         len({arm["shared_execution_contract_sha256"] for arm in payload["arms"]}) == 1
     )
 
-    replay["stepwise_replay_bank"].pop()
+    replay["teacher_token_replay"]["stepwise_replay_bank"].pop()
     replay_body = dict(replay)
     replay_body.pop("replay_payload_sha256")
     replay["replay_payload_sha256"] = runner.canonical_sha256(replay_body)
     contract_inputs["hashes"]["replay"] = _write_json(replay_path, replay)
     with pytest.raises(
         runner.FoldedBlankRecoveryABError,
-        match="exactly one ordered event",
+        match="Teacher-token replay",
     ):
         _build(contract_inputs)
 
-    replay.pop("stepwise_replay_bank")
+    replay["teacher_token_replay"].pop("stepwise_replay_bank")
     replay_body = dict(replay)
     replay_body.pop("replay_payload_sha256")
     replay["replay_payload_sha256"] = runner.canonical_sha256(replay_body)
     contract_inputs["hashes"]["replay"] = _write_json(replay_path, replay)
     with pytest.raises(
         runner.FoldedBlankRecoveryABError,
-        match="exactly one ordered event",
+        match="Teacher-token replay",
     ):
         _build(contract_inputs)
 
@@ -631,10 +893,7 @@ def test_stepwise_donor_token_bank_rejects_unsafe_or_wrong_events(
     replay_path = contract_inputs["paths"]["replay_bank"]
     plan_path = contract_inputs["paths"]["recovery_plan"]
     replay = _replay_payload()
-    replay["stepwise_replay_bank"] = [
-        _stepwise_token_event(step) for step in range(1, 5)
-    ]
-    mutate(replay["stepwise_replay_bank"])
+    mutate(replay["teacher_token_replay"]["stepwise_replay_bank"])
     replay_body = dict(replay)
     replay_body.pop("replay_payload_sha256")
     replay["replay_payload_sha256"] = runner.canonical_sha256(replay_body)
@@ -648,7 +907,7 @@ def test_stepwise_donor_token_bank_rejects_unsafe_or_wrong_events(
 
     with pytest.raises(
         runner.FoldedBlankRecoveryABError,
-        match="token replay bank|exactly one ordered event",
+        match="Teacher-token replay",
     ):
         _build(contract_inputs)
 
@@ -851,8 +1110,47 @@ def _zero_step_receipts(contract, materialization) -> dict[str, dict[str, Any]]:
         "accepted_artifact": False,
     }
     values = {}
-    for arm_id, score in (("folded", 0.25), ("blank", 0.0)):
-        metrics = {"coherent_action_rate": score, "sample_count": 4}
+    for arm_id, correct in (("folded", 1), ("blank", 0)):
+        behavior_breakdown = {
+            "math": {
+                "correct": correct,
+                "total": 4,
+                "pass_rate": correct / 4,
+                "failed_ids": [f"probe-{index}" for index in range(correct + 1, 5)],
+                "passed_ids": (["probe-1"] if correct else []),
+            }
+        }
+        generation_breakdown = {
+            "general": {
+                "correct": correct,
+                "total": 2,
+                "pass_rate": correct / 2,
+                "failed_ids": [
+                    f"generation-{index}" for index in range(correct + 1, 3)
+                ],
+                "passed_ids": (["generation-1"] if correct else []),
+            }
+        }
+        metrics = {
+            "step": 0,
+            "loss": None,
+            "correct": correct,
+            "total": 4,
+            "pass_rate": correct / 4,
+            "generation_health_correct": correct,
+            "generation_health_total": 2,
+            "generation_health_rate": correct / 2,
+            "behavior_category_breakdown": behavior_breakdown,
+            "generation_category_breakdown": generation_breakdown,
+            "behavior_category_summary": (
+                runner.hf_recovery._category_breakdown_summary(behavior_breakdown)
+            ),
+            "generation_category_summary": (
+                runner.hf_recovery._category_breakdown_summary(generation_breakdown)
+            ),
+            "passed_ids": ["probe-1"] if correct else [],
+            "generation_passed_prompts": (["generation prompt 1"] if correct else []),
+        }
         values[arm_id] = _receipt(
             {
                 **common,
@@ -863,7 +1161,7 @@ def _zero_step_receipts(contract, materialization) -> dict[str, dict[str, Any]]:
                 "metrics": metrics,
                 "metrics_sha256": runner.canonical_sha256(metrics),
                 "evaluator_implementation_sha256": contract.raw["implementation"][
-                    "recovery_implementation_sha256"
+                    "behavior_evaluator_implementation_sha256"
                 ],
             }
         )
@@ -905,7 +1203,30 @@ def test_materialization_and_zero_step_receipts_remain_unaccepted(
     assert zero_step["training_launched"] is False
     assert zero_step["publication_authorized"] is False
     assert zero_step["sealed_data_accessed"] is False
-    assert zero_step["next_action"] == "explicit-production-recovery-hook-required"
+    assert (
+        zero_step["next_action"] == "authenticated-production-recovery-executor-ready"
+    )
+
+    for mutate in (
+        lambda metrics: metrics.__setitem__("pass_rate", 0.5),
+        lambda metrics: metrics["behavior_category_summary"].__setitem__(
+            "hard_category_total", 99
+        ),
+        lambda metrics: metrics.__setitem__("unbound_metric", True),
+    ):
+        tampered_zero = _zero_step_receipts(contract, materialization)
+        folded = tampered_zero["folded"]
+        mutate(folded["metrics"])
+        folded["metrics_sha256"] = runner.canonical_sha256(folded["metrics"])
+        folded.pop("receipt_sha256")
+        tampered_zero["folded"] = _receipt(folded)
+        with pytest.raises(runner.FoldedBlankRecoveryABError):
+            runner.authenticate_zero_step_receipts(
+                contract,
+                materialization,
+                tampered_zero,
+                folded_artifact_hooks=artifact_hooks,
+            )
 
     for field, value in (
         ("preregistration_sha256", _digest("wrong-preregistration")),
@@ -1173,7 +1494,7 @@ def test_scaffold_source_has_no_model_or_gpu_execution_path() -> None:
     assert "from_pretrained(" not in source
     assert "torch.load(" not in source
     assert ".cuda(" not in source
-    assert '"production_model_hook_implemented": False' in source
+    assert '"production_model_hook_implemented": True' in source
     assert "verify_compiled_child_cache" in source
     assert "_winner_payload" in source
     assert "pydantic" not in source.lower()

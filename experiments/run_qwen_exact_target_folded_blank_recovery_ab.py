@@ -16,6 +16,7 @@ import hashlib
 import importlib.util
 import inspect
 import json
+import math
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -33,6 +34,7 @@ from neural_forge.hf_compiled_child_cache import (
     verify_compiled_child_cache,
 )
 from neural_forge import hf_recovery
+from neural_forge import hf_teacher_token_replay
 from neural_forge import hf_progressive_target_bridge as progressive_bridge
 from neural_forge.hf_recovery import recover_cross_tokenizer_causal_lm
 from neural_forge.hf_guided_checkpoint_recovery import (
@@ -57,18 +59,69 @@ PREREGISTRATION_SCHEMA = (
     "neural-forge-qwen-exact-target-folded-blank-recovery-ab-preregistration-v1"
 )
 RUN_SCHEMA = "neural-forge-qwen-exact-target-folded-blank-recovery-ab-run-v1"
-REPLAY_SCHEMA = "neural-forge-frozen-recovery-replay-bank-v1"
-PLAN_SCHEMA = "neural-forge-folded-blank-recovery-plan-v1"
+REPLAY_SCHEMA = "neural-forge-frozen-recovery-replay-bank-v2"
+PLAN_SCHEMA = "neural-forge-folded-blank-recovery-plan-v2"
+TEACHER_SOURCE_ARTIFACT_SCHEMA = "neural-forge-teacher-source-artifact-binding-v1"
 MATERIALIZATION_RECEIPT_SCHEMA = (
     "neural-forge-folded-blank-recovery-materialization-receipt-v1"
 )
 ZERO_STEP_RECEIPT_SCHEMA = "neural-forge-folded-blank-recovery-zero-step-receipt-v1"
 BUILD_FILENAME = "prepare_qwen_exact_target_folded_blank_recovery_ab.py"
+EXECUTOR_FILENAME = "execute_qwen_exact_target_folded_blank_recovery_ab.py"
+RECOVERY_INPUT_BUILDER_FILENAME = (
+    "prepare_qwen_exact_target_folded_blank_recovery_inputs.py"
+)
 ARM_IDS = ("folded", "blank")
 EXACT_UNIQUE_PARAMETERS = 1_410_567_168
 MAX_RETAINED_CHECKPOINTS_PER_ARM = 3
 MAX_TOTAL_RETAINED_CHECKPOINTS = 6
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_BEHAVIOR_CHECKPOINT_FIELDS = frozenset(
+    {
+        "step",
+        "loss",
+        "correct",
+        "total",
+        "pass_rate",
+        "generation_health_correct",
+        "generation_health_total",
+        "generation_health_rate",
+        "behavior_category_breakdown",
+        "generation_category_breakdown",
+        "behavior_category_summary",
+        "generation_category_summary",
+        "passed_ids",
+        "generation_passed_prompts",
+    }
+)
+_CATEGORY_BREAKDOWN_ROW_FIELDS = frozenset(
+    {"correct", "total", "pass_rate", "failed_ids", "passed_ids"}
+)
+_CATEGORY_SUMMARY_FIELDS = frozenset(
+    {
+        "category_count",
+        "covered_category_count",
+        "min_pass_rate",
+        "mean_pass_rate",
+        "hard_categories",
+        "hard_category_correct",
+        "hard_category_total",
+        "hard_category_pass_rate",
+        "hard_category_breakdown",
+    }
+)
+_HARD_CATEGORY_ROW_FIELDS = frozenset({"correct", "total", "pass_rate"})
+_REPLAY_RECOVERY_PARAMETER_NAMES = (
+    "steps",
+    "batch_size",
+    "max_length",
+    "response_loss_mode",
+    "calibration_order",
+    "stepwise_donor_max_new_tokens",
+    "on_policy_max_new_tokens",
+    "teacher_generate_max_new_tokens",
+    "on_policy_interval",
+)
 _FORBIDDEN_RECOVERY_KWARGS = {
     "source_model",
     "candidate_model",
@@ -125,6 +178,257 @@ def _strict(value: Any, fields: set[str], name: str) -> Mapping[str, Any]:
     return value
 
 
+def _nonnegative_int(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise FoldedBlankRecoveryABError(f"{name} must be a nonnegative integer.")
+    return int(value)
+
+
+def _finite_rate(value: Any, name: str) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        or not 0.0 <= float(value) <= 1.0
+    ):
+        raise FoldedBlankRecoveryABError(f"{name} must be a finite rate in [0, 1].")
+    return float(value)
+
+
+def _exact_rate(*, correct: int, total: int, rate: Any, name: str) -> float:
+    normalized = _finite_rate(rate, name)
+    expected = float(correct / max(1, total))
+    if abs(normalized - expected) > 1e-12:
+        raise FoldedBlankRecoveryABError(
+            f"{name} differs from its authenticated correct/total counts."
+        )
+    return normalized
+
+
+def _string_list(value: Any, name: str, *, unique: bool) -> list[str]:
+    if not isinstance(value, list) or any(
+        not isinstance(item, str) or not item.strip() for item in value
+    ):
+        raise FoldedBlankRecoveryABError(
+            f"{name} must be an array of nonblank strings."
+        )
+    if unique and len(value) != len(set(value)):
+        raise FoldedBlankRecoveryABError(f"{name} must not contain duplicates.")
+    return list(value)
+
+
+def _behavior_category_breakdown(value: Any, name: str) -> dict[str, dict[str, Any]]:
+    if not isinstance(value, Mapping):
+        raise FoldedBlankRecoveryABError(f"{name} must be an object.")
+    normalized: dict[str, dict[str, Any]] = {}
+    for category, raw_row in value.items():
+        if (
+            not isinstance(category, str)
+            or not category
+            or category != category.strip().lower().replace("-", "_")
+        ):
+            raise FoldedBlankRecoveryABError(
+                f"{name} contains a noncanonical category name."
+            )
+        row = _strict(
+            raw_row,
+            set(_CATEGORY_BREAKDOWN_ROW_FIELDS),
+            f"{name}.{category}",
+        )
+        correct = _nonnegative_int(row["correct"], f"{name}.{category}.correct")
+        total = _nonnegative_int(row["total"], f"{name}.{category}.total")
+        if correct > total:
+            raise FoldedBlankRecoveryABError(
+                f"{name}.{category}.correct exceeds total."
+            )
+        rate = _exact_rate(
+            correct=correct,
+            total=total,
+            rate=row["pass_rate"],
+            name=f"{name}.{category}.pass_rate",
+        )
+        passed_ids = _string_list(
+            row["passed_ids"],
+            f"{name}.{category}.passed_ids",
+            unique=True,
+        )
+        failed_ids = _string_list(
+            row["failed_ids"],
+            f"{name}.{category}.failed_ids",
+            unique=True,
+        )
+        if set(passed_ids).intersection(failed_ids):
+            raise FoldedBlankRecoveryABError(
+                f"{name}.{category} marks one identifier both passed and failed."
+            )
+        if len(passed_ids) > min(correct, 20) or len(failed_ids) > min(
+            total - correct, 20
+        ):
+            raise FoldedBlankRecoveryABError(
+                f"{name}.{category} contains more IDs than its counts permit."
+            )
+        normalized[category] = {
+            "correct": correct,
+            "total": total,
+            "pass_rate": rate,
+            "failed_ids": failed_ids,
+            "passed_ids": passed_ids,
+        }
+    if list(normalized) != sorted(normalized):
+        raise FoldedBlankRecoveryABError(f"{name} categories must be sorted.")
+    return normalized
+
+
+def _behavior_category_summary(
+    value: Any,
+    *,
+    breakdown: Mapping[str, Mapping[str, Any]],
+    name: str,
+) -> dict[str, Any]:
+    summary = _strict(value, set(_CATEGORY_SUMMARY_FIELDS), name)
+    hard_categories = _string_list(
+        summary["hard_categories"],
+        f"{name}.hard_categories",
+        unique=True,
+    )
+    hard_breakdown = summary["hard_category_breakdown"]
+    if not isinstance(hard_breakdown, Mapping):
+        raise FoldedBlankRecoveryABError(
+            f"{name}.hard_category_breakdown must be an object."
+        )
+    for category, row in hard_breakdown.items():
+        if category not in hard_categories:
+            raise FoldedBlankRecoveryABError(
+                f"{name}.hard_category_breakdown contains an undeclared category."
+            )
+        strict_row = _strict(
+            row,
+            set(_HARD_CATEGORY_ROW_FIELDS),
+            f"{name}.hard_category_breakdown.{category}",
+        )
+        correct = _nonnegative_int(
+            strict_row["correct"],
+            f"{name}.hard_category_breakdown.{category}.correct",
+        )
+        total = _nonnegative_int(
+            strict_row["total"],
+            f"{name}.hard_category_breakdown.{category}.total",
+        )
+        if correct > total:
+            raise FoldedBlankRecoveryABError(
+                f"{name}.hard_category_breakdown.{category}.correct exceeds total."
+            )
+        _exact_rate(
+            correct=correct,
+            total=total,
+            rate=strict_row["pass_rate"],
+            name=f"{name}.hard_category_breakdown.{category}.pass_rate",
+        )
+    expected = hf_recovery._category_breakdown_summary(dict(breakdown))
+    if canonical_json_bytes(summary) != canonical_json_bytes(expected):
+        raise FoldedBlankRecoveryABError(
+            f"{name} does not exactly summarize its authenticated category rows."
+        )
+    return dict(summary)
+
+
+def _behavior_checkpoint_metrics(
+    value: Any,
+    *,
+    expected_step: int,
+    require_loss_none: bool,
+    name: str,
+) -> dict[str, Any]:
+    metrics = _strict(value, set(_BEHAVIOR_CHECKPOINT_FIELDS), name)
+    step = _nonnegative_int(metrics["step"], f"{name}.step")
+    if step != expected_step:
+        raise FoldedBlankRecoveryABError(f"{name}.step differs from its checkpoint.")
+    loss = metrics["loss"]
+    if require_loss_none:
+        if loss is not None:
+            raise FoldedBlankRecoveryABError(f"{name}.loss must be null at step zero.")
+    elif (
+        isinstance(loss, bool)
+        or not isinstance(loss, (int, float))
+        or not math.isfinite(float(loss))
+    ):
+        raise FoldedBlankRecoveryABError(f"{name}.loss must be finite after step zero.")
+
+    correct = _nonnegative_int(metrics["correct"], f"{name}.correct")
+    total = _nonnegative_int(metrics["total"], f"{name}.total")
+    generation_correct = _nonnegative_int(
+        metrics["generation_health_correct"],
+        f"{name}.generation_health_correct",
+    )
+    generation_total = _nonnegative_int(
+        metrics["generation_health_total"],
+        f"{name}.generation_health_total",
+    )
+    if total <= 0 or correct > total or generation_correct > generation_total:
+        raise FoldedBlankRecoveryABError(
+            f"{name} contains impossible behavior or generation counts."
+        )
+    _exact_rate(
+        correct=correct,
+        total=total,
+        rate=metrics["pass_rate"],
+        name=f"{name}.pass_rate",
+    )
+    _exact_rate(
+        correct=generation_correct,
+        total=generation_total,
+        rate=metrics["generation_health_rate"],
+        name=f"{name}.generation_health_rate",
+    )
+    behavior_breakdown = _behavior_category_breakdown(
+        metrics["behavior_category_breakdown"],
+        f"{name}.behavior_category_breakdown",
+    )
+    generation_breakdown = _behavior_category_breakdown(
+        metrics["generation_category_breakdown"],
+        f"{name}.generation_category_breakdown",
+    )
+    if (
+        sum(row["correct"] for row in behavior_breakdown.values()) != correct
+        or sum(row["total"] for row in behavior_breakdown.values()) != total
+        or sum(row["correct"] for row in generation_breakdown.values())
+        != generation_correct
+        or sum(row["total"] for row in generation_breakdown.values())
+        != generation_total
+    ):
+        raise FoldedBlankRecoveryABError(
+            f"{name} category totals differ from its aggregate counts."
+        )
+    _behavior_category_summary(
+        metrics["behavior_category_summary"],
+        breakdown=behavior_breakdown,
+        name=f"{name}.behavior_category_summary",
+    )
+    _behavior_category_summary(
+        metrics["generation_category_summary"],
+        breakdown=generation_breakdown,
+        name=f"{name}.generation_category_summary",
+    )
+    passed_ids = _string_list(
+        metrics["passed_ids"],
+        f"{name}.passed_ids",
+        unique=True,
+    )
+    generation_passed_prompts = _string_list(
+        metrics["generation_passed_prompts"],
+        f"{name}.generation_passed_prompts",
+        unique=False,
+    )
+    if (
+        len(passed_ids) != correct
+        or len(generation_passed_prompts) != generation_correct
+    ):
+        raise FoldedBlankRecoveryABError(
+            f"{name} passed identifiers differ from its correct counts."
+        )
+    return dict(metrics)
+
+
 def _bound_json(path: Path | str, expected_sha256: str, name: str) -> dict[str, Any]:
     source = publication._bound_file(path, expected_sha256, name)
     payload = stage._strict_json(source)
@@ -151,9 +455,19 @@ def _implementation_hashes(*, builder_path: Path) -> dict[str, str]:
     )
     if not builder.is_file():
         raise FoldedBlankRecoveryABError("A/B builder implementation is absent.")
-    return {
+    executor = Path(__file__).resolve().with_name(EXECUTOR_FILENAME)
+    recovery_input_builder = (
+        Path(__file__).resolve().with_name(RECOVERY_INPUT_BUILDER_FILENAME)
+    )
+    if not executor.is_file() or not recovery_input_builder.is_file():
+        raise FoldedBlankRecoveryABError(
+            "Production recovery executor or frozen-input builder is absent."
+        )
+    result = {
         "runner_sha256": stage._file_sha256(Path(__file__).resolve()),
         "builder_sha256": stage._file_sha256(builder),
+        "production_executor_sha256": stage._file_sha256(executor),
+        "recovery_input_builder_sha256": stage._file_sha256(recovery_input_builder),
         "v4_candidate_tournament_runner_sha256": stage._file_sha256(
             Path(tournament.__file__).resolve()
         ),
@@ -170,6 +484,15 @@ def _implementation_hashes(*, builder_path: Path) -> dict[str, str]:
         "recovery_implementation_sha256": stage._file_sha256(
             _module_file("neural_forge.hf_recovery")
         ),
+        "teacher_token_replay_sha256": stage._file_sha256(
+            _module_file("neural_forge.hf_teacher_token_replay")
+        ),
+        "experimental_child_artifact_sha256": stage._file_sha256(
+            _module_file("neural_forge.hf_experimental_child_artifact")
+        ),
+        "behavior_tools_sha256": stage._file_sha256(
+            _module_file("neural_forge.hf_tools")
+        ),
         "blank_materializer_sha256": stage._file_sha256(Path(blank.__file__).resolve()),
         "checkpoint_authenticator_sha256": stage._file_sha256(
             _module_file("neural_forge.hf_guided_checkpoint_recovery")
@@ -178,6 +501,13 @@ def _implementation_hashes(*, builder_path: Path) -> dict[str, str]:
             _module_file("neural_forge.hf_target_native_behavior_distillation")
         ),
     }
+    result["behavior_evaluator_implementation_sha256"] = canonical_sha256(
+        {
+            "hf_recovery_sha256": result["recovery_implementation_sha256"],
+            "hf_tools_sha256": result["behavior_tools_sha256"],
+        }
+    )
+    return result
 
 
 def _collect_sha256_roots(value: Any, *, path: str = "$") -> dict[str, str]:
@@ -364,6 +694,9 @@ def _compiled_blank_binding(v4: _V4CandidateBinding) -> dict[str, Any]:
     return {
         "cache_path": str(cache_path),
         "compiler_identity_sha256": identity_sha,
+        "parent_artifact_tree_sha256": identity.as_dict()[
+            "parent_artifact_tree_sha256"
+        ],
         "receipt_sha256": verified.receipt.receipt_sha256,
         "compiler_report_sha256": cache.expected_compiler_report_sha256,
         "artifact_tree": dict(tree),
@@ -434,40 +767,102 @@ def _replay_binding(path: Path, expected_sha256: str) -> dict[str, Any]:
     replay_fields = {
         "schema",
         "status",
-        "calibration_texts",
-        "precomputed_teacher_generated_texts",
-        "on_policy_replay_bank",
+        "teacher_token_replay",
+        "teacher_source_artifact",
         "behavior_eval_suite",
         "frozen_before_preregistration",
         "contains_sealed_data",
         "publication_authorized",
         "replay_payload_sha256",
     }
-    if not isinstance(raw, Mapping) or set(raw) not in {
-        frozenset(replay_fields),
-        frozenset(replay_fields | {"stepwise_replay_bank"}),
-    }:
+    if not isinstance(raw, Mapping) or set(raw) != replay_fields:
         raise FoldedBlankRecoveryABError(
             "frozen replay bank fields changed or are incomplete."
         )
     body = dict(raw)
     embedded = _sha256(body.pop("replay_payload_sha256"), "replay payload SHA")
-    calibration = _nonblank_texts(raw["calibration_texts"], "calibration_texts")
-    teacher = _nonblank_texts(
-        raw["precomputed_teacher_generated_texts"],
-        "precomputed_teacher_generated_texts",
+    try:
+        verified_teacher_replay = (
+            hf_teacher_token_replay.verify_teacher_token_replay_payload(
+                raw["teacher_token_replay"]
+            )
+        )
+    except Exception as error:
+        raise FoldedBlankRecoveryABError(
+            "Teacher-token replay failed strict model-free authentication."
+        ) from error
+    calibration = _nonblank_texts(
+        verified_teacher_replay["calibration_texts"],
+        "teacher_token_replay.calibration_texts",
     )
-    bank_raw = raw["on_policy_replay_bank"]
+    teacher = _nonblank_texts(
+        verified_teacher_replay["precomputed_teacher_generated_texts"],
+        "teacher_token_replay.precomputed_teacher_generated_texts",
+    )
+    bank_raw = verified_teacher_replay["on_policy_replay_bank"]
     if isinstance(bank_raw, (str, bytes)) or not isinstance(bank_raw, Sequence):
         raise FoldedBlankRecoveryABError("on_policy_replay_bank must be a list.")
     bank = tuple(
         _nonblank_texts(event, f"on_policy_replay_bank[{index}]")
         for index, event in enumerate(bank_raw)
     )
-    stepwise_bank = _frozen_stepwise_replay_bank(raw.get("stepwise_replay_bank", ()))
+    stepwise_bank = _frozen_stepwise_replay_bank(
+        verified_teacher_replay["stepwise_replay_bank"]
+    )
     suite = raw["behavior_eval_suite"]
     if not isinstance(suite, Mapping) or not suite:
         raise FoldedBlankRecoveryABError("behavior_eval_suite must be an object.")
+    try:
+        loaded_suite, behavior_probes, _generation_prompts = (
+            hf_recovery._recovery_behavior_eval_suite(dict(suite))
+        )
+    except Exception as error:
+        raise FoldedBlankRecoveryABError(
+            "behavior_eval_suite is not a valid recovery evaluator suite."
+        ) from error
+    parameters = dict(verified_teacher_replay["parameters"])
+    tokenizer_fingerprints = verified_teacher_replay["tokenizer_fingerprints"]
+    source_model_fingerprint = verified_teacher_replay["source_model_fingerprint"]
+    source_model_state = source_model_fingerprint["model_state_fingerprint"]
+    teacher_source_artifact = _strict(
+        raw["teacher_source_artifact"],
+        {
+            "schema",
+            "expected_parent_artifact_tree_sha256",
+            "actual_parent_artifact_tree_sha256",
+            "artifact_tree_file_count",
+            "artifact_tree_total_bytes",
+            "tree_match_verified_before_model_load",
+            "source_model_state_dict_sha256",
+            "sha256",
+        },
+        "teacher_source_artifact",
+    )
+    teacher_source_body = dict(teacher_source_artifact)
+    teacher_source_sha = _sha256(
+        teacher_source_body.pop("sha256"),
+        "teacher_source_artifact.sha256",
+    )
+    expected_parent_tree_sha = _sha256(
+        teacher_source_artifact["expected_parent_artifact_tree_sha256"],
+        "teacher_source_artifact.expected_parent_artifact_tree_sha256",
+    )
+    actual_parent_tree_sha = _sha256(
+        teacher_source_artifact["actual_parent_artifact_tree_sha256"],
+        "teacher_source_artifact.actual_parent_artifact_tree_sha256",
+    )
+    teacher_source_state_sha = _sha256(
+        teacher_source_artifact["source_model_state_dict_sha256"],
+        "teacher_source_artifact.source_model_state_dict_sha256",
+    )
+    teacher_source_file_count = _nonnegative_int(
+        teacher_source_artifact["artifact_tree_file_count"],
+        "teacher_source_artifact.artifact_tree_file_count",
+    )
+    teacher_source_total_bytes = _nonnegative_int(
+        teacher_source_artifact["artifact_tree_total_bytes"],
+        "teacher_source_artifact.artifact_tree_total_bytes",
+    )
     if (
         raw.get("schema") != REPLAY_SCHEMA
         or raw.get("status") != "frozen"
@@ -477,6 +872,18 @@ def _replay_binding(path: Path, expected_sha256: str) -> dict[str, Any]:
         or not isinstance(suite.get("split"), str)
         or suite.get("split", "").strip().casefold() != "candidate"
         or suite.get("sealed_data_accessed") is not False
+        or suite.get("contains_sealed_data", False) is not False
+        or suite.get("publication_authorized", False) is not False
+        or loaded_suite is None
+        or not behavior_probes
+        or teacher_source_artifact.get("schema") != TEACHER_SOURCE_ARTIFACT_SCHEMA
+        or expected_parent_tree_sha != actual_parent_tree_sha
+        or teacher_source_artifact.get("tree_match_verified_before_model_load")
+        is not True
+        or teacher_source_file_count <= 0
+        or teacher_source_total_bytes <= 0
+        or teacher_source_state_sha != source_model_state["state_dict_sha256"]
+        or canonical_sha256(teacher_source_body) != teacher_source_sha
         or canonical_sha256(body) != embedded
     ):
         raise FoldedBlankRecoveryABError(
@@ -511,6 +918,27 @@ def _replay_binding(path: Path, expected_sha256: str) -> dict[str, Any]:
         "path": str(source),
         "file_sha256": file_sha,
         "payload_sha256": embedded,
+        "teacher_token_replay_schema": verified_teacher_replay["schema"],
+        "teacher_token_replay_payload_sha256": verified_teacher_replay[
+            "payload_sha256"
+        ],
+        "teacher_token_replay_parameters": parameters,
+        "teacher_token_replay_parameters_sha256": canonical_sha256(parameters),
+        "teacher_source_artifact_sha256": teacher_source_sha,
+        "teacher_source_expected_parent_artifact_tree_sha256": (
+            expected_parent_tree_sha
+        ),
+        "teacher_source_actual_parent_artifact_tree_sha256": (actual_parent_tree_sha),
+        "teacher_source_artifact_tree_file_count": teacher_source_file_count,
+        "teacher_source_artifact_tree_total_bytes": teacher_source_total_bytes,
+        "source_tokenizer_fingerprint_sha256": tokenizer_fingerprints["source"][
+            "sha256"
+        ],
+        "candidate_tokenizer_fingerprint_sha256": tokenizer_fingerprints["candidate"][
+            "sha256"
+        ],
+        "source_model_fingerprint_sha256": source_model_fingerprint["sha256"],
+        "source_model_state_dict_sha256": source_model_state["state_dict_sha256"],
         "calibration_text_count": len(calibration),
         "calibration_texts_sha256": _ordered_texts_sha256(calibration),
         "teacher_generated_text_count": len(teacher),
@@ -525,7 +953,7 @@ def _replay_binding(path: Path, expected_sha256: str) -> dict[str, Any]:
         "stepwise_replay_bank_sha256": (
             hf_recovery._stepwise_replay_bank_sha256(stepwise_bank)
         ),
-        "stepwise_replay_bank_supplied": "stepwise_replay_bank" in raw,
+        "stepwise_replay_bank_supplied": True,
         "behavior_eval_suite_sha256": canonical_sha256(suite),
         "frozen_before_preregistration": True,
         "contains_sealed_data": False,
@@ -546,6 +974,7 @@ def _plan_binding(path: Path, expected_sha256: str) -> dict[str, Any]:
             "seeds",
             "checkpoint_steps",
             "retained_checkpoint_steps",
+            "teacher_token_replay_payload_sha256",
             "zero_step_before_optimizer",
             "reset_rng_before_each_arm",
             "publication_authorized",
@@ -560,6 +989,10 @@ def _plan_binding(path: Path, expected_sha256: str) -> dict[str, Any]:
     seeds = raw["seeds"]
     checkpoints = raw["checkpoint_steps"]
     retained = raw["retained_checkpoint_steps"]
+    teacher_token_replay_payload_sha = _sha256(
+        raw["teacher_token_replay_payload_sha256"],
+        "recovery plan teacher-token replay payload SHA",
+    )
     if not isinstance(kwargs, Mapping) or not kwargs:
         raise FoldedBlankRecoveryABError("recovery_kwargs must be nonempty.")
     supported_recovery_kwargs = set(
@@ -660,6 +1093,7 @@ def _plan_binding(path: Path, expected_sha256: str) -> dict[str, Any]:
         "checkpoint_steps": list(checkpoints),
         "checkpoint_steps_sha256": canonical_sha256(checkpoints),
         "retained_checkpoint_steps": list(retained),
+        "teacher_token_replay_payload_sha256": teacher_token_replay_payload_sha,
         "maximum_retained_checkpoints_per_arm": MAX_RETAINED_CHECKPOINTS_PER_ARM,
         "maximum_total_retained_checkpoints": MAX_TOTAL_RETAINED_CHECKPOINTS,
         "on_policy_event_steps": events,
@@ -704,6 +1138,38 @@ def build_recovery_ab_preregistration_payload(
     compiled_blank = _compiled_blank_binding(v4)
     replay = _replay_binding(replay_bank, replay_bank_sha256)
     plan = _plan_binding(recovery_plan, recovery_plan_sha256)
+    replay_parameters = replay["teacher_token_replay_parameters"]
+    mismatched_replay_parameters = {
+        name: {
+            "replay": replay_parameters.get(name),
+            "recovery_plan": plan["recovery_kwargs"].get(name),
+        }
+        for name in _REPLAY_RECOVERY_PARAMETER_NAMES
+        if name not in plan["recovery_kwargs"]
+        or replay_parameters.get(name) != plan["recovery_kwargs"].get(name)
+    }
+    if mismatched_replay_parameters:
+        raise FoldedBlankRecoveryABError(
+            "Frozen teacher replay parameters differ from recovery_kwargs: "
+            f"{mismatched_replay_parameters!r}."
+        )
+    if (
+        plan["teacher_token_replay_payload_sha256"]
+        != replay["teacher_token_replay_payload_sha256"]
+    ):
+        raise FoldedBlankRecoveryABError(
+            "Recovery plan does not bind the exact frozen teacher-token replay."
+        )
+    if (
+        replay["teacher_source_expected_parent_artifact_tree_sha256"]
+        != compiled_blank["parent_artifact_tree_sha256"]
+        or replay["teacher_source_actual_parent_artifact_tree_sha256"]
+        != compiled_blank["parent_artifact_tree_sha256"]
+    ):
+        raise FoldedBlankRecoveryABError(
+            "Teacher source artifact is not the canonical parent pinned by the "
+            "compiled child lineage."
+        )
     if replay["on_policy_event_count"] != plan["on_policy_event_count"]:
         raise FoldedBlankRecoveryABError(
             "Frozen on-policy replay event count differs from the recovery schedule."
@@ -720,6 +1186,24 @@ def build_recovery_ab_preregistration_payload(
     shared = {
         "replay_bank_file_sha256": replay["file_sha256"],
         "replay_bank_payload_sha256": replay["payload_sha256"],
+        "teacher_token_replay_payload_sha256": replay[
+            "teacher_token_replay_payload_sha256"
+        ],
+        "teacher_token_replay_parameters_sha256": replay[
+            "teacher_token_replay_parameters_sha256"
+        ],
+        "teacher_source_artifact_sha256": replay["teacher_source_artifact_sha256"],
+        "source_tokenizer_fingerprint_sha256": replay[
+            "source_tokenizer_fingerprint_sha256"
+        ],
+        "candidate_tokenizer_fingerprint_sha256": replay[
+            "candidate_tokenizer_fingerprint_sha256"
+        ],
+        "source_model_fingerprint_sha256": replay["source_model_fingerprint_sha256"],
+        "source_model_state_dict_sha256": replay["source_model_state_dict_sha256"],
+        "canonical_parent_artifact_tree_sha256": compiled_blank[
+            "parent_artifact_tree_sha256"
+        ],
         "calibration_texts_sha256": replay["calibration_texts_sha256"],
         "teacher_generated_texts_sha256": replay["teacher_generated_texts_sha256"],
         "on_policy_replay_bank_sha256": replay["on_policy_replay_bank_sha256"],
@@ -824,8 +1308,8 @@ def build_recovery_ab_preregistration_payload(
         "accepted_artifact": False,
         "maximum_retained_checkpoints_per_arm": MAX_RETAINED_CHECKPOINTS_PER_ARM,
         "maximum_total_retained_checkpoints": MAX_TOTAL_RETAINED_CHECKPOINTS,
-        "production_model_hook_implemented": False,
-        "explicit_production_hook_required": True,
+        "production_model_hook_implemented": True,
+        "explicit_production_hook_required": False,
     }
     payload["semantic_contract_sha256"] = canonical_sha256(
         {
@@ -887,8 +1371,8 @@ class AuthenticatedFoldedBlankRecoveryAB:
             "recovery_plan": dict(self.raw["recovery_plan"]),
             "maximum_retained_checkpoints_per_arm": (MAX_RETAINED_CHECKPOINTS_PER_ARM),
             "maximum_total_retained_checkpoints": MAX_TOTAL_RETAINED_CHECKPOINTS,
-            "production_model_hook_implemented": False,
-            "explicit_production_hook_required": True,
+            "production_model_hook_implemented": True,
+            "explicit_production_hook_required": False,
         }
 
 
@@ -1439,6 +1923,13 @@ def authenticate_zero_step_receipts(
             name=f"{arm_id} zero-step receipt",
         )
         metrics = row.get("metrics")
+        if isinstance(metrics, Mapping):
+            _behavior_checkpoint_metrics(
+                metrics,
+                expected_step=0,
+                require_loss_none=True,
+                name=f"{arm_id} zero-step metrics",
+            )
         if (
             row.get("schema") != ZERO_STEP_RECEIPT_SCHEMA
             or row.get("status") != "experimental-unaccepted"
@@ -1452,10 +1943,11 @@ def authenticate_zero_step_receipts(
             or row.get("checkpoint_step") != 0
             or row.get("optimizer_steps") != 0
             or not isinstance(metrics, Mapping)
-            or not metrics
             or row.get("metrics_sha256") != canonical_sha256(metrics)
             or row.get("evaluator_implementation_sha256")
-            != contract.raw["implementation"]["recovery_implementation_sha256"]
+            != contract.raw["implementation"][
+                "behavior_evaluator_implementation_sha256"
+            ]
             or row.get("sealed_data_accessed") is not False
             or row.get("publication_authorized") is not False
             or row.get("accepted_artifact") is not False
@@ -1470,7 +1962,7 @@ def authenticate_zero_step_receipts(
         "preregistration_sha256": contract.file_sha256,
         "materialization_receipts": dict(materialization["receipts"]),
         "zero_step_receipts": normalized,
-        "next_action": "explicit-production-recovery-hook-required",
+        "next_action": "authenticated-production-recovery-executor-ready",
         "training_launched": False,
         "optimizer_steps": 0,
         "maximum_retained_checkpoints_per_arm": (MAX_RETAINED_CHECKPOINTS_PER_ARM),
