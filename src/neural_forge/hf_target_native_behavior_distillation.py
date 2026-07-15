@@ -18,10 +18,18 @@ output behavior.
 from __future__ import annotations
 
 import hashlib
+import contextvars
+import dis
+import functools
 import inspect
 import json
+import logging
 import math
 import operator
+import sys
+import types
+import typing
+import _thread
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
@@ -57,6 +65,15 @@ BEHAVIOR_FACTOR_PACK_V3_SCHEMA = "neural-forge-target-native-factor-pack-v3"
 BEHAVIOR_FACTOR_PACK_V4_SCHEMA = "neural-forge-target-native-factor-pack-v4"
 BEHAVIOR_CHECKPOINT_SCHEMA = "neural-forge-behavior-checkpoint-v1"
 DURABLE_BEHAVIOR_CHECKPOINT_SCHEMA = "neural-forge-durable-behavior-checkpoint-v1"
+PARENT_BEHAVIOR_CACHE_SCHEMA = "neural-forge-parent-behavior-cache-v1"
+PARENT_BEHAVIOR_CACHE_BINDING_SCHEMA = (
+    "neural-forge-parent-behavior-cache-binding-v1"
+)
+PARENT_BEHAVIOR_CACHE_AUDIT_SCHEMA = "neural-forge-parent-behavior-cache-audit-v1"
+PARENT_TENSOR_STATE_SCHEMA = "neural-forge-parent-tensor-state-v1"
+PARENT_EXECUTION_CONTRACT_SCHEMA = "neural-forge-parent-execution-contract-v1"
+
+_PARENT_TENSOR_HASH_CHUNK_BYTES = 32 * 1024 * 1024
 
 GUIDED_QKVO_PARAMETER_COUNT = 7_127_040
 GUIDED_QKVO_FACTOR_TENSOR_COUNT = 8
@@ -359,6 +376,1676 @@ class BehaviorDomainSuite:
             "prompts": [value.as_dict() for value in self.prompts],
             "domain_sha256": self.domain_sha256,
             "raw_prompt_text_retained": False,
+        }
+
+
+def _named_parent_tensors(model: nn.Module) -> tuple[tuple[str, str, Tensor], ...]:
+    """Return every named parameter/buffer, preserving alias topology."""
+
+    values: list[tuple[str, str, Tensor]] = []
+    for kind, accessor in (
+        ("parameter", model.named_parameters),
+        ("buffer", model.named_buffers),
+    ):
+        try:
+            named_values = accessor(remove_duplicate=False)
+        except TypeError:  # pragma: no cover - compatibility with older torch.
+            named_values = accessor()
+        for name, value in named_values:
+            if not isinstance(value, Tensor):
+                raise TargetNativeBehaviorDistillationError(
+                    "Parent parameters and buffers must be tensors."
+                )
+            values.append((kind, str(name), value))
+    values.sort(key=lambda row: (row[0], row[1]))
+    if not values:
+        raise TargetNativeBehaviorDistillationError(
+            "A parent behavior cache requires model parameters or buffers."
+        )
+    return tuple(values)
+
+
+def _parent_runtime_signature(model: nn.Module) -> tuple[tuple[Any, ...], ...]:
+    """Return a cheap in-process guard over tensor ownership and versions."""
+
+    values: list[tuple[Any, ...]] = []
+    for kind, name, value in _named_parent_tensors(model):
+        try:
+            version = int(value._version)
+        except RuntimeError as error:
+            raise TargetNativeBehaviorDistillationError(
+                "Parent cache tensors must expose a version counter."
+            ) from error
+        values.append(
+            (
+                kind,
+                name,
+                id(value),
+                int(value.data_ptr()),
+                version,
+                tuple(value.shape),
+                str(value.dtype),
+                str(value.device),
+            )
+        )
+    return tuple(values)
+
+
+def _chunked_parent_tensor_sha256(value: Tensor) -> str:
+    """Hash one dense contiguous tensor without staging it whole on the CPU."""
+
+    detached = value.detach()
+    if (
+        detached.layout != torch.strided
+        or detached.device.type == "meta"
+        or not detached.is_contiguous()
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Parent cache authentication requires dense contiguous non-meta tensors."
+        )
+    digest = hashlib.sha256()
+    digest.update(str(detached.dtype).encode("ascii"))
+    digest.update(b"\0")
+    digest.update(repr(tuple(detached.shape)).encode("ascii"))
+    digest.update(b"\0")
+    flat = detached.reshape(-1)
+    elements_per_chunk = max(
+        1,
+        _PARENT_TENSOR_HASH_CHUNK_BYTES // max(1, detached.element_size()),
+    )
+    for start in range(0, int(flat.numel()), elements_per_chunk):
+        staged = flat[start : start + elements_per_chunk].to(device="cpu").contiguous()
+        digest.update(memoryview(staged.view(torch.uint8).numpy()))
+    return digest.hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class _ParentTensorState:
+    state_sha256: str
+    tensor_count: int
+    tensor_bytes: int
+
+
+def _parent_tensor_state(model: nn.Module) -> _ParentTensorState:
+    """Bind all parent tensor names, aliases, metadata, and exact bytes."""
+
+    tensor_hash_by_id: dict[int, str] = {}
+    first_name_by_id: dict[int, str] = {}
+    rows: list[dict[str, Any]] = []
+    total_bytes = 0
+    for kind, name, value in _named_parent_tensors(model):
+        identity = id(value)
+        qualified_name = f"{kind}:{name}"
+        tensor_hash = tensor_hash_by_id.get(identity)
+        if tensor_hash is None:
+            tensor_hash = _chunked_parent_tensor_sha256(value)
+            tensor_hash_by_id[identity] = tensor_hash
+            first_name_by_id[identity] = qualified_name
+            total_bytes += int(value.numel() * value.element_size())
+        rows.append(
+            {
+                "kind": kind,
+                "name": name,
+                "alias_of": first_name_by_id[identity],
+                "shape": list(value.shape),
+                "dtype": str(value.dtype),
+                "requires_grad": bool(value.requires_grad),
+                "tensor_sha256": tensor_hash,
+            }
+        )
+    payload = {
+        "schema": PARENT_TENSOR_STATE_SCHEMA,
+        "named_tensor_count": len(rows),
+        "unique_tensor_count": len(tensor_hash_by_id),
+        "unique_tensor_bytes": total_bytes,
+        "tensors": rows,
+    }
+    return _ParentTensorState(
+        state_sha256=_canonical_sha256(payload),
+        tensor_count=len(rows),
+        tensor_bytes=total_bytes,
+    )
+
+
+_JSON_SIMPLE_UNSUPPORTED = object()
+_MODULE_ATTRIBUTE_EXCLUSIONS = frozenset(
+    {
+        "training",
+        "config",
+        "_parameters",
+        "_buffers",
+        "_non_persistent_buffers_set",
+        "_modules",
+        "_backward_hooks",
+        "_backward_pre_hooks",
+        "_forward_hooks",
+        "_forward_hooks_always_called",
+        "_forward_hooks_with_kwargs",
+        "_forward_pre_hooks",
+        "_forward_pre_hooks_with_kwargs",
+        "_state_dict_hooks",
+        "_state_dict_pre_hooks",
+        "_load_state_dict_pre_hooks",
+        "_load_state_dict_post_hooks",
+        "_is_full_backward_hook",
+    }
+)
+
+
+def _stable_code_constant(value: Any) -> Any:
+    """Canonicalize one Python code constant without adaptive-bytecode state."""
+
+    if isinstance(value, types.CodeType):
+        return {"nested_code_v1": _stable_code_payload(value)}
+    if value is None or value is Ellipsis or isinstance(value, (bool, int, str)):
+        return {
+            "constant_type": type(value).__name__,
+            "value": "Ellipsis" if value is Ellipsis else value,
+        }
+    if isinstance(value, float):
+        return {"constant_type": "float", "value": value.hex()}
+    if isinstance(value, complex):
+        return {
+            "constant_type": "complex",
+            "real": value.real.hex(),
+            "imag": value.imag.hex(),
+        }
+    if isinstance(value, bytes):
+        return {"constant_type": "bytes", "value_hex": value.hex()}
+    if isinstance(value, tuple):
+        return {
+            "constant_type": "tuple",
+            "items": [_stable_code_constant(item) for item in value],
+        }
+    if isinstance(value, frozenset):
+        items = [_stable_code_constant(item) for item in value]
+        items.sort(
+            key=lambda item: json.dumps(
+                item,
+                allow_nan=False,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        )
+        return {"constant_type": "frozenset", "items": items}
+    return {
+        "constant_type_module": type(value).__module__,
+        "constant_type_qualname": type(value).__qualname__,
+        "repr": repr(value),
+    }
+
+
+def _stable_code_payload(code: types.CodeType) -> dict[str, Any]:
+    """Describe executable code using stable public fields only."""
+
+    return {
+        "schema": "neural-forge-python-code-v1",
+        "argcount": int(code.co_argcount),
+        "posonlyargcount": int(code.co_posonlyargcount),
+        "kwonlyargcount": int(code.co_kwonlyargcount),
+        "nlocals": int(code.co_nlocals),
+        "stacksize": int(code.co_stacksize),
+        "flags": int(code.co_flags),
+        "bytecode_hex": code.co_code.hex(),
+        "exception_table_hex": code.co_exceptiontable.hex(),
+        "constants": [_stable_code_constant(item) for item in code.co_consts],
+        "names": list(code.co_names),
+        "varnames": list(code.co_varnames),
+        "freevars": list(code.co_freevars),
+        "cellvars": list(code.co_cellvars),
+        "name": code.co_name,
+        "qualname": code.co_qualname,
+    }
+
+
+def _stable_code_sha256(code: types.CodeType) -> str:
+    return _canonical_sha256(_stable_code_payload(code))
+
+
+def _json_simple_value(value: Any, seen: set[int] | None = None) -> Any:
+    """Return typed canonical runtime state or an unsupported sentinel."""
+
+    if value is None or isinstance(value, (bool, str)):
+        return value
+    if isinstance(value, int):
+        return int(value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise TargetNativeBehaviorDistillationError(
+                "Parent module scalar attributes must be finite."
+            )
+        return float(value)
+    generic_origin = typing.get_origin(value)
+    if generic_origin is not None:
+        normalized_origin = _runtime_object_state(generic_origin, seen or set())
+        normalized_arguments = _json_simple_value(typing.get_args(value), seen)
+        if (
+            normalized_origin is _JSON_SIMPLE_UNSUPPORTED
+            or normalized_arguments is _JSON_SIMPLE_UNSUPPORTED
+        ):
+            return _JSON_SIMPLE_UNSUPPORTED
+        return {
+            "runtime_generic_alias_v1": {
+                "origin": normalized_origin,
+                "arguments": normalized_arguments,
+            }
+        }
+    if isinstance(value, typing.TypeVar):
+        constraints = _json_simple_value(value.__constraints__, seen)
+        bound = _json_simple_value(value.__bound__, seen)
+        if (
+            constraints is _JSON_SIMPLE_UNSUPPORTED
+            or bound is _JSON_SIMPLE_UNSUPPORTED
+        ):
+            return _JSON_SIMPLE_UNSUPPORTED
+        return {
+            "runtime_type_var_v1": {
+                "name": value.__name__,
+                "constraints": constraints,
+                "bound": bound,
+                "covariant": bool(value.__covariant__),
+                "contravariant": bool(value.__contravariant__),
+            }
+        }
+    if seen is None:
+        seen = set()
+    if isinstance(value, (list, tuple)):
+        identity = id(value)
+        if identity in seen:
+            return _JSON_SIMPLE_UNSUPPORTED
+        seen.add(identity)
+        result = [_json_simple_value(item, seen) for item in value]
+        seen.remove(identity)
+        if any(item is _JSON_SIMPLE_UNSUPPORTED for item in result):
+            return _JSON_SIMPLE_UNSUPPORTED
+        return {
+            "sequence_type": "tuple" if isinstance(value, tuple) else "list",
+            "items": result,
+        }
+    if isinstance(value, (set, frozenset)):
+        identity = id(value)
+        if identity in seen:
+            return _JSON_SIMPLE_UNSUPPORTED
+        seen.add(identity)
+        result = [_json_simple_value(item, seen) for item in value]
+        seen.remove(identity)
+        if any(item is _JSON_SIMPLE_UNSUPPORTED for item in result):
+            return _JSON_SIMPLE_UNSUPPORTED
+        result.sort(
+            key=lambda item: json.dumps(
+                item,
+                allow_nan=False,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        )
+        return {
+            "set_type": "frozenset" if isinstance(value, frozenset) else "set",
+            "items": result,
+        }
+    if isinstance(value, Mapping):
+        identity = id(value)
+        if identity in seen:
+            return _JSON_SIMPLE_UNSUPPORTED
+        seen.add(identity)
+        result: list[dict[str, Any]] = []
+        for key, item in value.items():
+            if isinstance(key, str):
+                normalized_key = {"type": "str", "value": key}
+            elif isinstance(key, bool):
+                normalized_key = {"type": "bool", "value": key}
+            elif isinstance(key, int):
+                normalized_key = {"type": "int", "value": int(key)}
+            elif isinstance(key, float) and math.isfinite(key):
+                normalized_key = {"type": "float", "value": float(key)}
+            elif key is None:
+                normalized_key = {"type": "none", "value": None}
+            else:
+                seen.remove(identity)
+                return _JSON_SIMPLE_UNSUPPORTED
+            normalized = _json_simple_value(item, seen)
+            if normalized is _JSON_SIMPLE_UNSUPPORTED:
+                seen.remove(identity)
+                return _JSON_SIMPLE_UNSUPPORTED
+            result.append({"key": normalized_key, "value": normalized})
+        seen.remove(identity)
+        result.sort(
+            key=lambda row: json.dumps(
+                row["key"],
+                allow_nan=False,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        )
+        # Always wrap mappings, including string-keyed mappings, so a real
+        # mapping cannot collide with the typed-key representation itself.
+        return {"typed_mapping_items_v1": result}
+    if isinstance(value, Tensor):
+        return _JSON_SIMPLE_UNSUPPORTED
+    if isinstance(value, (staticmethod, classmethod)):
+        normalized_descriptor = _runtime_callable_fingerprint(
+            value.__func__,
+            seen=seen,
+            include_referenced_globals=False,
+        )
+        if normalized_descriptor is _JSON_SIMPLE_UNSUPPORTED:
+            return _JSON_SIMPLE_UNSUPPORTED
+        return {
+            "callable_descriptor_type": type(value).__name__,
+            "callable": normalized_descriptor,
+        }
+    if callable(value):
+        return _runtime_callable_fingerprint(
+            value,
+            seen=seen,
+            include_referenced_globals=False,
+        )
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        identity = id(value)
+        if identity in seen:
+            return _JSON_SIMPLE_UNSUPPORTED
+        seen.add(identity)
+        try:
+            payload = to_dict()
+        except Exception:
+            seen.remove(identity)
+            return _JSON_SIMPLE_UNSUPPORTED
+        normalized = _json_simple_value(payload, seen)
+        seen.remove(identity)
+        if normalized is _JSON_SIMPLE_UNSUPPORTED:
+            return _JSON_SIMPLE_UNSUPPORTED
+        return {
+            "config_like_type": {
+                "module": type(value).__module__,
+                "qualname": type(value).__qualname__,
+            },
+            "to_dict": normalized,
+        }
+    return _JSON_SIMPLE_UNSUPPORTED
+
+
+def _runtime_object_state(
+    value: Any,
+    seen: set[int],
+    *,
+    bind_helper_class: bool = False,
+) -> Any:
+    """Fingerprint one non-tensor helper object used by executable code."""
+
+    if isinstance(value, Tensor):
+        return _JSON_SIMPLE_UNSUPPORTED
+    if isinstance(value, logging.Logger):
+        return {
+            "runtime_logger_v1": {
+                "name": value.name,
+                "level": int(value.level),
+                "disabled": bool(value.disabled),
+                "propagate": bool(value.propagate),
+                "class_module": type(value).__module__,
+                "class_qualname": type(value).__qualname__,
+            }
+        }
+    if isinstance(value, _thread.LockType):
+        return {
+            "runtime_thread_lock_v1": {
+                "locked": bool(value.locked()),
+            }
+        }
+    if isinstance(value, contextvars.ContextVar):
+        try:
+            current = value.get()
+        except LookupError:
+            current = {"context_value_missing": True}
+        normalized_current = _json_simple_value(current, seen)
+        if normalized_current is _JSON_SIMPLE_UNSUPPORTED:
+            return _JSON_SIMPLE_UNSUPPORTED
+        return {
+            "runtime_context_var_v1": {
+                "name": value.name,
+                "current": normalized_current,
+            }
+        }
+    if isinstance(value, types.GeneratorType):
+        identity = id(value)
+        if identity in seen:
+            return _JSON_SIMPLE_UNSUPPORTED
+        seen.add(identity)
+        frame = value.gi_frame
+        local_state = _json_simple_value(
+            {} if frame is None else dict(frame.f_locals),
+            seen,
+        )
+        seen.remove(identity)
+        if local_state is _JSON_SIMPLE_UNSUPPORTED:
+            return _JSON_SIMPLE_UNSUPPORTED
+        return {
+            "runtime_generator_v1": {
+                "code_sha256": _stable_code_sha256(value.gi_code),
+                "state": inspect.getgeneratorstate(value),
+                "locals": local_state,
+            }
+        }
+    if isinstance(value, types.ModuleType):
+        version = getattr(value, "__version__", None)
+        normalized_version = _json_simple_value(version, seen)
+        if normalized_version is _JSON_SIMPLE_UNSUPPORTED:
+            normalized_version = None
+        return {
+            "runtime_module_v1": {
+                "name": str(getattr(value, "__name__", "")),
+                "file": str(getattr(value, "__file__", "")),
+                "version": normalized_version,
+            }
+        }
+    if isinstance(value, type):
+        return {
+            "runtime_type_v1": {
+                "module": value.__module__,
+                "qualname": value.__qualname__,
+            }
+        }
+    normalized = _json_simple_value(value, seen)
+    if normalized is not _JSON_SIMPLE_UNSUPPORTED:
+        return normalized
+    try:
+        state = vars(value)
+    except TypeError:
+        return _JSON_SIMPLE_UNSUPPORTED
+    identity = id(value)
+    if identity in seen:
+        return _JSON_SIMPLE_UNSUPPORTED
+    seen.add(identity)
+    rows: dict[str, Any] = {}
+    for name, item in sorted(state.items()):
+        if _contains_runtime_tensor(item):
+            seen.remove(identity)
+            return _JSON_SIMPLE_UNSUPPORTED
+        item_state = _runtime_object_state(
+            item,
+            seen,
+            bind_helper_class=bind_helper_class,
+        )
+        if item_state is _JSON_SIMPLE_UNSUPPORTED:
+            seen.remove(identity)
+            return _JSON_SIMPLE_UNSUPPORTED
+        rows[str(name)] = item_state
+    seen.remove(identity)
+    class_contract = None
+    if bind_helper_class:
+        class_contract = _runtime_helper_class_contract(type(value), seen)
+        if class_contract is _JSON_SIMPLE_UNSUPPORTED:
+            return _JSON_SIMPLE_UNSUPPORTED
+    return {
+        "runtime_object_v1": {
+            "module": type(value).__module__,
+            "qualname": type(value).__qualname__,
+            "state": rows,
+            "class_execution_contract": class_contract,
+        }
+    }
+
+
+def _runtime_bound_object_state(value: Any, seen: set[int]) -> Any:
+    """Bind callable owners without recursively treating the owner as callable."""
+
+    if isinstance(value, (types.ModuleType, type)):
+        return _runtime_object_state(value, seen)
+    identity = id(value)
+    if identity in seen:
+        return _JSON_SIMPLE_UNSUPPORTED
+    try:
+        state = vars(value)
+    except TypeError:
+        return {
+            "bound_runtime_object_v1": {
+                "module": type(value).__module__,
+                "qualname": type(value).__qualname__,
+                "state": None,
+            }
+        }
+    seen.add(identity)
+    rows: dict[str, Any] = {}
+    for name, item in sorted(state.items()):
+        if _contains_runtime_tensor(item):
+            seen.remove(identity)
+            return _JSON_SIMPLE_UNSUPPORTED
+        normalized = _runtime_object_state(item, seen)
+        if normalized is _JSON_SIMPLE_UNSUPPORTED:
+            seen.remove(identity)
+            return _JSON_SIMPLE_UNSUPPORTED
+        rows[str(name)] = normalized
+    seen.remove(identity)
+    return {
+        "bound_runtime_object_v1": {
+            "module": type(value).__module__,
+            "qualname": type(value).__qualname__,
+            "state": rows,
+        }
+    }
+
+
+def _runtime_callable_fingerprint(
+    value: Any,
+    *,
+    seen: set[int],
+    include_referenced_globals: bool,
+    relevant_registry_keys: frozenset[str] = frozenset(),
+) -> Any:
+    """Bind callable implementation/default/closure state without executing it."""
+
+    if isinstance(value, (staticmethod, classmethod)):
+        value = value.__func__
+    if isinstance(value, type):
+        return _runtime_object_state(value, seen)
+    if isinstance(value, functools.partial):
+        identity = id(value)
+        if identity in seen:
+            return _JSON_SIMPLE_UNSUPPORTED
+        seen.add(identity)
+        function_state = _runtime_callable_fingerprint(
+            value.func,
+            seen=seen,
+            include_referenced_globals=include_referenced_globals,
+            relevant_registry_keys=relevant_registry_keys,
+        )
+        arguments = _json_simple_value(value.args, seen)
+        keywords = _json_simple_value(value.keywords or {}, seen)
+        seen.remove(identity)
+        if any(
+            item is _JSON_SIMPLE_UNSUPPORTED
+            for item in (function_state, arguments, keywords)
+        ):
+            return _JSON_SIMPLE_UNSUPPORTED
+        return {
+            "runtime_partial_v1": {
+                "function": function_state,
+                "arguments": arguments,
+                "keywords": keywords,
+            }
+        }
+
+    target = value
+    bound_self: Any = None
+    if inspect.ismethod(value):
+        target = value.__func__
+        bound_self = value.__self__
+    elif inspect.isbuiltin(value):
+        bound_self = getattr(value, "__self__", None)
+    elif not inspect.isfunction(value):
+        target = inspect.getattr_static(type(value), "__call__", None)
+        bound_self = value
+    if target is None:
+        return _JSON_SIMPLE_UNSUPPORTED
+
+    identity = id(value)
+    if identity in seen:
+        return _JSON_SIMPLE_UNSUPPORTED
+    seen.add(identity)
+    code = getattr(target, "__code__", None)
+    defaults = _json_simple_value(getattr(target, "__defaults__", None), seen)
+    keyword_defaults = _json_simple_value(
+        getattr(target, "__kwdefaults__", None),
+        seen,
+    )
+    if (
+        defaults is _JSON_SIMPLE_UNSUPPORTED
+        or keyword_defaults is _JSON_SIMPLE_UNSUPPORTED
+    ):
+        seen.remove(identity)
+        return _JSON_SIMPLE_UNSUPPORTED
+    closure_rows: list[Any] = []
+    for cell in getattr(target, "__closure__", None) or ():
+        try:
+            cell_value = cell.cell_contents
+        except ValueError:
+            closure_rows.append({"empty_cell": True})
+            continue
+        if id(cell_value) in seen:
+            closure_rows.append(
+                {
+                    "recursive_runtime_reference_v1": {
+                        "module": str(getattr(cell_value, "__module__", "")),
+                        "qualname": str(getattr(cell_value, "__qualname__", "")),
+                        "type_module": type(cell_value).__module__,
+                        "type_qualname": type(cell_value).__qualname__,
+                    }
+                }
+            )
+            continue
+        normalized_cell = _runtime_object_state(cell_value, seen)
+        if normalized_cell is _JSON_SIMPLE_UNSUPPORTED:
+            seen.remove(identity)
+            return _JSON_SIMPLE_UNSUPPORTED
+        closure_rows.append(normalized_cell)
+    bound_state = None
+    if bound_self is not None:
+        bound_state = _runtime_bound_object_state(bound_self, seen)
+        if bound_state is _JSON_SIMPLE_UNSUPPORTED:
+            seen.remove(identity)
+            return _JSON_SIMPLE_UNSUPPORTED
+    global_rows: dict[str, Any] = {}
+    if include_referenced_globals and code is not None:
+        global_values = getattr(target, "__globals__", {})
+        referenced_names = {
+            str(instruction.argval)
+            for instruction in dis.get_instructions(code)
+            if instruction.opname in {"LOAD_GLOBAL", "LOAD_NAME"}
+            and isinstance(instruction.argval, str)
+        }
+        for name in sorted(referenced_names):
+            if name not in global_values:
+                continue
+            item = global_values[name]
+            if isinstance(item, Tensor):
+                seen.remove(identity)
+                return _JSON_SIMPLE_UNSUPPORTED
+            if name == "_CAN_RECORD_REGISTRY" and isinstance(item, Mapping):
+                registry_rows: list[dict[str, Any]] = []
+                for registry_key in sorted(relevant_registry_keys):
+                    if registry_key not in item:
+                        registry_rows.append(
+                            {"key": registry_key, "entry_missing": True}
+                        )
+                        continue
+                    registry_value = _runtime_object_state(
+                        item[registry_key],
+                        seen,
+                    )
+                    if registry_value is _JSON_SIMPLE_UNSUPPORTED:
+                        seen.remove(identity)
+                        return _JSON_SIMPLE_UNSUPPORTED
+                    registry_rows.append(
+                        {"key": registry_key, "value": registry_value}
+                    )
+                normalized_item = {
+                    "transformers_relevant_output_registry_v1": registry_rows
+                }
+            elif callable(item):
+                if id(item) in seen:
+                    normalized_item = {
+                        "recursive_runtime_reference_v1": {
+                            "module": str(getattr(item, "__module__", "")),
+                            "qualname": str(getattr(item, "__qualname__", "")),
+                            "type_module": type(item).__module__,
+                            "type_qualname": type(item).__qualname__,
+                        }
+                    }
+                else:
+                    normalized_item = _runtime_callable_fingerprint(
+                        item,
+                        seen=seen,
+                        include_referenced_globals=True,
+                        relevant_registry_keys=relevant_registry_keys,
+                    )
+            else:
+                normalized_item = _runtime_object_state(item, seen)
+            if normalized_item is _JSON_SIMPLE_UNSUPPORTED:
+                seen.remove(identity)
+                return _JSON_SIMPLE_UNSUPPORTED
+            global_rows[name] = normalized_item
+    wrapped_state = None
+    wrapped = getattr(target, "__wrapped__", None)
+    if callable(wrapped) and wrapped is not target:
+        wrapped_state = _runtime_callable_fingerprint(
+            wrapped,
+            seen=seen,
+            include_referenced_globals=include_referenced_globals,
+            relevant_registry_keys=relevant_registry_keys,
+        )
+        if wrapped_state is _JSON_SIMPLE_UNSUPPORTED:
+            seen.remove(identity)
+            return _JSON_SIMPLE_UNSUPPORTED
+    seen.remove(identity)
+    return {
+        "runtime_callable_v1": {
+            "type_module": type(value).__module__,
+            "type_qualname": type(value).__qualname__,
+            "module": str(getattr(target, "__module__", "")),
+            "qualname": str(getattr(target, "__qualname__", "")),
+            "code_sha256": (
+                _stable_code_sha256(code)
+                if code is not None
+                else None
+            ),
+            "defaults": defaults,
+            "keyword_defaults": keyword_defaults,
+            "closure": closure_rows,
+            "bound_self": bound_state,
+            "referenced_globals": global_rows,
+            "wrapped": wrapped_state,
+        }
+    }
+
+
+def _runtime_helper_class_contract(
+    helper_type: type[Any],
+    seen: set[int],
+) -> Any:
+    """Bind executable class state for an arbitrary nested helper object."""
+
+    identity = id(helper_type)
+    if identity in seen:
+        return {
+            "recursive_helper_class_reference_v1": {
+                "module": helper_type.__module__,
+                "qualname": helper_type.__qualname__,
+            }
+        }
+    seen.add(identity)
+    owners: list[dict[str, Any]] = []
+    for owner in helper_type.__mro__:
+        if owner is object:
+            continue
+        attributes: dict[str, Any] = {}
+        for name, value in sorted(vars(owner).items()):
+            if name in _CLASS_ATTRIBUTE_EXCLUSIONS:
+                continue
+            if _contains_runtime_tensor(value):
+                seen.remove(identity)
+                return _JSON_SIMPLE_UNSUPPORTED
+            if isinstance(value, property):
+                property_state: dict[str, Any] = {}
+                for role, accessor in (
+                    ("get", value.fget),
+                    ("set", value.fset),
+                    ("delete", value.fdel),
+                ):
+                    if accessor is None:
+                        property_state[role] = None
+                        continue
+                    normalized_accessor = _runtime_callable_fingerprint(
+                        accessor,
+                        seen=seen,
+                        include_referenced_globals=True,
+                    )
+                    if normalized_accessor is _JSON_SIMPLE_UNSUPPORTED:
+                        seen.remove(identity)
+                        return _JSON_SIMPLE_UNSUPPORTED
+                    property_state[role] = normalized_accessor
+                attributes[name] = {"runtime_property_v1": property_state}
+                continue
+            descriptor = value.__func__ if isinstance(
+                value, (staticmethod, classmethod)
+            ) else value
+            if callable(descriptor):
+                normalized = _runtime_callable_fingerprint(
+                    descriptor,
+                    seen=seen,
+                    include_referenced_globals=True,
+                )
+            else:
+                normalized = _runtime_object_state(descriptor, seen)
+            if normalized is _JSON_SIMPLE_UNSUPPORTED:
+                seen.remove(identity)
+                return _JSON_SIMPLE_UNSUPPORTED
+            attributes[name] = normalized
+        owners.append(
+            {
+                "owner_module": owner.__module__,
+                "owner_qualname": owner.__qualname__,
+                "attributes": attributes,
+            }
+        )
+    seen.remove(identity)
+    return {
+        "runtime_helper_class_v1": {
+            "module": helper_type.__module__,
+            "qualname": helper_type.__qualname__,
+            "owners": owners,
+        }
+    }
+
+
+def _contains_runtime_tensor(value: Any, seen: set[int] | None = None) -> bool:
+    """Find unregistered tensors nested in ordinary runtime attributes."""
+
+    if isinstance(value, Tensor):
+        return True
+    if value is None or isinstance(value, (bool, int, float, str, bytes)):
+        return False
+    if seen is None:
+        seen = set()
+    identity = id(value)
+    if identity in seen:
+        return False
+    if isinstance(value, Mapping):
+        seen.add(identity)
+        result = any(
+            _contains_runtime_tensor(key, seen)
+            or _contains_runtime_tensor(item, seen)
+            for key, item in value.items()
+        )
+        seen.remove(identity)
+        return result
+    if isinstance(value, (list, tuple, set, frozenset)):
+        seen.add(identity)
+        result = any(_contains_runtime_tensor(item, seen) for item in value)
+        seen.remove(identity)
+        return result
+    if isinstance(value, functools.partial):
+        seen.add(identity)
+        result = any(
+            (
+                _contains_runtime_tensor(value.func, seen),
+                _contains_runtime_tensor(value.args, seen),
+                _contains_runtime_tensor(value.keywords or {}, seen),
+            )
+        )
+        seen.remove(identity)
+        return result
+    callable_target = value
+    bound_self: Any = None
+    if inspect.ismethod(value):
+        callable_target = value.__func__
+        bound_self = value.__self__
+    if inspect.isfunction(callable_target):
+        seen.add(identity)
+        values: list[Any] = [
+            getattr(callable_target, "__defaults__", None),
+            getattr(callable_target, "__kwdefaults__", None),
+        ]
+        for cell in getattr(callable_target, "__closure__", None) or ():
+            try:
+                values.append(cell.cell_contents)
+            except ValueError:
+                pass
+        if bound_self is not None:
+            values.append(bound_self)
+        result = any(_contains_runtime_tensor(item, seen) for item in values)
+        seen.remove(identity)
+        return result
+    if isinstance(value, types.GeneratorType):
+        seen.add(identity)
+        frame = value.gi_frame
+        result = frame is not None and _contains_runtime_tensor(
+            dict(frame.f_locals),
+            seen,
+        )
+        seen.remove(identity)
+        return result
+    if isinstance(
+        value,
+        (types.ModuleType, type, logging.Logger, contextvars.ContextVar),
+    ):
+        return False
+    try:
+        state = vars(value)
+    except TypeError:
+        return False
+    seen.add(identity)
+    result = any(_contains_runtime_tensor(item, seen) for item in state.values())
+    seen.remove(identity)
+    return result
+
+
+def _reject_parent_forward_hooks(model: nn.Module) -> None:
+    """Reject output-intercepting state that cannot be fingerprinted exactly."""
+
+    global_module = torch.nn.modules.module
+    global_hook_names = (
+        "_global_forward_pre_hooks",
+        "_global_forward_hooks",
+    )
+    if any(bool(getattr(global_module, name, {})) for name in global_hook_names):
+        raise TargetNativeBehaviorDistillationError(
+            "Parent behavior caching forbids global forward/pre-forward hooks."
+        )
+    for path, module in model.named_modules():
+        module_state = vars(module)
+        if bool(module_state.get("_forward_pre_hooks")) or bool(
+            module_state.get("_forward_hooks")
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                "Parent behavior caching forbids local forward/pre-forward hooks "
+                f"at {path or '<root>'}."
+            )
+        if "forward" in module_state:
+            raise TargetNativeBehaviorDistillationError(
+                "Parent behavior caching forbids instance-level forward overrides "
+                f"at {path or '<root>'}."
+            )
+        if module_state.get("_hf_hook") is not None:
+            raise TargetNativeBehaviorDistillationError(
+                "Parent behavior caching forbids Accelerate _hf_hook dispatch state "
+                f"at {path or '<root>'}."
+            )
+
+
+def _forward_code_sha256(module: nn.Module) -> str:
+    implementation = inspect.getattr_static(type(module), "forward", None)
+    if not callable(implementation):
+        raise TargetNativeBehaviorDistillationError(
+            "Parent module forward implementation is not callable."
+        )
+    payload = _runtime_callable_fingerprint(
+        implementation,
+        seen=set(),
+        include_referenced_globals=True,
+        relevant_registry_keys=frozenset({str(type(module))}),
+    )
+    if payload is _JSON_SIMPLE_UNSUPPORTED:
+        raise TargetNativeBehaviorDistillationError(
+            "Parent module forward implementation has unsupported executable state."
+        )
+    return _canonical_sha256(payload)
+
+
+def _descriptor_callables(value: Any) -> tuple[Callable[..., Any], ...]:
+    if isinstance(value, (staticmethod, classmethod)):
+        return (value.__func__,)
+    if isinstance(value, property):
+        return tuple(
+            accessor
+            for accessor in (value.fget, value.fset, value.fdel)
+            if accessor is not None
+        )
+    return (value,) if callable(value) else ()
+
+
+def _callable_code_objects(value: Callable[..., Any]) -> tuple[types.CodeType, ...]:
+    """Return implementation/wrapper code objects used by one callable."""
+
+    pending: list[Any] = [value]
+    seen: set[int] = set()
+    codes: list[types.CodeType] = []
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if inspect.ismethod(current):
+            current = current.__func__
+        code = getattr(current, "__code__", None)
+        if isinstance(code, types.CodeType):
+            codes.append(code)
+        wrapped = getattr(current, "__wrapped__", None)
+        if callable(wrapped):
+            pending.append(wrapped)
+        for cell in getattr(current, "__closure__", None) or ():
+            try:
+                cell_value = cell.cell_contents
+            except ValueError:
+                continue
+            if callable(cell_value):
+                pending.append(cell_value)
+    return tuple(codes)
+
+
+def _reachable_class_method_contract(module_type: type[nn.Module]) -> list[dict[str, Any]]:
+    """Bind reachable method implementations across the concrete class MRO."""
+
+    def definitions(
+        name: str,
+    ) -> list[tuple[type[Any], str, Callable[..., Any]]]:
+        values: list[tuple[type[Any], str, Callable[..., Any]]] = []
+        for owner in module_type.__mro__:
+            if owner is object or name not in vars(owner):
+                continue
+            values.extend(
+                (owner, name, callable_value)
+                for callable_value in _descriptor_callables(vars(owner)[name])
+            )
+        return values
+
+    forward_definitions = definitions("forward")
+    if not forward_definitions:
+        raise TargetNativeBehaviorDistillationError(
+            "Parent module class has no resolvable forward implementation."
+        )
+    resolved_forward_owner = forward_definitions[0][0]
+    pending = [
+        value
+        for value in forward_definitions
+        if value[0] is resolved_forward_owner
+    ]
+    root_keys = {
+        (id(owner), name, id(implementation))
+        for owner, name, implementation in pending
+    }
+    seen_implementations: set[tuple[int, str, int]] = set()
+    rows: list[dict[str, Any]] = []
+    registry_keys = frozenset({str(module_type)})
+    while pending:
+        owner, name, implementation = pending.pop()
+        implementation_key = (id(owner), name, id(implementation))
+        if implementation_key in seen_implementations:
+            continue
+        seen_implementations.add(implementation_key)
+        if implementation_key not in root_keys:
+            fingerprint = _runtime_callable_fingerprint(
+                implementation,
+                seen=set(),
+                include_referenced_globals=True,
+                relevant_registry_keys=registry_keys,
+            )
+            if fingerprint is _JSON_SIMPLE_UNSUPPORTED:
+                raise TargetNativeBehaviorDistillationError(
+                    "A forward-reachable parent class method has unsupported "
+                    f"execution state: {owner.__module__}."
+                    f"{owner.__qualname__}.{name}."
+                )
+            rows.append(
+                {
+                    "owner_module": owner.__module__,
+                    "owner_qualname": owner.__qualname__,
+                    "name": name,
+                    "callable": fingerprint,
+                }
+            )
+        referenced_names: set[str] = set()
+        for code in _callable_code_objects(implementation):
+            referenced_names.update(
+                str(instruction.argval)
+                for instruction in dis.get_instructions(code)
+                if instruction.opname in {"LOAD_ATTR", "LOAD_METHOD"}
+                and isinstance(instruction.argval, str)
+            )
+        for referenced_name in sorted(referenced_names):
+            pending.extend(definitions(referenced_name))
+    rows.sort(
+        key=lambda row: (
+            row["owner_module"],
+            row["owner_qualname"],
+            row["name"],
+            _canonical_sha256(row["callable"]),
+        )
+    )
+    return rows
+
+
+_CLASS_ATTRIBUTE_EXCLUSIONS = frozenset(
+    {
+        "__annotations__",
+        "__dict__",
+        "__doc__",
+        "__module__",
+        "__weakref__",
+    }
+)
+
+
+def _class_execution_attributes(
+    module_type: type[nn.Module],
+    owner_cache: dict[type[Any], dict[str, Any]],
+) -> list[dict[str, str]]:
+    """Bind scalar/callable class state across the module's full MRO."""
+
+    rows: list[dict[str, str]] = []
+    for owner in module_type.__mro__:
+        if owner is object:
+            continue
+        if owner not in owner_cache:
+            attributes: dict[str, Any] = {}
+            for name, value in sorted(vars(owner).items()):
+                if name in _CLASS_ATTRIBUTE_EXCLUSIONS:
+                    continue
+                if _contains_runtime_tensor(value):
+                    raise TargetNativeBehaviorDistillationError(
+                        "Parent behavior caching forbids unregistered class tensors at "
+                        f"{owner.__module__}.{owner.__qualname__}.{name}."
+                    )
+                if isinstance(value, property):
+                    property_state: dict[str, Any] = {}
+                    for role, accessor in (
+                        ("get", value.fget),
+                        ("set", value.fset),
+                        ("delete", value.fdel),
+                    ):
+                        if accessor is None:
+                            property_state[role] = None
+                            continue
+                        normalized_accessor = _runtime_callable_fingerprint(
+                            accessor,
+                            seen=set(),
+                            include_referenced_globals=False,
+                        )
+                        if normalized_accessor is _JSON_SIMPLE_UNSUPPORTED:
+                            raise TargetNativeBehaviorDistillationError(
+                                "Parent class property has unsupported callable state "
+                                f"at {owner.__module__}.{owner.__qualname__}.{name}."
+                            )
+                        property_state[role] = normalized_accessor
+                    attributes[name] = {"runtime_property_v1": property_state}
+                    continue
+                normalized = _runtime_object_state(value, set())
+                if normalized is not _JSON_SIMPLE_UNSUPPORTED:
+                    attributes[name] = normalized
+                else:
+                    raise TargetNativeBehaviorDistillationError(
+                        "Parent class attribute has unsupported executable state at "
+                        f"{owner.__module__}.{owner.__qualname__}.{name}."
+                    )
+            owner_cache[owner] = {
+                "owner_module": owner.__module__,
+                "owner_qualname": owner.__qualname__,
+                "attributes": attributes,
+            }
+        rows.append(
+            {
+                "owner_module": owner.__module__,
+                "owner_qualname": owner.__qualname__,
+            }
+        )
+    return rows
+
+
+def _parent_execution_contract_sha256(model: nn.Module) -> str:
+    """Bind covered hook-free code, topology, config, and runtime state.
+
+    This is deliberately a bounded in-process contract, not a proof over every
+    mutable Python interpreter object.  Terminal cache authentication separately
+    rehashes cached output rows; it does not rerun live parent outputs.
+    """
+
+    _reject_parent_forward_hooks(model)
+    config = getattr(model, "config", None)
+    config_payload: Any = None
+    if config is not None:
+        to_dict = getattr(config, "to_dict", None)
+        if not callable(to_dict):
+            raise TargetNativeBehaviorDistillationError(
+                "Parent model config must expose to_dict for behavior caching."
+            )
+        config_payload = _json_simple_value(to_dict())
+        if config_payload is _JSON_SIMPLE_UNSUPPORTED:
+            raise TargetNativeBehaviorDistillationError(
+                "Parent model config is not canonical JSON-simple data."
+            )
+    modules: list[dict[str, Any]] = []
+    try:
+        named_modules = model.named_modules(remove_duplicate=False)
+    except TypeError:  # pragma: no cover - compatibility with older torch.
+        named_modules = model.named_modules()
+    code_hash_by_class: dict[type[nn.Module], str] = {}
+    class_attributes_by_class: dict[type[nn.Module], list[dict[str, str]]] = {}
+    reachable_methods_by_class: dict[type[nn.Module], list[dict[str, Any]]] = {}
+    class_owner_attribute_cache: dict[type[Any], dict[str, Any]] = {}
+    for path, module in named_modules:
+        module_type = type(module)
+        code_hash = code_hash_by_class.get(module_type)
+        if code_hash is None:
+            code_hash = _forward_code_sha256(module)
+            code_hash_by_class[module_type] = code_hash
+            class_attributes_by_class[module_type] = _class_execution_attributes(
+                module_type,
+                class_owner_attribute_cache,
+            )
+            reachable_methods_by_class[module_type] = (
+                _reachable_class_method_contract(module_type)
+            )
+        scalar_attributes: dict[str, Any] = {}
+        for name, value in sorted(vars(module).items()):
+            if name in _MODULE_ATTRIBUTE_EXCLUSIONS:
+                continue
+            if _contains_runtime_tensor(value):
+                raise TargetNativeBehaviorDistillationError(
+                    "Parent behavior caching forbids unregistered tensor attributes "
+                    f"at {path or '<root>'}.{name}."
+                )
+            normalized = _runtime_object_state(
+                value,
+                set(),
+                bind_helper_class=True,
+            )
+            if normalized is not _JSON_SIMPLE_UNSUPPORTED:
+                scalar_attributes[name] = normalized
+            else:
+                raise TargetNativeBehaviorDistillationError(
+                    "Parent module attribute has unsupported executable state at "
+                    f"{path or '<root>'}.{name}."
+                )
+        modules.append(
+            {
+                "path": str(path),
+                "class_module": module_type.__module__,
+                "class_qualname": module_type.__qualname__,
+                "json_simple_scalar_attributes": scalar_attributes,
+            }
+        )
+    module_class_contracts = [
+        {
+            "class_module": module_type.__module__,
+            "class_qualname": module_type.__qualname__,
+            "forward_code_sha256": code_hash_by_class[module_type],
+            "mro": class_attributes_by_class[module_type],
+            "forward_reachable_class_methods": (
+                reachable_methods_by_class[module_type]
+            ),
+        }
+        for module_type in sorted(
+            code_hash_by_class,
+            key=lambda value: (value.__module__, value.__qualname__),
+        )
+    ]
+    class_owner_contracts = sorted(
+        class_owner_attribute_cache.values(),
+        key=lambda row: (row["owner_module"], row["owner_qualname"]),
+    )
+    runtime = {
+        "torch_version": str(torch.__version__),
+        "python_version": str(sys.version),
+        "default_dtype": str(torch.get_default_dtype()),
+        "deterministic_algorithms": bool(
+            torch.are_deterministic_algorithms_enabled()
+        ),
+        "float32_matmul_precision": str(torch.get_float32_matmul_precision()),
+        "cuda_matmul_allow_tf32": bool(torch.backends.cuda.matmul.allow_tf32),
+        "cudnn_allow_tf32": bool(torch.backends.cudnn.allow_tf32),
+        "cudnn_benchmark": bool(torch.backends.cudnn.benchmark),
+        "cudnn_deterministic": bool(torch.backends.cudnn.deterministic),
+    }
+    return _canonical_sha256(
+        {
+            "schema": PARENT_EXECUTION_CONTRACT_SCHEMA,
+            "hook_policy": "no-local-or-global-forward-hooks",
+            "runtime": runtime,
+            "model_config": config_payload,
+            "module_class_contracts": module_class_contracts,
+            "class_owner_contracts": class_owner_contracts,
+            "modules": modules,
+        }
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _ParentAuthentication:
+    runtime_signature: tuple[tuple[Any, ...], ...]
+    tensor_state_sha256: str
+    tensor_count: int
+    tensor_bytes: int
+    execution_contract_sha256: str
+
+
+def _capture_parent_authentication(model: nn.Module) -> _ParentAuthentication:
+    runtime_signature = _parent_runtime_signature(model)
+    execution_contract_sha256 = _parent_execution_contract_sha256(model)
+    tensor_state = _parent_tensor_state(model)
+    if _parent_runtime_signature(model) != runtime_signature:
+        raise TargetNativeBehaviorDistillationError(
+            "Parent runtime tensors changed while their bytes were authenticated."
+        )
+    if _parent_execution_contract_sha256(model) != execution_contract_sha256:
+        raise TargetNativeBehaviorDistillationError(
+            "Parent execution state changed while it was authenticated."
+        )
+    return _ParentAuthentication(
+        runtime_signature=runtime_signature,
+        tensor_state_sha256=tensor_state.state_sha256,
+        tensor_count=tensor_state.tensor_count,
+        tensor_bytes=tensor_state.tensor_bytes,
+        execution_contract_sha256=execution_contract_sha256,
+    )
+
+
+def _assert_parent_authentication_matches(
+    expected: _ParentAuthentication,
+    observed: _ParentAuthentication,
+) -> None:
+    if observed.runtime_signature != expected.runtime_signature:
+        raise TargetNativeBehaviorDistillationError(
+            "Parent runtime tensor ownership or versions changed."
+        )
+    if observed.tensor_state_sha256 != expected.tensor_state_sha256:
+        raise TargetNativeBehaviorDistillationError(
+            "Parent tensor-state bytes or topology changed."
+        )
+    if (
+        observed.tensor_count != expected.tensor_count
+        or observed.tensor_bytes != expected.tensor_bytes
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Parent tensor-state cardinality changed."
+        )
+    if (
+        observed.execution_contract_sha256
+        != expected.execution_contract_sha256
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Parent execution contract changed."
+        )
+
+
+def _assert_parent_runtime_execution_unchanged(
+    model: nn.Module,
+    expected: _ParentAuthentication,
+) -> None:
+    """Use cheap guards during training; terminal byte hashing remains authoritative."""
+
+    if _parent_runtime_signature(model) != expected.runtime_signature:
+        raise TargetNativeBehaviorDistillationError(
+            "Parent runtime tensor ownership or versions changed."
+        )
+    if (
+        _parent_execution_contract_sha256(model)
+        != expected.execution_contract_sha256
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Parent execution contract changed."
+        )
+
+
+def _full_prefix_parent_trace_manifest(
+    trace: FunctionalDecodeTrace,
+    *,
+    horizon: int,
+) -> dict[str, Any]:
+    """Authenticate one full-prefix parent trace and return its cache manifest."""
+
+    if not isinstance(trace, FunctionalDecodeTrace):
+        raise TargetNativeBehaviorDistillationError(
+            "Parent behavior cache traces must be FunctionalDecodeTrace values."
+        )
+    horizon_value = _index(horizon, "parent cache horizon", positive=True)
+    token_hash = token_sequence_sha256(trace.prompt_token_ids)
+    if (
+        trace.lane != "greedy"
+        or not trace.sequence_id
+        or len(trace.steps) != horizon_value
+        or len(trace.selected_token_ids) != horizon_value
+        or trace.consumed_token_ids != trace.selected_token_ids[:-1]
+        or trace.cache_class != "full-prefix-functional-decode"
+        or trace.model_class != "output-only-causal-model"
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Parent behavior cache contains a non-canonical full-prefix trace."
+        )
+    row_hashes: list[str] = []
+    row_shapes: list[list[int]] = []
+    row_dtypes: list[str] = []
+    logit_bytes = 0
+    for index, (selected, step) in enumerate(
+        zip(trace.selected_token_ids, trace.steps, strict=True)
+    ):
+        row = step.action_logits
+        if (
+            not isinstance(row, Tensor)
+            or row.device.type != "cpu"
+            or not row.is_contiguous()
+            or not row.dtype.is_floating_point
+            or tuple(row.shape) != (1, trace.vocabulary_size)
+            or not bool(torch.isfinite(row).all())
+            or step.step_index != index
+            or step.prefix_length != len(trace.prompt_token_ids) + index
+            or step.cache_length != step.prefix_length
+            or step.selected_token_id != selected
+            or step.greedy_token_id != selected
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                "Parent behavior cache contains an invalid output-logit row."
+            )
+        digest = _tensor_sha256(row)
+        if digest != step.action_logits_sha256:
+            raise TargetNativeBehaviorDistillationError(
+                "Parent behavior cache output-logit row hash changed."
+            )
+        row_hashes.append(digest)
+        row_shapes.append(list(row.shape))
+        row_dtypes.append(str(row.dtype))
+        logit_bytes += int(row.numel() * row.element_size())
+    trace_payload = {
+        "sequence_id": trace.sequence_id,
+        "lane": "greedy",
+        "prompt_token_ids_sha256": token_hash,
+        "selected_token_ids": list(trace.selected_token_ids),
+        "action_logits_sha256s": row_hashes,
+    }
+    if (
+        trace.trace_sha256 != _canonical_sha256(trace_payload)
+        or trace.logit_bytes != logit_bytes
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Parent behavior cache trace digest or byte count changed."
+        )
+    return {
+        "prompt_id": trace.sequence_id,
+        "token_ids_sha256": token_hash,
+        "token_count": len(trace.prompt_token_ids),
+        "trace_sha256": trace.trace_sha256,
+        "selected_token_ids": list(trace.selected_token_ids),
+        "row_tensor_sha256s": row_hashes,
+        "row_shapes": row_shapes,
+        "row_dtypes": row_dtypes,
+    }
+
+
+def _parent_behavior_cache_manifest(
+    *,
+    split_name: str,
+    artifact_sha256: str,
+    domain_sha256: str,
+    parent_tensor_state_sha256: str,
+    parent_tensor_count: int,
+    parent_tensor_bytes: int,
+    parent_execution_contract_sha256: str,
+    horizon: int,
+    traces: Sequence[FunctionalDecodeTrace],
+) -> dict[str, Any]:
+    prompt_rows = [
+        _full_prefix_parent_trace_manifest(trace, horizon=horizon) for trace in traces
+    ]
+    return {
+        "schema": PARENT_BEHAVIOR_CACHE_SCHEMA,
+        "split_name": str(split_name),
+        "artifact_sha256": _sha256(artifact_sha256, "cache artifact_sha256"),
+        "domain_sha256": _sha256(domain_sha256, "cache domain_sha256"),
+        "parent_tensor_state_sha256": _sha256(
+            parent_tensor_state_sha256,
+            "cache parent tensor-state SHA-256",
+        ),
+        "parent_tensor_count": _index(
+            parent_tensor_count,
+            "cache parent tensor count",
+            positive=True,
+        ),
+        "parent_tensor_bytes": _index(
+            parent_tensor_bytes,
+            "cache parent tensor bytes",
+            positive=True,
+        ),
+        "parent_execution_contract_sha256": _sha256(
+            parent_execution_contract_sha256,
+            "cache parent execution-contract SHA-256",
+        ),
+        "horizon": _index(horizon, "cache horizon", positive=True),
+        "prompt_count": len(prompt_rows),
+        "prompts": prompt_rows,
+        "cache_build_parent_forward_count": len(prompt_rows) * horizon,
+        "collector": "full-prefix-use-cache-false",
+        "output_function_only": True,
+        "parent_weights_stored": False,
+    }
+
+
+@dataclass(frozen=True, slots=True)
+class ParentBehaviorCache:
+    """Hash-bound in-process cache of parent greedy output traces.
+
+    Public row tensors remain ordinary mutable tensors, so every use authenticates
+    them and hands consumers private clones.  The cache object itself is not a
+    Python security boundary.
+    """
+
+    split_name: str
+    artifact_sha256: str
+    domain_sha256: str
+    parent_tensor_state_sha256: str
+    parent_tensor_count: int
+    parent_tensor_bytes: int
+    parent_execution_contract_sha256: str
+    horizon: int
+    traces: tuple[FunctionalDecodeTrace, ...]
+    _parent_model: nn.Module = field(repr=False, compare=False)
+    _parent_runtime_signature: tuple[tuple[Any, ...], ...] = field(
+        repr=False,
+        compare=False,
+    )
+    cache_sha256: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        name = str(self.split_name).strip().lower()
+        traces = tuple(self.traces)
+        if not name or not traces or not isinstance(self._parent_model, nn.Module):
+            raise TargetNativeBehaviorDistillationError(
+                "Parent behavior cache metadata is incomplete."
+            )
+        runtime_signature = tuple(self._parent_runtime_signature)
+        if not runtime_signature:
+            raise TargetNativeBehaviorDistillationError(
+                "Parent behavior cache has no runtime state guard."
+            )
+        object.__setattr__(self, "split_name", name)
+        object.__setattr__(
+            self,
+            "artifact_sha256",
+            _sha256(self.artifact_sha256, "cache artifact_sha256"),
+        )
+        object.__setattr__(
+            self,
+            "domain_sha256",
+            _sha256(self.domain_sha256, "cache domain_sha256"),
+        )
+        object.__setattr__(
+            self,
+            "parent_tensor_state_sha256",
+            _sha256(
+                self.parent_tensor_state_sha256,
+                "cache parent tensor-state SHA-256",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "parent_tensor_count",
+            _index(
+                self.parent_tensor_count,
+                "cache parent tensor count",
+                positive=True,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "parent_tensor_bytes",
+            _index(
+                self.parent_tensor_bytes,
+                "cache parent tensor bytes",
+                positive=True,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "parent_execution_contract_sha256",
+            _sha256(
+                self.parent_execution_contract_sha256,
+                "cache parent execution-contract SHA-256",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "horizon",
+            _index(self.horizon, "cache horizon", positive=True),
+        )
+        object.__setattr__(self, "traces", traces)
+        object.__setattr__(self, "_parent_runtime_signature", runtime_signature)
+        object.__setattr__(self, "cache_sha256", _canonical_sha256(self.manifest()))
+
+    def manifest(self) -> dict[str, Any]:
+        return _parent_behavior_cache_manifest(
+            split_name=self.split_name,
+            artifact_sha256=self.artifact_sha256,
+            domain_sha256=self.domain_sha256,
+            parent_tensor_state_sha256=self.parent_tensor_state_sha256,
+            parent_tensor_count=self.parent_tensor_count,
+            parent_tensor_bytes=self.parent_tensor_bytes,
+            parent_execution_contract_sha256=(
+                self.parent_execution_contract_sha256
+            ),
+            horizon=self.horizon,
+            traces=self.traces,
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {**self.manifest(), "cache_sha256": self.cache_sha256}
+
+
+@dataclass(frozen=True, slots=True)
+class ParentBehaviorCacheBinding:
+    """One authenticated horizon-specific hit against a parent behavior cache."""
+
+    cache_sha256: str
+    domain_sha256: str
+    split_name: str
+    parent_tensor_state_sha256: str
+    parent_execution_contract_sha256: str
+    cache_horizon: int
+    requested_horizon: int
+    traces: tuple[FunctionalDecodeTrace, ...] = field(repr=False)
+    binding_sha256: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        traces = tuple(self.traces)
+        if not traces:
+            raise TargetNativeBehaviorDistillationError(
+                "A parent behavior cache binding cannot be empty."
+            )
+        payload = {
+            "schema": PARENT_BEHAVIOR_CACHE_BINDING_SCHEMA,
+            "cache_sha256": _sha256(self.cache_sha256, "parent cache SHA-256"),
+            "domain_sha256": _sha256(self.domain_sha256, "parent cache domain"),
+            "split_name": str(self.split_name),
+            "parent_tensor_state_sha256": _sha256(
+                self.parent_tensor_state_sha256,
+                "parent cache tensor-state SHA-256",
+            ),
+            "parent_execution_contract_sha256": _sha256(
+                self.parent_execution_contract_sha256,
+                "parent cache execution-contract SHA-256",
+            ),
+            "cache_horizon": _index(
+                self.cache_horizon, "parent cache horizon", positive=True
+            ),
+            "requested_horizon": _index(
+                self.requested_horizon, "requested cache horizon", positive=True
+            ),
+            "prompt_count": len(traces),
+            "trace_sha256s": [value.trace_sha256 for value in traces],
+            "row_tensor_sha256s": [
+                [step.action_logits_sha256 for step in value.steps]
+                for value in traces
+            ],
+        }
+        object.__setattr__(self, "traces", traces)
+        object.__setattr__(self, "binding_sha256", _canonical_sha256(payload))
+
+    @property
+    def parent_forward_count_avoided(self) -> int:
+        return len(self.traces) * self.requested_horizon
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema": PARENT_BEHAVIOR_CACHE_BINDING_SCHEMA,
+            "cache_hit": True,
+            "cache_sha256": self.cache_sha256,
+            "binding_sha256": self.binding_sha256,
+            "domain_sha256": self.domain_sha256,
+            "split_name": self.split_name,
+            "parent_tensor_state_sha256": self.parent_tensor_state_sha256,
+            "parent_execution_contract_sha256": (
+                self.parent_execution_contract_sha256
+            ),
+            "cache_horizon": self.cache_horizon,
+            "requested_horizon": self.requested_horizon,
+            "prompt_count": len(self.traces),
+            "gross_parent_forward_count_avoided": (
+                self.parent_forward_count_avoided
+            ),
+            "full_prefix_parent_rows_reused": True,
+            "parent_tensor_state_authenticated_at_binding": True,
+            "covered_parent_execution_state_authenticated_at_binding": True,
+            "arbitrary_python_runtime_state_authenticated_at_binding": False,
+            "live_parent_outputs_executed_at_binding": False,
         }
 
 
@@ -3220,9 +4907,10 @@ class BehaviorTrainingAudit:
     parent_greedy_cache_prompt_count: int
     parent_greedy_cache_forward_count: int
     gradient_activation: GradientActivationAudit
+    parent_behavior_cache_audit: Mapping[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "optimizer_steps": self.optimizer_steps,
             "optimizer_class": self.optimizer_class,
             "parent_greedy_prefix_count": self.parent_greedy_prefix_count,
@@ -3244,6 +4932,11 @@ class BehaviorTrainingAudit:
             "attention_map_targets_used": False,
             "cache_value_targets_used": False,
         }
+        if self.parent_behavior_cache_audit is not None:
+            result["parent_behavior_cache"] = dict(
+                self.parent_behavior_cache_audit
+            )
+        return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -4120,6 +5813,284 @@ def _functional_trace(
     )
 
 
+def _parent_trace_at_horizon(
+    trace: FunctionalDecodeTrace,
+    horizon: int,
+    *,
+    clone_rows: bool = False,
+) -> FunctionalDecodeTrace:
+    """Return an authenticated prefix, optionally with private cloned rows."""
+
+    horizon_value = _index(horizon, "parent trace horizon", positive=True)
+    if horizon_value > len(trace.steps):
+        raise TargetNativeBehaviorDistillationError(
+            "Requested parent trace horizon exceeds its cached rows."
+        )
+    if horizon_value == len(trace.steps) and not clone_rows:
+        return trace
+    source_steps = trace.steps[:horizon_value]
+    steps = (
+        tuple(
+            replace(
+                step,
+                action_logits=(
+                    step.action_logits.detach().cpu().contiguous().clone()
+                ),
+            )
+            for step in source_steps
+        )
+        if clone_rows
+        else source_steps
+    )
+    selected = trace.selected_token_ids[:horizon_value]
+    payload = {
+        "sequence_id": trace.sequence_id,
+        "lane": "greedy",
+        "prompt_token_ids_sha256": token_sequence_sha256(trace.prompt_token_ids),
+        "selected_token_ids": list(selected),
+        "action_logits_sha256s": [value.action_logits_sha256 for value in steps],
+    }
+    result = FunctionalDecodeTrace(
+        sequence_id=trace.sequence_id,
+        lane="greedy",
+        prompt_token_ids=trace.prompt_token_ids,
+        consumed_token_ids=selected[:-1],
+        selected_token_ids=selected,
+        steps=steps,
+        vocabulary_size=trace.vocabulary_size,
+        logit_bytes=sum(
+            int(value.action_logits.numel() * value.action_logits.element_size())
+            for value in steps
+        ),
+        model_class=trace.model_class,
+        cache_class=trace.cache_class,
+        trace_sha256=_canonical_sha256(payload),
+    )
+    if clone_rows:
+        # Authenticate the private copy itself.  This closes the interval
+        # between validating the public cache and copying rows out of it.
+        _full_prefix_parent_trace_manifest(result, horizon=horizon_value)
+    return result
+
+
+def build_parent_behavior_cache(
+    parent_model: nn.Module,
+    domain: BehaviorDomainSuite,
+    *,
+    horizon: int,
+) -> ParentBehaviorCache:
+    """Collect one hash-bound full-prefix parent cache for reuse across arms."""
+
+    if not isinstance(parent_model, nn.Module):
+        raise TargetNativeBehaviorDistillationError(
+            "parent_model must be a torch module."
+        )
+    if not isinstance(domain, BehaviorDomainSuite):
+        raise TargetNativeBehaviorDistillationError(
+            "domain must be BehaviorDomainSuite."
+        )
+    horizon_value = _index(horizon, "parent cache horizon", positive=True)
+    parent_authentication = _capture_parent_authentication(parent_model)
+    modes = tuple((module, bool(module.training)) for module in parent_model.modules())
+    traces: list[FunctionalDecodeTrace] = []
+    try:
+        parent_model.eval()
+        for prompt in domain.prompts:
+            tokens, rows = _greedy_path(
+                parent_model,
+                prompt.token_ids,
+                horizon_value,
+            )
+            traces.append(
+                _functional_trace(
+                    prompt=prompt,
+                    lane="greedy",
+                    selected=tokens,
+                    rows=rows,
+                )
+            )
+    finally:
+        for module, mode in modes:
+            module.training = mode
+    terminal_authentication = _capture_parent_authentication(parent_model)
+    _assert_parent_authentication_matches(
+        parent_authentication,
+        terminal_authentication,
+    )
+    return ParentBehaviorCache(
+        split_name=domain.split_name,
+        artifact_sha256=domain.artifact_sha256,
+        domain_sha256=domain.domain_sha256,
+        parent_tensor_state_sha256=(
+            parent_authentication.tensor_state_sha256
+        ),
+        parent_tensor_count=parent_authentication.tensor_count,
+        parent_tensor_bytes=parent_authentication.tensor_bytes,
+        parent_execution_contract_sha256=(
+            parent_authentication.execution_contract_sha256
+        ),
+        horizon=horizon_value,
+        traces=tuple(traces),
+        _parent_model=parent_model,
+        _parent_runtime_signature=parent_authentication.runtime_signature,
+    )
+
+
+def _authenticate_parent_behavior_cache_with_parent(
+    parent_model: nn.Module,
+    domain: BehaviorDomainSuite,
+    cache: ParentBehaviorCache,
+    *,
+    horizon: int,
+    parent_authentication: _ParentAuthentication,
+) -> ParentBehaviorCacheBinding:
+    """Authenticate one cache against an already-hashed shared parent state."""
+
+    if not isinstance(parent_model, nn.Module) or not isinstance(
+        domain, BehaviorDomainSuite
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Parent cache authentication requires a model and behavior domain."
+        )
+    if not isinstance(cache, ParentBehaviorCache):
+        raise TargetNativeBehaviorDistillationError(
+            "parent_behavior_cache must be ParentBehaviorCache."
+        )
+    requested_horizon = _index(horizon, "requested parent cache horizon", positive=True)
+    if requested_horizon > cache.horizon:
+        raise TargetNativeBehaviorDistillationError(
+            "Parent behavior cache horizon is shorter than requested."
+        )
+    if cache._parent_model is not parent_model:
+        raise TargetNativeBehaviorDistillationError(
+            "Parent behavior cache belongs to another model object."
+        )
+    if (
+        parent_authentication.runtime_signature
+        != cache._parent_runtime_signature
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Parent behavior cache runtime tensor ownership or versions changed."
+        )
+    if (
+        parent_authentication.tensor_state_sha256
+        != cache.parent_tensor_state_sha256
+        or parent_authentication.tensor_count != cache.parent_tensor_count
+        or parent_authentication.tensor_bytes != cache.parent_tensor_bytes
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Parent behavior cache tensor-state bytes or topology changed."
+        )
+    if (
+        parent_authentication.execution_contract_sha256
+        != cache.parent_execution_contract_sha256
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Parent behavior cache execution contract changed."
+        )
+    manifest = cache.manifest()
+    if _canonical_sha256(manifest) != cache.cache_sha256:
+        raise TargetNativeBehaviorDistillationError(
+            "Parent behavior cache canonical digest changed."
+        )
+    if (
+        cache.split_name != domain.split_name
+        or cache.artifact_sha256 != domain.artifact_sha256
+        or cache.domain_sha256 != domain.domain_sha256
+        or len(cache.traces) != len(domain.prompts)
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Parent behavior cache does not bind the requested domain."
+        )
+    for prompt, trace, prompt_manifest in zip(
+        domain.prompts,
+        cache.traces,
+        manifest["prompts"],
+        strict=True,
+    ):
+        if (
+            trace.sequence_id != prompt.prompt_id
+            or trace.prompt_token_ids != prompt.token_ids
+            or prompt_manifest["prompt_id"] != prompt.prompt_id
+            or prompt_manifest["token_ids_sha256"] != prompt.token_ids_sha256
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                "Parent behavior cache prompt identity or token hash changed."
+            )
+    return ParentBehaviorCacheBinding(
+        cache_sha256=cache.cache_sha256,
+        domain_sha256=domain.domain_sha256,
+        split_name=domain.split_name,
+        parent_tensor_state_sha256=cache.parent_tensor_state_sha256,
+        parent_execution_contract_sha256=(
+            cache.parent_execution_contract_sha256
+        ),
+        cache_horizon=cache.horizon,
+        requested_horizon=requested_horizon,
+        traces=tuple(
+            _parent_trace_at_horizon(
+                trace,
+                requested_horizon,
+                clone_rows=True,
+            )
+            for trace in cache.traces
+        ),
+    )
+
+
+def authenticate_parent_behavior_cache(
+    parent_model: nn.Module,
+    domain: BehaviorDomainSuite,
+    cache: ParentBehaviorCache,
+    *,
+    horizon: int,
+) -> ParentBehaviorCacheBinding:
+    """Authenticate cached rows and the explicitly covered parent state."""
+
+    if not isinstance(parent_model, nn.Module):
+        raise TargetNativeBehaviorDistillationError(
+            "Parent cache authentication requires a torch module."
+        )
+    parent_authentication = _capture_parent_authentication(parent_model)
+    return _authenticate_parent_behavior_cache_with_parent(
+        parent_model,
+        domain,
+        cache,
+        horizon=horizon,
+        parent_authentication=parent_authentication,
+    )
+
+
+def _parent_cache_binding_at_horizon(
+    binding: ParentBehaviorCacheBinding,
+    horizon: int,
+) -> ParentBehaviorCacheBinding:
+    """Derive a shorter binding without rehashing an already-authenticated cache."""
+
+    requested_horizon = _index(horizon, "requested parent cache horizon", positive=True)
+    if requested_horizon > binding.requested_horizon:
+        raise TargetNativeBehaviorDistillationError(
+            "Derived parent cache horizon exceeds its authenticated binding."
+        )
+    if requested_horizon == binding.requested_horizon:
+        return binding
+    return ParentBehaviorCacheBinding(
+        cache_sha256=binding.cache_sha256,
+        domain_sha256=binding.domain_sha256,
+        split_name=binding.split_name,
+        parent_tensor_state_sha256=binding.parent_tensor_state_sha256,
+        parent_execution_contract_sha256=(
+            binding.parent_execution_contract_sha256
+        ),
+        cache_horizon=binding.cache_horizon,
+        requested_horizon=requested_horizon,
+        traces=tuple(
+            _parent_trace_at_horizon(trace, requested_horizon)
+            for trace in binding.traces
+        ),
+    )
+
+
 def evaluate_behavior_domain(
     parent_model: nn.Module,
     child_model: nn.Module,
@@ -4128,8 +6099,63 @@ def evaluate_behavior_domain(
     horizon: int,
     top_k: int,
     split: BehaviorEvaluationSplit,
+    parent_behavior_cache: ParentBehaviorCache | None = None,
 ) -> CausalBehaviorMetrics:
     """Evaluate fixed-parent actions plus independent free-running rollouts."""
+
+    if parent_behavior_cache is None:
+        return _evaluate_behavior_domain_impl(
+            parent_model,
+            child_model,
+            domain,
+            horizon=horizon,
+            top_k=top_k,
+            split=split,
+            parent_cache_binding=None,
+        )
+    parent_authentication = _capture_parent_authentication(parent_model)
+    parent_cache_binding = _authenticate_parent_behavior_cache_with_parent(
+        parent_model,
+        domain,
+        parent_behavior_cache,
+        horizon=horizon,
+        parent_authentication=parent_authentication,
+    )
+    result = _evaluate_behavior_domain_impl(
+        parent_model,
+        child_model,
+        domain,
+        horizon=horizon,
+        top_k=top_k,
+        split=split,
+        parent_cache_binding=parent_cache_binding,
+    )
+    terminal_authentication = _capture_parent_authentication(parent_model)
+    _assert_parent_authentication_matches(
+        parent_authentication,
+        terminal_authentication,
+    )
+    _authenticate_parent_behavior_cache_with_parent(
+        parent_model,
+        domain,
+        parent_behavior_cache,
+        horizon=horizon,
+        parent_authentication=terminal_authentication,
+    )
+    return result
+
+
+def _evaluate_behavior_domain_impl(
+    parent_model: nn.Module,
+    child_model: nn.Module,
+    domain: BehaviorDomainSuite,
+    *,
+    horizon: int,
+    top_k: int,
+    split: BehaviorEvaluationSplit,
+    parent_cache_binding: ParentBehaviorCacheBinding | None,
+) -> CausalBehaviorMetrics:
+    """Evaluate behavior with a preauthenticated optional parent cache binding."""
 
     if not isinstance(parent_model, nn.Module) or not isinstance(
         child_model, nn.Module
@@ -4158,6 +6184,14 @@ def evaluate_behavior_domain(
         )
     horizon_value = _index(horizon, "horizon", positive=True)
     top_k_value = _index(top_k, "top_k", positive=True)
+    if parent_cache_binding is not None and (
+        parent_cache_binding.domain_sha256 != domain.domain_sha256
+        or parent_cache_binding.requested_horizon != horizon_value
+        or len(parent_cache_binding.traces) != len(domain.prompts)
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Parent cache binding does not match this evaluation request."
+        )
     parent_traces: list[FunctionalDecodeTrace] = []
     child_traces: list[FunctionalDecodeTrace] = []
     parent_modes = tuple(
@@ -4169,10 +6203,25 @@ def evaluate_behavior_domain(
     try:
         parent_model.eval()
         child_model.eval()
-        for prompt in domain.prompts:
-            parent_tokens, parent_rows = _greedy_path(
-                parent_model, prompt.token_ids, horizon_value
-            )
+        for prompt_index, prompt in enumerate(domain.prompts):
+            cached_parent_trace: FunctionalDecodeTrace | None = None
+            if parent_cache_binding is None:
+                parent_tokens, parent_rows = _greedy_path(
+                    parent_model, prompt.token_ids, horizon_value
+                )
+            else:
+                cached_parent_trace = parent_cache_binding.traces[prompt_index]
+                if (
+                    cached_parent_trace.sequence_id != prompt.prompt_id
+                    or cached_parent_trace.prompt_token_ids != prompt.token_ids
+                ):
+                    raise TargetNativeBehaviorDistillationError(
+                        "Parent cache trace order changed after authentication."
+                    )
+                parent_tokens = cached_parent_trace.selected_token_ids
+                parent_rows = tuple(
+                    value.action_logits for value in cached_parent_trace.steps
+                )
             child_forced_rows = _forced_path(
                 child_model, prompt.token_ids, parent_tokens
             )
@@ -4187,7 +6236,9 @@ def evaluate_behavior_domain(
                         selected=parent_tokens,
                         rows=parent_rows,
                     ),
-                    _functional_trace(
+                    cached_parent_trace
+                    if cached_parent_trace is not None
+                    else _functional_trace(
                         prompt=prompt,
                         lane="greedy",
                         selected=parent_tokens,
@@ -4282,6 +6333,33 @@ def _normalize_domains(
                         f"A meaningful token prefix overlaps {previous} and {role}."
                     )
                 meaningful_prefixes[prefix] = role
+    return MappingProxyType(values)
+
+
+def _normalize_parent_behavior_caches(
+    caches: Mapping[str, ParentBehaviorCache] | None,
+) -> Mapping[str, ParentBehaviorCache]:
+    """Normalize optional fit/candidate cache roles without widening domains."""
+
+    if caches is None:
+        return MappingProxyType({})
+    if not isinstance(caches, Mapping):
+        raise TargetNativeBehaviorDistillationError(
+            "parent_behavior_caches must be a mapping or None."
+        )
+    values = dict(caches)
+    if "candidate" in values:
+        if "calibration" in values:
+            raise TargetNativeBehaviorDistillationError(
+                "Provide only one of candidate or calibration parent caches."
+            )
+        values["calibration"] = values.pop("candidate")
+    if not set(values).issubset({"fit", "calibration"}) or any(
+        not isinstance(value, ParentBehaviorCache) for value in values.values()
+    ):
+        raise TargetNativeBehaviorDistillationError(
+            "Parent behavior caches may contain only fit and candidate/calibration."
+        )
     return MappingProxyType(values)
 
 
@@ -4836,6 +6914,7 @@ def train_target_native_behavior_distillation(
     guided_gud_tranche: Any | None = None,
     durable_checkpoint_callback: DurableBehaviorCheckpointCallback | None = None,
     post_optimizer_step_callback: Callable[[int], None] | None = None,
+    parent_behavior_caches: Mapping[str, ParentBehaviorCache] | None = None,
 ) -> BehaviorDistillationResult:
     """Train, Pareto-select, restore, and optionally unlock sealed evaluation.
 
@@ -4954,6 +7033,47 @@ def train_target_native_behavior_distillation(
             "Preregistered evaluation work exceeds max_evaluation_prefixes."
         )
 
+    parent_caches = _normalize_parent_behavior_caches(parent_behavior_caches)
+    fit_training_cache_binding: ParentBehaviorCacheBinding | None = None
+    fit_evaluation_cache_binding: ParentBehaviorCacheBinding | None = None
+    calibration_cache_binding: ParentBehaviorCacheBinding | None = None
+    parent_authentication_before = (
+        _capture_parent_authentication(parent_model) if parent_caches else None
+    )
+    parent_authentication_after: _ParentAuthentication | None = None
+    if "fit" in parent_caches:
+        if parent_authentication_before is None:
+            raise TargetNativeBehaviorDistillationError(
+                "Parent cache authentication state disappeared."
+            )
+        fit_full_binding = _authenticate_parent_behavior_cache_with_parent(
+            parent_model,
+            fit,
+            parent_caches["fit"],
+            horizon=max(schedule.fit_horizon, schedule.evaluation_horizon),
+            parent_authentication=parent_authentication_before,
+        )
+        fit_training_cache_binding = _parent_cache_binding_at_horizon(
+            fit_full_binding,
+            schedule.fit_horizon,
+        )
+        fit_evaluation_cache_binding = _parent_cache_binding_at_horizon(
+            fit_full_binding,
+            schedule.evaluation_horizon,
+        )
+    if "calibration" in parent_caches:
+        if parent_authentication_before is None:
+            raise TargetNativeBehaviorDistillationError(
+                "Parent cache authentication state disappeared."
+            )
+        calibration_cache_binding = _authenticate_parent_behavior_cache_with_parent(
+            parent_model,
+            calibration,
+            parent_caches["calibration"],
+            horizon=schedule.evaluation_horizon,
+            parent_authentication=parent_authentication_before,
+        )
+
     domain_payload = {role: suite.as_dict() for role, suite in suites.items()}
     domain_binding_sha256 = _canonical_sha256(domain_payload)
     schedule_sha256 = _canonical_sha256(schedule.as_dict())
@@ -5069,13 +7189,19 @@ def train_target_native_behavior_distillation(
                 "Combined guided step zero differs from the authenticated restored "
                 "v3 continuation."
             )
-    step0_metrics = evaluate_behavior_domain(
+    if parent_authentication_before is not None:
+        _assert_parent_runtime_execution_unchanged(
+            parent_model,
+            parent_authentication_before,
+        )
+    step0_metrics = _evaluate_behavior_domain_impl(
         parent_model,
         transaction.model,
         calibration,
         horizon=schedule.evaluation_horizon,
         top_k=schedule.top_k,
         split="calibration-selection",
+        parent_cache_binding=calibration_cache_binding,
     )
     checkpoints: list[BehaviorCheckpoint] = [
         BehaviorCheckpoint(
@@ -5141,18 +7267,32 @@ def train_target_native_behavior_distillation(
             state=step0_state,
             pareto_safe_vs_step0=True,
         )
-        parent_greedy_cache: dict[str, tuple[tuple[int, ...], tuple[Tensor, ...]]] = {}
-        for prompt in fit.prompts:
-            tokens, rows = _greedy_path(
-                parent_model, prompt.token_ids, schedule.fit_horizon
-            )
+        parent_greedy_cache: dict[
+            str, tuple[tuple[int, ...], tuple[Tensor, ...]]
+        ] = {}
+        for prompt_index, prompt in enumerate(fit.prompts):
+            if fit_training_cache_binding is None:
+                tokens, rows = _greedy_path(
+                    parent_model, prompt.token_ids, schedule.fit_horizon
+                )
+                parent_forwards += schedule.fit_horizon
+                parent_greedy_cache_forwards += schedule.fit_horizon
+            else:
+                trace = fit_training_cache_binding.traces[prompt_index]
+                if (
+                    trace.sequence_id != prompt.prompt_id
+                    or trace.prompt_token_ids != prompt.token_ids
+                ):
+                    raise TargetNativeBehaviorDistillationError(
+                        "Fit parent cache trace order changed after authentication."
+                    )
+                tokens = trace.selected_token_ids
+                rows = tuple(value.action_logits for value in trace.steps)
             if len(tokens) != schedule.fit_horizon or len(rows) != len(tokens):
                 raise TargetNativeBehaviorDistillationError(
                     "Invariant parent greedy cache has an invalid horizon."
                 )
             parent_greedy_cache[prompt.prompt_id] = (tokens, rows)
-            parent_forwards += schedule.fit_horizon
-            parent_greedy_cache_forwards += schedule.fit_horizon
         training_scope = (
             _GuidedCombinedOutputTrainingScope(
                 transaction,
@@ -5205,6 +7345,11 @@ def train_target_native_behavior_distillation(
                 )
             factor_name_by_id = {id(value): name for name, value in factor_entries}
             for step in range(1, schedule.steps + 1):
+                if parent_authentication_before is not None:
+                    _assert_parent_runtime_execution_unchanged(
+                        parent_model,
+                        parent_authentication_before,
+                    )
                 for group in optimizer.param_groups:
                     expected_rates = {
                         _factor_learning_rate(
@@ -5467,6 +7612,11 @@ def train_target_native_behavior_distillation(
                     )
                 if post_optimizer_step_callback is not None:
                     post_optimizer_step_callback(step)
+                if parent_authentication_before is not None:
+                    _assert_parent_runtime_execution_unchanged(
+                        parent_model,
+                        parent_authentication_before,
+                    )
                 if guided_gud_continuation:
                     _assert_guided_gud_frozen_sources(
                         factor_entries,
@@ -5474,13 +7624,14 @@ def train_target_native_behavior_distillation(
                         step=step,
                     )
                 if step in schedule.normalized_checkpoint_steps:
-                    metrics = evaluate_behavior_domain(
+                    metrics = _evaluate_behavior_domain_impl(
                         parent_model,
                         transaction.model,
                         calibration,
                         horizon=schedule.evaluation_horizon,
                         top_k=schedule.top_k,
                         split="calibration-selection",
+                        parent_cache_binding=calibration_cache_binding,
                     )
                     state = capture_target_native_factor_state(
                         transaction,
@@ -5575,6 +7726,11 @@ def train_target_native_behavior_distillation(
     ]
     guided_candidate_gate: GuidedCandidateGateAudit | None = None
     try:
+        if parent_authentication_before is not None:
+            _assert_parent_runtime_execution_unchanged(
+                parent_model,
+                parent_authentication_before,
+            )
         restore_target_native_factor_state(
             transaction,
             selected_state,
@@ -5592,13 +7748,14 @@ def train_target_native_behavior_distillation(
             raise TargetNativeBehaviorDistillationError(
                 "Selected factor pack does not match the restored checkpoint."
             )
-        fit_metrics = evaluate_behavior_domain(
+        fit_metrics = _evaluate_behavior_domain_impl(
             parent_model,
             transaction.model,
             fit,
             horizon=schedule.evaluation_horizon,
             top_k=schedule.top_k,
             split="calibration-exploratory",
+            parent_cache_binding=fit_evaluation_cache_binding,
         )
         static_thresholds_passed = threshold.passes(selected_metrics)
         if guided_continuation:
@@ -5624,6 +7781,33 @@ def train_target_native_behavior_distillation(
                 top_k=schedule.top_k,
                 split="heldout-evaluation",
             )
+        if parent_authentication_before is not None:
+            parent_authentication_after = _capture_parent_authentication(
+                parent_model
+            )
+            _assert_parent_authentication_matches(
+                parent_authentication_before,
+                parent_authentication_after,
+            )
+            if "fit" in parent_caches:
+                _authenticate_parent_behavior_cache_with_parent(
+                    parent_model,
+                    fit,
+                    parent_caches["fit"],
+                    horizon=max(
+                        schedule.fit_horizon,
+                        schedule.evaluation_horizon,
+                    ),
+                    parent_authentication=parent_authentication_after,
+                )
+            if "calibration" in parent_caches:
+                _authenticate_parent_behavior_cache_with_parent(
+                    parent_model,
+                    calibration,
+                    parent_caches["calibration"],
+                    horizon=schedule.evaluation_horizon,
+                    parent_authentication=parent_authentication_after,
+                )
     except Exception:
         if transaction.is_live:
             restore_target_native_factor_state(
@@ -5633,6 +7817,109 @@ def train_target_native_behavior_distillation(
                 guided_gud_tranche=guided_gud_tranche,
             )
         raise
+
+    parent_cache_audit: Mapping[str, Any] | None = None
+    if fit_training_cache_binding is not None or calibration_cache_binding is not None:
+        if (
+            parent_authentication_before is None
+            or parent_authentication_after is None
+        ):
+            raise TargetNativeBehaviorDistillationError(
+                "Terminal parent cache authentication evidence disappeared."
+            )
+        cache_roles: dict[str, Any] = {}
+        gross_avoided = 0
+        cache_build_forwards = 0
+        if fit_training_cache_binding is not None:
+            if fit_evaluation_cache_binding is None:
+                raise TargetNativeBehaviorDistillationError(
+                    "Fit cache evaluation binding disappeared."
+                )
+            fit_avoided = (
+                fit_training_cache_binding.parent_forward_count_avoided
+                + fit_evaluation_cache_binding.parent_forward_count_avoided
+            )
+            gross_avoided += fit_avoided
+            fit_cache = parent_caches["fit"]
+            fit_build_forwards = len(fit_cache.traces) * fit_cache.horizon
+            cache_build_forwards += fit_build_forwards
+            cache_roles["fit"] = {
+                "cache_sha256_before": fit_training_cache_binding.cache_sha256,
+                "cache_sha256_after": fit_training_cache_binding.cache_sha256,
+                "training_binding": fit_training_cache_binding.as_dict(),
+                "exploratory_evaluation_binding": (
+                    fit_evaluation_cache_binding.as_dict()
+                ),
+                "training_cache_hit": True,
+                "exploratory_evaluation_cache_hit": True,
+                "gross_parent_forward_count_avoided": fit_avoided,
+                "one_time_cache_build_parent_forward_count": (
+                    fit_build_forwards
+                ),
+                "terminal_cache_rows_reauthenticated": True,
+            }
+        if calibration_cache_binding is not None:
+            evaluation_hit_count = len(checkpoints)
+            calibration_avoided = (
+                calibration_cache_binding.parent_forward_count_avoided
+                * evaluation_hit_count
+            )
+            gross_avoided += calibration_avoided
+            calibration_cache = parent_caches["calibration"]
+            calibration_build_forwards = (
+                len(calibration_cache.traces) * calibration_cache.horizon
+            )
+            cache_build_forwards += calibration_build_forwards
+            cache_roles["calibration"] = {
+                "cache_sha256_before": calibration_cache_binding.cache_sha256,
+                "cache_sha256_after": calibration_cache_binding.cache_sha256,
+                "evaluation_binding": calibration_cache_binding.as_dict(),
+                "evaluation_cache_hit_count": evaluation_hit_count,
+                "gross_parent_forward_count_avoided": calibration_avoided,
+                "one_time_cache_build_parent_forward_count": (
+                    calibration_build_forwards
+                ),
+                "terminal_cache_rows_reauthenticated": True,
+            }
+        cache_payload = {
+            "schema": PARENT_BEHAVIOR_CACHE_AUDIT_SCHEMA,
+            "cache_hit": True,
+            "roles": cache_roles,
+            "gross_parent_forward_count_avoided": gross_avoided,
+            "one_time_cache_build_parent_forward_count": cache_build_forwards,
+            "single_consumer_net_parent_forward_count_avoided": (
+                gross_avoided - cache_build_forwards
+            ),
+            "cache_build_cost_not_charged_to_training_forward_counters": True,
+            "parent_cache_rows_authenticated_before_training": True,
+            "parent_cache_rows_reauthenticated_after_training": True,
+            "parent_tensor_state_sha256_before": (
+                parent_authentication_before.tensor_state_sha256
+            ),
+            "parent_tensor_state_sha256_after": (
+                parent_authentication_after.tensor_state_sha256
+            ),
+            "parent_tensor_count": parent_authentication_before.tensor_count,
+            "parent_tensor_bytes": parent_authentication_before.tensor_bytes,
+            "parent_execution_contract_sha256_before": (
+                parent_authentication_before.execution_contract_sha256
+            ),
+            "parent_execution_contract_sha256_after": (
+                parent_authentication_after.execution_contract_sha256
+            ),
+            "covered_parent_execution_state_authenticated": True,
+            "arbitrary_python_runtime_state_authenticated": False,
+            "live_parent_outputs_reexecuted_at_terminal": False,
+            "terminal_authentication_scope": (
+                "cached-row-bytes-and-covered-execution-state"
+            ),
+        }
+        parent_cache_audit = MappingProxyType(
+            {
+                **cache_payload,
+                "audit_sha256": _canonical_sha256(cache_payload),
+            }
+        )
 
     training_audit = BehaviorTrainingAudit(
         optimizer_steps=schedule.steps,
@@ -5644,6 +7931,7 @@ def train_target_native_behavior_distillation(
         parent_greedy_cache_prompt_count=len(parent_greedy_cache),
         parent_greedy_cache_forward_count=parent_greedy_cache_forwards,
         gradient_activation=gradient_audit,
+        parent_behavior_cache_audit=parent_cache_audit,
     )
     return BehaviorDistillationResult(
         seed=seed_value,
@@ -5693,6 +7981,11 @@ __all__ = [
     "GUIDED_ONLY_END_STEP",
     "GUIDED_QKVO_FACTOR_TENSOR_COUNT",
     "GUIDED_QKVO_PARAMETER_COUNT",
+    "PARENT_BEHAVIOR_CACHE_AUDIT_SCHEMA",
+    "PARENT_BEHAVIOR_CACHE_BINDING_SCHEMA",
+    "PARENT_BEHAVIOR_CACHE_SCHEMA",
+    "PARENT_EXECUTION_CONTRACT_SCHEMA",
+    "PARENT_TENSOR_STATE_SCHEMA",
     "TARGET_NATIVE_BEHAVIOR_DISTILLATION_SCHEMA",
     "BehaviorCheckpoint",
     "BehaviorDistillationResult",
@@ -5713,10 +8006,14 @@ __all__ = [
     "GuidedFactorSourceBinding",
     "GuidedGUDFactorSourceBinding",
     "GuidedTrainingStage",
+    "ParentBehaviorCache",
+    "ParentBehaviorCacheBinding",
     "TargetNativeBehaviorDistillationError",
     "TargetNativeFactorState",
     "authenticate_guided_factor_sources",
     "authenticate_guided_gud_factor_sources",
+    "authenticate_parent_behavior_cache",
+    "build_parent_behavior_cache",
     "capture_target_native_factor_state",
     "evaluate_behavior_domain",
     "load_behavior_domain_suite",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Sequence
 from dataclasses import replace
 from types import MappingProxyType
 
@@ -124,6 +125,148 @@ class _StrictToyTarget(nn.Module):
         for layer in self.layers:
             hidden = layer(hidden)
         return self.lm_head(self.norm(hidden))
+
+
+class _ClassStateToyTarget(_StrictToyTarget):
+    output_token_zero_boost = 0.0
+
+    def forward(self, *args, **kwargs) -> Tensor:
+        logits = super().forward(*args, **kwargs).clone()
+        logits[..., 0] += type(self).output_token_zero_boost
+        return logits
+
+
+class _UnregisteredTensorToyTarget(_StrictToyTarget):
+    def __init__(self) -> None:
+        super().__init__()
+        self.unregistered_output_bias = torch.zeros(19)
+
+    def forward(self, *args, **kwargs) -> Tensor:
+        logits = super().forward(*args, **kwargs)
+        return logits + self.unregistered_output_bias.to(logits.device)
+
+
+class _NestedRuntimeState:
+    def __init__(self, value: float = 0.0) -> None:
+        self.value = value
+
+
+class _NestedTensorRuntimeState:
+    def __init__(self) -> None:
+        self.value = torch.zeros(19)
+
+
+class _NestedRuntimeStateToyTarget(_StrictToyTarget):
+    def __init__(self, state: object) -> None:
+        super().__init__()
+        self.runtime_state = state
+
+    def forward(self, *args, **kwargs) -> Tensor:
+        logits = super().forward(*args, **kwargs).clone()
+        value = self.runtime_state.value
+        if isinstance(value, Tensor):
+            return logits + value.to(logits.device)
+        logits[..., 0] += float(value)
+        return logits
+
+
+class _HelperClassRuntimeState:
+    token_id = 3
+
+    def token(self) -> int:
+        return type(self).token_id
+
+
+def _replacement_helper_token(_self: object) -> int:
+    return 7
+
+
+class _HelperClassRuntimeToyTarget(_StrictToyTarget):
+    def __init__(self) -> None:
+        super().__init__()
+        self.helper = _HelperClassRuntimeState()
+
+    def forward(self, *args, **kwargs) -> Tensor:
+        logits = super().forward(*args, **kwargs).clone()
+        logits[..., self.helper.token()] += 1000.0
+        return logits
+
+
+_METHOD_GLOBAL_STATE = {"token_id": 3}
+
+
+class _MethodGlobalToyTarget(_StrictToyTarget):
+    def select(self) -> int:
+        return _METHOD_GLOBAL_STATE["token_id"]
+
+    def forward(self, *args, **kwargs) -> Tensor:
+        logits = super().forward(*args, **kwargs).clone()
+        logits[..., self.select()] += 1000.0
+        return logits
+
+
+_SUPER_FORWARD_GLOBAL_STATE = {"token_id": 3}
+
+
+class _SuperForwardGlobalBase(_StrictToyTarget):
+    def forward(self, *args, **kwargs) -> Tensor:
+        logits = super().forward(*args, **kwargs).clone()
+        logits[..., _SUPER_FORWARD_GLOBAL_STATE["token_id"]] += 1000.0
+        return logits
+
+
+class _SuperForwardGlobalDerived(_SuperForwardGlobalBase):
+    def forward(self, *args, **kwargs) -> Tensor:
+        return super().forward(*args, **kwargs)
+
+
+_EXPLICIT_BASE_METHOD_GLOBAL_STATE = {"token_id": 3}
+
+
+class _ExplicitBaseMethodGlobalBase(_StrictToyTarget):
+    def select(self) -> int:
+        return _EXPLICIT_BASE_METHOD_GLOBAL_STATE["token_id"]
+
+
+class _ExplicitBaseMethodGlobalDerived(_ExplicitBaseMethodGlobalBase):
+    def select(self) -> int:
+        return 1
+
+    def forward(self, *args, **kwargs) -> Tensor:
+        logits = super().forward(*args, **kwargs).clone()
+        logits[..., _ExplicitBaseMethodGlobalBase.select(self)] += 1000.0
+        return logits
+
+
+def _identity_output(logits: Tensor) -> Tensor:
+    return logits
+
+
+def _boost_token_zero(logits: Tensor) -> Tensor:
+    result = logits.clone()
+    result[..., 0] += 1000.0
+    return result
+
+
+_GLOBAL_OUTPUT_TRANSFORM = _identity_output
+
+
+def _indirect_output_transform(logits: Tensor) -> Tensor:
+    return _GLOBAL_OUTPUT_TRANSFORM(logits)
+
+
+class _CallableStateToyTarget(_StrictToyTarget):
+    def __init__(self) -> None:
+        super().__init__()
+        self.output_transform = _identity_output
+
+    def forward(self, *args, **kwargs) -> Tensor:
+        return self.output_transform(super().forward(*args, **kwargs))
+
+
+class _GlobalHelperToyTarget(_StrictToyTarget):
+    def forward(self, *args, **kwargs) -> Tensor:
+        return _indirect_output_transform(super().forward(*args, **kwargs))
 
 
 def _layout() -> DecoderLayout:
@@ -841,6 +984,819 @@ def test_loader_derives_prompt_identity_and_rejects_false_binding() -> None:
             {"prompts": [{"token_ids": [1, 2], "prompt_id": "invented"}]},
             artifact_sha256="a" * 64,
         )
+
+
+def test_parent_behavior_cache_is_hash_bound_and_reuses_exact_parent_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    torch.manual_seed(20260715)
+    parent = _StrictToyTarget()
+    child = copy.deepcopy(parent)
+    with torch.no_grad():
+        child.lm_head.weight.copy_(torch.roll(child.lm_head.weight, 1, dims=0))
+    candidate = _domain("candidate", [[1, 2, 3], [4, 5]], "c" * 64)
+    parent_calls: list[int] = []
+    original_last_logits = behavior_distillation._last_causal_logits
+
+    def counted_last_logits(model: nn.Module, prefix: Sequence[int]) -> Tensor:
+        if model is parent:
+            parent_calls.append(1)
+        return original_last_logits(model, prefix)
+
+    monkeypatch.setattr(
+        behavior_distillation,
+        "_last_causal_logits",
+        counted_last_logits,
+    )
+    cache = behavior_distillation.build_parent_behavior_cache(
+        parent,
+        candidate,
+        horizon=2,
+    )
+    assert len(parent_calls) == 4
+    manifest = cache.as_dict()
+    assert manifest["cache_sha256"] == cache.cache_sha256
+    assert manifest["domain_sha256"] == candidate.domain_sha256
+    assert manifest["parent_tensor_state_sha256"] == (
+        cache.parent_tensor_state_sha256
+    )
+    assert manifest["parent_execution_contract_sha256"] == (
+        cache.parent_execution_contract_sha256
+    )
+    assert manifest["cache_build_parent_forward_count"] == 4
+    assert [row["prompt_id"] for row in manifest["prompts"]] == [
+        value.prompt_id for value in candidate.prompts
+    ]
+    assert all(len(row["row_tensor_sha256s"]) == 2 for row in manifest["prompts"])
+
+    binding = behavior_distillation.authenticate_parent_behavior_cache(
+        parent,
+        candidate,
+        cache,
+        horizon=1,
+    )
+    assert binding.as_dict()["cache_hit"] is True
+    assert binding.parent_forward_count_avoided == 2
+
+    parent_calls.clear()
+    cached_metrics = behavior_distillation.evaluate_behavior_domain(
+        parent,
+        child,
+        candidate,
+        horizon=2,
+        top_k=3,
+        split="calibration-selection",
+        parent_behavior_cache=cache,
+    )
+    assert parent_calls == []
+    uncached_metrics = behavior_distillation.evaluate_behavior_domain(
+        parent,
+        child,
+        candidate,
+        horizon=2,
+        top_k=3,
+        split="calibration-selection",
+    )
+    assert len(parent_calls) == 4
+    assert cached_metrics.as_dict() == uncached_metrics.as_dict()
+
+    mismatched = _domain("candidate", [[1, 2, 3], [4, 5]], "d" * 64)
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="does not bind the requested domain",
+    ):
+        behavior_distillation.authenticate_parent_behavior_cache(
+            parent,
+            mismatched,
+            cache,
+            horizon=2,
+        )
+
+    with torch.no_grad():
+        cache.traces[0].steps[0].action_logits.add_(1.0)
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="row hash changed",
+    ):
+        behavior_distillation.authenticate_parent_behavior_cache(
+            parent,
+            candidate,
+            horizon=2,
+            cache=cache,
+        )
+
+
+def test_parent_behavior_cache_binds_class_state_and_rejects_unregistered_tensors(
+) -> None:
+    candidate = _domain("candidate", [[1, 2, 3]], "9" * 64)
+    parent = _ClassStateToyTarget().eval()
+    cache = behavior_distillation.build_parent_behavior_cache(
+        parent,
+        candidate,
+        horizon=1,
+    )
+    _ClassStateToyTarget.output_token_zero_boost = 1000.0
+    try:
+        with pytest.raises(
+            TargetNativeBehaviorDistillationError,
+            match="execution contract changed",
+        ):
+            behavior_distillation.authenticate_parent_behavior_cache(
+                parent,
+                candidate,
+                cache,
+                horizon=1,
+            )
+    finally:
+        _ClassStateToyTarget.output_token_zero_boost = 0.0
+
+    unregistered_parent = _UnregisteredTensorToyTarget().eval()
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="forbids unregistered tensor attributes",
+    ):
+        behavior_distillation.build_parent_behavior_cache(
+            unregistered_parent,
+            candidate,
+            horizon=1,
+        )
+
+    nested_tensor_parent = _NestedRuntimeStateToyTarget(
+        _NestedTensorRuntimeState()
+    ).eval()
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="forbids unregistered tensor attributes",
+    ):
+        behavior_distillation.build_parent_behavior_cache(
+            nested_tensor_parent,
+            candidate,
+            horizon=1,
+        )
+
+    nested_state = _NestedRuntimeState()
+    nested_parent = _NestedRuntimeStateToyTarget(nested_state).eval()
+    nested_cache = behavior_distillation.build_parent_behavior_cache(
+        nested_parent,
+        candidate,
+        horizon=1,
+    )
+    nested_state.value = 1000.0
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="execution contract changed",
+    ):
+        behavior_distillation.authenticate_parent_behavior_cache(
+            nested_parent,
+            candidate,
+            nested_cache,
+            horizon=1,
+        )
+
+
+def test_parent_behavior_cache_binds_callable_and_forward_global_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = _domain("candidate", [[1, 2, 3]], "6" * 64)
+    callable_parent = _CallableStateToyTarget().eval()
+    callable_cache = behavior_distillation.build_parent_behavior_cache(
+        callable_parent,
+        candidate,
+        horizon=1,
+    )
+    callable_parent.output_transform = _boost_token_zero
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="execution contract changed",
+    ):
+        behavior_distillation.authenticate_parent_behavior_cache(
+            callable_parent,
+            candidate,
+            callable_cache,
+            horizon=1,
+        )
+
+    global_parent = _GlobalHelperToyTarget().eval()
+    global_cache = behavior_distillation.build_parent_behavior_cache(
+        global_parent,
+        candidate,
+        horizon=1,
+    )
+    monkeypatch.setitem(
+        _GlobalHelperToyTarget.forward.__globals__,
+        "_GLOBAL_OUTPUT_TRANSFORM",
+        _boost_token_zero,
+    )
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="execution contract changed",
+    ):
+        behavior_distillation.authenticate_parent_behavior_cache(
+            global_parent,
+            candidate,
+            global_cache,
+            horizon=1,
+        )
+
+
+def test_parent_behavior_cache_binds_nested_helper_class_and_method_state() -> None:
+    candidate = _domain("candidate", [[1, 2, 3]], "4" * 64)
+    parent = _HelperClassRuntimeToyTarget().eval()
+    cache = behavior_distillation.build_parent_behavior_cache(
+        parent,
+        candidate,
+        horizon=1,
+    )
+    _HelperClassRuntimeState.token_id = 4
+    try:
+        with pytest.raises(
+            TargetNativeBehaviorDistillationError,
+            match="execution contract changed",
+        ):
+            behavior_distillation.authenticate_parent_behavior_cache(
+                parent,
+                candidate,
+                cache,
+                horizon=1,
+            )
+    finally:
+        _HelperClassRuntimeState.token_id = 3
+
+    original_method = _HelperClassRuntimeState.token
+    _HelperClassRuntimeState.token = _replacement_helper_token
+    try:
+        with pytest.raises(
+            TargetNativeBehaviorDistillationError,
+            match="execution contract changed",
+        ):
+            behavior_distillation.authenticate_parent_behavior_cache(
+                parent,
+                candidate,
+                cache,
+                horizon=1,
+            )
+    finally:
+        _HelperClassRuntimeState.token = original_method
+
+
+def test_parent_behavior_cache_binds_forward_reachable_method_globals() -> None:
+    candidate = _domain("candidate", [[1, 2, 3]], "3" * 64)
+    parent = _MethodGlobalToyTarget().eval()
+    cache = behavior_distillation.build_parent_behavior_cache(
+        parent,
+        candidate,
+        horizon=1,
+    )
+    _METHOD_GLOBAL_STATE["token_id"] = 4
+    try:
+        with pytest.raises(
+            TargetNativeBehaviorDistillationError,
+            match="execution contract changed",
+        ):
+            behavior_distillation.authenticate_parent_behavior_cache(
+                parent,
+                candidate,
+                cache,
+                horizon=1,
+            )
+    finally:
+        _METHOD_GLOBAL_STATE["token_id"] = 3
+
+
+def test_parent_behavior_cache_binds_super_forward_global_state() -> None:
+    candidate = _domain("candidate", [[1, 2, 3]], "2" * 64)
+    parent = _SuperForwardGlobalDerived().eval()
+    cache = behavior_distillation.build_parent_behavior_cache(
+        parent,
+        candidate,
+        horizon=1,
+    )
+    _SUPER_FORWARD_GLOBAL_STATE["token_id"] = 4
+    try:
+        with pytest.raises(
+            TargetNativeBehaviorDistillationError,
+            match="execution contract changed",
+        ):
+            behavior_distillation.authenticate_parent_behavior_cache(
+                parent,
+                candidate,
+                cache,
+                horizon=1,
+            )
+    finally:
+        _SUPER_FORWARD_GLOBAL_STATE["token_id"] = 3
+
+
+def test_parent_behavior_cache_binds_explicit_base_method_global_state() -> None:
+    candidate = _domain("candidate", [[1, 2, 3]], "1" * 64)
+    parent = _ExplicitBaseMethodGlobalDerived().eval()
+    cache = behavior_distillation.build_parent_behavior_cache(
+        parent,
+        candidate,
+        horizon=1,
+    )
+    _EXPLICIT_BASE_METHOD_GLOBAL_STATE["token_id"] = 4
+    try:
+        with pytest.raises(
+            TargetNativeBehaviorDistillationError,
+            match="execution contract changed",
+        ):
+            behavior_distillation.authenticate_parent_behavior_cache(
+                parent,
+                candidate,
+                cache,
+                horizon=1,
+            )
+    finally:
+        _EXPLICIT_BASE_METHOD_GLOBAL_STATE["token_id"] = 3
+
+
+def test_execution_code_hash_ignores_adaptive_interpreter_specialization() -> None:
+    def adaptive_subject(values: dict[str, int]) -> int:
+        return values.get("value", 0) + 1
+
+    before = behavior_distillation._stable_code_sha256(adaptive_subject.__code__)
+    for _ in range(1000):
+        assert adaptive_subject({"value": 2}) == 3
+    after = behavior_distillation._stable_code_sha256(adaptive_subject.__code__)
+    assert after == before
+
+
+def test_qwen_config_integer_keys_and_tiny_models_are_cache_compatible() -> None:
+    transformers = pytest.importorskip("transformers")
+    if hasattr(transformers, "GPT2LMHeadModel"):
+        transformers.GPT2LMHeadModel(
+            transformers.GPT2Config(
+                vocab_size=32,
+                n_embd=16,
+                n_layer=1,
+                n_head=2,
+                n_positions=16,
+                n_ctx=16,
+                bos_token_id=1,
+                eos_token_id=2,
+            )
+        )
+    model_pairs = []
+    if hasattr(transformers, "Qwen2Config"):
+        model_pairs.append(
+            (
+                transformers.Qwen2Config,
+                transformers.Qwen2ForCausalLM,
+                {},
+            )
+        )
+    if hasattr(transformers, "Qwen3Config"):
+        model_pairs.append(
+            (
+                transformers.Qwen3Config,
+                transformers.Qwen3ForCausalLM,
+                {"head_dim": 8},
+            )
+        )
+    if not model_pairs:
+        pytest.skip("Installed Transformers has no Qwen2/Qwen3 runtime.")
+    candidate = _domain("candidate", [[1, 2]], "a" * 64)
+    for config_type, model_type, extras in model_pairs:
+        config = config_type(
+            vocab_size=32,
+            hidden_size=16,
+            intermediate_size=32,
+            num_hidden_layers=1,
+            num_attention_heads=2,
+            num_key_value_heads=1,
+            **extras,
+        )
+        raw_config = config.to_dict()
+        assert any(
+            isinstance(key, int) for key in raw_config["id2label"]
+        )
+        normalized = behavior_distillation._json_simple_value(raw_config)
+        assert normalized is not behavior_distillation._JSON_SIMPLE_UNSUPPORTED
+        model = model_type(config).eval()
+        cache = behavior_distillation.build_parent_behavior_cache(
+            model,
+            candidate,
+            horizon=1,
+        )
+        binding = behavior_distillation.authenticate_parent_behavior_cache(
+            model,
+            candidate,
+            cache,
+            horizon=1,
+        )
+        assert binding.cache_sha256 == cache.cache_sha256
+
+
+def test_qwen_cache_ignores_unrelated_output_registry_and_binds_relevant_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transformers = pytest.importorskip("transformers")
+    if not hasattr(transformers, "Qwen2ForCausalLM"):
+        pytest.skip("Installed Transformers has no Qwen2 runtime.")
+    from transformers.utils import output_capturing
+
+    model = transformers.Qwen2ForCausalLM(
+        transformers.Qwen2Config(
+            vocab_size=32,
+            hidden_size=16,
+            intermediate_size=32,
+            num_hidden_layers=1,
+            num_attention_heads=2,
+            num_key_value_heads=1,
+        )
+    ).eval()
+    candidate = _domain("candidate", [[1, 2]], "5" * 64)
+    cache = behavior_distillation.build_parent_behavior_cache(
+        model,
+        candidate,
+        horizon=1,
+    )
+    registry = output_capturing._CAN_RECORD_REGISTRY
+    monkeypatch.setitem(
+        registry,
+        "<unrelated-neural-forge-test-model>",
+        {"unsupported_unrelated_value": object()},
+    )
+    binding = behavior_distillation.authenticate_parent_behavior_cache(
+        model,
+        candidate,
+        cache,
+        horizon=1,
+    )
+    assert binding.cache_sha256 == cache.cache_sha256
+
+    relevant_key = str(type(model.model))
+    relevant_entry = dict(registry[relevant_key])
+    relevant_entry["hidden_states"] = type(model.model.layers[0].self_attn)
+    monkeypatch.setitem(registry, relevant_key, relevant_entry)
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="execution contract changed",
+    ):
+        behavior_distillation.authenticate_parent_behavior_cache(
+            model,
+            candidate,
+            cache,
+            horizon=1,
+        )
+
+
+def test_parent_behavior_cache_rejects_tensor_bytes_and_execution_drift() -> None:
+    torch.manual_seed(20260720)
+    parent = _StrictToyTarget()
+    candidate = _domain("candidate", [[1, 2, 3]], "a" * 64)
+    cache = behavior_distillation.build_parent_behavior_cache(
+        parent,
+        candidate,
+        horizon=1,
+    )
+    version = parent.lm_head.weight._version
+    parent.lm_head.weight.data.add_(
+        1000.0 * torch.randn_like(parent.lm_head.weight)
+    )
+    assert parent.lm_head.weight._version == version
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="tensor-state bytes or topology changed",
+    ):
+        behavior_distillation.authenticate_parent_behavior_cache(
+            parent,
+            candidate,
+            cache,
+            horizon=1,
+        )
+
+    execution_parent = _StrictToyTarget()
+    execution_parent.behavior_scale = 1.0
+    execution_cache = behavior_distillation.build_parent_behavior_cache(
+        execution_parent,
+        candidate,
+        horizon=1,
+    )
+    execution_parent.behavior_scale = 2.0
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="execution contract changed",
+    ):
+        behavior_distillation.authenticate_parent_behavior_cache(
+            execution_parent,
+            candidate,
+            execution_cache,
+            horizon=1,
+        )
+
+
+def test_parent_behavior_cache_rejects_forward_interception() -> None:
+    parent = _StrictToyTarget()
+    candidate = _domain("candidate", [[1, 2, 3]], "b" * 64)
+    handle = parent.register_forward_pre_hook(lambda _module, _args: None)
+    try:
+        with pytest.raises(
+            TargetNativeBehaviorDistillationError,
+            match="forbids local forward/pre-forward hooks",
+        ):
+            behavior_distillation.build_parent_behavior_cache(
+                parent,
+                candidate,
+                horizon=1,
+            )
+    finally:
+        handle.remove()
+
+    parent.forward = parent.forward  # type: ignore[method-assign]
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="instance-level forward overrides",
+    ):
+        behavior_distillation.build_parent_behavior_cache(
+            parent,
+            candidate,
+            horizon=1,
+        )
+
+    global_parent = _StrictToyTarget()
+    global_handle = torch.nn.modules.module.register_module_forward_pre_hook(
+        lambda _module, _args: None
+    )
+    try:
+        with pytest.raises(
+            TargetNativeBehaviorDistillationError,
+            match="forbids global forward/pre-forward hooks",
+        ):
+            behavior_distillation.build_parent_behavior_cache(
+                global_parent,
+                candidate,
+                horizon=1,
+            )
+    finally:
+        global_handle.remove()
+
+
+def test_training_reuses_fit_and_candidate_parent_caches_and_audits_hits() -> None:
+    torch.manual_seed(20260716)
+    child = _StrictToyTarget()
+    uncached_child = copy.deepcopy(child)
+    parent = copy.deepcopy(child)
+    with torch.no_grad():
+        parent.lm_head.weight.copy_(torch.roll(parent.lm_head.weight, 3, dims=0))
+    transaction = _transaction(child)
+    domains = {
+        "fit": _domain("fit", [[1, 2, 3], [4, 5, 6]], "e" * 64),
+        "candidate": _domain("candidate", [[7, 8], [9, 10]], "f" * 64),
+    }
+    schedule = BehaviorDistillationSchedule(
+        steps=2,
+        learning_rate=1e-3,
+        fit_horizon=2,
+        evaluation_horizon=1,
+        fit_prompts_per_step=1,
+        parent_only_steps=1,
+        warmup_fit_horizon=1,
+        top_k=3,
+        sealed_evaluation_policy="disabled",
+    )
+    caches = {
+        "fit": behavior_distillation.build_parent_behavior_cache(
+            parent,
+            domains["fit"],
+            horizon=2,
+        ),
+        "candidate": behavior_distillation.build_parent_behavior_cache(
+            parent,
+            domains["candidate"],
+            horizon=1,
+        ),
+    }
+    result = train_target_native_behavior_distillation(
+        transaction,
+        parent,
+        domains,
+        schedule,
+        seed=17,
+        parent_behavior_caches=caches,
+        optimizer_factory=lambda parameters: torch.optim.SGD(
+            parameters,
+            lr=schedule.learning_rate,
+        ),
+    )
+    assert result.training_audit.parent_greedy_cache_prompt_count == 2
+    assert result.training_audit.parent_greedy_cache_forward_count == 0
+    audit = result.training_audit.as_dict()["parent_behavior_cache"]
+    assert audit["cache_hit"] is True
+    assert audit["roles"]["fit"]["training_cache_hit"] is True
+    assert audit["roles"]["fit"]["gross_parent_forward_count_avoided"] == 6
+    assert audit["roles"]["calibration"]["evaluation_cache_hit_count"] == 2
+    assert (
+        audit["roles"]["calibration"]["gross_parent_forward_count_avoided"]
+        == 4
+    )
+    assert audit["gross_parent_forward_count_avoided"] == 10
+    assert audit["one_time_cache_build_parent_forward_count"] == 6
+    assert audit["single_consumer_net_parent_forward_count_avoided"] == 4
+    assert audit["parent_cache_rows_reauthenticated_after_training"] is True
+    assert audit["parent_tensor_state_sha256_before"] == (
+        audit["parent_tensor_state_sha256_after"]
+    )
+    assert audit["parent_execution_contract_sha256_before"] == (
+        audit["parent_execution_contract_sha256_after"]
+    )
+    assert audit["covered_parent_execution_state_authenticated"] is True
+    assert audit["arbitrary_python_runtime_state_authenticated"] is False
+    assert audit["live_parent_outputs_reexecuted_at_terminal"] is False
+    assert audit["terminal_authentication_scope"] == (
+        "cached-row-bytes-and-covered-execution-state"
+    )
+    assert "parent_runtime_state_authenticated" not in audit
+    assert behavior_distillation._canonical_sha256(
+        {name: value for name, value in audit.items() if name != "audit_sha256"}
+    ) == audit["audit_sha256"]
+    uncached_transaction = _transaction(uncached_child)
+    uncached_result = train_target_native_behavior_distillation(
+        uncached_transaction,
+        parent,
+        domains,
+        schedule,
+        seed=17,
+        optimizer_factory=lambda parameters: torch.optim.SGD(
+            parameters,
+            lr=schedule.learning_rate,
+        ),
+    )
+    assert uncached_result.fit_metrics.as_dict() == result.fit_metrics.as_dict()
+    assert uncached_result.candidate_metrics.as_dict() == (
+        result.candidate_metrics.as_dict()
+    )
+    assert [value.as_dict() for value in uncached_result.checkpoints] == [
+        value.as_dict() for value in result.checkpoints
+    ]
+    assert uncached_result.factor_pack.tensor_sha256s == (
+        result.factor_pack.tensor_sha256s
+    )
+    assert uncached_result.selected_step == result.selected_step
+    assert "parent_behavior_cache" not in uncached_result.training_audit.as_dict()
+    uncached_transaction.rollback()
+    transaction.rollback()
+
+
+def _cache_mutation_training_case(seed: int):
+    torch.manual_seed(seed)
+    child = _StrictToyTarget()
+    parent = copy.deepcopy(child)
+    with torch.no_grad():
+        parent.lm_head.weight.copy_(torch.roll(parent.lm_head.weight, 3, dims=0))
+    transaction = _transaction(child)
+    domains = {
+        "fit": _domain("fit", [[1, 2, 3], [4, 5, 6]], "7" * 64),
+        "candidate": _domain("candidate", [[7, 8], [9, 10]], "8" * 64),
+    }
+    schedule = BehaviorDistillationSchedule(
+        steps=2,
+        learning_rate=1e-3,
+        fit_horizon=2,
+        evaluation_horizon=1,
+        fit_prompts_per_step=1,
+        parent_only_steps=1,
+        warmup_fit_horizon=1,
+        top_k=3,
+        sealed_evaluation_policy="disabled",
+    )
+    caches = {
+        "fit": behavior_distillation.build_parent_behavior_cache(
+            parent,
+            domains["fit"],
+            horizon=2,
+        ),
+        "candidate": behavior_distillation.build_parent_behavior_cache(
+            parent,
+            domains["candidate"],
+            horizon=1,
+        ),
+    }
+    return transaction, parent, domains, schedule, caches
+
+
+def test_cached_training_rolls_back_if_parent_changes_after_authentication() -> None:
+    transaction, parent, domains, schedule, caches = _cache_mutation_training_case(
+        20260721
+    )
+    initial = capture_target_native_factor_state(transaction).factor_state_sha256
+
+    def mutate_parent(step: int) -> None:
+        if step == 1:
+            with torch.no_grad():
+                parent.lm_head.weight.add_(1.0)
+
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="runtime tensor ownership or versions changed",
+    ):
+        train_target_native_behavior_distillation(
+            transaction,
+            parent,
+            domains,
+            schedule,
+            seed=17,
+            parent_behavior_caches=caches,
+            post_optimizer_step_callback=mutate_parent,
+            optimizer_factory=lambda parameters: torch.optim.SGD(
+                parameters,
+                lr=schedule.learning_rate,
+            ),
+        )
+    assert capture_target_native_factor_state(transaction).factor_state_sha256 == initial
+    transaction.rollback()
+
+
+def test_cached_training_rolls_back_if_cached_rows_change_after_binding() -> None:
+    transaction, parent, domains, schedule, caches = _cache_mutation_training_case(
+        20260722
+    )
+    initial = capture_target_native_factor_state(transaction).factor_state_sha256
+
+    def mutate_cache(step: int) -> None:
+        if step == 1:
+            caches["fit"].traces[0].steps[0].action_logits.add_(1.0)
+
+    with pytest.raises(
+        TargetNativeBehaviorDistillationError,
+        match="output-logit row hash changed",
+    ):
+        train_target_native_behavior_distillation(
+            transaction,
+            parent,
+            domains,
+            schedule,
+            seed=17,
+            parent_behavior_caches=caches,
+            post_optimizer_step_callback=mutate_cache,
+            optimizer_factory=lambda parameters: torch.optim.SGD(
+                parameters,
+                lr=schedule.learning_rate,
+            ),
+        )
+    assert capture_target_native_factor_state(transaction).factor_state_sha256 == initial
+    transaction.rollback()
+
+
+def test_cached_training_uses_private_rows_during_mutate_restore_callback() -> None:
+    transaction, parent, domains, schedule, caches = _cache_mutation_training_case(
+        20260723
+    )
+    public_row = caches["fit"].traces[0].steps[0].action_logits
+    original_row = public_row.clone()
+
+    def mutate_then_restore_public_cache(step: int) -> None:
+        with torch.no_grad():
+            if step == 1:
+                public_row.add_(1000.0)
+            elif step == 2:
+                public_row.copy_(original_row)
+
+    mutated_result = train_target_native_behavior_distillation(
+        transaction,
+        parent,
+        domains,
+        schedule,
+        seed=17,
+        parent_behavior_caches=caches,
+        post_optimizer_step_callback=mutate_then_restore_public_cache,
+        optimizer_factory=lambda parameters: torch.optim.SGD(
+            parameters,
+            lr=schedule.learning_rate,
+        ),
+    )
+    assert torch.equal(public_row, original_row)
+    behavior_distillation.authenticate_parent_behavior_cache(
+        parent,
+        domains["fit"],
+        caches["fit"],
+        horizon=2,
+    )
+
+    clean_transaction, clean_parent, clean_domains, clean_schedule, clean_caches = (
+        _cache_mutation_training_case(20260723)
+    )
+    clean_result = train_target_native_behavior_distillation(
+        clean_transaction,
+        clean_parent,
+        clean_domains,
+        clean_schedule,
+        seed=17,
+        parent_behavior_caches=clean_caches,
+        optimizer_factory=lambda parameters: torch.optim.SGD(
+            parameters,
+            lr=clean_schedule.learning_rate,
+        ),
+    )
+    assert mutated_result.factor_pack.tensor_sha256s == (
+        clean_result.factor_pack.tensor_sha256s
+    )
+    assert [value.as_dict() for value in mutated_result.checkpoints] == [
+        value.as_dict() for value in clean_result.checkpoints
+    ]
+    clean_transaction.rollback()
+    transaction.rollback()
 
 
 def test_rollout_first_policy_acquires_behavior_without_strict_dominance() -> None:
