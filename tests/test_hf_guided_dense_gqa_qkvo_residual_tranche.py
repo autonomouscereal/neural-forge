@@ -542,6 +542,12 @@ def test_real_transaction_bakes_nested_lexical_then_guided_composite(
     torch.manual_seed(59)
     model = _LexicalToyModel()
     native_count = sum(value.numel() for value in model.parameters())
+    native_child_state_sha256 = progressive_bridge._dense_model_state_sha256(
+        model
+    )
+    native_tensor_guards = progressive_bridge._capture_native_tensor_guards(
+        model
+    )
     inherited = _install_inherited(model)
     lexical = install_dense_lexical_residual_adapter(
         model,
@@ -557,6 +563,8 @@ def test_real_transaction_bakes_nested_lexical_then_guided_composite(
         exact_unique_parameters=native_count,
         topology=SimpleNamespace(layout=object()),
         native_before=certificate,
+        native_child_state_sha256=native_child_state_sha256,
+        native_tensor_guards=native_tensor_guards,
         qkvo_handle=combined,
         swiglu_handle=swiglu,
         lexical_handle=lexical,

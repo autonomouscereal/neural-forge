@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import threading
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import pytest
 import torch
@@ -35,6 +38,7 @@ from neural_forge.hf_parent_compiler import HFParentCompilerResult
 from neural_forge.hf_progressive_target_bridge import (
     ExactTargetCompilerTransaction,
     ExternalBehaviorGateReceipt,
+    ExperimentalRecoveryMaterializationReceipt,
     ProgressiveTargetBridgeError,
     ProgressiveTargetPublicationError,
     certify_native_dense_gqa_target,
@@ -100,6 +104,25 @@ class _ToyTarget(nn.Module):
 
     def get_output_embeddings(self) -> nn.Module:
         return self.lm_head
+
+
+class _RuntimeConfig:
+    def __init__(self) -> None:
+        shared: list[object] = ["stable"]
+        self.shared = shared
+        self.mapping: dict[str, object] = {
+            "shared": shared,
+            "self": self,
+        }
+
+
+def _omit_norm_weight_state_dict_hook(
+    _module: nn.Module,
+    state: dict[str, Tensor],
+    prefix: str,
+    _local_metadata: dict[str, object],
+) -> None:
+    state.pop(f"{prefix}norm.weight", None)
 
 
 def _layout() -> DecoderLayout:
@@ -204,6 +227,24 @@ def _approval(*, passed: bool = True) -> ExternalBehaviorGateReceipt:
         heldout_action_count=12,
         free_running_rollout_count=6,
         passed=passed,
+    )
+
+
+def _experimental_receipt(
+    transaction: ExactTargetCompilerTransaction,
+) -> tuple[dict[str, object], ExperimentalRecoveryMaterializationReceipt]:
+    contract: dict[str, object] = {
+        "schema": target_bridge.EXPERIMENTAL_RECOVERY_CONTRACT_SCHEMA,
+        "factor_state_sha256": "d" * 64,
+        "factor_payload_schema": "neural-forge-target-native-factor-pack-v4",
+        "native_child_state_sha256": transaction.native_child_state_sha256,
+        "blank_control_state_sha256": transaction.native_child_state_sha256,
+        "exact_unique_parameters": transaction.exact_unique_parameters,
+        "publication_authorized": False,
+        "sealed_data_accessed": False,
+    }
+    return contract, transaction.experimental_recovery_receipt(
+        experiment_contract=contract
     )
 
 
@@ -318,6 +359,490 @@ def test_combined_transaction_counts_temporary_state_and_publishes_exact_native(
     )
     assert certificate.dense_qkvo_projection_count == 8
     assert certificate.dense_swiglu_projection_count == 6
+
+
+def test_experimental_materialization_is_dense_unaccepted_and_restores_native() -> (
+    None
+):
+    torch.manual_seed(221)
+    model = _ToyTarget().eval()
+    inputs = torch.tensor([[2, 5, 9]])
+    baseline = model(inputs).detach().clone()
+    exact = exact_unique_parameter_count(model)
+    keys = tuple(sorted(model.state_dict()))
+    transaction = install_exact_target_compiler_transaction(
+        model,
+        exact_unique_parameters=exact,
+        qkvo_sites=(DenseGQASite(0, 1), DenseGQASite(1, 0)),
+        qkvo_rank=2,
+        swiglu_layer_indices=(0, 1),
+        swiglu_rank=2,
+        lexical_rank=2,
+        layout=_layout(),
+        initialization_seed=37,
+    )
+    _activate(transaction)
+    live = model(inputs).detach().clone()
+    experiment_contract, receipt = _experimental_receipt(transaction)
+
+    with transaction.experimental_recovery_materialization(
+        receipt,
+        experiment_contract=experiment_contract,
+    ) as report_bytes:
+        assert type(report_bytes) is bytes
+        report = json.loads(report_bytes)
+        assert (
+            json.dumps(
+                report,
+                allow_nan=False,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("ascii")
+            == report_bytes
+        )
+        transaction_hash = report.pop("materialization_transaction_sha256")
+        assert target_bridge._canonical_sha256(report) == transaction_hash
+        report["materialization_transaction_sha256"] = transaction_hash
+        assert len(hashlib.sha256(report_bytes).hexdigest()) == 64
+        baked = model(inputs).detach().clone()
+        torch.testing.assert_close(baked, live, rtol=4e-5, atol=4e-5)
+        assert report["status"] == "experimental-unaccepted"
+        assert report["publication_authorized"] is False
+        assert report["accepted_artifact"] is False
+        assert report["sealed_data_accessed"] is False
+        assert report["recovery_training_required"] is True
+        assert report["exact_unique_parameters"] == exact
+        assert report["materialized_registered_adapter_parameter_count"] == 0
+        assert (
+            report["materialized_registered_source_sized_sidecar_parameter_count"]
+            == 0
+        )
+        assert report["arbitrary_python_runtime_reference_audit_performed"] is False
+        assert len(report["materialized_native_state_sha256"]) == 64
+        receipt = report["experimental_recovery_receipt"]
+        assert receipt["status"] == "experimental-unaccepted"
+        assert receipt["publication_authorized"] is False
+        with pytest.raises(TypeError):
+            report_bytes[0] = 0  # type: ignore[index]
+        with pytest.raises((AttributeError, TypeError)):
+            object.__setattr__(report_bytes, "forged", True)
+        assert exact_unique_parameter_count(model) == exact
+        assert tuple(sorted(model.state_dict())) == keys
+
+    assert not transaction.is_live
+    assert torch.equal(model(inputs), baseline)
+    assert exact_unique_parameter_count(model) == exact
+    assert tuple(sorted(model.state_dict())) == keys
+    assert transaction.publication_report is None
+
+
+def test_experimental_materialization_rejects_mutation_and_publication_receipt() -> (
+    None
+):
+    model = _ToyTarget().eval()
+    exact = exact_unique_parameter_count(model)
+    transaction = install_exact_target_compiler_transaction(
+        model,
+        exact_unique_parameters=exact,
+        qkvo_sites=(DenseGQASite(0, 0),),
+        qkvo_rank=1,
+        swiglu_layer_indices=(0,),
+        swiglu_rank=1,
+        layout=_layout(),
+    )
+    _activate(transaction)
+    experiment_contract, receipt = _experimental_receipt(transaction)
+    baseline_embedding = model.embedding.weight.detach().clone()
+    with pytest.raises(ProgressiveTargetPublicationError):
+        transaction.bake_for_publication(receipt)  # type: ignore[arg-type]
+    with pytest.raises(
+        ProgressiveTargetPublicationError,
+        match="mutated instead of serialized",
+    ):
+        with transaction.experimental_recovery_materialization(
+            receipt,
+            experiment_contract=experiment_contract,
+        ):
+            with torch.no_grad():
+                # ``.data`` bypasses PyTorch's tensor version counter; the
+                # content digest must still reject the mutation.
+                model.embedding.weight.data.add_(0.01)
+    assert not transaction.is_live
+    assert torch.equal(model.embedding.weight, baseline_embedding)
+
+
+def test_experimental_materialization_budget_mismatch_leaves_transaction_live() -> (
+    None
+):
+    model = _ToyTarget().eval()
+    exact = exact_unique_parameter_count(model)
+    transaction = install_exact_target_compiler_transaction(
+        model,
+        exact_unique_parameters=exact,
+        qkvo_sites=(DenseGQASite(0, 0),),
+        qkvo_rank=1,
+        swiglu_layer_indices=(0,),
+        swiglu_rank=1,
+        layout=_layout(),
+    )
+    experiment_contract, valid_receipt = _experimental_receipt(transaction)
+    invalid_receipt = replace(
+        valid_receipt,
+        exact_unique_parameters=exact + 1,
+    )
+    with pytest.raises(
+        ProgressiveTargetPublicationError,
+        match="exact child budget",
+    ):
+        with transaction.experimental_recovery_materialization(
+            invalid_receipt,
+            experiment_contract=experiment_contract,
+        ):
+            raise AssertionError("unreachable")
+    assert transaction.is_live
+    transaction.rollback()
+
+
+def test_experimental_materialization_rejects_forged_live_factor_binding() -> None:
+    model = _ToyTarget().eval()
+    exact = exact_unique_parameter_count(model)
+    transaction = install_exact_target_compiler_transaction(
+        model,
+        exact_unique_parameters=exact,
+        qkvo_sites=(DenseGQASite(0, 0),),
+        qkvo_rank=1,
+        swiglu_layer_indices=(0,),
+        swiglu_rank=1,
+        layout=_layout(),
+    )
+    experiment_contract, receipt = _experimental_receipt(transaction)
+    forged = replace(receipt, live_factor_state_sha256="f" * 64)
+    with pytest.raises(
+        ProgressiveTargetPublicationError,
+        match="live factor tensors",
+    ):
+        with transaction.experimental_recovery_materialization(
+            forged,
+            experiment_contract=experiment_contract,
+        ):
+            raise AssertionError("unreachable")
+    assert transaction.is_live
+    transaction.rollback()
+
+
+def test_experimental_receipt_rejects_native_child_drift_before_bake() -> None:
+    model = _ToyTarget().eval()
+    exact = exact_unique_parameter_count(model)
+    transaction = install_exact_target_compiler_transaction(
+        model,
+        exact_unique_parameters=exact,
+        qkvo_sites=(DenseGQASite(0, 0),),
+        qkvo_rank=1,
+        swiglu_layer_indices=(0,),
+        swiglu_rank=1,
+        layout=_layout(),
+    )
+    contract = {
+        "schema": target_bridge.EXPERIMENTAL_RECOVERY_CONTRACT_SCHEMA,
+        "factor_state_sha256": "d" * 64,
+        "factor_payload_schema": "neural-forge-target-native-factor-pack-v4",
+        "native_child_state_sha256": transaction.native_child_state_sha256,
+        "blank_control_state_sha256": transaction.native_child_state_sha256,
+        "exact_unique_parameters": exact,
+        "publication_authorized": False,
+        "sealed_data_accessed": False,
+    }
+    model.embedding.weight.data.add_(0.25)
+    with pytest.raises(
+        ProgressiveTargetPublicationError,
+        match="Native child tensor changed",
+    ):
+        transaction.experimental_recovery_receipt(
+            experiment_contract=contract
+        )
+    transaction.rollback()
+
+
+def test_experimental_materialization_report_failure_restores_atomically(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _ToyTarget().eval()
+    inputs = torch.tensor([[1, 3, 5]])
+    baseline = model(inputs).detach().clone()
+    exact = exact_unique_parameter_count(model)
+    transaction = install_exact_target_compiler_transaction(
+        model,
+        exact_unique_parameters=exact,
+        qkvo_sites=(DenseGQASite(0, 0),),
+        qkvo_rank=1,
+        swiglu_layer_indices=(0,),
+        swiglu_rank=1,
+        layout=_layout(),
+    )
+    _activate(transaction)
+    experiment_contract, receipt = _experimental_receipt(transaction)
+    original_hash = target_bridge._dense_model_state_sha256
+    fail_once = True
+
+    def flaky_hash(value: nn.Module) -> str:
+        nonlocal fail_once
+        if fail_once:
+            fail_once = False
+            raise ProgressiveTargetBridgeError("synthetic evidence hash failure")
+        return original_hash(value)
+
+    monkeypatch.setattr(target_bridge, "_dense_model_state_sha256", flaky_hash)
+    with pytest.raises(
+        ProgressiveTargetBridgeError,
+        match="synthetic evidence hash failure",
+    ):
+        with transaction.experimental_recovery_materialization(
+            receipt,
+            experiment_contract=experiment_contract,
+        ):
+            raise AssertionError("unreachable")
+    assert not transaction.is_live
+    assert torch.equal(model(inputs), baseline)
+
+
+def test_experimental_materialization_rejects_training_and_restores_grad_runtime() -> (
+    None
+):
+    torch.manual_seed(607)
+    model = _ToyTarget().eval()
+    inputs = torch.tensor([[1, 4, 7]])
+    baseline = model(inputs).detach().clone()
+    original_gradient = torch.randn_like(model.embedding.weight)
+    original_gradient_bytes = original_gradient.clone()
+    model.embedding.weight.grad = original_gradient
+    original_training = tuple(
+        (module, bool(module.training)) for module in model.modules()
+    )
+    original_requires_grad = tuple(
+        (parameter, bool(parameter.requires_grad)) for parameter in model.parameters()
+    )
+    original_gradients = tuple(
+        (parameter, parameter.grad) for parameter in model.parameters()
+    )
+    exact = exact_unique_parameter_count(model)
+    transaction = install_exact_target_compiler_transaction(
+        model,
+        exact_unique_parameters=exact,
+        qkvo_sites=(DenseGQASite(0, 0),),
+        qkvo_rank=1,
+        swiglu_layer_indices=(0,),
+        swiglu_rank=1,
+        layout=_layout(),
+    )
+    _activate(transaction)
+    experiment_contract, receipt = _experimental_receipt(transaction)
+
+    with pytest.raises(
+        ProgressiveTargetPublicationError,
+        match="mutated instead of serialized",
+    ):
+        with transaction.experimental_recovery_materialization(
+            receipt,
+            experiment_contract=experiment_contract,
+        ):
+            model.train()
+            model(inputs).sum().backward()
+            model.embedding.weight.requires_grad_(False)
+
+    assert not transaction.is_live
+    assert torch.equal(model(inputs), baseline)
+    assert all(
+        bool(module.training) == training
+        for module, training in original_training
+    )
+    assert all(
+        bool(parameter.requires_grad) == requires_grad
+        for parameter, requires_grad in original_requires_grad
+    )
+    assert all(
+        parameter.grad is gradient
+        for parameter, gradient in original_gradients
+    )
+    assert model.embedding.weight.grad is original_gradient
+    assert torch.equal(original_gradient, original_gradient_bytes)
+
+
+def test_experimental_materialization_restores_parameter_buffer_owners_and_aliases() -> (
+    None
+):
+    model = _ToyTarget().eval()
+    original_parameter = model.embedding.weight
+    model.register_parameter("embedding_alias", original_parameter)
+    original_buffer = torch.tensor([1.0, 2.0, 3.0])
+    model.register_buffer("runtime_buffer", original_buffer)
+    model.register_buffer("runtime_buffer_alias", original_buffer)
+    original_root_parameters = model._parameters
+    original_root_buffers = model._buffers
+    original_embedding_parameters = model.embedding._parameters
+    exact = exact_unique_parameter_count(model)
+    transaction = install_exact_target_compiler_transaction(
+        model,
+        exact_unique_parameters=exact,
+        qkvo_sites=(DenseGQASite(0, 0),),
+        qkvo_rank=1,
+        swiglu_layer_indices=(0,),
+        swiglu_rank=1,
+        layout=_layout(),
+    )
+    _activate(transaction)
+    experiment_contract, receipt = _experimental_receipt(transaction)
+
+    with pytest.raises(
+        ProgressiveTargetPublicationError,
+        match="mutated instead of serialized",
+    ):
+        with transaction.experimental_recovery_materialization(
+            receipt,
+            experiment_contract=experiment_contract,
+        ):
+            model.embedding.weight = nn.Parameter(
+                model.embedding.weight.detach().clone()
+            )
+            model.runtime_buffer = model.runtime_buffer.detach().clone()
+
+    assert not transaction.is_live
+    assert model._parameters is original_root_parameters
+    assert model._buffers is original_root_buffers
+    assert model.embedding._parameters is original_embedding_parameters
+    assert model.embedding.weight is original_parameter
+    assert model.embedding_alias is original_parameter
+    assert model.runtime_buffer is original_buffer
+    assert model.runtime_buffer_alias is original_buffer
+    assert torch.equal(original_buffer, torch.tensor([1.0, 2.0, 3.0]))
+
+
+def test_experimental_materialization_restores_hooks_and_mutable_config_graph() -> (
+    None
+):
+    model = _ToyTarget().eval()
+    runtime_config = _RuntimeConfig()
+    shared = runtime_config.shared
+    mapping = runtime_config.mapping
+    model.runtime_config = runtime_config
+    model.runtime_config_alias = runtime_config
+    original_hook_registry = model._forward_hooks
+    original_hook_items = tuple(original_hook_registry.items())
+    exact = exact_unique_parameter_count(model)
+    transaction = install_exact_target_compiler_transaction(
+        model,
+        exact_unique_parameters=exact,
+        qkvo_sites=(DenseGQASite(0, 0),),
+        qkvo_rank=1,
+        swiglu_layer_indices=(0,),
+        swiglu_rank=1,
+        layout=_layout(),
+    )
+    _activate(transaction)
+    experiment_contract, receipt = _experimental_receipt(transaction)
+
+    with pytest.raises(
+        ProgressiveTargetPublicationError,
+        match="mutated instead of serialized",
+    ):
+        with transaction.experimental_recovery_materialization(
+            receipt,
+            experiment_contract=experiment_contract,
+        ):
+            model.register_forward_hook(lambda *_args: None)
+            shared.append("mutated")
+            mapping["extra"] = ["mutated"]
+            runtime_config.extra = {"mutated": True}
+            model.runtime_config = _RuntimeConfig()
+            model.added_runtime_reference = object()
+
+    assert not transaction.is_live
+    assert model._forward_hooks is original_hook_registry
+    assert tuple(model._forward_hooks.items()) == original_hook_items
+    assert model.runtime_config is runtime_config
+    assert model.runtime_config_alias is runtime_config
+    assert runtime_config.shared is shared
+    assert shared == ["stable"]
+    assert runtime_config.mapping is mapping
+    assert tuple(mapping) == ("shared", "self")
+    assert mapping["shared"] is shared
+    assert mapping["self"] is runtime_config
+    assert not hasattr(runtime_config, "extra")
+    assert not hasattr(model, "added_runtime_reference")
+
+
+def test_experimental_materialization_fails_closed_for_unsupported_runtime() -> None:
+    model = _ToyTarget().eval()
+    model.runtime_lock = threading.Lock()
+    exact = exact_unique_parameter_count(model)
+    transaction = install_exact_target_compiler_transaction(
+        model,
+        exact_unique_parameters=exact,
+        qkvo_sites=(DenseGQASite(0, 0),),
+        qkvo_rank=1,
+        swiglu_layer_indices=(0,),
+        swiglu_rank=1,
+        layout=_layout(),
+    )
+    experiment_contract, receipt = _experimental_receipt(transaction)
+    with pytest.raises(
+        ProgressiveTargetPublicationError,
+        match="unsupported native runtime state",
+    ):
+        with transaction.experimental_recovery_materialization(
+            receipt,
+            experiment_contract=experiment_contract,
+        ):
+            raise AssertionError("unreachable")
+    assert transaction.is_live
+    transaction.rollback()
+
+
+def test_experimental_materialization_ignores_state_dict_omission_for_rollback() -> (
+    None
+):
+    model = _ToyTarget().eval()
+    hook_registry = model._state_dict_hooks
+    hook_handle = model.register_state_dict_post_hook(
+        _omit_norm_weight_state_dict_hook
+    )
+    hook_items = tuple(model._state_dict_hooks.items())
+    assert model._state_dict_hooks is hook_registry
+    assert "norm.weight" not in model.state_dict()
+    original_parameter = model.norm.weight
+    original_bytes = original_parameter.detach().clone()
+    exact = exact_unique_parameter_count(model)
+    transaction = install_exact_target_compiler_transaction(
+        model,
+        exact_unique_parameters=exact,
+        qkvo_sites=(DenseGQASite(0, 0),),
+        qkvo_rank=1,
+        swiglu_layer_indices=(0,),
+        swiglu_rank=1,
+        layout=_layout(),
+    )
+    _activate(transaction)
+    experiment_contract, receipt = _experimental_receipt(transaction)
+
+    with pytest.raises(RuntimeError, match="synthetic body failure") as caught:
+        with transaction.experimental_recovery_materialization(
+            receipt,
+            experiment_contract=experiment_contract,
+        ):
+            model.norm.weight.data.add_(3.0)
+            raise RuntimeError("synthetic body failure")
+
+    assert any(
+        "also mutated before cleanup" in note
+        for note in getattr(caught.value, "__notes__", ())
+    )
+    assert not transaction.is_live
+    assert model.norm.weight is original_parameter
+    assert torch.equal(model.norm.weight, original_bytes)
+    assert model._state_dict_hooks is hook_registry
+    assert tuple(model._state_dict_hooks.items()) == hook_items
+    assert "norm.weight" not in model.state_dict()
+    hook_handle.remove()
 
 
 def test_composite_lexical_transaction_counts_trains_and_publishes_exact_native() -> (

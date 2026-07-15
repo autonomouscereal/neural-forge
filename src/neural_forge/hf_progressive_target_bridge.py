@@ -19,12 +19,22 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Mapping, Sequence
-from contextlib import ExitStack
+import sys
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import ExitStack, contextmanager
 from dataclasses import asdict, dataclass
+from enum import Enum
+from pathlib import PurePath
+from types import (
+    BuiltinFunctionType,
+    FunctionType,
+    MethodType,
+    ModuleType,
+)
 from typing import Any, Literal
+from weakref import ReferenceType
 
-from torch import Tensor, nn
+from torch import Tensor, nn, no_grad, strided, uint8
 
 from neural_forge.hf_arch_layout import (
     DecoderLayout,
@@ -69,6 +79,15 @@ EXACT_TARGET_COMPILER_TRANSACTION_INSTALLATION_SCHEMA = (
 )
 EXACT_TARGET_COMPILER_TRANSACTION_PUBLICATION_SCHEMA = (
     "neural-forge-exact-target-compiler-transaction-publication-v1"
+)
+EXACT_TARGET_EXPERIMENTAL_RECOVERY_MATERIALIZATION_SCHEMA = (
+    "neural-forge-exact-target-experimental-recovery-materialization-v1"
+)
+EXPERIMENTAL_RECOVERY_MATERIALIZATION_RECEIPT_SCHEMA = (
+    "neural-forge-experimental-recovery-materialization-receipt-v1"
+)
+EXPERIMENTAL_RECOVERY_CONTRACT_SCHEMA = (
+    "neural-forge-experimental-recovery-contract-v1"
 )
 EXACT_TARGET_COMPILER_OUTPUT_TRAINING_SCOPE_SCHEMA = (
     "neural-forge-exact-target-compiler-output-training-scope-v1"
@@ -132,6 +151,963 @@ def _canonical_sha256(value: Any) -> str:
             "Target provenance must be finite canonical JSON."
         ) from error
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _canonical_json_report_bytes(
+    value: Mapping[str, Any],
+    *,
+    hash_field: str,
+) -> bytes:
+    """Return built-in immutable canonical bytes after self-hash verification."""
+
+    payload = dict(value)
+    expected = _sha256(payload.get(hash_field), hash_field)
+    preimage = {key: item for key, item in payload.items() if key != hash_field}
+    if _canonical_sha256(preimage) != expected:
+        raise ProgressiveTargetPublicationError(
+            f"Canonical report {hash_field} does not authenticate."
+        )
+    try:
+        canonical = json.dumps(
+            payload,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+        decoded = json.loads(canonical)
+    except (TypeError, ValueError) as error:
+        raise ProgressiveTargetPublicationError(
+            "Canonical report is not finite JSON."
+        ) from error
+    if decoded != payload:
+        raise ProgressiveTargetPublicationError(
+            "Canonical report JSON round-trip changed its payload."
+        )
+    decoded_preimage = {
+        key: item for key, item in decoded.items() if key != hash_field
+    }
+    if _canonical_sha256(decoded_preimage) != expected:
+        raise ProgressiveTargetPublicationError(
+            "Canonical report bytes do not preserve their transaction hash."
+        )
+    return canonical
+
+
+def _dense_tensor_sha256(value: Tensor) -> str:
+    """Hash one dense tensor in bounded host-memory chunks."""
+
+    if value.layout != strided or value.device.type == "meta":
+        raise ProgressiveTargetBridgeError(
+            "Dense tensor hashing requires a dense non-meta tensor."
+        )
+    detached = value.detach()
+    if not detached.is_contiguous():
+        detached = detached.contiguous()
+    digest = hashlib.sha256()
+    digest.update(str(detached.dtype).encode("ascii"))
+    digest.update(b"\0")
+    digest.update(repr(tuple(detached.shape)).encode("ascii"))
+    digest.update(b"\0")
+    flat = detached.reshape(-1)
+    elements_per_chunk = max(
+        1,
+        (16 * 1024 * 1024) // max(1, detached.element_size()),
+    )
+    for start in range(0, int(flat.numel()), elements_per_chunk):
+        staged = flat[start : start + elements_per_chunk].to(
+            device="cpu"
+        ).contiguous()
+        digest.update(memoryview(staged.view(uint8).numpy()))
+    return digest.hexdigest()
+
+
+def _dense_model_state_sha256(model: nn.Module) -> str:
+    """Hash every directly registered tensor, alias, and byte."""
+
+    digest = hashlib.sha256()
+    rows = _registered_model_tensors(model)
+    aliases: dict[int, int] = {}
+    for kind, name, value, persistent in rows:
+        if value.layout != strided or value.device.type == "meta":
+            raise ProgressiveTargetBridgeError(
+                "Dense model-state hashing requires dense non-meta tensors."
+            )
+        alias_index = aliases.setdefault(id(value), len(aliases))
+        header = json.dumps(
+            {
+                "alias_index": alias_index,
+                "kind": kind,
+                "name": name,
+                "dtype": str(value.dtype),
+                "persistent": persistent,
+                "shape": list(value.shape),
+            },
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+        digest.update(len(header).to_bytes(8, "big"))
+        digest.update(header)
+        digest.update(bytes.fromhex(_dense_tensor_sha256(value)))
+    if not rows:
+        raise ProgressiveTargetBridgeError("Dense model-state hashing found no state.")
+    return digest.hexdigest()
+
+
+def _registered_model_tensors(
+    model: nn.Module,
+) -> tuple[tuple[str, str, Tensor, bool | None], ...]:
+    """Enumerate raw recursive registries without invoking state-dict hooks."""
+
+    values: list[tuple[str, str, Tensor, bool | None]] = []
+    active_modules: set[int] = set()
+
+    def visit(module: nn.Module, prefix: str) -> None:
+        module_id = id(module)
+        if module_id in active_modules:
+            raise ProgressiveTargetBridgeError(
+                "Registered module graph contains a recursive ownership cycle."
+            )
+        active_modules.add(module_id)
+        try:
+            for local_name, parameter in module._parameters.items():
+                if parameter is None:
+                    continue
+                if not isinstance(parameter, nn.Parameter):
+                    raise ProgressiveTargetBridgeError(
+                        "Registered parameter entry is not an nn.Parameter."
+                    )
+                name = f"{prefix}.{local_name}" if prefix else str(local_name)
+                values.append(("parameter", name, parameter, None))
+            for local_name, buffer in module._buffers.items():
+                if buffer is None:
+                    continue
+                if not isinstance(buffer, Tensor):
+                    raise ProgressiveTargetBridgeError(
+                        "Registered buffer entry is not a Tensor."
+                    )
+                name = f"{prefix}.{local_name}" if prefix else str(local_name)
+                values.append(
+                    (
+                        "buffer",
+                        name,
+                        buffer,
+                        local_name not in module._non_persistent_buffers_set,
+                    )
+                )
+            for local_name, child in module._modules.items():
+                if child is None:
+                    continue
+                if not isinstance(child, nn.Module):
+                    raise ProgressiveTargetBridgeError(
+                        "Registered child entry is not an nn.Module."
+                    )
+                child_prefix = (
+                    f"{prefix}.{local_name}" if prefix else str(local_name)
+                )
+                visit(child, child_prefix)
+        finally:
+            active_modules.remove(module_id)
+
+    visit(model, "")
+    values.sort(key=lambda row: (row[0], row[1]))
+    return tuple(values)
+
+
+def _named_model_tensors(
+    model: nn.Module,
+) -> tuple[tuple[str, str, Tensor], ...]:
+    return tuple(
+        (kind, name, value)
+        for kind, name, value, _persistent in _registered_model_tensors(model)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _RegisteredTensorBytesSnapshot:
+    tensor_bytes: Tensor
+    persistent: bool | None
+    alias_index: int
+
+
+def _snapshot_named_model_tensors(
+    model: nn.Module,
+) -> dict[tuple[str, str], _RegisteredTensorBytesSnapshot]:
+    """Clone raw registered tensors without invoking serialization hooks."""
+
+    snapshot: dict[tuple[str, str], _RegisteredTensorBytesSnapshot] = {}
+    aliases: dict[int, int] = {}
+    for kind, name, value, persistent in _registered_model_tensors(model):
+        if value.device.type == "meta":
+            raise ProgressiveTargetBridgeError(
+                "Experimental materialization cannot snapshot meta tensors."
+            )
+        snapshot[(kind, name)] = _RegisteredTensorBytesSnapshot(
+            tensor_bytes=value.detach().to(device="cpu").clone(),
+            persistent=persistent,
+            alias_index=aliases.setdefault(id(value), len(aliases)),
+        )
+    if not snapshot:
+        raise ProgressiveTargetBridgeError(
+            "Experimental materialization found no registered model tensors."
+        )
+    return snapshot
+
+
+def _restore_named_model_tensors(
+    model: nn.Module,
+    snapshot: Mapping[tuple[str, str], _RegisteredTensorBytesSnapshot],
+) -> None:
+    """Restore matching raw registry tensors from the pre-bake snapshot."""
+
+    source_alias_owners: dict[int, int] = {}
+    current_alias_sources: dict[int, int] = {}
+    with no_grad():
+        for kind, name, value, persistent in _registered_model_tensors(model):
+            source = snapshot.get((kind, name))
+            # Adapter-owned projection names differ while wrapped. Their own
+            # authenticated snapshots restore them before this pass. The final
+            # direct-registry digest below remains authoritative.
+            if source is None:
+                continue
+            source_bytes = source.tensor_bytes
+            current_id = id(value)
+            expected_current_id = source_alias_owners.setdefault(
+                source.alias_index,
+                current_id,
+            )
+            expected_source_alias = current_alias_sources.setdefault(
+                current_id,
+                source.alias_index,
+            )
+            if (
+                tuple(source_bytes.shape) != tuple(value.shape)
+                or source_bytes.dtype != value.dtype
+                or persistent != source.persistent
+                or expected_current_id != current_id
+                or expected_source_alias != source.alias_index
+            ):
+                raise ProgressiveTargetPublicationError(
+                    "Experimental cleanup registered tensor metadata or aliasing "
+                    f"changed at {kind}:{name}."
+                )
+            value.copy_(source_bytes.to(device=value.device))
+
+
+def _named_tensor_version_signature(model: nn.Module) -> tuple[tuple[Any, ...], ...]:
+    return tuple(
+        (kind, name, id(value), int(value._version))
+        for kind, name, value in _named_model_tensors(model)
+    )
+
+
+def _capture_native_tensor_guards(
+    model: nn.Module,
+) -> tuple[tuple[str, str, Tensor, str], ...]:
+    """Retain lightweight exact-byte guards over pre-install native tensors."""
+
+    return tuple(
+        (kind, name, value, _dense_tensor_sha256(value))
+        for kind, name, value in _named_model_tensors(model)
+    )
+
+
+_HOOK_REGISTRY_NAMES = (
+    "_backward_pre_hooks",
+    "_backward_hooks",
+    "_forward_hooks",
+    "_forward_hooks_with_kwargs",
+    "_forward_hooks_always_called",
+    "_forward_pre_hooks",
+    "_forward_pre_hooks_with_kwargs",
+    "_state_dict_hooks",
+    "_state_dict_pre_hooks",
+    "_load_state_dict_pre_hooks",
+    "_load_state_dict_post_hooks",
+)
+_CONTROLLED_MODULE_ATTRIBUTES = {
+    "training",
+    "_parameters",
+    "_buffers",
+    "_non_persistent_buffers_set",
+    "_modules",
+    *_HOOK_REGISTRY_NAMES,
+}
+
+
+@dataclass(frozen=True, slots=True)
+class _HookRegistrySnapshot:
+    name: str
+    existed: bool
+    value: Any
+    items: tuple[tuple[Any, Any], ...] | None
+
+
+@dataclass(frozen=True, slots=True)
+class _ModuleRuntimeSnapshot:
+    module: nn.Module
+    modules_registry: dict[str, nn.Module | None]
+    module_items: tuple[tuple[str, nn.Module | None], ...]
+    parameters_registry: dict[str, nn.Parameter | None]
+    parameter_items: tuple[tuple[str, nn.Parameter | None], ...]
+    buffers_registry: dict[str, Tensor | None]
+    buffer_items: tuple[tuple[str, Tensor | None], ...]
+    nonpersistent_registry: set[str]
+    nonpersistent_names: frozenset[str]
+    training: bool
+    hooks: tuple[_HookRegistrySnapshot, ...]
+    plain_attributes: tuple[tuple[str, Any], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _ParameterRuntimeSnapshot:
+    parameter: nn.Parameter
+    requires_grad: bool
+    gradient: Tensor | None
+    gradient_bytes: Tensor | None
+    gradient_sha256: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _BufferRuntimeSnapshot:
+    buffer: Tensor
+    tensor_bytes: Tensor
+    tensor_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class _PlainListRuntimeSnapshot:
+    value: list[Any]
+    items: tuple[Any, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _PlainDictRuntimeSnapshot:
+    value: dict[Any, Any]
+    items: tuple[tuple[Any, Any], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _PlainSetRuntimeSnapshot:
+    value: set[Any]
+    items: tuple[Any, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _PlainObjectRuntimeSnapshot:
+    value: Any
+    dictionary: dict[str, Any]
+    dictionary_items: tuple[tuple[str, Any], ...]
+    slot_items: tuple[tuple[str, bool, Any], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _PlainTensorRuntimeSnapshot:
+    value: Tensor
+    tensor_bytes: Tensor
+    tensor_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class _PlainRuntimeGraphSnapshot:
+    nodes: tuple[
+        _PlainListRuntimeSnapshot
+        | _PlainDictRuntimeSnapshot
+        | _PlainSetRuntimeSnapshot
+        | _PlainObjectRuntimeSnapshot
+        | _PlainTensorRuntimeSnapshot,
+        ...,
+    ]
+    unsupported_paths: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _ModelRuntimeSnapshot:
+    root: nn.Module
+    modules: tuple[_ModuleRuntimeSnapshot, ...]
+    parameters: tuple[_ParameterRuntimeSnapshot, ...]
+    buffers: tuple[_BufferRuntimeSnapshot, ...]
+    plain_runtime: _PlainRuntimeGraphSnapshot
+
+
+def _identity_items_equal(
+    value: Any,
+    expected: Sequence[tuple[Any, Any]],
+) -> bool:
+    if not isinstance(value, Mapping) or len(value) != len(expected):
+        return False
+    return all(
+        actual_key == expected_key and actual_value is expected_value
+        for (actual_key, actual_value), (expected_key, expected_value) in zip(
+            value.items(), expected, strict=True
+        )
+    )
+
+
+def _plain_attributes(module: nn.Module) -> tuple[tuple[str, Any], ...]:
+    return tuple(
+        sorted(
+            (
+                (str(name), value)
+                for name, value in module.__dict__.items()
+                if name not in _CONTROLLED_MODULE_ATTRIBUTES
+            ),
+            key=lambda row: row[0],
+        )
+    )
+
+
+def _plain_value_matches(actual: Any, expected: Any) -> bool:
+    if actual is expected:
+        return True
+    if isinstance(expected, (type(None), bool, int, float, complex, str, bytes)):
+        return type(actual) is type(expected) and actual == expected
+    if isinstance(expected, tuple) and isinstance(actual, tuple):
+        return len(actual) == len(expected) and all(
+            _plain_value_matches(left, right)
+            for left, right in zip(actual, expected, strict=True)
+        )
+    if isinstance(expected, frozenset) and isinstance(actual, frozenset):
+        return actual == expected
+    return False
+
+
+_PLAIN_ATOMIC_TYPES = (
+    type(None),
+    bool,
+    int,
+    float,
+    complex,
+    str,
+    bytes,
+    range,
+    slice,
+)
+_PLAIN_OPAQUE_TYPES = (
+    BuiltinFunctionType,
+    ReferenceType,
+    re.Pattern,
+)
+
+
+def _plain_slot_names(value: Any) -> tuple[str, ...]:
+    names: list[str] = []
+    for owner in type(value).__mro__:
+        declared = owner.__dict__.get("__slots__", ())
+        if isinstance(declared, str):
+            declared = (declared,)
+        for raw_name in declared:
+            name = str(raw_name)
+            if name in {"__dict__", "__weakref__"}:
+                continue
+            if name.startswith("__") and not name.endswith("__"):
+                name = f"_{owner.__name__.lstrip('_')}{name}"
+            if name not in names:
+                names.append(name)
+    return tuple(names)
+
+
+def _capture_plain_runtime_graph(
+    modules: Sequence[_ModuleRuntimeSnapshot],
+    *,
+    name: str,
+) -> _PlainRuntimeGraphSnapshot:
+    nodes: list[
+        _PlainListRuntimeSnapshot
+        | _PlainDictRuntimeSnapshot
+        | _PlainSetRuntimeSnapshot
+        | _PlainObjectRuntimeSnapshot
+        | _PlainTensorRuntimeSnapshot
+    ] = []
+    unsupported: list[str] = []
+    observed: set[int] = set()
+    registered_module_ids = {id(state.module) for state in modules}
+
+    def unsupported_value(value: Any, path: str) -> None:
+        unsupported.append(
+            f"{path} ({type(value).__module__}.{type(value).__qualname__})"
+        )
+
+    def visit(value: Any, path: str) -> None:
+        if (
+            isinstance(value, _PLAIN_ATOMIC_TYPES)
+            or value is Ellipsis
+            or value is NotImplemented
+        ):
+            return
+        if isinstance(value, (Enum, PurePath)) or isinstance(
+            value, _PLAIN_OPAQUE_TYPES
+        ):
+            return
+        if isinstance(value, type):
+            return
+        if isinstance(value, FunctionType):
+            if value.__closure__ is not None:
+                unsupported_value(value, path)
+                return
+            if not value.__dict__:
+                return
+        if isinstance(value, MethodType):
+            owner = value.__self__
+            if owner is not None:
+                visit(owner, f"{path}.__self__")
+            return
+        if isinstance(value, ModuleType):
+            unsupported_value(value, path)
+            return
+        if isinstance(value, nn.Module):
+            if id(value) not in registered_module_ids:
+                unsupported_value(value, path)
+            return
+        if isinstance(value, Tensor):
+            if id(value) in observed:
+                return
+            observed.add(id(value))
+            if (
+                value.layout != strided
+                or value.device.type == "meta"
+                or value.requires_grad
+                or value.grad_fn is not None
+            ):
+                unsupported_value(value, path)
+                return
+            nodes.append(
+                _PlainTensorRuntimeSnapshot(
+                    value=value,
+                    tensor_bytes=value.detach().to(device="cpu").clone(),
+                    tensor_sha256=_dense_tensor_sha256(value),
+                )
+            )
+            return
+        if id(value) in observed:
+            return
+        observed.add(id(value))
+        if type(value) is list:
+            items = tuple(value)
+            nodes.append(_PlainListRuntimeSnapshot(value=value, items=items))
+            for index, item in enumerate(items):
+                visit(item, f"{path}[{index}]")
+            return
+        if type(value) is dict:
+            items = tuple(value.items())
+            nodes.append(_PlainDictRuntimeSnapshot(value=value, items=items))
+            for index, (key, item) in enumerate(items):
+                visit(key, f"{path}.key[{index}]")
+                visit(item, f"{path}.value[{index}]")
+            return
+        if type(value) is set:
+            items = tuple(value)
+            nodes.append(_PlainSetRuntimeSnapshot(value=value, items=items))
+            for index, item in enumerate(items):
+                visit(item, f"{path}.set[{index}]")
+            return
+        if isinstance(value, (list, dict, set)):
+            unsupported_value(value, path)
+            return
+        if isinstance(value, tuple):
+            for index, item in enumerate(value):
+                visit(item, f"{path}[{index}]")
+            return
+        if isinstance(value, frozenset):
+            for index, item in enumerate(value):
+                visit(item, f"{path}.frozenset[{index}]")
+            return
+        try:
+            dictionary = value.__dict__
+        except AttributeError:
+            # Known torch scalar descriptors are immutable runtime values.
+            if type(value).__module__ == "torch" and type(value).__name__ in {
+                "device",
+                "dtype",
+                "layout",
+                "memory_format",
+            }:
+                return
+            unsupported_value(value, path)
+            return
+        if type(dictionary) is not dict:
+            unsupported_value(value, path)
+            return
+        dictionary_items = tuple(
+            (str(attribute), item) for attribute, item in dictionary.items()
+        )
+        slots = tuple(
+            (slot, hasattr(value, slot), getattr(value, slot, None))
+            for slot in _plain_slot_names(value)
+        )
+        nodes.append(
+            _PlainObjectRuntimeSnapshot(
+                value=value,
+                dictionary=dictionary,
+                dictionary_items=dictionary_items,
+                slot_items=slots,
+            )
+        )
+        for attribute, item in dictionary_items:
+            visit(item, f"{path}.{attribute}")
+        for slot, existed, item in slots:
+            if existed:
+                visit(item, f"{path}.{slot}")
+
+    for module_index, state in enumerate(modules):
+        for attribute, value in state.plain_attributes:
+            visit(value, f"{name}.module[{module_index}].{attribute}")
+        for hook in state.hooks:
+            if hook.items is None:
+                continue
+            for hook_index, (key, callback) in enumerate(hook.items):
+                visit(
+                    key,
+                    f"{name}.module[{module_index}].{hook.name}.key[{hook_index}]",
+                )
+                visit(
+                    callback,
+                    f"{name}.module[{module_index}].{hook.name}[{hook_index}]",
+                )
+    return _PlainRuntimeGraphSnapshot(
+        nodes=tuple(nodes),
+        unsupported_paths=tuple(dict.fromkeys(unsupported)),
+    )
+
+
+def _plain_runtime_graph_matches(snapshot: _PlainRuntimeGraphSnapshot) -> bool:
+    def sequence_matches(actual: Sequence[Any], expected: Sequence[Any]) -> bool:
+        return len(actual) == len(expected) and all(
+            _plain_value_matches(left, right)
+            for left, right in zip(actual, expected, strict=True)
+        )
+
+    try:
+        for state in snapshot.nodes:
+            if isinstance(state, _PlainListRuntimeSnapshot):
+                if not sequence_matches(state.value, state.items):
+                    return False
+            elif isinstance(state, _PlainDictRuntimeSnapshot):
+                actual_items = tuple(state.value.items())
+                if len(actual_items) != len(state.items) or any(
+                    not _plain_value_matches(actual_key, expected_key)
+                    or not _plain_value_matches(actual_value, expected_value)
+                    for (actual_key, actual_value), (
+                        expected_key,
+                        expected_value,
+                    ) in zip(actual_items, state.items, strict=True)
+                ):
+                    return False
+            elif isinstance(state, _PlainSetRuntimeSnapshot):
+                unmatched = list(state.value)
+                for expected in state.items:
+                    for index, actual in enumerate(unmatched):
+                        if _plain_value_matches(actual, expected):
+                            unmatched.pop(index)
+                            break
+                    else:
+                        return False
+                if unmatched:
+                    return False
+            elif isinstance(state, _PlainObjectRuntimeSnapshot):
+                if state.value.__dict__ is not state.dictionary:
+                    return False
+                actual_items = tuple(state.dictionary.items())
+                if len(actual_items) != len(state.dictionary_items) or any(
+                    actual_name != expected_name
+                    or not _plain_value_matches(actual_value, expected_value)
+                    for (actual_name, actual_value), (
+                        expected_name,
+                        expected_value,
+                    ) in zip(actual_items, state.dictionary_items, strict=True)
+                ):
+                    return False
+                for slot, existed, expected in state.slot_items:
+                    if hasattr(state.value, slot) != existed:
+                        return False
+                    if existed and not _plain_value_matches(
+                        getattr(state.value, slot), expected
+                    ):
+                        return False
+            elif _dense_tensor_sha256(state.value) != state.tensor_sha256:
+                return False
+        return True
+    except BaseException:
+        return False
+
+
+def _restore_plain_runtime_graph(snapshot: _PlainRuntimeGraphSnapshot) -> None:
+    # Restore object attributes first so custom hash/equality state is stable
+    # before those objects are reinserted into dictionaries or sets.
+    for state in snapshot.nodes:
+        if not isinstance(state, _PlainObjectRuntimeSnapshot):
+            continue
+        if state.value.__dict__ is not state.dictionary:
+            object.__setattr__(state.value, "__dict__", state.dictionary)
+        state.dictionary.clear()
+        state.dictionary.update(state.dictionary_items)
+        for slot, existed, expected in state.slot_items:
+            if existed:
+                object.__setattr__(state.value, slot, expected)
+            elif hasattr(state.value, slot):
+                object.__delattr__(state.value, slot)
+    with no_grad():
+        for state in snapshot.nodes:
+            if not isinstance(state, _PlainTensorRuntimeSnapshot):
+                continue
+            value = state.value
+            expected = state.tensor_bytes
+            if value.dtype != expected.dtype:
+                raise ProgressiveTargetPublicationError(
+                    "Plain runtime tensor dtype changed and cannot be restored."
+                )
+            if tuple(value.shape) != tuple(expected.shape):
+                value.resize_(tuple(expected.shape))
+            value.copy_(expected.to(device=value.device))
+    for state in snapshot.nodes:
+        if isinstance(state, _PlainListRuntimeSnapshot):
+            state.value.clear()
+            state.value.extend(state.items)
+        elif isinstance(state, _PlainDictRuntimeSnapshot):
+            state.value.clear()
+            state.value.update(state.items)
+        elif isinstance(state, _PlainSetRuntimeSnapshot):
+            state.value.clear()
+            state.value.update(state.items)
+
+
+def _capture_model_runtime_snapshot(
+    model: nn.Module,
+    *,
+    name: str,
+) -> _ModelRuntimeSnapshot:
+    try:
+        named_modules = model.named_modules(remove_duplicate=False)
+    except TypeError:  # pragma: no cover - older torch compatibility.
+        named_modules = model.named_modules()
+    modules: list[_ModuleRuntimeSnapshot] = []
+    parameters: list[_ParameterRuntimeSnapshot] = []
+    buffers: list[_BufferRuntimeSnapshot] = []
+    observed_modules: set[int] = set()
+    observed_parameters: set[int] = set()
+    observed_buffers: set[int] = set()
+    for _module_name, module in named_modules:
+        if id(module) in observed_modules:
+            continue
+        observed_modules.add(id(module))
+        hooks: list[_HookRegistrySnapshot] = []
+        for hook_name in _HOOK_REGISTRY_NAMES:
+            existed = hook_name in module.__dict__
+            value = module.__dict__.get(hook_name)
+            items = tuple(value.items()) if isinstance(value, Mapping) else None
+            hooks.append(
+                _HookRegistrySnapshot(
+                    name=hook_name,
+                    existed=existed,
+                    value=value,
+                    items=items,
+                )
+            )
+        modules.append(
+            _ModuleRuntimeSnapshot(
+                module=module,
+                modules_registry=module._modules,
+                module_items=tuple(module._modules.items()),
+                parameters_registry=module._parameters,
+                parameter_items=tuple(module._parameters.items()),
+                buffers_registry=module._buffers,
+                buffer_items=tuple(module._buffers.items()),
+                nonpersistent_registry=module._non_persistent_buffers_set,
+                nonpersistent_names=frozenset(module._non_persistent_buffers_set),
+                training=bool(module.training),
+                hooks=tuple(hooks),
+                plain_attributes=_plain_attributes(module),
+            )
+        )
+        for parameter in module._parameters.values():
+            if parameter is None or id(parameter) in observed_parameters:
+                continue
+            observed_parameters.add(id(parameter))
+            gradient = parameter.grad
+            if gradient is not None and (
+                gradient.layout != strided or gradient.device.type == "meta"
+            ):
+                raise ProgressiveTargetPublicationError(
+                    f"{name} cannot guard a sparse or meta parameter gradient."
+                )
+            gradient_bytes = (
+                None
+                if gradient is None
+                else gradient.detach().to(device="cpu").clone()
+            )
+            parameters.append(
+                _ParameterRuntimeSnapshot(
+                    parameter=parameter,
+                    requires_grad=bool(parameter.requires_grad),
+                    gradient=gradient,
+                    gradient_bytes=gradient_bytes,
+                    gradient_sha256=(
+                        None if gradient is None else _dense_tensor_sha256(gradient)
+                    ),
+                )
+            )
+        for buffer in module._buffers.values():
+            if buffer is None or id(buffer) in observed_buffers:
+                continue
+            observed_buffers.add(id(buffer))
+            if buffer.layout != strided or buffer.device.type == "meta":
+                raise ProgressiveTargetPublicationError(
+                    f"{name} cannot guard a sparse or meta registered buffer."
+                )
+            buffers.append(
+                _BufferRuntimeSnapshot(
+                    buffer=buffer,
+                    tensor_bytes=buffer.detach().to(device="cpu").clone(),
+                    tensor_sha256=_dense_tensor_sha256(buffer),
+                )
+            )
+    if not modules or not parameters:
+        raise ProgressiveTargetPublicationError(
+            f"{name} found no module/parameter runtime state to guard."
+        )
+    module_states = tuple(modules)
+    return _ModelRuntimeSnapshot(
+        root=model,
+        modules=module_states,
+        parameters=tuple(parameters),
+        buffers=tuple(buffers),
+        plain_runtime=_capture_plain_runtime_graph(
+            module_states,
+            name=name,
+        ),
+    )
+
+
+def _model_runtime_snapshot_matches(
+    model: nn.Module,
+    snapshot: _ModelRuntimeSnapshot,
+) -> bool:
+    if model is not snapshot.root:
+        return False
+    try:
+        for state in snapshot.modules:
+            module = state.module
+            if (
+                module._modules is not state.modules_registry
+                or not _identity_items_equal(module._modules, state.module_items)
+                or module._parameters is not state.parameters_registry
+                or not _identity_items_equal(module._parameters, state.parameter_items)
+                or module._buffers is not state.buffers_registry
+                or not _identity_items_equal(module._buffers, state.buffer_items)
+                or module._non_persistent_buffers_set
+                is not state.nonpersistent_registry
+                or frozenset(module._non_persistent_buffers_set)
+                != state.nonpersistent_names
+                or bool(module.training) != state.training
+            ):
+                return False
+            for hook in state.hooks:
+                exists = hook.name in module.__dict__
+                current = module.__dict__.get(hook.name)
+                if exists != hook.existed or current is not hook.value:
+                    return False
+                if hook.items is not None and not _identity_items_equal(
+                    current, hook.items
+                ):
+                    return False
+            current_plain = _plain_attributes(module)
+            if len(current_plain) != len(state.plain_attributes) or any(
+                actual_name != expected_name
+                or not _plain_value_matches(actual_value, expected_value)
+                for (actual_name, actual_value), (expected_name, expected_value) in zip(
+                    current_plain, state.plain_attributes, strict=True
+                )
+            ):
+                return False
+        for state in snapshot.parameters:
+            parameter = state.parameter
+            if (
+                bool(parameter.requires_grad) != state.requires_grad
+                or parameter.grad is not state.gradient
+            ):
+                return False
+            if state.gradient is not None and (
+                state.gradient_sha256 is None
+                or _dense_tensor_sha256(state.gradient) != state.gradient_sha256
+            ):
+                return False
+        return _plain_runtime_graph_matches(snapshot.plain_runtime) and all(
+            _dense_tensor_sha256(state.buffer) == state.tensor_sha256
+            for state in snapshot.buffers
+        )
+    except BaseException:
+        return False
+
+
+def _restore_model_runtime_snapshot(snapshot: _ModelRuntimeSnapshot) -> None:
+    for state in snapshot.modules:
+        module = state.module
+        object.__setattr__(module, "_modules", state.modules_registry)
+        state.modules_registry.clear()
+        state.modules_registry.update(state.module_items)
+        object.__setattr__(module, "_parameters", state.parameters_registry)
+        state.parameters_registry.clear()
+        state.parameters_registry.update(state.parameter_items)
+        object.__setattr__(module, "_buffers", state.buffers_registry)
+        state.buffers_registry.clear()
+        state.buffers_registry.update(state.buffer_items)
+        object.__setattr__(
+            module,
+            "_non_persistent_buffers_set",
+            state.nonpersistent_registry,
+        )
+        state.nonpersistent_registry.clear()
+        state.nonpersistent_registry.update(state.nonpersistent_names)
+        module.__dict__["training"] = state.training
+        expected_plain = dict(state.plain_attributes)
+        for attribute in tuple(module.__dict__):
+            if (
+                attribute not in _CONTROLLED_MODULE_ATTRIBUTES
+                and attribute not in expected_plain
+            ):
+                module.__dict__.pop(attribute, None)
+        module.__dict__.update(expected_plain)
+        for hook in state.hooks:
+            if not hook.existed:
+                module.__dict__.pop(hook.name, None)
+                continue
+            module.__dict__[hook.name] = hook.value
+            if hook.items is not None:
+                hook.value.clear()
+                hook.value.update(hook.items)
+    _restore_plain_runtime_graph(snapshot.plain_runtime)
+    with no_grad():
+        for state in snapshot.parameters:
+            parameter = state.parameter
+            parameter.requires_grad_(state.requires_grad)
+            if state.gradient is None:
+                parameter.grad = None
+                continue
+            gradient = state.gradient
+            expected = state.gradient_bytes
+            if expected is None:
+                raise ProgressiveTargetPublicationError(
+                    "Gradient snapshot bytes are absent during restoration."
+                )
+            if gradient.dtype != expected.dtype:
+                raise ProgressiveTargetPublicationError(
+                    "Original gradient dtype changed and cannot be restored."
+                )
+            if tuple(gradient.shape) != tuple(expected.shape):
+                gradient.resize_(tuple(expected.shape))
+            gradient.copy_(expected.to(device=gradient.device))
+            parameter.grad = gradient
+        for state in snapshot.buffers:
+            buffer = state.buffer
+            expected = state.tensor_bytes
+            if buffer.dtype != expected.dtype:
+                raise ProgressiveTargetPublicationError(
+                    "Original buffer dtype changed and cannot be restored."
+                )
+            if tuple(buffer.shape) != tuple(expected.shape):
+                buffer.resize_(tuple(expected.shape))
+            buffer.copy_(expected.to(device=buffer.device))
 
 
 def _unique_parameter_bytes(model: nn.Module) -> int:
@@ -556,6 +1532,70 @@ class ExternalBehaviorGateReceipt:
 
 
 @dataclass(frozen=True, slots=True)
+class ExperimentalRecoveryMaterializationReceipt:
+    """Bind a folded initialization that is not approved for publication.
+
+    This receipt authorizes one reversible dense materialization for an A/B
+    recovery experiment. It cannot attest behavior, consume a sealed split, or
+    satisfy :class:`ExternalBehaviorGateReceipt`.
+    """
+
+    experiment_contract_sha256: str
+    factor_state_sha256: str
+    live_factor_state_sha256: str
+    native_child_state_sha256: str
+    exact_unique_parameters: int
+    factor_payload_schema: str
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "experiment_contract_sha256",
+            "factor_state_sha256",
+            "live_factor_state_sha256",
+            "native_child_state_sha256",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _sha256(getattr(self, field_name), field_name),
+            )
+        object.__setattr__(
+            self,
+            "exact_unique_parameters",
+            _positive_int(
+                self.exact_unique_parameters,
+                "exact_unique_parameters",
+            ),
+        )
+        schema = str(self.factor_payload_schema).strip()
+        if re.fullmatch(
+            r"neural-forge-target-native-factor-pack-v[1-9][0-9]*",
+            schema,
+        ) is None:
+            raise ProgressiveTargetBridgeError(
+                "factor_payload_schema must be a target-native factor-pack schema."
+            )
+        object.__setattr__(self, "factor_payload_schema", schema)
+
+    def as_dict(self) -> dict[str, Any]:
+        payload = {
+            "schema": EXPERIMENTAL_RECOVERY_MATERIALIZATION_RECEIPT_SCHEMA,
+            **asdict(self),
+            "status": "experimental-unaccepted",
+            "publication_authorized": False,
+            "sealed_data_accessed": False,
+            "behavior_capability_proven": False,
+            "recovery_training_required": True,
+            "external_experiment_contract_revalidated_by_bridge": False,
+            "external_factor_pack_revalidated_by_bridge": False,
+            "live_factor_tensor_state_revalidated_by_bridge": True,
+            "native_child_state_revalidated_by_bridge": True,
+        }
+        payload["receipt_sha256"] = _canonical_sha256(payload)
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
 class NativeDenseGQACertificate:
     exact_unique_parameters: int
     logical_parameters: int
@@ -861,7 +1901,17 @@ def certify_native_dense_gqa_target(
         raise ProgressiveTargetBridgeError(
             f"Native target contains {actual} unique parameters, expected {expected}."
         )
-    keys = tuple(sorted(model.state_dict()))
+    registered_rows = _registered_model_tensors(model)
+    aliases: dict[int, int] = {}
+    keys = tuple(
+        {
+            "alias_index": aliases.setdefault(id(value), len(aliases)),
+            "kind": kind,
+            "name": name,
+            "persistent": persistent,
+        }
+        for kind, name, value, persistent in registered_rows
+    )
     return NativeDenseGQACertificate(
         exact_unique_parameters=actual,
         logical_parameters=int(counts["logical_parameter_count"]),
@@ -1127,16 +2177,29 @@ class ExactTargetCompilerTransaction:
         exact_unique_parameters: int,
         topology: _DenseGQATopology,
         native_before: NativeDenseGQACertificate,
+        native_child_state_sha256: str,
+        native_tensor_guards: tuple[tuple[str, str, Tensor, str], ...],
         qkvo_handle: InstalledDenseGQAQKVOResidualAdapter,
         swiglu_handle: InstalledDenseSwiGLUProjectionResidualAdapter,
         stage: ProgressiveDenseGQAStage | None,
         parent_compiler_report_sha256: str | None,
         lexical_handle: InstalledDenseLexicalResidualAdapter | None = None,
+        native_runtime_snapshot: _ModelRuntimeSnapshot | None = None,
     ) -> None:
         self.model = model
         self.exact_unique_parameters = exact_unique_parameters
         self.topology = topology
         self.native_before = native_before
+        self._native_runtime_snapshot = native_runtime_snapshot
+        self.native_child_state_sha256 = _sha256(
+            native_child_state_sha256,
+            "native_child_state_sha256",
+        )
+        self._native_tensor_guards = tuple(native_tensor_guards)
+        if not self._native_tensor_guards:
+            raise ProgressiveTargetBridgeError(
+                "Compiler transaction has no native tensor guards."
+            )
         self.qkvo_handle = qkvo_handle
         self.swiglu_handle = swiglu_handle
         self.lexical_handle = lexical_handle
@@ -1194,6 +2257,94 @@ class ExactTargetCompilerTransaction:
 
     def output_training_scope(self) -> ExactTargetCompilerOutputTrainingScope:
         return ExactTargetCompilerOutputTrainingScope(self)
+
+    def _live_factor_state_sha256(self) -> str:
+        """Hash every live factor tensor by its registered target-side name."""
+
+        self.assert_live()
+        factors = self.output_trainable_parameters()
+        factor_ids = {id(value) for value in factors}
+        rows: list[dict[str, Any]] = []
+        first_name_by_id: dict[int, str] = {}
+        observed_ids: set[int] = set()
+        for _kind, name, value in _named_model_tensors(self.model):
+            identity = id(value)
+            if identity not in factor_ids:
+                continue
+            observed_ids.add(identity)
+            first_name = first_name_by_id.setdefault(identity, name)
+            rows.append(
+                {
+                    "name": name,
+                    "alias_of": first_name,
+                    "dtype": str(value.dtype),
+                    "shape": list(value.shape),
+                    "tensor_sha256": _dense_tensor_sha256(value),
+                }
+            )
+        if observed_ids != factor_ids or not rows:
+            raise ProgressiveTargetPublicationError(
+                "Live compiler factors are not fully registered on the child."
+            )
+        return _canonical_sha256(
+            {
+                "schema": "neural-forge-live-target-factor-state-v1",
+                "unique_factor_tensor_count": len(factor_ids),
+                "named_factor_tensor_count": len(rows),
+                "factors": rows,
+            }
+        )
+
+    def _assert_native_tensor_guards(self) -> None:
+        """Fail closed if frozen native child bytes or ownership changed."""
+
+        registered_ids = {
+            id(value) for _kind, _name, value in _named_model_tensors(self.model)
+        }
+        for kind, name, value, digest in self._native_tensor_guards:
+            if id(value) not in registered_ids or _dense_tensor_sha256(value) != digest:
+                raise ProgressiveTargetPublicationError(
+                    "Native child tensor changed before experimental materialization "
+                    f"at {kind}:{name}."
+                )
+
+    def experimental_recovery_receipt(
+        self,
+        *,
+        experiment_contract: Mapping[str, Any],
+    ) -> ExperimentalRecoveryMaterializationReceipt:
+        """Create a receipt bound to this live transaction and native child."""
+
+        if (
+            not isinstance(experiment_contract, Mapping)
+            or experiment_contract.get("schema")
+            != EXPERIMENTAL_RECOVERY_CONTRACT_SCHEMA
+            or experiment_contract.get("publication_authorized") is not False
+            or experiment_contract.get("sealed_data_accessed") is not False
+            or experiment_contract.get("blank_control_state_sha256")
+            != self.native_child_state_sha256
+            or experiment_contract.get("native_child_state_sha256")
+            != self.native_child_state_sha256
+            or experiment_contract.get("exact_unique_parameters")
+            != self.exact_unique_parameters
+        ):
+            raise ProgressiveTargetPublicationError(
+                "Experimental recovery contract does not bind this native child."
+            )
+        self._assert_native_tensor_guards()
+        return ExperimentalRecoveryMaterializationReceipt(
+            experiment_contract_sha256=_canonical_sha256(experiment_contract),
+            factor_state_sha256=_sha256(
+                experiment_contract.get("factor_state_sha256"),
+                "experiment factor_state_sha256",
+            ),
+            live_factor_state_sha256=self._live_factor_state_sha256(),
+            native_child_state_sha256=self.native_child_state_sha256,
+            exact_unique_parameters=self.exact_unique_parameters,
+            factor_payload_schema=str(
+                experiment_contract.get("factor_payload_schema", "")
+            ),
+        )
 
     def installation_report(self) -> dict[str, Any]:
         self.assert_live()
@@ -1367,6 +2518,321 @@ class ExactTargetCompilerTransaction:
         restored = self._restore_failed_publication()
         self.publication_report = None
         return restored
+
+    @contextmanager
+    def experimental_recovery_materialization(
+        self,
+        receipt: ExperimentalRecoveryMaterializationReceipt,
+        *,
+        experiment_contract: Mapping[str, Any],
+    ) -> Iterator[bytes]:
+        """Temporarily expose a dense, exact-size, unaccepted recovery init.
+
+        ``self.model`` is dense while canonical built-in report bytes are
+        yielded. The context is for serialization only: recovery must freshly
+        reload the serialized child and train that copy. Exit restores every
+        guarded native tensor and supported runtime object from private
+        pre-bake snapshots.
+        """
+
+        if not isinstance(receipt, ExperimentalRecoveryMaterializationReceipt):
+            raise ProgressiveTargetPublicationError(
+                "receipt must be ExperimentalRecoveryMaterializationReceipt."
+            )
+        if receipt.exact_unique_parameters != self.exact_unique_parameters:
+            raise ProgressiveTargetPublicationError(
+                "Experimental receipt does not match the exact child budget."
+            )
+        if (
+            not isinstance(experiment_contract, Mapping)
+            or experiment_contract.get("schema")
+            != EXPERIMENTAL_RECOVERY_CONTRACT_SCHEMA
+            or _canonical_sha256(experiment_contract)
+            != receipt.experiment_contract_sha256
+            or experiment_contract.get("factor_state_sha256")
+            != receipt.factor_state_sha256
+            or experiment_contract.get("factor_payload_schema")
+            != receipt.factor_payload_schema
+            or experiment_contract.get("native_child_state_sha256")
+            != receipt.native_child_state_sha256
+            or experiment_contract.get("blank_control_state_sha256")
+            != receipt.native_child_state_sha256
+            or experiment_contract.get("exact_unique_parameters")
+            != receipt.exact_unique_parameters
+            or experiment_contract.get("publication_authorized") is not False
+            or experiment_contract.get("sealed_data_accessed") is not False
+        ):
+            raise ProgressiveTargetPublicationError(
+                "Experimental receipt does not authenticate its recovery contract."
+            )
+        if receipt.native_child_state_sha256 != self.native_child_state_sha256:
+            raise ProgressiveTargetPublicationError(
+                "Experimental receipt belongs to another native child state."
+            )
+        native_runtime_snapshot = self._native_runtime_snapshot
+        if (
+            native_runtime_snapshot is None
+            or native_runtime_snapshot.root is not self.model
+        ):
+            raise ProgressiveTargetPublicationError(
+                "Experimental materialization lacks its pre-install native runtime "
+                "snapshot."
+            )
+        if native_runtime_snapshot.plain_runtime.unsupported_paths:
+            raise ProgressiveTargetPublicationError(
+                "Experimental materialization cannot guard unsupported native "
+                "runtime state at "
+                f"{native_runtime_snapshot.plain_runtime.unsupported_paths[0]}."
+            )
+        self.assert_live()
+        self._assert_native_tensor_guards()
+        live_factor_state_sha256 = self._live_factor_state_sha256()
+        if receipt.live_factor_state_sha256 != live_factor_state_sha256:
+            raise ProgressiveTargetPublicationError(
+                "Experimental receipt does not bind the live factor tensors."
+            )
+        try:
+            contract_payload = json.loads(
+                json.dumps(
+                    experiment_contract,
+                    allow_nan=False,
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+            )
+        except (TypeError, ValueError) as error:
+            raise ProgressiveTargetPublicationError(
+                "Experimental recovery contract is not canonical JSON."
+            ) from error
+        baseline_snapshot = _snapshot_named_model_tensors(self.model)
+        materialized_state_sha256: str | None = None
+        materialized_runtime_snapshot: _ModelRuntimeSnapshot | None = None
+        tensor_versions: tuple[tuple[Any, ...], ...] | None = None
+        mutated = False
+        try:
+            if self.lexical_handle is None:
+                lexical_bake = None
+                lexical_suspensions: tuple[str, ...] = ()
+            else:
+                with ExitStack() as stack:
+                    lexical_suspensions = self._enter_guided_owner_suspensions(
+                        stack,
+                        (
+                            ("qkvo", self.qkvo_handle),
+                            ("gate-up-down", self.swiglu_handle),
+                        ),
+                    )
+                    lexical_bake = self.lexical_handle.bake_for_publication()
+            with ExitStack() as stack:
+                qkvo_suspensions = self._enter_guided_owner_suspensions(
+                    stack,
+                    (("gate-up-down", self.swiglu_handle),),
+                )
+                qkvo_bake = self.qkvo_handle.bake_for_publication()
+            swiglu_bake = self.swiglu_handle.bake_for_publication()
+            native_after = certify_native_dense_gqa_target(
+                self.model,
+                exact_unique_parameters=self.exact_unique_parameters,
+                layout=self.topology.layout,
+                stage=self.stage,
+                require_dense_swiglu=True,
+            )
+            if (
+                native_after.structure_sha256 != self.native_before.structure_sha256
+                or native_after.state_key_sha256 != self.native_before.state_key_sha256
+                or native_after.state_key_count != self.native_before.state_key_count
+            ):
+                raise ProgressiveTargetPublicationError(
+                    "Experimental dense bake changed native state-key topology."
+                )
+            payload = {
+                "schema": EXACT_TARGET_EXPERIMENTAL_RECOVERY_MATERIALIZATION_SCHEMA,
+                "status": "experimental-unaccepted",
+                "exact_unique_parameters": self.exact_unique_parameters,
+                "exact_budget_match": True,
+                "native_before": self.native_before.as_dict(),
+                "native_materialized": native_after.as_dict(),
+                "dense_qkvo_bake": qkvo_bake.as_dict(),
+                "dense_gate_up_down_bake": swiglu_bake.as_dict(),
+                "experimental_recovery_contract": contract_payload,
+                "experimental_recovery_receipt": receipt.as_dict(),
+                "stage": None if self.stage is None else self.stage.as_dict(),
+                "parent_compiler_report_sha256": self.parent_compiler_report_sha256,
+                "live_factor_state_sha256": live_factor_state_sha256,
+                "native_child_state_sha256": self.native_child_state_sha256,
+                "materialized_registered_adapter_parameter_count": 0,
+                "materialized_optimizer_parameter_count": 0,
+                "materialized_registered_source_sized_sidecar_parameter_count": 0,
+                "arbitrary_python_runtime_reference_audit_performed": False,
+                "recursive_module_training_state_guarded": True,
+                "parameter_requires_grad_state_guarded": True,
+                "parameter_gradient_identity_and_bytes_guarded": True,
+                "parameter_and_buffer_owner_alias_identity_guarded": True,
+                "module_hook_registry_identity_guarded": True,
+                "plain_python_runtime_reference_ownership_guarded": True,
+                "supported_plain_python_mutable_graph_guarded": True,
+                "supported_plain_python_aliases_and_cycles_guarded": True,
+                "unsupported_plain_python_mutable_state_fails_closed": True,
+                "callable_closure_and_opaque_runtime_internal_state_audited": False,
+                "plain_python_runtime_mutation_proven_absent": False,
+                "native_state_key_topology_restored": True,
+                "native_registered_tensor_topology_directly_enumerated": True,
+                "authoritative_snapshot_uses_state_dict": False,
+                "authoritative_hash_uses_state_dict": False,
+                "standalone_structure_materialized": True,
+                "serialization_only_context": True,
+                "state_dict_hook_output_completeness_proven": False,
+                "serialization_api_output_revalidated_by_bridge": False,
+                "caller_must_serialize_all_registered_tensors": True,
+                "mutating_or_training_in_context_forbidden": True,
+                "endpoint_tensor_version_and_byte_guard": True,
+                "transient_mutation_proven_absent": False,
+                "serialized_state_must_match_materialized_state_sha256": True,
+                "fresh_reload_and_recovery_required": True,
+                "publication_authorized": False,
+                "accepted_artifact": False,
+                "sealed_data_accessed": False,
+                "behavior_capability_proven": False,
+                "recovery_training_required": True,
+                "external_factor_pack_revalidated_by_bridge": False,
+                "external_factor_pack_receipt_bound": False,
+                "contract_factor_state_sha256_is_external_label_only": True,
+                "live_factor_state_sha256_is_bridge_authenticated": True,
+            }
+            if lexical_bake is not None:
+                payload.update(
+                    {
+                        "dense_lexical_bake": lexical_bake.as_dict(),
+                        "materialized_lexical_adapter_parameter_count": 0,
+                        "native_lexical_state_key_topology_restored": True,
+                        "guided_registry_suspended_for_lexical_bake": (
+                            "qkvo" in lexical_suspensions
+                        ),
+                    }
+                )
+            if "gate-up-down" in (*lexical_suspensions, *qkvo_suspensions):
+                payload.update(
+                    {
+                        "guided_gate_up_down_registry_suspended_for_lexical_bake": (
+                            "gate-up-down" in lexical_suspensions
+                        ),
+                        "guided_gate_up_down_registry_suspended_for_qkvo_bake": (
+                            "gate-up-down" in qkvo_suspensions
+                        ),
+                        "nested_materialization_bake_order": [
+                            "lexical",
+                            "qkvo-inherited-then-guided",
+                            "gate-up-down-inherited-then-guided",
+                        ],
+                    }
+                )
+            materialized_state_sha256 = _dense_model_state_sha256(self.model)
+            payload["materialized_native_state_sha256"] = (
+                materialized_state_sha256
+            )
+            materialized_runtime_snapshot = _capture_model_runtime_snapshot(
+                self.model,
+                name="materialized recovery runtime",
+            )
+            if materialized_runtime_snapshot.plain_runtime.unsupported_paths:
+                raise ProgressiveTargetPublicationError(
+                    "Experimental materialization produced unsupported runtime "
+                    "state at "
+                    f"{materialized_runtime_snapshot.plain_runtime.unsupported_paths[0]}."
+                )
+            payload["materialization_transaction_sha256"] = _canonical_sha256(
+                payload
+            )
+            canonical_report = _canonical_json_report_bytes(
+                payload,
+                hash_field="materialization_transaction_sha256",
+            )
+            tensor_versions = _named_tensor_version_signature(self.model)
+            yield canonical_report
+        finally:
+            active_error = sys.exc_info()[1]
+            if tensor_versions is not None:
+                try:
+                    mutated = (
+                        tensor_versions != _named_tensor_version_signature(self.model)
+                        or materialized_state_sha256 is None
+                        or _dense_model_state_sha256(self.model)
+                        != materialized_state_sha256
+                        or materialized_runtime_snapshot is None
+                        or not _model_runtime_snapshot_matches(
+                            self.model,
+                            materialized_runtime_snapshot,
+                        )
+                    )
+                except BaseException:
+                    mutated = True
+            cleanup_errors: list[BaseException] = []
+            cleanup_steps = []
+            if materialized_runtime_snapshot is not None:
+                cleanup_steps.append(
+                    lambda: _restore_model_runtime_snapshot(
+                        materialized_runtime_snapshot
+                    )
+                )
+            cleanup_steps.extend(
+                (
+                    self._restore_failed_publication,
+                    lambda: _restore_named_model_tensors(
+                        self.model,
+                        baseline_snapshot,
+                    ),
+                    lambda: _restore_model_runtime_snapshot(
+                        native_runtime_snapshot
+                    ),
+                )
+            )
+            for cleanup_step in cleanup_steps:
+                try:
+                    cleanup_step()
+                except BaseException as error:
+                    cleanup_errors.append(error)
+            try:
+                if (
+                    _dense_model_state_sha256(self.model)
+                    != self.native_child_state_sha256
+                ):
+                    raise ProgressiveTargetPublicationError(
+                        "Experimental cleanup did not restore native child bytes."
+                    )
+                if not _model_runtime_snapshot_matches(
+                    self.model,
+                    native_runtime_snapshot,
+                ):
+                    raise ProgressiveTargetPublicationError(
+                        "Experimental cleanup did not restore native runtime ownership."
+                    )
+            except BaseException as error:
+                cleanup_errors.append(error)
+            self.publication_report = None
+            if cleanup_errors:
+                cleanup_error = cleanup_errors[0]
+                for secondary_error in cleanup_errors[1:]:
+                    cleanup_error.add_note(
+                        "Additional experimental cleanup failure: "
+                        f"{secondary_error!r}"
+                    )
+                if active_error is not None:
+                    active_error.add_note(
+                        "Experimental materialization cleanup also failed: "
+                        f"{cleanup_error!r}"
+                    )
+                    raise cleanup_error from active_error
+                raise cleanup_error
+            if mutated:
+                if active_error is not None:
+                    active_error.add_note(
+                        "Experimental materialization was also mutated before cleanup."
+                    )
+                else:
+                    raise ProgressiveTargetPublicationError(
+                        "Experimental materialization was mutated instead of serialized."
+                    )
 
     def bake_for_publication(
         self,
@@ -1579,6 +3045,12 @@ def install_exact_target_compiler_transaction(
         layout,
         require_dense_swiglu=True,
     )
+    native_child_state_sha256 = _dense_model_state_sha256(model)
+    native_tensor_guards = _capture_native_tensor_guards(model)
+    native_runtime_snapshot = _capture_model_runtime_snapshot(
+        model,
+        name="native child runtime",
+    )
     native = certify_native_dense_gqa_target(
         model,
         exact_unique_parameters=expected,
@@ -1665,6 +3137,9 @@ def install_exact_target_compiler_transaction(
         exact_unique_parameters=expected,
         topology=topology,
         native_before=native,
+        native_child_state_sha256=native_child_state_sha256,
+        native_tensor_guards=native_tensor_guards,
+        native_runtime_snapshot=native_runtime_snapshot,
         qkvo_handle=qkvo_handle,
         swiglu_handle=swiglu_handle,
         lexical_handle=lexical_handle,
@@ -1769,7 +3244,10 @@ __all__ = [
     "EXACT_TARGET_COMPILER_OUTPUT_TRAINING_SCOPE_SCHEMA",
     "EXACT_TARGET_COMPILER_TRANSACTION_INSTALLATION_SCHEMA",
     "EXACT_TARGET_COMPILER_TRANSACTION_PUBLICATION_SCHEMA",
+    "EXACT_TARGET_EXPERIMENTAL_RECOVERY_MATERIALIZATION_SCHEMA",
     "EXTERNAL_BEHAVIOR_GATE_SCHEMA",
+    "EXPERIMENTAL_RECOVERY_CONTRACT_SCHEMA",
+    "EXPERIMENTAL_RECOVERY_MATERIALIZATION_RECEIPT_SCHEMA",
     "NATIVE_TARGET_CERTIFICATE_SCHEMA",
     "PROGRESSIVE_TARGET_PLAN_SCHEMA",
     "QWEN3_1P4B_EXACT_PARAMETERS",
@@ -1781,6 +3259,7 @@ __all__ = [
     "ExactTargetCompilerTransaction",
     "ExactTargetQKVOPublicationSession",
     "ExternalBehaviorGateReceipt",
+    "ExperimentalRecoveryMaterializationReceipt",
     "NativeDenseGQACertificate",
     "ProgressiveDenseGQAPlan",
     "ProgressiveDenseGQAStage",
