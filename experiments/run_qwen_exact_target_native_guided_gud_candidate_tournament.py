@@ -98,6 +98,28 @@ EXPECTED_SOURCE_TOURNAMENT_PREREGISTRATION_SHA256 = (
 EXPECTED_SOURCE_FACTOR_PACK_FILE_SHA256 = (
     "ec18c6e1b671a7bfe2a8ea4557fb94e53abd990072bf0f647a15eab80fff27c1"
 )
+EXPECTED_SOURCE_RUNTIME_V3_SHA256 = (
+    "557f7c52369d63958b7dd8ffce95ce18cab88289b9b287bc04426763a9a686b7"
+)
+EXPECTED_SOURCE_EVALUATION_CONTRACT_SHA256 = (
+    "0f99a02f9711ac8633c763caa6b01cbb2bbcfb6e3fc91de44edda8f517f2e587"
+)
+EXPECTED_SOURCE_RUN_REPORT_SHA256 = (
+    "86d47fa3a4e65d9c22efa6e8188bf85eba3c2d312c0dd969c67e82fd5446a902"
+)
+EXPECTED_SOURCE_WINNER_SELECTION_SHA256 = (
+    "b432e6bd3c6ef8434ff8745361e95cc7baae502a51f2d434fc150de38d85e263"
+)
+EXPECTED_SOURCE_CANDIDATE_FRONTIER_SHA256 = (
+    "cb0068bb4d1a646d1368600394b9e276ca15ada12606ce803f16a25e9b25b937"
+)
+HISTORICAL_V3_RUN_SCHEMA = (
+    "neural-forge-qwen-exact-target-native-guided-candidate-tournament-v1"
+)
+HISTORICAL_V3_WINNER_SCHEMA = "neural-forge-guided-candidate-tournament-winner-v1"
+HISTORICAL_V3_FRONTIER_SCHEMA = (
+    "neural-forge-guided-candidate-tournament-frontier-v1"
+)
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -1290,6 +1312,296 @@ class AuthenticatedV3WinnerSource:
     candidate_frontier: Mapping[str, Any]
 
 
+def _authenticate_historical_v1_winner_payload(
+    contract: v3_tournament.AuthenticatedCandidateTournament,
+    *,
+    run_path: Path,
+    run_sha256: str,
+    run_report: Mapping[str, Any],
+    winner_path: Path,
+    winner_sha256: str,
+    winner_selection: Mapping[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Authenticate the exact frozen v1 evidence without pretending it is v2."""
+
+    if (
+        run_sha256 != EXPECTED_SOURCE_RUN_REPORT_SHA256
+        or winner_sha256 != EXPECTED_SOURCE_WINNER_SELECTION_SHA256
+        or contract.evaluation_contract_sha256
+        != EXPECTED_SOURCE_EVALUATION_CONTRACT_SHA256
+    ):
+        raise GuidedGUDCandidateTournamentError(
+            "Historical v3 run, winner, or evaluation identity changed."
+        )
+    if (
+        run_path.name != "run_report.json"
+        or winner_path.name != "winner_selection.json"
+        or run_path.parent != winner_path.parent
+    ):
+        raise GuidedGUDCandidateTournamentError(
+            "Historical v3 run and winner must be exact sibling artifacts."
+        )
+    evaluation_sha = contract.evaluation_contract_sha256
+    if (
+        run_report.get("schema") != HISTORICAL_V3_RUN_SCHEMA
+        or run_report.get("status") != "candidate-winner-selected"
+        or run_report.get("evaluation_contract_sha256") != evaluation_sha
+        or run_report.get("sealed_forward_count") != 0
+        or run_report.get("sealed_evaluation_accessed") is not False
+        or run_report.get("sealed_evaluation_locked") is not True
+        or run_report.get("sealed_suite_supplied_to_trainer") is not False
+        or run_report.get("selection_uses_internal_numeric_targets") is not False
+        or run_report.get("model_checkpoint_written") is not False
+        or run_report.get("publication_attempted") is not False
+        or run_report.get("publication_authorized") is not False
+        or run_report.get("stop_after_candidate_winner") is not True
+        or canonical_json_bytes(run_report.get("winner_selection"))
+        != canonical_json_bytes(winner_selection)
+    ):
+        raise GuidedGUDCandidateTournamentError(
+            "Historical v3 terminal report is not the sealed-free v1 boundary."
+        )
+
+    required_winner = {
+        "arm_id",
+        "arm_index",
+        "step",
+        "rank",
+        "runtime_factor_state_sha256",
+        "portable_factor_state_sha256",
+        "checkpoint_sha256",
+        "metrics",
+        "factor_pack",
+        "factor_pack_sha256",
+    }
+    selection = _strict(
+        winner_selection,
+        {
+            "schema",
+            "evaluation_contract_sha256",
+            "winner",
+            "top_three_factor_state_sha256s",
+            "top_three_portable_factor_state_sha256s",
+            "candidate_only",
+            "sealed_evaluation_accessed",
+            "model_checkpoint_written",
+            "publication_attempted",
+            "stop_reason",
+        },
+        "historical v3 winner selection",
+    )
+    winner = _strict(selection["winner"], required_winner, "historical v3 winner")
+    metrics = winner.get("metrics")
+    if (
+        selection.get("schema") != HISTORICAL_V3_WINNER_SCHEMA
+        or selection.get("evaluation_contract_sha256") != evaluation_sha
+        or selection.get("candidate_only") is not True
+        or selection.get("sealed_evaluation_accessed") is not False
+        or selection.get("model_checkpoint_written") is not False
+        or selection.get("publication_attempted") is not False
+        or selection.get("stop_reason")
+        != "candidate-winner-selected-before-sealed"
+        or winner.get("arm_id") != EXPECTED_SOURCE_ARM_ID
+        or winner.get("arm_index") != 0
+        or winner.get("step") != EXPECTED_SOURCE_STEP
+        or winner.get("runtime_factor_state_sha256")
+        != EXPECTED_SOURCE_RUNTIME_V3_SHA256
+        or winner.get("portable_factor_state_sha256")
+        != EXPECTED_SOURCE_PORTABLE_V3_SHA256
+        or winner.get("factor_pack_sha256")
+        != EXPECTED_SOURCE_FACTOR_PACK_FILE_SHA256
+        or not isinstance(metrics, Mapping)
+        or winner.get("rank") != list(v3_tournament.tournament_behavior_rank(metrics))
+    ):
+        raise GuidedGUDCandidateTournamentError(
+            "Historical v3 winner is malformed, unlocked, or relabeled."
+        )
+    for field in (
+        "runtime_factor_state_sha256",
+        "portable_factor_state_sha256",
+        "checkpoint_sha256",
+        "factor_pack_sha256",
+    ):
+        _sha256(winner[field], f"historical v3 winner.{field}")
+
+    frontier_path = _resolve(
+        run_path.parent,
+        "candidate_frontier.json",
+        "historical v3 candidate frontier",
+    )
+    if (
+        not frontier_path.is_file()
+        or stage._file_sha256(frontier_path)
+        != EXPECTED_SOURCE_CANDIDATE_FRONTIER_SHA256
+    ):
+        raise GuidedGUDCandidateTournamentError(
+            "Historical v3 candidate frontier is absent or changed."
+        )
+    frontier = _strict(
+        stage._strict_json(frontier_path),
+        {
+            "schema",
+            "evaluation_contract_sha256",
+            "completed_arms",
+            "retained_count",
+            "retained",
+            "distinct_full_v3_states_only",
+            "portable_content_identity_used",
+            "step_zero_ranked",
+            "later_states_require_pareto_safety_vs_step_zero",
+            "sealed_metrics_used",
+            "internal_numeric_matching_used",
+        },
+        "historical v3 candidate frontier",
+    )
+    retained = frontier.get("retained")
+    if (
+        frontier.get("schema") != HISTORICAL_V3_FRONTIER_SCHEMA
+        or frontier.get("evaluation_contract_sha256") != evaluation_sha
+        or frontier.get("completed_arms") != list(v3_tournament.ARM_IDS)
+        or frontier.get("retained_count") != v3_tournament.MAX_RETAINED_STATES
+        or not isinstance(retained, list)
+        or len(retained) != v3_tournament.MAX_RETAINED_STATES
+        or frontier.get("distinct_full_v3_states_only") is not True
+        or frontier.get("portable_content_identity_used") is not True
+        or frontier.get("step_zero_ranked") is not True
+        or frontier.get("later_states_require_pareto_safety_vs_step_zero") is not True
+        or frontier.get("sealed_metrics_used") is not False
+        or frontier.get("internal_numeric_matching_used") is not False
+    ):
+        raise GuidedGUDCandidateTournamentError(
+            "Historical v3 candidate frontier is incomplete or unlocked."
+        )
+
+    retained_rows: list[Mapping[str, Any]] = []
+    portable_identities: set[str] = set()
+    for index, raw in enumerate(retained):
+        row = _strict(raw, required_winner, f"historical v3 retained[{index}]")
+        row_metrics = row.get("metrics")
+        arm_index = row.get("arm_index")
+        portable = _sha256(
+            row.get("portable_factor_state_sha256"),
+            f"historical v3 retained[{index}].portable_factor_state_sha256",
+        )
+        if (
+            not isinstance(arm_index, int)
+            or isinstance(arm_index, bool)
+            or not 0 <= arm_index < len(v3_tournament.ARM_IDS)
+            or row.get("arm_id") != v3_tournament.ARM_IDS[arm_index]
+            or row.get("step") not in v3_tournament.CHECKPOINT_STEPS
+            or not isinstance(row_metrics, Mapping)
+            or row.get("rank")
+            != list(v3_tournament.tournament_behavior_rank(row_metrics))
+            or portable in portable_identities
+        ):
+            raise GuidedGUDCandidateTournamentError(
+                "Historical v3 retained frontier row is inconsistent."
+            )
+        portable_identities.add(portable)
+        for field in (
+            "runtime_factor_state_sha256",
+            "checkpoint_sha256",
+            "factor_pack_sha256",
+        ):
+            _sha256(row.get(field), f"historical v3 retained[{index}].{field}")
+        pack_path = _resolve(
+            run_path.parent,
+            row.get("factor_pack"),
+            f"historical v3 retained[{index}] factor pack",
+        )
+        if (
+            not pack_path.is_file()
+            or stage._file_sha256(pack_path) != row.get("factor_pack_sha256")
+        ):
+            raise GuidedGUDCandidateTournamentError(
+                "A historical v3 retained factor pack is absent or changed."
+            )
+        record_path = _resolve(
+            pack_path.parent,
+            "candidate_record.json",
+            f"historical v3 retained[{index}] candidate record",
+        )
+        if (
+            not record_path.is_file()
+            or canonical_json_bytes(stage._strict_json(record_path))
+            != canonical_json_bytes(row)
+        ):
+            raise GuidedGUDCandidateTournamentError(
+                "A historical v3 retained candidate record is absent or changed."
+            )
+        retained_rows.append(row)
+
+    runtime_ids = [row["runtime_factor_state_sha256"] for row in retained_rows]
+    portable_ids = [row["portable_factor_state_sha256"] for row in retained_rows]
+    if (
+        canonical_json_bytes(retained_rows[0]) != canonical_json_bytes(winner)
+        or selection.get("top_three_factor_state_sha256s") != runtime_ids
+        or selection.get("top_three_portable_factor_state_sha256s") != portable_ids
+        or run_report.get("top_three_factor_state_sha256s") != runtime_ids
+        or run_report.get("top_three_portable_factor_state_sha256s") != portable_ids
+    ):
+        raise GuidedGUDCandidateTournamentError(
+            "Historical v3 winner, frontier, and terminal top three disagree."
+        )
+
+    factor_path = _resolve(
+        run_path.parent,
+        winner["factor_pack"],
+        "historical v3 winner factor pack",
+    )
+    try:
+        loaded = torch.load(factor_path, map_location="cpu", weights_only=True)
+    except (OSError, RuntimeError, TypeError, ValueError) as error:
+        raise GuidedGUDCandidateTournamentError(
+            "Historical v3 winner factor pack cannot load safely."
+        ) from error
+    if not isinstance(loaded, Mapping):
+        raise GuidedGUDCandidateTournamentError(
+            "Historical v3 winner factor pack is not a mapping."
+        )
+    try:
+        GuidedCheckpointRecoverySink._validate_v3_factor_payload(
+            loaded,
+            expected_factor_state_sha256=EXPECTED_SOURCE_RUNTIME_V3_SHA256,
+        )
+    except Exception as error:
+        raise GuidedGUDCandidateTournamentError(
+            "Historical v3 winner is not a complete authenticated 26-factor state."
+        ) from error
+    if portable_v3_factor_state_sha256(loaded) != EXPECTED_SOURCE_PORTABLE_V3_SHA256:
+        raise GuidedGUDCandidateTournamentError(
+            "Historical v3 winner portable factor identity changed."
+        )
+    frontier_binding = {
+        "schema": HISTORICAL_V3_FRONTIER_SCHEMA,
+        "path": str(frontier_path),
+        "sha256": EXPECTED_SOURCE_CANDIDATE_FRONTIER_SHA256,
+        "retained_count": v3_tournament.MAX_RETAINED_STATES,
+        "completed_arms": list(v3_tournament.ARM_IDS),
+        "callback_preimages_persisted": False,
+        "historical_source_commit": v3_tournament.HISTORICAL_V3_SOURCE_COMMIT,
+        "authentication_mode": "exact-artifact-sha-plus-historical-v1-structure",
+        "publication_authorized": False,
+    }
+    return (
+        {
+            "arm_id": str(winner["arm_id"]),
+            "arm_index": int(winner["arm_index"]),
+            "step": int(winner["step"]),
+            "rank": list(winner["rank"]),
+            "runtime_factor_state_sha256": EXPECTED_SOURCE_RUNTIME_V3_SHA256,
+            "portable_factor_state_sha256": EXPECTED_SOURCE_PORTABLE_V3_SHA256,
+            "checkpoint_sha256": str(winner["checkpoint_sha256"]),
+            "metrics": dict(metrics),
+            "metrics_sha256": canonical_sha256(metrics),
+            "factor_pack": str(factor_path),
+            "factor_pack_sha256": EXPECTED_SOURCE_FACTOR_PACK_FILE_SHA256,
+            "candidate_frontier": frontier_binding,
+        },
+        dict(loaded),
+    )
+
+
 def authenticate_v3_winner_source(
     value: Mapping[str, Any],
     *,
@@ -1345,10 +1657,14 @@ def authenticate_v3_winner_source(
             raise GuidedGUDCandidateTournamentError(
                 "Source tournament reports are not mappings."
             )
-        winner, payload = v3_publication._winner_payload(
+        winner, payload = _authenticate_historical_v1_winner_payload(
             contract,
-            run_report,
-            winner_selection,
+            run_path=run_path,
+            run_sha256=run_sha,
+            run_report=run_report,
+            winner_path=winner_path,
+            winner_sha256=winner_sha,
+            winner_selection=winner_selection,
         )
     except Exception as error:
         if isinstance(error, GuidedGUDCandidateTournamentError):
