@@ -158,6 +158,10 @@ def test_basis_is_biorthogonal_deterministic_hashed_and_zero_optimizer() -> None
     assert len(report.basis_sha256) == 71
     assert canonical_array_sha256(first.encoder) == report.encoder_sha256
     assert json.dumps(report.as_dict(), allow_nan=False)
+    assert all(
+        value is None or type(value) is float
+        for value in report.as_dict()["rank_tolerances"].values()
+    )
     assert report.as_dict()["execution"] == {
         "deterministic": True,
         "backward_used": False,

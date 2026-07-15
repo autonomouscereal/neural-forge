@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import numpy as np
 import pytest
 import torch
 
@@ -458,6 +459,69 @@ def test_replay_basis_roundtrip_and_tensor_tamper_fails(
             path,
             tournament.stage._file_sha256(path),
         )
+
+
+def test_replay_bundle_normalizes_numpy_scalars_for_weights_only_load(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_small_geometry(monkeypatch)
+    result = _replay_result()
+    report = result.report.to_dict()
+    report["ordered_site_reports"] = [
+        {
+            "balanced_dependency_report": {
+                "rank_tolerances": {
+                    "controllability": np.float64(1.25e-12),
+                    "observability": np.float64(2.5e-12),
+                    "hankel": np.float64(5.0e-12),
+                }
+            }
+        }
+    ]
+    report.pop("report_sha256")
+    report["report_sha256"] = tournament.canonical_sha256(report)
+    canonical_before = tournament.canonical_json_bytes(report)
+    production_shaped = replay.GUDOutputJacobianReplayResult(
+        basis_packs=result.basis_packs,
+        site_reports=result.site_reports,
+        report=replay.GUDOutputJacobianReplayReport(report),
+    )
+
+    payload = tournament.guided_gud_basis_bundle_from_audit(production_shaped)
+    normalized_report = payload["replay_audit_report"]
+    tolerances = normalized_report["ordered_site_reports"][0][
+        "balanced_dependency_report"
+    ]["rank_tolerances"]
+    assert all(type(value) is float for value in tolerances.values())
+    assert tournament.canonical_json_bytes(normalized_report) == canonical_before
+    assert normalized_report["report_sha256"] == report["report_sha256"]
+    safe_metadata = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"basis_payload_sha256", "guided_right_rows"}
+    }
+    pre_normalized_metadata = {
+        **safe_metadata,
+        "replay_audit_report": report,
+    }
+    assert tournament.canonical_json_bytes(pre_normalized_metadata) == (
+        tournament.canonical_json_bytes(safe_metadata)
+    )
+    assert (
+        tournament.canonical_sha256(pre_normalized_metadata)
+        == payload["basis_payload_sha256"]
+    )
+
+    path = tmp_path / "numpy-scalar-normalized.pt"
+    torch.save(payload, path)
+    restricted = torch.load(path, map_location="cpu", weights_only=True)
+    assert restricted["replay_audit_report"] == normalized_report
+    authenticated = tournament.authenticate_guided_gud_basis_bundle(
+        path,
+        tournament.stage._file_sha256(path),
+    )
+    assert authenticated.audit_report_sha256 == report["report_sha256"]
 
 
 def test_replay_bundle_rejects_full_config_seed_tamper(

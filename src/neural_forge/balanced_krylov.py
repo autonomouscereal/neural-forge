@@ -1186,7 +1186,7 @@ def _rank_tolerance(
     tolerance = max(atol, float(singular_values[0]) * relative)
     if not math.isfinite(tolerance):
         raise BalancedKrylovFiniteError("Computed SVD rank tolerance is non-finite.")
-    return tolerance
+    return float(tolerance)
 
 
 def _effective_rank(singular_values: np.ndarray, tolerance: float) -> int:

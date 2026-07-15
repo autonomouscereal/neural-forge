@@ -15,6 +15,7 @@ import argparse
 import contextlib
 import dataclasses
 import json
+import pickle
 import re
 import shutil
 from collections.abc import Callable, Mapping, Sequence
@@ -179,6 +180,28 @@ def _canonical_report_sha256(value: Mapping[str, Any], field: str) -> str:
     return expected
 
 
+def _json_native_mapping(value: Any, name: str) -> dict[str, Any]:
+    """Copy canonical metadata into the restricted loader's native JSON types."""
+
+    try:
+        encoded = canonical_json_bytes(value)
+        normalized = json.loads(encoded)
+        roundtrip = canonical_json_bytes(normalized)
+    except (
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+        checkpoint_recovery.GuidedCheckpointRecoveryError,
+    ) as error:
+        raise GuidedGUDCandidateTournamentError(
+            f"{name} is not canonical JSON metadata."
+        ) from error
+    if not isinstance(normalized, dict) or roundtrip != encoded:
+        raise GuidedGUDCandidateTournamentError(
+            f"{name} did not preserve its canonical JSON identity."
+        )
+    return normalized
+
+
 def guided_gud_candidate_schedule() -> BehaviorDistillationSchedule:
     """Return the one fixed 64-step v4 behavior schedule."""
 
@@ -328,7 +351,10 @@ def guided_gud_basis_bundle_from_audit(
             "basis bundle requires GUDOutputJacobianReplayResult."
         )
     replay_report = result.report.to_dict()
-    _canonical_report_sha256(replay_report, "report_sha256")
+    replay_audit_sha = _canonical_report_sha256(
+        replay_report,
+        "report_sha256",
+    )
     geometry = _strict(
         replay_report.get("geometry"),
         set(EXPECTED_GEOMETRY),
@@ -532,6 +558,19 @@ def guided_gud_basis_bundle_from_audit(
         "contains_hidden_states": False,
         "contains_replay_blocks": False,
     }
+    metadata = _json_native_mapping(metadata, "basis bundle metadata")
+    normalized_replay_report = _strict(
+        metadata["replay_audit_report"],
+        set(replay_report),
+        "normalized replay audit report",
+    )
+    if (
+        _canonical_report_sha256(normalized_replay_report, "report_sha256")
+        != replay_audit_sha
+    ):
+        raise GuidedGUDCandidateTournamentError(
+            "JSON-native replay metadata changed the authenticated audit."
+        )
     payload_sha = canonical_sha256(metadata)
     return {
         **metadata,
@@ -582,7 +621,13 @@ def authenticate_guided_gud_basis_bundle(
         raise GuidedGUDCandidateTournamentError("Basis bundle is absent or changed.")
     try:
         raw = torch.load(bundle_path, map_location="cpu", weights_only=True)
-    except (OSError, RuntimeError, TypeError, ValueError) as error:
+    except (
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        pickle.UnpicklingError,
+    ) as error:
         raise GuidedGUDCandidateTournamentError(
             "Basis bundle cannot load safely."
         ) from error
