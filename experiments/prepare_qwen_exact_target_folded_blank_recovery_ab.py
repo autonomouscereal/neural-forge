@@ -16,7 +16,7 @@ import run_qwen_exact_target_folded_blank_recovery_ab as recovery_ab
 import run_qwen_exact_target_native_stage as stage
 
 
-BUILD_SCHEMA = "neural-forge-folded-blank-recovery-ab-build-v1"
+BUILD_SCHEMA = "neural-forge-folded-blank-recovery-ab-build-v2"
 
 
 class FoldedBlankRecoveryABPreparationError(RuntimeError):
@@ -26,6 +26,7 @@ class FoldedBlankRecoveryABPreparationError(RuntimeError):
 def prepare_recovery_ab(
     *,
     output_dir: Path | str,
+    fold_source_kind: recovery_ab.FoldSourceKind,
     tournament_preregistration: Path | str,
     tournament_run_report: Path | str,
     winner_selection: Path | str,
@@ -49,17 +50,17 @@ def prepare_recovery_ab(
         "tournament_preregistration": recovery_ab.publication._resolve(
             tournament_preregistration,
             base=Path.cwd(),
-            name="v4 candidate tournament preregistration",
+            name="fold source tournament preregistration",
         ),
         "tournament_run_report": recovery_ab.publication._resolve(
             tournament_run_report,
             base=Path.cwd(),
-            name="v4 candidate tournament run report",
+            name="fold source tournament run report",
         ),
         "winner_selection": recovery_ab.publication._resolve(
             winner_selection,
             base=Path.cwd(),
-            name="v4 retained winner selection",
+            name="fold source retained winner selection",
         ),
         "replay_bank": recovery_ab.publication._resolve(
             replay_bank,
@@ -86,7 +87,8 @@ def prepare_recovery_ab(
     ).resolve()
     renamed = False
     try:
-        payload, _v4 = recovery_ab.build_recovery_ab_preregistration_payload(
+        payload, _fold_source = recovery_ab.build_recovery_ab_preregistration_payload(
+            fold_source_kind=fold_source_kind,
             tournament_preregistration=paths["tournament_preregistration"],
             tournament_preregistration_sha256=stage._file_sha256(
                 paths["tournament_preregistration"]
@@ -117,8 +119,9 @@ def prepare_recovery_ab(
             "preregistration": str(output / "preregistration.json"),
             "preregistration_sha256": preregistration_sha,
             "semantic_contract_sha256": payload["semantic_contract_sha256"],
-            "v4_candidate_only": True,
-            "winner_portable_factor_state_sha256": payload["v4_candidate"]["winner"][
+            "fold_source_kind": payload["fold_source"]["kind"],
+            "fold_source_candidate_only": True,
+            "winner_portable_factor_state_sha256": payload["fold_source"]["winner"][
                 "portable_factor_state_sha256"
             ],
             "compiled_blank_state_sha256": payload["compiled_blank"][
@@ -183,6 +186,11 @@ def prepare_recovery_ab(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--fold-source-kind",
+        choices=recovery_ab.FOLD_SOURCE_KINDS,
+        required=True,
+    )
     parser.add_argument("--tournament-preregistration", type=Path, required=True)
     parser.add_argument("--tournament-run-report", type=Path, required=True)
     parser.add_argument("--winner-selection", type=Path, required=True)
@@ -195,6 +203,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     report = prepare_recovery_ab(
         output_dir=args.output_dir,
+        fold_source_kind=args.fold_source_kind,
         tournament_preregistration=args.tournament_preregistration,
         tournament_run_report=args.tournament_run_report,
         winner_selection=args.winner_selection,

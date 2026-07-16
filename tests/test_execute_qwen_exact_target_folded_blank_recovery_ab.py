@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
 from typing import Any
@@ -15,6 +16,13 @@ if str(EXPERIMENTS) not in sys.path:
 
 import execute_qwen_exact_target_folded_blank_recovery_ab as executor  # noqa: E402
 from neural_forge import hf_recovery  # noqa: E402
+
+
+@dataclass(frozen=True)
+class _RuntimeInputBase:
+    parent: Any
+    splits: Any
+    training: Any
 
 
 def _digest(label: str) -> str:
@@ -33,6 +41,48 @@ def _file_sha(path: Path) -> str:
     import hashlib
 
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("kind", ("historical-guided-qkvo-v3", "guided-gud-v4"))
+def test_production_runtime_inputs_use_authenticated_outer_source_contract(
+    tmp_path: Path,
+    kind: str,
+) -> None:
+    v3 = SimpleNamespace(
+        splits="v3-splits",
+        schedule=SimpleNamespace(as_dict=lambda: {"source": "v3-schedule"}),
+        runtime={"source": "v3-runtime"},
+    )
+    v4 = SimpleNamespace(
+        splits="v4-splits",
+        schedule=SimpleNamespace(as_dict=lambda: {"source": "v4-schedule"}),
+        runtime={"source": "v4-runtime"},
+    )
+    outer = v3 if kind == "historical-guided-qkvo-v3" else v4
+    source_guided = SimpleNamespace(
+        execution_contract=_RuntimeInputBase(
+            parent=SimpleNamespace(path=str(tmp_path / "parent")),
+            splits="stale-splits",
+            training={"source": "stale-schedule"},
+        )
+    )
+    contract = SimpleNamespace(
+        fold_source=SimpleNamespace(
+            tournament_contract=outer,
+            v3_tournament_contract=v3,
+            source_guided=source_guided,
+        )
+    )
+
+    base, returned_guided, source_path, runtime = (
+        executor._production_runtime_inputs(contract)
+    )
+
+    assert returned_guided is source_guided
+    assert base.splits == outer.splits
+    assert base.training == outer.schedule.as_dict()
+    assert runtime == outer.runtime
+    assert source_path == (tmp_path / "parent").resolve()
 
 
 def _behavior(step: int, *, correct: int, loss: float | None) -> dict[str, Any]:
@@ -225,7 +275,8 @@ def _fixture_contract(tmp_path: Path) -> tuple[Any, dict[str, Any], Path]:
             "parameter_topology_sha256": _digest("parameters"),
             "buffer_topology_sha256": _digest("buffers"),
         },
-        "v4_candidate": {
+        "fold_source": {
+            "kind": "guided-gud-v4",
             "factor_pack_schema": "fake-v4-pack",
             "factor_source_binding_sha256": _digest("source-binding"),
             "winner": {
@@ -1087,6 +1138,11 @@ def test_restore_v4_winner_uses_live_rebinding_and_composite_handoff(
         lambda _payload, _binding: {"factor_state_sha256": _digest("runtime-v3")},
     )
     monkeypatch.setattr(
+        executor.v3_publication,
+        "portable_v3_factor_state_sha256",
+        lambda *_args: _digest("portable-v3"),
+    )
+    monkeypatch.setattr(
         executor.publication,
         "authenticate_guided_gud_factor_sources",
         lambda *_args: calls.append("authenticate-gud") or {"gud": "live"},
@@ -1119,16 +1175,21 @@ def test_restore_v4_winner_uses_live_rebinding_and_composite_handoff(
         lambda *_args: _digest("portable-v4"),
     )
     v4_contract = SimpleNamespace(
-        source=SimpleNamespace(factor_payload={}),
+        source=SimpleNamespace(
+            factor_payload={},
+            runtime_factor_state_sha256=_digest("runtime-v3"),
+            portable_factor_state_sha256=_digest("portable-v3"),
+        ),
     )
     contract = SimpleNamespace(
-        v4=SimpleNamespace(
-            contract=v4_contract,
+        fold_source=SimpleNamespace(
+            tournament_contract=v4_contract,
             factor_payload={},
             winner={},
         ),
         raw={
-            "v4_candidate": {
+            "fold_source": {
+                "kind": "guided-gud-v4",
                 "winner": {
                     "runtime_factor_state_sha256": _digest("runtime-v4"),
                     "portable_factor_state_sha256": _digest("portable-v4"),
@@ -1151,5 +1212,121 @@ def test_restore_v4_winner_uses_live_rebinding_and_composite_handoff(
         "authenticate-gud",
         "handoff",
     ]
-    assert trace["runtime_rebound_v4_factor_state_sha256"] == _digest("runtime-v4")
-    assert trace["portable_v4_factor_state_sha256"] == _digest("portable-v4")
+    assert trace["runtime_rebound_factor_state_sha256"] == _digest("runtime-v4")
+    assert trace["portable_factor_state_sha256"] == _digest("portable-v4")
+
+
+def test_restore_historical_v3_uses_exact_qkvo_order_and_never_calls_gud(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    qkvo = SimpleNamespace(
+        set_training_stage=lambda stage_name: calls.append(f"qkvo-stage:{stage_name}")
+    )
+
+    class Runtime:
+        _guided_tranche = qkvo
+
+        def restore_source_v2(self, _transaction, _source):
+            calls.append("restore-v2")
+            return {"restored": True}
+
+        def install_guided_transaction(self, _transaction, _source):
+            calls.append("install-qkvo")
+            return {"installed": "qkvo"}
+
+        def install_guided_gud_transaction(self, *_args, **_kwargs):
+            pytest.fail("historical V3 restoration must never install guided GUD")
+
+        def handoff_v4_for_publication(self, *_args, **_kwargs):
+            pytest.fail("historical V3 restoration must never use the V4 handoff")
+
+        def handoff_guided_for_publication(self, _transaction, _source):
+            calls.append("handoff-qkvo")
+            return {
+                "handoff_complete": True,
+                "transaction_qkvo_handle_is_guided_composite": True,
+                "old_only_publication_path_disabled": True,
+            }
+
+    transaction = SimpleNamespace(
+        installation_report=lambda: calls.append("installation-report")
+        or {"installed": "inherited"}
+    )
+    captured = iter(
+        (
+            SimpleNamespace(factor_state_sha256=_digest("v2")),
+            SimpleNamespace(factor_state_sha256=_digest("runtime-v3")),
+        )
+    )
+
+    def capture(*_args, **_kwargs):
+        value = next(captured)
+        calls.append(
+            "capture-v3"
+            if value.factor_state_sha256 == _digest("runtime-v3")
+            else "capture-v2"
+        )
+        return value
+
+    monkeypatch.setattr(executor.publication, "capture_target_native_factor_state", capture)
+    monkeypatch.setattr(
+        executor.publication,
+        "authenticate_guided_factor_sources",
+        lambda *_args: calls.append("authenticate-qkvo") or {"qkvo": "live"},
+    )
+    monkeypatch.setattr(
+        executor.publication,
+        "rebind_recovered_v3_factor_payload",
+        lambda _payload, _binding: calls.append("rebind-v3")
+        or {"factor_state_sha256": _digest("runtime-v3")},
+    )
+    monkeypatch.setattr(
+        executor.publication,
+        "restore_target_native_factor_payload",
+        lambda *_args, **_kwargs: calls.append("restore-v3")
+        or SimpleNamespace(
+            schema=executor.publication.BEHAVIOR_FACTOR_PACK_V3_SCHEMA,
+            factor_state_sha256=_digest("runtime-v3"),
+        ),
+    )
+    monkeypatch.setattr(
+        executor.v3_publication,
+        "portable_v3_factor_state_sha256",
+        lambda *_args: calls.append("portable-v3") or _digest("portable-v3"),
+    )
+    contract = SimpleNamespace(
+        fold_source=SimpleNamespace(factor_payload={"schema": "fake-v3"}),
+        raw={
+            "fold_source": {
+                "kind": "historical-guided-qkvo-v3",
+                "winner": {
+                    "runtime_factor_state_sha256": _digest("runtime-v3"),
+                    "portable_factor_state_sha256": _digest("portable-v3"),
+                },
+            }
+        },
+    )
+    trace = executor._restore_fold_source(
+        contract=contract,
+        runtime=Runtime(),
+        transaction=transaction,
+        source_guided=object(),
+    )
+    assert calls == [
+        "installation-report",
+        "restore-v2",
+        "install-qkvo",
+        "capture-v2",
+        "authenticate-qkvo",
+        "rebind-v3",
+        "qkvo-stage:joint",
+        "restore-v3",
+        "capture-v3",
+        "portable-v3",
+        "handoff-qkvo",
+    ]
+    assert trace["kind"] == "historical-guided-qkvo-v3"
+    assert trace["guided_gud_installation"] is None
+    assert trace["runtime_rebound_factor_state_sha256"] == _digest("runtime-v3")
+    assert trace["portable_factor_state_sha256"] == _digest("portable-v3")

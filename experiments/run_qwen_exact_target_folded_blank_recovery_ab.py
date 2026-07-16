@@ -2,8 +2,8 @@
 """Authenticate a sealed-free folded-vs-blank recovery A/B scaffold.
 
 Preregistration and preflight are deliberately model-free.  They authenticate
-one retained v4 candidate factor state, the exact compiled blank cache that
-candidate started from, a frozen replay bank, and one recovery plan shared
+one authenticated retained V3 or V4 candidate factor state, the exact compiled
+blank cache that candidate started from, a frozen replay bank, and one recovery plan shared
 byte-for-byte by both arms.  Folded materialization authentication is stricter:
 an explicit production callback bundle must independently fresh-reload the
 atomic experimental child artifact before zero-step evaluation or training.
@@ -22,7 +22,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Literal
 
 import authenticate_qwen_exact_target_native_guided_gud_candidate_tournament_history as tournament_history
 import materialize_qwen3_stage1_blank_target as blank
@@ -58,9 +58,9 @@ from neural_forge.hf_progressive_target_bridge import (
 
 
 PREREGISTRATION_SCHEMA = (
-    "neural-forge-qwen-exact-target-folded-blank-recovery-ab-preregistration-v1"
+    "neural-forge-qwen-exact-target-folded-blank-recovery-ab-preregistration-v2"
 )
-RUN_SCHEMA = "neural-forge-qwen-exact-target-folded-blank-recovery-ab-run-v1"
+RUN_SCHEMA = "neural-forge-qwen-exact-target-folded-blank-recovery-ab-run-v2"
 REPLAY_SCHEMA = "neural-forge-frozen-recovery-replay-bank-v4"
 PLAN_SCHEMA = "neural-forge-folded-blank-recovery-plan-v2"
 TEACHER_SOURCE_ARTIFACT_SCHEMA = "neural-forge-teacher-source-artifact-binding-v1"
@@ -68,6 +68,15 @@ MATERIALIZATION_RECEIPT_SCHEMA = (
     "neural-forge-folded-blank-recovery-materialization-receipt-v1"
 )
 ZERO_STEP_RECEIPT_SCHEMA = "neural-forge-folded-blank-recovery-zero-step-receipt-v1"
+FOLD_SOURCE_SCHEMA = "neural-forge-folded-recovery-source-binding-v1"
+FOLD_SOURCE_AUTHENTICATION_SCHEMA = (
+    "neural-forge-folded-recovery-source-authentication-receipt-v1"
+)
+FoldSourceKind = Literal["historical-guided-qkvo-v3", "guided-gud-v4"]
+FOLD_SOURCE_KINDS: tuple[FoldSourceKind, ...] = (
+    "historical-guided-qkvo-v3",
+    "guided-gud-v4",
+)
 BUILD_FILENAME = "prepare_qwen_exact_target_folded_blank_recovery_ab.py"
 EXECUTOR_FILENAME = "execute_qwen_exact_target_folded_blank_recovery_ab.py"
 RECOVERY_INPUT_BUILDER_FILENAME = (
@@ -474,6 +483,21 @@ def _implementation_hashes(*, builder_path: Path) -> dict[str, str]:
         "v4_candidate_tournament_runner_sha256": stage._file_sha256(
             Path(tournament.__file__).resolve()
         ),
+        "v3_candidate_tournament_runner_sha256": stage._file_sha256(
+            Path(tournament.v3_tournament.__file__).resolve()
+        ),
+        "v3_winner_publication_runtime_sha256": stage._file_sha256(
+            Path(tournament.v3_publication.__file__).resolve()
+        ),
+        "guided_continuation_runtime_sha256": stage._file_sha256(
+            Path(tournament.v3_publication.guided.__file__).resolve()
+        ),
+        "guided_qkvo_adapter_sha256": stage._file_sha256(
+            _module_file(tournament.v3_publication.guided.GUIDED_ADAPTER_MODULE)
+        ),
+        "guided_gud_adapter_sha256": stage._file_sha256(
+            Path(publication.tournament.gud_adapter.__file__).resolve()
+        ),
         "v4_candidate_authenticator_sha256": stage._file_sha256(
             Path(publication.__file__).resolve()
         ),
@@ -634,13 +658,384 @@ def _authenticate_v4_candidate(
     )
 
 
-def _compiled_blank_binding(v4: _V4CandidateBinding) -> dict[str, Any]:
+@dataclass(frozen=True, slots=True)
+class _FoldSourceBinding:
+    kind: FoldSourceKind
+    tournament_contract: Any
+    v3_tournament_contract: Any
+    source_guided: Any
+    preregistration_path: Path
+    preregistration_sha256: str
+    preregistration: Mapping[str, Any]
+    run_report_path: Path
+    run_report_sha256: str
+    run_report: Mapping[str, Any]
+    winner_selection_path: Path
+    winner_selection_sha256: str
+    winner_selection: Mapping[str, Any]
+    winner: Mapping[str, Any]
+    factor_payload: Mapping[str, Any]
+    authentication_receipt: Mapping[str, Any]
+    historical_source_commit: str | None
+
+
+def _factor_payload_binding(
+    factor_payload: Mapping[str, Any],
+    *,
+    kind: FoldSourceKind,
+    winner: Mapping[str, Any],
+) -> dict[str, Any]:
+    expected_schema = (
+        publication.BEHAVIOR_FACTOR_PACK_V3_SCHEMA
+        if kind == "historical-guided-qkvo-v3"
+        else publication.BEHAVIOR_FACTOR_PACK_V4_SCHEMA
+    )
+    rows = factor_payload.get("factors")
+    if (
+        factor_payload.get("schema") != expected_schema
+        or factor_payload.get("factor_state_sha256")
+        != winner["runtime_factor_state_sha256"]
+        or isinstance(factor_payload.get("factor_count"), bool)
+        or not isinstance(factor_payload.get("factor_count"), int)
+        or not isinstance(rows, list)
+        or factor_payload.get("factor_count") != len(rows)
+        or not rows
+    ):
+        raise FoldedBlankRecoveryABError(
+            "Fold source factor payload metadata differs from its authenticated winner."
+        )
+    tensor_hashes: dict[str, str] = {}
+    for index, raw_row in enumerate(rows):
+        row = _strict(
+            raw_row,
+            {"name", "shape", "dtype", "tensor_sha256"},
+            f"fold source factor manifest[{index}]",
+        )
+        name = row["name"]
+        if (
+            not isinstance(name, str)
+            or not name
+            or name in tensor_hashes
+            or not isinstance(row["shape"], list)
+            or any(
+                isinstance(size, bool) or not isinstance(size, int) or size < 0
+                for size in row["shape"]
+            )
+            or not isinstance(row["dtype"], str)
+            or not row["dtype"]
+        ):
+            raise FoldedBlankRecoveryABError(
+                "Fold source factor manifest names, shapes, or dtypes are malformed."
+            )
+        tensor_hashes[name] = _sha256(
+            row["tensor_sha256"],
+            f"fold source factor manifest[{index}].tensor_sha256",
+        )
+    tensor_hashes = {name: tensor_hashes[name] for name in sorted(tensor_hashes)}
+    guided_source_sha = _sha256(
+        factor_payload.get("guided_source_binding_sha256"),
+        "fold source guided source binding SHA",
+    )
+    guided_gud_source_sha: str | None = None
+    if kind == "guided-gud-v4":
+        guided_gud_source_sha = _sha256(
+            factor_payload.get("guided_gud_source_binding_sha256"),
+            "fold source guided-GUD source binding SHA",
+        )
+    elif "guided_gud_source_binding_sha256" in factor_payload:
+        raise FoldedBlankRecoveryABError(
+            "Historical guided-QKVO source cannot contain a guided-GUD binding."
+        )
+    factor_manifest = {
+        key: value for key, value in factor_payload.items() if key != "factor_tensors"
+    }
+    return {
+        "factor_pack_schema": expected_schema,
+        "factor_count": len(rows),
+        "factor_payload_manifest_sha256": canonical_sha256(factor_manifest),
+        "factor_rows_sha256": canonical_sha256(rows),
+        "factor_tensor_sha256s": tensor_hashes,
+        "factor_tensor_sha256s_sha256": canonical_sha256(tensor_hashes),
+        "guided_source_binding_sha256": guided_source_sha,
+        "guided_gud_source_binding_sha256": guided_gud_source_sha,
+    }
+
+
+def _source_authentication_receipt(
+    *,
+    kind: FoldSourceKind,
+    preregistration_sha256: str,
+    run_report_sha256: str,
+    winner_selection_sha256: str,
+    evaluation_contract_sha256: str,
+    candidate_frontier_sha256: str,
+    factor_pack_sha256: str,
+    historical_source_commit: str | None,
+    upstream_receipt: Mapping[str, Any],
+) -> dict[str, Any]:
+    body = {
+        "schema": FOLD_SOURCE_AUTHENTICATION_SCHEMA,
+        "kind": kind,
+        "authentication_mode": (
+            "historical-exact-artifact-v1"
+            if kind == "historical-guided-qkvo-v3"
+            else "live-v4-transitive-history-authentication"
+        ),
+        "preregistration_sha256": _sha256(
+            preregistration_sha256,
+            "fold source authentication preregistration SHA",
+        ),
+        "run_report_sha256": _sha256(
+            run_report_sha256,
+            "fold source authentication run report SHA",
+        ),
+        "winner_selection_sha256": _sha256(
+            winner_selection_sha256,
+            "fold source authentication winner selection SHA",
+        ),
+        "evaluation_contract_sha256": _sha256(
+            evaluation_contract_sha256,
+            "fold source authentication evaluation contract SHA",
+        ),
+        "candidate_frontier_sha256": _sha256(
+            candidate_frontier_sha256,
+            "fold source authentication frontier SHA",
+        ),
+        "factor_pack_sha256": _sha256(
+            factor_pack_sha256,
+            "fold source authentication factor pack SHA",
+        ),
+        "historical_source_commit": historical_source_commit,
+        "nonretained_callback_preimages_complete": (
+            False if kind == "historical-guided-qkvo-v3" else None
+        ),
+        "upstream_receipt": dict(upstream_receipt),
+        "upstream_receipt_sha256": canonical_sha256(dict(upstream_receipt)),
+        "candidate_only": True,
+        "sealed_evaluation_accessed": False,
+        "sealed_data_accessed": False,
+        "publication_attempted": False,
+        "publication_authorized": False,
+        "accepted_artifact": False,
+        "behavior_capability_proven": False,
+        "coherent_continuation_proven": False,
+        "standalone_intelligence_claim": False,
+    }
+    historical_commit_valid = (
+        historical_source_commit
+        == tournament.v3_tournament.HISTORICAL_V3_SOURCE_COMMIT
+        if kind == "historical-guided-qkvo-v3"
+        else historical_source_commit is None
+    )
+    if not historical_commit_valid:
+        raise FoldedBlankRecoveryABError(
+            "Fold source historical commit is inconsistent with its source kind."
+        )
+    return {**body, "receipt_sha256": canonical_sha256(body)}
+
+
+def _normalize_v3_winner(
+    source: tournament.AuthenticatedV3WinnerSource,
+    winner_selection: Mapping[str, Any],
+) -> dict[str, Any]:
+    raw_winner = winner_selection.get("winner")
+    if not isinstance(raw_winner, Mapping):
+        raise FoldedBlankRecoveryABError(
+            "Historical V3 winner selection has no authenticated winner."
+        )
+    metrics = raw_winner.get("metrics")
+    frontier = source.candidate_frontier
+    if not isinstance(metrics, Mapping) or not isinstance(frontier, Mapping):
+        raise FoldedBlankRecoveryABError(
+            "Historical V3 winner metrics or frontier binding are malformed."
+        )
+    return {
+        "arm_id": source.arm_id,
+        "arm_index": int(raw_winner["arm_index"]),
+        "step": source.step,
+        "rank": list(raw_winner["rank"]),
+        "runtime_factor_state_sha256": source.runtime_factor_state_sha256,
+        "portable_factor_state_sha256": source.portable_factor_state_sha256,
+        "checkpoint_sha256": _sha256(
+            raw_winner["checkpoint_sha256"],
+            "historical V3 winner checkpoint SHA",
+        ),
+        "metrics": dict(metrics),
+        "metrics_sha256": canonical_sha256(metrics),
+        "factor_pack": str(source.factor_pack_path),
+        "factor_pack_sha256": source.factor_pack_file_sha256,
+        "candidate_frontier": dict(frontier),
+    }
+
+
+def _authenticate_v3_fold_source(
+    *,
+    tournament_preregistration: Path,
+    tournament_preregistration_sha256: str,
+    tournament_run_report: Path,
+    tournament_run_report_sha256: str,
+    winner_selection: Path,
+    winner_selection_sha256: str,
+) -> _FoldSourceBinding:
+    source_value = {
+        "tournament_preregistration": {
+            "path": str(tournament_preregistration),
+            "sha256": tournament_preregistration_sha256,
+        },
+        "tournament_run_report": {
+            "path": str(tournament_run_report),
+            "sha256": tournament_run_report_sha256,
+        },
+        "winner_selection": {
+            "path": str(winner_selection),
+            "sha256": winner_selection_sha256,
+        },
+        "expected_winner": {
+            "arm_id": tournament.EXPECTED_SOURCE_ARM_ID,
+            "step": tournament.EXPECTED_SOURCE_STEP,
+            "runtime_factor_state_sha256": tournament.EXPECTED_SOURCE_RUNTIME_V3_SHA256,
+            "portable_factor_state_sha256": tournament.EXPECTED_SOURCE_PORTABLE_V3_SHA256,
+            "factor_pack_file_sha256": tournament.EXPECTED_SOURCE_FACTOR_PACK_FILE_SHA256,
+        },
+    }
     try:
-        guided_source = v4.contract.source.tournament_contract.source
+        source = tournament.authenticate_v3_winner_source(
+            source_value,
+            base=Path.cwd(),
+        )
+    except Exception as error:
+        raise FoldedBlankRecoveryABError(
+            "Historical V3 candidate failed exact-artifact authentication."
+        ) from error
+    prereg = _bound_json(
+        source.tournament_preregistration_path,
+        source.tournament_preregistration_sha256,
+        "historical V3 candidate preregistration",
+    )
+    run_report = _bound_json(
+        source.run_report_path,
+        source.run_report_sha256,
+        "historical V3 candidate run report",
+    )
+    selection = _bound_json(
+        source.winner_selection_path,
+        source.winner_selection_sha256,
+        "historical V3 winner selection",
+    )
+    winner = _normalize_v3_winner(source, selection)
+    evaluation_sha = source.tournament_contract.evaluation_contract_sha256
+    upstream = {
+        "schema": "neural-forge-historical-v3-source-audit-v1",
+        "historical_source_commit": tournament.v3_tournament.HISTORICAL_V3_SOURCE_COMMIT,
+        "callback_preimages_persisted": False,
+        "candidate_frontier": dict(source.candidate_frontier),
+        "exact_artifact_authenticator": "authenticate_v3_winner_source",
+        "candidate_only": True,
+        "incoherent_candidate_label_preserved": True,
+        "publication_authorized": False,
+    }
+    receipt = _source_authentication_receipt(
+        kind="historical-guided-qkvo-v3",
+        preregistration_sha256=source.tournament_preregistration_sha256,
+        run_report_sha256=source.run_report_sha256,
+        winner_selection_sha256=source.winner_selection_sha256,
+        evaluation_contract_sha256=evaluation_sha,
+        candidate_frontier_sha256=winner["candidate_frontier"]["sha256"],
+        factor_pack_sha256=source.factor_pack_file_sha256,
+        historical_source_commit=tournament.v3_tournament.HISTORICAL_V3_SOURCE_COMMIT,
+        upstream_receipt=upstream,
+    )
+    return _FoldSourceBinding(
+        kind="historical-guided-qkvo-v3",
+        tournament_contract=source.tournament_contract,
+        v3_tournament_contract=source.tournament_contract,
+        source_guided=source.tournament_contract.source,
+        preregistration_path=source.tournament_preregistration_path,
+        preregistration_sha256=source.tournament_preregistration_sha256,
+        preregistration=MappingProxyType(dict(prereg)),
+        run_report_path=source.run_report_path,
+        run_report_sha256=source.run_report_sha256,
+        run_report=MappingProxyType(dict(run_report)),
+        winner_selection_path=source.winner_selection_path,
+        winner_selection_sha256=source.winner_selection_sha256,
+        winner_selection=MappingProxyType(dict(selection)),
+        winner=MappingProxyType(winner),
+        factor_payload=MappingProxyType(dict(source.factor_payload)),
+        authentication_receipt=MappingProxyType(receipt),
+        historical_source_commit=tournament.v3_tournament.HISTORICAL_V3_SOURCE_COMMIT,
+    )
+
+
+def _authenticate_fold_source(
+    *,
+    kind: FoldSourceKind,
+    tournament_preregistration: Path,
+    tournament_preregistration_sha256: str,
+    tournament_run_report: Path,
+    tournament_run_report_sha256: str,
+    winner_selection: Path,
+    winner_selection_sha256: str,
+) -> _FoldSourceBinding:
+    if kind not in FOLD_SOURCE_KINDS:
+        raise FoldedBlankRecoveryABError(
+            f"Unknown fold source kind {kind!r}; expected one of {FOLD_SOURCE_KINDS!r}."
+        )
+    if kind == "historical-guided-qkvo-v3":
+        return _authenticate_v3_fold_source(
+            tournament_preregistration=tournament_preregistration,
+            tournament_preregistration_sha256=tournament_preregistration_sha256,
+            tournament_run_report=tournament_run_report,
+            tournament_run_report_sha256=tournament_run_report_sha256,
+            winner_selection=winner_selection,
+            winner_selection_sha256=winner_selection_sha256,
+        )
+    v4 = _authenticate_v4_candidate(
+        tournament_preregistration=tournament_preregistration,
+        tournament_preregistration_sha256=tournament_preregistration_sha256,
+        tournament_run_report=tournament_run_report,
+        tournament_run_report_sha256=tournament_run_report_sha256,
+        winner_selection=winner_selection,
+        winner_selection_sha256=winner_selection_sha256,
+    )
+    receipt = _source_authentication_receipt(
+        kind="guided-gud-v4",
+        preregistration_sha256=v4.preregistration_sha256,
+        run_report_sha256=v4.run_report_sha256,
+        winner_selection_sha256=v4.winner_selection_sha256,
+        evaluation_contract_sha256=v4.contract.evaluation_contract_sha256,
+        candidate_frontier_sha256=v4.winner["candidate_frontier"]["sha256"],
+        factor_pack_sha256=v4.winner["factor_pack_sha256"],
+        historical_source_commit=None,
+        upstream_receipt=v4.preregistration_authentication_receipt,
+    )
+    return _FoldSourceBinding(
+        kind="guided-gud-v4",
+        tournament_contract=v4.contract,
+        v3_tournament_contract=v4.contract.source.tournament_contract,
+        source_guided=v4.contract.source.tournament_contract.source,
+        preregistration_path=v4.preregistration_path,
+        preregistration_sha256=v4.preregistration_sha256,
+        preregistration=v4.preregistration,
+        run_report_path=v4.run_report_path,
+        run_report_sha256=v4.run_report_sha256,
+        run_report=v4.run_report,
+        winner_selection_path=v4.winner_selection_path,
+        winner_selection_sha256=v4.winner_selection_sha256,
+        winner_selection=v4.winner_selection,
+        winner=v4.winner,
+        factor_payload=v4.factor_payload,
+        authentication_receipt=MappingProxyType(receipt),
+        historical_source_commit=None,
+    )
+
+
+def _compiled_blank_binding(fold_source: _FoldSourceBinding) -> dict[str, Any]:
+    try:
+        guided_source = fold_source.source_guided
         cache = guided_source.execution_contract.compiler_cache
     except AttributeError as error:
         raise FoldedBlankRecoveryABError(
-            "V4 source does not expose its transitive compiled blank cache."
+            "Fold source does not expose its transitive compiled blank cache."
         ) from error
     required_pins = (
         "expected_compiler_identity_sha256",
@@ -655,7 +1050,7 @@ def _compiled_blank_binding(v4: _V4CandidateBinding) -> dict[str, Any]:
         or any(getattr(cache, name, None) is None for name in required_pins)
     ):
         raise FoldedBlankRecoveryABError(
-            "V4 source does not require one fully pinned compiled blank cache hit."
+            "Fold source does not require one fully pinned compiled blank cache hit."
         )
     identity_sha = _sha256(
         cache.expected_compiler_identity_sha256,
@@ -1230,6 +1625,7 @@ def _plan_binding(path: Path, expected_sha256: str) -> dict[str, Any]:
 
 def build_recovery_ab_preregistration_payload(
     *,
+    fold_source_kind: FoldSourceKind,
     tournament_preregistration: Path,
     tournament_preregistration_sha256: str,
     tournament_run_report: Path,
@@ -1241,8 +1637,9 @@ def build_recovery_ab_preregistration_payload(
     recovery_plan: Path,
     recovery_plan_sha256: str,
     builder_path: Path,
-) -> tuple[dict[str, Any], _V4CandidateBinding]:
-    v4 = _authenticate_v4_candidate(
+) -> tuple[dict[str, Any], _FoldSourceBinding]:
+    fold_source = _authenticate_fold_source(
+        kind=fold_source_kind,
         tournament_preregistration=tournament_preregistration,
         tournament_preregistration_sha256=tournament_preregistration_sha256,
         tournament_run_report=tournament_run_report,
@@ -1250,7 +1647,7 @@ def build_recovery_ab_preregistration_payload(
         winner_selection=winner_selection,
         winner_selection_sha256=winner_selection_sha256,
     )
-    compiled_blank = _compiled_blank_binding(v4)
+    compiled_blank = _compiled_blank_binding(fold_source)
     replay = _replay_binding(replay_bank, replay_bank_sha256)
     plan = _plan_binding(recovery_plan, recovery_plan_sha256)
     replay_parameters = replay["teacher_token_replay_parameters"]
@@ -1350,22 +1747,37 @@ def build_recovery_ab_preregistration_payload(
         "dynamic_stepwise_donor_generation_forbidden": True,
     }
     shared_sha = canonical_sha256(shared)
+    factor_payload_binding = _factor_payload_binding(
+        fold_source.factor_payload,
+        kind=fold_source.kind,
+        winner=fold_source.winner,
+    )
     factor_source_binding = {
-        "factor_pack_sha256": v4.winner["factor_pack_sha256"],
-        "portable_factor_state_sha256": v4.winner["portable_factor_state_sha256"],
-        "runtime_factor_state_sha256": v4.winner["runtime_factor_state_sha256"],
-        "candidate_frontier_sha256": v4.winner["candidate_frontier"]["sha256"],
-        "winner_selection_sha256": v4.winner_selection_sha256,
+        "kind": fold_source.kind,
+        "factor_pack_sha256": fold_source.winner["factor_pack_sha256"],
+        "portable_factor_state_sha256": fold_source.winner[
+            "portable_factor_state_sha256"
+        ],
+        "runtime_factor_state_sha256": fold_source.winner[
+            "runtime_factor_state_sha256"
+        ],
+        "checkpoint_sha256": fold_source.winner["checkpoint_sha256"],
+        "metrics_sha256": fold_source.winner["metrics_sha256"],
+        "candidate_frontier_sha256": fold_source.winner["candidate_frontier"][
+            "sha256"
+        ],
+        "winner_selection_sha256": fold_source.winner_selection_sha256,
+        **factor_payload_binding,
     }
     factor_source_binding_sha = canonical_sha256(factor_source_binding)
     arms = [
         {
             "arm_id": "folded",
-            "initialization": "retained-v4-factor-materialization",
-            "source_portable_factor_state_sha256": v4.winner[
+            "initialization": "authenticated-fold-source-materialization",
+            "source_portable_factor_state_sha256": fold_source.winner[
                 "portable_factor_state_sha256"
             ],
-            "source_factor_pack_sha256": v4.winner["factor_pack_sha256"],
+            "source_factor_pack_sha256": fold_source.winner["factor_pack_sha256"],
             "expected_initial_state_sha256": None,
             "shared_execution_contract_sha256": shared_sha,
         },
@@ -1379,13 +1791,18 @@ def build_recovery_ab_preregistration_payload(
         },
     ]
     source_roots = {
-        "v4_preregistration": _collect_sha256_roots(v4.preregistration),
-        "v4_run_report": _collect_sha256_roots(v4.run_report),
-        "v4_winner_selection": _collect_sha256_roots(v4.winner_selection),
-        "v4_winner": _collect_sha256_roots(v4.winner),
-        "v4_preregistration_authentication": _collect_sha256_roots(
-            v4.preregistration_authentication_receipt
+        "fold_source_preregistration": _collect_sha256_roots(
+            fold_source.preregistration
         ),
+        "fold_source_run_report": _collect_sha256_roots(fold_source.run_report),
+        "fold_source_winner_selection": _collect_sha256_roots(
+            fold_source.winner_selection
+        ),
+        "fold_source_winner": _collect_sha256_roots(fold_source.winner),
+        "fold_source_authentication": _collect_sha256_roots(
+            fold_source.authentication_receipt
+        ),
+        "fold_source_factor_binding": _collect_sha256_roots(factor_source_binding),
         "compiled_blank": _collect_sha256_roots(compiled_blank),
         "replay_bank": _collect_sha256_roots(replay),
         "recovery_plan": _collect_sha256_roots(plan),
@@ -1394,24 +1811,46 @@ def build_recovery_ab_preregistration_payload(
     payload = {
         "schema": PREREGISTRATION_SCHEMA,
         "status": "experimental-unaccepted",
-        "v4_candidate": {
-            "tournament_preregistration": str(v4.preregistration_path),
-            "tournament_preregistration_sha256": v4.preregistration_sha256,
-            "tournament_run_report": str(v4.run_report_path),
-            "tournament_run_report_sha256": v4.run_report_sha256,
-            "winner_selection": str(v4.winner_selection_path),
-            "winner_selection_sha256": v4.winner_selection_sha256,
-            "evaluation_contract_sha256": v4.contract.evaluation_contract_sha256,
-            "preregistration_authentication_receipt": dict(
-                v4.preregistration_authentication_receipt
+        "fold_source": {
+            "schema": FOLD_SOURCE_SCHEMA,
+            "kind": fold_source.kind,
+            "historical_source_commit": fold_source.historical_source_commit,
+            "nonretained_callback_preimages_complete": (
+                False
+                if fold_source.kind == "historical-guided-qkvo-v3"
+                else None
             ),
-            "winner": dict(v4.winner),
-            "factor_pack_schema": str(v4.factor_payload.get("schema", "")),
+            "tournament_preregistration": str(fold_source.preregistration_path),
+            "tournament_preregistration_sha256": fold_source.preregistration_sha256,
+            "tournament_run_report": str(fold_source.run_report_path),
+            "tournament_run_report_sha256": fold_source.run_report_sha256,
+            "winner_selection": str(fold_source.winner_selection_path),
+            "winner_selection_sha256": fold_source.winner_selection_sha256,
+            "factor_pack": str(fold_source.winner["factor_pack"]),
+            "factor_pack_sha256": fold_source.winner["factor_pack_sha256"],
+            "candidate_frontier": str(
+                fold_source.winner["candidate_frontier"]["path"]
+            ),
+            "candidate_frontier_sha256": fold_source.winner[
+                "candidate_frontier"
+            ]["sha256"],
+            "evaluation_contract_sha256": (
+                fold_source.tournament_contract.evaluation_contract_sha256
+            ),
+            "authentication_receipt": dict(fold_source.authentication_receipt),
+            "winner": dict(fold_source.winner),
+            "factor_pack_schema": str(fold_source.factor_payload.get("schema", "")),
             "factor_source_binding": factor_source_binding,
             "factor_source_binding_sha256": factor_source_binding_sha,
             "candidate_only": True,
             "sealed_evaluation_accessed": False,
+            "sealed_data_accessed": False,
             "publication_attempted": False,
+            "publication_authorized": False,
+            "accepted_artifact": False,
+            "behavior_capability_proven": False,
+            "coherent_continuation_proven": False,
+            "standalone_intelligence_claim": False,
         },
         "compiled_blank": compiled_blank,
         "replay_bank": replay,
@@ -1445,7 +1884,7 @@ def build_recovery_ab_preregistration_payload(
         {
             key: payload[key]
             for key in (
-                "v4_candidate",
+                "fold_source",
                 "compiled_blank",
                 "replay_bank",
                 "recovery_plan",
@@ -1457,14 +1896,14 @@ def build_recovery_ab_preregistration_payload(
             )
         }
     )
-    return payload, v4
+    return payload, fold_source
 
 
 @dataclass(frozen=True, slots=True)
 class AuthenticatedFoldedBlankRecoveryAB:
     path: Path
     file_sha256: str
-    v4: _V4CandidateBinding
+    fold_source: _FoldSourceBinding
     raw: Mapping[str, Any]
 
     def materialization_plan(self) -> dict[str, Any]:
@@ -1479,7 +1918,8 @@ class AuthenticatedFoldedBlankRecoveryAB:
             "compiled_blank_state_sha256": self.raw["compiled_blank"][
                 "state_dict_sha256"
             ],
-            "folded_factor_state_sha256": self.raw["v4_candidate"]["winner"][
+            "fold_source_kind": self.raw["fold_source"]["kind"],
+            "folded_factor_state_sha256": self.raw["fold_source"]["winner"][
                 "portable_factor_state_sha256"
             ],
             "fresh_copy_per_arm_required": True,
@@ -1518,7 +1958,7 @@ def authenticate_recovery_ab_preregistration(
     expected_fields = {
         "schema",
         "status",
-        "v4_candidate",
+        "fold_source",
         "compiled_blank",
         "replay_bank",
         "recovery_plan",
@@ -1549,21 +1989,30 @@ def authenticate_recovery_ab_preregistration(
         "semantic_contract_sha256",
     }
     _strict(raw, expected_fields, "recovery A/B preregistration")
-    v4_row = raw.get("v4_candidate")
+    fold_source_row = raw.get("fold_source")
     replay_row = raw.get("replay_bank")
     plan_row = raw.get("recovery_plan")
-    if not all(isinstance(value, Mapping) for value in (v4_row, replay_row, plan_row)):
+    if not all(
+        isinstance(value, Mapping)
+        for value in (fold_source_row, replay_row, plan_row)
+    ):
         raise FoldedBlankRecoveryABError("Recovery A/B source rows are malformed.")
+    assert isinstance(fold_source_row, Mapping)
     builder_path = Path(__file__).resolve().with_name(BUILD_FILENAME)
-    expected_payload, v4 = build_recovery_ab_preregistration_payload(
-        tournament_preregistration=Path(str(v4_row["tournament_preregistration"])),
-        tournament_preregistration_sha256=str(
-            v4_row["tournament_preregistration_sha256"]
+    expected_payload, fold_source = build_recovery_ab_preregistration_payload(
+        fold_source_kind=str(fold_source_row["kind"]),
+        tournament_preregistration=Path(
+            str(fold_source_row["tournament_preregistration"])
         ),
-        tournament_run_report=Path(str(v4_row["tournament_run_report"])),
-        tournament_run_report_sha256=str(v4_row["tournament_run_report_sha256"]),
-        winner_selection=Path(str(v4_row["winner_selection"])),
-        winner_selection_sha256=str(v4_row["winner_selection_sha256"]),
+        tournament_preregistration_sha256=str(
+            fold_source_row["tournament_preregistration_sha256"]
+        ),
+        tournament_run_report=Path(str(fold_source_row["tournament_run_report"])),
+        tournament_run_report_sha256=str(
+            fold_source_row["tournament_run_report_sha256"]
+        ),
+        winner_selection=Path(str(fold_source_row["winner_selection"])),
+        winner_selection_sha256=str(fold_source_row["winner_selection_sha256"]),
         replay_bank=Path(str(replay_row["path"])),
         replay_bank_sha256=str(replay_row["file_sha256"]),
         recovery_plan=Path(str(plan_row["path"])),
@@ -1577,7 +2026,7 @@ def authenticate_recovery_ab_preregistration(
     return AuthenticatedFoldedBlankRecoveryAB(
         path=source,
         file_sha256=expected,
-        v4=v4,
+        fold_source=fold_source,
         raw=MappingProxyType(dict(raw)),
     )
 
@@ -1748,8 +2197,8 @@ def _authenticate_folded_artifact_publication(
         },
         name="folded bridge materialization receipt",
     )
-    winner = contract.raw["v4_candidate"]["winner"]
-    expected_factor_schema = contract.raw["v4_candidate"]["factor_pack_schema"]
+    winner = contract.raw["fold_source"]["winner"]
+    expected_factor_schema = contract.raw["fold_source"]["factor_pack_schema"]
     evidence_sha = _sha256(
         row.get("materialization_evidence_sha256"),
         "folded materialization evidence SHA",
@@ -1907,7 +2356,7 @@ def authenticate_materialization_receipts(
     normalized: dict[str, dict[str, Any]] = {}
     report_bindings: dict[str, dict[str, Any] | None] = {}
     blank_row = contract.raw["compiled_blank"]
-    winner = contract.raw["v4_candidate"]["winner"]
+    winner = contract.raw["fold_source"]["winner"]
     for arm_id in ARM_IDS:
         row = _self_hashed_receipt(
             receipts[arm_id],
@@ -1920,7 +2369,7 @@ def authenticate_materialization_receipts(
         )
         expected_pack = winner["factor_pack_sha256"] if arm_id == "folded" else None
         expected_source_binding = (
-            contract.raw["v4_candidate"]["factor_source_binding_sha256"]
+            contract.raw["fold_source"]["factor_source_binding_sha256"]
             if arm_id == "folded"
             else None
         )

@@ -798,15 +798,56 @@ def _blank_binding() -> dict[str, Any]:
     }
 
 
-@pytest.fixture
-def contract_inputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    prereg_path = tmp_path / "v4_prereg.json"
-    run_path = tmp_path / "v4_run.json"
-    winner_path = tmp_path / "v4_winner.json"
+def _fake_factor_payload(
+    kind: runner.FoldSourceKind,
+    winner: dict[str, Any],
+) -> dict[str, Any]:
+    rows = [
+        {
+            "name": "factor.a",
+            "shape": [2, 2],
+            "dtype": "torch.float32",
+            "tensor_sha256": _digest(f"{kind}-factor-a"),
+        },
+        {
+            "name": "factor.b",
+            "shape": [2, 1],
+            "dtype": "torch.float32",
+            "tensor_sha256": _digest(f"{kind}-factor-b"),
+        },
+    ]
+    result = {
+        "schema": (
+            runner.publication.BEHAVIOR_FACTOR_PACK_V3_SCHEMA
+            if kind == "historical-guided-qkvo-v3"
+            else runner.publication.BEHAVIOR_FACTOR_PACK_V4_SCHEMA
+        ),
+        "factor_count": len(rows),
+        "factors": rows,
+        "factor_state_sha256": winner["runtime_factor_state_sha256"],
+        "guided_source_binding_sha256": _digest(f"{kind}-guided-source"),
+    }
+    if kind == "guided-gud-v4":
+        result["guided_gud_source_binding_sha256"] = _digest(
+            f"{kind}-guided-gud-source"
+        )
+    return result
+
+
+@pytest.fixture(params=runner.FOLD_SOURCE_KINDS)
+def contract_inputs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
+):
+    kind = request.param
+    prereg_path = tmp_path / "fold_source_prereg.json"
+    run_path = tmp_path / "fold_source_run.json"
+    winner_path = tmp_path / "fold_source_winner.json"
     replay_path = tmp_path / "replay.json"
     plan_path = tmp_path / "plan.json"
     prereg = {
-        "schema": "fake-authenticated-v4-prereg",
+        "schema": "fake-authenticated-fold-source-prereg",
         "source_v3_sha256": _digest("v3-root"),
         "basis_sha256": _digest("basis-root"),
         "mask_sha256": _digest("mask-root"),
@@ -817,12 +858,57 @@ def contract_inputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         "publication_attempted": False,
         "frontier_sha256": _digest("frontier"),
     }
-    winner_selection = {
+    winner = {
+        "arm_id": (
+            runner.tournament.EXPECTED_SOURCE_ARM_ID
+            if kind == "historical-guided-qkvo-v3"
+            else "gud-winner"
+        ),
+        "arm_index": 0 if kind == "historical-guided-qkvo-v3" else 2,
+        "step": (
+            runner.tournament.EXPECTED_SOURCE_STEP
+            if kind == "historical-guided-qkvo-v3"
+            else 24
+        ),
+        "rank": [0, 0, 0],
+        "portable_factor_state_sha256": (
+            runner.tournament.EXPECTED_SOURCE_PORTABLE_V3_SHA256
+            if kind == "historical-guided-qkvo-v3"
+            else _digest("portable-v4")
+        ),
+        "runtime_factor_state_sha256": (
+            runner.tournament.EXPECTED_SOURCE_RUNTIME_V3_SHA256
+            if kind == "historical-guided-qkvo-v3"
+            else _digest("runtime-v4")
+        ),
+        "checkpoint_sha256": _digest(f"{kind}-checkpoint"),
+        "metrics": {"action_count": 1, "rollout_count": 1},
+        "metrics_sha256": runner.canonical_sha256(
+            {"action_count": 1, "rollout_count": 1}
+        ),
+        "factor_pack": str(tmp_path / "winner.pt"),
+        "factor_pack_sha256": (
+            runner.tournament.EXPECTED_SOURCE_FACTOR_PACK_FILE_SHA256
+            if kind == "historical-guided-qkvo-v3"
+            else _digest("factor-pack-file")
+        ),
+        "candidate_frontier": {
+            "path": str(tmp_path / "frontier.json"),
+            "sha256": _digest("frontier"),
+        },
+    }
+    winner_selection: dict[str, Any] = {
         "candidate_only": True,
         "sealed_evaluation_accessed": False,
         "publication_attempted": False,
         "winner_sha256": _digest("winner"),
     }
+    if kind == "historical-guided-qkvo-v3":
+        winner_selection["winner"] = {
+            key: value
+            for key, value in winner.items()
+            if key not in {"metrics_sha256", "candidate_frontier"}
+        }
     hashes = {
         "prereg": _write_json(prereg_path, prereg),
         "run": _write_json(run_path, run),
@@ -830,22 +916,24 @@ def contract_inputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         "replay": _write_json(replay_path, _replay_payload()),
         "plan": _write_json(plan_path, _plan_payload()),
     }
-    fake_contract = SimpleNamespace(
-        evaluation_contract_sha256=_digest("v4-evaluation"),
+    source_guided = SimpleNamespace()
+    v3_contract = SimpleNamespace(
+        evaluation_contract_sha256=(
+            runner.tournament.EXPECTED_SOURCE_EVALUATION_CONTRACT_SHA256
+            if kind == "historical-guided-qkvo-v3"
+            else _digest("v3-evaluation")
+        ),
+        source=source_guided,
     )
-    winner = {
-        "arm_id": "gud-winner",
-        "arm_index": 2,
-        "step": 24,
-        "portable_factor_state_sha256": _digest("portable-v4"),
-        "runtime_factor_state_sha256": _digest("runtime-v4"),
-        "factor_pack": str(tmp_path / "winner.pt"),
-        "factor_pack_sha256": _digest("factor-pack-file"),
-        "candidate_frontier": {
-            "path": str(tmp_path / "frontier.json"),
-            "sha256": _digest("frontier"),
-        },
-    }
+    fake_contract = (
+        v3_contract
+        if kind == "historical-guided-qkvo-v3"
+        else SimpleNamespace(
+            evaluation_contract_sha256=_digest("v4-evaluation"),
+            source=SimpleNamespace(tournament_contract=v3_contract),
+        )
+    )
+    factor_payload = _fake_factor_payload(kind, winner)
 
     def authenticate_with_history(_path: Path, prereg_sha: str) -> SimpleNamespace:
         receipt = {
@@ -867,15 +955,54 @@ def contract_inputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         "authenticate_guided_gud_candidate_preregistration_with_history",
         authenticate_with_history,
     )
+    def authenticate_v3_source(*_args, **_kwargs):
+        current_run = json.loads(run_path.read_text(encoding="utf-8"))
+        current_selection = json.loads(winner_path.read_text(encoding="utf-8"))
+        if (
+            current_run.get("sealed_evaluation_accessed") is not False
+            or current_run.get("publication_attempted") is not False
+            or current_selection.get("candidate_only") is not True
+            or current_selection.get("sealed_evaluation_accessed") is not False
+            or current_selection.get("publication_attempted") is not False
+        ):
+            raise RuntimeError("historical V3 source is not sealed-free")
+        return SimpleNamespace(
+            tournament_contract=v3_contract,
+            tournament_preregistration_path=prereg_path,
+            tournament_preregistration_sha256=hashes["prereg"],
+            run_report_path=run_path,
+            run_report_sha256=hashes["run"],
+            winner_selection_path=winner_path,
+            winner_selection_sha256=hashes["winner"],
+            arm_id=winner["arm_id"],
+            step=winner["step"],
+            runtime_factor_state_sha256=winner[
+                "runtime_factor_state_sha256"
+            ],
+            portable_factor_state_sha256=winner[
+                "portable_factor_state_sha256"
+            ],
+            factor_pack_path=Path(winner["factor_pack"]),
+            factor_pack_file_sha256=winner["factor_pack_sha256"],
+            factor_payload=factor_payload,
+            candidate_frontier=winner["candidate_frontier"],
+        )
+
+    monkeypatch.setattr(
+        runner.tournament,
+        "authenticate_v3_winner_source",
+        authenticate_v3_source,
+    )
     monkeypatch.setattr(
         runner.publication,
         "_winner_payload",
-        lambda *_args, **_kwargs: (
-            winner,
-            {"schema": "neural-forge-target-native-factor-pack-v4"},
-        ),
+        lambda *_args, **_kwargs: (winner, factor_payload),
     )
-    monkeypatch.setattr(runner, "_compiled_blank_binding", lambda _v4: _blank_binding())
+    monkeypatch.setattr(
+        runner,
+        "_compiled_blank_binding",
+        lambda _fold_source: _blank_binding(),
+    )
     monkeypatch.setattr(
         child_artifact,
         "model_state_fingerprint",
@@ -883,6 +1010,7 @@ def contract_inputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     )
 
     return {
+        "kind": kind,
         "paths": {
             "tournament_preregistration": prereg_path,
             "tournament_run_report": run_path,
@@ -899,6 +1027,7 @@ def _build(inputs) -> tuple[dict[str, Any], Any]:
     paths = inputs["paths"]
     hashes = inputs["hashes"]
     return runner.build_recovery_ab_preregistration_payload(
+        fold_source_kind=inputs["kind"],
         tournament_preregistration=paths["tournament_preregistration"],
         tournament_preregistration_sha256=hashes["prereg"],
         tournament_run_report=paths["tournament_run_report"],
@@ -921,11 +1050,22 @@ def _write_prereg(tmp_path: Path, payload: dict[str, Any]) -> tuple[Path, str]:
 def test_prereg_binds_candidate_blank_code_data_and_symmetric_schedule(
     contract_inputs,
 ) -> None:
-    payload, _v4 = _build(contract_inputs)
+    payload, _fold_source = _build(contract_inputs)
 
     assert payload["status"] == "experimental-unaccepted"
-    assert payload["v4_candidate"]["candidate_only"] is True
-    assert payload["v4_candidate"]["sealed_evaluation_accessed"] is False
+    assert payload["fold_source"]["kind"] == contract_inputs["kind"]
+    assert payload["fold_source"]["candidate_only"] is True
+    assert payload["fold_source"]["sealed_evaluation_accessed"] is False
+    assert payload["fold_source"]["sealed_data_accessed"] is False
+    assert payload["fold_source"]["publication_authorized"] is False
+    assert payload["fold_source"]["behavior_capability_proven"] is False
+    assert payload["fold_source"]["coherent_continuation_proven"] is False
+    assert payload["fold_source"]["standalone_intelligence_claim"] is False
+    assert payload["fold_source"]["nonretained_callback_preimages_complete"] == (
+        False
+        if contract_inputs["kind"] == "historical-guided-qkvo-v3"
+        else None
+    )
     assert payload["publication_authorized"] is False
     assert payload["sealed_data_accessed"] is False
     assert payload["accepted_artifact"] is False
@@ -954,20 +1094,39 @@ def test_prereg_binds_candidate_blank_code_data_and_symmetric_schedule(
     )
     assert payload["maximum_retained_checkpoints_per_arm"] == 3
     assert payload["maximum_total_retained_checkpoints"] == 6
-    receipt = payload["v4_candidate"]["preregistration_authentication_receipt"]
+    receipt = payload["fold_source"]["authentication_receipt"]
     assert receipt["preregistration_sha256"] == contract_inputs["hashes"]["prereg"]
-    assert receipt["evaluation_contract_sha256"] == _digest("v4-evaluation")
+    assert receipt["kind"] == contract_inputs["kind"]
+    assert receipt["historical_source_commit"] == (
+        runner.tournament.v3_tournament.HISTORICAL_V3_SOURCE_COMMIT
+        if contract_inputs["kind"] == "historical-guided-qkvo-v3"
+        else None
+    )
     assert payload["implementation"]["v4_historical_authenticator_sha256"] == (
         runner.stage._file_sha256(Path(runner.tournament_history.__file__).resolve())
     )
-    roots = payload["transitive_sha256_roots"]
-    assert _digest("v3-root") in roots["v4_preregistration"].values()
-    assert _digest("basis-root") in roots["v4_preregistration"].values()
-    assert _digest("mask-root") in roots["v4_preregistration"].values()
-    assert (
-        _digest("v4-implementation")
-        in roots["v4_preregistration_authentication"].values()
+    assert payload["implementation"]["guided_continuation_runtime_sha256"] == (
+        runner.stage._file_sha256(
+            Path(runner.tournament.v3_publication.guided.__file__).resolve()
+        )
     )
+    assert payload["implementation"]["guided_qkvo_adapter_sha256"] == (
+        runner.stage._file_sha256(
+            runner._module_file(
+                runner.tournament.v3_publication.guided.GUIDED_ADAPTER_MODULE
+            )
+        )
+    )
+    assert payload["implementation"]["guided_gud_adapter_sha256"] == (
+        runner.stage._file_sha256(
+            Path(runner.publication.tournament.gud_adapter.__file__).resolve()
+        )
+    )
+    roots = payload["transitive_sha256_roots"]
+    assert _digest("v3-root") in roots["fold_source_preregistration"].values()
+    assert _digest("basis-root") in roots["fold_source_preregistration"].values()
+    assert _digest("mask-root") in roots["fold_source_preregistration"].values()
+    assert receipt["receipt_sha256"] in roots["fold_source_authentication"].values()
     assert payload["production_model_hook_implemented"] is True
 
 
@@ -975,7 +1134,7 @@ def test_authentication_rebuilds_every_bound_source_and_rejects_drift(
     tmp_path: Path,
     contract_inputs,
 ) -> None:
-    payload, _v4 = _build(contract_inputs)
+    payload, _fold_source = _build(contract_inputs)
     path, digest = _write_prereg(tmp_path, payload)
     contract = runner.authenticate_recovery_ab_preregistration(path, digest)
     assert contract.preflight_report()["status"] == "preflight-passed"
@@ -989,6 +1148,141 @@ def test_authentication_rebuilds_every_bound_source_and_rejects_drift(
         runner.authenticate_recovery_ab_preregistration(path, digest)
 
 
+def test_authentication_rebuilds_live_guided_dependency_hashes(
+    tmp_path: Path,
+    contract_inputs,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload, _fold_source = _build(contract_inputs)
+    path, digest = _write_prereg(tmp_path, payload)
+    original = runner._implementation_hashes
+
+    def drifted(*, builder_path: Path) -> dict[str, str]:
+        result = original(builder_path=builder_path)
+        result["guided_continuation_runtime_sha256"] = _digest(
+            "drifted-guided-continuation-runtime"
+        )
+        return result
+
+    monkeypatch.setattr(runner, "_implementation_hashes", drifted)
+    with pytest.raises(
+        runner.FoldedBlankRecoveryABError,
+        match="differs from freshly authenticated roots",
+    ):
+        runner.authenticate_recovery_ab_preregistration(path, digest)
+
+
+@pytest.mark.parametrize(
+    "field_path",
+    [
+        ("fold_source", "tournament_preregistration_sha256"),
+        ("fold_source", "tournament_run_report_sha256"),
+        ("fold_source", "winner_selection_sha256"),
+        ("fold_source", "factor_pack_sha256"),
+        ("fold_source", "candidate_frontier_sha256"),
+        ("fold_source", "evaluation_contract_sha256"),
+        ("fold_source", "authentication_receipt", "preregistration_sha256"),
+        ("fold_source", "authentication_receipt", "run_report_sha256"),
+        ("fold_source", "authentication_receipt", "winner_selection_sha256"),
+        ("fold_source", "authentication_receipt", "evaluation_contract_sha256"),
+        ("fold_source", "authentication_receipt", "candidate_frontier_sha256"),
+        ("fold_source", "authentication_receipt", "factor_pack_sha256"),
+        ("fold_source", "authentication_receipt", "upstream_receipt_sha256"),
+        ("fold_source", "authentication_receipt", "receipt_sha256"),
+        ("fold_source", "winner", "runtime_factor_state_sha256"),
+        ("fold_source", "winner", "portable_factor_state_sha256"),
+        ("fold_source", "winner", "checkpoint_sha256"),
+        ("fold_source", "winner", "metrics_sha256"),
+        ("fold_source", "winner", "factor_pack_sha256"),
+        ("fold_source", "winner", "candidate_frontier", "sha256"),
+        ("fold_source", "factor_source_binding_sha256"),
+        ("fold_source", "factor_source_binding", "factor_pack_sha256"),
+        ("fold_source", "factor_source_binding", "portable_factor_state_sha256"),
+        ("fold_source", "factor_source_binding", "runtime_factor_state_sha256"),
+        ("fold_source", "factor_source_binding", "checkpoint_sha256"),
+        ("fold_source", "factor_source_binding", "metrics_sha256"),
+        ("fold_source", "factor_source_binding", "candidate_frontier_sha256"),
+        ("fold_source", "factor_source_binding", "winner_selection_sha256"),
+        ("fold_source", "factor_source_binding", "factor_payload_manifest_sha256"),
+        ("fold_source", "factor_source_binding", "factor_rows_sha256"),
+        (
+            "fold_source",
+            "factor_source_binding",
+            "factor_tensor_sha256s",
+            "factor.a",
+        ),
+        (
+            "fold_source",
+            "factor_source_binding",
+            "factor_tensor_sha256s_sha256",
+        ),
+        ("fold_source", "factor_source_binding", "guided_source_binding_sha256"),
+        (
+            "fold_source",
+            "factor_source_binding",
+            "guided_gud_source_binding_sha256",
+        ),
+    ],
+)
+def test_every_fold_source_hash_fails_closed_when_tampered(
+    tmp_path: Path,
+    contract_inputs,
+    field_path: tuple[str, ...],
+) -> None:
+    payload, _fold_source = _build(contract_inputs)
+    cursor: Any = payload
+    for field in field_path[:-1]:
+        cursor = cursor[field]
+    leaf = field_path[-1]
+    if cursor[leaf] is None:
+        assert contract_inputs["kind"] == "historical-guided-qkvo-v3"
+        return
+    cursor[leaf] = _digest("tampered-fold-source-hash")
+    path, digest = _write_prereg(tmp_path, payload)
+    with pytest.raises(Exception):
+        runner.authenticate_recovery_ab_preregistration(path, digest)
+
+
+def test_fold_source_kind_commit_and_acceptance_flags_are_strict(
+    tmp_path: Path,
+    contract_inputs,
+) -> None:
+    payload, _fold_source = _build(contract_inputs)
+    for field, value in (
+        ("kind", "guided-gud-v4"),
+        ("historical_source_commit", _digest("wrong-historical-commit")),
+        ("candidate_only", False),
+        ("sealed_evaluation_accessed", True),
+        ("sealed_data_accessed", True),
+        ("publication_attempted", True),
+        ("publication_authorized", True),
+        ("accepted_artifact", True),
+        ("behavior_capability_proven", True),
+        ("coherent_continuation_proven", True),
+        ("standalone_intelligence_claim", True),
+    ):
+        tampered = json.loads(json.dumps(payload))
+        tampered["fold_source"][field] = value
+        if (
+            field == "kind"
+            and contract_inputs["kind"] == "guided-gud-v4"
+            and value == contract_inputs["kind"]
+        ):
+            tampered["fold_source"][field] = "historical-guided-qkvo-v3"
+        path, digest = _write_prereg(tmp_path, tampered)
+        with pytest.raises(Exception):
+            runner.authenticate_recovery_ab_preregistration(path, digest)
+
+    if contract_inputs["kind"] == "historical-guided-qkvo-v3":
+        tampered = json.loads(json.dumps(payload))
+        tampered["fold_source"]["factor_source_binding"][
+            "guided_gud_source_binding_sha256"
+        ] = _digest("forbidden-v3-guided-gud-binding")
+        path, digest = _write_prereg(tmp_path, tampered)
+        with pytest.raises(Exception):
+            runner.authenticate_recovery_ab_preregistration(path, digest)
+
+
 def test_candidate_boundary_and_replay_schedule_fail_closed(
     contract_inputs,
 ) -> None:
@@ -998,7 +1292,7 @@ def test_candidate_boundary_and_replay_schedule_fail_closed(
     contract_inputs["hashes"]["run"] = _write_json(run_path, run)
     with pytest.raises(
         runner.FoldedBlankRecoveryABError,
-        match="binding|fresh disjoint|sealed-free",
+        match="binding|fresh disjoint|sealed-free|authentication",
     ):
         _build(contract_inputs)
 
@@ -1264,7 +1558,7 @@ def test_stepwise_donor_requires_one_frozen_ordered_event_per_optimizer_step(
     contract_inputs["hashes"]["replay"] = _write_json(replay_path, replay)
     contract_inputs["hashes"]["plan"] = _write_json(plan_path, plan)
 
-    payload, _v4 = _build(contract_inputs)
+    payload, _fold_source = _build(contract_inputs)
     assert payload["replay_bank"]["stepwise_event_count"] == 4
     assert payload["recovery_plan"]["stepwise_event_steps"] == [1, 2, 3, 4]
     assert payload["recovery_plan"]["stepwise_replay_bank_required"] is True
@@ -1471,7 +1765,7 @@ def _receipt(body: dict[str, Any]) -> dict[str, Any]:
 
 def _materialization_receipts(contract, tmp_path: Path) -> dict[str, dict[str, Any]]:
     blank = contract.raw["compiled_blank"]
-    winner = contract.raw["v4_candidate"]["winner"]
+    winner = contract.raw["fold_source"]["winner"]
     folded_model = _TinyFoldedModel()
     folded_initial_state_sha256 = _contract_model_state_fingerprint(folded_model)[
         "state_dict_sha256"
@@ -1489,7 +1783,7 @@ def _materialization_receipts(contract, tmp_path: Path) -> dict[str, dict[str, A
             "shared_execution_contract_sha256"
         ],
         "factor_state_sha256": winner["portable_factor_state_sha256"],
-        "factor_payload_schema": contract.raw["v4_candidate"]["factor_pack_schema"],
+        "factor_payload_schema": contract.raw["fold_source"]["factor_pack_schema"],
         "native_child_state_sha256": bridge_native_child_state_sha256,
         "blank_control_state_sha256": bridge_native_child_state_sha256,
         "compiled_blank_cache_state_dict_sha256": blank["state_dict_sha256"],
@@ -1509,7 +1803,7 @@ def _materialization_receipts(contract, tmp_path: Path) -> dict[str, dict[str, A
             "live_factor_state_sha256": bridge_live_factor_state_sha256,
             "native_child_state_sha256": bridge_native_child_state_sha256,
             "exact_unique_parameters": runner.EXACT_UNIQUE_PARAMETERS,
-            "factor_payload_schema": contract.raw["v4_candidate"]["factor_pack_schema"],
+            "factor_payload_schema": contract.raw["fold_source"]["factor_pack_schema"],
             "status": "experimental-unaccepted",
             "publication_authorized": False,
             "sealed_data_accessed": False,
@@ -1610,7 +1904,7 @@ def _materialization_receipts(contract, tmp_path: Path) -> dict[str, dict[str, A
                     "portable_factor_state_sha256"
                 ],
                 "source_factor_pack_sha256": winner["factor_pack_sha256"],
-                "factor_source_binding_sha256": contract.raw["v4_candidate"][
+                "factor_source_binding_sha256": contract.raw["fold_source"][
                     "factor_source_binding_sha256"
                 ],
                 "factor_pack_authenticated_separately": True,
@@ -1723,7 +2017,7 @@ def test_materialization_and_zero_step_receipts_remain_unaccepted(
     tmp_path: Path,
     contract_inputs,
 ) -> None:
-    payload, _v4 = _build(contract_inputs)
+    payload, _fold_source = _build(contract_inputs)
     path, digest = _write_prereg(tmp_path, payload)
     contract = runner.authenticate_recovery_ab_preregistration(path, digest)
     blank = contract.raw["compiled_blank"]
@@ -1875,7 +2169,7 @@ def test_materialization_rejects_noncanonical_bridge_report_bytes(
     tmp_path: Path,
     contract_inputs,
 ) -> None:
-    payload, _v4 = _build(contract_inputs)
+    payload, _fold_source = _build(contract_inputs)
     path, digest = _write_prereg(tmp_path, payload)
     contract = runner.authenticate_recovery_ab_preregistration(path, digest)
     receipts = _materialization_receipts(contract, tmp_path)
@@ -1901,7 +2195,7 @@ def test_materialization_rejects_changed_folded_artifact_bytes(
     tmp_path: Path,
     contract_inputs,
 ) -> None:
-    payload, _v4 = _build(contract_inputs)
+    payload, _fold_source = _build(contract_inputs)
     path, digest = _write_prereg(tmp_path, payload)
     contract = runner.authenticate_recovery_ab_preregistration(path, digest)
     receipts = _materialization_receipts(contract, tmp_path)
@@ -1927,7 +2221,7 @@ def test_materialization_rejects_changed_external_artifact_receipt(
     tmp_path: Path,
     contract_inputs,
 ) -> None:
-    payload, _v4 = _build(contract_inputs)
+    payload, _fold_source = _build(contract_inputs)
     path, digest = _write_prereg(tmp_path, payload)
     contract = runner.authenticate_recovery_ab_preregistration(path, digest)
     receipts = _materialization_receipts(contract, tmp_path)
@@ -1952,7 +2246,7 @@ def test_materialization_rejects_changed_independent_reload_evidence(
     tmp_path: Path,
     contract_inputs,
 ) -> None:
-    payload, _v4 = _build(contract_inputs)
+    payload, _fold_source = _build(contract_inputs)
     path, digest = _write_prereg(tmp_path, payload)
     contract = runner.authenticate_recovery_ab_preregistration(path, digest)
     receipts = _materialization_receipts(contract, tmp_path)
@@ -1978,7 +2272,7 @@ def test_materialization_rejects_legacy_bridge_only_folded_receipt(
     tmp_path: Path,
     contract_inputs,
 ) -> None:
-    payload, _v4 = _build(contract_inputs)
+    payload, _fold_source = _build(contract_inputs)
     path, digest = _write_prereg(tmp_path, payload)
     contract = runner.authenticate_recovery_ab_preregistration(path, digest)
     receipts = _materialization_receipts(contract, tmp_path)
@@ -2022,6 +2316,7 @@ def test_preparer_writes_only_atomic_model_free_contract(
     output = tmp_path / "prepared"
     report = builder.prepare_recovery_ab(
         output_dir=output,
+        fold_source_kind=contract_inputs["kind"],
         **contract_inputs["paths"],
     )
     assert report["status"] == "ready-experimental-unaccepted"

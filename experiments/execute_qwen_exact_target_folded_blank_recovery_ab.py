@@ -3,7 +3,8 @@
 
 This is deliberately an experimental materialization and recovery hook, not a
 publication path.  It fresh-authenticates the model-free preregistration,
-temporarily materializes the retained v4 winner through the existing bridge,
+temporarily materializes the authenticated retained V3 or V4 winner through
+the existing bridge,
 authenticates both zero-step controls, and only then launches the two symmetric
 recovery arms.  Recovery reports are detached from model directories before
 any standalone-child reload or artifact hash.
@@ -31,6 +32,7 @@ from typing import Any
 import run_qwen_exact_target_folded_blank_recovery_ab as recovery_ab
 import run_qwen_exact_target_native_guided_gud_candidate_tournament as tournament
 import run_qwen_exact_target_native_guided_gud_winner_publication as publication
+import run_qwen_exact_target_native_guided_winner_publication as v3_publication
 import run_qwen_exact_target_native_stage as stage
 from neural_forge import hf_experimental_child_artifact as child_artifact
 from neural_forge import hf_recovery
@@ -44,8 +46,8 @@ from neural_forge.hf_compiled_child_cache import (
 )
 
 
-EXECUTION_SCHEMA = "neural-forge-folded-blank-recovery-ab-execution-v1"
-COMPARISON_SCHEMA = "neural-forge-folded-blank-recovery-ab-comparison-v1"
+EXECUTION_SCHEMA = "neural-forge-folded-blank-recovery-ab-execution-v2"
+COMPARISON_SCHEMA = "neural-forge-folded-blank-recovery-ab-comparison-v2"
 RECOVERY_REPORT_FILENAME = "neural_forge_xfamily_recovery_report.json"
 COMPARISON_REPORT_FILENAME = "comparison_report.json"
 EVIDENCE_DIRECTORY_NAME = "evidence"
@@ -463,8 +465,8 @@ def build_experimental_recovery_contract(
     """Create exactly the bridge contract authenticated by the A/B runner."""
 
     blank = _mapping(contract.raw["compiled_blank"], "compiled blank")
-    v4 = _mapping(contract.raw["v4_candidate"], "v4 candidate")
-    winner = _mapping(v4["winner"], "v4 winner")
+    fold_source = _mapping(contract.raw["fold_source"], "fold source")
+    winner = _mapping(fold_source["winner"], "fold source winner")
     native_sha = _sha256(native_child_state_sha256, "native child state SHA")
     live_sha = _sha256(live_factor_state_sha256, "live factor state SHA")
     runtime_sha = _sha256(
@@ -473,7 +475,7 @@ def build_experimental_recovery_contract(
     )
     if runtime_sha != winner["runtime_factor_state_sha256"]:
         raise FoldedBlankRecoveryExecutionError(
-            "Restored v4 runtime factor state differs from the retained winner."
+            "Restored runtime factor state differs from the retained fold source."
         )
     return {
         "schema": recovery_ab.EXPERIMENTAL_RECOVERY_CONTRACT_SCHEMA,
@@ -485,7 +487,7 @@ def build_experimental_recovery_contract(
             "shared_execution_contract_sha256"
         ],
         "factor_state_sha256": winner["portable_factor_state_sha256"],
-        "factor_payload_schema": v4["factor_pack_schema"],
+        "factor_payload_schema": fold_source["factor_pack_schema"],
         "native_child_state_sha256": native_sha,
         "blank_control_state_sha256": native_sha,
         "compiled_blank_cache_state_dict_sha256": blank["state_dict_sha256"],
@@ -503,18 +505,22 @@ def _production_runtime_inputs(
     contract: Any,
 ) -> tuple[Any, Any, Path, Mapping[str, Any]]:
     try:
-        v4_contract = contract.v4.contract
-        source_guided = v4_contract.source.tournament_contract.source
+        fold_source = contract.fold_source
+        source_tournament = fold_source.tournament_contract
+        source_guided = fold_source.source_guided
         base = dataclasses.replace(
             source_guided.execution_contract,
-            splits=v4_contract.splits,
-            training=v4_contract.schedule.as_dict(),
+            splits=source_tournament.splits,
+            training=source_tournament.schedule.as_dict(),
         )
         source_path = Path(base.parent.path).expanduser().resolve()
-        runtime_contract = _mapping(v4_contract.runtime, "v4 runtime contract")
+        runtime_contract = _mapping(
+            source_tournament.runtime,
+            "fold source runtime contract",
+        )
     except (AttributeError, KeyError, TypeError) as error:
         raise FoldedBlankRecoveryExecutionError(
-            "Authenticated v4 roots do not expose the canonical runtime chain."
+            "Authenticated fold-source roots do not expose the canonical runtime chain."
         ) from error
     return base, source_guided, source_path, runtime_contract
 
@@ -538,14 +544,27 @@ def _require_compiled_cache_hit(
         )
 
 
-def _restore_v4_winner(
+@dataclass(frozen=True, slots=True)
+class _RestoredV3QKVO:
+    inherited_installation: Mapping[str, Any]
+    source_v2_restore: Mapping[str, Any]
+    guided_qkvo_installation: Mapping[str, Any]
+    live_qkvo_binding: Any
+    source_v3_state: Any
+    runtime_payload: Mapping[str, Any]
+    portable_factor_state_sha256: str
+
+
+def _restore_v3_qkvo(
     *,
-    contract: Any,
     runtime: Any,
     transaction: Any,
     source_guided: Any,
-) -> dict[str, Any]:
-    """Restore v2 -> recovered v3 -> retained v4 with live source rebinding."""
+    factor_payload: Mapping[str, Any],
+    expected_runtime_factor_state_sha256: str,
+    expected_portable_factor_state_sha256: str,
+) -> _RestoredV3QKVO:
+    """Restore source V2 then the complete guided-QKVO V3 state."""
 
     inherited_install = transaction.installation_report()
     source_restore = runtime.restore_source_v2(transaction, source_guided)
@@ -557,7 +576,7 @@ def _restore_v4_winner(
         source_v2_state,
     )
     runtime_v3_payload = publication.rebind_recovered_v3_factor_payload(
-        contract.v4.contract.source.factor_payload,
+        factor_payload,
         live_qkvo_binding,
     )
     set_qkvo_stage = getattr(runtime._guided_tranche, "set_training_stage", None)
@@ -575,6 +594,8 @@ def _restore_v4_winner(
     if (
         restored_v3.schema != publication.BEHAVIOR_FACTOR_PACK_V3_SCHEMA
         or restored_v3.factor_state_sha256 != runtime_v3_payload["factor_state_sha256"]
+        or restored_v3.factor_state_sha256
+        != expected_runtime_factor_state_sha256
     ):
         raise FoldedBlankRecoveryExecutionError(
             "Authenticated recovered-v3 restore changed its runtime factor state."
@@ -589,9 +610,95 @@ def _restore_v4_winner(
             "Live recovered-v3 factors differ from their restored state."
         )
 
+    portable_sha = v3_publication.portable_v3_factor_state_sha256(
+        runtime_v3_payload,
+        live_qkvo_binding,
+    )
+    if portable_sha != expected_portable_factor_state_sha256:
+        raise FoldedBlankRecoveryExecutionError(
+            "Authenticated recovered-v3 restore changed its portable identity."
+        )
+    return _RestoredV3QKVO(
+        inherited_installation=MappingProxyType(dict(inherited_install)),
+        source_v2_restore=MappingProxyType(dict(source_restore)),
+        guided_qkvo_installation=MappingProxyType(dict(guided_install)),
+        live_qkvo_binding=live_qkvo_binding,
+        source_v3_state=source_v3_state,
+        runtime_payload=MappingProxyType(dict(runtime_v3_payload)),
+        portable_factor_state_sha256=portable_sha,
+    )
+
+
+def _restore_v3_winner(
+    *,
+    contract: Any,
+    runtime: Any,
+    transaction: Any,
+    source_guided: Any,
+) -> dict[str, Any]:
+    fold_source = contract.fold_source
+    winner = contract.raw["fold_source"]["winner"]
+    restored = _restore_v3_qkvo(
+        runtime=runtime,
+        transaction=transaction,
+        source_guided=source_guided,
+        factor_payload=fold_source.factor_payload,
+        expected_runtime_factor_state_sha256=winner[
+            "runtime_factor_state_sha256"
+        ],
+        expected_portable_factor_state_sha256=winner[
+            "portable_factor_state_sha256"
+        ],
+    )
+    handoff = runtime.handoff_guided_for_publication(
+        transaction,
+        source_guided,
+    )
+    if (
+        not isinstance(handoff, Mapping)
+        or handoff.get("handoff_complete") is not True
+        or handoff.get("transaction_qkvo_handle_is_guided_composite") is not True
+        or handoff.get("old_only_publication_path_disabled") is not True
+    ):
+        raise FoldedBlankRecoveryExecutionError(
+            "Guided QKVO composite handoff was not exact."
+        )
+    return {
+        "kind": "historical-guided-qkvo-v3",
+        "inherited_installation": _json_copy(restored.inherited_installation),
+        "source_v2_restore": _json_copy(restored.source_v2_restore),
+        "guided_qkvo_installation": _json_copy(restored.guided_qkvo_installation),
+        "guided_gud_installation": None,
+        "runtime_rebound_factor_state_sha256": restored.runtime_payload[
+            "factor_state_sha256"
+        ],
+        "portable_factor_state_sha256": restored.portable_factor_state_sha256,
+        "handoff": _json_copy(handoff),
+    }
+
+
+def _restore_v4_winner(
+    *,
+    contract: Any,
+    runtime: Any,
+    transaction: Any,
+    source_guided: Any,
+) -> dict[str, Any]:
+    """Restore V2 -> V3 -> retained V4 with live QKVO/GUD rebinding."""
+
+    fold_source = contract.fold_source
+    source_v3 = fold_source.tournament_contract.source
+    restored_v3 = _restore_v3_qkvo(
+        runtime=runtime,
+        transaction=transaction,
+        source_guided=source_guided,
+        factor_payload=source_v3.factor_payload,
+        expected_runtime_factor_state_sha256=source_v3.runtime_factor_state_sha256,
+        expected_portable_factor_state_sha256=source_v3.portable_factor_state_sha256,
+    )
     winner_binding = _WinnerRuntimeBinding(
-        tournament=contract.v4.contract,
-        winner=contract.v4.winner,
+        tournament=fold_source.tournament_contract,
+        winner=fold_source.winner,
     )
     guided_gud_install = runtime.install_guided_gud_transaction(
         transaction,
@@ -601,27 +708,27 @@ def _restore_v4_winner(
         transaction,
         runtime._guided_tranche,
         runtime._guided_gud_tranche,
-        source_v3_state,
+        restored_v3.source_v3_state,
     )
     runtime_v4_payload = publication.rebind_recovered_v4_factor_payload(
-        contract.v4.factor_payload,
-        live_qkvo_binding,
+        fold_source.factor_payload,
+        restored_v3.live_qkvo_binding,
         live_gud_binding,
     )
     restored_v4 = publication.restore_target_native_factor_payload(
         transaction,
         runtime_v4_payload,
         guided_tranche=runtime._guided_tranche,
-        expected_guided_source_binding=live_qkvo_binding,
+        expected_guided_source_binding=restored_v3.live_qkvo_binding,
         guided_gud_tranche=runtime._guided_gud_tranche,
         expected_guided_gud_source_binding=live_gud_binding,
     )
     portable_sha = publication.portable_v4_factor_state_sha256(
         runtime_v4_payload,
-        live_qkvo_binding,
+        restored_v3.live_qkvo_binding,
         live_gud_binding,
     )
-    winner = contract.raw["v4_candidate"]["winner"]
+    winner = contract.raw["fold_source"]["winner"]
     if (
         restored_v4.schema != publication.BEHAVIOR_FACTOR_PACK_V4_SCHEMA
         or restored_v4.factor_state_sha256 != runtime_v4_payload["factor_state_sha256"]
@@ -642,19 +749,49 @@ def _restore_v4_winner(
             "Guided QKVO/GUD composite handoff was not exact."
         )
     return {
-        "inherited_installation": _json_copy(inherited_install),
-        "source_v2_restore": _json_copy(source_restore),
-        "guided_qkvo_installation": _json_copy(guided_install),
+        "kind": "guided-gud-v4",
+        "inherited_installation": _json_copy(restored_v3.inherited_installation),
+        "source_v2_restore": _json_copy(restored_v3.source_v2_restore),
+        "guided_qkvo_installation": _json_copy(
+            restored_v3.guided_qkvo_installation
+        ),
         "guided_gud_installation": _json_copy(guided_gud_install),
-        "runtime_rebound_v3_factor_state_sha256": runtime_v3_payload[
+        "runtime_rebound_source_v3_factor_state_sha256": restored_v3.runtime_payload[
             "factor_state_sha256"
         ],
-        "runtime_rebound_v4_factor_state_sha256": runtime_v4_payload[
+        "runtime_rebound_factor_state_sha256": runtime_v4_payload[
             "factor_state_sha256"
         ],
-        "portable_v4_factor_state_sha256": portable_sha,
+        "portable_factor_state_sha256": portable_sha,
         "handoff": _json_copy(handoff),
     }
+
+
+def _restore_fold_source(
+    *,
+    contract: Any,
+    runtime: Any,
+    transaction: Any,
+    source_guided: Any,
+) -> dict[str, Any]:
+    kind = contract.raw["fold_source"]["kind"]
+    if kind == "historical-guided-qkvo-v3":
+        return _restore_v3_winner(
+            contract=contract,
+            runtime=runtime,
+            transaction=transaction,
+            source_guided=source_guided,
+        )
+    if kind == "guided-gud-v4":
+        return _restore_v4_winner(
+            contract=contract,
+            runtime=runtime,
+            transaction=transaction,
+            source_guided=source_guided,
+        )
+    raise FoldedBlankRecoveryExecutionError(
+        f"Unsupported authenticated fold source kind {kind!r}."
+    )
 
 
 def _rollback_transaction_exactly(
@@ -697,7 +834,7 @@ def _production_materialize_initializations(
     folded_artifact_hooks: recovery_ab.FoldedArtifactVerificationHooks,
     runtime: Any | None = None,
 ) -> MaterializationProduct:
-    """Use the existing v4 runtime and bridge to materialize one folded init."""
+    """Use the existing V3/V4 runtime and bridge to materialize one folded init."""
 
     if type(folded_artifact_hooks) is not recovery_ab.FoldedArtifactVerificationHooks:
         raise FoldedBlankRecoveryExecutionError(
@@ -709,7 +846,7 @@ def _production_materialize_initializations(
     try:
         cuda_preflight = (
             tournament.v3_tournament.validate_candidate_tournament_cuda_preflight(
-                contract.v4.contract.source.tournament_contract,
+                contract.fold_source.v3_tournament_contract,
                 dtype=str(runtime_contract["dtype"]),
                 parent_device_map=str(runtime_contract["parent_device_map"]),
                 target_device_map=str(runtime_contract["target_device_map"]),
@@ -717,10 +854,15 @@ def _production_materialize_initializations(
         )
     except Exception as error:
         raise FoldedBlankRecoveryExecutionError(
-            "V4 production CUDA/runtime preflight failed."
+            "Fold-source production CUDA/runtime preflight failed."
         ) from error
+    runtime_type = (
+        v3_publication.ProductionWinnerPublicationRuntime
+        if contract.raw["fold_source"]["kind"] == "historical-guided-qkvo-v3"
+        else publication.ProductionGuidedGUDWinnerPublicationRuntime
+    )
     runner = (
-        publication.ProductionGuidedGUDWinnerPublicationRuntime(
+        runtime_type(
             dtype=str(runtime_contract["dtype"]),
             parent_device_map=str(runtime_contract["parent_device_map"]),
             target_device_map=str(runtime_contract["target_device_map"]),
@@ -775,7 +917,7 @@ def _production_materialize_initializations(
             )
 
         transaction = runner.install_transaction(compiled)
-        restore_trace = _restore_v4_winner(
+        restore_trace = _restore_fold_source(
             contract=contract,
             runtime=runner,
             transaction=transaction,
@@ -794,7 +936,7 @@ def _production_materialize_initializations(
             native_child_state_sha256=native_sha,
             live_factor_state_sha256=live_factor_sha,
             restored_runtime_factor_state_sha256=restore_trace[
-                "runtime_rebound_v4_factor_state_sha256"
+                "runtime_rebound_factor_state_sha256"
             ],
         )
         bridge_receipt = transaction.experimental_recovery_receipt(
@@ -804,7 +946,9 @@ def _production_materialize_initializations(
             bridge_receipt.live_factor_state_sha256 != live_factor_sha
             or bridge_receipt.native_child_state_sha256 != native_sha
             or bridge_receipt.factor_state_sha256
-            != contract.raw["v4_candidate"]["winner"]["portable_factor_state_sha256"]
+            != contract.raw["fold_source"]["winner"][
+                "portable_factor_state_sha256"
+            ]
         ):
             raise FoldedBlankRecoveryExecutionError(
                 "Bridge receipt differs from the restored live v4 transaction."
@@ -877,13 +1021,13 @@ def _production_materialize_initializations(
                 **common,
                 "arm_id": "folded",
                 "initial_state_sha256": folded_initial_sha,
-                "source_portable_factor_state_sha256": contract.raw["v4_candidate"][
+                "source_portable_factor_state_sha256": contract.raw["fold_source"][
                     "winner"
                 ]["portable_factor_state_sha256"],
-                "source_factor_pack_sha256": contract.raw["v4_candidate"]["winner"][
+                "source_factor_pack_sha256": contract.raw["fold_source"]["winner"][
                     "factor_pack_sha256"
                 ],
-                "factor_source_binding_sha256": contract.raw["v4_candidate"][
+                "factor_source_binding_sha256": contract.raw["fold_source"][
                     "factor_source_binding_sha256"
                 ],
                 "factor_pack_authenticated_separately": True,
@@ -940,7 +1084,8 @@ def _production_materialize_initializations(
                     "compiled_blank_state_sha256_after": post_materialization_sha,
                     "compiled_blank_bytes_restored_exactly": True,
                     "compiler_report_sha256": _canonical_sha256(compiler_report),
-                    "v4_restore": restore_trace,
+                    "fold_source_restore": restore_trace,
+                    "fold_source_kind": contract.raw["fold_source"]["kind"],
                     "experimental_recovery_contract": experiment_contract,
                     "experimental_recovery_contract_sha256": _canonical_sha256(
                         experiment_contract
