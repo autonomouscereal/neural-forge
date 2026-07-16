@@ -56,7 +56,7 @@ TEACHER_REPLAY_ACQUISITION_SCHEMA = (
     "neural-forge-teacher-replay-acquisition-v2"
 )
 TEACHER_REPLAY_CACHE_IMPORT_RECEIPT_SCHEMA = (
-    "neural-forge-teacher-replay-compatible-import-v1"
+    "neural-forge-teacher-replay-compatible-import-v2"
 )
 PARENT_MODEL_USAGE_SCHEMA = "neural-forge-parent-model-usage-v1"
 
@@ -127,6 +127,13 @@ LEGACY_TEACHER_CACHE_IMPORT_PREP_PRODUCER = {
     "byte_count": 165_948,
     "sha256": "9b69c663880e6a4c891af8473159e4ef4ce641c705542da134212ac5d4b1f3d2",
 }
+LEGACY_TEACHER_CACHE_IMPORT_RUNTIME_IDENTITY_SHA256 = (
+    "c75a13ce1d6bbf747b37914b05193f8e10491fff3fa037a84c3be75ba6659d9b"
+)
+LEGACY_TEACHER_CACHE_IMPORT_CURRENT_RUNTIME_IDENTITY_SHA256 = (
+    "4199bcaa51f5c4509b66e7c5a976598ce728ccb52e5e24c099543c2ddeef07d1"
+)
+LEGACY_TEACHER_CACHE_IMPORT_CURRENT_CUDNN_VERSION = 91_900
 PINNED_RECOVERY_CORPUS_SHA256 = (
     "ba2dd1202752e2dd2b9b981c52501060ee367e220e5fb73ce7f8c320e2bbdd90"
 )
@@ -3448,6 +3455,63 @@ def _teacher_replay_cache_request(
         ) from error
 
 
+def _teacher_cache_runtime_compatibility(
+    *,
+    source_runtime: Mapping[str, Any],
+    current_runtime: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Allow only exact runtime identity or one pinned legacy observation gap."""
+
+    source = _json_value(source_runtime, name="source cache runtime identity")
+    current = _json_value(current_runtime, name="current cache runtime identity")
+    source_sha = _require_sha256(
+        source.get("sha256"), "source cache runtime identity SHA"
+    )
+    current_sha = _require_sha256(
+        current.get("sha256"), "current cache runtime identity SHA"
+    )
+    source_cudnn = source.get("cudnn_version")
+    current_cudnn = current.get("cudnn_version")
+    if source == current:
+        return {
+            "mode": "exact",
+            "source_runtime_identity_sha256": source_sha,
+            "current_runtime_identity_sha256": current_sha,
+            "source_cudnn_version": source_cudnn,
+            "current_cudnn_version": current_cudnn,
+            "legacy_missing_cudnn_version_allowlist_applied": False,
+            "only_cudnn_version_and_runtime_self_hash_changed": False,
+        }
+
+    source_body = dict(source)
+    current_body = dict(current)
+    source_body.pop("sha256")
+    current_body.pop("sha256")
+    source_body["cudnn_version"] = current_cudnn
+    pinned_legacy_gap = (
+        source_sha == LEGACY_TEACHER_CACHE_IMPORT_RUNTIME_IDENTITY_SHA256
+        and current_sha
+        == LEGACY_TEACHER_CACHE_IMPORT_CURRENT_RUNTIME_IDENTITY_SHA256
+        and source_cudnn is None
+        and current_cudnn == LEGACY_TEACHER_CACHE_IMPORT_CURRENT_CUDNN_VERSION
+        and source_body == current_body
+    )
+    if not pinned_legacy_gap:
+        raise RecoveryInputPreparationError(
+            "Explicit teacher replay cache import runtime identity changed outside "
+            "the pinned legacy missing-cuDNN-version observation."
+        )
+    return {
+        "mode": "pinned-legacy-missing-cudnn-version",
+        "source_runtime_identity_sha256": source_sha,
+        "current_runtime_identity_sha256": current_sha,
+        "source_cudnn_version": None,
+        "current_cudnn_version": current_cudnn,
+        "legacy_missing_cudnn_version_allowlist_applied": True,
+        "only_cudnn_version_and_runtime_self_hash_changed": True,
+    }
+
+
 def _read_exact_compatible_teacher_cache_import(
     *,
     cache_dir: Path | str,
@@ -3525,9 +3589,15 @@ def _read_exact_compatible_teacher_cache_import(
     old_semantics = dict(source_request)
     old_semantics.pop("request_sha256")
     old_producers = old_semantics.pop("producer_byte_hash_manifest")
+    old_runtime = old_semantics.pop("runtime_identity")
     current_semantics = dict(verified_current)
     current_semantics.pop("request_sha256")
     current_producers = current_semantics.pop("producer_byte_hash_manifest")
+    current_runtime = current_semantics.pop("runtime_identity")
+    runtime_compatibility = _teacher_cache_runtime_compatibility(
+        source_runtime=old_runtime,
+        current_runtime=current_runtime,
+    )
     old_rows = {row["role"]: dict(row) for row in old_producers["files"]}
     current_rows = {
         row["role"]: dict(row) for row in current_producers["files"]
@@ -3567,7 +3637,9 @@ def _read_exact_compatible_teacher_cache_import(
         ),
         "current_prepare_producer": current_rows["prepare_recovery_inputs"],
         "current_request_sha256": verified_current["request_sha256"],
-        "request_fields_equal_except_producer_manifest_and_request_self_hash": True,
+        "request_fields_compatible_except_producer_manifest_request_self_hash_and_"
+        "pinned_runtime_observation": True,
+        "runtime_identity_compatibility": runtime_compatibility,
         "only_prepare_producer_row_changed": True,
         "other_producer_rows_byte_identical": True,
         "reservoir_frozen_before_import_read": True,
@@ -3652,7 +3724,9 @@ def _verify_teacher_cache_import_receipt(
         "source_prepare_producer_allowlist",
         "current_prepare_producer",
         "current_request_sha256",
-        "request_fields_equal_except_producer_manifest_and_request_self_hash",
+        "request_fields_compatible_except_producer_manifest_request_self_hash_and_"
+        "pinned_runtime_observation",
+        "runtime_identity_compatibility",
         "only_prepare_producer_row_changed",
         "other_producer_rows_byte_identical",
         "reservoir_frozen_before_import_read",
@@ -3691,6 +3765,54 @@ def _verify_teacher_cache_import_receipt(
     source_prepare = receipt.get("source_prepare_producer_allowlist")
     current_prepare = receipt.get("current_prepare_producer")
     result = receipt.get("current_cache_publication_result")
+    runtime = receipt.get("runtime_identity_compatibility")
+    runtime_fields = {
+        "mode",
+        "source_runtime_identity_sha256",
+        "current_runtime_identity_sha256",
+        "source_cudnn_version",
+        "current_cudnn_version",
+        "legacy_missing_cudnn_version_allowlist_applied",
+        "only_cudnn_version_and_runtime_self_hash_changed",
+    }
+    runtime_valid = False
+    if isinstance(runtime, Mapping) and set(runtime) == runtime_fields:
+        source_runtime_sha = _require_sha256(
+            runtime.get("source_runtime_identity_sha256"),
+            "import source runtime identity SHA",
+        )
+        current_runtime_sha = _require_sha256(
+            runtime.get("current_runtime_identity_sha256"),
+            "import current runtime identity SHA",
+        )
+        if runtime.get("mode") == "exact":
+            runtime_valid = (
+                source_runtime_sha == current_runtime_sha
+                and runtime.get("source_cudnn_version")
+                == runtime.get("current_cudnn_version")
+                and runtime.get("legacy_missing_cudnn_version_allowlist_applied")
+                is False
+                and runtime.get(
+                    "only_cudnn_version_and_runtime_self_hash_changed"
+                )
+                is False
+            )
+        elif runtime.get("mode") == "pinned-legacy-missing-cudnn-version":
+            runtime_valid = (
+                source_runtime_sha
+                == LEGACY_TEACHER_CACHE_IMPORT_RUNTIME_IDENTITY_SHA256
+                and current_runtime_sha
+                == LEGACY_TEACHER_CACHE_IMPORT_CURRENT_RUNTIME_IDENTITY_SHA256
+                and runtime.get("source_cudnn_version") is None
+                and runtime.get("current_cudnn_version")
+                == LEGACY_TEACHER_CACHE_IMPORT_CURRENT_CUDNN_VERSION
+                and runtime.get("legacy_missing_cudnn_version_allowlist_applied")
+                is True
+                and runtime.get(
+                    "only_cudnn_version_and_runtime_self_hash_changed"
+                )
+                is True
+            )
     if (
         receipt.get("schema") != TEACHER_REPLAY_CACHE_IMPORT_RECEIPT_SCHEMA
         or receipt.get("status")
@@ -3709,10 +3831,12 @@ def _verify_teacher_cache_import_receipt(
         != receipt.get("source_teacher_payload_sha256")
         or result
         not in {"published", "existing-byte-identical", "concurrent-byte-identical"}
+        or not runtime_valid
         or any(
             receipt.get(name) is not True
             for name in (
-                "request_fields_equal_except_producer_manifest_and_request_self_hash",
+                "request_fields_compatible_except_producer_manifest_request_self_"
+                "hash_and_pinned_runtime_observation",
                 "only_prepare_producer_row_changed",
                 "other_producer_rows_byte_identical",
                 "reservoir_frozen_before_import_read",

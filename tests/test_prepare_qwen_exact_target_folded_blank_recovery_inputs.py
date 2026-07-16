@@ -1787,6 +1787,24 @@ def _cache_request_with_producer_rows(
     return hf_teacher_replay_cache.verify_request(request)
 
 
+def _cache_request_with_runtime_identity(
+    current_request: dict[str, Any],
+    runtime_identity: dict[str, Any],
+) -> dict[str, Any]:
+    request = copy.deepcopy(current_request)
+    runtime = copy.deepcopy(runtime_identity)
+    runtime_body = dict(runtime)
+    runtime_body.pop("sha256", None)
+    runtime["sha256"] = hf_teacher_replay_cache._canonical_sha256(runtime_body)
+    request["runtime_identity"] = runtime
+    request_body = dict(request)
+    request_body.pop("request_sha256")
+    request["request_sha256"] = hf_teacher_replay_cache._canonical_sha256(
+        request_body
+    )
+    return hf_teacher_replay_cache.verify_request(request)
+
+
 def test_explicit_compatible_cache_import_republishes_without_teacher_generation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2098,6 +2116,130 @@ def test_explicit_compatible_cache_import_republishes_without_teacher_generation
                 current_request=current_request,
                 source_request_sha256=variant_request["request_sha256"],
                 source_envelope_sha256=variant_envelope["envelope_sha256"],
+            )
+
+    pinned_current_runtime = copy.deepcopy(current_request["runtime_identity"])
+    pinned_current_runtime["cudnn_version"] = 91_900
+    pinned_current_request = _cache_request_with_runtime_identity(
+        current_request,
+        pinned_current_runtime,
+    )
+    pinned_legacy_runtime = copy.deepcopy(
+        pinned_current_request["runtime_identity"]
+    )
+    pinned_legacy_runtime["cudnn_version"] = None
+    pinned_legacy_request = _cache_request_with_runtime_identity(
+        pinned_current_request,
+        pinned_legacy_runtime,
+    )
+    pinned_legacy_request = _cache_request_with_producer_rows(
+        pinned_legacy_request,
+        legacy_rows,
+    )
+    pinned_runtime_cache = tmp_path / "pinned-runtime-observation-import"
+    pinned_runtime_envelope, _ = hf_teacher_replay_cache.publish_entry(
+        cache_dir=pinned_runtime_cache,
+        request=pinned_legacy_request,
+        teacher_payload=teacher_payload,
+        live_source_model_fingerprint=source_fingerprint,
+    )
+    with monkeypatch.context() as runtime_patch:
+        runtime_patch.setattr(
+            preparer,
+            "LEGACY_TEACHER_CACHE_IMPORT_RUNTIME_IDENTITY_SHA256",
+            pinned_legacy_request["runtime_identity"]["sha256"],
+        )
+        runtime_patch.setattr(
+            preparer,
+            "LEGACY_TEACHER_CACHE_IMPORT_CURRENT_RUNTIME_IDENTITY_SHA256",
+            pinned_current_request["runtime_identity"]["sha256"],
+        )
+        runtime_patch.setattr(
+            preparer,
+            "LEGACY_TEACHER_CACHE_IMPORT_CURRENT_CUDNN_VERSION",
+            91_900,
+        )
+        pinned_import = original_import(
+            cache_dir=pinned_runtime_cache,
+            current_request=pinned_current_request,
+            source_request_sha256=pinned_legacy_request["request_sha256"],
+            source_envelope_sha256=pinned_runtime_envelope["envelope_sha256"],
+        )
+        runtime_receipt = pinned_import.pre_model_receipt[
+            "runtime_identity_compatibility"
+        ]
+        assert runtime_receipt == {
+            "mode": "pinned-legacy-missing-cudnn-version",
+            "source_runtime_identity_sha256": pinned_legacy_request[
+                "runtime_identity"
+            ]["sha256"],
+            "current_runtime_identity_sha256": pinned_current_request[
+                "runtime_identity"
+            ]["sha256"],
+            "source_cudnn_version": None,
+            "current_cudnn_version": 91_900,
+            "legacy_missing_cudnn_version_allowlist_applied": True,
+            "only_cudnn_version_and_runtime_self_hash_changed": True,
+        }
+        pinned_current_envelope, pinned_publication = (
+            hf_teacher_replay_cache.publish_entry(
+                cache_dir=pinned_runtime_cache,
+                request=pinned_current_request,
+                teacher_payload=teacher_payload,
+                live_source_model_fingerprint=source_fingerprint,
+            )
+        )
+        pinned_final_receipt = preparer._finalize_teacher_cache_import_receipt(
+            compatible_import=pinned_import,
+            current_envelope=pinned_current_envelope,
+            publication_result=pinned_publication,
+        )
+        assert preparer._verify_teacher_cache_import_receipt(
+            pinned_final_receipt,
+            current_request_sha256=pinned_current_request["request_sha256"],
+            current_envelope_sha256=pinned_current_envelope["envelope_sha256"],
+        ) == pinned_final_receipt
+        tampered_runtime_receipt = copy.deepcopy(pinned_final_receipt)
+        tampered_runtime_receipt["runtime_identity_compatibility"][
+            "current_cudnn_version"
+        ] = 91_901
+        tampered_body = dict(tampered_runtime_receipt)
+        tampered_body.pop("payload_sha256")
+        tampered_runtime_receipt["payload_sha256"] = preparer.canonical_sha256(
+            tampered_body
+        )
+        with pytest.raises(
+            preparer.RecoveryInputPreparationError,
+            match="receipt failed authentication",
+        ):
+            preparer._verify_teacher_cache_import_receipt(
+                tampered_runtime_receipt,
+                current_request_sha256=pinned_current_request[
+                    "request_sha256"
+                ],
+                current_envelope_sha256=pinned_current_envelope[
+                    "envelope_sha256"
+                ],
+            )
+        incompatible_runtime = copy.deepcopy(
+            pinned_current_request["runtime_identity"]
+        )
+        incompatible_runtime["cudnn_benchmark"] = True
+        incompatible_current_request = _cache_request_with_runtime_identity(
+            pinned_current_request,
+            incompatible_runtime,
+        )
+        with pytest.raises(
+            preparer.RecoveryInputPreparationError,
+            match="runtime identity changed outside",
+        ):
+            original_import(
+                cache_dir=pinned_runtime_cache,
+                current_request=incompatible_current_request,
+                source_request_sha256=pinned_legacy_request["request_sha256"],
+                source_envelope_sha256=pinned_runtime_envelope[
+                    "envelope_sha256"
+                ],
             )
 
     for request_sha, envelope_sha in (
