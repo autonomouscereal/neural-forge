@@ -31,13 +31,16 @@ from neural_forge.hf_guided_checkpoint_recovery import (
 )
 
 
-REPLAY_WRAPPER_SCHEMA = "neural-forge-frozen-recovery-replay-bank-v2"
+REPLAY_WRAPPER_SCHEMA = "neural-forge-frozen-recovery-replay-bank-v3"
 RECOVERY_PLAN_SCHEMA = "neural-forge-folded-blank-recovery-plan-v2"
 BEHAVIOR_SUITE_BINDING_SCHEMA = (
-    "neural-forge-candidate-recovery-behavior-suite-binding-v2"
+    "neural-forge-candidate-recovery-behavior-suite-binding-v3"
 )
-FRESH_SELECTION_SCHEMA = "neural-forge-fresh-recovery-candidate-selection-v1"
-TOKEN_DOMAIN_ADAPTER_SCHEMA = "neural-forge-token-domain-recovery-behavior-adapter-v2"
+FRESH_SELECTION_SCHEMA = "neural-forge-fresh-recovery-candidate-selection-v2"
+FRESH_REPLAY_EXCLUSION_DERIVATION_SCHEMA = (
+    "neural-forge-fresh-replay-exclusion-first-survivors-v1"
+)
+TOKEN_DOMAIN_ADAPTER_SCHEMA = "neural-forge-token-domain-recovery-behavior-adapter-v3"
 RECOVERY_REPLAY_DISJOINTNESS_AUDIT_SCHEMA = (
     "neural-forge-fresh-candidate-replay-disjointness-audit-v1"
 )
@@ -72,6 +75,7 @@ PINNED_RECOVERY_CORPUS_SHA256 = (
     "ba2dd1202752e2dd2b9b981c52501060ee367e220e5fb73ce7f8c320e2bbdd90"
 )
 PINNED_RECOVERY_CORPUS_LINE_COUNT = 2_906
+PINNED_RECOVERY_CORPUS_DUPLICATE_SOURCE_ROW_COUNT = 328
 PINNED_V4_PREREGISTRATION_SCHEMA = (
     "neural-forge-qwen-exact-target-native-guided-gud-candidate-tournament-"
     "preregistration-v1"
@@ -219,11 +223,38 @@ class TokenizerComponents:
 
 @dataclass(frozen=True, slots=True)
 class FreshRecoverySelection:
-    """A fresh 24-prompt candidate frozen before source-model access."""
+    """A fresh 24-prompt candidate frozen after replay exclusion."""
 
     prompts: tuple[split_tools._PromptRecord, ...]
     decoded_prompts: tuple[str, ...]
     provenance: Mapping[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class FreshRecoveryCandidateReservoir:
+    """Ordered tokenized and decoded candidate reservoir frozen pre-parent."""
+
+    prompts: tuple[split_tools._PromptRecord, ...]
+    decoded_prompts: tuple[str, ...]
+    provenance: Mapping[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class FreshCandidateReplayExclusions:
+    """Frozen recovery fields against which final heldout prompts are filtered."""
+
+    calibration: tuple[str, ...]
+    teacher_generated: tuple[str, ...]
+    on_policy: tuple[tuple[str, ...], ...]
+    stepwise: tuple[Any, ...]
+    indexed_training_texts: tuple[tuple[str, int, int | None, str], ...]
+    training_text_rows: tuple[Mapping[str, Any], ...]
+    prompt_windows: frozenset[tuple[int, ...]]
+    rollout_windows: frozenset[tuple[int, ...]]
+    prompt_window_total: int
+    rollout_window_total: int
+    stepwise_row_count: int
+    stepwise_sha256: str
 
 
 def _require_sha256(value: Any, name: str) -> str:
@@ -545,7 +576,7 @@ def _calibration_exclusion_records(
     }
 
 
-def _authenticate_and_select_fresh_recovery_candidate(
+def _authenticate_fresh_recovery_candidate_reservoir(
     *,
     v4_preregistration: Path,
     v4_preregistration_sha256: str,
@@ -553,8 +584,8 @@ def _authenticate_and_select_fresh_recovery_candidate(
     calibration_texts: Sequence[str],
     tokenizer: Any,
     preregistration_authenticator: Callable[[Path, str], Any],
-) -> FreshRecoverySelection:
-    """Freeze a new candidate from the pinned corpus before model access."""
+) -> FreshRecoveryCandidateReservoir:
+    """Freeze the ordered tokenized/decoded reservoir before model access."""
 
     if len(calibration_texts) != 640:
         raise RecoveryInputPreparationError(
@@ -685,7 +716,7 @@ def _authenticate_and_select_fresh_recovery_candidate(
             "Pinned recovery corpus authentication failed."
         ) from error
 
-    eligible_records: list[Mapping[str, Any]] = []
+    tokenized_records: list[tuple[Mapping[str, Any], tuple[int, ...]]] = []
     skipped_short = 0
     skipped_calibration_text = 0
     for record in corpus_records:
@@ -705,7 +736,7 @@ def _authenticate_and_select_fresh_recovery_candidate(
         if len(tokens) < split_tools.MINIMUM_MEANINGFUL_PREFIX_TOKENS:
             skipped_short += 1
             continue
-        eligible_records.append(record)
+        tokenized_records.append((record, tokens))
 
     excluded = (
         tuple(
@@ -715,76 +746,91 @@ def _authenticate_and_select_fresh_recovery_candidate(
         )
         + calibration_records
     )
-    try:
-        selected, statistics = split_tools._select_fresh_candidate(
-            eligible_records,
-            tokenizer,
-            excluded_prompts=excluded,
-            max_prompt_tokens=MAX_LENGTH,
-            expected_count=FRESH_CANDIDATE_COUNT,
-        )
-    except split_tools.ContinuationSplitPreparationError as error:
-        raise RecoveryInputPreparationError(
-            "Could not freeze 24 fresh recovery candidate prompts."
-        ) from error
-    prompts = tuple(selected)
-    token_counts = [len(prompt.token_ids) for prompt in prompts]
-    if (
-        len(prompts) != FRESH_CANDIDATE_COUNT
-        or min(token_counts) < split_tools.MINIMUM_MEANINGFUL_PREFIX_TOKENS
-        or max(token_counts) > MAX_LENGTH
-    ):
-        raise RecoveryInputPreparationError(
-            "Fresh recovery candidate prompt length contract failed."
-        )
-    excluded_ids = {prompt.prompt_id for prompt in excluded}
-    excluded_prefixes = {prefix for prompt in excluded for prefix in prompt.prefixes}
-    exact_overlap = sum(prompt.prompt_id in excluded_ids for prompt in prompts)
-    prefix_overlap = sum(
-        bool(prompt.prefixes & excluded_prefixes) for prompt in prompts
-    )
-    decoded = tuple(
-        _decode_identity_prompt(tokenizer, prompt.token_ids) for prompt in prompts
-    )
-    decoded_leaks = sum(
-        any(
-            prompt in calibration_text or calibration_text in prompt
-            for calibration_text in calibration_texts
-        )
-        for prompt in decoded
+    duplicate_source_row_count = (
+        PINNED_RECOVERY_CORPUS_LINE_COUNT - len(corpus_records)
     )
     if (
-        exact_overlap != 0
-        or prefix_overlap != 0
-        or decoded_leaks != 0
-        or len(set(decoded)) != len(decoded)
+        duplicate_source_row_count
+        != PINNED_RECOVERY_CORPUS_DUPLICATE_SOURCE_ROW_COUNT
     ):
         raise RecoveryInputPreparationError(
-            "Fresh recovery candidate is not disjoint from recovery training data."
+            "Pinned recovery corpus unique-prompt count changed."
         )
-    statistics = {
-        **dict(statistics),
-        "skipped_under_minimum_prompt_tokens": skipped_short,
-        "skipped_candidate_text_present_in_calibration": skipped_calibration_text,
+    statically_excluded_prompt_ids = {prompt.prompt_id for prompt in excluded}
+    statically_excluded_prefixes = {
+        prefix for prompt in excluded for prefix in prompt.prefixes
     }
-    selected_rows = [
+    reservoir_prompts: list[split_tools._PromptRecord] = []
+    decoded_reservoir: list[str] = []
+    reservoir_stats = {
+        "records_considered": len(corpus_records),
+        "unique_source_prompt_count": len(corpus_records),
+        "duplicate_source_row_count": duplicate_source_row_count,
+        "skipped_candidate_text_present_in_calibration": skipped_calibration_text,
+        "skipped_under_minimum_prompt_tokens": skipped_short,
+        "skipped_over_token_limit": 0,
+        "skipped_exact_prompt_collision": 0,
+        "skipped_meaningful_prefix_collision": 0,
+        "skipped_decoded_calibration_collision": 0,
+        "skipped_duplicate_decoded_prompt": 0,
+        "accepted_into_reservoir": 0,
+    }
+    decoded_seen: set[str] = set()
+    for record, tokens in tokenized_records:
+        if len(tokens) > MAX_LENGTH:
+            reservoir_stats["skipped_over_token_limit"] += 1
+            continue
+        digest = split_tools._token_sequence_sha256(tokens)
+        prompt_id = f"prompt-{digest}"
+        prefixes = split_tools._meaningful_prefixes(tokens)
+        if prompt_id in statically_excluded_prompt_ids:
+            reservoir_stats["skipped_exact_prompt_collision"] += 1
+            continue
+        if prefixes & statically_excluded_prefixes:
+            reservoir_stats["skipped_meaningful_prefix_collision"] += 1
+            continue
+        decoded = _decode_identity_prompt(tokenizer, tokens)
+        if any(
+            decoded in calibration_text or calibration_text in decoded
+            for calibration_text in calibration_texts
+        ):
+            reservoir_stats["skipped_decoded_calibration_collision"] += 1
+            continue
+        if decoded in decoded_seen:
+            reservoir_stats["skipped_duplicate_decoded_prompt"] += 1
+            continue
+        prompt = split_tools._PromptRecord(
+            payload=split_tools._fresh_prompt_payload(record, tokens),
+            token_ids=tokens,
+            prompt_id=prompt_id,
+            prefixes=prefixes,
+        )
+        reservoir_prompts.append(prompt)
+        decoded_reservoir.append(decoded)
+        decoded_seen.add(decoded)
+        reservoir_stats["accepted_into_reservoir"] += 1
+
+    if len(reservoir_prompts) < FRESH_CANDIDATE_COUNT:
+        raise RecoveryInputPreparationError(
+            "Pinned corpus has fewer than 24 pre-model reservoir prompts."
+        )
+    reservoir_manifest = [
         {
+            "reservoir_index": index,
             "prompt_id": prompt.prompt_id,
-            "token_ids_sha256": split_tools._token_sequence_sha256(prompt.token_ids),
-            "token_count": len(prompt.token_ids),
+            "token_ids_sha256": split_tools._token_sequence_sha256(
+                prompt.token_ids
+            ),
+            "decoded_prompt_sha256": hashlib.sha256(
+                decoded_reservoir[index].encode("utf-8")
+            ).hexdigest(),
             "source_line_number": int(prompt.payload["source_line_number"]),
             "source_prompt_sha256": str(prompt.payload["source_prompt_sha256"]),
-            "decoded_prompt_sha256": hashlib.sha256(
-                decoded[index].encode("utf-8")
-            ).hexdigest(),
         }
-        for index, prompt in enumerate(prompts)
+        for index, prompt in enumerate(reservoir_prompts)
     ]
-    body = {
-        "schema": FRESH_SELECTION_SCHEMA,
-        "status": "frozen-before-parent-load",
-        "mode": BEHAVIOR_MODE_FRESH,
-        "causal_ab_eligible": True,
+    reservoir_body = {
+        "status": "candidate-reservoir-frozen-before-parent-load",
         "v4_preregistration": {
             "schema": PINNED_V4_PREREGISTRATION_SCHEMA,
             "source_filename": v4_preregistration.name,
@@ -802,6 +848,87 @@ def _authenticate_and_select_fresh_recovery_candidate(
             "global_order": "source_prompt_sha256, then source_line_number",
         },
         "recovery_calibration": calibration_provenance,
+        "reservoir_prompt_count": len(reservoir_prompts),
+        "reservoir_manifest_sha256": canonical_sha256(reservoir_manifest),
+        "reservoir_order": "pinned-corpus-global-order-after-static-exclusions",
+        "reservoir_rows_hold_token_ids_and_decoded_text": True,
+        "preselection_statistics": reservoir_stats,
+        "sealed_exclusion_manifest_used_model_free": True,
+        "sealed_prompts_supplied_to_model_or_trainer": False,
+        "sealed_outputs_or_selection_scores_computed": False,
+        "contains_sealed_data": False,
+        "parent_model_loaded_during_reservoir_freeze": False,
+        "parent_forward_or_generate_during_reservoir_freeze": False,
+        "identity_tokenizer_used_during_reservoir_freeze": True,
+    }
+    reservoir_provenance = {
+        **reservoir_body,
+        "candidate_reservoir_payload_sha256": canonical_sha256(reservoir_body),
+    }
+    return FreshRecoveryCandidateReservoir(
+        prompts=tuple(reservoir_prompts),
+        decoded_prompts=tuple(decoded_reservoir),
+        provenance=reservoir_provenance,
+    )
+
+
+def _select_fresh_recovery_candidate(
+    *,
+    reservoir: FreshRecoveryCandidateReservoir,
+    teacher_payload: Mapping[str, Any],
+) -> FreshRecoverySelection:
+    """Choose the first 24 replay-disjoint rows from the pre-model reservoir."""
+
+    reservoir_rows = _fresh_candidate_reservoir_rows(reservoir)
+    derivation = _derive_fresh_candidate_selection(
+        reservoir_rows=reservoir_rows,
+        teacher_payload=teacher_payload,
+    )
+    selected_indices = tuple(derivation["selected_reservoir_indices"])
+    prompts = tuple(reservoir.prompts[index] for index in selected_indices)
+    decoded = tuple(reservoir.decoded_prompts[index] for index in selected_indices)
+    token_counts = [len(prompt.token_ids) for prompt in prompts]
+    if (
+        len(prompts) != FRESH_CANDIDATE_COUNT
+        or min(token_counts) < split_tools.MINIMUM_MEANINGFUL_PREFIX_TOKENS
+        or max(token_counts) > MAX_LENGTH
+    ):
+        raise RecoveryInputPreparationError(
+            "Fresh recovery candidate prompt length contract failed."
+        )
+    if len(set(decoded)) != len(decoded):
+        raise RecoveryInputPreparationError(
+            "Fresh recovery candidate is not disjoint from recovery training data."
+        )
+    selected_rows = [
+        {
+            "reservoir_index": selected_indices[index],
+            "prompt_id": prompt.prompt_id,
+            "token_ids_sha256": split_tools._token_sequence_sha256(prompt.token_ids),
+            "token_count": len(prompt.token_ids),
+            "source_line_number": int(prompt.payload["source_line_number"]),
+            "source_prompt_sha256": str(prompt.payload["source_prompt_sha256"]),
+            "decoded_prompt_sha256": hashlib.sha256(
+                decoded[index].encode("utf-8")
+            ).hexdigest(),
+        }
+        for index, prompt in enumerate(prompts)
+    ]
+    body = {
+        "schema": FRESH_SELECTION_SCHEMA,
+        "status": "frozen-after-teacher-replay-exclusion",
+        "mode": BEHAVIOR_MODE_FRESH,
+        "causal_ab_eligible": True,
+        "v4_preregistration": reservoir.provenance["v4_preregistration"],
+        "v4_exclusion_splits": reservoir.provenance["v4_exclusion_splits"],
+        "corpus": reservoir.provenance["corpus"],
+        "recovery_calibration": reservoir.provenance["recovery_calibration"],
+        "candidate_reservoir": {
+            "provenance": reservoir.provenance,
+            "rows": reservoir_rows,
+            "rows_sha256": canonical_sha256(reservoir_rows),
+        },
+        "replay_exclusion_derivation": derivation,
         "selected_candidate": {
             "prompt_count": len(prompts),
             "minimum_token_count": min(token_counts),
@@ -814,11 +941,16 @@ def _authenticate_and_select_fresh_recovery_candidate(
             "prompt_manifest_sha256": canonical_sha256(selected_rows),
             "decoded_prompt_manifest_sha256": canonical_sha256(list(decoded)),
         },
-        "selection_statistics": statistics,
+        "selection_statistics": {
+            "preselection": reservoir.provenance["preselection_statistics"],
+            "replay_exclusion_reason_counts": derivation["reason_counts"],
+            "replay_disjoint_survivor_count": derivation["survivor_count"],
+            "replay_disjoint_survivor_margin": derivation["survivor_margin"],
+        },
         "disjointness": {
-            "exact_token_prompt_overlap_count": exact_overlap,
-            "meaningful_prefix_overlap_count": prefix_overlap,
-            "decoded_candidate_text_in_recovery_calibration_count": decoded_leaks,
+            "exact_token_prompt_overlap_count": 0,
+            "meaningful_prefix_overlap_count": 0,
+            "decoded_candidate_text_in_recovery_calibration_count": 0,
             "minimum_meaningful_prefix_tokens": (
                 split_tools.MINIMUM_MEANINGFUL_PREFIX_TOKENS
             ),
@@ -828,8 +960,21 @@ def _authenticate_and_select_fresh_recovery_candidate(
         "sealed_prompts_supplied_to_model_or_trainer": False,
         "sealed_outputs_or_selection_scores_computed": False,
         "contains_sealed_data": False,
-        "model_accessed_during_selection": False,
+        "candidate_reservoir_frozen_before_parent_load": True,
+        "final_candidate_frozen_before_parent_load": False,
+        "parent_model_loaded_before_final_selection": True,
+        "teacher_replay_generated_before_final_selection": True,
+        "teacher_replay_used_for_exclusion_only": True,
+        "parent_forward_or_score_during_final_selection": False,
+        "tokenizer_called_during_final_selection": False,
+        "child_or_arm_outputs_accessed_during_final_selection": False,
     }
+    replay_audit = _fresh_candidate_replay_disjointness_audit(
+        decoded_prompts=decoded,
+        prompt_token_ids=[prompt.token_ids for prompt in prompts],
+        teacher_payload=teacher_payload,
+    )
+    body["final_replay_disjointness_audit_sha256"] = replay_audit["payload_sha256"]
     provenance = {**body, "payload_sha256": canonical_sha256(body)}
     return FreshRecoverySelection(
         prompts=prompts,
@@ -1377,6 +1522,174 @@ def _build_fresh_behavior_binding(
     )
 
 
+def _fresh_selection_structure_is_valid(selection: Mapping[str, Any]) -> bool:
+    """Verify reservoir/order/first-survivor bindings without replay access."""
+
+    try:
+        reservoir_rows = _verify_fresh_candidate_reservoir_payload(
+            selection["candidate_reservoir"]
+        )
+        derivation = selection["replay_exclusion_derivation"]
+        if not isinstance(derivation, Mapping):
+            return False
+        derivation_fields = {
+            "schema",
+            "status",
+            "algorithm",
+            "reason_precedence",
+            "minimum_common_token_window",
+            "teacher_token_replay_payload_sha256",
+            "training_text_manifest_sha256",
+            "stepwise_replay_bank_sha256",
+            "reservoir_rows_sha256",
+            "reservoir_prompt_count",
+            "classification_rows",
+            "classification_rows_sha256",
+            "reason_counts",
+            "survivor_count",
+            "survivor_margin",
+            "selected_reservoir_indices",
+            "selected_prompt_ids",
+            "selected_count",
+            "full_reservoir_classified",
+            "selection_is_first_survivors_in_frozen_order",
+            "teacher_replay_used_for_exclusion_only",
+            "candidate_behavior_or_child_arm_scores_accessed",
+            "parent_forward_or_score_executed_by_derivation",
+            "tokenizer_called_by_derivation",
+            "payload_sha256",
+        }
+        if set(derivation) != derivation_fields:
+            return False
+        derivation_body = dict(derivation)
+        claimed_derivation_sha = _require_sha256(
+            derivation_body.pop("payload_sha256"),
+            "fresh replay exclusion derivation SHA",
+        )
+        classifications = derivation["classification_rows"]
+        reason_precedence = [
+            "bidirectional_recovery_text_collision",
+            "stepwise_prompt_window_collision",
+            "stepwise_rollout_window_collision",
+            "prior_survivor_meaningful_prefix_collision",
+            "replay_disjoint_survivor",
+        ]
+        if (
+            not isinstance(classifications, list)
+            or len(classifications) != len(reservoir_rows)
+            or any(
+                row
+                != {
+                    "reservoir_index": index,
+                    "classification": row.get("classification"),
+                }
+                or row.get("classification") not in reason_precedence
+                for index, row in enumerate(classifications)
+                if isinstance(row, Mapping)
+            )
+            or any(not isinstance(row, Mapping) for row in classifications)
+        ):
+            return False
+        recomputed_counts = {
+            reason: sum(
+                row["classification"] == reason for row in classifications
+            )
+            for reason in reason_precedence
+        }
+        survivor_indices = [
+            row["reservoir_index"]
+            for row in classifications
+            if row["classification"] == "replay_disjoint_survivor"
+        ]
+        selected_indices = survivor_indices[:FRESH_CANDIDATE_COUNT]
+        selected_prompt_ids = [
+            reservoir_rows[index]["prompt_id"] for index in selected_indices
+        ]
+        selected_rows = selection["selected_candidate"]["prompt_rows"]
+        if (
+            derivation.get("schema")
+            != FRESH_REPLAY_EXCLUSION_DERIVATION_SCHEMA
+            or derivation.get("status")
+            != "authenticated-first-24-replay-disjoint-survivors"
+            or derivation.get("algorithm")
+            != "full-reservoir-fixed-reason-order-first-24-v1"
+            or derivation.get("reason_precedence") != reason_precedence
+            or derivation.get("minimum_common_token_window")
+            != MINIMUM_REPLAY_DISJOINT_TOKEN_WINDOW
+            or derivation.get("reservoir_rows_sha256")
+            != canonical_sha256(reservoir_rows)
+            or derivation.get("reservoir_prompt_count") != len(reservoir_rows)
+            or derivation.get("classification_rows_sha256")
+            != canonical_sha256(classifications)
+            or derivation.get("reason_counts") != recomputed_counts
+            or derivation.get("survivor_count") != len(survivor_indices)
+            or derivation.get("survivor_margin")
+            != len(survivor_indices) - FRESH_CANDIDATE_COUNT
+            or derivation.get("selected_reservoir_indices") != selected_indices
+            or derivation.get("selected_prompt_ids") != selected_prompt_ids
+            or derivation.get("selected_count") != FRESH_CANDIDATE_COUNT
+            or derivation.get("full_reservoir_classified") is not True
+            or derivation.get("selection_is_first_survivors_in_frozen_order")
+            is not True
+            or derivation.get("teacher_replay_used_for_exclusion_only") is not True
+            or derivation.get("candidate_behavior_or_child_arm_scores_accessed")
+            is not False
+            or derivation.get("parent_forward_or_score_executed_by_derivation")
+            is not False
+            or derivation.get("tokenizer_called_by_derivation") is not False
+            or canonical_sha256(derivation_body) != claimed_derivation_sha
+            or not isinstance(selected_rows, list)
+            or len(selected_rows) != FRESH_CANDIDATE_COUNT
+        ):
+            return False
+        for offset, selected_row in enumerate(selected_rows):
+            source = reservoir_rows[selected_indices[offset]]
+            if (
+                not isinstance(selected_row, Mapping)
+                or selected_row.get("reservoir_index") != selected_indices[offset]
+                or selected_row.get("prompt_id") != source["prompt_id"]
+                or selected_row.get("token_ids_sha256")
+                != source["token_ids_sha256"]
+                or selected_row.get("token_count") != len(source["token_ids"])
+                or selected_row.get("decoded_prompt_sha256")
+                != source["decoded_prompt_sha256"]
+                or selected_row.get("source_line_number")
+                != source["source_line_number"]
+                or selected_row.get("source_prompt_sha256")
+                != source["source_prompt_sha256"]
+            ):
+                return False
+        return (
+            selection.get("status") == "frozen-after-teacher-replay-exclusion"
+            and selection.get("candidate_reservoir_frozen_before_parent_load")
+            is True
+            and selection.get("final_candidate_frozen_before_parent_load") is False
+            and selection.get("parent_model_loaded_before_final_selection") is True
+            and selection.get("teacher_replay_generated_before_final_selection")
+            is True
+            and selection.get("teacher_replay_used_for_exclusion_only") is True
+            and selection.get("parent_forward_or_score_during_final_selection")
+            is False
+            and selection.get("tokenizer_called_during_final_selection") is False
+            and selection.get(
+                "child_or_arm_outputs_accessed_during_final_selection"
+            )
+            is False
+            and _require_sha256(
+                selection.get("final_replay_disjointness_audit_sha256"),
+                "final replay disjointness audit SHA",
+            )
+            == selection.get("final_replay_disjointness_audit_sha256")
+        )
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+        RecoveryInputPreparationError,
+    ):
+        return False
+
+
 def _fresh_adapter_cross_bindings_valid(
     adapter: Mapping[str, Any], suite: Mapping[str, Any]
 ) -> bool:
@@ -1708,7 +2021,7 @@ def verify_behavior_suite_binding(payload: Mapping[str, Any]) -> dict[str, Any]:
                 selection.get("schema") == FRESH_SELECTION_SCHEMA
                 and selection.get("mode") == BEHAVIOR_MODE_FRESH
                 and selection.get("causal_ab_eligible") is True
-                and selection.get("model_accessed_during_selection") is False
+                and _fresh_selection_structure_is_valid(selection)
                 and selection.get("sealed_exclusion_manifest_used_model_free") is True
                 and selection.get("sealed_prompts_supplied_to_model_or_trainer")
                 is False
@@ -2003,6 +2316,14 @@ def verify_frozen_replay_wrapper(payload: Mapping[str, Any]) -> dict[str, Any]:
             prompt["id"]: prompt for prompt in behavior["suite"]["generation_prompts"]
         }
         targets = adapter["targets"]
+        selection = adapter["selection"]
+        reservoir_rows = _verify_fresh_candidate_reservoir_payload(
+            selection["candidate_reservoir"]
+        )
+        recomputed_derivation = _derive_fresh_candidate_selection(
+            reservoir_rows=reservoir_rows,
+            teacher_payload=teacher,
+        )
         recomputed_disjointness = _fresh_candidate_replay_disjointness_audit(
             decoded_prompts=[
                 generation_by_id[target["generation_prompt_id"]]["prompt"]
@@ -2022,6 +2343,17 @@ def verify_frozen_replay_wrapper(payload: Mapping[str, Any]) -> dict[str, Any]:
             != recomputed_disjointness
             or adapter.get("recovery_replay_disjointness_audit_sha256")
             != recomputed_disjointness["payload_sha256"]
+            or selection.get("replay_exclusion_derivation")
+            != recomputed_derivation
+            or selection.get("final_replay_disjointness_audit_sha256")
+            != recomputed_disjointness["payload_sha256"]
+            or [target.get("prompt_id") for target in targets]
+            != recomputed_derivation["selected_prompt_ids"]
+            or [
+                row.get("reservoir_index")
+                for row in selection["selected_candidate"]["prompt_rows"]
+            ]
+            != recomputed_derivation["selected_reservoir_indices"]
         ):
             raise RecoveryInputPreparationError(
                 "Fresh behavior adapter is bound to different replay/model/tokenizer "
@@ -2287,6 +2619,426 @@ def _token_windows(
     )
 
 
+def _freeze_fresh_candidate_replay_exclusions(
+    teacher_payload: Mapping[str, Any],
+) -> FreshCandidateReplayExclusions:
+    """Freeze every recovery text and stepwise token window used for filtering."""
+
+    if not isinstance(teacher_payload, Mapping):
+        raise RecoveryInputPreparationError("Teacher replay payload must be an object.")
+    try:
+        calibration = hf_recovery._freeze_ordered_recovery_texts(
+            teacher_payload.get("calibration_texts"),
+            field_name="calibration_texts",
+        )
+        teacher_generated = hf_recovery._freeze_ordered_recovery_texts(
+            teacher_payload.get("precomputed_teacher_generated_texts"),
+            field_name="precomputed_teacher_generated_texts",
+        )
+        on_policy = hf_recovery._freeze_on_policy_replay_bank(
+            teacher_payload.get("on_policy_replay_bank")
+        )
+        stepwise = hf_recovery._freeze_stepwise_replay_bank(
+            teacher_payload.get("stepwise_replay_bank")
+        )
+    except (TypeError, ValueError) as error:
+        raise RecoveryInputPreparationError(
+            "Fresh causal mode requires fully formed frozen text and token replay banks."
+        ) from error
+
+    training_text_rows: list[Mapping[str, Any]] = []
+    indexed_training_texts: list[tuple[str, int, int | None, str]] = []
+    for source, texts in (
+        ("calibration_texts", calibration),
+        ("precomputed_teacher_generated_texts", teacher_generated),
+    ):
+        for index, text in enumerate(texts):
+            training_text_rows.append(
+                {
+                    "source": source,
+                    "event_index": None,
+                    "text_index": index,
+                    "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                }
+            )
+            indexed_training_texts.append((source, index, None, text))
+    for event_index, event in enumerate(on_policy):
+        for text_index, text in enumerate(event):
+            training_text_rows.append(
+                {
+                    "source": "on_policy_replay_bank",
+                    "event_index": event_index,
+                    "text_index": text_index,
+                    "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                }
+            )
+            indexed_training_texts.append(
+                ("on_policy_replay_bank", text_index, event_index, text)
+            )
+
+    prompt_windows: set[tuple[int, ...]] = set()
+    rollout_windows: set[tuple[int, ...]] = set()
+    prompt_window_total = 0
+    rollout_window_total = 0
+    stepwise_row_count = 0
+    for event in stepwise:
+        for row in event.rows:
+            stepwise_row_count += 1
+            row_prompt_windows = _token_windows(
+                row.prompt_input_ids, MINIMUM_REPLAY_DISJOINT_TOKEN_WINDOW
+            )
+            row_rollout_windows = _token_windows(
+                row.rollout_input_ids, MINIMUM_REPLAY_DISJOINT_TOKEN_WINDOW
+            )
+            prompt_window_total += len(row_prompt_windows)
+            rollout_window_total += len(row_rollout_windows)
+            prompt_windows.update(row_prompt_windows)
+            rollout_windows.update(row_rollout_windows)
+
+    return FreshCandidateReplayExclusions(
+        calibration=tuple(calibration),
+        teacher_generated=tuple(teacher_generated),
+        on_policy=tuple(tuple(event) for event in on_policy),
+        stepwise=tuple(stepwise),
+        indexed_training_texts=tuple(indexed_training_texts),
+        training_text_rows=tuple(training_text_rows),
+        prompt_windows=frozenset(prompt_windows),
+        rollout_windows=frozenset(rollout_windows),
+        prompt_window_total=prompt_window_total,
+        rollout_window_total=rollout_window_total,
+        stepwise_row_count=stepwise_row_count,
+        stepwise_sha256=hf_recovery._stepwise_replay_bank_sha256(stepwise),
+    )
+
+
+def _freeze_fresh_candidate_reservoir_rows(
+    reservoir_rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Authenticate the complete ordered reservoir without tokenizer access."""
+
+    if (
+        isinstance(reservoir_rows, (str, bytes, Mapping))
+        or not isinstance(reservoir_rows, Sequence)
+        or len(reservoir_rows) < FRESH_CANDIDATE_COUNT
+    ):
+        raise RecoveryInputPreparationError(
+            "Fresh candidate reservoir must contain at least 24 ordered rows."
+        )
+    expected_fields = {
+        "reservoir_index",
+        "prompt_id",
+        "token_ids",
+        "token_ids_sha256",
+        "decoded_prompt",
+        "decoded_prompt_sha256",
+        "source_line_number",
+        "source_prompt_sha256",
+    }
+    frozen: list[dict[str, Any]] = []
+    prompt_ids: set[str] = set()
+    decoded_prompts: set[str] = set()
+    previous_source_order: tuple[str, int] | None = None
+    for index, row in enumerate(reservoir_rows):
+        if not isinstance(row, Mapping) or set(row) != expected_fields:
+            raise RecoveryInputPreparationError(
+                f"Fresh reservoir row {index} fields changed."
+            )
+        raw_tokens = row.get("token_ids")
+        if isinstance(raw_tokens, (str, bytes, Mapping)) or not isinstance(
+            raw_tokens, Sequence
+        ):
+            raise RecoveryInputPreparationError(
+                f"Fresh reservoir row {index} token_ids must be a sequence."
+            )
+        tokens = tuple(raw_tokens)
+        if (
+            not (
+                split_tools.MINIMUM_MEANINGFUL_PREFIX_TOKENS
+                <= len(tokens)
+                <= MAX_LENGTH
+            )
+            or any(
+                isinstance(token_id, bool)
+                or not isinstance(token_id, int)
+                or token_id < 0
+                for token_id in tokens
+            )
+        ):
+            raise RecoveryInputPreparationError(
+                f"Fresh reservoir row {index} has invalid token IDs."
+            )
+        digest = split_tools._token_sequence_sha256(tokens)
+        decoded = row.get("decoded_prompt")
+        source_line = row.get("source_line_number")
+        if (
+            row.get("reservoir_index") != index
+            or row.get("prompt_id") != f"prompt-{digest}"
+            or row.get("token_ids_sha256") != digest
+            or not isinstance(decoded, str)
+            or not decoded.strip()
+            or row.get("decoded_prompt_sha256")
+            != hashlib.sha256(decoded.encode("utf-8")).hexdigest()
+            or isinstance(source_line, bool)
+            or not isinstance(source_line, int)
+            or source_line <= 0
+        ):
+            raise RecoveryInputPreparationError(
+                f"Fresh reservoir row {index} failed content authentication."
+            )
+        _require_sha256(
+            row.get("source_prompt_sha256"),
+            f"fresh reservoir row {index} source prompt SHA",
+        )
+        source_order = (str(row["source_prompt_sha256"]), source_line)
+        if previous_source_order is not None and source_order <= previous_source_order:
+            raise RecoveryInputPreparationError(
+                "Fresh reservoir rows are not in strict pinned corpus order."
+            )
+        previous_source_order = source_order
+        if row["prompt_id"] in prompt_ids or decoded in decoded_prompts:
+            raise RecoveryInputPreparationError(
+                "Fresh reservoir contains duplicate prompts or decoded text."
+            )
+        prompt_ids.add(str(row["prompt_id"]))
+        decoded_prompts.add(decoded)
+        frozen.append(
+            {
+                "reservoir_index": index,
+                "prompt_id": str(row["prompt_id"]),
+                "token_ids": [int(token_id) for token_id in tokens],
+                "token_ids_sha256": digest,
+                "decoded_prompt": decoded,
+                "decoded_prompt_sha256": str(row["decoded_prompt_sha256"]),
+                "source_line_number": source_line,
+                "source_prompt_sha256": str(row["source_prompt_sha256"]),
+            }
+        )
+    return frozen
+
+
+def _verify_fresh_candidate_reservoir_payload(
+    payload: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    if not isinstance(payload, Mapping) or set(payload) != {
+        "provenance",
+        "rows",
+        "rows_sha256",
+    }:
+        raise RecoveryInputPreparationError(
+            "Fresh candidate reservoir payload fields changed."
+        )
+    frozen = _freeze_fresh_candidate_reservoir_rows(payload["rows"])
+    if payload.get("rows_sha256") != canonical_sha256(frozen):
+        raise RecoveryInputPreparationError(
+            "Fresh candidate reservoir row binding changed."
+        )
+    manifest = [
+        {key: row[key] for key in row if key not in {"token_ids", "decoded_prompt"}}
+        for row in frozen
+    ]
+    provenance = payload.get("provenance")
+    if not isinstance(provenance, Mapping):
+        raise RecoveryInputPreparationError(
+            "Fresh candidate reservoir provenance must be an object."
+        )
+    provenance_body = dict(provenance)
+    claimed = _require_sha256(
+        provenance_body.pop("candidate_reservoir_payload_sha256"),
+        "candidate reservoir payload SHA",
+    )
+    statistics = provenance.get("preselection_statistics")
+    statistic_fields = {
+        "records_considered",
+        "unique_source_prompt_count",
+        "duplicate_source_row_count",
+        "skipped_candidate_text_present_in_calibration",
+        "skipped_under_minimum_prompt_tokens",
+        "skipped_over_token_limit",
+        "skipped_exact_prompt_collision",
+        "skipped_meaningful_prefix_collision",
+        "skipped_decoded_calibration_collision",
+        "skipped_duplicate_decoded_prompt",
+        "accepted_into_reservoir",
+    }
+    statistics_valid = (
+        isinstance(statistics, Mapping)
+        and set(statistics) == statistic_fields
+        and all(
+            isinstance(value, int) and not isinstance(value, bool) and value >= 0
+            for value in statistics.values()
+        )
+        and statistics["records_considered"]
+        == statistics["unique_source_prompt_count"]
+        and statistics["unique_source_prompt_count"]
+        + statistics["duplicate_source_row_count"]
+        == PINNED_RECOVERY_CORPUS_LINE_COUNT
+        and statistics["duplicate_source_row_count"]
+        == PINNED_RECOVERY_CORPUS_DUPLICATE_SOURCE_ROW_COUNT
+        and statistics["accepted_into_reservoir"] == len(frozen)
+        and sum(
+            value
+            for name, value in statistics.items()
+            if name
+            not in {
+                "records_considered",
+                "unique_source_prompt_count",
+                "duplicate_source_row_count",
+            }
+        )
+        == statistics["records_considered"]
+    )
+    if (
+        provenance.get("status")
+        != "candidate-reservoir-frozen-before-parent-load"
+        or provenance.get("reservoir_prompt_count") != len(frozen)
+        or provenance.get("reservoir_manifest_sha256")
+        != canonical_sha256(manifest)
+        or provenance.get("reservoir_rows_hold_token_ids_and_decoded_text") is not True
+        or provenance.get("parent_model_loaded_during_reservoir_freeze") is not False
+        or provenance.get("parent_forward_or_generate_during_reservoir_freeze")
+        is not False
+        or provenance.get("identity_tokenizer_used_during_reservoir_freeze")
+        is not True
+        or not statistics_valid
+        or canonical_sha256(provenance_body) != claimed
+    ):
+        raise RecoveryInputPreparationError(
+            "Fresh candidate reservoir provenance failed authentication."
+        )
+    return frozen
+
+
+def _fresh_candidate_reservoir_rows(
+    reservoir: FreshRecoveryCandidateReservoir,
+) -> list[dict[str, Any]]:
+    if len(reservoir.prompts) != len(reservoir.decoded_prompts):
+        raise RecoveryInputPreparationError(
+            "Fresh candidate reservoir prompt/text alignment changed."
+        )
+    rows = [
+        {
+            "reservoir_index": index,
+            "prompt_id": prompt.prompt_id,
+            "token_ids": list(prompt.token_ids),
+            "token_ids_sha256": split_tools._token_sequence_sha256(
+                prompt.token_ids
+            ),
+            "decoded_prompt": reservoir.decoded_prompts[index],
+            "decoded_prompt_sha256": hashlib.sha256(
+                reservoir.decoded_prompts[index].encode("utf-8")
+            ).hexdigest(),
+            "source_line_number": int(prompt.payload["source_line_number"]),
+            "source_prompt_sha256": str(prompt.payload["source_prompt_sha256"]),
+        }
+        for index, prompt in enumerate(reservoir.prompts)
+    ]
+    return _verify_fresh_candidate_reservoir_payload(
+        {
+            "provenance": reservoir.provenance,
+            "rows": rows,
+            "rows_sha256": canonical_sha256(rows),
+        }
+    )
+
+
+def _derive_fresh_candidate_selection(
+    *,
+    reservoir_rows: Sequence[Mapping[str, Any]],
+    teacher_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Deterministically classify all rows and select the first 24 survivors."""
+
+    frozen_rows = _freeze_fresh_candidate_reservoir_rows(reservoir_rows)
+    replay = _freeze_fresh_candidate_replay_exclusions(teacher_payload)
+    classifications: list[dict[str, Any]] = []
+    survivors: list[int] = []
+    reason_counts = {
+        "bidirectional_recovery_text_collision": 0,
+        "stepwise_prompt_window_collision": 0,
+        "stepwise_rollout_window_collision": 0,
+        "prior_survivor_meaningful_prefix_collision": 0,
+        "replay_disjoint_survivor": 0,
+    }
+    survivor_prefixes: set[tuple[int, ...]] = set()
+    for row in frozen_rows:
+        decoded = row["decoded_prompt"].strip()
+        if any(
+            decoded in training_text.strip() or training_text.strip() in decoded
+            for _source, _text_index, _event_index, training_text in (
+                replay.indexed_training_texts
+            )
+        ):
+            reason = "bidirectional_recovery_text_collision"
+        else:
+            candidate_windows = frozenset(
+                _token_windows(
+                    row["token_ids"], MINIMUM_REPLAY_DISJOINT_TOKEN_WINDOW
+                )
+            )
+            if candidate_windows & replay.prompt_windows:
+                reason = "stepwise_prompt_window_collision"
+            elif candidate_windows & replay.rollout_windows:
+                reason = "stepwise_rollout_window_collision"
+            elif split_tools._meaningful_prefixes(
+                tuple(row["token_ids"])
+            ) & survivor_prefixes:
+                reason = "prior_survivor_meaningful_prefix_collision"
+            else:
+                reason = "replay_disjoint_survivor"
+                survivors.append(row["reservoir_index"])
+                survivor_prefixes.update(
+                    split_tools._meaningful_prefixes(tuple(row["token_ids"]))
+                )
+        reason_counts[reason] += 1
+        classifications.append(
+            {"reservoir_index": row["reservoir_index"], "classification": reason}
+        )
+    if len(survivors) < FRESH_CANDIDATE_COUNT:
+        raise RecoveryInputPreparationError(
+            "Replay exclusion left fewer than 24 fresh candidate prompts."
+        )
+    selected_indices = survivors[:FRESH_CANDIDATE_COUNT]
+    selected_prompt_ids = [frozen_rows[index]["prompt_id"] for index in selected_indices]
+    body = {
+        "schema": FRESH_REPLAY_EXCLUSION_DERIVATION_SCHEMA,
+        "status": "authenticated-first-24-replay-disjoint-survivors",
+        "algorithm": "full-reservoir-fixed-reason-order-first-24-v1",
+        "reason_precedence": [
+            "bidirectional_recovery_text_collision",
+            "stepwise_prompt_window_collision",
+            "stepwise_rollout_window_collision",
+            "prior_survivor_meaningful_prefix_collision",
+            "replay_disjoint_survivor",
+        ],
+        "minimum_common_token_window": MINIMUM_REPLAY_DISJOINT_TOKEN_WINDOW,
+        "teacher_token_replay_payload_sha256": _require_sha256(
+            teacher_payload.get("payload_sha256"),
+            "teacher replay payload SHA",
+        ),
+        "training_text_manifest_sha256": canonical_sha256(
+            list(replay.training_text_rows)
+        ),
+        "stepwise_replay_bank_sha256": replay.stepwise_sha256,
+        "reservoir_rows_sha256": canonical_sha256(frozen_rows),
+        "reservoir_prompt_count": len(frozen_rows),
+        "classification_rows": classifications,
+        "classification_rows_sha256": canonical_sha256(classifications),
+        "reason_counts": reason_counts,
+        "survivor_count": len(survivors),
+        "survivor_margin": len(survivors) - FRESH_CANDIDATE_COUNT,
+        "selected_reservoir_indices": selected_indices,
+        "selected_prompt_ids": selected_prompt_ids,
+        "selected_count": FRESH_CANDIDATE_COUNT,
+        "full_reservoir_classified": True,
+        "selection_is_first_survivors_in_frozen_order": True,
+        "teacher_replay_used_for_exclusion_only": True,
+        "candidate_behavior_or_child_arm_scores_accessed": False,
+        "parent_forward_or_score_executed_by_derivation": False,
+        "tokenizer_called_by_derivation": False,
+    }
+    return {**body, "payload_sha256": canonical_sha256(body)}
+
+
 def _fresh_candidate_replay_disjointness_audit(
     *,
     decoded_prompts: Sequence[str],
@@ -2373,58 +3125,12 @@ def _fresh_candidate_replay_disjointness_audit(
             "Fresh prompt token IDs exceed the authenticated candidate vocabulary."
         )
 
-    try:
-        calibration = hf_recovery._freeze_ordered_recovery_texts(
-            teacher_payload.get("calibration_texts"),
-            field_name="calibration_texts",
-        )
-        teacher_generated = hf_recovery._freeze_ordered_recovery_texts(
-            teacher_payload.get("precomputed_teacher_generated_texts"),
-            field_name="precomputed_teacher_generated_texts",
-        )
-        on_policy = hf_recovery._freeze_on_policy_replay_bank(
-            teacher_payload.get("on_policy_replay_bank")
-        )
-        stepwise = hf_recovery._freeze_stepwise_replay_bank(
-            teacher_payload.get("stepwise_replay_bank")
-        )
-    except (TypeError, ValueError) as error:
-        raise RecoveryInputPreparationError(
-            "Fresh causal mode requires fully formed frozen text and token replay banks."
-        ) from error
-
-    training_text_rows: list[dict[str, Any]] = []
-    indexed_training_texts: list[tuple[str, int, int | None, str]] = []
-    for source, texts in (
-        ("calibration_texts", calibration),
-        ("precomputed_teacher_generated_texts", teacher_generated),
-    ):
-        for index, text in enumerate(texts):
-            training_text_rows.append(
-                {
-                    "source": source,
-                    "event_index": None,
-                    "text_index": index,
-                    "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
-                }
-            )
-            indexed_training_texts.append((source, index, None, text))
-    for event_index, event in enumerate(on_policy):
-        for text_index, text in enumerate(event):
-            training_text_rows.append(
-                {
-                    "source": "on_policy_replay_bank",
-                    "event_index": event_index,
-                    "text_index": text_index,
-                    "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
-                }
-            )
-            indexed_training_texts.append(
-                ("on_policy_replay_bank", text_index, event_index, text)
-            )
+    replay = _freeze_fresh_candidate_replay_exclusions(teacher_payload)
 
     for candidate_index, candidate in enumerate(frozen_decoded):
-        for source, text_index, event_index, training_text in indexed_training_texts:
+        for source, text_index, event_index, training_text in (
+            replay.indexed_training_texts
+        ):
             candidate_view = candidate.strip()
             training_view = training_text.strip()
             location = (
@@ -2450,20 +3156,14 @@ def _fresh_candidate_replay_disjointness_audit(
         candidate_window_total += len(windows)
         candidate_windows.update(windows)
 
-    prompt_window_total = 0
-    rollout_window_total = 0
-    stepwise_row_count = 0
-    for event_index, event in enumerate(stepwise):
+    for event_index, event in enumerate(replay.stepwise):
         for row_index, row in enumerate(event.rows):
-            stepwise_row_count += 1
             prompt_windows = _token_windows(
                 row.prompt_input_ids, MINIMUM_REPLAY_DISJOINT_TOKEN_WINDOW
             )
             rollout_windows = _token_windows(
                 row.rollout_input_ids, MINIMUM_REPLAY_DISJOINT_TOKEN_WINDOW
             )
-            prompt_window_total += len(prompt_windows)
-            rollout_window_total += len(rollout_windows)
             if candidate_windows.intersection(prompt_windows):
                 raise RecoveryInputPreparationError(
                     "A fresh candidate shares an eight-token window with stepwise "
@@ -2475,7 +3175,6 @@ def _fresh_candidate_replay_disjointness_audit(
                     f"rollout replay event {event_index}, row {row_index}."
                 )
 
-    stepwise_sha = hf_recovery._stepwise_replay_bank_sha256(stepwise)
     audit_body = {
         "schema": RECOVERY_REPLAY_DISJOINTNESS_AUDIT_SCHEMA,
         "status": "passed",
@@ -2489,13 +3188,15 @@ def _fresh_candidate_replay_disjointness_audit(
             teacher_payload.get("payload_sha256"),
             "teacher replay payload SHA",
         ),
-        "training_text_manifest_sha256": canonical_sha256(training_text_rows),
+        "training_text_manifest_sha256": canonical_sha256(
+            list(replay.training_text_rows)
+        ),
         "training_text_counts": {
-            "calibration_texts": len(calibration),
-            "precomputed_teacher_generated_texts": len(teacher_generated),
-            "on_policy_events": len(on_policy),
-            "on_policy_texts": sum(len(event) for event in on_policy),
-            "total": len(indexed_training_texts),
+            "calibration_texts": len(replay.calibration),
+            "precomputed_teacher_generated_texts": len(replay.teacher_generated),
+            "on_policy_events": len(replay.on_policy),
+            "on_policy_texts": sum(len(event) for event in replay.on_policy),
+            "total": len(replay.indexed_training_texts),
         },
         "text_scan": {
             "candidate_in_training_overlap_count": 0,
@@ -2505,13 +3206,13 @@ def _fresh_candidate_replay_disjointness_audit(
             "outer_whitespace_stripped_before_scan": True,
         },
         "stepwise_scan": {
-            "stepwise_replay_bank_sha256": stepwise_sha,
-            "event_count": len(stepwise),
-            "row_count": stepwise_row_count,
+            "stepwise_replay_bank_sha256": replay.stepwise_sha256,
+            "event_count": len(replay.stepwise),
+            "row_count": replay.stepwise_row_count,
             "candidate_window_total_count": candidate_window_total,
             "candidate_window_unique_count": len(candidate_windows),
-            "prompt_window_total_count": prompt_window_total,
-            "rollout_window_total_count": rollout_window_total,
+            "prompt_window_total_count": replay.prompt_window_total,
+            "rollout_window_total_count": replay.rollout_window_total,
             "candidate_prompt_window_overlap_count": 0,
             "candidate_rollout_window_overlap_count": 0,
             "all_candidate_offsets_scanned": True,
@@ -2670,6 +3371,7 @@ def prepare_recovery_inputs(
             "Pinned recovery corpus did not yield exactly 640 frozen calibration rows."
         )
 
+    candidate_reservoir: FreshRecoveryCandidateReservoir | None = None
     selection: FreshRecoverySelection | None = None
     if fresh_mode:
         tokenizers = tokenizer_loader(
@@ -2694,7 +3396,7 @@ def prepare_recovery_inputs(
             )
         assert v4_path is not None
         assert v4_preregistration_sha256 is not None
-        selection = _authenticate_and_select_fresh_recovery_candidate(
+        candidate_reservoir = _authenticate_fresh_recovery_candidate_reservoir(
             v4_preregistration=v4_path,
             v4_preregistration_sha256=v4_preregistration_sha256,
             corpus_path=calibration_path,
@@ -2755,7 +3457,11 @@ def prepare_recovery_inputs(
             name="teacher_token_replay",
         )
         if fresh_mode:
-            assert selection is not None
+            assert candidate_reservoir is not None
+            selection = _select_fresh_recovery_candidate(
+                reservoir=candidate_reservoir,
+                teacher_payload=teacher_payload,
+            )
             behavior_binding = _build_fresh_behavior_binding(
                 torch=components.torch,
                 source_model=components.source_model,

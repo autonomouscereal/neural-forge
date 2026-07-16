@@ -72,7 +72,12 @@ def _token_prompt(base: int) -> dict[str, Any]:
 def _fresh_selection_fixture(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-) -> tuple[preparer.FreshRecoverySelection, _IdentityTokenizer, list[str]]:
+) -> tuple[
+    preparer.FreshRecoverySelection,
+    preparer.FreshRecoveryCandidateReservoir,
+    _IdentityTokenizer,
+    list[str],
+]:
     tokenizer = _IdentityTokenizer()
     split_bindings: dict[str, Any] = {}
     for role, count in preparer.PINNED_V4_SPLIT_COUNTS.items():
@@ -125,6 +130,7 @@ def _fresh_selection_fixture(
         f"{index:08x} unique recovery prompt with enough distinct content {index}."
         for index in range(800)
     ]
+    corpus_rows[-1] = corpus_rows[-2]
     corpus.write_text(
         "".join(json.dumps({"text": text}) + "\n" for text in corpus_rows),
         encoding="utf-8",
@@ -133,7 +139,12 @@ def _fresh_selection_fixture(
         preparer, "PINNED_RECOVERY_CORPUS_SHA256", preparer._file_sha256(corpus)
     )
     monkeypatch.setattr(preparer, "PINNED_RECOVERY_CORPUS_LINE_COUNT", 800)
-    selection = preparer._authenticate_and_select_fresh_recovery_candidate(
+    monkeypatch.setattr(
+        preparer,
+        "PINNED_RECOVERY_CORPUS_DUPLICATE_SOURCE_ROW_COUNT",
+        1,
+    )
+    reservoir = preparer._authenticate_fresh_recovery_candidate_reservoir(
         v4_preregistration=prereg,
         v4_preregistration_sha256=prereg_sha,
         corpus_path=corpus,
@@ -141,7 +152,37 @@ def _fresh_selection_fixture(
         tokenizer=tokenizer,
         preregistration_authenticator=lambda _path, _sha: contract,
     )
-    return selection, tokenizer, corpus_rows[:640]
+    teacher = {
+        "payload_sha256": "7" * 64,
+        "calibration_texts": corpus_rows[:640],
+        "precomputed_teacher_generated_texts": [
+            "Teacher-generated response is unrelated to every held-out prompt."
+        ],
+        "on_policy_replay_bank": [],
+        "stepwise_replay_bank": [
+            {
+                "step": 1,
+                "rows": [
+                    {
+                        "prompt_input_ids": [1_500_000, 1_500_001],
+                        "rollout_input_ids": [
+                            1_500_000,
+                            1_500_001,
+                            1_500_002,
+                        ],
+                    }
+                ],
+            }
+        ],
+        "tokenizer_fingerprints": {
+            "candidate": {"tokenizer_length": 2_000_000}
+        },
+    }
+    selection = preparer._select_fresh_recovery_candidate(
+        reservoir=reservoir,
+        teacher_payload=teacher,
+    )
+    return selection, reservoir, tokenizer, corpus_rows[:640]
 
 
 def _replay_audit_fixture() -> tuple[list[str], list[list[int]], dict[str, Any]]:
@@ -766,7 +807,9 @@ def test_fresh_selection_excludes_v4_and_exact_640_recovery_rows(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    selection, _tokenizer, calibration = _fresh_selection_fixture(tmp_path, monkeypatch)
+    selection, _reservoir, _tokenizer, calibration = _fresh_selection_fixture(
+        tmp_path, monkeypatch
+    )
     assert len(selection.prompts) == 24
     assert len(set(selection.decoded_prompts)) == 24
     assert all(8 <= len(prompt.token_ids) <= 128 for prompt in selection.prompts)
@@ -776,13 +819,32 @@ def test_fresh_selection_excludes_v4_and_exact_640_recovery_rows(
     )
     provenance = selection.provenance
     assert provenance["causal_ab_eligible"] is True
-    assert provenance["model_accessed_during_selection"] is False
+    assert provenance["candidate_reservoir_frozen_before_parent_load"] is True
+    assert provenance["final_candidate_frozen_before_parent_load"] is False
+    assert provenance["parent_model_loaded_before_final_selection"] is True
+    assert provenance["teacher_replay_used_for_exclusion_only"] is True
+    assert provenance["parent_forward_or_score_during_final_selection"] is False
+    assert provenance["tokenizer_called_during_final_selection"] is False
+    assert provenance["child_or_arm_outputs_accessed_during_final_selection"] is False
     assert provenance["sealed_exclusion_manifest_used_model_free"] is True
     assert provenance["sealed_prompts_supplied_to_model_or_trainer"] is False
     assert provenance["sealed_outputs_or_selection_scores_computed"] is False
     assert provenance["recovery_calibration"]["text_count"] == 640
     assert provenance["selected_candidate"]["minimum_token_count"] >= 8
     assert provenance["selected_candidate"]["maximum_token_count"] <= 128
+    reservoir = provenance["candidate_reservoir"]
+    assert len(reservoir["rows"]) > 24
+    assert reservoir["rows_sha256"] == preparer.canonical_sha256(reservoir["rows"])
+    derivation = provenance["replay_exclusion_derivation"]
+    assert derivation["selected_reservoir_indices"] == list(range(24))
+    assert derivation["survivor_margin"] > 0
+    assert derivation["full_reservoir_classified"] is True
+    assert (
+        reservoir["provenance"]["preselection_statistics"][
+            "duplicate_source_row_count"
+        ]
+        == 1
+    )
     assert provenance["disjointness"] == {
         "exact_token_prompt_overlap_count": 0,
         "meaningful_prefix_overlap_count": 0,
@@ -792,11 +854,141 @@ def test_fresh_selection_excludes_v4_and_exact_640_recovery_rows(
     }
 
 
+@pytest.mark.parametrize(
+    ("collision_location", "expected_reason"),
+    (
+        ("prompt", "stepwise_prompt_window_collision"),
+        ("rollout", "stepwise_rollout_window_collision"),
+    ),
+)
+def test_final_selection_skips_replay_window_collisions_before_freezing_24(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    collision_location: str,
+    expected_reason: str,
+) -> None:
+    _baseline, reservoir, _tokenizer, calibration = _fresh_selection_fixture(
+        tmp_path, monkeypatch
+    )
+    collision = list(reservoir.prompts[0].token_ids[3:11])
+    prompt_ids = [42, 43]
+    rollout_ids = [42, 43, 44]
+    if collision_location == "prompt":
+        prompt_ids = [42, *collision, 43]
+        rollout_ids = [*prompt_ids, 44]
+    else:
+        rollout_ids = [42, 43, *collision, 44]
+    teacher = {
+        "payload_sha256": "8" * 64,
+        "calibration_texts": calibration,
+        "precomputed_teacher_generated_texts": [
+            "Independent teacher-generated recovery response."
+        ],
+        "on_policy_replay_bank": [],
+        "stepwise_replay_bank": [
+            {
+                "step": 8,
+                "rows": [
+                    {
+                        "prompt_input_ids": prompt_ids,
+                        "rollout_input_ids": rollout_ids,
+                    }
+                ],
+            }
+        ],
+        "tokenizer_fingerprints": {
+            "candidate": {"tokenizer_length": 2_000_000}
+        },
+    }
+
+    first = preparer._select_fresh_recovery_candidate(
+        reservoir=reservoir,
+        teacher_payload=teacher,
+    )
+    second = preparer._select_fresh_recovery_candidate(
+        reservoir=reservoir,
+        teacher_payload=copy.deepcopy(teacher),
+    )
+
+    derivation = first.provenance["replay_exclusion_derivation"]
+    assert derivation["classification_rows"][0] == {
+        "reservoir_index": 0,
+        "classification": expected_reason,
+    }
+    assert derivation["selected_reservoir_indices"] == list(range(1, 25))
+    assert [prompt.prompt_id for prompt in first.prompts] == [
+        prompt.prompt_id for prompt in reservoir.prompts[1:25]
+    ]
+    assert first.provenance == second.provenance
+    assert first.prompts == second.prompts
+
+
+def test_rehashed_reservoir_reorder_is_rejected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selection, _reservoir, _tokenizer, _calibration = _fresh_selection_fixture(
+        tmp_path, monkeypatch
+    )
+    payload = copy.deepcopy(selection.provenance["candidate_reservoir"])
+    rows = payload["rows"]
+    rows[0], rows[1] = rows[1], rows[0]
+    rows[0]["reservoir_index"] = 0
+    rows[1]["reservoir_index"] = 1
+    payload["rows_sha256"] = preparer.canonical_sha256(rows)
+    manifest = [
+        {
+            key: value
+            for key, value in row.items()
+            if key not in {"token_ids", "decoded_prompt"}
+        }
+        for row in rows
+    ]
+    provenance = payload["provenance"]
+    provenance["reservoir_manifest_sha256"] = preparer.canonical_sha256(manifest)
+    provenance_body = dict(provenance)
+    provenance_body.pop("candidate_reservoir_payload_sha256")
+    provenance["candidate_reservoir_payload_sha256"] = preparer.canonical_sha256(
+        provenance_body
+    )
+
+    with pytest.raises(
+        preparer.RecoveryInputPreparationError,
+        match="strict pinned corpus order",
+    ):
+        preparer._verify_fresh_candidate_reservoir_payload(payload)
+
+
+def test_rehashed_reservoir_incomplete_preselection_counts_are_rejected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selection, _reservoir, _tokenizer, _calibration = _fresh_selection_fixture(
+        tmp_path, monkeypatch
+    )
+    payload = copy.deepcopy(selection.provenance["candidate_reservoir"])
+    provenance = payload["provenance"]
+    provenance["preselection_statistics"]["accepted_into_reservoir"] += 1
+    provenance_body = dict(provenance)
+    provenance_body.pop("candidate_reservoir_payload_sha256")
+    provenance["candidate_reservoir_payload_sha256"] = preparer.canonical_sha256(
+        provenance_body
+    )
+
+    with pytest.raises(
+        preparer.RecoveryInputPreparationError,
+        match="provenance failed authentication",
+    ):
+        preparer._verify_fresh_candidate_reservoir_payload(payload)
+
+
 def test_fresh_parent_adapter_pins_all_decoded_prefix_probes_and_rejects_reseal(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    selection, tokenizer, _calibration = _fresh_selection_fixture(tmp_path, monkeypatch)
+    selection, _reservoir, tokenizer, _calibration = _fresh_selection_fixture(
+        tmp_path, monkeypatch
+    )
 
     class Parent:
         def eval(self) -> None:
@@ -899,7 +1091,9 @@ def test_fresh_parent_adapter_rejects_prefix_without_coherent_tail(
     monkeypatch: pytest.MonkeyPatch,
     suffix: str,
 ) -> None:
-    selection, tokenizer, calibration = _fresh_selection_fixture(tmp_path, monkeypatch)
+    selection, _reservoir, tokenizer, calibration = _fresh_selection_fixture(
+        tmp_path, monkeypatch
+    )
 
     class Parent:
         def eval(self) -> None:

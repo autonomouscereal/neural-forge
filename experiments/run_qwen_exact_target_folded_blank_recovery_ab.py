@@ -61,7 +61,7 @@ PREREGISTRATION_SCHEMA = (
     "neural-forge-qwen-exact-target-folded-blank-recovery-ab-preregistration-v1"
 )
 RUN_SCHEMA = "neural-forge-qwen-exact-target-folded-blank-recovery-ab-run-v1"
-REPLAY_SCHEMA = "neural-forge-frozen-recovery-replay-bank-v2"
+REPLAY_SCHEMA = "neural-forge-frozen-recovery-replay-bank-v3"
 PLAN_SCHEMA = "neural-forge-folded-blank-recovery-plan-v2"
 TEACHER_SOURCE_ARTIFACT_SCHEMA = "neural-forge-teacher-source-artifact-binding-v1"
 MATERIALIZATION_RECEIPT_SCHEMA = (
@@ -856,7 +856,17 @@ def _replay_binding(path: Path, expected_sha256: str) -> dict[str, Any]:
         prompt["id"]: prompt for prompt in loaded_suite["generation_prompts"]
     }
     adapter_targets = adapter["targets"]
+    selection = adapter["selection"]
     try:
+        reservoir_rows = recovery_inputs._verify_fresh_candidate_reservoir_payload(
+            selection["candidate_reservoir"]
+        )
+        recomputed_derivation = (
+            recovery_inputs._derive_fresh_candidate_selection(
+                reservoir_rows=reservoir_rows,
+                teacher_payload=verified_teacher_replay,
+            )
+        )
         recomputed_disjointness = (
             recovery_inputs._fresh_candidate_replay_disjointness_audit(
                 decoded_prompts=[
@@ -871,15 +881,28 @@ def _replay_binding(path: Path, expected_sha256: str) -> dict[str, Any]:
         )
     except Exception as error:
         raise FoldedBlankRecoveryABError(
-            "Fresh behavior prompts overlap or fail the complete frozen replay audit."
+            "Fresh behavior reservoir derivation or prompts fail the complete "
+            "frozen replay audit."
         ) from error
     if (
-        adapter.get("recovery_replay_disjointness_audit") != recomputed_disjointness
+        selection.get("replay_exclusion_derivation") != recomputed_derivation
+        or selection.get("final_replay_disjointness_audit_sha256")
+        != recomputed_disjointness["payload_sha256"]
+        or [target.get("prompt_id") for target in adapter_targets]
+        != recomputed_derivation["selected_prompt_ids"]
+        or [
+            row.get("reservoir_index")
+            for row in selection["selected_candidate"]["prompt_rows"]
+        ]
+        != recomputed_derivation["selected_reservoir_indices"]
+        or adapter.get("recovery_replay_disjointness_audit")
+        != recomputed_disjointness
         or adapter.get("recovery_replay_disjointness_audit_sha256")
         != recomputed_disjointness["payload_sha256"]
     ):
         raise FoldedBlankRecoveryABError(
-            "Fresh behavior replay-disjointness evidence changed after freezing."
+            "Fresh behavior reservoir selection or replay-disjointness evidence "
+            "changed after freezing."
         )
     parameters = dict(verified_teacher_replay["parameters"])
     tokenizer_fingerprints = verified_teacher_replay["tokenizer_fingerprints"]
