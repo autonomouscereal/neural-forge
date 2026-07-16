@@ -17,7 +17,11 @@ if str(EXPERIMENTS) not in sys.path:
     sys.path.insert(0, str(EXPERIMENTS))
 
 import prepare_qwen_exact_target_folded_blank_recovery_inputs as preparer  # noqa: E402
-from neural_forge import hf_recovery, hf_teacher_token_replay  # noqa: E402
+from neural_forge import (  # noqa: E402
+    hf_recovery,
+    hf_teacher_replay_cache,
+    hf_teacher_token_replay,
+)
 
 
 STATE_SHA = "1" * 64
@@ -359,6 +363,10 @@ class _FakeCuda:
     def empty_cache(self) -> None:
         self.empty_cache_calls += 1
 
+    @staticmethod
+    def is_available() -> bool:
+        return False
+
 
 def _fake_components(captured: dict[str, Any]):
     def loader(**kwargs: Any) -> preparer.TeacherComponents:
@@ -545,10 +553,73 @@ def test_preparer_freezes_exact_order_recipe_lineage_and_atomic_tree(
     assert disk_report["optimizer_created"] is False
     assert disk_report["accepted_artifact"] is False
     assert disk_report["sealed_data_accessed"] is False
+    assert disk_report["teacher_generation_completed"] is True
+    assert disk_report["teacher_replay_acquisition"] == {
+        "schema": preparer.TEACHER_REPLAY_ACQUISITION_SCHEMA,
+        "cache_mode": "off",
+        "origin": "generated",
+        "cache_result": "disabled",
+        "cache_request_sha256": None,
+        "cache_envelope_sha256": None,
+        "cache_entry_relative_path": None,
+        "cache_verified_before_final_selection": False,
+    }
+    assert disk_report["parent_model_usage"] == {
+        "schema": preparer.PARENT_MODEL_USAGE_SCHEMA,
+        "model_load_count": 1,
+        "load_purpose": "teacher-replay",
+        "teacher_replay_generated_this_run": True,
+        "teacher_replay_reused_from_cache": False,
+        "fresh_target_generation_performed": False,
+    }
     assert (
         disk_report["teacher_source_artifact"]["source_model_state_dict_sha256"]
         == STATE_SHA
     )
+
+    falsely_resealed = copy.deepcopy(disk_report)
+    falsely_resealed["teacher_replay_acquisition"]["cache_result"] = "hit"
+    falsely_resealed_body = dict(falsely_resealed)
+    falsely_resealed_body.pop("build_report_sha256")
+    falsely_resealed["build_report_sha256"] = preparer.canonical_sha256(
+        falsely_resealed_body
+    )
+    with pytest.raises(
+        preparer.RecoveryInputPreparationError,
+        match="replay acquisition or parent usage is inconsistent",
+    ):
+        preparer.verify_build_report(falsely_resealed)
+
+    cached_report = copy.deepcopy(disk_report)
+    cached_report["behavior_mode"] = preparer.BEHAVIOR_MODE_FRESH
+    cached_report["causal_ab_eligible"] = True
+    cached_report["teacher_generation_completed"] = False
+    cached_report["teacher_replay_acquisition"] = {
+        "schema": preparer.TEACHER_REPLAY_ACQUISITION_SCHEMA,
+        "cache_mode": "auto",
+        "origin": "cache-hit",
+        "cache_result": "hit",
+        "cache_request_sha256": "c" * 64,
+        "cache_envelope_sha256": "d" * 64,
+        "cache_entry_relative_path": (
+            f"{'c' * 64}/{hf_teacher_replay_cache.CACHE_FILENAME}"
+        ),
+        "cache_verified_before_final_selection": True,
+    }
+    cached_report["parent_model_usage"] = {
+        "schema": preparer.PARENT_MODEL_USAGE_SCHEMA,
+        "model_load_count": 1,
+        "load_purpose": "fresh-targets",
+        "teacher_replay_generated_this_run": False,
+        "teacher_replay_reused_from_cache": True,
+        "fresh_target_generation_performed": True,
+    }
+    cached_report_body = dict(cached_report)
+    cached_report_body.pop("build_report_sha256")
+    cached_report["build_report_sha256"] = preparer.canonical_sha256(
+        cached_report_body
+    )
+    assert preparer.verify_build_report(cached_report) == cached_report
 
 
 def test_expected_parent_tree_mismatch_stops_before_model_load_or_publication(
@@ -1246,3 +1317,304 @@ def test_fresh_preregistration_failure_occurs_before_parent_model_load(
             teacher_replay_builder=lambda **_kwargs: {},
         )
     assert model_loaded is False
+
+
+def test_teacher_replay_cache_modes_freeze_before_read_reuse_and_survive_late_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_teacher_verifier: None,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "config.json").write_text("{}\n", encoding="utf-8")
+    (source / "model.safetensors").write_bytes(b"canonical parent weights")
+    calibration = tmp_path / "calibration.jsonl"
+    calibration_texts = [
+        f"{index:08x} cache orchestration calibration row remains unique and long enough."
+        for index in range(640)
+    ]
+    calibration.write_text(
+        "".join(json.dumps({"text": text}) + "\n" for text in calibration_texts),
+        encoding="utf-8",
+    )
+    preregistration = tmp_path / "preregistration.json"
+    _write_json(preregistration, {"sealed_before_model_access": True})
+
+    tokenizer_fingerprint = {"sha256": "a" * 64}
+    source_fingerprint = {
+        "class": "tests.FakeParent",
+        "model_state_fingerprint": {"state_dict_sha256": STATE_SHA},
+        "sha256": "b" * 64,
+    }
+    parameters = preparer._teacher_parameters("cpu")
+    teacher_payload = {
+        "schema": hf_teacher_token_replay.TEACHER_TOKEN_REPLAY_SCHEMA,
+        "status": "frozen",
+        "calibration_texts": calibration_texts,
+        "parameters": parameters,
+        "tokenizer_fingerprints": {
+            "source": tokenizer_fingerprint,
+            "candidate": tokenizer_fingerprint,
+        },
+        "source_model_fingerprint": source_fingerprint,
+        "provenance_sha256": {
+            "calibration_texts": hf_recovery._ordered_recovery_texts_sha256(
+                calibration_texts
+            )
+        },
+        "payload_sha256": "2" * 64,
+    }
+    cuda = _FakeCuda()
+    torch_module = SimpleNamespace(
+        __version__="test-torch",
+        cuda=cuda,
+        version=SimpleNamespace(cuda=None),
+        backends=SimpleNamespace(),
+    )
+    transformers = SimpleNamespace(__version__="test-transformers")
+    tokenizer = object()
+    events: list[str] = []
+    requests: list[dict[str, Any]] = []
+
+    monkeypatch.setattr(
+        preparer.hf_teacher_token_replay,
+        "tokenizer_functional_fingerprint",
+        lambda _tokenizer: copy.deepcopy(tokenizer_fingerprint),
+    )
+
+    def authenticate_reservoir(**_kwargs: Any) -> object:
+        assert "parent-model-load" not in events
+        events.append("reservoir-frozen")
+        return object()
+
+    monkeypatch.setattr(
+        preparer,
+        "_authenticate_fresh_recovery_candidate_reservoir",
+        authenticate_reservoir,
+    )
+    original_request = preparer._teacher_replay_cache_request
+
+    def observed_request(**kwargs: Any) -> dict[str, Any]:
+        assert events and events[-1] == "reservoir-frozen"
+        events.append("cache-request")
+        request = original_request(**kwargs)
+        requests.append(request)
+        return request
+
+    monkeypatch.setattr(preparer, "_teacher_replay_cache_request", observed_request)
+    original_read = hf_teacher_replay_cache.read_entry
+
+    def observed_read(*args: Any, **kwargs: Any) -> dict[str, Any] | None:
+        assert "reservoir-frozen" in events
+        events.append("cache-read")
+        return original_read(*args, **kwargs)
+
+    monkeypatch.setattr(hf_teacher_replay_cache, "read_entry", observed_read)
+    original_publish = hf_teacher_replay_cache.publish_entry
+
+    def observed_publish(**kwargs: Any) -> tuple[dict[str, Any], str]:
+        events.append("cache-publish")
+        return original_publish(**kwargs)
+
+    monkeypatch.setattr(hf_teacher_replay_cache, "publish_entry", observed_publish)
+
+    def load_parent(**_kwargs: Any) -> object:
+        events.append("parent-model-load")
+        return object()
+
+    def fingerprint_parent(_model: Any) -> dict[str, Any]:
+        events.append("parent-model-fingerprint")
+        return copy.deepcopy(source_fingerprint)
+
+    def build_teacher(**_kwargs: Any) -> dict[str, Any]:
+        events.append("teacher-builder")
+        return copy.deepcopy(teacher_payload)
+
+    class LateSelectionFailure(RuntimeError):
+        pass
+
+    def fail_late_selection(**_kwargs: Any) -> Any:
+        events.append("final-selection")
+        raise LateSelectionFailure("deliberate failure after replay acquisition")
+
+    monkeypatch.setattr(
+        preparer,
+        "_select_fresh_recovery_candidate",
+        fail_late_selection,
+    )
+
+    base_args = {
+        "source_model": source,
+        "source_tokenizer": source,
+        "candidate_tokenizer": source,
+        "calibration_file": calibration,
+        "behavior_eval_suite": None,
+        "behavior_mode": preparer.BEHAVIOR_MODE_FRESH,
+        "v4_preregistration": preregistration,
+        "v4_preregistration_sha256": preparer._file_sha256(preregistration),
+        "expected_parent_artifact_tree_sha256": preparer.stage._artifact_tree(source)[
+            "tree_sha256"
+        ],
+        "teacher_device": "cpu",
+        "recovery_device": "cpu",
+        "component_loader": None,
+        "tokenizer_loader": lambda **_kwargs: preparer.TokenizerComponents(
+            torch=torch_module,
+            transformers=transformers,
+            source_tokenizer=tokenizer,
+            candidate_tokenizer=tokenizer,
+        ),
+        "source_model_loader": load_parent,
+        "source_model_fingerprinter": fingerprint_parent,
+        "teacher_replay_builder": build_teacher,
+        "_test_only_cache_injection_authority": (
+            preparer._CACHE_TEST_INJECTION_AUTHORITY
+        ),
+    }
+
+    def run_late_failure(mode: str, cache_dir: Path, output_name: str) -> list[str]:
+        events.clear()
+        with pytest.raises(
+            LateSelectionFailure,
+            match="failure after replay acquisition",
+        ):
+            preparer.prepare_recovery_inputs(
+                **base_args,
+                output_dir=tmp_path / output_name,
+                teacher_replay_cache_dir=cache_dir,
+                teacher_replay_cache_mode=mode,
+            )
+        assert not (tmp_path / output_name).exists()
+        return list(events)
+
+    missing_cache = tmp_path / "missing-cache"
+    events.clear()
+    with pytest.raises(
+        preparer.RecoveryInputPreparationError,
+        match="Required teacher replay cache entry is missing",
+    ):
+        preparer.prepare_recovery_inputs(
+            **base_args,
+            output_dir=tmp_path / "require-missing-output",
+            teacher_replay_cache_dir=missing_cache,
+            teacher_replay_cache_mode="require",
+        )
+    assert events[:3] == ["reservoir-frozen", "cache-request", "cache-read"]
+    assert "parent-model-load" not in events
+    assert "teacher-builder" not in events
+
+    cache_dir = tmp_path / "durable-cache"
+    miss_events = run_late_failure("auto", cache_dir, "auto-miss-output")
+    assert miss_events.index("reservoir-frozen") < miss_events.index("cache-read")
+    assert miss_events.index("cache-read") < miss_events.index("parent-model-load")
+    assert miss_events.index("teacher-builder") < miss_events.index("cache-publish")
+    assert miss_events.index("cache-publish") < miss_events.index("final-selection")
+    assert miss_events.count("parent-model-fingerprint") == 1
+    request = requests[-1]
+    persisted = original_read(cache_dir, request)
+    assert persisted is not None
+    entry_path = hf_teacher_replay_cache.cache_entry_path(cache_dir, request)
+    envelope_path = entry_path / hf_teacher_replay_cache.CACHE_FILENAME
+    original_bytes = envelope_path.read_bytes()
+
+    hit_events = run_late_failure("auto", cache_dir, "auto-hit-output")
+    assert "teacher-builder" not in hit_events
+    assert "cache-publish" not in hit_events
+    assert hit_events.count("parent-model-fingerprint") == 1
+    assert hit_events.index("cache-read") < hit_events.index("parent-model-load")
+    assert hit_events.index("parent-model-fingerprint") < hit_events.index(
+        "final-selection"
+    )
+
+    require_events = run_late_failure("require", cache_dir, "require-hit-output")
+    assert "teacher-builder" not in require_events
+    assert "cache-publish" not in require_events
+    assert require_events.count("parent-model-fingerprint") == 1
+
+    refresh_events = run_late_failure("refresh", cache_dir, "refresh-output")
+    assert refresh_events.index("teacher-builder") < refresh_events.index(
+        "cache-publish"
+    )
+    assert refresh_events.index("cache-publish") < refresh_events.index(
+        "final-selection"
+    )
+    assert refresh_events.count("parent-model-fingerprint") == 1
+    assert envelope_path.read_bytes() == original_bytes
+    assert original_read(cache_dir, requests[-1]) == persisted
+
+    for field in (
+        "tokenizer_loader",
+        "source_model_loader",
+        "teacher_replay_builder",
+        "source_model_fingerprinter",
+    ):
+        production_args = dict(base_args)
+        production_args["_test_only_cache_injection_authority"] = None
+        production_args["tokenizer_loader"] = preparer._CANONICAL_TOKENIZER_LOADER
+        production_args["source_model_loader"] = (
+            preparer._CANONICAL_SOURCE_MODEL_LOADER
+        )
+        production_args["teacher_replay_builder"] = (
+            preparer._CANONICAL_TEACHER_REPLAY_BUILDER
+        )
+        production_args["source_model_fingerprinter"] = (
+            preparer._CANONICAL_SOURCE_MODEL_FINGERPRINTER
+        )
+        production_args[field] = lambda **_kwargs: {}
+        events.clear()
+        with pytest.raises(
+            preparer.RecoveryInputPreparationError,
+            match="canonical tokenizer loader, source-model loader, teacher replay",
+        ):
+            preparer.prepare_recovery_inputs(
+                **production_args,
+                output_dir=tmp_path / f"noncanonical-{field}",
+                teacher_replay_cache_dir=tmp_path / f"noncanonical-cache-{field}",
+                teacher_replay_cache_mode="auto",
+            )
+        assert events == []
+
+    wrong_fingerprint = copy.deepcopy(source_fingerprint)
+    wrong_fingerprint["model_state_fingerprint"]["state_dict_sha256"] = "f" * 64
+
+    def fingerprint_wrong_parent(_model: Any) -> dict[str, Any]:
+        events.append("wrong-parent-model-fingerprint")
+        return copy.deepcopy(wrong_fingerprint)
+
+    wrong_miss_args = dict(base_args)
+    wrong_miss_args["source_model_fingerprinter"] = fingerprint_wrong_parent
+    wrong_miss_cache = tmp_path / "wrong-live-miss-cache"
+    events.clear()
+    with pytest.raises(
+        preparer.RecoveryInputPreparationError,
+        match="cache publication failed closed",
+    ):
+        preparer.prepare_recovery_inputs(
+            **wrong_miss_args,
+            output_dir=tmp_path / "wrong-live-miss-output",
+            teacher_replay_cache_dir=wrong_miss_cache,
+            teacher_replay_cache_mode="auto",
+        )
+    assert events.count("wrong-parent-model-fingerprint") == 1
+    assert events.count("teacher-builder") == 1
+    assert "final-selection" not in events
+    assert original_read(wrong_miss_cache, requests[-1]) is None
+
+    wrong_refresh_args = dict(base_args)
+    wrong_refresh_args["source_model_fingerprinter"] = fingerprint_wrong_parent
+    events.clear()
+    with pytest.raises(
+        preparer.RecoveryInputPreparationError,
+        match="cache publication failed closed",
+    ):
+        preparer.prepare_recovery_inputs(
+            **wrong_refresh_args,
+            output_dir=tmp_path / "wrong-live-refresh-output",
+            teacher_replay_cache_dir=cache_dir,
+            teacher_replay_cache_mode="refresh",
+        )
+    assert events.count("wrong-parent-model-fingerprint") == 1
+    assert events.count("teacher-builder") == 1
+    assert "final-selection" not in events
+    assert envelope_path.read_bytes() == original_bytes
+    assert original_read(cache_dir, requests[-1]) == persisted

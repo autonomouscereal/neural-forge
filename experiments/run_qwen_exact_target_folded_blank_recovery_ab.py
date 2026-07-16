@@ -61,7 +61,7 @@ PREREGISTRATION_SCHEMA = (
     "neural-forge-qwen-exact-target-folded-blank-recovery-ab-preregistration-v1"
 )
 RUN_SCHEMA = "neural-forge-qwen-exact-target-folded-blank-recovery-ab-run-v1"
-REPLAY_SCHEMA = "neural-forge-frozen-recovery-replay-bank-v3"
+REPLAY_SCHEMA = "neural-forge-frozen-recovery-replay-bank-v4"
 PLAN_SCHEMA = "neural-forge-folded-blank-recovery-plan-v2"
 TEACHER_SOURCE_ARTIFACT_SCHEMA = "neural-forge-teacher-source-artifact-binding-v1"
 MATERIALIZATION_RECEIPT_SCHEMA = (

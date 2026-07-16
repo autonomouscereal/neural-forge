@@ -631,7 +631,9 @@ def _fresh_behavior_binding(teacher_payload: dict[str, Any]) -> dict[str, Any]:
             "max_new_tokens": 16,
             "minimum_real_pre_eos_tokens": 4,
             "batch_size": 1,
-            "parent_model_loaded_once_for_replay_and_targets": True,
+            "parent_model_target_generation_performed": True,
+            "teacher_replay_origin": "generated",
+            "parent_model_generated_teacher_replay_this_run": True,
         },
         "recovery_replay_disjointness_audit": disjointness_audit,
         "recovery_replay_disjointness_audit_sha256": disjointness_audit[

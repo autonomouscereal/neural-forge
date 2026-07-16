@@ -24,28 +24,37 @@ from typing import Any
 
 import prepare_qwen_exact_target_native_continuation_splits as split_tools
 import run_qwen_exact_target_native_stage as stage
-from neural_forge import hf_recovery, hf_teacher_token_replay, hf_tools
+from neural_forge import (
+    hf_recovery,
+    hf_teacher_replay_cache,
+    hf_teacher_token_replay,
+    hf_tools,
+)
 from neural_forge.hf_guided_checkpoint_recovery import (
     canonical_json_bytes,
     canonical_sha256,
 )
 
 
-REPLAY_WRAPPER_SCHEMA = "neural-forge-frozen-recovery-replay-bank-v3"
+REPLAY_WRAPPER_SCHEMA = "neural-forge-frozen-recovery-replay-bank-v4"
 RECOVERY_PLAN_SCHEMA = "neural-forge-folded-blank-recovery-plan-v2"
 BEHAVIOR_SUITE_BINDING_SCHEMA = (
-    "neural-forge-candidate-recovery-behavior-suite-binding-v3"
+    "neural-forge-candidate-recovery-behavior-suite-binding-v4"
 )
 FRESH_SELECTION_SCHEMA = "neural-forge-fresh-recovery-candidate-selection-v2"
 FRESH_REPLAY_EXCLUSION_DERIVATION_SCHEMA = (
     "neural-forge-fresh-replay-exclusion-first-survivors-v1"
 )
-TOKEN_DOMAIN_ADAPTER_SCHEMA = "neural-forge-token-domain-recovery-behavior-adapter-v3"
+TOKEN_DOMAIN_ADAPTER_SCHEMA = "neural-forge-token-domain-recovery-behavior-adapter-v4"
 RECOVERY_REPLAY_DISJOINTNESS_AUDIT_SCHEMA = (
     "neural-forge-fresh-candidate-replay-disjointness-audit-v1"
 )
 TEACHER_SOURCE_BINDING_SCHEMA = "neural-forge-teacher-source-artifact-binding-v1"
-BUILD_REPORT_SCHEMA = "neural-forge-folded-blank-recovery-input-build-v1"
+BUILD_REPORT_SCHEMA = "neural-forge-folded-blank-recovery-input-build-v2"
+TEACHER_REPLAY_ACQUISITION_SCHEMA = (
+    "neural-forge-teacher-replay-acquisition-v1"
+)
+PARENT_MODEL_USAGE_SCHEMA = "neural-forge-parent-model-usage-v1"
 
 REPLAY_FILENAME = "replay_bank.json"
 PLAN_FILENAME = "recovery_plan.json"
@@ -64,6 +73,14 @@ TEACHER_GENERATE_MAX_NEW_TOKENS = 48
 ON_POLICY_INTERVAL = 8
 BEHAVIOR_MODE_FRESH = "fresh-token-domain"
 BEHAVIOR_MODE_EXPLICIT = "explicit-json-diagnostic"
+TEACHER_REPLAY_CACHE_MODES = frozenset({"auto", "require", "refresh", "off"})
+_CANONICAL_TEACHER_REPLAY_BUILDER = (
+    hf_teacher_token_replay.build_teacher_token_replay_payload
+)
+_CANONICAL_SOURCE_MODEL_FINGERPRINTER = (
+    hf_teacher_token_replay._model_functional_fingerprint
+)
+_CACHE_TEST_INJECTION_AUTHORITY = object()
 FRESH_CANDIDATE_COUNT = 24
 FIRST_ACTION_PROBE_COUNT = FRESH_CANDIDATE_COUNT
 LCP4_PROBE_COUNT = FRESH_CANDIDATE_COUNT
@@ -184,6 +201,8 @@ _BUILD_FIELDS = frozenset(
         "trust_remote_code",
         "model_weights_loaded",
         "teacher_generation_completed",
+        "teacher_replay_acquisition",
+        "parent_model_usage",
         "gpu_work_launched",
         "training_launched",
         "optimizer_created",
@@ -453,6 +472,10 @@ def load_teacher_source_model(
     model.to(device)
     model.eval()
     return model
+
+
+_CANONICAL_TOKENIZER_LOADER = load_local_tokenizers
+_CANONICAL_SOURCE_MODEL_LOADER = load_teacher_source_model
 
 
 def _authenticate_v4_preregistration(path: Path, expected_sha256: str) -> Any:
@@ -1236,8 +1259,12 @@ def _build_fresh_behavior_binding(
     selection: FreshRecoverySelection,
     teacher_payload: Mapping[str, Any],
     device: str,
+    teacher_replay_origin: str = "generated",
 ) -> dict[str, Any]:
     """Generate and self-score parent decoded-prefix targets for the fresh 24."""
+
+    if teacher_replay_origin not in {"generated", "cache-hit"}:
+        raise RecoveryInputPreparationError("teacher_replay_origin is unsupported.")
 
     tokenizer_fingerprints = teacher_payload.get("tokenizer_fingerprints")
     if not isinstance(tokenizer_fingerprints, Mapping) or tokenizer_fingerprints.get(
@@ -1481,7 +1508,11 @@ def _build_fresh_behavior_binding(
             "max_new_tokens": BEHAVIOR_MAX_NEW_TOKENS,
             "minimum_real_pre_eos_tokens": 4,
             "batch_size": 1,
-            "parent_model_loaded_once_for_replay_and_targets": True,
+            "parent_model_target_generation_performed": True,
+            "teacher_replay_origin": teacher_replay_origin,
+            "parent_model_generated_teacher_replay_this_run": (
+                teacher_replay_origin == "generated"
+            ),
         },
         "recovery_replay_disjointness_audit": replay_disjointness_audit,
         "recovery_replay_disjointness_audit_sha256": (
@@ -1970,13 +2001,20 @@ def _fresh_adapter_cross_bindings_valid(
         ):
             return False
         generation_contract = adapter.get("generation")
+        if not isinstance(generation_contract, Mapping):
+            return False
+        replay_origin = generation_contract.get("teacher_replay_origin")
         return generation_contract == {
             "do_sample": False,
             "max_new_tokens": BEHAVIOR_MAX_NEW_TOKENS,
             "minimum_real_pre_eos_tokens": 4,
             "batch_size": 1,
-            "parent_model_loaded_once_for_replay_and_targets": True,
-        }
+            "parent_model_target_generation_performed": True,
+            "teacher_replay_origin": replay_origin,
+            "parent_model_generated_teacher_replay_this_run": (
+                replay_origin == "generated"
+            ),
+        } and replay_origin in {"generated", "cache-hit"}
     except (
         KeyError,
         TypeError,
@@ -2473,6 +2511,8 @@ def _build_report(
     plan_payload: Mapping[str, Any],
     teacher_generation_device: str,
     recovery_device: str,
+    teacher_replay_acquisition: Mapping[str, Any],
+    parent_model_usage: Mapping[str, Any],
 ) -> dict[str, Any]:
     body = {
         "schema": BUILD_REPORT_SCHEMA,
@@ -2511,7 +2551,17 @@ def _build_report(
         "local_files_only": True,
         "trust_remote_code": False,
         "model_weights_loaded": True,
-        "teacher_generation_completed": True,
+        "teacher_generation_completed": (
+            teacher_replay_acquisition.get("origin") == "generated"
+        ),
+        "teacher_replay_acquisition": _json_value(
+            teacher_replay_acquisition,
+            name="teacher_replay_acquisition",
+        ),
+        "parent_model_usage": _json_value(
+            parent_model_usage,
+            name="parent_model_usage",
+        ),
         "gpu_work_launched": teacher_generation_device.casefold().startswith("cuda"),
         "training_launched": False,
         "optimizer_created": False,
@@ -2550,6 +2600,109 @@ def verify_build_report(payload: Mapping[str, Any]) -> dict[str, Any]:
             "source_model_state_dict_sha256"
         ],
     )
+    acquisition = row.get("teacher_replay_acquisition")
+    usage = row.get("parent_model_usage")
+    if not isinstance(acquisition, Mapping) or set(acquisition) != {
+        "schema",
+        "cache_mode",
+        "origin",
+        "cache_result",
+        "cache_request_sha256",
+        "cache_envelope_sha256",
+        "cache_entry_relative_path",
+        "cache_verified_before_final_selection",
+    }:
+        raise RecoveryInputPreparationError(
+            "Build report teacher replay acquisition changed."
+        )
+    if not isinstance(usage, Mapping) or set(usage) != {
+        "schema",
+        "model_load_count",
+        "load_purpose",
+        "teacher_replay_generated_this_run",
+        "teacher_replay_reused_from_cache",
+        "fresh_target_generation_performed",
+    }:
+        raise RecoveryInputPreparationError("Build report parent model usage changed.")
+    cache_mode = acquisition.get("cache_mode")
+    origin = acquisition.get("origin")
+    cache_result = acquisition.get("cache_result")
+    cache_enabled = cache_mode != "off"
+    if cache_enabled:
+        _require_sha256(
+            acquisition.get("cache_request_sha256"), "cache request SHA"
+        )
+        _require_sha256(
+            acquisition.get("cache_envelope_sha256"), "cache envelope SHA"
+        )
+        relative = acquisition.get("cache_entry_relative_path")
+        if relative != (
+            f"{acquisition['cache_request_sha256']}/"
+            f"{hf_teacher_replay_cache.CACHE_FILENAME}"
+        ):
+            raise RecoveryInputPreparationError("Cache entry relative path changed.")
+    elif any(
+        acquisition.get(name) is not None
+        for name in (
+            "cache_request_sha256",
+            "cache_envelope_sha256",
+            "cache_entry_relative_path",
+        )
+    ):
+        raise RecoveryInputPreparationError("Disabled cache cannot bind an entry.")
+    expected_reused = origin == "cache-hit"
+    generated_results = {
+        "published",
+        "existing-byte-identical",
+        "concurrent-byte-identical",
+    }
+    valid_mode_result = (
+        (cache_mode == "off" and origin == "generated" and cache_result == "disabled")
+        or (
+            cache_mode in {"auto", "require"}
+            and origin == "cache-hit"
+            and cache_result == "hit"
+        )
+        or (
+            cache_mode == "auto"
+            and origin == "generated"
+            and cache_result in generated_results
+        )
+        or (
+            cache_mode == "refresh"
+            and origin == "generated"
+            and cache_result in generated_results
+        )
+    )
+    fresh_targets = usage.get("fresh_target_generation_performed")
+    expected_load_purpose = (
+        "fresh-targets"
+        if expected_reused
+        else (
+            "teacher-replay-and-fresh-targets"
+            if fresh_targets is True
+            else "teacher-replay"
+        )
+    )
+    if (
+        acquisition.get("schema") != TEACHER_REPLAY_ACQUISITION_SCHEMA
+        or usage.get("schema") != PARENT_MODEL_USAGE_SCHEMA
+        or cache_mode not in TEACHER_REPLAY_CACHE_MODES
+        or origin not in {"generated", "cache-hit"}
+        or not valid_mode_result
+        or acquisition.get("cache_verified_before_final_selection")
+        is not cache_enabled
+        or usage.get("model_load_count") != 1
+        or usage.get("load_purpose") != expected_load_purpose
+        or usage.get("teacher_replay_generated_this_run") is expected_reused
+        or usage.get("teacher_replay_reused_from_cache") is not expected_reused
+        or not isinstance(fresh_targets, bool)
+        or fresh_targets is not (row.get("behavior_mode") == BEHAVIOR_MODE_FRESH)
+        or (not fresh_targets and (cache_enabled or expected_reused))
+    ):
+        raise RecoveryInputPreparationError(
+            "Build report replay acquisition or parent usage is inconsistent."
+        )
     if (
         row.get("schema") != BUILD_REPORT_SCHEMA
         or row.get("status") != "ready-experimental-unaccepted"
@@ -2573,7 +2726,8 @@ def verify_build_report(payload: Mapping[str, Any]) -> dict[str, Any]:
         or row.get("local_files_only") is not True
         or row.get("trust_remote_code") is not False
         or row.get("model_weights_loaded") is not True
-        or row.get("teacher_generation_completed") is not True
+        or row.get("teacher_generation_completed")
+        is not usage.get("teacher_replay_generated_this_run")
         or row.get("training_launched") is not False
         or row.get("optimizer_created") is not False
         or row.get("sealed_data_accessed") is not False
@@ -2814,6 +2968,57 @@ def _freeze_fresh_candidate_reservoir_rows(
             }
         )
     return frozen
+
+
+def _teacher_replay_cache_request(
+    *,
+    actual_parent_tree: Mapping[str, Any],
+    expected_parent_tree_sha256: str,
+    calibration_path: Path,
+    ordered_calibration: Sequence[str],
+    source_tokenizer_fingerprint: Mapping[str, Any],
+    candidate_tokenizer_fingerprint: Mapping[str, Any],
+    torch: Any,
+    transformers: Any,
+    teacher_device: str,
+) -> dict[str, Any]:
+    """Build cache identity without accepting any candidate or held-out input."""
+
+    try:
+        producers = hf_teacher_replay_cache.producer_byte_hash_manifest(
+            (
+                ("prepare_recovery_inputs", Path(__file__)),
+                (
+                    "hf_teacher_token_replay",
+                    Path(hf_teacher_token_replay.__file__),
+                ),
+                ("hf_recovery", Path(hf_recovery.__file__)),
+                (
+                    "hf_teacher_replay_cache",
+                    Path(hf_teacher_replay_cache.__file__),
+                ),
+            )
+        )
+        runtime = hf_teacher_replay_cache.runtime_identity(
+            torch,
+            transformers,
+            teacher_device,
+        )
+        return hf_teacher_replay_cache.build_request(
+            expected_parent_artifact_tree_sha256=expected_parent_tree_sha256,
+            actual_parent_artifact_tree=actual_parent_tree,
+            calibration_source_file_sha256=_file_sha256(calibration_path),
+            ordered_calibration_texts=ordered_calibration,
+            source_tokenizer_fingerprint=source_tokenizer_fingerprint,
+            candidate_tokenizer_fingerprint=candidate_tokenizer_fingerprint,
+            teacher_parameters=_teacher_parameters(teacher_device),
+            producer_manifest=producers,
+            runtime=runtime,
+        )
+    except hf_teacher_replay_cache.TeacherReplayCacheError as error:
+        raise RecoveryInputPreparationError(
+            "Teacher replay cache request failed authentication."
+        ) from error
 
 
 def _verify_fresh_candidate_reservoir_payload(
@@ -3254,15 +3459,21 @@ def prepare_recovery_inputs(
     teacher_device: str = "cuda:0",
     recovery_device: str = "cuda:0",
     max_calibration_texts: int = 640,
+    teacher_replay_cache_dir: Path | str | None = None,
+    teacher_replay_cache_mode: str = "off",
     component_loader: Callable[..., TeacherComponents] | None = load_teacher_components,
-    tokenizer_loader: Callable[..., TokenizerComponents] = load_local_tokenizers,
-    source_model_loader: Callable[..., Any] = load_teacher_source_model,
+    tokenizer_loader: Callable[..., TokenizerComponents] = _CANONICAL_TOKENIZER_LOADER,
+    source_model_loader: Callable[..., Any] = _CANONICAL_SOURCE_MODEL_LOADER,
     preregistration_authenticator: Callable[[Path, str], Any] = (
         _authenticate_v4_preregistration
     ),
     teacher_replay_builder: Callable[..., Mapping[str, Any]] = (
-        hf_teacher_token_replay.build_teacher_token_replay_payload
+        _CANONICAL_TEACHER_REPLAY_BUILDER
     ),
+    source_model_fingerprinter: Callable[[Any], Mapping[str, Any]] = (
+        _CANONICAL_SOURCE_MODEL_FINGERPRINTER
+    ),
+    _test_only_cache_injection_authority: object | None = None,
 ) -> dict[str, Any]:
     """Generate, authenticate, then atomically publish one frozen A/B input set."""
 
@@ -3282,6 +3493,45 @@ def prepare_recovery_inputs(
             "behavior_mode must be fresh-token-domain or explicit-json-diagnostic."
         )
     fresh_mode = behavior_mode == BEHAVIOR_MODE_FRESH
+    if (
+        _test_only_cache_injection_authority is not None
+        and _test_only_cache_injection_authority
+        is not _CACHE_TEST_INJECTION_AUTHORITY
+    ):
+        raise RecoveryInputPreparationError(
+            "Invalid internal cache test-injection authority."
+        )
+    allow_test_cache_injections = (
+        _test_only_cache_injection_authority is _CACHE_TEST_INJECTION_AUTHORITY
+    )
+    if teacher_replay_cache_mode not in TEACHER_REPLAY_CACHE_MODES:
+        raise RecoveryInputPreparationError(
+            "teacher_replay_cache_mode must be auto, require, refresh, or off."
+        )
+    if teacher_replay_cache_mode == "off":
+        if teacher_replay_cache_dir is not None:
+            raise RecoveryInputPreparationError(
+                "teacher_replay_cache_dir requires a cache mode other than off."
+            )
+    elif teacher_replay_cache_dir is None:
+        raise RecoveryInputPreparationError(
+            "Enabled teacher replay caching requires teacher_replay_cache_dir."
+        )
+    elif not allow_test_cache_injections and (
+        tokenizer_loader is not _CANONICAL_TOKENIZER_LOADER
+        or source_model_loader is not _CANONICAL_SOURCE_MODEL_LOADER
+        or teacher_replay_builder is not _CANONICAL_TEACHER_REPLAY_BUILDER
+        or source_model_fingerprinter is not _CANONICAL_SOURCE_MODEL_FINGERPRINTER
+    ):
+        raise RecoveryInputPreparationError(
+            "Cache-enabled production runs require the canonical tokenizer loader, "
+            "source-model loader, teacher replay builder, and source-model "
+            "fingerprinter."
+        )
+    if not fresh_mode and teacher_replay_cache_mode != "off":
+        raise RecoveryInputPreparationError(
+            "Teacher replay caching is available only in fresh causal mode."
+        )
     behavior_path = (
         None
         if behavior_eval_suite is None
@@ -3373,6 +3623,11 @@ def prepare_recovery_inputs(
 
     candidate_reservoir: FreshRecoveryCandidateReservoir | None = None
     selection: FreshRecoverySelection | None = None
+    cache_request: dict[str, Any] | None = None
+    cached_envelope: dict[str, Any] | None = None
+    cache_envelope: dict[str, Any] | None = None
+    teacher_replay_origin = "generated"
+    cache_result = "disabled"
     if fresh_mode:
         tokenizers = tokenizer_loader(
             source_tokenizer_path=source_tokenizer_root,
@@ -3404,6 +3659,41 @@ def prepare_recovery_inputs(
             tokenizer=tokenizers.candidate_tokenizer,
             preregistration_authenticator=preregistration_authenticator,
         )
+        # This is the first cache access.  The full candidate reservoir above is
+        # authenticated and immutable before any cached parent-derived content
+        # can be read.  The cache request API cannot receive that reservoir.
+        if teacher_replay_cache_mode != "off":
+            assert teacher_replay_cache_dir is not None
+            cache_request = _teacher_replay_cache_request(
+                actual_parent_tree=actual_parent_tree,
+                expected_parent_tree_sha256=expected_tree_sha,
+                calibration_path=calibration_path,
+                ordered_calibration=ordered_calibration,
+                source_tokenizer_fingerprint=source_tokenizer_fingerprint,
+                candidate_tokenizer_fingerprint=candidate_tokenizer_fingerprint,
+                torch=tokenizers.torch,
+                transformers=tokenizers.transformers,
+                teacher_device=teacher_device,
+            )
+            try:
+                cached_envelope = hf_teacher_replay_cache.read_entry(
+                    teacher_replay_cache_dir,
+                    cache_request,
+                )
+            except hf_teacher_replay_cache.TeacherReplayCacheError as error:
+                raise RecoveryInputPreparationError(
+                    "Existing teacher replay cache entry failed authentication."
+                ) from error
+            if cached_envelope is None and teacher_replay_cache_mode == "require":
+                raise RecoveryInputPreparationError(
+                    "Required teacher replay cache entry is missing."
+                )
+            if (
+                cached_envelope is not None
+                and teacher_replay_cache_mode in {"auto", "require"}
+            ):
+                teacher_replay_origin = "cache-hit"
+                cache_result = "hit"
         source_model_object = source_model_loader(
             torch=tokenizers.torch,
             transformers=tokenizers.transformers,
@@ -3434,28 +3724,84 @@ def prepare_recovery_inputs(
             source_torch_dtype="float16",
         )
     try:
-        teacher_payload_raw = teacher_replay_builder(
-            torch=components.torch,
-            source_model=components.source_model,
-            source_tokenizer=components.source_tokenizer,
-            candidate_tokenizer=components.candidate_tokenizer,
-            calibration_texts=ordered_calibration,
-            **_teacher_parameters(teacher_device),
-        )
-        try:
-            verified_teacher = (
-                hf_teacher_token_replay.verify_teacher_token_replay_payload(
-                    teacher_payload_raw
+        live_source_fingerprint: dict[str, Any] | None = None
+        if teacher_replay_origin == "cache-hit":
+            assert cache_request is not None
+            try:
+                live_source_fingerprint = _json_value(
+                    source_model_fingerprinter(components.source_model),
+                    name="live_source_model_fingerprint",
                 )
+                assert cached_envelope is not None
+                cached_envelope = hf_teacher_replay_cache.verify_envelope(
+                    cached_envelope,
+                    expected_request=cache_request,
+                    live_source_model_fingerprint=live_source_fingerprint,
+                )
+            except (
+                TypeError,
+                ValueError,
+                hf_teacher_replay_cache.TeacherReplayCacheError,
+            ) as error:
+                raise RecoveryInputPreparationError(
+                    "Teacher replay cache source-model binding failed authentication."
+                ) from error
+        if teacher_replay_origin == "cache-hit":
+            assert cached_envelope is not None
+            teacher_payload = _json_value(
+                cached_envelope["teacher_token_replay"],
+                name="cached_teacher_token_replay",
             )
-        except (TypeError, ValueError) as error:
-            raise RecoveryInputPreparationError(
-                "Generated teacher replay failed model-free verification."
-            ) from error
-        teacher_payload = _json_value(
-            verified_teacher,
-            name="teacher_token_replay",
-        )
+            cache_envelope = cached_envelope
+        else:
+            teacher_payload_raw = teacher_replay_builder(
+                torch=components.torch,
+                source_model=components.source_model,
+                source_tokenizer=components.source_tokenizer,
+                candidate_tokenizer=components.candidate_tokenizer,
+                calibration_texts=ordered_calibration,
+                **_teacher_parameters(teacher_device),
+            )
+            try:
+                verified_teacher = (
+                    hf_teacher_token_replay.verify_teacher_token_replay_payload(
+                        teacher_payload_raw
+                    )
+                )
+            except (TypeError, ValueError) as error:
+                raise RecoveryInputPreparationError(
+                    "Generated teacher replay failed model-free verification."
+                ) from error
+            teacher_payload = _json_value(
+                verified_teacher,
+                name="teacher_token_replay",
+            )
+            if fresh_mode and teacher_replay_cache_mode != "off":
+                assert teacher_replay_cache_dir is not None
+                assert cache_request is not None
+                try:
+                    live_source_fingerprint = _json_value(
+                        source_model_fingerprinter(components.source_model),
+                        name="live_source_model_fingerprint",
+                    )
+                except (TypeError, ValueError) as error:
+                    raise RecoveryInputPreparationError(
+                        "Teacher replay cache source-model fingerprinting failed."
+                    ) from error
+                assert live_source_fingerprint is not None
+                try:
+                    cache_envelope, cache_result = (
+                        hf_teacher_replay_cache.publish_entry(
+                            cache_dir=teacher_replay_cache_dir,
+                            request=cache_request,
+                            teacher_payload=teacher_payload,
+                            live_source_model_fingerprint=live_source_fingerprint,
+                        )
+                    )
+                except hf_teacher_replay_cache.TeacherReplayCacheError as error:
+                    raise RecoveryInputPreparationError(
+                        "Generated teacher replay cache publication failed closed."
+                    ) from error
         if fresh_mode:
             assert candidate_reservoir is not None
             selection = _select_fresh_recovery_candidate(
@@ -3469,6 +3815,7 @@ def prepare_recovery_inputs(
                 selection=selection,
                 teacher_payload=teacher_payload,
                 device=teacher_device,
+                teacher_replay_origin=teacher_replay_origin,
             )
             verify_behavior_suite_binding(behavior_binding)
     finally:
@@ -3500,6 +3847,49 @@ def prepare_recovery_inputs(
     plan_payload = _recovery_plan(teacher_payload, recovery_device)
     verify_recovery_plan(plan_payload, teacher_payload=teacher_payload)
 
+    if teacher_replay_cache_mode == "off":
+        cache_request_sha: str | None = None
+        cache_envelope_sha: str | None = None
+        cache_relative_path: str | None = None
+    else:
+        assert cache_request is not None
+        assert cache_envelope is not None
+        cache_request_sha = cache_request["request_sha256"]
+        cache_envelope_sha = cache_envelope["envelope_sha256"]
+        cache_relative_path = (
+            f"{cache_request_sha}/{hf_teacher_replay_cache.CACHE_FILENAME}"
+        )
+    teacher_replay_acquisition = {
+        "schema": TEACHER_REPLAY_ACQUISITION_SCHEMA,
+        "cache_mode": teacher_replay_cache_mode,
+        "origin": teacher_replay_origin,
+        "cache_result": cache_result,
+        "cache_request_sha256": cache_request_sha,
+        "cache_envelope_sha256": cache_envelope_sha,
+        "cache_entry_relative_path": cache_relative_path,
+        "cache_verified_before_final_selection": (
+            teacher_replay_cache_mode != "off"
+        ),
+    }
+    parent_model_usage = {
+        "schema": PARENT_MODEL_USAGE_SCHEMA,
+        "model_load_count": 1,
+        "load_purpose": (
+            "fresh-targets"
+            if teacher_replay_origin == "cache-hit"
+            else (
+                "teacher-replay-and-fresh-targets"
+                if fresh_mode
+                else "teacher-replay"
+            )
+        ),
+        "teacher_replay_generated_this_run": (
+            teacher_replay_origin == "generated"
+        ),
+        "teacher_replay_reused_from_cache": teacher_replay_origin == "cache-hit",
+        "fresh_target_generation_performed": fresh_mode,
+    }
+
     staging = Path(
         tempfile.mkdtemp(
             prefix=f".{output.name}.",
@@ -3522,6 +3912,8 @@ def prepare_recovery_inputs(
             plan_payload=plan_payload,
             teacher_generation_device=teacher_device,
             recovery_device=recovery_device,
+            teacher_replay_acquisition=teacher_replay_acquisition,
+            parent_model_usage=parent_model_usage,
         )
         verify_build_report(report)
         _write_json_exclusive(staging / BUILD_REPORT_FILENAME, report)
@@ -3580,6 +3972,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--teacher-device", default="cuda:0")
     parser.add_argument("--recovery-device", required=True)
     parser.add_argument("--max-calibration-texts", type=int, default=640)
+    parser.add_argument("--teacher-replay-cache-dir", type=Path)
+    parser.add_argument(
+        "--teacher-replay-cache-mode",
+        choices=tuple(sorted(TEACHER_REPLAY_CACHE_MODES)),
+        default="off",
+    )
     return parser
 
 
@@ -3601,6 +3999,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         teacher_device=args.teacher_device,
         recovery_device=args.recovery_device,
         max_calibration_texts=args.max_calibration_texts,
+        teacher_replay_cache_dir=args.teacher_replay_cache_dir,
+        teacher_replay_cache_mode=args.teacher_replay_cache_mode,
     )
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
