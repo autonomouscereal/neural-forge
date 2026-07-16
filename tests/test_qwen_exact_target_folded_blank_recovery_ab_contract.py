@@ -299,11 +299,7 @@ def _teacher_replay_payload() -> dict[str, Any]:
 def _fresh_behavior_binding(teacher_payload: dict[str, Any]) -> dict[str, Any]:
     inputs = runner.recovery_inputs
     calibration = teacher_payload["calibration_texts"]
-    selection_rows = []
     reservoir_rows = []
-    targets = []
-    behavior_probes = []
-    generation_prompts = []
     external_seed = inputs._load_external_fresh_reservoir_seed()
     for index, external_row in enumerate(external_seed.prompts):
         token_ids = [200 + index, 710, 711, 712, 713, 714, 715, 716]
@@ -325,106 +321,6 @@ def _fresh_behavior_binding(teacher_payload: dict[str, Any]) -> dict[str, Any]:
                 "source_prompt_sha256": source_prompt_sha,
             }
         )
-        if index >= inputs.FRESH_CANDIDATE_COUNT:
-            continue
-        first_prefix = f"Answer{index:02d}"
-        lcp4_prefix = f"Answer{index:02d} continues correctly"
-        decoded_continuation = f"{lcp4_prefix} with coherent reasoning"
-        continuation = [900 + index * 4 + offset for offset in range(8)]
-        first_id = f"parent-first-action-{prompt_id}"
-        lcp4_id = f"parent-lcp4-{prompt_id}"
-        generation_id = f"parent-generation-{prompt_id}"
-        selection_rows.append(
-            {
-                "reservoir_index": index,
-                "prompt_id": prompt_id,
-                "token_ids_sha256": token_sha,
-                "token_count": len(token_ids),
-                "source_line_number": int(external_row["source_line_number"]),
-                "source_prompt_sha256": source_prompt_sha,
-                "decoded_prompt_sha256": hashlib.sha256(
-                    prompt.encode("utf-8")
-                ).hexdigest(),
-            }
-        )
-        behavior_probes.extend(
-            [
-                {
-                    "id": first_id,
-                    "category": "parent-first-action-decoded-prefix",
-                    "prompt": prompt,
-                    "kind": "literal_prefix",
-                    "expected_prefix": first_prefix,
-                },
-                {
-                    "id": lcp4_id,
-                    "category": "parent-lcp4-decoded-prefix",
-                    "prompt": prompt,
-                    "kind": "literal_prefix",
-                    "expected_prefix": lcp4_prefix,
-                },
-            ]
-        )
-        generation_prompts.append(
-            {
-                "id": generation_id,
-                "category": "parent-lcp4-decoded-prefix",
-                "prompt": prompt,
-                "kind": "literal_prefix",
-                "expected_prefix": lcp4_prefix,
-                "expected_prefix_generated_token_count": 4,
-                "relevance_rules": [],
-                "require_generation_health": True,
-            }
-        )
-        targets.append(
-            {
-                "index": index,
-                "prompt_id": prompt_id,
-                "prompt_token_ids": token_ids,
-                "prompt_token_ids_sha256": token_sha,
-                "prompt_token_count": len(token_ids),
-                "decoded_prompt_sha256": hashlib.sha256(
-                    prompt.encode("utf-8")
-                ).hexdigest(),
-                "generated_continuation_token_ids": continuation,
-                "generated_continuation_token_ids_sha256": (
-                    inputs.split_tools._token_sequence_sha256(continuation)
-                ),
-                "generated_continuation_token_count": len(continuation),
-                "generated_continuation_decoded_text": decoded_continuation,
-                "generated_continuation_decoded_text_sha256": hashlib.sha256(
-                    decoded_continuation.encode("utf-8")
-                ).hexdigest(),
-                "pre_eos_token_count": len(continuation),
-                "first_action_token_ids": continuation[:1],
-                "first_action_token_ids_sha256": (
-                    inputs.split_tools._token_sequence_sha256(continuation[:1])
-                ),
-                "first_action_decoded_prefix": first_prefix,
-                "first_action_decoded_prefix_sha256": hashlib.sha256(
-                    first_prefix.encode("utf-8")
-                ).hexdigest(),
-                "lcp4_token_ids": continuation[:4],
-                "lcp4_token_ids_sha256": (
-                    inputs.split_tools._token_sequence_sha256(continuation[:4])
-                ),
-                "lcp4_decoded_prefix": lcp4_prefix,
-                "lcp4_decoded_prefix_sha256": hashlib.sha256(
-                    lcp4_prefix.encode("utf-8")
-                ).hexdigest(),
-                "first_action_probe_id": first_id,
-                "lcp4_probe_id": lcp4_id,
-                "generation_prompt_id": generation_id,
-            }
-        )
-    suite = {
-        "source": "fresh-token-domain-parent-greedy-v1",
-        "text_evals": [],
-        "choice_probes": [],
-        "generation_prompts": generation_prompts,
-        "behavior_probes": behavior_probes,
-    }
     v4_preregistration = {
         "schema": inputs.PINNED_V4_PREREGISTRATION_SCHEMA,
         "source_filename": "preregistration.json",
@@ -497,179 +393,80 @@ def _fresh_behavior_binding(teacher_payload: dict[str, Any]) -> dict[str, Any]:
             reservoir_provenance_body
         ),
     }
-    candidate_reservoir = {
-        "provenance": reservoir_provenance,
-        "rows": reservoir_rows,
-        "rows_sha256": runner.canonical_sha256(reservoir_rows),
-    }
-    replay_derivation = inputs._derive_fresh_candidate_selection(
-        reservoir_rows=reservoir_rows,
+    prompt_records = tuple(
+        inputs.split_tools._PromptRecord(
+            payload={
+                "source_line_number": row["source_line_number"],
+                "source_prompt_sha256": row["source_prompt_sha256"],
+            },
+            token_ids=tuple(row["token_ids"]),
+            prompt_id=row["prompt_id"],
+            prefixes=inputs.split_tools._meaningful_prefixes(tuple(row["token_ids"])),
+        )
+        for row in reservoir_rows
+    )
+    reservoir_object = inputs.FreshRecoveryCandidateReservoir(
+        prompts=prompt_records,
+        decoded_prompts=tuple(row["decoded_prompt"] for row in reservoir_rows),
+        provenance=reservoir_provenance,
+    )
+    parent_pool = inputs._select_fresh_recovery_candidate(
+        reservoir=reservoir_object,
         teacher_payload=teacher_payload,
     )
-    disjointness_audit = inputs._fresh_candidate_replay_disjointness_audit(
-        decoded_prompts=[prompt["prompt"] for prompt in generation_prompts],
-        prompt_token_ids=[target["prompt_token_ids"] for target in targets],
+    prompt_text_by_ids = {
+        tuple(row["token_ids"]): row["decoded_prompt"] for row in reservoir_rows
+    }
+    suffix_text = "a b c d e f g h "
+    suffix_ids = tuple(800 + index for index in range(len(suffix_text)))
+    suffix_character_by_id = dict(zip(suffix_ids, suffix_text, strict=True))
+
+    class FixtureTokenizer:
+        eos_token_id = None
+        pad_token_id = 0
+
+        def decode(
+            self,
+            token_ids: Any,
+            *,
+            skip_special_tokens: bool = True,
+            clean_up_tokenization_spaces: bool = False,
+        ) -> str:
+            assert skip_special_tokens is True
+            assert clean_up_tokenization_spaces is False
+            values = tuple(
+                int(value)
+                for value in (
+                    token_ids.tolist() if hasattr(token_ids, "tolist") else token_ids
+                )
+            )
+            for prompt_ids, prompt_text in prompt_text_by_ids.items():
+                if values[: len(prompt_ids)] == prompt_ids:
+                    return prompt_text + "".join(
+                        suffix_character_by_id[value]
+                        for value in values[len(prompt_ids) :]
+                    )
+            raise AssertionError("fixture decode lost its prompt prefix")
+
+    class FixtureParent:
+        def eval(self) -> None:
+            return None
+
+        def generate(self, *, input_ids: Any, **_kwargs: Any) -> Any:
+            suffix = torch.tensor(
+                [list(suffix_ids)],
+                dtype=torch.long,
+                device=input_ids.device,
+            )
+            return torch.cat((input_ids, suffix), dim=1)
+
+    return inputs._build_fresh_behavior_binding(
+        torch=torch,
+        source_model=FixtureParent(),
+        tokenizer=FixtureTokenizer(),
+        selection=parent_pool,
         teacher_payload=teacher_payload,
-    )
-    selection_body = {
-        "schema": inputs.FRESH_SELECTION_SCHEMA,
-        "status": "frozen-after-teacher-replay-exclusion",
-        "mode": inputs.BEHAVIOR_MODE_FRESH,
-        "causal_ab_eligible": True,
-        "v4_preregistration": v4_preregistration,
-        "v4_exclusion_splits": {},
-        "external_candidate_source": dict(external_seed.receipt),
-        "corpus": corpus,
-        "recovery_calibration": recovery_calibration,
-        "candidate_reservoir": candidate_reservoir,
-        "replay_exclusion_derivation": replay_derivation,
-        "selected_candidate": {
-            "prompt_count": len(selection_rows),
-            "minimum_token_count": 8,
-            "maximum_token_count": 8,
-            "minimum_required_token_count": 8,
-            "maximum_allowed_token_count": 128,
-            "prompt_rows": selection_rows,
-            "prompt_manifest_sha256": runner.canonical_sha256(selection_rows),
-            "decoded_prompt_manifest_sha256": runner.canonical_sha256(
-                [probe["prompt"] for probe in generation_prompts]
-            ),
-            "category_ids_in_selected_order": [
-                str(row["category_id"])
-                for row in external_seed.prompts[: inputs.FRESH_CANDIDATE_COUNT]
-            ],
-            "category_histogram": {
-                category: sum(
-                    row["category_id"] == category
-                    for row in external_seed.prompts[
-                        : inputs.FRESH_CANDIDATE_COUNT
-                    ]
-                )
-                for category in sorted(
-                    {str(row["category_id"]) for row in external_seed.prompts}
-                )
-            },
-            "all_external_categories_represented": True,
-        },
-        "selection_statistics": {
-            "preselection": reservoir_provenance_body["preselection_statistics"],
-            "replay_exclusion_reason_counts": replay_derivation["reason_counts"],
-            "replay_disjoint_survivor_count": replay_derivation["survivor_count"],
-            "replay_disjoint_survivor_margin": replay_derivation["survivor_margin"],
-        },
-        "disjointness": {
-            "exact_token_prompt_overlap_count": 0,
-            "meaningful_prefix_overlap_count": 0,
-            "decoded_candidate_text_in_recovery_calibration_count": 0,
-            "minimum_meaningful_prefix_tokens": 8,
-            "recovery_calibration_prefixes_bounded_to_candidate_max_tokens": True,
-        },
-        "sealed_exclusion_manifest_used_model_free": True,
-        "sealed_prompts_supplied_to_model_or_trainer": False,
-        "sealed_outputs_or_selection_scores_computed": False,
-        "contains_sealed_data": False,
-        "candidate_reservoir_frozen_before_parent_load": True,
-        "final_candidate_frozen_before_parent_load": False,
-        "parent_model_loaded_before_final_selection": True,
-        "teacher_replay_authenticated_before_final_selection": True,
-        "teacher_replay_used_for_exclusion_only": True,
-        "parent_forward_or_score_during_final_selection": False,
-        "tokenizer_called_during_final_selection": False,
-        "child_or_arm_outputs_accessed_during_final_selection": False,
-        "final_replay_disjointness_audit_sha256": disjointness_audit[
-            "payload_sha256"
-        ],
-    }
-    selection = {
-        **selection_body,
-        "payload_sha256": runner.canonical_sha256(selection_body),
-    }
-    generation_by_id = {prompt["id"]: prompt for prompt in generation_prompts}
-    health_receipts = []
-    for target in targets:
-        generation = generation_by_id[target["generation_prompt_id"]]
-        decoded_continuation = target["generated_continuation_decoded_text"]
-        health = inputs.hf_tools._generation_health(
-            {
-                **generation,
-                "output": generation["prompt"] + decoded_continuation,
-                "diagnostics": inputs.hf_tools._generation_diagnostics(
-                    decoded_continuation,
-                    target["generated_continuation_token_ids"][
-                        : target["pre_eos_token_count"]
-                    ],
-                ),
-            },
-            min_continuation_chars=24,
-            min_unique_token_ratio=0.20,
-        )
-        assert health["passed"] is True
-        health_receipts.append(
-            {"generation_prompt_id": generation["id"], "health": health}
-        )
-    adapter_body = {
-        "schema": inputs.TOKEN_DOMAIN_ADAPTER_SCHEMA,
-        "status": "frozen-parent-targets",
-        "mode": inputs.BEHAVIOR_MODE_FRESH,
-        "causal_ab_eligible": True,
-        "selection": selection,
-        "source_model_fingerprint_sha256": teacher_payload["source_model_fingerprint"][
-            "sha256"
-        ],
-        "source_model_state_dict_sha256": teacher_payload["source_model_fingerprint"][
-            "model_state_fingerprint"
-        ]["state_dict_sha256"],
-        "identity_tokenizer_fingerprint_sha256": teacher_payload[
-            "tokenizer_fingerprints"
-        ]["source"]["sha256"],
-        "generation": {
-            "do_sample": False,
-            "max_new_tokens": 16,
-            "minimum_real_pre_eos_tokens": 4,
-            "batch_size": 1,
-            "parent_model_target_generation_performed": True,
-            "teacher_replay_origin": "generated",
-            "parent_model_generated_teacher_replay_this_run": True,
-        },
-        "recovery_replay_disjointness_audit": disjointness_audit,
-        "recovery_replay_disjointness_audit_sha256": disjointness_audit[
-            "payload_sha256"
-        ],
-        "targets": targets,
-        "target_manifest_sha256": runner.canonical_sha256(targets),
-        "suite_sha256": runner.canonical_sha256(suite),
-        "behavior_probe_count": 48,
-        "first_action_probe_count": 24,
-        "lcp4_probe_count": 24,
-        "generation_prompt_count": 24,
-        "suite_prompt_exact_token_roundtrip_count": 24,
-        "parent_full_decode_starts_canonical_prompt_count": 24,
-        "parent_self_score_pass_count": 48,
-        "parent_self_score_probe_count": 48,
-        "parent_generation_health_pass_count": 24,
-        "parent_generation_health_probe_count": 24,
-        "parent_generation_health_receipts": health_receipts,
-        "parent_generation_health_receipts_sha256": runner.canonical_sha256(
-            health_receipts
-        ),
-        "sealed_exclusion_manifest_used_model_free": True,
-        "sealed_prompt_decode_count": 0,
-        "sealed_prompt_forward_count": 0,
-        "sealed_prompt_output_count": 0,
-        "sealed_prompts_supplied_to_model_or_trainer": False,
-        "contains_sealed_data": False,
-        "publication_authorized": False,
-    }
-    adapter = {
-        **adapter_body,
-        "payload_sha256": runner.canonical_sha256(adapter_body),
-    }
-    return inputs._binding_from_suite(
-        suite=suite,
-        mode=inputs.BEHAVIOR_MODE_FRESH,
-        source_filename="preregistration.json",
-        source_file_sha256=_digest("v4-prereg"),
-        adapter_provenance=adapter,
+        device="cpu",
     )
 
 
@@ -951,6 +748,7 @@ def contract_inputs(
         "authenticate_guided_gud_candidate_preregistration_with_history",
         authenticate_with_history,
     )
+
     def authenticate_v3_source(*_args, **_kwargs):
         current_run = json.loads(run_path.read_text(encoding="utf-8"))
         current_selection = json.loads(winner_path.read_text(encoding="utf-8"))
@@ -972,12 +770,8 @@ def contract_inputs(
             winner_selection_sha256=hashes["winner"],
             arm_id=winner["arm_id"],
             step=winner["step"],
-            runtime_factor_state_sha256=winner[
-                "runtime_factor_state_sha256"
-            ],
-            portable_factor_state_sha256=winner[
-                "portable_factor_state_sha256"
-            ],
+            runtime_factor_state_sha256=winner["runtime_factor_state_sha256"],
+            portable_factor_state_sha256=winner["portable_factor_state_sha256"],
             factor_pack_path=Path(winner["factor_pack"]),
             factor_pack_file_sha256=winner["factor_pack_sha256"],
             factor_payload=factor_payload,
@@ -1058,9 +852,7 @@ def test_prereg_binds_candidate_blank_code_data_and_symmetric_schedule(
     assert payload["fold_source"]["coherent_continuation_proven"] is False
     assert payload["fold_source"]["standalone_intelligence_claim"] is False
     assert payload["fold_source"]["nonretained_callback_preimages_complete"] == (
-        False
-        if contract_inputs["kind"] == "historical-guided-qkvo-v3"
-        else None
+        False if contract_inputs["kind"] == "historical-guided-qkvo-v3" else None
     )
     assert payload["publication_authorized"] is False
     assert payload["sealed_data_accessed"] is False
@@ -1748,7 +1540,10 @@ def test_fully_resealed_false_reservoir_derivation_is_rejected(
 
     with pytest.raises(
         runner.FoldedBlankRecoveryABError,
-        match="selection or replay-disjointness evidence changed",
+        match=(
+            "binding failed strict adapter authentication|"
+            "selection or replay-disjointness evidence changed"
+        ),
     ):
         _build(contract_inputs)
 

@@ -42,19 +42,20 @@ RECOVERY_PLAN_SCHEMA = "neural-forge-folded-blank-recovery-plan-v2"
 BEHAVIOR_SUITE_BINDING_SCHEMA = (
     "neural-forge-candidate-recovery-behavior-suite-binding-v5"
 )
-FRESH_SELECTION_SCHEMA = "neural-forge-fresh-recovery-candidate-selection-v3"
+FRESH_SELECTION_SCHEMA = "neural-forge-fresh-recovery-candidate-selection-v4"
 FRESH_REPLAY_EXCLUSION_DERIVATION_SCHEMA = (
-    "neural-forge-fresh-replay-exclusion-first-survivors-v1"
+    "neural-forge-fresh-replay-exclusion-fixed-parent-pool-v2"
 )
-TOKEN_DOMAIN_ADAPTER_SCHEMA = "neural-forge-token-domain-recovery-behavior-adapter-v5"
+FRESH_PARENT_STRUCTURAL_SELECTION_SCHEMA = (
+    "neural-forge-fresh-parent-output-structural-selection-v1"
+)
+TOKEN_DOMAIN_ADAPTER_SCHEMA = "neural-forge-token-domain-recovery-behavior-adapter-v6"
 RECOVERY_REPLAY_DISJOINTNESS_AUDIT_SCHEMA = (
-    "neural-forge-fresh-candidate-replay-disjointness-audit-v1"
+    "neural-forge-fresh-candidate-replay-disjointness-audit-v2"
 )
 TEACHER_SOURCE_BINDING_SCHEMA = "neural-forge-teacher-source-artifact-binding-v1"
 BUILD_REPORT_SCHEMA = "neural-forge-folded-blank-recovery-input-build-v3"
-TEACHER_REPLAY_ACQUISITION_SCHEMA = (
-    "neural-forge-teacher-replay-acquisition-v2"
-)
+TEACHER_REPLAY_ACQUISITION_SCHEMA = "neural-forge-teacher-replay-acquisition-v2"
 TEACHER_REPLAY_CACHE_IMPORT_RECEIPT_SCHEMA = (
     "neural-forge-teacher-replay-compatible-import-v2"
 )
@@ -86,11 +87,15 @@ _CANONICAL_SOURCE_MODEL_FINGERPRINTER = (
 )
 _CACHE_TEST_INJECTION_AUTHORITY = object()
 FRESH_CANDIDATE_COUNT = 24
+FRESH_PARENT_CANDIDATE_POOL_COUNT = 64
+FRESH_CATEGORY_QUOTA = 3
 FIRST_ACTION_PROBE_COUNT = FRESH_CANDIDATE_COUNT
 LCP4_PROBE_COUNT = FRESH_CANDIDATE_COUNT
 BEHAVIOR_PROBE_COUNT = FIRST_ACTION_PROBE_COUNT + LCP4_PROBE_COUNT
 GENERATION_PROMPT_COUNT = FRESH_CANDIDATE_COUNT
 BEHAVIOR_MAX_NEW_TOKENS = 16
+PARENT_GENERATION_HEALTH_MIN_CONTINUATION_CHARS = 24
+PARENT_GENERATION_HEALTH_MIN_UNIQUE_TOKEN_RATIO = 0.20
 MINIMUM_REPLAY_DISJOINT_TOKEN_WINDOW = 8
 EXTERNAL_FRESH_RESERVOIR_SCHEMA = (
     "neural-forge.exact-target-fresh-recovery-reservoir-seed.v1"
@@ -118,9 +123,7 @@ PINNED_EXTERNAL_FRESH_RESERVOIR_EXPANDED_MANIFEST_SHA256 = (
 PINNED_EXTERNAL_FRESH_RESERVOIR_EXPANDED_TEXT_MANIFEST_SHA256 = (
     "fd2db9aa77e190f0923c77e4acfcdf5289167300b3273ae4fdcac5331fb23f75"
 )
-LEGACY_TEACHER_CACHE_IMPORT_SOURCE_COMMIT = (
-    "6166562db25f6a9e938be45d580381fc9d81d104"
-)
+LEGACY_TEACHER_CACHE_IMPORT_SOURCE_COMMIT = "6166562db25f6a9e938be45d580381fc9d81d104"
 LEGACY_TEACHER_CACHE_IMPORT_PREP_PRODUCER = {
     "role": "prepare_recovery_inputs",
     "filename": "prepare_qwen_exact_target_folded_blank_recovery_inputs.py",
@@ -289,7 +292,16 @@ class TokenizerComponents:
 
 @dataclass(frozen=True, slots=True)
 class FreshRecoverySelection:
-    """A fresh 24-prompt candidate frozen after replay exclusion."""
+    """A final balanced 24-prompt candidate frozen after parent eligibility."""
+
+    prompts: tuple[split_tools._PromptRecord, ...]
+    decoded_prompts: tuple[str, ...]
+    provenance: Mapping[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class FreshRecoveryParentCandidatePool:
+    """Fixed replay-disjoint pool frozen before parent-output selection."""
 
     prompts: tuple[split_tools._PromptRecord, ...]
     decoded_prompts: tuple[str, ...]
@@ -657,13 +669,10 @@ def _load_external_fresh_reservoir_seed() -> ExternalFreshReservoirSeed:
             "External reservoir expansion count changed."
         )
     manifest = [
-        {key: value for key, value in row.items() if key != "text"}
-        for row in expanded
+        {key: value for key, value in row.items() if key != "text"} for row in expanded
     ]
     expanded_manifest_sha = canonical_sha256(manifest)
-    expanded_text_manifest_sha = canonical_sha256(
-        [row["text"] for row in expanded]
-    )
+    expanded_text_manifest_sha = canonical_sha256([row["text"] for row in expanded])
     if (
         expanded_manifest_sha
         != PINNED_EXTERNAL_FRESH_RESERVOIR_EXPANDED_MANIFEST_SHA256
@@ -684,9 +693,7 @@ def _load_external_fresh_reservoir_seed() -> ExternalFreshReservoirSeed:
         "expansion_algorithm": payload["expansion_algorithm"],
         "category_count": len(normalized_categories),
         "topic_count": sum(len(row["topics"]) for row in normalized_categories),
-        "template_count": sum(
-            len(row["templates"]) for row in normalized_categories
-        ),
+        "template_count": sum(len(row["templates"]) for row in normalized_categories),
         "expanded_prompt_count": len(expanded),
         "expanded_prompt_manifest_sha256": expanded_manifest_sha,
         "expanded_prompt_text_manifest_sha256": expanded_text_manifest_sha,
@@ -1056,13 +1063,8 @@ def _authenticate_fresh_recovery_candidate_reservoir(
             "Pinned recovery corpus authentication failed."
         ) from error
 
-    duplicate_source_row_count = (
-        PINNED_RECOVERY_CORPUS_LINE_COUNT - len(corpus_records)
-    )
-    if (
-        duplicate_source_row_count
-        != PINNED_RECOVERY_CORPUS_DUPLICATE_SOURCE_ROW_COUNT
-    ):
+    duplicate_source_row_count = PINNED_RECOVERY_CORPUS_LINE_COUNT - len(corpus_records)
+    if duplicate_source_row_count != PINNED_RECOVERY_CORPUS_DUPLICATE_SOURCE_ROW_COUNT:
         raise RecoveryInputPreparationError(
             "Pinned recovery corpus unique-prompt count changed."
         )
@@ -1171,9 +1173,7 @@ def _authenticate_fresh_recovery_candidate_reservoir(
         {
             "reservoir_index": index,
             "prompt_id": prompt.prompt_id,
-            "token_ids_sha256": split_tools._token_sequence_sha256(
-                prompt.token_ids
-            ),
+            "token_ids_sha256": split_tools._token_sequence_sha256(prompt.token_ids),
             "decoded_prompt_sha256": hashlib.sha256(
                 decoded_reservoir[index].encode("utf-8")
             ).hexdigest(),
@@ -1233,17 +1233,17 @@ def _select_fresh_recovery_candidate(
     *,
     reservoir: FreshRecoveryCandidateReservoir,
     teacher_payload: Mapping[str, Any],
-) -> FreshRecoverySelection:
-    """Choose the first 24 replay-disjoint rows from the pre-model reservoir."""
+) -> FreshRecoveryParentCandidatePool:
+    """Freeze the first 64 replay-disjoint rows for parent structural scanning."""
 
     reservoir_rows = _fresh_candidate_reservoir_rows(reservoir)
     derivation = _derive_fresh_candidate_selection(
         reservoir_rows=reservoir_rows,
         teacher_payload=teacher_payload,
     )
-    selected_indices = tuple(derivation["selected_reservoir_indices"])
-    prompts = tuple(reservoir.prompts[index] for index in selected_indices)
-    decoded = tuple(reservoir.decoded_prompts[index] for index in selected_indices)
+    pool_indices = tuple(derivation["selected_reservoir_indices"])
+    prompts = tuple(reservoir.prompts[index] for index in pool_indices)
+    decoded = tuple(reservoir.decoded_prompts[index] for index in pool_indices)
     external_seed = _verify_external_fresh_reservoir_receipt(
         reservoir.provenance["external_candidate_source"]
     )
@@ -1251,40 +1251,44 @@ def _select_fresh_recovery_candidate(
         int(row["source_line_number"]): str(row["category_id"])
         for row in external_seed.prompts
     }
-    selected_categories = [
+    pool_categories = [
         source_categories[int(prompt.payload["source_line_number"])]
         for prompt in prompts
     ]
     all_categories = sorted({str(row["category_id"]) for row in external_seed.prompts})
     category_histogram = {
-        category: selected_categories.count(category) for category in all_categories
+        category: pool_categories.count(category) for category in all_categories
     }
-    if any(count == 0 for count in category_histogram.values()):
+    if any(count < FRESH_CATEGORY_QUOTA for count in category_histogram.values()):
         raise RecoveryInputPreparationError(
-            "The first 24 replay-disjoint survivors do not cover all external "
-            f"candidate categories; category_counts={json.dumps(category_histogram, sort_keys=True)}."
+            "The fixed replay-disjoint parent candidate pool does not contain "
+            f"at least {FRESH_CATEGORY_QUOTA} rows from every authenticated "
+            "external category; category_counts="
+            f"{json.dumps(category_histogram, sort_keys=True)}."
         )
     token_counts = [len(prompt.token_ids) for prompt in prompts]
     if (
-        len(prompts) != FRESH_CANDIDATE_COUNT
+        len(prompts) != FRESH_PARENT_CANDIDATE_POOL_COUNT
         or min(token_counts) < split_tools.MINIMUM_MEANINGFUL_PREFIX_TOKENS
         or max(token_counts) > MAX_LENGTH
     ):
         raise RecoveryInputPreparationError(
-            "Fresh recovery candidate prompt length contract failed."
+            "Fresh parent candidate pool prompt length contract failed."
         )
     if len(set(decoded)) != len(decoded):
         raise RecoveryInputPreparationError(
-            "Fresh recovery candidate is not disjoint from recovery training data."
+            "Fresh parent candidate pool contains duplicate decoded prompts."
         )
-    selected_rows = [
+    pool_rows = [
         {
-            "reservoir_index": selected_indices[index],
+            "pool_order": index,
+            "reservoir_index": pool_indices[index],
             "prompt_id": prompt.prompt_id,
             "token_ids_sha256": split_tools._token_sequence_sha256(prompt.token_ids),
             "token_count": len(prompt.token_ids),
             "source_line_number": int(prompt.payload["source_line_number"]),
             "source_prompt_sha256": str(prompt.payload["source_prompt_sha256"]),
+            "category_id": pool_categories[index],
             "decoded_prompt_sha256": hashlib.sha256(
                 decoded[index].encode("utf-8")
             ).hexdigest(),
@@ -1293,14 +1297,12 @@ def _select_fresh_recovery_candidate(
     ]
     body = {
         "schema": FRESH_SELECTION_SCHEMA,
-        "status": "frozen-after-teacher-replay-exclusion",
+        "status": "parent-candidate-pool-frozen-after-teacher-replay-exclusion",
         "mode": BEHAVIOR_MODE_FRESH,
-        "causal_ab_eligible": True,
+        "causal_ab_eligible": False,
         "v4_preregistration": reservoir.provenance["v4_preregistration"],
         "v4_exclusion_splits": reservoir.provenance["v4_exclusion_splits"],
-        "external_candidate_source": reservoir.provenance[
-            "external_candidate_source"
-        ],
+        "external_candidate_source": reservoir.provenance["external_candidate_source"],
         "corpus": reservoir.provenance["corpus"],
         "recovery_calibration": reservoir.provenance["recovery_calibration"],
         "candidate_reservoir": {
@@ -1309,20 +1311,22 @@ def _select_fresh_recovery_candidate(
             "rows_sha256": canonical_sha256(reservoir_rows),
         },
         "replay_exclusion_derivation": derivation,
-        "selected_candidate": {
+        "parent_candidate_pool": {
             "prompt_count": len(prompts),
+            "fixed_required_prompt_count": FRESH_PARENT_CANDIDATE_POOL_COUNT,
             "minimum_token_count": min(token_counts),
             "maximum_token_count": max(token_counts),
             "minimum_required_token_count": (
                 split_tools.MINIMUM_MEANINGFUL_PREFIX_TOKENS
             ),
             "maximum_allowed_token_count": MAX_LENGTH,
-            "prompt_rows": selected_rows,
-            "prompt_manifest_sha256": canonical_sha256(selected_rows),
+            "prompt_rows": pool_rows,
+            "prompt_manifest_sha256": canonical_sha256(pool_rows),
             "decoded_prompt_manifest_sha256": canonical_sha256(list(decoded)),
-            "category_ids_in_selected_order": selected_categories,
+            "category_ids_in_pool_order": pool_categories,
             "category_histogram": category_histogram,
-            "all_external_categories_represented": True,
+            "minimum_rows_per_authenticated_category": min(category_histogram.values()),
+            "all_external_categories_meet_final_quota": True,
         },
         "selection_statistics": {
             "preselection": reservoir.provenance["preselection_statistics"],
@@ -1344,22 +1348,24 @@ def _select_fresh_recovery_candidate(
         "sealed_outputs_or_selection_scores_computed": False,
         "contains_sealed_data": False,
         "candidate_reservoir_frozen_before_parent_load": True,
-        "final_candidate_frozen_before_parent_load": False,
-        "parent_model_loaded_before_final_selection": True,
-        "teacher_replay_authenticated_before_final_selection": True,
+        "parent_candidate_pool_derived_without_parent_output_access": True,
         "teacher_replay_used_for_exclusion_only": True,
-        "parent_forward_or_score_during_final_selection": False,
-        "tokenizer_called_during_final_selection": False,
-        "child_or_arm_outputs_accessed_during_final_selection": False,
+        "parent_forward_or_score_during_pool_derivation": False,
+        "tokenizer_called_during_pool_derivation": False,
+        "child_or_arm_outputs_accessed_during_pool_derivation": False,
     }
     replay_audit = _fresh_candidate_replay_disjointness_audit(
         decoded_prompts=decoded,
         prompt_token_ids=[prompt.token_ids for prompt in prompts],
         teacher_payload=teacher_payload,
+        expected_count=FRESH_PARENT_CANDIDATE_POOL_COUNT,
+        audit_scope="parent-candidate-pool",
     )
-    body["final_replay_disjointness_audit_sha256"] = replay_audit["payload_sha256"]
+    body["parent_candidate_pool_replay_disjointness_audit_sha256"] = replay_audit[
+        "payload_sha256"
+    ]
     provenance = {**body, "payload_sha256": canonical_sha256(body)}
-    return FreshRecoverySelection(
+    return FreshRecoveryParentCandidatePool(
         prompts=prompts,
         decoded_prompts=decoded,
         provenance=provenance,
@@ -1611,108 +1617,146 @@ def _decoded_prefix(
     return prefix
 
 
-def _build_fresh_behavior_binding(
+def _safe_parent_generation_health_receipt(
+    scored: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Retain structural health evidence without retaining rejected raw output."""
+
+    post_expected = scored.get("post_expected_health")
+    diagnostics = scored.get("diagnostics")
+    if not isinstance(post_expected, Mapping) or not isinstance(diagnostics, Mapping):
+        raise RecoveryInputPreparationError(
+            "Parent generation health receipt is incomplete."
+        )
+    post_expected_text = post_expected.get("continuation")
+    generated_ids = diagnostics.get("generated_token_ids")
+    if (
+        not isinstance(post_expected_text, str)
+        or not isinstance(generated_ids, list)
+        or any(
+            isinstance(token_id, bool) or not isinstance(token_id, int) or token_id < 0
+            for token_id in generated_ids
+        )
+    ):
+        raise RecoveryInputPreparationError(
+            "Parent generation health diagnostic fields are invalid."
+        )
+    safe_post_expected = {
+        key: value for key, value in post_expected.items() if key != "continuation"
+    }
+    safe_post_expected["continuation_sha256"] = hashlib.sha256(
+        post_expected_text.encode("utf-8")
+    ).hexdigest()
+    safe_diagnostics = {
+        key: value for key, value in diagnostics.items() if key != "generated_token_ids"
+    }
+    safe_diagnostics["generated_token_ids_sha256"] = split_tools._token_sequence_sha256(
+        generated_ids
+    )
+    return _json_value(
+        {
+            "passed": scored.get("passed") is True,
+            "continuation_chars": scored.get("continuation_chars"),
+            "token_count": scored.get("token_count"),
+            "unique_token_ratio": scored.get("unique_token_ratio"),
+            "long_enough": scored.get("long_enough"),
+            "diverse_enough": scored.get("diverse_enough"),
+            "prompt_repeated": scored.get("prompt_repeated"),
+            "relevant_enough": scored.get("relevant_enough"),
+            "expected_enough": scored.get("expected_enough"),
+            "post_expected_health": safe_post_expected,
+            "diagnostics": safe_diagnostics,
+        },
+        name="parent_structural_health_receipt",
+    )
+
+
+def _evaluate_parent_candidate_structure(
     *,
     torch: Any,
     source_model: Any,
     tokenizer: Any,
-    selection: FreshRecoverySelection,
-    teacher_payload: Mapping[str, Any],
+    prompt: split_tools._PromptRecord,
+    canonical_prompt: str,
+    pool_order: int,
+    pool_row: Mapping[str, Any],
+    category_id: str,
     device: str,
-    teacher_replay_origin: str = "generated",
-) -> dict[str, Any]:
-    """Generate and self-score parent decoded-prefix targets for the fresh 24."""
+    eos_value: int | None,
+    eos_ids: set[int],
+    pad_token_id: int | None,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Generate once and apply only the pinned parent structural eligibility gates."""
 
-    if teacher_replay_origin not in {"generated", "cache-hit", "cache-import"}:
-        raise RecoveryInputPreparationError("teacher_replay_origin is unsupported.")
-
-    tokenizer_fingerprints = teacher_payload.get("tokenizer_fingerprints")
-    if not isinstance(tokenizer_fingerprints, Mapping) or tokenizer_fingerprints.get(
-        "source"
-    ) != tokenizer_fingerprints.get("candidate"):
+    input_ids = torch.tensor([list(prompt.token_ids)], dtype=torch.long, device=device)
+    attention_mask = torch.ones_like(input_ids)
+    generated_tensor = source_model.generate(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        max_new_tokens=BEHAVIOR_MAX_NEW_TOKENS,
+        do_sample=False,
+        pad_token_id=pad_token_id,
+        eos_token_id=eos_value,
+    )
+    output_ids = tuple(
+        int(value) for value in generated_tensor[0].detach().cpu().tolist()
+    )
+    if output_ids[: len(prompt.token_ids)] != prompt.token_ids:
         raise RecoveryInputPreparationError(
-            "Fresh token-domain adapter requires one identical tokenizer fingerprint."
+            "Parent generation did not preserve the exact prompt token prefix."
         )
-    replay_disjointness_audit = _fresh_candidate_replay_disjointness_audit(
-        decoded_prompts=selection.decoded_prompts,
-        prompt_token_ids=[prompt.token_ids for prompt in selection.prompts],
-        teacher_payload=teacher_payload,
+    continuation = output_ids[len(prompt.token_ids) :]
+    if len(continuation) > BEHAVIOR_MAX_NEW_TOKENS:
+        raise RecoveryInputPreparationError(
+            "Parent exceeded the pinned 16-token adapter generation limit."
+        )
+    full_decoded = tokenizer.decode(
+        list(output_ids),
+        skip_special_tokens=True,
+        clean_up_tokenization_spaces=False,
     )
-    behavior_probes: list[dict[str, Any]] = []
-    generation_prompts: list[dict[str, Any]] = []
-    target_rows: list[dict[str, Any]] = []
-    generated_outputs: dict[str, str] = {}
-    generated_token_ids: dict[str, tuple[int, ...]] = {}
-    eos_value = getattr(tokenizer, "eos_token_id", None)
-    eos_ids = (
-        {int(eos_value)}
-        if isinstance(eos_value, int) and not isinstance(eos_value, bool)
-        else set()
+    if not isinstance(full_decoded, str):
+        raise RecoveryInputPreparationError("Parent full decode did not return text.")
+    decoded_prefix_contract_pass = full_decoded.startswith(canonical_prompt)
+    scored_continuation = (
+        full_decoded[len(canonical_prompt) :].strip()
+        if decoded_prefix_contract_pass
+        else full_decoded.strip()
     )
-    pad_value = getattr(tokenizer, "pad_token_id", None)
-    pad_token_id = pad_value if pad_value is not None else eos_value
-    source_model.eval()
-    with torch.no_grad():
-        for index, (prompt, canonical_prompt) in enumerate(
-            zip(selection.prompts, selection.decoded_prompts, strict=True)
-        ):
-            input_ids = torch.tensor(
-                [list(prompt.token_ids)], dtype=torch.long, device=device
-            )
-            attention_mask = torch.ones_like(input_ids)
-            generated_tensor = source_model.generate(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                max_new_tokens=BEHAVIOR_MAX_NEW_TOKENS,
-                do_sample=False,
-                pad_token_id=pad_token_id,
-                eos_token_id=eos_value,
-            )
-            output_ids = tuple(
-                int(value) for value in generated_tensor[0].detach().cpu().tolist()
-            )
-            if output_ids[: len(prompt.token_ids)] != prompt.token_ids:
-                raise RecoveryInputPreparationError(
-                    "Parent generation did not preserve the exact prompt token prefix."
-                )
-            continuation = output_ids[len(prompt.token_ids) :]
-            if len(continuation) > BEHAVIOR_MAX_NEW_TOKENS:
-                raise RecoveryInputPreparationError(
-                    "Parent exceeded the pinned 16-token adapter generation limit."
-                )
-            pre_eos: list[int] = []
-            for token_id in continuation:
-                if token_id in eos_ids:
-                    break
-                pre_eos.append(token_id)
-            if len(pre_eos) < 4:
-                raise RecoveryInputPreparationError(
-                    "Parent produced fewer than four real pre-EOS continuation tokens."
-                )
-            full_decoded = tokenizer.decode(
-                list(output_ids),
-                skip_special_tokens=True,
-                clean_up_tokenization_spaces=False,
-            )
-            if not isinstance(full_decoded, str) or not full_decoded.startswith(
-                canonical_prompt
-            ):
-                raise RecoveryInputPreparationError(
-                    "Parent full decode does not start with the canonical suite prompt."
-                )
+    pre_eos: list[int] = []
+    for token_id in continuation:
+        if token_id in eos_ids:
+            break
+        pre_eos.append(token_id)
+    minimum_pre_eos_pass = len(pre_eos) >= 4
+    decoded_prefix_self_score_pass = False
+    generation_health_pass = False
+    health_receipt: dict[str, Any] | None = None
+    accepted_material: dict[str, Any] | None = None
+    classification = "rejected_parent_minimum_pre_eos"
+    if minimum_pre_eos_pass and not decoded_prefix_contract_pass:
+        classification = "rejected_parent_decode_prefix_contract"
+    elif minimum_pre_eos_pass:
+        first_prefix: str | None = None
+        lcp4_prefix: str | None = None
+        try:
             first_prefix = _decoded_prefix(
                 tokenizer, prompt.token_ids, pre_eos[:1], canonical_prompt
             )
             lcp4_prefix = _decoded_prefix(
                 tokenizer, prompt.token_ids, pre_eos[:4], canonical_prompt
             )
-            scored_continuation = full_decoded[len(canonical_prompt) :].strip()
-            if not scored_continuation.startswith(first_prefix) or not (
-                scored_continuation.startswith(lcp4_prefix)
-            ):
-                raise RecoveryInputPreparationError(
-                    "Parent target prefix disagrees with scorer continuation slicing."
-                )
+        except RecoveryInputPreparationError:
+            decoded_prefix_contract_pass = False
+        if (
+            not decoded_prefix_contract_pass
+            or first_prefix is None
+            or lcp4_prefix is None
+            or not scored_continuation.startswith(first_prefix)
+            or not scored_continuation.startswith(lcp4_prefix)
+        ):
+            classification = "rejected_parent_decode_prefix_contract"
+        else:
             first_id = f"parent-first-action-{prompt.prompt_id}"
             lcp4_id = f"parent-lcp4-{prompt.prompt_id}"
             generation_id = f"parent-generation-{prompt.prompt_id}"
@@ -1730,114 +1774,516 @@ def _build_fresh_behavior_binding(
                 "kind": "literal_prefix",
                 "expected_prefix": lcp4_prefix,
             }
-            behavior_probes.extend((first_probe, lcp4_probe))
-            generation_prompts.append(
-                {
-                    "id": generation_id,
-                    "category": "parent-lcp4-decoded-prefix",
-                    "prompt": canonical_prompt,
-                    "kind": "literal_prefix",
-                    "expected_prefix": lcp4_prefix,
-                    "expected_prefix_generated_token_count": 4,
-                    "relevance_rules": [],
-                    "require_generation_health": True,
-                }
-            )
-            generated_outputs[canonical_prompt] = full_decoded
-            generated_token_ids[canonical_prompt] = tuple(pre_eos)
-            target_rows.append(
-                {
-                    "index": index,
-                    "prompt_id": prompt.prompt_id,
-                    "prompt_token_ids": list(prompt.token_ids),
-                    "prompt_token_ids_sha256": (
-                        split_tools._token_sequence_sha256(prompt.token_ids)
+            generation = {
+                "id": generation_id,
+                "category": "parent-lcp4-decoded-prefix",
+                "prompt": canonical_prompt,
+                "kind": "literal_prefix",
+                "expected_prefix": lcp4_prefix,
+                "expected_prefix_generated_token_count": 4,
+                "relevance_rules": [],
+                "require_generation_health": True,
+            }
+            try:
+                decoded_prefix_self_score_pass = all(
+                    hf_tools._score_behavior_probe(
+                        probe,
+                        {"output": full_decoded, "prompt": canonical_prompt},
+                    ).get("passed")
+                    is True
+                    for probe in (first_probe, lcp4_probe)
+                )
+            except ValueError:
+                decoded_prefix_self_score_pass = False
+            if not decoded_prefix_self_score_pass:
+                classification = "rejected_parent_decoded_prefix_self_score"
+            else:
+                scored_health = hf_tools._generation_health(
+                    {
+                        **generation,
+                        "output": full_decoded,
+                        "diagnostics": hf_tools._generation_diagnostics(
+                            scored_continuation,
+                            pre_eos,
+                        ),
+                    },
+                    min_continuation_chars=(
+                        PARENT_GENERATION_HEALTH_MIN_CONTINUATION_CHARS
                     ),
-                    "prompt_token_count": len(prompt.token_ids),
-                    "decoded_prompt_sha256": hashlib.sha256(
-                        canonical_prompt.encode("utf-8")
-                    ).hexdigest(),
-                    "generated_continuation_token_ids": list(continuation),
-                    "generated_continuation_token_ids_sha256": (
-                        split_tools._token_sequence_sha256(continuation)
+                    min_unique_token_ratio=(
+                        PARENT_GENERATION_HEALTH_MIN_UNIQUE_TOKEN_RATIO
                     ),
-                    "generated_continuation_token_count": len(continuation),
-                    "generated_continuation_decoded_text": scored_continuation,
-                    "generated_continuation_decoded_text_sha256": hashlib.sha256(
-                        scored_continuation.encode("utf-8")
-                    ).hexdigest(),
-                    "pre_eos_token_count": len(pre_eos),
-                    "first_action_token_ids": pre_eos[:1],
-                    "first_action_token_ids_sha256": (
-                        split_tools._token_sequence_sha256(pre_eos[:1])
-                    ),
-                    "first_action_decoded_prefix": first_prefix,
-                    "first_action_decoded_prefix_sha256": hashlib.sha256(
-                        first_prefix.encode("utf-8")
-                    ).hexdigest(),
-                    "lcp4_token_ids": pre_eos[:4],
-                    "lcp4_token_ids_sha256": split_tools._token_sequence_sha256(
-                        pre_eos[:4]
-                    ),
-                    "lcp4_decoded_prefix": lcp4_prefix,
-                    "lcp4_decoded_prefix_sha256": hashlib.sha256(
-                        lcp4_prefix.encode("utf-8")
-                    ).hexdigest(),
-                    "first_action_probe_id": first_id,
-                    "lcp4_probe_id": lcp4_id,
-                    "generation_prompt_id": generation_id,
-                }
-            )
+                )
+                generation_health_pass = scored_health.get("passed") is True
+                health_receipt = _safe_parent_generation_health_receipt(scored_health)
+                if generation_health_pass:
+                    classification = "parent_structurally_eligible"
+                    accepted_material = {
+                        "first_probe": first_probe,
+                        "lcp4_probe": lcp4_probe,
+                        "generation": generation,
+                        "continuation": continuation,
+                        "pre_eos": tuple(pre_eos),
+                        "scored_continuation": scored_continuation,
+                        "first_prefix": first_prefix,
+                        "lcp4_prefix": lcp4_prefix,
+                    }
+                else:
+                    classification = "rejected_parent_generation_health"
+    structurally_eligible = (
+        minimum_pre_eos_pass
+        and decoded_prefix_contract_pass
+        and decoded_prefix_self_score_pass
+        and generation_health_pass
+    )
+    row = {
+        "scan_order": pool_order,
+        "pool_order": pool_order,
+        "reservoir_index": int(pool_row["reservoir_index"]),
+        "prompt_id": prompt.prompt_id,
+        "category_id": category_id,
+        "prompt_token_ids_sha256": split_tools._token_sequence_sha256(prompt.token_ids),
+        "decoded_prompt_sha256": hashlib.sha256(
+            canonical_prompt.encode("utf-8")
+        ).hexdigest(),
+        "generated_continuation_token_count": len(continuation),
+        "generated_continuation_token_ids_sha256": (
+            split_tools._token_sequence_sha256(continuation)
+        ),
+        "generated_continuation_decoded_text_char_count": len(scored_continuation),
+        "generated_continuation_decoded_text_sha256": hashlib.sha256(
+            scored_continuation.encode("utf-8")
+        ).hexdigest(),
+        "pre_eos_token_count": len(pre_eos),
+        "pre_eos_token_ids_sha256": canonical_sha256(pre_eos),
+        "minimum_pre_eos_pass": minimum_pre_eos_pass,
+        "decoded_prefix_contract_pass": decoded_prefix_contract_pass,
+        "decoded_prefix_self_score_pass": decoded_prefix_self_score_pass,
+        "generation_health_pass": generation_health_pass,
+        "generation_health_receipt": health_receipt,
+        "generation_health_receipt_sha256": (
+            canonical_sha256(health_receipt) if health_receipt is not None else None
+        ),
+        "parent_structurally_eligible": structurally_eligible,
+        "accepted_for_balanced_quota": False,
+        "classification": classification,
+    }
+    return row, accepted_material
 
-    if len(generated_outputs) != FRESH_CANDIDATE_COUNT:
+
+def _finalize_balanced_fresh_selection(
+    *,
+    candidate_pool: FreshRecoveryParentCandidatePool,
+    selected_pool_orders: Sequence[int],
+    classification_rows: Sequence[Mapping[str, Any]],
+    category_counts: Mapping[str, int],
+    teacher_payload: Mapping[str, Any],
+) -> FreshRecoverySelection:
+    """Bind the final 24 to the first completed balanced structural quota."""
+
+    pool_rows = candidate_pool.provenance["parent_candidate_pool"]["prompt_rows"]
+    selected_prompts = tuple(
+        candidate_pool.prompts[pool_order] for pool_order in selected_pool_orders
+    )
+    selected_decoded = tuple(
+        candidate_pool.decoded_prompts[pool_order]
+        for pool_order in selected_pool_orders
+    )
+    selected_rows = [
+        {
+            "selection_order": selection_order,
+            "pool_order": int(pool_order),
+            "reservoir_index": int(pool_rows[pool_order]["reservoir_index"]),
+            "prompt_id": str(pool_rows[pool_order]["prompt_id"]),
+            "token_ids_sha256": str(pool_rows[pool_order]["token_ids_sha256"]),
+            "token_count": int(pool_rows[pool_order]["token_count"]),
+            "source_line_number": int(pool_rows[pool_order]["source_line_number"]),
+            "source_prompt_sha256": str(pool_rows[pool_order]["source_prompt_sha256"]),
+            "category_id": str(pool_rows[pool_order]["category_id"]),
+            "decoded_prompt_sha256": str(
+                pool_rows[pool_order]["decoded_prompt_sha256"]
+            ),
+        }
+        for selection_order, pool_order in enumerate(selected_pool_orders)
+    ]
+    categories = sorted(category_counts)
+    structural_body = {
+        "schema": FRESH_PARENT_STRUCTURAL_SELECTION_SCHEMA,
+        "status": "balanced-category-quota-completed",
+        "algorithm": (
+            "frozen-pool-order-first-3-parent-structurally-eligible-per-"
+            "authenticated-category-v1"
+        ),
+        "parent_candidate_pool_payload_sha256": _require_sha256(
+            candidate_pool.provenance["payload_sha256"],
+            "parent candidate pool payload SHA",
+        ),
+        "candidate_pool_count": FRESH_PARENT_CANDIDATE_POOL_COUNT,
+        "authenticated_category_ids": categories,
+        "authenticated_category_count": len(categories),
+        "per_category_quota": FRESH_CATEGORY_QUOTA,
+        "required_final_prompt_count": FRESH_CANDIDATE_COUNT,
+        "eligibility_contract": {
+            "minimum_real_pre_eos_tokens": 4,
+            "decoded_first_action_self_score_required": True,
+            "decoded_lcp4_self_score_required": True,
+            "generation_health_required": True,
+            "generation_health_min_continuation_chars": (
+                PARENT_GENERATION_HEALTH_MIN_CONTINUATION_CHARS
+            ),
+            "generation_health_min_unique_token_ratio": (
+                PARENT_GENERATION_HEALTH_MIN_UNIQUE_TOKEN_RATIO
+            ),
+        },
+        "classification_reason_precedence": [
+            "rejected_parent_minimum_pre_eos",
+            "rejected_parent_decode_prefix_contract",
+            "rejected_parent_decoded_prefix_self_score",
+            "rejected_parent_generation_health",
+            "eligible_category_quota_already_complete",
+            "accepted_balanced_category_quota",
+        ],
+        "classification_rows": _json_value(
+            classification_rows, name="parent_structural_classification_rows"
+        ),
+        "classification_rows_sha256": canonical_sha256(classification_rows),
+        "scanned_count": len(classification_rows),
+        "scanned_pool_orders": list(range(len(classification_rows))),
+        "accepted_pool_orders": [int(value) for value in selected_pool_orders],
+        "accepted_reservoir_indices": [row["reservoir_index"] for row in selected_rows],
+        "accepted_prompt_ids": [row["prompt_id"] for row in selected_rows],
+        "accepted_category_ids_in_selection_order": [
+            row["category_id"] for row in selected_rows
+        ],
+        "accepted_count": len(selected_rows),
+        "accepted_category_histogram": dict(category_counts),
+        "completion_pool_order": len(classification_rows) - 1,
+        "unscanned_candidate_pool_count": (
+            FRESH_PARENT_CANDIDATE_POOL_COUNT - len(classification_rows)
+        ),
+        "stopped_exactly_at_first_completed_balanced_quota": True,
+        "selection_uses_parent_output_for_fixed_structure_only": True,
+        "selection_is_child_blind": True,
+        "selection_is_fold_blind": True,
+        "selection_is_not_parent_capability_ranked": True,
+        "parent_health_used_as_fixed_binary_gate_only": True,
+        "eligible_rows_sorted_or_ranked_after_gate": False,
+        "child_or_fold_outputs_accessed": False,
+        "rejected_raw_generated_text_or_token_ids_recorded": False,
+        "rejected_generated_token_and_text_hashes_recorded": True,
+        "teacher_replay_authenticated_before_parent_scan": True,
+        "parent_live_fingerprint_verified_before_scan": True,
+    }
+    structural_selection = {
+        **structural_body,
+        "payload_sha256": canonical_sha256(structural_body),
+    }
+    replay_audit = _fresh_candidate_replay_disjointness_audit(
+        decoded_prompts=selected_decoded,
+        prompt_token_ids=[prompt.token_ids for prompt in selected_prompts],
+        teacher_payload=teacher_payload,
+        expected_count=FRESH_CANDIDATE_COUNT,
+        audit_scope="final-balanced-candidate",
+    )
+    token_counts = [len(prompt.token_ids) for prompt in selected_prompts]
+    pool_provenance = candidate_pool.provenance
+    body = {
+        "schema": FRESH_SELECTION_SCHEMA,
+        "status": "frozen-after-parent-output-structural-selection",
+        "mode": BEHAVIOR_MODE_FRESH,
+        "causal_ab_eligible": True,
+        "v4_preregistration": pool_provenance["v4_preregistration"],
+        "v4_exclusion_splits": pool_provenance["v4_exclusion_splits"],
+        "external_candidate_source": pool_provenance["external_candidate_source"],
+        "corpus": pool_provenance["corpus"],
+        "recovery_calibration": pool_provenance["recovery_calibration"],
+        "candidate_reservoir": pool_provenance["candidate_reservoir"],
+        "replay_exclusion_derivation": pool_provenance["replay_exclusion_derivation"],
+        "parent_candidate_pool": pool_provenance["parent_candidate_pool"],
+        "parent_candidate_pool_payload_sha256": pool_provenance["payload_sha256"],
+        "parent_candidate_pool_replay_disjointness_audit_sha256": pool_provenance[
+            "parent_candidate_pool_replay_disjointness_audit_sha256"
+        ],
+        "parent_structural_selection": structural_selection,
+        "selected_candidate": {
+            "prompt_count": len(selected_rows),
+            "minimum_token_count": min(token_counts),
+            "maximum_token_count": max(token_counts),
+            "minimum_required_token_count": (
+                split_tools.MINIMUM_MEANINGFUL_PREFIX_TOKENS
+            ),
+            "maximum_allowed_token_count": MAX_LENGTH,
+            "prompt_rows": selected_rows,
+            "prompt_manifest_sha256": canonical_sha256(selected_rows),
+            "decoded_prompt_manifest_sha256": canonical_sha256(list(selected_decoded)),
+            "category_ids_in_selected_order": [
+                row["category_id"] for row in selected_rows
+            ],
+            "category_histogram": dict(category_counts),
+            "all_external_categories_represented": True,
+            "all_external_categories_have_exact_quota": True,
+            "per_category_quota": FRESH_CATEGORY_QUOTA,
+        },
+        "selection_statistics": {
+            **pool_provenance["selection_statistics"],
+            "parent_structural_scan_count": len(classification_rows),
+            "parent_structural_rejection_count": (
+                len(classification_rows) - FRESH_CANDIDATE_COUNT
+            ),
+        },
+        "disjointness": {
+            "exact_token_prompt_overlap_count": 0,
+            "meaningful_prefix_overlap_count": 0,
+            "decoded_candidate_text_in_recovery_calibration_count": 0,
+            "minimum_meaningful_prefix_tokens": (
+                split_tools.MINIMUM_MEANINGFUL_PREFIX_TOKENS
+            ),
+            "recovery_calibration_prefixes_bounded_to_candidate_max_tokens": True,
+        },
+        "sealed_exclusion_manifest_used_model_free": True,
+        "sealed_prompts_supplied_to_model_or_trainer": False,
+        "sealed_outputs_or_selection_scores_computed": False,
+        "contains_sealed_data": False,
+        "candidate_reservoir_frozen_before_parent_load": True,
+        "final_candidate_frozen_before_parent_load": False,
+        "parent_model_loaded_before_final_selection": True,
+        "teacher_replay_authenticated_before_final_selection": True,
+        "teacher_replay_used_for_exclusion_only": True,
+        "parent_forward_or_score_during_final_selection": True,
+        "tokenizer_called_during_final_selection": True,
+        "child_or_arm_outputs_accessed_during_final_selection": False,
+        "selection_is_parent_output_structural_not_capability_ranked": True,
+        "final_replay_disjointness_audit_sha256": replay_audit["payload_sha256"],
+    }
+    return FreshRecoverySelection(
+        prompts=selected_prompts,
+        decoded_prompts=selected_decoded,
+        provenance={**body, "payload_sha256": canonical_sha256(body)},
+    )
+
+
+def _build_fresh_behavior_binding(
+    *,
+    torch: Any,
+    source_model: Any,
+    tokenizer: Any,
+    selection: FreshRecoveryParentCandidatePool,
+    teacher_payload: Mapping[str, Any],
+    device: str,
+    teacher_replay_origin: str = "generated",
+) -> dict[str, Any]:
+    """Build a balanced final 24 from the fixed replay-disjoint parent pool."""
+
+    if teacher_replay_origin not in {"generated", "cache-hit", "cache-import"}:
+        raise RecoveryInputPreparationError("teacher_replay_origin is unsupported.")
+    tokenizer_fingerprints = teacher_payload.get("tokenizer_fingerprints")
+    if not isinstance(tokenizer_fingerprints, Mapping) or tokenizer_fingerprints.get(
+        "source"
+    ) != tokenizer_fingerprints.get("candidate"):
         raise RecoveryInputPreparationError(
-            "Fresh adapter generation cache lost a unique canonical prompt."
+            "Fresh token-domain adapter requires one identical tokenizer fingerprint."
         )
-    for probe in behavior_probes:
-        scored = hf_tools._score_behavior_probe(
-            probe,
-            {
-                "output": generated_outputs[probe["prompt"]],
-                "prompt": probe["prompt"],
-            },
+    if (
+        len(selection.prompts) != FRESH_PARENT_CANDIDATE_POOL_COUNT
+        or len(selection.decoded_prompts) != FRESH_PARENT_CANDIDATE_POOL_COUNT
+        or selection.provenance.get("status")
+        != "parent-candidate-pool-frozen-after-teacher-replay-exclusion"
+        or selection.provenance.get("causal_ab_eligible") is not False
+    ):
+        raise RecoveryInputPreparationError(
+            "Fresh parent candidate pool contract changed before structural scan."
         )
-        if scored.get("passed") is not True:
-            raise RecoveryInputPreparationError(
-                "Parent failed its own frozen decoded-prefix behavior probe."
+    pool_rows = selection.provenance.get("parent_candidate_pool", {}).get("prompt_rows")
+    if not isinstance(pool_rows, list) or len(pool_rows) != len(selection.prompts):
+        raise RecoveryInputPreparationError(
+            "Fresh parent candidate pool provenance is incomplete."
+        )
+    external_seed = _verify_external_fresh_reservoir_receipt(
+        selection.provenance["external_candidate_source"]
+    )
+    category_by_source_line = {
+        int(row["source_line_number"]): str(row["category_id"])
+        for row in external_seed.prompts
+    }
+    categories = sorted(set(category_by_source_line.values()))
+    if len(categories) * FRESH_CATEGORY_QUOTA != FRESH_CANDIDATE_COUNT:
+        raise RecoveryInputPreparationError(
+            "Authenticated category count no longer yields exactly 24 balanced rows."
+        )
+    category_counts = {category: 0 for category in categories}
+    eos_value_raw = getattr(tokenizer, "eos_token_id", None)
+    eos_value = (
+        int(eos_value_raw)
+        if isinstance(eos_value_raw, int) and not isinstance(eos_value_raw, bool)
+        else None
+    )
+    eos_ids = {eos_value} if eos_value is not None else set()
+    pad_value = getattr(tokenizer, "pad_token_id", None)
+    pad_token_id = (
+        int(pad_value)
+        if isinstance(pad_value, int) and not isinstance(pad_value, bool)
+        else eos_value
+    )
+    behavior_probes: list[dict[str, Any]] = []
+    generation_prompts: list[dict[str, Any]] = []
+    target_rows: list[dict[str, Any]] = []
+    classification_rows: list[dict[str, Any]] = []
+    selected_pool_orders: list[int] = []
+    source_model.eval()
+    with torch.no_grad():
+        for pool_order, (prompt, canonical_prompt) in enumerate(
+            zip(selection.prompts, selection.decoded_prompts, strict=True)
+        ):
+            pool_row = pool_rows[pool_order]
+            source_line_number = int(prompt.payload["source_line_number"])
+            category_id = category_by_source_line.get(source_line_number)
+            if (
+                category_id is None
+                or pool_row.get("pool_order") != pool_order
+                or pool_row.get("prompt_id") != prompt.prompt_id
+                or pool_row.get("category_id") != category_id
+                or pool_row.get("source_line_number") != source_line_number
+            ):
+                raise RecoveryInputPreparationError(
+                    "Fresh parent pool order/category binding changed."
+                )
+            classification, material = _evaluate_parent_candidate_structure(
+                torch=torch,
+                source_model=source_model,
+                tokenizer=tokenizer,
+                prompt=prompt,
+                canonical_prompt=canonical_prompt,
+                pool_order=pool_order,
+                pool_row=pool_row,
+                category_id=category_id,
+                device=device,
+                eos_value=eos_value,
+                eos_ids=eos_ids,
+                pad_token_id=pad_token_id,
             )
-    parent_generation_health_pass_count = 0
-    parent_generation_health_receipts: list[dict[str, Any]] = []
-    for generation in generation_prompts:
-        scored = hf_tools._generation_health(
-            {
-                **generation,
-                "output": generated_outputs[generation["prompt"]],
-                "diagnostics": hf_tools._generation_diagnostics(
-                    generated_outputs[generation["prompt"]][
-                        len(generation["prompt"]) :
-                    ].strip(),
-                    generated_token_ids[generation["prompt"]],
-                ),
-            },
-            min_continuation_chars=24,
-            min_unique_token_ratio=0.20,
+            eligible = classification["parent_structurally_eligible"] is True
+            if eligible and category_counts[category_id] >= FRESH_CATEGORY_QUOTA:
+                classification["classification"] = (
+                    "eligible_category_quota_already_complete"
+                )
+            elif eligible:
+                if material is None:
+                    raise RecoveryInputPreparationError(
+                        "Structurally eligible parent row lacks accepted material."
+                    )
+                classification["classification"] = "accepted_balanced_category_quota"
+                classification["accepted_for_balanced_quota"] = True
+                category_counts[category_id] += 1
+                selected_index = len(target_rows)
+                selected_pool_orders.append(pool_order)
+                first_probe = material["first_probe"]
+                lcp4_probe = material["lcp4_probe"]
+                generation = material["generation"]
+                continuation = material["continuation"]
+                pre_eos = material["pre_eos"]
+                scored_continuation = material["scored_continuation"]
+                first_prefix = material["first_prefix"]
+                lcp4_prefix = material["lcp4_prefix"]
+                behavior_probes.extend((first_probe, lcp4_probe))
+                generation_prompts.append(generation)
+                target_rows.append(
+                    {
+                        "index": selected_index,
+                        "pool_order": pool_order,
+                        "reservoir_index": int(pool_row["reservoir_index"]),
+                        "category_id": category_id,
+                        "prompt_id": prompt.prompt_id,
+                        "prompt_token_ids": list(prompt.token_ids),
+                        "prompt_token_ids_sha256": (
+                            split_tools._token_sequence_sha256(prompt.token_ids)
+                        ),
+                        "prompt_token_count": len(prompt.token_ids),
+                        "decoded_prompt_sha256": hashlib.sha256(
+                            canonical_prompt.encode("utf-8")
+                        ).hexdigest(),
+                        "generated_continuation_token_ids": list(continuation),
+                        "generated_continuation_token_ids_sha256": (
+                            split_tools._token_sequence_sha256(continuation)
+                        ),
+                        "generated_continuation_token_count": len(continuation),
+                        "generated_continuation_decoded_text": scored_continuation,
+                        "generated_continuation_decoded_text_sha256": hashlib.sha256(
+                            scored_continuation.encode("utf-8")
+                        ).hexdigest(),
+                        "pre_eos_token_count": len(pre_eos),
+                        "first_action_token_ids": list(pre_eos[:1]),
+                        "first_action_token_ids_sha256": (
+                            split_tools._token_sequence_sha256(pre_eos[:1])
+                        ),
+                        "first_action_decoded_prefix": first_prefix,
+                        "first_action_decoded_prefix_sha256": hashlib.sha256(
+                            first_prefix.encode("utf-8")
+                        ).hexdigest(),
+                        "lcp4_token_ids": list(pre_eos[:4]),
+                        "lcp4_token_ids_sha256": (
+                            split_tools._token_sequence_sha256(pre_eos[:4])
+                        ),
+                        "lcp4_decoded_prefix": lcp4_prefix,
+                        "lcp4_decoded_prefix_sha256": hashlib.sha256(
+                            lcp4_prefix.encode("utf-8")
+                        ).hexdigest(),
+                        "first_action_probe_id": first_probe["id"],
+                        "lcp4_probe_id": lcp4_probe["id"],
+                        "generation_prompt_id": generation["id"],
+                    }
+                )
+            classification_rows.append(classification)
+            if all(count == FRESH_CATEGORY_QUOTA for count in category_counts.values()):
+                break
+    if len(target_rows) != FRESH_CANDIDATE_COUNT or any(
+        count != FRESH_CATEGORY_QUOTA for count in category_counts.values()
+    ):
+        raise RecoveryInputPreparationError(
+            "Fixed parent structural candidate pool could not complete the balanced "
+            f"category quota; scanned={len(classification_rows)}, "
+            f"pool={FRESH_PARENT_CANDIDATE_POOL_COUNT}, category_counts="
+            f"{json.dumps(category_counts, sort_keys=True)}."
         )
-        if scored.get("passed") is not True:
+    final_selection = _finalize_balanced_fresh_selection(
+        candidate_pool=selection,
+        selected_pool_orders=selected_pool_orders,
+        classification_rows=classification_rows,
+        category_counts=category_counts,
+        teacher_payload=teacher_payload,
+    )
+    replay_disjointness_audit = _fresh_candidate_replay_disjointness_audit(
+        decoded_prompts=final_selection.decoded_prompts,
+        prompt_token_ids=[prompt.token_ids for prompt in final_selection.prompts],
+        teacher_payload=teacher_payload,
+        expected_count=FRESH_CANDIDATE_COUNT,
+        audit_scope="final-balanced-candidate",
+    )
+    parent_generation_health_receipts = []
+    classification_by_pool_order = {
+        row["pool_order"]: row for row in classification_rows
+    }
+    for target in target_rows:
+        health_receipt = classification_by_pool_order[target["pool_order"]][
+            "generation_health_receipt"
+        ]
+        if (
+            not isinstance(health_receipt, Mapping)
+            or health_receipt.get("passed") is not True
+        ):
             raise RecoveryInputPreparationError(
-                "Parent failed its own frozen prefix-plus-coherence generation probe."
+                "Accepted parent target lost its structural health receipt."
             )
-        parent_generation_health_pass_count += 1
         parent_generation_health_receipts.append(
             {
-                "generation_prompt_id": generation["id"],
+                "generation_prompt_id": target["generation_prompt_id"],
                 "health": _json_value(
-                    scored,
-                    name="parent_generation_health_receipt",
+                    health_receipt,
+                    name="accepted_parent_generation_health_receipt",
                 ),
             }
         )
     suite = {
-        "source": "fresh-token-domain-parent-greedy-v1",
+        "source": "fresh-token-domain-parent-greedy-balanced-structural-v2",
         "text_evals": [],
         "choice_probes": [],
         "generation_prompts": generation_prompts,
@@ -1847,12 +2293,13 @@ def _build_fresh_behavior_binding(
     source_state_sha = source_fingerprint["model_state_fingerprint"][
         "state_dict_sha256"
     ]
+    structural_selection = final_selection.provenance["parent_structural_selection"]
     adapter_body = {
         "schema": TOKEN_DOMAIN_ADAPTER_SCHEMA,
         "status": "frozen-parent-targets",
         "mode": BEHAVIOR_MODE_FRESH,
         "causal_ab_eligible": True,
-        "selection": _json_value(selection.provenance, name="fresh_selection"),
+        "selection": _json_value(final_selection.provenance, name="fresh_selection"),
         "source_model_fingerprint_sha256": _require_sha256(
             source_fingerprint["sha256"], "source model fingerprint SHA"
         ),
@@ -1867,6 +2314,12 @@ def _build_fresh_behavior_binding(
             "do_sample": False,
             "max_new_tokens": BEHAVIOR_MAX_NEW_TOKENS,
             "minimum_real_pre_eos_tokens": 4,
+            "generation_health_min_continuation_chars": (
+                PARENT_GENERATION_HEALTH_MIN_CONTINUATION_CHARS
+            ),
+            "generation_health_min_unique_token_ratio": (
+                PARENT_GENERATION_HEALTH_MIN_UNIQUE_TOKEN_RATIO
+            ),
             "batch_size": 1,
             "parent_model_target_generation_performed": True,
             "teacher_replay_origin": teacher_replay_origin,
@@ -1889,12 +2342,21 @@ def _build_fresh_behavior_binding(
         "parent_full_decode_starts_canonical_prompt_count": FRESH_CANDIDATE_COUNT,
         "parent_self_score_pass_count": len(behavior_probes),
         "parent_self_score_probe_count": len(behavior_probes),
-        "parent_generation_health_pass_count": parent_generation_health_pass_count,
+        "parent_generation_health_pass_count": len(generation_prompts),
         "parent_generation_health_probe_count": len(generation_prompts),
         "parent_generation_health_receipts": parent_generation_health_receipts,
         "parent_generation_health_receipts_sha256": canonical_sha256(
             parent_generation_health_receipts
         ),
+        "parent_structural_selection_payload_sha256": structural_selection[
+            "payload_sha256"
+        ],
+        "parent_structural_scan_count": len(classification_rows),
+        "parent_structural_rejection_count": (
+            len(classification_rows) - FRESH_CANDIDATE_COUNT
+        ),
+        "parent_structural_selection_child_blind": True,
+        "parent_structural_selection_capability_ranked": False,
         "sealed_exclusion_manifest_used_model_free": True,
         "sealed_prompt_decode_count": 0,
         "sealed_prompt_forward_count": 0,
@@ -1907,26 +2369,30 @@ def _build_fresh_behavior_binding(
     return _binding_from_suite(
         suite=suite,
         mode=BEHAVIOR_MODE_FRESH,
-        source_filename=selection.provenance["v4_preregistration"]["source_filename"],
-        source_file_sha256=selection.provenance["v4_preregistration"]["file_sha256"],
+        source_filename=final_selection.provenance["v4_preregistration"][
+            "source_filename"
+        ],
+        source_file_sha256=final_selection.provenance["v4_preregistration"][
+            "file_sha256"
+        ],
         adapter_provenance=adapter,
     )
 
 
 def _fresh_selection_structure_is_valid(selection: Mapping[str, Any]) -> bool:
-    """Verify reservoir/order/first-survivor bindings without replay access."""
+    """Verify replay-pool order and deterministic balanced parent selection."""
 
     try:
         reservoir_rows = _verify_fresh_candidate_reservoir_payload(
             selection["candidate_reservoir"]
         )
         derivation = selection["replay_exclusion_derivation"]
-        if not isinstance(derivation, Mapping):
-            return False
         derivation_fields = {
             "schema",
             "status",
             "algorithm",
+            "selection_scope",
+            "fixed_candidate_pool_count",
             "reason_precedence",
             "minimum_common_token_window",
             "teacher_token_replay_payload_sha256",
@@ -1950,75 +2416,72 @@ def _fresh_selection_structure_is_valid(selection: Mapping[str, Any]) -> bool:
             "tokenizer_called_by_derivation",
             "payload_sha256",
         }
-        if set(derivation) != derivation_fields:
+        if not isinstance(derivation, Mapping) or set(derivation) != derivation_fields:
             return False
         derivation_body = dict(derivation)
-        claimed_derivation_sha = _require_sha256(
+        derivation_sha = _require_sha256(
             derivation_body.pop("payload_sha256"),
             "fresh replay exclusion derivation SHA",
         )
-        classifications = derivation["classification_rows"]
-        reason_precedence = [
+        replay_reasons = [
             "bidirectional_recovery_text_collision",
             "stepwise_prompt_window_collision",
             "stepwise_rollout_window_collision",
             "prior_survivor_meaningful_prefix_collision",
             "replay_disjoint_survivor",
         ]
+        replay_rows = derivation["classification_rows"]
         if (
-            not isinstance(classifications, list)
-            or len(classifications) != len(reservoir_rows)
+            not isinstance(replay_rows, list)
+            or len(replay_rows) != len(reservoir_rows)
             or any(
-                row
+                not isinstance(row, Mapping)
+                or row
                 != {
                     "reservoir_index": index,
                     "classification": row.get("classification"),
                 }
-                or row.get("classification") not in reason_precedence
-                for index, row in enumerate(classifications)
-                if isinstance(row, Mapping)
+                or row.get("classification") not in replay_reasons
+                for index, row in enumerate(replay_rows)
             )
-            or any(not isinstance(row, Mapping) for row in classifications)
         ):
             return False
-        recomputed_counts = {
-            reason: sum(
-                row["classification"] == reason for row in classifications
-            )
-            for reason in reason_precedence
+        reason_counts = {
+            reason: sum(row["classification"] == reason for row in replay_rows)
+            for reason in replay_reasons
         }
         survivor_indices = [
-            row["reservoir_index"]
-            for row in classifications
+            int(row["reservoir_index"])
+            for row in replay_rows
             if row["classification"] == "replay_disjoint_survivor"
         ]
-        selected_indices = survivor_indices[:FRESH_CANDIDATE_COUNT]
-        selected_prompt_ids = [
-            reservoir_rows[index]["prompt_id"] for index in selected_indices
-        ]
-        selected_rows = selection["selected_candidate"]["prompt_rows"]
+        pool_indices = survivor_indices[:FRESH_PARENT_CANDIDATE_POOL_COUNT]
+        pool_prompt_ids = [reservoir_rows[index]["prompt_id"] for index in pool_indices]
         if (
-            derivation.get("schema")
-            != FRESH_REPLAY_EXCLUSION_DERIVATION_SCHEMA
+            derivation.get("schema") != FRESH_REPLAY_EXCLUSION_DERIVATION_SCHEMA
             or derivation.get("status")
-            != "authenticated-first-24-replay-disjoint-survivors"
+            != "authenticated-first-64-replay-disjoint-parent-candidate-pool"
             or derivation.get("algorithm")
-            != "full-reservoir-fixed-reason-order-first-24-v1"
-            or derivation.get("reason_precedence") != reason_precedence
+            != "full-reservoir-fixed-reason-order-first-64-parent-pool-v2"
+            or derivation.get("selection_scope")
+            != "parent-structural-candidate-pool-not-final-evaluation"
+            or derivation.get("fixed_candidate_pool_count")
+            != FRESH_PARENT_CANDIDATE_POOL_COUNT
+            or derivation.get("reason_precedence") != replay_reasons
             or derivation.get("minimum_common_token_window")
             != MINIMUM_REPLAY_DISJOINT_TOKEN_WINDOW
             or derivation.get("reservoir_rows_sha256")
             != canonical_sha256(reservoir_rows)
             or derivation.get("reservoir_prompt_count") != len(reservoir_rows)
             or derivation.get("classification_rows_sha256")
-            != canonical_sha256(classifications)
-            or derivation.get("reason_counts") != recomputed_counts
+            != canonical_sha256(replay_rows)
+            or derivation.get("reason_counts") != reason_counts
             or derivation.get("survivor_count") != len(survivor_indices)
             or derivation.get("survivor_margin")
-            != len(survivor_indices) - FRESH_CANDIDATE_COUNT
-            or derivation.get("selected_reservoir_indices") != selected_indices
-            or derivation.get("selected_prompt_ids") != selected_prompt_ids
-            or derivation.get("selected_count") != FRESH_CANDIDATE_COUNT
+            != len(survivor_indices) - FRESH_PARENT_CANDIDATE_POOL_COUNT
+            or derivation.get("selected_reservoir_indices") != pool_indices
+            or derivation.get("selected_prompt_ids") != pool_prompt_ids
+            or derivation.get("selected_count") != FRESH_PARENT_CANDIDATE_POOL_COUNT
             or derivation.get("full_reservoir_classified") is not True
             or derivation.get("selection_is_first_survivors_in_frozen_order")
             is not True
@@ -2028,79 +2491,403 @@ def _fresh_selection_structure_is_valid(selection: Mapping[str, Any]) -> bool:
             or derivation.get("parent_forward_or_score_executed_by_derivation")
             is not False
             or derivation.get("tokenizer_called_by_derivation") is not False
-            or canonical_sha256(derivation_body) != claimed_derivation_sha
-            or not isinstance(selected_rows, list)
-            or len(selected_rows) != FRESH_CANDIDATE_COUNT
+            or canonical_sha256(derivation_body) != derivation_sha
         ):
             return False
-        for offset, selected_row in enumerate(selected_rows):
-            source = reservoir_rows[selected_indices[offset]]
-            if (
-                not isinstance(selected_row, Mapping)
-                or selected_row.get("reservoir_index") != selected_indices[offset]
-                or selected_row.get("prompt_id") != source["prompt_id"]
-                or selected_row.get("token_ids_sha256")
-                != source["token_ids_sha256"]
-                or selected_row.get("token_count") != len(source["token_ids"])
-                or selected_row.get("decoded_prompt_sha256")
-                != source["decoded_prompt_sha256"]
-                or selected_row.get("source_line_number")
-                != source["source_line_number"]
-                or selected_row.get("source_prompt_sha256")
-                != source["source_prompt_sha256"]
-            ):
-                return False
         external_seed = _verify_external_fresh_reservoir_receipt(
             selection["external_candidate_source"]
         )
-        source_categories = {
+        category_by_line = {
             int(row["source_line_number"]): str(row["category_id"])
             for row in external_seed.prompts
         }
-        selected_categories = [
-            source_categories[int(row["source_line_number"])] for row in selected_rows
-        ]
-        all_categories = sorted(
-            {str(row["category_id"]) for row in external_seed.prompts}
-        )
-        category_histogram = {
-            category: selected_categories.count(category)
-            for category in all_categories
-        }
-        selected_candidate = selection["selected_candidate"]
+        categories = sorted(set(category_by_line.values()))
+        pool = selection["parent_candidate_pool"]
+        pool_rows = pool.get("prompt_rows") if isinstance(pool, Mapping) else None
         if (
-            selection.get("external_candidate_source")
-            != selection["candidate_reservoir"]["provenance"].get(
-                "external_candidate_source"
-            )
-            or selected_candidate.get("category_ids_in_selected_order")
-            != selected_categories
-            or selected_candidate.get("category_histogram") != category_histogram
-            or selected_candidate.get("all_external_categories_represented") is not True
-            or any(count == 0 for count in category_histogram.values())
+            not isinstance(pool_rows, list)
+            or len(pool_rows) != FRESH_PARENT_CANDIDATE_POOL_COUNT
         ):
             return False
+        expected_pool_rows = []
+        for pool_order, reservoir_index in enumerate(pool_indices):
+            source = reservoir_rows[reservoir_index]
+            category = category_by_line[int(source["source_line_number"])]
+            expected_pool_rows.append(
+                {
+                    "pool_order": pool_order,
+                    "reservoir_index": reservoir_index,
+                    "prompt_id": source["prompt_id"],
+                    "token_ids_sha256": source["token_ids_sha256"],
+                    "token_count": len(source["token_ids"]),
+                    "source_line_number": source["source_line_number"],
+                    "source_prompt_sha256": source["source_prompt_sha256"],
+                    "category_id": category,
+                    "decoded_prompt_sha256": source["decoded_prompt_sha256"],
+                }
+            )
+        pool_category_order = [row["category_id"] for row in expected_pool_rows]
+        pool_histogram = {
+            category: pool_category_order.count(category) for category in categories
+        }
+        if (
+            pool_rows != expected_pool_rows
+            or pool.get("prompt_count") != FRESH_PARENT_CANDIDATE_POOL_COUNT
+            or pool.get("fixed_required_prompt_count")
+            != FRESH_PARENT_CANDIDATE_POOL_COUNT
+            or pool.get("prompt_manifest_sha256")
+            != canonical_sha256(expected_pool_rows)
+            or pool.get("category_ids_in_pool_order") != pool_category_order
+            or pool.get("category_histogram") != pool_histogram
+            or pool.get("minimum_rows_per_authenticated_category")
+            != min(pool_histogram.values())
+            or pool.get("all_external_categories_meet_final_quota") is not True
+            or any(count < FRESH_CATEGORY_QUOTA for count in pool_histogram.values())
+        ):
+            return False
+        pool_body = {
+            "schema": FRESH_SELECTION_SCHEMA,
+            "status": ("parent-candidate-pool-frozen-after-teacher-replay-exclusion"),
+            "mode": BEHAVIOR_MODE_FRESH,
+            "causal_ab_eligible": False,
+            "v4_preregistration": selection["v4_preregistration"],
+            "v4_exclusion_splits": selection["v4_exclusion_splits"],
+            "external_candidate_source": selection["external_candidate_source"],
+            "corpus": selection["corpus"],
+            "recovery_calibration": selection["recovery_calibration"],
+            "candidate_reservoir": selection["candidate_reservoir"],
+            "replay_exclusion_derivation": derivation,
+            "parent_candidate_pool": pool,
+            "selection_statistics": {
+                key: value
+                for key, value in selection["selection_statistics"].items()
+                if not key.startswith("parent_structural_")
+            },
+            "disjointness": selection["disjointness"],
+            "sealed_exclusion_manifest_used_model_free": True,
+            "sealed_prompts_supplied_to_model_or_trainer": False,
+            "sealed_outputs_or_selection_scores_computed": False,
+            "contains_sealed_data": False,
+            "candidate_reservoir_frozen_before_parent_load": True,
+            "parent_candidate_pool_derived_without_parent_output_access": True,
+            "teacher_replay_used_for_exclusion_only": True,
+            "parent_forward_or_score_during_pool_derivation": False,
+            "tokenizer_called_during_pool_derivation": False,
+            "child_or_arm_outputs_accessed_during_pool_derivation": False,
+            "parent_candidate_pool_replay_disjointness_audit_sha256": selection[
+                "parent_candidate_pool_replay_disjointness_audit_sha256"
+            ],
+        }
+        if canonical_sha256(pool_body) != selection.get(
+            "parent_candidate_pool_payload_sha256"
+        ):
+            return False
+        structural = selection["parent_structural_selection"]
+        if not isinstance(structural, Mapping):
+            return False
+        structural_body = dict(structural)
+        structural_sha = _require_sha256(
+            structural_body.pop("payload_sha256"),
+            "parent structural selection SHA",
+        )
+        classification_rows = structural.get("classification_rows")
+        if (
+            not isinstance(classification_rows, list)
+            or not classification_rows
+            or len(classification_rows) > FRESH_PARENT_CANDIDATE_POOL_COUNT
+        ):
+            return False
+        classification_fields = {
+            "scan_order",
+            "pool_order",
+            "reservoir_index",
+            "prompt_id",
+            "category_id",
+            "prompt_token_ids_sha256",
+            "decoded_prompt_sha256",
+            "generated_continuation_token_count",
+            "generated_continuation_token_ids_sha256",
+            "generated_continuation_decoded_text_char_count",
+            "generated_continuation_decoded_text_sha256",
+            "pre_eos_token_count",
+            "pre_eos_token_ids_sha256",
+            "minimum_pre_eos_pass",
+            "decoded_prefix_contract_pass",
+            "decoded_prefix_self_score_pass",
+            "generation_health_pass",
+            "generation_health_receipt",
+            "generation_health_receipt_sha256",
+            "parent_structurally_eligible",
+            "accepted_for_balanced_quota",
+            "classification",
+        }
+        accepted_pool_orders: list[int] = []
+        running_counts = {category: 0 for category in categories}
+        completion_order: int | None = None
+        for scan_order, row in enumerate(classification_rows):
+            if not isinstance(row, Mapping) or set(row) != classification_fields:
+                return False
+            source = expected_pool_rows[scan_order]
+            if (
+                row.get("scan_order") != scan_order
+                or row.get("pool_order") != scan_order
+                or row.get("reservoir_index") != source["reservoir_index"]
+                or row.get("prompt_id") != source["prompt_id"]
+                or row.get("category_id") != source["category_id"]
+                or row.get("prompt_token_ids_sha256") != source["token_ids_sha256"]
+                or row.get("decoded_prompt_sha256") != source["decoded_prompt_sha256"]
+                or _require_sha256(
+                    row.get("generated_continuation_token_ids_sha256"),
+                    "generated continuation token SHA",
+                )
+                != row.get("generated_continuation_token_ids_sha256")
+                or _require_sha256(
+                    row.get("generated_continuation_decoded_text_sha256"),
+                    "generated continuation text SHA",
+                )
+                != row.get("generated_continuation_decoded_text_sha256")
+                or _require_sha256(
+                    row.get("pre_eos_token_ids_sha256"),
+                    "pre-EOS token SHA",
+                )
+                != row.get("pre_eos_token_ids_sha256")
+                or any(
+                    isinstance(row.get(name), bool)
+                    or not isinstance(row.get(name), int)
+                    or row.get(name) < 0
+                    for name in (
+                        "generated_continuation_token_count",
+                        "generated_continuation_decoded_text_char_count",
+                        "pre_eos_token_count",
+                    )
+                )
+                or row.get("pre_eos_token_count")
+                > row.get("generated_continuation_token_count")
+            ):
+                return False
+            health = row.get("generation_health_receipt")
+            health_sha = row.get("generation_health_receipt_sha256")
+            self_score_claimed = row.get("decoded_prefix_self_score_pass") is True
+            if (health is not None) is not self_score_claimed:
+                return False
+            if health is None:
+                if health_sha is not None or row.get("generation_health_pass") is True:
+                    return False
+            elif (
+                not isinstance(health, Mapping)
+                or _require_sha256(health_sha, "generation health receipt SHA")
+                != canonical_sha256(health)
+                or set(health)
+                != {
+                    "passed",
+                    "continuation_chars",
+                    "token_count",
+                    "unique_token_ratio",
+                    "long_enough",
+                    "diverse_enough",
+                    "prompt_repeated",
+                    "relevant_enough",
+                    "expected_enough",
+                    "post_expected_health",
+                    "diagnostics",
+                }
+                or not isinstance(health.get("post_expected_health"), Mapping)
+                or set(health["post_expected_health"])
+                != {
+                    "required",
+                    "passed",
+                    "continuation_chars",
+                    "surface_token_count",
+                    "surface_unique_ratio",
+                    "surface_max_token_run",
+                    "surface_repeated_bigram_share",
+                    "generated_token_count",
+                    "generated_distinct_token_ratio",
+                    "generated_max_token_id_run",
+                    "expected_prefix_generated_token_count",
+                    "post_expected_generated_token_count",
+                    "post_expected_generated_distinct_token_ratio",
+                    "post_expected_generated_max_token_id_run",
+                    "continuation_sha256",
+                }
+                or _require_sha256(
+                    health["post_expected_health"].get("continuation_sha256"),
+                    "post-expected continuation SHA",
+                )
+                != health["post_expected_health"].get("continuation_sha256")
+                or not isinstance(health.get("diagnostics"), Mapping)
+                or set(health["diagnostics"])
+                != {
+                    "word_token_count",
+                    "distinct_1",
+                    "distinct_2",
+                    "top_token_share",
+                    "max_token_run",
+                    "repeated_bigram_share",
+                    "generated_token_count",
+                    "generated_distinct_token_ratio",
+                    "generated_max_token_id_run",
+                    "generated_token_ids_sha256",
+                }
+                or _require_sha256(
+                    health["diagnostics"].get("generated_token_ids_sha256"),
+                    "health generated-token SHA",
+                )
+                != health["diagnostics"].get("generated_token_ids_sha256")
+                or health.get("passed") is not row.get("generation_health_pass")
+            ):
+                return False
+            minimum_pass = row.get("minimum_pre_eos_pass") is True
+            decode_pass = row.get("decoded_prefix_contract_pass") is True
+            self_score_pass = row.get("decoded_prefix_self_score_pass") is True
+            health_pass = row.get("generation_health_pass") is True
+            eligible = minimum_pass and decode_pass and self_score_pass and health_pass
+            category = source["category_id"]
+            if (
+                minimum_pass != (row["pre_eos_token_count"] >= 4)
+                or (not minimum_pass and (self_score_pass or health_pass))
+                or (not decode_pass and (self_score_pass or health_pass))
+                or (not self_score_pass and health_pass)
+                or row.get("parent_structurally_eligible") is not eligible
+            ):
+                return False
+            if not minimum_pass:
+                expected_reason = "rejected_parent_minimum_pre_eos"
+            elif not decode_pass:
+                expected_reason = "rejected_parent_decode_prefix_contract"
+            elif not self_score_pass:
+                expected_reason = "rejected_parent_decoded_prefix_self_score"
+            elif not health_pass:
+                expected_reason = "rejected_parent_generation_health"
+            elif running_counts[category] >= FRESH_CATEGORY_QUOTA:
+                expected_reason = "eligible_category_quota_already_complete"
+            else:
+                expected_reason = "accepted_balanced_category_quota"
+                running_counts[category] += 1
+                accepted_pool_orders.append(scan_order)
+            accepted = expected_reason == "accepted_balanced_category_quota"
+            if (
+                row.get("classification") != expected_reason
+                or row.get("accepted_for_balanced_quota") is not accepted
+            ):
+                return False
+            if all(count == FRESH_CATEGORY_QUOTA for count in running_counts.values()):
+                completion_order = scan_order
+                if scan_order != len(classification_rows) - 1:
+                    return False
+        selected_candidate = selection["selected_candidate"]
+        selected_rows = selected_candidate.get("prompt_rows")
+        if not isinstance(selected_rows, list):
+            return False
+        expected_selected_rows = [
+            {
+                "selection_order": selection_order,
+                **expected_pool_rows[pool_order],
+            }
+            for selection_order, pool_order in enumerate(accepted_pool_orders)
+        ]
+        if (
+            completion_order != len(classification_rows) - 1
+            or any(count != FRESH_CATEGORY_QUOTA for count in running_counts.values())
+            or selected_rows != expected_selected_rows
+            or selected_candidate.get("prompt_count") != FRESH_CANDIDATE_COUNT
+            or selected_candidate.get("prompt_manifest_sha256")
+            != canonical_sha256(selected_rows)
+            or selected_candidate.get("category_ids_in_selected_order")
+            != [row["category_id"] for row in selected_rows]
+            or selected_candidate.get("category_histogram") != running_counts
+            or selected_candidate.get("all_external_categories_represented") is not True
+            or selected_candidate.get("all_external_categories_have_exact_quota")
+            is not True
+            or selected_candidate.get("per_category_quota") != FRESH_CATEGORY_QUOTA
+        ):
+            return False
+        expected_structural = {
+            "schema": FRESH_PARENT_STRUCTURAL_SELECTION_SCHEMA,
+            "status": "balanced-category-quota-completed",
+            "algorithm": (
+                "frozen-pool-order-first-3-parent-structurally-eligible-per-"
+                "authenticated-category-v1"
+            ),
+            "parent_candidate_pool_payload_sha256": selection[
+                "parent_candidate_pool_payload_sha256"
+            ],
+            "candidate_pool_count": FRESH_PARENT_CANDIDATE_POOL_COUNT,
+            "authenticated_category_ids": categories,
+            "authenticated_category_count": len(categories),
+            "per_category_quota": FRESH_CATEGORY_QUOTA,
+            "required_final_prompt_count": FRESH_CANDIDATE_COUNT,
+            "eligibility_contract": {
+                "minimum_real_pre_eos_tokens": 4,
+                "decoded_first_action_self_score_required": True,
+                "decoded_lcp4_self_score_required": True,
+                "generation_health_required": True,
+                "generation_health_min_continuation_chars": (
+                    PARENT_GENERATION_HEALTH_MIN_CONTINUATION_CHARS
+                ),
+                "generation_health_min_unique_token_ratio": (
+                    PARENT_GENERATION_HEALTH_MIN_UNIQUE_TOKEN_RATIO
+                ),
+            },
+            "classification_reason_precedence": [
+                "rejected_parent_minimum_pre_eos",
+                "rejected_parent_decode_prefix_contract",
+                "rejected_parent_decoded_prefix_self_score",
+                "rejected_parent_generation_health",
+                "eligible_category_quota_already_complete",
+                "accepted_balanced_category_quota",
+            ],
+            "classification_rows": classification_rows,
+            "classification_rows_sha256": canonical_sha256(classification_rows),
+            "scanned_count": len(classification_rows),
+            "scanned_pool_orders": list(range(len(classification_rows))),
+            "accepted_pool_orders": accepted_pool_orders,
+            "accepted_reservoir_indices": [
+                row["reservoir_index"] for row in selected_rows
+            ],
+            "accepted_prompt_ids": [row["prompt_id"] for row in selected_rows],
+            "accepted_category_ids_in_selection_order": [
+                row["category_id"] for row in selected_rows
+            ],
+            "accepted_count": len(selected_rows),
+            "accepted_category_histogram": running_counts,
+            "completion_pool_order": completion_order,
+            "unscanned_candidate_pool_count": (
+                FRESH_PARENT_CANDIDATE_POOL_COUNT - len(classification_rows)
+            ),
+            "stopped_exactly_at_first_completed_balanced_quota": True,
+            "selection_uses_parent_output_for_fixed_structure_only": True,
+            "selection_is_child_blind": True,
+            "selection_is_fold_blind": True,
+            "selection_is_not_parent_capability_ranked": True,
+            "parent_health_used_as_fixed_binary_gate_only": True,
+            "eligible_rows_sorted_or_ranked_after_gate": False,
+            "child_or_fold_outputs_accessed": False,
+            "rejected_raw_generated_text_or_token_ids_recorded": False,
+            "rejected_generated_token_and_text_hashes_recorded": True,
+            "teacher_replay_authenticated_before_parent_scan": True,
+            "parent_live_fingerprint_verified_before_scan": True,
+        }
         return (
-            selection.get("status") == "frozen-after-teacher-replay-exclusion"
-            and selection.get("candidate_reservoir_frozen_before_parent_load")
-            is True
+            structural_body == expected_structural
+            and canonical_sha256(structural_body) == structural_sha
+            and selection.get("status")
+            == "frozen-after-parent-output-structural-selection"
+            and selection.get("causal_ab_eligible") is True
+            and selection.get("candidate_reservoir_frozen_before_parent_load") is True
             and selection.get("final_candidate_frozen_before_parent_load") is False
             and selection.get("parent_model_loaded_before_final_selection") is True
             and selection.get("teacher_replay_authenticated_before_final_selection")
             is True
             and selection.get("teacher_replay_used_for_exclusion_only") is True
-            and selection.get("parent_forward_or_score_during_final_selection")
+            and selection.get("parent_forward_or_score_during_final_selection") is True
+            and selection.get("tokenizer_called_during_final_selection") is True
+            and selection.get("child_or_arm_outputs_accessed_during_final_selection")
             is False
-            and selection.get("tokenizer_called_during_final_selection") is False
             and selection.get(
-                "child_or_arm_outputs_accessed_during_final_selection"
+                "selection_is_parent_output_structural_not_capability_ranked"
             )
-            is False
-            and _require_sha256(
-                selection.get("final_replay_disjointness_audit_sha256"),
-                "final replay disjointness audit SHA",
-            )
-            == selection.get("final_replay_disjointness_audit_sha256")
+            is True
         )
     except (
         KeyError,
@@ -2132,6 +2919,9 @@ def _fresh_adapter_cross_bindings_valid(
         target_by_id = {row["prompt_id"]: row for row in targets}
         behavior_by_id = {probe["id"]: probe for probe in behavior_probes}
         generation_by_id = {prompt["id"]: prompt for prompt in generation_prompts}
+        structural_rows = adapter["selection"]["parent_structural_selection"][
+            "classification_rows"
+        ]
         if not (
             len(selection_by_id) == len(target_by_id) == FRESH_CANDIDATE_COUNT
             and len(behavior_by_id) == BEHAVIOR_PROBE_COUNT
@@ -2140,6 +2930,7 @@ def _fresh_adapter_cross_bindings_valid(
             return False
         for prompt_id, target in target_by_id.items():
             selection_row = selection_by_id[prompt_id]
+            classification_row = structural_rows[target["pool_order"]]
             prompt_ids = target["prompt_token_ids"]
             continuation = target["generated_continuation_token_ids"]
             decoded_continuation = target["generated_continuation_decoded_text"]
@@ -2176,6 +2967,31 @@ def _fresh_adapter_cross_bindings_valid(
                 or target["prompt_token_ids_sha256"]
                 != selection_row["token_ids_sha256"]
                 or target["prompt_token_count"] != selection_row["token_count"]
+                or target.get("pool_order") != selection_row["pool_order"]
+                or target.get("reservoir_index") != selection_row["reservoir_index"]
+                or target.get("category_id") != selection_row["category_id"]
+                or classification_row.get("accepted_for_balanced_quota") is not True
+                or classification_row.get("classification")
+                != "accepted_balanced_category_quota"
+                or classification_row.get("prompt_id") != prompt_id
+                or classification_row.get("pool_order") != target["pool_order"]
+                or classification_row.get("reservoir_index")
+                != target["reservoir_index"]
+                or classification_row.get("category_id") != target["category_id"]
+                or classification_row.get("generated_continuation_token_count")
+                != len(continuation)
+                or classification_row.get("generated_continuation_token_ids_sha256")
+                != target["generated_continuation_token_ids_sha256"]
+                or classification_row.get(
+                    "generated_continuation_decoded_text_char_count"
+                )
+                != len(decoded_continuation)
+                or classification_row.get("generated_continuation_decoded_text_sha256")
+                != target["generated_continuation_decoded_text_sha256"]
+                or classification_row.get("pre_eos_token_count")
+                != target["pre_eos_token_count"]
+                or classification_row.get("pre_eos_token_ids_sha256")
+                != canonical_sha256(continuation[: target["pre_eos_token_count"]])
                 or split_tools._token_sequence_sha256(continuation)
                 != target["generated_continuation_token_ids_sha256"]
                 or split_tools._token_sequence_sha256(first_ids)
@@ -2244,13 +3060,18 @@ def _fresh_adapter_cross_bindings_valid(
             )
             if health.get("passed") is not True:
                 return False
+            safe_health = _safe_parent_generation_health_receipt(health)
+            classification_health = structural_rows[target["pool_order"]].get(
+                "generation_health_receipt"
+            )
+            if classification_health != safe_health or structural_rows[
+                target["pool_order"]
+            ].get("generation_health_receipt_sha256") != canonical_sha256(safe_health):
+                return False
             expected_health_receipts.append(
                 {
                     "generation_prompt_id": generation["id"],
-                    "health": _json_value(
-                        health,
-                        name="verified_parent_generation_health_receipt",
-                    ),
+                    "health": safe_health,
                 }
             )
         if adapter.get(
@@ -2265,6 +3086,8 @@ def _fresh_adapter_cross_bindings_valid(
         audit_fields = {
             "schema",
             "status",
+            "audit_scope",
+            "expected_candidate_prompt_count",
             "minimum_common_token_window",
             "candidate_prompt_count",
             "candidate_decoded_prompt_manifest_sha256",
@@ -2366,6 +3189,8 @@ def _fresh_adapter_cross_bindings_valid(
             == stepwise_scan["stepwise_replay_bank_sha256"]
             and audit.get("schema") == RECOVERY_REPLAY_DISJOINTNESS_AUDIT_SCHEMA
             and audit.get("status") == "passed"
+            and audit.get("audit_scope") == "final-balanced-candidate"
+            and audit.get("expected_candidate_prompt_count") == FRESH_CANDIDATE_COUNT
             and audit.get("minimum_common_token_window")
             == MINIMUM_REPLAY_DISJOINT_TOKEN_WINDOW
             and audit.get("candidate_prompt_count") == FRESH_CANDIDATE_COUNT
@@ -2398,6 +3223,12 @@ def _fresh_adapter_cross_bindings_valid(
             "do_sample": False,
             "max_new_tokens": BEHAVIOR_MAX_NEW_TOKENS,
             "minimum_real_pre_eos_tokens": 4,
+            "generation_health_min_continuation_chars": (
+                PARENT_GENERATION_HEALTH_MIN_CONTINUATION_CHARS
+            ),
+            "generation_health_min_unique_token_ratio": (
+                PARENT_GENERATION_HEALTH_MIN_UNIQUE_TOKEN_RATIO
+            ),
             "batch_size": 1,
             "parent_model_target_generation_performed": True,
             "teacher_replay_origin": replay_origin,
@@ -2510,6 +3341,14 @@ def verify_behavior_suite_binding(payload: Mapping[str, Any]) -> dict[str, Any]:
             == GENERATION_PROMPT_COUNT
             and adapter.get("parent_generation_health_probe_count")
             == GENERATION_PROMPT_COUNT
+            and adapter.get("parent_structural_selection_payload_sha256")
+            == selection.get("parent_structural_selection", {}).get("payload_sha256")
+            and adapter.get("parent_structural_scan_count")
+            == selection.get("parent_structural_selection", {}).get("scanned_count")
+            and adapter.get("parent_structural_rejection_count")
+            == adapter.get("parent_structural_scan_count") - FRESH_CANDIDATE_COUNT
+            and adapter.get("parent_structural_selection_child_blind") is True
+            and adapter.get("parent_structural_selection_capability_ranked") is False
             and adapter.get("sealed_prompt_decode_count") == 0
             and adapter.get("sealed_prompt_forward_count") == 0
             and adapter.get("sealed_prompt_output_count") == 0
@@ -2759,7 +3598,22 @@ def verify_frozen_replay_wrapper(payload: Mapping[str, Any]) -> dict[str, Any]:
             ],
             prompt_token_ids=[target["prompt_token_ids"] for target in targets],
             teacher_payload=teacher,
+            expected_count=FRESH_CANDIDATE_COUNT,
+            audit_scope="final-balanced-candidate",
         )
+        pool_indices = recomputed_derivation["selected_reservoir_indices"]
+        recomputed_pool_disjointness = _fresh_candidate_replay_disjointness_audit(
+            decoded_prompts=[
+                reservoir_rows[index]["decoded_prompt"] for index in pool_indices
+            ],
+            prompt_token_ids=[
+                reservoir_rows[index]["token_ids"] for index in pool_indices
+            ],
+            teacher_payload=teacher,
+            expected_count=FRESH_PARENT_CANDIDATE_POOL_COUNT,
+            audit_scope="parent-candidate-pool",
+        )
+        structural = selection["parent_structural_selection"]
         if (
             tokenizers.get("source") != tokenizers.get("candidate")
             or adapter.get("source_model_fingerprint_sha256")
@@ -2771,17 +3625,23 @@ def verify_frozen_replay_wrapper(payload: Mapping[str, Any]) -> dict[str, Any]:
             != recomputed_disjointness
             or adapter.get("recovery_replay_disjointness_audit_sha256")
             != recomputed_disjointness["payload_sha256"]
-            or selection.get("replay_exclusion_derivation")
-            != recomputed_derivation
+            or selection.get("replay_exclusion_derivation") != recomputed_derivation
             or selection.get("final_replay_disjointness_audit_sha256")
             != recomputed_disjointness["payload_sha256"]
+            or selection.get("parent_candidate_pool_replay_disjointness_audit_sha256")
+            != recomputed_pool_disjointness["payload_sha256"]
             or [target.get("prompt_id") for target in targets]
-            != recomputed_derivation["selected_prompt_ids"]
+            != structural["accepted_prompt_ids"]
             or [
                 row.get("reservoir_index")
                 for row in selection["selected_candidate"]["prompt_rows"]
             ]
-            != recomputed_derivation["selected_reservoir_indices"]
+            != structural["accepted_reservoir_indices"]
+            or [
+                row.get("reservoir_index")
+                for row in selection["parent_candidate_pool"]["prompt_rows"]
+            ]
+            != pool_indices
         ):
             raise RecoveryInputPreparationError(
                 "Fresh behavior adapter is bound to different replay/model/tokenizer "
@@ -3037,12 +3897,8 @@ def verify_build_report(payload: Mapping[str, Any]) -> dict[str, Any]:
     cache_result = acquisition.get("cache_result")
     cache_enabled = cache_mode != "off"
     if cache_enabled:
-        _require_sha256(
-            acquisition.get("cache_request_sha256"), "cache request SHA"
-        )
-        _require_sha256(
-            acquisition.get("cache_envelope_sha256"), "cache envelope SHA"
-        )
+        _require_sha256(acquisition.get("cache_request_sha256"), "cache request SHA")
+        _require_sha256(acquisition.get("cache_envelope_sha256"), "cache envelope SHA")
         relative = acquisition.get("cache_entry_relative_path")
         if relative != (
             f"{acquisition['cache_request_sha256']}/"
@@ -3114,8 +3970,7 @@ def verify_build_report(payload: Mapping[str, Any]) -> dict[str, Any]:
         or cache_mode not in TEACHER_REPLAY_CACHE_MODES
         or origin not in {"generated", "cache-hit", "cache-import"}
         or not valid_mode_result
-        or acquisition.get("cache_verified_before_final_selection")
-        is not cache_enabled
+        or acquisition.get("cache_verified_before_final_selection") is not cache_enabled
         or usage.get("model_load_count") != 1
         or usage.get("load_purpose") != expected_load_purpose
         or usage.get("teacher_replay_generated_this_run") is expected_reused
@@ -3333,18 +4188,11 @@ def _freeze_fresh_candidate_reservoir_rows(
                 f"Fresh reservoir row {index} token_ids must be a sequence."
             )
         tokens = tuple(raw_tokens)
-        if (
-            not (
-                split_tools.MINIMUM_MEANINGFUL_PREFIX_TOKENS
-                <= len(tokens)
-                <= MAX_LENGTH
-            )
-            or any(
-                isinstance(token_id, bool)
-                or not isinstance(token_id, int)
-                or token_id < 0
-                for token_id in tokens
-            )
+        if not (
+            split_tools.MINIMUM_MEANINGFUL_PREFIX_TOKENS <= len(tokens) <= MAX_LENGTH
+        ) or any(
+            isinstance(token_id, bool) or not isinstance(token_id, int) or token_id < 0
+            for token_id in tokens
         ):
             raise RecoveryInputPreparationError(
                 f"Fresh reservoir row {index} has invalid token IDs."
@@ -3375,8 +4223,7 @@ def _freeze_fresh_candidate_reservoir_rows(
         if (
             source_line <= previous_source_line
             or expected_source is None
-            or row["source_prompt_sha256"]
-            != expected_source["source_prompt_sha256"]
+            or row["source_prompt_sha256"] != expected_source["source_prompt_sha256"]
             or decoded != expected_source["text"]
         ):
             raise RecoveryInputPreparationError(
@@ -3490,8 +4337,7 @@ def _teacher_cache_runtime_compatibility(
     source_body["cudnn_version"] = current_cudnn
     pinned_legacy_gap = (
         source_sha == LEGACY_TEACHER_CACHE_IMPORT_RUNTIME_IDENTITY_SHA256
-        and current_sha
-        == LEGACY_TEACHER_CACHE_IMPORT_CURRENT_RUNTIME_IDENTITY_SHA256
+        and current_sha == LEGACY_TEACHER_CACHE_IMPORT_CURRENT_RUNTIME_IDENTITY_SHA256
         and source_cudnn is None
         and current_cudnn == LEGACY_TEACHER_CACHE_IMPORT_CURRENT_CUDNN_VERSION
         and source_body == current_body
@@ -3546,7 +4392,10 @@ def _read_exact_compatible_teacher_cache_import(
             entry, "teacher replay cache import request path"
         )
         children = list(entry.iterdir())
-        if len(children) != 1 or children[0].name != hf_teacher_replay_cache.CACHE_FILENAME:
+        if (
+            len(children) != 1
+            or children[0].name != hf_teacher_replay_cache.CACHE_FILENAME
+        ):
             raise hf_teacher_replay_cache.TeacherReplayCacheError(
                 "Explicit cache import entry has unexpected contents."
             )
@@ -3599,9 +4448,7 @@ def _read_exact_compatible_teacher_cache_import(
         current_runtime=current_runtime,
     )
     old_rows = {row["role"]: dict(row) for row in old_producers["files"]}
-    current_rows = {
-        row["role"]: dict(row) for row in current_producers["files"]
-    }
+    current_rows = {row["role"]: dict(row) for row in current_producers["files"]}
     nonprep_roles = {
         "hf_teacher_token_replay",
         "hf_recovery",
@@ -3792,9 +4639,7 @@ def _verify_teacher_cache_import_receipt(
                 == runtime.get("current_cudnn_version")
                 and runtime.get("legacy_missing_cudnn_version_allowlist_applied")
                 is False
-                and runtime.get(
-                    "only_cudnn_version_and_runtime_self_hash_changed"
-                )
+                and runtime.get("only_cudnn_version_and_runtime_self_hash_changed")
                 is False
             )
         elif runtime.get("mode") == "pinned-legacy-missing-cudnn-version":
@@ -3808,9 +4653,7 @@ def _verify_teacher_cache_import_receipt(
                 == LEGACY_TEACHER_CACHE_IMPORT_CURRENT_CUDNN_VERSION
                 and runtime.get("legacy_missing_cudnn_version_allowlist_applied")
                 is True
-                and runtime.get(
-                    "only_cudnn_version_and_runtime_self_hash_changed"
-                )
+                and runtime.get("only_cudnn_version_and_runtime_self_hash_changed")
                 is True
             )
     if (
@@ -3921,8 +4764,7 @@ def _verify_fresh_candidate_reservoir_payload(
             isinstance(value, int) and not isinstance(value, bool) and value >= 0
             for value in statistics.values()
         )
-        and statistics["records_considered"]
-        == statistics["unique_source_prompt_count"]
+        and statistics["records_considered"] == statistics["unique_source_prompt_count"]
         and statistics["unique_source_prompt_count"]
         == PINNED_EXTERNAL_FRESH_RESERVOIR_EXPANDED_COUNT
         and statistics["duplicate_source_row_count"] == 0
@@ -3946,30 +4788,23 @@ def _verify_fresh_candidate_reservoir_payload(
     except RecoveryInputPreparationError:
         raise
     corpus = provenance.get("corpus")
-    corpus_valid = (
-        isinstance(corpus, Mapping)
-        and corpus
-        == {
-            "file_sha256": PINNED_RECOVERY_CORPUS_SHA256,
-            "nonblank_line_count": PINNED_RECOVERY_CORPUS_LINE_COUNT,
-            "duplicate_source_row_count": (
-                PINNED_RECOVERY_CORPUS_DUPLICATE_SOURCE_ROW_COUNT
-            ),
-            "purpose": "teacher-recovery-calibration-lineage-only",
-        }
-    )
+    corpus_valid = isinstance(corpus, Mapping) and corpus == {
+        "file_sha256": PINNED_RECOVERY_CORPUS_SHA256,
+        "nonblank_line_count": PINNED_RECOVERY_CORPUS_LINE_COUNT,
+        "duplicate_source_row_count": (
+            PINNED_RECOVERY_CORPUS_DUPLICATE_SOURCE_ROW_COUNT
+        ),
+        "purpose": "teacher-recovery-calibration-lineage-only",
+    }
     if (
-        provenance.get("status")
-        != "candidate-reservoir-frozen-before-parent-load"
+        provenance.get("status") != "candidate-reservoir-frozen-before-parent-load"
         or provenance.get("reservoir_prompt_count") != len(frozen)
-        or provenance.get("reservoir_manifest_sha256")
-        != canonical_sha256(manifest)
+        or provenance.get("reservoir_manifest_sha256") != canonical_sha256(manifest)
         or provenance.get("reservoir_rows_hold_token_ids_and_decoded_text") is not True
         or provenance.get("parent_model_loaded_during_reservoir_freeze") is not False
         or provenance.get("parent_forward_or_generate_during_reservoir_freeze")
         is not False
-        or provenance.get("identity_tokenizer_used_during_reservoir_freeze")
-        is not True
+        or provenance.get("identity_tokenizer_used_during_reservoir_freeze") is not True
         or provenance.get("reservoir_order")
         != "external-round-robin-source-line-order-after-static-exclusions"
         or not corpus_valid
@@ -3994,9 +4829,7 @@ def _fresh_candidate_reservoir_rows(
             "reservoir_index": index,
             "prompt_id": prompt.prompt_id,
             "token_ids": list(prompt.token_ids),
-            "token_ids_sha256": split_tools._token_sequence_sha256(
-                prompt.token_ids
-            ),
+            "token_ids_sha256": split_tools._token_sequence_sha256(prompt.token_ids),
             "decoded_prompt": reservoir.decoded_prompts[index],
             "decoded_prompt_sha256": hashlib.sha256(
                 reservoir.decoded_prompts[index].encode("utf-8")
@@ -4020,7 +4853,7 @@ def _derive_fresh_candidate_selection(
     reservoir_rows: Sequence[Mapping[str, Any]],
     teacher_payload: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Deterministically classify all rows and select the first 24 survivors."""
+    """Classify all rows and freeze the first 64 replay-disjoint survivors."""
 
     frozen_rows = _freeze_fresh_candidate_reservoir_rows(reservoir_rows)
     replay = _freeze_fresh_candidate_replay_exclusions(teacher_payload)
@@ -4045,17 +4878,16 @@ def _derive_fresh_candidate_selection(
             reason = "bidirectional_recovery_text_collision"
         else:
             candidate_windows = frozenset(
-                _token_windows(
-                    row["token_ids"], MINIMUM_REPLAY_DISJOINT_TOKEN_WINDOW
-                )
+                _token_windows(row["token_ids"], MINIMUM_REPLAY_DISJOINT_TOKEN_WINDOW)
             )
             if candidate_windows & replay.prompt_windows:
                 reason = "stepwise_prompt_window_collision"
             elif candidate_windows & replay.rollout_windows:
                 reason = "stepwise_rollout_window_collision"
-            elif split_tools._meaningful_prefixes(
-                tuple(row["token_ids"])
-            ) & survivor_prefixes:
+            elif (
+                split_tools._meaningful_prefixes(tuple(row["token_ids"]))
+                & survivor_prefixes
+            ):
                 reason = "prior_survivor_meaningful_prefix_collision"
             else:
                 reason = "replay_disjoint_survivor"
@@ -4067,19 +4899,24 @@ def _derive_fresh_candidate_selection(
         classifications.append(
             {"reservoir_index": row["reservoir_index"], "classification": reason}
         )
-    if len(survivors) < FRESH_CANDIDATE_COUNT:
+    if len(survivors) < FRESH_PARENT_CANDIDATE_POOL_COUNT:
         raise RecoveryInputPreparationError(
-            "Replay exclusion left fewer than 24 fresh candidate prompts; "
+            "Replay exclusion left fewer than the fixed 64 parent candidate "
+            "pool prompts; "
             f"reservoir={len(frozen_rows)}, survivors={len(survivors)}, "
-            f"required={FRESH_CANDIDATE_COUNT}, reason_counts="
+            f"required={FRESH_PARENT_CANDIDATE_POOL_COUNT}, reason_counts="
             f"{json.dumps(reason_counts, sort_keys=True)}."
         )
-    selected_indices = survivors[:FRESH_CANDIDATE_COUNT]
-    selected_prompt_ids = [frozen_rows[index]["prompt_id"] for index in selected_indices]
+    selected_indices = survivors[:FRESH_PARENT_CANDIDATE_POOL_COUNT]
+    selected_prompt_ids = [
+        frozen_rows[index]["prompt_id"] for index in selected_indices
+    ]
     body = {
         "schema": FRESH_REPLAY_EXCLUSION_DERIVATION_SCHEMA,
-        "status": "authenticated-first-24-replay-disjoint-survivors",
-        "algorithm": "full-reservoir-fixed-reason-order-first-24-v1",
+        "status": "authenticated-first-64-replay-disjoint-parent-candidate-pool",
+        "algorithm": "full-reservoir-fixed-reason-order-first-64-parent-pool-v2",
+        "selection_scope": "parent-structural-candidate-pool-not-final-evaluation",
+        "fixed_candidate_pool_count": FRESH_PARENT_CANDIDATE_POOL_COUNT,
         "reason_precedence": [
             "bidirectional_recovery_text_collision",
             "stepwise_prompt_window_collision",
@@ -4102,10 +4939,10 @@ def _derive_fresh_candidate_selection(
         "classification_rows_sha256": canonical_sha256(classifications),
         "reason_counts": reason_counts,
         "survivor_count": len(survivors),
-        "survivor_margin": len(survivors) - FRESH_CANDIDATE_COUNT,
+        "survivor_margin": len(survivors) - FRESH_PARENT_CANDIDATE_POOL_COUNT,
         "selected_reservoir_indices": selected_indices,
         "selected_prompt_ids": selected_prompt_ids,
-        "selected_count": FRESH_CANDIDATE_COUNT,
+        "selected_count": FRESH_PARENT_CANDIDATE_POOL_COUNT,
         "full_reservoir_classified": True,
         "selection_is_first_survivors_in_frozen_order": True,
         "teacher_replay_used_for_exclusion_only": True,
@@ -4121,21 +4958,41 @@ def _fresh_candidate_replay_disjointness_audit(
     decoded_prompts: Sequence[str],
     prompt_token_ids: Sequence[Sequence[int]],
     teacher_payload: Mapping[str, Any],
+    expected_count: int = FRESH_CANDIDATE_COUNT,
+    audit_scope: str = "final-balanced-candidate",
 ) -> dict[str, Any]:
     """Authenticate that fresh evaluation prompts never occur in recovery input."""
 
     if not isinstance(teacher_payload, Mapping):
         raise RecoveryInputPreparationError("Teacher replay payload must be an object.")
     if (
+        isinstance(expected_count, bool)
+        or not isinstance(expected_count, int)
+        or expected_count <= 0
+        or audit_scope not in {"final-balanced-candidate", "parent-candidate-pool"}
+        or (
+            audit_scope == "final-balanced-candidate"
+            and expected_count != FRESH_CANDIDATE_COUNT
+        )
+        or (
+            audit_scope == "parent-candidate-pool"
+            and expected_count != FRESH_PARENT_CANDIDATE_POOL_COUNT
+        )
+    ):
+        raise RecoveryInputPreparationError(
+            "Replay disjointness audit count/scope contract changed."
+        )
+    if (
         isinstance(decoded_prompts, (str, bytes, Mapping))
         or not isinstance(decoded_prompts, Sequence)
         or isinstance(prompt_token_ids, (str, bytes, Mapping))
         or not isinstance(prompt_token_ids, Sequence)
-        or len(decoded_prompts) != FRESH_CANDIDATE_COUNT
-        or len(prompt_token_ids) != FRESH_CANDIDATE_COUNT
+        or len(decoded_prompts) != expected_count
+        or len(prompt_token_ids) != expected_count
     ):
         raise RecoveryInputPreparationError(
-            "Replay disjointness requires exactly 24 aligned fresh prompts."
+            "Replay disjointness requires the exact aligned prompt count bound "
+            f"to its scope; scope={audit_scope!r}, expected={expected_count}."
         )
     frozen_decoded: list[str] = []
     frozen_candidate_ids: list[tuple[int, ...]] = []
@@ -4205,9 +5062,12 @@ def _fresh_candidate_replay_disjointness_audit(
     replay = _freeze_fresh_candidate_replay_exclusions(teacher_payload)
 
     for candidate_index, candidate in enumerate(frozen_decoded):
-        for source, text_index, event_index, training_text in (
-            replay.indexed_training_texts
-        ):
+        for (
+            source,
+            text_index,
+            event_index,
+            training_text,
+        ) in replay.indexed_training_texts:
             candidate_view = candidate.strip()
             training_view = training_text.strip()
             location = (
@@ -4255,6 +5115,8 @@ def _fresh_candidate_replay_disjointness_audit(
     audit_body = {
         "schema": RECOVERY_REPLAY_DISJOINTNESS_AUDIT_SCHEMA,
         "status": "passed",
+        "audit_scope": audit_scope,
+        "expected_candidate_prompt_count": expected_count,
         "minimum_common_token_window": MINIMUM_REPLAY_DISJOINT_TOKEN_WINDOW,
         "candidate_prompt_count": len(frozen_decoded),
         "candidate_decoded_prompt_manifest_sha256": canonical_sha256(frozen_decoded),
@@ -4369,8 +5231,7 @@ def prepare_recovery_inputs(
     fresh_mode = behavior_mode == BEHAVIOR_MODE_FRESH
     if (
         _test_only_cache_injection_authority is not None
-        and _test_only_cache_injection_authority
-        is not _CACHE_TEST_INJECTION_AUTHORITY
+        and _test_only_cache_injection_authority is not _CACHE_TEST_INJECTION_AUTHORITY
     ):
         raise RecoveryInputPreparationError(
             "Invalid internal cache test-injection authority."
@@ -4475,7 +5336,7 @@ def prepare_recovery_inputs(
     elif behavior_path is None:
         raise RecoveryInputPreparationError(
             "Diagnostic explicit mode requires behavior_eval_suite."
-    )
+        )
     expected_tree_sha = _require_sha256(
         expected_parent_artifact_tree_sha256,
         "expected_parent_artifact_tree_sha256",
@@ -4594,17 +5455,13 @@ def prepare_recovery_inputs(
             if cached_envelope is None and cache_import_authorized:
                 assert teacher_replay_cache_import_request_sha256 is not None
                 assert teacher_replay_cache_import_envelope_sha256 is not None
-                compatible_cache_import = (
-                    _read_exact_compatible_teacher_cache_import(
-                        cache_dir=teacher_replay_cache_dir,
-                        current_request=cache_request,
-                        source_request_sha256=(
-                            teacher_replay_cache_import_request_sha256
-                        ),
-                        source_envelope_sha256=(
-                            teacher_replay_cache_import_envelope_sha256
-                        ),
-                    )
+                compatible_cache_import = _read_exact_compatible_teacher_cache_import(
+                    cache_dir=teacher_replay_cache_dir,
+                    current_request=cache_request,
+                    source_request_sha256=(teacher_replay_cache_import_request_sha256),
+                    source_envelope_sha256=(
+                        teacher_replay_cache_import_envelope_sha256
+                    ),
                 )
                 teacher_replay_origin = "cache-import"
             if cached_envelope is None and teacher_replay_cache_mode == "require":
@@ -4612,10 +5469,10 @@ def prepare_recovery_inputs(
                     raise RecoveryInputPreparationError(
                         "Required teacher replay cache entry is missing."
                     )
-            if (
-                cached_envelope is not None
-                and teacher_replay_cache_mode in {"auto", "require"}
-            ):
+            if cached_envelope is not None and teacher_replay_cache_mode in {
+                "auto",
+                "require",
+            }:
                 teacher_replay_origin = "cache-hit"
                 cache_result = "hit"
         source_model_object = source_model_loader(
@@ -4770,6 +5627,24 @@ def prepare_recovery_inputs(
                     ) from error
         if fresh_mode:
             assert candidate_reservoir is not None
+            if live_source_fingerprint is None:
+                try:
+                    live_source_fingerprint = _json_value(
+                        source_model_fingerprinter(components.source_model),
+                        name="live_source_model_fingerprint_before_parent_scan",
+                    )
+                except (TypeError, ValueError) as error:
+                    raise RecoveryInputPreparationError(
+                        "Parent source-model fingerprinting failed before fixed "
+                        "structural selection."
+                    ) from error
+            if live_source_fingerprint != teacher_payload.get(
+                "source_model_fingerprint"
+            ):
+                raise RecoveryInputPreparationError(
+                    "Parent live fingerprint differs from the authenticated teacher "
+                    "replay before fixed structural selection."
+                )
             selection = _select_fresh_recovery_candidate(
                 reservoir=candidate_reservoir,
                 teacher_payload=teacher_payload,
@@ -4833,9 +5708,7 @@ def prepare_recovery_inputs(
         "cache_request_sha256": cache_request_sha,
         "cache_envelope_sha256": cache_envelope_sha,
         "cache_entry_relative_path": cache_relative_path,
-        "cache_verified_before_final_selection": (
-            teacher_replay_cache_mode != "off"
-        ),
+        "cache_verified_before_final_selection": (teacher_replay_cache_mode != "off"),
         "cache_import": cache_import_receipt,
     }
     parent_model_usage = {
@@ -4845,14 +5718,10 @@ def prepare_recovery_inputs(
             "fresh-targets"
             if teacher_replay_origin in {"cache-hit", "cache-import"}
             else (
-                "teacher-replay-and-fresh-targets"
-                if fresh_mode
-                else "teacher-replay"
+                "teacher-replay-and-fresh-targets" if fresh_mode else "teacher-replay"
             )
         ),
-        "teacher_replay_generated_this_run": (
-            teacher_replay_origin == "generated"
-        ),
+        "teacher_replay_generated_this_run": (teacher_replay_origin == "generated"),
         "teacher_replay_reused_from_cache": teacher_replay_origin
         in {"cache-hit", "cache-import"},
         "fresh_target_generation_performed": fresh_mode,

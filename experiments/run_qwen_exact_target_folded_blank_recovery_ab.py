@@ -822,8 +822,7 @@ def _source_authentication_receipt(
         "standalone_intelligence_claim": False,
     }
     historical_commit_valid = (
-        historical_source_commit
-        == tournament.v3_tournament.HISTORICAL_V3_SOURCE_COMMIT
+        historical_source_commit == tournament.v3_tournament.HISTORICAL_V3_SOURCE_COMMIT
         if kind == "historical-guided-qkvo-v3"
         else historical_source_commit is None
     )
@@ -1256,11 +1255,9 @@ def _replay_binding(path: Path, expected_sha256: str) -> dict[str, Any]:
         reservoir_rows = recovery_inputs._verify_fresh_candidate_reservoir_payload(
             selection["candidate_reservoir"]
         )
-        recomputed_derivation = (
-            recovery_inputs._derive_fresh_candidate_selection(
-                reservoir_rows=reservoir_rows,
-                teacher_payload=verified_teacher_replay,
-            )
+        recomputed_derivation = recovery_inputs._derive_fresh_candidate_selection(
+            reservoir_rows=reservoir_rows,
+            teacher_payload=verified_teacher_replay,
         )
         recomputed_disjointness = (
             recovery_inputs._fresh_candidate_replay_disjointness_audit(
@@ -1272,6 +1269,22 @@ def _replay_binding(path: Path, expected_sha256: str) -> dict[str, Any]:
                     target["prompt_token_ids"] for target in adapter_targets
                 ],
                 teacher_payload=verified_teacher_replay,
+                expected_count=recovery_inputs.FRESH_CANDIDATE_COUNT,
+                audit_scope="final-balanced-candidate",
+            )
+        )
+        pool_indices = recomputed_derivation["selected_reservoir_indices"]
+        recomputed_pool_disjointness = (
+            recovery_inputs._fresh_candidate_replay_disjointness_audit(
+                decoded_prompts=[
+                    reservoir_rows[index]["decoded_prompt"] for index in pool_indices
+                ],
+                prompt_token_ids=[
+                    reservoir_rows[index]["token_ids"] for index in pool_indices
+                ],
+                teacher_payload=verified_teacher_replay,
+                expected_count=(recovery_inputs.FRESH_PARENT_CANDIDATE_POOL_COUNT),
+                audit_scope="parent-candidate-pool",
             )
         )
     except Exception as error:
@@ -1279,19 +1292,38 @@ def _replay_binding(path: Path, expected_sha256: str) -> dict[str, Any]:
             "Fresh behavior reservoir derivation or prompts fail the complete "
             "frozen replay audit."
         ) from error
+    structural = selection.get("parent_structural_selection")
+    selected_rows = selection["selected_candidate"]["prompt_rows"]
+    pool_rows = selection["parent_candidate_pool"]["prompt_rows"]
     if (
-        selection.get("replay_exclusion_derivation") != recomputed_derivation
+        not isinstance(structural, Mapping)
+        or selection.get("replay_exclusion_derivation") != recomputed_derivation
         or selection.get("final_replay_disjointness_audit_sha256")
         != recomputed_disjointness["payload_sha256"]
+        or selection.get("parent_candidate_pool_replay_disjointness_audit_sha256")
+        != recomputed_pool_disjointness["payload_sha256"]
         or [target.get("prompt_id") for target in adapter_targets]
+        != structural.get("accepted_prompt_ids")
+        or [row.get("reservoir_index") for row in selected_rows]
+        != structural.get("accepted_reservoir_indices")
+        or [row.get("pool_order") for row in selected_rows]
+        != structural.get("accepted_pool_orders")
+        or [row.get("category_id") for row in selected_rows]
+        != structural.get("accepted_category_ids_in_selection_order")
+        or [row.get("reservoir_index") for row in pool_rows] != pool_indices
+        or [row.get("prompt_id") for row in pool_rows]
         != recomputed_derivation["selected_prompt_ids"]
-        or [
-            row.get("reservoir_index")
-            for row in selection["selected_candidate"]["prompt_rows"]
-        ]
-        != recomputed_derivation["selected_reservoir_indices"]
-        or adapter.get("recovery_replay_disjointness_audit")
-        != recomputed_disjointness
+        or structural.get("accepted_category_histogram")
+        != {
+            category: recovery_inputs.FRESH_CATEGORY_QUOTA
+            for category in structural.get("authenticated_category_ids", [])
+        }
+        or structural.get("selection_is_child_blind") is not True
+        or structural.get("selection_is_not_parent_capability_ranked") is not True
+        or structural.get("parent_health_used_as_fixed_binary_gate_only") is not True
+        or structural.get("eligible_rows_sorted_or_ranked_after_gate") is not False
+        or structural.get("child_or_fold_outputs_accessed") is not False
+        or adapter.get("recovery_replay_disjointness_audit") != recomputed_disjointness
         or adapter.get("recovery_replay_disjointness_audit_sha256")
         != recomputed_disjointness["payload_sha256"]
     ):
@@ -1763,9 +1795,7 @@ def build_recovery_ab_preregistration_payload(
         ],
         "checkpoint_sha256": fold_source.winner["checkpoint_sha256"],
         "metrics_sha256": fold_source.winner["metrics_sha256"],
-        "candidate_frontier_sha256": fold_source.winner["candidate_frontier"][
-            "sha256"
-        ],
+        "candidate_frontier_sha256": fold_source.winner["candidate_frontier"]["sha256"],
         "winner_selection_sha256": fold_source.winner_selection_sha256,
         **factor_payload_binding,
     }
@@ -1816,9 +1846,7 @@ def build_recovery_ab_preregistration_payload(
             "kind": fold_source.kind,
             "historical_source_commit": fold_source.historical_source_commit,
             "nonretained_callback_preimages_complete": (
-                False
-                if fold_source.kind == "historical-guided-qkvo-v3"
-                else None
+                False if fold_source.kind == "historical-guided-qkvo-v3" else None
             ),
             "tournament_preregistration": str(fold_source.preregistration_path),
             "tournament_preregistration_sha256": fold_source.preregistration_sha256,
@@ -1828,12 +1856,10 @@ def build_recovery_ab_preregistration_payload(
             "winner_selection_sha256": fold_source.winner_selection_sha256,
             "factor_pack": str(fold_source.winner["factor_pack"]),
             "factor_pack_sha256": fold_source.winner["factor_pack_sha256"],
-            "candidate_frontier": str(
-                fold_source.winner["candidate_frontier"]["path"]
-            ),
-            "candidate_frontier_sha256": fold_source.winner[
-                "candidate_frontier"
-            ]["sha256"],
+            "candidate_frontier": str(fold_source.winner["candidate_frontier"]["path"]),
+            "candidate_frontier_sha256": fold_source.winner["candidate_frontier"][
+                "sha256"
+            ],
             "evaluation_contract_sha256": (
                 fold_source.tournament_contract.evaluation_contract_sha256
             ),
@@ -1993,8 +2019,7 @@ def authenticate_recovery_ab_preregistration(
     replay_row = raw.get("replay_bank")
     plan_row = raw.get("recovery_plan")
     if not all(
-        isinstance(value, Mapping)
-        for value in (fold_source_row, replay_row, plan_row)
+        isinstance(value, Mapping) for value in (fold_source_row, replay_row, plan_row)
     ):
         raise FoldedBlankRecoveryABError("Recovery A/B source rows are malformed.")
     assert isinstance(fold_source_row, Mapping)

@@ -63,6 +63,51 @@ class _IdentityTokenizer:
         return "".join(chr(int(token_id) - 10) for token_id in values)
 
 
+class _UniquePrefixTokenizer(_IdentityTokenizer):
+    def __init__(self) -> None:
+        self._text_to_ids: dict[str, tuple[int, ...]] = {}
+        self._ids_to_text: dict[tuple[int, ...], str] = {}
+
+    def __call__(
+        self,
+        text: str,
+        *,
+        add_special_tokens: bool = True,
+        truncation: bool = False,
+        **_kwargs: Any,
+    ) -> dict[str, list[int]]:
+        assert add_special_tokens is True
+        assert truncation is False
+        token_ids = self._text_to_ids.get(text)
+        if token_ids is None:
+            base = 100_000 + len(self._text_to_ids) * 32
+            token_ids = tuple(base + offset for offset in range(16))
+            self._text_to_ids[text] = token_ids
+            self._ids_to_text[token_ids] = text
+        return {"input_ids": list(token_ids)}
+
+    def decode(
+        self,
+        token_ids: Any,
+        *,
+        skip_special_tokens: bool = True,
+        clean_up_tokenization_spaces: bool = False,
+    ) -> str:
+        assert skip_special_tokens is True
+        assert clean_up_tokenization_spaces is False
+        values = tuple(
+            int(value)
+            for value in (
+                token_ids.tolist() if hasattr(token_ids, "tolist") else token_ids
+            )
+        )
+        for prompt_ids, text in self._ids_to_text.items():
+            if values[: len(prompt_ids)] == prompt_ids:
+                suffix = values[len(prompt_ids) :]
+                return text + "".join(chr(token_id - 10) for token_id in suffix)
+        raise AssertionError("Tokenizer lost the exact prompt-token mapping.")
+
+
 def _token_prompt(base: int) -> dict[str, Any]:
     token_ids = [base + offset for offset in range(8)]
     digest = preparer.split_tools._token_sequence_sha256(token_ids)
@@ -77,12 +122,12 @@ def _fresh_selection_fixture(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[
-    preparer.FreshRecoverySelection,
+    preparer.FreshRecoveryParentCandidatePool,
     preparer.FreshRecoveryCandidateReservoir,
     _IdentityTokenizer,
     list[str],
 ]:
-    tokenizer = _IdentityTokenizer()
+    tokenizer = _UniquePrefixTokenizer()
     split_bindings: dict[str, Any] = {}
     for role, count in preparer.PINNED_V4_SPLIT_COUNTS.items():
         prompts = [
@@ -178,15 +223,115 @@ def _fresh_selection_fixture(
                 ],
             }
         ],
-        "tokenizer_fingerprints": {
-            "candidate": {"tokenizer_length": 2_000_000}
-        },
+        "tokenizer_fingerprints": {"candidate": {"tokenizer_length": 2_000_000}},
     }
     selection = preparer._select_fresh_recovery_candidate(
         reservoir=reservoir,
         teacher_payload=teacher,
     )
     return selection, reservoir, tokenizer, corpus_rows[:640]
+
+
+def _fresh_parent_teacher(calibration: list[str]) -> dict[str, Any]:
+    tokenizer_fingerprint = {"sha256": "d" * 64, "tokenizer_length": 2_000_000}
+    return {
+        "payload_sha256": "1" * 64,
+        "calibration_texts": calibration,
+        "precomputed_teacher_generated_texts": [
+            "Teacher replay output remains separate from every evaluation prompt."
+        ],
+        "on_policy_replay_bank": [],
+        "stepwise_replay_bank": [
+            {
+                "step": 1,
+                "rows": [
+                    {
+                        "prompt_input_ids": [1_500_000, 1_500_001],
+                        "rollout_input_ids": [
+                            1_500_000,
+                            1_500_001,
+                            1_500_002,
+                        ],
+                    }
+                ],
+            }
+        ],
+        "tokenizer_fingerprints": {
+            "source": tokenizer_fingerprint,
+            "candidate": tokenizer_fingerprint,
+        },
+        "source_model_fingerprint": {
+            "sha256": "e" * 64,
+            "model_state_fingerprint": {"state_dict_sha256": "f" * 64},
+        },
+    }
+
+
+def _balanced_parent_binding(
+    *,
+    pool: preparer.FreshRecoveryParentCandidatePool,
+    tokenizer: _IdentityTokenizer,
+    calibration: list[str],
+    rejected_pool_orders: set[int] | None = None,
+    rejected_categories: set[str] | None = None,
+) -> dict[str, Any]:
+    rejected_pool_orders = set(rejected_pool_orders or ())
+    rejected_categories = set(rejected_categories or ())
+    eos_token_id = 1_999_999
+    prompt_order = {
+        tuple(prompt.token_ids): index for index, prompt in enumerate(pool.prompts)
+    }
+    category_by_order = {
+        int(row["pool_order"]): str(row["category_id"])
+        for row in pool.provenance["parent_candidate_pool"]["prompt_rows"]
+    }
+
+    class StructuralTokenizer:
+        eos_token_id = 1_999_999
+        pad_token_id = 0
+
+        @staticmethod
+        def decode(token_ids: Any, **kwargs: Any) -> str:
+            values = token_ids.tolist() if hasattr(token_ids, "tolist") else token_ids
+            return tokenizer.decode(
+                [value for value in values if int(value) != eos_token_id],
+                **kwargs,
+            )
+
+    class Parent:
+        calls: list[int] = []
+
+        def eval(self) -> None:
+            return None
+
+        def generate(self, *, input_ids: Any, **kwargs: Any) -> Any:
+            assert kwargs["max_new_tokens"] == 16
+            order = prompt_order[
+                tuple(int(value) for value in input_ids[0].detach().cpu().tolist())
+            ]
+            self.calls.append(order)
+            if (
+                order in rejected_pool_orders
+                or category_by_order[order] in rejected_categories
+            ):
+                suffix = [eos_token_id]
+            else:
+                suffix = [ord(character) + 10 for character in "a b c d e f g h "]
+            suffix_tensor = torch.tensor(
+                [suffix],
+                dtype=torch.long,
+                device=input_ids.device,
+            )
+            return torch.cat((input_ids, suffix_tensor), dim=1)
+
+    return preparer._build_fresh_behavior_binding(
+        torch=torch,
+        source_model=Parent(),
+        tokenizer=StructuralTokenizer(),
+        selection=pool,
+        teacher_payload=_fresh_parent_teacher(calibration),
+        device="cpu",
+    )
 
 
 def _replay_audit_fixture() -> tuple[list[str], list[list[int]], dict[str, Any]]:
@@ -621,9 +766,7 @@ def test_preparer_freezes_exact_order_recipe_lineage_and_atomic_tree(
     }
     cached_report_body = dict(cached_report)
     cached_report_body.pop("build_report_sha256")
-    cached_report["build_report_sha256"] = preparer.canonical_sha256(
-        cached_report_body
-    )
+    cached_report["build_report_sha256"] = preparer.canonical_sha256(cached_report_body)
     assert preparer.verify_build_report(cached_report) == cached_report
 
 
@@ -879,55 +1022,59 @@ def test_default_loader_pins_local_only_trust_false_and_fp16(
         )
 
 
-def test_fresh_selection_excludes_v4_and_exact_640_recovery_rows(
+def test_fresh_parent_pool_excludes_v4_and_exact_640_recovery_rows(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     selection, _reservoir, _tokenizer, calibration = _fresh_selection_fixture(
         tmp_path, monkeypatch
     )
-    assert len(selection.prompts) == 24
-    assert len(set(selection.decoded_prompts)) == 24
+    assert len(selection.prompts) == preparer.FRESH_PARENT_CANDIDATE_POOL_COUNT
+    assert len(set(selection.decoded_prompts)) == (
+        preparer.FRESH_PARENT_CANDIDATE_POOL_COUNT
+    )
     assert all(8 <= len(prompt.token_ids) <= 128 for prompt in selection.prompts)
     assert all(
         not any(prompt in row or row in prompt for row in calibration)
         for prompt in selection.decoded_prompts
     )
     provenance = selection.provenance
-    assert provenance["causal_ab_eligible"] is True
+    assert provenance["causal_ab_eligible"] is False
     assert provenance["candidate_reservoir_frozen_before_parent_load"] is True
-    assert provenance["final_candidate_frozen_before_parent_load"] is False
-    assert provenance["parent_model_loaded_before_final_selection"] is True
+    assert (
+        provenance["parent_candidate_pool_derived_without_parent_output_access"] is True
+    )
     assert provenance["teacher_replay_used_for_exclusion_only"] is True
-    assert provenance["parent_forward_or_score_during_final_selection"] is False
-    assert provenance["tokenizer_called_during_final_selection"] is False
-    assert provenance["child_or_arm_outputs_accessed_during_final_selection"] is False
+    assert provenance["parent_forward_or_score_during_pool_derivation"] is False
+    assert provenance["tokenizer_called_during_pool_derivation"] is False
+    assert provenance["child_or_arm_outputs_accessed_during_pool_derivation"] is False
     assert provenance["sealed_exclusion_manifest_used_model_free"] is True
     assert provenance["sealed_prompts_supplied_to_model_or_trainer"] is False
     assert provenance["sealed_outputs_or_selection_scores_computed"] is False
     assert provenance["recovery_calibration"]["text_count"] == 640
-    assert provenance["selected_candidate"]["minimum_token_count"] >= 8
-    assert provenance["selected_candidate"]["maximum_token_count"] <= 128
+    assert provenance["parent_candidate_pool"]["minimum_token_count"] >= 8
+    assert provenance["parent_candidate_pool"]["maximum_token_count"] <= 128
     reservoir = provenance["candidate_reservoir"]
     assert len(reservoir["rows"]) > 24
     assert reservoir["rows_sha256"] == preparer.canonical_sha256(reservoir["rows"])
     derivation = provenance["replay_exclusion_derivation"]
-    assert derivation["selected_reservoir_indices"] == [
-        row["reservoir_index"]
-        for row in derivation["classification_rows"]
-        if row["classification"] == "replay_disjoint_survivor"
-    ][:24]
+    assert (
+        derivation["selected_reservoir_indices"]
+        == [
+            row["reservoir_index"]
+            for row in derivation["classification_rows"]
+            if row["classification"] == "replay_disjoint_survivor"
+        ][: preparer.FRESH_PARENT_CANDIDATE_POOL_COUNT]
+    )
     assert derivation["survivor_margin"] > 0
     assert derivation["full_reservoir_classified"] is True
     assert (
-        reservoir["provenance"]["preselection_statistics"][
-            "duplicate_source_row_count"
-        ]
+        reservoir["provenance"]["preselection_statistics"]["duplicate_source_row_count"]
         == 0
     )
-    selected = provenance["selected_candidate"]
-    assert selected["all_external_categories_represented"] is True
-    assert set(selected["category_histogram"]) == {
+    pool = provenance["parent_candidate_pool"]
+    assert pool["all_external_categories_meet_final_quota"] is True
+    assert set(pool["category_histogram"]) == {
         "science",
         "reasoning",
         "code",
@@ -937,7 +1084,10 @@ def test_fresh_selection_excludes_v4_and_exact_640_recovery_rows(
         "practical",
         "data",
     }
-    assert all(value > 0 for value in selected["category_histogram"].values())
+    assert all(
+        value >= preparer.FRESH_CATEGORY_QUOTA
+        for value in pool["category_histogram"].values()
+    )
     assert provenance["disjointness"] == {
         "exact_token_prompt_overlap_count": 0,
         "meaningful_prefix_overlap_count": 0,
@@ -983,9 +1133,7 @@ def test_external_reservoir_seed_is_static_round_robin_and_tamper_evident(
     )
     payload["categories"][0]["topics"][0]["label"] += " changed"
     _write_json(tampered, payload)
-    monkeypatch.setattr(
-        preparer, "PINNED_EXTERNAL_FRESH_RESERVOIR_PATH", tampered
-    )
+    monkeypatch.setattr(preparer, "PINNED_EXTERNAL_FRESH_RESERVOIR_PATH", tampered)
     with pytest.raises(
         preparer.RecoveryInputPreparationError,
         match="seed bytes changed",
@@ -1009,19 +1157,23 @@ def test_external_reservoir_survives_massive_original_corpus_replay_overlap(
         ],
         "on_policy_replay_bank": [],
         "stepwise_replay_bank": [],
-        "tokenizer_fingerprints": {
-            "candidate": {"tokenizer_length": 2_000_000}
-        },
+        "tokenizer_fingerprints": {"candidate": {"tokenizer_length": 2_000_000}},
     }
     selection = preparer._select_fresh_recovery_candidate(
         reservoir=reservoir,
         teacher_payload=teacher,
     )
-    assert len(selection.prompts) == 24
-    assert selection.provenance["replay_exclusion_derivation"]["survivor_count"] >= 24
-    assert selection.provenance["selected_candidate"][
-        "all_external_categories_represented"
-    ] is True
+    assert len(selection.prompts) == preparer.FRESH_PARENT_CANDIDATE_POOL_COUNT
+    assert (
+        selection.provenance["replay_exclusion_derivation"]["survivor_count"]
+        >= preparer.FRESH_PARENT_CANDIDATE_POOL_COUNT
+    )
+    assert (
+        selection.provenance["parent_candidate_pool"][
+            "all_external_categories_meet_final_quota"
+        ]
+        is True
+    )
 
 
 def test_selected_survivors_fail_closed_if_one_external_domain_is_removed(
@@ -1049,16 +1201,13 @@ def test_selected_survivors_fail_closed_if_one_external_domain_is_removed(
         "precomputed_teacher_generated_texts": ["Independent recovery output."],
         "on_policy_replay_bank": [],
         "stepwise_replay_bank": [
-            {"step": index + 1, "rows": [row]}
-            for index, row in enumerate(blocked_rows)
+            {"step": index + 1, "rows": [row]} for index, row in enumerate(blocked_rows)
         ],
-        "tokenizer_fingerprints": {
-            "candidate": {"tokenizer_length": 2_000_000}
-        },
+        "tokenizer_fingerprints": {"candidate": {"tokenizer_length": 2_000_000}},
     }
     with pytest.raises(
         preparer.RecoveryInputPreparationError,
-        match="do not cover all external candidate categories",
+        match="does not contain at least",
     ):
         preparer._select_fresh_recovery_candidate(
             reservoir=reservoir,
@@ -1108,9 +1257,7 @@ def test_final_selection_skips_replay_window_collisions_before_freezing_24(
                 ],
             }
         ],
-        "tokenizer_fingerprints": {
-            "candidate": {"tokenizer_length": 2_000_000}
-        },
+        "tokenizer_fingerprints": {"candidate": {"tokenizer_length": 2_000_000}},
     }
 
     first = preparer._select_fresh_recovery_candidate(
@@ -1131,7 +1278,7 @@ def test_final_selection_skips_replay_window_collisions_before_freezing_24(
         row["reservoir_index"]
         for row in derivation["classification_rows"]
         if row["classification"] == "replay_disjoint_survivor"
-    ][:24]
+    ][: preparer.FRESH_PARENT_CANDIDATE_POOL_COUNT]
     assert derivation["selected_reservoir_indices"] == expected_indices
     assert [prompt.prompt_id for prompt in first.prompts] == [
         reservoir.prompts[index].prompt_id for index in expected_indices
@@ -1302,6 +1449,233 @@ def test_fresh_parent_adapter_pins_all_decoded_prefix_probes_and_rejects_reseal(
         preparer.verify_behavior_suite_binding(tampered)
 
 
+def test_parent_structural_selection_replaces_immediate_eos_with_later_same_domain(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool, _reservoir, tokenizer, calibration = _fresh_selection_fixture(
+        tmp_path, monkeypatch
+    )
+    binding = _balanced_parent_binding(
+        pool=pool,
+        tokenizer=tokenizer,
+        calibration=calibration,
+        rejected_pool_orders={11},
+    )
+    verified = preparer.verify_behavior_suite_binding(binding)
+    adapter = verified["adapter_provenance"]
+    selection = adapter["selection"]
+    structural = selection["parent_structural_selection"]
+    assert structural["scanned_count"] == 28
+    assert structural["completion_pool_order"] == 27
+    assert structural["accepted_pool_orders"] == [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        27,
+    ]
+    rejected = structural["classification_rows"][11]
+    replacement = structural["classification_rows"][27]
+    assert rejected["category_id"] == replacement["category_id"] == "mathematics"
+    assert rejected["classification"] == "rejected_parent_minimum_pre_eos"
+    assert rejected["pre_eos_token_count"] == 0
+    assert rejected["generated_continuation_token_ids_sha256"]
+    assert rejected["generated_continuation_decoded_text_sha256"]
+    assert "generated_continuation_token_ids" not in rejected
+    assert "generated_continuation_decoded_text" not in rejected
+    assert replacement["classification"] == "accepted_balanced_category_quota"
+    assert all(
+        count == preparer.FRESH_CATEGORY_QUOTA
+        for count in structural["accepted_category_histogram"].values()
+    )
+    assert selection["selected_candidate"]["category_histogram"] == {
+        category: preparer.FRESH_CATEGORY_QUOTA
+        for category in structural["authenticated_category_ids"]
+    }
+    assert adapter["behavior_probe_count"] == 48
+    assert adapter["generation_prompt_count"] == 24
+    assert structural["selection_is_child_blind"] is True
+    assert structural["selection_is_not_parent_capability_ranked"] is True
+    assert structural["parent_health_used_as_fixed_binary_gate_only"] is True
+    assert structural["eligible_rows_sorted_or_ranked_after_gate"] is False
+    assert structural["child_or_fold_outputs_accessed"] is False
+
+
+def test_parent_structural_selection_is_deterministic_first_quota_completion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool, _reservoir, tokenizer, calibration = _fresh_selection_fixture(
+        tmp_path, monkeypatch
+    )
+    first = _balanced_parent_binding(
+        pool=pool, tokenizer=tokenizer, calibration=calibration
+    )
+    second = _balanced_parent_binding(
+        pool=pool, tokenizer=tokenizer, calibration=calibration
+    )
+    first_structural = first["adapter_provenance"]["selection"][
+        "parent_structural_selection"
+    ]
+    second_structural = second["adapter_provenance"]["selection"][
+        "parent_structural_selection"
+    ]
+    assert first_structural == second_structural
+    assert first_structural["scanned_count"] == 24
+    assert first_structural["accepted_pool_orders"] == list(range(24))
+    assert first_structural["completion_pool_order"] == 23
+    assert first_structural["unscanned_candidate_pool_count"] == 40
+    assert first_structural["stopped_exactly_at_first_completed_balanced_quota"] is True
+
+
+def test_parent_structural_selection_fails_if_one_domain_has_fewer_than_three(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool, _reservoir, tokenizer, calibration = _fresh_selection_fixture(
+        tmp_path, monkeypatch
+    )
+    with pytest.raises(
+        preparer.RecoveryInputPreparationError,
+        match="could not complete the balanced category quota",
+    ):
+        _balanced_parent_binding(
+            pool=pool,
+            tokenizer=tokenizer,
+            calibration=calibration,
+            rejected_categories={"science"},
+        )
+
+
+@pytest.mark.parametrize("tamper_kind", ["order", "eligibility", "category"])
+def test_parent_structural_selection_rejects_resealed_classification_tampering(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tamper_kind: str,
+) -> None:
+    pool, _reservoir, tokenizer, calibration = _fresh_selection_fixture(
+        tmp_path, monkeypatch
+    )
+    tampered = copy.deepcopy(
+        _balanced_parent_binding(
+            pool=pool, tokenizer=tokenizer, calibration=calibration
+        )
+    )
+    adapter = tampered["adapter_provenance"]
+    selection = adapter["selection"]
+    structural = selection["parent_structural_selection"]
+    row = structural["classification_rows"][0]
+    if tamper_kind == "order":
+        row["pool_order"] = 1
+    elif tamper_kind == "eligibility":
+        row["parent_structurally_eligible"] = False
+    else:
+        row["category_id"] = "code"
+    structural["classification_rows_sha256"] = preparer.canonical_sha256(
+        structural["classification_rows"]
+    )
+    structural_body = dict(structural)
+    structural_body.pop("payload_sha256")
+    structural["payload_sha256"] = preparer.canonical_sha256(structural_body)
+    selection_body = dict(selection)
+    selection_body.pop("payload_sha256")
+    selection["payload_sha256"] = preparer.canonical_sha256(selection_body)
+    adapter["parent_structural_selection_payload_sha256"] = structural["payload_sha256"]
+    adapter_body = dict(adapter)
+    adapter_body.pop("payload_sha256")
+    adapter["payload_sha256"] = preparer.canonical_sha256(adapter_body)
+    binding_body = dict(tampered)
+    binding_body.pop("payload_sha256")
+    tampered["payload_sha256"] = preparer.canonical_sha256(binding_body)
+    with pytest.raises(
+        preparer.RecoveryInputPreparationError,
+        match="failed authentication",
+    ):
+        preparer.verify_behavior_suite_binding(tampered)
+
+
+def test_parent_structural_selection_rejects_resealed_missing_health_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool, _reservoir, tokenizer, calibration = _fresh_selection_fixture(
+        tmp_path, monkeypatch
+    )
+    tampered = copy.deepcopy(
+        _balanced_parent_binding(
+            pool=pool,
+            tokenizer=tokenizer,
+            calibration=calibration,
+            rejected_pool_orders={11},
+        )
+    )
+    adapter = tampered["adapter_provenance"]
+    selection = adapter["selection"]
+    structural = selection["parent_structural_selection"]
+    row = structural["classification_rows"][11]
+    assert row["classification"] == "rejected_parent_minimum_pre_eos"
+    row.update(
+        {
+            "generated_continuation_token_count": 4,
+            "generated_continuation_token_ids_sha256": preparer.canonical_sha256(
+                [101, 102, 103, 104]
+            ),
+            "pre_eos_token_count": 4,
+            "pre_eos_token_ids_sha256": preparer.canonical_sha256([101, 102, 103, 104]),
+            "minimum_pre_eos_pass": True,
+            "decoded_prefix_contract_pass": True,
+            "decoded_prefix_self_score_pass": True,
+            "generation_health_pass": False,
+            "generation_health_receipt": None,
+            "generation_health_receipt_sha256": None,
+            "parent_structurally_eligible": False,
+            "accepted_for_balanced_quota": False,
+            "classification": "rejected_parent_generation_health",
+        }
+    )
+    structural["classification_rows_sha256"] = preparer.canonical_sha256(
+        structural["classification_rows"]
+    )
+    structural_body = dict(structural)
+    structural_body.pop("payload_sha256")
+    structural["payload_sha256"] = preparer.canonical_sha256(structural_body)
+    selection_body = dict(selection)
+    selection_body.pop("payload_sha256")
+    selection["payload_sha256"] = preparer.canonical_sha256(selection_body)
+    adapter["parent_structural_selection_payload_sha256"] = structural["payload_sha256"]
+    adapter_body = dict(adapter)
+    adapter_body.pop("payload_sha256")
+    adapter["payload_sha256"] = preparer.canonical_sha256(adapter_body)
+    binding_body = dict(tampered)
+    binding_body.pop("payload_sha256")
+    tampered["payload_sha256"] = preparer.canonical_sha256(binding_body)
+    with pytest.raises(
+        preparer.RecoveryInputPreparationError,
+        match="failed authentication",
+    ):
+        preparer.verify_behavior_suite_binding(tampered)
+
+
 @pytest.mark.parametrize("suffix", ["a b ", "a b !!!!"])
 def test_fresh_parent_adapter_rejects_prefix_without_coherent_tail(
     tmp_path: Path,
@@ -1357,7 +1731,7 @@ def test_fresh_parent_adapter_rejects_prefix_without_coherent_tail(
 
     with pytest.raises(
         preparer.RecoveryInputPreparationError,
-        match="prefix-plus-coherence generation probe",
+        match="could not complete the balanced category quota",
     ):
         preparer._build_fresh_behavior_binding(
             torch=torch,
@@ -1697,9 +2071,7 @@ def test_teacher_replay_cache_modes_freeze_before_read_reuse_and_survive_late_fa
         production_args = dict(base_args)
         production_args["_test_only_cache_injection_authority"] = None
         production_args["tokenizer_loader"] = preparer._CANONICAL_TOKENIZER_LOADER
-        production_args["source_model_loader"] = (
-            preparer._CANONICAL_SOURCE_MODEL_LOADER
-        )
+        production_args["source_model_loader"] = preparer._CANONICAL_SOURCE_MODEL_LOADER
         production_args["teacher_replay_builder"] = (
             preparer._CANONICAL_TEACHER_REPLAY_BUILDER
         )
@@ -1781,9 +2153,7 @@ def _cache_request_with_producer_rows(
     }
     request_body = dict(request)
     request_body.pop("request_sha256")
-    request["request_sha256"] = hf_teacher_replay_cache._canonical_sha256(
-        request_body
-    )
+    request["request_sha256"] = hf_teacher_replay_cache._canonical_sha256(request_body)
     return hf_teacher_replay_cache.verify_request(request)
 
 
@@ -1799,9 +2169,7 @@ def _cache_request_with_runtime_identity(
     request["runtime_identity"] = runtime
     request_body = dict(request)
     request_body.pop("request_sha256")
-    request["request_sha256"] = hf_teacher_replay_cache._canonical_sha256(
-        request_body
-    )
+    request["request_sha256"] = hf_teacher_replay_cache._canonical_sha256(request_body)
     return hf_teacher_replay_cache.verify_request(request)
 
 
@@ -1886,9 +2254,7 @@ def test_explicit_compatible_cache_import_republishes_without_teacher_generation
         teacher_payload=teacher_payload,
         live_source_model_fingerprint=source_fingerprint,
     )
-    external_prompt = preparer._load_external_fresh_reservoir_seed().prompts[0][
-        "text"
-    ]
+    external_prompt = preparer._load_external_fresh_reservoir_seed().prompts[0]["text"]
     assert external_prompt not in json.dumps(current_request, sort_keys=True)
     assert external_prompt not in json.dumps(legacy_envelope, sort_keys=True)
 
@@ -1981,9 +2347,7 @@ def test_explicit_compatible_cache_import_republishes_without_teacher_generation
             output_dir=tmp_path / "migrated-late-output",
             teacher_replay_cache_dir=cache_dir,
             teacher_replay_cache_mode="require",
-            teacher_replay_cache_import_request_sha256=legacy_request[
-                "request_sha256"
-            ],
+            teacher_replay_cache_import_request_sha256=legacy_request["request_sha256"],
             teacher_replay_cache_import_envelope_sha256=legacy_envelope[
                 "envelope_sha256"
             ],
@@ -1999,11 +2363,14 @@ def test_explicit_compatible_cache_import_republishes_without_teacher_generation
         == legacy_envelope["teacher_token_replay"]
     )
     assert len(captured_receipts) == 1
-    assert preparer._verify_teacher_cache_import_receipt(
-        captured_receipts[0],
-        current_request_sha256=current_request["request_sha256"],
-        current_envelope_sha256=current_envelope["envelope_sha256"],
-    ) == captured_receipts[0]
+    assert (
+        preparer._verify_teacher_cache_import_receipt(
+            captured_receipts[0],
+            current_request_sha256=current_request["request_sha256"],
+            current_envelope_sha256=current_envelope["envelope_sha256"],
+        )
+        == captured_receipts[0]
+    )
     assert external_prompt not in json.dumps(captured_receipts[0], sort_keys=True)
     report_replay = tmp_path / "report-replay.json"
     report_plan = tmp_path / "report-plan.json"
@@ -2098,9 +2465,9 @@ def test_explicit_compatible_cache_import_republishes_without_teacher_generation
         "byte_count"
     ] += 1
     bad_nonprep = copy.deepcopy(legacy_rows)
-    next(row for row in bad_nonprep if row["role"] == "hf_recovery")[
-        "sha256"
-    ] = "e" * 64
+    next(row for row in bad_nonprep if row["role"] == "hf_recovery")["sha256"] = (
+        "e" * 64
+    )
     for name, rows in (
         ("bad-prep-hash", bad_prep_hash),
         ("bad-prep-bytes", bad_prep_bytes),
@@ -2124,9 +2491,7 @@ def test_explicit_compatible_cache_import_republishes_without_teacher_generation
         current_request,
         pinned_current_runtime,
     )
-    pinned_legacy_runtime = copy.deepcopy(
-        pinned_current_request["runtime_identity"]
-    )
+    pinned_legacy_runtime = copy.deepcopy(pinned_current_request["runtime_identity"])
     pinned_legacy_runtime["cudnn_version"] = None
     pinned_legacy_request = _cache_request_with_runtime_identity(
         pinned_current_request,
@@ -2170,9 +2535,9 @@ def test_explicit_compatible_cache_import_republishes_without_teacher_generation
         ]
         assert runtime_receipt == {
             "mode": "pinned-legacy-missing-cudnn-version",
-            "source_runtime_identity_sha256": pinned_legacy_request[
-                "runtime_identity"
-            ]["sha256"],
+            "source_runtime_identity_sha256": pinned_legacy_request["runtime_identity"][
+                "sha256"
+            ],
             "current_runtime_identity_sha256": pinned_current_request[
                 "runtime_identity"
             ]["sha256"],
@@ -2194,11 +2559,14 @@ def test_explicit_compatible_cache_import_republishes_without_teacher_generation
             current_envelope=pinned_current_envelope,
             publication_result=pinned_publication,
         )
-        assert preparer._verify_teacher_cache_import_receipt(
-            pinned_final_receipt,
-            current_request_sha256=pinned_current_request["request_sha256"],
-            current_envelope_sha256=pinned_current_envelope["envelope_sha256"],
-        ) == pinned_final_receipt
+        assert (
+            preparer._verify_teacher_cache_import_receipt(
+                pinned_final_receipt,
+                current_request_sha256=pinned_current_request["request_sha256"],
+                current_envelope_sha256=pinned_current_envelope["envelope_sha256"],
+            )
+            == pinned_final_receipt
+        )
         tampered_runtime_receipt = copy.deepcopy(pinned_final_receipt)
         tampered_runtime_receipt["runtime_identity_compatibility"][
             "current_cudnn_version"
@@ -2214,16 +2582,10 @@ def test_explicit_compatible_cache_import_republishes_without_teacher_generation
         ):
             preparer._verify_teacher_cache_import_receipt(
                 tampered_runtime_receipt,
-                current_request_sha256=pinned_current_request[
-                    "request_sha256"
-                ],
-                current_envelope_sha256=pinned_current_envelope[
-                    "envelope_sha256"
-                ],
+                current_request_sha256=pinned_current_request["request_sha256"],
+                current_envelope_sha256=pinned_current_envelope["envelope_sha256"],
             )
-        incompatible_runtime = copy.deepcopy(
-            pinned_current_request["runtime_identity"]
-        )
+        incompatible_runtime = copy.deepcopy(pinned_current_request["runtime_identity"])
         incompatible_runtime["cudnn_benchmark"] = True
         incompatible_current_request = _cache_request_with_runtime_identity(
             pinned_current_request,
@@ -2237,9 +2599,7 @@ def test_explicit_compatible_cache_import_republishes_without_teacher_generation
                 cache_dir=pinned_runtime_cache,
                 current_request=incompatible_current_request,
                 source_request_sha256=pinned_legacy_request["request_sha256"],
-                source_envelope_sha256=pinned_runtime_envelope[
-                    "envelope_sha256"
-                ],
+                source_envelope_sha256=pinned_runtime_envelope["envelope_sha256"],
             )
 
     for request_sha, envelope_sha in (
@@ -2314,15 +2674,11 @@ def test_explicit_compatible_cache_import_republishes_without_teacher_generation
             )
 
     symlink_envelope_root = tmp_path / "symlink-envelope-import-cache"
-    symlink_envelope_entry = (
-        symlink_envelope_root / legacy_request["request_sha256"]
-    )
+    symlink_envelope_entry = symlink_envelope_root / legacy_request["request_sha256"]
     symlink_envelope_entry.mkdir(parents=True)
     real_envelope = tmp_path / "authorized-legacy-cache-envelope.json"
     _write_json(real_envelope, legacy_envelope)
-    symlink_envelope = (
-        symlink_envelope_entry / hf_teacher_replay_cache.CACHE_FILENAME
-    )
+    symlink_envelope = symlink_envelope_entry / hf_teacher_replay_cache.CACHE_FILENAME
     try:
         symlink_envelope.symlink_to(real_envelope)
     except OSError:
@@ -2346,9 +2702,7 @@ def test_explicit_compatible_cache_import_republishes_without_teacher_generation
         extra_child_entry / hf_teacher_replay_cache.CACHE_FILENAME,
         legacy_envelope,
     )
-    (extra_child_entry / "unexpected.txt").write_text(
-        "unexpected\n", encoding="utf-8"
-    )
+    (extra_child_entry / "unexpected.txt").write_text("unexpected\n", encoding="utf-8")
     with pytest.raises(
         preparer.RecoveryInputPreparationError,
         match="strict path/request/envelope authentication",
@@ -2376,9 +2730,7 @@ def test_explicit_compatible_cache_import_republishes_without_teacher_generation
             output_dir=tmp_path / "wrong-live-import-output",
             teacher_replay_cache_dir=wrong_cache,
             teacher_replay_cache_mode="require",
-            teacher_replay_cache_import_request_sha256=wrong_request[
-                "request_sha256"
-            ],
+            teacher_replay_cache_import_request_sha256=wrong_request["request_sha256"],
             teacher_replay_cache_import_envelope_sha256=wrong_envelope[
                 "envelope_sha256"
             ],
