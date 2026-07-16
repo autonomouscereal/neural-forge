@@ -5,7 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 from typing import Any
 
 import pytest
@@ -129,20 +129,46 @@ def fake_teacher_verifier(monkeypatch: pytest.MonkeyPatch) -> None:
         "payload_sha256",
     }
 
-    def verify(payload: Any) -> dict[str, Any]:
+    def freeze(value: Any) -> Any:
+        if isinstance(value, dict):
+            return MappingProxyType({key: freeze(item) for key, item in value.items()})
+        if isinstance(value, list):
+            return tuple(freeze(item) for item in value)
+        return value
+
+    def verify(payload: Any) -> MappingProxyType[str, Any]:
         if not isinstance(payload, dict) or set(payload) != expected_fields:
             raise ValueError("fake teacher fields changed")
         value = copy.deepcopy(payload)
         claimed = value.pop("payload_sha256")
         if claimed != _canonical_sha256(value):
             raise ValueError("fake teacher hash changed")
-        return copy.deepcopy(payload)
+        return freeze(copy.deepcopy(payload))
 
     monkeypatch.setattr(
         replay_cache.hf_teacher_token_replay,
         "verify_teacher_token_replay_payload",
         verify,
     )
+
+
+def test_immutable_teacher_verifier_payload_round_trips_through_cache(
+    tmp_path: Path,
+    fake_teacher_verifier: None,
+) -> None:
+    request = _request(tmp_path / "request")
+    teacher = _teacher_payload(request)
+    envelope, result = replay_cache.publish_entry(
+        cache_dir=tmp_path / "cache",
+        request=request,
+        teacher_payload=teacher,
+        live_source_model_fingerprint=_source_fingerprint(),
+    )
+
+    assert result == "published"
+    assert isinstance(envelope, dict)
+    assert envelope["teacher_token_replay"] == teacher
+    assert replay_cache.read_entry(tmp_path / "cache", request) == envelope
 
 
 def test_request_identity_binds_every_replay_producer_input(tmp_path: Path) -> None:

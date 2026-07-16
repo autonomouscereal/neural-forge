@@ -125,6 +125,40 @@ def _canonical_sha256(value: Any) -> str:
     return hashlib.sha256(_canonical_bytes(value)).hexdigest()
 
 
+def _json_copy(value: Any, *, name: str) -> Any:
+    """Return mutable JSON containers from verified immutable payloads."""
+
+    def normalize(item: Any, path: str) -> Any:
+        if isinstance(item, Mapping):
+            result: dict[str, Any] = {}
+            for key, child in item.items():
+                if not isinstance(key, str):
+                    raise TeacherReplayCacheError(
+                        f"{path} contains a non-string JSON object key."
+                    )
+                result[key] = normalize(child, f"{path}.{key}")
+            return result
+        if isinstance(item, (list, tuple)):
+            return [
+                normalize(child, f"{path}[{index}]")
+                for index, child in enumerate(item)
+            ]
+        if item is None or isinstance(item, (str, bool, int, float)):
+            return item
+        raise TeacherReplayCacheError(
+            f"{path} contains non-JSON value {type(item).__name__}."
+        )
+
+    copied = normalize(value, name)
+    try:
+        _canonical_bytes(copied)
+    except (TypeError, ValueError) as error:
+        raise TeacherReplayCacheError(
+            f"{name} contains a non-finite or non-JSON value."
+        ) from error
+    return copied
+
+
 def _require_sha256(value: Any, name: str) -> str:
     if (
         not isinstance(value, str)
@@ -451,7 +485,7 @@ def verify_request(payload: Mapping[str, Any]) -> dict[str, Any]:
     _verify_runtime_identity(row["runtime_identity"])
     if _canonical_sha256(body) != claimed:
         raise TeacherReplayCacheError("Cache request self-hash failed.")
-    return json.loads(json.dumps(dict(row), allow_nan=False))
+    return _json_copy(row, name="cache request")
 
 
 def build_envelope(
@@ -467,8 +501,11 @@ def build_envelope(
         )
     except (TypeError, ValueError) as error:
         raise TeacherReplayCacheError("Teacher replay failed strict verification.") from error
-    teacher = json.loads(json.dumps(verified_teacher, allow_nan=False))
-    live = json.loads(json.dumps(dict(live_source_model_fingerprint), allow_nan=False))
+    teacher = _json_copy(verified_teacher, name="verified teacher replay")
+    live = _json_copy(
+        live_source_model_fingerprint,
+        name="live source model fingerprint",
+    )
     if live != teacher["source_model_fingerprint"]:
         raise TeacherReplayCacheError(
             "Live source model fingerprint differs from generated teacher replay."
@@ -514,7 +551,7 @@ def verify_envelope(
         )
     except (TypeError, ValueError) as error:
         raise TeacherReplayCacheError("Cached teacher replay failed strict verification.") from error
-    teacher = json.loads(json.dumps(verified_teacher, allow_nan=False))
+    teacher = _json_copy(verified_teacher, name="verified cached teacher replay")
     if teacher != row["teacher_token_replay"]:
         raise TeacherReplayCacheError("Cached teacher replay changed during verification.")
     teacher_sha = _require_sha256(row["teacher_payload_sha256"], "teacher payload SHA")
@@ -552,7 +589,7 @@ def verify_envelope(
         or _canonical_sha256(body) != claimed
     ):
         raise TeacherReplayCacheError("Cache envelope self-hash failed.")
-    return json.loads(json.dumps(dict(row), allow_nan=False))
+    return _json_copy(row, name="cache envelope")
 
 
 def _absolute_path(value: Path | str) -> Path:
