@@ -2575,7 +2575,9 @@ def _normalize_choice_probe(item: dict[str, Any], index: int) -> dict[str, Any]:
     return probe
 
 
-def _normalize_generation_prompt(item: str | dict[str, Any], index: int) -> dict[str, Any]:
+def _normalize_generation_prompt(
+    item: str | dict[str, Any], index: int
+) -> dict[str, Any]:
     if isinstance(item, str):
         return {
             "id": f"generation_{index:04d}",
@@ -2590,11 +2592,23 @@ def _normalize_generation_prompt(item: str | dict[str, Any], index: int) -> dict
     normalized = {
         "id": str(item.get("id") or f"generation_{index:04d}"),
         "prompt": prompt,
-        "relevance_rules": item.get("relevance_rules", item.get("pattern_groups", GENERATION_RELEVANCE_RULES.get(prompt, []))),
+        "relevance_rules": item.get(
+            "relevance_rules",
+            item.get("pattern_groups", GENERATION_RELEVANCE_RULES.get(prompt, [])),
+        ),
     }
     if item.get("category") is not None:
         normalized["category"] = str(item.get("category"))
-    for key in ("kind", "answer", "function_name", "tests", "pattern_groups"):
+    for key in (
+        "kind",
+        "answer",
+        "function_name",
+        "tests",
+        "pattern_groups",
+        "expected_prefix",
+        "expected_prefix_generated_token_count",
+        "require_generation_health",
+    ):
         if key in item:
             normalized[key] = item[key]
     return normalized
@@ -2618,10 +2632,14 @@ def _limit_sequence(items: Sequence[Any], limit: int | None) -> list[Any]:
     return list(items)[: int(limit)]
 
 
-def _generation_health(item: dict[str, Any], min_continuation_chars: int, min_unique_token_ratio: float) -> dict[str, Any]:
+def _generation_health(
+    item: dict[str, Any], min_continuation_chars: int, min_unique_token_ratio: float
+) -> dict[str, Any]:
     prompt = str(item.get("prompt", ""))
     output = str(item.get("output", ""))
-    continuation = output[len(prompt) :] if prompt and output.startswith(prompt) else output
+    continuation = (
+        output[len(prompt) :] if prompt and output.startswith(prompt) else output
+    )
     continuation = continuation.strip()
     diagnostics = item.get("diagnostics") or _generation_diagnostics(continuation)
     tokens = re.findall(r"[A-Za-z0-9_]+", continuation.lower())
@@ -2629,10 +2647,120 @@ def _generation_health(item: dict[str, Any], min_continuation_chars: int, min_un
     relevance = _generation_relevance(prompt, continuation, item.get("relevance_rules"))
     expected = _generation_expected_behavior(item)
     expectation_passed = True if expected is None else bool(expected["passed"])
+    require_generation_health = item.get("require_generation_health") is True
+    expected_prefix = item.get("expected_prefix")
+    expected_prefix_generated_token_count = item.get(
+        "expected_prefix_generated_token_count"
+    )
+    post_expected_health = {
+        "required": require_generation_health,
+        "passed": not require_generation_health,
+        "continuation": "",
+        "continuation_chars": 0,
+        "surface_token_count": 0,
+        "surface_unique_ratio": 0.0,
+        "surface_max_token_run": 0,
+        "surface_repeated_bigram_share": 0.0,
+        "generated_token_count": int(diagnostics.get("generated_token_count", 0)),
+        "generated_distinct_token_ratio": float(
+            diagnostics.get("generated_distinct_token_ratio", 0.0)
+        ),
+        "generated_max_token_id_run": int(
+            diagnostics.get("generated_max_token_id_run", 0)
+        ),
+        "post_expected_generated_token_count": 0,
+        "post_expected_generated_distinct_token_ratio": 0.0,
+        "post_expected_generated_max_token_id_run": 0,
+    }
+    if require_generation_health:
+        if (
+            expected is not None
+            and expectation_passed
+            and isinstance(expected_prefix, str)
+            and continuation.startswith(expected_prefix)
+        ):
+            post_expected = continuation[len(expected_prefix) :].strip()
+        else:
+            post_expected = ""
+        surface_tokens = re.findall(r"[A-Za-z0-9_]+", post_expected.lower())
+        surface_bigrams = list(zip(surface_tokens, surface_tokens[1:]))
+        repeated_surface_bigrams = len(surface_bigrams) - len(set(surface_bigrams))
+        surface_unique_ratio = (
+            len(set(surface_tokens)) / len(surface_tokens) if surface_tokens else 0.0
+        )
+        surface_repeated_bigram_share = (
+            repeated_surface_bigrams / len(surface_bigrams) if surface_bigrams else 0.0
+        )
+        generated_token_count = int(diagnostics.get("generated_token_count", 0))
+        generated_distinct_ratio = float(
+            diagnostics.get("generated_distinct_token_ratio", 0.0)
+        )
+        generated_max_run = int(diagnostics.get("generated_max_token_id_run", 0))
+        raw_generated_ids = diagnostics.get("generated_token_ids")
+        valid_prefix_token_count = (
+            isinstance(expected_prefix_generated_token_count, int)
+            and not isinstance(expected_prefix_generated_token_count, bool)
+            and expected_prefix_generated_token_count > 0
+        )
+        valid_generated_ids = isinstance(raw_generated_ids, list) and all(
+            isinstance(token_id, int)
+            and not isinstance(token_id, bool)
+            and token_id >= 0
+            for token_id in raw_generated_ids
+        )
+        post_generated_ids = (
+            raw_generated_ids[expected_prefix_generated_token_count:]
+            if valid_prefix_token_count
+            and valid_generated_ids
+            and expected_prefix_generated_token_count <= len(raw_generated_ids)
+            else []
+        )
+        post_generated_distinct_ratio = (
+            len(set(post_generated_ids)) / len(post_generated_ids)
+            if post_generated_ids
+            else 0.0
+        )
+        post_generated_max_run = _max_run_length(post_generated_ids)
+        post_expected_passed = (
+            len(post_expected) >= 4
+            and len(surface_tokens) >= 2
+            and len(set(surface_tokens)) >= 2
+            and surface_unique_ratio >= 0.40
+            and _max_run_length(surface_tokens) <= 2
+            and surface_repeated_bigram_share <= 0.25
+            and valid_prefix_token_count
+            and valid_generated_ids
+            and len(post_generated_ids) >= 2
+            and post_generated_distinct_ratio >= 0.20
+            and post_generated_max_run <= 4
+        )
+        post_expected_health = {
+            "required": True,
+            "passed": post_expected_passed,
+            "continuation": post_expected,
+            "continuation_chars": len(post_expected),
+            "surface_token_count": len(surface_tokens),
+            "surface_unique_ratio": surface_unique_ratio,
+            "surface_max_token_run": _max_run_length(surface_tokens),
+            "surface_repeated_bigram_share": surface_repeated_bigram_share,
+            "generated_token_count": generated_token_count,
+            "generated_distinct_token_ratio": generated_distinct_ratio,
+            "generated_max_token_id_run": generated_max_run,
+            "expected_prefix_generated_token_count": (
+                expected_prefix_generated_token_count
+            ),
+            "post_expected_generated_token_count": len(post_generated_ids),
+            "post_expected_generated_distinct_token_ratio": (
+                post_generated_distinct_ratio
+            ),
+            "post_expected_generated_max_token_id_run": post_generated_max_run,
+        }
     long_enough = len(continuation) >= min_continuation_chars or (
         expected is not None and expectation_passed and bool(tokens)
     )
-    if expected is not None:
+    if require_generation_health:
+        long_enough = bool(post_expected_health["continuation_chars"] >= 4)
+    if expected is not None and not require_generation_health:
         diverse_enough = bool(tokens) and expectation_passed
     elif min_continuation_chars == 0 and min_unique_token_ratio == 0.0:
         diverse_enough = bool(tokens)
@@ -2647,8 +2775,7 @@ def _generation_health(item: dict[str, Any], min_continuation_chars: int, min_un
                 len(tokens) < 8
                 or (
                     float(diagnostics.get("distinct_2", 0.0)) >= 0.50
-                    and float(diagnostics.get("repeated_bigram_share", 1.0))
-                    <= 0.35
+                    and float(diagnostics.get("repeated_bigram_share", 1.0)) <= 0.35
                 )
             )
         )
@@ -2670,6 +2797,7 @@ def _generation_health(item: dict[str, Any], min_continuation_chars: int, min_un
             and not prompt_repeated
             and relevance["passed"]
             and expectation_passed
+            and bool(post_expected_health["passed"])
         ),
         "continuation_chars": len(continuation),
         "token_count": len(tokens),
@@ -2682,6 +2810,10 @@ def _generation_health(item: dict[str, Any], min_continuation_chars: int, min_un
         "relevant_enough": relevance["passed"],
         "expected_enough": expectation_passed,
         "expected_behavior": expected,
+        "generation_health_required_beyond_expected_behavior": (
+            require_generation_health
+        ),
+        "post_expected_health": post_expected_health,
         "relevance": relevance,
     }
 
@@ -2695,7 +2827,14 @@ def _generation_expected_behavior(item: dict[str, Any]) -> dict[str, Any] | None
         "prompt": str(item.get("prompt", "")),
         "kind": str(item.get("kind")),
     }
-    for key in ("answer", "function_name", "tests", "pattern_groups"):
+    for key in (
+        "answer",
+        "function_name",
+        "tests",
+        "pattern_groups",
+        "expected_prefix",
+        "expected_prefix_generated_token_count",
+    ):
         if key in item:
             probe[key] = item[key]
     try:
@@ -2738,7 +2877,9 @@ def _generation_relevance(prompt: str, continuation: str, relevance_rules: Seque
     }
 
 
-def _generation_diagnostics(continuation: str, generated_token_ids: Sequence[int] | None = None) -> dict[str, Any]:
+def _generation_diagnostics(
+    continuation: str, generated_token_ids: Sequence[int] | None = None
+) -> dict[str, Any]:
     tokens = re.findall(r"[A-Za-z0-9_]+", str(continuation).lower())
     bigrams = list(zip(tokens, tokens[1:]))
     repeated_bigrams = len(bigrams) - len(set(bigrams)) if bigrams else 0
@@ -2753,7 +2894,10 @@ def _generation_diagnostics(continuation: str, generated_token_ids: Sequence[int
         "max_token_run": _max_run_length(tokens),
         "repeated_bigram_share": (repeated_bigrams / len(bigrams)) if bigrams else 0.0,
         "generated_token_count": len(token_ids),
-        "generated_distinct_token_ratio": (len(set(token_ids)) / len(token_ids)) if token_ids else 0.0,
+        "generated_token_ids": token_ids,
+        "generated_distinct_token_ratio": (len(set(token_ids)) / len(token_ids))
+        if token_ids
+        else 0.0,
         "generated_max_token_id_run": _max_run_length(token_ids),
     }
 
@@ -3516,18 +3660,50 @@ def _score_choice_probe(torch, model, tokenizer, probe: dict[str, Any], device: 
     }
 
 
-def _generate_text(torch, model, tokenizer, prompt: str, device: str, max_new_tokens: int) -> dict[str, Any]:
+def _trim_terminal_generated_token_ids(
+    generated_token_ids: Sequence[int], tokenizer: Any
+) -> list[int]:
+    terminal_ids = {
+        int(token_id)
+        for token_id in (
+            getattr(tokenizer, "eos_token_id", None),
+            getattr(tokenizer, "pad_token_id", None),
+        )
+        if isinstance(token_id, int) and not isinstance(token_id, bool)
+    }
+    trimmed: list[int] = []
+    for token_id in generated_token_ids:
+        value = int(token_id)
+        if value in terminal_ids:
+            break
+        trimmed.append(value)
+    return trimmed
+
+def _generate_text(
+    torch, model, tokenizer, prompt: str, device: str, max_new_tokens: int
+) -> dict[str, Any]:
     inputs = tokenizer(prompt, return_tensors="pt").to(device)
-    pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+    pad_token_id = (
+        tokenizer.pad_token_id
+        if tokenizer.pad_token_id is not None
+        else tokenizer.eos_token_id
+    )
     output_ids = model.generate(
         **inputs,
         max_new_tokens=max_new_tokens,
         do_sample=False,
         pad_token_id=pad_token_id,
     )
-    decoded = tokenizer.decode(output_ids[0], skip_special_tokens=True)
+    decoded = tokenizer.decode(
+        output_ids[0],
+        skip_special_tokens=True,
+        clean_up_tokenization_spaces=False,
+    )
     continuation = decoded[len(prompt) :] if decoded.startswith(prompt) else decoded
-    generated_ids = output_ids[0, inputs["input_ids"].shape[1] :].detach().cpu().tolist()
+    generated_ids = _trim_terminal_generated_token_ids(
+        output_ids[0, inputs["input_ids"].shape[1] :].detach().cpu().tolist(),
+        tokenizer,
+    )
     return {
         "prompt": prompt,
         "output": decoded,
@@ -3551,7 +3727,11 @@ def _generate_text_batch(
         raise ValueError("batch_size must be positive.")
     if tokenizer.pad_token_id is None and tokenizer.eos_token_id is not None:
         tokenizer.pad_token = tokenizer.eos_token
-    pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+    pad_token_id = (
+        tokenizer.pad_token_id
+        if tokenizer.pad_token_id is not None
+        else tokenizer.eos_token_id
+    )
     old_padding_side = getattr(tokenizer, "padding_side", None)
     if old_padding_side is not None:
         tokenizer.padding_side = "left"
@@ -3559,7 +3739,9 @@ def _generate_text_batch(
         results = []
         for start in range(0, len(prompt_list), int(batch_size)):
             batch_prompts = prompt_list[start : start + int(batch_size)]
-            inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True).to(device)
+            inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True).to(
+                device
+            )
             output_ids = model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
@@ -3568,14 +3750,25 @@ def _generate_text_batch(
             )
             prompt_width = int(inputs["input_ids"].shape[1])
             for index, prompt in enumerate(batch_prompts):
-                decoded = tokenizer.decode(output_ids[index], skip_special_tokens=True)
-                continuation = decoded[len(prompt) :] if decoded.startswith(prompt) else decoded
-                generated_ids = output_ids[index, prompt_width:].detach().cpu().tolist()
+                decoded = tokenizer.decode(
+                    output_ids[index],
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=False,
+                )
+                continuation = (
+                    decoded[len(prompt) :] if decoded.startswith(prompt) else decoded
+                )
+                generated_ids = _trim_terminal_generated_token_ids(
+                    output_ids[index, prompt_width:].detach().cpu().tolist(),
+                    tokenizer,
+                )
                 results.append(
                     {
                         "prompt": prompt,
                         "output": decoded,
-                        "diagnostics": _generation_diagnostics(continuation, generated_ids),
+                        "diagnostics": _generation_diagnostics(
+                            continuation, generated_ids
+                        ),
                     }
                 )
         return results
@@ -3589,20 +3782,33 @@ def _generate_text_for_spec(torch, model, tokenizer, spec: dict[str, Any], devic
     return _generation_from_cached_spec(item, spec)
 
 
-def _generation_from_cached_spec(generation: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
+def _generation_from_cached_spec(
+    generation: dict[str, Any], spec: dict[str, Any]
+) -> dict[str, Any]:
     item = dict(generation)
     item["id"] = spec.get("id")
     if spec.get("category") is not None:
         item["category"] = spec.get("category")
     if spec.get("relevance_rules") is not None:
         item["relevance_rules"] = spec.get("relevance_rules")
-    for key in ("kind", "answer", "function_name", "tests", "pattern_groups"):
+    for key in (
+        "kind",
+        "answer",
+        "function_name",
+        "tests",
+        "pattern_groups",
+        "expected_prefix",
+        "expected_prefix_generated_token_count",
+        "require_generation_health",
+    ):
         if key in spec:
             item[key] = spec[key]
     return item
 
 
-def _score_behavior_probe(probe: dict[str, Any], generation: dict[str, Any]) -> dict[str, Any]:
+def _score_behavior_probe(
+    probe: dict[str, Any], generation: dict[str, Any]
+) -> dict[str, Any]:
     prompt = str(probe["prompt"])
     output = str(generation.get("output", ""))
     continuation = output[len(prompt) :] if output.startswith(prompt) else output
@@ -3612,10 +3818,26 @@ def _score_behavior_probe(probe: dict[str, Any], generation: dict[str, Any]) -> 
         numbers = re.findall(r"-?\d+", continuation)
         prediction = numbers[0] if numbers else ""
         passed = prediction == str(probe["answer"])
-        details = {"prediction": prediction, "answer": str(probe["answer"]), "numbers": numbers[:5]}
+        details = {
+            "prediction": prediction,
+            "answer": str(probe["answer"]),
+            "numbers": numbers[:5],
+        }
     elif kind == "pattern_groups":
         details = _score_pattern_groups(continuation, probe.get("pattern_groups", []))
         passed = bool(details["passed"])
+    elif kind == "literal_prefix":
+        expected_prefix = probe.get("expected_prefix")
+        if not isinstance(expected_prefix, str) or not expected_prefix.strip():
+            raise ValueError(
+                "literal_prefix behavior probe requires a nonblank expected_prefix."
+            )
+        passed = continuation.startswith(expected_prefix)
+        details = {
+            "expected_prefix": expected_prefix,
+            "observed_prefix": continuation[: len(expected_prefix)],
+            "case_sensitive": True,
+        }
     elif kind == "python_function":
         details = _score_python_function(
             continuation,
@@ -3633,7 +3855,9 @@ def _score_behavior_probe(probe: dict[str, Any], generation: dict[str, Any]) -> 
         "passed": bool(passed),
         "output": output,
         "continuation": continuation,
-        "diagnostics": generation.get("diagnostics", _generation_diagnostics(continuation)),
+        "diagnostics": generation.get(
+            "diagnostics", _generation_diagnostics(continuation)
+        ),
         "details": details,
     }
 

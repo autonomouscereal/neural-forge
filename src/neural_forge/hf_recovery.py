@@ -829,6 +829,35 @@ def _raise_if_nonfinite_parameters(torch, model, step: int) -> None:
         raise RuntimeError(f"Non-finite recovery parameters after step {step}: {joined}")
 
 
+def _load_cross_tokenizer_recovery_tokenizers(
+    transformers,
+    *,
+    source_model: str | Path,
+    candidate_model: str | Path,
+    candidate_tokenizer_model: str | Path | None,
+    trust_remote_code: bool,
+    local_files_only: bool,
+):
+    """Load recovery tokenizers, allowing a model-independent candidate source."""
+
+    tokenizer_source = (
+        candidate_model
+        if candidate_tokenizer_model is None
+        else candidate_tokenizer_model
+    )
+    source_tokenizer = transformers.AutoTokenizer.from_pretrained(
+        source_model,
+        trust_remote_code=trust_remote_code,
+        local_files_only=local_files_only,
+    )
+    candidate_tokenizer = transformers.AutoTokenizer.from_pretrained(
+        tokenizer_source,
+        trust_remote_code=trust_remote_code,
+        local_files_only=local_files_only,
+    )
+    return source_tokenizer, candidate_tokenizer, str(tokenizer_source)
+
+
 def recover_cross_tokenizer_causal_lm(
     source_model: str,
     candidate_model: str,
@@ -920,6 +949,7 @@ def recover_cross_tokenizer_causal_lm(
     behavior_checkpoint_observer: Callable[[Mapping[str, Any]], None] | None = None,
     adamw_foreach: bool | None = None,
     stepwise_replay_bank: Sequence[Mapping[str, Any]] | None = None,
+    candidate_tokenizer_model: str | Path | None = None,
 ) -> dict[str, Any]:
     """Recover a cross-tokenizer folded child against donor anchor logits.
 
@@ -1142,15 +1172,15 @@ def recover_cross_tokenizer_causal_lm(
     torch, transformers = _torch_and_transformers()
     dtype = _dtype_from_name(torch, torch_dtype)
     candidate_dtype = _dtype_from_name(torch, candidate_torch_dtype)
-    source_tokenizer = transformers.AutoTokenizer.from_pretrained(
-        source_model,
-        trust_remote_code=trust_remote_code,
-        local_files_only=local_files_only,
-    )
-    candidate_tokenizer = transformers.AutoTokenizer.from_pretrained(
-        candidate_model,
-        trust_remote_code=trust_remote_code,
-        local_files_only=local_files_only,
+    source_tokenizer, candidate_tokenizer, candidate_tokenizer_source = (
+        _load_cross_tokenizer_recovery_tokenizers(
+            transformers,
+            source_model=source_model,
+            candidate_model=candidate_model,
+            candidate_tokenizer_model=candidate_tokenizer_model,
+            trust_remote_code=trust_remote_code,
+            local_files_only=local_files_only,
+        )
     )
     if source_tokenizer.pad_token_id is None and source_tokenizer.eos_token_id is not None:
         source_tokenizer.pad_token = source_tokenizer.eos_token
@@ -1984,6 +2014,7 @@ def recover_cross_tokenizer_causal_lm(
         "operation": "recover_cross_tokenizer_causal_lm",
         "source_model": source_model,
         "candidate_model": candidate_model,
+        "candidate_tokenizer_model": candidate_tokenizer_source,
         "output_dir": str(target),
         "steps": steps,
         "batch_size": batch_size,
@@ -8559,7 +8590,16 @@ def _heldout_behavior_summary(
                 generated["category"] = prompt.get("category")
             if prompt.get("relevance_rules") is not None:
                 generated["relevance_rules"] = prompt.get("relevance_rules")
-            for key in ("kind", "answer", "function_name", "tests", "pattern_groups"):
+            for key in (
+                "kind",
+                "answer",
+                "function_name",
+                "tests",
+                "pattern_groups",
+                "expected_prefix",
+                "expected_prefix_generated_token_count",
+                "require_generation_health",
+            ):
                 if key in prompt:
                     generated[key] = prompt[key]
             return generated

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -7,6 +9,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+import torch
 
 
 EXPERIMENTS = Path(__file__).resolve().parents[1] / "experiments"
@@ -25,6 +28,217 @@ def _write_json(path: Path, value: Any) -> None:
         json.dumps(value, allow_nan=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+
+class _IdentityTokenizer:
+    eos_token_id = None
+    pad_token_id = 0
+
+    def __call__(
+        self,
+        text: str,
+        *,
+        add_special_tokens: bool = True,
+        truncation: bool = False,
+        **_kwargs: Any,
+    ) -> dict[str, list[int]]:
+        assert add_special_tokens is True
+        assert truncation is False
+        return {"input_ids": [ord(character) + 10 for character in text]}
+
+    def decode(
+        self,
+        token_ids: Any,
+        *,
+        skip_special_tokens: bool = True,
+        clean_up_tokenization_spaces: bool = False,
+    ) -> str:
+        assert skip_special_tokens is True
+        assert clean_up_tokenization_spaces is False
+        values = token_ids.tolist() if hasattr(token_ids, "tolist") else token_ids
+        return "".join(chr(int(token_id) - 10) for token_id in values)
+
+
+def _token_prompt(base: int) -> dict[str, Any]:
+    token_ids = [base + offset for offset in range(8)]
+    digest = preparer.split_tools._token_sequence_sha256(token_ids)
+    return {
+        "token_ids": token_ids,
+        "prompt_id": f"prompt-{digest}",
+        "token_ids_sha256": digest,
+    }
+
+
+def _fresh_selection_fixture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[preparer.FreshRecoverySelection, _IdentityTokenizer, list[str]]:
+    tokenizer = _IdentityTokenizer()
+    split_bindings: dict[str, Any] = {}
+    for role, count in preparer.PINNED_V4_SPLIT_COUNTS.items():
+        prompts = [
+            _token_prompt(1_000_000 + role.__len__() * 100_000 + index * 32)
+            for index in range(count)
+        ]
+        payload = preparer.split_tools._split_payload(
+            role,
+            prompts,
+            original_hashes={
+                name: hashlib.sha256(name.encode()).hexdigest()
+                for name in ("fit", "candidate", "sealed")
+            },
+            corpus_sha256="a" * 64,
+            corpus_line_count=800,
+            tokenizer_sha256="b" * 64,
+            components=[],
+            selection_schema=(
+                preparer.PINNED_V4_CANDIDATE_SELECTION_SCHEMA
+                if role == "candidate"
+                else preparer.split_tools.CONTINUATION_SELECTION_SCHEMA
+            ),
+        )
+        path = tmp_path / f"{role}.json"
+        _write_json(path, payload)
+        split_bindings[role] = SimpleNamespace(
+            path=path,
+            sha256=preparer._file_sha256(path),
+            expected_count=count,
+            payload=payload,
+        )
+    prereg = tmp_path / "preregistration.json"
+    _write_json(
+        prereg,
+        {
+            "schema": preparer.PINNED_V4_PREREGISTRATION_SCHEMA,
+            "sealed_before_model_access": True,
+        },
+    )
+    prereg_sha = preparer._file_sha256(prereg)
+    contract = SimpleNamespace(
+        path=prereg,
+        file_sha256=prereg_sha,
+        splits=split_bindings,
+        evaluation_contract_sha256="c" * 64,
+    )
+    corpus = tmp_path / "corpus.jsonl"
+    corpus_rows = [
+        f"{index:08x} unique recovery prompt with enough distinct content {index}."
+        for index in range(800)
+    ]
+    corpus.write_text(
+        "".join(json.dumps({"text": text}) + "\n" for text in corpus_rows),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        preparer, "PINNED_RECOVERY_CORPUS_SHA256", preparer._file_sha256(corpus)
+    )
+    monkeypatch.setattr(preparer, "PINNED_RECOVERY_CORPUS_LINE_COUNT", 800)
+    selection = preparer._authenticate_and_select_fresh_recovery_candidate(
+        v4_preregistration=prereg,
+        v4_preregistration_sha256=prereg_sha,
+        corpus_path=corpus,
+        calibration_texts=corpus_rows[:640],
+        tokenizer=tokenizer,
+        preregistration_authenticator=lambda _path, _sha: contract,
+    )
+    return selection, tokenizer, corpus_rows[:640]
+
+
+def _replay_audit_fixture() -> tuple[list[str], list[list[int]], dict[str, Any]]:
+    decoded = [f"Fresh held-out candidate prompt {index:02d}." for index in range(24)]
+    token_rows = [
+        [1_000 + index * 32 + offset for offset in range(16)] for index in range(24)
+    ]
+    teacher = {
+        "payload_sha256": "7" * 64,
+        "calibration_texts": ["Calibration text exists only in recovery training."],
+        "precomputed_teacher_generated_texts": [
+            "Teacher-generated response is unrelated to every held-out prompt."
+        ],
+        "on_policy_replay_bank": [],
+        "stepwise_replay_bank": [
+            {
+                "step": 1,
+                "rows": [
+                    {
+                        "prompt_input_ids": [8_000, 8_001],
+                        "rollout_input_ids": [8_000, 8_001, 8_002],
+                    }
+                ],
+            }
+        ],
+        "tokenizer_fingerprints": {"candidate": {"tokenizer_length": 10_000}},
+    }
+    return decoded, token_rows, teacher
+
+
+def test_replay_disjointness_audit_rejects_reverse_text_containment() -> None:
+    decoded, token_rows, teacher = _replay_audit_fixture()
+    teacher["precomputed_teacher_generated_texts"] = ["held-out fragment"]
+    decoded[0] = "Fresh held-out fragment remains evaluation-only."
+
+    with pytest.raises(
+        preparer.RecoveryInputPreparationError,
+        match="contained in fresh decoded candidate prompt",
+    ):
+        preparer._fresh_candidate_replay_disjointness_audit(
+            decoded_prompts=decoded,
+            prompt_token_ids=token_rows,
+            teacher_payload=teacher,
+        )
+
+
+def test_replay_disjointness_audit_scans_later_stepwise_prompt_windows() -> None:
+    decoded, token_rows, teacher = _replay_audit_fixture()
+    collision = token_rows[0][4:12]
+    prompt_ids = [42, *collision, 43]
+    teacher["stepwise_replay_bank"] = [
+        {
+            "step": 1,
+            "rows": [
+                {
+                    "prompt_input_ids": prompt_ids,
+                    "rollout_input_ids": [*prompt_ids, 44],
+                }
+            ],
+        }
+    ]
+
+    with pytest.raises(
+        preparer.RecoveryInputPreparationError,
+        match="stepwise prompt replay",
+    ):
+        preparer._fresh_candidate_replay_disjointness_audit(
+            decoded_prompts=decoded,
+            prompt_token_ids=token_rows,
+            teacher_payload=teacher,
+        )
+
+
+def test_replay_disjointness_audit_scans_nonzero_rollout_windows() -> None:
+    decoded, token_rows, teacher = _replay_audit_fixture()
+    prompt_ids = [42, 43]
+    teacher["stepwise_replay_bank"] = [
+        {
+            "step": 1,
+            "rows": [
+                {
+                    "prompt_input_ids": prompt_ids,
+                    "rollout_input_ids": [*prompt_ids, *token_rows[0][:8], 44],
+                }
+            ],
+        }
+    ]
+
+    with pytest.raises(
+        preparer.RecoveryInputPreparationError,
+        match="stepwise rollout replay",
+    ):
+        preparer._fresh_candidate_replay_disjointness_audit(
+            decoded_prompts=decoded,
+            prompt_token_ids=token_rows,
+            teacher_payload=teacher,
+        )
 
 
 def _strict_json(path: Path) -> dict[str, Any]:
@@ -546,3 +760,295 @@ def test_default_loader_pins_local_only_trust_false_and_fp16(
             trust_remote_code=False,
             source_torch_dtype="float16",
         )
+
+
+def test_fresh_selection_excludes_v4_and_exact_640_recovery_rows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selection, _tokenizer, calibration = _fresh_selection_fixture(tmp_path, monkeypatch)
+    assert len(selection.prompts) == 24
+    assert len(set(selection.decoded_prompts)) == 24
+    assert all(8 <= len(prompt.token_ids) <= 128 for prompt in selection.prompts)
+    assert all(
+        not any(prompt in row or row in prompt for row in calibration)
+        for prompt in selection.decoded_prompts
+    )
+    provenance = selection.provenance
+    assert provenance["causal_ab_eligible"] is True
+    assert provenance["model_accessed_during_selection"] is False
+    assert provenance["sealed_exclusion_manifest_used_model_free"] is True
+    assert provenance["sealed_prompts_supplied_to_model_or_trainer"] is False
+    assert provenance["sealed_outputs_or_selection_scores_computed"] is False
+    assert provenance["recovery_calibration"]["text_count"] == 640
+    assert provenance["selected_candidate"]["minimum_token_count"] >= 8
+    assert provenance["selected_candidate"]["maximum_token_count"] <= 128
+    assert provenance["disjointness"] == {
+        "exact_token_prompt_overlap_count": 0,
+        "meaningful_prefix_overlap_count": 0,
+        "decoded_candidate_text_in_recovery_calibration_count": 0,
+        "minimum_meaningful_prefix_tokens": 8,
+        "recovery_calibration_prefixes_bounded_to_candidate_max_tokens": True,
+    }
+
+
+def test_fresh_parent_adapter_pins_all_decoded_prefix_probes_and_rejects_reseal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selection, tokenizer, _calibration = _fresh_selection_fixture(tmp_path, monkeypatch)
+
+    class Parent:
+        def eval(self) -> None:
+            return None
+
+        def generate(self, *, input_ids: Any, **kwargs: Any) -> Any:
+            assert kwargs["max_new_tokens"] == 16
+            assert kwargs["do_sample"] is False
+            suffix = torch.tensor(
+                [[ord(character) + 10 for character in "a b c d e f g h "]],
+                dtype=torch.long,
+                device=input_ids.device,
+            )
+            return torch.cat((input_ids, suffix), dim=1)
+
+    tokenizer_fingerprint = {"sha256": "d" * 64, "tokenizer_length": 2_000_000}
+    teacher = {
+        "payload_sha256": "1" * 64,
+        "calibration_texts": _calibration,
+        "precomputed_teacher_generated_texts": [
+            "Teacher replay output remains separate from every evaluation prompt."
+        ],
+        "on_policy_replay_bank": [
+            ["Frozen on-policy recovery text remains training-only."]
+        ],
+        "stepwise_replay_bank": [
+            {
+                "step": 1,
+                "rows": [
+                    {
+                        "prompt_input_ids": [1_500_000, 1_500_001],
+                        "rollout_input_ids": [
+                            1_500_000,
+                            1_500_001,
+                            1_500_002,
+                        ],
+                    }
+                ],
+            }
+        ],
+        "tokenizer_fingerprints": {
+            "source": tokenizer_fingerprint,
+            "candidate": tokenizer_fingerprint,
+        },
+        "source_model_fingerprint": {
+            "sha256": "e" * 64,
+            "model_state_fingerprint": {"state_dict_sha256": "f" * 64},
+        },
+    }
+    binding = preparer._build_fresh_behavior_binding(
+        torch=torch,
+        source_model=Parent(),
+        tokenizer=tokenizer,
+        selection=selection,
+        teacher_payload=teacher,
+        device="cpu",
+    )
+    verified = preparer.verify_behavior_suite_binding(binding)
+    assert verified["mode"] == preparer.BEHAVIOR_MODE_FRESH
+    assert verified["causal_ab_eligible"] is True
+    assert verified["behavior_probe_count"] == 48
+    assert verified["first_action_probe_count"] == 24
+    assert verified["lcp4_probe_count"] == 24
+    assert verified["generation_prompt_count"] == 24
+    assert all(
+        probe["kind"] == "literal_prefix"
+        for probe in verified["suite"]["behavior_probes"]
+    )
+    assert all(
+        prompt["kind"] == "literal_prefix"
+        and prompt["require_generation_health"] is True
+        and prompt["expected_prefix_generated_token_count"] == 4
+        for prompt in verified["suite"]["generation_prompts"]
+    )
+    assert verified["adapter_provenance"]["parent_self_score_pass_count"] == 48
+    assert verified["adapter_provenance"]["parent_generation_health_pass_count"] == 24
+
+    tampered = copy.deepcopy(verified)
+    tampered["suite"]["behavior_probes"][0]["expected_prefix"] = "Wrong"
+    tampered["suite_sha256"] = preparer.canonical_sha256(tampered["suite"])
+    tampered["adapter_provenance"]["suite_sha256"] = tampered["suite_sha256"]
+    adapter_body = dict(tampered["adapter_provenance"])
+    adapter_body.pop("payload_sha256")
+    tampered["adapter_provenance"]["payload_sha256"] = preparer.canonical_sha256(
+        adapter_body
+    )
+    binding_body = dict(tampered)
+    binding_body.pop("payload_sha256")
+    tampered["payload_sha256"] = preparer.canonical_sha256(binding_body)
+    with pytest.raises(
+        preparer.RecoveryInputPreparationError,
+        match="failed authentication",
+    ):
+        preparer.verify_behavior_suite_binding(tampered)
+
+
+@pytest.mark.parametrize("suffix", ["a b ", "a b !!!!"])
+def test_fresh_parent_adapter_rejects_prefix_without_coherent_tail(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    suffix: str,
+) -> None:
+    selection, tokenizer, calibration = _fresh_selection_fixture(tmp_path, monkeypatch)
+
+    class Parent:
+        def eval(self) -> None:
+            return None
+
+        def generate(self, *, input_ids: Any, **_kwargs: Any) -> Any:
+            suffix_ids = torch.tensor(
+                [[ord(character) + 10 for character in suffix]],
+                dtype=torch.long,
+                device=input_ids.device,
+            )
+            return torch.cat((input_ids, suffix_ids), dim=1)
+
+    tokenizer_fingerprint = {"sha256": "d" * 64, "tokenizer_length": 2_000_000}
+    teacher = {
+        "payload_sha256": "1" * 64,
+        "calibration_texts": calibration,
+        "precomputed_teacher_generated_texts": ["Independent teacher replay text."],
+        "on_policy_replay_bank": [],
+        "stepwise_replay_bank": [
+            {
+                "step": 1,
+                "rows": [
+                    {
+                        "prompt_input_ids": [1_500_000, 1_500_001],
+                        "rollout_input_ids": [
+                            1_500_000,
+                            1_500_001,
+                            1_500_002,
+                        ],
+                    }
+                ],
+            }
+        ],
+        "tokenizer_fingerprints": {
+            "source": tokenizer_fingerprint,
+            "candidate": tokenizer_fingerprint,
+        },
+        "source_model_fingerprint": {
+            "sha256": "e" * 64,
+            "model_state_fingerprint": {"state_dict_sha256": "f" * 64},
+        },
+    }
+
+    with pytest.raises(
+        preparer.RecoveryInputPreparationError,
+        match="prefix-plus-coherence generation probe",
+    ):
+        preparer._build_fresh_behavior_binding(
+            torch=torch,
+            source_model=Parent(),
+            tokenizer=tokenizer,
+            selection=selection,
+            teacher_payload=teacher,
+            device="cpu",
+        )
+
+
+def test_literal_prefix_scoring_is_case_sensitive_and_rejects_blank_target() -> None:
+    probe = {
+        "id": "literal",
+        "category": "decoded-prefix",
+        "prompt": "Prompt:",
+        "kind": "literal_prefix",
+        "expected_prefix": "Answer",
+    }
+    passed = preparer.hf_tools._score_behavior_probe(
+        probe, {"output": "Prompt:Answer follows"}
+    )
+    failed = preparer.hf_tools._score_behavior_probe(
+        probe, {"output": "Prompt:answer follows"}
+    )
+    assert passed["passed"] is True
+    assert failed["passed"] is False
+    with pytest.raises(ValueError, match="nonblank expected_prefix"):
+        preparer.hf_tools._score_behavior_probe(
+            {**probe, "expected_prefix": "   "},
+            {"output": "Prompt:anything"},
+        )
+
+
+def test_fresh_preregistration_failure_occurs_before_parent_model_load(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "config.json").write_text("{}\n", encoding="utf-8")
+    (source / "tokenizer.json").write_text("{}\n", encoding="utf-8")
+    corpus = tmp_path / "corpus.jsonl"
+    corpus.write_text(
+        "".join(
+            json.dumps(
+                {
+                    "text": (
+                        f"{index:08x} calibration row remains long enough for recovery."
+                    )
+                }
+            )
+            + "\n"
+            for index in range(640)
+        ),
+        encoding="utf-8",
+    )
+    prereg = tmp_path / "bad-preregistration.json"
+    _write_json(
+        prereg,
+        {"schema": "wrong-schema", "sealed_before_model_access": True},
+    )
+    tokenizer = _IdentityTokenizer()
+    monkeypatch.setattr(
+        preparer.hf_teacher_token_replay,
+        "tokenizer_functional_fingerprint",
+        lambda _tokenizer: {"sha256": "1" * 64},
+    )
+    model_loaded = False
+
+    def forbidden_model_loader(**_kwargs: Any) -> Any:
+        nonlocal model_loaded
+        model_loaded = True
+        raise AssertionError("parent model must not load")
+
+    with pytest.raises(
+        preparer.RecoveryInputPreparationError,
+        match="schema or pre-model seal",
+    ):
+        preparer.prepare_recovery_inputs(
+            output_dir=tmp_path / "outputs",
+            source_model=source,
+            source_tokenizer=source,
+            candidate_tokenizer=source,
+            calibration_file=corpus,
+            behavior_eval_suite=None,
+            behavior_mode=preparer.BEHAVIOR_MODE_FRESH,
+            v4_preregistration=prereg,
+            v4_preregistration_sha256=preparer._file_sha256(prereg),
+            expected_parent_artifact_tree_sha256=preparer.stage._artifact_tree(source)[
+                "tree_sha256"
+            ],
+            teacher_device="cpu",
+            recovery_device="cpu",
+            component_loader=None,
+            tokenizer_loader=lambda **_kwargs: preparer.TokenizerComponents(
+                torch=SimpleNamespace(),
+                transformers=SimpleNamespace(),
+                source_tokenizer=tokenizer,
+                candidate_tokenizer=tokenizer,
+            ),
+            source_model_loader=forbidden_model_loader,
+            teacher_replay_builder=lambda **_kwargs: {},
+        )
+    assert model_loaded is False

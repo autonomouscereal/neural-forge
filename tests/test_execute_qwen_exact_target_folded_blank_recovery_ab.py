@@ -370,6 +370,7 @@ def _replay_report(
         "operation": "recover_cross_tokenizer_causal_lm",
         "source_model": invocation["source_model"],
         "candidate_model": invocation["candidate_model"],
+        "candidate_tokenizer_model": invocation["candidate_tokenizer_model"],
         "output_dir": invocation["output_dir"],
         "steps": 2,
         "local_files_only": True,
@@ -418,6 +419,12 @@ def _fake_dependencies(
 ) -> tuple[executor.ExecutorDependencies, list[str]]:
     calls: list[str] = []
     folded_initial = _digest("folded-initial")
+    frozen_replay = json.loads(
+        Path(contract.raw["replay_bank"]["path"]).read_text(encoding="utf-8")
+    )
+    expected_clean_tokenizer = frozen_replay["teacher_token_replay"][
+        "tokenizer_fingerprints"
+    ]["candidate"]
 
     def authenticate(path, digest):
         calls.append("authenticate")
@@ -512,6 +519,10 @@ def _fake_dependencies(
             "candidate_tokenizer_fingerprint_sha256": (
                 expected_candidate_tokenizer_fingerprint["sha256"]
             ),
+            "candidate_tokenizer_model": str(source_model_path),
+            "candidate_tokenizer_sources": {
+                arm_id: str(source_model_path) for arm_id in ("folded", "blank")
+            },
             "source_artifact_tree_sha256": parent_tree,
             "compiler_parent_artifact_tree_sha256": parent_tree,
             "compiled_blank_compiler_identity_sha256": _contract.raw["compiled_blank"][
@@ -521,6 +532,7 @@ def _fake_dependencies(
             "source_fingerprint_exactly_matches_teacher_token_replay": True,
             "source_tokenizer_exactly_matches_teacher_token_replay": True,
             "both_candidate_tokenizers_exactly_match_teacher_token_replay": True,
+            "both_candidate_tokenizers_loaded_from_contract_identity_path": True,
             "source_tree_exactly_matches_compiler_parent_lineage": True,
             "artifact_tree_unchanged_by_authentication": True,
             "candidate_artifact_trees_unchanged_by_authentication": True,
@@ -574,7 +586,13 @@ def _fake_dependencies(
             behavior=MappingProxyType(event["behavior"]),
             report={},
             report_file_sha256=_digest(f"zero-report-{arm_id}"),
-            clean_artifact={"state_fingerprint": {"state_dict_sha256": initial}},
+            clean_artifact={
+                "state_fingerprint": {"state_dict_sha256": initial},
+                "tokenizer_fingerprint": expected_clean_tokenizer,
+                "tokenizer_fingerprint_sha256": expected_clean_tokenizer["sha256"],
+                "tokenizer_exactly_matches_teacher_replay": True,
+                "tokenizer_fresh_reload_verified": True,
+            },
         )
 
     zero_authenticated = {"value": False}
@@ -603,6 +621,8 @@ def _fake_dependencies(
         )
         calls.append(f"train-start:{arm_id}")
         assert zero_authenticated["value"] is True
+        assert invocation["candidate_tokenizer_model"] == invocation["source_model"]
+        assert not (Path(invocation["candidate_model"]) / "tokenizer.json").exists()
         zero_roots = list((tmp_path / "output").glob(".zero-step-*"))
         assert len(zero_roots) == 1
         assert not any(zero_roots[0].iterdir())
@@ -632,8 +652,15 @@ def _fake_dependencies(
         _write_json(output / executor.RECOVERY_REPORT_FILENAME, report)
         return report
 
-    def clean_artifact(path, *, folded_artifact_hooks, expected_state_sha256):
+    def clean_artifact(
+        path,
+        *,
+        folded_artifact_hooks,
+        expected_state_sha256,
+        expected_tokenizer_fingerprint,
+    ):
         del folded_artifact_hooks, expected_state_sha256
+        assert expected_tokenizer_fingerprint == expected_clean_tokenizer
         calls.append(f"clean:{path.name}")
         assert not (path / executor.RECOVERY_REPORT_FILENAME).exists()
         assert {item.name for item in path.iterdir()} == {
@@ -646,6 +673,10 @@ def _fake_dependencies(
             "state_fingerprint": {"state_dict_sha256": _digest(f"final-{path.name}")},
             "artifact_tree": {"tree_sha256": _digest(f"tree-{path.name}")},
             "report_detached_before_reload": True,
+            "tokenizer_fingerprint": expected_clean_tokenizer,
+            "tokenizer_fingerprint_sha256": expected_clean_tokenizer["sha256"],
+            "tokenizer_exactly_matches_teacher_replay": True,
+            "tokenizer_fresh_reload_verified": True,
         }
 
     def atomic_json(path, payload):
@@ -700,6 +731,54 @@ def test_experimental_contract_has_exact_runner_fields(tmp_path: Path) -> None:
     }
     assert payload["blank_control_state_sha256"] == _digest("native")
     assert payload["publication_authorized"] is False
+
+
+def test_recovery_loads_candidate_tokenizer_from_explicit_identity_path() -> None:
+    import inspect
+
+    legacy = inspect.signature(hf_recovery.recover_cross_tokenizer_causal_lm).bind(
+        "source",
+        "candidate",
+        "output",
+        17,
+    )
+    legacy.apply_defaults()
+    assert legacy.arguments["steps"] == 17
+    assert legacy.arguments["candidate_tokenizer_model"] is None
+
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    class AutoTokenizer:
+        @staticmethod
+        def from_pretrained(path, **kwargs):
+            calls.append((str(path), kwargs))
+            return {"path": str(path)}
+
+    transformers = SimpleNamespace(AutoTokenizer=AutoTokenizer)
+    source, candidate, resolved = hf_recovery._load_cross_tokenizer_recovery_tokenizers(
+        transformers,
+        source_model="/models/qwen-parent",
+        candidate_model="/models/model-only-compiled-blank",
+        candidate_tokenizer_model="/models/qwen-parent",
+        local_files_only=True,
+        trust_remote_code=False,
+    )
+    assert source == {"path": "/models/qwen-parent"}
+    assert candidate == {"path": "/models/qwen-parent"}
+    assert resolved == "/models/qwen-parent"
+    assert calls == [
+        (
+            "/models/qwen-parent",
+            {"local_files_only": True, "trust_remote_code": False},
+        ),
+        (
+            "/models/qwen-parent",
+            {"local_files_only": True, "trust_remote_code": False},
+        ),
+    ]
+    assert (
+        "candidate_tokenizer_model" in executor.recovery_ab._FORBIDDEN_RECOVERY_KWARGS
+    )
 
 
 def test_frozen_observer_validates_exact_behavior_and_step_zero() -> None:
@@ -906,6 +985,49 @@ def test_clean_authenticator_rejects_embedded_recovery_report(tmp_path: Path) ->
             child,
             folded_artifact_hooks=hooks,
             expected_state_sha256=None,
+            expected_tokenizer_fingerprint={"sha256": "0" * 64},
+        )
+
+
+def test_clean_authenticator_rejects_saved_tokenizer_fingerprint_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = tmp_path / "child"
+    child.mkdir()
+    for name in ("config.json", "tokenizer.json", "model.safetensors"):
+        (child / name).write_text(name, encoding="utf-8")
+    expected_body = {"class": "expected.Tokenizer"}
+    expected = {
+        **expected_body,
+        "sha256": executor._canonical_sha256(expected_body),
+    }
+    wrong_body = {"class": "wrong.Tokenizer"}
+    wrong = {
+        **wrong_body,
+        "sha256": executor._canonical_sha256(wrong_body),
+    }
+    monkeypatch.setattr(
+        executor.hf_teacher_token_replay,
+        "tokenizer_functional_fingerprint",
+        lambda _tokenizer: wrong,
+    )
+    hooks = SimpleNamespace(
+        model_loader=lambda _path: object(),
+        native_certifier=lambda _model: pytest.fail("certificate must not run"),
+        runtime_auditor=lambda _model, _path: pytest.fail("audit must not run"),
+    )
+
+    with pytest.raises(
+        executor.FoldedBlankRecoveryExecutionError,
+        match="tokenizer differs from teacher replay",
+    ):
+        executor._authenticate_clean_artifact(
+            child,
+            folded_artifact_hooks=hooks,
+            expected_state_sha256=None,
+            expected_tokenizer_fingerprint=expected,
+            tokenizer_loader=lambda _path: object(),
         )
 
 

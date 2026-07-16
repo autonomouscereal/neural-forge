@@ -67,7 +67,9 @@ class _Tokenizer:
             )
         )
         texts = [value] if isinstance(value, str) else list(value)
-        rows = [self._encode(text, add_special_tokens=add_special_tokens) for text in texts]
+        rows = [
+            self._encode(text, add_special_tokens=add_special_tokens) for text in texts
+        ]
         if truncation and max_length is not None:
             rows = [row[:max_length] for row in rows]
         width = max(len(row) for row in rows)
@@ -91,7 +93,12 @@ class _Tokenizer:
         )
 
     @staticmethod
-    def decode(token_ids: torch.Tensor, skip_special_tokens: bool = True) -> str:
+    def decode(
+        token_ids: torch.Tensor,
+        skip_special_tokens: bool = True,
+        clean_up_tokenization_spaces: bool = True,
+    ) -> str:
+        assert clean_up_tokenization_spaces is False
         del skip_special_tokens
         return "decoded " + " ".join(str(int(item)) for item in token_ids)
 
@@ -166,7 +173,10 @@ def _report_for(provenance: Any) -> dict[str, Any]:
     suite = _suite()
     choice_items = []
     for probe in suite["choice_probes"][: contract.choice_items]:
-        scores = [float(len(probe["choices"]) - index) for index in range(len(probe["choices"]))]
+        scores = [
+            float(len(probe["choices"]) - index)
+            for index in range(len(probe["choices"]))
+        ]
         prediction = max(range(len(scores)), key=lambda index: scores[index])
         answer = int(probe["answer"])
         choice_items.append(
@@ -268,8 +278,7 @@ def test_binding_matches_literal_evaluator_tokenizer_and_label_paths(
     assert len(choice.choice_sequences) == 2
     prompt_length = len(_Tokenizer._encode("Q:"))
     assert all(
-        item.label_mask_boundary == prompt_length
-        for item in choice.choice_sequences
+        item.label_mask_boundary == prompt_length for item in choice.choice_sequences
     )
     for offset, sequence in enumerate(choice.choice_sequences, start=1):
         observed_labels = model.forward_calls[offset][1]
@@ -303,11 +312,7 @@ def test_generation_batching_is_exactly_eight_and_records_every_metric_item() ->
         _suite(generation_count=10),
         max_new_tokens=3,
     )
-    generation_calls = [
-        call
-        for call in tokenizer.calls
-        if isinstance(call[0], tuple)
-    ]
+    generation_calls = [call for call in tokenizer.calls if isinstance(call[0], tuple)]
     assert [len(call[0]) for call in generation_calls] == [8, 2]
     assert all(call[1]["padding"] is True for call in generation_calls)
     assert all(call[2] == "left" for call in generation_calls)
@@ -438,7 +443,9 @@ def test_strict_disjointness_detects_same_active_tokens_across_different_calls(
     transaction = evaluation(
         shared if overlap_domain == "transaction" else "transaction"
     )
-    with pytest.raises(HFEvaluationPathOverlapError, match="token_content_overlap_count"):
+    with pytest.raises(
+        HFEvaluationPathOverlapError, match="token_content_overlap_count"
+    ):
         assert_strict_evaluation_path_disjointness(
             calibration=calibration,
             sensitivity=sensitivity,
@@ -492,11 +499,12 @@ def test_truncated_collector_prefix_cannot_leak_into_untruncated_evaluation() ->
         set(calibration.token_content_sha256s)
         & set(candidate.to_path_domain("candidate").token_content_sha256s)
     )
-    assert (
-        set(calibration.token_content_sha256s)
-        & set(candidate.to_path_domain("candidate").token_prefix_sha256s)
+    assert set(calibration.token_content_sha256s) & set(
+        candidate.to_path_domain("candidate").token_prefix_sha256s
     )
-    with pytest.raises(HFEvaluationPathOverlapError, match="token_prefix_overlap_count"):
+    with pytest.raises(
+        HFEvaluationPathOverlapError, match="token_prefix_overlap_count"
+    ):
         assert_strict_evaluation_path_disjointness(
             calibration=calibration,
             sensitivity=sensitivity,
@@ -535,9 +543,8 @@ def test_shared_boilerplate_prefixes_do_not_make_independent_paths_overlap() -> 
     transaction = evaluation("shared boilerplate transaction unique ending")
     # The domains share many >=8-token prefixes, but neither complete token
     # path is a prefix of another complete path.
-    assert (
-        set(calibration.token_prefix_sha256s)
-        & set(candidate.to_path_domain("candidate").token_prefix_sha256s)
+    assert set(calibration.token_prefix_sha256s) & set(
+        candidate.to_path_domain("candidate").token_prefix_sha256s
     )
     report = assert_strict_evaluation_path_disjointness(
         calibration=calibration,
@@ -546,10 +553,7 @@ def test_shared_boilerplate_prefixes_do_not_make_independent_paths_overlap() -> 
         transaction=transaction,
     )
     assert report.all_paths_disjoint is True
-    assert all(
-        check[-2:] == (0, 0)
-        for check in report.pairwise_checks
-    )
+    assert all(check[-2:] == (0, 0) for check in report.pairwise_checks)
 
 
 def test_count_contract_rejects_missing_items_and_reordered_ids() -> None:

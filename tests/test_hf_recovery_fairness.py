@@ -7,6 +7,117 @@ import pytest
 from neural_forge import hf_recovery
 
 
+def test_heldout_behavior_summary_preserves_literal_prefix_generation_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def generated_batch(
+        _torch,
+        _model,
+        _tokenizer,
+        prompts,
+        _device,
+        _max_new_tokens,
+    ):
+        return [
+            {
+                "prompt": prompt,
+                "output": f"{prompt}Expected reasoning stays coherent",
+                "diagnostics": {
+                    "distinct_1": 1.0,
+                    "distinct_2": 1.0,
+                    "repeated_bigram_share": 0.0,
+                    "top_token_share": 0.25,
+                    "max_token_run": 1,
+                    "generated_token_ids": [10, 11, 12, 13],
+                    "generated_token_count": 4,
+                    "generated_distinct_token_ratio": 1.0,
+                    "generated_max_token_id_run": 1,
+                },
+            }
+            for prompt in prompts
+        ]
+
+    monkeypatch.setattr(hf_recovery, "_generate_text_batch", generated_batch)
+    probe = {
+        "id": "literal-prefix-probe",
+        "category": "parent-lcp4-decoded-prefix",
+        "prompt": "Prompt: ",
+        "kind": "literal_prefix",
+        "expected_prefix": "Expected",
+        "expected_prefix_generated_token_count": 1,
+    }
+
+    summary = hf_recovery._heldout_behavior_summary(
+        None,
+        object(),
+        object(),
+        "cpu",
+        16,
+        1,
+        behavior_probes=[probe],
+        generation_prompts=[
+            {**probe, "relevance_rules": [], "require_generation_health": True}
+        ],
+        max_generation_prompts=1,
+    )
+
+    assert summary["correct"] == summary["total"] == 1
+    assert summary["generation_health_correct"] == 1
+    assert summary["generation_health_total"] == 1
+    assert summary["generation_health_rate"] == pytest.approx(1.0)
+    assert summary["generation_items"][0]["passed"] is True
+
+
+def test_heldout_behavior_summary_rejects_junk_after_literal_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def generated_batch(*_args, **_kwargs):
+        return [
+            {
+                "prompt": "Prompt: ",
+                "output": "Prompt: Expected !?.;",
+                "diagnostics": {
+                    "distinct_1": 1.0,
+                    "distinct_2": 1.0,
+                    "repeated_bigram_share": 0.0,
+                    "top_token_share": 0.25,
+                    "max_token_run": 1,
+                    "generated_token_ids": [10, 11, 12, 13, 14],
+                    "generated_token_count": 5,
+                    "generated_distinct_token_ratio": 1.0,
+                    "generated_max_token_id_run": 1,
+                },
+            }
+        ]
+
+    monkeypatch.setattr(hf_recovery, "_generate_text_batch", generated_batch)
+    generation = {
+        "id": "literal-prefix-generation",
+        "category": "parent-lcp4-decoded-prefix",
+        "prompt": "Prompt: ",
+        "kind": "literal_prefix",
+        "expected_prefix": "Expected",
+        "expected_prefix_generated_token_count": 1,
+        "relevance_rules": [],
+        "require_generation_health": True,
+    }
+    summary = hf_recovery._heldout_behavior_summary(
+        None,
+        object(),
+        object(),
+        "cpu",
+        16,
+        1,
+        behavior_probes=[generation],
+        generation_prompts=[generation],
+        max_generation_prompts=1,
+    )
+
+    assert summary["generation_health_correct"] == 0
+    assert summary["generation_health_total"] == 1
+    assert summary["generation_items"][0]["passed"] is False
+
+
 def test_frozen_on_policy_replay_bank_preserves_ordered_utf8_bytes() -> None:
     mutable_bank = [["alpha\r\nline", "βeta"], ["third", "fourth"]]
 
@@ -19,16 +130,23 @@ def test_frozen_on_policy_replay_bank_preserves_ordered_utf8_bytes() -> None:
     mutable_bank[0][0] = "changed after freeze"
     mutable_bank.append(["extra"])
 
-    assert folded_arm == blank_arm == (
-        ("alpha\r\nline", "βeta"),
-        ("third", "fourth"),
+    assert (
+        folded_arm
+        == blank_arm
+        == (
+            ("alpha\r\nline", "βeta"),
+            ("third", "fourth"),
+        )
     )
     assert hf_recovery._on_policy_replay_bank_sha256(folded_arm) == expected_sha
     assert hf_recovery._on_policy_replay_bank_sha256(blank_arm) == expected_sha
-    assert hf_recovery._on_policy_replay_bank_sha256(tuple(reversed(blank_arm))) != expected_sha
-    assert hf_recovery._ordered_recovery_texts_sha256(tuple(reversed(blank_arm[0]))) != (
-        hf_recovery._ordered_recovery_texts_sha256(blank_arm[0])
+    assert (
+        hf_recovery._on_policy_replay_bank_sha256(tuple(reversed(blank_arm)))
+        != expected_sha
     )
+    assert hf_recovery._ordered_recovery_texts_sha256(
+        tuple(reversed(blank_arm[0]))
+    ) != (hf_recovery._ordered_recovery_texts_sha256(blank_arm[0]))
 
 
 def test_recovery_checkpoint_observer_payload_is_deeply_read_only() -> None:
@@ -49,7 +167,10 @@ def test_recovery_checkpoint_observer_payload_is_deeply_read_only() -> None:
     )
 
     assert len(observations) == 1
-    assert observations[0]["schema"] == "neural-forge.recovery-behavior-checkpoint-observer.v1"
+    assert (
+        observations[0]["schema"]
+        == "neural-forge.recovery-behavior-checkpoint-observer.v1"
+    )
     assert observations[0]["checkpoint_index"] == 2
     assert observations[0]["behavior"]["nested"]["value"] == "stable"
 
@@ -76,7 +197,9 @@ class _FakeTokenizer:
         assert return_tensors == "pt"
         torch = pytest.importorskip("torch")
         rows = [texts] if isinstance(texts, str) else list(texts)
-        encoded = [[2 + (ord(char) % 2) for char in text][:max_length] or [2] for text in rows]
+        encoded = [
+            [2 + (ord(char) % 2) for char in text][:max_length] or [2] for text in rows
+        ]
         width = max(len(row) for row in encoded) if padding else len(encoded[0])
         padded = []
         masks = []
@@ -94,7 +217,9 @@ class _FakeTokenizer:
         }
 
     def decode(self, token_ids, **_kwargs) -> str:
-        return "x" * sum(int(token_id) not in self.all_special_ids for token_id in token_ids)
+        return "x" * sum(
+            int(token_id) not in self.all_special_ids for token_id in token_ids
+        )
 
     def save_pretrained(self, _target) -> None:
         return None
@@ -156,17 +281,24 @@ class _FakeCausalLM:
             attention_mask = kwargs.get("attention_mask")
             self.forward_calls.append(
                 {
-                    "input_ids": tuple(tuple(int(token) for token in row) for row in input_ids.tolist()),
+                    "input_ids": tuple(
+                        tuple(int(token) for token in row) for row in input_ids.tolist()
+                    ),
                     "attention_mask": (
                         ()
                         if attention_mask is None
-                        else tuple(tuple(int(token) for token in row) for row in attention_mask.tolist())
+                        else tuple(
+                            tuple(int(token) for token in row)
+                            for row in attention_mask.tolist()
+                        )
                     ),
                 }
             )
         batch_size = 1 if input_ids is None else int(input_ids.shape[0])
         sequence_length = 3 if input_ids is None else int(input_ids.shape[1])
-        vocab_offsets = self._torch.arange(4, dtype=weight.dtype, device=weight.device) * 0.01
+        vocab_offsets = (
+            self._torch.arange(4, dtype=weight.dtype, device=weight.device) * 0.01
+        )
         logits = weight.expand(batch_size, sequence_length, 4) + vocab_offsets
         return SimpleNamespace(logits=logits, hidden_states=(logits,))
 
@@ -281,9 +413,17 @@ def _install_fake_cross_tokenizer_recovery(
     def differentiable_loss(_torch, student, _teacher, *_args, **_kwargs):
         return student.logits.to(torch.float32).square().mean()
 
-    monkeypatch.setattr(hf_recovery, "_torch_and_transformers", lambda: (torch, fake_transformers))
-    monkeypatch.setattr(hf_recovery, "_shared_recovery_anchors", lambda *_args, **_kwargs: [("a", 0, 0)])
-    monkeypatch.setattr(hf_recovery, "_set_train_scope", lambda model, _scope: sum(p.numel() for p in model.parameters()))
+    monkeypatch.setattr(
+        hf_recovery, "_torch_and_transformers", lambda: (torch, fake_transformers)
+    )
+    monkeypatch.setattr(
+        hf_recovery, "_shared_recovery_anchors", lambda *_args, **_kwargs: [("a", 0, 0)]
+    )
+    monkeypatch.setattr(
+        hf_recovery,
+        "_set_train_scope",
+        lambda model, _scope: sum(p.numel() for p in model.parameters()),
+    )
     monkeypatch.setattr(hf_recovery, "_make_paired_batches", paired_batches)
     monkeypatch.setattr(hf_recovery, "_make_batches", candidate_batches)
     monkeypatch.setattr(
@@ -311,11 +451,15 @@ def _install_fake_cross_tokenizer_recovery(
             "code_valid_rows": 0,
         },
     )
-    monkeypatch.setattr(hf_recovery, "_cross_tokenizer_recovery_loss", differentiable_loss)
+    monkeypatch.setattr(
+        hf_recovery, "_cross_tokenizer_recovery_loss", differentiable_loss
+    )
     monkeypatch.setattr(
         hf_recovery,
         "_candidate_lm_stabilizer_loss",
-        lambda _torch, student, *_args: student.logits.to(torch.float32).square().mean(),
+        lambda _torch, student, *_args: (
+            student.logits.to(torch.float32).square().mean()
+        ),
     )
     monkeypatch.setattr(
         hf_recovery,
@@ -409,7 +553,9 @@ def _run_fake_fairness_arm(
     return report, audit, replay_bank
 
 
-def _fake_stepwise_event(step: int, continuation: tuple[int, ...] = (2,)) -> dict[str, object]:
+def _fake_stepwise_event(
+    step: int, continuation: tuple[int, ...] = (2,)
+) -> dict[str, object]:
     prompt_input_ids = (3, 3)
     return {
         "step": step,
@@ -436,7 +582,9 @@ def test_stepwise_token_replay_freezes_exact_ids_and_hashes_order() -> None:
     assert frozen[0].rows[0].prompt_input_ids == (3, 3)
     assert frozen[0].rows[0].rollout_input_ids == (3, 3, 2, 3)
     assert hf_recovery._stepwise_replay_bank_sha256(frozen) == frozen_hash
-    assert hf_recovery._stepwise_replay_bank_sha256(tuple(reversed(frozen))) != frozen_hash
+    assert (
+        hf_recovery._stepwise_replay_bank_sha256(tuple(reversed(frozen))) != frozen_hash
+    )
     changed_token = hf_recovery._freeze_stepwise_replay_bank(
         (_fake_stepwise_event(1, (3, 3)), _fake_stepwise_event(2, (3,)))
     )
@@ -448,23 +596,40 @@ def test_stepwise_token_replay_freezes_exact_ids_and_hashes_order() -> None:
     [
         (("legacy text replay",), TypeError, "mapping with step and rows"),
         (
-            ({"step": 1, "rows": [{"prompt_input_ids": [2], "rollout_input_ids": [2]}]},),
+            (
+                {
+                    "step": 1,
+                    "rows": [{"prompt_input_ids": [2], "rollout_input_ids": [2]}],
+                },
+            ),
             ValueError,
             "continuation token",
         ),
         (
-            ({"step": 1, "rows": [{"prompt_input_ids": [2], "rollout_input_ids": [3, 2]}]},),
+            (
+                {
+                    "step": 1,
+                    "rows": [{"prompt_input_ids": [2], "rollout_input_ids": [3, 2]}],
+                },
+            ),
             ValueError,
             "exact rollout prefix",
         ),
         (
-            ({"step": 1, "rows": [{"prompt_input_ids": [True], "rollout_input_ids": [1, 2]}]},),
+            (
+                {
+                    "step": 1,
+                    "rows": [{"prompt_input_ids": [True], "rollout_input_ids": [1, 2]}],
+                },
+            ),
             TypeError,
             "integer token ID",
         ),
     ],
 )
-def test_stepwise_token_replay_schema_is_fail_closed(bank, error_type, message: str) -> None:
+def test_stepwise_token_replay_schema_is_fail_closed(
+    bank, error_type, message: str
+) -> None:
     with pytest.raises(error_type, match=message):
         hf_recovery._freeze_stepwise_replay_bank(bank)
 
@@ -523,14 +688,24 @@ def test_folded_and_blank_arms_consume_identical_replay_without_generation(
     ]
     assert blank_audit["teacher_batch_calls"] == folded_audit["teacher_batch_calls"]
     assert folded_report["teacher_generated_text_source"] == "precomputed"
-    assert blank_report["teacher_generated_ordered_text_sha256"] == (
-        folded_report["teacher_generated_ordered_text_sha256"]
+    assert (
+        blank_report["teacher_generated_ordered_text_sha256"]
+        == (folded_report["teacher_generated_ordered_text_sha256"])
     )
     assert folded_report["on_policy_dynamic_candidate_generation"] is False
     assert blank_report["on_policy_dynamic_candidate_generation"] is False
-    assert blank_report["on_policy_replay_bank_sha256"] == folded_report["on_policy_replay_bank_sha256"]
-    assert blank_report["on_policy_replay_consumption"] == folded_report["on_policy_replay_consumption"]
-    assert [item["step"] for item in folded_report["on_policy_replay_consumption"]] == [1, 2]
+    assert (
+        blank_report["on_policy_replay_bank_sha256"]
+        == folded_report["on_policy_replay_bank_sha256"]
+    )
+    assert (
+        blank_report["on_policy_replay_consumption"]
+        == folded_report["on_policy_replay_consumption"]
+    )
+    assert [item["step"] for item in folded_report["on_policy_replay_consumption"]] == [
+        1,
+        2,
+    ]
     assert folded_audit["adamw_kwargs"] == [{"lr": 1e-3, "foreach": False}]
     assert blank_audit["adamw_kwargs"] == [{"lr": 1e-3, "foreach": False}]
 
@@ -652,14 +827,34 @@ def test_folded_and_blank_arms_consume_identical_stepwise_replay_without_generat
     assert blank_audit["generation_calls"] == []
     assert folded_report["stepwise_dynamic_candidate_generation"] is False
     assert blank_report["stepwise_dynamic_candidate_generation"] is False
-    assert folded_report["stepwise_replay_bank_sha256"] == blank_report["stepwise_replay_bank_sha256"]
-    assert folded_report["stepwise_replay_consumption"] == blank_report["stepwise_replay_consumption"]
-    assert [item["step"] for item in folded_report["stepwise_replay_consumption"]] == [1, 2]
-    assert [item["row_count"] for item in folded_report["stepwise_replay_consumption"]] == [1, 1]
-    assert [item["kd_position_count"] for item in folded_report["stepwise_replay_consumption"]] == [1, 2]
+    assert (
+        folded_report["stepwise_replay_bank_sha256"]
+        == blank_report["stepwise_replay_bank_sha256"]
+    )
+    assert (
+        folded_report["stepwise_replay_consumption"]
+        == blank_report["stepwise_replay_consumption"]
+    )
+    assert [item["step"] for item in folded_report["stepwise_replay_consumption"]] == [
+        1,
+        2,
+    ]
+    assert [
+        item["row_count"] for item in folded_report["stepwise_replay_consumption"]
+    ] == [1, 1]
+    assert [
+        item["kd_position_count"]
+        for item in folded_report["stepwise_replay_consumption"]
+    ] == [1, 2]
     assert folded_report["stepwise_scheduled_steps"] == [1, 2]
-    assert folded_report["stepwise_replay_bank_schema"] == hf_recovery._STEPWISE_REPLAY_SCHEMA
-    assert folded_report["stepwise_replay_preflight"] == blank_report["stepwise_replay_preflight"]
+    assert (
+        folded_report["stepwise_replay_bank_schema"]
+        == hf_recovery._STEPWISE_REPLAY_SCHEMA
+    )
+    assert (
+        folded_report["stepwise_replay_preflight"]
+        == blank_report["stepwise_replay_preflight"]
+    )
     preflight = folded_report["stepwise_replay_preflight"]
     assert preflight["schema"] == hf_recovery._STEPWISE_REPLAY_PREFLIGHT_SCHEMA
     assert preflight["status"] == "validated"
@@ -668,7 +863,9 @@ def test_folded_and_blank_arms_consume_identical_stepwise_replay_without_generat
     assert [event["kd_position_count"] for event in preflight["events"]] == [1, 2]
     preflight_body = dict(preflight)
     preflight_sha256 = preflight_body.pop("sha256")
-    assert preflight_sha256 == hf_recovery._stepwise_replay_preflight_sha256(preflight_body)
+    assert preflight_sha256 == hf_recovery._stepwise_replay_preflight_sha256(
+        preflight_body
+    )
     assert folded_audit["optimizer_step_calls"] == [None, None]
     assert blank_audit["optimizer_step_calls"] == [None, None]
     assert any(
@@ -805,8 +1002,7 @@ def test_stepwise_preflight_rejects_bad_later_event_before_any_training(
     )
     candidate = audit["candidate"]
     initial_state = {
-        key: value.detach().clone()
-        for key, value in candidate.state_dict().items()
+        key: value.detach().clone() for key, value in candidate.state_dict().items()
     }
     observer_events = []
     bad_second_event = {
@@ -852,7 +1048,9 @@ def test_stepwise_preflight_rejects_bad_later_event_before_any_training(
 def test_stepwise_token_replay_padding_mask_keeps_valid_eos(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    audit = _install_fake_cross_tokenizer_recovery(monkeypatch, candidate_initial_value=0.0)
+    audit = _install_fake_cross_tokenizer_recovery(
+        monkeypatch, candidate_initial_value=0.0
+    )
     torch, transformers = hf_recovery._torch_and_transformers()
     tokenizer = transformers.AutoTokenizer.from_pretrained("candidate")
     tokenizer.pad_token_id = tokenizer.eos_token_id
@@ -944,7 +1142,9 @@ def test_explicit_behavior_checkpoints_notify_read_only_observer_without_best_se
     assert [item["step"] for item in report["behavior_history"]] == [0, 2]
     assert report["behavior_checkpoint_observer_calls"] == 2
     assert [event["step"] for event in events] == [0, 2]
-    assert all(event["operation"] == "recover_cross_tokenizer_causal_lm" for event in events)
+    assert all(
+        event["operation"] == "recover_cross_tokenizer_causal_lm" for event in events
+    )
 
 
 @pytest.mark.parametrize(
@@ -956,7 +1156,9 @@ def test_explicit_behavior_checkpoints_notify_read_only_observer_without_best_se
         ((3,), "must be in"),
     ],
 )
-def test_explicit_behavior_checkpoint_steps_are_fail_closed(checkpoint_steps, message: str) -> None:
+def test_explicit_behavior_checkpoint_steps_are_fail_closed(
+    checkpoint_steps, message: str
+) -> None:
     with pytest.raises(ValueError, match=message):
         hf_recovery._normalize_behavior_checkpoint_steps(checkpoint_steps, steps=2)
 

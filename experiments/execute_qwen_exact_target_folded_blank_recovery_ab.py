@@ -1094,6 +1094,8 @@ def _authenticate_clean_artifact(
     *,
     folded_artifact_hooks: recovery_ab.FoldedArtifactVerificationHooks,
     expected_state_sha256: str | None,
+    expected_tokenizer_fingerprint: Mapping[str, Any],
+    tokenizer_loader: Callable[[Path], Any] | None = None,
 ) -> dict[str, Any]:
     """Fresh-reload a report-free standalone child and reject every sidecar."""
 
@@ -1106,9 +1108,45 @@ def _authenticate_clean_artifact(
         raise FoldedBlankRecoveryExecutionError(
             "Recovery report remains inside the candidate model directory."
         )
+    expected_tokenizer = _mapping(
+        expected_tokenizer_fingerprint,
+        "expected clean child tokenizer fingerprint",
+    )
+    expected_tokenizer_sha256 = _sha256(
+        expected_tokenizer.get("sha256"),
+        "expected clean child tokenizer fingerprint SHA",
+    )
+    if tokenizer_loader is None:
+        try:
+            from transformers import AutoTokenizer
+        except ImportError as error:  # pragma: no cover - production dependency
+            raise FoldedBlankRecoveryExecutionError(
+                "Transformers is required for clean child tokenizer authentication."
+            ) from error
+
+        def tokenizer_loader(value: Path) -> Any:
+            return AutoTokenizer.from_pretrained(
+                value,
+                local_files_only=True,
+                trust_remote_code=False,
+            )
+
     tree_before = child_artifact.artifact_tree(root)
+    tokenizer: Any = None
     model = folded_artifact_hooks.model_loader(root)
     try:
+        tokenizer = tokenizer_loader(root)
+        tokenizer_fingerprint = (
+            hf_teacher_token_replay.tokenizer_functional_fingerprint(tokenizer)
+        )
+        if (
+            _canonical_bytes(tokenizer_fingerprint)
+            != _canonical_bytes(expected_tokenizer)
+            or tokenizer_fingerprint.get("sha256") != expected_tokenizer_sha256
+        ):
+            raise FoldedBlankRecoveryExecutionError(
+                "Freshly loaded clean child tokenizer differs from teacher replay."
+            )
         fingerprint = model_state_fingerprint(model)
         if (
             fingerprint.get("unique_parameter_count")
@@ -1158,7 +1196,7 @@ def _authenticate_clean_artifact(
                 "Clean child authenticator mutated model state."
             )
     finally:
-        del model
+        del tokenizer, model
         _release_production_memory()
     tree_after = child_artifact.artifact_tree(root)
     if tree_after != tree_before:
@@ -1171,6 +1209,10 @@ def _authenticate_clean_artifact(
         "state_fingerprint_sha256": _canonical_sha256(fingerprint),
         "native_certificate_sha256": _canonical_sha256(certificate),
         "runtime_audit": _json_copy(audit),
+        "tokenizer_fingerprint": _json_copy(tokenizer_fingerprint),
+        "tokenizer_fingerprint_sha256": tokenizer_fingerprint["sha256"],
+        "tokenizer_exactly_matches_teacher_replay": True,
+        "tokenizer_fresh_reload_verified": True,
         "config_payload_sha256": config_sha,
         "artifact_tree": _json_copy(tree_after),
         "report_detached_before_reload": True,
@@ -1275,11 +1317,11 @@ def _authenticate_source_model(
             candidate_root = candidate_input.resolve(strict=True)
         except FileNotFoundError as error:
             raise FoldedBlankRecoveryExecutionError(
-                f"{arm_id} candidate tokenizer artifact is absent."
+                f"{arm_id} candidate model artifact is absent."
             ) from error
         if not candidate_root.is_dir():
             raise FoldedBlankRecoveryExecutionError(
-                f"{arm_id} candidate tokenizer artifact is not a directory."
+                f"{arm_id} candidate model artifact is not a directory."
             )
         candidate_roots[arm_id] = candidate_root
         candidate_trees_before[arm_id] = stage._artifact_tree(candidate_root)
@@ -1295,7 +1337,7 @@ def _authenticate_source_model(
             trust_remote_code=False,
         )
         actual_source_tokenizer_fingerprint = (
-            hf_teacher_token_replay._tokenizer_functional_fingerprint(source_tokenizer)
+            hf_teacher_token_replay.tokenizer_functional_fingerprint(source_tokenizer)
         )
         if _canonical_bytes(actual_source_tokenizer_fingerprint) != _canonical_bytes(
             expected_source_tokenizer_fingerprint
@@ -1308,12 +1350,12 @@ def _authenticate_source_model(
 
         for arm_id in ARM_IDS:
             candidate_tokenizer = AutoTokenizer.from_pretrained(
-                candidate_roots[arm_id],
+                source_root,
                 local_files_only=True,
                 trust_remote_code=False,
             )
             candidate_tokenizer_fingerprint = (
-                hf_teacher_token_replay._tokenizer_functional_fingerprint(
+                hf_teacher_token_replay.tokenizer_functional_fingerprint(
                     candidate_tokenizer
                 )
             )
@@ -1363,7 +1405,7 @@ def _authenticate_source_model(
         for arm_id in ARM_IDS
     ):
         raise FoldedBlankRecoveryExecutionError(
-            "Fresh tokenizer loading mutated a candidate artifact tree."
+            "Candidate model artifact tree changed during shared-tokenizer authentication."
         )
     return {
         "status": "source-model-authenticated",
@@ -1378,6 +1420,8 @@ def _authenticate_source_model(
         "candidate_tokenizer_fingerprint_sha256": (
             expected_candidate_tokenizer_fingerprint["sha256"]
         ),
+        "candidate_tokenizer_model": str(source_root),
+        "candidate_tokenizer_sources": {arm_id: str(source_root) for arm_id in ARM_IDS},
         "source_artifact_tree": _json_copy(tree_after),
         "source_artifact_tree_sha256": tree_after["tree_sha256"],
         "compiler_parent_artifact_tree_sha256": expected_tree_sha256,
@@ -1386,6 +1430,7 @@ def _authenticate_source_model(
         "source_fingerprint_exactly_matches_teacher_token_replay": True,
         "source_tokenizer_exactly_matches_teacher_token_replay": True,
         "both_candidate_tokenizers_exactly_match_teacher_token_replay": True,
+        "both_candidate_tokenizers_loaded_from_contract_identity_path": True,
         "source_tree_exactly_matches_compiler_parent_lineage": True,
         "artifact_tree_unchanged_by_authentication": True,
         "candidate_artifact_trees_unchanged_by_authentication": True,
@@ -1657,6 +1702,7 @@ def _recovery_static_inputs(
     result = {
         **kwargs,
         "source_model": str(source_model_path),
+        "candidate_tokenizer_model": str(source_model_path),
         "calibration_texts": _json_copy(replay_payload["calibration_texts"]),
         "behavior_eval_suite": _json_copy(replay_payload["behavior_eval_suite"]),
         "precomputed_teacher_generated_texts": _json_copy(
@@ -1846,6 +1892,9 @@ def _validate_training_report(
         report.get("operation") != "recover_cross_tokenizer_causal_lm"
         or report.get("source_model") != invocation["source_model"]
         or report.get("candidate_model") != invocation["candidate_model"]
+        or report.get("candidate_tokenizer_model")
+        != invocation["candidate_tokenizer_model"]
+        or invocation.get("candidate_tokenizer_model") != invocation.get("source_model")
         or Path(str(report.get("output_dir", ""))).expanduser().resolve()
         != Path(str(invocation["output_dir"])).expanduser().resolve()
         or report.get("steps") != plan["recovery_kwargs"]["steps"]
@@ -1891,6 +1940,9 @@ def _validate_zero_report(
 ) -> None:
     if (
         report.get("operation") != "recover_cross_tokenizer_causal_lm"
+        or report.get("candidate_tokenizer_model")
+        != invocation["candidate_tokenizer_model"]
+        or invocation.get("candidate_tokenizer_model") != invocation.get("source_model")
         or report.get("steps") != 0
         or report.get("losses") != []
         or report.get("local_files_only") is not True
@@ -1957,6 +2009,10 @@ def _production_zero_step_evaluator(
         Path(invocation["output_dir"]),
         folded_artifact_hooks=folded_artifact_hooks,
         expected_state_sha256=expected_initial,
+        expected_tokenizer_fingerprint=_expected_tokenizer_fingerprints(
+            contract,
+            replay_payload,
+        )["candidate"],
     )
     return ZeroStepEvaluation(
         event=event,
@@ -2304,6 +2360,12 @@ def execute_recovery_ab(
         )
         or source_authentication.get("candidate_tokenizer_fingerprint_sha256")
         != expected_tokenizer_fingerprints["candidate"]["sha256"]
+        or Path(
+            str(source_authentication.get("candidate_tokenizer_model", ""))
+        ).resolve()
+        != product.source_model_path.resolve()
+        or source_authentication.get("candidate_tokenizer_sources")
+        != {arm_id: str(product.source_model_path.resolve()) for arm_id in ARM_IDS}
         or source_authentication.get("source_artifact_tree_sha256")
         != source_authentication.get("compiler_parent_artifact_tree_sha256")
         or source_authentication.get("compiled_blank_compiler_identity_sha256")
@@ -2319,6 +2381,10 @@ def execute_recovery_ab(
         is not True
         or source_authentication.get(
             "both_candidate_tokenizers_exactly_match_teacher_token_replay"
+        )
+        is not True
+        or source_authentication.get(
+            "both_candidate_tokenizers_loaded_from_contract_identity_path"
         )
         is not True
         or source_authentication.get(
@@ -2368,9 +2434,21 @@ def execute_recovery_ab(
             if (
                 evaluation.clean_artifact["state_fingerprint"]["state_dict_sha256"]
                 != expected_initial
+                or _canonical_bytes(
+                    evaluation.clean_artifact.get("tokenizer_fingerprint")
+                )
+                != _canonical_bytes(expected_tokenizer_fingerprints["candidate"])
+                or evaluation.clean_artifact.get("tokenizer_fingerprint_sha256")
+                != expected_tokenizer_fingerprints["candidate"]["sha256"]
+                or evaluation.clean_artifact.get(
+                    "tokenizer_exactly_matches_teacher_replay"
+                )
+                is not True
+                or evaluation.clean_artifact.get("tokenizer_fresh_reload_verified")
+                is not True
             ):
                 raise FoldedBlankRecoveryExecutionError(
-                    f"{arm_id} zero-step output differs from materialized initialization."
+                    f"{arm_id} zero-step output differs from its authenticated initialization/tokenizer."
                 )
             zero_evaluations[arm_id] = evaluation
             zero_receipts[arm_id] = _zero_step_receipt(
@@ -2439,10 +2517,21 @@ def execute_recovery_ab(
                 Path(invocation["output_dir"]),
                 folded_artifact_hooks=hooks,
                 expected_state_sha256=None,
+                expected_tokenizer_fingerprint=expected_tokenizer_fingerprints[
+                    "candidate"
+                ],
             )
-            if clean.get("report_detached_before_reload") is not True:
+            if (
+                clean.get("report_detached_before_reload") is not True
+                or _canonical_bytes(clean.get("tokenizer_fingerprint"))
+                != _canonical_bytes(expected_tokenizer_fingerprints["candidate"])
+                or clean.get("tokenizer_fingerprint_sha256")
+                != expected_tokenizer_fingerprints["candidate"]["sha256"]
+                or clean.get("tokenizer_exactly_matches_teacher_replay") is not True
+                or clean.get("tokenizer_fresh_reload_verified") is not True
+            ):
                 raise FoldedBlankRecoveryExecutionError(
-                    "Final child was authenticated before report detachment."
+                    "Final child report/tokenizer authentication failed after detachment."
                 )
             arm_reports[arm_id] = {
                 "arm_id": arm_id,
@@ -2502,6 +2591,10 @@ def execute_recovery_ab(
             "materialization_trace": _json_copy(product.trace),
             "source_model_authentication": _json_copy(source_authentication),
             "source_model_authenticated_before_zero_step_and_training": True,
+            "shared_candidate_tokenizer_model": str(
+                product.source_model_path.resolve()
+            ),
+            "both_arms_use_contract_identity_candidate_tokenizer": True,
             "zero_step_authentication": _json_copy(zero_step),
             "both_zero_steps_authenticated_before_any_optimizer_step": True,
             "ephemeral_zero_step_children_pruned_before_training": True,

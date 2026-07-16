@@ -24,7 +24,9 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
+import authenticate_qwen_exact_target_native_guided_gud_candidate_tournament_history as tournament_history
 import materialize_qwen3_stage1_blank_target as blank
+import prepare_qwen_exact_target_folded_blank_recovery_inputs as recovery_inputs
 import run_qwen_exact_target_native_guided_gud_candidate_tournament as tournament
 import run_qwen_exact_target_native_guided_gud_winner_publication as publication
 import run_qwen_exact_target_native_stage as stage
@@ -125,6 +127,7 @@ _REPLAY_RECOVERY_PARAMETER_NAMES = (
 _FORBIDDEN_RECOVERY_KWARGS = {
     "source_model",
     "candidate_model",
+    "candidate_tokenizer_model",
     "output_dir",
     "calibration_texts",
     "behavior_eval_suite",
@@ -474,6 +477,9 @@ def _implementation_hashes(*, builder_path: Path) -> dict[str, str]:
         "v4_candidate_authenticator_sha256": stage._file_sha256(
             Path(publication.__file__).resolve()
         ),
+        "v4_historical_authenticator_sha256": stage._file_sha256(
+            Path(tournament_history.__file__).resolve()
+        ),
         "exact_stage_runner_sha256": stage._file_sha256(Path(stage.__file__).resolve()),
         "compiled_blank_cache_sha256": stage._file_sha256(
             _module_file("neural_forge.hf_compiled_child_cache")
@@ -526,6 +532,7 @@ def _collect_sha256_roots(value: Any, *, path: str = "$") -> dict[str, str]:
 @dataclass(frozen=True, slots=True)
 class _V4CandidateBinding:
     contract: tournament.AuthenticatedGuidedGUDCandidateTournament
+    preregistration_authentication_receipt: Mapping[str, Any]
     preregistration_path: Path
     preregistration_sha256: str
     preregistration: Mapping[str, Any]
@@ -559,10 +566,12 @@ def _authenticate_v4_candidate(
     )
     prereg = _bound_json(prereg_path, prereg_sha, "v4 candidate preregistration")
     try:
-        contract = tournament.authenticate_guided_gud_candidate_preregistration(
+        authenticated = tournament_history.authenticate_guided_gud_candidate_preregistration_with_history(
             prereg_path,
             prereg_sha,
         )
+        contract = authenticated.contract
+        authentication_receipt = authenticated.receipt.as_dict()
     except Exception as error:
         raise FoldedBlankRecoveryABError(
             "V4 candidate tournament failed transitive authentication."
@@ -608,6 +617,9 @@ def _authenticate_v4_candidate(
         )
     return _V4CandidateBinding(
         contract=contract,
+        preregistration_authentication_receipt=MappingProxyType(
+            dict(authentication_receipt)
+        ),
         preregistration_path=prereg_path,
         preregistration_sha256=prereg_sha,
         preregistration=MappingProxyType(dict(prereg)),
@@ -813,6 +825,25 @@ def _replay_binding(path: Path, expected_sha256: str) -> dict[str, Any]:
     if not isinstance(suite, Mapping) or not suite:
         raise FoldedBlankRecoveryABError("behavior_eval_suite must be an object.")
     try:
+        authenticated_behavior = recovery_inputs.verify_behavior_suite_binding(suite)
+    except Exception as error:
+        raise FoldedBlankRecoveryABError(
+            "behavior_eval_suite binding failed strict adapter authentication."
+        ) from error
+    if (
+        authenticated_behavior.get("mode") != recovery_inputs.BEHAVIOR_MODE_FRESH
+        or authenticated_behavior.get("causal_ab_eligible") is not True
+        or len(calibration) != 640
+        or authenticated_behavior["adapter_provenance"]["selection"][
+            "recovery_calibration"
+        ]["ordered_text_manifest_sha256"]
+        != canonical_sha256(list(calibration))
+    ):
+        raise FoldedBlankRecoveryABError(
+            "Production recovery A/B requires the fresh disjoint causal adapter; "
+            "explicit JSON is diagnostic-only."
+        )
+    try:
         loaded_suite, behavior_probes, _generation_prompts = (
             hf_recovery._recovery_behavior_eval_suite(dict(suite))
         )
@@ -820,6 +851,36 @@ def _replay_binding(path: Path, expected_sha256: str) -> dict[str, Any]:
         raise FoldedBlankRecoveryABError(
             "behavior_eval_suite is not a valid recovery evaluator suite."
         ) from error
+    adapter = authenticated_behavior["adapter_provenance"]
+    generation_by_id = {
+        prompt["id"]: prompt for prompt in loaded_suite["generation_prompts"]
+    }
+    adapter_targets = adapter["targets"]
+    try:
+        recomputed_disjointness = (
+            recovery_inputs._fresh_candidate_replay_disjointness_audit(
+                decoded_prompts=[
+                    generation_by_id[target["generation_prompt_id"]]["prompt"]
+                    for target in adapter_targets
+                ],
+                prompt_token_ids=[
+                    target["prompt_token_ids"] for target in adapter_targets
+                ],
+                teacher_payload=verified_teacher_replay,
+            )
+        )
+    except Exception as error:
+        raise FoldedBlankRecoveryABError(
+            "Fresh behavior prompts overlap or fail the complete frozen replay audit."
+        ) from error
+    if (
+        adapter.get("recovery_replay_disjointness_audit") != recomputed_disjointness
+        or adapter.get("recovery_replay_disjointness_audit_sha256")
+        != recomputed_disjointness["payload_sha256"]
+    ):
+        raise FoldedBlankRecoveryABError(
+            "Fresh behavior replay-disjointness evidence changed after freezing."
+        )
     parameters = dict(verified_teacher_replay["parameters"])
     tokenizer_fingerprints = verified_teacher_replay["tokenizer_fingerprints"]
     source_model_fingerprint = verified_teacher_replay["source_model_fingerprint"]
@@ -876,6 +937,20 @@ def _replay_binding(path: Path, expected_sha256: str) -> dict[str, Any]:
         or suite.get("publication_authorized", False) is not False
         or loaded_suite is None
         or not behavior_probes
+        or tokenizer_fingerprints.get("source")
+        != tokenizer_fingerprints.get("candidate")
+        or authenticated_behavior["adapter_provenance"].get(
+            "source_model_fingerprint_sha256"
+        )
+        != source_model_fingerprint["sha256"]
+        or authenticated_behavior["adapter_provenance"].get(
+            "source_model_state_dict_sha256"
+        )
+        != source_model_state["state_dict_sha256"]
+        or authenticated_behavior["adapter_provenance"].get(
+            "identity_tokenizer_fingerprint_sha256"
+        )
+        != tokenizer_fingerprints["source"]["sha256"]
         or teacher_source_artifact.get("schema") != TEACHER_SOURCE_ARTIFACT_SCHEMA
         or expected_parent_tree_sha != actual_parent_tree_sha
         or teacher_source_artifact.get("tree_match_verified_before_model_load")
@@ -955,6 +1030,17 @@ def _replay_binding(path: Path, expected_sha256: str) -> dict[str, Any]:
         ),
         "stepwise_replay_bank_supplied": True,
         "behavior_eval_suite_sha256": canonical_sha256(suite),
+        "behavior_eval_suite_binding_payload_sha256": authenticated_behavior[
+            "payload_sha256"
+        ],
+        "behavior_mode": authenticated_behavior["mode"],
+        "causal_ab_eligible": True,
+        "behavior_adapter_payload_sha256": authenticated_behavior["adapter_provenance"][
+            "payload_sha256"
+        ],
+        "recovery_replay_disjointness_audit_sha256": recomputed_disjointness[
+            "payload_sha256"
+        ],
         "frozen_before_preregistration": True,
         "contains_sealed_data": False,
         "publication_authorized": False,
@@ -1023,6 +1109,11 @@ def _plan_binding(path: Path, expected_sha256: str) -> dict[str, Any]:
         or kwargs.get("trust_remote_code", False) is not False
         or kwargs.get("save_best_loss", False) is not False
         or kwargs.get("save_best_behavior", False) is not False
+        or kwargs.get("behavior_max_probes") != recovery_inputs.BEHAVIOR_PROBE_COUNT
+        or kwargs.get("behavior_max_generation_prompts")
+        != recovery_inputs.GENERATION_PROMPT_COUNT
+        or kwargs.get("behavior_max_new_tokens")
+        != recovery_inputs.BEHAVIOR_MAX_NEW_TOKENS
         or isinstance(stepwise_weight, bool)
         or not isinstance(stepwise_weight, (int, float))
         or float(stepwise_weight) < 0.0
@@ -1030,7 +1121,8 @@ def _plan_binding(path: Path, expected_sha256: str) -> dict[str, Any]:
         raise FoldedBlankRecoveryABError(
             "Recovery plan must pin positive steps/interval, local-only trusted "
             "model loading, AdamW foreach=False, no implicit best-checkpoint "
-            "retention, and a nonnegative stepwise donor weight."
+            "retention, the full 48/24/16 behavior contract, and a nonnegative "
+            "stepwise donor weight."
         )
     if (
         not isinstance(checkpoints, list)
@@ -1208,6 +1300,15 @@ def build_recovery_ab_preregistration_payload(
         "teacher_generated_texts_sha256": replay["teacher_generated_texts_sha256"],
         "on_policy_replay_bank_sha256": replay["on_policy_replay_bank_sha256"],
         "behavior_eval_suite_sha256": replay["behavior_eval_suite_sha256"],
+        "behavior_eval_suite_binding_payload_sha256": replay[
+            "behavior_eval_suite_binding_payload_sha256"
+        ],
+        "behavior_mode": replay["behavior_mode"],
+        "causal_ab_eligible": replay["causal_ab_eligible"],
+        "behavior_adapter_payload_sha256": replay["behavior_adapter_payload_sha256"],
+        "recovery_replay_disjointness_audit_sha256": replay[
+            "recovery_replay_disjointness_audit_sha256"
+        ],
         "recovery_plan_file_sha256": plan["file_sha256"],
         "recovery_plan_payload_sha256": plan["payload_sha256"],
         "recovery_kwargs_sha256": plan["recovery_kwargs_sha256"],
@@ -1259,6 +1360,9 @@ def build_recovery_ab_preregistration_payload(
         "v4_run_report": _collect_sha256_roots(v4.run_report),
         "v4_winner_selection": _collect_sha256_roots(v4.winner_selection),
         "v4_winner": _collect_sha256_roots(v4.winner),
+        "v4_preregistration_authentication": _collect_sha256_roots(
+            v4.preregistration_authentication_receipt
+        ),
         "compiled_blank": _collect_sha256_roots(compiled_blank),
         "replay_bank": _collect_sha256_roots(replay),
         "recovery_plan": _collect_sha256_roots(plan),
@@ -1275,6 +1379,9 @@ def build_recovery_ab_preregistration_payload(
             "winner_selection": str(v4.winner_selection_path),
             "winner_selection_sha256": v4.winner_selection_sha256,
             "evaluation_contract_sha256": v4.contract.evaluation_contract_sha256,
+            "preregistration_authentication_receipt": dict(
+                v4.preregistration_authentication_receipt
+            ),
             "winner": dict(v4.winner),
             "factor_pack_schema": str(v4.factor_payload.get("schema", "")),
             "factor_source_binding": factor_source_binding,

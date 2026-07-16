@@ -12,6 +12,7 @@ from neural_forge.hf_tools import _ensure_unique_ratio_tags
 from neural_forge.hf_tools import _finite_float
 from neural_forge.hf_tools import _generate_text_batch
 from neural_forge.hf_tools import _generation_diagnostics
+from neural_forge.hf_tools import _generation_health
 from neural_forge.hf_tools import _load_eval_suite
 from neural_forge.hf_tools import _ratio_tag
 from neural_forge.hf_tools import _score_behavior_probe
@@ -531,6 +532,52 @@ def test_generation_diagnostics_detects_repetition() -> None:
     assert diagnostics["generated_max_token_id_run"] == 3
 
 
+def test_literal_prefix_generation_can_require_health_beyond_the_prefix() -> None:
+    prompt = "Prompt: "
+    expected_prefix = "Good four token prefix"
+    common = {
+        "id": "fresh-parent-generation",
+        "prompt": prompt,
+        "kind": "literal_prefix",
+        "expected_prefix": expected_prefix,
+        "expected_prefix_generated_token_count": 4,
+        "relevance_rules": [],
+    }
+
+    def score(tail: str, tail_ids: list[int], *, required: bool = True) -> dict:
+        continuation = expected_prefix + tail
+        return _generation_health(
+            {
+                **common,
+                "output": prompt + continuation,
+                "diagnostics": _generation_diagnostics(
+                    continuation, [1, 2, 3, 4, *tail_ids]
+                ),
+                "require_generation_health": required,
+            },
+            24,
+            0.20,
+        )
+
+    prefix_only = score(" " + "x " * 12, [9] * 12, required=False)
+    exact_prefix = score("", [])
+    punctuation = score(" !?.;", [5, 6, 7, 8])
+    short_repetition = score(" x x x x", [9, 9, 9, 9])
+    coherent = score(
+        " coherent reasoning continues clearly.",
+        [5, 6, 7, 8, 10],
+    )
+
+    assert prefix_only["expected_enough"] is True
+    assert prefix_only["passed"] is True
+    assert exact_prefix["passed"] is False
+    assert punctuation["passed"] is False
+    assert short_repetition["passed"] is False
+    assert coherent["expected_enough"] is True
+    assert coherent["generation_health_required_beyond_expected_behavior"] is True
+    assert coherent["post_expected_health"]["post_expected_generated_token_count"] == 5
+    assert coherent["passed"] is True
+
 def test_generate_text_batch_preserves_prompt_order_and_padding_side() -> None:
     torch = pytest.importorskip("torch")
 
@@ -570,11 +617,22 @@ def test_generate_text_batch_preserves_prompt_order_and_padding_side() -> None:
                 }
             )
 
-        def decode(self, ids, skip_special_tokens=False):
-            values = ids.detach().cpu().tolist() if hasattr(ids, "detach") else list(ids)
+        def decode(
+            self,
+            ids,
+            skip_special_tokens=False,
+            clean_up_tokenization_spaces=True,
+        ):
+            assert clean_up_tokenization_spaces is False
+            values = (
+                ids.detach().cpu().tolist() if hasattr(ids, "detach") else list(ids)
+            )
             chars = []
             for value in values:
-                if skip_special_tokens and int(value) in {self.eos_token_id, self.pad_token_id}:
+                if skip_special_tokens and int(value) in {
+                    self.eos_token_id,
+                    self.pad_token_id,
+                }:
                     continue
                 chars.append(chr(int(value)))
             return "".join(chars)
@@ -583,25 +641,49 @@ def test_generate_text_batch_preserves_prompt_order_and_padding_side() -> None:
         def __init__(self) -> None:
             self.seen_batches = []
 
-        def generate(self, input_ids, attention_mask=None, max_new_tokens=None, do_sample=None, pad_token_id=None):
+        def generate(
+            self,
+            input_ids,
+            attention_mask=None,
+            max_new_tokens=None,
+            do_sample=None,
+            pad_token_id=None,
+        ):
             assert do_sample is False
             assert pad_token_id == 7
             self.seen_batches.append(input_ids.detach().cpu().tolist())
             suffixes = []
             for row_index in range(input_ids.shape[0]):
-                suffix = [ord("x"), ord(str(row_index + 1))]
+                suffix = (
+                    [ord("x"), 0, 7, 7]
+                    if row_index == 0
+                    else [ord("y"), ord("z"), ord("w"), ord("q")]
+                )
                 suffixes.append(suffix[: int(max_new_tokens)])
-            return torch.cat([input_ids, torch.tensor(suffixes, dtype=torch.long)], dim=1)
+            return torch.cat(
+                [input_ids, torch.tensor(suffixes, dtype=torch.long)], dim=1
+            )
 
     tokenizer = _Tokenizer()
     model = _Model()
 
-    results = _generate_text_batch(torch, model, tokenizer, ["A", "BC", "D"], "cpu", 2, batch_size=2)
+    results = _generate_text_batch(
+        torch, model, tokenizer, ["A", "BC", "D"], "cpu", 4, batch_size=2
+    )
 
     assert tokenizer.padding_side == "right"
     assert [item["prompt"] for item in results] == ["A", "BC", "D"]
-    assert [item["output"] for item in results] == ["Ax1", "BCx2", "Dx1"]
-    assert [item["diagnostics"]["generated_token_count"] for item in results] == [2, 2, 2]
+    assert [item["output"] for item in results] == ["Ax", "BCyzwq", "Dx"]
+    assert [item["diagnostics"]["generated_token_count"] for item in results] == [
+        1,
+        4,
+        1,
+    ]
+    assert [item["diagnostics"]["generated_token_ids"] for item in results] == [
+        [ord("x")],
+        [ord("y"), ord("z"), ord("w"), ord("q")],
+        [ord("x")],
+    ]
     assert model.seen_batches == [
         [[7, ord("A")], [ord("B"), ord("C")]],
         [[ord("D")]],
