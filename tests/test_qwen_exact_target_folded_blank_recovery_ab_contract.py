@@ -304,32 +304,13 @@ def _fresh_behavior_binding(teacher_payload: dict[str, Any]) -> dict[str, Any]:
     targets = []
     behavior_probes = []
     generation_prompts = []
-    for index in range(inputs.FRESH_CANDIDATE_COUNT):
-        token_ids = [500 + index * 16 + offset for offset in range(8)]
+    external_seed = inputs._load_external_fresh_reservoir_seed()
+    for index, external_row in enumerate(external_seed.prompts):
+        token_ids = [200 + index, 710, 711, 712, 713, 714, 715, 716]
         token_sha = inputs.split_tools._token_sequence_sha256(token_ids)
         prompt_id = f"prompt-{token_sha}"
-        prompt = f"Fresh evaluation candidate {index:02d}: solve the unseen task."
-        first_prefix = f"Answer{index:02d}"
-        lcp4_prefix = f"Answer{index:02d} continues correctly"
-        decoded_continuation = f"{lcp4_prefix} with coherent reasoning"
-        continuation = [900 + index * 4 + offset for offset in range(8)]
-        first_id = f"parent-first-action-{prompt_id}"
-        lcp4_id = f"parent-lcp4-{prompt_id}"
-        generation_id = f"parent-generation-{prompt_id}"
-        source_prompt_sha = f"{index + 1:064x}"
-        selection_rows.append(
-            {
-                "reservoir_index": index,
-                "prompt_id": prompt_id,
-                "token_ids_sha256": token_sha,
-                "token_count": len(token_ids),
-                "source_line_number": index + 1,
-                "source_prompt_sha256": source_prompt_sha,
-                "decoded_prompt_sha256": hashlib.sha256(
-                    prompt.encode("utf-8")
-                ).hexdigest(),
-            }
-        )
+        prompt = str(external_row["text"])
+        source_prompt_sha = str(external_row["source_prompt_sha256"])
         reservoir_rows.append(
             {
                 "reservoir_index": index,
@@ -340,8 +321,30 @@ def _fresh_behavior_binding(teacher_payload: dict[str, Any]) -> dict[str, Any]:
                 "decoded_prompt_sha256": hashlib.sha256(
                     prompt.encode("utf-8")
                 ).hexdigest(),
-                "source_line_number": index + 1,
+                "source_line_number": int(external_row["source_line_number"]),
                 "source_prompt_sha256": source_prompt_sha,
+            }
+        )
+        if index >= inputs.FRESH_CANDIDATE_COUNT:
+            continue
+        first_prefix = f"Answer{index:02d}"
+        lcp4_prefix = f"Answer{index:02d} continues correctly"
+        decoded_continuation = f"{lcp4_prefix} with coherent reasoning"
+        continuation = [900 + index * 4 + offset for offset in range(8)]
+        first_id = f"parent-first-action-{prompt_id}"
+        lcp4_id = f"parent-lcp4-{prompt_id}"
+        generation_id = f"parent-generation-{prompt_id}"
+        selection_rows.append(
+            {
+                "reservoir_index": index,
+                "prompt_id": prompt_id,
+                "token_ids_sha256": token_sha,
+                "token_count": len(token_ids),
+                "source_line_number": int(external_row["source_line_number"]),
+                "source_prompt_sha256": source_prompt_sha,
+                "decoded_prompt_sha256": hashlib.sha256(
+                    prompt.encode("utf-8")
+                ).hexdigest(),
             }
         )
         behavior_probes.extend(
@@ -415,24 +418,6 @@ def _fresh_behavior_binding(teacher_payload: dict[str, Any]) -> dict[str, Any]:
                 "generation_prompt_id": generation_id,
             }
         )
-    for index in range(inputs.FRESH_CANDIDATE_COUNT, 28):
-        token_ids = [500 + index * 16 + offset for offset in range(8)]
-        token_sha = inputs.split_tools._token_sequence_sha256(token_ids)
-        prompt = f"Fresh reserve candidate {index:02d}: solve another unseen task."
-        reservoir_rows.append(
-            {
-                "reservoir_index": index,
-                "prompt_id": f"prompt-{token_sha}",
-                "token_ids": token_ids,
-                "token_ids_sha256": token_sha,
-                "decoded_prompt": prompt,
-                "decoded_prompt_sha256": hashlib.sha256(
-                    prompt.encode("utf-8")
-                ).hexdigest(),
-                "source_line_number": index + 1,
-                "source_prompt_sha256": f"{index + 1:064x}",
-            }
-        )
     suite = {
         "source": "fresh-token-domain-parent-greedy-v1",
         "text_evals": [],
@@ -450,7 +435,10 @@ def _fresh_behavior_binding(teacher_payload: dict[str, Any]) -> dict[str, Any]:
     corpus = {
         "file_sha256": inputs.PINNED_RECOVERY_CORPUS_SHA256,
         "nonblank_line_count": inputs.PINNED_RECOVERY_CORPUS_LINE_COUNT,
-        "global_order": "source_prompt_sha256, then source_line_number",
+        "duplicate_source_row_count": (
+            inputs.PINNED_RECOVERY_CORPUS_DUPLICATE_SOURCE_ROW_COUNT
+        ),
+        "purpose": "teacher-recovery-calibration-lineage-only",
     }
     recovery_calibration = {
         "text_count": len(calibration),
@@ -473,29 +461,20 @@ def _fresh_behavior_binding(teacher_payload: dict[str, Any]) -> dict[str, Any]:
         "status": "candidate-reservoir-frozen-before-parent-load",
         "v4_preregistration": v4_preregistration,
         "v4_exclusion_splits": {},
+        "external_candidate_source": dict(external_seed.receipt),
         "corpus": corpus,
         "recovery_calibration": recovery_calibration,
         "reservoir_prompt_count": len(reservoir_rows),
         "reservoir_manifest_sha256": runner.canonical_sha256(reservoir_manifest),
-        "reservoir_order": "pinned-corpus-global-order-after-static-exclusions",
+        "reservoir_order": (
+            "external-round-robin-source-line-order-after-static-exclusions"
+        ),
         "reservoir_rows_hold_token_ids_and_decoded_text": True,
         "preselection_statistics": {
-            "records_considered": (
-                inputs.PINNED_RECOVERY_CORPUS_LINE_COUNT
-                - inputs.PINNED_RECOVERY_CORPUS_DUPLICATE_SOURCE_ROW_COUNT
-            ),
-            "unique_source_prompt_count": (
-                inputs.PINNED_RECOVERY_CORPUS_LINE_COUNT
-                - inputs.PINNED_RECOVERY_CORPUS_DUPLICATE_SOURCE_ROW_COUNT
-            ),
-            "duplicate_source_row_count": (
-                inputs.PINNED_RECOVERY_CORPUS_DUPLICATE_SOURCE_ROW_COUNT
-            ),
-            "skipped_candidate_text_present_in_calibration": (
-                inputs.PINNED_RECOVERY_CORPUS_LINE_COUNT
-                - inputs.PINNED_RECOVERY_CORPUS_DUPLICATE_SOURCE_ROW_COUNT
-                - len(reservoir_rows)
-            ),
+            "records_considered": inputs.PINNED_EXTERNAL_FRESH_RESERVOIR_EXPANDED_COUNT,
+            "unique_source_prompt_count": inputs.PINNED_EXTERNAL_FRESH_RESERVOIR_EXPANDED_COUNT,
+            "duplicate_source_row_count": 0,
+            "skipped_candidate_text_present_in_calibration": 0,
             "skipped_under_minimum_prompt_tokens": 0,
             "skipped_over_token_limit": 0,
             "skipped_exact_prompt_collision": 0,
@@ -539,6 +518,7 @@ def _fresh_behavior_binding(teacher_payload: dict[str, Any]) -> dict[str, Any]:
         "causal_ab_eligible": True,
         "v4_preregistration": v4_preregistration,
         "v4_exclusion_splits": {},
+        "external_candidate_source": dict(external_seed.receipt),
         "corpus": corpus,
         "recovery_calibration": recovery_calibration,
         "candidate_reservoir": candidate_reservoir,
@@ -554,6 +534,22 @@ def _fresh_behavior_binding(teacher_payload: dict[str, Any]) -> dict[str, Any]:
             "decoded_prompt_manifest_sha256": runner.canonical_sha256(
                 [probe["prompt"] for probe in generation_prompts]
             ),
+            "category_ids_in_selected_order": [
+                str(row["category_id"])
+                for row in external_seed.prompts[: inputs.FRESH_CANDIDATE_COUNT]
+            ],
+            "category_histogram": {
+                category: sum(
+                    row["category_id"] == category
+                    for row in external_seed.prompts[
+                        : inputs.FRESH_CANDIDATE_COUNT
+                    ]
+                )
+                for category in sorted(
+                    {str(row["category_id"]) for row in external_seed.prompts}
+                )
+            },
+            "all_external_categories_represented": True,
         },
         "selection_statistics": {
             "preselection": reservoir_provenance_body["preselection_statistics"],
@@ -575,7 +571,7 @@ def _fresh_behavior_binding(teacher_payload: dict[str, Any]) -> dict[str, Any]:
         "candidate_reservoir_frozen_before_parent_load": True,
         "final_candidate_frozen_before_parent_load": False,
         "parent_model_loaded_before_final_selection": True,
-        "teacher_replay_generated_before_final_selection": True,
+        "teacher_replay_authenticated_before_final_selection": True,
         "teacher_replay_used_for_exclusion_only": True,
         "parent_forward_or_score_during_final_selection": False,
         "tokenizer_called_during_final_selection": False,

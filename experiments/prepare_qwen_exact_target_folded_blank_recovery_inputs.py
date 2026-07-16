@@ -16,6 +16,7 @@ import json
 import math
 import os
 import shutil
+import stat
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -36,23 +37,26 @@ from neural_forge.hf_guided_checkpoint_recovery import (
 )
 
 
-REPLAY_WRAPPER_SCHEMA = "neural-forge-frozen-recovery-replay-bank-v4"
+REPLAY_WRAPPER_SCHEMA = "neural-forge-frozen-recovery-replay-bank-v5"
 RECOVERY_PLAN_SCHEMA = "neural-forge-folded-blank-recovery-plan-v2"
 BEHAVIOR_SUITE_BINDING_SCHEMA = (
-    "neural-forge-candidate-recovery-behavior-suite-binding-v4"
+    "neural-forge-candidate-recovery-behavior-suite-binding-v5"
 )
-FRESH_SELECTION_SCHEMA = "neural-forge-fresh-recovery-candidate-selection-v2"
+FRESH_SELECTION_SCHEMA = "neural-forge-fresh-recovery-candidate-selection-v3"
 FRESH_REPLAY_EXCLUSION_DERIVATION_SCHEMA = (
     "neural-forge-fresh-replay-exclusion-first-survivors-v1"
 )
-TOKEN_DOMAIN_ADAPTER_SCHEMA = "neural-forge-token-domain-recovery-behavior-adapter-v4"
+TOKEN_DOMAIN_ADAPTER_SCHEMA = "neural-forge-token-domain-recovery-behavior-adapter-v5"
 RECOVERY_REPLAY_DISJOINTNESS_AUDIT_SCHEMA = (
     "neural-forge-fresh-candidate-replay-disjointness-audit-v1"
 )
 TEACHER_SOURCE_BINDING_SCHEMA = "neural-forge-teacher-source-artifact-binding-v1"
-BUILD_REPORT_SCHEMA = "neural-forge-folded-blank-recovery-input-build-v2"
+BUILD_REPORT_SCHEMA = "neural-forge-folded-blank-recovery-input-build-v3"
 TEACHER_REPLAY_ACQUISITION_SCHEMA = (
-    "neural-forge-teacher-replay-acquisition-v1"
+    "neural-forge-teacher-replay-acquisition-v2"
+)
+TEACHER_REPLAY_CACHE_IMPORT_RECEIPT_SCHEMA = (
+    "neural-forge-teacher-replay-compatible-import-v1"
 )
 PARENT_MODEL_USAGE_SCHEMA = "neural-forge-parent-model-usage-v1"
 
@@ -88,6 +92,41 @@ BEHAVIOR_PROBE_COUNT = FIRST_ACTION_PROBE_COUNT + LCP4_PROBE_COUNT
 GENERATION_PROMPT_COUNT = FRESH_CANDIDATE_COUNT
 BEHAVIOR_MAX_NEW_TOKENS = 16
 MINIMUM_REPLAY_DISJOINT_TOKEN_WINDOW = 8
+EXTERNAL_FRESH_RESERVOIR_SCHEMA = (
+    "neural-forge.exact-target-fresh-recovery-reservoir-seed.v1"
+)
+EXTERNAL_FRESH_RESERVOIR_RECEIPT_SCHEMA = (
+    "neural-forge.exact-target-fresh-recovery-reservoir-receipt.v1"
+)
+EXTERNAL_FRESH_RESERVOIR_EXPANSION_ALGORITHM = (
+    "round-robin-topic-template-category-format-v1"
+)
+PINNED_EXTERNAL_FRESH_RESERVOIR_PATH = Path(__file__).with_name(
+    "qwen_exact_target_fresh_recovery_reservoir_v1.json"
+)
+PINNED_EXTERNAL_FRESH_RESERVOIR_FILE_SHA256 = (
+    "db955d62b35c6d221de71a254b82956056c58a7f0a5d7340f84e9cb587f335bb"
+)
+PINNED_EXTERNAL_FRESH_RESERVOIR_BYTE_COUNT = 13_322
+PINNED_EXTERNAL_FRESH_RESERVOIR_PAYLOAD_SHA256 = (
+    "d2e9f9af068cce6b0769ebb24f6bdf94985cc20c090c32b35415a9db1f7364e3"
+)
+PINNED_EXTERNAL_FRESH_RESERVOIR_EXPANDED_COUNT = 384
+PINNED_EXTERNAL_FRESH_RESERVOIR_EXPANDED_MANIFEST_SHA256 = (
+    "855949e15df34ee515aa7d4092d96353321207939e507215f8e963738e664a6f"
+)
+PINNED_EXTERNAL_FRESH_RESERVOIR_EXPANDED_TEXT_MANIFEST_SHA256 = (
+    "fd2db9aa77e190f0923c77e4acfcdf5289167300b3273ae4fdcac5331fb23f75"
+)
+LEGACY_TEACHER_CACHE_IMPORT_SOURCE_COMMIT = (
+    "6166562db25f6a9e938be45d580381fc9d81d104"
+)
+LEGACY_TEACHER_CACHE_IMPORT_PREP_PRODUCER = {
+    "role": "prepare_recovery_inputs",
+    "filename": "prepare_qwen_exact_target_folded_blank_recovery_inputs.py",
+    "byte_count": 165_948,
+    "sha256": "9b69c663880e6a4c891af8473159e4ef4ce641c705542da134212ac5d4b1f3d2",
+}
 PINNED_RECOVERY_CORPUS_SHA256 = (
     "ba2dd1202752e2dd2b9b981c52501060ee367e220e5fb73ce7f8c320e2bbdd90"
 )
@@ -203,6 +242,7 @@ _BUILD_FIELDS = frozenset(
         "teacher_generation_completed",
         "teacher_replay_acquisition",
         "parent_model_usage",
+        "fresh_candidate_reservoir",
         "gpu_work_launched",
         "training_launched",
         "optimizer_created",
@@ -256,6 +296,23 @@ class FreshRecoveryCandidateReservoir:
     prompts: tuple[split_tools._PromptRecord, ...]
     decoded_prompts: tuple[str, ...]
     provenance: Mapping[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class ExternalFreshReservoirSeed:
+    """Authenticated independent prompt seed expanded without model access."""
+
+    prompts: tuple[Mapping[str, Any], ...]
+    receipt: Mapping[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class CompatibleTeacherCacheImport:
+    """One explicitly pinned legacy replay authorized for compatible migration."""
+
+    request: Mapping[str, Any]
+    envelope: Mapping[str, Any]
+    pre_model_receipt: Mapping[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -400,6 +457,258 @@ def _existing_real_file(value: Path | str, name: str) -> Path:
     if not path.is_file():
         raise RecoveryInputPreparationError(f"{name} must be an existing real file.")
     return path
+
+
+def _load_external_fresh_reservoir_seed() -> ExternalFreshReservoirSeed:
+    """Authenticate and expand the committed prompt seed without model access."""
+
+    raw_path = Path(PINNED_EXTERNAL_FRESH_RESERVOIR_PATH).expanduser()
+    try:
+        info = raw_path.lstat()
+    except OSError as error:
+        raise RecoveryInputPreparationError(
+            "Pinned external fresh-reservoir seed is unavailable."
+        ) from error
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+        raise RecoveryInputPreparationError(
+            "Pinned external fresh-reservoir seed must be one real file."
+        )
+    if (
+        info.st_size != PINNED_EXTERNAL_FRESH_RESERVOIR_BYTE_COUNT
+        or _file_sha256(raw_path) != PINNED_EXTERNAL_FRESH_RESERVOIR_FILE_SHA256
+    ):
+        raise RecoveryInputPreparationError(
+            "Pinned external fresh-reservoir seed bytes changed."
+        )
+    payload = _strict_json_file(raw_path)
+    expected_fields = {
+        "schema",
+        "status",
+        "seed",
+        "expansion_algorithm",
+        "categories",
+        "expected_expanded_prompt_count",
+        "contains_cached_prompt_or_target_content",
+        "contains_parent_or_child_outputs",
+        "payload_sha256",
+    }
+    if set(payload) != expected_fields:
+        raise RecoveryInputPreparationError(
+            "External fresh-reservoir seed fields changed."
+        )
+    body = dict(payload)
+    claimed = _require_sha256(
+        body.pop("payload_sha256"), "external fresh-reservoir payload SHA"
+    )
+    categories = payload.get("categories")
+    if (
+        payload.get("schema") != EXTERNAL_FRESH_RESERVOIR_SCHEMA
+        or payload.get("status") != "static-independent-pre-model-seed"
+        or payload.get("seed") != 20_260_715
+        or payload.get("expansion_algorithm")
+        != EXTERNAL_FRESH_RESERVOIR_EXPANSION_ALGORITHM
+        or payload.get("expected_expanded_prompt_count")
+        != PINNED_EXTERNAL_FRESH_RESERVOIR_EXPANDED_COUNT
+        or payload.get("contains_cached_prompt_or_target_content") is not False
+        or payload.get("contains_parent_or_child_outputs") is not False
+        or claimed != PINNED_EXTERNAL_FRESH_RESERVOIR_PAYLOAD_SHA256
+        or canonical_sha256(body) != claimed
+        or not isinstance(categories, list)
+        or len(categories) != 8
+    ):
+        raise RecoveryInputPreparationError(
+            "External fresh-reservoir seed authentication failed."
+        )
+
+    normalized_categories: list[dict[str, Any]] = []
+    category_ids: set[str] = set()
+    candidate_ids: set[str] = set()
+    source_texts: set[str] = set()
+    for category_index, raw_category in enumerate(categories):
+        if not isinstance(raw_category, Mapping) or set(raw_category) != {
+            "category_id",
+            "topics",
+            "templates",
+        }:
+            raise RecoveryInputPreparationError(
+                f"External reservoir category {category_index} fields changed."
+            )
+        category_id = raw_category.get("category_id")
+        topics = raw_category.get("topics")
+        templates = raw_category.get("templates")
+        if (
+            not isinstance(category_id, str)
+            or not category_id
+            or not category_id.replace("-", "").isalnum()
+            or category_id in category_ids
+            or not isinstance(topics, list)
+            or len(topics) != 12
+            or not isinstance(templates, list)
+            or len(templates) != 4
+        ):
+            raise RecoveryInputPreparationError(
+                f"External reservoir category {category_index} is invalid."
+            )
+        category_ids.add(category_id)
+        normalized_topics: list[dict[str, str]] = []
+        topic_ids: set[str] = set()
+        for topic_index, topic in enumerate(topics):
+            if not isinstance(topic, Mapping) or set(topic) != {"topic_id", "label"}:
+                raise RecoveryInputPreparationError(
+                    f"External reservoir topic {category_index}:{topic_index} changed."
+                )
+            topic_id = topic.get("topic_id")
+            label = topic.get("label")
+            if (
+                not isinstance(topic_id, str)
+                or not topic_id
+                or not topic_id.replace("-", "").isalnum()
+                or topic_id in topic_ids
+                or not isinstance(label, str)
+                or not label.strip()
+                or label != label.strip()
+            ):
+                raise RecoveryInputPreparationError(
+                    f"External reservoir topic {category_index}:{topic_index} is invalid."
+                )
+            topic_ids.add(topic_id)
+            normalized_topics.append({"topic_id": topic_id, "label": label})
+        normalized_templates: list[dict[str, str]] = []
+        template_ids: set[str] = set()
+        for template_index, template in enumerate(templates):
+            if not isinstance(template, Mapping) or set(template) != {
+                "template_id",
+                "text",
+            }:
+                raise RecoveryInputPreparationError(
+                    "External reservoir template fields changed."
+                )
+            template_id = template.get("template_id")
+            text = template.get("text")
+            if (
+                not isinstance(template_id, str)
+                or not template_id
+                or not template_id.replace("-", "").isalnum()
+                or template_id in template_ids
+                or not isinstance(text, str)
+                or text.count("{topic}") != 1
+                or "{" in text.replace("{topic}", "")
+                or "}" in text.replace("{topic}", "")
+            ):
+                raise RecoveryInputPreparationError(
+                    f"External reservoir template {category_index}:{template_index} is invalid."
+                )
+            template_ids.add(template_id)
+            normalized_templates.append({"template_id": template_id, "text": text})
+        normalized_categories.append(
+            {
+                "category_id": category_id,
+                "topics": normalized_topics,
+                "templates": normalized_templates,
+            }
+        )
+
+    expanded: list[dict[str, Any]] = []
+    # The category loop is innermost: each consecutive block of eight spans
+    # every domain, independent of any model, cache, or output.
+    for topic_index in range(12):
+        for template_index in range(4):
+            for category in normalized_categories:
+                topic = category["topics"][topic_index]
+                template = category["templates"][template_index]
+                candidate_id = (
+                    f"{category['category_id']}.{topic['topic_id']}."
+                    f"{template['template_id']}"
+                )
+                text = template["text"].format(topic=topic["label"])
+                if (
+                    candidate_id in candidate_ids
+                    or text in source_texts
+                    or not text.strip()
+                    or text != text.strip()
+                ):
+                    raise RecoveryInputPreparationError(
+                        "External reservoir expansion produced a duplicate or blank prompt."
+                    )
+                candidate_ids.add(candidate_id)
+                source_texts.add(text)
+                source_sha = hashlib.sha256(text.encode("utf-8")).hexdigest()
+                expanded.append(
+                    {
+                        "source_line_number": len(expanded) + 1,
+                        "source_candidate_id": candidate_id,
+                        "category_id": category["category_id"],
+                        "topic_id": topic["topic_id"],
+                        "template_id": template["template_id"],
+                        "source_prompt_sha256": source_sha,
+                        "source_prompt_utf8_byte_count": len(text.encode("utf-8")),
+                        "text": text,
+                    }
+                )
+    if len(expanded) != PINNED_EXTERNAL_FRESH_RESERVOIR_EXPANDED_COUNT:
+        raise RecoveryInputPreparationError(
+            "External reservoir expansion count changed."
+        )
+    manifest = [
+        {key: value for key, value in row.items() if key != "text"}
+        for row in expanded
+    ]
+    expanded_manifest_sha = canonical_sha256(manifest)
+    expanded_text_manifest_sha = canonical_sha256(
+        [row["text"] for row in expanded]
+    )
+    if (
+        expanded_manifest_sha
+        != PINNED_EXTERNAL_FRESH_RESERVOIR_EXPANDED_MANIFEST_SHA256
+        or expanded_text_manifest_sha
+        != PINNED_EXTERNAL_FRESH_RESERVOIR_EXPANDED_TEXT_MANIFEST_SHA256
+    ):
+        raise RecoveryInputPreparationError(
+            "External reservoir expanded prompt manifests changed."
+        )
+    receipt = {
+        "schema": EXTERNAL_FRESH_RESERVOIR_RECEIPT_SCHEMA,
+        "status": "authenticated-expanded-before-cache-or-model-access",
+        "source_filename": raw_path.name,
+        "source_file_sha256": PINNED_EXTERNAL_FRESH_RESERVOIR_FILE_SHA256,
+        "source_file_byte_count": PINNED_EXTERNAL_FRESH_RESERVOIR_BYTE_COUNT,
+        "source_payload_sha256": claimed,
+        "seed": payload["seed"],
+        "expansion_algorithm": payload["expansion_algorithm"],
+        "category_count": len(normalized_categories),
+        "topic_count": sum(len(row["topics"]) for row in normalized_categories),
+        "template_count": sum(
+            len(row["templates"]) for row in normalized_categories
+        ),
+        "expanded_prompt_count": len(expanded),
+        "expanded_prompt_manifest_sha256": expanded_manifest_sha,
+        "expanded_prompt_text_manifest_sha256": expanded_text_manifest_sha,
+        "first_24_cover_all_categories": (
+            len({row["category_id"] for row in expanded[:24]})
+            == len(normalized_categories)
+        ),
+        "contains_cached_prompt_or_target_content": False,
+        "contains_parent_or_child_outputs": False,
+    }
+    if receipt["first_24_cover_all_categories"] is not True:
+        raise RecoveryInputPreparationError(
+            "External reservoir round-robin coverage changed."
+        )
+    return ExternalFreshReservoirSeed(
+        prompts=tuple(expanded),
+        receipt=receipt,
+    )
+
+
+def _verify_external_fresh_reservoir_receipt(
+    receipt: Mapping[str, Any],
+) -> ExternalFreshReservoirSeed:
+    expected = _load_external_fresh_reservoir_seed()
+    if not isinstance(receipt, Mapping) or dict(receipt) != dict(expected.receipt):
+        raise RecoveryInputPreparationError(
+            "External fresh-reservoir provenance changed."
+        )
+    return expected
 
 
 def _absent_output_directory(value: Path | str) -> Path:
@@ -725,6 +1034,7 @@ def _authenticate_fresh_recovery_candidate_reservoir(
             "V4 exclusion domains are not globally disjoint."
         ) from error
 
+    external_seed = _load_external_fresh_reservoir_seed()
     try:
         corpus_records = split_tools._load_corpus(
             corpus_path,
@@ -739,10 +1049,21 @@ def _authenticate_fresh_recovery_candidate_reservoir(
             "Pinned recovery corpus authentication failed."
         ) from error
 
+    duplicate_source_row_count = (
+        PINNED_RECOVERY_CORPUS_LINE_COUNT - len(corpus_records)
+    )
+    if (
+        duplicate_source_row_count
+        != PINNED_RECOVERY_CORPUS_DUPLICATE_SOURCE_ROW_COUNT
+    ):
+        raise RecoveryInputPreparationError(
+            "Pinned recovery corpus unique-prompt count changed."
+        )
+
     tokenized_records: list[tuple[Mapping[str, Any], tuple[int, ...]]] = []
     skipped_short = 0
     skipped_calibration_text = 0
-    for record in corpus_records:
+    for record in external_seed.prompts:
         text = str(record["text"])
         if any(
             text in calibration_text or calibration_text in text
@@ -754,7 +1075,7 @@ def _authenticate_fresh_recovery_candidate_reservoir(
             tokens = split_tools._tokenize(tokenizer, text)
         except split_tools.ContinuationSplitPreparationError as error:
             raise RecoveryInputPreparationError(
-                "Pinned corpus tokenization failed during fresh selection."
+                "External candidate tokenization failed during fresh selection."
             ) from error
         if len(tokens) < split_tools.MINIMUM_MEANINGFUL_PREFIX_TOKENS:
             skipped_short += 1
@@ -769,16 +1090,6 @@ def _authenticate_fresh_recovery_candidate_reservoir(
         )
         + calibration_records
     )
-    duplicate_source_row_count = (
-        PINNED_RECOVERY_CORPUS_LINE_COUNT - len(corpus_records)
-    )
-    if (
-        duplicate_source_row_count
-        != PINNED_RECOVERY_CORPUS_DUPLICATE_SOURCE_ROW_COUNT
-    ):
-        raise RecoveryInputPreparationError(
-            "Pinned recovery corpus unique-prompt count changed."
-        )
     statically_excluded_prompt_ids = {prompt.prompt_id for prompt in excluded}
     statically_excluded_prefixes = {
         prefix for prompt in excluded for prefix in prompt.prefixes
@@ -786,9 +1097,9 @@ def _authenticate_fresh_recovery_candidate_reservoir(
     reservoir_prompts: list[split_tools._PromptRecord] = []
     decoded_reservoir: list[str] = []
     reservoir_stats = {
-        "records_considered": len(corpus_records),
-        "unique_source_prompt_count": len(corpus_records),
-        "duplicate_source_row_count": duplicate_source_row_count,
+        "records_considered": len(external_seed.prompts),
+        "unique_source_prompt_count": len(external_seed.prompts),
+        "duplicate_source_row_count": 0,
         "skipped_candidate_text_present_in_calibration": skipped_calibration_text,
         "skipped_under_minimum_prompt_tokens": skipped_short,
         "skipped_over_token_limit": 0,
@@ -813,6 +1124,10 @@ def _authenticate_fresh_recovery_candidate_reservoir(
             reservoir_stats["skipped_meaningful_prefix_collision"] += 1
             continue
         decoded = _decode_identity_prompt(tokenizer, tokens)
+        if decoded != record["text"]:
+            raise RecoveryInputPreparationError(
+                "An external candidate did not round-trip to its exact source text."
+            )
         if any(
             decoded in calibration_text or calibration_text in decoded
             for calibration_text in calibration_texts
@@ -823,7 +1138,13 @@ def _authenticate_fresh_recovery_candidate_reservoir(
             reservoir_stats["skipped_duplicate_decoded_prompt"] += 1
             continue
         prompt = split_tools._PromptRecord(
-            payload=split_tools._fresh_prompt_payload(record, tokens),
+            payload={
+                "source_line_number": int(record["source_line_number"]),
+                "source_prompt_sha256": str(record["source_prompt_sha256"]),
+                "token_ids": list(tokens),
+                "prompt_id": prompt_id,
+                "token_ids_sha256": digest,
+            },
             token_ids=tokens,
             prompt_id=prompt_id,
             prefixes=prefixes,
@@ -835,7 +1156,9 @@ def _authenticate_fresh_recovery_candidate_reservoir(
 
     if len(reservoir_prompts) < FRESH_CANDIDATE_COUNT:
         raise RecoveryInputPreparationError(
-            "Pinned corpus has fewer than 24 pre-model reservoir prompts."
+            "External seed has fewer than 24 pre-model reservoir prompts after "
+            f"static exclusions; accepted={len(reservoir_prompts)}, "
+            f"expanded={len(external_seed.prompts)}."
         )
     reservoir_manifest = [
         {
@@ -865,15 +1188,19 @@ def _authenticate_fresh_recovery_candidate_reservoir(
             "sealed_before_model_access": True,
         },
         "v4_exclusion_splits": split_provenance,
+        "external_candidate_source": dict(external_seed.receipt),
         "corpus": {
             "file_sha256": PINNED_RECOVERY_CORPUS_SHA256,
             "nonblank_line_count": PINNED_RECOVERY_CORPUS_LINE_COUNT,
-            "global_order": "source_prompt_sha256, then source_line_number",
+            "duplicate_source_row_count": duplicate_source_row_count,
+            "purpose": "teacher-recovery-calibration-lineage-only",
         },
         "recovery_calibration": calibration_provenance,
         "reservoir_prompt_count": len(reservoir_prompts),
         "reservoir_manifest_sha256": canonical_sha256(reservoir_manifest),
-        "reservoir_order": "pinned-corpus-global-order-after-static-exclusions",
+        "reservoir_order": (
+            "external-round-robin-source-line-order-after-static-exclusions"
+        ),
         "reservoir_rows_hold_token_ids_and_decoded_text": True,
         "preselection_statistics": reservoir_stats,
         "sealed_exclusion_manifest_used_model_free": True,
@@ -910,6 +1237,26 @@ def _select_fresh_recovery_candidate(
     selected_indices = tuple(derivation["selected_reservoir_indices"])
     prompts = tuple(reservoir.prompts[index] for index in selected_indices)
     decoded = tuple(reservoir.decoded_prompts[index] for index in selected_indices)
+    external_seed = _verify_external_fresh_reservoir_receipt(
+        reservoir.provenance["external_candidate_source"]
+    )
+    source_categories = {
+        int(row["source_line_number"]): str(row["category_id"])
+        for row in external_seed.prompts
+    }
+    selected_categories = [
+        source_categories[int(prompt.payload["source_line_number"])]
+        for prompt in prompts
+    ]
+    all_categories = sorted({str(row["category_id"]) for row in external_seed.prompts})
+    category_histogram = {
+        category: selected_categories.count(category) for category in all_categories
+    }
+    if any(count == 0 for count in category_histogram.values()):
+        raise RecoveryInputPreparationError(
+            "The first 24 replay-disjoint survivors do not cover all external "
+            f"candidate categories; category_counts={json.dumps(category_histogram, sort_keys=True)}."
+        )
     token_counts = [len(prompt.token_ids) for prompt in prompts]
     if (
         len(prompts) != FRESH_CANDIDATE_COUNT
@@ -944,6 +1291,9 @@ def _select_fresh_recovery_candidate(
         "causal_ab_eligible": True,
         "v4_preregistration": reservoir.provenance["v4_preregistration"],
         "v4_exclusion_splits": reservoir.provenance["v4_exclusion_splits"],
+        "external_candidate_source": reservoir.provenance[
+            "external_candidate_source"
+        ],
         "corpus": reservoir.provenance["corpus"],
         "recovery_calibration": reservoir.provenance["recovery_calibration"],
         "candidate_reservoir": {
@@ -963,6 +1313,9 @@ def _select_fresh_recovery_candidate(
             "prompt_rows": selected_rows,
             "prompt_manifest_sha256": canonical_sha256(selected_rows),
             "decoded_prompt_manifest_sha256": canonical_sha256(list(decoded)),
+            "category_ids_in_selected_order": selected_categories,
+            "category_histogram": category_histogram,
+            "all_external_categories_represented": True,
         },
         "selection_statistics": {
             "preselection": reservoir.provenance["preselection_statistics"],
@@ -986,7 +1339,7 @@ def _select_fresh_recovery_candidate(
         "candidate_reservoir_frozen_before_parent_load": True,
         "final_candidate_frozen_before_parent_load": False,
         "parent_model_loaded_before_final_selection": True,
-        "teacher_replay_generated_before_final_selection": True,
+        "teacher_replay_authenticated_before_final_selection": True,
         "teacher_replay_used_for_exclusion_only": True,
         "parent_forward_or_score_during_final_selection": False,
         "tokenizer_called_during_final_selection": False,
@@ -1263,7 +1616,7 @@ def _build_fresh_behavior_binding(
 ) -> dict[str, Any]:
     """Generate and self-score parent decoded-prefix targets for the fresh 24."""
 
-    if teacher_replay_origin not in {"generated", "cache-hit"}:
+    if teacher_replay_origin not in {"generated", "cache-hit", "cache-import"}:
         raise RecoveryInputPreparationError("teacher_replay_origin is unsupported.")
 
     tokenizer_fingerprints = teacher_payload.get("tokenizer_fingerprints")
@@ -1690,13 +2043,43 @@ def _fresh_selection_structure_is_valid(selection: Mapping[str, Any]) -> bool:
                 != source["source_prompt_sha256"]
             ):
                 return False
+        external_seed = _verify_external_fresh_reservoir_receipt(
+            selection["external_candidate_source"]
+        )
+        source_categories = {
+            int(row["source_line_number"]): str(row["category_id"])
+            for row in external_seed.prompts
+        }
+        selected_categories = [
+            source_categories[int(row["source_line_number"])] for row in selected_rows
+        ]
+        all_categories = sorted(
+            {str(row["category_id"]) for row in external_seed.prompts}
+        )
+        category_histogram = {
+            category: selected_categories.count(category)
+            for category in all_categories
+        }
+        selected_candidate = selection["selected_candidate"]
+        if (
+            selection.get("external_candidate_source")
+            != selection["candidate_reservoir"]["provenance"].get(
+                "external_candidate_source"
+            )
+            or selected_candidate.get("category_ids_in_selected_order")
+            != selected_categories
+            or selected_candidate.get("category_histogram") != category_histogram
+            or selected_candidate.get("all_external_categories_represented") is not True
+            or any(count == 0 for count in category_histogram.values())
+        ):
+            return False
         return (
             selection.get("status") == "frozen-after-teacher-replay-exclusion"
             and selection.get("candidate_reservoir_frozen_before_parent_load")
             is True
             and selection.get("final_candidate_frozen_before_parent_load") is False
             and selection.get("parent_model_loaded_before_final_selection") is True
-            and selection.get("teacher_replay_generated_before_final_selection")
+            and selection.get("teacher_replay_authenticated_before_final_selection")
             is True
             and selection.get("teacher_replay_used_for_exclusion_only") is True
             and selection.get("parent_forward_or_score_during_final_selection")
@@ -2014,7 +2397,7 @@ def _fresh_adapter_cross_bindings_valid(
             "parent_model_generated_teacher_replay_this_run": (
                 replay_origin == "generated"
             ),
-        } and replay_origin in {"generated", "cache-hit"}
+        } and replay_origin in {"generated", "cache-hit", "cache-import"}
     except (
         KeyError,
         TypeError,
@@ -2562,6 +2945,16 @@ def _build_report(
             parent_model_usage,
             name="parent_model_usage",
         ),
+        "fresh_candidate_reservoir": (
+            _json_value(
+                behavior_binding["adapter_provenance"]["selection"][
+                    "external_candidate_source"
+                ],
+                name="fresh_candidate_reservoir",
+            )
+            if behavior_binding["mode"] == BEHAVIOR_MODE_FRESH
+            else None
+        ),
         "gpu_work_launched": teacher_generation_device.casefold().startswith("cuda"),
         "training_launched": False,
         "optimizer_created": False,
@@ -2602,6 +2995,7 @@ def verify_build_report(payload: Mapping[str, Any]) -> dict[str, Any]:
     )
     acquisition = row.get("teacher_replay_acquisition")
     usage = row.get("parent_model_usage")
+    fresh_reservoir = row.get("fresh_candidate_reservoir")
     if not isinstance(acquisition, Mapping) or set(acquisition) != {
         "schema",
         "cache_mode",
@@ -2611,6 +3005,7 @@ def verify_build_report(payload: Mapping[str, Any]) -> dict[str, Any]:
         "cache_envelope_sha256",
         "cache_entry_relative_path",
         "cache_verified_before_final_selection",
+        "cache_import",
     }:
         raise RecoveryInputPreparationError(
             "Build report teacher replay acquisition changed."
@@ -2624,6 +3019,12 @@ def verify_build_report(payload: Mapping[str, Any]) -> dict[str, Any]:
         "fresh_target_generation_performed",
     }:
         raise RecoveryInputPreparationError("Build report parent model usage changed.")
+    if row.get("behavior_mode") == BEHAVIOR_MODE_FRESH:
+        _verify_external_fresh_reservoir_receipt(fresh_reservoir)
+    elif fresh_reservoir is not None:
+        raise RecoveryInputPreparationError(
+            "Diagnostic build report cannot bind a fresh candidate reservoir."
+        )
     cache_mode = acquisition.get("cache_mode")
     origin = acquisition.get("origin")
     cache_result = acquisition.get("cache_result")
@@ -2650,7 +3051,7 @@ def verify_build_report(payload: Mapping[str, Any]) -> dict[str, Any]:
         )
     ):
         raise RecoveryInputPreparationError("Disabled cache cannot bind an entry.")
-    expected_reused = origin == "cache-hit"
+    expected_reused = origin in {"cache-hit", "cache-import"}
     generated_results = {
         "published",
         "existing-byte-identical",
@@ -2664,6 +3065,11 @@ def verify_build_report(payload: Mapping[str, Any]) -> dict[str, Any]:
             and cache_result == "hit"
         )
         or (
+            cache_mode in {"auto", "require"}
+            and origin == "cache-import"
+            and cache_result in generated_results
+        )
+        or (
             cache_mode == "auto"
             and origin == "generated"
             and cache_result in generated_results
@@ -2674,6 +3080,17 @@ def verify_build_report(payload: Mapping[str, Any]) -> dict[str, Any]:
             and cache_result in generated_results
         )
     )
+    import_receipt = acquisition.get("cache_import")
+    if origin == "cache-import":
+        _verify_teacher_cache_import_receipt(
+            import_receipt,
+            current_request_sha256=acquisition["cache_request_sha256"],
+            current_envelope_sha256=acquisition["cache_envelope_sha256"],
+        )
+    elif import_receipt is not None:
+        raise RecoveryInputPreparationError(
+            "Non-import replay acquisition cannot bind an import receipt."
+        )
     fresh_targets = usage.get("fresh_target_generation_performed")
     expected_load_purpose = (
         "fresh-targets"
@@ -2688,7 +3105,7 @@ def verify_build_report(payload: Mapping[str, Any]) -> dict[str, Any]:
         acquisition.get("schema") != TEACHER_REPLAY_ACQUISITION_SCHEMA
         or usage.get("schema") != PARENT_MODEL_USAGE_SCHEMA
         or cache_mode not in TEACHER_REPLAY_CACHE_MODES
-        or origin not in {"generated", "cache-hit"}
+        or origin not in {"generated", "cache-hit", "cache-import"}
         or not valid_mode_result
         or acquisition.get("cache_verified_before_final_selection")
         is not cache_enabled
@@ -2891,7 +3308,11 @@ def _freeze_fresh_candidate_reservoir_rows(
     frozen: list[dict[str, Any]] = []
     prompt_ids: set[str] = set()
     decoded_prompts: set[str] = set()
-    previous_source_order: tuple[str, int] | None = None
+    previous_source_line = 0
+    external_seed = _load_external_fresh_reservoir_seed()
+    external_by_line = {
+        int(row["source_line_number"]): row for row in external_seed.prompts
+    }
     for index, row in enumerate(reservoir_rows):
         if not isinstance(row, Mapping) or set(row) != expected_fields:
             raise RecoveryInputPreparationError(
@@ -2943,12 +3364,18 @@ def _freeze_fresh_candidate_reservoir_rows(
             row.get("source_prompt_sha256"),
             f"fresh reservoir row {index} source prompt SHA",
         )
-        source_order = (str(row["source_prompt_sha256"]), source_line)
-        if previous_source_order is not None and source_order <= previous_source_order:
+        expected_source = external_by_line.get(source_line)
+        if (
+            source_line <= previous_source_line
+            or expected_source is None
+            or row["source_prompt_sha256"]
+            != expected_source["source_prompt_sha256"]
+            or decoded != expected_source["text"]
+        ):
             raise RecoveryInputPreparationError(
-                "Fresh reservoir rows are not in strict pinned corpus order."
+                "Fresh reservoir row differs from strict external source order/content."
             )
-        previous_source_order = source_order
+        previous_source_line = source_line
         if row["prompt_id"] in prompt_ids or decoded in decoded_prompts:
             raise RecoveryInputPreparationError(
                 "Fresh reservoir contains duplicate prompts or decoded text."
@@ -3021,6 +3448,304 @@ def _teacher_replay_cache_request(
         ) from error
 
 
+def _read_exact_compatible_teacher_cache_import(
+    *,
+    cache_dir: Path | str,
+    current_request: Mapping[str, Any],
+    source_request_sha256: str,
+    source_envelope_sha256: str,
+) -> CompatibleTeacherCacheImport:
+    """Read only one explicitly named, semantically compatible legacy entry."""
+
+    source_request_sha = _require_sha256(
+        source_request_sha256, "cache import source request SHA"
+    )
+    source_envelope_sha = _require_sha256(
+        source_envelope_sha256, "cache import source envelope SHA"
+    )
+    try:
+        verified_current = hf_teacher_replay_cache.verify_request(current_request)
+        root = hf_teacher_replay_cache._absolute_path(cache_dir)
+        if not hf_teacher_replay_cache._lexists(root):
+            raise hf_teacher_replay_cache.TeacherReplayCacheError(
+                "Explicit cache import root does not exist."
+            )
+        hf_teacher_replay_cache._require_real_directory(
+            root, "teacher replay cache import directory"
+        )
+        entry = root / source_request_sha
+        if entry.parent != root or not hf_teacher_replay_cache._lexists(entry):
+            raise hf_teacher_replay_cache.TeacherReplayCacheError(
+                "Explicit cache import request entry is missing."
+            )
+        hf_teacher_replay_cache._require_real_directory(
+            entry, "teacher replay cache import request path"
+        )
+        children = list(entry.iterdir())
+        if len(children) != 1 or children[0].name != hf_teacher_replay_cache.CACHE_FILENAME:
+            raise hf_teacher_replay_cache.TeacherReplayCacheError(
+                "Explicit cache import entry has unexpected contents."
+            )
+        envelope_path = children[0]
+        envelope_info = hf_teacher_replay_cache._lstat_or_none(envelope_path)
+        if (
+            envelope_info is None
+            or stat.S_ISLNK(envelope_info.st_mode)
+            or not stat.S_ISREG(envelope_info.st_mode)
+        ):
+            raise hf_teacher_replay_cache.TeacherReplayCacheError(
+                "Explicit cache import envelope must be one real file."
+            )
+        raw_envelope = hf_teacher_replay_cache._strict_json_file(envelope_path)
+        if raw_envelope.get("envelope_sha256") != source_envelope_sha:
+            raise hf_teacher_replay_cache.TeacherReplayCacheError(
+                "Explicit cache import envelope SHA differs from authorization."
+            )
+        source_request = hf_teacher_replay_cache.verify_request(
+            raw_envelope.get("request")
+        )
+        if source_request["request_sha256"] != source_request_sha:
+            raise hf_teacher_replay_cache.TeacherReplayCacheError(
+                "Explicit cache import request SHA differs from authorization."
+            )
+        imported = hf_teacher_replay_cache.read_entry(root, source_request)
+        if imported is None or imported["envelope_sha256"] != source_envelope_sha:
+            raise hf_teacher_replay_cache.TeacherReplayCacheError(
+                "Explicit cache import disappeared or changed during authentication."
+            )
+        imported = hf_teacher_replay_cache.verify_envelope(
+            imported, expected_request=source_request
+        )
+    except (OSError, hf_teacher_replay_cache.TeacherReplayCacheError) as error:
+        raise RecoveryInputPreparationError(
+            "Explicit teacher replay cache import failed strict path/request/envelope "
+            "authentication."
+        ) from error
+
+    old_semantics = dict(source_request)
+    old_semantics.pop("request_sha256")
+    old_producers = old_semantics.pop("producer_byte_hash_manifest")
+    current_semantics = dict(verified_current)
+    current_semantics.pop("request_sha256")
+    current_producers = current_semantics.pop("producer_byte_hash_manifest")
+    old_rows = {row["role"]: dict(row) for row in old_producers["files"]}
+    current_rows = {
+        row["role"]: dict(row) for row in current_producers["files"]
+    }
+    nonprep_roles = {
+        "hf_teacher_token_replay",
+        "hf_recovery",
+        "hf_teacher_replay_cache",
+    }
+    if (
+        old_semantics != current_semantics
+        or old_rows.get("prepare_recovery_inputs")
+        != LEGACY_TEACHER_CACHE_IMPORT_PREP_PRODUCER
+        or set(old_rows) != {*nonprep_roles, "prepare_recovery_inputs"}
+        or set(current_rows) != set(old_rows)
+        or any(old_rows[role] != current_rows[role] for role in nonprep_roles)
+        or current_rows["prepare_recovery_inputs"]
+        == old_rows["prepare_recovery_inputs"]
+    ):
+        raise RecoveryInputPreparationError(
+            "Explicit teacher replay cache import is not semantically compatible "
+            "with the current producer request."
+        )
+    receipt_body = {
+        "schema": TEACHER_REPLAY_CACHE_IMPORT_RECEIPT_SCHEMA,
+        "status": "compatible-source-verified-before-model-load",
+        "authorized_by_explicit_request_and_envelope_cli": True,
+        "source_producer_commit": LEGACY_TEACHER_CACHE_IMPORT_SOURCE_COMMIT,
+        "source_request_sha256": source_request_sha,
+        "source_envelope_sha256": source_envelope_sha,
+        "source_teacher_payload_sha256": _require_sha256(
+            imported.get("teacher_payload_sha256"),
+            "cache import source teacher payload SHA",
+        ),
+        "source_prepare_producer_allowlist": dict(
+            LEGACY_TEACHER_CACHE_IMPORT_PREP_PRODUCER
+        ),
+        "current_prepare_producer": current_rows["prepare_recovery_inputs"],
+        "current_request_sha256": verified_current["request_sha256"],
+        "request_fields_equal_except_producer_manifest_and_request_self_hash": True,
+        "only_prepare_producer_row_changed": True,
+        "other_producer_rows_byte_identical": True,
+        "reservoir_frozen_before_import_read": True,
+        "source_verified_before_model_load": True,
+        "contains_heldout_or_reservoir_text": False,
+        "live_source_fingerprint_verified_after_model_load": False,
+        "teacher_replay_generated_during_import": False,
+    }
+    pre_model_receipt = {
+        **receipt_body,
+        "pre_model_compatibility_sha256": canonical_sha256(receipt_body),
+    }
+    return CompatibleTeacherCacheImport(
+        request=source_request,
+        envelope=imported,
+        pre_model_receipt=pre_model_receipt,
+    )
+
+
+def _finalize_teacher_cache_import_receipt(
+    *,
+    compatible_import: CompatibleTeacherCacheImport,
+    current_envelope: Mapping[str, Any],
+    publication_result: str,
+) -> dict[str, Any]:
+    pre_model = _json_value(
+        compatible_import.pre_model_receipt,
+        name="teacher cache import pre-model receipt",
+    )
+    pre_body = dict(pre_model)
+    pre_claimed = _require_sha256(
+        pre_body.pop("pre_model_compatibility_sha256"),
+        "cache import pre-model compatibility SHA",
+    )
+    if canonical_sha256(pre_body) != pre_claimed:
+        raise RecoveryInputPreparationError(
+            "Teacher cache import pre-model receipt changed."
+        )
+    body = {
+        **pre_model,
+        "status": "compatible-replay-republished-under-current-request",
+        "live_source_fingerprint_verified_after_model_load": True,
+        "current_envelope_sha256": _require_sha256(
+            current_envelope.get("envelope_sha256"),
+            "cache import current envelope SHA",
+        ),
+        "current_teacher_payload_sha256": _require_sha256(
+            current_envelope.get("teacher_payload_sha256"),
+            "cache import current teacher payload SHA",
+        ),
+        "current_cache_publication_result": publication_result,
+        "teacher_payload_byte_identical": (
+            current_envelope.get("teacher_token_replay")
+            == compatible_import.envelope.get("teacher_token_replay")
+        ),
+    }
+    if (
+        body["teacher_payload_byte_identical"] is not True
+        or body["current_teacher_payload_sha256"]
+        != body["source_teacher_payload_sha256"]
+    ):
+        raise RecoveryInputPreparationError(
+            "Teacher cache import changed replay bytes during republication."
+        )
+    return {**body, "payload_sha256": canonical_sha256(body)}
+
+
+def _verify_teacher_cache_import_receipt(
+    receipt: Mapping[str, Any],
+    *,
+    current_request_sha256: str,
+    current_envelope_sha256: str,
+) -> dict[str, Any]:
+    fields = {
+        "schema",
+        "status",
+        "authorized_by_explicit_request_and_envelope_cli",
+        "source_producer_commit",
+        "source_request_sha256",
+        "source_envelope_sha256",
+        "source_teacher_payload_sha256",
+        "source_prepare_producer_allowlist",
+        "current_prepare_producer",
+        "current_request_sha256",
+        "request_fields_equal_except_producer_manifest_and_request_self_hash",
+        "only_prepare_producer_row_changed",
+        "other_producer_rows_byte_identical",
+        "reservoir_frozen_before_import_read",
+        "source_verified_before_model_load",
+        "contains_heldout_or_reservoir_text",
+        "live_source_fingerprint_verified_after_model_load",
+        "teacher_replay_generated_during_import",
+        "pre_model_compatibility_sha256",
+        "current_envelope_sha256",
+        "current_teacher_payload_sha256",
+        "current_cache_publication_result",
+        "teacher_payload_byte_identical",
+        "payload_sha256",
+    }
+    if not isinstance(receipt, Mapping) or set(receipt) != fields:
+        raise RecoveryInputPreparationError(
+            "Teacher cache import receipt fields changed."
+        )
+    body = dict(receipt)
+    claimed = _require_sha256(body.pop("payload_sha256"), "cache import receipt SHA")
+    pre_body = dict(receipt)
+    for name in (
+        "current_envelope_sha256",
+        "current_teacher_payload_sha256",
+        "current_cache_publication_result",
+        "teacher_payload_byte_identical",
+        "payload_sha256",
+    ):
+        pre_body.pop(name)
+    pre_claimed = _require_sha256(
+        pre_body.pop("pre_model_compatibility_sha256"),
+        "cache import pre-model compatibility SHA",
+    )
+    pre_body["status"] = "compatible-source-verified-before-model-load"
+    pre_body["live_source_fingerprint_verified_after_model_load"] = False
+    source_prepare = receipt.get("source_prepare_producer_allowlist")
+    current_prepare = receipt.get("current_prepare_producer")
+    result = receipt.get("current_cache_publication_result")
+    if (
+        receipt.get("schema") != TEACHER_REPLAY_CACHE_IMPORT_RECEIPT_SCHEMA
+        or receipt.get("status")
+        != "compatible-replay-republished-under-current-request"
+        or receipt.get("authorized_by_explicit_request_and_envelope_cli") is not True
+        or receipt.get("source_producer_commit")
+        != LEGACY_TEACHER_CACHE_IMPORT_SOURCE_COMMIT
+        or source_prepare != LEGACY_TEACHER_CACHE_IMPORT_PREP_PRODUCER
+        or not isinstance(current_prepare, Mapping)
+        or current_prepare.get("role") != "prepare_recovery_inputs"
+        or set(current_prepare) != {"role", "filename", "byte_count", "sha256"}
+        or current_prepare == source_prepare
+        or receipt.get("current_request_sha256") != current_request_sha256
+        or receipt.get("current_envelope_sha256") != current_envelope_sha256
+        or receipt.get("current_teacher_payload_sha256")
+        != receipt.get("source_teacher_payload_sha256")
+        or result
+        not in {"published", "existing-byte-identical", "concurrent-byte-identical"}
+        or any(
+            receipt.get(name) is not True
+            for name in (
+                "request_fields_equal_except_producer_manifest_and_request_self_hash",
+                "only_prepare_producer_row_changed",
+                "other_producer_rows_byte_identical",
+                "reservoir_frozen_before_import_read",
+                "source_verified_before_model_load",
+                "live_source_fingerprint_verified_after_model_load",
+                "teacher_payload_byte_identical",
+            )
+        )
+        or receipt.get("contains_heldout_or_reservoir_text") is not False
+        or receipt.get("teacher_replay_generated_during_import") is not False
+        or canonical_sha256(pre_body) != pre_claimed
+        or canonical_sha256(body) != claimed
+    ):
+        raise RecoveryInputPreparationError(
+            "Teacher cache import receipt failed authentication."
+        )
+    _require_sha256(receipt.get("source_request_sha256"), "import source request SHA")
+    _require_sha256(receipt.get("source_envelope_sha256"), "import source envelope SHA")
+    _require_sha256(
+        receipt.get("source_teacher_payload_sha256"), "import teacher payload SHA"
+    )
+    _require_sha256(current_prepare.get("sha256"), "current prep producer SHA")
+    if (
+        isinstance(current_prepare.get("byte_count"), bool)
+        or not isinstance(current_prepare.get("byte_count"), int)
+        or current_prepare["byte_count"] <= 0
+    ):
+        raise RecoveryInputPreparationError(
+            "Current prep producer byte count is invalid."
+        )
+    return _json_value(receipt, name="teacher cache import receipt")
+
+
 def _verify_fresh_candidate_reservoir_payload(
     payload: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
@@ -3075,10 +3800,8 @@ def _verify_fresh_candidate_reservoir_payload(
         and statistics["records_considered"]
         == statistics["unique_source_prompt_count"]
         and statistics["unique_source_prompt_count"]
-        + statistics["duplicate_source_row_count"]
-        == PINNED_RECOVERY_CORPUS_LINE_COUNT
-        and statistics["duplicate_source_row_count"]
-        == PINNED_RECOVERY_CORPUS_DUPLICATE_SOURCE_ROW_COUNT
+        == PINNED_EXTERNAL_FRESH_RESERVOIR_EXPANDED_COUNT
+        and statistics["duplicate_source_row_count"] == 0
         and statistics["accepted_into_reservoir"] == len(frozen)
         and sum(
             value
@@ -3092,6 +3815,25 @@ def _verify_fresh_candidate_reservoir_payload(
         )
         == statistics["records_considered"]
     )
+    try:
+        _verify_external_fresh_reservoir_receipt(
+            provenance.get("external_candidate_source")
+        )
+    except RecoveryInputPreparationError:
+        raise
+    corpus = provenance.get("corpus")
+    corpus_valid = (
+        isinstance(corpus, Mapping)
+        and corpus
+        == {
+            "file_sha256": PINNED_RECOVERY_CORPUS_SHA256,
+            "nonblank_line_count": PINNED_RECOVERY_CORPUS_LINE_COUNT,
+            "duplicate_source_row_count": (
+                PINNED_RECOVERY_CORPUS_DUPLICATE_SOURCE_ROW_COUNT
+            ),
+            "purpose": "teacher-recovery-calibration-lineage-only",
+        }
+    )
     if (
         provenance.get("status")
         != "candidate-reservoir-frozen-before-parent-load"
@@ -3104,6 +3846,9 @@ def _verify_fresh_candidate_reservoir_payload(
         is not False
         or provenance.get("identity_tokenizer_used_during_reservoir_freeze")
         is not True
+        or provenance.get("reservoir_order")
+        != "external-round-robin-source-line-order-after-static-exclusions"
+        or not corpus_valid
         or not statistics_valid
         or canonical_sha256(provenance_body) != claimed
     ):
@@ -3200,7 +3945,10 @@ def _derive_fresh_candidate_selection(
         )
     if len(survivors) < FRESH_CANDIDATE_COUNT:
         raise RecoveryInputPreparationError(
-            "Replay exclusion left fewer than 24 fresh candidate prompts."
+            "Replay exclusion left fewer than 24 fresh candidate prompts; "
+            f"reservoir={len(frozen_rows)}, survivors={len(survivors)}, "
+            f"required={FRESH_CANDIDATE_COUNT}, reason_counts="
+            f"{json.dumps(reason_counts, sort_keys=True)}."
         )
     selected_indices = survivors[:FRESH_CANDIDATE_COUNT]
     selected_prompt_ids = [frozen_rows[index]["prompt_id"] for index in selected_indices]
@@ -3461,6 +4209,8 @@ def prepare_recovery_inputs(
     max_calibration_texts: int = 640,
     teacher_replay_cache_dir: Path | str | None = None,
     teacher_replay_cache_mode: str = "off",
+    teacher_replay_cache_import_request_sha256: str | None = None,
+    teacher_replay_cache_import_envelope_sha256: str | None = None,
     component_loader: Callable[..., TeacherComponents] | None = load_teacher_components,
     tokenizer_loader: Callable[..., TokenizerComponents] = _CANONICAL_TOKENIZER_LOADER,
     source_model_loader: Callable[..., Any] = _CANONICAL_SOURCE_MODEL_LOADER,
@@ -3504,14 +4254,38 @@ def prepare_recovery_inputs(
     allow_test_cache_injections = (
         _test_only_cache_injection_authority is _CACHE_TEST_INJECTION_AUTHORITY
     )
+    import_argument_count = sum(
+        value is not None
+        for value in (
+            teacher_replay_cache_import_request_sha256,
+            teacher_replay_cache_import_envelope_sha256,
+        )
+    )
+    if import_argument_count not in {0, 2}:
+        raise RecoveryInputPreparationError(
+            "Teacher replay cache import request/envelope SHAs must be supplied together."
+        )
+    cache_import_authorized = import_argument_count == 2
+    if cache_import_authorized:
+        assert teacher_replay_cache_import_request_sha256 is not None
+        assert teacher_replay_cache_import_envelope_sha256 is not None
+        _require_sha256(
+            teacher_replay_cache_import_request_sha256,
+            "teacher_replay_cache_import_request_sha256",
+        )
+        _require_sha256(
+            teacher_replay_cache_import_envelope_sha256,
+            "teacher_replay_cache_import_envelope_sha256",
+        )
     if teacher_replay_cache_mode not in TEACHER_REPLAY_CACHE_MODES:
         raise RecoveryInputPreparationError(
             "teacher_replay_cache_mode must be auto, require, refresh, or off."
         )
     if teacher_replay_cache_mode == "off":
-        if teacher_replay_cache_dir is not None:
+        if teacher_replay_cache_dir is not None or cache_import_authorized:
             raise RecoveryInputPreparationError(
-                "teacher_replay_cache_dir requires a cache mode other than off."
+                "Teacher cache directory/import authorization requires an enabled "
+                "cache mode."
             )
     elif teacher_replay_cache_dir is None:
         raise RecoveryInputPreparationError(
@@ -3527,6 +4301,13 @@ def prepare_recovery_inputs(
             "Cache-enabled production runs require the canonical tokenizer loader, "
             "source-model loader, teacher replay builder, and source-model "
             "fingerprinter."
+        )
+    if cache_import_authorized and teacher_replay_cache_mode not in {
+        "auto",
+        "require",
+    }:
+        raise RecoveryInputPreparationError(
+            "Explicit compatible cache import is allowed only with auto or require."
         )
     if not fresh_mode and teacher_replay_cache_mode != "off":
         raise RecoveryInputPreparationError(
@@ -3626,6 +4407,8 @@ def prepare_recovery_inputs(
     cache_request: dict[str, Any] | None = None
     cached_envelope: dict[str, Any] | None = None
     cache_envelope: dict[str, Any] | None = None
+    compatible_cache_import: CompatibleTeacherCacheImport | None = None
+    cache_import_receipt: dict[str, Any] | None = None
     teacher_replay_origin = "generated"
     cache_result = "disabled"
     if fresh_mode:
@@ -3684,10 +4467,27 @@ def prepare_recovery_inputs(
                 raise RecoveryInputPreparationError(
                     "Existing teacher replay cache entry failed authentication."
                 ) from error
-            if cached_envelope is None and teacher_replay_cache_mode == "require":
-                raise RecoveryInputPreparationError(
-                    "Required teacher replay cache entry is missing."
+            if cached_envelope is None and cache_import_authorized:
+                assert teacher_replay_cache_import_request_sha256 is not None
+                assert teacher_replay_cache_import_envelope_sha256 is not None
+                compatible_cache_import = (
+                    _read_exact_compatible_teacher_cache_import(
+                        cache_dir=teacher_replay_cache_dir,
+                        current_request=cache_request,
+                        source_request_sha256=(
+                            teacher_replay_cache_import_request_sha256
+                        ),
+                        source_envelope_sha256=(
+                            teacher_replay_cache_import_envelope_sha256
+                        ),
+                    )
                 )
+                teacher_replay_origin = "cache-import"
+            if cached_envelope is None and teacher_replay_cache_mode == "require":
+                if compatible_cache_import is None:
+                    raise RecoveryInputPreparationError(
+                        "Required teacher replay cache entry is missing."
+                    )
             if (
                 cached_envelope is not None
                 and teacher_replay_cache_mode in {"auto", "require"}
@@ -3725,17 +4525,36 @@ def prepare_recovery_inputs(
         )
     try:
         live_source_fingerprint: dict[str, Any] | None = None
-        if teacher_replay_origin == "cache-hit":
+        if teacher_replay_origin in {"cache-hit", "cache-import"}:
             assert cache_request is not None
             try:
                 live_source_fingerprint = _json_value(
                     source_model_fingerprinter(components.source_model),
                     name="live_source_model_fingerprint",
                 )
-                assert cached_envelope is not None
-                cached_envelope = hf_teacher_replay_cache.verify_envelope(
-                    cached_envelope,
-                    expected_request=cache_request,
+                source_envelope = (
+                    cached_envelope
+                    if teacher_replay_origin == "cache-hit"
+                    else (
+                        compatible_cache_import.envelope
+                        if compatible_cache_import is not None
+                        else None
+                    )
+                )
+                source_request = (
+                    cache_request
+                    if teacher_replay_origin == "cache-hit"
+                    else (
+                        compatible_cache_import.request
+                        if compatible_cache_import is not None
+                        else None
+                    )
+                )
+                assert source_envelope is not None
+                assert source_request is not None
+                verified_source_envelope = hf_teacher_replay_cache.verify_envelope(
+                    source_envelope,
+                    expected_request=source_request,
                     live_source_model_fingerprint=live_source_fingerprint,
                 )
             except (
@@ -3746,13 +4565,36 @@ def prepare_recovery_inputs(
                 raise RecoveryInputPreparationError(
                     "Teacher replay cache source-model binding failed authentication."
                 ) from error
-        if teacher_replay_origin == "cache-hit":
-            assert cached_envelope is not None
+        if teacher_replay_origin in {"cache-hit", "cache-import"}:
             teacher_payload = _json_value(
-                cached_envelope["teacher_token_replay"],
+                verified_source_envelope["teacher_token_replay"],
                 name="cached_teacher_token_replay",
             )
-            cache_envelope = cached_envelope
+            if teacher_replay_origin == "cache-hit":
+                cache_envelope = verified_source_envelope
+            else:
+                assert teacher_replay_cache_dir is not None
+                assert cache_request is not None
+                assert live_source_fingerprint is not None
+                assert compatible_cache_import is not None
+                try:
+                    cache_envelope, cache_result = (
+                        hf_teacher_replay_cache.publish_entry(
+                            cache_dir=teacher_replay_cache_dir,
+                            request=cache_request,
+                            teacher_payload=teacher_payload,
+                            live_source_model_fingerprint=live_source_fingerprint,
+                        )
+                    )
+                except hf_teacher_replay_cache.TeacherReplayCacheError as error:
+                    raise RecoveryInputPreparationError(
+                        "Compatible teacher replay cache republication failed closed."
+                    ) from error
+                cache_import_receipt = _finalize_teacher_cache_import_receipt(
+                    compatible_import=compatible_cache_import,
+                    current_envelope=cache_envelope,
+                    publication_result=cache_result,
+                )
         else:
             teacher_payload_raw = teacher_replay_builder(
                 torch=components.torch,
@@ -3870,13 +4712,14 @@ def prepare_recovery_inputs(
         "cache_verified_before_final_selection": (
             teacher_replay_cache_mode != "off"
         ),
+        "cache_import": cache_import_receipt,
     }
     parent_model_usage = {
         "schema": PARENT_MODEL_USAGE_SCHEMA,
         "model_load_count": 1,
         "load_purpose": (
             "fresh-targets"
-            if teacher_replay_origin == "cache-hit"
+            if teacher_replay_origin in {"cache-hit", "cache-import"}
             else (
                 "teacher-replay-and-fresh-targets"
                 if fresh_mode
@@ -3886,7 +4729,8 @@ def prepare_recovery_inputs(
         "teacher_replay_generated_this_run": (
             teacher_replay_origin == "generated"
         ),
-        "teacher_replay_reused_from_cache": teacher_replay_origin == "cache-hit",
+        "teacher_replay_reused_from_cache": teacher_replay_origin
+        in {"cache-hit", "cache-import"},
         "fresh_target_generation_performed": fresh_mode,
     }
 
@@ -3978,6 +4822,8 @@ def build_parser() -> argparse.ArgumentParser:
         choices=tuple(sorted(TEACHER_REPLAY_CACHE_MODES)),
         default="off",
     )
+    parser.add_argument("--teacher-replay-cache-import-request-sha256")
+    parser.add_argument("--teacher-replay-cache-import-envelope-sha256")
     return parser
 
 
@@ -4001,6 +4847,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_calibration_texts=args.max_calibration_texts,
         teacher_replay_cache_dir=args.teacher_replay_cache_dir,
         teacher_replay_cache_mode=args.teacher_replay_cache_mode,
+        teacher_replay_cache_import_request_sha256=(
+            args.teacher_replay_cache_import_request_sha256
+        ),
+        teacher_replay_cache_import_envelope_sha256=(
+            args.teacher_replay_cache_import_envelope_sha256
+        ),
     )
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0

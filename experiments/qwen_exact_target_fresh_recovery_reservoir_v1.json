@@ -1,0 +1,196 @@
+{
+  "categories": [
+    {
+      "category_id": "science",
+      "templates": [
+        {"template_id": "mechanism", "text": "{topic}: explain the mechanism, name one edge case, and give a testable prediction."},
+        {"template_id": "experiment", "text": "{topic}: design a controlled experiment with variables, controls, and an expected result."},
+        {"template_id": "contrast", "text": "{topic}: contrast two plausible explanations and state what evidence would separate them."},
+        {"template_id": "teach", "text": "{topic}: teach the core idea with a concrete analogy, then state where the analogy fails."}
+      ],
+      "topics": [
+        {"label": "Tidal locking", "topic_id": "tidal-locking"},
+        {"label": "Plant phototropism", "topic_id": "plant-phototropism"},
+        {"label": "Plate subduction", "topic_id": "plate-subduction"},
+        {"label": "Antibody specificity", "topic_id": "antibody-specificity"},
+        {"label": "Cloud nucleation", "topic_id": "cloud-nucleation"},
+        {"label": "Battery degradation", "topic_id": "battery-degradation"},
+        {"label": "Coral bleaching", "topic_id": "coral-bleaching"},
+        {"label": "Neural adaptation", "topic_id": "neural-adaptation"},
+        {"label": "River meanders", "topic_id": "river-meanders"},
+        {"label": "Enzyme inhibition", "topic_id": "enzyme-inhibition"},
+        {"label": "Magnetic reconnection", "topic_id": "magnetic-reconnection"},
+        {"label": "Seed dormancy", "topic_id": "seed-dormancy"}
+      ]
+    },
+    {
+      "category_id": "reasoning",
+      "templates": [
+        {"template_id": "assumptions", "text": "{topic}: identify hidden assumptions, test each one, and give the strongest conclusion."},
+        {"template_id": "counterexample", "text": "{topic}: construct a counterexample, then revise the claim so the counterexample no longer works."},
+        {"template_id": "decision", "text": "{topic}: compare three options under uncertainty and justify a reversible first decision."},
+        {"template_id": "causal", "text": "{topic}: draw a causal chain, name two confounders, and propose a discriminating observation."}
+      ],
+      "topics": [
+        {"label": "A delayed project", "topic_id": "delayed-project"},
+        {"label": "A noisy measurement", "topic_id": "noisy-measurement"},
+        {"label": "A surprising survey", "topic_id": "surprising-survey"},
+        {"label": "A disputed forecast", "topic_id": "disputed-forecast"},
+        {"label": "A scarce resource", "topic_id": "scarce-resource"},
+        {"label": "A failed prediction", "topic_id": "failed-prediction"},
+        {"label": "An ambiguous rule", "topic_id": "ambiguous-rule"},
+        {"label": "A selection bias", "topic_id": "selection-bias"},
+        {"label": "A changing baseline", "topic_id": "changing-baseline"},
+        {"label": "A brittle plan", "topic_id": "brittle-plan"},
+        {"label": "A partial observation", "topic_id": "partial-observation"},
+        {"label": "A conflicting incentive", "topic_id": "conflicting-incentive"}
+      ]
+    },
+    {
+      "category_id": "code",
+      "templates": [
+        {"template_id": "implement", "text": "{topic}: outline a small implementation, its invariants, and two boundary-case tests."},
+        {"template_id": "debug", "text": "{topic}: diagnose a subtle failure from symptoms and propose the shortest confirming test."},
+        {"template_id": "review", "text": "{topic}: review for correctness, complexity, and one security or reliability risk."},
+        {"template_id": "refactor", "text": "{topic}: refactor the design while preserving behavior and describe how to prove equivalence."}
+      ],
+      "topics": [
+        {"label": "A bounded work queue", "topic_id": "bounded-work-queue"},
+        {"label": "A streaming CSV parser", "topic_id": "streaming-csv-parser"},
+        {"label": "A retrying HTTP client", "topic_id": "retrying-http-client"},
+        {"label": "A content hash cache", "topic_id": "content-hash-cache"},
+        {"label": "A graph cycle detector", "topic_id": "graph-cycle-detector"},
+        {"label": "A monotonic ID allocator", "topic_id": "monotonic-id-allocator"},
+        {"label": "A log rotation service", "topic_id": "log-rotation-service"},
+        {"label": "A Unicode tokenizer", "topic_id": "unicode-tokenizer"},
+        {"label": "A rate limiter", "topic_id": "rate-limiter"},
+        {"label": "A transactional file writer", "topic_id": "transactional-file-writer"},
+        {"label": "A sparse matrix iterator", "topic_id": "sparse-matrix-iterator"},
+        {"label": "A dependency resolver", "topic_id": "dependency-resolver"}
+      ]
+    },
+    {
+      "category_id": "mathematics",
+      "templates": [
+        {"template_id": "derive", "text": "{topic}: derive the result step by step and mark the exact point each assumption is used."},
+        {"template_id": "example", "text": "{topic}: solve one concrete example, then generalize the method and its limitation."},
+        {"template_id": "verify", "text": "{topic}: propose two independent checks for a solution and explain what each check catches."},
+        {"template_id": "intuition", "text": "{topic}: give geometric intuition, a symbolic statement, and a small numerical sanity check."}
+      ],
+      "topics": [
+        {"label": "Bayesian updating", "topic_id": "bayesian-updating"},
+        {"label": "Eigenvalue sensitivity", "topic_id": "eigenvalue-sensitivity"},
+        {"label": "Modular arithmetic", "topic_id": "modular-arithmetic"},
+        {"label": "Convex combinations", "topic_id": "convex-combinations"},
+        {"label": "Markov chain mixing", "topic_id": "markov-chain-mixing"},
+        {"label": "Numerical integration", "topic_id": "numerical-integration"},
+        {"label": "Conditional expectation", "topic_id": "conditional-expectation"},
+        {"label": "Graph coloring", "topic_id": "graph-coloring"},
+        {"label": "Fourier aliasing", "topic_id": "fourier-aliasing"},
+        {"label": "Recurrence relations", "topic_id": "recurrence-relations"},
+        {"label": "Confidence intervals", "topic_id": "confidence-intervals"},
+        {"label": "Gradient approximation", "topic_id": "gradient-approximation"}
+      ]
+    },
+    {
+      "category_id": "systems",
+      "templates": [
+        {"template_id": "architecture", "text": "{topic}: sketch the components, trust boundaries, failure modes, and recovery path."},
+        {"template_id": "capacity", "text": "{topic}: estimate capacity from explicit assumptions and identify the first likely bottleneck."},
+        {"template_id": "incident", "text": "{topic}: write an incident hypothesis tree and order the checks by information gained."},
+        {"template_id": "tradeoff", "text": "{topic}: compare latency, durability, cost, and operability under two design choices."}
+      ],
+      "topics": [
+        {"label": "A regional message bus", "topic_id": "regional-message-bus"},
+        {"label": "A replicated metadata store", "topic_id": "replicated-metadata-store"},
+        {"label": "A batch inference service", "topic_id": "batch-inference-service"},
+        {"label": "A sensor telemetry pipeline", "topic_id": "sensor-telemetry-pipeline"},
+        {"label": "A zero-downtime migration", "topic_id": "zero-downtime-migration"},
+        {"label": "A multi-tenant scheduler", "topic_id": "multi-tenant-scheduler"},
+        {"label": "A backup verification job", "topic_id": "backup-verification-job"},
+        {"label": "A distributed lock", "topic_id": "distributed-lock"},
+        {"label": "A feature flag service", "topic_id": "feature-flag-service"},
+        {"label": "A metrics aggregation tier", "topic_id": "metrics-aggregation-tier"},
+        {"label": "A secrets rotation flow", "topic_id": "secrets-rotation-flow"},
+        {"label": "A cold-starting worker pool", "topic_id": "cold-starting-worker-pool"}
+      ]
+    },
+    {
+      "category_id": "language",
+      "templates": [
+        {"template_id": "rewrite", "text": "{topic}: rewrite for clarity while preserving every claim, uncertainty, and dependency."},
+        {"template_id": "interpret", "text": "{topic}: give two plausible interpretations and the context that would favor each one."},
+        {"template_id": "summarize", "text": "{topic}: produce a precise summary, then list what the summary necessarily leaves out."},
+        {"template_id": "audience", "text": "{topic}: explain once for a novice and once for an expert without changing the facts."}
+      ],
+      "topics": [
+        {"label": "A cautious research claim", "topic_id": "cautious-research-claim"},
+        {"label": "An unclear maintenance note", "topic_id": "unclear-maintenance-note"},
+        {"label": "A tense customer reply", "topic_id": "tense-customer-reply"},
+        {"label": "A dense policy paragraph", "topic_id": "dense-policy-paragraph"},
+        {"label": "An incomplete meeting recap", "topic_id": "incomplete-meeting-recap"},
+        {"label": "A technical warning", "topic_id": "technical-warning"},
+        {"label": "A disputed definition", "topic_id": "disputed-definition"},
+        {"label": "A bilingual instruction", "topic_id": "bilingual-instruction"},
+        {"label": "An implicit request", "topic_id": "implicit-request"},
+        {"label": "A nuanced comparison", "topic_id": "nuanced-comparison"},
+        {"label": "A compressed abstract", "topic_id": "compressed-abstract"},
+        {"label": "A misleading headline", "topic_id": "misleading-headline"}
+      ]
+    },
+    {
+      "category_id": "practical",
+      "templates": [
+        {"template_id": "plan", "text": "{topic}: make a staged plan with prerequisites, checkpoints, and a safe rollback."},
+        {"template_id": "diagnose", "text": "{topic}: list likely causes, cheap observations, and the safest next action."},
+        {"template_id": "optimize", "text": "{topic}: improve the process under a fixed budget without hiding the tradeoffs."},
+        {"template_id": "checklist", "text": "{topic}: create a short checklist that prevents the three most expensive mistakes."}
+      ],
+      "topics": [
+        {"label": "A greenhouse watering schedule", "topic_id": "greenhouse-watering-schedule"},
+        {"label": "A workshop tool inventory", "topic_id": "workshop-tool-inventory"},
+        {"label": "A long-distance move", "topic_id": "long-distance-move"},
+        {"label": "A community event", "topic_id": "community-event"},
+        {"label": "A home energy audit", "topic_id": "home-energy-audit"},
+        {"label": "A field equipment repair", "topic_id": "field-equipment-repair"},
+        {"label": "A rotating meal plan", "topic_id": "rotating-meal-plan"},
+        {"label": "A volunteer handoff", "topic_id": "volunteer-handoff"},
+        {"label": "A small library catalog", "topic_id": "small-library-catalog"},
+        {"label": "A weather delay protocol", "topic_id": "weather-delay-protocol"},
+        {"label": "A shared studio booking", "topic_id": "shared-studio-booking"},
+        {"label": "A fragile package shipment", "topic_id": "fragile-package-shipment"}
+      ]
+    },
+    {
+      "category_id": "data",
+      "templates": [
+        {"template_id": "inspect", "text": "{topic}: define validation rules, inspect anomalies, and separate errors from real outliers."},
+        {"template_id": "measure", "text": "{topic}: choose useful metrics, explain denominator risks, and specify one guardrail metric."},
+        {"template_id": "sample", "text": "{topic}: design a sampling strategy and show how selection effects could distort the result."},
+        {"template_id": "communicate", "text": "{topic}: choose a compact visualization and state the conclusion it must not imply."}
+      ],
+      "topics": [
+        {"label": "A drifting temperature series", "topic_id": "drifting-temperature-series"},
+        {"label": "A sparse customer table", "topic_id": "sparse-customer-table"},
+        {"label": "A delayed event stream", "topic_id": "delayed-event-stream"},
+        {"label": "A class-imbalanced dataset", "topic_id": "class-imbalanced-dataset"},
+        {"label": "A duplicated transaction log", "topic_id": "duplicated-transaction-log"},
+        {"label": "A censored lifetime study", "topic_id": "censored-lifetime-study"},
+        {"label": "A changing category taxonomy", "topic_id": "changing-category-taxonomy"},
+        {"label": "A noisy geospatial sample", "topic_id": "noisy-geospatial-sample"},
+        {"label": "A missing-not-at-random survey", "topic_id": "missing-not-at-random-survey"},
+        {"label": "A seasonal demand history", "topic_id": "seasonal-demand-history"},
+        {"label": "A thresholded sensor feed", "topic_id": "thresholded-sensor-feed"},
+        {"label": "A multi-source identity graph", "topic_id": "multi-source-identity-graph"}
+      ]
+    }
+  ],
+  "contains_cached_prompt_or_target_content": false,
+  "contains_parent_or_child_outputs": false,
+  "expected_expanded_prompt_count": 384,
+  "expansion_algorithm": "round-robin-topic-template-category-format-v1",
+  "payload_sha256": "d2e9f9af068cce6b0769ebb24f6bdf94985cc20c090c32b35415a9db1f7364e3",
+  "schema": "neural-forge.exact-target-fresh-recovery-reservoir-seed.v1",
+  "seed": 20260715,
+  "status": "static-independent-pre-model-seed"
+}

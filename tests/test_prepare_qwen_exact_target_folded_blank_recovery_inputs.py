@@ -563,6 +563,7 @@ def test_preparer_freezes_exact_order_recipe_lineage_and_atomic_tree(
         "cache_envelope_sha256": None,
         "cache_entry_relative_path": None,
         "cache_verified_before_final_selection": False,
+        "cache_import": None,
     }
     assert disk_report["parent_model_usage"] == {
         "schema": preparer.PARENT_MODEL_USAGE_SCHEMA,
@@ -593,6 +594,9 @@ def test_preparer_freezes_exact_order_recipe_lineage_and_atomic_tree(
     cached_report = copy.deepcopy(disk_report)
     cached_report["behavior_mode"] = preparer.BEHAVIOR_MODE_FRESH
     cached_report["causal_ab_eligible"] = True
+    cached_report["fresh_candidate_reservoir"] = dict(
+        preparer._load_external_fresh_reservoir_seed().receipt
+    )
     cached_report["teacher_generation_completed"] = False
     cached_report["teacher_replay_acquisition"] = {
         "schema": preparer.TEACHER_REPLAY_ACQUISITION_SCHEMA,
@@ -605,6 +609,7 @@ def test_preparer_freezes_exact_order_recipe_lineage_and_atomic_tree(
             f"{'c' * 64}/{hf_teacher_replay_cache.CACHE_FILENAME}"
         ),
         "cache_verified_before_final_selection": True,
+        "cache_import": None,
     }
     cached_report["parent_model_usage"] = {
         "schema": preparer.PARENT_MODEL_USAGE_SCHEMA,
@@ -907,15 +912,32 @@ def test_fresh_selection_excludes_v4_and_exact_640_recovery_rows(
     assert len(reservoir["rows"]) > 24
     assert reservoir["rows_sha256"] == preparer.canonical_sha256(reservoir["rows"])
     derivation = provenance["replay_exclusion_derivation"]
-    assert derivation["selected_reservoir_indices"] == list(range(24))
+    assert derivation["selected_reservoir_indices"] == [
+        row["reservoir_index"]
+        for row in derivation["classification_rows"]
+        if row["classification"] == "replay_disjoint_survivor"
+    ][:24]
     assert derivation["survivor_margin"] > 0
     assert derivation["full_reservoir_classified"] is True
     assert (
         reservoir["provenance"]["preselection_statistics"][
             "duplicate_source_row_count"
         ]
-        == 1
+        == 0
     )
+    selected = provenance["selected_candidate"]
+    assert selected["all_external_categories_represented"] is True
+    assert set(selected["category_histogram"]) == {
+        "science",
+        "reasoning",
+        "code",
+        "mathematics",
+        "systems",
+        "language",
+        "practical",
+        "data",
+    }
+    assert all(value > 0 for value in selected["category_histogram"].values())
     assert provenance["disjointness"] == {
         "exact_token_prompt_overlap_count": 0,
         "meaningful_prefix_overlap_count": 0,
@@ -923,6 +945,125 @@ def test_fresh_selection_excludes_v4_and_exact_640_recovery_rows(
         "minimum_meaningful_prefix_tokens": 8,
         "recovery_calibration_prefixes_bounded_to_candidate_max_tokens": True,
     }
+
+
+def test_external_reservoir_seed_is_static_round_robin_and_tamper_evident(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed = preparer._load_external_fresh_reservoir_seed()
+    assert len(seed.prompts) == 384
+    assert seed.receipt == {
+        **seed.receipt,
+        "source_file_sha256": preparer.PINNED_EXTERNAL_FRESH_RESERVOIR_FILE_SHA256,
+        "source_file_byte_count": preparer.PINNED_EXTERNAL_FRESH_RESERVOIR_BYTE_COUNT,
+        "source_payload_sha256": (
+            preparer.PINNED_EXTERNAL_FRESH_RESERVOIR_PAYLOAD_SHA256
+        ),
+        "expanded_prompt_manifest_sha256": (
+            preparer.PINNED_EXTERNAL_FRESH_RESERVOIR_EXPANDED_MANIFEST_SHA256
+        ),
+        "expanded_prompt_text_manifest_sha256": (
+            preparer.PINNED_EXTERNAL_FRESH_RESERVOIR_EXPANDED_TEXT_MANIFEST_SHA256
+        ),
+        "expanded_prompt_count": 384,
+        "first_24_cover_all_categories": True,
+        "contains_cached_prompt_or_target_content": False,
+        "contains_parent_or_child_outputs": False,
+    }
+    categories = [row["category_id"] for row in seed.prompts[:24]]
+    assert len(set(categories)) == 8
+    assert all(categories.count(category) == 3 for category in set(categories))
+    assert len({row["source_candidate_id"] for row in seed.prompts}) == 384
+    assert len({row["text"] for row in seed.prompts}) == 384
+
+    tampered = tmp_path / "tampered-reservoir.json"
+    payload = json.loads(
+        preparer.PINNED_EXTERNAL_FRESH_RESERVOIR_PATH.read_text(encoding="utf-8")
+    )
+    payload["categories"][0]["topics"][0]["label"] += " changed"
+    _write_json(tampered, payload)
+    monkeypatch.setattr(
+        preparer, "PINNED_EXTERNAL_FRESH_RESERVOIR_PATH", tampered
+    )
+    with pytest.raises(
+        preparer.RecoveryInputPreparationError,
+        match="seed bytes changed",
+    ):
+        preparer._load_external_fresh_reservoir_seed()
+
+
+def test_external_reservoir_survives_massive_original_corpus_replay_overlap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _selection, reservoir, _tokenizer, calibration = _fresh_selection_fixture(
+        tmp_path, monkeypatch
+    )
+    teacher = {
+        "payload_sha256": "9" * 64,
+        "calibration_texts": calibration,
+        "precomputed_teacher_generated_texts": [
+            f"{index:08x} unique recovery prompt with enough distinct content {index}."
+            for index in range(640, 800)
+        ],
+        "on_policy_replay_bank": [],
+        "stepwise_replay_bank": [],
+        "tokenizer_fingerprints": {
+            "candidate": {"tokenizer_length": 2_000_000}
+        },
+    }
+    selection = preparer._select_fresh_recovery_candidate(
+        reservoir=reservoir,
+        teacher_payload=teacher,
+    )
+    assert len(selection.prompts) == 24
+    assert selection.provenance["replay_exclusion_derivation"]["survivor_count"] >= 24
+    assert selection.provenance["selected_candidate"][
+        "all_external_categories_represented"
+    ] is True
+
+
+def test_selected_survivors_fail_closed_if_one_external_domain_is_removed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _selection, reservoir, _tokenizer, calibration = _fresh_selection_fixture(
+        tmp_path, monkeypatch
+    )
+    seed = preparer._load_external_fresh_reservoir_seed()
+    category_by_line = {
+        int(row["source_line_number"]): row["category_id"] for row in seed.prompts
+    }
+    blocked_rows = [
+        {
+            "prompt_input_ids": list(prompt.token_ids),
+            "rollout_input_ids": [*prompt.token_ids, 1_999_999],
+        }
+        for prompt in reservoir.prompts
+        if category_by_line[int(prompt.payload["source_line_number"])] == "science"
+    ]
+    teacher = {
+        "payload_sha256": "6" * 64,
+        "calibration_texts": calibration,
+        "precomputed_teacher_generated_texts": ["Independent recovery output."],
+        "on_policy_replay_bank": [],
+        "stepwise_replay_bank": [
+            {"step": index + 1, "rows": [row]}
+            for index, row in enumerate(blocked_rows)
+        ],
+        "tokenizer_fingerprints": {
+            "candidate": {"tokenizer_length": 2_000_000}
+        },
+    }
+    with pytest.raises(
+        preparer.RecoveryInputPreparationError,
+        match="do not cover all external candidate categories",
+    ):
+        preparer._select_fresh_recovery_candidate(
+            reservoir=reservoir,
+            teacher_payload=teacher,
+        )
 
 
 @pytest.mark.parametrize(
@@ -986,9 +1127,14 @@ def test_final_selection_skips_replay_window_collisions_before_freezing_24(
         "reservoir_index": 0,
         "classification": expected_reason,
     }
-    assert derivation["selected_reservoir_indices"] == list(range(1, 25))
+    expected_indices = [
+        row["reservoir_index"]
+        for row in derivation["classification_rows"]
+        if row["classification"] == "replay_disjoint_survivor"
+    ][:24]
+    assert derivation["selected_reservoir_indices"] == expected_indices
     assert [prompt.prompt_id for prompt in first.prompts] == [
-        prompt.prompt_id for prompt in reservoir.prompts[1:25]
+        reservoir.prompts[index].prompt_id for index in expected_indices
     ]
     assert first.provenance == second.provenance
     assert first.prompts == second.prompts
@@ -1025,7 +1171,7 @@ def test_rehashed_reservoir_reorder_is_rejected(
 
     with pytest.raises(
         preparer.RecoveryInputPreparationError,
-        match="strict pinned corpus order",
+        match="strict external source order/content",
     ):
         preparer._verify_fresh_candidate_reservoir_payload(payload)
 
@@ -1618,3 +1764,481 @@ def test_teacher_replay_cache_modes_freeze_before_read_reuse_and_survive_late_fa
     assert "final-selection" not in events
     assert envelope_path.read_bytes() == original_bytes
     assert original_read(cache_dir, requests[-1]) == persisted
+
+
+def _cache_request_with_producer_rows(
+    current_request: dict[str, Any],
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    request = copy.deepcopy(current_request)
+    producer_body = {
+        "schema": request["producer_byte_hash_manifest"]["schema"],
+        "files": sorted(rows, key=lambda row: row["role"]),
+    }
+    request["producer_byte_hash_manifest"] = {
+        **producer_body,
+        "sha256": hf_teacher_replay_cache._canonical_sha256(producer_body),
+    }
+    request_body = dict(request)
+    request_body.pop("request_sha256")
+    request["request_sha256"] = hf_teacher_replay_cache._canonical_sha256(
+        request_body
+    )
+    return hf_teacher_replay_cache.verify_request(request)
+
+
+def test_explicit_compatible_cache_import_republishes_without_teacher_generation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_teacher_verifier: None,
+) -> None:
+    source = tmp_path / "source-import"
+    source.mkdir()
+    (source / "config.json").write_text("{}\n", encoding="utf-8")
+    (source / "model.safetensors").write_bytes(b"canonical parent weights")
+    calibration = tmp_path / "calibration-import.jsonl"
+    calibration_texts = [
+        f"{index:08x} import calibration row remains unique and long enough."
+        for index in range(640)
+    ]
+    calibration.write_text(
+        "".join(json.dumps({"text": text}) + "\n" for text in calibration_texts),
+        encoding="utf-8",
+    )
+    preregistration = tmp_path / "preregistration-import.json"
+    _write_json(preregistration, {"sealed_before_model_access": True})
+    tokenizer_fingerprint = {"sha256": "a" * 64}
+    source_fingerprint = {
+        "class": "tests.FakeParent",
+        "model_state_fingerprint": {"state_dict_sha256": STATE_SHA},
+        "sha256": "b" * 64,
+    }
+    teacher_payload = {
+        "schema": hf_teacher_token_replay.TEACHER_TOKEN_REPLAY_SCHEMA,
+        "status": "frozen",
+        "calibration_texts": calibration_texts,
+        "parameters": preparer._teacher_parameters("cpu"),
+        "tokenizer_fingerprints": {
+            "source": tokenizer_fingerprint,
+            "candidate": tokenizer_fingerprint,
+        },
+        "source_model_fingerprint": source_fingerprint,
+        "provenance_sha256": {
+            "calibration_texts": hf_recovery._ordered_recovery_texts_sha256(
+                calibration_texts
+            )
+        },
+        "payload_sha256": "2" * 64,
+    }
+    torch_module = SimpleNamespace(
+        __version__="test-torch",
+        cuda=_FakeCuda(),
+        version=SimpleNamespace(cuda=None),
+        backends=SimpleNamespace(),
+    )
+    transformers = SimpleNamespace(__version__="test-transformers")
+    actual_tree = preparer.stage._artifact_tree(source)
+    current_request = preparer._teacher_replay_cache_request(
+        actual_parent_tree=actual_tree,
+        expected_parent_tree_sha256=actual_tree["tree_sha256"],
+        calibration_path=calibration,
+        ordered_calibration=calibration_texts,
+        source_tokenizer_fingerprint=tokenizer_fingerprint,
+        candidate_tokenizer_fingerprint=tokenizer_fingerprint,
+        torch=torch_module,
+        transformers=transformers,
+        teacher_device="cpu",
+    )
+    current_rows = copy.deepcopy(
+        current_request["producer_byte_hash_manifest"]["files"]
+    )
+    legacy_rows = [
+        (
+            dict(preparer.LEGACY_TEACHER_CACHE_IMPORT_PREP_PRODUCER)
+            if row["role"] == "prepare_recovery_inputs"
+            else row
+        )
+        for row in current_rows
+    ]
+    legacy_request = _cache_request_with_producer_rows(current_request, legacy_rows)
+    cache_dir = tmp_path / "compatible-import-cache"
+    legacy_envelope, _result = hf_teacher_replay_cache.publish_entry(
+        cache_dir=cache_dir,
+        request=legacy_request,
+        teacher_payload=teacher_payload,
+        live_source_model_fingerprint=source_fingerprint,
+    )
+    external_prompt = preparer._load_external_fresh_reservoir_seed().prompts[0][
+        "text"
+    ]
+    assert external_prompt not in json.dumps(current_request, sort_keys=True)
+    assert external_prompt not in json.dumps(legacy_envelope, sort_keys=True)
+
+    events: list[str] = []
+    captured_receipts: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        preparer.hf_teacher_token_replay,
+        "tokenizer_functional_fingerprint",
+        lambda _tokenizer: copy.deepcopy(tokenizer_fingerprint),
+    )
+
+    def freeze_reservoir(**_kwargs: Any) -> object:
+        events.append("reservoir-frozen")
+        return object()
+
+    monkeypatch.setattr(
+        preparer, "_authenticate_fresh_recovery_candidate_reservoir", freeze_reservoir
+    )
+    original_import = preparer._read_exact_compatible_teacher_cache_import
+
+    def observed_import(**kwargs: Any) -> preparer.CompatibleTeacherCacheImport:
+        assert events and events[0] == "reservoir-frozen"
+        events.append("import-read")
+        return original_import(**kwargs)
+
+    monkeypatch.setattr(
+        preparer, "_read_exact_compatible_teacher_cache_import", observed_import
+    )
+    original_finalize = preparer._finalize_teacher_cache_import_receipt
+
+    def observed_finalize(**kwargs: Any) -> dict[str, Any]:
+        receipt = original_finalize(**kwargs)
+        captured_receipts.append(receipt)
+        return receipt
+
+    monkeypatch.setattr(
+        preparer, "_finalize_teacher_cache_import_receipt", observed_finalize
+    )
+
+    def load_parent(**_kwargs: Any) -> object:
+        events.append("parent-model-load")
+        return object()
+
+    def fingerprint_parent(_model: Any) -> dict[str, Any]:
+        events.append("parent-model-fingerprint")
+        return copy.deepcopy(source_fingerprint)
+
+    def forbidden_builder(**_kwargs: Any) -> dict[str, Any]:
+        raise AssertionError("teacher replay generation is forbidden during import")
+
+    class LateSelectionFailure(RuntimeError):
+        pass
+
+    def fail_late_selection(**_kwargs: Any) -> Any:
+        events.append("final-selection")
+        raise LateSelectionFailure("late failure preserves migrated current cache")
+
+    monkeypatch.setattr(
+        preparer, "_select_fresh_recovery_candidate", fail_late_selection
+    )
+    base_args = {
+        "source_model": source,
+        "source_tokenizer": source,
+        "candidate_tokenizer": source,
+        "calibration_file": calibration,
+        "behavior_eval_suite": None,
+        "behavior_mode": preparer.BEHAVIOR_MODE_FRESH,
+        "v4_preregistration": preregistration,
+        "v4_preregistration_sha256": preparer._file_sha256(preregistration),
+        "expected_parent_artifact_tree_sha256": actual_tree["tree_sha256"],
+        "teacher_device": "cpu",
+        "recovery_device": "cpu",
+        "component_loader": None,
+        "tokenizer_loader": lambda **_kwargs: preparer.TokenizerComponents(
+            torch=torch_module,
+            transformers=transformers,
+            source_tokenizer=object(),
+            candidate_tokenizer=object(),
+        ),
+        "source_model_loader": load_parent,
+        "source_model_fingerprinter": fingerprint_parent,
+        "teacher_replay_builder": forbidden_builder,
+        "_test_only_cache_injection_authority": (
+            preparer._CACHE_TEST_INJECTION_AUTHORITY
+        ),
+    }
+    with pytest.raises(LateSelectionFailure, match="preserves migrated"):
+        preparer.prepare_recovery_inputs(
+            **base_args,
+            output_dir=tmp_path / "migrated-late-output",
+            teacher_replay_cache_dir=cache_dir,
+            teacher_replay_cache_mode="require",
+            teacher_replay_cache_import_request_sha256=legacy_request[
+                "request_sha256"
+            ],
+            teacher_replay_cache_import_envelope_sha256=legacy_envelope[
+                "envelope_sha256"
+            ],
+        )
+    assert events.index("reservoir-frozen") < events.index("import-read")
+    assert events.index("import-read") < events.index("parent-model-load")
+    assert "final-selection" in events
+    assert not (tmp_path / "migrated-late-output").exists()
+    current_envelope = hf_teacher_replay_cache.read_entry(cache_dir, current_request)
+    assert current_envelope is not None
+    assert (
+        current_envelope["teacher_token_replay"]
+        == legacy_envelope["teacher_token_replay"]
+    )
+    assert len(captured_receipts) == 1
+    assert preparer._verify_teacher_cache_import_receipt(
+        captured_receipts[0],
+        current_request_sha256=current_request["request_sha256"],
+        current_envelope_sha256=current_envelope["envelope_sha256"],
+    ) == captured_receipts[0]
+    assert external_prompt not in json.dumps(captured_receipts[0], sort_keys=True)
+    report_replay = tmp_path / "report-replay.json"
+    report_plan = tmp_path / "report-plan.json"
+    report_replay.write_text("{}\n", encoding="utf-8")
+    report_plan.write_text("{}\n", encoding="utf-8")
+    source_binding = preparer._source_binding(
+        expected_tree_sha256=actual_tree["tree_sha256"],
+        actual_tree=actual_tree,
+        state_dict_sha256=STATE_SHA,
+    )
+    acquisition = {
+        "schema": preparer.TEACHER_REPLAY_ACQUISITION_SCHEMA,
+        "cache_mode": "require",
+        "origin": "cache-import",
+        "cache_result": captured_receipts[0]["current_cache_publication_result"],
+        "cache_request_sha256": current_request["request_sha256"],
+        "cache_envelope_sha256": current_envelope["envelope_sha256"],
+        "cache_entry_relative_path": (
+            f"{current_request['request_sha256']}/"
+            f"{hf_teacher_replay_cache.CACHE_FILENAME}"
+        ),
+        "cache_verified_before_final_selection": True,
+        "cache_import": captured_receipts[0],
+    }
+    usage = {
+        "schema": preparer.PARENT_MODEL_USAGE_SCHEMA,
+        "model_load_count": 1,
+        "load_purpose": "fresh-targets",
+        "teacher_replay_generated_this_run": False,
+        "teacher_replay_reused_from_cache": True,
+        "fresh_target_generation_performed": True,
+    }
+    behavior_binding = {
+        "payload_sha256": "4" * 64,
+        "mode": preparer.BEHAVIOR_MODE_FRESH,
+        "causal_ab_eligible": True,
+        "behavior_probe_count": preparer.BEHAVIOR_PROBE_COUNT,
+        "generation_prompt_count": preparer.GENERATION_PROMPT_COUNT,
+        "adapter_provenance": {
+            "selection": {
+                "external_candidate_source": dict(
+                    preparer._load_external_fresh_reservoir_seed().receipt
+                )
+            }
+        },
+    }
+    import_report = preparer._build_report(
+        replay_path=report_replay,
+        plan_path=report_plan,
+        teacher_payload=teacher_payload,
+        source_binding=source_binding,
+        behavior_binding=behavior_binding,
+        plan_payload={"plan_payload_sha256": "5" * 64},
+        teacher_generation_device="cpu",
+        recovery_device="cpu",
+        teacher_replay_acquisition=acquisition,
+        parent_model_usage=usage,
+    )
+    assert preparer.verify_build_report(import_report) == import_report
+
+    events.clear()
+    with pytest.raises(LateSelectionFailure, match="preserves migrated"):
+        preparer.prepare_recovery_inputs(
+            **base_args,
+            output_dir=tmp_path / "current-hit-late-output",
+            teacher_replay_cache_dir=cache_dir,
+            teacher_replay_cache_mode="require",
+        )
+    assert "import-read" not in events
+    assert "parent-model-fingerprint" in events
+
+    def publish_variant(
+        name: str,
+        rows: list[dict[str, Any]],
+    ) -> tuple[Path, dict[str, Any], dict[str, Any]]:
+        variant_request = _cache_request_with_producer_rows(current_request, rows)
+        variant_cache = tmp_path / name
+        variant_envelope, _ = hf_teacher_replay_cache.publish_entry(
+            cache_dir=variant_cache,
+            request=variant_request,
+            teacher_payload=teacher_payload,
+            live_source_model_fingerprint=source_fingerprint,
+        )
+        return variant_cache, variant_request, variant_envelope
+
+    bad_prep_hash = copy.deepcopy(legacy_rows)
+    next(row for row in bad_prep_hash if row["role"] == "prepare_recovery_inputs")[
+        "sha256"
+    ] = "e" * 64
+    bad_prep_bytes = copy.deepcopy(legacy_rows)
+    next(row for row in bad_prep_bytes if row["role"] == "prepare_recovery_inputs")[
+        "byte_count"
+    ] += 1
+    bad_nonprep = copy.deepcopy(legacy_rows)
+    next(row for row in bad_nonprep if row["role"] == "hf_recovery")[
+        "sha256"
+    ] = "e" * 64
+    for name, rows in (
+        ("bad-prep-hash", bad_prep_hash),
+        ("bad-prep-bytes", bad_prep_bytes),
+        ("bad-nonprep", bad_nonprep),
+    ):
+        variant_cache, variant_request, variant_envelope = publish_variant(name, rows)
+        with pytest.raises(
+            preparer.RecoveryInputPreparationError,
+            match="not semantically compatible",
+        ):
+            original_import(
+                cache_dir=variant_cache,
+                current_request=current_request,
+                source_request_sha256=variant_request["request_sha256"],
+                source_envelope_sha256=variant_envelope["envelope_sha256"],
+            )
+
+    for request_sha, envelope_sha in (
+        ("f" * 64, legacy_envelope["envelope_sha256"]),
+        (legacy_request["request_sha256"], "f" * 64),
+    ):
+        with pytest.raises(
+            preparer.RecoveryInputPreparationError,
+            match="strict path/request/envelope authentication",
+        ):
+            original_import(
+                cache_dir=cache_dir,
+                current_request=current_request,
+                source_request_sha256=request_sha,
+                source_envelope_sha256=envelope_sha,
+            )
+
+    malformed_cache = tmp_path / "malformed-import-cache"
+    malformed_entry = malformed_cache / legacy_request["request_sha256"]
+    malformed_entry.mkdir(parents=True)
+    (malformed_entry / hf_teacher_replay_cache.CACHE_FILENAME).write_text(
+        "{}\n", encoding="utf-8"
+    )
+    with pytest.raises(
+        preparer.RecoveryInputPreparationError,
+        match="strict path/request/envelope authentication",
+    ):
+        original_import(
+            cache_dir=malformed_cache,
+            current_request=current_request,
+            source_request_sha256=legacy_request["request_sha256"],
+            source_envelope_sha256=legacy_envelope["envelope_sha256"],
+        )
+
+    symlink_root = tmp_path / "symlink-import-cache"
+    try:
+        symlink_root.symlink_to(cache_dir, target_is_directory=True)
+    except OSError:
+        pass
+    else:
+        with pytest.raises(
+            preparer.RecoveryInputPreparationError,
+            match="strict path/request/envelope authentication",
+        ):
+            original_import(
+                cache_dir=symlink_root,
+                current_request=current_request,
+                source_request_sha256=legacy_request["request_sha256"],
+                source_envelope_sha256=legacy_envelope["envelope_sha256"],
+            )
+
+    symlink_entry_root = tmp_path / "symlink-entry-import-cache"
+    symlink_entry_root.mkdir()
+    symlink_entry = symlink_entry_root / legacy_request["request_sha256"]
+    try:
+        symlink_entry.symlink_to(
+            cache_dir / legacy_request["request_sha256"],
+            target_is_directory=True,
+        )
+    except OSError:
+        pass
+    else:
+        with pytest.raises(
+            preparer.RecoveryInputPreparationError,
+            match="strict path/request/envelope authentication",
+        ):
+            original_import(
+                cache_dir=symlink_entry_root,
+                current_request=current_request,
+                source_request_sha256=legacy_request["request_sha256"],
+                source_envelope_sha256=legacy_envelope["envelope_sha256"],
+            )
+
+    symlink_envelope_root = tmp_path / "symlink-envelope-import-cache"
+    symlink_envelope_entry = (
+        symlink_envelope_root / legacy_request["request_sha256"]
+    )
+    symlink_envelope_entry.mkdir(parents=True)
+    real_envelope = tmp_path / "authorized-legacy-cache-envelope.json"
+    _write_json(real_envelope, legacy_envelope)
+    symlink_envelope = (
+        symlink_envelope_entry / hf_teacher_replay_cache.CACHE_FILENAME
+    )
+    try:
+        symlink_envelope.symlink_to(real_envelope)
+    except OSError:
+        pass
+    else:
+        with pytest.raises(
+            preparer.RecoveryInputPreparationError,
+            match="strict path/request/envelope authentication",
+        ):
+            original_import(
+                cache_dir=symlink_envelope_root,
+                current_request=current_request,
+                source_request_sha256=legacy_request["request_sha256"],
+                source_envelope_sha256=legacy_envelope["envelope_sha256"],
+            )
+
+    extra_child_root = tmp_path / "extra-child-import-cache"
+    extra_child_entry = extra_child_root / legacy_request["request_sha256"]
+    extra_child_entry.mkdir(parents=True)
+    _write_json(
+        extra_child_entry / hf_teacher_replay_cache.CACHE_FILENAME,
+        legacy_envelope,
+    )
+    (extra_child_entry / "unexpected.txt").write_text(
+        "unexpected\n", encoding="utf-8"
+    )
+    with pytest.raises(
+        preparer.RecoveryInputPreparationError,
+        match="strict path/request/envelope authentication",
+    ):
+        original_import(
+            cache_dir=extra_child_root,
+            current_request=current_request,
+            source_request_sha256=legacy_request["request_sha256"],
+            source_envelope_sha256=legacy_envelope["envelope_sha256"],
+        )
+
+    wrong_cache, wrong_request, wrong_envelope = publish_variant(
+        "wrong-live-import", legacy_rows
+    )
+    wrong_fingerprint = copy.deepcopy(source_fingerprint)
+    wrong_fingerprint["model_state_fingerprint"]["state_dict_sha256"] = "f" * 64
+    wrong_args = dict(base_args)
+    wrong_args["source_model_fingerprinter"] = lambda _model: wrong_fingerprint
+    with pytest.raises(
+        preparer.RecoveryInputPreparationError,
+        match="source-model binding failed authentication",
+    ):
+        preparer.prepare_recovery_inputs(
+            **wrong_args,
+            output_dir=tmp_path / "wrong-live-import-output",
+            teacher_replay_cache_dir=wrong_cache,
+            teacher_replay_cache_mode="require",
+            teacher_replay_cache_import_request_sha256=wrong_request[
+                "request_sha256"
+            ],
+            teacher_replay_cache_import_envelope_sha256=wrong_envelope[
+                "envelope_sha256"
+            ],
+        )
+    assert hf_teacher_replay_cache.read_entry(wrong_cache, current_request) is None
