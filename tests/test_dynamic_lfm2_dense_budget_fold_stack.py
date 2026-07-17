@@ -1,0 +1,1121 @@
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from neural_forge.dynamic_behavior_gate import (
+    BehaviorGateBinding,
+    expose_behavior_gate_binding,
+)
+from neural_forge.dynamic_circuit_ir import canonical_sha256
+from neural_forge.dynamic_fold_compiler import DynamicFoldingCompiler
+from neural_forge.dynamic_fold_executor import (
+    FoldDecision,
+    fingerprint_model_state,
+)
+from neural_forge.dynamic_fold_registry import ExperimentLedger
+from neural_forge.dynamic_lfm2_adapter import (
+    DynamicLfm2AdapterError,
+    Lfm2TargetSynthesisAdapter,
+)
+from neural_forge.dynamic_lfm2_system import (
+    Lfm2DynamicFoldStackAdapter,
+    Lfm2DynamicStackResources,
+)
+from neural_forge.dynamic_lfm2_targets import Lfm2Topology
+from neural_forge.dynamic_model_inspector import (
+    default_inspector_registry,
+    inspect_model_circuits,
+)
+from neural_forge.dynamic_parameter_frontier import DenseParameterBudgetRequest
+from neural_forge.dynamic_system import (
+    AutomaticDynamicFoldingSystem,
+    DynamicFoldStackAdapterRegistry,
+)
+from neural_forge.dynamic_target_synthesis import (
+    DynamicTargetAdapterRegistry,
+    DynamicTargetRequest,
+    DynamicTargetSynthesisError,
+    DynamicTargetSynthesizer,
+)
+from neural_forge.hf_lfm2_circuit_trace_cache import (
+    CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+    FULL_PREFIX_CANONICAL_TRACE_MODE,
+    Lfm2CircuitTraceCaptureConfig,
+    build_lfm2_circuit_trace_cache,
+)
+from neural_forge.hf_lfm2_dense_budget_model_fold import (
+    DENSE_BUDGET_MODEL_METHOD,
+    Lfm2DenseBudgetFoldConfig,
+    Lfm2DenseBudgetFoldError,
+    _build_residual_basis,
+)
+from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (
+    Lfm2DynamicClosedLoopAdapterConfig,
+)
+from neural_forge.dynamic_closed_loop_fold import ClosedLoopCompilerConfig
+
+
+torch = pytest.importorskip("torch")
+pytest.importorskip("safetensors")
+transformers = pytest.importorskip("transformers")
+
+
+def _tokenizer_fingerprint() -> str:
+    return canonical_sha256(
+        {"kind": "dense-budget-fold-test-tokenizer", "vocabulary_size": 41}
+    )
+
+
+def _model(*, hidden: int, intermediate: int, heads: int, seed: int):
+    config = transformers.Lfm2Config(
+        vocab_size=41,
+        hidden_size=hidden,
+        intermediate_size=intermediate,
+        num_hidden_layers=2,
+        num_attention_heads=heads,
+        num_key_value_heads=heads,
+        head_dim=4,
+        layer_types=["conv", "full_attention"],
+        conv_L_cache=3,
+        conv_bias=False,
+        block_auto_adjust_ff_dim=False,
+        tie_word_embeddings=True,
+    )
+    config._attn_implementation = "eager"
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(seed)
+        model = transformers.Lfm2ForCausalLM(config)
+    model.eval()
+    return model
+
+
+def _batch(prompt, forced):
+    input_ids = torch.tensor([list(prompt)], dtype=torch.long)
+    return {
+        "input_ids": input_ids,
+        "attention_mask": torch.ones_like(input_ids),
+        "forced_decode_ids": torch.tensor([list(forced)], dtype=torch.long),
+    }
+
+
+def _target_unique_parameters() -> int:
+    vocabulary = 41
+    hidden = 4
+    intermediate = 6
+    query_heads = 1
+    key_value_heads = 1
+    head_dim = 4
+    fir = 3
+    token = vocabulary * hidden
+    body = hidden
+    body += 2 * hidden + 4 * hidden * hidden + fir * hidden
+    body += 3 * hidden * intermediate
+    body += (
+        2 * hidden
+        + 2
+        * hidden
+        * head_dim
+        * (query_heads + key_value_heads)
+        + 2 * head_dim
+    )
+    body += 3 * hidden * intermediate
+    return token + body
+
+
+class _Accept:
+    def evaluate(self, _context):
+        return FoldDecision.accept("dense test whole-output acceptance")
+
+
+class _WholeOutputAccept:
+    def evaluate(self, context):
+        with torch.no_grad():
+            context.execution_context.child_model(
+                input_ids=torch.tensor([[1, 2]], dtype=torch.long),
+                use_cache=False,
+            )
+        return FoldDecision.accept("dense test child-root acceptance")
+
+
+def _behavior_binding(cache_key: str) -> BehaviorGateBinding:
+    body = {
+        "schema": "test-behavior-gate-manifest-v1",
+        "gate_id": "test.lfm2.dense_budget",
+        "gate_version": 1,
+        "baseline_fingerprint": cache_key,
+    }
+    fingerprint = canonical_sha256(body)
+    return BehaviorGateBinding(
+        gate_id="test.lfm2.dense_budget",
+        gate_version=1,
+        baseline_fingerprint=cache_key,
+        manifest_fingerprint=fingerprint,
+        manifest={**body, "manifest_fingerprint": fingerprint},
+    )
+
+
+def _saver(model, destination):
+    torch.save(model.state_dict(), destination / "model.pt")
+    (destination / "config.json").write_text(
+        json.dumps(model.config.to_dict()),
+        encoding="utf-8",
+    )
+
+
+def _loader(source):
+    payload = json.loads((source / "config.json").read_text(encoding="utf-8"))
+    config = transformers.Lfm2Config(**payload)
+    # Lfm2Config currently consumes this serialized topology alias but resets
+    # it to None during direct ``**payload`` construction.  Restore the sealed
+    # value before model creation so the compiler-authenticated config
+    # fingerprint survives a local artifact round trip.
+    config.block_ff_dim = payload["block_ff_dim"]
+    model = transformers.Lfm2ForCausalLM(config)
+    model.load_state_dict(
+        torch.load(source / "model.pt", map_location="cpu", weights_only=True)
+    )
+    model.eval()
+    return model
+
+
+@pytest.fixture(scope="module")
+def sealed_parent(tmp_path_factory):
+    parent = _model(hidden=8, intermediate=12, heads=2, seed=2101)
+    batches = [
+        _batch((1, 2, 3, 4), (5,)),
+        _batch((6, 7, 8, 9), (10,)),
+        _batch((11, 12, 13, 14), (15,)),
+        _batch((16, 17, 18, 19), (20,)),
+    ]
+    capture_config = Lfm2CircuitTraceCaptureConfig(
+        sample_last_tokens=2,
+        max_decode_steps=2,
+        max_capture_bytes=64 * 1024 * 1024,
+        decode_trace_mode=FULL_PREFIX_CANONICAL_TRACE_MODE,
+    )
+    cache = build_lfm2_circuit_trace_cache(
+        tmp_path_factory.mktemp("dense-budget-parent-cache"),
+        parent,
+        batches,
+        config=capture_config,
+        input_device="cpu",
+    )
+    return parent, cache
+
+
+@pytest.fixture(scope="module")
+def production_budget_parent(tmp_path_factory):
+    config = transformers.Lfm2Config(
+        vocab_size=41,
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=16,
+        layer_types=["conv", "full_attention"],
+        conv_L_cache=3,
+        conv_bias=False,
+        block_auto_adjust_ff_dim=False,
+        tie_word_embeddings=True,
+    )
+    config._attn_implementation = "eager"
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(2300)
+        parent = transformers.Lfm2ForCausalLM(config)
+    parent.eval()
+    batches = [
+        _batch((1, 2, 3, 4), (5,)),
+        _batch((6, 7, 8, 9), (10,)),
+        _batch((11, 12, 13, 14), (15,)),
+        _batch((16, 17, 18, 19), (20,)),
+    ]
+    cache = build_lfm2_circuit_trace_cache(
+        tmp_path_factory.mktemp("production-dense-budget-parent-cache"),
+        parent,
+        batches,
+        config=Lfm2CircuitTraceCaptureConfig(
+            sample_last_tokens=1,
+            max_decode_steps=1,
+            max_capture_bytes=64 * 1024 * 1024,
+            decode_trace_mode=FULL_PREFIX_CANONICAL_TRACE_MODE,
+        ),
+        input_device="cpu",
+    )
+    return parent, cache
+
+
+@pytest.fixture(scope="module")
+def production_ten_x_parent(tmp_path_factory):
+    layer_types = ["conv", "full_attention"] * 7
+    config = transformers.Lfm2Config(
+        vocab_size=41,
+        hidden_size=128,
+        intermediate_size=320,
+        num_hidden_layers=len(layer_types),
+        num_attention_heads=8,
+        num_key_value_heads=4,
+        head_dim=16,
+        layer_types=layer_types,
+        conv_L_cache=3,
+        conv_bias=False,
+        block_auto_adjust_ff_dim=False,
+        tie_word_embeddings=True,
+    )
+    config._attn_implementation = "eager"
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(2400)
+        parent = transformers.Lfm2ForCausalLM(config)
+    parent.eval()
+    batches = [
+        _batch((1, 2, 3, 4), (5,)),
+        _batch((6, 7, 8, 9), (10,)),
+        _batch((11, 12, 13, 14), (15,)),
+        _batch((16, 17, 18, 19), (20,)),
+    ]
+    cache = build_lfm2_circuit_trace_cache(
+        tmp_path_factory.mktemp("production-dense-budget-10x-parent-cache"),
+        parent,
+        batches,
+        config=Lfm2CircuitTraceCaptureConfig(
+            sample_last_tokens=1,
+            max_decode_steps=1,
+            max_capture_bytes=128 * 1024 * 1024,
+            decode_trace_mode=FULL_PREFIX_CANONICAL_TRACE_MODE,
+        ),
+        input_device="cpu",
+    )
+    return parent, cache
+
+
+def _production_extreme_ratio_parent(
+    tmp_path_factory,
+    *,
+    ratio: int,
+    intermediate_size: int,
+    seed: int,
+):
+    config = transformers.Lfm2Config(
+        vocab_size=41,
+        hidden_size=224,
+        intermediate_size=intermediate_size,
+        num_hidden_layers=2,
+        num_attention_heads=14,
+        num_key_value_heads=7,
+        head_dim=16,
+        layer_types=["conv", "full_attention"],
+        conv_L_cache=3,
+        conv_bias=False,
+        block_auto_adjust_ff_dim=False,
+        tie_word_embeddings=True,
+    )
+    config._attn_implementation = "eager"
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(seed)
+        parent = transformers.Lfm2ForCausalLM(config)
+    parent.eval()
+    batches = [
+        _batch((1, 2, 3, 4), (5,)),
+        _batch((6, 7, 8, 9), (10,)),
+        _batch((11, 12, 13, 14), (15,)),
+        _batch((16, 17, 18, 19), (20,)),
+    ]
+    cache = build_lfm2_circuit_trace_cache(
+        tmp_path_factory.mktemp(
+            f"production-dense-budget-{ratio}x-parent-cache"
+        ),
+        parent,
+        batches,
+        config=Lfm2CircuitTraceCaptureConfig(
+            sample_last_tokens=1,
+            max_decode_steps=1,
+            max_capture_bytes=64 * 1024 * 1024,
+            decode_trace_mode=FULL_PREFIX_CANONICAL_TRACE_MODE,
+        ),
+        input_device="cpu",
+    )
+    return parent, cache
+
+
+@pytest.fixture(scope="module")
+def production_hundred_x_parent(tmp_path_factory):
+    """Small full-depth parent just above the honest dense 100x floor."""
+
+    return _production_extreme_ratio_parent(
+        tmp_path_factory,
+        ratio=100,
+        intermediate_size=687,
+        seed=2500,
+    )
+
+
+@pytest.fixture(scope="module")
+def production_two_hundred_fifty_x_parent(tmp_path_factory):
+    """Smallest integer FFN width clearing the same dense 250x floor."""
+
+    return _production_extreme_ratio_parent(
+        tmp_path_factory,
+        ratio=250,
+        intermediate_size=2_121,
+        seed=2750,
+    )
+
+
+@pytest.fixture(scope="module")
+def production_thousand_x_parent(tmp_path_factory):
+    """Exact 1000x parent over the same full-depth 12,848-param child."""
+
+    return _production_extreme_ratio_parent(
+        tmp_path_factory,
+        ratio=1_000,
+        intermediate_size=9_290,
+        seed=3500,
+    )
+
+
+def test_dense_budget_vocab_margin_requires_circuit_balanced_basis() -> None:
+    defaults = Lfm2DenseBudgetFoldConfig()
+    assert defaults.vocabulary_margin_candidate_gate_enabled is False
+    assert defaults.vocabulary_margin_candidate_replay_mode == (
+        CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+    )
+    assert (
+        defaults
+        .vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction
+        == pytest.approx(0.9)
+    )
+    with pytest.raises(
+        Lfm2DenseBudgetFoldError,
+        match="requires residual_basis_mode='circuit_balanced'",
+    ):
+        Lfm2DenseBudgetFoldConfig(
+            residual_basis_mode="weight_complete",
+            vocabulary_margin_observability=True,
+        )
+    with pytest.raises(
+        Lfm2DenseBudgetFoldError,
+        match="requires vocabulary_margin_observability=True",
+    ):
+        Lfm2DenseBudgetFoldConfig(
+            residual_basis_mode="circuit_balanced",
+            vocabulary_margin_candidate_gate_enabled=True,
+        )
+
+
+def test_dense_budget_balanced_basis_consumes_cached_vocab_margin(
+    sealed_parent,
+) -> None:
+    parent, cache = sealed_parent
+    parent_state = fingerprint_model_state(parent)
+    graph = inspect_model_circuits(
+        parent,
+        model_name="parent",
+        tokenizer_fingerprint=_tokenizer_fingerprint(),
+    )
+    basis = _build_residual_basis(
+        parent,
+        graph,
+        cache,
+        4,
+        Lfm2DenseBudgetFoldConfig(
+            residual_basis_mode="circuit_balanced",
+            run_closed_loop=False,
+            vocabulary_margin_observability=True,
+            vocabulary_margin_top_k=3,
+            vocabulary_margin_floor_fraction=0.05,
+        ),
+    )
+
+    report = basis.as_dict()
+    margin = report["vocabulary_margin_observability"]
+    assert margin["enabled"] is True
+    assert margin["full_parent_logits_read_from_sealed_cache"] is True
+    assert margin["parent_forward_calls"] == 0
+    assert margin["trace_regeneration_calls"] == 0
+    assert margin["training_steps"] == 0
+    projection_gate = basis.evaluate_vocabulary_margin_projection_gate(
+        basis.basis,
+        minimum_retained_energy_fraction=0.0,
+        minimum_sign_agreement_fraction=0.0,
+        minimum_top_competitor_nonnegative_fraction=0.0,
+        minimum_all_top_k_nonnegative_fraction=0.0,
+    )
+    assert projection_gate["gate_passed"] is True
+    assert fingerprint_model_state(parent) == parent_state
+
+
+def _compile_vocabulary_margin_gated_child(
+    sealed_parent,
+    *,
+    minimum_fraction: float,
+    child_name: str,
+):
+    parent, cache = sealed_parent
+    tokenizer = _tokenizer_fingerprint()
+    exact = _target_unique_parameters()
+    request = DynamicTargetRequest(
+        child_name=child_name,
+        exact_unique_parameters=exact,
+        target_family="lfm2",
+        target_modalities=("text",),
+        tokenizer_fingerprint=tokenizer,
+        adapter_id=Lfm2TargetSynthesisAdapter.adapter_id,
+        blank_seed=2501,
+        configuration=tuple(
+            {
+                "model_type": "lfm2",
+                "vocab_size": 41,
+                "hidden_size": 4,
+                "intermediate_size": 6,
+                "num_hidden_layers": 2,
+                "num_attention_heads": 1,
+                "num_key_value_heads": 1,
+                "head_dim": 4,
+                "layer_types": "conv,full_attention",
+                "conv_L_cache": 3,
+                "block_auto_adjust_ff_dim": False,
+                "tie_word_embeddings": True,
+                "_neural_forge_ordered_source_spans": "0;1",
+                "_neural_forge_target_layer_types": "conv,full_attention",
+                "_neural_forge_dense_topology_catalog": (
+                    "test.lfm2.same_depth.vocabulary-margin-gate"
+                ),
+                "_neural_forge_tokenizer_bridge_required": False,
+            }.items()
+        ),
+    )
+    target = DynamicTargetSynthesizer(
+        inspectors=default_inspector_registry(),
+        adapters=DynamicTargetAdapterRegistry(
+            (
+                Lfm2TargetSynthesisAdapter(
+                    terminal_topology=Lfm2Topology(1, 1, 6),
+                    evidence_fingerprint=cache.cache_key,
+                    device="cpu",
+                    dtype=torch.float32,
+                ),
+            )
+        ),
+    ).synthesize(
+        request=request,
+        parent_models={"parent": parent},
+        parent_tokenizer_fingerprints={"parent": tokenizer},
+    )
+    blank_state = fingerprint_model_state(target.model)
+    final_gate = _Accept()
+
+    def fresh_gate(_model):
+        return FoldDecision.accept("unused fresh gate")
+
+    binding = _behavior_binding(cache.cache_key)
+    expose_behavior_gate_binding(final_gate, binding)
+    expose_behavior_gate_binding(fresh_gate, binding)
+    stack = Lfm2DynamicFoldStackAdapter(
+        Lfm2DynamicStackResources(
+            parent_cache_fingerprint=cache.cache_key,
+            parent_cache_payload=cache,
+            evidence_builder=lambda _request: None,
+            final_evaluator=final_gate,
+            model_saver=_saver,
+            model_loader=_loader,
+            fresh_reload_evaluator=fresh_gate,
+            saver_id="test-vocabulary-margin-gate-saver-v1",
+            loader_id="test-vocabulary-margin-gate-loader-v1",
+            ledger=ExperimentLedger(),
+            dense_fold_config=Lfm2DenseBudgetFoldConfig(
+                residual_basis_mode="circuit_balanced",
+                run_closed_loop=False,
+                circuit_split_seed=(
+                    "dense-budget-vocabulary-margin-candidate-gate-v1"
+                ),
+                vocabulary_margin_observability=True,
+                vocabulary_margin_top_k=3,
+                vocabulary_margin_candidate_gate_enabled=True,
+                vocabulary_margin_candidate_replay_mode=(
+                    CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+                ),
+                vocabulary_margin_candidate_minimum_sign_agreement_fraction=(
+                    minimum_fraction
+                ),
+                vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction=(
+                    minimum_fraction
+                ),
+                vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction=(
+                    minimum_fraction
+                ),
+                vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction=(
+                    minimum_fraction
+                ),
+            ),
+        )
+    ).build(target)
+    compilation = DynamicFoldingCompiler(
+        operators=stack.operators,
+        ledger=ExperimentLedger(),
+    ).compile(
+        parent_models={"parent": parent},
+        child_model=target.model,
+        child_name=child_name,
+        evidence_provider=stack.evidence_provider,
+        evaluator=stack.evaluator,
+        final_evaluator=stack.final_evaluator,
+        evidence_fingerprint=cache.cache_key,
+        parent_tokenizer_fingerprints={"parent": tokenizer},
+        child_tokenizer_fingerprint=tokenizer,
+        exact_target_unique_parameters=exact,
+        initializer=stack.initializer,
+    )
+    return compilation, target, blank_state
+
+
+def test_dense_budget_candidate_gate_replays_once_and_commits(
+    sealed_parent,
+) -> None:
+    parent, _cache = sealed_parent
+    parent_state = fingerprint_model_state(parent)
+    compilation, target, blank_state = (
+        _compile_vocabulary_margin_gated_child(
+            sealed_parent,
+            minimum_fraction=0.0,
+            child_name="dense-vocabulary-gate-pass",
+        )
+    )
+
+    assert compilation.complete
+    assert fingerprint_model_state(target.model) != blank_state
+    assert fingerprint_model_state(parent) == parent_state
+    assert compilation.run.observed_parent_module_forward_calls == 0
+    assert compilation.run.observed_parent_root_forward_calls == 0
+    attempt = compilation.run.attempts[0]
+    assert attempt.accepted
+    audit = attempt.transaction_report[
+        "vocabulary_margin_candidate_gate"
+    ]
+    assert audit["enabled"] is True
+    assert audit["gate_passed"] is True
+    assert audit["candidate_replay_capture_calls"] == 1
+    assert audit["candidate_replay_mode"] == (
+        CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+    )
+    assert audit["single_pass_causal_authenticated"] is True
+    assert audit["heldout_record_count"] == 1
+    assert audit["actual_child_forward_calls"] == 1
+    expected_canonical_prefix_forwards = audit["evaluation"]["phase_count"]
+    assert audit["canonical_prefix_child_forward_calls"] == (
+        expected_canonical_prefix_forwards
+    )
+    assert audit["saved_child_forward_calls"] == (
+        expected_canonical_prefix_forwards
+        - audit["actual_child_forward_calls"]
+    )
+    assert audit["parent_forward_calls"] == 0
+    assert audit["trace_regeneration_calls"] == 0
+    assert audit["training_steps"] == 0
+    assert audit["evaluation"]["candidate_forward_calls"] == 0
+
+
+def test_dense_budget_candidate_gate_rejects_and_exactly_restores_blank(
+    sealed_parent,
+) -> None:
+    parent, _cache = sealed_parent
+    parent_state = fingerprint_model_state(parent)
+    compilation, target, blank_state = (
+        _compile_vocabulary_margin_gated_child(
+            sealed_parent,
+            minimum_fraction=1.0,
+            child_name="dense-vocabulary-gate-reject",
+        )
+    )
+
+    assert compilation.complete is False
+    assert fingerprint_model_state(target.model) == blank_state
+    assert fingerprint_model_state(parent) == parent_state
+    assert compilation.run.observed_parent_module_forward_calls == 0
+    assert compilation.run.observed_parent_root_forward_calls == 0
+    attempt = compilation.run.attempts[0]
+    assert attempt.accepted is False
+    assert attempt.rollback_exact is True
+    audit = attempt.transaction_report[
+        "vocabulary_margin_candidate_gate"
+    ]
+    assert audit["enabled"] is True
+    assert audit["gate_passed"] is False
+    assert audit["candidate_replay_capture_calls"] == 1
+    assert audit["actual_child_forward_calls"] == 1
+    assert audit["parent_forward_calls"] == 0
+    assert audit["training_steps"] == 0
+    assert attempt.transaction_report["action"] == "rollback"
+    assert attempt.transaction_report["rollback_exact"] is True
+    decision_metrics = dict(attempt.decision.metrics)
+    evaluation = audit["evaluation"]
+    for name, value in evaluation["metrics"].items():
+        if name in evaluation["minimums"]:
+            assert decision_metrics[
+                f"vocabulary_margin_candidate_{name}"
+            ] == pytest.approx(value)
+            assert decision_metrics[
+                f"vocabulary_margin_candidate_minimum_{name}"
+            ] == pytest.approx(evaluation["minimums"][name])
+            assert decision_metrics[
+                f"vocabulary_margin_candidate_check_{name}"
+            ] is evaluation["checks"][name]
+    assert decision_metrics[
+        "vocabulary_margin_candidate_heldout_record_count"
+    ] == audit["heldout_record_count"]
+    assert decision_metrics[
+        "vocabulary_margin_candidate_actual_child_forward_calls"
+    ] == audit["actual_child_forward_calls"]
+    assert decision_metrics[
+        "vocabulary_margin_candidate_parent_forward_calls"
+    ] == 0
+    assert decision_metrics[
+        "vocabulary_margin_candidate_training_steps"
+    ] == 0
+    assert decision_metrics[
+        "vocabulary_margin_candidate_audit_sha256"
+    ] == audit["audit_sha256"]
+
+
+def test_dense_budget_stack_fills_blank_with_parent_structural_fold(
+    sealed_parent,
+) -> None:
+    parent, cache = sealed_parent
+    parent_state = fingerprint_model_state(parent)
+    tokenizer = _tokenizer_fingerprint()
+    exact = _target_unique_parameters()
+    request = DynamicTargetRequest(
+        child_name="dense-child",
+        exact_unique_parameters=exact,
+        target_family="lfm2",
+        target_modalities=("text",),
+        tokenizer_fingerprint=tokenizer,
+        adapter_id=Lfm2TargetSynthesisAdapter.adapter_id,
+        blank_seed=2102,
+        configuration=tuple(
+            {
+                "model_type": "lfm2",
+                "vocab_size": 41,
+                "hidden_size": 4,
+                "intermediate_size": 6,
+                "num_hidden_layers": 2,
+                "num_attention_heads": 1,
+                "num_key_value_heads": 1,
+                "head_dim": 4,
+                "layer_types": "conv,full_attention",
+                "conv_L_cache": 3,
+                "block_auto_adjust_ff_dim": False,
+                "tie_word_embeddings": True,
+                "_neural_forge_ordered_source_spans": "0;1",
+                "_neural_forge_target_layer_types": "conv,full_attention",
+                "_neural_forge_dense_topology_catalog": (
+                    "test.lfm2.same_depth.2x"
+                ),
+                "_neural_forge_tokenizer_bridge_required": False,
+            }.items()
+        ),
+    )
+    target_adapter = Lfm2TargetSynthesisAdapter(
+        terminal_topology=Lfm2Topology(1, 1, 6),
+        evidence_fingerprint=cache.cache_key,
+        device="cpu",
+        dtype=torch.float32,
+    )
+    target = DynamicTargetSynthesizer(
+        inspectors=default_inspector_registry(),
+        adapters=DynamicTargetAdapterRegistry((target_adapter,)),
+    ).synthesize(
+        request=request,
+        parent_models={"parent": parent},
+        parent_tokenizer_fingerprints={"parent": tokenizer},
+    )
+    blank_state = fingerprint_model_state(target.model)
+    assert all(
+        int(torch.count_nonzero(parameter).item()) == 0
+        for parameter in target.model.parameters()
+    )
+    final_gate = _Accept()
+
+    def fresh_gate(_model):
+        return FoldDecision.accept("fresh dense reload accepted")
+
+    binding = _behavior_binding(cache.cache_key)
+    expose_behavior_gate_binding(final_gate, binding)
+    expose_behavior_gate_binding(fresh_gate, binding)
+    stack = Lfm2DynamicFoldStackAdapter(
+        Lfm2DynamicStackResources(
+            parent_cache_fingerprint=cache.cache_key,
+            parent_cache_payload=cache,
+            evidence_builder=lambda _request: None,
+            final_evaluator=final_gate,
+            model_saver=_saver,
+            model_loader=_loader,
+            fresh_reload_evaluator=fresh_gate,
+            saver_id="test-dense-saver-v1",
+            loader_id="test-dense-loader-v1",
+            ledger=ExperimentLedger(),
+            dense_fold_config=Lfm2DenseBudgetFoldConfig(
+                residual_basis_mode="weight_complete",
+                run_closed_loop=True,
+                closed_loop_adapter_config=(
+                    Lfm2DynamicClosedLoopAdapterConfig(
+                        ridge=1e-5,
+                        norm_ridge=1e-5,
+                        max_prior_delta_ratio=4.0,
+                        cluster_max_iterations=4,
+                        cluster_distance_chunk_size=16,
+                        minimum_layer_relative_rmse_improvement=-1_000_000.0,
+                        minimum_final_norm_relative_rmse_improvement=(
+                            -1_000_000.0
+                        ),
+                        minimum_output_kl_improvement=-1_000_000.0,
+                        minimum_output_known_sequence_nll_improvement=(
+                            -1_000_000.0
+                        ),
+                        output_validation_tolerance=1_000_000.0,
+                    )
+                ),
+                closed_loop_compiler_config=ClosedLoopCompilerConfig(
+                    validation_fraction=0.25,
+                    split_seed="dense-budget-stack-test-v1",
+                ),
+            ),
+        )
+    ).build(target)
+    compilation = DynamicFoldingCompiler(
+        operators=stack.operators,
+        ledger=ExperimentLedger(),
+    ).compile(
+        parent_models={"parent": parent},
+        child_model=target.model,
+        child_name="dense-child",
+        evidence_provider=stack.evidence_provider,
+        evaluator=stack.evaluator,
+        final_evaluator=stack.final_evaluator,
+        evidence_fingerprint=cache.cache_key,
+        parent_tokenizer_fingerprints={"parent": tokenizer},
+        child_tokenizer_fingerprint=tokenizer,
+        exact_target_unique_parameters=exact,
+        initializer=stack.initializer,
+    )
+
+    assert compilation.complete
+    assert compilation.run.status == "complete"
+    assert compilation.plan.actions[0].method_id == DENSE_BUDGET_MODEL_METHOD
+    assert fingerprint_model_state(target.model) != blank_state
+    assert fingerprint_model_state(parent) == parent_state
+    assert target.graph.unique_parameter_count == exact
+    assert sum(
+        int(torch.count_nonzero(parameter).item())
+        for parameter in target.model.parameters()
+    ) > 0
+    assert compilation.run.optimizer_constructions == 0
+    assert compilation.run.optimizer_steps == 0
+    assert compilation.run.backward_calls == 0
+    assert compilation.run.autograd_grad_calls == 0
+    assert compilation.run.observed_parent_module_forward_calls == 0
+    assert compilation.run.observed_parent_root_forward_calls == 0
+    attempt = compilation.run.attempts[0]
+    assert attempt.accepted
+    assert attempt.method_id == DENSE_BUDGET_MODEL_METHOD
+    transaction_report = dict(attempt.transaction_report)
+    assert transaction_report["closed_loop_enabled"] is True
+    assert transaction_report["complete_target_parameter_overwrite"] is True
+    assert transaction_report["residual_basis_mode"] == "weight_complete"
+    assert transaction_report["quantization_used"] is False
+    assert transaction_report["pruning_used"] is False
+    assert transaction_report["training_used"] is False
+    assert transaction_report["initial_structural_fold"][
+        "complete_target_parameter_overwrite"
+    ]
+    assert transaction_report["closed_loop"]["audit"]["training_steps"] == 0
+    assert transaction_report["closed_loop"]["audit"]["backward_calls"] == 0
+    assert transaction_report["closed_loop"]["audit"]["optimizer_steps"] == 0
+
+
+def test_dense_budget_stack_fails_closed_on_depth_composition(
+    sealed_parent,
+) -> None:
+    parent, cache = sealed_parent
+    parent_state = fingerprint_model_state(parent)
+    tokenizer = _tokenizer_fingerprint()
+    exact = 41 * 4 + 4 + 2 * 4 + 2 * 4 * 4 * (1 + 1) + 2 * 4
+    exact += 3 * 4 * 6
+    request = DynamicTargetRequest(
+        child_name="dense-depth-child",
+        exact_unique_parameters=exact,
+        target_family="lfm2",
+        target_modalities=("text",),
+        tokenizer_fingerprint=tokenizer,
+        adapter_id=Lfm2TargetSynthesisAdapter.adapter_id,
+        blank_seed=2202,
+        configuration=tuple(
+            {
+                "model_type": "lfm2",
+                "vocab_size": 41,
+                "hidden_size": 4,
+                "intermediate_size": 6,
+                "num_hidden_layers": 1,
+                "num_attention_heads": 1,
+                "num_key_value_heads": 1,
+                "head_dim": 4,
+                "layer_types": "full_attention",
+                "conv_L_cache": 3,
+                "block_auto_adjust_ff_dim": False,
+                "tie_word_embeddings": True,
+                "_neural_forge_ordered_source_spans": "0,1",
+                "_neural_forge_target_layer_types": "full_attention",
+                "_neural_forge_dense_topology_catalog": (
+                    "test.lfm2.depth-changing"
+                ),
+                "_neural_forge_tokenizer_bridge_required": False,
+            }.items()
+        ),
+    )
+    target_adapter = Lfm2TargetSynthesisAdapter(
+        terminal_topology=Lfm2Topology(1, 1, 6),
+        evidence_fingerprint=cache.cache_key,
+        device="cpu",
+        dtype=torch.float32,
+    )
+    target = DynamicTargetSynthesizer(
+        inspectors=default_inspector_registry(),
+        adapters=DynamicTargetAdapterRegistry((target_adapter,)),
+    ).synthesize(
+        request=request,
+        parent_models={"parent": parent},
+        parent_tokenizer_fingerprints={"parent": tokenizer},
+    )
+    blank_state = fingerprint_model_state(target.model)
+    final_gate = _Accept()
+
+    def fresh_gate(_model):
+        return FoldDecision.accept("unused depth-changing reload gate")
+
+    binding = _behavior_binding(cache.cache_key)
+    expose_behavior_gate_binding(final_gate, binding)
+    expose_behavior_gate_binding(fresh_gate, binding)
+    adapter = Lfm2DynamicFoldStackAdapter(
+        Lfm2DynamicStackResources(
+            parent_cache_fingerprint=cache.cache_key,
+            parent_cache_payload=cache,
+            evidence_builder=lambda _request: None,
+            final_evaluator=final_gate,
+            model_saver=_saver,
+            model_loader=_loader,
+            fresh_reload_evaluator=fresh_gate,
+            saver_id="test-depth-saver-v1",
+            loader_id="test-depth-loader-v1",
+            ledger=ExperimentLedger(),
+        )
+    )
+    with pytest.raises(
+        DynamicLfm2AdapterError,
+        match="Ordered source-span composition is required",
+    ):
+        adapter.build(target)
+    assert fingerprint_model_state(target.model) == blank_state
+    assert fingerprint_model_state(parent) == parent_state
+
+
+@pytest.mark.parametrize(
+    ("parent_fixture", "compression_ratio"),
+    (
+        ("production_budget_parent", 2),
+        ("production_budget_parent", 4),
+        ("production_ten_x_parent", 10),
+        ("production_hundred_x_parent", 100),
+        ("production_two_hundred_fifty_x_parent", 250),
+        ("production_thousand_x_parent", 1_000),
+    ),
+)
+def test_automatic_supported_ratio_selector_folds_and_publishes_dense_target(
+    request,
+    tmp_path,
+    parent_fixture,
+    compression_ratio,
+) -> None:
+    parent, cache = request.getfixturevalue(parent_fixture)
+    parent_state = fingerprint_model_state(parent)
+    tokenizer = _tokenizer_fingerprint()
+    parent_graph = inspect_model_circuits(
+        parent,
+        model_name="parent",
+        tokenizer_fingerprint=tokenizer,
+    )
+    target_adapter = Lfm2TargetSynthesisAdapter(
+        terminal_topology=Lfm2Topology(1, 1, 32),
+        evidence_fingerprint=cache.cache_key,
+        device="cpu",
+        dtype=torch.float32,
+    )
+    final_gate = _WholeOutputAccept()
+
+    def fresh_gate(model):
+        with torch.no_grad():
+            model(
+                input_ids=torch.tensor([[1, 2]], dtype=torch.long),
+                use_cache=False,
+            )
+        return FoldDecision.accept("automatic target fresh gate")
+
+    binding = _behavior_binding(cache.cache_key)
+    expose_behavior_gate_binding(final_gate, binding)
+    expose_behavior_gate_binding(fresh_gate, binding)
+    stack_adapter = Lfm2DynamicFoldStackAdapter(
+        Lfm2DynamicStackResources(
+            parent_cache_fingerprint=cache.cache_key,
+            parent_cache_payload=cache,
+            evidence_builder=lambda _request: None,
+            final_evaluator=final_gate,
+            model_saver=_saver,
+            model_loader=_loader,
+            fresh_reload_evaluator=fresh_gate,
+            saver_id="automatic-dense-saver-v1",
+            loader_id="automatic-dense-loader-v1",
+            ledger=ExperimentLedger(),
+            dense_fold_config=Lfm2DenseBudgetFoldConfig(
+                run_closed_loop=False,
+            ),
+        )
+    )
+    target_registry = DynamicTargetAdapterRegistry((target_adapter,))
+    system = AutomaticDynamicFoldingSystem(
+        target_adapters=target_registry,
+        stack_adapters=DynamicFoldStackAdapterRegistry((stack_adapter,)),
+    )
+    plan = system.plan_budgeted_target(
+        parent_graph=parent_graph,
+        budget_request=DenseParameterBudgetRequest(
+            target_family="lfm2",
+            target_modalities=("text",),
+            compression_ratio=compression_ratio,
+            maximum_candidates=64,
+        ),
+        child_name=f"automatic-dense-{compression_ratio}x",
+        tokenizer_fingerprint=tokenizer,
+        adapter_id=target_adapter.adapter_id,
+        blank_seed=2300 + compression_ratio,
+    )
+    rank = plan.target_certificate.selected_candidate_rank
+    candidate = plan.frontier.candidates[rank]
+    assert plan.target_certificate.selection_policy == (
+        "supported_pareto_balanced_executable_v1"
+    )
+    assert candidate.compiler_executable
+    assert candidate.missing_compiler_capabilities == ()
+    assert len(candidate.ordered_source_spans) == len(parent_graph.layer_indices)
+    assert candidate.ordered_source_spans == tuple(
+        (index,) for index in range(len(parent_graph.layer_indices))
+    )
+    result = system.run(
+        parent_models={"parent": parent},
+        target_request=plan.target_request,
+        evidence_fingerprint=cache.cache_key,
+        destination=(
+            tmp_path / f"automatic-dense-{compression_ratio}x-published"
+        ),
+        parent_tokenizer_fingerprints={"parent": tokenizer},
+    )
+    assert result.complete
+    assert result.target.blank_provenance.compiler_created_blank
+    assert result.target.blank_provenance.all_parameters_zero
+    assert result.target.graph.unique_parameter_count == candidate.unique_parameters
+    assert result.target.graph.unique_parameter_count <= (
+        parent_graph.unique_parameter_count // compression_ratio
+    )
+    assert candidate.compression_ratio >= compression_ratio
+    extreme_parent_parameters = {
+        100: 1_285_568,
+        250: 3_212_864,
+        1_000: 12_848_000,
+    }
+    if compression_ratio in extreme_parent_parameters:
+        expected_parent_parameters = extreme_parent_parameters[
+            compression_ratio
+        ]
+        assert (
+            parent_graph.unique_parameter_count
+            == expected_parent_parameters
+        )
+        assert candidate.unique_parameters == 12_848
+        assert candidate.compression_ratio == pytest.approx(
+            expected_parent_parameters / 12_848
+        )
+        hundred_x_configuration = dict(candidate.configuration)
+        assert hundred_x_configuration["hidden_size"] == 32
+        assert hundred_x_configuration["intermediate_size"] == 32
+        assert hundred_x_configuration["num_hidden_layers"] == 2
+        assert hundred_x_configuration["num_attention_heads"] == 1
+        assert hundred_x_configuration["num_key_value_heads"] == 1
+        assert hundred_x_configuration["head_dim"] == 8
+    assert fingerprint_model_state(parent) == parent_state
+    assert any(
+        action.method_id == DENSE_BUDGET_MODEL_METHOD
+        for action in result.published.compilation.plan.actions
+    )
+    assert result.published.compilation.run.optimizer_constructions == 0
+    assert result.published.compilation.run.optimizer_steps == 0
+    assert result.published.compilation.run.backward_calls == 0
+    assert result.published.compilation.run.autograd_grad_calls == 0
+    attempt = result.published.compilation.run.attempts[0]
+    assert attempt.accepted
+    report = dict(attempt.transaction_report)
+    assert report["complete_target_parameter_overwrite"] is True
+    assert report["closed_loop_enabled"] is False
+    assert report["quantization_used"] is False
+    assert report["pruning_used"] is False
+    assert report["training_used"] is False
+    assert result.published.artifact.fresh_reload_decision.accepted
+    reloaded = _loader(
+        tmp_path
+        / f"automatic-dense-{compression_ratio}x-published"
+        / "child"
+    )
+    assert fingerprint_model_state(reloaded) == (
+        result.published.artifact.child_state_fingerprint
+    )
+
+
+def test_tiny_two_layer_10x_budget_fails_closed_at_discrete_catalog_boundary(
+    production_budget_parent,
+) -> None:
+    """This tiny-budget refusal is not a general claim about 10x LFM2."""
+
+    parent, cache = production_budget_parent
+    tokenizer = _tokenizer_fingerprint()
+    parent_graph = inspect_model_circuits(
+        parent,
+        model_name="parent",
+        tokenizer_fingerprint=tokenizer,
+    )
+    assert parent_graph.unique_parameter_count == 80_992
+    adapter = Lfm2TargetSynthesisAdapter(
+        terminal_topology=Lfm2Topology(1, 1, 32),
+        evidence_fingerprint=cache.cache_key,
+        device="cpu",
+        dtype=torch.float32,
+    )
+    system = AutomaticDynamicFoldingSystem(
+        target_adapters=DynamicTargetAdapterRegistry((adapter,)),
+        stack_adapters=DynamicFoldStackAdapterRegistry(),
+    )
+
+    with pytest.raises(
+        DynamicTargetSynthesisError,
+        match="No supported-Pareto dense topology is executable",
+    ):
+        system.plan_budgeted_target(
+            parent_graph=parent_graph,
+            budget_request=DenseParameterBudgetRequest(
+                target_family="lfm2",
+                target_modalities=("text",),
+                compression_ratio=10,
+                maximum_candidates=64,
+            ),
+            child_name="automatic-dense-10x",
+            tokenizer_fingerprint=tokenizer,
+            adapter_id=adapter.adapter_id,
+            blank_seed=2310,
+        )

@@ -1,0 +1,2307 @@
+"""Automatic causal-circuit alignment and fold-plan generation."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Mapping, Sequence
+
+from .dynamic_circuit_ir import (
+    CircuitKind,
+    CircuitNode,
+    EdgeKind,
+    JsonScalar,
+    ModelCircuitGraph,
+    PortKind,
+    canonical_sha256,
+)
+from .dynamic_fold_registry import (
+    ExperimentLedger,
+    ExperimentSignature,
+    FoldMethodSpec,
+    FoldMethodRegistry,
+    LedgerDecision,
+    default_method_registry,
+)
+
+
+PLAN_SCHEMA = "neural-forge-dynamic-fold-plan-v1"
+
+
+class DynamicFoldPlanningError(ValueError):
+    """The requested target cannot yet be covered by registered fold operators."""
+
+
+def _text(value: Any, name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise DynamicFoldPlanningError(f"{name} must be a nonempty string.")
+    return value.strip()
+
+
+def _positive_int(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise DynamicFoldPlanningError(f"{name} must be a positive integer.")
+    return value
+
+
+def _digest(value: Any, name: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise DynamicFoldPlanningError(f"{name} must be a lowercase SHA-256 digest.")
+    return value
+
+
+def _attributes(
+    values: Mapping[str, JsonScalar] | Sequence[tuple[str, JsonScalar]] | None,
+) -> tuple[tuple[str, JsonScalar], ...]:
+    if values is None:
+        return ()
+    items = values.items() if isinstance(values, Mapping) else values
+    result = sorted((str(key), value) for key, value in items)
+    if len({key for key, _ in result}) != len(result):
+        raise DynamicFoldPlanningError("Action configuration keys repeat.")
+    return tuple(result)
+
+
+@dataclass(frozen=True, slots=True)
+class SourceCircuitRef:
+    parent_name: str
+    node_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "parent_name", _text(self.parent_name, "parent_name"))
+        node_ids = tuple(
+            sorted({_text(value, "source node_id") for value in self.node_ids})
+        )
+        if not node_ids:
+            raise DynamicFoldPlanningError(
+                "A source circuit reference cannot be empty."
+            )
+        object.__setattr__(self, "node_ids", node_ids)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"parent_name": self.parent_name, "node_ids": list(self.node_ids)}
+
+
+@dataclass(frozen=True, slots=True)
+class FoldAction:
+    """One atomic complete-circuit transaction selected without layer surgery."""
+
+    action_id: str
+    sequence_index: int
+    method_id: str
+    sources: tuple[SourceCircuitRef, ...]
+    target_node_ids: tuple[str, ...]
+    target_parameter_paths: tuple[str, ...]
+    target_storage_groups: tuple[str, ...]
+    dependencies: tuple[str, ...]
+    evidence_requirements: tuple[str, ...]
+    source_logical_parameters: int
+    target_logical_parameters: int
+    configuration: tuple[tuple[str, JsonScalar], ...]
+    signature: ExperimentSignature
+    ledger_decision: LedgerDecision
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "action_id", _text(self.action_id, "action_id"))
+        object.__setattr__(
+            self,
+            "sequence_index",
+            _positive_int(self.sequence_index + 1, "sequence_index") - 1,
+        )
+        object.__setattr__(self, "method_id", _text(self.method_id, "method_id"))
+        sources = tuple(sorted(self.sources, key=lambda value: value.parent_name))
+        if not sources or any(
+            not isinstance(value, SourceCircuitRef) for value in sources
+        ):
+            raise DynamicFoldPlanningError("Fold action sources are invalid.")
+        object.__setattr__(self, "sources", sources)
+        for name in (
+            "target_node_ids",
+            "target_parameter_paths",
+            "target_storage_groups",
+            "dependencies",
+            "evidence_requirements",
+        ):
+            object.__setattr__(
+                self,
+                name,
+                tuple(sorted({_text(value, name) for value in getattr(self, name)})),
+            )
+        if not self.target_node_ids:
+            raise DynamicFoldPlanningError("Fold action target nodes cannot be empty.")
+        for name in ("source_logical_parameters", "target_logical_parameters"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise DynamicFoldPlanningError(f"{name} must be non-negative.")
+        object.__setattr__(self, "configuration", _attributes(self.configuration))
+        if not isinstance(self.signature, ExperimentSignature):
+            raise DynamicFoldPlanningError("Fold action signature is invalid.")
+        if not isinstance(self.ledger_decision, LedgerDecision):
+            raise DynamicFoldPlanningError("Fold action ledger decision is invalid.")
+
+    @property
+    def compression_delta(self) -> int:
+        return self.source_logical_parameters - self.target_logical_parameters
+
+    @property
+    def action_sha256(self) -> str:
+        return canonical_sha256(self.as_dict())
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "action_id": self.action_id,
+            "sequence_index": self.sequence_index,
+            "method_id": self.method_id,
+            "sources": [value.as_dict() for value in self.sources],
+            "target_node_ids": list(self.target_node_ids),
+            "target_parameter_paths": list(self.target_parameter_paths),
+            "target_storage_groups": list(self.target_storage_groups),
+            "dependencies": list(self.dependencies),
+            "evidence_requirements": list(self.evidence_requirements),
+            "source_logical_parameters": self.source_logical_parameters,
+            "target_logical_parameters": self.target_logical_parameters,
+            "compression_delta": self.compression_delta,
+            "configuration": dict(self.configuration),
+            "signature": self.signature.as_dict(),
+            "ledger_decision": {
+                "allowed": self.ledger_decision.allowed,
+                "reason": self.ledger_decision.reason,
+                "blocking_record_sha256": (self.ledger_decision.blocking_record_sha256),
+                "closure_level": self.ledger_decision.closure_level,
+            },
+        }
+
+
+def validate_fold_action_evidence_channels(
+    action: FoldAction,
+    available_channels: Sequence[str],
+    *,
+    allow_additional: bool = False,
+) -> tuple[str, ...]:
+    """Validate an evidence manifest against one action's exact method contract.
+
+    The executor cannot infer semantic channel names from an arbitrary payload.
+    Evidence providers can call this hook before constructing ``FoldEvidence``;
+    production adapters should expose the returned canonical manifest in their
+    own immutable evidence receipt.
+    """
+
+    if not isinstance(action, FoldAction):
+        raise DynamicFoldPlanningError("action must be FoldAction.")
+    if isinstance(available_channels, (str, bytes)):
+        raise DynamicFoldPlanningError(
+            "available_channels must be a sequence of channel names."
+        )
+    channels = tuple(
+        sorted(_text(value, "evidence channel") for value in available_channels)
+    )
+    if len(set(channels)) != len(channels):
+        raise DynamicFoldPlanningError(
+            "Available evidence channel names must be unique."
+        )
+    required = action.evidence_requirements
+    missing = sorted(set(required) - set(channels))
+    unexpected = sorted(set(channels) - set(required))
+    if missing or (unexpected and not allow_additional):
+        raise DynamicFoldPlanningError(
+            "Evidence channels do not satisfy the fold action contract: "
+            f"missing={missing}, unexpected={unexpected}."
+        )
+    return channels
+
+
+@dataclass(frozen=True, slots=True)
+class FoldPlanGap:
+    target_node_ids: tuple[str, ...]
+    reason: str
+    required_capability: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "target_node_ids": list(self.target_node_ids),
+            "reason": self.reason,
+            "required_capability": self.required_capability,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class DynamicFoldPlan:
+    parent_graph_fingerprints: tuple[str, ...]
+    parent_state_fingerprints: tuple[tuple[str, str], ...]
+    child_graph_fingerprint: str
+    child_state_fingerprint: str
+    evidence_fingerprint: str
+    exact_target_unique_parameters: int
+    actions: tuple[FoldAction, ...]
+    gaps: tuple[FoldPlanGap, ...]
+    registry_fingerprint: str
+    ledger_fingerprint: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "parent_graph_fingerprints",
+            tuple(
+                sorted(
+                    _digest(value, "parent graph")
+                    for value in self.parent_graph_fingerprints
+                )
+            ),
+        )
+        if not self.parent_graph_fingerprints:
+            raise DynamicFoldPlanningError("A plan requires at least one parent.")
+        parent_states = tuple(
+            sorted(
+                (
+                    _text(name, "parent state name"),
+                    _digest(digest, "parent state fingerprint"),
+                )
+                for name, digest in self.parent_state_fingerprints
+            )
+        )
+        if not parent_states or len({name for name, _value in parent_states}) != len(
+            parent_states
+        ):
+            raise DynamicFoldPlanningError(
+                "Plan parent state fingerprints must be uniquely named."
+            )
+        object.__setattr__(self, "parent_state_fingerprints", parent_states)
+        for name in (
+            "child_graph_fingerprint",
+            "child_state_fingerprint",
+            "evidence_fingerprint",
+            "registry_fingerprint",
+            "ledger_fingerprint",
+        ):
+            object.__setattr__(self, name, _digest(getattr(self, name), name))
+        object.__setattr__(
+            self,
+            "exact_target_unique_parameters",
+            _positive_int(
+                self.exact_target_unique_parameters,
+                "exact_target_unique_parameters",
+            ),
+        )
+        actions = tuple(sorted(self.actions, key=lambda value: value.sequence_index))
+        if len({value.action_id for value in actions}) != len(actions):
+            raise DynamicFoldPlanningError("Fold action IDs must be unique.")
+        object.__setattr__(self, "actions", actions)
+        target_paths = [
+            path for action in actions for path in action.target_parameter_paths
+        ]
+        if len(set(target_paths)) != len(target_paths):
+            raise DynamicFoldPlanningError(
+                "A child parameter path is owned by multiple fold actions."
+            )
+        target_storage_groups = [
+            group for action in actions for group in action.target_storage_groups
+        ]
+        if len(set(target_storage_groups)) != len(target_storage_groups):
+            raise DynamicFoldPlanningError(
+                "A child learned-storage group is owned by multiple fold actions."
+            )
+        object.__setattr__(self, "gaps", tuple(self.gaps))
+
+    @property
+    def ready(self) -> bool:
+        return not self.gaps and all(
+            action.ledger_decision.allowed for action in self.actions
+        )
+
+    @property
+    def expected_logical_compression_delta(self) -> int:
+        return sum(value.compression_delta for value in self.actions)
+
+    @property
+    def fingerprint(self) -> str:
+        return canonical_sha256(self.as_dict(include_fingerprint=False))
+
+    def as_dict(self, *, include_fingerprint: bool = True) -> dict[str, Any]:
+        value = {
+            "schema": PLAN_SCHEMA,
+            "parent_graph_fingerprints": list(self.parent_graph_fingerprints),
+            "parent_state_fingerprints": dict(self.parent_state_fingerprints),
+            "child_graph_fingerprint": self.child_graph_fingerprint,
+            "child_state_fingerprint": self.child_state_fingerprint,
+            "evidence_fingerprint": self.evidence_fingerprint,
+            "exact_target_unique_parameters": self.exact_target_unique_parameters,
+            "actions": [action.as_dict() for action in self.actions],
+            "gaps": [gap.as_dict() for gap in self.gaps],
+            "registry_fingerprint": self.registry_fingerprint,
+            "ledger_fingerprint": self.ledger_fingerprint,
+            "complete_target_parameter_coverage": not self.gaps,
+            "known_closed_methods_filtered": True,
+            "ready": self.ready,
+            "expected_logical_compression_delta": (
+                self.expected_logical_compression_delta
+            ),
+        }
+        if include_fingerprint:
+            value["fingerprint"] = canonical_sha256(value)
+        return value
+
+
+def _node_semantic_contract(node: CircuitNode) -> dict[str, Any]:
+    return {
+        "kind": node.kind,
+        "inputs": [value.as_dict() for value in node.inputs],
+        "outputs": [value.as_dict() for value in node.outputs],
+        "parameters": [
+            {
+                "role": value.role,
+                "shape": list(value.shape),
+                "dtype": value.dtype,
+                "trainable": value.trainable,
+            }
+            for value in sorted(node.parameters, key=lambda item: item.role)
+        ],
+        "attributes": dict(node.attributes),
+    }
+
+
+def _same_parameter_contract(
+    source_graph: ModelCircuitGraph,
+    source_nodes: Sequence[CircuitNode],
+    target_graph: ModelCircuitGraph,
+    target_nodes: Sequence[CircuitNode],
+) -> bool:
+    if len(source_nodes) != len(target_nodes):
+        return False
+    source_by_id = {value.node_id: value for value in source_nodes}
+    target_by_id = {value.node_id: value for value in target_nodes}
+    if set(source_by_id) != set(target_by_id):
+        return False
+    if any(
+        _node_semantic_contract(source_by_id[node_id])
+        != _node_semantic_contract(target_by_id[node_id])
+        for node_id in source_by_id
+    ):
+        return False
+    node_ids = set(source_by_id)
+
+    def induced_edges(graph: ModelCircuitGraph) -> tuple[dict[str, Any], ...]:
+        return tuple(
+            edge.as_dict()
+            for edge in graph.edges
+            if edge.source_node in node_ids and edge.target_node in node_ids
+        )
+
+    return induced_edges(source_graph) == induced_edges(target_graph)
+
+
+def _source_span_indices(
+    source_depth: int,
+    target_depth: int,
+    target_index: int,
+) -> tuple[int, ...]:
+    start = target_index * source_depth // target_depth
+    stop = (target_index + 1) * source_depth // target_depth
+    if stop <= start:
+        stop = start + 1
+    return tuple(range(start, min(stop, source_depth)))
+
+
+def _nodes_for_span(
+    graph: ModelCircuitGraph,
+    indices: Sequence[int],
+) -> tuple[CircuitNode, ...]:
+    wanted = set(indices)
+    return tuple(value for value in graph.nodes if value.layer_index in wanted)
+
+
+def _global_match(
+    parent: ModelCircuitGraph,
+    target: CircuitNode,
+) -> tuple[CircuitNode, ...]:
+    exact_id = [value for value in parent.nodes if value.node_id == target.node_id]
+    if exact_id:
+        return tuple(exact_id)
+    return tuple(
+        value
+        for value in parent.nodes
+        if value.layer_index is None and value.kind == target.kind
+    )
+
+
+def _storage_groups(nodes: Sequence[CircuitNode]) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            {parameter.storage_group for node in nodes for parameter in node.parameters}
+        )
+    )
+
+
+def _global_alias_bundle(
+    child: ModelCircuitGraph,
+    target: CircuitNode,
+) -> tuple[CircuitNode, ...]:
+    """Return all global nodes connected by learned-storage aliasing."""
+
+    selected = {target.node_id}
+    groups = set(_storage_groups((target,)))
+    changed = True
+    while changed and groups:
+        changed = False
+        for node in child.nodes:
+            if node.layer_index is not None or node.node_id in selected:
+                continue
+            node_groups = set(_storage_groups((node,)))
+            if not groups.intersection(node_groups):
+                continue
+            selected.add(node.node_id)
+            groups.update(node_groups)
+            changed = True
+    return tuple(value for value in child.nodes if value.node_id in selected)
+
+
+def _semantic_name(value: Any) -> str:
+    text = str(value).strip().lower()
+    return "_".join(
+        part
+        for part in "".join(
+            character if character.isalnum() else " " for character in text
+        ).split()
+        if part
+    )
+
+
+def _node_attributes(node: CircuitNode) -> dict[str, JsonScalar]:
+    return dict(node.attributes)
+
+
+def _nodes_declare_semantic(
+    nodes: Sequence[CircuitNode],
+    semantic: str,
+) -> bool:
+    wanted = _semantic_name(semantic)
+    for node in nodes:
+        if _semantic_name(node.kind) == wanted:
+            return True
+        for key, value in node.attributes:
+            key_name = _semantic_name(key)
+            value_name = _semantic_name(value)
+            if key_name == wanted and value not in {False, None, ""}:
+                return True
+            if key_name in {
+                "circuit_kind",
+                "coupled_role",
+                "coupled_roles",
+                "semantic_kind",
+                "semantic_kinds",
+                "semantic_role",
+                "semantic_roles",
+            } and (
+                value_name == wanted
+                or wanted in value_name.split("_")
+                or wanted in value_name
+            ):
+                return True
+        if any(
+            wanted == _semantic_name(parameter.role)
+            or wanted in _semantic_name(parameter.role)
+            for parameter in node.parameters
+        ):
+            return True
+    return False
+
+
+def _complete_layer_bundle(
+    graph: ModelCircuitGraph,
+    nodes: Sequence[CircuitNode],
+    *,
+    minimum_layers: int = 1,
+) -> bool:
+    indices = {node.layer_index for node in nodes if node.layer_index is not None}
+    if len(indices) < minimum_layers or any(node.layer_index is None for node in nodes):
+        return False
+    expected = {node.node_id for index in indices for node in graph.layer_nodes(index)}
+    return expected == {node.node_id for node in nodes}
+
+
+def _complete_model_bundle(
+    graph: ModelCircuitGraph,
+    nodes: Sequence[CircuitNode],
+) -> bool:
+    return {node.node_id for node in nodes} == {node.node_id for node in graph.nodes}
+
+
+def _has_edge(
+    graph: ModelCircuitGraph,
+    sources: Sequence[CircuitNode],
+    targets: Sequence[CircuitNode],
+) -> bool:
+    source_ids = {node.node_id for node in sources}
+    target_ids = {node.node_id for node in targets}
+    return any(
+        edge.source_node in source_ids and edge.target_node in target_ids
+        for edge in graph.edges
+    )
+
+
+def _ordered_residual_contract(
+    graph: ModelCircuitGraph,
+    nodes: Sequence[CircuitNode],
+    *,
+    require_attention: bool = False,
+) -> bool:
+    operator_kinds = (
+        {CircuitKind.ATTENTION.value}
+        if require_attention
+        else {
+            CircuitKind.ATTENTION.value,
+            CircuitKind.SHORT_CONV.value,
+            CircuitKind.RECURRENT_MIXER.value,
+        }
+    )
+    operators = tuple(node for node in nodes if node.kind in operator_kinds)
+    mlps = tuple(
+        node
+        for node in nodes
+        if node.kind
+        in {
+            CircuitKind.GATED_MLP.value,
+            CircuitKind.DENSE_MLP.value,
+        }
+    )
+    operator_residuals = tuple(
+        node
+        for node in nodes
+        if node.kind == CircuitKind.RESIDUAL_ADD.value
+        and _node_attributes(node).get("ordered_branch")
+        in ({"attention"} if require_attention else {"attention", "operator"})
+    )
+    mlp_residuals = tuple(
+        node
+        for node in nodes
+        if node.kind == CircuitKind.RESIDUAL_ADD.value
+        and _node_attributes(node).get("ordered_branch") == "mlp"
+    )
+    if not operators or not mlps or not operator_residuals or not mlp_residuals:
+        return False
+    return (
+        max(node.order for node in operators)
+        < min(node.order for node in operator_residuals)
+        < min(node.order for node in mlps)
+        < min(node.order for node in mlp_residuals)
+        and _has_edge(graph, operators, operator_residuals)
+        and _has_edge(graph, mlps, mlp_residuals)
+        and _has_edge(graph, operator_residuals, mlp_residuals)
+    )
+
+
+def _lfm2_layer_contract(
+    graph: ModelCircuitGraph,
+    nodes: Sequence[CircuitNode],
+) -> bool:
+    kinds = {node.kind for node in nodes}
+    operator_count = sum(
+        node.kind
+        in {
+            CircuitKind.ATTENTION.value,
+            CircuitKind.SHORT_CONV.value,
+        }
+        for node in nodes
+    )
+    return (
+        graph.family == "lfm2"
+        and _complete_layer_bundle(graph, nodes)
+        and operator_count == 1
+        and CircuitKind.GATED_MLP.value in kinds
+        and sum(node.kind == CircuitKind.RESIDUAL_ADD.value for node in nodes) >= 2
+        and sum(node.kind == CircuitKind.NORM.value for node in nodes) >= 2
+        and _ordered_residual_contract(graph, nodes)
+    )
+
+
+def _neo_single_neuron_swiglu_contract(
+    source_graph: ModelCircuitGraph,
+    source_nodes: Sequence[CircuitNode],
+    target_graph: ModelCircuitGraph,
+    target_nodes: Sequence[CircuitNode],
+) -> bool:
+    if (
+        source_graph.family != "neo_chat"
+        or target_graph.family != "neo_chat"
+        or not _residual_layer_contract(source_graph, source_nodes)
+        or not _residual_layer_contract(target_graph, target_nodes)
+    ):
+        return False
+    source_by_id = {node.node_id: node for node in source_nodes}
+    target_by_id = {node.node_id: node for node in target_nodes}
+    if set(source_by_id) != set(target_by_id):
+        return False
+    source_mlps = tuple(
+        node for node in source_nodes if node.kind == CircuitKind.GATED_MLP.value
+    )
+    target_mlps = tuple(
+        node for node in target_nodes if node.kind == CircuitKind.GATED_MLP.value
+    )
+    if len(source_mlps) != 1 or len(target_mlps) != 1:
+        return False
+    source_intermediate = _node_attributes(source_mlps[0]).get("intermediate_size")
+    target_intermediate = _node_attributes(target_mlps[0]).get("intermediate_size")
+    if (
+        not isinstance(source_intermediate, int)
+        or not isinstance(target_intermediate, int)
+        or source_intermediate != target_intermediate + 1
+    ):
+        return False
+    for node_id, source in source_by_id.items():
+        target = target_by_id[node_id]
+        if (
+            source.kind != target.kind
+            or source.layer_index != target.layer_index
+            or source.inputs != target.inputs
+            or source.outputs != target.outputs
+        ):
+            return False
+        if source.kind != CircuitKind.GATED_MLP.value:
+            if not _same_parameter_contract(
+                source_graph,
+                (source,),
+                target_graph,
+                (target,),
+            ):
+                return False
+            continue
+        source_parameters = {value.role: value for value in source.parameters}
+        target_parameters = {value.role: value for value in target.parameters}
+        if set(source_parameters) != set(target_parameters):
+            return False
+        changed = 0
+        for role, source_parameter in source_parameters.items():
+            target_parameter = target_parameters[role]
+            if (
+                source_parameter.dtype != target_parameter.dtype
+                or source_parameter.trainable != target_parameter.trainable
+            ):
+                return False
+            source_shape = source_parameter.shape
+            target_shape = target_parameter.shape
+            if source_shape == target_shape:
+                continue
+            semantic = _semantic_name(role)
+            if (
+                ("gate_proj" in semantic or "up_proj" in semantic)
+                and len(source_shape) == 2
+                and len(target_shape) == 2
+                and source_shape[0] == target_shape[0] + 1
+                and source_shape[1] == target_shape[1]
+            ) or (
+                "down_proj" in semantic
+                and len(source_shape) == 2
+                and len(target_shape) == 2
+                and source_shape[0] == target_shape[0]
+                and source_shape[1] == target_shape[1] + 1
+            ):
+                changed += 1
+                continue
+            return False
+        if changed != 3:
+            return False
+    return True
+
+
+def _neo_single_neuron_model_contract(
+    source: ModelCircuitGraph,
+    target: ModelCircuitGraph,
+) -> bool:
+    if (
+        source.family != "neo_chat"
+        or target.family != "neo_chat"
+        or source.layer_indices != target.layer_indices
+        or not source.layer_indices
+        or source.tokenizer_fingerprint != target.tokenizer_fingerprint
+        or {interface.modality for interface in source.interfaces} != {"image", "text"}
+        or {interface.modality for interface in target.interfaces} != {"image", "text"}
+    ):
+        return False
+    if any(
+        not _neo_single_neuron_swiglu_contract(
+            source,
+            source.layer_nodes(index),
+            target,
+            target.layer_nodes(index),
+        )
+        for index in source.layer_indices
+    ):
+        return False
+    source_globals = {
+        node.node_id: node for node in source.nodes if node.layer_index is None
+    }
+    target_globals = {
+        node.node_id: node for node in target.nodes if node.layer_index is None
+    }
+    if set(source_globals) != set(target_globals):
+        return False
+    for node_id, source_node in source_globals.items():
+        target_node = target_globals[node_id]
+        if (
+            source_node.kind != target_node.kind
+            or source_node.inputs != target_node.inputs
+            or source_node.outputs != target_node.outputs
+            or source_node.attributes != target_node.attributes
+        ):
+            return False
+        if source_node.parameters or target_node.parameters:
+            if not _same_parameter_contract(
+                source,
+                (source_node,),
+                target,
+                (target_node,),
+            ):
+                return False
+    return True
+
+
+def _qwen3_compensated_model_contract(
+    source: ModelCircuitGraph,
+    target: ModelCircuitGraph,
+) -> bool:
+    """Prove one full-depth Qwen3 differs only by coupled MLP row removal."""
+
+    if (
+        source.family != "qwen3"
+        or target.family != "qwen3"
+        or source.layer_indices != target.layer_indices
+        or not source.layer_indices
+        or source.tokenizer_fingerprint is None
+        or source.tokenizer_fingerprint != target.tokenizer_fingerprint
+        or dict(target.metadata).get("compensated_ragged") is not True
+        or source.interfaces != target.interfaces
+    ):
+        return False
+    source_nodes = {node.node_id: node for node in source.nodes}
+    target_nodes = {node.node_id: node for node in target.nodes}
+    if set(source_nodes) != set(target_nodes):
+        return False
+    changed_layers: list[tuple[int, int, int]] = []
+    for node_id, source_node in source_nodes.items():
+        target_node = target_nodes[node_id]
+        if (
+            source_node.kind != target_node.kind
+            or source_node.order != target_node.order
+            or source_node.path != target_node.path
+            or source_node.layer_index != target_node.layer_index
+            or source_node.inputs != target_node.inputs
+            or source_node.outputs != target_node.outputs
+        ):
+            return False
+        source_attributes = dict(source_node.attributes)
+        target_attributes = dict(target_node.attributes)
+        source_parameters = {
+            parameter.role: parameter for parameter in source_node.parameters
+        }
+        target_parameters = {
+            parameter.role: parameter for parameter in target_node.parameters
+        }
+        if set(source_parameters) != set(target_parameters):
+            return False
+        if source_node.kind != CircuitKind.GATED_MLP.value:
+            if source_attributes != target_attributes or any(
+                source_parameters[role].shape != target_parameters[role].shape
+                or source_parameters[role].dtype != target_parameters[role].dtype
+                or source_parameters[role].trainable
+                != target_parameters[role].trainable
+                for role in source_parameters
+            ):
+                return False
+            continue
+        source_width = source_attributes.get("intermediate_size")
+        target_width = target_attributes.get("intermediate_size")
+        if (
+            not isinstance(source_width, int)
+            or not isinstance(target_width, int)
+            or target_width <= 0
+            or target_width > source_width
+        ):
+            return False
+        expected_attributes = dict(source_attributes)
+        expected_attributes["intermediate_size"] = target_width
+        if target_attributes != expected_attributes:
+            return False
+        if target_width == source_width:
+            if any(
+                source_parameters[role].shape != target_parameters[role].shape
+                or source_parameters[role].dtype != target_parameters[role].dtype
+                or source_parameters[role].trainable
+                != target_parameters[role].trainable
+                for role in source_parameters
+            ):
+                return False
+            continue
+        hidden: int | None = None
+        for role, source_parameter in source_parameters.items():
+            target_parameter = target_parameters[role]
+            if (
+                source_parameter.dtype != target_parameter.dtype
+                or source_parameter.trainable != target_parameter.trainable
+            ):
+                return False
+            semantic = _semantic_name(role)
+            source_shape = source_parameter.shape
+            target_shape = target_parameter.shape
+            if "gate_proj" in semantic or "up_proj" in semantic:
+                if (
+                    len(source_shape) != 2
+                    or source_shape[0] != source_width
+                    or target_shape != (target_width, source_shape[1])
+                ):
+                    return False
+                hidden = int(source_shape[1])
+            elif "down_proj" in semantic:
+                if (
+                    len(source_shape) != 2
+                    or source_shape[1] != source_width
+                    or target_shape != (source_shape[0], target_width)
+                ):
+                    return False
+                hidden = int(source_shape[0])
+            elif source_shape != target_shape:
+                return False
+        if hidden is None or target_node.layer_index is None:
+            return False
+        changed_layers.append(
+            (target_node.layer_index, source_width - target_width, hidden)
+        )
+    if len(changed_layers) != 1:
+        return False
+    _layer_index, removed, hidden = changed_layers[0]
+    expected_delta = 3 * removed * hidden
+    return (
+        source.unique_parameter_count - target.unique_parameter_count == expected_delta
+        and source.logical_parameter_count - target.logical_parameter_count
+        == expected_delta
+        and all(
+            _residual_layer_contract(source, source.layer_nodes(index))
+            and _residual_layer_contract(target, target.layer_nodes(index))
+            for index in source.layer_indices
+        )
+    )
+
+
+def _residual_layer_contract(
+    graph: ModelCircuitGraph,
+    nodes: Sequence[CircuitNode],
+) -> bool:
+    return _complete_layer_bundle(graph, nodes) and _ordered_residual_contract(
+        graph, nodes
+    )
+
+
+def _ordered_layer_span_contract(
+    graph: ModelCircuitGraph,
+    nodes: Sequence[CircuitNode],
+) -> bool:
+    indices = sorted(
+        {node.layer_index for node in nodes if node.layer_index is not None}
+    )
+    return (
+        len(indices) >= 2
+        and _complete_layer_bundle(graph, nodes, minimum_layers=2)
+        and all(
+            _residual_layer_contract(graph, graph.layer_nodes(index))
+            for index in indices
+        )
+    )
+
+
+def _bundle_kind_contract(
+    graph: ModelCircuitGraph,
+    nodes: Sequence[CircuitNode],
+    requirement: str,
+) -> bool:
+    kinds = {node.kind for node in nodes}
+    if requirement == "any":
+        return bool(nodes)
+    if requirement == "attention_or_short_conv":
+        return bool(
+            kinds
+            & {
+                CircuitKind.ATTENTION.value,
+                CircuitKind.SHORT_CONV.value,
+            }
+        )
+    if requirement == "residual":
+        return CircuitKind.RESIDUAL_ADD.value in kinds
+    if requirement == "lfm2_layer":
+        return _lfm2_layer_contract(graph, nodes)
+    if requirement in {
+        "lfm2_hybrid_model",
+        "lfm2_producer_first_model",
+        "lfm2_dense_budget_model",
+    }:
+        return (
+            graph.family == "lfm2"
+            and _complete_model_bundle(graph, nodes)
+            and bool(graph.layer_indices)
+            and dict(graph.metadata).get("hybrid_attention_short_conv") is True
+            and all(
+                _residual_layer_contract(graph, graph.layer_nodes(index))
+                for index in graph.layer_indices
+            )
+        )
+    if requirement == "residual_layer":
+        return _residual_layer_contract(graph, nodes)
+    if requirement == "ordered_layer_span":
+        return _ordered_layer_span_contract(graph, nodes)
+    if requirement == "gated_mlp_neuron":
+        return CircuitKind.GATED_MLP.value in kinds
+    if requirement == "attention_group":
+        return CircuitKind.ATTENTION.value in kinds
+    if requirement == "qwen3_dense_model":
+        return (
+            graph.family == "qwen3"
+            and _complete_model_bundle(graph, nodes)
+            and bool(graph.layer_indices)
+            and all(
+                _residual_layer_contract(graph, graph.layer_nodes(index))
+                for index in graph.layer_indices
+            )
+        )
+    if requirement == "qwen3_codebook_model":
+        return (
+            graph.family == "qwen3_codebook"
+            and _complete_model_bundle(graph, nodes)
+            and bool(graph.layer_indices)
+            and any(node.kind == "attention_codebook_registry" for node in nodes)
+            and any(node.kind == "neuron_codebook_registry" for node in nodes)
+            and all(
+                _residual_layer_contract(graph, graph.layer_nodes(index))
+                for index in graph.layer_indices
+            )
+        )
+    if requirement == "qwen3_compensated_model":
+        return (
+            graph.family == "qwen3"
+            and dict(graph.metadata).get("compensated_ragged") is True
+            and _complete_model_bundle(graph, nodes)
+            and bool(graph.layer_indices)
+            and all(
+                _residual_layer_contract(graph, graph.layer_nodes(index))
+                for index in graph.layer_indices
+            )
+        )
+    if requirement == "neo_native_vision_model":
+        return (
+            graph.family == "neo_chat"
+            and _complete_model_bundle(graph, nodes)
+            and {interface.modality for interface in graph.interfaces}
+            == {"image", "text"}
+            and bool(graph.layer_indices)
+            and dict(graph.metadata).get("native_temporal_height_width_attention")
+            is True
+            and all(
+                _residual_layer_contract(graph, graph.layer_nodes(index))
+                for index in graph.layer_indices
+            )
+        )
+    return _nodes_declare_semantic(nodes, requirement)
+
+
+def _parameter_roles(
+    nodes: Sequence[CircuitNode],
+    kinds: set[str],
+) -> tuple[str, ...]:
+    return tuple(
+        _semantic_name(parameter.role)
+        for node in nodes
+        if node.kind in kinds
+        for parameter in node.parameters
+    )
+
+
+def _roles_contain(
+    roles: Sequence[str],
+    alternatives: Sequence[str],
+) -> bool:
+    return any(
+        _semantic_name(alternative) in role
+        for role in roles
+        for alternative in alternatives
+    )
+
+
+def _projection_role_contract(
+    nodes: Sequence[CircuitNode],
+    *,
+    require_q: bool,
+    require_k: bool,
+    require_v: bool,
+    require_o: bool,
+) -> bool:
+    roles = _parameter_roles(nodes, {CircuitKind.ATTENTION.value})
+    requirements = (
+        (require_q, ("q_proj", "query_proj")),
+        (require_k, ("k_proj", "key_proj")),
+        (require_v, ("v_proj", "value_proj")),
+        (require_o, ("o_proj", "out_proj", "output_proj")),
+    )
+    return bool(roles) and all(
+        not required or _roles_contain(roles, alternatives)
+        for required, alternatives in requirements
+    )
+
+
+def _stateful_operator_contract(
+    graph: ModelCircuitGraph,
+    nodes: Sequence[CircuitNode],
+    *,
+    operator_kind: str,
+    port_kind: str,
+    edge_kind: str,
+) -> bool:
+    operators = tuple(node for node in nodes if node.kind == operator_kind)
+    for operator in operators:
+        has_input = any(
+            port.kind == port_kind and port.stateful for port in operator.inputs
+        )
+        has_output = any(
+            port.kind == port_kind and port.stateful for port in operator.outputs
+        )
+        has_edge = any(
+            edge.source_node == operator.node_id
+            and edge.target_node == operator.node_id
+            and edge.kind == edge_kind
+            and edge.recurrent
+            for edge in graph.edges
+        )
+        if has_input and has_output and has_edge:
+            return True
+    return False
+
+
+def _gated_mlp_contract(
+    nodes: Sequence[CircuitNode],
+    *,
+    require_swiglu: bool,
+) -> bool:
+    mlps = tuple(node for node in nodes if node.kind == CircuitKind.GATED_MLP.value)
+    roles = _parameter_roles(nodes, {CircuitKind.GATED_MLP.value})
+    projections = (
+        _roles_contain(roles, ("gate_proj", "w1_weight"))
+        and _roles_contain(roles, ("up_proj", "w3_weight"))
+        and _roles_contain(roles, ("down_proj", "w2_weight"))
+    )
+    if not projections or not mlps:
+        return False
+    if not require_swiglu:
+        return True
+    return any(
+        _semantic_name(_node_attributes(node).get("activation", ""))
+        in {"silu", "swish"}
+        or "post_swiglu"
+        in _semantic_name(_node_attributes(node).get("coupled_roles", ""))
+        for node in mlps
+    )
+
+
+def _short_conv_contract(
+    graph: ModelCircuitGraph,
+    nodes: Sequence[CircuitNode],
+) -> bool:
+    operators = tuple(
+        node for node in nodes if node.kind == CircuitKind.SHORT_CONV.value
+    )
+    roles = _parameter_roles(nodes, {CircuitKind.SHORT_CONV.value})
+    return bool(operators) and (
+        _roles_contain(roles, ("in_proj",))
+        and _roles_contain(roles, ("conv_weight",))
+        and _roles_contain(roles, ("out_proj", "output_proj"))
+        and any(
+            _node_attributes(node).get("input_chunk_order") == "b_c_x"
+            and isinstance(_node_attributes(node).get("fir_length"), int)
+            for node in operators
+        )
+        and _stateful_operator_contract(
+            graph,
+            nodes,
+            operator_kind=CircuitKind.SHORT_CONV.value,
+            port_kind=PortKind.RECURRENT_STATE.value,
+            edge_kind=EdgeKind.STATE.value,
+        )
+    )
+
+
+def _token_interface_tying_contract(
+    graph: ModelCircuitGraph,
+    nodes: Sequence[CircuitNode],
+) -> bool:
+    embeddings = tuple(
+        node for node in nodes if node.kind == CircuitKind.TOKEN_EMBEDDING.value
+    )
+    heads = tuple(node for node in nodes if node.kind == CircuitKind.OUTPUT_HEAD.value)
+    embedding_groups = set(_storage_groups(embeddings))
+    head_groups = set(_storage_groups(heads))
+    return (
+        graph.tokenizer_fingerprint is not None
+        and bool(embeddings)
+        and bool(heads)
+        and bool(embedding_groups & head_groups)
+    )
+
+
+def _coupled_role_contract(
+    role: str,
+    graph: ModelCircuitGraph,
+    nodes: Sequence[CircuitNode],
+) -> bool | None:
+    if _nodes_declare_semantic(nodes, role):
+        return True
+    if role == "q_k_v_o_cache":
+        if not any(node.kind == CircuitKind.ATTENTION.value for node in nodes):
+            return None
+        return _projection_role_contract(
+            nodes,
+            require_q=True,
+            require_k=True,
+            require_v=True,
+            require_o=True,
+        ) and _stateful_operator_contract(
+            graph,
+            nodes,
+            operator_kind=CircuitKind.ATTENTION.value,
+            port_kind=PortKind.CACHE.value,
+            edge_kind=EdgeKind.CACHE.value,
+        )
+    if role == "b_c_x_fir_state_output":
+        if not any(node.kind == CircuitKind.SHORT_CONV.value for node in nodes):
+            return None
+        return _short_conv_contract(graph, nodes)
+    if role == "gate_up_post_swiglu_down":
+        return _gated_mlp_contract(nodes, require_swiglu=True)
+    if role == "gate_up_down":
+        return _gated_mlp_contract(nodes, require_swiglu=False)
+    if role == "ordered_residual":
+        return _ordered_residual_contract(graph, nodes)
+    if role == "all_layers_ordered_residual":
+        return bool(graph.layer_indices) and all(
+            _ordered_residual_contract(graph, graph.layer_nodes(index))
+            for index in graph.layer_indices
+        )
+    if role == "attention_mlp_residual_order":
+        return _ordered_residual_contract(
+            graph,
+            nodes,
+            require_attention=True,
+        )
+    if role == "q_k":
+        return _projection_role_contract(
+            nodes,
+            require_q=True,
+            require_k=True,
+            require_v=False,
+            require_o=False,
+        )
+    if role == "v_o":
+        return _projection_role_contract(
+            nodes,
+            require_q=False,
+            require_k=False,
+            require_v=True,
+            require_o=True,
+        )
+    if role == "q_k_v_o":
+        return _projection_role_contract(
+            nodes,
+            require_q=True,
+            require_k=True,
+            require_v=True,
+            require_o=True,
+        )
+    if role == "gqa_group":
+        attention = tuple(
+            node for node in nodes if node.kind == CircuitKind.ATTENTION.value
+        )
+        return bool(attention) and all(
+            isinstance(_node_attributes(node).get("query_heads"), int)
+            and isinstance(_node_attributes(node).get("key_value_heads"), int)
+            and int(_node_attributes(node)["key_value_heads"]) > 0
+            and int(_node_attributes(node)["query_heads"])
+            % int(_node_attributes(node)["key_value_heads"])
+            == 0
+            for node in attention
+        )
+    if role == "cache":
+        return _stateful_operator_contract(
+            graph,
+            nodes,
+            operator_kind=CircuitKind.ATTENTION.value,
+            port_kind=PortKind.CACHE.value,
+            edge_kind=EdgeKind.CACHE.value,
+        )
+    if role == "embedding_tokenizer_output_head_tying":
+        return _token_interface_tying_contract(graph, nodes)
+    return False
+
+
+def validate_fold_method_contract(
+    method: FoldMethodSpec,
+    *,
+    source_groups: Sequence[tuple[ModelCircuitGraph, Sequence[CircuitNode]]],
+    target_graph: ModelCircuitGraph,
+    target_nodes: Sequence[CircuitNode],
+) -> None:
+    """Fail closed unless actual source/target bundles satisfy a method spec."""
+
+    if not isinstance(method, FoldMethodSpec):
+        raise DynamicFoldPlanningError("method must be FoldMethodSpec.")
+    groups = tuple((graph, tuple(nodes)) for graph, nodes in source_groups)
+    targets = tuple(target_nodes)
+    if not groups or any(not nodes for _graph, nodes in groups):
+        raise DynamicFoldPlanningError(
+            f"Method {method.method_id!r} requires nonempty source bundles."
+        )
+    if not targets:
+        raise DynamicFoldPlanningError(
+            f"Method {method.method_id!r} requires a nonempty target bundle."
+        )
+    if not method.evidence_channels:
+        raise DynamicFoldPlanningError(
+            f"Method {method.method_id!r} has no evidence-channel contract."
+        )
+
+    for graph, nodes in groups:
+        for requirement in method.source_kinds:
+            if not _bundle_kind_contract(graph, nodes, requirement):
+                raise DynamicFoldPlanningError(
+                    f"Method {method.method_id!r} source kind contract "
+                    f"{requirement!r} is not satisfied by "
+                    f"{graph.model_name!r}."
+                )
+
+    for requirement in method.target_kinds:
+        if requirement == "same_semantics_same_shape":
+            satisfied = all(
+                _same_parameter_contract(
+                    graph,
+                    nodes,
+                    target_graph,
+                    targets,
+                )
+                for graph, nodes in groups
+            )
+        else:
+            satisfied = _bundle_kind_contract(
+                target_graph,
+                targets,
+                requirement,
+            )
+        if not satisfied:
+            raise DynamicFoldPlanningError(
+                f"Method {method.method_id!r} target kind contract "
+                f"{requirement!r} is not satisfied."
+            )
+
+    bundles = (*groups, (target_graph, targets))
+    roles = set(method.coupled_roles)
+    operator_alternatives = {
+        "q_k_v_o_cache",
+        "b_c_x_fir_state_output",
+    }
+    declared_alternatives = roles & operator_alternatives
+    if len(declared_alternatives) > 1:
+        for graph, nodes in bundles:
+            results = tuple(
+                _coupled_role_contract(role, graph, nodes)
+                for role in sorted(declared_alternatives)
+            )
+            applicable = tuple(value for value in results if value is not None)
+            if not applicable or not any(applicable) or not all(applicable):
+                raise DynamicFoldPlanningError(
+                    f"Method {method.method_id!r} operator-role alternative "
+                    f"is not satisfied by {graph.model_name!r}."
+                )
+        roles -= declared_alternatives
+
+    for role in sorted(roles):
+        if role == "all_target_tensor_roles":
+            satisfied = all(
+                _same_parameter_contract(
+                    graph,
+                    nodes,
+                    target_graph,
+                    targets,
+                )
+                for graph, nodes in groups
+            )
+            if not satisfied:
+                raise DynamicFoldPlanningError(
+                    f"Method {method.method_id!r} does not cover every target "
+                    "tensor role with matching source semantics."
+                )
+            continue
+        for graph, nodes in bundles:
+            if _coupled_role_contract(role, graph, nodes) is not True:
+                raise DynamicFoldPlanningError(
+                    f"Method {method.method_id!r} coupled role {role!r} "
+                    f"is not proven for {graph.model_name!r}."
+                )
+
+
+def _lfm2_ordered_layer_types(graph: ModelCircuitGraph) -> tuple[str, ...]:
+    result = []
+    for index in graph.layer_indices:
+        operators = {
+            node.kind
+            for node in graph.layer_nodes(index)
+            if node.kind
+            in {
+                CircuitKind.ATTENTION.value,
+                CircuitKind.SHORT_CONV.value,
+            }
+        }
+        if len(operators) != 1:
+            return ()
+        result.append(
+            "full_attention"
+            if next(iter(operators)) == CircuitKind.ATTENTION.value
+            else "conv"
+        )
+    return tuple(result)
+
+
+def _lfm2_hybrid_model_contract(
+    parent: ModelCircuitGraph,
+    child: ModelCircuitGraph,
+) -> bool:
+    """Recognize only real shallower LFM2 model targets."""
+
+    parent_types = _lfm2_ordered_layer_types(parent)
+    child_types = _lfm2_ordered_layer_types(child)
+    child_metadata = dict(child.metadata)
+    encoded_types = ",".join(child_types)
+    spans_value = child_metadata.get("ordered_source_spans")
+    if not isinstance(spans_value, str):
+        return False
+    try:
+        spans = tuple(
+            tuple(int(part) for part in span.split(","))
+            for span in spans_value.split(";")
+        )
+    except ValueError:
+        return False
+    flattened = tuple(index for span in spans for index in span)
+    return bool(
+        parent.family == child.family == "lfm2"
+        and parent_types
+        and child_types
+        and len(child_types) < len(parent_types)
+        and parent.unique_parameter_count > child.unique_parameter_count
+        and dict(parent.metadata).get("hidden_size") == child_metadata.get("hidden_size")
+        and dict(parent.metadata).get("hybrid_attention_short_conv") is True
+        and child_metadata.get("hybrid_attention_short_conv") is True
+        and child_metadata.get("fold_method_id")
+        == "lfm2_hybrid_residual_attention_model"
+        and child_metadata.get("target_layer_types") == encoded_types
+        and len(spans) == len(child_types)
+        and flattened == tuple(range(len(parent_types)))
+        and parent.tokenizer_fingerprint is not None
+        and parent.tokenizer_fingerprint == child.tokenizer_fingerprint
+    )
+
+
+def _lfm2_producer_first_model_contract(
+    parent: ModelCircuitGraph,
+    child: ModelCircuitGraph,
+) -> bool:
+    """Recognize only full-depth LFM2 width/GQA targets with an explicit marker."""
+
+    parent_types = _lfm2_ordered_layer_types(parent)
+    child_types = _lfm2_ordered_layer_types(child)
+    parent_metadata = dict(parent.metadata)
+    child_metadata = dict(child.metadata)
+    return bool(
+        parent.family == child.family == "lfm2"
+        and parent_types
+        and parent_types == child_types
+        and len(parent.layer_indices) == len(child.layer_indices)
+        and parent.unique_parameter_count > child.unique_parameter_count
+        and parent_metadata.get("hidden_size") == child_metadata.get("hidden_size")
+        and parent_metadata.get("hybrid_attention_short_conv") is True
+        and child_metadata.get("hybrid_attention_short_conv") is True
+        and child_metadata.get("fold_method_id")
+        == "lfm2_producer_first_residual_attention_model"
+        and "ordered_source_spans" not in child_metadata
+        and "target_layer_types" not in child_metadata
+        and parent.tokenizer_fingerprint is not None
+        and parent.tokenizer_fingerprint == child.tokenizer_fingerprint
+    )
+
+
+def _lfm2_dense_budget_model_contract(
+    parent: ModelCircuitGraph,
+    child: ModelCircuitGraph,
+) -> bool:
+    """Recognize an executable same-depth dense width/GQA LFM2 target."""
+
+    parent_types = _lfm2_ordered_layer_types(parent)
+    child_types = _lfm2_ordered_layer_types(child)
+    parent_metadata = dict(parent.metadata)
+    child_metadata = dict(child.metadata)
+    spans_value = child_metadata.get("ordered_source_spans")
+    if not isinstance(spans_value, str):
+        return False
+    try:
+        spans = tuple(
+            tuple(int(part) for part in span.split(","))
+            for span in spans_value.split(";")
+        )
+    except ValueError:
+        return False
+    expected_spans = tuple((index,) for index in range(len(parent_types)))
+    return bool(
+        parent.family == child.family == "lfm2"
+        and parent_types
+        and parent_types == child_types
+        and len(parent.layer_indices) == len(child.layer_indices)
+        and spans == expected_spans
+        and parent.unique_parameter_count > child.unique_parameter_count
+        and isinstance(parent_metadata.get("hidden_size"), int)
+        and isinstance(child_metadata.get("hidden_size"), int)
+        and int(parent_metadata["hidden_size"])
+        > int(child_metadata["hidden_size"])
+        and parent_metadata.get("hybrid_attention_short_conv") is True
+        and child_metadata.get("hybrid_attention_short_conv") is True
+        and child_metadata.get("fold_method_id")
+        == "lfm2_dense_budget_residual_attention_model"
+        and isinstance(child_metadata.get("dense_topology_catalog"), str)
+        and bool(child_metadata["dense_topology_catalog"])
+        and child_metadata.get("target_layer_types")
+        == ",".join(child_types)
+        and child_metadata.get("tokenizer_bridge_required") is False
+        and parent.tokenizer_fingerprint is not None
+        and parent.tokenizer_fingerprint == child.tokenizer_fingerprint
+    )
+
+
+class DynamicFoldPlanner:
+    """Compile structural graphs into automatic complete-circuit actions."""
+
+    def __init__(
+        self,
+        *,
+        methods: FoldMethodRegistry | None = None,
+        ledger: ExperimentLedger | None = None,
+    ) -> None:
+        self.methods = methods or default_method_registry()
+        self.ledger = ledger or ExperimentLedger()
+
+    def _action(
+        self,
+        *,
+        index: int,
+        method_id: str,
+        parent_graphs: Sequence[ModelCircuitGraph],
+        parent_state_fingerprints: Mapping[str, str],
+        source_groups: Sequence[tuple[ModelCircuitGraph, Sequence[CircuitNode]]],
+        target_nodes: Sequence[CircuitNode],
+        child_graph: ModelCircuitGraph,
+        child_state_fingerprint: str,
+        evidence_fingerprint: str,
+        dependencies: tuple[str, ...],
+        configuration: Mapping[str, JsonScalar],
+    ) -> FoldAction:
+        method = self.methods.require_selectable(method_id)
+        if not method.standalone:
+            raise DynamicFoldPlanningError(
+                f"Method {method_id!r} cannot produce a standalone child."
+            )
+        validate_fold_method_contract(
+            method,
+            source_groups=source_groups,
+            target_graph=child_graph,
+            target_nodes=target_nodes,
+        )
+        sources = tuple(
+            SourceCircuitRef(
+                parent_name=graph.model_name,
+                node_ids=tuple(value.node_id for value in nodes),
+            )
+            for graph, nodes in source_groups
+        )
+        target_ids = tuple(value.node_id for value in target_nodes)
+        transition = (
+            "+".join(
+                sorted(
+                    {value.kind for _graph, nodes in source_groups for value in nodes}
+                )
+            )
+            + "->"
+            + "+".join(sorted({value.kind for value in target_nodes}))
+        )
+        signature = ExperimentSignature(
+            method_id=method.method_id,
+            method_version=method.version,
+            family_id=method.family_id,
+            parent_graph_fingerprints=tuple(
+                value.fingerprint for value in parent_graphs
+            ),
+            parent_state_fingerprints=tuple(sorted(parent_state_fingerprints.items())),
+            child_graph_fingerprint=child_graph.fingerprint,
+            child_state_fingerprint=child_state_fingerprint,
+            evidence_fingerprint=evidence_fingerprint,
+            source_unit_ids=tuple(
+                f"{graph.model_name}:{node.node_id}"
+                for graph, nodes in source_groups
+                for node in nodes
+            ),
+            target_unit_ids=target_ids,
+            topology_transition=transition,
+            selection_policy=str(
+                configuration.get("selection_policy", "automatic_semantic_alignment")
+            ),
+            fit_objective=str(
+                configuration.get(
+                    "fit_objective",
+                    "closed_loop_parent_relative_residual_endpoint",
+                )
+            ),
+            promotion_gate=str(
+                configuration.get(
+                    "promotion_gate",
+                    "automatic_behavior_then_final_manual_review",
+                )
+            ),
+            zero_gradient=True,
+            configuration=tuple(configuration.items()),
+        )
+        decision = self.ledger.decision(signature)
+        action_id = f"action-{index:04d}-{signature.candidate_sha256[:12]}"
+        action = FoldAction(
+            action_id=action_id,
+            sequence_index=index,
+            method_id=method_id,
+            sources=sources,
+            target_node_ids=target_ids,
+            target_parameter_paths=tuple(
+                path for value in target_nodes for path in value.parameter_paths
+            ),
+            target_storage_groups=_storage_groups(target_nodes),
+            dependencies=dependencies,
+            evidence_requirements=method.evidence_channels,
+            source_logical_parameters=sum(
+                value.logical_parameter_count
+                for _graph, nodes in source_groups
+                for value in nodes
+            ),
+            target_logical_parameters=sum(
+                value.logical_parameter_count for value in target_nodes
+            ),
+            configuration=tuple(configuration.items()),
+            signature=signature,
+            ledger_decision=decision,
+        )
+        if action.evidence_requirements != method.evidence_channels:
+            raise DynamicFoldPlanningError(
+                f"Method {method_id!r} evidence channels were not bound "
+                "exactly into the fold action."
+            )
+        return action
+
+    def plan(
+        self,
+        parents: Sequence[ModelCircuitGraph],
+        child: ModelCircuitGraph,
+        *,
+        child_state_fingerprint: str,
+        evidence_fingerprint: str,
+        parent_state_fingerprints: Mapping[str, str],
+        exact_target_unique_parameters: int | None = None,
+    ) -> DynamicFoldPlan:
+        parents = tuple(parents)
+        if not parents:
+            raise DynamicFoldPlanningError("At least one parent graph is required.")
+        if len({value.model_name for value in parents}) != len(parents):
+            raise DynamicFoldPlanningError("Parent model names must be unique.")
+        parent_state_fingerprints = {
+            _text(name, "parent state name"): _digest(
+                digest, "parent state fingerprint"
+            )
+            for name, digest in parent_state_fingerprints.items()
+        }
+        parent_names = {value.model_name for value in parents}
+        if set(parent_state_fingerprints) != parent_names:
+            raise DynamicFoldPlanningError(
+                "Parent state fingerprint names must match parent graph names."
+            )
+        child_state_fingerprint = _digest(
+            child_state_fingerprint, "child_state_fingerprint"
+        )
+        evidence_fingerprint = _digest(evidence_fingerprint, "evidence_fingerprint")
+        budget = (
+            child.unique_parameter_count
+            if exact_target_unique_parameters is None
+            else _positive_int(
+                exact_target_unique_parameters,
+                "exact_target_unique_parameters",
+            )
+        )
+        if budget != child.unique_parameter_count:
+            raise DynamicFoldPlanningError(
+                "The concrete child graph does not match the requested exact budget."
+            )
+        if (
+            len(parents) == 1
+            and _lfm2_dense_budget_model_contract(parents[0], child)
+        ):
+            parent = parents[0]
+            parent_types = _lfm2_ordered_layer_types(parent)
+            child_metadata = dict(child.metadata)
+            action = self._action(
+                index=0,
+                method_id="lfm2_dense_budget_residual_attention_model",
+                parent_graphs=parents,
+                parent_state_fingerprints=parent_state_fingerprints,
+                source_groups=((parent, parent.nodes),),
+                target_nodes=child.nodes,
+                child_graph=child,
+                child_state_fingerprint=child_state_fingerprint,
+                evidence_fingerprint=evidence_fingerprint,
+                dependencies=(),
+                configuration={
+                    "catalog_id": str(
+                        child_metadata["dense_topology_catalog"]
+                    ),
+                    "source_depth": len(parent_types),
+                    "target_depth": len(parent_types),
+                    "source_spans": str(
+                        child_metadata["ordered_source_spans"]
+                    ),
+                    "target_layer_types": str(
+                        child_metadata["target_layer_types"]
+                    ),
+                    "target_hidden_size": int(
+                        child_metadata["hidden_size"]
+                    ),
+                    "target_intermediate_size": int(
+                        next(
+                            dict(node.attributes)["intermediate_size"]
+                            for node in child.nodes
+                            if node.kind == CircuitKind.GATED_MLP.value
+                        )
+                    ),
+                    "target_query_heads": int(
+                        next(
+                            dict(node.attributes)["query_heads"]
+                            for node in child.nodes
+                            if node.kind == CircuitKind.ATTENTION.value
+                        )
+                    ),
+                    "target_key_value_heads": int(
+                        next(
+                            dict(node.attributes)["key_value_heads"]
+                            for node in child.nodes
+                            if node.kind == CircuitKind.ATTENTION.value
+                        )
+                    ),
+                    "target_head_dim": int(
+                        next(
+                            dict(node.attributes)["head_dim"]
+                            for node in child.nodes
+                            if node.kind == CircuitKind.ATTENTION.value
+                        )
+                    ),
+                    "fit_objective": (
+                        "complete_weight_residual_basis_then_cached_child_"
+                        "closed_loop_attention_swiglu_output"
+                    ),
+                    "selection_policy": (
+                        "automatic_dense_budget_catalog_same_depth_executable"
+                    ),
+                    "promotion_gate": (
+                        "cached_whole_output_behavior_then_fresh_reload"
+                    ),
+                    "blank_child_features_used": False,
+                    "zero_gradient": True,
+                },
+            )
+            return DynamicFoldPlan(
+                parent_graph_fingerprints=(parent.fingerprint,),
+                parent_state_fingerprints=tuple(
+                    sorted(parent_state_fingerprints.items())
+                ),
+                child_graph_fingerprint=child.fingerprint,
+                child_state_fingerprint=child_state_fingerprint,
+                evidence_fingerprint=evidence_fingerprint,
+                exact_target_unique_parameters=budget,
+                actions=(action,),
+                gaps=(),
+                registry_fingerprint=self.methods.fingerprint,
+                ledger_fingerprint=self.ledger.fingerprint,
+            )
+        if (
+            len(parents) == 1
+            and _lfm2_producer_first_model_contract(parents[0], child)
+        ):
+            parent = parents[0]
+            layer_types = _lfm2_ordered_layer_types(parent)
+            action = self._action(
+                index=0,
+                method_id="lfm2_producer_first_residual_attention_model",
+                parent_graphs=parents,
+                parent_state_fingerprints=parent_state_fingerprints,
+                source_groups=((parent, parent.nodes),),
+                target_nodes=child.nodes,
+                child_graph=child,
+                child_state_fingerprint=child_state_fingerprint,
+                evidence_fingerprint=evidence_fingerprint,
+                dependencies=(),
+                configuration={
+                    "source_depth": len(layer_types),
+                    "target_depth": len(layer_types),
+                    "ordered_layer_types": ",".join(layer_types),
+                    "fit_objective": (
+                        "producer_first_sequential_residual_attention_feedback"
+                    ),
+                    "selection_policy": (
+                        "sealed_parent_medoid_producers_before_child_capture"
+                    ),
+                    "promotion_gate": (
+                        "cached_whole_output_behavior_then_fresh_reload"
+                    ),
+                    "blank_child_features_used": False,
+                    "zero_gradient": True,
+                },
+            )
+            return DynamicFoldPlan(
+                parent_graph_fingerprints=(parent.fingerprint,),
+                parent_state_fingerprints=tuple(
+                    sorted(parent_state_fingerprints.items())
+                ),
+                child_graph_fingerprint=child.fingerprint,
+                child_state_fingerprint=child_state_fingerprint,
+                evidence_fingerprint=evidence_fingerprint,
+                exact_target_unique_parameters=budget,
+                actions=(action,),
+                gaps=(),
+                registry_fingerprint=self.methods.fingerprint,
+                ledger_fingerprint=self.ledger.fingerprint,
+            )
+        if len(parents) == 1 and _lfm2_hybrid_model_contract(parents[0], child):
+            parent = parents[0]
+            source_types = _lfm2_ordered_layer_types(parent)
+            target_types = _lfm2_ordered_layer_types(child)
+            spans = tuple(
+                tuple(int(part) for part in span.split(","))
+                for span in str(
+                    dict(child.metadata)["ordered_source_spans"]
+                ).split(";")
+            )
+            action = self._action(
+                index=0,
+                method_id="lfm2_hybrid_residual_attention_model",
+                parent_graphs=parents,
+                parent_state_fingerprints=parent_state_fingerprints,
+                source_groups=((parent, parent.nodes),),
+                target_nodes=child.nodes,
+                child_graph=child,
+                child_state_fingerprint=child_state_fingerprint,
+                evidence_fingerprint=evidence_fingerprint,
+                dependencies=(),
+                configuration={
+                    "source_depth": len(source_types),
+                    "target_depth": len(target_types),
+                    "source_layer_types": ",".join(source_types),
+                    "target_layer_types": ",".join(target_types),
+                    "ordered_source_spans": ";".join(
+                        ",".join(str(index) for index in span) for span in spans
+                    ),
+                    "fit_objective": (
+                        "joint_depth_attention_swiglu_ordered_residual_"
+                        "endpoint_compaction"
+                    ),
+                    "selection_policy": (
+                        "explicit_ordered_source_span_model_fold"
+                    ),
+                    "promotion_gate": (
+                        "cached_whole_output_behavior_then_fresh_reload"
+                    ),
+                    "zero_gradient": True,
+                },
+            )
+            return DynamicFoldPlan(
+                parent_graph_fingerprints=(parent.fingerprint,),
+                parent_state_fingerprints=tuple(
+                    sorted(parent_state_fingerprints.items())
+                ),
+                child_graph_fingerprint=child.fingerprint,
+                child_state_fingerprint=child_state_fingerprint,
+                evidence_fingerprint=evidence_fingerprint,
+                exact_target_unique_parameters=budget,
+                actions=(action,),
+                gaps=(),
+                registry_fingerprint=self.methods.fingerprint,
+                ledger_fingerprint=self.ledger.fingerprint,
+            )
+        if (
+            len(parents) == 1
+            and parents[0].family == "qwen3"
+            and child.family == "qwen3_codebook"
+        ):
+            parent = parents[0]
+            attention_owner = child.node("storage.attention_codebook")
+            neuron_owner = child.node("storage.neuron_codebook")
+            attention_attributes = dict(attention_owner.attributes)
+            neuron_attributes = dict(neuron_owner.attributes)
+            action = self._action(
+                index=0,
+                method_id="qwen3_global_codebook_fold",
+                parent_graphs=parents,
+                parent_state_fingerprints=parent_state_fingerprints,
+                source_groups=((parent, parent.nodes),),
+                target_nodes=child.nodes,
+                child_graph=child,
+                child_state_fingerprint=child_state_fingerprint,
+                evidence_fingerprint=evidence_fingerprint,
+                dependencies=(),
+                configuration={
+                    "attention_prototypes_per_group": int(
+                        attention_attributes["prototypes_per_group"]
+                    ),
+                    "neuron_prototypes_per_neuron": (
+                        neuron_attributes["prototypes_per_neuron"]
+                    ),
+                    "fit_objective": (
+                        "global_coupled_qkvo_and_swiglu_medoid_installation"
+                    ),
+                    "selection_policy": (
+                        "single_atomic_qwen3_model_level_codebook_action"
+                    ),
+                    "promotion_gate": ("cached_parent_whole_output_then_fresh_reload"),
+                    "target_token_row_fingerprint": dict(child.metadata)[
+                        "token_row_fingerprint"
+                    ],
+                    "zero_gradient": True,
+                },
+            )
+            return DynamicFoldPlan(
+                parent_graph_fingerprints=(parent.fingerprint,),
+                parent_state_fingerprints=tuple(
+                    sorted(parent_state_fingerprints.items())
+                ),
+                child_graph_fingerprint=child.fingerprint,
+                child_state_fingerprint=child_state_fingerprint,
+                evidence_fingerprint=evidence_fingerprint,
+                exact_target_unique_parameters=budget,
+                actions=(action,),
+                gaps=(),
+                registry_fingerprint=self.methods.fingerprint,
+                ledger_fingerprint=self.ledger.fingerprint,
+            )
+        if len(parents) == 1 and _neo_single_neuron_model_contract(parents[0], child):
+            parent = parents[0]
+            action = self._action(
+                index=0,
+                method_id="neo_native_vision_swiglu_model",
+                parent_graphs=parents,
+                parent_state_fingerprints=parent_state_fingerprints,
+                source_groups=((parent, parent.nodes),),
+                target_nodes=child.nodes,
+                child_graph=child,
+                child_state_fingerprint=child_state_fingerprint,
+                evidence_fingerprint=evidence_fingerprint,
+                dependencies=(),
+                configuration={
+                    "fit_objective": (
+                        "image_conditioned_single_swiglu_neuron_merge_per_layer_"
+                        "with_exact_native_spatial_attention_copy"
+                    ),
+                    "selection_policy": (
+                        "sealed_calibration_trace_low_importance_anchor_regression"
+                    ),
+                    "promotion_gate": (
+                        "cached_parent_visual_behavior_then_fresh_reload"
+                    ),
+                    "layer_count": len(child.layer_indices),
+                    "zero_gradient": True,
+                },
+            )
+            return DynamicFoldPlan(
+                parent_graph_fingerprints=(parent.fingerprint,),
+                parent_state_fingerprints=tuple(
+                    sorted(parent_state_fingerprints.items())
+                ),
+                child_graph_fingerprint=child.fingerprint,
+                child_state_fingerprint=child_state_fingerprint,
+                evidence_fingerprint=evidence_fingerprint,
+                exact_target_unique_parameters=budget,
+                actions=(action,),
+                gaps=(),
+                registry_fingerprint=self.methods.fingerprint,
+                ledger_fingerprint=self.ledger.fingerprint,
+            )
+        if len(parents) == 1 and _qwen3_compensated_model_contract(parents[0], child):
+            parent = parents[0]
+            child_metadata = dict(child.metadata)
+            compact_layers = str(child_metadata["compact_layer_indices"])
+            action = self._action(
+                index=0,
+                method_id="qwen3_compensated_transaction_replay",
+                parent_graphs=parents,
+                parent_state_fingerprints=parent_state_fingerprints,
+                source_groups=((parent, parent.nodes),),
+                target_nodes=child.nodes,
+                child_graph=child,
+                child_state_fingerprint=child_state_fingerprint,
+                evidence_fingerprint=evidence_fingerprint,
+                dependencies=(),
+                configuration={
+                    "fit_objective": (
+                        "authenticated_multi_anchor_down_column_compensation"
+                    ),
+                    "selection_policy": ("cached_accepted_transaction_sequence_replay"),
+                    "promotion_gate": ("cached_parent_whole_output_then_fresh_reload"),
+                    "compact_layer_indices": compact_layers,
+                    "layer_widths_sha256": str(child_metadata["layer_widths_sha256"]),
+                    "zero_gradient": True,
+                },
+            )
+            return DynamicFoldPlan(
+                parent_graph_fingerprints=(parent.fingerprint,),
+                parent_state_fingerprints=tuple(
+                    sorted(parent_state_fingerprints.items())
+                ),
+                child_graph_fingerprint=child.fingerprint,
+                child_state_fingerprint=child_state_fingerprint,
+                evidence_fingerprint=evidence_fingerprint,
+                exact_target_unique_parameters=budget,
+                actions=(action,),
+                gaps=(),
+                registry_fingerprint=self.methods.fingerprint,
+                ledger_fingerprint=self.ledger.fingerprint,
+            )
+        actions: list[FoldAction] = []
+        gaps: list[FoldPlanGap] = []
+        covered: set[str] = set()
+        gapped: set[str] = set()
+        covered_nodes: set[str] = set()
+        gapped_nodes: set[str] = set()
+        dependency: tuple[str, ...] = ()
+
+        target_layers = child.layer_indices
+        layer_orders = [
+            value.order for value in child.nodes if value.layer_index is not None
+        ]
+        first_layer_order = min(layer_orders) if layer_orders else 0
+        pre_layer_globals = tuple(
+            value
+            for value in child.nodes
+            if value.layer_index is None and value.order < first_layer_order
+        )
+        post_layer_globals = tuple(
+            value
+            for value in child.nodes
+            if value.layer_index is None and value.order >= first_layer_order
+        )
+
+        def add_global_targets(targets: Sequence[CircuitNode]) -> None:
+            nonlocal dependency
+            for target in targets:
+                if target.node_id in covered_nodes or target.node_id in gapped_nodes:
+                    continue
+                target_bundle = _global_alias_bundle(child, target)
+                target_node_ids = {value.node_id for value in target_bundle}
+                target_paths = {
+                    path for node in target_bundle for path in node.parameter_paths
+                }
+                if target_node_ids <= covered_nodes:
+                    continue
+                source_groups = []
+                for parent in parents:
+                    matched = tuple(
+                        source
+                        for bundle_node in target_bundle
+                        for source in _global_match(parent, bundle_node)
+                    )
+                    if len(matched) != len(target_bundle):
+                        source_groups = []
+                        break
+                    source_groups.append((parent, matched))
+                if not source_groups:
+                    if target_paths:
+                        gaps.append(
+                            FoldPlanGap(
+                                tuple(value.node_id for value in target_bundle),
+                                "No parent exposes the required global interface circuit.",
+                                "global_interface_alignment",
+                            )
+                        )
+                        gapped.update(target_paths)
+                        gapped_nodes.update(target_node_ids)
+                    continue
+                token_interface = any(
+                    value.kind
+                    in {
+                        CircuitKind.TOKEN_EMBEDDING.value,
+                        CircuitKind.OUTPUT_HEAD.value,
+                    }
+                    for value in target_bundle
+                )
+                if token_interface and (
+                    child.tokenizer_fingerprint is None
+                    or any(parent.tokenizer_fingerprint is None for parent in parents)
+                ):
+                    gaps.append(
+                        FoldPlanGap(
+                            tuple(value.node_id for value in target_bundle),
+                            "Tokenizer identity is unknown; exact token-interface "
+                            "copy or bridging cannot be proven.",
+                            "tokenizer_fingerprint",
+                        )
+                    )
+                    gapped.update(target_paths)
+                    gapped_nodes.update(target_node_ids)
+                    continue
+                if token_interface and any(
+                    parent.tokenizer_fingerprint != child.tokenizer_fingerprint
+                    for parent in parents
+                ):
+                    method_id = "token_interface_bridge"
+                    fit_objective = "byte_span_and_semantic_token_interface"
+                elif len(parents) == 1 and _same_parameter_contract(
+                    parents[0],
+                    source_groups[0][1],
+                    child,
+                    target_bundle,
+                ):
+                    method_id = "copy_exact"
+                    fit_objective = "exact_role_copy"
+                else:
+                    gaps.append(
+                        FoldPlanGap(
+                            tuple(value.node_id for value in target_bundle),
+                            "Global circuit semantics differ and no bridge is "
+                            "registered.",
+                            (
+                                "global_interface_projection"
+                                if target_paths
+                                else "global_structural_semantic_alignment"
+                            ),
+                        )
+                    )
+                    gapped.update(target_paths)
+                    gapped_nodes.update(target_node_ids)
+                    continue
+                action = self._action(
+                    index=len(actions),
+                    method_id=method_id,
+                    parent_graphs=parents,
+                    parent_state_fingerprints=parent_state_fingerprints,
+                    source_groups=source_groups,
+                    target_nodes=target_bundle,
+                    child_graph=child,
+                    child_state_fingerprint=child_state_fingerprint,
+                    evidence_fingerprint=evidence_fingerprint,
+                    dependencies=dependency,
+                    configuration={
+                        "fit_objective": fit_objective,
+                        "selection_policy": (
+                            "automatic_global_semantic_role_alignment"
+                        ),
+                        "promotion_gate": (
+                            "automatic_behavior_then_final_manual_review"
+                        ),
+                    },
+                )
+                actions.append(action)
+                covered.update(action.target_parameter_paths)
+                covered_nodes.update(action.target_node_ids)
+                dependency = (action.action_id,)
+
+        add_global_targets(pre_layer_globals)
+        for target_index in target_layers:
+            target_nodes = child.layer_nodes(target_index)
+            source_groups = []
+            spans = []
+            for parent in parents:
+                span = _source_span_indices(
+                    len(parent.layer_indices),
+                    len(target_layers),
+                    target_index,
+                )
+                spans.append(span)
+                source_groups.append((parent, _nodes_for_span(parent, span)))
+            if any(not nodes for _graph, nodes in source_groups):
+                gaps.append(
+                    FoldPlanGap(
+                        tuple(value.node_id for value in target_nodes),
+                        "A parent depth span has no executable circuit nodes.",
+                        "depth_alignment",
+                    )
+                )
+                gapped.update(
+                    path for value in target_nodes for path in value.parameter_paths
+                )
+                gapped_nodes.update(value.node_id for value in target_nodes)
+                continue
+
+            method_id: str | None = None
+            configuration: dict[str, JsonScalar] = {
+                "target_layer_index": target_index,
+                "source_spans": ";".join(
+                    f"{graph.model_name}:{','.join(str(i) for i in span)}"
+                    for (graph, _nodes), span in zip(source_groups, spans, strict=True)
+                ),
+                "selection_policy": "automatic_complete_circuit_alignment",
+                "promotion_gate": "automatic_behavior_then_final_manual_review",
+            }
+            if (
+                method_id is None
+                and len(parents) == 1
+                and parents[0].family == child.family == "lfm2"
+                and len(spans[0]) == 1
+            ):
+                source_kinds = {value.kind for value in source_groups[0][1]}
+                target_kinds = {value.kind for value in target_nodes}
+                source_operator = source_kinds & {
+                    CircuitKind.ATTENTION.value,
+                    CircuitKind.SHORT_CONV.value,
+                }
+                target_operator = target_kinds & {
+                    CircuitKind.ATTENTION.value,
+                    CircuitKind.SHORT_CONV.value,
+                }
+                if source_operator == target_operator:
+                    method_id = "lfm2_closed_loop_layer"
+                    configuration["fit_objective"] = (
+                        "qkvo_or_bcx_plus_swiglu_ordered_residual_closed_loop"
+                    )
+            if method_id is None and len(spans[0]) > 1:
+                method_id = "ordered_residual_span_compose"
+                configuration["fit_objective"] = (
+                    "ordered_parent_span_to_child_residual_transition"
+                )
+            if (
+                method_id is None
+                and len(parents) == 1
+                and _same_parameter_contract(
+                    parents[0],
+                    source_groups[0][1],
+                    child,
+                    target_nodes,
+                )
+            ):
+                method_id = "copy_exact"
+                configuration["fit_objective"] = "exact_role_copy"
+            if method_id is None:
+                gaps.append(
+                    FoldPlanGap(
+                        tuple(value.node_id for value in target_nodes),
+                        "No registered complete-layer operator covers this source/target topology.",
+                        "cross_family_closed_loop_layer_operator",
+                    )
+                )
+                gapped.update(
+                    path for value in target_nodes for path in value.parameter_paths
+                )
+                gapped_nodes.update(value.node_id for value in target_nodes)
+                continue
+            if not self.methods.get(method_id).standalone:
+                gaps.append(
+                    FoldPlanGap(
+                        tuple(value.node_id for value in target_nodes),
+                        f"Method {method_id!r} requires a non-standalone sidecar.",
+                        "standalone_depth_operator",
+                    )
+                )
+                gapped.update(
+                    path for value in target_nodes for path in value.parameter_paths
+                )
+                gapped_nodes.update(value.node_id for value in target_nodes)
+                continue
+            action = self._action(
+                index=len(actions),
+                method_id=method_id,
+                parent_graphs=parents,
+                parent_state_fingerprints=parent_state_fingerprints,
+                source_groups=source_groups,
+                target_nodes=target_nodes,
+                child_graph=child,
+                child_state_fingerprint=child_state_fingerprint,
+                evidence_fingerprint=evidence_fingerprint,
+                dependencies=dependency,
+                configuration=configuration,
+            )
+            actions.append(action)
+            covered.update(action.target_parameter_paths)
+            covered_nodes.update(action.target_node_ids)
+            dependency = (action.action_id,)
+
+        add_global_targets(post_layer_globals)
+
+        missing_paths = sorted(set(child.parameter_paths) - covered - gapped)
+        if missing_paths:
+            gaps.append(
+                FoldPlanGap(
+                    tuple(
+                        value.node_id
+                        for value in child.nodes
+                        if set(value.parameter_paths) & set(missing_paths)
+                    ),
+                    "Target parameters remain without an owning fold transaction: "
+                    + ", ".join(missing_paths[:16]),
+                    "complete_target_tensor_ownership",
+                )
+            )
+        missing_nodes = sorted(
+            set(value.node_id for value in child.nodes) - covered_nodes - gapped_nodes
+        )
+        if missing_nodes:
+            gaps.append(
+                FoldPlanGap(
+                    tuple(missing_nodes),
+                    "Target causal circuits remain without an owning fold transaction.",
+                    "complete_target_circuit_ownership",
+                )
+            )
+        return DynamicFoldPlan(
+            parent_graph_fingerprints=tuple(value.fingerprint for value in parents),
+            parent_state_fingerprints=tuple(sorted(parent_state_fingerprints.items())),
+            child_graph_fingerprint=child.fingerprint,
+            child_state_fingerprint=child_state_fingerprint,
+            evidence_fingerprint=evidence_fingerprint,
+            exact_target_unique_parameters=budget,
+            actions=tuple(actions),
+            gaps=tuple(gaps),
+            registry_fingerprint=self.methods.fingerprint,
+            ledger_fingerprint=self.ledger.fingerprint,
+        )
+
+
+def plan_dynamic_fold(
+    parents: Sequence[ModelCircuitGraph],
+    child: ModelCircuitGraph,
+    *,
+    child_state_fingerprint: str,
+    evidence_fingerprint: str,
+    parent_state_fingerprints: Mapping[str, str],
+    exact_target_unique_parameters: int | None = None,
+    methods: FoldMethodRegistry | None = None,
+    ledger: ExperimentLedger | None = None,
+) -> DynamicFoldPlan:
+    return DynamicFoldPlanner(methods=methods, ledger=ledger).plan(
+        parents,
+        child,
+        child_state_fingerprint=child_state_fingerprint,
+        evidence_fingerprint=evidence_fingerprint,
+        parent_state_fingerprints=parent_state_fingerprints,
+        exact_target_unique_parameters=exact_target_unique_parameters,
+    )
+
+
+__all__ = [
+    "DynamicFoldPlan",
+    "DynamicFoldPlanner",
+    "DynamicFoldPlanningError",
+    "FoldAction",
+    "FoldPlanGap",
+    "PLAN_SCHEMA",
+    "SourceCircuitRef",
+    "plan_dynamic_fold",
+    "validate_fold_action_evidence_channels",
+    "validate_fold_method_contract",
+]

@@ -5407,17 +5407,17 @@ def load_calibration_texts(
     calibration_file: str | Path,
     max_texts: int | None = None,
     min_chars: int = 32,
-    max_chars: int = 4096,
+    max_chars: int | None = None,
     preserve_whitespace: bool = True,
 ) -> list[str]:
-    """Load recovery calibration texts from plain text or JSONL rows."""
+    """Load recovery calibration texts without implicit long-context truncation."""
 
     if max_texts is not None and max_texts <= 0:
         raise ValueError("max_texts must be positive when provided.")
     if min_chars < 0:
         raise ValueError("min_chars must be non-negative.")
-    if max_chars <= 0:
-        raise ValueError("max_chars must be positive.")
+    if max_chars is not None and max_chars <= 0:
+        raise ValueError("max_chars must be positive when provided.")
     path = Path(calibration_file)
     if not path.exists():
         raise FileNotFoundError(path)
@@ -5431,7 +5431,7 @@ def load_calibration_texts(
             text = _clean_calibration_text(text, preserve_whitespace=preserve_whitespace)
             if len(text) < min_chars:
                 continue
-            texts.append(text[:max_chars])
+            texts.append(text if max_chars is None else text[:max_chars])
             if max_texts is not None and len(texts) >= max_texts:
                 break
     if not texts:

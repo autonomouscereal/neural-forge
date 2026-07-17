@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import math
+
 import pytest
 
 
 torch = pytest.importorskip("torch")
 
+from neural_forge import hf_feature_fold as feature_fold  # noqa: E402
 from neural_forge.hf_feature_fold import (  # noqa: E402
     FeatureFoldFiniteError,
     FeatureFoldMap,
@@ -101,9 +104,18 @@ def test_build_has_full_coverage_nonempty_balanced_groups_and_report() -> None:
     assert report.dense_materialized is False
     assert 0.0 <= report.sketch_retained_energy_fraction <= 1.0
     assert 0.0 <= report.sketch_relative_reconstruction_error <= 1.0
+    assert 0.0 <= report.exact_retained_energy_fraction <= 1.0
+    assert 0.0 <= report.exact_relative_reconstruction_error <= 1.0
+    assert len(report.exact_matrix_input_energies) == 2
+    assert len(report.exact_matrix_projected_energies) == 2
+    assert len(report.exact_matrix_retained_energy_fractions) == 2
+    assert len(report.exact_matrix_relative_reconstruction_errors) == 2
     assert report.as_dict()["memory_bounds"][
         "caller_calibration_storage_excluded"
     ] is True
+    assert report.as_dict()["exact_projection"][
+        "retained_energy_fraction"
+    ] == report.exact_retained_energy_fraction
 
 
 def test_build_is_bitwise_deterministic_for_coupled_inputs() -> None:
@@ -201,6 +213,110 @@ def test_zero_energy_channels_are_merged_with_nonzero_finite_coefficients() -> N
     assert fold.report.dropped_channels == 0
     assert fold.report.sketch_retained_energy_fraction == 1.0
     assert fold.report.sketch_relative_reconstruction_error == 0.0
+    assert fold.report.exact_retained_energy_fraction == 1.0
+    assert fold.report.exact_relative_reconstruction_error == 0.0
+
+
+def test_countsketch_hashes_do_not_force_periodic_same_sign_collisions() -> None:
+    sketch_size = 64
+    buckets, signs = feature_fold._deterministic_countsketch_hashes(
+        torch,
+        4 * sketch_size,
+        sketch_size,
+        0,
+    )
+    earlier = slice(0, 3 * sketch_size)
+    later = slice(sketch_size, 4 * sketch_size)
+
+    # The previous bucket/sign arithmetic made both tensors exactly periodic:
+    # every row r and r + sketch_size had the same bucket and the same sign.
+    assert not torch.equal(buckets[earlier], buckets[later])
+    assert not torch.equal(signs[earlier], signs[later])
+    same_bucket_and_sign = (
+        (buckets[earlier] == buckets[later])
+        & (signs[earlier] == signs[later])
+    )
+    assert int(same_bucket_and_sign.sum().item()) < sketch_size
+
+
+def test_exact_projection_metrics_equal_explicit_dense_calculation() -> None:
+    matrices = [_rows(29, 13, 70), _rows(17, 13, 71)]
+    fold = build_feature_fold_map(
+        matrices,
+        6,
+        chunk_size=4,
+        sketch_size=9,
+    )
+    dense = fold.materialize_dense(max_elements=1_000)
+    input_energies = tuple(
+        float(matrix.square().sum().item()) for matrix in matrices
+    )
+    projected_energies = tuple(
+        float((matrix @ dense).square().sum().item()) for matrix in matrices
+    )
+    total_input = sum(input_energies)
+    total_projected = sum(projected_energies)
+    retained = total_projected / total_input
+    error = math.sqrt(1.0 - retained)
+    report = fold.report
+
+    assert report is not None
+    assert report.exact_input_energy == pytest.approx(total_input, abs=1e-10)
+    assert report.exact_projected_energy == pytest.approx(
+        total_projected, abs=1e-10
+    )
+    assert report.exact_retained_energy_fraction == pytest.approx(
+        retained, abs=1e-12
+    )
+    assert report.exact_relative_reconstruction_error == pytest.approx(
+        error, abs=1e-12
+    )
+    assert report.exact_matrix_input_energies == pytest.approx(
+        input_energies, abs=1e-10
+    )
+    assert report.exact_matrix_projected_energies == pytest.approx(
+        projected_energies, abs=1e-10
+    )
+    for index, input_energy in enumerate(input_energies):
+        matrix_retained = projected_energies[index] / input_energy
+        assert report.exact_matrix_retained_energy_fractions[
+            index
+        ] == pytest.approx(matrix_retained, abs=1e-12)
+        assert report.exact_matrix_relative_reconstruction_errors[
+            index
+        ] == pytest.approx(math.sqrt(1.0 - matrix_retained), abs=1e-12)
+
+
+def test_sign_allowed_groups_use_exact_leading_eigenvectors() -> None:
+    matrices = [_rows(23, 12, 80), _rows(19, 12, 81)]
+    fold = build_feature_fold_map(
+        matrices,
+        5,
+        chunk_size=4,
+        sketch_size=7,
+        allow_sign_flip=True,
+    )
+
+    for target in range(fold.target_width):
+        indices = torch.nonzero(
+            fold.assignment == target, as_tuple=False
+        ).reshape(-1)
+        group_rows = torch.cat(
+            tuple(matrix.index_select(1, indices) for matrix in matrices),
+            dim=0,
+        )
+        gram = group_rows.T @ group_rows
+        eigenvalues = torch.linalg.eigvalsh(gram)
+        coefficient = fold.coefficients.index_select(0, indices)
+        rayleigh = coefficient @ gram @ coefficient
+        torch.testing.assert_close(
+            rayleigh,
+            eigenvalues[-1],
+            atol=1e-10,
+            rtol=1e-10,
+        )
+        pivot = int(torch.argmax(coefficient.abs()).item())
+        assert float(coefficient[pivot].item()) > 0.0
 
 
 def test_nonlinear_fold_can_prohibit_sign_flips() -> None:

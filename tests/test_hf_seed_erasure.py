@@ -123,6 +123,33 @@ def test_exactly_erased_outcomes_produce_immutable_proof() -> None:
         report.seed_erasure_proven = False
 
 
+def test_standard_torch_dtype_in_model_config_is_canonicalized() -> None:
+    outcomes = [_outcome(11), _outcome(29)]
+    for outcome in outcomes:
+        outcome.model.config = type(
+            "_DtypeConfig",
+            (),
+            {
+                "to_dict": lambda self: {
+                    "family": "unit-test",
+                    "dtype": torch.bfloat16,
+                    "kernel": {"accumulator_dtype": torch.float32},
+                }
+            },
+        )()
+
+    report = audit_seed_erasure(
+        outcomes,
+        _behavior,
+        exceptions=SeedOwnedExceptionScope(
+            compiler_report_paths=(_seed_report_exception(),),
+        ),
+    )
+
+    assert report.seed_erasure_proven is True
+    assert report.exact_structure_match is True
+
+
 def test_declared_tensor_and_output_differences_report_a_seed_leak() -> None:
     report = audit_seed_erasure(
         [_outcome(11, weight=1.0), _outcome(29, weight=2.0)],

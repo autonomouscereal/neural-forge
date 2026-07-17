@@ -1,0 +1,34 @@
+{
+  "schema": "neural-forge-neo-native-vision-proof-runtime-v1",
+  "purpose": "Exact offline runtime used for the NEO1.5-2B native-vision dynamic-fold proof.",
+  "python": "3.12.3",
+  "packages": {
+    "numpy": "2.5.1",
+    "Pillow": "12.2.0",
+    "safetensors": "0.8.0",
+    "tokenizers": "0.22.2",
+    "torch": "2.11.0+cu128",
+    "transformers": "4.57.3"
+  },
+  "cuda_runtime": "12.8",
+  "device": {
+    "type": "cuda",
+    "index": 0,
+    "name": "NVIDIA GeForce RTX 3090",
+    "uuid": "GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561"
+  },
+  "execution_constraints": {
+    "automatic_model_or_tokenizer_loader": false,
+    "hub_access": false,
+    "optimizer_steps": 0,
+    "backward_calls": 0,
+    "parent_outputs_regenerated_after_cache": false
+  },
+  "input_sha256": {
+    "probe_manifest": "76152804adba32da5e51b4ffccf5b9fe18c9b079dec8a6ee72553e88e1ac4811",
+    "parent_outputs": "d02b28bbc91b5206dc7f86b48ba7743aa66a334a037ea390fc702259fd2d9e7f",
+    "parent_config": "8e781b5b2bd8abe049323180a64486c4403309cec569cacfe878f197fbc237bf",
+    "parent_model": "f75490310c65a59b8cfb7745b4dd7723848e049efdd59b65ff86176ef42b9a95",
+    "parent_safetensors_index": "078bc74ea9a75e4389734bebf0d4ec826c8a22ffb58ae16ba6120d8686c3e4b4"
+  }
+}

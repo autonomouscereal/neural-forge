@@ -8,6 +8,7 @@ dist/
 build/
 *.egg-info/
 runs/
+upload_staging/
 *.npz
 !tests/fixtures/*.npz
 *.orig

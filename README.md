@@ -1,5 +1,60 @@
 # Neural Forge
 
+The current automatic folding-compiler architecture and proof sequence are
+documented in
+[`docs/DYNAMIC_FOLDING_COMPILER_2026-07-16.md`](docs/DYNAMIC_FOLDING_COMPILER_2026-07-16.md).
+Current real LFM compaction evidence is summarized in
+[`docs/DYNAMIC_LFM2_RESULTS_2026-07-16.md`](docs/DYNAMIC_LFM2_RESULTS_2026-07-16.md).
+The current strict objective, large-ratio dense topology frontier, and
+behavioral status are tracked in
+[`docs/DYNAMIC_COMPACTION_GOAL_AND_FRONTIER_2026-07-17.md`](docs/DYNAMIC_COMPACTION_GOAL_AND_FRONTIER_2026-07-17.md).
+
+The new automatic system path is implemented by
+`dynamic_target_synthesis.py`, `dynamic_fold_compiler.py`,
+`dynamic_system.py`, `dynamic_search.py`, `dynamic_production_catalog.py`, and
+`dynamic_fold_artifact.py`. The production-catalog API assembles registered
+target, folding-stack, and bounded-candidate implementations into a neutral
+runtime facade. The current real proof runners still perform that
+registration-time lane wiring explicitly; after assembly, each run provides
+parent model(s), an exact family/modality/size objective, immutable cached
+evidence, and an output-behavior contract without per-layer surgery. The
+system selects the adapters, constructs the blank child, performs fold-only
+transactions, rejects observed out-of-transaction mutation or training APIs,
+and publishes only a positively compacted, freshly reloaded standalone
+artifact with a sealed certificate. The compiler audits hidden/unregistered
+tensor state, requires compiler-reviewed structural-buffer policies,
+content-binds cached evidence, observes zero live-parent forwards, requires
+root-child execution, and reloads the child from its retained final path
+before certification.
+Registered operator and callback implementations are source-bound and audited;
+the in-process guard is not presented as a proof against arbitrary hostile
+Python plugins, and opaque third-party evidence verifiers remain an explicit
+provider-trust boundary.
+
+Registered production lanes exist for curated LFM2 text, Qwen3 text, and NEO
+image+text capabilities. Registration is not certification: each concrete
+lane must still pass its exact target, behavior, artifact, and fresh-reload
+gates. The facade intentionally fails closed for unknown families, arbitrary
+unregistered sizes, cross-tokenizer/cross-family transforms, and audio/video;
+those remain extension milestones rather than claimed results.
+
+The current real LFM2 structural child removes 115,625,856 learned parameters:
+229,693,184 -> 114,067,328, or 2.014x smaller, in dense BF16 state with no
+quantization, pruning, or gradient training. It is not a successful
+intelligence result: the strict whole-output gate reports 0% retained task
+score and repetitive punctuation/whitespace collapse. A circuit-balanced
+basis improves parent-nonempty retention from 45.83% to 54.17%. Adding cached
+vocabulary-margin geometry raises it again to 79.17% and reduces new empty
+responses from 11 to 5, but remains repetitive and retains 0% task score. The
+capability-aware blank-target planner now exposes executable full-depth dense
+LFM2 topologies at approximately 2x, 4x, and 10x; those are structural
+feasibility results only. The production transaction has separately completed
+automatic blank -> fold -> execute -> publish -> fresh-reload proofs at
+2.009x, 4.030x, 10.051x, 100.060x, 250.067x, and 1000x without training,
+pruning, or quantization. Those synthetic proofs validate the compiler across
+three orders of magnitude, not intelligence. No real LFM2 child is promoted
+until a standalone fresh reload retains coherent parent-demonstrated behavior.
+
 This repository is the canonical source tree only for the Neural Forge folding
 project. Historical Neural Forge experiment copies and deployment packets are
 preserved under immutable archive tags/refs. `chimera-omni`, the 2026 frontier

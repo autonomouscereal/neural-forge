@@ -257,6 +257,28 @@ def _json_value(value: Any, *, context: str) -> Any:
     return json.loads(serialized.decode("utf-8"))
 
 
+def _normalize_model_config_scalars(value: Any) -> Any:
+    """Canonicalize standard framework scalars emitted by model configs.
+
+    Recent Transformers configs may retain ``torch.dtype`` objects in nested
+    runtime/kernel metadata even though the public config is otherwise JSON
+    shaped.  A dtype has one unambiguous textual identity, so normalize only
+    that standard scalar and continue to reject every other non-JSON object.
+    """
+
+    torch = _torch()
+    if isinstance(value, torch.dtype):
+        return str(value).removeprefix("torch.")
+    if isinstance(value, Mapping):
+        return {
+            key: _normalize_model_config_scalars(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_normalize_model_config_scalars(item) for item in value]
+    return value
+
+
 def _json_sha256(value: Any, *, context: str) -> str:
     return hashlib.sha256(_canonical_json(value, context=context)).hexdigest()
 
@@ -470,7 +492,10 @@ def _model_capture(outcome: SeedCompileOutcome) -> _ModelCapture:
                 "model.config must be a mapping, dataclass, or provide to_dict() "
                 "when present."
             )
-        config_value = _json_value(raw_config, context="model config")
+        config_value = _json_value(
+            _normalize_model_config_scalars(raw_config),
+            context="model config",
+        )
 
     metadata_value = None
     if outcome.structure_metadata is not None:

@@ -151,6 +151,49 @@ class _SVDAnalysis:
         return int(self.singular_values.numel())
 
 
+@dataclass(frozen=True, slots=True)
+class TiedVocabularySVDAnalysis:
+    """One reusable deterministic SVD for a truly tied vocabulary interface.
+
+    The expensive decomposition is computed once by
+    :func:`analyze_tied_vocabulary_modules`.  Multiple rank prefixes can then
+    be materialized without recomputing the SVD or changing the canonical
+    ``U S @ Vh`` factorization used by the ordinary pair API.
+    """
+
+    _analysis: _SVDAnalysis
+    source_weight: Tensor
+    padding_idx: int | None
+    max_norm: float | None
+    norm_type: float
+    scale_grad_by_freq: bool
+    sparse: bool
+    head_bias: Tensor | None
+    embedding_training: bool
+    head_training: bool
+
+    @property
+    def vocab_size(self) -> int:
+        return self._analysis.vocab_size
+
+    @property
+    def hidden_size(self) -> int:
+        return self._analysis.hidden_size
+
+    @property
+    def max_rank(self) -> int:
+        return self._analysis.max_rank
+
+    @property
+    def singular_values(self) -> tuple[float, ...]:
+        return tuple(float(value) for value in self._analysis.singular_values.tolist())
+
+    def factorize(self, rank: int) -> FactorizedVocabularyPair:
+        """Build one tied factor pair from a prefix of this exact SVD."""
+
+        return _factorize_tied_from_precomputed_analysis(self, rank=rank)
+
+
 def _positive_int(value: Any, name: str, *, maximum: int | None = None) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise FactorizationRankError(f"{name} must be a positive integer.")
@@ -933,6 +976,113 @@ class FactorizedVocabularyPair(nn.Module):
 FactorizedVocabPair = FactorizedVocabularyPair
 
 
+def analyze_tied_vocabulary_modules(
+    embedding: nn.Embedding,
+    lm_head: nn.Linear,
+) -> TiedVocabularySVDAnalysis:
+    """Compute one reusable float64 SVD for a tied embedding/LM-head matrix."""
+
+    embedding = _validate_embedding_module(embedding)
+    lm_head = _validate_head_module(lm_head)
+    if (
+        embedding.num_embeddings != lm_head.out_features
+        or embedding.embedding_dim != lm_head.in_features
+    ):
+        raise FactorizationShapeError(
+            "Embedding and LM head must have matching vocabulary and hidden sizes."
+        )
+    if not _same_tensor_storage(embedding.weight, lm_head.weight):
+        raise FactorizationShapeError(
+            "Reusable tied-vocabulary analysis requires exact shared weight storage."
+        )
+    with torch.no_grad():
+        analysis = _analyze_weight(embedding.weight, "embedding.weight")
+    return TiedVocabularySVDAnalysis(
+        _analysis=analysis,
+        source_weight=embedding.weight,
+        padding_idx=embedding.padding_idx,
+        max_norm=embedding.max_norm,
+        norm_type=float(embedding.norm_type),
+        scale_grad_by_freq=embedding.scale_grad_by_freq,
+        sparse=embedding.sparse,
+        head_bias=lm_head.bias,
+        embedding_training=embedding.training,
+        head_training=lm_head.training,
+    )
+
+
+def _factorize_tied_from_precomputed_analysis(
+    analysis: TiedVocabularySVDAnalysis,
+    *,
+    rank: int,
+) -> FactorizedVocabularyPair:
+    if not isinstance(analysis, TiedVocabularySVDAnalysis):
+        raise FactorizationShapeError(
+            "analysis must be a TiedVocabularySVDAnalysis."
+        )
+    selected_rank = _positive_int(
+        rank,
+        "rank",
+        maximum=analysis.max_rank,
+    )
+    bias_count = 0 if analysis.head_bias is None else analysis.vocab_size
+    with torch.no_grad():
+        plan = _make_plan(
+            analysis._analysis,
+            rank=selected_rank,
+            selection="rank",
+        )
+        vocab_factor, hidden_factor = _factors_from_analysis(
+            analysis._analysis,
+            selected_rank,
+            analysis.source_weight,
+        )
+        embedding = FactorizedEmbedding(
+            vocab_factor,
+            hidden_factor,
+            padding_idx=analysis.padding_idx,
+            max_norm=analysis.max_norm,
+            norm_type=analysis.norm_type,
+            scale_grad_by_freq=analysis.scale_grad_by_freq,
+            sparse=analysis.sparse,
+            plan=plan,
+        )
+        embedding.train(analysis.embedding_training)
+        lm_head = FactorizedLMHead(
+            embedding.vocab_factor,
+            embedding.hidden_factor,
+            bias=analysis.head_bias,
+            plan=plan,
+        )
+        lm_head.train(analysis.head_training)
+        factor_count = plan.factor_parameter_count
+        pair_plan = VocabularyFactorizationPlan(
+            tied=True,
+            embedding=plan,
+            lm_head=plan,
+            head_bias_parameters=bias_count,
+            logical_parameter_count=2 * factor_count + bias_count,
+            unique_parameter_count=factor_count + bias_count,
+            dense_unique_parameter_count=(
+                analysis.vocab_size * analysis.hidden_size + bias_count
+            ),
+            parameter_budget=None,
+            budget_headroom=None,
+            retained_energy_fraction=plan.retained_energy_fraction,
+        )
+        result = FactorizedVocabularyPair(
+            embedding,
+            lm_head,
+            tied=True,
+            plan=pair_plan,
+        )
+        if result.unique_parameter_count != pair_plan.unique_parameter_count:
+            raise RuntimeError(
+                "Precomputed tied-factor plan and physical parameters disagree."
+            )
+        return result
+
+
 def factorize_embedding_and_lm_head(
     embedding: nn.Embedding,
     lm_head: nn.Linear,
@@ -1226,8 +1376,10 @@ __all__ = [
     "FactorizedLMHead",
     "FactorizedVocabPair",
     "FactorizedVocabularyPair",
+    "TiedVocabularySVDAnalysis",
     "VocabularyFactorizationError",
     "VocabularyFactorizationPlan",
+    "analyze_tied_vocabulary_modules",
     "count_unique_parameters",
     "exact_parameter_report",
     "exact_unique_parameter_count",

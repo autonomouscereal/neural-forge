@@ -65,6 +65,14 @@ class FeatureFoldReport:
     sketch_retained_energy_fraction: float
     sketch_relative_reconstruction_error: float
     sketch_energy_relative_error: float
+    exact_input_energy: float
+    exact_projected_energy: float
+    exact_retained_energy_fraction: float
+    exact_relative_reconstruction_error: float
+    exact_matrix_input_energies: tuple[float, ...]
+    exact_matrix_projected_energies: tuple[float, ...]
+    exact_matrix_retained_energy_fractions: tuple[float, ...]
+    exact_matrix_relative_reconstruction_errors: tuple[float, ...]
     chunk_size: int
     map_stored_elements: int
     map_stored_bytes: int
@@ -72,6 +80,7 @@ class FeatureFoldReport:
     peak_activation_chunk_elements: int
     peak_signature_chunk_elements: int
     peak_similarity_chunk_elements: int
+    peak_exact_projection_elements: int
     persistent_builder_elements_upper_bound: int
     full_target_rank: bool
     columns_normalized: bool
@@ -130,6 +139,39 @@ class FeatureFoldReport:
             "sketch_energy_relative_error": (
                 self.sketch_energy_relative_error
             ),
+            "exact_input_energy": self.exact_input_energy,
+            "exact_projected_energy": self.exact_projected_energy,
+            "exact_retained_energy_fraction": (
+                self.exact_retained_energy_fraction
+            ),
+            "exact_relative_reconstruction_error": (
+                self.exact_relative_reconstruction_error
+            ),
+            "exact_projection": {
+                "input_energy": self.exact_input_energy,
+                "projected_energy": self.exact_projected_energy,
+                "retained_energy_fraction": (
+                    self.exact_retained_energy_fraction
+                ),
+                "relative_reconstruction_error": (
+                    self.exact_relative_reconstruction_error
+                ),
+                "per_matrix": [
+                    {
+                        "input_energy": input_energy,
+                        "projected_energy": projected_energy,
+                        "retained_energy_fraction": retained,
+                        "relative_reconstruction_error": error,
+                    }
+                    for input_energy, projected_energy, retained, error in zip(
+                        self.exact_matrix_input_energies,
+                        self.exact_matrix_projected_energies,
+                        self.exact_matrix_retained_energy_fractions,
+                        self.exact_matrix_relative_reconstruction_errors,
+                        strict=True,
+                    )
+                ],
+            },
             "chunk_size": self.chunk_size,
             "memory_bounds": {
                 "map_stored_elements": self.map_stored_elements,
@@ -145,6 +187,9 @@ class FeatureFoldReport:
                 ),
                 "peak_similarity_chunk_elements": (
                     self.peak_similarity_chunk_elements
+                ),
+                "peak_exact_projection_elements": (
+                    self.peak_exact_projection_elements
                 ),
                 "persistent_builder_elements_upper_bound": (
                     self.persistent_builder_elements_upper_bound
@@ -566,10 +611,12 @@ def _countsketch_signatures(
             raise FeatureFoldFiniteError(
                 f"activation_matrices[{matrix_index}] contains NaN or infinity."
             )
-        rows = torch.arange(int(matrix.shape[0]), dtype=torch.long)
-        buckets = (rows * 37 + matrix_index * 17) % sketch_size
-        parity = (rows * 104_729 + matrix_index * 8_191) % 2
-        signs = parity.to(dtype=torch.float64).mul_(2.0).sub_(1.0)
+        buckets, signs = _deterministic_countsketch_hashes(
+            torch,
+            int(matrix.shape[0]),
+            sketch_size,
+            matrix_index,
+        )
         sketch = torch.zeros(
             (sketch_size, int(indices.numel())),
             dtype=torch.float64,
@@ -582,6 +629,191 @@ def _countsketch_signatures(
             "Activation sketching produced NaN or infinity."
         )
     return result
+
+
+def _deterministic_countsketch_hashes(
+    torch,
+    row_count: int,
+    sketch_size: int,
+    matrix_index: int,
+):
+    """Return independently seeded deterministic bucket and sign hashes.
+
+    The previous arithmetic used a bucket period of ``sketch_size`` and a sign
+    period of two.  For an even sketch size, rows separated by the sketch size
+    therefore collided with exactly the same sign, so correlated calibration
+    rows accumulated coherently instead of cancelling as CountSketch requires.
+
+    These hashes use separate seeds and separate nonlinear modular mixers.  All
+    intermediate values remain below signed-int64 overflow, which keeps the
+    result bitwise deterministic across supported CPU builds.
+    """
+
+    row_count = _positive_int(row_count, "row_count")
+    sketch_size = _positive_int(sketch_size, "sketch_size")
+    if isinstance(matrix_index, bool) or not isinstance(matrix_index, int):
+        raise FeatureFoldShapeError("matrix_index must be a non-negative integer.")
+    if matrix_index < 0:
+        raise FeatureFoldShapeError("matrix_index must be a non-negative integer.")
+
+    prime = 2_147_483_647
+    rows = torch.arange(row_count, dtype=torch.long)
+
+    def mixed(seed: int, first_salt: int, second_salt: int):
+        seed = seed % prime
+        value = torch.remainder(rows + seed, prime)
+        value = torch.remainder(
+            value.square() + first_salt * value + second_salt,
+            prime,
+        )
+        value = torch.remainder(
+            value.square() + second_salt * value + first_salt,
+            prime,
+        )
+        return value
+
+    bucket_seed = (
+        324_508_639 + (matrix_index + 1) * 49_979_687
+    ) % prime
+    sign_seed = (
+        610_839_777 + (matrix_index + 1) * 86_028_121
+    ) % prime
+    bucket_hash = mixed(bucket_seed, 104_729, 130_363)
+    sign_hash = mixed(sign_seed, 155_921, 196_613)
+    buckets = torch.remainder(bucket_hash, sketch_size)
+    signs = torch.where(
+        torch.remainder(sign_hash, 2) == 0,
+        torch.ones(row_count, dtype=torch.float64),
+        -torch.ones(row_count, dtype=torch.float64),
+    )
+    return buckets.contiguous(), signs.contiguous()
+
+
+def _exact_group_principal_coefficients(
+    torch,
+    matrices: tuple[Any, ...],
+    assignment: Any,
+    target_width: int,
+):
+    """Maximize exact captured calibration energy inside every fixed group."""
+
+    coefficients = torch.empty(int(assignment.numel()), dtype=torch.float64)
+    for target in range(target_width):
+        indices = torch.nonzero(assignment == target, as_tuple=False).reshape(-1)
+        group_width = int(indices.numel())
+        if group_width <= 0:  # pragma: no cover - guarded by the builder
+            raise FeatureFoldRankError(
+                "Every target group must contain at least one source channel."
+            )
+        if group_width == 1:
+            coefficients[indices[0]] = 1.0
+            continue
+
+        rows = torch.cat(
+            tuple(_column_chunk(torch, matrix, indices) for matrix in matrices),
+            dim=0,
+        )
+        gram = rows.T @ rows
+        gram = 0.5 * (gram + gram.T)
+        if not bool(torch.isfinite(gram).all()):
+            raise FeatureFoldFiniteError(
+                "Exact per-group calibration Gram matrix is non-finite."
+            )
+        eigenvalues, eigenvectors = torch.linalg.eigh(gram)
+        top_value = float(eigenvalues[-1].item())
+        if top_value <= torch.finfo(torch.float64).tiny:
+            # Every unit vector is a leading eigenvector of the all-zero Gram
+            # matrix.  The uniform choice preserves every source channel.
+            vector = torch.full(
+                (group_width,),
+                1.0 / math.sqrt(group_width),
+                dtype=torch.float64,
+            )
+        else:
+            vector = eigenvectors[:, -1].contiguous()
+            pivot = int(torch.argmax(vector.abs()).item())
+            if float(vector[pivot].item()) < 0.0:
+                vector = -vector
+            # Exact leading eigenvectors can contain structural zeros.  Sparse
+            # full-source folding forbids a zero coefficient, so use the
+            # smallest representable deterministic perturbation only for those
+            # degenerate coordinates, then renormalize.
+            zero = vector == 0.0
+            if bool(zero.any()):
+                vector = vector.clone()
+                vector[zero] = torch.finfo(torch.float64).eps
+                vector = vector / torch.linalg.vector_norm(vector)
+        coefficients.index_copy_(0, indices, vector)
+    if bool((coefficients == 0.0).any()) or not bool(
+        torch.isfinite(coefficients).all()
+    ):
+        raise FeatureFoldRankError(
+            "Exact per-group principal coefficients lack finite full coverage."
+        )
+    return coefficients
+
+
+def _exact_projection_diagnostics(
+    torch,
+    matrices: tuple[Any, ...],
+    assignment: Any,
+    coefficients: Any,
+    target_width: int,
+    chunk_size: int,
+):
+    """Measure the exact orthogonal projection without materializing ``M``."""
+
+    input_energies: list[float] = []
+    projected_energies: list[float] = []
+    retained_fractions: list[float] = []
+    reconstruction_errors: list[float] = []
+    source_width = int(assignment.numel())
+    for matrix in matrices:
+        projected = torch.zeros(
+            (int(matrix.shape[0]), target_width),
+            dtype=torch.float64,
+        )
+        input_energy = 0.0
+        for start in range(0, source_width, chunk_size):
+            stop = min(start + chunk_size, source_width)
+            indices = torch.arange(start, stop, dtype=torch.long)
+            chunk = _column_chunk(torch, matrix, indices)
+            input_energy += float(chunk.square().sum().item())
+            projected.index_add_(
+                1,
+                assignment[start:stop],
+                chunk * coefficients[start:stop].unsqueeze(0),
+            )
+        projected_energy = float(projected.square().sum().item())
+        if input_energy > 0.0:
+            retained = min(1.0, max(0.0, projected_energy / input_energy))
+            error = math.sqrt(max(0.0, 1.0 - retained))
+        else:
+            retained = 1.0
+            error = 0.0
+        input_energies.append(input_energy)
+        projected_energies.append(projected_energy)
+        retained_fractions.append(retained)
+        reconstruction_errors.append(error)
+
+    total_input = sum(input_energies)
+    total_projected = sum(projected_energies)
+    if total_input > 0.0:
+        total_retained = min(1.0, max(0.0, total_projected / total_input))
+        total_error = math.sqrt(max(0.0, 1.0 - total_retained))
+    else:
+        total_retained = 1.0
+        total_error = 0.0
+    return (
+        total_input,
+        total_projected,
+        total_retained,
+        total_error,
+        tuple(input_energies),
+        tuple(projected_energies),
+        tuple(retained_fractions),
+        tuple(reconstruction_errors),
+    )
 
 
 def _normalized_rows(torch, rows: Any):
@@ -654,7 +886,6 @@ def build_feature_fold_map(
     order = torch.argsort(energies, descending=True, stable=True)
     seed_indices = order[:target_width]
     assignment = torch.full((source_width,), -1, dtype=torch.long)
-    orientation = torch.ones(source_width, dtype=torch.float64)
     assignment[seed_indices] = torch.arange(target_width, dtype=torch.long)
     group_sizes = torch.ones(target_width, dtype=torch.long)
     group_loads = energies.index_select(0, seed_indices).clone()
@@ -728,7 +959,6 @@ def build_feature_fold_map(
             if allow_sign_flip and float(similarities[local_index, target]) < 0.0:
                 sign = -1.0
             assignment[source_index] = target
-            orientation[source_index] = sign
             chosen_targets[local_index] = target
             chosen_signs[local_index] = sign
             group_sizes[target] += 1
@@ -753,29 +983,43 @@ def build_feature_fold_map(
             "Grouping failed to assign every source channel."
         )
 
-    positive_energies = energies[energies > 0.0]
-    if int(positive_energies.numel()) > 0:
-        energy_floor = max(
-            float(positive_energies.min().item()) * 1e-12,
-            torch.finfo(torch.float64).tiny,
+    if allow_sign_flip:
+        # For a fixed sparse assignment, each target column captures
+        # ``v.T @ Gram(group) @ v`` energy.  The exact leading eigenvector is
+        # therefore the optimal normalized coefficient vector for that group.
+        # This also removes the old dependence on energy-only magnitudes and
+        # sketch-derived signs.
+        coefficients = _exact_group_principal_coefficients(
+            torch,
+            matrices,
+            assignment,
+            target_width,
         )
-        coefficient_scales = torch.sqrt(energies.clamp_min(energy_floor))
     else:
-        coefficient_scales = torch.ones_like(energies)
-    raw_coefficients = orientation * coefficient_scales
-    squared_norms = torch.zeros(target_width, dtype=torch.float64)
-    squared_norms.index_add_(
-        0,
-        assignment,
-        raw_coefficients.square(),
-    )
-    if bool((squared_norms <= 0.0).any()) or not bool(
-        torch.isfinite(squared_norms).all()
-    ):
-        raise FeatureFoldRankError(
-            "A target group has no finite coefficient norm."
+        positive_energies = energies[energies > 0.0]
+        if int(positive_energies.numel()) > 0:
+            energy_floor = max(
+                float(positive_energies.min().item()) * 1e-12,
+                torch.finfo(torch.float64).tiny,
+            )
+            coefficient_scales = torch.sqrt(energies.clamp_min(energy_floor))
+        else:
+            coefficient_scales = torch.ones_like(energies)
+        squared_norms = torch.zeros(target_width, dtype=torch.float64)
+        squared_norms.index_add_(
+            0,
+            assignment,
+            coefficient_scales.square(),
         )
-    coefficients = raw_coefficients / torch.sqrt(squared_norms[assignment])
+        if bool((squared_norms <= 0.0).any()) or not bool(
+            torch.isfinite(squared_norms).all()
+        ):
+            raise FeatureFoldRankError(
+                "A target group has no finite coefficient norm."
+            )
+        coefficients = coefficient_scales / torch.sqrt(
+            squared_norms[assignment]
+        )
     if bool((coefficients == 0.0).any()) or not bool(
         torch.isfinite(coefficients).all()
     ):
@@ -825,6 +1069,24 @@ def build_feature_fold_map(
     else:
         sketch_energy_error = 0.0
 
+    (
+        exact_input_energy,
+        exact_projected_energy,
+        exact_retained,
+        exact_error,
+        exact_matrix_input_energies,
+        exact_matrix_projected_energies,
+        exact_matrix_retained,
+        exact_matrix_errors,
+    ) = _exact_projection_diagnostics(
+        torch,
+        matrices,
+        assignment,
+        coefficients,
+        target_width,
+        effective_chunk,
+    )
+
     exact_group_loads = torch.zeros(target_width, dtype=torch.float64)
     exact_group_loads.index_add_(0, assignment, energies)
     exact_squared_norms = torch.zeros(target_width, dtype=torch.float64)
@@ -852,6 +1114,14 @@ def build_feature_fold_map(
         sketch_retained_energy_fraction=retained,
         sketch_relative_reconstruction_error=sketch_error,
         sketch_energy_relative_error=sketch_energy_error,
+        exact_input_energy=exact_input_energy,
+        exact_projected_energy=exact_projected_energy,
+        exact_retained_energy_fraction=exact_retained,
+        exact_relative_reconstruction_error=exact_error,
+        exact_matrix_input_energies=exact_matrix_input_energies,
+        exact_matrix_projected_energies=exact_matrix_projected_energies,
+        exact_matrix_retained_energy_fractions=exact_matrix_retained,
+        exact_matrix_relative_reconstruction_errors=exact_matrix_errors,
         chunk_size=effective_chunk,
         map_stored_elements=source_width * 2,
         map_stored_bytes=source_width * 16,
@@ -859,6 +1129,7 @@ def build_feature_fold_map(
         peak_activation_chunk_elements=max(rows) * effective_chunk,
         peak_signature_chunk_elements=signature_width * effective_chunk,
         peak_similarity_chunk_elements=target_width * effective_chunk,
+        peak_exact_projection_elements=max(rows) * target_width,
         persistent_builder_elements_upper_bound=(
             source_width * 6
             + target_width * (signature_width * 3 + 8)

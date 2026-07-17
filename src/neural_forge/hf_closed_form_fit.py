@@ -96,15 +96,27 @@ def fit_ridge_linear(
                 [inputs, torch.ones((inputs.shape[0], 1), dtype=torch.float64)],
                 dim=1,
             )
-        gram = design.T @ design
-        regularizer = torch.eye(gram.shape[0], dtype=torch.float64) * ridge
-        if fit_bias:
-            regularizer[-1, -1] = 0.0
-        right = design.T @ targets
-        try:
-            solution = torch.linalg.solve(gram + regularizer, right)
-        except RuntimeError:
-            solution = torch.linalg.lstsq(gram + regularizer, right).solution
+        if (
+            not fit_bias
+            and ridge > 0.0
+            and int(design.shape[1]) > int(design.shape[0])
+        ):
+            solution = _dual_ridge_solution(
+                torch,
+                design,
+                targets,
+                ridge=ridge,
+            )
+        else:
+            gram = design.T @ design
+            regularizer = torch.eye(gram.shape[0], dtype=torch.float64) * ridge
+            if fit_bias:
+                regularizer[-1, -1] = 0.0
+            right = design.T @ targets
+            try:
+                solution = torch.linalg.solve(gram + regularizer, right)
+            except RuntimeError:
+                solution = torch.linalg.lstsq(gram + regularizer, right).solution
         if not bool(torch.isfinite(solution).all()):
             raise ClosedFormFitError("Ridge solve produced non-finite coefficients.")
         if fit_bias:
@@ -215,7 +227,6 @@ def fit_prior_preserving_ridge_linear(
                 [prior_solution, prior_bias_rows.unsqueeze(0)],
                 dim=0,
             )
-        gram = design.T @ design
         feature_gram = inputs.T @ inputs
         trace_scale = float(feature_gram.diagonal().sum().item()) / max(
             1,
@@ -227,13 +238,27 @@ def fit_prior_preserving_ridge_linear(
             trace_scale,
             torch.finfo(torch.float64).tiny,
         )
-        regularizer = torch.eye(gram.shape[0], dtype=torch.float64)
-        right = design.T @ targets + effective_ridge * prior_solution
-        system = gram + effective_ridge * regularizer
-        try:
-            solution = torch.linalg.solve(system, right)
-        except RuntimeError:
-            solution = torch.linalg.lstsq(system, right).solution
+        if (
+            not fit_bias
+            and effective_ridge > 0.0
+            and int(design.shape[1]) > int(design.shape[0])
+        ):
+            prior_prediction = design @ prior_solution
+            solution = prior_solution + _dual_ridge_solution(
+                torch,
+                design,
+                targets - prior_prediction,
+                ridge=effective_ridge,
+            )
+        else:
+            gram = design.T @ design
+            regularizer = torch.eye(gram.shape[0], dtype=torch.float64)
+            right = design.T @ targets + effective_ridge * prior_solution
+            system = gram + effective_ridge * regularizer
+            try:
+                solution = torch.linalg.solve(system, right)
+            except RuntimeError:
+                solution = torch.linalg.lstsq(system, right).solution
         if not bool(torch.isfinite(solution).all()):
             raise ClosedFormFitError(
                 "Prior-preserving ridge solve produced non-finite coefficients."
@@ -520,6 +545,37 @@ def _fit_channel_affine(
     if not bool(torch.isfinite(weight).all()) or not bool(torch.isfinite(bias).all()):
         raise ClosedFormFitError("Norm affine solve produced non-finite values.")
     return weight.contiguous(), bias.contiguous()
+
+
+def _dual_ridge_solution(
+    torch: Any,
+    design: Any,
+    targets: Any,
+    *,
+    ridge: float,
+) -> Any:
+    """Return ``(X.T X + λI)^-1 X.T Y`` through the row-space dual.
+
+    The result is algebraically identical to the primal ridge solution while
+    avoiding a feature-by-feature system when a circuit has thousands of
+    producer coordinates but only hundreds of authenticated trace rows.
+    """
+
+    if ridge <= 0.0:
+        raise ClosedFormFitError("Dual ridge requires a positive regularizer.")
+    row_gram = design @ design.T
+    system = row_gram + torch.eye(
+        int(row_gram.shape[0]),
+        dtype=torch.float64,
+    ) * ridge
+    try:
+        dual = torch.linalg.solve(system, targets)
+    except RuntimeError:
+        dual = torch.linalg.lstsq(system, targets).solution
+    result = design.T @ dual
+    if not bool(torch.isfinite(result).all()):
+        raise ClosedFormFitError("Dual ridge solve produced non-finite coefficients.")
+    return result.contiguous()
 
 
 def _validated_pair(

@@ -594,6 +594,42 @@ def test_load_calibration_texts_handles_jsonl_message_rows(tmp_path) -> None:
     assert texts[4] == "user: Return compact JSON.\nUse concise JSON."
 
 
+def test_load_calibration_texts_preserves_long_rows_unless_capped(tmp_path) -> None:
+    calibration = tmp_path / "long.jsonl"
+    long_response = "x" * 10000
+    calibration.write_text(
+        json.dumps(
+            {
+                "messages": [
+                    {"role": "user", "content": "Keep the full context."},
+                    {"role": "assistant", "content": long_response},
+                ]
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    full = load_calibration_texts(calibration, min_chars=8)
+    capped = load_calibration_texts(calibration, min_chars=8, max_chars=4096)
+
+    assert len(full) == 1
+    assert full[0].endswith(long_response)
+    assert len(full[0]) > 10000
+    assert len(capped) == 1
+    assert len(capped[0]) == 4096
+
+
+@pytest.mark.parametrize("max_chars", [0, -1])
+def test_load_calibration_texts_rejects_nonpositive_explicit_cap(
+    tmp_path, max_chars
+) -> None:
+    calibration = tmp_path / "calibration.txt"
+    calibration.write_text("long enough calibration row\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="positive when provided"):
+        load_calibration_texts(calibration, max_chars=max_chars)
+
+
 def test_build_recovery_calibration_writes_prompt_response_jsonl(tmp_path) -> None:
     output = tmp_path / "recovery.jsonl"
 

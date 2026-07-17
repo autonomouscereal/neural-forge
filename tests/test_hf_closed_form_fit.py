@@ -135,6 +135,54 @@ def test_prior_trust_radius_caps_collapsed_feature_update() -> None:
     )
 
 
+def test_wide_ridge_dual_matches_primal_solution() -> None:
+    inputs = _rows(9, 24, 24)
+    targets = _rows(9, 5, 25)
+    ridge = 0.125
+
+    result = fit_ridge_linear(
+        inputs,
+        targets,
+        ridge=ridge,
+        fit_bias=False,
+    )
+    expected = torch.linalg.solve(
+        inputs.T @ inputs
+        + ridge * torch.eye(inputs.shape[1], dtype=torch.float64),
+        inputs.T @ targets,
+    ).T
+
+    torch.testing.assert_close(result.weight, expected, atol=1e-10, rtol=1e-10)
+    assert result.bias is None
+    assert result.train_metrics.finite is True
+
+
+def test_wide_prior_preserving_dual_matches_primal_solution() -> None:
+    inputs = _rows(10, 22, 26)
+    targets = _rows(10, 4, 27)
+    prior = _rows(4, 22, 28)
+    ridge = 0.3
+
+    result = fit_prior_preserving_ridge_linear(
+        inputs,
+        targets,
+        prior,
+        ridge=ridge,
+        fit_bias=False,
+    )
+    trace_scale = float((inputs.T @ inputs).diagonal().sum()) / inputs.shape[1]
+    effective_ridge = ridge * trace_scale
+    expected = torch.linalg.solve(
+        inputs.T @ inputs
+        + effective_ridge * torch.eye(inputs.shape[1], dtype=torch.float64),
+        inputs.T @ targets + effective_ridge * prior.T,
+    ).T
+
+    torch.testing.assert_close(result.weight, expected, atol=1e-10, rtol=1e-10)
+    assert result.bias is None
+    assert result.effective_ridge == pytest.approx(effective_ridge)
+
+
 def test_layer_norm_affine_fit_recovers_weight_and_bias() -> None:
     inputs = _rows(128, 7, 20)
     normalized = normalize_rows(inputs, kind="layer_norm", epsilon=1e-5)
