@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -18,6 +20,8 @@ from neural_forge.dynamic_parameter_frontier import (
     CAP_ATTENTION_TOPOLOGY_PROJECTION,
     CAP_DENSE_BLANK_MATERIALIZATION,
     CAP_RESIDUAL_WIDTH_PROJECTION,
+    CAP_TOKENIZER_BRIDGE,
+    LFM2_CURRENT_COMPILER_CAPABILITIES,
     DenseParameterBudgetRequest,
     DenseTargetTopologyCatalogRegistry,
     DenseTargetTopologyCandidate,
@@ -28,6 +32,13 @@ from neural_forge.dynamic_parameter_frontier import (
     select_best_executable_dense_candidate,
     synthesize_dense_compression_ratio_frontier,
     synthesize_dense_parameter_frontier,
+)
+from neural_forge.hf_tokenizer_bridge import (
+    CHILD_TOKENIZER_SEMANTICS_CONFIG_KEY,
+    PARENT_TOKENIZER_SEMANTICS_CONFIG_KEY,
+    TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY,
+    TOKENIZER_BRIDGE_PROFILE_CONFIG_KEY,
+    seal_strict_tokenizer_bridge_artifact,
 )
 from neural_forge.dynamic_system import (
     AutomaticDynamicFoldingSystem,
@@ -286,6 +297,50 @@ def _lfm2_graph(
             ("layer_count", len(layer_types)),
             ("hybrid_attention_short_conv", True),
         ),
+    )
+
+
+class _BridgeTokenizer:
+    def __init__(self, surfaces: list[str]) -> None:
+        self.surfaces = list(surfaces)
+        self.all_special_ids: list[int] = []
+        self.bos_token_id = None
+        self.eos_token_id = None
+        self.pad_token_id = None
+        self.unk_token_id = None
+
+    def __len__(self) -> int:
+        return len(self.surfaces)
+
+    def get_vocab(self) -> dict[str, int]:
+        return {
+            f"raw-{index}-{surface}": index
+            for index, surface in enumerate(self.surfaces)
+        }
+
+    def convert_ids_to_tokens(self, token_id: int) -> str:
+        return f"raw-{token_id}-{self.surfaces[token_id]}"
+
+    def decode(self, token_ids: list[int], **_kwargs: Any) -> str:
+        return "".join(self.surfaces[token_id] for token_id in token_ids)
+
+    def encode(self, text: str, *, add_special_tokens: bool) -> list[int]:
+        assert add_special_tokens is False
+        return [self.surfaces.index(text)]
+
+
+def _bridge_artifact(tmp_path: Path):
+    donor = _BridgeTokenizer([f"<{index}>" for index in range(256)])
+    target = _BridgeTokenizer(donor.surfaces[:128])
+    root = tmp_path / "target-tokenizer"
+    root.mkdir()
+    (root / "tokenizer.json").write_text("{}", encoding="utf-8")
+    return seal_strict_tokenizer_bridge_artifact(
+        donor,
+        target,
+        root,
+        donor_row_capacity=256,
+        target_row_capacity=128,
     )
 
 
@@ -763,6 +818,116 @@ def test_optional_target_vocabulary_marks_unimplemented_tokenizer_bridge() -> No
     assert dict(winner.configuration)["vocab_size"] == 128
     assert result.diagnostics["tokenizer_bridge_required"] is True
     assert result.diagnostics["tokenizer_mapping_implemented"] is False
+
+
+def test_tokenizer_bridge_capability_requires_verified_artifact(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(
+        DynamicParameterFrontierError,
+        match="requires an explicit verified",
+    ):
+        Lfm2DenseTargetTopologyCatalog(
+            compiler_capabilities=(
+                *LFM2_CURRENT_COMPILER_CAPABILITIES,
+                CAP_TOKENIZER_BRIDGE,
+            )
+        )
+
+    artifact = _bridge_artifact(tmp_path)
+    graph = replace(
+        _lfm2_graph(),
+        tokenizer_fingerprint=(
+            artifact.donor_tokenizer_semantics_sha256
+        ),
+    )
+    catalog = Lfm2DenseTargetTopologyCatalog(
+        tokenizer_bridge_artifact=artifact,
+    )
+    registry = DenseTargetTopologyCatalogRegistry((catalog,))
+    plan = plan_budgeted_dynamic_target(
+        graph,
+        DenseParameterBudgetRequest(
+            target_family="lfm2",
+            target_modalities=("text",),
+            compression_ratio=4,
+            target_vocabulary_size=128,
+        ),
+        child_name="strict-bridged-blank",
+        catalogs=registry,
+    )
+    candidate = plan.frontier.candidates[
+        plan.target_certificate.selected_candidate_rank
+    ]
+    configuration = dict(candidate.configuration)
+
+    assert CAP_TOKENIZER_BRIDGE in candidate.declared_compiler_capabilities
+    assert CAP_TOKENIZER_BRIDGE not in candidate.missing_compiler_capabilities
+    assert candidate.compiler_executable
+    assert plan.target_request.tokenizer_fingerprint == (
+        artifact.target_tokenizer_semantics_sha256
+    )
+    assert configuration[TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY] == (
+        artifact.artifact_sha256
+    )
+    assert configuration[TOKENIZER_BRIDGE_PROFILE_CONFIG_KEY] == (
+        artifact.profile_fingerprint
+    )
+    assert configuration[PARENT_TOKENIZER_SEMANTICS_CONFIG_KEY] == (
+        artifact.donor_tokenizer_semantics_sha256
+    )
+    assert configuration[CHILD_TOKENIZER_SEMANTICS_CONFIG_KEY] == (
+        artifact.target_tokenizer_semantics_sha256
+    )
+    assert plan.frontier.diagnostics["tokenizer_mapping_implemented"] is True
+
+
+def test_tokenizer_bridge_planning_rejects_wrong_semantics_and_tampering(
+    tmp_path: Path,
+) -> None:
+    artifact = _bridge_artifact(tmp_path)
+    request = DenseParameterBudgetRequest(
+        target_family="lfm2",
+        target_modalities=("text",),
+        compression_ratio=10,
+        target_vocabulary_size=128,
+    )
+    registry = DenseTargetTopologyCatalogRegistry(
+        (
+            Lfm2DenseTargetTopologyCatalog(
+                tokenizer_bridge_artifact=artifact,
+            ),
+        )
+    )
+    with pytest.raises(
+        DynamicParameterFrontierError,
+        match="does not match the inspected parent semantics",
+    ):
+        synthesize_dense_parameter_frontier(
+            _lfm2_graph(),
+            request,
+            catalogs=registry,
+        )
+
+    graph = replace(
+        _lfm2_graph(),
+        tokenizer_fingerprint=(
+            artifact.donor_tokenizer_semantics_sha256
+        ),
+    )
+    (artifact.root_dir / "tokenizer.json").write_text(
+        '{"tampered":true}',
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        DynamicParameterFrontierError,
+        match="changed after catalog registration",
+    ):
+        synthesize_dense_parameter_frontier(
+            graph,
+            request,
+            catalogs=registry,
+        )
 
 
 def test_candidates_reject_parameter_count_cheats_and_wrong_modalities() -> None:

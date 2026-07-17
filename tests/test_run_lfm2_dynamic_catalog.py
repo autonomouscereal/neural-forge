@@ -177,6 +177,17 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     assert config.whole_output_max_new_tokens == 64
     assert config.whole_output_minimum_task_score_retention == 1.0
     assert config.whole_output_maximum_parent_task_score_regressions == 0
+    assert config.dense_minimum_hidden_size == 32
+    assert config.identity()["target"]["dense_minimum_hidden_size"] == 32
+    assert config.dense_macro_cell_attractor_gate_enabled is False
+    assert config.dense_macro_cell_attractor_maximum_records == 4
+    assert config.dense_macro_cell_attractor_maximum_steps == 8
+    assert config.dense_attention_consumer_mode == "output-only"
+    assert config.dense_attention_score_candidate_gate_enabled is False
+    assert config.dense_attention_score_top_k == 8
+    assert config.identity()["target"][
+        "dense_macro_cell_attractor_gate"
+    ]["exact_token_match_is_diagnostic_only"]
     assert config.dense_vocabulary_margin_candidate_gate_enabled is False
     assert config.dense_vocabulary_margin_candidate_replay_mode == (
         MODULE.CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
@@ -205,7 +216,36 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     assert "zero-gradient" in help_text
     assert "229,349,120" in help_text
     assert "--dense-vocabulary-margin-candidate-gate" in help_text
+    assert "--dense-macro-cell-attractor-gate" in help_text
+    assert "--dense-attention-score-candidate-gate" in help_text
+    assert "--dense-minimum-hidden-size" in help_text
     assert "--sealed-parent-cache-directory" in help_text
+
+
+@pytest.mark.parametrize("minimum_hidden_size", (0, 7))
+def test_dense_minimum_hidden_size_must_be_a_positive_multiple_of_eight(
+    tmp_path,
+    minimum_hidden_size,
+) -> None:
+    parser = MODULE.build_parser()
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match=(
+            "dense_minimum_hidden_size must be a positive integer"
+            if minimum_hidden_size == 0
+            else "dense_minimum_hidden_size must be a multiple of eight"
+        ),
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    "--dense-minimum-hidden-size",
+                    str(minimum_hidden_size),
+                ]
+            )
+        )
 
 
 def test_parser_accepts_sealed_cache_without_calibration(tmp_path) -> None:
@@ -390,6 +430,167 @@ def test_parser_accepts_automatic_dense_ratio_and_cached_margin_basis(
     ] == pytest.approx(0.84)
 
 
+def test_parser_accepts_macro_cell_attractor_policy(tmp_path) -> None:
+    parser = MODULE.build_parser()
+    config = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                "--compression-ratio",
+                "10",
+                "--dense-run-closed-loop",
+                "--dense-macro-cell-attractor-gate",
+                "--dense-macro-cell-attractor-maximum-records",
+                "6",
+                "--dense-macro-cell-attractor-maximum-steps",
+                "12",
+                "--dense-macro-cell-attractor-maximum-entropy-regression",
+                "0.11",
+                "--dense-macro-cell-attractor-maximum-repetition-regression",
+                "0.12",
+                "--dense-macro-cell-attractor-maximum-dominance-regression",
+                "0.13",
+                "--dense-macro-cell-attractor-maximum-eos-regression",
+                "0.14",
+                "--dense-macro-cell-attractor-collapse-entropy-threshold",
+                "0.15",
+                "--dense-macro-cell-attractor-collapse-repetition-threshold",
+                "0.75",
+                "--dense-macro-cell-attractor-collapse-dominance-threshold",
+                "0.76",
+                "--dense-macro-cell-attractor-maximum-new-collapsed-records",
+                "2",
+            ]
+        )
+    )
+
+    assert config.dense_run_closed_loop
+    assert config.dense_macro_cell_attractor_gate_enabled
+    assert config.dense_macro_cell_attractor_maximum_records == 6
+    assert config.dense_macro_cell_attractor_maximum_steps == 12
+    identity = config.identity()["target"][
+        "dense_macro_cell_attractor_gate"
+    ]
+    assert identity["enabled"]
+    assert identity["maximum_entropy_regression"] == pytest.approx(0.11)
+    assert identity["maximum_repetition_regression"] == pytest.approx(0.12)
+    assert identity["maximum_dominance_regression"] == pytest.approx(0.13)
+    assert identity["maximum_eos_regression"] == pytest.approx(0.14)
+    assert identity["collapse_entropy_threshold"] == pytest.approx(0.15)
+    assert identity["collapse_repetition_threshold"] == pytest.approx(0.75)
+    assert identity["collapse_dominance_threshold"] == pytest.approx(0.76)
+    assert identity["maximum_new_collapsed_records"] == 2
+
+
+def test_macro_cell_attractor_gate_requires_dense_closed_loop(
+    tmp_path,
+) -> None:
+    parser = MODULE.build_parser()
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="requires an automatic compression_ratio request with "
+        "dense_run_closed_loop=True",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    "--compression-ratio",
+                    "10",
+                    "--dense-macro-cell-attractor-gate",
+                ]
+            )
+        )
+
+
+def test_parser_accepts_heldout_attention_score_policy(tmp_path) -> None:
+    parser = MODULE.build_parser()
+    config = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                "--compression-ratio",
+                "10",
+                "--dense-run-closed-loop",
+                "--dense-attention-consumer-mode",
+                "coupled-value-output",
+                "--dense-attention-score-candidate-gate",
+                "--dense-attention-score-top-k",
+                "6",
+                "--dense-attention-score-margin-floor-fraction",
+                "0.4",
+                "--dense-attention-score-minimum-top1-key-agreement",
+                "0.81",
+                (
+                    "--dense-attention-score-minimum-top-k-pair-"
+                    "order-agreement"
+                ),
+                "0.82",
+                (
+                    "--dense-attention-score-minimum-winner-margin-"
+                    "sign-agreement"
+                ),
+                "0.83",
+                (
+                    "--dense-attention-score-minimum-relative-margin-"
+                    "floor-retention"
+                ),
+                "0.84",
+                "--dense-attention-score-maximum-softmax-fisher-error",
+                "0.12",
+                "--dense-attention-score-maximum-js-divergence",
+                "0.13",
+            ]
+        )
+    )
+
+    assert config.dense_attention_consumer_mode == "coupled-value-output"
+    assert config.dense_attention_score_candidate_gate_enabled
+    assert config.dense_attention_score_top_k == 6
+    policy = config.identity()["target"][
+        "dense_attention_score_candidate_gate"
+    ]
+    assert policy["enabled"]
+    assert policy["top_k"] == 6
+    assert policy["margin_floor_fraction"] == pytest.approx(0.4)
+    assert policy["minimum_top1_key_agreement_fraction"] == pytest.approx(
+        0.81
+    )
+    assert policy[
+        "minimum_top_k_pair_order_agreement_fraction"
+    ] == pytest.approx(0.82)
+    assert policy[
+        "minimum_winner_margin_sign_agreement_fraction"
+    ] == pytest.approx(0.83)
+    assert policy[
+        "minimum_relative_margin_floor_retention_fraction"
+    ] == pytest.approx(0.84)
+    assert policy["maximum_softmax_fisher_error"] == pytest.approx(0.12)
+    assert policy["maximum_js_divergence"] == pytest.approx(0.13)
+    assert policy["numeric_weight_matching_used"] is False
+    assert policy["parent_forward_calls"] == 0
+
+
+def test_attention_score_gate_requires_dense_closed_loop(tmp_path) -> None:
+    parser = MODULE.build_parser()
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="attention-score candidate gating requires",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    "--compression-ratio",
+                    "10",
+                    "--dense-attention-score-candidate-gate",
+                ]
+            )
+        )
+
+
 def test_dense_margin_basis_fails_closed_without_automatic_ratio(
     tmp_path,
 ) -> None:
@@ -555,6 +756,7 @@ def _trajectory_rows(
     layer_values: tuple[float, ...],
     cache_key: str,
     trace_rows_sha256: str,
+    row_width: int = 4,
 ) -> object:
     assert len(layer_kinds) == len(layer_values)
     return MODULE.residual.TraceRowIndex(
@@ -566,7 +768,7 @@ def _trajectory_rows(
                 index: MappingProxyType(
                     {
                         "residual.post_layer": torch.full(
-                            (3, 4),
+                            (3, row_width),
                             value,
                             dtype=torch.float64,
                         )
@@ -593,6 +795,7 @@ def test_span_mapped_parent_trajectory_view_authenticates_hybrid_endpoints() -> 
         layer_values=(2.0, 3.0),
         cache_key="d" * 64,
         trace_rows_sha256="e" * 64,
+        row_width=2,
     )
 
     projected, mapping = MODULE.build_span_mapped_parent_trajectory_rows(
@@ -616,6 +819,13 @@ def test_span_mapped_parent_trajectory_view_authenticates_hybrid_endpoints() -> 
     assert mapping["complete_child_layer_coverage"] is True
     assert mapping["entries"][0]["source_span_endpoint_layer_index"] == 1
     assert mapping["entries"][1]["source_span_endpoint_layer_index"] == 2
+    assert mapping["entries"][0]["parent_row_shape"] == [3, 4]
+    assert mapping["entries"][0]["child_row_shape"] == [3, 2]
+    assert mapping["entries"][0]["cross_width"] is True
+    assert (
+        mapping["entries"][0]["representation_comparison"]
+        == "cross_width_linear_cka"
+    )
 
 
 def test_cached_trajectory_evaluator_reaches_gate_with_different_hybrid_topology(
@@ -725,6 +935,111 @@ def test_cached_trajectory_evaluator_reaches_gate_with_different_hybrid_topology
     ] is True
 
 
+def test_cached_trajectory_evaluator_uses_dense_child_mapping_markers(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    parent_rows = _trajectory_rows(
+        layer_kinds=("short_conv", "full_attention", "short_conv"),
+        layer_values=(1.0, 2.0, 3.0),
+        cache_key="a" * 64,
+        trace_rows_sha256="c" * 64,
+        row_width=4,
+    )
+    child_rows = _trajectory_rows(
+        layer_kinds=("full_attention", "short_conv"),
+        layer_values=(2.0, 3.0),
+        cache_key="d" * 64,
+        trace_rows_sha256="e" * 64,
+        row_width=2,
+    )
+    payload = MODULE.ProductionParentCachePayload(
+        cache=_Cache(),
+        rows=parent_rows,
+        calibration_batches=(
+            {
+                "forced_decode_ids": torch.tensor([[1]], dtype=torch.long),
+            },
+        ),
+        calibration_splits=("fit",),
+        partition=SimpleNamespace(
+            selection_indices=(0,),
+            fit_indices=(1,),
+            validation_indices=(2,),
+        ),
+    )
+    child_cache = SimpleNamespace(cache_key=child_rows.cache_key)
+    monkeypatch.setattr(
+        MODULE.residual,
+        "build_child_trace_cache",
+        lambda *_args, **_kwargs: (child_cache, child_rows),
+    )
+
+    def fake_gate(
+        _parent_cache,
+        _child_cache,
+        _model,
+        projected_parent_rows,
+        observed_child_rows,
+        *,
+        config,
+    ):
+        del config
+        projected_parent_rows.assert_aligned(observed_child_rows)
+        assert projected_parent_rows.field(
+            0,
+            "residual.post_layer",
+        ).shape == (3, 4)
+        assert observed_child_rows.field(
+            0,
+            "residual.post_layer",
+        ).shape == (3, 2)
+        return {
+            "passed": False,
+            "reasons": ["synthetic final rejection"],
+            "score": 0.5,
+            "teacher_forced": {"top1_agreement": 0.5},
+            "free_run": {
+                "token_match_fraction": 0.5,
+                "lcp_fraction": 0.5,
+            },
+            "mean_residual_cosine": 0.75,
+            "mean_residual_relative_rmse": 0.5,
+            "cached_full_self_consistent": True,
+            "cached_full_top1_diagnostic_fraction": 1.0,
+        }
+
+    monkeypatch.setattr(
+        MODULE.residual,
+        "evaluate_trajectory_gate",
+        fake_gate,
+    )
+    evaluator = MODULE.CachedTrajectoryEvaluator(
+        payload=payload,
+        capture_config=MODULE.Lfm2CircuitTraceCaptureConfig(),
+        gate_config=MODULE.residual.TrajectoryGateConfig(),
+        final_cache_root=tmp_path / "final",
+        reload_cache_root=tmp_path / "reload",
+    )
+    model = SimpleNamespace(
+        config=SimpleNamespace(
+            _neural_forge_dense_ordered_source_spans="0,1;2",
+            _neural_forge_dense_target_layer_types="full_attention,conv",
+        )
+    )
+
+    decision = evaluator._evaluate_model(
+        model,
+        phase="accepted_in_memory_child",
+        cache_root=tmp_path / "final",
+    )
+
+    assert decision.accepted is False
+    mapping = evaluator.events[0]["residual_trajectory_mapping"]
+    assert mapping["mapping_binding"] == "authenticated_dense_child_config"
+    assert mapping["entries"][0]["cross_width"] is True
+
+
 class _Accept:
     def evaluate(self, _context):
         return MODULE.FoldDecision.accept("test gate")
@@ -803,6 +1118,10 @@ def test_wiring_uses_automatic_lfm_catalog_real_bridge_and_disk_snapshots(
     assert wiring.system.ledger is ledger
     assert wiring.target_adapter.ledger is ledger
     assert resources.ledger is ledger
+    assert wiring.system.topology_catalogs is not None
+    assert wiring.system.topology_catalogs.catalog_ids == (
+        MODULE.Lfm2DenseTargetTopologyCatalog().catalog_id,
+    )
 
 
 def test_wiring_automatically_plans_dense_blank_from_parent_parameter_budget(
@@ -820,6 +1139,28 @@ def test_wiring_automatically_plans_dense_blank_from_parent_parameter_budget(
         receipt_path=tmp_path / "receipt.json",
         compression_ratio=2.0,
         dense_maximum_candidates=8,
+        dense_run_closed_loop=True,
+        dense_macro_cell_attractor_gate_enabled=True,
+        dense_macro_cell_attractor_maximum_records=5,
+        dense_macro_cell_attractor_maximum_steps=7,
+        dense_macro_cell_attractor_maximum_entropy_regression=0.11,
+        dense_macro_cell_attractor_maximum_repetition_regression=0.12,
+        dense_macro_cell_attractor_maximum_dominance_regression=0.13,
+        dense_macro_cell_attractor_maximum_eos_regression=0.14,
+        dense_macro_cell_attractor_collapse_entropy_threshold=0.15,
+        dense_macro_cell_attractor_collapse_repetition_threshold=0.75,
+        dense_macro_cell_attractor_collapse_dominance_threshold=0.76,
+        dense_macro_cell_attractor_maximum_new_collapsed_records=2,
+        dense_attention_consumer_mode="coupled-value-output",
+        dense_attention_score_candidate_gate_enabled=True,
+        dense_attention_score_top_k=6,
+        dense_attention_score_margin_floor_fraction=0.4,
+        dense_attention_score_minimum_top1_key_agreement_fraction=0.81,
+        dense_attention_score_minimum_top_k_pair_order_agreement_fraction=0.82,
+        dense_attention_score_minimum_winner_margin_sign_agreement_fraction=0.83,
+        dense_attention_score_minimum_relative_margin_floor_retention_fraction=0.84,
+        dense_attention_score_maximum_softmax_fisher_error=0.12,
+        dense_attention_score_maximum_js_divergence=0.13,
         dense_vocabulary_margin_observability=True,
         dense_vocabulary_margin_top_k=11,
         dense_vocabulary_margin_floor_fraction=0.2,
@@ -905,6 +1246,75 @@ def test_wiring_automatically_plans_dense_blank_from_parent_parameter_budget(
     )
     resources = wiring.stack_adapter.resources
     assert resources.dense_fold_config.residual_basis_mode == "circuit_balanced"
+    assert resources.dense_fold_config.run_closed_loop is True
+    attractor = (
+        resources.dense_fold_config.macro_cell_attractor_gate_config
+    )
+    assert isinstance(
+        attractor,
+        MODULE.Lfm2MacroCellAttractorGateConfig,
+    )
+    assert attractor.maximum_records == 5
+    assert attractor.maximum_steps == 7
+    assert (
+        attractor.maximum_entropy_parent_distance_regression
+        == pytest.approx(0.11)
+    )
+    assert (
+        attractor.maximum_repetition_excess_regression
+        == pytest.approx(0.12)
+    )
+    assert (
+        attractor.maximum_dominant_token_excess_regression
+        == pytest.approx(0.13)
+    )
+    assert (
+        attractor.maximum_eos_position_error_regression
+        == pytest.approx(0.14)
+    )
+    assert attractor.collapse_entropy_threshold == pytest.approx(0.15)
+    assert (
+        attractor.collapse_repetition_share_threshold
+        == pytest.approx(0.75)
+    )
+    assert (
+        attractor.collapse_dominant_token_share_threshold
+        == pytest.approx(0.76)
+    )
+    assert attractor.maximum_new_collapsed_records == 2
+    score_config = resources.dense_fold_config.closed_loop_adapter_config
+    assert score_config.attention_consumer_mode == "coupled-value-output"
+    assert score_config.attention_score_candidate_gate_enabled
+    assert score_config.attention_score_top_k == 6
+    assert score_config.attention_score_margin_floor_fraction == pytest.approx(
+        0.4
+    )
+    assert (
+        score_config.attention_score_minimum_top1_key_agreement_fraction
+        == pytest.approx(0.81)
+    )
+    assert (
+        score_config
+        .attention_score_minimum_top_k_pair_order_agreement_fraction
+        == pytest.approx(0.82)
+    )
+    assert (
+        score_config
+        .attention_score_minimum_winner_margin_sign_agreement_fraction
+        == pytest.approx(0.83)
+    )
+    assert (
+        score_config
+        .attention_score_minimum_relative_margin_floor_retention_fraction
+        == pytest.approx(0.84)
+    )
+    assert (
+        score_config.attention_score_maximum_softmax_fisher_error
+        == pytest.approx(0.12)
+    )
+    assert score_config.attention_score_maximum_js_divergence == pytest.approx(
+        0.13
+    )
     assert resources.dense_fold_config.vocabulary_margin_observability is True
     assert resources.dense_fold_config.vocabulary_margin_top_k == 11
     assert (
@@ -939,6 +1349,126 @@ def test_wiring_automatically_plans_dense_blank_from_parent_parameter_budget(
         .vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction
         == pytest.approx(0.74)
     )
+    topology_catalog = wiring.system.topology_catalogs.select(
+        parent_graph,
+        target_family="lfm2",
+        target_modalities=("text",),
+    )
+    assert topology_catalog.minimum_hidden_size == 32
+    assert topology_catalog.compiler_capabilities == (
+        MODULE.Lfm2DenseTargetTopologyCatalog().compiler_capabilities
+    )
+    assert wiring.budget_plan.frontier.diagnostics[
+        "compiler_capability_selection_fail_closed"
+    ]
+    assert selected.compiler_executable
+    assert selected.missing_compiler_capabilities == ()
+
+
+def test_wiring_plans_h8_at_roughly_250x_without_weakening_capability_gate(
+    tmp_path,
+) -> None:
+    config = MODULE.ProductionLfm2CatalogConfig(
+        parent_model=tmp_path / "parent",
+        calibration=tmp_path / "calibration.json",
+        cached_parent_outputs=tmp_path / "parent-outputs.json",
+        cached_parent_outputs_sha256="d" * 64,
+        cache_root=tmp_path / "cache",
+        snapshot_root=tmp_path / "snapshots",
+        publish_destination=tmp_path / "published",
+        ledger_path=tmp_path / "ledger.jsonl",
+        receipt_path=tmp_path / "receipt.json",
+        compression_ratio=250.0,
+        dense_maximum_candidates=16,
+        dense_minimum_hidden_size=8,
+    )
+    payload = MODULE.ProductionParentCachePayload(
+        cache=_Cache(),
+        rows=_Rows(),
+        calibration_batches=(),
+        calibration_splits=(),
+        partition=SimpleNamespace(
+            selection_indices=(0,),
+            fit_indices=(1,),
+            validation_indices=(2,),
+        ),
+    )
+    parent = transformers.Lfm2ForCausalLM(
+        transformers.Lfm2Config(
+            vocab_size=64,
+            hidden_size=128,
+            intermediate_size=1024,
+            num_hidden_layers=8,
+            num_attention_heads=8,
+            num_key_value_heads=4,
+            head_dim=16,
+            layer_types=[
+                "conv",
+                "full_attention",
+                "conv",
+                "full_attention",
+                "conv",
+                "full_attention",
+                "conv",
+                "full_attention",
+            ],
+            conv_L_cache=3,
+            block_auto_adjust_ff_dim=False,
+            tie_word_embeddings=True,
+        )
+    )
+    parent_graph = MODULE.inspect_model_circuits(
+        parent,
+        model_name="parent",
+        tokenizer_fingerprint="c" * 64,
+    )
+
+    wiring = MODULE.build_production_catalog_wiring(
+        config,
+        parent_cache_payload=payload,
+        parent_graph=parent_graph,
+        tokenizer_fingerprint="c" * 64,
+        evidence_builder=lambda _request: None,
+        final_evaluator=_Accept(),
+        model_saver=lambda _model, _path: None,
+        model_loader=lambda _path: object(),
+        fresh_reload_evaluator=lambda _model: True,
+        ledger=MODULE.ExperimentLedger(),
+        device="cpu",
+        dtype=torch.float32,
+    )
+
+    assert wiring.budget_plan is not None
+    selected_rank = wiring.budget_plan.target_certificate.selected_candidate_rank
+    selected = wiring.budget_plan.frontier.candidates[selected_rank]
+    selected_configuration = dict(selected.configuration)
+    topology_catalog = wiring.system.topology_catalogs.select(
+        parent_graph,
+        target_family="lfm2",
+        target_modalities=("text",),
+    )
+
+    assert config.identity()["target"]["dense_minimum_hidden_size"] == 8
+    assert topology_catalog.minimum_hidden_size == 8
+    assert selected_configuration["hidden_size"] == 8
+    assert dict(wiring.target_request.configuration)["hidden_size"] == 8
+    assert wiring.target_request.exact_unique_parameters <= (
+        parent_graph.unique_parameter_count // 250
+    )
+    assert selected.compiler_executable
+    assert selected.missing_compiler_capabilities == ()
+    assert topology_catalog.compiler_capabilities == (
+        MODULE.Lfm2DenseTargetTopologyCatalog().compiler_capabilities
+    )
+    assert selected.required_compiler_capabilities == (
+        topology_catalog.compiler_capabilities
+    )
+    assert wiring.budget_plan.frontier.diagnostics[
+        "minimum_hidden_size"
+    ] == 8
+    assert wiring.budget_plan.frontier.diagnostics[
+        "compiler_capability_selection_fail_closed"
+    ]
 
 
 def test_wiring_emits_explicit_hybrid_method_and_ordered_span_request(
@@ -1177,6 +1707,53 @@ def test_sealed_parent_cache_never_calls_builder_or_parent_forward(
     assert receipt_fields["parent_trace_regeneration_after_cache"] == 0
 
 
+def test_tokenizer_facing_parent_accepts_padded_model_vocabulary() -> None:
+    parent = _sealed_test_parent(seed=703)
+    tokenizer = _FixedVocabularyTokenizer(29)
+    batches = (
+        {
+            "input_ids": torch.tensor([[1, 2, 28]], dtype=torch.long),
+            "forced_decode_ids": torch.tensor([[7]], dtype=torch.long),
+        },
+    )
+
+    MODULE._validate_tokenizer_facing_parent(parent, tokenizer, batches)
+
+
+def test_tokenizer_facing_parent_rejects_tokenizer_beyond_model_rows() -> None:
+    parent = _sealed_test_parent(seed=704)
+    tokenizer = _FixedVocabularyTokenizer(32)
+    batches = (
+        {
+            "input_ids": torch.tensor([[1, 2, 3]], dtype=torch.long),
+            "forced_decode_ids": torch.tensor([[7]], dtype=torch.long),
+        },
+    )
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="Tokenizer vocabulary exceeds",
+    ):
+        MODULE._validate_tokenizer_facing_parent(parent, tokenizer, batches)
+
+
+def test_tokenizer_facing_parent_rejects_cache_id_beyond_model_rows() -> None:
+    parent = _sealed_test_parent(seed=705)
+    tokenizer = _FixedVocabularyTokenizer(31)
+    batches = (
+        {
+            "input_ids": torch.tensor([[1, 2, 31]], dtype=torch.long),
+            "forced_decode_ids": torch.tensor([[7]], dtype=torch.long),
+        },
+    )
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="row capacity",
+    ):
+        MODULE._validate_tokenizer_facing_parent(parent, tokenizer, batches)
+
+
 def test_sealed_parent_cache_ignores_mismatched_calibration_for_splits(
     tmp_path,
     monkeypatch,
@@ -1381,6 +1958,120 @@ def test_failed_receipt_explicitly_records_candidate_gate_policy(
     ) == receipt
 
 
+def test_failed_receipt_records_macro_cell_attractor_policy(
+    tmp_path,
+) -> None:
+    config = MODULE.ProductionLfm2CatalogConfig(
+        parent_model=tmp_path / "missing-parent",
+        calibration=tmp_path / "missing-calibration.json",
+        cached_parent_outputs=tmp_path / "missing-parent-outputs.json",
+        cached_parent_outputs_sha256="d" * 64,
+        cache_root=tmp_path / "cache",
+        snapshot_root=tmp_path / "snapshots",
+        publish_destination=tmp_path / "published",
+        ledger_path=tmp_path / "ledger.jsonl",
+        receipt_path=tmp_path / "receipt.json",
+        compression_ratio=10.0,
+        dense_run_closed_loop=True,
+        dense_macro_cell_attractor_gate_enabled=True,
+        dense_macro_cell_attractor_maximum_records=5,
+        dense_macro_cell_attractor_maximum_steps=7,
+        dense_macro_cell_attractor_maximum_entropy_regression=0.11,
+        dense_macro_cell_attractor_maximum_repetition_regression=0.12,
+        dense_macro_cell_attractor_maximum_dominance_regression=0.13,
+        dense_macro_cell_attractor_maximum_eos_regression=0.14,
+        dense_macro_cell_attractor_collapse_entropy_threshold=0.15,
+        dense_macro_cell_attractor_collapse_repetition_threshold=0.75,
+        dense_macro_cell_attractor_collapse_dominance_threshold=0.76,
+        dense_macro_cell_attractor_maximum_new_collapsed_records=2,
+        device="cpu",
+        dtype="float32",
+    )
+
+    receipt = MODULE.run_production_catalog(config)
+    policy = receipt["macro_cell_attractor_gate_policy"]
+
+    assert receipt["status"] == "failed_closed"
+    assert policy["enabled"]
+    assert policy["maximum_records"] == 5
+    assert policy["maximum_steps"] == 7
+    assert (
+        policy["maximum_entropy_parent_distance_regression"]
+        == pytest.approx(0.11)
+    )
+    assert policy["maximum_repetition_excess_regression"] == pytest.approx(
+        0.12
+    )
+    assert (
+        policy["maximum_dominant_token_excess_regression"]
+        == pytest.approx(0.13)
+    )
+    assert (
+        policy["maximum_eos_position_error_regression"]
+        == pytest.approx(0.14)
+    )
+    assert policy["maximum_new_collapsed_records"] == 2
+    assert policy["parent_outputs_cached"]
+    assert policy["child_only_free_rollout"]
+    assert policy["exact_token_match_is_diagnostic_only"]
+    assert policy["training_steps"] == 0
+
+
+def test_failed_receipt_records_attention_score_policy(tmp_path) -> None:
+    config = MODULE.ProductionLfm2CatalogConfig(
+        parent_model=tmp_path / "missing-parent",
+        calibration=tmp_path / "missing-calibration.json",
+        cached_parent_outputs=tmp_path / "missing-parent-outputs.json",
+        cached_parent_outputs_sha256="d" * 64,
+        cache_root=tmp_path / "cache",
+        snapshot_root=tmp_path / "snapshots",
+        publish_destination=tmp_path / "published",
+        ledger_path=tmp_path / "ledger.jsonl",
+        receipt_path=tmp_path / "receipt.json",
+        compression_ratio=10.0,
+        dense_run_closed_loop=True,
+        dense_attention_consumer_mode="coupled-value-output",
+        dense_attention_score_candidate_gate_enabled=True,
+        dense_attention_score_top_k=6,
+        dense_attention_score_margin_floor_fraction=0.4,
+        dense_attention_score_minimum_top1_key_agreement_fraction=0.81,
+        dense_attention_score_minimum_top_k_pair_order_agreement_fraction=0.82,
+        dense_attention_score_minimum_winner_margin_sign_agreement_fraction=0.83,
+        dense_attention_score_minimum_relative_margin_floor_retention_fraction=0.84,
+        dense_attention_score_maximum_softmax_fisher_error=0.12,
+        dense_attention_score_maximum_js_divergence=0.13,
+        device="cpu",
+        dtype="float32",
+    )
+
+    receipt = MODULE.run_production_catalog(config)
+    policy = receipt["attention_score_candidate_gate_policy"]
+
+    assert receipt["status"] == "failed_closed"
+    assert policy["enabled"]
+    assert policy["consumer_mode"] == "coupled-value-output"
+    assert policy["top_k"] == 6
+    assert policy["relative_margin_floor"] == pytest.approx(0.4)
+    assert policy["minimum_top1_key_agreement_fraction"] == pytest.approx(
+        0.81
+    )
+    assert policy[
+        "minimum_top_k_pair_order_agreement_fraction"
+    ] == pytest.approx(0.82)
+    assert policy[
+        "minimum_winner_margin_sign_agreement_fraction"
+    ] == pytest.approx(0.83)
+    assert policy[
+        "minimum_relative_margin_floor_retention_fraction"
+    ] == pytest.approx(0.84)
+    assert policy["maximum_softmax_fisher_error"] == pytest.approx(0.12)
+    assert policy["maximum_js_divergence"] == pytest.approx(0.13)
+    assert policy["masked_keys_excluded"]
+    assert policy["numeric_weight_matching_used"] is False
+    assert policy["parent_forward_calls"] == 0
+    assert policy["training_steps"] == 0
+
+
 def test_tiny_real_local_catalog_folds_publishes_and_reloads(
     tmp_path,
 ) -> None:
@@ -1543,6 +2234,7 @@ def test_tiny_real_local_catalog_folds_publishes_and_reloads(
 
     assert receipt["status"] == "complete"
     assert receipt["target"]["exact_unique_parameters"] == target_count
+    assert receipt["target"]["dense_minimum_hidden_size"] == 32
     assert receipt["target"]["parameters_removed"] > 0
     assert receipt["target"]["hub_loader_used"] is False
     assert receipt["fold"]["snapshot_backend"] == "disk"

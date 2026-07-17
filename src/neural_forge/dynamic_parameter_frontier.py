@@ -39,6 +39,11 @@ from .dynamic_circuit_ir import (
     ModelCircuitGraph,
     canonical_sha256,
 )
+from .hf_tokenizer_bridge import (
+    StrictTokenizerBridgeArtifact,
+    TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY,
+    strict_tokenizer_bridge_configuration,
+)
 
 
 SCHEMA = "neural-forge-dense-parameter-frontier-v1"
@@ -1819,6 +1824,7 @@ class Lfm2DenseTargetTopologyCatalog:
     compiler_capabilities: tuple[str, ...] = (
         LFM2_CURRENT_COMPILER_CAPABILITIES
     )
+    tokenizer_bridge_artifact: StrictTokenizerBridgeArtifact | None = None
 
     def __post_init__(self) -> None:
         _positive_int(self.minimum_hidden_size, "minimum_hidden_size")
@@ -1828,14 +1834,33 @@ class Lfm2DenseTargetTopologyCatalog:
             raise DynamicParameterFrontierError(
                 "minimum_hidden_size must be a hidden_size_multiple."
             )
-        object.__setattr__(
-            self,
-            "compiler_capabilities",
-            _capabilities(
-                self.compiler_capabilities,
-                "LFM2 compiler capability",
-            ),
+        capabilities = _capabilities(
+            self.compiler_capabilities,
+            "LFM2 compiler capability",
         )
+        bridge = self.tokenizer_bridge_artifact
+        if bridge is None:
+            if CAP_TOKENIZER_BRIDGE in capabilities:
+                raise DynamicParameterFrontierError(
+                    "CAP_TOKENIZER_BRIDGE requires an explicit verified strict "
+                    "tokenizer bridge artifact."
+                )
+        else:
+            if not isinstance(bridge, StrictTokenizerBridgeArtifact):
+                raise DynamicParameterFrontierError(
+                    "tokenizer_bridge_artifact must be a "
+                    "StrictTokenizerBridgeArtifact."
+                )
+            try:
+                bridge.verify_files()
+            except ValueError as exc:
+                raise DynamicParameterFrontierError(
+                    "tokenizer_bridge_artifact failed verification."
+                ) from exc
+            capabilities = tuple(
+                sorted({*capabilities, CAP_TOKENIZER_BRIDGE})
+            )
+        object.__setattr__(self, "compiler_capabilities", capabilities)
 
     def supports(
         self,
@@ -1874,6 +1899,31 @@ class Lfm2DenseTargetTopologyCatalog:
                 "target_vocabulary_size",
             )
         )
+        tokenizer_bridge_configuration: dict[str, str] = {}
+        if target_vocab != geometry.vocab_size:
+            bridge = self.tokenizer_bridge_artifact
+            if bridge is not None:
+                try:
+                    bridge.verify_files()
+                except ValueError as exc:
+                    raise DynamicParameterFrontierError(
+                        "Tokenizer bridge artifact changed after catalog "
+                        "registration."
+                    ) from exc
+                profile = bridge.transport_profile
+                if (
+                    parent_graph.tokenizer_fingerprint
+                    != bridge.donor_tokenizer_semantics_sha256
+                    or profile.donor_row_capacity != geometry.vocab_size
+                    or profile.target_row_capacity != target_vocab
+                ):
+                    raise DynamicParameterFrontierError(
+                        "Tokenizer bridge artifact does not match the inspected "
+                        "parent semantics or requested vocabulary capacities."
+                    )
+                tokenizer_bridge_configuration = (
+                    strict_tokenizer_bridge_configuration(bridge)
+                )
         if match_policy not in _POLICIES:
             raise DynamicParameterFrontierError("Unknown budget match policy.")
         layouts = _lfm2_layouts(geometry.layer_types)
@@ -2122,6 +2172,7 @@ class Lfm2DenseTargetTopologyCatalog:
                                 "_neural_forge_tokenizer_bridge_required": (
                                     target_vocab != geometry.vocab_size
                                 ),
+                                **tokenizer_bridge_configuration,
                             }
                         )
                         identity = canonical_sha256(
@@ -2300,7 +2351,16 @@ class Lfm2DenseTargetTopologyCatalog:
             "tokenizer_bridge_required_for_requested_budget": (
                 dense_token_floor > requested
             ),
-            "tokenizer_mapping_implemented": False,
+            "tokenizer_mapping_implemented": bool(
+                tokenizer_bridge_configuration
+            ),
+            "tokenizer_bridge_artifact_sha256": (
+                None
+                if not tokenizer_bridge_configuration
+                else tokenizer_bridge_configuration[
+                    TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY
+                ]
+            ),
             "match_policy": match_policy,
             "topologies_considered": considered,
             "minimum_representable_unique_parameters": minimum_representable,

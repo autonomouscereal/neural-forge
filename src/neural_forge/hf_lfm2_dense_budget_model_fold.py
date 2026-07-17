@@ -32,7 +32,6 @@ from .dynamic_closed_loop_fold import (
     ClosedLoopCompilerConfig,
 )
 from .dynamic_fold_executor import (
-    DynamicFoldExecutionError,
     FoldDecision,
     FoldEvaluationContext,
     FoldEvidence,
@@ -42,7 +41,6 @@ from .dynamic_fold_executor import (
 )
 from .dynamic_fold_planner import DynamicFoldPlan, FoldAction
 from .dynamic_lfm2_adapter import (
-    DynamicLfm2AdapterError,
     Lfm2DenseBudgetedSelectedTarget,
     encode_lfm2_layer_types,
     encode_lfm2_source_spans,
@@ -63,7 +61,15 @@ from .hf_lfm2_dynamic_closed_loop_adapter import (
     Lfm2DynamicClosedLoopAdapter,
     Lfm2DynamicClosedLoopAdapterConfig,
 )
+from .hf_lfm2_macro_cell_attractor_gate import (
+    Lfm2MacroCellAttractorGate,
+    Lfm2MacroCellAttractorGateConfig,
+)
 from .hf_lfm2_weight_complete_basis import build_lfm2_weight_complete_basis
+from .hf_tokenizer_bridge import (
+    StrictTokenizerBridgeArtifact,
+    compile_strict_vocabulary_operators,
+)
 
 
 DENSE_BUDGET_MODEL_METHOD = "lfm2_dense_budget_residual_attention_model"
@@ -394,6 +400,9 @@ class Lfm2DenseBudgetFoldConfig:
     closed_loop_compiler_config: ClosedLoopCompilerConfig = field(
         default_factory=ClosedLoopCompilerConfig
     )
+    macro_cell_attractor_gate_config: (
+        Lfm2MacroCellAttractorGateConfig | None
+    ) = None
 
     def __post_init__(self) -> None:
         mode = _text(self.residual_basis_mode, "residual_basis_mode")
@@ -528,6 +537,23 @@ class Lfm2DenseBudgetFoldConfig:
         ):
             raise Lfm2DenseBudgetFoldError(
                 "closed_loop_compiler_config has the wrong type."
+            )
+        if (
+            self.macro_cell_attractor_gate_config is not None
+            and not isinstance(
+                self.macro_cell_attractor_gate_config,
+                Lfm2MacroCellAttractorGateConfig,
+            )
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "macro_cell_attractor_gate_config has the wrong type."
+            )
+        if (
+            self.macro_cell_attractor_gate_config is not None
+            and not self.run_closed_loop
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "macro-cell attractor gating requires run_closed_loop=True."
             )
 
 
@@ -846,6 +872,7 @@ def _fold_dense_blank_from_parent(
     parent_model: Any,
     child_model: Any,
     mapping: Any,
+    tokenizer_bridge_artifact: StrictTokenizerBridgeArtifact | None = None,
 ) -> dict[str, Any]:
     """Overwrite every learned child tensor from the complete parent state."""
 
@@ -908,32 +935,98 @@ def _fold_dense_blank_from_parent(
     with torch.no_grad():
         source_embedding = parent_model.get_input_embeddings().weight
         target_embedding = child_model.get_input_embeddings().weight
-        _copy_parameter(
-            target_embedding,
-            mapping.fold_consumer_weight(
-                source_embedding.detach().to(device="cpu", dtype=torch.float64)
-            ),
-            name="model.embed_tokens.weight",
-            written=written,
-        )
         source_head = parent_model.get_output_embeddings().weight
         target_head = child_model.get_output_embeddings().weight
-        if id(target_head) == id(target_embedding):
-            if id(source_head) != id(source_embedding):
+        target_tied = id(target_head) == id(target_embedding)
+        source_tied = id(source_head) == id(source_embedding)
+        vocabulary_transport_report: Mapping[str, Any] | None = None
+        if tokenizer_bridge_artifact is not None:
+            if target_tied and not source_tied:
                 raise Lfm2DenseBudgetFoldError(
-                    "A tied dense target cannot merge an untied source token "
-                    "interface without an explicit tokenizer/output bridge."
+                    "A tied dense target cannot exactly represent an untied "
+                    "source token interface."
                 )
-            written.add(id(target_head))
-        else:
-            _copy_parameter(
-                target_head,
-                mapping.fold_consumer_weight(
-                    source_head.detach().to(device="cpu", dtype=torch.float64)
+            transported = compile_strict_vocabulary_operators(
+                source_embedding,
+                source_head,
+                tokenizer_bridge_artifact,
+                mapping,
+                mapping,
+                source_lm_head_bias=getattr(
+                    parent_model.get_output_embeddings(),
+                    "bias",
+                    None,
                 ),
-                name="lm_head.weight",
+                require_tied_target=target_tied,
+            )
+            _copy_parameter(
+                target_embedding,
+                transported.embedding_weight,
+                name="model.embed_tokens.weight",
                 written=written,
             )
+            if target_tied:
+                written.add(id(target_head))
+            else:
+                _copy_parameter(
+                    target_head,
+                    transported.lm_head_weight,
+                    name="lm_head.weight",
+                    written=written,
+                )
+            target_bias = getattr(
+                child_model.get_output_embeddings(),
+                "bias",
+                None,
+            )
+            if target_bias is not None:
+                if transported.lm_head_bias is None:
+                    raise Lfm2DenseBudgetFoldError(
+                        "Bridged target LM-head bias lacks transported source "
+                        "values."
+                    )
+                _copy_parameter(
+                    target_bias,
+                    transported.lm_head_bias,
+                    name="lm_head.bias",
+                    written=written,
+                )
+            elif transported.lm_head_bias is not None:
+                raise Lfm2DenseBudgetFoldError(
+                    "Bridged source LM-head bias has no target parameter."
+                )
+            vocabulary_transport_report = dict(transported.report)
+        else:
+            _copy_parameter(
+                target_embedding,
+                mapping.fold_consumer_weight(
+                    source_embedding.detach().to(
+                        device="cpu",
+                        dtype=torch.float64,
+                    )
+                ),
+                name="model.embed_tokens.weight",
+                written=written,
+            )
+            if target_tied:
+                if not source_tied:
+                    raise Lfm2DenseBudgetFoldError(
+                        "A tied dense target cannot merge an untied source token "
+                        "interface without an explicit tokenizer/output bridge."
+                    )
+                written.add(id(target_head))
+            else:
+                _copy_parameter(
+                    target_head,
+                    mapping.fold_consumer_weight(
+                        source_head.detach().to(
+                            device="cpu",
+                            dtype=torch.float64,
+                        )
+                    ),
+                    name="lm_head.weight",
+                    written=written,
+                )
 
         for layer_index, (source_layer, target_layer) in enumerate(
             zip(source_layers, target_layers, strict=True)
@@ -1273,6 +1366,8 @@ def _fold_dense_blank_from_parent(
         "backward_calls": 0,
         "parent_forward_calls": 0,
         "parent_trace_regeneration_calls": 0,
+        "tokenizer_bridge_used": tokenizer_bridge_artifact is not None,
+        "strict_vocabulary_operator_transport": vocabulary_transport_report,
     }
 
 
@@ -1405,6 +1500,7 @@ class Lfm2DenseBudgetModelOperator:
         trace_cache: Lfm2CircuitTraceCache,
         *,
         config: Lfm2DenseBudgetFoldConfig | None = None,
+        tokenizer_bridge_artifact: StrictTokenizerBridgeArtifact | None = None,
     ) -> None:
         if not isinstance(
             selected_target,
@@ -1424,6 +1520,53 @@ class Lfm2DenseBudgetModelOperator:
             raise Lfm2DenseBudgetFoldError(
                 "config must be Lfm2DenseBudgetFoldConfig."
             )
+        if selected_target.tokenizer_bridge_required:
+            if not isinstance(
+                tokenizer_bridge_artifact,
+                StrictTokenizerBridgeArtifact,
+            ):
+                raise Lfm2DenseBudgetFoldError(
+                    "Bridged dense target requires its explicit strict "
+                    "tokenizer bridge artifact."
+                )
+            try:
+                tokenizer_bridge_artifact.verify_files()
+            except ValueError as exc:
+                raise Lfm2DenseBudgetFoldError(
+                    "Dense tokenizer bridge artifact failed verification."
+                ) from exc
+            if (
+                tokenizer_bridge_artifact.artifact_sha256
+                != selected_target.tokenizer_bridge_artifact_sha256
+                or tokenizer_bridge_artifact.profile_fingerprint
+                != selected_target.tokenizer_transport_profile_sha256
+                or tokenizer_bridge_artifact.donor_tokenizer_semantics_sha256
+                != selected_target.parent_tokenizer_semantics_sha256
+                or tokenizer_bridge_artifact.target_tokenizer_semantics_sha256
+                != selected_target.child_tokenizer_semantics_sha256
+                or tokenizer_bridge_artifact.transport_profile.target_row_capacity
+                != selected_target.vocabulary_size
+            ):
+                raise Lfm2DenseBudgetFoldError(
+                    "Dense tokenizer bridge artifact differs from selected "
+                    "target metadata."
+                )
+            if (
+                self.config.run_closed_loop
+                or self.config.vocabulary_margin_candidate_gate_enabled
+                or self.config.macro_cell_attractor_gate_config is not None
+            ):
+                raise Lfm2DenseBudgetFoldError(
+                    "Bridged dense folding requires sealed child-tokenizer "
+                    "trace retokenization before closed-loop or candidate "
+                    "replay can run."
+                )
+        elif tokenizer_bridge_artifact is not None:
+            raise Lfm2DenseBudgetFoldError(
+                "Unbridged dense target received an unused tokenizer bridge "
+                "artifact."
+            )
+        self.tokenizer_bridge_artifact = tokenizer_bridge_artifact
 
     def _validate_action(
         self,
@@ -1447,6 +1590,8 @@ class Lfm2DenseBudgetModelOperator:
         if (
             parent_graph.fingerprint
             != self.selected_target.source_graph_fingerprint
+            or parent_graph.tokenizer_fingerprint
+            != self.selected_target.parent_tokenizer_semantics_sha256
             or set(source.node_ids)
             != {node.node_id for node in parent_graph.nodes}
             or set(action.target_node_ids)
@@ -1483,6 +1628,24 @@ class Lfm2DenseBudgetModelOperator:
             "target_key_value_heads": self.selected_target.key_value_heads,
             "target_head_dim": self.selected_target.head_dim,
         }
+        if self.selected_target.tokenizer_bridge_required:
+            expected.update(
+                {
+                    "tokenizer_bridge_required": True,
+                    "tokenizer_bridge_artifact_sha256": (
+                        self.selected_target.tokenizer_bridge_artifact_sha256
+                    ),
+                    "tokenizer_transport_profile_sha256": (
+                        self.selected_target.tokenizer_transport_profile_sha256
+                    ),
+                    "parent_tokenizer_semantics_sha256": (
+                        self.selected_target.parent_tokenizer_semantics_sha256
+                    ),
+                    "child_tokenizer_semantics_sha256": (
+                        self.selected_target.child_tokenizer_semantics_sha256
+                    ),
+                }
+            )
         if any(configuration.get(name) != value for name, value in expected.items()):
             raise Lfm2DenseBudgetFoldError(
                 "Dense action topology differs from its selected catalog target."
@@ -1558,10 +1721,21 @@ class Lfm2DenseBudgetModelOperator:
                 parent_model,
                 context.child_model,
                 basis,
+                self.tokenizer_bridge_artifact,
             )
             initial_state = context.child_state_fingerprint
             closed_loop_report: Mapping[str, Any] | None = None
             if self.config.run_closed_loop:
+                macro_cell_attractor_gate = (
+                    None
+                    if self.config.macro_cell_attractor_gate_config is None
+                    else Lfm2MacroCellAttractorGate(
+                        self.trace_cache,
+                        config=(
+                            self.config.macro_cell_attractor_gate_config
+                        ),
+                    )
+                )
                 adapter = Lfm2DynamicClosedLoopAdapter(
                     source_model=parent_model,
                     child_model=context.child_model,
@@ -1569,6 +1743,7 @@ class Lfm2DenseBudgetModelOperator:
                     coordinate_map=basis,
                     initial_child_basis_sha256=basis.map_sha256,
                     config=self.config.closed_loop_adapter_config,
+                    macro_cell_attractor_gate=macro_cell_attractor_gate,
                 )
                 closed_loop_report = ChildClosedLoopCompiler(
                     adapter,
@@ -1606,6 +1781,15 @@ class Lfm2DenseBudgetModelOperator:
                 "method_id": self.method_id,
                 "source_parent": source_name,
                 "catalog_id": self.selected_target.catalog_id,
+                "tokenizer_bridge_required": (
+                    self.selected_target.tokenizer_bridge_required
+                ),
+                "tokenizer_bridge_artifact_sha256": (
+                    self.selected_target.tokenizer_bridge_artifact_sha256
+                ),
+                "tokenizer_transport_profile_sha256": (
+                    self.selected_target.tokenizer_transport_profile_sha256
+                ),
                 "exact_target_unique_parameters": (
                     self.selected_target.exact_target_unique_parameters
                 ),
@@ -1615,6 +1799,9 @@ class Lfm2DenseBudgetModelOperator:
                 "initial_structural_fold": initial_report,
                 "initial_structural_state_fingerprint": initial_state,
                 "closed_loop_enabled": self.config.run_closed_loop,
+                "macro_cell_attractor_gate_enabled": (
+                    self.config.macro_cell_attractor_gate_config is not None
+                ),
                 "closed_loop": (
                     None if closed_loop_report is None else dict(closed_loop_report)
                 ),

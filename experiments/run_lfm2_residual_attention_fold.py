@@ -1928,10 +1928,54 @@ def _residual_metrics(parent: Tensor, child: Tensor) -> dict[str, float]:
         .to(device="cpu", dtype=torch.float64)
         .reshape(int(child.shape[0]), -1)
     )
-    if left.shape != right.shape:
+    if int(left.shape[0]) != int(right.shape[0]):
         raise Lfm2ResidualAttentionRunnerError(
-            "Parent and child residual trace shapes differ."
+            "Parent and child residual trace row counts differ."
         )
+    if int(left.shape[1]) != int(right.shape[1]):
+        centered_left = left - left.mean(dim=0, keepdim=True)
+        centered_right = right - right.mean(dim=0, keepdim=True)
+
+        def linear_cka(
+            left_rows: Tensor,
+            right_rows: Tensor,
+        ) -> tuple[float, float]:
+            cross_energy = torch.sum(
+                (left_rows.T @ right_rows).square()
+            )
+            left_energy = torch.sum((left_rows.T @ left_rows).square())
+            right_energy = torch.sum((right_rows.T @ right_rows).square())
+            denominator = torch.sqrt(left_energy * right_energy)
+            return float(cross_energy.item()), float(denominator.item())
+
+        numerator, denominator = linear_cka(
+            centered_left,
+            centered_right,
+        )
+        comparison_mode = "cross_width_centered_linear_cka"
+        if denominator <= 1e-24:
+            numerator, denominator = linear_cka(left, right)
+            comparison_mode = "cross_width_uncentered_linear_cka"
+        if denominator <= 1e-24:
+            left_zero = bool(torch.count_nonzero(left).item() == 0)
+            right_zero = bool(torch.count_nonzero(right).item() == 0)
+            cka = 1.0 if left_zero and right_zero else 0.0
+        else:
+            cka = min(1.0, max(0.0, numerator / denominator))
+        normalized_gram_distance = math.sqrt(max(0.0, 2.0 - 2.0 * cka))
+        return {
+            # Preserve the legacy trajectory-gate field names while making
+            # their cross-width representation meaning explicit.
+            "rmse": normalized_gram_distance,
+            "target_rms": 1.0,
+            "relative_rmse": normalized_gram_distance,
+            "mean_cosine": cka,
+            "comparison_mode": comparison_mode,
+            "parent_width": int(left.shape[1]),
+            "child_width": int(right.shape[1]),
+            "centered_linear_cka": cka,
+            "normalized_gram_distance": normalized_gram_distance,
+        }
     error = right - left
     rmse = torch.sqrt(torch.mean(error.square()))
     target_rms = torch.sqrt(torch.mean(left.square()))
@@ -1942,6 +1986,9 @@ def _residual_metrics(parent: Tensor, child: Tensor) -> dict[str, float]:
         "target_rms": float(target_rms.item()),
         "relative_rmse": relative,
         "mean_cosine": cosine,
+        "comparison_mode": "same_width_row_cosine_rmse",
+        "parent_width": int(left.shape[1]),
+        "child_width": int(right.shape[1]),
     }
 
 

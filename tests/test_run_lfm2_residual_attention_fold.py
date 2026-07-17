@@ -506,6 +506,35 @@ class _GreedyChild(nn.Module):
         )
 
 
+def test_cross_width_residual_metrics_use_representation_geometry() -> None:
+    latent = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [-1.0, 0.0],
+            [0.0, -1.0],
+        ],
+        dtype=torch.float64,
+    )
+    parent = torch.cat((latent, latent), dim=1)
+    preserved = MODULE._residual_metrics(parent, latent)
+    collapsed = MODULE._residual_metrics(
+        parent,
+        torch.zeros_like(latent),
+    )
+
+    assert (
+        preserved["comparison_mode"]
+        == "cross_width_centered_linear_cka"
+    )
+    assert preserved["parent_width"] == 4
+    assert preserved["child_width"] == 2
+    assert preserved["centered_linear_cka"] == pytest.approx(1.0)
+    assert preserved["normalized_gram_distance"] == pytest.approx(0.0)
+    assert collapsed["mean_cosine"] == 0.0
+    assert collapsed["relative_rmse"] == pytest.approx(2.0**0.5)
+
+
 def test_gate_uses_cached_parent_trajectory_and_full_top1_is_diagnostic() -> None:
     parent_tensors = {
         # Deliberately disagree with the externally cached parent generation

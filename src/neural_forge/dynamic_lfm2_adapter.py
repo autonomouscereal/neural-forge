@@ -73,6 +73,15 @@ from .hf_lfm2_closed_loop_fold import (
     build_lfm2_closed_loop_fold_plan,
     install_lfm2_closed_loop_fold_plan,
 )
+from .hf_tokenizer_bridge import (
+    CHILD_TOKENIZER_SEMANTICS_CONFIG_KEY,
+    PARENT_TOKENIZER_SEMANTICS_CONFIG_KEY,
+    TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY,
+    TOKENIZER_BRIDGE_CONFIG_KEYS,
+    TOKENIZER_BRIDGE_PROFILE_CONFIG_KEY,
+    StrictTokenizerBridgeArtifact,
+    strict_tokenizer_bridge_configuration,
+)
 from .dynamic_model_inspector import inspect_model_circuits
 from .dynamic_target_synthesis import (
     AdapterMaterialization,
@@ -105,6 +114,9 @@ _DENSE_BUDGET_CONFIGURATION_KEYS = frozenset(
         _DENSE_BUDGET_CATALOG_MARKER,
         "_neural_forge_tokenizer_bridge_required",
     }
+)
+_DENSE_BUDGET_BRIDGED_CONFIGURATION_KEYS = (
+    _DENSE_BUDGET_CONFIGURATION_KEYS | TOKENIZER_BRIDGE_CONFIG_KEYS
 )
 
 
@@ -834,7 +846,10 @@ class Lfm2DenseBudgetedSelectedTarget:
     source_parent: str
     source_graph_fingerprint: str
     source_state_fingerprint: str
-    tokenizer_fingerprint: str
+    parent_tokenizer_semantics_sha256: str
+    child_tokenizer_semantics_sha256: str
+    tokenizer_bridge_artifact_sha256: str | None
+    tokenizer_transport_profile_sha256: str | None
     catalog_id: str
     hidden_size: int
     intermediate_size: int
@@ -860,12 +875,39 @@ class Lfm2DenseBudgetedSelectedTarget:
         for name in (
             "source_graph_fingerprint",
             "source_state_fingerprint",
-            "tokenizer_fingerprint",
+            "parent_tokenizer_semantics_sha256",
+            "child_tokenizer_semantics_sha256",
         ):
             object.__setattr__(
                 self,
                 name,
                 _digest(getattr(self, name), name),
+            )
+        bridge_values = (
+            self.tokenizer_bridge_artifact_sha256,
+            self.tokenizer_transport_profile_sha256,
+        )
+        if any(value is None for value in bridge_values) != all(
+            value is None for value in bridge_values
+        ):
+            raise DynamicLfm2AdapterError(
+                "Dense budget tokenizer bridge artifact/profile seals must be "
+                "supplied together."
+            )
+        for name in (
+            "tokenizer_bridge_artifact_sha256",
+            "tokenizer_transport_profile_sha256",
+        ):
+            value = getattr(self, name)
+            if value is not None:
+                object.__setattr__(self, name, _digest(value, name))
+        if self.tokenizer_bridge_required == (
+            self.parent_tokenizer_semantics_sha256
+            == self.child_tokenizer_semantics_sha256
+        ):
+            raise DynamicLfm2AdapterError(
+                "Dense budget tokenizer semantics and bridge declaration "
+                "disagree."
             )
         for name in (
             "hidden_size",
@@ -918,6 +960,42 @@ class Lfm2DenseBudgetedSelectedTarget:
                 "Dense budget target configuration keys must be unique."
             )
         object.__setattr__(self, "configuration", configuration)
+        configuration_values = dict(configuration)
+        marker = configuration_values.get(
+            "_neural_forge_tokenizer_bridge_required"
+        )
+        if marker is not self.tokenizer_bridge_required:
+            raise DynamicLfm2AdapterError(
+                "Dense budget tokenizer bridge marker differs from selected "
+                "target metadata."
+            )
+        if self.tokenizer_bridge_required:
+            expected_bridge = {
+                TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY: (
+                    self.tokenizer_bridge_artifact_sha256
+                ),
+                TOKENIZER_BRIDGE_PROFILE_CONFIG_KEY: (
+                    self.tokenizer_transport_profile_sha256
+                ),
+                PARENT_TOKENIZER_SEMANTICS_CONFIG_KEY: (
+                    self.parent_tokenizer_semantics_sha256
+                ),
+                CHILD_TOKENIZER_SEMANTICS_CONFIG_KEY: (
+                    self.child_tokenizer_semantics_sha256
+                ),
+            }
+            if any(
+                configuration_values.get(name) != value
+                for name, value in expected_bridge.items()
+            ):
+                raise DynamicLfm2AdapterError(
+                    "Dense budget tokenizer bridge configuration seals differ "
+                    "from selected target metadata."
+                )
+        elif TOKENIZER_BRIDGE_CONFIG_KEYS.intersection(configuration_values):
+            raise DynamicLfm2AdapterError(
+                "Unbridged dense target contains tokenizer bridge seals."
+            )
         native_tied = (
             self.vocabulary_size * self.hidden_size
             if self.tie_word_embeddings
@@ -945,6 +1023,16 @@ class Lfm2DenseBudgetedSelectedTarget:
     def target_depth(self) -> int:
         return len(self.layer_types)
 
+    @property
+    def tokenizer_fingerprint(self) -> str:
+        """Backward-compatible child-tokenizer graph identity."""
+
+        return self.child_tokenizer_semantics_sha256
+
+    @property
+    def tokenizer_bridge_required(self) -> bool:
+        return self.tokenizer_bridge_artifact_sha256 is not None
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "schema": ADAPTER_SCHEMA,
@@ -952,7 +1040,20 @@ class Lfm2DenseBudgetedSelectedTarget:
             "source_parent": self.source_parent,
             "source_graph_fingerprint": self.source_graph_fingerprint,
             "source_state_fingerprint": self.source_state_fingerprint,
+            "parent_tokenizer_semantics_sha256": (
+                self.parent_tokenizer_semantics_sha256
+            ),
+            "child_tokenizer_semantics_sha256": (
+                self.child_tokenizer_semantics_sha256
+            ),
             "tokenizer_fingerprint": self.tokenizer_fingerprint,
+            "tokenizer_bridge_required": self.tokenizer_bridge_required,
+            "tokenizer_bridge_artifact_sha256": (
+                self.tokenizer_bridge_artifact_sha256
+            ),
+            "tokenizer_transport_profile_sha256": (
+                self.tokenizer_transport_profile_sha256
+            ),
             "catalog_id": self.catalog_id,
             "hidden_size": self.hidden_size,
             "intermediate_size": self.intermediate_size,
@@ -1115,13 +1216,26 @@ def _select_lfm2_dense_budgeted_target(
     request: DynamicTargetRequest,
     parent_model: Any,
     parent_graph: ModelCircuitGraph,
+    tokenizer_bridge_artifact: StrictTokenizerBridgeArtifact | None = None,
 ) -> Lfm2DenseBudgetedSelectedTarget:
     """Authenticate one catalog configuration against its actual source."""
 
     configuration = dict(request.configuration)
-    if set(configuration) != _DENSE_BUDGET_CONFIGURATION_KEYS:
-        missing = sorted(_DENSE_BUDGET_CONFIGURATION_KEYS - set(configuration))
-        extra = sorted(set(configuration) - _DENSE_BUDGET_CONFIGURATION_KEYS)
+    bridge_marker = configuration.get(
+        "_neural_forge_tokenizer_bridge_required"
+    )
+    if not isinstance(bridge_marker, bool):
+        raise DynamicLfm2AdapterError(
+            "Dense budget tokenizer bridge marker must be boolean."
+        )
+    expected_configuration_keys = (
+        _DENSE_BUDGET_BRIDGED_CONFIGURATION_KEYS
+        if bridge_marker
+        else _DENSE_BUDGET_CONFIGURATION_KEYS
+    )
+    if set(configuration) != expected_configuration_keys:
+        missing = sorted(expected_configuration_keys - set(configuration))
+        extra = sorted(set(configuration) - expected_configuration_keys)
         raise DynamicLfm2AdapterError(
             "Dense budget LFM2 configuration is not the exact catalog schema "
             f"(missing={missing}, extra={extra})."
@@ -1141,10 +1255,6 @@ def _select_lfm2_dense_budgeted_target(
         raise DynamicLfm2AdapterError(
             "Dense budget target lacks its topology-catalog provenance."
         )
-    if configuration["_neural_forge_tokenizer_bridge_required"] is not False:
-        raise DynamicLfm2AdapterError(
-            "Dense LFM2 materialization does not implement tokenizer bridging."
-        )
     if configuration["block_auto_adjust_ff_dim"] is not False:
         raise DynamicLfm2AdapterError(
             "Dense budget target must disable automatic FFN width adjustment."
@@ -1159,13 +1269,47 @@ def _select_lfm2_dense_budgeted_target(
             "Dense budget materialization requires a source tokenizer "
             "fingerprint."
         )
-    if (
+    bridge = tokenizer_bridge_artifact
+    if bridge_marker:
+        if not isinstance(bridge, StrictTokenizerBridgeArtifact):
+            raise DynamicLfm2AdapterError(
+                "Dense tokenizer-bridge materialization requires the explicit "
+                "verified StrictTokenizerBridgeArtifact."
+            )
+        try:
+            bridge.verify_files()
+        except ValueError as exc:
+            raise DynamicLfm2AdapterError(
+                "Dense tokenizer bridge artifact failed verification."
+            ) from exc
+        expected_bridge_configuration = strict_tokenizer_bridge_configuration(
+            bridge
+        )
+        if any(
+            configuration.get(name) != value
+            for name, value in expected_bridge_configuration.items()
+        ):
+            raise DynamicLfm2AdapterError(
+                "Dense target configuration differs from its tokenizer bridge "
+                "artifact seals."
+            )
+        if (
+            parent_graph.tokenizer_fingerprint
+            != bridge.donor_tokenizer_semantics_sha256
+            or request.tokenizer_fingerprint
+            != bridge.target_tokenizer_semantics_sha256
+        ):
+            raise DynamicLfm2AdapterError(
+                "Dense tokenizer bridge parent/child semantics differ from "
+                "the inspected source or requested child."
+            )
+    elif (
         request.tokenizer_fingerprint is None
         or request.tokenizer_fingerprint != parent_graph.tokenizer_fingerprint
     ):
         raise DynamicLfm2AdapterError(
-            "Dense budget child tokenizer fingerprint must exactly match its "
-            "selected source until a tokenizer bridge exists."
+            "Unbridged dense child tokenizer fingerprint must exactly match "
+            "its selected source."
         )
     source = inspect_lfm2_progressive_source(parent_model, parent_graph)
     parent_config = getattr(parent_model, "config", None)
@@ -1230,13 +1374,24 @@ def _select_lfm2_dense_budgeted_target(
                 "Dense budget target operator lacks a compatible source anchor "
                 "inside its assigned span."
             )
-    if (
-        vocabulary_size != source_vocabulary
-        or tie_word_embeddings != source_tied
-    ):
+    if tie_word_embeddings != source_tied:
         raise DynamicLfm2AdapterError(
-            "Dense budget target changed the tokenizer vocabulary or native "
-            "token-interface tie without a bridge."
+            "Dense budget target changed its native token-interface tie."
+        )
+    if bridge_marker:
+        assert bridge is not None
+        profile = bridge.transport_profile
+        if (
+            profile.donor_row_capacity != source_vocabulary
+            or profile.target_row_capacity != vocabulary_size
+        ):
+            raise DynamicLfm2AdapterError(
+                "Dense tokenizer bridge row capacities differ from the source "
+                "and target vocabulary operators."
+            )
+    elif vocabulary_size != source_vocabulary:
+        raise DynamicLfm2AdapterError(
+            "Dense budget target changed tokenizer vocabulary without a bridge."
         )
     if fir_length != source_fir:
         raise DynamicLfm2AdapterError(
@@ -1298,7 +1453,18 @@ def _select_lfm2_dense_budgeted_target(
         source_parent=parent_graph.model_name,
         source_graph_fingerprint=parent_graph.fingerprint,
         source_state_fingerprint=fingerprint_model_state(parent_model),
-        tokenizer_fingerprint=parent_graph.tokenizer_fingerprint,
+        parent_tokenizer_semantics_sha256=(
+            parent_graph.tokenizer_fingerprint
+        ),
+        child_tokenizer_semantics_sha256=(
+            request.tokenizer_fingerprint
+        ),
+        tokenizer_bridge_artifact_sha256=(
+            None if bridge is None or not bridge_marker else bridge.artifact_sha256
+        ),
+        tokenizer_transport_profile_sha256=(
+            None if bridge is None or not bridge_marker else bridge.profile_fingerprint
+        ),
         catalog_id=catalog_id,
         hidden_size=hidden_size,
         intermediate_size=intermediate_size,
@@ -1382,6 +1548,36 @@ def validate_lfm2_dense_budgeted_child(
         None,
     ) != encode_lfm2_layer_types(selected_target.layer_types):
         mismatches.append("dense target-layer provenance differs")
+    if child_graph.tokenizer_fingerprint != (
+        selected_target.child_tokenizer_semantics_sha256
+    ):
+        mismatches.append("child tokenizer semantics differ")
+    if config is None or getattr(
+        config,
+        "_neural_forge_tokenizer_bridge_required",
+        None,
+    ) is not selected_target.tokenizer_bridge_required:
+        mismatches.append("tokenizer bridge marker differs")
+    if selected_target.tokenizer_bridge_required:
+        expected_bridge = {
+            TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY: (
+                selected_target.tokenizer_bridge_artifact_sha256
+            ),
+            TOKENIZER_BRIDGE_PROFILE_CONFIG_KEY: (
+                selected_target.tokenizer_transport_profile_sha256
+            ),
+            PARENT_TOKENIZER_SEMANTICS_CONFIG_KEY: (
+                selected_target.parent_tokenizer_semantics_sha256
+            ),
+            CHILD_TOKENIZER_SEMANTICS_CONFIG_KEY: (
+                selected_target.child_tokenizer_semantics_sha256
+            ),
+        }
+        if config is None or any(
+            getattr(config, name, None) != value
+            for name, value in expected_bridge.items()
+        ):
+            mismatches.append("tokenizer bridge seal bundle differs")
     if mismatches:
         raise DynamicLfm2AdapterError(
             "Materialized child does not match the selected dense LFM2 budget "
@@ -3664,7 +3860,31 @@ def build_dense_budgeted_lfm2_config(
     result._neural_forge_dense_target_layer_types = encode_lfm2_layer_types(
         selected_target.layer_types
     )
-    result._neural_forge_tokenizer_bridge_required = False
+    result._neural_forge_tokenizer_bridge_required = (
+        selected_target.tokenizer_bridge_required
+    )
+    expected_bridge: dict[str, str] = {}
+    if selected_target.tokenizer_bridge_required:
+        expected_bridge = {
+            TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY: (
+                selected_target.tokenizer_bridge_artifact_sha256
+            ),
+            TOKENIZER_BRIDGE_PROFILE_CONFIG_KEY: (
+                selected_target.tokenizer_transport_profile_sha256
+            ),
+            PARENT_TOKENIZER_SEMANTICS_CONFIG_KEY: (
+                selected_target.parent_tokenizer_semantics_sha256
+            ),
+            CHILD_TOKENIZER_SEMANTICS_CONFIG_KEY: (
+                selected_target.child_tokenizer_semantics_sha256
+            ),
+        }
+        for name, value in expected_bridge.items():
+            setattr(result, name, value)
+    else:
+        for name in TOKENIZER_BRIDGE_CONFIG_KEYS:
+            if hasattr(result, name):
+                delattr(result, name)
     payload = result.to_dict()
     required = {
         "model_type": "lfm2",
@@ -3688,7 +3908,10 @@ def build_dense_budgeted_lfm2_config(
         "_neural_forge_dense_target_layer_types": encode_lfm2_layer_types(
             selected_target.layer_types
         ),
-        "_neural_forge_tokenizer_bridge_required": False,
+        "_neural_forge_tokenizer_bridge_required": (
+            selected_target.tokenizer_bridge_required
+        ),
+        **expected_bridge,
     }
     if any(payload.get(name) != value for name, value in required.items()):
         raise DynamicLfm2AdapterError(
@@ -3756,7 +3979,9 @@ def materialize_dense_budgeted_lfm2_child(
     graph = inspect_model_circuits(
         child,
         model_name=child_name,
-        tokenizer_fingerprint=selected_target.tokenizer_fingerprint,
+        tokenizer_fingerprint=(
+            selected_target.child_tokenizer_semantics_sha256
+        ),
     )
     validate_lfm2_dense_budgeted_child(selected_target, child, graph)
     if any(parameter.grad is not None for parameter in child.parameters()):
@@ -3792,6 +4017,7 @@ class Lfm2TargetSynthesisAdapter:
         maximum_mlp_step: int = 64,
         device: Any | None = None,
         dtype: Any | None = None,
+        tokenizer_bridge_artifact: StrictTokenizerBridgeArtifact | None = None,
     ) -> None:
         if not isinstance(terminal_topology, Lfm2Topology):
             raise DynamicLfm2AdapterError("terminal_topology must be Lfm2Topology.")
@@ -3815,12 +4041,50 @@ class Lfm2TargetSynthesisAdapter:
             )
         self.device = device
         self.dtype = dtype
+        if tokenizer_bridge_artifact is not None:
+            if not isinstance(
+                tokenizer_bridge_artifact,
+                StrictTokenizerBridgeArtifact,
+            ):
+                raise DynamicLfm2AdapterError(
+                    "tokenizer_bridge_artifact must be a "
+                    "StrictTokenizerBridgeArtifact."
+                )
+            try:
+                tokenizer_bridge_artifact.verify_files()
+            except ValueError as exc:
+                raise DynamicLfm2AdapterError(
+                    "tokenizer_bridge_artifact failed verification."
+                ) from exc
+        self.tokenizer_bridge_artifact = tokenizer_bridge_artifact
 
     def supports(
         self,
         request: DynamicTargetRequest,
         parent_graphs: Mapping[str, ModelCircuitGraph],
     ) -> bool:
+        configuration = dict(request.configuration)
+        bridge_required = (
+            configuration.get(
+                "_neural_forge_tokenizer_bridge_required"
+            )
+            is True
+        )
+        if bridge_required:
+            bridge = self.tokenizer_bridge_artifact
+            if not isinstance(bridge, StrictTokenizerBridgeArtifact):
+                return False
+            try:
+                bridge.verify_files()
+            except ValueError:
+                return False
+            if any(
+                configuration.get(name) != value
+                for name, value in strict_tokenizer_bridge_configuration(
+                    bridge
+                ).items()
+            ):
+                return False
         return (
             request.target_family in {"auto", "lfm2"}
             and request.target_modalities == ("text",)
@@ -3880,9 +4144,17 @@ class Lfm2TargetSynthesisAdapter:
         source_name = self._source_name(request, parent_graphs)
         parent_model = parent_models[source_name]
         parent_graph = parent_graphs[source_name]
+        bridge_required = (
+            dict(request.configuration).get(
+                "_neural_forge_tokenizer_bridge_required"
+            )
+            is True
+        )
         if (
-            request.tokenizer_fingerprint is not None
-            and request.tokenizer_fingerprint != parent_graph.tokenizer_fingerprint
+            not bridge_required
+            and request.tokenizer_fingerprint is not None
+            and request.tokenizer_fingerprint
+            != parent_graph.tokenizer_fingerprint
         ):
             raise DynamicLfm2AdapterError(
                 "Requested child tokenizer differs from the selected LFM2 "
@@ -3893,6 +4165,7 @@ class Lfm2TargetSynthesisAdapter:
                 request,
                 parent_model,
                 parent_graph,
+                self.tokenizer_bridge_artifact,
             )
             materialized_budgeted = materialize_dense_budgeted_lfm2_child(
                 parent_model,
@@ -3941,6 +4214,25 @@ class Lfm2TargetSynthesisAdapter:
                     ),
                     "native_token_interface_tied": (
                         selected_budgeted.tie_word_embeddings
+                    ),
+                    **(
+                        {
+                            "tokenizer_bridge_required": True,
+                            "parent_tokenizer_semantics_sha256": (
+                                selected_budgeted.parent_tokenizer_semantics_sha256
+                            ),
+                            "child_tokenizer_semantics_sha256": (
+                                selected_budgeted.child_tokenizer_semantics_sha256
+                            ),
+                            "tokenizer_bridge_artifact_sha256": (
+                                selected_budgeted.tokenizer_bridge_artifact_sha256
+                            ),
+                            "tokenizer_transport_profile_sha256": (
+                                selected_budgeted.tokenizer_transport_profile_sha256
+                            ),
+                        }
+                        if selected_budgeted.tokenizer_bridge_required
+                        else {}
                     ),
                     "blank_state_fingerprint": (
                         materialized_budgeted.blank_state_fingerprint

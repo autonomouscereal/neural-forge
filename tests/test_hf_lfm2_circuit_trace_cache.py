@@ -230,6 +230,275 @@ def test_real_lfm2_cache_captures_bcx_attention_mlp_and_forced_decode(
         assert value.grad_fn is None
 
 
+def test_opt_in_causal_circuit_cache_captures_installable_operators(
+    tmp_path,
+) -> None:
+    model = _parent(seed=109)
+    config = Lfm2CircuitTraceCaptureConfig(
+        sample_last_tokens=3,
+        max_decode_steps=4,
+        capture_causal_circuit_evidence=True,
+    )
+
+    cache = build_lfm2_circuit_trace_cache(
+        tmp_path,
+        model,
+        [_batch()],
+        config=config,
+        input_device="cpu",
+    )
+
+    capture = cache.manifest["capture"]
+    assert capture["capture_causal_circuit_evidence"] is True
+    assert capture["attention_pre_rope_qk"] is True
+    assert capture["attention_exact_causal_scores_and_probabilities"] is True
+    assert capture["short_conv_exact_fir_state_and_response"] is True
+    assert capture["final_normalization_boundary"] is True
+
+    batch = cache.load_batch(0)
+    tensors = batch.tensors
+    assert tensors[
+        "prefill.layer.001.attention.q_normalized_pre_rope"
+    ].shape == (1, 2, 4, 4)
+    assert tensors[
+        "prefill.layer.001.attention.k_normalized_pre_rope"
+    ].shape == (1, 1, 4, 4)
+    assert tensors["prefill.layer.001.attention.rope_cos"].shape == (1, 4, 4)
+    assert tensors["prefill.layer.001.attention.rope_sin"].shape == (1, 4, 4)
+    assert tensors["prefill.layer.001.attention.key_history"].shape == (
+        1,
+        1,
+        4,
+        4,
+    )
+    assert tensors["prefill.layer.001.attention.qk_scores"].shape == (
+        1,
+        2,
+        3,
+        4,
+    )
+    assert tensors["prefill.layer.001.attention.probabilities"].shape == (
+        1,
+        2,
+        3,
+        4,
+    )
+    assert tensors["prefill.layer.001.attention.qk_scores"].dtype == tensors[
+        "prefill.layer.001.attention.q"
+    ].dtype
+    assert tensors["prefill.layer.001.attention.additive_mask"].dtype == tensors[
+        "prefill.layer.001.attention.q"
+    ].dtype
+    assert tensors["prefill.layer.001.attention.probabilities"].dtype == tensors[
+        "prefill.layer.001.attention.q"
+    ].dtype
+    assert tensors[
+        "prefill.layer.001.attention.context_from_probabilities"
+    ].dtype == tensors["prefill.layer.001.attention.context"].dtype
+    torch.testing.assert_close(
+        tensors["prefill.layer.001.attention.probabilities"].sum(dim=-1),
+        torch.ones(
+            (1, 2, 3),
+            dtype=tensors["prefill.layer.001.attention.probabilities"].dtype,
+        ),
+    )
+    torch.testing.assert_close(
+        tensors["prefill.layer.001.attention.context_from_probabilities"],
+        tensors["prefill.layer.001.attention.context"].to(torch.float32),
+        rtol=2e-2,
+        atol=2e-3,
+    )
+    assert tensors["decode.000.layer.001.attention.key_history"].shape == (
+        1,
+        1,
+        5,
+        4,
+    )
+    assert tensors["decode.001.layer.001.attention.key_history"].shape == (
+        1,
+        1,
+        6,
+        4,
+    )
+
+    assert tensors["prefill.layer.000.short_conv.bx_history"].shape == (
+        1,
+        4,
+        8,
+    )
+    assert tensors["prefill.layer.000.short_conv.pre_bx_state"].shape == (
+        1,
+        8,
+        3,
+    )
+    assert tensors["prefill.layer.000.short_conv.fir_kernel"].shape == (8, 3)
+    assert tensors["prefill.layer.000.short_conv.fir_bias"].shape == (8,)
+    assert tensors[
+        "prefill.layer.000.short_conv.fir_has_bias"
+    ].tolist() == [0]
+    assert tensors["decode.000.layer.000.short_conv.pre_bx_state"].shape == (
+        1,
+        8,
+        3,
+    )
+    torch.testing.assert_close(
+        tensors["prefill.layer.000.short_conv.context_from_fir"][:, -3:, :],
+        tensors["prefill.layer.000.short_conv.context"].to(torch.float32),
+        rtol=2e-2,
+        atol=2e-3,
+    )
+
+    assert tensors["prefill.output.final_norm_input"].shape == (1, 3, 8)
+    assert tensors["prefill.output.final_norm_output"].shape == (1, 3, 8)
+    torch.testing.assert_close(
+        tensors["prefill.output.final_norm_output"],
+        tensors["prefill.output.lm_head_input"],
+        rtol=0.0,
+        atol=0.0,
+    )
+    assert tensors["decode.001.output.final_norm_input"].shape == (1, 1, 8)
+
+    diagnostics = batch.record["capture"]["phase_diagnostics"]["prefill"]
+    assert diagnostics["layer.001"][
+        "attention_context_reconstructed_from_probabilities"
+    ] is True
+    assert diagnostics["layer.001"][
+        "attention_context_authenticated_on_execution_device"
+    ] is True
+    assert diagnostics["layer.001"][
+        "attention_evidence_serialized_after_device_authentication"
+    ] is True
+    assert diagnostics["layer.001"][
+        "attention_reconstruction_execution_device_type"
+    ] == "cpu"
+    assert diagnostics["layer.000"][
+        "short_conv_context_reconstructed_from_fir"
+    ] is True
+    assert diagnostics["output"]["final_norm_boundary_captured"] is True
+
+
+def test_opt_in_attention_reconstruction_uses_runtime_bfloat16_path(
+    tmp_path,
+) -> None:
+    model = _parent(seed=113).to(dtype=torch.bfloat16)
+    cache = build_lfm2_circuit_trace_cache(
+        tmp_path,
+        model,
+        [_batch(forced=(5,))],
+        config=Lfm2CircuitTraceCaptureConfig(
+            sample_last_tokens=2,
+            max_decode_steps=1,
+            capture_causal_circuit_evidence=True,
+        ),
+        input_device="cpu",
+    )
+
+    tensors = cache.load_batch(0).tensors
+    prefix = "prefill.layer.001.attention"
+    assert tensors[f"{prefix}.qk_scores"].dtype == torch.bfloat16
+    assert tensors[f"{prefix}.additive_mask"].dtype == torch.bfloat16
+    assert tensors[f"{prefix}.probabilities"].dtype == torch.bfloat16
+    assert tensors[f"{prefix}.context_from_probabilities"].dtype == torch.bfloat16
+    torch.testing.assert_close(
+        tensors[f"{prefix}.context_from_probabilities"],
+        tensors[f"{prefix}.context"],
+        rtol=2e-2,
+        atol=2e-3,
+    )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+def test_device_local_bfloat16_attention_avoids_cpu_false_negative() -> None:
+    if not torch.cuda.is_bf16_supported():
+        pytest.skip("CUDA bfloat16 support is required")
+    query_heads = 16
+    key_value_heads = 8
+    sequence = 256
+    head_dim = 64
+    groups = query_heads // key_value_heads
+    generator = torch.Generator(device="cpu").manual_seed(7)
+    query = torch.randn(
+        (1, query_heads, sequence, head_dim),
+        generator=generator,
+        dtype=torch.float32,
+    ).to(torch.bfloat16)
+    key = torch.randn(
+        (1, key_value_heads, sequence, head_dim),
+        generator=generator,
+        dtype=torch.float32,
+    ).to(torch.bfloat16)
+    value = torch.randn(
+        (1, key_value_heads, sequence, head_dim),
+        generator=generator,
+        dtype=torch.float32,
+    ).to(torch.bfloat16)
+    additive_mask = torch.triu(
+        torch.full(
+            (1, 1, sequence, sequence),
+            float("-inf"),
+            dtype=torch.float32,
+        ),
+        diagonal=1,
+    ).to(torch.bfloat16)
+
+    cpu_replay = trace_cache._reconstruct_attention_causal_path(
+        torch,
+        query=query,
+        key_history=key,
+        value_history=value,
+        additive_mask=additive_mask,
+        groups=groups,
+        sample_count=sequence,
+        head_dim=head_dim,
+    )["reconstructed_context"]
+    gpu_inputs = {
+        "query": query.to("cuda"),
+        "key_history": key.to("cuda"),
+        "value_history": value.to("cuda"),
+        "additive_mask": additive_mask.to("cuda"),
+    }
+    gpu_replay = trace_cache._reconstruct_attention_causal_path(
+        torch,
+        **gpu_inputs,
+        groups=groups,
+        sample_count=sequence,
+        head_dim=head_dim,
+    )["reconstructed_context"]
+    gpu_repeat = trace_cache._reconstruct_attention_causal_path(
+        torch,
+        **gpu_inputs,
+        groups=groups,
+        sample_count=sequence,
+        head_dim=head_dim,
+    )["reconstructed_context"]
+
+    assert torch.equal(gpu_replay, gpu_repeat)
+    assert not torch.allclose(
+        cpu_replay,
+        gpu_replay.cpu(),
+        rtol=2e-2,
+        atol=2e-3,
+    )
+    assert int(
+        (
+            ~torch.isclose(
+                cpu_replay,
+                gpu_replay.cpu(),
+                rtol=2e-2,
+                atol=2e-3,
+            )
+        ).sum().item()
+    ) >= 1
+
+
+def test_causal_circuit_evidence_rejects_noncanonical_trace_mode() -> None:
+    with pytest.raises(ValueError, match="cached_verified"):
+        Lfm2CircuitTraceCaptureConfig(
+            decode_trace_mode=FULL_PREFIX_CANONICAL_TRACE_MODE,
+            capture_causal_circuit_evidence=True,
+        )
+
+
 def test_full_prefix_canonical_mode_never_accepts_cached_logits_and_keeps_paths(
     tmp_path,
 ) -> None:
@@ -443,6 +712,62 @@ def test_bfloat16_runtime_algebra_is_checked_in_runtime_dtype(tmp_path) -> None:
             tensors[f"{prefix}.residual.post_operator"],
             rtol=0.0,
             atol=0.0,
+        )
+
+
+def test_cached_top1_numeric_tie_is_verified_without_claiming_exact_agreement():
+    cached = torch.tensor([[[13.3750, 13.3750, 9.0]]])
+    full = torch.tensor([[[13.2500, 13.3125, 9.0]]])
+    config = Lfm2CircuitTraceCaptureConfig(
+        logit_rtol=0.0,
+        logit_atol=0.25,
+        require_top1_agreement=True,
+        allow_top1_disagreement_within_numeric_error_envelope=True,
+    )
+
+    report = trace_cache._compare_logits(
+        torch,
+        cached,
+        full,
+        config=config,
+        name="bf16 near tie",
+    )
+
+    assert report["numerically_close"] is True
+    assert report["top1_agreement"] is False
+    assert report["top1_decision_verified"] is True
+    assert report["top1_disagreement_count"] == 1
+    assert report[
+        "top1_disagreement_within_numeric_error_envelope"
+    ] is True
+    assert report["first_top1_disagreement"] == {
+        "row_index": 0,
+        "cached_token_id": 0,
+        "full_prefix_token_id": 1,
+        "cached_winner_margin": 0.0,
+        "full_prefix_winner_margin": 0.0625,
+        "cached_preference_gap": 0.0,
+        "full_prefix_preference_gap": 0.0625,
+        "row_max_abs_error": 0.125,
+        "winner_pair_error_envelope": 0.1875,
+        "within_numeric_error_envelope": True,
+    }
+
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="within_error_envelope=True",
+    ):
+        trace_cache._compare_logits(
+            torch,
+            cached,
+            full,
+            config=Lfm2CircuitTraceCaptureConfig(
+                logit_rtol=0.0,
+                logit_atol=0.25,
+                require_top1_agreement=True,
+                allow_top1_disagreement_within_numeric_error_envelope=False,
+            ),
+            name="strict exact winner",
         )
 
 

@@ -53,6 +53,14 @@ def _digest(value: Any, name: str) -> str:
     return value
 
 
+def _is_digest(value: Any) -> bool:
+    return bool(
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
 def _attributes(
     values: Mapping[str, JsonScalar] | Sequence[tuple[str, JsonScalar]] | None,
 ) -> tuple[tuple[str, JsonScalar], ...]:
@@ -1453,6 +1461,39 @@ def _lfm2_dense_budget_model_contract(
     except ValueError:
         return False
     expected_spans = tuple((index,) for index in range(len(parent_types)))
+    bridge_required = child_metadata.get("tokenizer_bridge_required")
+    if bridge_required is False:
+        tokenizer_contract = bool(
+            parent.tokenizer_fingerprint is not None
+            and parent.tokenizer_fingerprint == child.tokenizer_fingerprint
+        )
+    elif bridge_required is True:
+        tokenizer_contract = bool(
+            parent.tokenizer_fingerprint is not None
+            and child.tokenizer_fingerprint is not None
+            and parent.tokenizer_fingerprint
+            != child.tokenizer_fingerprint
+            and child_metadata.get(
+                "parent_tokenizer_semantics_sha256"
+            )
+            == parent.tokenizer_fingerprint
+            and child_metadata.get(
+                "child_tokenizer_semantics_sha256"
+            )
+            == child.tokenizer_fingerprint
+            and _is_digest(
+                child_metadata.get(
+                    "tokenizer_bridge_artifact_sha256"
+                )
+            )
+            and _is_digest(
+                child_metadata.get(
+                    "tokenizer_transport_profile_sha256"
+                )
+            )
+        )
+    else:
+        tokenizer_contract = False
     return bool(
         parent.family == child.family == "lfm2"
         and parent_types
@@ -1472,9 +1513,7 @@ def _lfm2_dense_budget_model_contract(
         and bool(child_metadata["dense_topology_catalog"])
         and child_metadata.get("target_layer_types")
         == ",".join(child_types)
-        and child_metadata.get("tokenizer_bridge_required") is False
-        and parent.tokenizer_fingerprint is not None
-        and parent.tokenizer_fingerprint == child.tokenizer_fingerprint
+        and tokenizer_contract
     )
 
 
@@ -1704,6 +1743,35 @@ class DynamicFoldPlanner:
                             for node in child.nodes
                             if node.kind == CircuitKind.ATTENTION.value
                         )
+                    ),
+                    **(
+                        {
+                            "tokenizer_bridge_required": True,
+                            "tokenizer_bridge_artifact_sha256": str(
+                                child_metadata[
+                                    "tokenizer_bridge_artifact_sha256"
+                                ]
+                            ),
+                            "tokenizer_transport_profile_sha256": str(
+                                child_metadata[
+                                    "tokenizer_transport_profile_sha256"
+                                ]
+                            ),
+                            "parent_tokenizer_semantics_sha256": str(
+                                child_metadata[
+                                    "parent_tokenizer_semantics_sha256"
+                                ]
+                            ),
+                            "child_tokenizer_semantics_sha256": str(
+                                child_metadata[
+                                    "child_tokenizer_semantics_sha256"
+                                ]
+                            ),
+                        }
+                        if child_metadata[
+                            "tokenizer_bridge_required"
+                        ]
+                        else {}
                     ),
                     "fit_objective": (
                         "complete_weight_residual_basis_then_cached_child_"

@@ -29,6 +29,9 @@ from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (  # noqa: E402
     Lfm2DynamicClosedLoopAdapterConfig,
     Lfm2DynamicClosedLoopAdapterError,
 )
+from neural_forge.hf_lfm2_macro_cell_attractor_gate import (  # noqa: E402
+    Lfm2MacroCellAttractorGate,
+)
 
 
 def _model(*, hidden: int, intermediate: int, heads: int, seed: int):
@@ -274,6 +277,10 @@ def _adapter(
     attention_consumer_mode="output-only",
     output_interface_mode="fit-transform",
     output_max_prior_delta_ratio=0.25,
+    macro_cell_attractor_gate=None,
+    attention_score_candidate_gate_enabled=False,
+    attention_score_maximum_softmax_fisher_error=None,
+    attention_score_minimum_fraction=0.0,
 ):
     parent, cache, replay_config = sealed_parent
     mapping = _DenseMap(8, 4)
@@ -313,10 +320,85 @@ def _adapter(
             ),
             replay_capture_mode=replay_capture_mode,
             attention_consumer_mode=attention_consumer_mode,
+            attention_score_candidate_gate_enabled=(
+                attention_score_candidate_gate_enabled
+            ),
+            attention_score_maximum_softmax_fisher_error=(
+                attention_score_maximum_softmax_fisher_error
+            ),
+            attention_score_minimum_top1_key_agreement_fraction=(
+                attention_score_minimum_fraction
+            ),
+            attention_score_minimum_top_k_pair_order_agreement_fraction=(
+                attention_score_minimum_fraction
+            ),
+            attention_score_minimum_winner_margin_sign_agreement_fraction=(
+                attention_score_minimum_fraction
+            ),
+            attention_score_minimum_relative_margin_floor_retention_fraction=(
+                attention_score_minimum_fraction
+            ),
             output_interface_mode=output_interface_mode,
         ),
+        macro_cell_attractor_gate=macro_cell_attractor_gate,
     )
     return adapter, child, mapping
+
+
+class _ScriptedAttractorSnapshot:
+    def __init__(self, phase):
+        self.phase = phase
+        self.snapshot_sha256 = hashlib.sha256(
+            phase.encode("utf-8")
+        ).hexdigest()
+        self.metrics = {
+            "mean_entropy_parent_distance": 0.01,
+            "mean_repetition_excess": 0.02,
+            "mean_dominant_token_excess": 0.03,
+            "mean_eos_position_error": 0.0,
+            "collapsed_record_count": 0,
+        }
+
+
+class _ScriptedAttractorDecision:
+    def __init__(self, accepted):
+        self.accepted = bool(accepted)
+        self.failed_checks = (
+            () if accepted else ("new_collapsed_records",)
+        )
+        self.decision_sha256 = hashlib.sha256(
+            f"decision:{accepted}".encode("ascii")
+        ).hexdigest()
+
+    def as_dict(self):
+        return {
+            "new_collapsed_record_ids": (
+                [] if self.accepted else ["batch-000000-row-000000"]
+            ),
+            "checks": {
+                "new_collapsed_records": {
+                    "observed": 0 if self.accepted else 1,
+                    "maximum": 0,
+                    "passed": self.accepted,
+                }
+            },
+        }
+
+
+class _ScriptedAttractorGate(Lfm2MacroCellAttractorGate):
+    def __init__(self, *, accepted):
+        self.accepted = bool(accepted)
+        self.phases = []
+
+    def capture(self, child_model, *, phase):
+        del child_model
+        self.phases.append(phase)
+        return _ScriptedAttractorSnapshot(phase)
+
+    def compare(self, incumbent, candidate):
+        assert incumbent.phase.startswith("pre-macro-cell-layer-")
+        assert candidate.phase.startswith("post-macro-cell-layer-")
+        return _ScriptedAttractorDecision(self.accepted)
 
 
 def test_adapter_rejects_a_child_bound_to_another_basis(
@@ -477,12 +559,96 @@ def test_real_adapter_runs_all_layers_with_all_batch_live_child_recaptures(
         ]
 
 
+def test_macro_cell_attractor_gate_is_reported_for_every_layer(
+    sealed_parent,
+) -> None:
+    gate = _ScriptedAttractorGate(accepted=True)
+    adapter, _child, _mapping = _adapter(
+        sealed_parent,
+        macro_cell_attractor_gate=gate,
+    )
+
+    report = ChildClosedLoopCompiler(
+        adapter,
+        ClosedLoopCompilerConfig(
+            validation_fraction=0.25,
+            split_seed="lfm2-macro-cell-attractor-pass-v1",
+        ),
+    ).run()
+
+    assert gate.phases == [
+        "pre-macro-cell-layer-000000",
+        "post-macro-cell-layer-000000",
+        "pre-macro-cell-layer-000001",
+        "post-macro-cell-layer-000001",
+    ]
+    for layer in report["layer_reports"]:
+        compiled = layer["producer"]["compiled"]
+        metrics = layer["validation"]["metrics"]
+        assert compiled["metadata"][
+            "macro_cell_attractor_gate_enabled"
+        ]
+        assert metrics["macro_cell_attractor_gate_enabled"]
+        assert metrics["macro_cell_attractor_gate_accepted"]
+        assert metrics[
+            "macro_cell_exact_token_metrics_used_for_acceptance"
+        ] is False
+        assert metrics["macro_cell_parent_forward_calls"] == 0
+        assert metrics["macro_cell_training_steps"] == 0
+
+
+def test_macro_cell_attractor_rejection_rolls_back_whole_child_exactly(
+    sealed_parent,
+) -> None:
+    gate = _ScriptedAttractorGate(accepted=False)
+    adapter, child, _mapping = _adapter(
+        sealed_parent,
+        macro_cell_attractor_gate=gate,
+    )
+    parameter = child.model.layers[0].feed_forward.w1.weight
+    parameter.grad = torch.arange(
+        parameter.numel(), dtype=parameter.dtype
+    ).reshape_as(parameter)
+    parameter_id = id(parameter)
+    gradient_id = id(parameter.grad)
+    gradient_before = parameter.grad.detach().clone()
+    state_before = adapter.child_state_fingerprint()
+    topology_before = adapter.child_topology_fingerprint()
+
+    with pytest.raises(
+        ClosedLoopFoldError,
+        match=(
+            "macro-cell free-rollout attractor gate rejected: "
+            "new_collapsed_records=1>0"
+        ),
+    ):
+        ChildClosedLoopCompiler(
+            adapter,
+            ClosedLoopCompilerConfig(
+                validation_fraction=0.25,
+                split_seed="lfm2-macro-cell-attractor-reject-v1",
+            ),
+        ).run()
+
+    assert gate.phases == [
+        "pre-macro-cell-layer-000000",
+        "post-macro-cell-layer-000000",
+    ]
+    assert adapter.child_state_fingerprint() == state_before
+    assert adapter.child_topology_fingerprint() == topology_before
+    assert id(parameter) == parameter_id
+    assert id(parameter.grad) == gradient_id
+    assert torch.equal(parameter.grad, gradient_before)
+
+
 def test_adapter_opt_in_coupled_attention_value_output_path(
     sealed_parent,
 ) -> None:
     adapter, _child, _mapping = _adapter(
         sealed_parent,
         attention_consumer_mode="coupled-value-output",
+        attention_score_candidate_gate_enabled=True,
+        attention_score_minimum_fraction=0.0,
     )
     report = ChildClosedLoopCompiler(
         adapter,
@@ -492,7 +658,14 @@ def test_adapter_opt_in_coupled_attention_value_output_path(
         ),
     ).run()
 
+    producer = adapter._producer_payloads[1]
     attention_consumer = adapter._consumer_payloads[1].compiled
+    assert producer.attention_score_fit is not None
+    assert producer.attention_score_validation is not None
+    assert producer.attention_score_validation.accepted
+    assert attention_consumer.fixed_query_key_sha256 == (
+        producer.compiled.score_state_sha256
+    )
     assert attention_consumer.as_dict()["score_path_fixed"]
     assert attention_consumer.value_context_solver == (
         "exact-live-context-head-local-value-transport"
@@ -501,6 +674,53 @@ def test_adapter_opt_in_coupled_attention_value_output_path(
     assert report["audit"]["training_steps"] == 0
     assert report["audit"]["backward_calls"] == 0
     assert report["audit"]["optimizer_steps"] == 0
+    attention_layer = report["layer_reports"][1]
+    score_metadata = attention_layer["producer"]["compiled"]["metadata"]
+    assert score_metadata["attention_score_candidate_gate_enabled"]
+    assert score_metadata["attention_score_candidate_gate_accepted"]
+    assert score_metadata["attention_score_parent_forward_calls"] == 0
+    assert score_metadata[
+        "attention_score_numeric_weight_matching_used"
+    ] is False
+
+
+def test_attention_score_gate_rejection_rolls_back_whole_child_exactly(
+    sealed_parent,
+) -> None:
+    adapter, child, _mapping = _adapter(
+        sealed_parent,
+        attention_consumer_mode="coupled-value-output",
+        attention_score_candidate_gate_enabled=True,
+        attention_score_maximum_softmax_fisher_error=0.0,
+        attention_score_minimum_fraction=0.0,
+    )
+    parameter = child.model.layers[0].feed_forward.w1.weight
+    parameter.grad = torch.arange(
+        parameter.numel(), dtype=parameter.dtype
+    ).reshape_as(parameter)
+    parameter_id = id(parameter)
+    gradient_id = id(parameter.grad)
+    gradient_before = parameter.grad.detach().clone()
+    state_before = adapter.child_state_fingerprint()
+    topology_before = adapter.child_topology_fingerprint()
+
+    with pytest.raises(
+        ClosedLoopFoldError,
+        match="Held-out attention score/order/margin gate rejected",
+    ):
+        ChildClosedLoopCompiler(
+            adapter,
+            ClosedLoopCompilerConfig(
+                validation_fraction=0.25,
+                split_seed="lfm2-attention-score-gate-reject-v1",
+            ),
+        ).run()
+
+    assert adapter.child_state_fingerprint() == state_before
+    assert adapter.child_topology_fingerprint() == topology_before
+    assert id(parameter) == parameter_id
+    assert id(parameter.grad) == gradient_id
+    assert torch.equal(parameter.grad, gradient_before)
 
 
 def test_adapter_single_pass_is_explicit_and_audits_forward_savings(
@@ -642,12 +862,12 @@ def test_output_interface_identity_skip_is_exact_with_zero_delta_cap(
     assert torch.equal(parameter, value_before)
 
 
-def test_output_interface_default_gates_reject_nonimproving_live_candidate(
+def test_output_interface_required_improvement_rejects_live_candidate(
     sealed_parent,
 ) -> None:
     adapter, child, _mapping = _adapter(
         sealed_parent,
-        minimum_output_improvement=0.0,
+        minimum_output_improvement=1.0,
         output_validation_tolerance=1e-8,
     )
     state_before = adapter.child_state_fingerprint()
@@ -658,7 +878,10 @@ def test_output_interface_default_gates_reject_nonimproving_live_candidate(
 
     with pytest.raises(
         ClosedLoopFoldError,
-        match="full_vocabulary_parent_kl,eos_margin_rmse",
+        match=(
+            "full_vocabulary_parent_kl,"
+            "known_sequence_token_nll"
+        ),
     ):
         ChildClosedLoopCompiler(
             adapter,
@@ -684,6 +907,9 @@ def test_adapter_config_rejects_unknown_replay_mode() -> None:
 
 
 def test_adapter_config_rejects_unknown_opt_in_modes() -> None:
+    defaults = Lfm2DynamicClosedLoopAdapterConfig()
+    assert defaults.attention_score_candidate_gate_enabled is False
+    assert defaults.attention_score_top_k == 8
     with pytest.raises(ValueError, match="attention_consumer_mode"):
         Lfm2DynamicClosedLoopAdapterConfig(
             attention_consumer_mode="not-an-attention-mode"
@@ -691,4 +917,16 @@ def test_adapter_config_rejects_unknown_opt_in_modes() -> None:
     with pytest.raises(ValueError, match="output_interface_mode"):
         Lfm2DynamicClosedLoopAdapterConfig(
             output_interface_mode="not-an-output-mode"
+        )
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="attention_score_top_k must be at least two",
+    ):
+        Lfm2DynamicClosedLoopAdapterConfig(attention_score_top_k=1)
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="must be within",
+    ):
+        Lfm2DynamicClosedLoopAdapterConfig(
+            attention_score_minimum_top1_key_agreement_fraction=1.01
         )

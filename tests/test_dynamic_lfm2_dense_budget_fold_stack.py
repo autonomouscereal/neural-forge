@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import pytest
 
@@ -28,7 +29,11 @@ from neural_forge.dynamic_model_inspector import (
     default_inspector_registry,
     inspect_model_circuits,
 )
-from neural_forge.dynamic_parameter_frontier import DenseParameterBudgetRequest
+from neural_forge.dynamic_parameter_frontier import (
+    DenseParameterBudgetRequest,
+    DenseTargetTopologyCatalogRegistry,
+    Lfm2DenseTargetTopologyCatalog,
+)
 from neural_forge.dynamic_system import (
     AutomaticDynamicFoldingSystem,
     DynamicFoldStackAdapterRegistry,
@@ -38,8 +43,10 @@ from neural_forge.dynamic_target_synthesis import (
     DynamicTargetRequest,
     DynamicTargetSynthesisError,
     DynamicTargetSynthesizer,
+    plan_budgeted_dynamic_target,
 )
 from neural_forge.hf_lfm2_circuit_trace_cache import (
+    CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
     CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
     FULL_PREFIX_CANONICAL_TRACE_MODE,
     Lfm2CircuitTraceCaptureConfig,
@@ -54,7 +61,14 @@ from neural_forge.hf_lfm2_dense_budget_model_fold import (
 from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (
     Lfm2DynamicClosedLoopAdapterConfig,
 )
+from neural_forge.hf_lfm2_macro_cell_attractor_gate import (
+    Lfm2MacroCellAttractorGateConfig,
+)
 from neural_forge.dynamic_closed_loop_fold import ClosedLoopCompilerConfig
+from neural_forge.hf_tokenizer_bridge import (
+    TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY,
+    seal_strict_tokenizer_bridge_artifact,
+)
 
 
 torch = pytest.importorskip("torch")
@@ -65,6 +79,50 @@ transformers = pytest.importorskip("transformers")
 def _tokenizer_fingerprint() -> str:
     return canonical_sha256(
         {"kind": "dense-budget-fold-test-tokenizer", "vocabulary_size": 41}
+    )
+
+
+class _BridgeTokenizer:
+    def __init__(self, surfaces: list[str]) -> None:
+        self.surfaces = list(surfaces)
+        self.all_special_ids: list[int] = []
+        self.bos_token_id = None
+        self.eos_token_id = None
+        self.pad_token_id = None
+        self.unk_token_id = None
+
+    def __len__(self) -> int:
+        return len(self.surfaces)
+
+    def get_vocab(self) -> dict[str, int]:
+        return {
+            f"raw-{index}-{surface}": index
+            for index, surface in enumerate(self.surfaces)
+        }
+
+    def convert_ids_to_tokens(self, token_id: int) -> str:
+        return f"raw-{token_id}-{self.surfaces[token_id]}"
+
+    def decode(self, token_ids: list[int], **_kwargs: Any) -> str:
+        return "".join(self.surfaces[token_id] for token_id in token_ids)
+
+    def encode(self, text: str, *, add_special_tokens: bool) -> list[int]:
+        assert add_special_tokens is False
+        return [self.surfaces.index(text)]
+
+
+def _strict_bridge(tmp_path, *, target_vocab_size: int = 17):
+    donor = _BridgeTokenizer([f"<{index}>" for index in range(41)])
+    target = _BridgeTokenizer(donor.surfaces[:target_vocab_size])
+    root = tmp_path / "strict-target-tokenizer"
+    root.mkdir()
+    (root / "tokenizer.json").write_text("{}", encoding="utf-8")
+    return seal_strict_tokenizer_bridge_artifact(
+        donor,
+        target,
+        root,
+        donor_row_capacity=41,
+        target_row_capacity=target_vocab_size,
     )
 
 
@@ -137,6 +195,23 @@ class _WholeOutputAccept:
                 use_cache=False,
             )
         return FoldDecision.accept("dense test child-root acceptance")
+
+
+class _ProductionParentCachePayload:
+    def __init__(self, cache, *, cache_key: str | None = None) -> None:
+        self.cache = cache
+        self._cache_key = (
+            cache.cache_key if cache_key is None else cache_key
+        )
+        self.verify_calls = 0
+
+    @property
+    def cache_key(self) -> str:
+        return self._cache_key
+
+    def verify(self) -> None:
+        self.verify_calls += 1
+        self.cache.verify()
 
 
 def _behavior_binding(cache_key: str) -> BehaviorGateBinding:
@@ -377,6 +452,7 @@ def production_thousand_x_parent(tmp_path_factory):
 
 def test_dense_budget_vocab_margin_requires_circuit_balanced_basis() -> None:
     defaults = Lfm2DenseBudgetFoldConfig()
+    assert defaults.macro_cell_attractor_gate_config is None
     assert defaults.vocabulary_margin_candidate_gate_enabled is False
     assert defaults.vocabulary_margin_candidate_replay_mode == (
         CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
@@ -401,6 +477,16 @@ def test_dense_budget_vocab_margin_requires_circuit_balanced_basis() -> None:
         Lfm2DenseBudgetFoldConfig(
             residual_basis_mode="circuit_balanced",
             vocabulary_margin_candidate_gate_enabled=True,
+        )
+    with pytest.raises(
+        Lfm2DenseBudgetFoldError,
+        match="requires run_closed_loop=True",
+    ):
+        Lfm2DenseBudgetFoldConfig(
+            run_closed_loop=False,
+            macro_cell_attractor_gate_config=(
+                Lfm2MacroCellAttractorGateConfig()
+            ),
         )
 
 
@@ -451,6 +537,8 @@ def _compile_vocabulary_margin_gated_child(
     *,
     minimum_fraction: float,
     child_name: str,
+    parent_cache_payload=None,
+    replay_mode: str = CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
 ):
     parent, cache = sealed_parent
     tokenizer = _tokenizer_fingerprint()
@@ -515,7 +603,11 @@ def _compile_vocabulary_margin_gated_child(
     stack = Lfm2DynamicFoldStackAdapter(
         Lfm2DynamicStackResources(
             parent_cache_fingerprint=cache.cache_key,
-            parent_cache_payload=cache,
+            parent_cache_payload=(
+                cache
+                if parent_cache_payload is None
+                else parent_cache_payload
+            ),
             evidence_builder=lambda _request: None,
             final_evaluator=final_gate,
             model_saver=_saver,
@@ -533,9 +625,7 @@ def _compile_vocabulary_margin_gated_child(
                 vocabulary_margin_observability=True,
                 vocabulary_margin_top_k=3,
                 vocabulary_margin_candidate_gate_enabled=True,
-                vocabulary_margin_candidate_replay_mode=(
-                    CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
-                ),
+                vocabulary_margin_candidate_replay_mode=replay_mode,
                 vocabulary_margin_candidate_minimum_sign_agreement_fraction=(
                     minimum_fraction
                 ),
@@ -568,6 +658,48 @@ def _compile_vocabulary_margin_gated_child(
         initializer=stack.initializer,
     )
     return compilation, target, blank_state
+
+
+def test_dense_budget_stack_unwraps_verified_production_cache_payload(
+    sealed_parent,
+) -> None:
+    _parent, cache = sealed_parent
+    payload = _ProductionParentCachePayload(cache)
+
+    compilation, _target, _blank_state = (
+        _compile_vocabulary_margin_gated_child(
+            sealed_parent,
+            minimum_fraction=0.0,
+            child_name="dense-production-cache-payload",
+            parent_cache_payload=payload,
+            replay_mode=CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
+        )
+    )
+
+    assert compilation.complete
+    assert payload.verify_calls == 1
+
+
+def test_dense_budget_stack_rejects_payload_without_typed_trace_cache(
+    sealed_parent,
+) -> None:
+    _parent, cache = sealed_parent
+    payload = _ProductionParentCachePayload(
+        object(),
+        cache_key=cache.cache_key,
+    )
+
+    with pytest.raises(
+        DynamicLfm2AdapterError,
+        match="verified production payload containing one",
+    ):
+        _compile_vocabulary_margin_gated_child(
+            sealed_parent,
+            minimum_fraction=0.0,
+            child_name="dense-invalid-production-cache-payload",
+            parent_cache_payload=payload,
+        )
+    assert payload.verify_calls == 0
 
 
 def test_dense_budget_candidate_gate_replays_once_and_commits(
@@ -832,6 +964,204 @@ def test_dense_budget_stack_fills_blank_with_parent_structural_fold(
     assert transaction_report["closed_loop"]["audit"]["training_steps"] == 0
     assert transaction_report["closed_loop"]["audit"]["backward_calls"] == 0
     assert transaction_report["closed_loop"]["audit"]["optimizer_steps"] == 0
+
+
+def test_strict_tokenizer_bridge_materializes_and_folds_reduced_vocab_rows(
+    sealed_parent,
+    tmp_path,
+) -> None:
+    parent, cache = sealed_parent
+    artifact = _strict_bridge(tmp_path)
+    parent_graph = inspect_model_circuits(
+        parent,
+        model_name="parent",
+        tokenizer_fingerprint=(
+            artifact.donor_tokenizer_semantics_sha256
+        ),
+    )
+    catalogs = DenseTargetTopologyCatalogRegistry(
+        (
+            Lfm2DenseTargetTopologyCatalog(
+                minimum_hidden_size=4,
+                hidden_size_multiple=4,
+                minimum_head_dim=4,
+                tokenizer_bridge_artifact=artifact,
+            ),
+        )
+    )
+    plan = plan_budgeted_dynamic_target(
+        parent_graph,
+        DenseParameterBudgetRequest(
+            target_family="lfm2",
+            target_modalities=("text",),
+            compression_ratio=2,
+            target_vocabulary_size=17,
+            maximum_candidates=64,
+        ),
+        child_name="strict-bridge-dense-child",
+        adapter_id=Lfm2TargetSynthesisAdapter.adapter_id,
+        catalogs=catalogs,
+    )
+    selected_candidate = plan.frontier.candidates[
+        plan.target_certificate.selected_candidate_rank
+    ]
+    assert selected_candidate.compiler_executable
+    assert dict(selected_candidate.configuration)[
+        TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY
+    ] == artifact.artifact_sha256
+
+    target_adapter = Lfm2TargetSynthesisAdapter(
+        terminal_topology=Lfm2Topology(1, 1, 4),
+        evidence_fingerprint=cache.cache_key,
+        device="cpu",
+        dtype=torch.float32,
+        tokenizer_bridge_artifact=artifact,
+    )
+    target = DynamicTargetSynthesizer(
+        inspectors=default_inspector_registry(),
+        adapters=DynamicTargetAdapterRegistry((target_adapter,)),
+    ).synthesize(
+        request=plan.target_request,
+        parent_models={"parent": parent},
+        parent_tokenizer_fingerprints={
+            "parent": artifact.donor_tokenizer_semantics_sha256
+        },
+    )
+    selected = target.adapter_payload
+    assert selected.tokenizer_bridge_required
+    assert selected.tokenizer_bridge_artifact_sha256 == (
+        artifact.artifact_sha256
+    )
+    assert selected.tokenizer_transport_profile_sha256 == (
+        artifact.profile_fingerprint
+    )
+    assert target.graph.tokenizer_fingerprint == (
+        artifact.target_tokenizer_semantics_sha256
+    )
+    assert target.model.config.vocab_size == 17
+    assert target.model.get_input_embeddings().weight.shape[0] == 17
+    assert all(
+        int(torch.count_nonzero(parameter).item()) == 0
+        for parameter in target.model.parameters()
+    )
+
+    def fresh_gate(_model):
+        return FoldDecision.accept("unused bridge fresh gate")
+
+    final_gate = _Accept()
+    binding = _behavior_binding(cache.cache_key)
+    expose_behavior_gate_binding(final_gate, binding)
+    expose_behavior_gate_binding(fresh_gate, binding)
+    base_resources = {
+        "parent_cache_fingerprint": cache.cache_key,
+        "parent_cache_payload": cache,
+        "evidence_builder": lambda _request: None,
+        "final_evaluator": final_gate,
+        "model_saver": _saver,
+        "model_loader": _loader,
+        "fresh_reload_evaluator": fresh_gate,
+        "saver_id": "strict-bridge-dense-saver-v1",
+        "loader_id": "strict-bridge-dense-loader-v1",
+        "ledger": ExperimentLedger(),
+    }
+    with pytest.raises(
+        DynamicLfm2AdapterError,
+        match="requires its explicit strict tokenizer bridge artifact",
+    ):
+        Lfm2DynamicFoldStackAdapter(
+            Lfm2DynamicStackResources(
+                **base_resources,
+                dense_fold_config=Lfm2DenseBudgetFoldConfig(
+                    run_closed_loop=False
+                ),
+            )
+        ).build(target)
+    with pytest.raises(
+        Lfm2DenseBudgetFoldError,
+        match="requires sealed child-tokenizer trace retokenization",
+    ):
+        Lfm2DynamicFoldStackAdapter(
+            Lfm2DynamicStackResources(
+                **base_resources,
+                dense_fold_config=Lfm2DenseBudgetFoldConfig(),
+                tokenizer_bridge_artifact=artifact,
+            )
+        ).build(target)
+
+    fold_config = Lfm2DenseBudgetFoldConfig(run_closed_loop=False)
+    stack = Lfm2DynamicFoldStackAdapter(
+        Lfm2DynamicStackResources(
+            **base_resources,
+            dense_fold_config=fold_config,
+            tokenizer_bridge_artifact=artifact,
+        )
+    ).build(target)
+    compilation = DynamicFoldingCompiler(
+        operators=stack.operators,
+        ledger=ExperimentLedger(),
+    ).compile(
+        parent_models={"parent": parent},
+        child_model=target.model,
+        child_name=plan.target_request.child_name,
+        evidence_provider=stack.evidence_provider,
+        evaluator=stack.evaluator,
+        final_evaluator=stack.final_evaluator,
+        evidence_fingerprint=cache.cache_key,
+        parent_tokenizer_fingerprints={
+            "parent": artifact.donor_tokenizer_semantics_sha256
+        },
+        child_tokenizer_fingerprint=(
+            artifact.target_tokenizer_semantics_sha256
+        ),
+        exact_target_unique_parameters=(
+            selected.exact_target_unique_parameters
+        ),
+        initializer=stack.initializer,
+    )
+
+    assert compilation.complete
+    basis = _build_residual_basis(
+        parent,
+        parent_graph,
+        cache,
+        selected.hidden_size,
+        fold_config,
+    )
+    indices = torch.tensor(
+        artifact.transport_profile.target_to_donor_row_indices,
+        dtype=torch.long,
+    )
+    expected_embedding = basis.fold_consumer_weight(
+        parent.get_input_embeddings()
+        .weight.detach()
+        .to(dtype=torch.float64)
+        .index_select(0, indices)
+    )
+    torch.testing.assert_close(
+        target.model.get_input_embeddings().weight.detach(),
+        expected_embedding.to(dtype=torch.float32),
+    )
+    assert target.model.get_input_embeddings().weight is (
+        target.model.get_output_embeddings().weight
+    )
+    attempt = compilation.run.attempts[0]
+    report = dict(attempt.transaction_report)
+    vocabulary_report = report["initial_structural_fold"][
+        "strict_vocabulary_operator_transport"
+    ]
+    assert report["tokenizer_bridge_required"] is True
+    assert report["tokenizer_bridge_artifact_sha256"] == (
+        artifact.artifact_sha256
+    )
+    assert report["initial_structural_fold"][
+        "tokenizer_bridge_used"
+    ] is True
+    assert vocabulary_report["bridge_artifact_sha256"] == (
+        artifact.artifact_sha256
+    )
+    assert vocabulary_report["target_row_capacity"] == 17
+    assert compilation.run.optimizer_steps == 0
+    assert compilation.run.backward_calls == 0
 
 
 def test_dense_budget_stack_fails_closed_on_depth_composition(

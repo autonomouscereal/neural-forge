@@ -56,6 +56,7 @@ from .dynamic_target_synthesis import (
     verify_compiler_authenticated_target,
 )
 from .hf_lfm2_closed_loop_fold import Lfm2ClosedLoopFoldConfig
+from .hf_tokenizer_bridge import StrictTokenizerBridgeArtifact
 
 
 LFM2_STACK_ADAPTER_ID = "neural_forge.lfm2.closed_loop_catalog"
@@ -100,6 +101,7 @@ class Lfm2DynamicStackResources:
     parent_cache_integrity_check: Callable[[Any], str] | None = None
     snapshot_config: DynamicFoldSnapshotConfig | None = None
     dense_fold_config: Any | None = None
+    tokenizer_bridge_artifact: StrictTokenizerBridgeArtifact | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -247,6 +249,21 @@ class Lfm2DynamicStackResources:
                 raise DynamicLfm2AdapterError(
                     "dense_fold_config has the wrong type."
                 )
+        if self.tokenizer_bridge_artifact is not None:
+            if not isinstance(
+                self.tokenizer_bridge_artifact,
+                StrictTokenizerBridgeArtifact,
+            ):
+                raise DynamicLfm2AdapterError(
+                    "tokenizer_bridge_artifact must be a "
+                    "StrictTokenizerBridgeArtifact."
+                )
+            try:
+                self.tokenizer_bridge_artifact.verify_files()
+            except ValueError as exc:
+                raise DynamicLfm2AdapterError(
+                    "tokenizer_bridge_artifact failed verification."
+                ) from exc
 
     def build_bridge(
         self,
@@ -493,6 +510,84 @@ class Lfm2DynamicFoldStackAdapter:
             selected.validate()
         return selected
 
+    def _dense_parent_trace_cache(self, *, verify: bool) -> Any:
+        try:
+            from .hf_lfm2_circuit_trace_cache import Lfm2CircuitTraceCache
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise DynamicLfm2AdapterError(
+                "The dense-budget LFM2 trace-cache primitive is unavailable."
+            ) from exc
+        payload = self.resources.parent_cache_payload
+        if isinstance(payload, Lfm2CircuitTraceCache):
+            trace_cache = payload
+        else:
+            trace_cache = getattr(payload, "cache", None)
+            if not isinstance(trace_cache, Lfm2CircuitTraceCache):
+                raise DynamicLfm2AdapterError(
+                    "Dense LFM2 target requires a typed sealed parent trace "
+                    "cache or a verified production payload containing one."
+                )
+        payload_verify = getattr(payload, "verify", None)
+        if (
+            not callable(payload_verify)
+            or getattr(payload, "cache_key", None)
+            != self.resources.parent_cache_fingerprint
+            or trace_cache.cache_key
+            != self.resources.parent_cache_fingerprint
+        ):
+            raise DynamicLfm2AdapterError(
+                "Dense LFM2 target requires the exact typed sealed parent "
+                "trace cache bound to the stack evidence fingerprint."
+            )
+        if verify:
+            payload_verify()
+            trace_cache.verify()
+        return trace_cache
+
+    def _dense_tokenizer_bridge(
+        self,
+        selected: Lfm2DenseBudgetedSelectedTarget,
+        *,
+        verify: bool,
+    ) -> StrictTokenizerBridgeArtifact | None:
+        artifact = self.resources.tokenizer_bridge_artifact
+        if not selected.tokenizer_bridge_required:
+            if artifact is not None:
+                raise DynamicLfm2AdapterError(
+                    "Unbridged dense target received an unused tokenizer "
+                    "bridge artifact."
+                )
+            return None
+        if not isinstance(artifact, StrictTokenizerBridgeArtifact):
+            raise DynamicLfm2AdapterError(
+                "Bridged dense target requires its explicit strict tokenizer "
+                "bridge artifact in stack resources."
+            )
+        if verify:
+            try:
+                artifact.verify_files()
+            except ValueError as exc:
+                raise DynamicLfm2AdapterError(
+                    "Dense tokenizer bridge artifact failed stack verification."
+                ) from exc
+        if (
+            artifact.artifact_sha256
+            != selected.tokenizer_bridge_artifact_sha256
+            or artifact.profile_fingerprint
+            != selected.tokenizer_transport_profile_sha256
+            or artifact.donor_tokenizer_semantics_sha256
+            != selected.parent_tokenizer_semantics_sha256
+            or artifact.target_tokenizer_semantics_sha256
+            != selected.child_tokenizer_semantics_sha256
+            or artifact.transport_profile.target_row_capacity
+            != selected.vocabulary_size
+        ):
+            raise DynamicLfm2AdapterError(
+                "Dense tokenizer bridge artifact differs from selected target "
+                "metadata."
+            )
+        return artifact
+
     def _validate_target(
         self,
         target: DynamicTargetSynthesisResult,
@@ -542,18 +637,8 @@ class Lfm2DynamicFoldStackAdapter:
                 "the single selected LFM2 source."
             )
         if isinstance(selected, Lfm2DenseBudgetedSelectedTarget):
-            cache = self.resources.parent_cache_payload
-            verify = getattr(cache, "verify", None)
-            cache_key = getattr(cache, "cache_key", None)
-            if (
-                not callable(verify)
-                or cache_key != self.resources.parent_cache_fingerprint
-            ):
-                raise DynamicLfm2AdapterError(
-                    "Dense LFM2 target requires the exact typed sealed parent "
-                    "trace cache bound to the stack evidence fingerprint."
-                )
-            verify()
+            self._dense_parent_trace_cache(verify=True)
+            self._dense_tokenizer_bridge(selected, verify=True)
         else:
             if (
                 selected.signature.evidence_fingerprint
@@ -712,6 +797,25 @@ class Lfm2DynamicFoldStackAdapter:
                 "native_token_interface_tied": (
                     selected.tie_word_embeddings
                 ),
+                **(
+                    {
+                        "tokenizer_bridge_required": True,
+                        "parent_tokenizer_semantics_sha256": (
+                            selected.parent_tokenizer_semantics_sha256
+                        ),
+                        "child_tokenizer_semantics_sha256": (
+                            selected.child_tokenizer_semantics_sha256
+                        ),
+                        "tokenizer_bridge_artifact_sha256": (
+                            selected.tokenizer_bridge_artifact_sha256
+                        ),
+                        "tokenizer_transport_profile_sha256": (
+                            selected.tokenizer_transport_profile_sha256
+                        ),
+                    }
+                    if selected.tokenizer_bridge_required
+                    else {}
+                ),
                 "blank_state_fingerprint": blank_state,
                 "local_parent_class_instantiation": True,
                 "hub_loader_used": False,
@@ -741,6 +845,11 @@ class Lfm2DynamicFoldStackAdapter:
         except (DynamicLfm2AdapterError, TypeError, ValueError):
             return False
         if isinstance(selected, Lfm2DenseBudgetedSelectedTarget):
+            try:
+                self._dense_parent_trace_cache(verify=False)
+                self._dense_tokenizer_bridge(selected, verify=False)
+            except DynamicLfm2AdapterError:
+                return False
             return bool(
                 target.resource_profile.family == "lfm2"
                 and target.resource_profile.modalities == ("text",)
@@ -750,12 +859,6 @@ class Lfm2DynamicFoldStackAdapter:
                         selected.source_graph_fingerprint
                     )
                 }
-                and getattr(
-                    self.resources.parent_cache_payload,
-                    "cache_key",
-                    None,
-                )
-                == self.resources.parent_cache_fingerprint
             )
         return bool(
             target.resource_profile.family == "lfm2"
@@ -787,7 +890,7 @@ class Lfm2DynamicFoldStackAdapter:
             dense_config = self.resources.dense_fold_config
             if dense_config is None:
                 dense_config = Lfm2DenseBudgetFoldConfig()
-            cache = self.resources.parent_cache_payload
+            cache = self._dense_parent_trace_cache(verify=False)
             provider = Lfm2DenseBudgetEvidenceProvider(
                 cache,
                 self.resources.parent_cache_fingerprint,
@@ -796,6 +899,12 @@ class Lfm2DynamicFoldStackAdapter:
                 selected,
                 cache,
                 config=dense_config,
+                tokenizer_bridge_artifact=(
+                    self._dense_tokenizer_bridge(
+                        selected,
+                        verify=True,
+                    )
+                ),
             )
             try:
                 behavior_binding = resolve_behavior_gate_binding(

@@ -23,6 +23,32 @@ The long-term capability envelope is:
 Registration is allowed for a new architecture or modality. Per-run manual
 neuron surgery is not.
 
+## Current severe-compaction execution objective
+
+Marginal parameter removal and small-ratio controls do not satisfy the current
+project objective.  The active real-model proof sequence is:
+
+1. fold the local 229,693,184-parameter LFM2.5 parent into a separately
+   instantiated 2,291,840-parameter dense blank child (100.222x);
+2. save and reload that child with no parent, sidecar, sparse state, or runtime
+   reconstruction dependency;
+3. require coherent free-running responses and score retained capability over
+   complete responses on disjoint evidence;
+4. after the 100x compiler path is structurally and behaviorally understood,
+   fold the same parent into the 916,928-parameter dense blank child (250.503x);
+5. generalize the proven compiler components through registered architecture,
+   tokenizer, and modality adapters rather than caller-written layer surgery.
+
+The 100x target preserves all 14 ordered LFM2 operators with hidden width 128,
+FFN width 175, two query heads, one key/value head, and head dimension 64.  The
+250x target preserves all 14 ordered operators with hidden width 64, FFN width
+166, two query heads, one key/value head, and head dimension 32.  Both use the
+sealed 4,096-row child tokenizer bridge.  Their sizes count dense learned
+parameters, not bytes.
+
+The 2x, 4x, and 10x plans remain useful controls and diagnostics.  They are not
+allowed to be reported as completion of the severe-compaction goal.
+
 ## Non-negotiable acceptance
 
 A promoted result must satisfy all of the following:
@@ -135,7 +161,9 @@ The active zero-training lane combines:
 7. macro-cell whole-output acceptance relative to the current incumbent; and
 8. promotion only after the independent free-running behavior gate.
 
-If 2x reaches coherent retention, the same automatic compiler advances to the
-already feasible 4x and 10x topologies. If it does not, the rejected
-whole-output evidence updates allocation and topology ranking; arithmetic
-feasibility alone does not advance the ratio.
+The active compiler executes the 100x target directly.  Smaller ratios may be
+run only as diagnostic controls when a rejected 100x component needs an
+isolated capacity comparison; they do not replace the severe target.  Rejected
+whole-output evidence updates operator fitting, boundary coordinates, and
+topology ranking.  Arithmetic feasibility alone never advances or completes a
+ratio.

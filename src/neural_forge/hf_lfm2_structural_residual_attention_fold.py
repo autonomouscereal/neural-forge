@@ -34,6 +34,9 @@ from neural_forge.hf_activation_cluster import (
 
 
 _SCHEMA = "neural-forge-lfm2-structural-residual-attention-fold-v1"
+_ATTENTION_SCORE_PRESERVATION_SCHEMA = (
+    "neural-forge-lfm2-attention-score-preservation-v1"
+)
 _CACHED_VERIFIED_TRACE_MODE = "cached_verified"
 _FULL_PREFIX_CANONICAL_TRACE_MODE = "full_prefix_canonical"
 _SUPPORTED_ATTENTION_TRACE_MODES = frozenset(
@@ -815,6 +818,696 @@ def _factor_score_barycenter(
             )
             key[batch_index, group] = right_factor
     return query, key
+
+
+def _optional_score_threshold(
+    value: Any | None,
+    name: str,
+    *,
+    unit_interval: bool,
+) -> float | None:
+    if value is None:
+        return None
+    result = _nonnegative_float(value, name)
+    if unit_interval and result > 1.0:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            f"{name} must be within [0, 1] or None."
+        )
+    return result
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2AttentionScorePreservationThresholds:
+    """Optional held-out acceptance thresholds for functional Q/K scores.
+
+    Error thresholds apply to the worst eligible causal row.  Fraction
+    thresholds apply to all eligible comparisons.  ``None`` disables one
+    threshold without changing the measured metric.
+    """
+
+    maximum_softmax_fisher_error: float | None = None
+    maximum_js_divergence: float | None = None
+    minimum_top1_key_agreement_fraction: float | None = None
+    minimum_top_k_pair_order_agreement_fraction: float | None = None
+    minimum_winner_margin_sign_agreement_fraction: float | None = None
+    minimum_relative_margin_floor_retention_fraction: float | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "maximum_softmax_fisher_error",
+            _optional_score_threshold(
+                self.maximum_softmax_fisher_error,
+                "maximum_softmax_fisher_error",
+                unit_interval=False,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "maximum_js_divergence",
+            _optional_score_threshold(
+                self.maximum_js_divergence,
+                "maximum_js_divergence",
+                unit_interval=True,
+            ),
+        )
+        for name in (
+            "minimum_top1_key_agreement_fraction",
+            "minimum_top_k_pair_order_agreement_fraction",
+            "minimum_winner_margin_sign_agreement_fraction",
+            "minimum_relative_margin_floor_retention_fraction",
+        ):
+            object.__setattr__(
+                self,
+                name,
+                _optional_score_threshold(
+                    getattr(self, name),
+                    name,
+                    unit_interval=True,
+                ),
+            )
+
+    def as_dict(self) -> dict[str, float | None]:
+        return {
+            name: getattr(self, name)
+            for name in self.__dataclass_fields__
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2AttentionScorePreservationReport:
+    """Canonical score-only acceptance report for held-out Q/K behavior."""
+
+    case_count: int
+    total_row_count: int
+    eligible_row_count: int
+    excluded_empty_row_count: int
+    excluded_singleton_row_count: int
+    top_k_pair_comparison_count: int
+    excluded_reference_tie_pair_count: int
+    winner_margin_comparison_count: int
+    excluded_reference_tie_margin_count: int
+    top_k: int
+    relative_margin_floor: float
+    softmax_fisher_error_mean: float
+    softmax_fisher_error_worst: float
+    js_divergence_mean: float
+    js_divergence_worst: float
+    top1_key_agreement_fraction: float
+    top_k_pair_order_agreement_fraction: float
+    winner_margin_sign_agreement_fraction: float
+    relative_margin_floor_retention_fraction: float
+    reference_score_bundle_sha256: str
+    candidate_score_bundle_sha256: str
+    key_mask_bundle_sha256: str
+    case_reports: tuple[tuple[tuple[str, Any], ...], ...]
+    thresholds: Lfm2AttentionScorePreservationThresholds
+    checks: tuple[tuple[str, bool | None], ...]
+
+    @property
+    def accepted(self) -> bool:
+        return all(value is not False for _name, value in self.checks)
+
+    @property
+    def metrics(self) -> dict[str, float]:
+        return {
+            "softmax_fisher_error_mean": self.softmax_fisher_error_mean,
+            "softmax_fisher_error_worst": self.softmax_fisher_error_worst,
+            "js_divergence_mean": self.js_divergence_mean,
+            "js_divergence_worst": self.js_divergence_worst,
+            "top1_key_agreement_fraction": (
+                self.top1_key_agreement_fraction
+            ),
+            "top_k_pair_order_agreement_fraction": (
+                self.top_k_pair_order_agreement_fraction
+            ),
+            "winner_margin_sign_agreement_fraction": (
+                self.winner_margin_sign_agreement_fraction
+            ),
+            "relative_margin_floor_retention_fraction": (
+                self.relative_margin_floor_retention_fraction
+            ),
+        }
+
+    def _payload(self) -> dict[str, Any]:
+        return {
+            "schema": _ATTENTION_SCORE_PRESERVATION_SCHEMA,
+            "case_count": self.case_count,
+            "total_row_count": self.total_row_count,
+            "eligible_row_count": self.eligible_row_count,
+            "excluded_empty_row_count": self.excluded_empty_row_count,
+            "excluded_singleton_row_count": (
+                self.excluded_singleton_row_count
+            ),
+            "top_k_pair_comparison_count": (
+                self.top_k_pair_comparison_count
+            ),
+            "excluded_reference_tie_pair_count": (
+                self.excluded_reference_tie_pair_count
+            ),
+            "winner_margin_comparison_count": (
+                self.winner_margin_comparison_count
+            ),
+            "excluded_reference_tie_margin_count": (
+                self.excluded_reference_tie_margin_count
+            ),
+            "top_k": self.top_k,
+            "relative_margin_floor": self.relative_margin_floor,
+            "metrics": self.metrics,
+            "thresholds": self.thresholds.as_dict(),
+            "checks": dict(self.checks),
+            "accepted": self.accepted,
+            "reference_score_bundle_sha256": (
+                self.reference_score_bundle_sha256
+            ),
+            "candidate_score_bundle_sha256": (
+                self.candidate_score_bundle_sha256
+            ),
+            "key_mask_bundle_sha256": self.key_mask_bundle_sha256,
+            "cases": [dict(value) for value in self.case_reports],
+            "score_tensors_only": True,
+            "numeric_weight_matching_used": False,
+            "model_forward_calls": 0,
+            "parent_forward_calls": 0,
+            "model_generate_calls": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+            "masked_keys_excluded": True,
+            "empty_and_singleton_rows_excluded": True,
+            "softmax_constant_shift_invariant": True,
+            "js_divergence_normalized_by_log_two": True,
+        }
+
+    @property
+    def report_sha256(self) -> str:
+        encoded = json.dumps(
+            self._payload(),
+            allow_nan=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            **self._payload(),
+            "report_sha256": self.report_sha256,
+        }
+
+
+def _score_case_sequence(value: Any, name: str) -> tuple[Any, ...]:
+    torch = _torch()
+    if isinstance(value, torch.Tensor):
+        return (value,)
+    if (
+        not isinstance(value, Sequence)
+        or isinstance(value, (str, bytes))
+        or not value
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            f"{name} must be a score tensor or a non-empty score-tensor sequence."
+        )
+    return tuple(value)
+
+
+def _score_mask_sequence(
+    value: Any | None,
+    *,
+    case_count: int,
+) -> tuple[Any | None, ...]:
+    torch = _torch()
+    if value is None:
+        return (None,) * case_count
+    if isinstance(value, torch.Tensor):
+        if case_count != 1:
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "One key mask can only accompany one score case."
+            )
+        return (value,)
+    if (
+        not isinstance(value, Sequence)
+        or isinstance(value, (str, bytes))
+        or len(value) != case_count
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "key_masks must be None, one mask, or one mask per score case."
+        )
+    return tuple(value)
+
+
+def _attention_score_case_tensor(value: Any, name: str) -> Any:
+    torch = _torch()
+    if (
+        not isinstance(value, torch.Tensor)
+        or value.layout != torch.strided
+        or value.device.type == "meta"
+        or value.ndim != 4
+        or any(int(size) <= 0 for size in value.shape)
+        or not value.is_floating_point()
+        or value.is_complex()
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            f"{name} must be a non-empty materialized real "
+            "[batch, heads, queries, keys] tensor."
+        )
+    result = value.detach().to(device="cpu", dtype=torch.float64).contiguous()
+    if bool(torch.isnan(result).any().item()):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            f"{name} contains NaN."
+        )
+    return result
+
+
+def _attention_score_case_mask(
+    value: Any | None,
+    *,
+    score_shape: tuple[int, ...],
+    name: str,
+) -> Any:
+    torch = _torch()
+    batch, heads, queries, keys = score_shape
+    if value is None:
+        return torch.ones(score_shape, dtype=torch.bool)
+    if (
+        not isinstance(value, torch.Tensor)
+        or value.layout != torch.strided
+        or value.device.type == "meta"
+        or value.dtype != torch.bool
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            f"{name} must be a dense boolean key mask."
+        )
+    mask = value.detach().to(device="cpu").contiguous()
+    if tuple(mask.shape) == (batch, queries, keys):
+        mask = mask.unsqueeze(1)
+    if tuple(mask.shape) not in {
+        score_shape,
+        (batch, 1, queries, keys),
+    }:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            f"{name} must have shape [batch, queries, keys], "
+            "[batch, 1, queries, keys], or the exact score shape."
+        )
+    return mask.expand(batch, heads, queries, keys).contiguous()
+
+
+def _score_bundle_sha256(values: Sequence[Any], prefix: str) -> str:
+    return _state_sha256(
+        {
+            f"{prefix}.{index:04d}": value
+            for index, value in enumerate(values)
+        }
+    )
+
+
+def _score_row_tolerance(reference: Any, candidate: Any) -> float:
+    torch = _torch()
+    scale = max(
+        1.0,
+        float(reference.abs().max().item()),
+        float(candidate.abs().max().item()),
+    )
+    return (
+        torch.finfo(torch.float64).eps
+        * max(2, int(reference.numel()))
+        * 16.0
+        * scale
+    )
+
+
+def _deterministic_descending_indices(value: Any) -> tuple[int, ...]:
+    return tuple(
+        sorted(
+            range(int(value.numel())),
+            key=lambda index: (-float(value[index].item()), index),
+        )
+    )
+
+
+def evaluate_lfm2_structural_attention_score_preservation(
+    reference_scores: Any,
+    candidate_scores: Any,
+    *,
+    key_masks: Any | None = None,
+    top_k: int = 8,
+    relative_margin_floor: float = 0.5,
+    thresholds: Lfm2AttentionScorePreservationThresholds | None = None,
+) -> Lfm2AttentionScorePreservationReport:
+    """Evaluate held-out Q/K behavior using scores, never numeric weights.
+
+    Inputs are one tensor or parallel sequences of tensors shaped
+    ``[batch, heads, queries, keys]``.  Key lengths may differ between cases.
+    Masks exclude unavailable causal keys.  Rows with fewer than two valid
+    keys are counted but excluded from every metric.
+    """
+
+    torch = _torch()
+    requested_top_k = _positive_int(top_k, "top_k")
+    if requested_top_k < 2:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "top_k must be at least two for order and margin evaluation."
+        )
+    margin_floor = _nonnegative_float(
+        relative_margin_floor,
+        "relative_margin_floor",
+    )
+    if margin_floor > 1.0:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "relative_margin_floor must be within [0, 1]."
+        )
+    policy = thresholds or Lfm2AttentionScorePreservationThresholds()
+    if not isinstance(policy, Lfm2AttentionScorePreservationThresholds):
+        raise TypeError(
+            "thresholds must be Lfm2AttentionScorePreservationThresholds."
+        )
+    references_raw = _score_case_sequence(
+        reference_scores,
+        "reference_scores",
+    )
+    candidates_raw = _score_case_sequence(
+        candidate_scores,
+        "candidate_scores",
+    )
+    if len(references_raw) != len(candidates_raw):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Reference and candidate score case counts differ."
+        )
+    masks_raw = _score_mask_sequence(
+        key_masks,
+        case_count=len(references_raw),
+    )
+
+    references: list[Any] = []
+    candidates: list[Any] = []
+    masks: list[Any] = []
+    fisher_rows: list[float] = []
+    js_rows: list[float] = []
+    top1_matches = 0
+    pair_matches = 0
+    pair_count = 0
+    tied_pairs = 0
+    winner_sign_matches = 0
+    winner_floor_matches = 0
+    winner_count = 0
+    tied_winner_margins = 0
+    total_rows = 0
+    eligible_rows = 0
+    empty_rows = 0
+    singleton_rows = 0
+    case_reports: list[tuple[tuple[str, Any], ...]] = []
+
+    for case_index, (raw_reference, raw_candidate, raw_mask) in enumerate(
+        zip(references_raw, candidates_raw, masks_raw, strict=True)
+    ):
+        reference = _attention_score_case_tensor(
+            raw_reference,
+            f"reference_scores[{case_index}]",
+        )
+        candidate = _attention_score_case_tensor(
+            raw_candidate,
+            f"candidate_scores[{case_index}]",
+        )
+        if tuple(candidate.shape) != tuple(reference.shape):
+            raise Lfm2StructuralResidualAttentionFoldError(
+                f"Score case {case_index} reference/candidate shapes differ."
+            )
+        mask = _attention_score_case_mask(
+            raw_mask,
+            score_shape=tuple(int(value) for value in reference.shape),
+            name=f"key_masks[{case_index}]",
+        )
+        if (
+            not bool(torch.isfinite(reference[mask]).all().item())
+            or not bool(torch.isfinite(candidate[mask]).all().item())
+        ):
+            raise Lfm2StructuralResidualAttentionFoldError(
+                f"Score case {case_index} has non-finite values at valid keys."
+            )
+        references.append(reference)
+        candidates.append(candidate)
+        masks.append(mask)
+
+        flat_reference = reference.reshape(-1, int(reference.shape[-1]))
+        flat_candidate = candidate.reshape_as(flat_reference)
+        flat_mask = mask.reshape_as(flat_reference)
+        case_eligible = 0
+        case_empty = 0
+        case_singleton = 0
+        case_pairs_before = pair_count
+        case_winner_before = winner_count
+        total_rows += int(flat_reference.shape[0])
+        for row_index in range(int(flat_reference.shape[0])):
+            valid = torch.nonzero(
+                flat_mask[row_index],
+                as_tuple=False,
+            ).reshape(-1)
+            valid_count = int(valid.numel())
+            if valid_count == 0:
+                empty_rows += 1
+                case_empty += 1
+                continue
+            if valid_count == 1:
+                singleton_rows += 1
+                case_singleton += 1
+                continue
+            eligible_rows += 1
+            case_eligible += 1
+            reference_row = flat_reference[row_index].index_select(0, valid)
+            candidate_row = flat_candidate[row_index].index_select(0, valid)
+            tolerance = _score_row_tolerance(reference_row, candidate_row)
+
+            reference_probability = torch.softmax(
+                reference_row,
+                dim=-1,
+                dtype=torch.float64,
+            )
+            candidate_probability = torch.softmax(
+                candidate_row,
+                dim=-1,
+                dtype=torch.float64,
+            )
+            delta = candidate_row - reference_row
+            mean_delta = (reference_probability * delta).sum()
+            fisher = (
+                (reference_probability * delta.square()).sum()
+                - mean_delta.square()
+            ).clamp_min(0.0)
+            fisher_rows.append(float(fisher.item()))
+
+            midpoint = 0.5 * (
+                reference_probability + candidate_probability
+            )
+            tiny = torch.finfo(torch.float64).tiny
+            reference_term = torch.where(
+                reference_probability > 0.0,
+                reference_probability
+                * (
+                    torch.log(reference_probability.clamp_min(tiny))
+                    - torch.log(midpoint.clamp_min(tiny))
+                ),
+                torch.zeros_like(reference_probability),
+            )
+            candidate_term = torch.where(
+                candidate_probability > 0.0,
+                candidate_probability
+                * (
+                    torch.log(candidate_probability.clamp_min(tiny))
+                    - torch.log(midpoint.clamp_min(tiny))
+                ),
+                torch.zeros_like(candidate_probability),
+            )
+            js = 0.5 * (
+                reference_term.sum() + candidate_term.sum()
+            ) / math.log(2.0)
+            js_rows.append(float(js.clamp_min(0.0).item()))
+
+            order = _deterministic_descending_indices(reference_row)
+            candidate_order = _deterministic_descending_indices(candidate_row)
+            reference_winner_score = float(reference_row[order[0]].item())
+            reference_winners = {
+                index
+                for index in order
+                if abs(
+                    float(reference_row[index].item())
+                    - reference_winner_score
+                )
+                <= tolerance
+            }
+            top1_matches += int(candidate_order[0] in reference_winners)
+            selected = order[: min(requested_top_k, valid_count)]
+            for left_offset, left in enumerate(selected):
+                for right in selected[left_offset + 1 :]:
+                    reference_difference = float(
+                        (reference_row[left] - reference_row[right]).item()
+                    )
+                    if abs(reference_difference) <= tolerance:
+                        tied_pairs += 1
+                        continue
+                    candidate_difference = float(
+                        (candidate_row[left] - candidate_row[right]).item()
+                    )
+                    reference_sign = 1 if reference_difference > 0.0 else -1
+                    candidate_sign = (
+                        1
+                        if candidate_difference > tolerance
+                        else -1
+                        if candidate_difference < -tolerance
+                        else 0
+                    )
+                    pair_count += 1
+                    pair_matches += int(candidate_sign == reference_sign)
+
+            winner = selected[0]
+            for competitor in selected[1:]:
+                reference_margin = float(
+                    (
+                        reference_row[winner]
+                        - reference_row[competitor]
+                    ).item()
+                )
+                if reference_margin <= tolerance:
+                    tied_winner_margins += 1
+                    continue
+                candidate_margin = float(
+                    (
+                        candidate_row[winner]
+                        - candidate_row[competitor]
+                    ).item()
+                )
+                winner_count += 1
+                winner_sign_matches += int(candidate_margin > tolerance)
+                winner_floor_matches += int(
+                    candidate_margin + tolerance
+                    >= margin_floor * reference_margin
+                )
+
+        case_reports.append(
+            tuple(
+                sorted(
+                    {
+                        "case_index": case_index,
+                        "score_shape": [
+                            int(value) for value in reference.shape
+                        ],
+                        "total_row_count": int(flat_reference.shape[0]),
+                        "eligible_row_count": case_eligible,
+                        "excluded_empty_row_count": case_empty,
+                        "excluded_singleton_row_count": case_singleton,
+                        "top_k_pair_comparison_count": (
+                            pair_count - case_pairs_before
+                        ),
+                        "winner_margin_comparison_count": (
+                            winner_count - case_winner_before
+                        ),
+                    }.items()
+                )
+            )
+        )
+
+    if eligible_rows <= 0:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Held-out attention score evidence has no row with two valid keys."
+        )
+    if len(fisher_rows) != eligible_rows or len(js_rows) != eligible_rows:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Attention score metric row accounting is inconsistent."
+        )
+
+    top1_fraction = top1_matches / eligible_rows
+    pair_fraction = 1.0 if pair_count == 0 else pair_matches / pair_count
+    winner_sign_fraction = (
+        1.0
+        if winner_count == 0
+        else winner_sign_matches / winner_count
+    )
+    winner_floor_fraction = (
+        1.0
+        if winner_count == 0
+        else winner_floor_matches / winner_count
+    )
+    metrics = {
+        "softmax_fisher_error_mean": math.fsum(fisher_rows)
+        / len(fisher_rows),
+        "softmax_fisher_error_worst": max(fisher_rows),
+        "js_divergence_mean": math.fsum(js_rows) / len(js_rows),
+        "js_divergence_worst": max(js_rows),
+        "top1_key_agreement_fraction": top1_fraction,
+        "top_k_pair_order_agreement_fraction": pair_fraction,
+        "winner_margin_sign_agreement_fraction": winner_sign_fraction,
+        "relative_margin_floor_retention_fraction": winner_floor_fraction,
+    }
+    checks = {
+        "maximum_softmax_fisher_error": (
+            None
+            if policy.maximum_softmax_fisher_error is None
+            else metrics["softmax_fisher_error_worst"]
+            <= policy.maximum_softmax_fisher_error
+        ),
+        "maximum_js_divergence": (
+            None
+            if policy.maximum_js_divergence is None
+            else metrics["js_divergence_worst"]
+            <= policy.maximum_js_divergence
+        ),
+        "minimum_top1_key_agreement_fraction": (
+            None
+            if policy.minimum_top1_key_agreement_fraction is None
+            else top1_fraction
+            >= policy.minimum_top1_key_agreement_fraction
+        ),
+        "minimum_top_k_pair_order_agreement_fraction": (
+            None
+            if policy.minimum_top_k_pair_order_agreement_fraction is None
+            else pair_fraction
+            >= policy.minimum_top_k_pair_order_agreement_fraction
+        ),
+        "minimum_winner_margin_sign_agreement_fraction": (
+            None
+            if policy.minimum_winner_margin_sign_agreement_fraction is None
+            else winner_sign_fraction
+            >= policy.minimum_winner_margin_sign_agreement_fraction
+        ),
+        "minimum_relative_margin_floor_retention_fraction": (
+            None
+            if policy.minimum_relative_margin_floor_retention_fraction is None
+            else winner_floor_fraction
+            >= policy.minimum_relative_margin_floor_retention_fraction
+        ),
+    }
+    return Lfm2AttentionScorePreservationReport(
+        case_count=len(references),
+        total_row_count=total_rows,
+        eligible_row_count=eligible_rows,
+        excluded_empty_row_count=empty_rows,
+        excluded_singleton_row_count=singleton_rows,
+        top_k_pair_comparison_count=pair_count,
+        excluded_reference_tie_pair_count=tied_pairs,
+        winner_margin_comparison_count=winner_count,
+        excluded_reference_tie_margin_count=tied_winner_margins,
+        top_k=requested_top_k,
+        relative_margin_floor=margin_floor,
+        softmax_fisher_error_mean=metrics["softmax_fisher_error_mean"],
+        softmax_fisher_error_worst=metrics["softmax_fisher_error_worst"],
+        js_divergence_mean=metrics["js_divergence_mean"],
+        js_divergence_worst=metrics["js_divergence_worst"],
+        top1_key_agreement_fraction=top1_fraction,
+        top_k_pair_order_agreement_fraction=pair_fraction,
+        winner_margin_sign_agreement_fraction=winner_sign_fraction,
+        relative_margin_floor_retention_fraction=winner_floor_fraction,
+        reference_score_bundle_sha256=_score_bundle_sha256(
+            references,
+            "reference",
+        ),
+        candidate_score_bundle_sha256=_score_bundle_sha256(
+            candidates,
+            "candidate",
+        ),
+        key_mask_bundle_sha256=_score_bundle_sha256(masks, "mask"),
+        case_reports=tuple(case_reports),
+        thresholds=policy,
+        checks=tuple(sorted(checks.items())),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1884,9 +2577,18 @@ def compile_lfm2_structural_residual_mlp_fold(
         raise Lfm2StructuralResidualAttentionFoldError(
             "Target templates are not one standard atomic LFM2 SwiGLU set."
         )
-    if target_intermediate >= source_intermediate:
+    if target_hidden > source_hidden or target_intermediate > source_intermediate:
         raise Lfm2StructuralResidualAttentionFoldError(
-            "The structural target must reduce the SwiGLU intermediate width."
+            "The structural target cannot expand the SwiGLU hidden or "
+            "intermediate width."
+        )
+    if (
+        target_hidden == source_hidden
+        and target_intermediate == source_intermediate
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "The structural target must reduce the SwiGLU hidden or "
+            "intermediate width."
         )
     if residual_assignment_sha256 is not None and (
         not isinstance(residual_assignment_sha256, str)
@@ -3153,12 +3855,24 @@ def compile_lfm2_structural_residual_attention_fold(
             f"{template_shapes} != {expected_shapes}."
         )
     if (
-        target_query_heads >= source_query_heads
-        or target_key_value_heads >= source_key_value_heads
+        target_hidden > source_hidden
+        or target_output > source_hidden
+        or target_query_heads > source_query_heads
+        or target_key_value_heads > source_key_value_heads
         or target_query_heads % target_key_value_heads
     ):
         raise Lfm2StructuralResidualAttentionFoldError(
-            "The structural target must reduce both Q and KV heads and remain valid GQA."
+            "The structural target cannot expand residual width or GQA heads "
+            "and must remain valid GQA."
+        )
+    if (
+        target_hidden == source_hidden
+        and target_output == source_hidden
+        and target_query_heads == source_query_heads
+        and target_key_value_heads == source_key_value_heads
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "The structural target must reduce residual width or GQA heads."
         )
     if residual_assignment_sha256 is not None and (
         not isinstance(residual_assignment_sha256, str)
@@ -4484,6 +5198,7 @@ def _normalize_attention_value_output_case(
         query,
         repeated_key.transpose(-2, -1),
     ) / math.sqrt(topology.head_dim)
+    candidate_scores = scores
     if mask is not None:
         scores = scores.masked_fill(~mask.unsqueeze(1), -1e30)
     probabilities = torch.softmax(scores, dim=-1, dtype=torch.float64)
@@ -4494,12 +5209,201 @@ def _normalize_attention_value_output_case(
     return {
         "batch": batch,
         "query_length": query_length,
+        "scores": candidate_scores,
+        "key_mask": mask,
         "probabilities": probabilities,
         "weighted_inputs": weighted_inputs,
         "endpoint": (
             parent_endpoint - target_residual
         ).reshape(batch * query_length, topology.target_output_size),
     }
+
+
+def evaluate_lfm2_compiled_attention_producer_score_preservation(
+    producer: Lfm2CompiledStructuralAttentionProducerFold,
+    cases: Sequence[Lfm2CachedAttentionFoldCase],
+    *,
+    query_norm_weight: Any | None = None,
+    key_norm_weight: Any | None = None,
+    norm_epsilon: float = 1e-6,
+    top_k: int = 8,
+    relative_margin_floor: float = 0.5,
+    thresholds: Lfm2AttentionScorePreservationThresholds | None = None,
+) -> Lfm2AttentionScorePreservationReport:
+    """Evaluate one compiled Q/K path against cached parent score decisions.
+
+    The parent reference is the compiler-authenticated barycenter of every
+    source query head assigned to each target head.  The candidate is
+    reconstructed analytically from the target-shaped Q/K weights and the
+    held-out live-child inputs.  No model forward, parent execution, numeric
+    weight equality, gradient, or optimizer is involved.
+    """
+
+    torch = _torch()
+    if not isinstance(
+        producer,
+        Lfm2CompiledStructuralAttentionProducerFold,
+    ):
+        raise TypeError(
+            "producer must be Lfm2CompiledStructuralAttentionProducerFold."
+        )
+    selected_cases = tuple(cases)
+    if (
+        not selected_cases
+        or any(
+            not isinstance(case, Lfm2CachedAttentionFoldCase)
+            for case in selected_cases
+        )
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "cases must contain held-out Lfm2CachedAttentionFoldCase values."
+        )
+    topology = producer.topology
+    q_norm = (
+        None
+        if query_norm_weight is None
+        else _float_tensor(
+            query_norm_weight,
+            "query_norm_weight",
+            ndim=1,
+        )
+    )
+    k_norm = (
+        None
+        if key_norm_weight is None
+        else _float_tensor(
+            key_norm_weight,
+            "key_norm_weight",
+            ndim=1,
+        )
+    )
+    if q_norm is not None and tuple(q_norm.shape) != (
+        topology.head_dim,
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "query_norm_weight must have shape [head_dim]."
+        )
+    if k_norm is not None and tuple(k_norm.shape) != (
+        topology.head_dim,
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "key_norm_weight must have shape [head_dim]."
+        )
+    if (
+        len(producer.query_groups) != topology.target_query_heads
+        or len(producer.query_barycentric_weights)
+        != topology.target_query_heads
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Compiled Q/K query-head barycentric evidence is incomplete."
+        )
+
+    reference_scores = []
+    candidate_scores = []
+    key_masks = []
+    with torch.no_grad():
+        for case_index, case in enumerate(selected_cases):
+            normalized = _normalize_attention_value_output_case(
+                case,
+                case_index=case_index,
+                producer=producer,
+                query_norm_weight=q_norm,
+                key_norm_weight=k_norm,
+                normalized_query_norm_weight=q_norm,
+                normalized_key_norm_weight=k_norm,
+                norm_epsilon=norm_epsilon,
+            )
+            parent_query = _float_tensor(
+                case.parent_query,
+                f"cases[{case_index}].parent_query",
+                ndim=4,
+            )
+            parent_key = _float_tensor(
+                case.parent_key,
+                f"cases[{case_index}].parent_key",
+                ndim=4,
+            )
+            repeated_parent_key = parent_key.repeat_interleave(
+                topology.source_query_heads_per_group,
+                dim=1,
+            )
+            source_scores = torch.matmul(
+                parent_query,
+                repeated_parent_key.transpose(-2, -1),
+            ) / math.sqrt(topology.head_dim)
+            grouped_scores = []
+            for target_head, (members, weights) in enumerate(
+                zip(
+                    producer.query_groups,
+                    producer.query_barycentric_weights,
+                    strict=True,
+                )
+            ):
+                if (
+                    not members
+                    or len(members) != len(weights)
+                    or any(
+                        isinstance(member, bool)
+                        or not isinstance(member, int)
+                        or member < 0
+                        or member >= topology.source_query_heads
+                        for member in members
+                    )
+                    or not all(
+                        math.isfinite(float(weight))
+                        and float(weight) >= 0.0
+                        for weight in weights
+                    )
+                ):
+                    raise Lfm2StructuralResidualAttentionFoldError(
+                        "Compiled Q/K barycentric query group is invalid."
+                    )
+                weight_sum = math.fsum(float(weight) for weight in weights)
+                if not math.isclose(
+                    weight_sum,
+                    1.0,
+                    rel_tol=1e-8,
+                    abs_tol=1e-10,
+                ):
+                    raise Lfm2StructuralResidualAttentionFoldError(
+                        "Compiled Q/K barycentric query weights do not sum "
+                        "to one."
+                    )
+                index = torch.tensor(members, dtype=torch.long)
+                selected = source_scores.index_select(1, index)
+                barycentric = torch.tensor(
+                    weights,
+                    dtype=torch.float64,
+                ).reshape(1, len(members), 1, 1)
+                grouped = (selected * barycentric).sum(
+                    dim=1,
+                    keepdim=False,
+                )
+                if not bool(torch.isfinite(grouped).all().item()):
+                    raise Lfm2StructuralResidualAttentionFoldError(
+                        f"Target query head {target_head} has non-finite "
+                        "held-out reference scores."
+                    )
+                grouped_scores.append(grouped)
+            reference_scores.append(
+                torch.stack(grouped_scores, dim=1).contiguous()
+            )
+            candidate_scores.append(
+                normalized["scores"].detach().to(
+                    device="cpu",
+                    dtype=torch.float64,
+                ).contiguous()
+            )
+            key_masks.append(normalized["key_mask"])
+
+    return evaluate_lfm2_structural_attention_score_preservation(
+        tuple(reference_scores),
+        tuple(candidate_scores),
+        key_masks=tuple(key_masks),
+        top_k=top_k,
+        relative_margin_floor=relative_margin_floor,
+        thresholds=thresholds,
+    )
 
 
 def _attention_context_rows_from_value(
@@ -7175,6 +8079,8 @@ def cached_mlp_case_from_lfm2_trace(
 
 
 __all__ = [
+    "Lfm2AttentionScorePreservationReport",
+    "Lfm2AttentionScorePreservationThresholds",
     "Lfm2CachedAttentionFoldCase",
     "Lfm2CachedMlpFoldCase",
     "Lfm2CachedShortConvFoldCase",
@@ -7209,6 +8115,8 @@ __all__ = [
     "compile_lfm2_structural_residual_short_conv_fold",
     "compile_lfm2_structural_short_conv_consumer_fold",
     "compile_lfm2_structural_short_conv_producer_fold",
+    "evaluate_lfm2_structural_attention_score_preservation",
+    "evaluate_lfm2_compiled_attention_producer_score_preservation",
     "install_lfm2_structural_attention_consumer_fold",
     "install_lfm2_structural_attention_fold",
     "install_lfm2_structural_attention_producer_fold",

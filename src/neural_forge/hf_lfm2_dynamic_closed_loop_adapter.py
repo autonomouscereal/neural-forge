@@ -73,7 +73,13 @@ from .hf_lfm2_circuit_trace_cache import (
     capture_lfm2_child_replay,
     fingerprint_lfm2_parent,
 )
+from .hf_lfm2_macro_cell_attractor_gate import (
+    Lfm2MacroCellAttractorGate,
+    Lfm2MacroCellAttractorSnapshot,
+)
 from .hf_lfm2_structural_residual_attention_fold import (
+    Lfm2AttentionScorePreservationReport,
+    Lfm2AttentionScorePreservationThresholds,
     Lfm2CompiledStructuralAttentionConsumerFold,
     Lfm2CompiledStructuralAttentionProducerFold,
     Lfm2CompiledStructuralAttentionValueOutputFold,
@@ -88,6 +94,7 @@ from .hf_lfm2_structural_residual_attention_fold import (
     compile_lfm2_structural_residual_mlp_fold,
     compile_lfm2_structural_short_conv_consumer_fold,
     compile_lfm2_structural_short_conv_producer_fold,
+    evaluate_lfm2_compiled_attention_producer_score_preservation,
     install_lfm2_structural_attention_consumer_fold,
     install_lfm2_structural_attention_producer_fold,
     install_lfm2_structural_attention_score_producer_fold,
@@ -188,6 +195,15 @@ def _finite_float(value: Any, name: str) -> float:
     if not math.isfinite(result):
         raise Lfm2DynamicClosedLoopAdapterError(
             f"{name} must be finite."
+        )
+    return result
+
+
+def _unit_fraction(value: Any, name: str) -> float:
+    result = _finite_float(value, name)
+    if result < 0.0 or result > 1.0:
+        raise Lfm2DynamicClosedLoopAdapterError(
+            f"{name} must be within [0, 1]."
         )
     return result
 
@@ -486,6 +502,17 @@ class Lfm2DynamicClosedLoopAdapterConfig:
     attention_value_output_context_ridge: float = 1e-6
     attention_value_output_fit_tolerance: float = 1e-10
     attention_value_output_context_equivalence_tolerance: float = 5e-2
+    attention_score_candidate_gate_enabled: bool = False
+    attention_score_top_k: int = 8
+    attention_score_margin_floor_fraction: float = 0.5
+    attention_score_minimum_top1_key_agreement_fraction: float = 0.9
+    attention_score_minimum_top_k_pair_order_agreement_fraction: float = 0.9
+    attention_score_minimum_winner_margin_sign_agreement_fraction: float = 0.9
+    attention_score_minimum_relative_margin_floor_retention_fraction: (
+        float
+    ) = 0.9
+    attention_score_maximum_softmax_fisher_error: float | None = None
+    attention_score_maximum_js_divergence: float | None = None
     output_interface_mode: str = "fit-transform"
 
     def __post_init__(self) -> None:
@@ -685,6 +712,65 @@ class Lfm2DynamicClosedLoopAdapterConfig:
                 "attention_value_output_context_equivalence_tolerance",
             ),
         )
+        if not isinstance(
+            self.attention_score_candidate_gate_enabled,
+            bool,
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "attention_score_candidate_gate_enabled must be boolean."
+            )
+        score_top_k = _positive_int(
+            self.attention_score_top_k,
+            "attention_score_top_k",
+        )
+        if score_top_k < 2:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "attention_score_top_k must be at least two."
+            )
+        object.__setattr__(
+            self,
+            "attention_score_top_k",
+            score_top_k,
+        )
+        for name in (
+            "attention_score_margin_floor_fraction",
+            "attention_score_minimum_top1_key_agreement_fraction",
+            (
+                "attention_score_minimum_top_k_pair_order_"
+                "agreement_fraction"
+            ),
+            (
+                "attention_score_minimum_winner_margin_sign_"
+                "agreement_fraction"
+            ),
+            (
+                "attention_score_minimum_relative_margin_floor_"
+                "retention_fraction"
+            ),
+        ):
+            object.__setattr__(
+                self,
+                name,
+                _unit_fraction(getattr(self, name), name),
+            )
+        if self.attention_score_maximum_softmax_fisher_error is not None:
+            object.__setattr__(
+                self,
+                "attention_score_maximum_softmax_fisher_error",
+                _nonnegative_float(
+                    self.attention_score_maximum_softmax_fisher_error,
+                    "attention_score_maximum_softmax_fisher_error",
+                ),
+            )
+        if self.attention_score_maximum_js_divergence is not None:
+            object.__setattr__(
+                self,
+                "attention_score_maximum_js_divergence",
+                _unit_fraction(
+                    self.attention_score_maximum_js_divergence,
+                    "attention_score_maximum_js_divergence",
+                ),
+            )
         if (
             not isinstance(self.output_interface_mode, str)
             or self.output_interface_mode
@@ -729,6 +815,11 @@ class _ProducerPayload:
     operator_norm_weight: Any
     operator_norm_report_sha256: str
     baseline_validation: FitMetrics
+    attention_score_fit: Lfm2AttentionScorePreservationReport | None
+    attention_score_validation: (
+        Lfm2AttentionScorePreservationReport | None
+    )
+    attractor_baseline: Lfm2MacroCellAttractorSnapshot | None
     split_sha256: str
 
 
@@ -943,6 +1034,7 @@ class Lfm2DynamicClosedLoopAdapter:
         replay_config: Lfm2CircuitTraceCaptureConfig | None = None,
         input_device: Any | None = None,
         config: Lfm2DynamicClosedLoopAdapterConfig | None = None,
+        macro_cell_attractor_gate: Lfm2MacroCellAttractorGate | None = None,
     ) -> None:
         if not isinstance(parent_cache, Lfm2CircuitTraceCache):
             raise TypeError("parent_cache must be Lfm2CircuitTraceCache.")
@@ -961,6 +1053,18 @@ class Lfm2DynamicClosedLoopAdapter:
             raise TypeError(
                 "config must be Lfm2DynamicClosedLoopAdapterConfig."
             )
+        if (
+            macro_cell_attractor_gate is not None
+            and not isinstance(
+                macro_cell_attractor_gate,
+                Lfm2MacroCellAttractorGate,
+            )
+        ):
+            raise TypeError(
+                "macro_cell_attractor_gate must be "
+                "Lfm2MacroCellAttractorGate or None."
+            )
+        self.macro_cell_attractor_gate = macro_cell_attractor_gate
         self.input_device = input_device
         self.source_layers = _layers(source_model)
         self.child_layers = _layers(child_model)
@@ -2400,6 +2504,14 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Producer parent endpoint envelope is invalid."
             )
         layer_index = scope.layer_index
+        attractor_baseline = (
+            None
+            if self.macro_cell_attractor_gate is None
+            else self.macro_cell_attractor_gate.capture(
+                self.child_model,
+                phase=f"pre-macro-cell-layer-{layer_index:06d}",
+            )
+        )
         capture = self._capture_payload(child_capture)
         split = self._split(capture.paired, fit_records)
         target_layer = self.child_layers[layer_index]
@@ -2496,6 +2608,91 @@ class Lfm2DynamicClosedLoopAdapter:
                     self.config.max_prior_delta_ratio
                 ),
             )
+        attention_score_fit = None
+        attention_score_validation = None
+        if (
+            operator_kind == "full_attention"
+            and self.config.attention_score_candidate_gate_enabled
+        ):
+            score_thresholds = (
+                Lfm2AttentionScorePreservationThresholds(
+                    maximum_softmax_fisher_error=(
+                        self.config
+                        .attention_score_maximum_softmax_fisher_error
+                    ),
+                    maximum_js_divergence=(
+                        self.config
+                        .attention_score_maximum_js_divergence
+                    ),
+                    minimum_top1_key_agreement_fraction=(
+                        self.config
+                        .attention_score_minimum_top1_key_agreement_fraction
+                    ),
+                    minimum_top_k_pair_order_agreement_fraction=(
+                        self.config
+                        .attention_score_minimum_top_k_pair_order_agreement_fraction
+                    ),
+                    minimum_winner_margin_sign_agreement_fraction=(
+                        self.config
+                        .attention_score_minimum_winner_margin_sign_agreement_fraction
+                    ),
+                    minimum_relative_margin_floor_retention_fraction=(
+                        self.config
+                        .attention_score_minimum_relative_margin_floor_retention_fraction
+                    ),
+                )
+            )
+            query_norm = getattr(
+                getattr(target, "q_layernorm", None),
+                "weight",
+                None,
+            )
+            key_norm = getattr(
+                getattr(target, "k_layernorm", None),
+                "weight",
+                None,
+            )
+            score_options = {
+                "query_norm_weight": query_norm,
+                "key_norm_weight": key_norm,
+                "norm_epsilon": self._attention_norm_epsilon(target),
+                "top_k": self.config.attention_score_top_k,
+                "relative_margin_floor": (
+                    self.config.attention_score_margin_floor_fraction
+                ),
+            }
+            attention_score_fit = (
+                evaluate_lfm2_compiled_attention_producer_score_preservation(
+                    compiled,
+                    operator_cases.fit_cases,
+                    thresholds=(
+                        Lfm2AttentionScorePreservationThresholds()
+                    ),
+                    **score_options,
+                )
+            )
+            attention_score_validation = (
+                evaluate_lfm2_compiled_attention_producer_score_preservation(
+                    compiled,
+                    operator_cases.validation_cases,
+                    thresholds=score_thresholds,
+                    **score_options,
+                )
+            )
+            if not attention_score_validation.accepted:
+                failed_checks = [
+                    name
+                    for name, accepted in (
+                        attention_score_validation.checks
+                    )
+                    if accepted is False
+                ]
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Held-out attention score/order/margin gate rejected "
+                    f"layer {layer_index}: {','.join(failed_checks)} "
+                    f"(report "
+                    f"{attention_score_validation.report_sha256})."
+                )
         materializer = operator_cases.norm_materializer
         payload = _ProducerPayload(
             operator_kind=operator_kind,
@@ -2508,6 +2705,9 @@ class Lfm2DynamicClosedLoopAdapter:
                 materializer
             ),
             baseline_validation=baseline,
+            attention_score_fit=attention_score_fit,
+            attention_score_validation=attention_score_validation,
+            attractor_baseline=attractor_baseline,
             split_sha256=split.split_sha256,
         )
         artifact_sha = canonical_sha256(
@@ -2521,6 +2721,21 @@ class Lfm2DynamicClosedLoopAdapter:
                 "compiled_state_sha256": compiled.compiled_state_sha256,
                 "operator_norm_report_sha256": (
                     payload.operator_norm_report_sha256
+                ),
+                "attractor_baseline_snapshot_sha256": (
+                    None
+                    if attractor_baseline is None
+                    else attractor_baseline.snapshot_sha256
+                ),
+                "attention_score_fit_report_sha256": (
+                    None
+                    if attention_score_fit is None
+                    else attention_score_fit.report_sha256
+                ),
+                "attention_score_validation_report_sha256": (
+                    None
+                    if attention_score_validation is None
+                    else attention_score_validation.report_sha256
                 ),
                 "split_sha256": split.split_sha256,
                 "map_sha256": self.map_sha256,
@@ -2542,6 +2757,52 @@ class Lfm2DynamicClosedLoopAdapter:
                     "all_parent_batches_available": True,
                     "actual_child_capture_used": True,
                     "map_sha256": self.map_sha256,
+                    "macro_cell_attractor_gate_enabled": (
+                        attractor_baseline is not None
+                    ),
+                    "attractor_baseline_snapshot_sha256": (
+                        None
+                        if attractor_baseline is None
+                        else attractor_baseline.snapshot_sha256
+                    ),
+                    "attention_score_candidate_gate_enabled": (
+                        attention_score_validation is not None
+                    ),
+                    "attention_score_candidate_gate_accepted": (
+                        None
+                        if attention_score_validation is None
+                        else attention_score_validation.accepted
+                    ),
+                    "attention_score_fit_report_sha256": (
+                        None
+                        if attention_score_fit is None
+                        else attention_score_fit.report_sha256
+                    ),
+                    "attention_score_validation_report_sha256": (
+                        None
+                        if attention_score_validation is None
+                        else attention_score_validation.report_sha256
+                    ),
+                    "attention_score_validation_top1_key_agreement": (
+                        None
+                        if attention_score_validation is None
+                        else attention_score_validation
+                        .top1_key_agreement_fraction
+                    ),
+                    "attention_score_validation_top_k_pair_order_agreement": (
+                        None
+                        if attention_score_validation is None
+                        else attention_score_validation
+                        .top_k_pair_order_agreement_fraction
+                    ),
+                    "attention_score_validation_margin_floor_retention": (
+                        None
+                        if attention_score_validation is None
+                        else attention_score_validation
+                        .relative_margin_floor_retention_fraction
+                    ),
+                    "attention_score_numeric_weight_matching_used": False,
+                    "attention_score_parent_forward_calls": 0,
                 }
             ),
         )
@@ -3097,7 +3358,7 @@ class Lfm2DynamicClosedLoopAdapter:
             layer_index=layer_index,
             batch_indices=indices,
         )
-        return self._validation_decision(
+        endpoint_decision = self._validation_decision(
             scope=scope,
             records=validation_records,
             baseline=producer.baseline_validation,
@@ -3106,6 +3367,135 @@ class Lfm2DynamicClosedLoopAdapter:
                 self.config.minimum_layer_relative_rmse_improvement
             ),
             endpoint="post-layer residual",
+        )
+        gate = self.macro_cell_attractor_gate
+        attractor_baseline = producer.attractor_baseline
+        if gate is None:
+            if attractor_baseline is not None:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Layer validation retained attractor evidence without a gate."
+                )
+            return endpoint_decision
+        if attractor_baseline is None:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Layer validation has no pre-cell attractor baseline."
+            )
+        attractor_candidate = gate.capture(
+            self.child_model,
+            phase=f"post-macro-cell-layer-{layer_index:06d}",
+        )
+        attractor_decision = gate.compare(
+            attractor_baseline,
+            attractor_candidate,
+        )
+        attractor_payload = attractor_decision.as_dict()
+        attractor_metrics = attractor_candidate.metrics
+        accepted = bool(
+            endpoint_decision.accepted and attractor_decision.accepted
+        )
+        reasons = [endpoint_decision.reason]
+        if attractor_decision.accepted:
+            reasons.append("macro-cell free-rollout attractor gate accepted")
+        else:
+            decision_checks = attractor_payload.get("checks", {})
+            failed_details = []
+            for check_name in attractor_decision.failed_checks:
+                check = (
+                    decision_checks.get(check_name)
+                    if isinstance(decision_checks, Mapping)
+                    else None
+                )
+                if (
+                    isinstance(check, Mapping)
+                    and isinstance(check.get("observed"), (int, float))
+                    and not isinstance(check.get("observed"), bool)
+                    and isinstance(check.get("maximum"), (int, float))
+                    and not isinstance(check.get("maximum"), bool)
+                ):
+                    failed_details.append(
+                        f"{check_name}="
+                        f"{float(check['observed']):.17g}>"
+                        f"{float(check['maximum']):.17g}"
+                    )
+                else:
+                    failed_details.append(check_name)
+            reasons.append(
+                "macro-cell free-rollout attractor gate rejected: "
+                + ",".join(failed_details)
+            )
+        metrics = dict(endpoint_decision.metrics)
+        metrics.update(
+            {
+                "macro_cell_attractor_gate_enabled": True,
+                "macro_cell_attractor_gate_accepted": (
+                    attractor_decision.accepted
+                ),
+                "macro_cell_attractor_decision_sha256": (
+                    attractor_decision.decision_sha256
+                ),
+                "macro_cell_attractor_incumbent_snapshot_sha256": (
+                    attractor_baseline.snapshot_sha256
+                ),
+                "macro_cell_attractor_candidate_snapshot_sha256": (
+                    attractor_candidate.snapshot_sha256
+                ),
+                "macro_cell_attractor_failed_check_count": len(
+                    attractor_decision.failed_checks
+                ),
+                "macro_cell_attractor_failed_checks": ",".join(
+                    attractor_decision.failed_checks
+                ),
+                "macro_cell_attractor_new_collapsed_records": len(
+                    attractor_payload["new_collapsed_record_ids"]
+                ),
+                "macro_cell_attractor_mean_entropy_parent_distance": float(
+                    attractor_metrics["mean_entropy_parent_distance"]
+                ),
+                "macro_cell_attractor_mean_repetition_excess": float(
+                    attractor_metrics["mean_repetition_excess"]
+                ),
+                "macro_cell_attractor_mean_dominant_token_excess": float(
+                    attractor_metrics["mean_dominant_token_excess"]
+                ),
+                "macro_cell_attractor_mean_eos_position_error": float(
+                    attractor_metrics["mean_eos_position_error"]
+                ),
+                "macro_cell_attractor_collapsed_record_count": int(
+                    attractor_metrics["collapsed_record_count"]
+                ),
+                "macro_cell_exact_token_metrics_used_for_acceptance": False,
+                "macro_cell_parent_forward_calls": 0,
+                "macro_cell_training_steps": 0,
+            }
+        )
+        decision_checks = attractor_payload.get("checks", {})
+        if isinstance(decision_checks, Mapping):
+            for check_name, check in sorted(decision_checks.items()):
+                if not isinstance(check_name, str) or not isinstance(
+                    check,
+                    Mapping,
+                ):
+                    continue
+                observed = check.get("observed")
+                maximum = check.get("maximum")
+                passed = check.get("passed")
+                if (
+                    isinstance(observed, (int, float))
+                    and not isinstance(observed, bool)
+                    and isinstance(maximum, (int, float))
+                    and not isinstance(maximum, bool)
+                    and isinstance(passed, bool)
+                ):
+                    prefix = f"macro_cell_attractor_check_{check_name}"
+                    metrics[f"{prefix}_observed"] = float(observed)
+                    metrics[f"{prefix}_maximum"] = float(maximum)
+                    metrics[f"{prefix}_passed"] = passed
+        return ValidationDecision(
+            scope=scope,
+            accepted=accepted,
+            validation_record_keys=endpoint_decision.validation_record_keys,
+            reason="; ".join(reasons),
+            metrics=_scalar_metadata(metrics),
         )
 
     # -- Final normalization --------------------------------------------

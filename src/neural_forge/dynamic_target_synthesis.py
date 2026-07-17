@@ -25,6 +25,7 @@ from .dynamic_circuit_ir import JsonScalar, ModelCircuitGraph, canonical_sha256
 from .dynamic_fold_executor import fingerprint_model_state
 from .dynamic_model_inspector import InspectorRegistry
 from .dynamic_parameter_frontier import (
+    CAP_TOKENIZER_BRIDGE,
     DenseParameterBudgetRequest,
     DenseParameterFrontierResult,
     DynamicParameterFrontierCapabilityError,
@@ -32,6 +33,11 @@ from .dynamic_parameter_frontier import (
     DenseTargetTopologyCandidate,
     select_best_executable_dense_candidate,
     synthesize_dense_parameter_frontier,
+)
+from .hf_tokenizer_bridge import (
+    CHILD_TOKENIZER_SEMANTICS_CONFIG_KEY,
+    PARENT_TOKENIZER_SEMANTICS_CONFIG_KEY,
+    TOKENIZER_BRIDGE_CONFIG_KEYS,
 )
 
 
@@ -601,14 +607,47 @@ def plan_budgeted_dynamic_target(
             "Automatic target synthesis refuses an over-budget nearest "
             "diagnostic candidate."
         )
+    selected_tokenizer_fingerprint = tokenizer_fingerprint
     if candidate.tokenizer_bridge_required:
-        raise DynamicTargetSynthesisError(
-            "Selected topology requires a tokenizer bridge, but tokenizer "
-            "mapping is not implemented by the dense target planner."
-        )
+        configuration = dict(candidate.configuration)
+        if (
+            not candidate.compiler_executable
+            or CAP_TOKENIZER_BRIDGE
+            not in candidate.declared_compiler_capabilities
+            or CAP_TOKENIZER_BRIDGE
+            in candidate.missing_compiler_capabilities
+            or not TOKENIZER_BRIDGE_CONFIG_KEYS.issubset(configuration)
+        ):
+            raise DynamicTargetSynthesisError(
+                "Selected topology requires a tokenizer bridge, but no "
+                "verified bridge artifact capability is bound to the planner."
+            )
+        parent_semantics = configuration[
+            PARENT_TOKENIZER_SEMANTICS_CONFIG_KEY
+        ]
+        child_semantics = configuration[
+            CHILD_TOKENIZER_SEMANTICS_CONFIG_KEY
+        ]
+        if (
+            parent_graph.tokenizer_fingerprint != parent_semantics
+            or not isinstance(child_semantics, str)
+        ):
+            raise DynamicTargetSynthesisError(
+                "Selected tokenizer bridge differs from the inspected parent "
+                "or lacks child semantics."
+            )
+        if (
+            selected_tokenizer_fingerprint is not None
+            and selected_tokenizer_fingerprint != child_semantics
+        ):
+            raise DynamicTargetSynthesisError(
+                "Requested child tokenizer differs from the selected strict "
+                "tokenizer bridge."
+            )
+        selected_tokenizer_fingerprint = child_semantics
     target_request = candidate.to_target_request(
         child_name=child_name,
-        tokenizer_fingerprint=tokenizer_fingerprint,
+        tokenizer_fingerprint=selected_tokenizer_fingerprint,
         adapter_id=adapter_id,
         fold_method_id=fold_method_id,
         blank_seed=blank_seed,

@@ -12,6 +12,7 @@ nn = torch.nn
 
 import neural_forge.hf_lfm2_structural_residual_attention_fold as fold_module  # noqa: E402
 from neural_forge.hf_lfm2_structural_residual_attention_fold import (  # noqa: E402
+    Lfm2AttentionScorePreservationThresholds,
     Lfm2CachedAttentionFoldCase,
     Lfm2CachedMlpFoldCase,
     Lfm2CachedShortConvFoldCase,
@@ -26,6 +27,8 @@ from neural_forge.hf_lfm2_structural_residual_attention_fold import (  # noqa: E
     compile_lfm2_structural_residual_attention_fold,
     compile_lfm2_structural_residual_mlp_fold,
     compile_lfm2_structural_residual_short_conv_fold,
+    evaluate_lfm2_compiled_attention_producer_score_preservation,
+    evaluate_lfm2_structural_attention_score_preservation,
     install_lfm2_structural_attention_fold,
     install_lfm2_structural_layer_fold,
     install_lfm2_structural_short_conv_fold,
@@ -33,6 +36,177 @@ from neural_forge.hf_lfm2_structural_residual_attention_fold import (  # noqa: E
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     open_lfm2_circuit_trace_cache,
 )
+
+
+def test_attention_score_preservation_is_masked_shift_invariant_and_canonical():
+    reference = torch.tensor(
+        [[[[3.0, 2.0, 1.0, 0.0], [4.0, 2.0, 1.0, -20.0], [3.0, 2.0, 1.0, 0.0]]]],
+        dtype=torch.float64,
+    )
+    candidate = reference.clone()
+    candidate[0, 0, 0] = torch.tensor(
+        [30.0, -900.0, 700.0, -800.0],
+        dtype=torch.float64,
+    )
+    candidate[0, 0, 1, :3] += 7.0
+    candidate[0, 0, 1, 3] = 1000.0
+    candidate[0, 0, 2] -= 11.0
+    key_mask = torch.tensor(
+        [[[True, False, False, False], [True, True, True, False], [True, True, True, True]]]
+    )
+    empty_reference = torch.tensor(
+        [[[[1.0, 0.0]]]],
+        dtype=torch.float64,
+    )
+    empty_candidate = torch.tensor(
+        [[[[900.0, -900.0]]]],
+        dtype=torch.float64,
+    )
+    empty_mask = torch.zeros((1, 1, 2), dtype=torch.bool)
+    originals = tuple(
+        value.clone()
+        for value in (
+            reference,
+            candidate,
+            key_mask,
+            empty_reference,
+            empty_candidate,
+            empty_mask,
+        )
+    )
+    thresholds = Lfm2AttentionScorePreservationThresholds(
+        maximum_softmax_fisher_error=1e-12,
+        maximum_js_divergence=1e-12,
+        minimum_top1_key_agreement_fraction=1.0,
+        minimum_top_k_pair_order_agreement_fraction=1.0,
+        minimum_winner_margin_sign_agreement_fraction=1.0,
+        minimum_relative_margin_floor_retention_fraction=1.0,
+    )
+
+    first = evaluate_lfm2_structural_attention_score_preservation(
+        (reference, empty_reference),
+        (candidate, empty_candidate),
+        key_masks=(key_mask, empty_mask),
+        top_k=4,
+        relative_margin_floor=1.0,
+        thresholds=thresholds,
+    )
+    second = evaluate_lfm2_structural_attention_score_preservation(
+        (reference, empty_reference),
+        (candidate, empty_candidate),
+        key_masks=(key_mask, empty_mask),
+        top_k=4,
+        relative_margin_floor=1.0,
+        thresholds=thresholds,
+    )
+
+    assert first.accepted
+    assert first.case_count == 2
+    assert first.total_row_count == 4
+    assert first.eligible_row_count == 2
+    assert first.excluded_singleton_row_count == 1
+    assert first.excluded_empty_row_count == 1
+    assert first.softmax_fisher_error_worst == pytest.approx(0.0, abs=1e-12)
+    assert first.js_divergence_worst == pytest.approx(0.0, abs=1e-12)
+    assert first.top1_key_agreement_fraction == 1.0
+    assert first.top_k_pair_order_agreement_fraction == 1.0
+    assert first.winner_margin_sign_agreement_fraction == 1.0
+    assert first.relative_margin_floor_retention_fraction == 1.0
+    assert first.as_dict() == second.as_dict()
+    assert first.report_sha256 == second.report_sha256
+    assert first.as_dict()["score_tensors_only"] is True
+    assert first.as_dict()["numeric_weight_matching_used"] is False
+    assert first.as_dict()["parent_forward_calls"] == 0
+    assert first.as_dict()["training_steps"] == 0
+    for value, original in zip(
+        (
+            reference,
+            candidate,
+            key_mask,
+            empty_reference,
+            empty_candidate,
+            empty_mask,
+        ),
+        originals,
+        strict=True,
+    ):
+        assert torch.equal(value, original)
+
+
+def test_attention_score_preservation_rejects_top_k_pair_order_flip():
+    reference = torch.tensor(
+        [[[[4.0, 3.0, 2.0, 0.0]]]],
+        dtype=torch.float64,
+    )
+    candidate = torch.tensor(
+        [[[[4.0, 2.0, 3.0, 0.0]]]],
+        dtype=torch.float64,
+    )
+
+    report = evaluate_lfm2_structural_attention_score_preservation(
+        reference,
+        candidate,
+        top_k=3,
+        thresholds=Lfm2AttentionScorePreservationThresholds(
+            minimum_top1_key_agreement_fraction=1.0,
+            minimum_top_k_pair_order_agreement_fraction=1.0,
+        ),
+    )
+
+    assert report.top1_key_agreement_fraction == 1.0
+    assert report.top_k_pair_order_agreement_fraction == pytest.approx(2.0 / 3.0)
+    assert not report.accepted
+    assert dict(report.checks)[
+        "minimum_top_k_pair_order_agreement_fraction"
+    ] is False
+
+
+def test_attention_score_preservation_rejects_relative_margin_collapse():
+    reference = torch.tensor(
+        [[[[4.0, 2.0, 0.0]]]],
+        dtype=torch.float64,
+    )
+    candidate = torch.tensor(
+        [[[[1.0, 0.9, 0.8]]]],
+        dtype=torch.float64,
+    )
+
+    report = evaluate_lfm2_structural_attention_score_preservation(
+        reference,
+        candidate,
+        top_k=3,
+        relative_margin_floor=0.5,
+        thresholds=Lfm2AttentionScorePreservationThresholds(
+            minimum_top1_key_agreement_fraction=1.0,
+            minimum_top_k_pair_order_agreement_fraction=1.0,
+            minimum_winner_margin_sign_agreement_fraction=1.0,
+            minimum_relative_margin_floor_retention_fraction=1.0,
+        ),
+    )
+
+    assert report.top1_key_agreement_fraction == 1.0
+    assert report.top_k_pair_order_agreement_fraction == 1.0
+    assert report.winner_margin_sign_agreement_fraction == 1.0
+    assert report.relative_margin_floor_retention_fraction == 0.0
+    assert not report.accepted
+
+
+def test_attention_score_preservation_requires_two_valid_keys():
+    reference = torch.zeros((1, 1, 2, 3), dtype=torch.float64)
+    candidate = torch.ones_like(reference)
+    key_mask = torch.tensor(
+        [[[True, False, False], [False, False, False]]]
+    )
+
+    with pytest.raises(
+        Lfm2StructuralResidualAttentionFoldError,
+        match="no row with two valid keys",
+    ):
+        evaluate_lfm2_structural_attention_score_preservation(
+            reference,
+            candidate,
+            key_masks=key_mask,
+        )
 
 
 class _ToyAttention(nn.Module):
@@ -287,6 +461,111 @@ def test_exact_duplicate_attention_oracle_is_full_coverage_and_structural() -> N
     assert compiled.parameter_reduction_fraction == pytest.approx(0.75)
     for name, value in source.items():
         assert torch.equal(value, source_before[name])
+
+
+def test_structural_attention_allows_preserved_heads_when_hidden_width_shrinks() -> None:
+    source, case = _duplicate_head_oracle()
+    target = _ToyAttention(
+        hidden_size=4,
+        output_size=4,
+        query_heads=4,
+        key_value_heads=2,
+        head_dim=2,
+        dtype=torch.float64,
+    )
+
+    compiled = compile_lfm2_structural_residual_attention_fold(
+        source_query_weight=source["query"],
+        source_key_weight=source["key"],
+        source_value_weight=source["value"],
+        source_output_weight=source["output"],
+        target_query_weight_template=target.q_proj.weight,
+        target_key_weight_template=target.k_proj.weight,
+        target_value_weight_template=target.v_proj.weight,
+        target_output_weight_template=target.out_proj.weight,
+        cases=(case,),
+        head_dim=2,
+        output_weight_prior=torch.zeros(4, 8, dtype=torch.float64),
+        residual_assignment_sha256="a" * 64,
+        ridge=0.0,
+        max_prior_delta_ratio=None,
+        cluster_ridge=0.0,
+    )
+
+    assert compiled.topology.source_query_heads == 4
+    assert compiled.topology.target_query_heads == 4
+    assert compiled.topology.source_key_value_heads == 2
+    assert compiled.topology.target_key_value_heads == 2
+    assert compiled.topology.source_hidden_size == 8
+    assert compiled.topology.target_hidden_size == 4
+    assert compiled.cluster_plan.report.full_source_coverage is True
+    assert compiled.audit.source_query_heads_dropped == 0
+    assert compiled.audit.source_key_value_heads_dropped == 0
+
+
+def test_compiled_attention_producer_heldout_score_oracle_passes_and_rejects(
+) -> None:
+    source, case = _duplicate_head_oracle()
+    target = _ToyAttention(
+        hidden_size=4,
+        output_size=4,
+        query_heads=2,
+        key_value_heads=1,
+        head_dim=2,
+        dtype=torch.float64,
+    )
+    producer = compile_lfm2_structural_attention_producer_fold(
+        source_query_weight=source["query"],
+        source_key_weight=source["key"],
+        source_value_weight=source["value"],
+        source_output_weight=source["output"],
+        target_query_weight_template=target.q_proj.weight,
+        target_key_weight_template=target.k_proj.weight,
+        target_value_weight_template=target.v_proj.weight,
+        target_output_weight_template=target.out_proj.weight,
+        cases=(case,),
+        head_dim=2,
+        residual_assignment_sha256="b" * 64,
+        ridge=0.0,
+        cluster_ridge=0.0,
+    )
+    thresholds = Lfm2AttentionScorePreservationThresholds(
+        maximum_softmax_fisher_error=1e-10,
+        maximum_js_divergence=1e-10,
+        minimum_top1_key_agreement_fraction=1.0,
+        minimum_top_k_pair_order_agreement_fraction=1.0,
+        minimum_winner_margin_sign_agreement_fraction=1.0,
+        minimum_relative_margin_floor_retention_fraction=1.0,
+    )
+
+    exact = evaluate_lfm2_compiled_attention_producer_score_preservation(
+        producer,
+        (case,),
+        top_k=4,
+        relative_margin_floor=0.99,
+        thresholds=thresholds,
+    )
+    collapsed = evaluate_lfm2_compiled_attention_producer_score_preservation(
+        replace(
+            producer,
+            query_weight=torch.zeros_like(producer.query_weight),
+        ),
+        (case,),
+        top_k=4,
+        relative_margin_floor=0.99,
+        thresholds=thresholds,
+    )
+
+    assert exact.accepted
+    assert exact.top1_key_agreement_fraction == 1.0
+    assert exact.top_k_pair_order_agreement_fraction == 1.0
+    assert exact.relative_margin_floor_retention_fraction == 1.0
+    assert not collapsed.accepted
+    assert collapsed.softmax_fisher_error_worst > 0.0
+    assert collapsed.relative_margin_floor_retention_fraction == 0.0
+    assert collapsed.as_dict()["model_forward_calls"] == 0
+    assert collapsed.as_dict()["parent_forward_calls"] == 0
+    assert collapsed.as_dict()["numeric_weight_matching_used"] is False
 
 
 def test_compile_erases_blank_seed_and_install_preserves_parameter_identity() -> None:
@@ -1103,6 +1382,95 @@ def test_exact_duplicate_swiglu_oracle_uses_every_neuron_and_installs_atomically
     assert torch.equal(target.w1.weight, compiled.gate_weight)
     assert torch.equal(target.w3.weight, compiled.up_weight)
     assert torch.equal(target.w2.weight, compiled.down_weight)
+
+
+def test_structural_swiglu_allows_preserved_neuron_count_when_hidden_width_shrinks() -> None:
+    generator = torch.Generator().manual_seed(1880)
+    source_hidden = 8
+    target_hidden = 4
+    intermediate = 4
+    rows = 4
+    source_gate_weight = torch.randn(
+        intermediate,
+        source_hidden,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    source_up_weight = torch.randn(
+        intermediate,
+        source_hidden,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    source_down_weight = torch.randn(
+        source_hidden,
+        intermediate,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    target_input = torch.eye(rows, target_hidden, dtype=torch.float64)
+    parent_gate = torch.randn(
+        rows,
+        intermediate,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    parent_up = torch.randn(
+        rows,
+        intermediate,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    parent_post = torch.nn.functional.silu(parent_gate) * parent_up
+    target_residual = torch.randn(
+        rows,
+        target_hidden,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    desired_down = torch.randn(
+        target_hidden,
+        intermediate,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    endpoint = target_residual + parent_post @ desired_down.T
+    target = _ToyMlp(
+        hidden_size=target_hidden,
+        intermediate_size=intermediate,
+        dtype=torch.float64,
+    )
+
+    compiled = compile_lfm2_structural_residual_mlp_fold(
+        source_gate_weight=source_gate_weight,
+        source_up_weight=source_up_weight,
+        source_down_weight=source_down_weight,
+        target_gate_weight_template=target.w1.weight,
+        target_up_weight_template=target.w3.weight,
+        target_down_weight_template=target.w2.weight,
+        cases=(
+            Lfm2CachedMlpFoldCase(
+                target_input=target_input,
+                parent_gate=parent_gate,
+                parent_up=parent_up,
+                parent_post_swiglu=parent_post,
+                parent_post_mlp_residual_target_space=endpoint,
+                target_pre_mlp_residual=target_residual,
+            ),
+        ),
+        residual_assignment_sha256="b" * 64,
+        ridge=0.0,
+        cluster_ridge=0.0,
+    )
+
+    assert compiled.source_intermediate_size == intermediate
+    assert compiled.target_intermediate_size == intermediate
+    assert compiled.source_hidden_size == source_hidden
+    assert compiled.target_hidden_size == target_hidden
+    assert compiled.full_source_coverage is True
+    assert compiled.removed_logical_parameters == 48
+    assert compiled.parameter_reduction_fraction == pytest.approx(0.5)
+    assert compiled.residual_endpoint_relative_rmse < 1e-10
 
 
 def test_short_conv_fold_uses_all_channels_actual_fir_and_endpoint_prior() -> None:

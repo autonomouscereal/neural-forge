@@ -9,10 +9,15 @@ against a fresh ``use_cache=False`` full-prefix forward.  The explicit
 the uncached full prefix alone; it never executes or accepts cached logits.
 
 Attention layers retain sampled Q/K/V, pre-O context, O delta, and residual
-endpoints.  Short-convolution layers retain their actual ``B, C, x`` gated FIR
-endpoints under a separate namespace.  They are never exposed as Q/K/V.
-Feed-forward hooks retain gate, up, exact post-SwiGLU, down, and residual
-endpoints for every layer.
+endpoints.  The opt-in causal-circuit evidence contract additionally retains
+pre-RoPE normalized Q/K, rotary terms, exact causal QK scores/probabilities,
+and the complete K/V history seen by each sampled query.  Short-convolution
+layers retain their actual ``B, C, x`` gated FIR endpoints under a separate
+namespace.  The same opt-in contract adds the exact FIR kernel, pre-update
+state, and functionally reconstructed filtered Bx path.  They are never
+exposed as Q/K/V.  Feed-forward hooks retain gate, up, exact post-SwiGLU,
+down, and residual endpoints for every layer.  The opt-in contract also seals
+the final RMSNorm input and output.
 
 The parent, ordered inputs, implementation sources, capture controls, and exact
 layer topology are content-addressed.  A completed cache is never rewritten.
@@ -503,7 +508,9 @@ class Lfm2CircuitTraceCaptureConfig:
     logit_rtol: float = 1e-5
     logit_atol: float = 1e-6
     require_top1_agreement: bool = True
+    allow_top1_disagreement_within_numeric_error_envelope: bool = False
     decode_trace_mode: str = CACHED_VERIFIED_TRACE_MODE
+    capture_causal_circuit_evidence: bool = False
 
     def __post_init__(self) -> None:
         for name in (
@@ -527,6 +534,16 @@ class Lfm2CircuitTraceCaptureConfig:
             object.__setattr__(self, name, normalized)
         if not isinstance(self.require_top1_agreement, bool):
             raise TypeError("require_top1_agreement must be bool.")
+        if not isinstance(
+            self.allow_top1_disagreement_within_numeric_error_envelope,
+            bool,
+        ):
+            raise TypeError(
+                "allow_top1_disagreement_within_numeric_error_envelope "
+                "must be bool."
+            )
+        if not isinstance(self.capture_causal_circuit_evidence, bool):
+            raise TypeError("capture_causal_circuit_evidence must be bool.")
         if self.decode_trace_mode not in {
             CACHED_VERIFIED_TRACE_MODE,
             FULL_PREFIX_CANONICAL_TRACE_MODE,
@@ -534,6 +551,16 @@ class Lfm2CircuitTraceCaptureConfig:
             raise ValueError(
                 "decode_trace_mode must be 'cached_verified' or "
                 "'full_prefix_canonical'."
+            )
+        if (
+            self.capture_causal_circuit_evidence
+            and self.decode_trace_mode != CACHED_VERIFIED_TRACE_MODE
+        ):
+            raise ValueError(
+                "Causal-circuit installability evidence requires "
+                "decode_trace_mode='cached_verified' so full causal histories "
+                "come from an exact cache whose logits are independently "
+                "verified against use_cache=False full-prefix forwards."
             )
 
     def as_dict(self) -> dict[str, Any]:
@@ -545,6 +572,9 @@ class Lfm2CircuitTraceCaptureConfig:
             "logit_rtol": self.logit_rtol,
             "logit_atol": self.logit_atol,
             "require_top1_agreement": self.require_top1_agreement,
+            "allow_top1_disagreement_within_numeric_error_envelope": (
+                self.allow_top1_disagreement_within_numeric_error_envelope
+            ),
             "inference_mode": True,
             "model_eval_mode": True,
             "gradients_used": False,
@@ -560,6 +590,17 @@ class Lfm2CircuitTraceCaptureConfig:
                     "decode_trace_mode": FULL_PREFIX_CANONICAL_TRACE_MODE,
                     "canonical_trace_source": "use_cache_false_full_prefix",
                     "cached_logits_accepted": False,
+                }
+            )
+        if self.capture_causal_circuit_evidence:
+            body.update(
+                {
+                    "capture_causal_circuit_evidence": True,
+                    "attention_pre_rope_qk": True,
+                    "attention_exact_causal_scores_and_probabilities": True,
+                    "attention_complete_kv_history": True,
+                    "short_conv_exact_fir_state_and_response": True,
+                    "final_normalization_boundary": True,
                 }
             )
         return {**body, "selection_sha256": _json_sha256(body)}
@@ -943,16 +984,134 @@ def _rotate_half(torch: Any, value: Any) -> Any:
     return torch.cat((-second, first), dim=-1)
 
 
+def _reconstruct_attention_causal_path(
+    torch: Any,
+    *,
+    query: Any,
+    key_history: Any,
+    value_history: Any,
+    additive_mask: Any | None,
+    groups: int,
+    sample_count: int,
+    head_dim: int,
+) -> dict[str, Any]:
+    """Replay eager QK/softmax/V without changing execution devices."""
+
+    operands = [query, key_history, value_history]
+    if additive_mask is not None:
+        operands.append(additive_mask)
+    if any(not torch.is_tensor(value) for value in operands):
+        raise Lfm2CircuitTraceCaptureError(
+            "Attention causal replay operands must be tensors."
+        )
+    if len({str(value.device) for value in operands}) != 1:
+        raise Lfm2CircuitTraceCaptureError(
+            "Attention causal replay operands must remain on one execution device."
+        )
+    if (
+        query.ndim != 4
+        or key_history.ndim != 4
+        or value_history.ndim != 4
+        or tuple(key_history.shape) != tuple(value_history.shape)
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            "Attention causal replay received invalid Q/K/V geometry."
+        )
+    if (
+        isinstance(groups, bool)
+        or not isinstance(groups, int)
+        or groups <= 0
+        or int(key_history.shape[1]) * groups != int(query.shape[1])
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            "Attention causal replay received invalid grouped-query geometry."
+        )
+    if (
+        isinstance(sample_count, bool)
+        or not isinstance(sample_count, int)
+        or sample_count <= 0
+        or sample_count > int(query.shape[2])
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            "Attention causal replay received an invalid sample count."
+        )
+    if (
+        isinstance(head_dim, bool)
+        or not isinstance(head_dim, int)
+        or head_dim <= 0
+        or int(query.shape[3]) != head_dim
+        or int(key_history.shape[3]) != head_dim
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            "Attention causal replay received an invalid head dimension."
+        )
+
+    repeated_key = key_history.repeat_interleave(groups, dim=1)
+    repeated_value = value_history.repeat_interleave(groups, dim=1)
+    sampled_query = query[:, :, -sample_count:, :]
+    qk_scores = torch.matmul(
+        sampled_query,
+        repeated_key.transpose(2, 3),
+    ) * float(head_dim**-0.5)
+    history_count = int(key_history.shape[2])
+    if additive_mask is None:
+        sampled_mask = torch.zeros(
+            (
+                int(query.shape[0]),
+                1,
+                sample_count,
+                history_count,
+            ),
+            dtype=qk_scores.dtype,
+            device=qk_scores.device,
+        )
+    else:
+        if additive_mask.ndim != 4:
+            raise Lfm2CircuitTraceCaptureError(
+                "Attention causal replay additive mask is not rank 4."
+            )
+        sampled_mask = additive_mask[
+            ...,
+            -sample_count:,
+            :history_count,
+        ].to(dtype=qk_scores.dtype)
+        if (
+            int(sampled_mask.shape[-2]) != sample_count
+            or int(sampled_mask.shape[-1]) != history_count
+        ):
+            raise Lfm2CircuitTraceCaptureError(
+                "Attention causal replay additive mask does not cover the "
+                "sampled queries and complete key history."
+            )
+    probabilities = torch.nn.functional.softmax(
+        qk_scores + sampled_mask,
+        dim=-1,
+        dtype=torch.float32,
+    ).to(sampled_query.dtype)
+    reconstructed_context = torch.matmul(
+        probabilities,
+        repeated_value,
+    )
+    return {
+        "qk_scores": qk_scores,
+        "sampled_mask": sampled_mask,
+        "probabilities": probabilities,
+        "reconstructed_context": reconstructed_context,
+    }
+
+
 class _Lfm2TraceHooks:
     def __init__(
         self,
         torch: Any,
+        model: Any,
         layers: Sequence[Any],
         contracts: Sequence[Lfm2LayerContract],
         config: Lfm2CircuitTraceCaptureConfig,
         selected_layer_indices: Sequence[int] | None = None,
     ) -> None:
         self.torch = torch
+        self.model = model
         self.layers = tuple(layers)
         self.contracts = tuple(contracts)
         self.config = config
@@ -965,6 +1124,8 @@ class _Lfm2TraceHooks:
         self.active_phase: str | None = None
         self.active_sample_last_tokens: int | None = None
         self.raw: dict[int, dict[str, Any]] = {}
+        self.global_raw: dict[str, Any] = {}
+        self.execution_raw: dict[int, dict[str, Any]] = {}
         self._register()
 
     def _register_pre(self, module: Any, callback: Any) -> None:
@@ -1059,13 +1220,18 @@ class _Lfm2TraceHooks:
                     self._register_post(
                         getattr(attention, module_name),
                         lambda module, args, kwargs, output, i=index, n=raw_name: (
-                            self._post_output(i, n, output, n)
+                            self._attention_projection_post(
+                                i,
+                                n,
+                                output,
+                                n,
+                            )
                         ),
                     )
                 self._register_pre(
                     attention.out_proj,
-                    lambda module, args, kwargs, i=index: self._pre_hidden(
-                        i, "attention_context", args, kwargs
+                    lambda module, args, kwargs, i=index: (
+                        self._attention_context_pre(i, args, kwargs)
                     ),
                 )
                 self._register_post(
@@ -1076,6 +1242,12 @@ class _Lfm2TraceHooks:
                 )
             else:
                 operator = layer.conv
+                self._register_pre(
+                    operator,
+                    lambda module, args, kwargs, i=index: self._short_conv_pre(
+                        i, args, kwargs
+                    ),
+                )
                 self._register_post(
                     operator,
                     lambda module, args, kwargs, output, i=index: self._post_output(
@@ -1100,6 +1272,49 @@ class _Lfm2TraceHooks:
                         i, "short_conv_o", output, "short-conv out projection"
                     ),
                 )
+                if self.config.capture_causal_circuit_evidence:
+                    self._register_post(
+                        operator.in_proj,
+                        lambda module, args, kwargs, output, i=index: (
+                            self._post_output(
+                                i,
+                                "short_conv_bcx_history",
+                                output,
+                                "short-conv B/C/x projection history",
+                                retain_full_sequence=True,
+                            )
+                        ),
+                    )
+
+        if self.config.capture_causal_circuit_evidence:
+            inner = getattr(self.model, "model", None)
+            final_norm = getattr(inner, "embedding_norm", None)
+            lm_head = getattr(self.model, "lm_head", None)
+            if final_norm is None or lm_head is None:
+                raise Lfm2CircuitTraceCaptureError(
+                    "Causal-circuit evidence requires model.embedding_norm "
+                    "and lm_head modules."
+                )
+            self._register_pre(
+                final_norm,
+                lambda module, args, kwargs: self._pre_global(
+                    "output_final_norm_input", args, kwargs
+                ),
+            )
+            self._register_post(
+                final_norm,
+                lambda module, args, kwargs, output: self._post_global(
+                    "output_final_norm_output",
+                    output,
+                    "final normalization",
+                ),
+            )
+            self._register_pre(
+                lm_head,
+                lambda module, args, kwargs: self._pre_global(
+                    "output_lm_head_input", args, kwargs
+                ),
+            )
 
     def begin(
         self,
@@ -1124,6 +1339,10 @@ class _Lfm2TraceHooks:
             else sample_last_tokens
         )
         self.raw = {index: {} for index in self.selected_layer_indices}
+        self.global_raw = {}
+        self.execution_raw = {
+            index: {} for index in self.selected_layer_indices
+        }
 
     def _ensure_inference(self) -> None:
         if self.active_phase is not None and self.torch.is_grad_enabled():
@@ -1131,7 +1350,15 @@ class _Lfm2TraceHooks:
                 "LFM2 hooks executed with gradients enabled."
             )
 
-    def _store(self, layer_index: int, name: str, value: Any, *, axis: int = 1) -> None:
+    def _store(
+        self,
+        layer_index: int,
+        name: str,
+        value: Any,
+        *,
+        axis: int = 1,
+        retain_full_sequence: bool = False,
+    ) -> None:
         if self.active_phase is None:
             return
         self._ensure_inference()
@@ -1140,11 +1367,79 @@ class _Lfm2TraceHooks:
             raise Lfm2CircuitTraceCaptureError(
                 f"Layer {layer_index} emitted duplicate hook endpoint {name!r}."
             )
-        target[name] = _sample_sequence_tensor(
+        endpoint_name = f"{self.active_phase} layer {layer_index} {name}"
+        target[name] = (
+            _cpu_tensor(self.torch, value, endpoint_name)
+            if retain_full_sequence
+            else _sample_sequence_tensor(
+                self.torch,
+                value,
+                endpoint_name,
+                sequence_axis=axis,
+                sample_last_tokens=self.active_sample_last_tokens,
+            )
+        )
+
+    def _store_exact(self, layer_index: int, name: str, value: Any) -> None:
+        if self.active_phase is None:
+            return
+        self._ensure_inference()
+        target = self.raw[layer_index]
+        if name in target:
+            raise Lfm2CircuitTraceCaptureError(
+                f"Layer {layer_index} emitted duplicate hook endpoint {name!r}."
+            )
+        target[name] = _cpu_tensor(
             self.torch,
             value,
             f"{self.active_phase} layer {layer_index} {name}",
-            sequence_axis=axis,
+        )
+
+    def _store_execution(
+        self,
+        layer_index: int,
+        name: str,
+        value: Any,
+        *,
+        clone: bool = False,
+    ) -> None:
+        if self.active_phase is None:
+            return
+        self._ensure_inference()
+        if not self.torch.is_tensor(value):
+            raise Lfm2CircuitTraceCaptureError(
+                f"{self.active_phase} layer {layer_index} {name} "
+                "must be an execution tensor."
+            )
+        target = self.execution_raw[layer_index]
+        if name in target:
+            raise Lfm2CircuitTraceCaptureError(
+                f"Layer {layer_index} emitted duplicate execution endpoint "
+                f"{name!r}."
+            )
+        retained = value.detach()
+        if clone:
+            retained = retained.clone()
+        if retained.requires_grad or retained.grad_fn is not None:
+            raise Lfm2CircuitTraceCaptureError(
+                f"{self.active_phase} layer {layer_index} {name} "
+                "retained a gradient graph."
+            )
+        target[name] = retained
+
+    def _store_global(self, name: str, value: Any) -> None:
+        if self.active_phase is None:
+            return
+        self._ensure_inference()
+        if name in self.global_raw:
+            raise Lfm2CircuitTraceCaptureError(
+                f"Trace phase emitted duplicate global endpoint {name!r}."
+            )
+        self.global_raw[name] = _sample_sequence_tensor(
+            self.torch,
+            value,
+            f"{self.active_phase} {name}",
+            sequence_axis=1,
             sample_last_tokens=self.active_sample_last_tokens,
         )
 
@@ -1169,11 +1464,56 @@ class _Lfm2TraceHooks:
         name: str,
         output: Any,
         endpoint_name: str,
+        *,
+        retain_full_sequence: bool = False,
     ) -> None:
         if self.active_phase is None:
             return
         self._store(
             layer_index,
+            name,
+            _output_tensor(self.torch, output, endpoint_name),
+            retain_full_sequence=retain_full_sequence,
+        )
+
+    def _attention_projection_post(
+        self,
+        layer_index: int,
+        name: str,
+        output: Any,
+        endpoint_name: str,
+    ) -> None:
+        if self.active_phase is None:
+            return
+        value = _output_tensor(self.torch, output, endpoint_name)
+        if self.config.capture_causal_circuit_evidence:
+            self._store_execution(layer_index, name, value)
+        self._store(
+            layer_index,
+            name,
+            value,
+            retain_full_sequence=self.config.capture_causal_circuit_evidence,
+        )
+
+    def _pre_global(
+        self,
+        name: str,
+        args: Sequence[Any],
+        kwargs: Mapping[str, Any],
+    ) -> None:
+        if self.active_phase is None:
+            return
+        self._store_global(name, _first_tensor(self.torch, args, kwargs))
+
+    def _post_global(
+        self,
+        name: str,
+        output: Any,
+        endpoint_name: str,
+    ) -> None:
+        if self.active_phase is None:
+            return
+        self._store_global(
             name,
             _output_tensor(self.torch, output, endpoint_name),
         )
@@ -1194,16 +1534,254 @@ class _Lfm2TraceHooks:
             raise Lfm2CircuitTraceCaptureError(
                 "LFM2 attention did not receive rotary position embeddings."
             )
+        if self.config.capture_causal_circuit_evidence:
+            self._store_execution(
+                layer_index,
+                "attention_cos",
+                position_embeddings[0],
+            )
+            self._store_execution(
+                layer_index,
+                "attention_sin",
+                position_embeddings[1],
+            )
         self._store(
             layer_index,
             "attention_cos",
             position_embeddings[0],
+            retain_full_sequence=self.config.capture_causal_circuit_evidence,
         )
         self._store(
             layer_index,
             "attention_sin",
             position_embeddings[1],
+            retain_full_sequence=self.config.capture_causal_circuit_evidence,
         )
+        if not self.config.capture_causal_circuit_evidence:
+            return
+        attention_mask = kwargs.get("attention_mask")
+        if self.torch.is_tensor(attention_mask):
+            self._store_execution(
+                layer_index,
+                "attention_additive_mask",
+                attention_mask,
+            )
+            self._store_exact(
+                layer_index,
+                "attention_additive_mask",
+                attention_mask,
+            )
+        past = kwargs.get("past_key_values")
+        cache_layer = self._cache_layer(past, layer_index)
+        if cache_layer is None:
+            return
+        keys = getattr(cache_layer, "keys", None)
+        values = getattr(cache_layer, "values", None)
+        if self.torch.is_tensor(keys) and int(keys.numel()) > 0:
+            self._store_execution(
+                layer_index,
+                "attention_pre_key_cache",
+                keys,
+                clone=True,
+            )
+            self._store_exact(layer_index, "attention_pre_key_cache", keys)
+        if self.torch.is_tensor(values) and int(values.numel()) > 0:
+            self._store_execution(
+                layer_index,
+                "attention_pre_value_cache",
+                values,
+                clone=True,
+            )
+            self._store_exact(layer_index, "attention_pre_value_cache", values)
+
+    def _attention_context_pre(
+        self,
+        layer_index: int,
+        args: Sequence[Any],
+        kwargs: Mapping[str, Any],
+    ) -> None:
+        if self.active_phase is None:
+            return
+        context = _first_tensor(self.torch, args, kwargs)
+        try:
+            if self.config.capture_causal_circuit_evidence:
+                self._authenticate_attention_execution_context(
+                    layer_index,
+                    context,
+                )
+            self._store(
+                layer_index,
+                "attention_context",
+                context,
+            )
+        finally:
+            self.execution_raw[layer_index] = {}
+
+    def _authenticate_attention_execution_context(
+        self,
+        layer_index: int,
+        context: Any,
+    ) -> None:
+        torch = self.torch
+        execution = self.execution_raw[layer_index]
+        required = {
+            "attention_q_normalized",
+            "attention_k_normalized",
+            "attention_v_linear",
+            "attention_cos",
+            "attention_sin",
+        }
+        missing = sorted(required.difference(execution))
+        if missing:
+            raise Lfm2CircuitTraceCaptureError(
+                f"Attention layer {layer_index} is missing execution-device "
+                f"endpoints: {missing}."
+            )
+        contract = self.contracts[layer_index]
+        operator = contract.operator
+        if not isinstance(operator, Lfm2AttentionContract):
+            raise Lfm2CircuitTraceCaptureError(
+                "Internal LFM2 attention execution contract mismatch."
+            )
+        q_heads = operator.query_heads
+        kv_heads = operator.key_value_heads
+        head_dim = operator.head_dim
+        groups = q_heads // kv_heads
+        q_normalized = execution["attention_q_normalized"]
+        k_normalized = execution["attention_k_normalized"]
+        v_linear = execution["attention_v_linear"]
+        cos = execution["attention_cos"].unsqueeze(2)
+        sin = execution["attention_sin"].unsqueeze(2)
+        batch = int(q_normalized.shape[0])
+        sequence = int(q_normalized.shape[1])
+        sample_count = min(
+            sequence,
+            int(self.active_sample_last_tokens or self.config.sample_last_tokens),
+        )
+        q_rotary = (
+            q_normalized * cos
+            + _rotate_half(torch, q_normalized) * sin
+        )
+        k_rotary = (
+            k_normalized * cos
+            + _rotate_half(torch, k_normalized) * sin
+        )
+        query = q_rotary.transpose(1, 2).contiguous()
+        current_key = k_rotary.transpose(1, 2).contiguous()
+        current_value = v_linear.view(
+            batch,
+            sequence,
+            kv_heads,
+            head_dim,
+        ).transpose(1, 2)
+        pre_key = execution.get("attention_pre_key_cache")
+        pre_value = execution.get("attention_pre_value_cache")
+        if (pre_key is None) is not (pre_value is None):
+            raise Lfm2CircuitTraceCaptureError(
+                f"Attention layer {layer_index} retained only one execution "
+                "side of its K/V cache."
+            )
+        if pre_key is not None:
+            key_history = torch.cat((pre_key, current_key), dim=2)
+            value_history = torch.cat((pre_value, current_value), dim=2)
+        else:
+            key_history = current_key
+            value_history = current_value
+        replay = _reconstruct_attention_causal_path(
+            torch,
+            query=query,
+            key_history=key_history,
+            value_history=value_history,
+            additive_mask=execution.get("attention_additive_mask"),
+            groups=groups,
+            sample_count=sample_count,
+            head_dim=head_dim,
+        )
+        expected_context_shape = (
+            batch,
+            sample_count,
+            q_heads * head_dim,
+        )
+        sampled_context = context[:, -sample_count:, :]
+        if tuple(sampled_context.shape) != expected_context_shape:
+            raise Lfm2CircuitTraceCaptureError(
+                f"Attention layer {layer_index} execution context shape changed."
+            )
+        captured_context = sampled_context.view(
+            batch,
+            sample_count,
+            q_heads,
+            head_dim,
+        ).transpose(1, 2)
+        reconstructed_context = replay["reconstructed_context"]
+        maximum_error = float(
+            (
+                reconstructed_context.to(torch.float32)
+                - captured_context.to(torch.float32)
+            )
+            .abs()
+            .max()
+            .item()
+        )
+        if not torch.allclose(
+            reconstructed_context,
+            captured_context,
+            rtol=2e-2,
+            atol=2e-3,
+        ):
+            raise Lfm2CircuitTraceCaptureError(
+                f"Attention layer {layer_index} execution-device causal "
+                "score/probability reconstruction does not reproduce its "
+                f"pre-O context (max error {maximum_error:.6g})."
+            )
+
+        serialized = {
+            "attention_execution_q_rotary": q_rotary,
+            "attention_execution_k_rotary": k_rotary,
+            "attention_execution_key_history": key_history,
+            "attention_execution_value_history": value_history,
+            "attention_execution_qk_scores": replay["qk_scores"],
+            "attention_execution_sampled_mask": replay["sampled_mask"],
+            "attention_execution_probabilities": replay["probabilities"],
+            "attention_execution_reconstructed_context": reconstructed_context,
+        }
+        for name, value in serialized.items():
+            self._store_exact(layer_index, name, value)
+        target = self.raw[layer_index]
+        target["attention_execution_device"] = str(query.device)
+        target["attention_execution_device_type"] = query.device.type
+        target["attention_execution_reconstruction_max_abs_error"] = maximum_error
+        target["attention_execution_reconstruction_verified"] = True
+
+    @staticmethod
+    def _cache_layer(past: Any, layer_index: int) -> Any | None:
+        if past is None:
+            return None
+        layers = getattr(past, "layers", None)
+        if layers is None:
+            return None
+        try:
+            return layers[layer_index]
+        except (IndexError, TypeError):
+            return None
+
+    def _short_conv_pre(
+        self,
+        layer_index: int,
+        args: Sequence[Any],
+        kwargs: Mapping[str, Any],
+    ) -> None:
+        if (
+            self.active_phase is None
+            or not self.config.capture_causal_circuit_evidence
+        ):
+            return
+        cache_layer = self._cache_layer(kwargs.get("past_key_values"), layer_index)
+        if cache_layer is None:
+            return
+        state = getattr(cache_layer, "conv_states", None)
+        if self.torch.is_tensor(state) and int(state.numel()) > 0:
+            self._store_exact(layer_index, "short_conv_pre_state", state)
 
     def finish(self) -> tuple[dict[str, Any], dict[str, Any]]:
         phase = self.active_phase
@@ -1222,11 +1800,60 @@ class _Lfm2TraceHooks:
                     {prefix + name: value for name, value in layer_tensors.items()}
                 )
                 diagnostics[f"layer.{index:03d}"] = layer_diagnostics
+            if self.config.capture_causal_circuit_evidence:
+                output_tensors, output_diagnostics = self._finalize_output_boundary()
+                tensors.update(
+                    {
+                        f"{phase}.{name}": value
+                        for name, value in output_tensors.items()
+                    }
+                )
+                diagnostics["output"] = output_diagnostics
             return tensors, diagnostics
         finally:
             self.active_phase = None
             self.active_sample_last_tokens = None
             self.raw = {}
+            self.global_raw = {}
+            self.execution_raw = {}
+
+    def _finalize_output_boundary(
+        self,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        required = {
+            "output_final_norm_input",
+            "output_final_norm_output",
+            "output_lm_head_input",
+        }
+        missing = sorted(required.difference(self.global_raw))
+        if missing:
+            raise Lfm2CircuitTraceCaptureError(
+                f"Output boundary is missing hook endpoints: {missing}."
+            )
+        final_output = self.global_raw["output_final_norm_output"]
+        head_input = self.global_raw["output_lm_head_input"]
+        if not self.torch.allclose(
+            final_output,
+            head_input,
+            rtol=0.0,
+            atol=0.0,
+        ):
+            raise Lfm2CircuitTraceCaptureError(
+                "The LM head input does not exactly equal final RMSNorm output."
+            )
+        return (
+            {
+                "output.final_norm_input": self.global_raw[
+                    "output_final_norm_input"
+                ],
+                "output.final_norm_output": final_output,
+                "output.lm_head_input": head_input,
+            },
+            {
+                "final_norm_boundary_captured": True,
+                "lm_head_input_exactly_verified": True,
+            },
+        )
 
     def _finalize_layer(
         self,
@@ -1299,16 +1926,22 @@ class _Lfm2TraceHooks:
             "layer_residual_verified": True,
         }
         if contract.kind == "full_attention":
-            attention_result = self._finalize_attention(index, contract, raw)
+            attention_result, attention_diagnostics = self._finalize_attention(
+                index, contract, raw
+            )
             result.update(attention_result)
             diagnostics["attention_qkvo_context_captured"] = True
             diagnostics["short_conv_bcx_captured"] = False
+            diagnostics.update(attention_diagnostics)
         else:
-            conv_result = self._finalize_short_conv(index, contract, raw)
+            conv_result, conv_diagnostics = self._finalize_short_conv(
+                index, contract, raw
+            )
             result.update(conv_result)
             diagnostics["attention_qkvo_context_captured"] = False
             diagnostics["short_conv_bcx_captured"] = True
             diagnostics["short_conv_not_treated_as_qkv"] = True
+            diagnostics.update(conv_diagnostics)
         return result, diagnostics
 
     def _finalize_attention(
@@ -1316,7 +1949,7 @@ class _Lfm2TraceHooks:
         index: int,
         contract: Lfm2LayerContract,
         raw: Mapping[str, Any],
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         torch = self.torch
         required = {
             "attention_q_linear",
@@ -1343,29 +1976,40 @@ class _Lfm2TraceHooks:
         kv_heads = operator.key_value_heads
         head_dim = operator.head_dim
 
-        q_linear = raw["attention_q_linear"]
-        k_linear = raw["attention_k_linear"]
-        v_linear = raw["attention_v_linear"]
-        batch, sequence = int(q_linear.shape[0]), int(q_linear.shape[1])
-        expected_shapes = {
+        q_linear_full = raw["attention_q_linear"]
+        k_linear_full = raw["attention_k_linear"]
+        v_linear_full = raw["attention_v_linear"]
+        batch, sequence = (
+            int(q_linear_full.shape[0]),
+            int(q_linear_full.shape[1]),
+        )
+        expected_projection_shapes = {
             "q": (batch, sequence, q_heads * head_dim),
             "k": (batch, sequence, kv_heads * head_dim),
             "v": (batch, sequence, kv_heads * head_dim),
-            "context": (batch, sequence, q_heads * head_dim),
         }
-        if tuple(q_linear.shape) != expected_shapes["q"]:
+        if tuple(q_linear_full.shape) != expected_projection_shapes["q"]:
             raise Lfm2CircuitTraceCaptureError(
                 f"Attention layer {index} Q projection shape changed."
             )
-        if tuple(k_linear.shape) != expected_shapes["k"]:
+        if tuple(k_linear_full.shape) != expected_projection_shapes["k"]:
             raise Lfm2CircuitTraceCaptureError(
                 f"Attention layer {index} K projection shape changed."
             )
-        if tuple(v_linear.shape) != expected_shapes["v"]:
+        if tuple(v_linear_full.shape) != expected_projection_shapes["v"]:
             raise Lfm2CircuitTraceCaptureError(
                 f"Attention layer {index} V projection shape changed."
             )
-        if tuple(raw["attention_context"].shape) != expected_shapes["context"]:
+        sample_count = min(
+            sequence,
+            int(self.active_sample_last_tokens or self.config.sample_last_tokens),
+        )
+        expected_context_shape = (
+            batch,
+            sample_count,
+            q_heads * head_dim,
+        )
+        if tuple(raw["attention_context"].shape) != expected_context_shape:
             raise Lfm2CircuitTraceCaptureError(
                 f"Attention layer {index} pre-O context shape changed."
             )
@@ -1379,33 +2023,167 @@ class _Lfm2TraceHooks:
             raise Lfm2CircuitTraceCaptureError(
                 f"Attention layer {index} normalized K shape changed."
             )
-        cos = raw["attention_cos"].unsqueeze(2)
-        sin = raw["attention_sin"].unsqueeze(2)
-        q_rotary = q_normalized * cos + _rotate_half(torch, q_normalized) * sin
-        k_rotary = k_normalized * cos + _rotate_half(torch, k_normalized) * sin
-        context = raw["attention_context"].view(batch, sequence, q_heads, head_dim)
-        return {
-            "attention.q_linear": q_linear.view(batch, sequence, q_heads, head_dim)
+        if self.config.capture_causal_circuit_evidence:
+            execution_required = {
+                "attention_execution_q_rotary",
+                "attention_execution_k_rotary",
+                "attention_execution_key_history",
+                "attention_execution_value_history",
+                "attention_execution_qk_scores",
+                "attention_execution_sampled_mask",
+                "attention_execution_probabilities",
+                "attention_execution_reconstructed_context",
+                "attention_execution_device",
+                "attention_execution_device_type",
+                "attention_execution_reconstruction_max_abs_error",
+                "attention_execution_reconstruction_verified",
+            }
+            execution_missing = sorted(execution_required.difference(raw))
+            if execution_missing:
+                raise Lfm2CircuitTraceCaptureError(
+                    f"Attention layer {index} is missing authenticated "
+                    f"execution-device evidence: {execution_missing}."
+                )
+            q_rotary = raw["attention_execution_q_rotary"]
+            k_rotary = raw["attention_execution_k_rotary"]
+        else:
+            cos = raw["attention_cos"].unsqueeze(2)
+            sin = raw["attention_sin"].unsqueeze(2)
+            q_rotary = (
+                q_normalized * cos
+                + _rotate_half(torch, q_normalized) * sin
+            )
+            k_rotary = (
+                k_normalized * cos
+                + _rotate_half(torch, k_normalized) * sin
+            )
+        context = raw["attention_context"].view(
+            batch,
+            sample_count,
+            q_heads,
+            head_dim,
+        )
+        q_linear = q_linear_full[:, -sample_count:, :]
+        k_linear = k_linear_full[:, -sample_count:, :]
+        v_linear = v_linear_full[:, -sample_count:, :]
+        q_sample = q_rotary[:, -sample_count:, :, :]
+        k_sample = k_rotary[:, -sample_count:, :, :]
+        result = {
+            "attention.q_linear": q_linear.view(
+                batch, sample_count, q_heads, head_dim
+            )
             .transpose(1, 2)
             .contiguous(),
-            "attention.q": q_rotary.transpose(1, 2).contiguous(),
-            "attention.k_linear": k_linear.view(batch, sequence, kv_heads, head_dim)
+            "attention.q": q_sample.transpose(1, 2).contiguous(),
+            "attention.k_linear": k_linear.view(
+                batch, sample_count, kv_heads, head_dim
+            )
             .transpose(1, 2)
             .contiguous(),
-            "attention.k": k_rotary.transpose(1, 2).contiguous(),
-            "attention.v": v_linear.view(batch, sequence, kv_heads, head_dim)
+            "attention.k": k_sample.transpose(1, 2).contiguous(),
+            "attention.v": v_linear.view(
+                batch, sample_count, kv_heads, head_dim
+            )
             .transpose(1, 2)
             .contiguous(),
             "attention.context": context.transpose(1, 2).contiguous(),
             "attention.o": raw["attention_o"],
         }
+        diagnostics = {
+            "attention_causal_circuit_evidence_captured": False,
+        }
+        if not self.config.capture_causal_circuit_evidence:
+            return result, diagnostics
+
+        groups = q_heads // kv_heads
+        if groups <= 0 or groups * kv_heads != q_heads:
+            raise Lfm2CircuitTraceCaptureError(
+                f"Attention layer {index} has invalid grouped-query geometry."
+            )
+        key_history = raw["attention_execution_key_history"]
+        value_history = raw["attention_execution_value_history"]
+        qk_scores = raw["attention_execution_qk_scores"]
+        sampled_mask = raw["attention_execution_sampled_mask"]
+        probabilities = raw["attention_execution_probabilities"]
+        reconstructed_context = raw[
+            "attention_execution_reconstructed_context"
+        ]
+        captured_context = context.transpose(1, 2)
+        serialized_maximum_error = float(
+            (
+                reconstructed_context.to(torch.float32)
+                - captured_context.to(torch.float32)
+            )
+            .abs()
+            .max()
+            .item()
+        )
+        if not torch.allclose(
+            reconstructed_context,
+            captured_context,
+            rtol=2e-2,
+            atol=2e-3,
+        ):
+            raise Lfm2CircuitTraceCaptureError(
+                f"Attention layer {index} causal score/probability reconstruction "
+                "changed during CPU serialization "
+                f"(max error {serialized_maximum_error:.6g})."
+            )
+        maximum_error = float(
+            raw["attention_execution_reconstruction_max_abs_error"]
+        )
+        if raw["attention_execution_reconstruction_verified"] is not True:
+            raise Lfm2CircuitTraceCaptureError(
+                f"Attention layer {index} lacks a successful execution-device "
+                "causal reconstruction decision."
+            )
+        result.update(
+            {
+                "attention.q_normalized_pre_rope": q_normalized.transpose(
+                    1, 2
+                ).contiguous(),
+                "attention.k_normalized_pre_rope": k_normalized.transpose(
+                    1, 2
+                ).contiguous(),
+                "attention.rope_cos": raw["attention_cos"],
+                "attention.rope_sin": raw["attention_sin"],
+                "attention.key_history": key_history.clone(),
+                "attention.value_history": value_history.clone(),
+                "attention.qk_scores": qk_scores,
+                "attention.additive_mask": sampled_mask,
+                "attention.probabilities": probabilities,
+                "attention.context_from_probabilities": reconstructed_context,
+            }
+        )
+        diagnostics.update(
+            {
+                "attention_causal_circuit_evidence_captured": True,
+                "attention_context_reconstructed_from_probabilities": True,
+                "attention_context_reconstruction_max_abs_error": maximum_error,
+                "attention_context_serialization_max_abs_error": (
+                    serialized_maximum_error
+                ),
+                "attention_context_authenticated_on_execution_device": True,
+                "attention_evidence_serialized_after_device_authentication": True,
+                "attention_reconstruction_execution_device": raw[
+                    "attention_execution_device"
+                ],
+                "attention_reconstruction_execution_device_type": raw[
+                    "attention_execution_device_type"
+                ],
+                "attention_query_count": sample_count,
+                "attention_key_history_count": int(key_history.shape[2]),
+            }
+        )
+        return result, diagnostics
 
     def _finalize_short_conv(
         self,
         index: int,
         contract: Lfm2LayerContract,
         raw: Mapping[str, Any],
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        torch = self.torch
         required = {
             "short_conv_bcx",
             "short_conv_context",
@@ -1427,7 +2205,7 @@ class _Lfm2TraceHooks:
                 f"Short-conv layer {index} B/C/x projection shape changed."
             )
         b_value, c_value, x_value = bcx.chunk(3, dim=-1)
-        return {
+        result = {
             "short_conv.b": b_value.contiguous(),
             "short_conv.c": c_value.contiguous(),
             "short_conv.x": x_value.contiguous(),
@@ -1435,6 +2213,129 @@ class _Lfm2TraceHooks:
             "short_conv.context": raw["short_conv_context"],
             "short_conv.o": raw["short_conv_o"],
         }
+        diagnostics = {
+            "short_conv_causal_circuit_evidence_captured": False,
+        }
+        if not self.config.capture_causal_circuit_evidence:
+            return result, diagnostics
+
+        history = raw.get("short_conv_bcx_history")
+        if history is None or int(history.shape[-1]) != 3 * operator.hidden_size:
+            raise Lfm2CircuitTraceCaptureError(
+                f"Short-conv layer {index} is missing its complete B/C/x history."
+            )
+        b_history, c_history, x_history = history.chunk(3, dim=-1)
+        bx_history = b_history * x_history
+        batch = int(history.shape[0])
+        sequence = int(history.shape[1])
+        hidden = operator.hidden_size
+        fir_length = operator.fir_length
+        conv_module = getattr(getattr(self.layers[index], "conv", None), "conv", None)
+        kernel_value = getattr(conv_module, "weight", None)
+        if (
+            not torch.is_tensor(kernel_value)
+            or tuple(kernel_value.shape) != (hidden, 1, fir_length)
+        ):
+            raise Lfm2CircuitTraceCaptureError(
+                f"Short-conv layer {index} FIR kernel shape changed."
+            )
+        kernel = _cpu_tensor(
+            torch,
+            kernel_value[:, 0, :],
+            f"{self.active_phase} layer {index} FIR kernel",
+        )
+        bias_value = getattr(conv_module, "bias", None)
+        if bias_value is None:
+            bias = torch.zeros(hidden, dtype=kernel.dtype)
+            has_bias = False
+        else:
+            if not torch.is_tensor(bias_value) or tuple(bias_value.shape) != (hidden,):
+                raise Lfm2CircuitTraceCaptureError(
+                    f"Short-conv layer {index} FIR bias shape changed."
+                )
+            bias = _cpu_tensor(
+                torch,
+                bias_value,
+                f"{self.active_phase} layer {index} FIR bias",
+            )
+            has_bias = True
+
+        pre_state = raw.get("short_conv_pre_state")
+        bx_channels = bx_history.transpose(1, 2).contiguous()
+        if pre_state is None:
+            pre_state = torch.zeros(
+                (batch, hidden, fir_length),
+                dtype=bx_channels.dtype,
+            )
+            filtered = torch.nn.functional.conv1d(
+                bx_channels.to(torch.float32),
+                kernel[:, None, :].to(torch.float32),
+                bias=bias.to(torch.float32),
+                padding=fir_length - 1,
+                groups=hidden,
+            )[..., :sequence]
+        else:
+            if (
+                tuple(pre_state.shape) != (batch, hidden, fir_length)
+                or sequence != 1
+            ):
+                raise Lfm2CircuitTraceCaptureError(
+                    f"Short-conv layer {index} pre-update state shape changed."
+                )
+            updated_state = torch.cat(
+                (pre_state[..., 1:], bx_channels),
+                dim=-1,
+            )
+            filtered = (
+                updated_state.to(torch.float32) * kernel.to(torch.float32)[None, :, :]
+            ).sum(dim=-1, keepdim=True)
+            filtered = filtered + bias.to(torch.float32)[None, :, None]
+
+        filtered_tokens = filtered.transpose(1, 2).contiguous()
+        gated_context = c_history.to(torch.float32) * filtered_tokens
+        sample_count = int(raw["short_conv_context"].shape[1])
+        captured_context = raw["short_conv_context"].to(torch.float32)
+        reconstructed_sample = gated_context[:, -sample_count:, :]
+        maximum_error = float(
+            (reconstructed_sample - captured_context).abs().max().item()
+        )
+        if not torch.allclose(
+            reconstructed_sample,
+            captured_context,
+            rtol=2e-2,
+            atol=2e-3,
+        ):
+            raise Lfm2CircuitTraceCaptureError(
+                f"Short-conv layer {index} FIR reconstruction does not reproduce "
+                f"its pre-output context (max error {maximum_error:.6g})."
+            )
+        result.update(
+            {
+                "short_conv.b_history": b_history,
+                "short_conv.c_history": c_history,
+                "short_conv.x_history": x_history,
+                "short_conv.bx_history": bx_history,
+                "short_conv.pre_bx_state": pre_state,
+                "short_conv.fir_kernel": kernel,
+                "short_conv.fir_bias": bias,
+                "short_conv.fir_has_bias": torch.tensor(
+                    [int(has_bias)],
+                    dtype=torch.int8,
+                ),
+                "short_conv.filtered_bx": filtered_tokens,
+                "short_conv.context_from_fir": gated_context,
+            }
+        )
+        diagnostics.update(
+            {
+                "short_conv_causal_circuit_evidence_captured": True,
+                "short_conv_context_reconstructed_from_fir": True,
+                "short_conv_context_reconstruction_max_abs_error": maximum_error,
+                "short_conv_history_count": sequence,
+                "short_conv_fir_length": fir_length,
+            }
+        )
+        return result, diagnostics
 
     def remove(self) -> None:
         for handle in reversed(self.handles):
@@ -1443,6 +2344,8 @@ class _Lfm2TraceHooks:
         self.active_phase = None
         self.active_sample_last_tokens = None
         self.raw = {}
+        self.global_raw = {}
+        self.execution_raw = {}
 
 
 def _output_field(output: Any, name: str) -> Any:
@@ -1507,6 +2410,80 @@ def _compare_logits(
         )
     difference = cached_cpu.to(torch.float64) - full_cpu.to(torch.float64)
     max_abs_error = float(difference.abs().max().item())
+    cached_rows = cached_cpu.to(torch.float64).reshape(
+        -1, int(cached_cpu.shape[-1])
+    )
+    full_rows = full_cpu.to(torch.float64).reshape(
+        -1, int(full_cpu.shape[-1])
+    )
+    cached_top1 = torch.argmax(cached_rows, dim=-1)
+    full_top1 = torch.argmax(full_rows, dim=-1)
+    agreements = cached_top1 == full_top1
+    disagreement_indices = torch.nonzero(
+        ~agreements, as_tuple=False
+    ).reshape(-1)
+    cached_top2 = torch.topk(cached_rows, k=2, dim=-1).values
+    full_top2 = torch.topk(full_rows, k=2, dim=-1).values
+    cached_margins = cached_top2[:, 0] - cached_top2[:, 1]
+    full_margins = full_top2[:, 0] - full_top2[:, 1]
+    error_envelope_verified = True
+    maximum_cached_preference_gap = 0.0
+    maximum_full_preference_gap = 0.0
+    first_disagreement: dict[str, Any] | None = None
+    for raw_index in disagreement_indices.tolist():
+        row_index = int(raw_index)
+        cached_id = int(cached_top1[row_index].item())
+        full_id = int(full_top1[row_index].item())
+        row_difference = difference.reshape_as(cached_rows)[row_index]
+        row_error = float(row_difference.abs().max().item())
+        pair_error_envelope = float(
+            (
+                row_difference[cached_id].abs()
+                + row_difference[full_id].abs()
+            ).item()
+        )
+        cached_gap = float(
+            (
+                cached_rows[row_index, cached_id]
+                - cached_rows[row_index, full_id]
+            ).item()
+        )
+        full_gap = float(
+            (
+                full_rows[row_index, full_id]
+                - full_rows[row_index, cached_id]
+            ).item()
+        )
+        maximum_cached_preference_gap = max(
+            maximum_cached_preference_gap, cached_gap
+        )
+        maximum_full_preference_gap = max(
+            maximum_full_preference_gap, full_gap
+        )
+        within_envelope = (
+            cached_gap <= pair_error_envelope + 1e-12
+            and full_gap <= pair_error_envelope + 1e-12
+        )
+        error_envelope_verified = (
+            error_envelope_verified and within_envelope
+        )
+        if first_disagreement is None:
+            first_disagreement = {
+                "row_index": row_index,
+                "cached_token_id": cached_id,
+                "full_prefix_token_id": full_id,
+                "cached_winner_margin": float(
+                    cached_margins[row_index].item()
+                ),
+                "full_prefix_winner_margin": float(
+                    full_margins[row_index].item()
+                ),
+                "cached_preference_gap": cached_gap,
+                "full_prefix_preference_gap": full_gap,
+                "row_max_abs_error": row_error,
+                "winner_pair_error_envelope": pair_error_envelope,
+                "within_numeric_error_envelope": within_envelope,
+            }
     numerically_close = bool(
         torch.allclose(
             cached_cpu.to(torch.float64),
@@ -1516,9 +2493,13 @@ def _compare_logits(
         )
     )
     top1_agreement = bool(
-        torch.equal(
-            torch.argmax(cached_cpu, dim=-1),
-            torch.argmax(full_cpu, dim=-1),
+        bool(agreements.all().item())
+    )
+    top1_decision_verified = (
+        top1_agreement
+        or (
+            config.allow_top1_disagreement_within_numeric_error_envelope
+            and error_envelope_verified
         )
     )
     if not numerically_close:
@@ -1526,14 +2507,44 @@ def _compare_logits(
             f"{name} cached logits differ from use_cache=False full-prefix logits "
             f"(maximum error {max_abs_error:.6g})."
         )
-    if config.require_top1_agreement and not top1_agreement:
+    if config.require_top1_agreement and not top1_decision_verified:
+        assert first_disagreement is not None
         raise Lfm2CircuitTraceCaptureError(
-            f"{name} cached and full-prefix logits choose different tokens."
+            f"{name} cached and full-prefix logits choose different tokens; "
+            f"first mismatch cached={first_disagreement['cached_token_id']} "
+            f"full={first_disagreement['full_prefix_token_id']}, "
+            f"cached_margin={first_disagreement['cached_winner_margin']:.6g}, "
+            f"full_margin={first_disagreement['full_prefix_winner_margin']:.6g}, "
+            f"row_error={first_disagreement['row_max_abs_error']:.6g}, "
+            "within_error_envelope="
+            f"{first_disagreement['within_numeric_error_envelope']}."
         )
     return {
         "max_abs_error": max_abs_error,
         "numerically_close": numerically_close,
         "top1_agreement": top1_agreement,
+        "top1_decision_verified": top1_decision_verified,
+        "top1_exact_or_numeric_tie_required": (
+            config.require_top1_agreement
+        ),
+        "numeric_top1_tie_acceptance_enabled": (
+            config.allow_top1_disagreement_within_numeric_error_envelope
+        ),
+        "top1_disagreement_count": int(disagreement_indices.numel()),
+        "top1_disagreement_within_numeric_error_envelope": (
+            error_envelope_verified
+        ),
+        "maximum_cached_preference_gap_on_disagreement": (
+            maximum_cached_preference_gap
+        ),
+        "maximum_full_prefix_preference_gap_on_disagreement": (
+            maximum_full_preference_gap
+        ),
+        "minimum_cached_top1_margin": float(cached_margins.min().item()),
+        "minimum_full_prefix_top1_margin": float(full_margins.min().item()),
+        "cached_top1_sha256": _tensor_sha256(torch, cached_top1),
+        "full_prefix_top1_sha256": _tensor_sha256(torch, full_top1),
+        "first_top1_disagreement": first_disagreement,
     }
 
 
@@ -1682,6 +2693,7 @@ def _capture_batch(
     )
     hooks = _Lfm2TraceHooks(
         torch,
+        model,
         layers,
         contracts,
         config,
@@ -1924,6 +2936,14 @@ def _capture_batch(
             None
             if full_prefix_only
             else all(bool(value["top1_agreement"]) for value in verifications)
+        ),
+        "all_cached_top1_decisions_verified": (
+            None
+            if full_prefix_only
+            else all(
+                bool(value["top1_decision_verified"])
+                for value in verifications
+            )
         ),
         "decode_trace_mode": config.decode_trace_mode,
         "canonical_trace_source": (
@@ -3074,6 +4094,7 @@ def _capture_child_batch_single_pass(
     module_modes = [(module, bool(module.training)) for module in model.modules()]
     hooks = _Lfm2TraceHooks(
         torch,
+        model,
         layers,
         contracts,
         config,
@@ -3634,6 +4655,15 @@ def build_lfm2_circuit_trace_cache(
     corpus = _corpus_identity(prepared)
     device = _resolve_input_device(torch, model, input_device)
     execution = _execution_identity(model, device)
+    if (
+        selected.capture_causal_circuit_evidence
+        and execution.get("attention_backend") != "eager"
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            "Causal-circuit installability evidence currently requires the "
+            "eager attention backend so the reconstructed score/probability "
+            "operator is identical to the executed parent operator."
+        )
     manifest = _manifest_for(
         parent_before,
         corpus,

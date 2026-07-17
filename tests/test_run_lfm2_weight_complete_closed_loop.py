@@ -285,6 +285,28 @@ def test_output_interface_controls_are_explicit_and_match_adapter_defaults() -> 
     identity_args = parser.parse_args(
         required + ["--preserve-output-interface"]
     )
+    score_gate_args = parser.parse_args(
+        required
+        + [
+            "--attention-score-candidate-gate",
+            "--attention-score-top-k",
+            "5",
+            "--attention-score-margin-floor-fraction",
+            "0.4",
+            "--attention-score-minimum-top1-key-agreement",
+            "0.81",
+            "--attention-score-minimum-top-k-pair-order-agreement",
+            "0.82",
+            "--attention-score-minimum-winner-margin-sign-agreement",
+            "0.83",
+            "--attention-score-minimum-relative-margin-floor-retention",
+            "0.84",
+            "--attention-score-maximum-softmax-fisher-error",
+            "0.03",
+            "--attention-score-maximum-js-divergence",
+            "0.02",
+        ]
+    )
     defaults = Lfm2DynamicClosedLoopAdapterConfig()
 
     assert args.preserve_output_interface is False
@@ -339,3 +361,61 @@ def test_output_interface_controls_are_explicit_and_match_adapter_defaults() -> 
         args.attention_value_output_context_equivalence_tolerance
         == defaults.attention_value_output_context_equivalence_tolerance
     )
+    assert (
+        args.attention_score_candidate_gate
+        == defaults.attention_score_candidate_gate_enabled
+    )
+    assert args.attention_score_top_k == defaults.attention_score_top_k
+    assert (
+        args.attention_score_margin_floor_fraction
+        == defaults.attention_score_margin_floor_fraction
+    )
+    assert (
+        args.attention_score_minimum_top1_key_agreement
+        == defaults.attention_score_minimum_top1_key_agreement_fraction
+    )
+    assert (
+        args.attention_score_minimum_top_k_pair_order_agreement
+        == defaults.attention_score_minimum_top_k_pair_order_agreement_fraction
+    )
+    assert (
+        args.attention_score_minimum_winner_margin_sign_agreement
+        == defaults.attention_score_minimum_winner_margin_sign_agreement_fraction
+    )
+    assert (
+        args.attention_score_minimum_relative_margin_floor_retention
+        == (
+            defaults
+            .attention_score_minimum_relative_margin_floor_retention_fraction
+        )
+    )
+    assert (
+        args.attention_score_maximum_softmax_fisher_error
+        == defaults.attention_score_maximum_softmax_fisher_error
+    )
+    assert (
+        args.attention_score_maximum_js_divergence
+        == defaults.attention_score_maximum_js_divergence
+    )
+    assert score_gate_args.attention_score_candidate_gate is True
+    assert score_gate_args.attention_score_top_k == 5
+    assert score_gate_args.attention_score_margin_floor_fraction == 0.4
+    assert score_gate_args.attention_score_minimum_top1_key_agreement == 0.81
+    assert (
+        score_gate_args.attention_score_minimum_top_k_pair_order_agreement
+        == 0.82
+    )
+    assert (
+        score_gate_args.attention_score_minimum_winner_margin_sign_agreement
+        == 0.83
+    )
+    assert (
+        score_gate_args
+        .attention_score_minimum_relative_margin_floor_retention
+        == 0.84
+    )
+    assert (
+        score_gate_args.attention_score_maximum_softmax_fisher_error
+        == 0.03
+    )
+    assert score_gate_args.attention_score_maximum_js_divergence == 0.02

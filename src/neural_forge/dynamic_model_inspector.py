@@ -24,6 +24,13 @@ from .dynamic_circuit_ir import (
     PortKind,
     canonical_sha256,
 )
+from .hf_tokenizer_bridge import (
+    CHILD_TOKENIZER_SEMANTICS_CONFIG_KEY,
+    PARENT_TOKENIZER_SEMANTICS_CONFIG_KEY,
+    TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY,
+    TOKENIZER_BRIDGE_CONFIG_KEYS,
+    TOKENIZER_BRIDGE_PROFILE_CONFIG_KEY,
+)
 
 
 class DynamicModelInspectionError(DynamicCircuitIRError):
@@ -2893,12 +2900,13 @@ def _validated_lfm2_hybrid_markers(
     )
     values = {name: getattr(config, name, None) for name in names}
     present = {name for name, value in values.items() if value is not None}
-    dense_names = (
+    dense_base_names = (
         "_neural_forge_dense_topology_catalog",
         "_neural_forge_dense_ordered_source_spans",
         "_neural_forge_dense_target_layer_types",
         "_neural_forge_tokenizer_bridge_required",
     )
+    dense_names = (*dense_base_names, *sorted(TOKENIZER_BRIDGE_CONFIG_KEYS))
     dense_values = {
         name: getattr(config, name, None) for name in dense_names
     }
@@ -2910,20 +2918,46 @@ def _validated_lfm2_hybrid_markers(
             "LFM2 legacy and dense-budget fold marker bundles cannot coexist."
         )
     if dense_present:
-        if dense_present != set(dense_names):
+        if not set(dense_base_names).issubset(dense_present):
             raise DynamicModelInspectionError(
                 "Dense-budget LFM2 markers must be present as one complete bundle."
+            )
+        bridge_required = dense_values[
+            "_neural_forge_tokenizer_bridge_required"
+        ]
+        if not isinstance(bridge_required, bool):
+            raise DynamicModelInspectionError(
+                "Dense-budget tokenizer bridge marker must be boolean."
+            )
+        expected_dense_names = set(dense_base_names)
+        if bridge_required:
+            expected_dense_names.update(TOKENIZER_BRIDGE_CONFIG_KEYS)
+        if dense_present != expected_dense_names:
+            raise DynamicModelInspectionError(
+                "Dense-budget tokenizer bridge seals must be present exactly "
+                "when tokenizer bridging is required."
             )
         catalog_id = dense_values["_neural_forge_dense_topology_catalog"]
         if not isinstance(catalog_id, str) or not catalog_id.strip():
             raise DynamicModelInspectionError(
                 "Dense-budget LFM2 catalog marker must be nonempty."
             )
-        if dense_values["_neural_forge_tokenizer_bridge_required"] is not False:
-            raise DynamicModelInspectionError(
-                "Executable dense-budget LFM2 currently requires an unchanged "
-                "tokenizer interface."
-            )
+        bridge_metadata: dict[str, str] = {}
+        if bridge_required:
+            for name in TOKENIZER_BRIDGE_CONFIG_KEYS:
+                value = dense_values[name]
+                if (
+                    not isinstance(value, str)
+                    or len(value) != 64
+                    or any(
+                        character not in "0123456789abcdef"
+                        for character in value
+                    )
+                ):
+                    raise DynamicModelInspectionError(
+                        f"Dense-budget tokenizer bridge seal {name!r} is invalid."
+                    )
+                bridge_metadata[name] = value
         layer_types_value = dense_values[
             "_neural_forge_dense_target_layer_types"
         ]
@@ -2980,13 +3014,31 @@ def _validated_lfm2_hybrid_markers(
                 "Dense-budget source spans must provide complete ordered "
                 "contiguous source coverage."
             )
-        return {
+        result = {
             "fold_method_id": _LFM2_DENSE_BUDGET_MODEL_METHOD,
             "dense_topology_catalog": catalog_id,
             "ordered_source_spans": spans_value,
             "target_layer_types": layer_types_value,
-            "tokenizer_bridge_required": False,
+            "tokenizer_bridge_required": bridge_required,
         }
+        if bridge_required:
+            result.update(
+                {
+                    "tokenizer_bridge_artifact_sha256": bridge_metadata[
+                        TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY
+                    ],
+                    "tokenizer_transport_profile_sha256": bridge_metadata[
+                        TOKENIZER_BRIDGE_PROFILE_CONFIG_KEY
+                    ],
+                    "parent_tokenizer_semantics_sha256": bridge_metadata[
+                        PARENT_TOKENIZER_SEMANTICS_CONFIG_KEY
+                    ],
+                    "child_tokenizer_semantics_sha256": bridge_metadata[
+                        CHILD_TOKENIZER_SEMANTICS_CONFIG_KEY
+                    ],
+                }
+            )
+        return result
     if not present:
         return {}
     if values["_neural_forge_fold_method_id"] == (

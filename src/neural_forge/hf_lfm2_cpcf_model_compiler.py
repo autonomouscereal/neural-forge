@@ -1,0 +1,992 @@
+"""Sequential target-runtime substrate for an LFM2 CPCF model fold.
+
+This module joins three pieces that must not be treated as independent local
+surgeries:
+
+* a strict target-tokenizer record is expanded into the exact full prefix for
+  every cached prefill/decode phase;
+* the compiler-owned zero blank receives its tied causal interface and
+  explicit neutral normalization coordinates; and
+* every installed macrocell is replayed on the *actual folded-upstream child
+  state* before the next component is compiled.
+
+The component solvers remain separate.  This substrate deliberately cannot
+run a parent, train, prune, quantize, or silently replace a failed child with a
+parent-backed wrapper.  It exists to prevent the old failure mode where every
+layer was fitted against an independently projected parent state and the
+errors were never propagated through the child that would actually be saved.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import re
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from types import MappingProxyType
+from typing import Any
+
+from neural_forge.hf_lfm2_cpcf_installability import (
+    Lfm2CpcfInstallablePhaseEvidence,
+)
+from neural_forge.hf_lfm2_cpcf_macrocell_replay import (
+    Lfm2CpcfMacrocellReplay,
+    replay_lfm2_cpcf_macrocell,
+)
+from neural_forge.hf_tied_causal_interface_fold import (
+    TiedCausalInterfaceFold,
+)
+
+
+LFM2_CPCF_TARGET_PHASE_SCHEMA = "neural-forge-lfm2-cpcf-target-phase-v1"
+LFM2_CPCF_TARGET_RUNTIME_SCHEMA = "neural-forge-lfm2-cpcf-target-runtime-v1"
+_DECODE_PHASE = re.compile(r"decode\.(\d{3,})\Z")
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+
+
+class Lfm2CpcfModelCompilerError(ValueError):
+    """Target phase alignment or sequential child replay is invalid."""
+
+
+def _torch() -> Any:
+    try:
+        import torch
+    except ImportError as exc:  # pragma: no cover - optional HF dependency
+        raise RuntimeError(
+            "PyTorch is required for LFM2 CPCF model compilation."
+        ) from exc
+    return torch
+
+
+def _canonical_json(value: Any) -> bytes:
+    try:
+        return json.dumps(
+            value,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+    except (TypeError, ValueError) as exc:
+        raise Lfm2CpcfModelCompilerError(
+            "CPCF target-runtime metadata must be finite canonical JSON."
+        ) from exc
+
+
+def _sha(value: Any) -> str:
+    return hashlib.sha256(_canonical_json(value)).hexdigest()
+
+
+def _digest(value: Any, name: str) -> str:
+    if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
+        raise Lfm2CpcfModelCompilerError(f"{name} must be a lowercase SHA-256 digest.")
+    return value
+
+
+def _text(value: Any, name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise Lfm2CpcfModelCompilerError(f"{name} must be nonempty text.")
+    return value.strip()
+
+
+def _nonnegative_int(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise Lfm2CpcfModelCompilerError(f"{name} must be a nonnegative integer.")
+    return value
+
+
+def _positive_int(value: Any, name: str) -> int:
+    result = _nonnegative_int(value, name)
+    if result == 0:
+        raise Lfm2CpcfModelCompilerError(f"{name} must be a positive integer.")
+    return result
+
+
+def _integer_matrix(value: Any, name: str) -> Any:
+    torch = _torch()
+    integer_dtypes = {
+        torch.uint8,
+        torch.int8,
+        torch.int16,
+        torch.int32,
+        torch.int64,
+    }
+    if (
+        not isinstance(value, torch.Tensor)
+        or value.layout != torch.strided
+        or value.device.type == "meta"
+        or value.ndim != 2
+        or value.numel() == 0
+        or value.dtype not in integer_dtypes
+        or value.requires_grad
+    ):
+        raise Lfm2CpcfModelCompilerError(
+            f"{name} must be a nonempty dense rank-two integer tensor."
+        )
+    result = value.detach().to(device="cpu", dtype=torch.long).contiguous()
+    if bool((result < 0).any().item()):
+        raise Lfm2CpcfModelCompilerError(f"{name} contains a negative value.")
+    return result.clone()
+
+
+def _floating_states(value: Any, name: str, *, hidden_size: int | None = None) -> Any:
+    torch = _torch()
+    if (
+        not isinstance(value, torch.Tensor)
+        or value.layout != torch.strided
+        or value.device.type == "meta"
+        or value.ndim != 3
+        or value.numel() == 0
+        or not torch.is_floating_point(value)
+        or torch.is_complex(value)
+        or value.requires_grad
+        or value.grad_fn is not None
+    ):
+        raise Lfm2CpcfModelCompilerError(
+            f"{name} must be a detached dense real rank-three tensor."
+        )
+    if hidden_size is not None and int(value.shape[-1]) != hidden_size:
+        raise Lfm2CpcfModelCompilerError(
+            f"{name} hidden width differs from {hidden_size}."
+        )
+    if not bool(torch.isfinite(value).all().item()):
+        raise Lfm2CpcfModelCompilerError(f"{name} contains NaN or infinity.")
+    return value.detach().clone()
+
+
+def _tensor_sha256(value: Any) -> str:
+    torch = _torch()
+    detached = value.detach().to(device="cpu").contiguous()
+    descriptor = {
+        "dtype": str(detached.dtype).removeprefix("torch."),
+        "shape": [int(size) for size in detached.shape],
+    }
+    digest = hashlib.sha256(_canonical_json(descriptor))
+    digest.update(detached.view(torch.uint8).numpy().tobytes(order="C"))
+    return digest.hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CpcfTargetPhase:
+    """One target-token full prefix aligned to one authenticated parent phase."""
+
+    batch_index: int
+    record_id: str
+    split: str
+    phase: str
+    donor_input_sha256: str
+    target_alignment_sha256: str
+    input_ids: Any
+    attention_mask: Any
+    position_ids: Any
+    sampled_suffix_tokens: int
+    parent_evidence: Lfm2CpcfInstallablePhaseEvidence
+    phase_sha256: str
+
+    def __post_init__(self) -> None:
+        batch_index = _nonnegative_int(self.batch_index, "batch_index")
+        record_id = _text(self.record_id, "record_id")
+        split = _text(self.split, "split")
+        phase = _text(self.phase, "phase")
+        donor_sha = _digest(
+            self.donor_input_sha256,
+            "donor_input_sha256",
+        )
+        alignment_sha = _digest(
+            self.target_alignment_sha256,
+            "target_alignment_sha256",
+        )
+        ids = _integer_matrix(self.input_ids, "input_ids")
+        mask = _integer_matrix(self.attention_mask, "attention_mask")
+        positions = _integer_matrix(self.position_ids, "position_ids")
+        if (
+            tuple(mask.shape) != tuple(ids.shape)
+            or tuple(positions.shape) != tuple(ids.shape)
+            or not bool(((mask == 0) | (mask == 1)).all().item())
+            or bool((mask.sum(dim=1) == 0).any().item())
+        ):
+            raise Lfm2CpcfModelCompilerError(
+                "Target phase IDs, mask, and positions are misaligned."
+            )
+        sampled = _positive_int(
+            self.sampled_suffix_tokens,
+            "sampled_suffix_tokens",
+        )
+        if sampled > int(ids.shape[1]):
+            raise Lfm2CpcfModelCompilerError(
+                "sampled_suffix_tokens exceeds the full target prefix."
+            )
+        evidence = self.parent_evidence
+        if (
+            not isinstance(evidence, Lfm2CpcfInstallablePhaseEvidence)
+            or evidence.batch_index != batch_index
+            or evidence.phase != phase
+            or evidence.input_sha256 != donor_sha
+        ):
+            raise Lfm2CpcfModelCompilerError(
+                "Parent evidence differs from the aligned target phase."
+            )
+        body = {
+            "schema": LFM2_CPCF_TARGET_PHASE_SCHEMA,
+            "batch_index": batch_index,
+            "record_id": record_id,
+            "split": split,
+            "phase": phase,
+            "donor_input_sha256": donor_sha,
+            "target_alignment_sha256": alignment_sha,
+            "input_ids_sha256": _tensor_sha256(ids),
+            "attention_mask_sha256": _tensor_sha256(mask),
+            "position_ids_sha256": _tensor_sha256(positions),
+            "batch_size": int(ids.shape[0]),
+            "full_prefix_tokens": int(ids.shape[1]),
+            "sampled_suffix_tokens": sampled,
+            "parent_evidence_sha256": evidence.evidence_sha256,
+            "numeric_token_id_equality_required": False,
+            "actual_child_full_prefix_required": True,
+        }
+        expected = _sha(body)
+        if self.phase_sha256 != expected:
+            raise Lfm2CpcfModelCompilerError("Target phase evidence seal is invalid.")
+        object.__setattr__(self, "record_id", record_id)
+        object.__setattr__(self, "split", split)
+        object.__setattr__(self, "phase", phase)
+        object.__setattr__(self, "input_ids", ids)
+        object.__setattr__(self, "attention_mask", mask)
+        object.__setattr__(self, "position_ids", positions)
+
+    @property
+    def identity(self) -> tuple[int, str]:
+        return self.batch_index, self.phase
+
+    @property
+    def batch_size(self) -> int:
+        return int(self.input_ids.shape[0])
+
+    @property
+    def full_prefix_tokens(self) -> int:
+        return int(self.input_ids.shape[1])
+
+    def suffix(self, value: Any) -> Any:
+        if (
+            not hasattr(value, "ndim")
+            or value.ndim < 2
+            or int(value.shape[0]) != self.batch_size
+            or int(value.shape[1]) != self.full_prefix_tokens
+        ):
+            raise Lfm2CpcfModelCompilerError(
+                "Cannot select an aligned suffix from this tensor."
+            )
+        return value[:, -self.sampled_suffix_tokens :, ...]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema": LFM2_CPCF_TARGET_PHASE_SCHEMA,
+            "batch_index": self.batch_index,
+            "record_id": self.record_id,
+            "split": self.split,
+            "phase": self.phase,
+            "donor_input_sha256": self.donor_input_sha256,
+            "target_alignment_sha256": self.target_alignment_sha256,
+            "batch_size": self.batch_size,
+            "full_prefix_tokens": self.full_prefix_tokens,
+            "sampled_suffix_tokens": self.sampled_suffix_tokens,
+            "parent_evidence_sha256": self.parent_evidence.evidence_sha256,
+            "phase_sha256": self.phase_sha256,
+        }
+
+
+def _target_phase(
+    *,
+    record: Any,
+    evidence: Lfm2CpcfInstallablePhaseEvidence,
+) -> Lfm2CpcfTargetPhase:
+    torch = _torch()
+    prompt_ids = _integer_matrix(record.target_input_ids, "target_input_ids")
+    prompt_mask = _integer_matrix(record.attention_mask, "attention_mask")
+    forced = _integer_matrix(
+        record.target_forced_decode_ids,
+        "target_forced_decode_ids",
+    )
+    base_positions = getattr(record, "position_ids", None)
+    if base_positions is None:
+        prompt_positions = (
+            torch.arange(
+                int(prompt_ids.shape[1]),
+                dtype=torch.long,
+            )
+            .unsqueeze(0)
+            .expand(int(prompt_ids.shape[0]), -1)
+        )
+    else:
+        prompt_positions = _integer_matrix(base_positions, "position_ids")
+    if evidence.phase in {"prefill", "cached_prefill"}:
+        ids = prompt_ids
+        mask = prompt_mask
+        positions = prompt_positions
+    else:
+        match = _DECODE_PHASE.fullmatch(evidence.phase)
+        if match is None:
+            raise Lfm2CpcfModelCompilerError(
+                f"Unsupported parent phase {evidence.phase!r}."
+            )
+        step_count = int(match.group(1)) + 1
+        if step_count > int(forced.shape[1]):
+            raise Lfm2CpcfModelCompilerError(
+                "Decode phase exceeds the target forced-decode record."
+            )
+        suffix_ids = forced[:, :step_count]
+        ids = torch.cat((prompt_ids, suffix_ids), dim=1).contiguous()
+        mask = torch.cat(
+            (
+                prompt_mask,
+                torch.ones_like(suffix_ids, dtype=torch.long),
+            ),
+            dim=1,
+        ).contiguous()
+        start = prompt_positions[:, -1:] + 1
+        offsets = torch.arange(step_count, dtype=torch.long).unsqueeze(0)
+        decode_positions = start + offsets
+        positions = torch.cat(
+            (prompt_positions, decode_positions),
+            dim=1,
+        ).contiguous()
+    sampled = int(evidence.layers[0].tensors["residual.pre"].shape[1])
+    body = {
+        "schema": LFM2_CPCF_TARGET_PHASE_SCHEMA,
+        "batch_index": evidence.batch_index,
+        "record_id": str(record.record_id),
+        "split": str(record.split),
+        "phase": evidence.phase,
+        "donor_input_sha256": evidence.input_sha256,
+        "target_alignment_sha256": str(record.alignment_sha256),
+        "input_ids_sha256": _tensor_sha256(ids),
+        "attention_mask_sha256": _tensor_sha256(mask),
+        "position_ids_sha256": _tensor_sha256(positions),
+        "batch_size": int(ids.shape[0]),
+        "full_prefix_tokens": int(ids.shape[1]),
+        "sampled_suffix_tokens": sampled,
+        "parent_evidence_sha256": evidence.evidence_sha256,
+        "numeric_token_id_equality_required": False,
+        "actual_child_full_prefix_required": True,
+    }
+    return Lfm2CpcfTargetPhase(
+        batch_index=evidence.batch_index,
+        record_id=str(record.record_id),
+        split=str(record.split),
+        phase=evidence.phase,
+        donor_input_sha256=evidence.input_sha256,
+        target_alignment_sha256=str(record.alignment_sha256),
+        input_ids=ids,
+        attention_mask=mask,
+        position_ids=positions,
+        sampled_suffix_tokens=sampled,
+        parent_evidence=evidence,
+        phase_sha256=_sha(body),
+    )
+
+
+def build_lfm2_cpcf_target_phases(
+    trace_adapter: Any,
+    parent_phases: Sequence[Lfm2CpcfInstallablePhaseEvidence],
+) -> tuple[Lfm2CpcfTargetPhase, ...]:
+    """Bind strict target IDs to every streamed installable parent phase."""
+
+    verify = getattr(trace_adapter, "verify", None)
+    records = getattr(trace_adapter, "records", None)
+    if not callable(verify) or not isinstance(records, tuple):
+        raise Lfm2CpcfModelCompilerError(
+            "A verified strict tokenizer trace adapter is required."
+        )
+    verify()
+    phases = tuple(parent_phases)
+    if not phases or not all(
+        isinstance(value, Lfm2CpcfInstallablePhaseEvidence) for value in phases
+    ):
+        raise Lfm2CpcfModelCompilerError(
+            "parent_phases must contain installable phase evidence."
+        )
+    by_ordinal = {int(record.ordinal): record for record in records}
+    if len(by_ordinal) != len(records):
+        raise Lfm2CpcfModelCompilerError(
+            "Tokenizer trace record ordinals are not unique."
+        )
+    result = []
+    seen: set[tuple[int, str]] = set()
+    for evidence in phases:
+        record = by_ordinal.get(evidence.batch_index)
+        if record is None:
+            raise Lfm2CpcfModelCompilerError(
+                f"No target tokenizer record for cache batch {evidence.batch_index}."
+            )
+        if record.donor_cache_input_sha256 != evidence.input_sha256:
+            raise Lfm2CpcfModelCompilerError(
+                "Target record is not bound to the parent cache input."
+            )
+        phase = _target_phase(record=record, evidence=evidence)
+        if phase.identity in seen:
+            raise Lfm2CpcfModelCompilerError(
+                f"Duplicate target phase {phase.identity}."
+            )
+        seen.add(phase.identity)
+        result.append(phase)
+    trace_adapter.verify()
+    return tuple(result)
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CpcfPhaseStateBank:
+    """Full-prefix actual child residuals at one sequential model boundary."""
+
+    boundary: str
+    layer_index: int
+    phases: tuple[Lfm2CpcfTargetPhase, ...]
+    states: Mapping[tuple[int, str], Any]
+    state_bank_sha256: str
+
+    def __post_init__(self) -> None:
+        boundary = _text(self.boundary, "boundary")
+        layer_index = _nonnegative_int(self.layer_index, "layer_index")
+        phases = tuple(self.phases)
+        if not phases:
+            raise Lfm2CpcfModelCompilerError("A phase-state bank cannot be empty.")
+        expected = tuple(phase.identity for phase in phases)
+        if len(set(expected)) != len(expected) or set(self.states) != set(expected):
+            raise Lfm2CpcfModelCompilerError(
+                "Phase-state identities are missing, duplicated, or reordered."
+            )
+        normalized: dict[tuple[int, str], Any] = {}
+        hidden_sizes = set()
+        inventory = []
+        for phase in phases:
+            state = _floating_states(
+                self.states[phase.identity],
+                f"states[{phase.identity!r}]",
+            )
+            if tuple(state.shape[:2]) != (
+                phase.batch_size,
+                phase.full_prefix_tokens,
+            ):
+                raise Lfm2CpcfModelCompilerError(
+                    f"State {phase.identity!r} differs from its full prefix."
+                )
+            hidden_sizes.add(int(state.shape[-1]))
+            normalized[phase.identity] = state
+            inventory.append(
+                {
+                    "identity": [phase.batch_index, phase.phase],
+                    "phase_sha256": phase.phase_sha256,
+                    "state_sha256": _tensor_sha256(state),
+                }
+            )
+        if len(hidden_sizes) != 1:
+            raise Lfm2CpcfModelCompilerError(
+                "Actual child residual widths differ by phase."
+            )
+        body = {
+            "schema": LFM2_CPCF_TARGET_RUNTIME_SCHEMA,
+            "scope": "phase_state_bank",
+            "boundary": boundary,
+            "layer_index": layer_index,
+            "hidden_size": next(iter(hidden_sizes)),
+            "ordered_states": inventory,
+            "actual_folded_upstream_states": True,
+        }
+        if self.state_bank_sha256 != _sha(body):
+            raise Lfm2CpcfModelCompilerError("Phase-state bank seal is invalid.")
+        object.__setattr__(self, "boundary", boundary)
+        object.__setattr__(self, "phases", phases)
+        object.__setattr__(
+            self,
+            "states",
+            MappingProxyType(normalized),
+        )
+
+    @property
+    def hidden_size(self) -> int:
+        return int(next(iter(self.states.values())).shape[-1])
+
+    def state(self, phase: Lfm2CpcfTargetPhase) -> Any:
+        try:
+            return self.states[phase.identity].clone()
+        except KeyError as exc:
+            raise Lfm2CpcfModelCompilerError(
+                f"Phase {phase.identity!r} is absent from this bank."
+            ) from exc
+
+    def suffix(self, phase: Lfm2CpcfTargetPhase) -> Any:
+        return phase.suffix(self.state(phase))
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema": LFM2_CPCF_TARGET_RUNTIME_SCHEMA,
+            "scope": "phase_state_bank",
+            "boundary": self.boundary,
+            "layer_index": self.layer_index,
+            "phase_count": len(self.phases),
+            "hidden_size": self.hidden_size,
+            "state_bank_sha256": self.state_bank_sha256,
+        }
+
+
+def _phase_state_bank(
+    boundary: str,
+    layer_index: int,
+    phases: Sequence[Lfm2CpcfTargetPhase],
+    states: Mapping[tuple[int, str], Any],
+) -> Lfm2CpcfPhaseStateBank:
+    ordered = tuple(phases)
+    inventory = []
+    for phase in ordered:
+        state = states[phase.identity]
+        inventory.append(
+            {
+                "identity": [phase.batch_index, phase.phase],
+                "phase_sha256": phase.phase_sha256,
+                "state_sha256": _tensor_sha256(state),
+            }
+        )
+    body = {
+        "schema": LFM2_CPCF_TARGET_RUNTIME_SCHEMA,
+        "scope": "phase_state_bank",
+        "boundary": boundary,
+        "layer_index": layer_index,
+        "hidden_size": int(next(iter(states.values())).shape[-1]),
+        "ordered_states": inventory,
+        "actual_folded_upstream_states": True,
+    }
+    return Lfm2CpcfPhaseStateBank(
+        boundary=boundary,
+        layer_index=layer_index,
+        phases=ordered,
+        states=states,
+        state_bank_sha256=_sha(body),
+    )
+
+
+def _model_core(model: Any) -> Any:
+    core = getattr(model, "model", None)
+    if (
+        core is None
+        or getattr(getattr(model, "config", None), "model_type", None) != "lfm2"
+    ):
+        raise Lfm2CpcfModelCompilerError(
+            "Target model must be a materialized LFM2 causal language model."
+        )
+    return core
+
+
+def _unique_parameter_count(model: Any) -> int:
+    seen: set[int] = set()
+    count = 0
+    for parameter in model.parameters():
+        if id(parameter) in seen:
+            continue
+        seen.add(id(parameter))
+        count += int(parameter.numel())
+    return count
+
+
+def install_lfm2_cpcf_tied_interface(
+    target_model: Any,
+    interface: TiedCausalInterfaceFold,
+) -> Mapping[str, Any]:
+    """Install the one dense tied input/output table into the zero blank."""
+
+    torch = _torch()
+    if not isinstance(interface, TiedCausalInterfaceFold):
+        raise TypeError("interface must be TiedCausalInterfaceFold.")
+    input_module = target_model.get_input_embeddings()
+    output_module = target_model.get_output_embeddings()
+    input_weight = getattr(input_module, "weight", None)
+    output_weight = getattr(output_module, "weight", None)
+    if (
+        not isinstance(input_weight, torch.nn.Parameter)
+        or output_weight is not input_weight
+        or tuple(input_weight.shape) != tuple(interface.target_weight.shape)
+    ):
+        raise Lfm2CpcfModelCompilerError(
+            "Target must expose one native tied table matching the interface."
+        )
+    identity = id(input_weight)
+    data_pointer = int(input_weight.data_ptr())
+    shape = tuple(int(size) for size in input_weight.shape)
+    unique_before = _unique_parameter_count(target_model)
+    with torch.no_grad():
+        input_weight.copy_(
+            interface.target_weight.to(
+                device=input_weight.device,
+                dtype=input_weight.dtype,
+            )
+        )
+    installed_sha = _tensor_sha256(input_weight)
+    expected_sha = _tensor_sha256(interface.target_weight.to(dtype=input_weight.dtype))
+    accepted = (
+        target_model.get_input_embeddings().weight
+        is target_model.get_output_embeddings().weight
+        and id(input_weight) == identity
+        and int(input_weight.data_ptr()) == data_pointer
+        and tuple(input_weight.shape) == shape
+        and _unique_parameter_count(target_model) == unique_before
+        and installed_sha == expected_sha
+    )
+    if not accepted:
+        raise Lfm2CpcfModelCompilerError(
+            "Installed tied interface failed identity or byte verification."
+        )
+    body = {
+        "schema": LFM2_CPCF_TARGET_RUNTIME_SCHEMA,
+        "scope": "tied_interface_install",
+        "accepted": True,
+        "native_tie_preserved": True,
+        "parameter_identity_preserved": True,
+        "unique_parameter_count_preserved": True,
+        "target_weight_sha256": installed_sha,
+        "interface_report_sha256": interface.report["report_sha256"],
+        "blank_target_values_read": False,
+        "training_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+    }
+    return MappingProxyType({**body, "report_sha256": _sha(body)})
+
+
+def install_lfm2_cpcf_neutral_norms(
+    target_model: Any,
+    *,
+    attention_qk_norm_weights: Mapping[int, tuple[Any, Any]] | None = None,
+) -> Mapping[str, Any]:
+    """Install explicit functional coordinates for every zeroed RMSNorm.
+
+    Residual and final normalizers receive unit gains.  Preserved-head-dimension
+    backends may supply source-derived Q/K gains per attention layer; otherwise
+    those gains are also unit vectors.  This is a deterministic installation,
+    not a learned parameter update.
+    """
+
+    torch = _torch()
+    core = _model_core(target_model)
+    supplied = dict(attention_qk_norm_weights or {})
+    layers = tuple(core.layers)
+    if set(supplied) - set(range(len(layers))):
+        raise Lfm2CpcfModelCompilerError(
+            "Q/K norm weights reference an unknown target layer."
+        )
+    parameters: list[tuple[str, Any, Any]] = []
+    for index, layer in enumerate(layers):
+        for role in ("operator_norm", "ffn_norm"):
+            module = getattr(layer, role, None)
+            weight = getattr(module, "weight", None)
+            if not isinstance(weight, torch.nn.Parameter):
+                raise Lfm2CpcfModelCompilerError(
+                    f"Target layer {index} lacks {role}.weight."
+                )
+            parameters.append((f"layers.{index}.{role}.weight", weight, None))
+        if bool(getattr(layer, "is_attention_layer", False)):
+            attention = getattr(layer, "self_attn", None)
+            values = supplied.get(index, (None, None))
+            for role, source in zip(
+                ("q_layernorm", "k_layernorm"),
+                values,
+            ):
+                weight = getattr(getattr(attention, role, None), "weight", None)
+                if not isinstance(weight, torch.nn.Parameter):
+                    raise Lfm2CpcfModelCompilerError(
+                        f"Target layer {index} lacks {role}.weight."
+                    )
+                parameters.append(
+                    (f"layers.{index}.self_attn.{role}.weight", weight, source)
+                )
+    final_weight = getattr(getattr(core, "embedding_norm", None), "weight", None)
+    if not isinstance(final_weight, torch.nn.Parameter):
+        raise Lfm2CpcfModelCompilerError(
+            "Target LFM2 model lacks embedding_norm.weight."
+        )
+    parameters.append(("embedding_norm.weight", final_weight, None))
+    identities = {
+        name: (id(weight), int(weight.data_ptr()), tuple(weight.shape))
+        for name, weight, _source in parameters
+    }
+    installed = {}
+    with torch.no_grad():
+        for name, weight, source in parameters:
+            value = torch.ones_like(weight)
+            if source is not None:
+                if (
+                    not isinstance(source, torch.Tensor)
+                    or tuple(source.shape) != tuple(weight.shape)
+                    or not torch.is_floating_point(source)
+                    or not bool(torch.isfinite(source).all().item())
+                ):
+                    raise Lfm2CpcfModelCompilerError(
+                        f"Source-derived {name} has the wrong shape or values."
+                    )
+                value = source.to(device=weight.device, dtype=weight.dtype)
+            weight.copy_(value)
+            installed[name] = _tensor_sha256(weight)
+    if any(
+        identities[name] != (id(weight), int(weight.data_ptr()), tuple(weight.shape))
+        for name, weight, _source in parameters
+    ):
+        raise Lfm2CpcfModelCompilerError(
+            "Neutral norm installation replaced a target Parameter."
+        )
+    body = {
+        "schema": LFM2_CPCF_TARGET_RUNTIME_SCHEMA,
+        "scope": "neutral_norm_install",
+        "accepted": True,
+        "installed_norm_count": len(parameters),
+        "source_derived_qk_norm_layer_indices": sorted(supplied),
+        "parameter_identities_preserved": True,
+        "installed_sha256": installed,
+        "blank_target_values_read": False,
+        "training_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+    }
+    return MappingProxyType({**body, "report_sha256": _sha(body)})
+
+
+def seed_lfm2_cpcf_phase_states(
+    target_model: Any,
+    phases: Sequence[Lfm2CpcfTargetPhase],
+) -> Lfm2CpcfPhaseStateBank:
+    """Lookup the installed target table directly for every full prefix."""
+
+    torch = _torch()
+    ordered = tuple(phases)
+    if not ordered:
+        raise Lfm2CpcfModelCompilerError("Target phases cannot be empty.")
+    weight = getattr(target_model.get_input_embeddings(), "weight", None)
+    if not isinstance(weight, torch.nn.Parameter):
+        raise Lfm2CpcfModelCompilerError(
+            "Target has no materialized input embedding table."
+        )
+    states = {}
+    with torch.no_grad():
+        for phase in ordered:
+            ids = phase.input_ids.to(device=weight.device)
+            if bool((ids >= int(weight.shape[0])).any().item()):
+                raise Lfm2CpcfModelCompilerError(
+                    f"Target phase {phase.identity!r} exceeds the table."
+                )
+            states[phase.identity] = (
+                weight.index_select(0, ids.reshape(-1))
+                .reshape(
+                    phase.batch_size,
+                    phase.full_prefix_tokens,
+                    int(weight.shape[1]),
+                )
+                .detach()
+                .clone()
+            )
+    return _phase_state_bank(
+        "input_embeddings",
+        0,
+        ordered,
+        states,
+    )
+
+
+def _rope_from_target(
+    target_model: Any,
+    residual: Any,
+    position_ids: Any,
+) -> tuple[Any, Any]:
+    torch = _torch()
+    rotary = getattr(_model_core(target_model), "rotary_emb", None)
+    inv_freq = getattr(rotary, "inv_freq", None)
+    scaling = getattr(rotary, "attention_scaling", None)
+    if (
+        not isinstance(inv_freq, torch.Tensor)
+        or inv_freq.ndim != 1
+        or inv_freq.numel() == 0
+        or isinstance(scaling, bool)
+    ):
+        raise Lfm2CpcfModelCompilerError(
+            "Target rotary embedding lacks a static inv_freq contract."
+        )
+    try:
+        scale = float(scaling)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise Lfm2CpcfModelCompilerError(
+            "Target RoPE attention scaling is invalid."
+        ) from exc
+    if not math.isfinite(scale) or scale <= 0.0:
+        raise Lfm2CpcfModelCompilerError(
+            "Target RoPE attention scaling must be positive and finite."
+        )
+    positions = position_ids.to(device=residual.device, dtype=torch.float32)
+    frequencies = positions.unsqueeze(-1) * inv_freq.to(
+        device=residual.device, dtype=torch.float32
+    ).reshape(1, 1, -1)
+    angles = torch.cat((frequencies, frequencies), dim=-1)
+    return (
+        (angles.cos() * scale).to(dtype=residual.dtype),
+        (angles.sin() * scale).to(dtype=residual.dtype),
+    )
+
+
+def _additive_causal_mask(phase: Lfm2CpcfTargetPhase, residual: Any) -> Any:
+    torch = _torch()
+    sequence = phase.full_prefix_tokens
+    allowed = torch.tril(
+        torch.ones(
+            (sequence, sequence),
+            device=residual.device,
+            dtype=torch.bool,
+        )
+    )
+    active_keys = phase.attention_mask.to(
+        device=residual.device,
+        dtype=torch.bool,
+    )[:, None, None, :]
+    allowed = allowed[None, None, :, :] & active_keys
+    minimum = torch.finfo(residual.dtype).min
+    return torch.where(
+        allowed,
+        torch.zeros((), device=residual.device, dtype=residual.dtype),
+        torch.full(
+            (),
+            minimum,
+            device=residual.device,
+            dtype=residual.dtype,
+        ),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CpcfLayerReplayBank:
+    """Every actual-child replay for one installed target layer."""
+
+    layer_index: int
+    input_bank_sha256: str
+    replays: Mapping[tuple[int, str], Lfm2CpcfMacrocellReplay]
+    post_layer_bank: Lfm2CpcfPhaseStateBank
+    report: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        _nonnegative_int(self.layer_index, "layer_index")
+        _digest(self.input_bank_sha256, "input_bank_sha256")
+        if set(self.replays) != set(self.post_layer_bank.states):
+            raise Lfm2CpcfModelCompilerError(
+                "Layer replay and post-layer state identities differ."
+            )
+        if not all(
+            isinstance(value, Lfm2CpcfMacrocellReplay)
+            for value in self.replays.values()
+        ):
+            raise Lfm2CpcfModelCompilerError(
+                "Layer replay bank contains an invalid replay."
+            )
+        object.__setattr__(
+            self,
+            "replays",
+            MappingProxyType(dict(self.replays)),
+        )
+        object.__setattr__(self, "report", MappingProxyType(dict(self.report)))
+
+    def as_dict(self) -> dict[str, Any]:
+        return dict(self.report)
+
+
+def replay_lfm2_cpcf_phase_bank(
+    target_model: Any,
+    *,
+    layer_index: int,
+    input_bank: Lfm2CpcfPhaseStateBank,
+) -> Lfm2CpcfLayerReplayBank:
+    """Replay one installed macrocell on all actual folded-upstream prefixes."""
+
+    if not isinstance(input_bank, Lfm2CpcfPhaseStateBank):
+        raise TypeError("input_bank must be Lfm2CpcfPhaseStateBank.")
+    index = _nonnegative_int(layer_index, "layer_index")
+    layers = tuple(_model_core(target_model).layers)
+    if index >= len(layers):
+        raise Lfm2CpcfModelCompilerError("layer_index is outside the target model.")
+    if input_bank.layer_index != index:
+        raise Lfm2CpcfModelCompilerError(
+            "Input state bank is not the next sequential layer boundary."
+        )
+    layer = layers[index]
+    replays = {}
+    post_states = {}
+    for phase in input_bank.phases:
+        residual = input_bank.state(phase)
+        if bool(getattr(layer, "is_attention_layer", False)):
+            position_embeddings = _rope_from_target(
+                target_model,
+                residual,
+                phase.position_ids,
+            )
+            mask = _additive_causal_mask(phase, residual)
+            replay = replay_lfm2_cpcf_macrocell(
+                layer,
+                residual,
+                position_embeddings=position_embeddings,
+                additive_causal_mask=mask,
+            )
+        else:
+            padding_mask = phase.attention_mask.to(
+                device=residual.device,
+                dtype=residual.dtype,
+            )
+            replay = replay_lfm2_cpcf_macrocell(
+                layer,
+                residual,
+                padding_mask=padding_mask,
+            )
+        replays[phase.identity] = replay
+        post_states[phase.identity] = replay.post_layer_residual
+    post_bank = _phase_state_bank(
+        f"layer.{index:03d}.post_layer",
+        index + 1,
+        input_bank.phases,
+        post_states,
+    )
+    body = {
+        "schema": LFM2_CPCF_TARGET_RUNTIME_SCHEMA,
+        "scope": "sequential_installed_macrocell_replay",
+        "layer_index": index,
+        "input_bank_sha256": input_bank.state_bank_sha256,
+        "post_layer_bank_sha256": post_bank.state_bank_sha256,
+        "ordered_replay_sha256": [
+            {
+                "identity": [phase.batch_index, phase.phase],
+                "replay_sha256": replays[phase.identity].replay_sha256,
+            }
+            for phase in input_bank.phases
+        ],
+        "actual_folded_upstream_input": True,
+        "full_prefix_replay": True,
+        "independent_parent_projection_substitution": False,
+        "parent_forward_count": 0,
+        "child_model_forward_count": 0,
+        "training_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+    }
+    report = {**body, "report_sha256": _sha(body)}
+    return Lfm2CpcfLayerReplayBank(
+        layer_index=index,
+        input_bank_sha256=input_bank.state_bank_sha256,
+        replays=replays,
+        post_layer_bank=post_bank,
+        report=report,
+    )
+
+
+__all__ = [
+    "LFM2_CPCF_TARGET_PHASE_SCHEMA",
+    "LFM2_CPCF_TARGET_RUNTIME_SCHEMA",
+    "Lfm2CpcfLayerReplayBank",
+    "Lfm2CpcfModelCompilerError",
+    "Lfm2CpcfPhaseStateBank",
+    "Lfm2CpcfTargetPhase",
+    "build_lfm2_cpcf_target_phases",
+    "install_lfm2_cpcf_neutral_norms",
+    "install_lfm2_cpcf_tied_interface",
+    "replay_lfm2_cpcf_phase_bank",
+    "seed_lfm2_cpcf_phase_states",
+]

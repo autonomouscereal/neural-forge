@@ -706,6 +706,34 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             attention_value_output_context_equivalence_tolerance=(
                 args.attention_value_output_context_equivalence_tolerance
             ),
+            attention_score_candidate_gate_enabled=(
+                args.attention_score_candidate_gate
+            ),
+            attention_score_top_k=args.attention_score_top_k,
+            attention_score_margin_floor_fraction=(
+                args.attention_score_margin_floor_fraction
+            ),
+            attention_score_minimum_top1_key_agreement_fraction=(
+                args.attention_score_minimum_top1_key_agreement
+            ),
+            attention_score_minimum_top_k_pair_order_agreement_fraction=(
+                args
+                .attention_score_minimum_top_k_pair_order_agreement
+            ),
+            attention_score_minimum_winner_margin_sign_agreement_fraction=(
+                args
+                .attention_score_minimum_winner_margin_sign_agreement
+            ),
+            attention_score_minimum_relative_margin_floor_retention_fraction=(
+                args
+                .attention_score_minimum_relative_margin_floor_retention
+            ),
+            attention_score_maximum_softmax_fisher_error=(
+                args.attention_score_maximum_softmax_fisher_error
+            ),
+            attention_score_maximum_js_divergence=(
+                args.attention_score_maximum_js_divergence
+            ),
             output_interface_mode=(
                 "identity-skip"
                 if args.preserve_output_interface
@@ -938,6 +966,38 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             "validation_tolerance": args.validation_tolerance,
             "replay_capture_mode": args.replay_capture_mode,
             "attention_consumer_mode": args.attention_consumer_mode,
+            "attention_score_candidate_gate": {
+                "enabled": args.attention_score_candidate_gate,
+                "top_k": args.attention_score_top_k,
+                "relative_margin_floor": (
+                    args.attention_score_margin_floor_fraction
+                ),
+                "minimum_top1_key_agreement_fraction": (
+                    args.attention_score_minimum_top1_key_agreement
+                ),
+                "minimum_top_k_pair_order_agreement_fraction": (
+                    args
+                    .attention_score_minimum_top_k_pair_order_agreement
+                ),
+                "minimum_winner_margin_sign_agreement_fraction": (
+                    args
+                    .attention_score_minimum_winner_margin_sign_agreement
+                ),
+                "minimum_relative_margin_floor_retention_fraction": (
+                    args
+                    .attention_score_minimum_relative_margin_floor_retention
+                ),
+                "maximum_softmax_fisher_error": (
+                    args.attention_score_maximum_softmax_fisher_error
+                ),
+                "maximum_js_divergence": (
+                    args.attention_score_maximum_js_divergence
+                ),
+                "masked_keys_excluded": True,
+                "numeric_weight_matching_used": False,
+                "parent_forward_calls": 0,
+                "training_steps": 0,
+            },
             "attention_value_output_iterations": (
                 args.attention_value_output_iterations
             ),
@@ -1128,6 +1188,48 @@ def build_parser() -> argparse.ArgumentParser:
         "--attention-value-output-context-equivalence-tolerance",
         type=float,
         default=5e-2,
+    )
+    parser.add_argument(
+        "--attention-score-candidate-gate",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--attention-score-top-k",
+        type=int,
+        default=8,
+    )
+    parser.add_argument(
+        "--attention-score-margin-floor-fraction",
+        type=float,
+        default=0.5,
+    )
+    parser.add_argument(
+        "--attention-score-minimum-top1-key-agreement",
+        type=float,
+        default=0.9,
+    )
+    parser.add_argument(
+        "--attention-score-minimum-top-k-pair-order-agreement",
+        type=float,
+        default=0.9,
+    )
+    parser.add_argument(
+        "--attention-score-minimum-winner-margin-sign-agreement",
+        type=float,
+        default=0.9,
+    )
+    parser.add_argument(
+        "--attention-score-minimum-relative-margin-floor-retention",
+        type=float,
+        default=0.9,
+    )
+    parser.add_argument(
+        "--attention-score-maximum-softmax-fisher-error",
+        type=float,
+    )
+    parser.add_argument(
+        "--attention-score-maximum-js-divergence",
+        type=float,
     )
     parser.add_argument(
         "--replay-capture-mode",
