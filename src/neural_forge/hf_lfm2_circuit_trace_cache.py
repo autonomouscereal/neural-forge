@@ -32,6 +32,8 @@ import json
 import math
 import os
 import shutil
+import stat
+import threading
 import uuid
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -54,6 +56,12 @@ CHILD_REPLAY_SCHEMA = "neural-forge-lfm2-child-circuit-replay-v1"
 CHILD_REPLAY_BATCH_SCHEMA = "neural-forge-lfm2-child-circuit-replay-batch-v1"
 AUTHENTICATED_SESSION_SCHEMA = (
     "neural-forge-lfm2-circuit-trace-authenticated-session-v1"
+)
+SELECTIVE_AUTHENTICATED_SESSION_SCHEMA = (
+    "neural-forge-lfm2-circuit-trace-selective-session-v1"
+)
+SELECTIVE_BATCH_PAYLOAD_SCHEMA = (
+    "neural-forge-lfm2-circuit-trace-selective-batch-payload-v1"
 )
 MANIFEST_FILENAME = "manifest.json"
 COMPLETION_FILENAME = "complete.json"
@@ -3343,6 +3351,145 @@ def _fresh_verified_cache_state(
 
 
 @dataclass(frozen=True, slots=True)
+class _Lfm2CircuitTraceFileIdentity:
+    """Stable regular-file identity used around selective mmap reads."""
+
+    device: int
+    inode: int
+    size: int
+    mtime_ns: int
+    ctime_ns: int
+
+    @classmethod
+    def from_stat(
+        cls,
+        value: os.stat_result,
+        *,
+        path: Path,
+    ) -> _Lfm2CircuitTraceFileIdentity:
+        if not stat.S_ISREG(value.st_mode):
+            raise Lfm2CircuitTraceCorruptionError(
+                f"Selective cache artifact is not a regular file: {path}."
+            )
+        return cls(
+            device=int(value.st_dev),
+            inode=int(value.st_ino),
+            size=int(value.st_size),
+            mtime_ns=int(value.st_mtime_ns),
+            ctime_ns=int(value.st_ctime_ns),
+        )
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "device": self.device,
+            "inode": self.inode,
+            "size": self.size,
+            "mtime_ns": self.mtime_ns,
+            "ctime_ns": self.ctime_ns,
+        }
+
+
+def _path_file_identity(path: Path) -> _Lfm2CircuitTraceFileIdentity:
+    if path.is_symlink():
+        raise Lfm2CircuitTraceCorruptionError(
+            f"Selective cache artifact cannot be a symlink: {path}."
+        )
+    try:
+        value = path.stat(follow_symlinks=False)
+    except OSError as exc:
+        raise Lfm2CircuitTraceCorruptionError(
+            f"Cannot stat selective cache artifact {path}."
+        ) from exc
+    return _Lfm2CircuitTraceFileIdentity.from_stat(value, path=path)
+
+
+def _handle_file_identity(
+    handle: Any,
+    *,
+    path: Path,
+) -> _Lfm2CircuitTraceFileIdentity:
+    try:
+        value = os.fstat(handle.fileno())
+    except (OSError, ValueError) as exc:
+        raise Lfm2CircuitTraceCorruptionError(
+            f"Cannot stat authenticated cache handle {path}."
+        ) from exc
+    return _Lfm2CircuitTraceFileIdentity.from_stat(value, path=path)
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CircuitTraceSelectiveBatchReference:
+    """Tensor-free record and inventory for one authenticated cache batch."""
+
+    index: int
+    input_sha256: str
+    record_sha256: str
+    tensor_count: int
+    ordered_tensor_names: tuple[str, ...]
+    logical_bytes: int
+    _record: Mapping[str, Any]
+
+    @property
+    def record(self) -> dict[str, Any]:
+        return json.loads(_canonical_json(dict(self._record)))
+
+
+class Lfm2CircuitTraceSelectedBatchPayload:
+    """One bounded selected-tensor view with deterministic reference release."""
+
+    __slots__ = (
+        "batch_index",
+        "input_sha256",
+        "logical_bytes",
+        "ordered_tensor_names",
+        "selection_sha256",
+        "session_sha256",
+        "_released",
+        "_tensors",
+    )
+
+    def __init__(
+        self,
+        *,
+        batch_index: int,
+        input_sha256: str,
+        ordered_tensor_names: tuple[str, ...],
+        logical_bytes: int,
+        session_sha256: str,
+        selection_sha256: str,
+        tensors: Mapping[str, Any],
+    ) -> None:
+        self.batch_index = batch_index
+        self.input_sha256 = input_sha256
+        self.ordered_tensor_names = ordered_tensor_names
+        self.logical_bytes = logical_bytes
+        self.session_sha256 = session_sha256
+        self.selection_sha256 = selection_sha256
+        self._tensors: dict[str, Any] | None = dict(tensors)
+        self._released = False
+
+    @property
+    def released(self) -> bool:
+        return self._released
+
+    @property
+    def tensors(self) -> Mapping[str, Any]:
+        if self._tensors is None:
+            raise Lfm2CircuitTraceCacheError(
+                "Selected cache tensor payload was released."
+            )
+        return MappingProxyType(self._tensors)
+
+    def _release(self) -> None:
+        if self._released:
+            return
+        if self._tensors is not None:
+            self._tensors.clear()
+        self._tensors = None
+        self._released = True
+
+
+@dataclass(frozen=True, slots=True)
 class Lfm2CircuitTraceBatch:
     """One verified, detached CPU circuit trace."""
 
@@ -3573,6 +3720,13 @@ class Lfm2CircuitTraceCache:
 
         return Lfm2CircuitTraceAuthenticatedSession(self)
 
+    def selective_authenticated_session(
+        self,
+    ) -> Lfm2CircuitTraceSelectiveAuthenticatedSession:
+        """Authenticate files once and permit bounded selected tensor reads."""
+
+        return Lfm2CircuitTraceSelectiveAuthenticatedSession(self)
+
 
 class Lfm2CircuitTraceAuthenticatedSession:
     """Verify one sealed cache exactly as its payloads are consumed.
@@ -3792,6 +3946,541 @@ class Lfm2CircuitTraceAuthenticatedSession:
                 "Authenticated cache session is not complete."
             )
         return json.loads(_canonical_json(dict(self._evidence)))
+
+
+@dataclass(slots=True)
+class _Lfm2SelectiveBatchState:
+    entry: Mapping[str, Any]
+    record: Mapping[str, Any]
+    reference: Lfm2CircuitTraceSelectiveBatchReference
+    trace_path: Path
+    record_path: Path
+    trace_identity: _Lfm2CircuitTraceFileIdentity
+    record_identity: _Lfm2CircuitTraceFileIdentity
+    trace_guard: Any
+    safetensors_handle: Any
+
+
+class Lfm2CircuitTraceSelectiveAuthenticatedSession:
+    """One immutable cache authentication with repeated bounded selections.
+
+    Every committed trace and record file is content-hashed exactly once while
+    this session opens.  The corresponding regular file descriptor and
+    safetensors mapping remain open for the session lifetime.  Later reads
+    load only caller-selected tensor names and compare each selected tensor to
+    its sealed descriptor.  Stable path and handle identities are checked
+    before and after every selection, so replacement or in-place mutation
+    fails closed without rescanning unrelated payload bytes.
+
+    The cross-platform TOCTOU boundary is explicit: ``safe_open`` accepts a
+    path rather than an existing descriptor.  This implementation requires
+    the path identity to equal the already-hashed guard identity immediately
+    before and after ``safe_open`` and keeps both handles pinned thereafter.
+    It detects normal concurrent replacement and mutation.  It does not claim
+    protection from a privileged hostile filesystem that swaps and restores
+    the same path entirely inside that narrow open/stat interval.
+    """
+
+    __slots__ = (
+        "_batch_states",
+        "_cache",
+        "_closed",
+        "_evidence",
+        "_lock",
+        "_manifest_identity",
+        "_completion_identity",
+    )
+
+    def __init__(self, cache: Lfm2CircuitTraceCache) -> None:
+        if not isinstance(cache, Lfm2CircuitTraceCache):
+            raise TypeError("cache must be Lfm2CircuitTraceCache.")
+        self._cache = cache
+        self._closed = False
+        self._lock = threading.RLock()
+        self._batch_states: tuple[_Lfm2SelectiveBatchState, ...] = ()
+        self._evidence: Mapping[str, Any] | None = None
+        manifest_path = cache.path / MANIFEST_FILENAME
+        completion_path = cache.path / COMPLETION_FILENAME
+        self._manifest_identity = _path_file_identity(manifest_path)
+        self._completion_identity = _path_file_identity(completion_path)
+        fresh_manifest, entries = _fresh_verified_cache_state(cache)
+        states: list[_Lfm2SelectiveBatchState] = []
+        try:
+            for entry in entries:
+                states.append(
+                    self._open_batch_state(
+                        fresh_manifest,
+                        entry,
+                    )
+                )
+            self._batch_states = tuple(states)
+            self._verify_immutable_metadata(entries)
+            self._seal_evidence()
+        except BaseException:
+            for state in reversed(states):
+                self._close_batch_state(state)
+            raise
+
+    @property
+    def path(self) -> Path:
+        return self._cache.path
+
+    @property
+    def manifest(self) -> dict[str, Any]:
+        return self._cache.manifest
+
+    @property
+    def cache_key(self) -> str:
+        return self._cache.cache_key
+
+    @property
+    def batch_count(self) -> int:
+        return self._cache.batch_count
+
+    @property
+    def evidence_sha256(self) -> str:
+        if self._evidence is None:  # pragma: no cover - constructor seals
+            raise Lfm2CircuitTraceCacheError(
+                "Selective authenticated session is not sealed."
+            )
+        return str(self._evidence["session_sha256"])
+
+    @property
+    def batch_references(
+        self,
+    ) -> tuple[Lfm2CircuitTraceSelectiveBatchReference, ...]:
+        return tuple(state.reference for state in self._batch_states)
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
+    def __len__(self) -> int:
+        return self.batch_count
+
+    def _open_batch_state(
+        self,
+        manifest: Mapping[str, Any],
+        entry: Mapping[str, Any],
+    ) -> _Lfm2SelectiveBatchState:
+        safe_open, _save_file = _safetensors()
+        index = int(entry["batch_index"])
+        batch_dir = self.path / "batches" / f"batch-{index:06d}"
+        if not batch_dir.is_dir() or batch_dir.is_symlink():
+            raise Lfm2CircuitTraceCorruptionError(
+                f"Cache batch directory {index} is missing or unsafe."
+            )
+        if {path.name for path in batch_dir.iterdir()} != {
+            TRACE_FILENAME,
+            BATCH_RECORD_FILENAME,
+        }:
+            raise Lfm2CircuitTraceCorruptionError(
+                f"Cache batch {index} contains unexpected artifacts."
+            )
+        trace_path = batch_dir / TRACE_FILENAME
+        record_path = batch_dir / BATCH_RECORD_FILENAME
+        trace_identity = _path_file_identity(trace_path)
+        record_identity = _path_file_identity(record_path)
+        if _file_sha256(trace_path) != entry["trace_file_sha256"]:
+            raise Lfm2CircuitTraceCorruptionError(
+                f"Cache batch {index} trace file hash changed."
+            )
+        if _path_file_identity(trace_path) != trace_identity:
+            raise Lfm2CircuitTraceCorruptionError(
+                f"Cache batch {index} trace changed while it was hashed."
+            )
+        if _file_sha256(record_path) != entry["record_file_sha256"]:
+            raise Lfm2CircuitTraceCorruptionError(
+                f"Cache batch {index} record file hash changed."
+            )
+        if _path_file_identity(record_path) != record_identity:
+            raise Lfm2CircuitTraceCorruptionError(
+                f"Cache batch {index} record changed while it was hashed."
+            )
+        record = _read_canonical_json(record_path)
+        _verify_seal(record, "record_sha256", f"cache batch {index} record")
+        if (
+            record.get("schema") != BATCH_SCHEMA
+            or record.get("cache_key") != manifest["cache_key"]
+            or record.get("batch_index") != index
+            or record.get("input_sha256") != entry["input_sha256"]
+            or record.get("record_sha256") != entry["record_sha256"]
+        ):
+            raise Lfm2CircuitTraceCorruptionError(
+                f"Cache batch {index} record binding is invalid."
+            )
+        inventory = record.get("tensors")
+        if not isinstance(inventory, Mapping) or not inventory:
+            raise Lfm2CircuitTraceCorruptionError(
+                f"Cache batch {index} tensor inventory is invalid."
+            )
+        expected_names = tuple(sorted(inventory))
+        guard = None
+        handle = None
+        try:
+            guard = trace_path.open("rb", buffering=0)
+            if _handle_file_identity(guard, path=trace_path) != trace_identity:
+                raise Lfm2CircuitTraceCorruptionError(
+                    f"Cache batch {index} trace guard changed identity."
+                )
+            if _path_file_identity(trace_path) != trace_identity:
+                raise Lfm2CircuitTraceCorruptionError(
+                    f"Cache batch {index} trace changed before safetensors open."
+                )
+            handle = safe_open(
+                str(trace_path),
+                framework="pt",
+                device="cpu",
+            )
+            handle.__enter__()
+            metadata = handle.metadata() or {}
+            if metadata != {
+                "schema": BATCH_SCHEMA,
+                "cache_key": str(manifest["cache_key"]),
+                "batch_index": str(index),
+                "input_sha256": str(entry["input_sha256"]),
+            }:
+                raise Lfm2CircuitTraceCorruptionError(
+                    f"Cache batch {index} safetensors metadata is invalid."
+                )
+            if tuple(sorted(handle.keys())) != expected_names:
+                raise Lfm2CircuitTraceCorruptionError(
+                    f"Cache batch {index} safetensors keys changed."
+                )
+            if _path_file_identity(trace_path) != trace_identity:
+                raise Lfm2CircuitTraceCorruptionError(
+                    f"Cache batch {index} trace changed during safetensors open."
+                )
+        except BaseException:
+            if handle is not None:
+                handle.__exit__(None, None, None)
+            if guard is not None:
+                guard.close()
+            raise
+        try:
+            logical_bytes = 0
+            for name in expected_names:
+                descriptor = inventory[name]
+                if not isinstance(descriptor, Mapping):
+                    raise Lfm2CircuitTraceCorruptionError(
+                        f"Cache batch {index} tensor descriptor {name!r} "
+                        "is invalid."
+                    )
+                size_bytes = descriptor.get("size_bytes")
+                if (
+                    isinstance(size_bytes, bool)
+                    or not isinstance(size_bytes, int)
+                    or size_bytes <= 0
+                ):
+                    raise Lfm2CircuitTraceCorruptionError(
+                        f"Cache batch {index} tensor {name!r} has invalid "
+                        "bytes."
+                    )
+                logical_bytes += size_bytes
+        except BaseException:
+            handle.__exit__(None, None, None)
+            guard.close()
+            raise
+        reference = Lfm2CircuitTraceSelectiveBatchReference(
+            index=index,
+            input_sha256=str(entry["input_sha256"]),
+            record_sha256=str(entry["record_sha256"]),
+            tensor_count=len(expected_names),
+            ordered_tensor_names=expected_names,
+            logical_bytes=logical_bytes,
+            _record=MappingProxyType(record),
+        )
+        return _Lfm2SelectiveBatchState(
+            entry=MappingProxyType(dict(entry)),
+            record=MappingProxyType(record),
+            reference=reference,
+            trace_path=trace_path,
+            record_path=record_path,
+            trace_identity=trace_identity,
+            record_identity=record_identity,
+            trace_guard=guard,
+            safetensors_handle=handle,
+        )
+
+    @staticmethod
+    def _close_batch_state(state: _Lfm2SelectiveBatchState) -> None:
+        try:
+            state.safetensors_handle.__exit__(None, None, None)
+        finally:
+            state.trace_guard.close()
+
+    def _verify_batch_identity(
+        self,
+        state: _Lfm2SelectiveBatchState,
+    ) -> None:
+        index = state.reference.index
+        if (
+            _path_file_identity(state.trace_path) != state.trace_identity
+            or _handle_file_identity(
+                state.trace_guard,
+                path=state.trace_path,
+            )
+            != state.trace_identity
+        ):
+            raise Lfm2CircuitTraceCorruptionError(
+                f"Cache batch {index} trace identity changed."
+            )
+        if _path_file_identity(state.record_path) != state.record_identity:
+            raise Lfm2CircuitTraceCorruptionError(
+                f"Cache batch {index} record identity changed."
+            )
+
+    def _verify_immutable_metadata(
+        self,
+        expected_entries: Sequence[Mapping[str, Any]] | None = None,
+    ) -> None:
+        if (
+            _path_file_identity(self.path / MANIFEST_FILENAME)
+            != self._manifest_identity
+            or _path_file_identity(self.path / COMPLETION_FILENAME)
+            != self._completion_identity
+        ):
+            raise Lfm2CircuitTraceCorruptionError(
+                "Cache metadata identity changed during selective session."
+            )
+        _fresh_manifest, entries = _fresh_verified_cache_state(self._cache)
+        expected = (
+            tuple(state.entry for state in self._batch_states)
+            if expected_entries is None
+            else tuple(expected_entries)
+        )
+        if tuple(dict(entry) for entry in entries) != tuple(
+            dict(entry) for entry in expected
+        ):
+            raise Lfm2CircuitTraceCorruptionError(
+                "Cache completion entries changed during selective session."
+            )
+        for state in self._batch_states:
+            self._verify_batch_identity(state)
+
+    def _seal_evidence(self) -> None:
+        body = {
+            "schema": SELECTIVE_AUTHENTICATED_SESSION_SCHEMA,
+            "cache_key": self.cache_key,
+            "manifest_sha256": str(
+                self._cache._manifest["manifest_sha256"]
+            ),
+            "completion_sha256": str(
+                self._cache._completion["completion_sha256"]
+            ),
+            "batch_count": self.batch_count,
+            "ordered_authenticated_batches": [
+                {
+                    "batch_index": state.reference.index,
+                    "input_sha256": state.reference.input_sha256,
+                    "trace_file_sha256": str(
+                        state.entry["trace_file_sha256"]
+                    ),
+                    "record_file_sha256": str(
+                        state.entry["record_file_sha256"]
+                    ),
+                    "record_sha256": state.reference.record_sha256,
+                    "tensor_count": state.reference.tensor_count,
+                    "logical_bytes": state.reference.logical_bytes,
+                }
+                for state in self._batch_states
+            ],
+            "authentication_contract": {
+                "committed_local_cache_only": True,
+                "manifest_completion_and_layout_verified": True,
+                "trace_file_sha256_passes_per_session": 1,
+                "record_file_sha256_passes_per_session": 1,
+                "record_self_hash_verified": True,
+                "safetensors_metadata_verified": True,
+                "complete_tensor_key_inventory_verified": True,
+                "selected_tensor_descriptors_verified_per_load": True,
+                "stable_file_identity_checked_before_and_after_load": True,
+                "authenticated_trace_guard_held_open": True,
+                "safetensors_mapping_held_open": True,
+                "unselected_tensor_payloads_loaded": False,
+                "parent_forward_calls": 0,
+                "training_steps": 0,
+                "toctou_boundary": (
+                    "privileged hostile filesystem replacement entirely "
+                    "inside the cross-platform safe_open path/stat interval"
+                ),
+            },
+        }
+        self._evidence = MappingProxyType(
+            {
+                **body,
+                "session_sha256": _json_sha256(body),
+            }
+        )
+
+    def _state(self, index: int) -> _Lfm2SelectiveBatchState:
+        if self._closed:
+            raise Lfm2CircuitTraceCacheError(
+                "Selective authenticated session is closed."
+            )
+        if isinstance(index, bool) or not isinstance(index, int):
+            raise TypeError("batch index must be an integer.")
+        if index < 0 or index >= self.batch_count:
+            raise IndexError(
+                f"batch index must be in [0, {self.batch_count}), got {index}."
+            )
+        return self._batch_states[index]
+
+    def load_selected_tensors(
+        self,
+        index: int,
+        tensor_names: Sequence[str],
+    ) -> Lfm2CircuitTraceSelectedBatchPayload:
+        """Load exactly one canonical selected tensor set from one batch."""
+
+        if isinstance(tensor_names, (str, bytes)) or not isinstance(
+            tensor_names,
+            Sequence,
+        ):
+            raise TypeError("tensor_names must be a sequence of strings.")
+        names = tuple(tensor_names)
+        if (
+            not names
+            or any(not isinstance(name, str) or not name for name in names)
+            or names != tuple(sorted(set(names)))
+        ):
+            raise Lfm2CircuitTraceCacheError(
+                "Selected tensor names must be nonempty, unique, and in "
+                "canonical sorted order."
+            )
+        with self._lock:
+            state = self._state(index)
+            inventory = state.record["tensors"]
+            if any(name not in inventory for name in names):
+                missing = next(name for name in names if name not in inventory)
+                raise Lfm2CircuitTraceCorruptionError(
+                    f"Cache batch {index} has no sealed tensor {missing!r}."
+                )
+            self._verify_batch_identity(state)
+            torch = _torch()
+            tensors: dict[str, Any] = {}
+            try:
+                for name in names:
+                    tensor = _cpu_tensor(
+                        torch,
+                        state.safetensors_handle.get_tensor(name),
+                        f"cache batch {index} selected tensor {name}",
+                    )
+                    if _tensor_descriptor(torch, tensor) != inventory[name]:
+                        raise Lfm2CircuitTraceCorruptionError(
+                            f"Cache batch {index} selected tensor {name!r} "
+                            "changed."
+                        )
+                    tensors[name] = tensor
+                self._verify_batch_identity(state)
+            except BaseException:
+                tensors.clear()
+                raise
+            logical_bytes = sum(
+                int(value.numel() * value.element_size())
+                for value in tensors.values()
+            )
+            expected_bytes = sum(
+                int(inventory[name]["size_bytes"]) for name in names
+            )
+            if logical_bytes != expected_bytes:
+                tensors.clear()
+                raise Lfm2CircuitTraceCorruptionError(
+                    f"Cache batch {index} selected tensor byte count changed."
+                )
+            body = {
+                "schema": SELECTIVE_BATCH_PAYLOAD_SCHEMA,
+                "session_sha256": self.evidence_sha256,
+                "cache_key": self.cache_key,
+                "batch_index": index,
+                "input_sha256": state.reference.input_sha256,
+                "record_sha256": state.reference.record_sha256,
+                "ordered_tensor_names": list(names),
+                "ordered_tensor_descriptors": [
+                    dict(inventory[name]) for name in names
+                ],
+                "logical_bytes": logical_bytes,
+            }
+            return Lfm2CircuitTraceSelectedBatchPayload(
+                batch_index=index,
+                input_sha256=state.reference.input_sha256,
+                ordered_tensor_names=names,
+                logical_bytes=logical_bytes,
+                session_sha256=self.evidence_sha256,
+                selection_sha256=_json_sha256(body),
+                tensors=tensors,
+            )
+
+    def release_selected_tensors(
+        self,
+        payload: Lfm2CircuitTraceSelectedBatchPayload,
+    ) -> None:
+        if not isinstance(payload, Lfm2CircuitTraceSelectedBatchPayload):
+            raise TypeError(
+                "payload must be Lfm2CircuitTraceSelectedBatchPayload."
+            )
+        if payload.session_sha256 != self.evidence_sha256:
+            raise Lfm2CircuitTraceCacheError(
+                "Selected payload belongs to another authenticated session."
+            )
+        payload._release()
+
+    def verify(
+        self,
+    ) -> Lfm2CircuitTraceSelectiveAuthenticatedSession:
+        """Recheck identities and metadata without rereading trace contents."""
+
+        with self._lock:
+            if self._closed:
+                raise Lfm2CircuitTraceCacheError(
+                    "Selective authenticated session is closed."
+                )
+            self._verify_immutable_metadata()
+        return self
+
+    def as_dict(self) -> dict[str, Any]:
+        if self._evidence is None:  # pragma: no cover - constructor seals
+            raise Lfm2CircuitTraceCacheError(
+                "Selective authenticated session is not sealed."
+            )
+        return json.loads(_canonical_json(dict(self._evidence)))
+
+    def close(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            error: BaseException | None = None
+            try:
+                self._verify_immutable_metadata()
+            except BaseException as exc:
+                error = exc
+            for state in reversed(self._batch_states):
+                try:
+                    self._close_batch_state(state)
+                except BaseException as exc:
+                    if error is None:
+                        error = exc
+                    else:
+                        error.add_note(
+                            "Selective session close also failed: "
+                            f"{type(exc).__qualname__}: {exc}"
+                        )
+            self._closed = True
+            if error is not None:
+                raise error
+
+    def __enter__(
+        self,
+    ) -> Lfm2CircuitTraceSelectiveAuthenticatedSession:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: Any,
+    ) -> None:
+        self.close()
 
 
 def open_lfm2_circuit_trace_cache(
@@ -5028,7 +5717,12 @@ __all__ = [
     "Lfm2CircuitTraceCaptureError",
     "Lfm2CircuitTraceConflictError",
     "Lfm2CircuitTraceCorruptionError",
+    "Lfm2CircuitTraceSelectedBatchPayload",
+    "Lfm2CircuitTraceSelectiveAuthenticatedSession",
+    "Lfm2CircuitTraceSelectiveBatchReference",
     "Lfm2ParentFingerprint",
+    "SELECTIVE_AUTHENTICATED_SESSION_SCHEMA",
+    "SELECTIVE_BATCH_PAYLOAD_SCHEMA",
     "build_lfm2_circuit_trace_cache",
     "capture_lfm2_child_replay",
     "capture_lfm2_circuit_trace_cache",

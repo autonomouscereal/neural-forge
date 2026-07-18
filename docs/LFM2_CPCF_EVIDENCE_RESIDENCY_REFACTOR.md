@@ -162,3 +162,43 @@ Integration is not safe until all of these pass:
 
 Until these tests pass, the standalone residency abstraction is infrastructure
 only and must not be cited as a completed reduction in production fold RSS.
+
+## Selective cache/provider implementation status
+
+`hf_lfm2_circuit_trace_cache.py` now also exposes
+`Lfm2CircuitTraceSelectiveAuthenticatedSession`. The selective session is a
+separate API; the conservative whole-batch loader and the existing one-pass
+whole-batch authenticated session are unchanged.
+
+The selective session:
+
+- opens only an existing committed local cache and has no parent-model API;
+- validates manifest, completion, layout, record seals, complete safetensors
+  metadata/key inventories, and each full trace/record file SHA-256 once per
+  immutable session;
+- keeps an authenticated regular-file guard and safetensors mapping open;
+- loads only a canonical caller-selected tensor-name set;
+- checks every selected tensor's sealed dtype, shape, size, and content hash;
+- checks stable trace, record, manifest, and completion file identity before
+  and after bounded reads; and
+- releases selected payload references deterministically.
+
+`hf_lfm2_cpcf_selective_evidence.py` builds a tensor-free catalog through a
+bounded layer-at-a-time pass, preserves every existing CPCF layer and phase
+evidence SHA-256, exposes a `DynamicEvidenceLayerCatalog`, implements the
+dynamic residency provider protocol, and keeps final-normalization evidence as
+a separately explicit bounded payload. It performs zero parent forwards,
+training, pruning, quantization, or arithmetic conversion.
+
+The file-system TOCTOU boundary is explicit. Cross-platform safetensors opens
+by path rather than by an already-authenticated file descriptor. The session
+requires the path identity to match the fully hashed guard immediately before
+and after `safe_open`, then pins both handles. This detects ordinary concurrent
+replacement and in-place mutation. It does not claim defense against a
+privileged hostile filesystem that swaps and restores the same path entirely
+inside that narrow open/stat interval.
+
+This provider is not imported by the current model compiler or live fold.
+Target-tokenizer alignment, target-phase hashes, fit/validation row lineage,
+state-bank ownership changes, resume authentication, and compiler
+fingerprinting remain part of the all-at-once integration boundary above.
