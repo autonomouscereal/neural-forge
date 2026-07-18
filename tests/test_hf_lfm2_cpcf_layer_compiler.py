@@ -383,6 +383,263 @@ def _state_sha(module):
     return digest.hexdigest()
 
 
+def test_decode_short_conv_suffixes_reconstruct_complete_causal_histories() -> None:
+    histories = {}
+    prefill = SimpleNamespace(
+        identity=(4, "prefill"),
+        batch_index=4,
+        phase="prefill",
+        batch_size=1,
+        full_prefix_tokens=5,
+        sampled_suffix_tokens=5,
+    )
+    prefill_fields = {
+        name: torch.arange(10, dtype=torch.float32).reshape(1, 5, 2)
+        + field_index * 100
+        for field_index, name in enumerate(
+            layer_compiler._SHORT_CONV_HISTORY_FIELDS
+        )
+    }
+    complete_prefill = layer_compiler._extend_short_conv_parent_histories(
+        prefill,
+        prefill_fields,
+        layer_index=0,
+        histories=histories,
+    )
+    assert all(tuple(value.shape) == (1, 5, 2) for value in complete_prefill.values())
+
+    decode_zero = SimpleNamespace(
+        identity=(4, "decode.000"),
+        batch_index=4,
+        phase="decode.000",
+        batch_size=1,
+        full_prefix_tokens=6,
+        sampled_suffix_tokens=1,
+    )
+    decode_fields = {
+        name: torch.full((1, 1, 2), 1000.0 + field_index)
+        for field_index, name in enumerate(
+            layer_compiler._SHORT_CONV_HISTORY_FIELDS
+        )
+    }
+    decode_fields["short_conv.pre_bx_state"] = (
+        prefill_fields["short_conv.b_history"]
+        * prefill_fields["short_conv.x_history"]
+    ).transpose(1, 2)[:, :, -3:]
+    reconstructed = layer_compiler._extend_short_conv_parent_histories(
+        decode_zero,
+        decode_fields,
+        layer_index=0,
+        histories=histories,
+    )
+    for name in layer_compiler._SHORT_CONV_HISTORY_FIELDS:
+        assert tuple(reconstructed[name].shape) == (1, 6, 2)
+        assert torch.equal(reconstructed[name][:, :5, :], prefill_fields[name])
+        assert torch.equal(reconstructed[name][:, 5:, :], decode_fields[name])
+
+    decode_one = SimpleNamespace(
+        identity=(4, "decode.001"),
+        batch_index=4,
+        phase="decode.001",
+        batch_size=1,
+        full_prefix_tokens=7,
+        sampled_suffix_tokens=1,
+    )
+    next_fields = {
+        name: torch.full((1, 1, 2), 2000.0 + field_index)
+        for field_index, name in enumerate(
+            layer_compiler._SHORT_CONV_HISTORY_FIELDS
+        )
+    }
+    next_fields["short_conv.pre_bx_state"] = (
+        reconstructed["short_conv.b_history"]
+        * reconstructed["short_conv.x_history"]
+    ).transpose(1, 2)[:, :, -3:]
+    reconstructed_next = layer_compiler._extend_short_conv_parent_histories(
+        decode_one,
+        next_fields,
+        layer_index=0,
+        histories=histories,
+    )
+    for name in layer_compiler._SHORT_CONV_HISTORY_FIELDS:
+        assert torch.equal(reconstructed_next[name][:, :6, :], reconstructed[name])
+        assert torch.equal(reconstructed_next[name][:, 6:, :], next_fields[name])
+
+
+def test_decode_short_conv_history_rejects_a_missing_causal_step() -> None:
+    histories = {}
+    prefill = SimpleNamespace(
+        identity=(9, "prefill"),
+        batch_index=9,
+        phase="prefill",
+        batch_size=1,
+        full_prefix_tokens=3,
+        sampled_suffix_tokens=3,
+    )
+    fields = {
+        name: torch.zeros((1, 3, 2), dtype=torch.float32)
+        for name in layer_compiler._SHORT_CONV_HISTORY_FIELDS
+    }
+    layer_compiler._extend_short_conv_parent_histories(
+        prefill,
+        fields,
+        layer_index=0,
+        histories=histories,
+    )
+    skipped_decode = SimpleNamespace(
+        identity=(9, "decode.001"),
+        batch_index=9,
+        phase="decode.001",
+        batch_size=1,
+        full_prefix_tokens=5,
+        sampled_suffix_tokens=1,
+    )
+    suffix = {
+        name: torch.zeros((1, 1, 2), dtype=torch.float32)
+        for name in layer_compiler._SHORT_CONV_HISTORY_FIELDS
+    }
+    suffix["short_conv.pre_bx_state"] = torch.zeros(
+        (1, 2, 3),
+        dtype=torch.float32,
+    )
+    with pytest.raises(
+        layer_compiler.Lfm2CpcfLayerCompilerError,
+        match="causal continuation",
+    ):
+        layer_compiler._extend_short_conv_parent_histories(
+            skipped_decode,
+            suffix,
+            layer_index=0,
+            histories=histories,
+        )
+
+
+def test_short_conv_phases_coalesce_into_one_causal_trajectory_per_record() -> None:
+    phases = []
+    states = {}
+    replays = {}
+    for batch_index, split in enumerate(("fit", "validation")):
+        generator = torch.Generator().manual_seed(8800 + batch_index)
+        parent_prefill = {
+            name: torch.randn(
+                (1, 3, 3),
+                generator=generator,
+                dtype=torch.float32,
+            )
+            for name in layer_compiler._SHORT_CONV_HISTORY_FIELDS
+        }
+        parent_decode = {
+            name: torch.randn(
+                (1, 1, 3),
+                generator=generator,
+                dtype=torch.float32,
+            )
+            for name in layer_compiler._SHORT_CONV_HISTORY_FIELDS
+        }
+        parent_decode["short_conv.pre_bx_state"] = (
+            parent_prefill["short_conv.b_history"]
+            * parent_prefill["short_conv.x_history"]
+        ).transpose(1, 2)[:, :, -2:]
+        child_input = torch.randn(
+            (1, 4, 2),
+            generator=generator,
+            dtype=torch.float32,
+        )
+        child_state = torch.randn(
+            (1, 4, 2),
+            generator=generator,
+            dtype=torch.float32,
+        )
+        phase_specs = (
+            (
+                "prefill",
+                3,
+                2,
+                parent_prefill,
+                child_input[:, :3, :],
+                child_state[:, :3, :],
+            ),
+            (
+                "decode.000",
+                4,
+                1,
+                parent_decode,
+                child_input,
+                child_state,
+            ),
+        )
+        for phase_name, width, sampled, parent_fields, replay, state in phase_specs:
+            tensors = {
+                **parent_fields,
+                "residual.post_operator": torch.randn(
+                    (1, sampled, 2),
+                    generator=generator,
+                    dtype=torch.float32,
+                ),
+            }
+            evidence = SimpleNamespace(
+                layer_index=0,
+                operator_kind="short_conv",
+                tensors=tensors,
+            )
+            phase = SimpleNamespace(
+                identity=(batch_index, phase_name),
+                batch_index=batch_index,
+                record_id=f"record-{batch_index}",
+                split=split,
+                phase=phase_name,
+                batch_size=1,
+                full_prefix_tokens=width,
+                sampled_suffix_tokens=sampled,
+                input_ids=torch.arange(width).reshape(1, width),
+                attention_mask=torch.ones((1, width), dtype=torch.long),
+                position_ids=torch.arange(width).reshape(1, width),
+                parent_evidence=SimpleNamespace(layers=(evidence,)),
+            )
+            phases.append(phase)
+            states[phase.identity] = state
+            replays[phase.identity] = SimpleNamespace(operator_input=replay)
+
+    class InputBank:
+        def __init__(self) -> None:
+            self.phases = tuple(phases)
+
+        def state(self, phase: SimpleNamespace) -> object:
+            return states[phase.identity].clone()
+
+    cases = layer_compiler._short_conv_cases(
+        layer_index=0,
+        input_bank=InputBank(),
+        preinstall_replay=SimpleNamespace(replays=replays),
+        chart=SimpleNamespace(
+            post_operator=SimpleNamespace(
+                encode_shaped=lambda value: value.clone(),
+            )
+        ),
+    )
+
+    assert len(cases) == 2
+    assert tuple(case.split for case in cases) == ("fit", "validation")
+    for case in cases:
+        assert ":trajectory:layer.0" in case.case_id
+        assert case.suffix_start == 1
+        assert tuple(case.actual_child_operator_input_history.shape) == (
+            1,
+            4,
+            2,
+        )
+        assert tuple(case.parent_b_history.shape) == (1, 4, 3)
+        assert tuple(
+            case.parent_post_operator_residual_target_space_suffix.shape
+        ) == (1, 3, 2)
+        assert tuple(case.actual_child_pre_operator_residual_suffix.shape) == (
+            1,
+            3,
+            2,
+        )
+        assert case.verify_authentication() is True
+
+
 @pytest.mark.parametrize("kind", ["full_attention", "short_conv"])
 def test_real_lfm2_layer_compiler_replays_actual_child_and_holds_out_validation(
     kind,

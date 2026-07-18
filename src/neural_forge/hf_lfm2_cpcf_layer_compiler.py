@@ -951,6 +951,170 @@ def _attention_cases(
     return tuple(result)
 
 
+_SHORT_CONV_HISTORY_FIELDS = (
+    "short_conv.b_history",
+    "short_conv.c_history",
+    "short_conv.x_history",
+)
+
+
+def _extend_short_conv_parent_histories(
+    phase: Lfm2CpcfTargetPhase,
+    tensors: Mapping[str, Any],
+    *,
+    layer_index: int,
+    histories: dict[tuple[int, str], Any],
+) -> dict[str, Any]:
+    """Rebuild full causal B/C/x histories from cached decode suffixes.
+
+    The strict tokenizer trace adapter maps one target row to one donor row
+    without changing batch or sequence geometry.  A prefill therefore seals
+    the complete prompt history, while each cached decode phase contributes
+    only its newly executed terminal suffix.  The short-convolution solver
+    needs their authenticated concatenation so its FIR warm state covers the
+    same complete prefix replayed through the child.
+    """
+
+    torch = _torch()
+    result = {}
+    previous_fields = {
+        field: histories.get((phase.batch_index, field))
+        for field in _SHORT_CONV_HISTORY_FIELDS
+    }
+    for field in _SHORT_CONV_HISTORY_FIELDS:
+        current = _finite_tensor(
+            tensors[field],
+            f"phase {phase.identity!r} layer {layer_index} {field}",
+            dimensions=3,
+        )
+        if int(current.shape[0]) != phase.batch_size:
+            raise Lfm2CpcfLayerCompilerError(
+                f"Phase {phase.identity!r} {field} changed its batch boundary."
+            )
+        key = (phase.batch_index, field)
+        if phase.phase == "prefill":
+            if key in histories or int(current.shape[1]) != phase.full_prefix_tokens:
+                raise Lfm2CpcfLayerCompilerError(
+                    f"Phase {phase.identity!r} {field} is not one complete "
+                    "causal prefill history."
+                )
+            history = current
+        else:
+            previous = histories.get(key)
+            previous_tokens = (
+                phase.full_prefix_tokens - phase.sampled_suffix_tokens
+            )
+            if (
+                previous is None
+                or tuple(previous.shape[:1]) != tuple(current.shape[:1])
+                or int(previous.shape[1]) != previous_tokens
+                or int(previous.shape[2]) != int(current.shape[2])
+                or previous.dtype != current.dtype
+            ):
+                raise Lfm2CpcfLayerCompilerError(
+                    f"Phase {phase.identity!r} {field} is not a causal "
+                    "continuation of its authenticated parent history."
+                )
+            current_tokens = int(current.shape[1])
+            if current_tokens == phase.sampled_suffix_tokens:
+                history = torch.cat((previous, current), dim=1).contiguous()
+            elif current_tokens == phase.full_prefix_tokens:
+                if not torch.equal(current[:, :previous_tokens, :], previous):
+                    raise Lfm2CpcfLayerCompilerError(
+                        f"Phase {phase.identity!r} full {field} changed its "
+                        "authenticated causal prefix."
+                    )
+                history = current
+            else:
+                raise Lfm2CpcfLayerCompilerError(
+                    f"Phase {phase.identity!r} {field} contains neither one "
+                    "terminal suffix nor one complete causal history."
+                )
+        if int(history.shape[1]) != phase.full_prefix_tokens:
+            raise Lfm2CpcfLayerCompilerError(
+                f"Phase {phase.identity!r} {field} did not reconstruct its "
+                "complete target-aligned prefix."
+            )
+        histories[key] = history
+        result[field] = history
+    if phase.phase != "prefill":
+        previous_b = previous_fields["short_conv.b_history"]
+        previous_x = previous_fields["short_conv.x_history"]
+        if previous_b is None or previous_x is None:
+            raise Lfm2CpcfLayerCompilerError(
+                f"Phase {phase.identity!r} has no authenticated short-conv "
+                "warm-state prefix."
+            )
+        pre_bx_state = _finite_tensor(
+            tensors["short_conv.pre_bx_state"],
+            (
+                f"phase {phase.identity!r} layer {layer_index} "
+                "short_conv.pre_bx_state"
+            ),
+            dimensions=3,
+        )
+        fir_length = int(pre_bx_state.shape[-1])
+        previous_bx = (previous_b * previous_x).transpose(1, 2).contiguous()
+        if int(previous_bx.shape[-1]) < fir_length:
+            previous_bx = torch.nn.functional.pad(
+                previous_bx,
+                (fir_length - int(previous_bx.shape[-1]), 0),
+            )
+        expected_pre_state = previous_bx[..., -fir_length:].contiguous()
+        if (
+            tuple(pre_bx_state.shape) != tuple(expected_pre_state.shape)
+            or pre_bx_state.dtype != expected_pre_state.dtype
+            or not torch.equal(pre_bx_state, expected_pre_state)
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                f"Phase {phase.identity!r} short-conv warm state is not the "
+                "exact authenticated tail of its reconstructed causal prefix."
+            )
+    return result
+
+
+def _floating_causal_prefix_matches(previous: Any, current: Any) -> bool:
+    torch = _torch()
+    if (
+        not isinstance(previous, torch.Tensor)
+        or not isinstance(current, torch.Tensor)
+        or previous.ndim != current.ndim
+        or previous.ndim < 2
+        or previous.dtype != current.dtype
+        or tuple(previous.shape[:1]) != tuple(current.shape[:1])
+        or tuple(previous.shape[2:]) != tuple(current.shape[2:])
+        or int(previous.shape[1]) > int(current.shape[1])
+    ):
+        return False
+    tolerance = 8.0 * torch.finfo(previous.dtype).eps
+    return bool(
+        torch.allclose(
+            current[:, : int(previous.shape[1]), ...].to(torch.float64),
+            previous.to(torch.float64),
+            rtol=tolerance,
+            atol=tolerance,
+        )
+    )
+
+
+def _integer_causal_prefix_matches(previous: Any, current: Any) -> bool:
+    torch = _torch()
+    return bool(
+        isinstance(previous, torch.Tensor)
+        and isinstance(current, torch.Tensor)
+        and previous.ndim == current.ndim
+        and previous.ndim >= 2
+        and previous.dtype == current.dtype
+        and tuple(previous.shape[:1]) == tuple(current.shape[:1])
+        and tuple(previous.shape[2:]) == tuple(current.shape[2:])
+        and int(previous.shape[1]) <= int(current.shape[1])
+        and torch.equal(
+            current[:, : int(previous.shape[1]), ...],
+            previous,
+        )
+    )
+
+
 def _short_conv_cases(
     *,
     layer_index: int,
@@ -958,34 +1122,164 @@ def _short_conv_cases(
     preinstall_replay: Lfm2CpcfLayerReplayBank,
     chart: Lfm2CpcfLayerBoundaryCharts,
 ) -> tuple[Lfm2CpcfShortConvFoldCase, ...]:
-    result = []
+    grouped: dict[tuple[int, str], list[Lfm2CpcfTargetPhase]] = {}
     for phase in input_bank.phases:
-        if phase.split not in _SPLITS:
-            continue
-        tensors = _phase_evidence(phase, layer_index, "short_conv")
-        replay = preinstall_replay.replays[phase.identity]
-        suffix_start = phase.full_prefix_tokens - phase.sampled_suffix_tokens
+        if phase.split in _SPLITS:
+            grouped.setdefault(
+                (phase.batch_index, phase.record_id),
+                [],
+            ).append(phase)
+
+    result = []
+    for (_batch_index, _record_id), trajectory in grouped.items():
+        histories: dict[tuple[int, str], Any] = {}
+        parent_histories: dict[str, Any] | None = None
+        endpoint_parts = []
+        endpoint_start: int | None = None
+        endpoint_end: int | None = None
+        previous_phase: Lfm2CpcfTargetPhase | None = None
+        previous_child_input = None
+        previous_child_state = None
+        previous_input_ids = None
+        previous_attention_mask = None
+        previous_position_ids = None
+        final_phase: Lfm2CpcfTargetPhase | None = None
+        final_child_input = None
+        final_child_state = None
+        for phase_index, phase in enumerate(trajectory):
+            expected_phase = (
+                "prefill"
+                if phase_index == 0
+                else f"decode.{phase_index - 1:03d}"
+            )
+            if phase.phase != expected_phase:
+                raise Lfm2CpcfLayerCompilerError(
+                    f"Short-conv trajectory {phase.batch_index}:"
+                    f"{phase.record_id} skips or reorders causal phase "
+                    f"{expected_phase!r}."
+                )
+            if previous_phase is not None and (
+                phase.split != previous_phase.split
+                or phase.full_prefix_tokens
+                != (
+                    previous_phase.full_prefix_tokens
+                    + phase.sampled_suffix_tokens
+                )
+            ):
+                raise Lfm2CpcfLayerCompilerError(
+                    f"Short-conv trajectory {phase.batch_index}:"
+                    f"{phase.record_id} changed split or target prefix "
+                    "geometry."
+                )
+            tensors = _phase_evidence(phase, layer_index, "short_conv")
+            parent_histories = _extend_short_conv_parent_histories(
+                phase,
+                tensors,
+                layer_index=layer_index,
+                histories=histories,
+            )
+            replay = preinstall_replay.replays[phase.identity]
+            child_input = _finite_tensor(
+                replay.operator_input,
+                f"phase {phase.identity!r} actual child operator input",
+                dimensions=3,
+            )
+            child_state = _finite_tensor(
+                input_bank.state(phase),
+                f"phase {phase.identity!r} actual child pre-operator state",
+                dimensions=3,
+            )
+            if (
+                tuple(child_input.shape[:2])
+                != (phase.batch_size, phase.full_prefix_tokens)
+                or tuple(child_state.shape[:2])
+                != (phase.batch_size, phase.full_prefix_tokens)
+            ):
+                raise Lfm2CpcfLayerCompilerError(
+                    f"Phase {phase.identity!r} actual child states do not "
+                    "cover their complete target prefix."
+                )
+            if previous_phase is not None and not (
+                _floating_causal_prefix_matches(
+                    previous_child_input,
+                    child_input,
+                )
+                and _floating_causal_prefix_matches(
+                    previous_child_state,
+                    child_state,
+                )
+                and _integer_causal_prefix_matches(
+                    previous_input_ids,
+                    phase.input_ids,
+                )
+                and _integer_causal_prefix_matches(
+                    previous_attention_mask,
+                    phase.attention_mask,
+                )
+                and _integer_causal_prefix_matches(
+                    previous_position_ids,
+                    phase.position_ids,
+                )
+            ):
+                raise Lfm2CpcfLayerCompilerError(
+                    f"Phase {phase.identity!r} changed an authenticated causal "
+                    "child prefix."
+                )
+            endpoint = chart.post_operator.encode_shaped(
+                tensors["residual.post_operator"]
+            )
+            current_start = (
+                phase.full_prefix_tokens - phase.sampled_suffix_tokens
+            )
+            if (
+                int(endpoint.shape[1]) != phase.sampled_suffix_tokens
+                or (endpoint_end is not None and current_start != endpoint_end)
+            ):
+                raise Lfm2CpcfLayerCompilerError(
+                    f"Phase {phase.identity!r} residual endpoint is not the "
+                    "next contiguous causal suffix."
+                )
+            if endpoint_start is None:
+                endpoint_start = current_start
+            endpoint_end = current_start + int(endpoint.shape[1])
+            endpoint_parts.append(endpoint)
+            previous_phase = phase
+            previous_child_input = child_input
+            previous_child_state = child_state
+            previous_input_ids = phase.input_ids
+            previous_attention_mask = phase.attention_mask
+            previous_position_ids = phase.position_ids
+            final_phase = phase
+            final_child_input = child_input
+            final_child_state = child_state
+        if (
+            final_phase is None
+            or final_child_input is None
+            or final_child_state is None
+            or parent_histories is None
+            or endpoint_start is None
+            or endpoint_end != final_phase.full_prefix_tokens
+        ):
+            raise Lfm2CpcfLayerCompilerError(
+                "Short-conv trajectory did not produce one complete causal case."
+            )
+        endpoint = _torch().cat(endpoint_parts, dim=1).contiguous()
+        actual_pre = final_child_state[:, endpoint_start:, :].contiguous()
         result.append(
             Lfm2CpcfShortConvFoldCase(
                 case_id=(
-                    f"{phase.batch_index}:{phase.record_id}:{phase.phase}:"
+                    f"{final_phase.batch_index}:{final_phase.record_id}:trajectory:"
                     f"layer.{layer_index}"
                 ),
-                split=phase.split,
-                suffix_start=suffix_start,
-                actual_child_operator_input_history=replay.operator_input,
-                parent_b_history=tensors["short_conv.b_history"],
-                parent_c_history=tensors["short_conv.c_history"],
-                parent_x_history=tensors["short_conv.x_history"],
-                parent_post_operator_residual_target_space_suffix=(
-                    chart.post_operator.encode_shaped(
-                        tensors["residual.post_operator"]
-                    )
-                ),
-                actual_child_pre_operator_residual_suffix=phase.suffix(
-                    input_bank.state(phase)
-                ),
-                valid_prefix_mask=phase.attention_mask,
+                split=final_phase.split,
+                suffix_start=endpoint_start,
+                actual_child_operator_input_history=final_child_input,
+                parent_b_history=parent_histories["short_conv.b_history"],
+                parent_c_history=parent_histories["short_conv.c_history"],
+                parent_x_history=parent_histories["short_conv.x_history"],
+                parent_post_operator_residual_target_space_suffix=endpoint,
+                actual_child_pre_operator_residual_suffix=actual_pre,
+                valid_prefix_mask=final_phase.attention_mask,
             )
         )
     if not any(value.split == "fit" for value in result) or not any(
