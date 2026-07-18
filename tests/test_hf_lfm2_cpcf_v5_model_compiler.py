@@ -10,6 +10,12 @@ torch = pytest.importorskip("torch")
 
 import neural_forge.hf_lfm2_cpcf_layer_compiler as layer_compiler  # noqa: E402
 import neural_forge.hf_lfm2_cpcf_v5_model_compiler as v5  # noqa: E402
+from neural_forge.hf_lfm2_cpcf_short_conv_v5 import (  # noqa: E402
+    Lfm2CpcfV5FirBasisPolicy,
+)
+from neural_forge.hf_lfm2_cpcf_short_conv_v5_numerical_adapter import (  # noqa: E402
+    Lfm2CpcfShortConvV5NumericalFrontierAdapter,
+)
 
 
 def test_v5_has_distinct_compiler_resume_and_artifact_fingerprints() -> None:
@@ -32,11 +38,16 @@ def test_v5_has_distinct_compiler_resume_and_artifact_fingerprints() -> None:
     assert implementation[
         "short_conv_v5_numerical_policy_integration_status"
     ] == (
-        "generic_numerical_frontier_adapter_integrated_"
-        "real_v5_candidate_generation_pending"
+        "real_v5_numerical_frontier_integrated_with_per_layer_"
+        "provenance_gate"
     )
     assert any(
         record["filename"] == "hf_lfm2_cpcf_short_conv_v5.py"
+        for record in implementation["ordered_source_files"]
+    )
+    assert any(
+        record["filename"]
+        == "hf_lfm2_cpcf_short_conv_v5_numerical_adapter.py"
         for record in implementation["ordered_source_files"]
     )
     short_conv_v5_source = next(
@@ -120,6 +131,139 @@ def test_v5_endpoint_selector_request_fails_before_touching_models() -> None:
             planned_target_unique_parameters=1,
             runtime_policy=policy,
         )
+
+
+def test_required_real_v5_adapter_rejects_generic_adapter_before_models() -> None:
+    class _GenericAdapter:
+        def generate(self, _request):
+            raise AssertionError("must not execute")
+
+    policy = v5.Lfm2CpcfV5RuntimePolicy(
+        model_fold_policy=(
+            v5.legacy_model_fold.Lfm2CpcfModelFoldPolicy()
+        ),
+        maximum_resident_evidence_bytes=1,
+        full_phase_tree_logical_bytes=1,
+        require_short_conv_v5_real_numerical_frontier_adapter=True,
+    )
+
+    with pytest.raises(
+        v5.Lfm2CpcfV5ModelCompilerError,
+        match="requires the concrete authenticated",
+    ):
+        v5.compile_lfm2_cpcf_v5_selective_model_fold(
+            None,
+            None,
+            trace_adapter=None,
+            evidence_provider=None,
+            source_tied_table=None,
+            blank_target_report={},
+            planned_target_unique_parameters=1,
+            runtime_policy=policy,
+            numerical_frontier_adapter=_GenericAdapter(),
+        )
+
+
+def test_concrete_real_v5_layer_provenance_is_policy_bound() -> None:
+    adapter = Lfm2CpcfShortConvV5NumericalFrontierAdapter(
+        basis_policy=Lfm2CpcfV5FirBasisPolicy(
+            maximum_projected_fir_offdiagonal_relative_frobenius=0.0,
+            maximum_per_lag_commutator_relative_frobenius=1.0,
+        )
+    )
+    contract = v5._real_v5_numerical_adapter_contract(adapter)
+    assert contract is not None
+    zero_execution = {
+        "parent_model_forward_calls": 0,
+        "target_model_forward_calls": 0,
+        "generation_calls": 0,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+    }
+    provenance = {
+        "implementation": contract["implementation"],
+        "real_v5_numerical_algorithm": True,
+        "dynamic_source_target_topology": True,
+        "basis_policy_sha256": contract["basis_policy_sha256"],
+        "ridge_policy_sha256": contract["ridge_policy_sha256"],
+        "basis_actual_commutator_gate": 1.0,
+        "basis_actual_commutator_residual": 0.75,
+        "basis_actual_commutator_gate_passed": True,
+        "basis_full_source_numeric_participation": True,
+        "source_channels_dropped": 0,
+        "source_channels_pruned": 0,
+        "source_channels_quantized": 0,
+        "source_fir_resized_before_basis": True,
+        "fit_only": True,
+        "selection_cases_consumed": 0,
+        "validation_cases_consumed": 0,
+        "selection_performed_by_adapter": False,
+        "validation_performed_by_adapter": False,
+        "model_forward_calls": 0,
+        "training": False,
+        "pruning": False,
+        "quantization": False,
+        "execution": zero_execution,
+    }
+    frontier_body = {
+        "kind": "authenticated_fit_only_numerical_frontier",
+        "adapter_id": adapter.adapter_id,
+        "full_source_numeric_participation": True,
+        "source_channels_dropped": 0,
+        "fit_only": True,
+        "selection_cases_consumed": 0,
+        "validation_cases_consumed": 0,
+        "execution": zero_execution,
+        "adapter_provenance": provenance,
+        "adapter_provenance_sha256": v5._sha(provenance),
+    }
+    frontier = {
+        **frontier_body,
+        "report_sha256": v5._sha(frontier_body),
+    }
+    artifact_body = {
+        "numerical_frontier_adapter_active": True,
+        "fit_only_numerical_generation": True,
+        "legacy_v4_numerical_generation_claimed": False,
+        "numerical_frontier": frontier,
+    }
+    artifact = {
+        **artifact_body,
+        "report_sha256": v5._sha(artifact_body),
+    }
+    receipt_body = {
+        "layer_index": 4,
+        "operator_kind": "short_conv",
+        "operator_artifact": artifact,
+    }
+    receipt = SimpleNamespace(
+        layer_index=4,
+        report={
+            **receipt_body,
+            "result_sha256": v5._sha(receipt_body),
+        },
+    )
+
+    proof = v5._prove_real_v5_numerical_layer(
+        receipt,
+        adapter_contract=contract,
+    )
+    assert proof is not None
+    assert proof["layer_index"] == 4
+    assert proof["projected_fir_offdiagonal_gate"] == 0.0
+    assert proof["per_lag_commutator_gate"] == 1.0
+
+    provenance["implementation"] = "tests.generic_adapter"
+    assert (
+        v5._prove_real_v5_numerical_layer(
+            receipt,
+            adapter_contract=contract,
+        )
+        is None
+    )
 
 
 def test_physical_rss_receipt_uses_sampled_process_memory(
@@ -565,6 +709,16 @@ def test_real_toy_cache_compiles_every_layer_through_selective_v5(
     assert result.report[
         "short_conv_numerical_frontier_adapter_layer_indices"
     ] == [0]
+    assert result.report[
+        "short_conv_v5_real_numerical_adapter_required"
+    ] is False
+    assert result.report[
+        "short_conv_v5_real_numerical_adapter_concrete_instance_provided"
+    ] is False
+    assert result.report[
+        "short_conv_v5_real_numerical_provenance_layer_indices"
+    ] == []
+    assert result.report["short_conv_v5_real_numerical_layer_proofs"] == []
     assert result.report[
         "short_conv_v5_endpoint_first_selector_integrated"
     ] is False

@@ -60,6 +60,9 @@ from neural_forge.hf_lfm2_cpcf_short_conv_v4_fold import (
 from neural_forge.hf_lfm2_cpcf_short_conv_v5 import (
     rescore_sealed_v4_short_conv_selection_frontier,
 )
+from neural_forge.hf_lfm2_cpcf_short_conv_v5_numerical_adapter import (
+    Lfm2CpcfShortConvV5NumericalFrontierAdapter,
+)
 from neural_forge.hf_lfm2_cpcf_model_compiler import (
     LFM2_CPCF_TARGET_PHASE_SCHEMA,
     Lfm2CpcfTargetPhase,
@@ -211,6 +214,7 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
     from neural_forge import hf_lfm2_cpcf_layer_compiler
     from neural_forge import hf_lfm2_cpcf_model_compiler
     from neural_forge import hf_lfm2_cpcf_short_conv_v5
+    from neural_forge import hf_lfm2_cpcf_short_conv_v5_numerical_adapter
     from neural_forge import hf_lfm2_cpcf_short_conv_v4_fold
     from neural_forge import hf_lfm2_cpcf_selective_evidence
 
@@ -223,6 +227,7 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
         hf_lfm2_cpcf_model_compiler,
         legacy_model_fold,
         hf_lfm2_cpcf_short_conv_v5,
+        hf_lfm2_cpcf_short_conv_v5_numerical_adapter,
         hf_lfm2_cpcf_short_conv_v4_fold,
         hf_lfm2_cpcf_selective_evidence,
     )
@@ -269,8 +274,8 @@ def lfm2_cpcf_v5_compiler_implementation() -> Mapping[str, Any]:
         "current_plus_next_residency_required": True,
         "physical_rss_gate_required": True,
         "short_conv_v5_numerical_policy_integration_status": (
-            "generic_numerical_frontier_adapter_integrated_"
-            "real_v5_candidate_generation_pending"
+            "real_v5_numerical_frontier_integrated_with_per_layer_"
+            "provenance_gate"
         ),
         "resume_implementation_status": "fail_closed_not_yet_integrated",
         "training_steps": 0,
@@ -294,6 +299,7 @@ class Lfm2CpcfV5RuntimePolicy:
     minimum_physical_rss_reduction_fraction: float = 0.10
     rss_sample_interval_seconds: float = _RSS_SAMPLE_INTERVAL_SECONDS
     require_short_conv_v5_endpoint_first_selector: bool = False
+    require_short_conv_v5_real_numerical_frontier_adapter: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(
@@ -333,6 +339,14 @@ class Lfm2CpcfV5RuntimePolicy:
                 "require_short_conv_v5_endpoint_first_selector must be "
                 "boolean."
             )
+        if not isinstance(
+            self.require_short_conv_v5_real_numerical_frontier_adapter,
+            bool,
+        ):
+            raise Lfm2CpcfV5ModelCompilerError(
+                "require_short_conv_v5_real_numerical_frontier_adapter must "
+                "be boolean."
+            )
 
     @property
     def maximum_physical_rss_increase_bytes(self) -> int:
@@ -359,6 +373,9 @@ class Lfm2CpcfV5RuntimePolicy:
             ),
             "require_short_conv_v5_endpoint_first_selector": (
                 self.require_short_conv_v5_endpoint_first_selector
+            ),
+            "require_short_conv_v5_real_numerical_frontier_adapter": (
+                self.require_short_conv_v5_real_numerical_frontier_adapter
             ),
         }
 
@@ -1633,6 +1650,197 @@ def _authenticated_bootstrap_payload(
     return payload, authentication
 
 
+_REAL_V5_NUMERICAL_ADAPTER_IMPLEMENTATION = (
+    "neural_forge.hf_lfm2_cpcf_short_conv_v5_numerical_adapter."
+    "Lfm2CpcfShortConvV5NumericalFrontierAdapter.v1"
+)
+_REAL_V5_NUMERICAL_ZERO_EXECUTION_FIELDS = {
+    "parent_model_forward_calls",
+    "target_model_forward_calls",
+    "generation_calls",
+    "training_steps",
+    "backward_calls",
+    "optimizer_steps",
+    "parameters_pruned",
+    "parameters_quantized",
+}
+
+
+def _mapping_seal_is_valid(
+    value: Mapping[str, Any],
+    *,
+    seal_field: str,
+) -> bool:
+    body = dict(value)
+    supplied = body.pop(seal_field, None)
+    return bool(
+        isinstance(supplied, str)
+        and _SHA256.fullmatch(supplied) is not None
+        and supplied == _sha(body)
+    )
+
+
+def _real_v5_numerical_adapter_contract(
+    adapter: Lfm2CpcfShortConvNumericalFrontierAdapter | None,
+) -> Mapping[str, Any] | None:
+    """Return the authenticated live policy contract for the concrete adapter."""
+
+    if type(adapter) is not Lfm2CpcfShortConvV5NumericalFrontierAdapter:
+        return None
+    basis_policy = adapter.basis_policy
+    ridge_policy = adapter.ridge_policy
+    if (
+        not basis_policy.verify_authentication()
+        or not ridge_policy.verify_authentication()
+    ):
+        return None
+    body = {
+        "adapter_type": (
+            f"{type(adapter).__module__}.{type(adapter).__qualname__}"
+        ),
+        "adapter_id": adapter.adapter_id,
+        "implementation": _REAL_V5_NUMERICAL_ADAPTER_IMPLEMENTATION,
+        "basis_policy": basis_policy.authentication_body(),
+        "basis_policy_sha256": basis_policy.authentication_sha256,
+        "ridge_policy": ridge_policy.authentication_body(),
+        "ridge_policy_sha256": ridge_policy.authentication_sha256,
+    }
+    return MappingProxyType({**body, "contract_sha256": _sha(body)})
+
+
+def _prove_real_v5_numerical_layer(
+    receipt: legacy_model_fold.Lfm2CpcfCompletedLayerReceipt,
+    *,
+    adapter_contract: Mapping[str, Any],
+) -> Mapping[str, Any] | None:
+    """Verify one installed short-conv layer came from the concrete v5 adapter."""
+
+    report = receipt.report
+    if report.get("operator_kind") != "short_conv":
+        return None
+    artifact = report.get("operator_artifact")
+    if not isinstance(artifact, Mapping):
+        return None
+    frontier = artifact.get("numerical_frontier")
+    if not isinstance(frontier, Mapping):
+        return None
+    provenance = frontier.get("adapter_provenance")
+    if not isinstance(provenance, Mapping):
+        return None
+    frontier_execution = frontier.get("execution")
+    provenance_execution = provenance.get("execution")
+    zero_frontier_execution = (
+        isinstance(frontier_execution, Mapping)
+        and set(frontier_execution) == _REAL_V5_NUMERICAL_ZERO_EXECUTION_FIELDS
+        and all(
+            type(frontier_execution[name]) is int
+            and frontier_execution[name] == 0
+            for name in _REAL_V5_NUMERICAL_ZERO_EXECUTION_FIELDS
+        )
+    )
+    zero_provenance_execution = isinstance(
+        provenance_execution,
+        Mapping,
+    ) and (
+        set(provenance_execution) == _REAL_V5_NUMERICAL_ZERO_EXECUTION_FIELDS
+        and all(
+            type(provenance_execution[name]) is int
+            and provenance_execution[name] == 0
+            for name in _REAL_V5_NUMERICAL_ZERO_EXECUTION_FIELDS
+        )
+    )
+    requested_commutator_gate = adapter_contract["basis_policy"][
+        "maximum_per_lag_commutator_relative_frobenius"
+    ]
+    observed_commutator = provenance.get(
+        "basis_actual_commutator_residual"
+    )
+    if (
+        not _mapping_seal_is_valid(report, seal_field="result_sha256")
+        or not _mapping_seal_is_valid(
+            artifact,
+            seal_field="report_sha256",
+        )
+        or not _mapping_seal_is_valid(
+            frontier,
+            seal_field="report_sha256",
+        )
+        or frontier.get("adapter_provenance_sha256") != _sha(provenance)
+        or adapter_contract.get("contract_sha256")
+        != _sha(
+            {
+                name: value
+                for name, value in adapter_contract.items()
+                if name != "contract_sha256"
+            }
+        )
+        or artifact.get("numerical_frontier_adapter_active") is not True
+        or artifact.get("fit_only_numerical_generation") is not True
+        or artifact.get("legacy_v4_numerical_generation_claimed") is not False
+        or frontier.get("kind")
+        != "authenticated_fit_only_numerical_frontier"
+        or frontier.get("adapter_id") != adapter_contract["adapter_id"]
+        or frontier.get("full_source_numeric_participation") is not True
+        or frontier.get("source_channels_dropped") != 0
+        or frontier.get("fit_only") is not True
+        or frontier.get("selection_cases_consumed") != 0
+        or frontier.get("validation_cases_consumed") != 0
+        or provenance.get("implementation")
+        != adapter_contract["implementation"]
+        or provenance.get("real_v5_numerical_algorithm") is not True
+        or provenance.get("dynamic_source_target_topology") is not True
+        or provenance.get("basis_policy_sha256")
+        != adapter_contract["basis_policy_sha256"]
+        or provenance.get("ridge_policy_sha256")
+        != adapter_contract["ridge_policy_sha256"]
+        or provenance.get("basis_actual_commutator_gate")
+        != requested_commutator_gate
+        or not isinstance(observed_commutator, (int, float))
+        or isinstance(observed_commutator, bool)
+        or not math.isfinite(float(observed_commutator))
+        or float(observed_commutator) > float(requested_commutator_gate)
+        or provenance.get("basis_actual_commutator_gate_passed") is not True
+        or provenance.get("basis_full_source_numeric_participation") is not True
+        or provenance.get("source_channels_dropped") != 0
+        or provenance.get("source_channels_pruned") != 0
+        or provenance.get("source_channels_quantized") != 0
+        or provenance.get("source_fir_resized_before_basis") is not True
+        or provenance.get("fit_only") is not True
+        or provenance.get("selection_cases_consumed") != 0
+        or provenance.get("validation_cases_consumed") != 0
+        or provenance.get("selection_performed_by_adapter") is not False
+        or provenance.get("validation_performed_by_adapter") is not False
+        or provenance.get("model_forward_calls") != 0
+        or provenance.get("training") is not False
+        or provenance.get("pruning") is not False
+        or provenance.get("quantization") is not False
+        or not zero_frontier_execution
+        or not zero_provenance_execution
+    ):
+        return None
+    body = {
+        "layer_index": receipt.layer_index,
+        "operator_artifact_report_sha256": artifact["report_sha256"],
+        "numerical_frontier_report_sha256": frontier["report_sha256"],
+        "adapter_provenance_sha256": frontier["adapter_provenance_sha256"],
+        "adapter_contract_sha256": adapter_contract["contract_sha256"],
+        "basis_policy_sha256": adapter_contract["basis_policy_sha256"],
+        "ridge_policy_sha256": adapter_contract["ridge_policy_sha256"],
+        "projected_fir_offdiagonal_gate": adapter_contract["basis_policy"][
+            "maximum_projected_fir_offdiagonal_relative_frobenius"
+        ],
+        "per_lag_commutator_gate": requested_commutator_gate,
+        "observed_per_lag_commutator_residual": observed_commutator,
+        "full_source_numeric_participation": True,
+        "fit_only_candidate_generation": True,
+        "training_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+        "concrete_real_v5_adapter_provenance_proven": True,
+    }
+    return MappingProxyType({**body, "proof_sha256": _sha(body)})
+
+
 def compile_lfm2_cpcf_v5_selective_model_fold(
     source_model: Any,
     target_model: Any,
@@ -1676,6 +1884,18 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
     ):
         raise TypeError(
             "numerical_frontier_adapter must implement generate(request)."
+        )
+    real_v5_adapter_contract = _real_v5_numerical_adapter_contract(
+        numerical_frontier_adapter
+    )
+    if (
+        runtime_policy.require_short_conv_v5_real_numerical_frontier_adapter
+        and real_v5_adapter_contract is None
+    ):
+        raise Lfm2CpcfV5ModelCompilerError(
+            "The runtime policy requires the concrete authenticated "
+            "Lfm2CpcfShortConvV5NumericalFrontierAdapter; a missing, generic, "
+            "toy, subclassed, or unauthenticated adapter is not admissible."
         )
     if (
         runtime_policy.require_short_conv_v5_endpoint_first_selector
@@ -1993,6 +2213,29 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             )
             is True
         ]
+        short_conv_layer_indices = [
+            receipt.layer_index
+            for receipt in completed_receipts
+            if receipt.report.get("operator_kind") == "short_conv"
+        ]
+        real_v5_layer_proofs = []
+        if real_v5_adapter_contract is not None:
+            for receipt in completed_receipts:
+                if receipt.report.get("operator_kind") != "short_conv":
+                    continue
+                proof = _prove_real_v5_numerical_layer(
+                    receipt,
+                    adapter_contract=real_v5_adapter_contract,
+                )
+                if proof is not None:
+                    real_v5_layer_proofs.append(proof)
+        real_v5_layer_indices = [
+            int(proof["layer_index"]) for proof in real_v5_layer_proofs
+        ]
+        real_v5_numerical_policy_integrated = bool(
+            short_conv_layer_indices
+            and real_v5_layer_indices == short_conv_layer_indices
+        )
         if (
             runtime_policy.require_short_conv_v5_endpoint_first_selector
             and not selector_applied_layer_indices
@@ -2000,6 +2243,15 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             raise Lfm2CpcfV5ModelCompilerError(
                 "The required short-conv v5 endpoint-first selector was not "
                 "applied to any compiled layer."
+            )
+        if (
+            runtime_policy.require_short_conv_v5_real_numerical_frontier_adapter
+            and not real_v5_numerical_policy_integrated
+        ):
+            raise Lfm2CpcfV5ModelCompilerError(
+                "The required concrete real v5 numerical adapter did not "
+                "produce authenticated provenance for every short-conv "
+                "layer."
             )
         bundle = boundary_compiler.finalize()
         final_payload = evidence_provider.load_final_norm_payload()
@@ -2139,8 +2391,31 @@ def compile_lfm2_cpcf_v5_selective_model_fold(
             "short_conv_numerical_frontier_adapter_layer_indices": (
                 numerical_frontier_layer_indices
             ),
-            "short_conv_v5_numerical_candidate_generation_integrated": False,
-            "short_conv_v5_numerical_policy_integrated": False,
+            "short_conv_layer_indices": short_conv_layer_indices,
+            "short_conv_v5_real_numerical_adapter_required": (
+                runtime_policy
+                .require_short_conv_v5_real_numerical_frontier_adapter
+            ),
+            "short_conv_v5_real_numerical_adapter_concrete_instance_provided": (
+                real_v5_adapter_contract is not None
+            ),
+            "short_conv_v5_real_numerical_adapter_contract": (
+                None
+                if real_v5_adapter_contract is None
+                else dict(real_v5_adapter_contract)
+            ),
+            "short_conv_v5_real_numerical_provenance_layer_indices": (
+                real_v5_layer_indices
+            ),
+            "short_conv_v5_real_numerical_layer_proofs": [
+                dict(proof) for proof in real_v5_layer_proofs
+            ],
+            "short_conv_v5_numerical_candidate_generation_integrated": (
+                real_v5_numerical_policy_integrated
+            ),
+            "short_conv_v5_numerical_policy_integrated": (
+                real_v5_numerical_policy_integrated
+            ),
             "short_conv_v5_post_install_rescoring_performed": False,
             "legacy_v4_default_or_fingerprint_changed": False,
             "operation_audit": {

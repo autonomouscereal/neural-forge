@@ -84,6 +84,26 @@ def test_parser_reuses_shared_compression_request_and_bounds_memory(
     assert config.forbidden_requests == ()
 
 
+def test_real_v5_adapter_uses_explicit_preregistered_measurement_gates() -> None:
+    pytest.importorskip("torch")
+    adapter = MODULE._build_preregistered_real_v5_numerical_adapter()
+
+    assert (
+        adapter.basis_policy
+        .maximum_projected_fir_offdiagonal_relative_frobenius
+        == MODULE.PREREGISTERED_PROJECTED_FIR_OFFDIAGONAL_GATE
+        == 0.0
+    )
+    assert (
+        adapter.basis_policy
+        .maximum_per_lag_commutator_relative_frobenius
+        == MODULE.PREREGISTERED_PER_LAG_COMMUTATOR_GATE
+        == 1.0
+    )
+    assert adapter.basis_policy.verify_authentication()
+    assert adapter.ridge_policy.verify_authentication()
+
+
 @pytest.mark.parametrize(
     ("flag", "value"),
     (
@@ -205,6 +225,25 @@ def test_failure_diagnostic_preserves_structured_reports_from_causes() -> None:
     assert diagnostic["child_checkpoint_saved"] is False
 
 
+def test_failure_diagnostic_preserves_real_adapter_diagnostics() -> None:
+    inner = RuntimeError("real adapter gate failed")
+    inner.diagnostics = {
+        "schema": "test-real-v5-adapter-diagnostics-v1",
+        "kind": "fir_commutator_gate_failure_evidence",
+        "requested_gate": 1.0,
+        "observed": 1.25,
+    }
+    outer = MODULE.Lfm2CpcfV5SelectiveBlankFoldRunnerError("outer failure")
+    outer.__cause__ = inner
+
+    diagnostic = MODULE.build_failure_diagnostic(outer)
+
+    preserved = diagnostic["preserved_structured_failure_reports"]
+    assert len(preserved) == 1
+    assert preserved[0]["name"] == "diagnostics"
+    assert preserved[0]["report"] == inner.diagnostics
+
+
 def test_main_persists_failure_diagnostic_without_loading_torch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -252,6 +291,9 @@ def test_runner_source_has_no_disallowed_execution_or_loader_lane() -> None:
     assert all(token not in source for token in forbidden)
     assert "compile_lfm2_cpcf_v5_selective_model_fold(" in source
     assert "Lfm2CpcfV5EndpointFirstCandidateSelector()" in source
+    assert "_build_preregistered_real_v5_numerical_adapter()" in source
+    assert "numerical_frontier_adapter=numerical_adapter" in source
+    assert "require_short_conv_v5_real_numerical_frontier_adapter=True" in source
     assert "build_lfm2_cpcf_selective_evidence_provider(cache)" in source
     assert "plan_and_synthesize_lfm2_cpcf_blank(" in source
     assert "GPU_LOGICAL_DEVICES = (0, 1)" in source

@@ -30,6 +30,9 @@ from typing import Any
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPOSITORY_ROOT))
+_SOURCE_ROOT = _REPOSITORY_ROOT / "src"
+if str(_SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SOURCE_ROOT))
 
 # These must be set before any Transformers or CUDA-backed module is imported.
 os.environ["HF_HUB_OFFLINE"] = "1"
@@ -51,6 +54,8 @@ GPU_PARITY_RELATIVE_TOLERANCE = 0.02
 GPU_PARITY_MAXIMUM_RELATIVE_RMSE = 0.02
 GPU_PARITY_MINIMUM_COSINE_SIMILARITY = 0.999
 MINIMUM_PROMOTION_COMPRESSION_RATIO = 100.0
+PREREGISTERED_PROJECTED_FIR_OFFDIAGONAL_GATE = 0.0
+PREREGISTERED_PER_LAG_COMMUTATOR_GATE = 1.0
 _GIB = 1024**3
 _FORBIDDEN_REQUEST_FIELDS = (
     "resume",
@@ -106,6 +111,28 @@ def _base_runner() -> Any:
     from experiments import run_lfm2_cpcf_blank_fold
 
     return run_lfm2_cpcf_blank_fold
+
+
+def _build_preregistered_real_v5_numerical_adapter() -> Any:
+    """Construct the explicit source-independent v5 measurement policy."""
+
+    from neural_forge.hf_lfm2_cpcf_short_conv_v5 import (
+        Lfm2CpcfV5FirBasisPolicy,
+    )
+    from neural_forge.hf_lfm2_cpcf_short_conv_v5_numerical_adapter import (
+        Lfm2CpcfShortConvV5NumericalFrontierAdapter,
+    )
+
+    return Lfm2CpcfShortConvV5NumericalFrontierAdapter(
+        basis_policy=Lfm2CpcfV5FirBasisPolicy(
+            maximum_projected_fir_offdiagonal_relative_frobenius=(
+                PREREGISTERED_PROJECTED_FIR_OFFDIAGONAL_GATE
+            ),
+            maximum_per_lag_commutator_relative_frobenius=(
+                PREREGISTERED_PER_LAG_COMMUTATOR_GATE
+            ),
+        )
+    )
 
 
 def _finite_float(value: Any, name: str) -> float:
@@ -1049,6 +1076,7 @@ def _run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
             minimum_physical_rss_reduction_fraction=(effective_reduction),
             rss_sample_interval_seconds=0.05,
             require_short_conv_v5_endpoint_first_selector=True,
+            require_short_conv_v5_real_numerical_frontier_adapter=True,
         )
         if (
             runtime_policy.maximum_physical_rss_increase_bytes
@@ -1059,6 +1087,7 @@ def _run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
             )
         source_tied_table = base._mapped_source_tied_table(parent, bridge)
         selector = v5_compiler.Lfm2CpcfV5EndpointFirstCandidateSelector()
+        numerical_adapter = _build_preregistered_real_v5_numerical_adapter()
         compiled = v5_compiler.compile_lfm2_cpcf_v5_selective_model_fold(
             parent,
             target,
@@ -1070,6 +1099,7 @@ def _run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
             runtime_policy=runtime_policy,
             candidate_replay_evaluator=gpu.evaluator,
             candidate_selector=selector,
+            numerical_frontier_adapter=numerical_adapter,
             resume_state=None,
         )
     finally:
@@ -1103,12 +1133,23 @@ def _run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
     if (
         compiled_report.get("short_conv_v5_endpoint_first_selector_integrated")
         is not True
+        or compiled_report.get(
+            "short_conv_v5_numerical_candidate_generation_integrated"
+        )
+        is not True
+        or compiled_report.get("short_conv_v5_numerical_policy_integrated")
+        is not True
+        or compiled_report.get(
+            "short_conv_v5_real_numerical_adapter_required"
+        )
+        is not True
         or compiled_report.get("candidate_replay_backend_injected") is not True
         or compiled_report.get("resume_supported") is not False
     ):
         raise Lfm2CpcfV5SelectiveBlankFoldRunnerError(
-            "The completed fold lacks the required v5 selector, replay "
-            "injection, or resume rejection receipt."
+            "The completed fold lacks the required real v5 numerical "
+            "provenance, selector, replay injection, or resume rejection "
+            "receipt."
         )
     body = {
         "schema": RUN_SCHEMA,
@@ -1163,6 +1204,28 @@ def _run(config: V5SelectiveBlankFoldConfig) -> dict[str, Any]:
         },
         "gpu_candidate_replay": dict(gpu.report),
         "gpu_execution_audit": gpu_execution,
+        "preregistered_short_conv_v5_measurement_policy": {
+            "projected_fir_offdiagonal_gate": (
+                PREREGISTERED_PROJECTED_FIR_OFFDIAGONAL_GATE
+            ),
+            "per_lag_commutator_gate": (
+                PREREGISTERED_PER_LAG_COMMUTATOR_GATE
+            ),
+            "basis_policy": (
+                numerical_adapter.basis_policy.authentication_body()
+            ),
+            "basis_policy_sha256": (
+                numerical_adapter.basis_policy.authentication_sha256
+            ),
+            "ridge_policy": (
+                numerical_adapter.ridge_policy.authentication_body()
+            ),
+            "ridge_policy_sha256": (
+                numerical_adapter.ridge_policy.authentication_sha256
+            ),
+            "source_independent_preregistered_before_fit": True,
+            "real_v5_adapter_required": True,
+        },
         "dynamic_system_contract": {
             "automatic_blank_target_registry_used": True,
             "automatic_parameter_frontier_used": True,
