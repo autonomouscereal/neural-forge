@@ -350,7 +350,10 @@ def test_equilibrated_ridge_separates_intercept_and_trust_units() -> None:
     )["kappa-01000"]
     assert exact.weight.item() == pytest.approx(2.0, abs=1e-12)
     assert exact.bias.item() == pytest.approx(7.0, abs=1e-12)
+    assert exact.diagnostics["fit_intercept"] is True
+    assert exact.diagnostics["bias_contract"] == "separate_unpenalized_intercept"
     assert exact.diagnostics["separate_unpenalized_intercept"] is True
+    assert exact.diagnostics["centering_applied"] is True
 
     bounded_target = 50.0 * design + 100.0
     bounded = condition_capped_equilibrated_prior_residual_ridge_frontier(
@@ -377,6 +380,56 @@ def test_equilibrated_ridge_separates_intercept_and_trust_units() -> None:
     assert bounded.diagnostics["joint_trust_is_intersection"] is True
     assert bounded.diagnostics["parameter_trust_reference_uses_function_units"] is False
     assert bounded.diagnostics["function_trust_reference_uses_parameter_units"] is False
+
+
+def test_equilibrated_ridge_no_intercept_uses_encoded_bias_coordinate() -> None:
+    sample = torch.linspace(-2.0, 2.0, 81, dtype=torch.float64)
+    design = torch.stack((sample, torch.ones_like(sample)), dim=1)
+    prior_weight = torch.zeros((2, 1), dtype=torch.float64)
+    target = (2.0 * sample + 3.0).reshape(-1, 1)
+
+    result = condition_capped_equilibrated_prior_residual_ridge_frontier(
+        (Lfm2CpcfV5RidgeCase("fit", "fit", design, target),),
+        prior_weight=prior_weight,
+        prior_bias=None,
+        fit_intercept=False,
+        policy=Lfm2CpcfV5RidgePolicy(
+            parameter_trust_radius=1e12,
+            effect_trust_radius=1e12,
+        ),
+    )["kappa-01000"]
+
+    assert result.verify_authentication()
+    assert result.bias is None
+    assert torch.allclose(
+        result.weight[:, 0],
+        torch.tensor([2.0, 3.0], dtype=torch.float64),
+        atol=1e-12,
+        rtol=1e-12,
+    )
+    receipt = result.diagnostics
+    assert receipt["fit_intercept"] is False
+    assert receipt["bias_contract"] == "absent_frozen_zero"
+    assert receipt["separate_unpenalized_intercept"] is False
+    assert receipt["bias_value_is_absent"] is True
+    assert receipt["bias_effect_is_frozen_zero"] is True
+    assert receipt["centering_applied"] is False
+    assert receipt["no_intercept_uses_uncentered_system"] is True
+    assert receipt["design_mean_sha256"] is None
+    assert receipt["prior_residual_mean_sha256"] is None
+    assert receipt["centered_case_balanced_design_sha256"] is None
+    assert receipt["uncentered_case_balanced_design_sha256"] is not None
+    assert receipt["prior_bias_sha256"] is None
+    assert receipt["raw_bias_delta_sha256"] is None
+    assert receipt["solution_bias_sha256"] is None
+
+    with pytest.raises(Lfm2CpcfShortConvV5Error, match="prior_bias=None"):
+        condition_capped_equilibrated_prior_residual_ridge_frontier(
+            (Lfm2CpcfV5RidgeCase("fit", "fit", design, target),),
+            prior_weight=prior_weight,
+            prior_bias=torch.zeros(1, dtype=torch.float64),
+            fit_intercept=False,
+        )
 
 
 def test_equilibrated_ridge_rejects_nonfit_evidence() -> None:
@@ -504,7 +557,8 @@ def test_fir_commuting_basis_balances_and_uses_every_channel() -> None:
         source_fir_kernel=fir,
         target_channels=3,
         policy=Lfm2CpcfV5FirBasisPolicy(
-            maximum_projected_fir_offdiagonal_relative_frobenius=0.0
+            maximum_projected_fir_offdiagonal_relative_frobenius=0.0,
+            maximum_per_lag_commutator_relative_frobenius=1.0,
         ),
     )
     second = build_fir_commuting_balanced_all_channel_basis(
@@ -512,7 +566,8 @@ def test_fir_commuting_basis_balances_and_uses_every_channel() -> None:
         source_fir_kernel=fir,
         target_channels=3,
         policy=Lfm2CpcfV5FirBasisPolicy(
-            maximum_projected_fir_offdiagonal_relative_frobenius=0.0
+            maximum_projected_fir_offdiagonal_relative_frobenius=0.0,
+            maximum_per_lag_commutator_relative_frobenius=1.0,
         ),
     )
 
@@ -534,7 +589,69 @@ def test_fir_commuting_basis_balances_and_uses_every_channel() -> None:
     assert first.report["full_source_numeric_participation"] is True
     assert first.report["projected_fir_offdiagonal_relative_frobenius"] == 0.0
     assert first.report["projected_fir_offdiagonal_gate_passed"] is True
+    assert (
+        first.report["projected_offdiagonal_is_not_sufficient_for_commuting_claim"]
+        is True
+    )
+    assert first.report["maximum_per_lag_commutator_relative_frobenius"] == (
+        pytest.approx(0.987049763115577)
+    )
+    assert (
+        first.report["maximum_per_lag_commutator_relative_frobenius_gate_passed"]
+        is True
+    )
+    assert first.report["commuting_claim_uses_actual_intertwining_residual"] is True
+    assert first.report["depthwise_fir_representable_in_target_basis"] is True
     assert first.report["exact_dual"] is True
+
+
+def test_fir_commutator_gate_passes_exact_groups_and_rejects_distortion() -> None:
+    descriptors = torch.tensor(
+        [[0.0], [0.0], [10.0], [10.0]],
+        dtype=torch.float64,
+    )
+    cases = (
+        Lfm2CpcfV5FirBasisCase(
+            "fit",
+            "fit",
+            descriptors,
+            descriptors,
+        ),
+    )
+    strict = Lfm2CpcfV5FirBasisPolicy(
+        maximum_projected_fir_offdiagonal_relative_frobenius=0.0,
+        maximum_per_lag_commutator_relative_frobenius=2e-16,
+    )
+    exact = build_fir_commuting_balanced_all_channel_basis(
+        cases,
+        source_fir_kernel=torch.tensor(
+            [[1.0, -0.5], [1.0, -0.5], [2.0, 0.25], [2.0, 0.25]],
+            dtype=torch.float64,
+        ),
+        target_channels=2,
+        policy=strict,
+    )
+    assert max(exact.report["per_lag_commutator_relative_frobenius"]) <= 2e-16
+    assert exact.report["maximum_per_lag_commutator_relative_frobenius"] <= 2e-16
+    assert (
+        exact.report["maximum_per_lag_commutator_relative_frobenius_gate_passed"]
+        is True
+    )
+    assert exact.report["depthwise_fir_representable_in_target_basis"] is True
+
+    with pytest.raises(
+        Lfm2CpcfShortConvV5Error,
+        match="commutator residual",
+    ):
+        build_fir_commuting_balanced_all_channel_basis(
+            cases,
+            source_fir_kernel=torch.tensor(
+                [[1.0, -0.5], [1.2, -0.4], [2.0, 0.25], [2.2, 0.35]],
+                dtype=torch.float64,
+            ),
+            target_channels=2,
+            policy=strict,
+        )
 
 
 def test_fir_commuting_basis_rejects_selection_descriptors() -> None:

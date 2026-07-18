@@ -75,7 +75,8 @@ RRMSE final-BCX shape are rejected.
 ## Equilibrated prior-residual ridge
 
 `condition_capped_equilibrated_prior_residual_ridge_frontier()` produces the
-fixed `kappa=1e3` and `kappa=1e4` candidates. It:
+fixed `kappa=1e3` and `kappa=1e4` candidates. Its default
+`fit_intercept=True` mode preserves the original affine behavior. It:
 
 1. computes residuals relative to transported prior weights and bias;
 2. uses equal-case weighting so row duplication cannot change case weight;
@@ -101,6 +102,15 @@ equilibration, Gram and right-hand-side hashes, eigenvalues and eigenvectors,
 raw/accepted eigen corrections, nullspace proof, condition, prior and solution
 hashes, and both trust receipts.
 
+FIR and linearized B/C/x designs already encode every physically installable
+bias coordinate in their design matrices. They must call the same solver with
+`fit_intercept=False` and `prior_bias=None`. This mode does not center the
+design or residual, does not create a separate intercept, and returns
+`bias=None` under the sealed `absent_frozen_zero` contract. The report binds
+that the bias value is absent, its effect is frozen at zero, all bias hashes
+are null, and the uncentered case-balanced system is the one that was solved.
+Supplying a separate bias in this mode fails closed.
+
 ## FIR-commuting balanced all-channel basis
 
 `build_fir_commuting_balanced_all_channel_basis()` accepts only fit evidence:
@@ -111,21 +121,36 @@ source to a capacity-balanced target group.
 
 Every source receives a strictly positive coefficient derived from the square
 root of its within-group energy share. Disjoint group support makes the encoder
-columns orthonormal and its transpose an exact dual. Therefore
+columns orthonormal and its transpose an exact dual. It also makes
 
 ```text
 decoder @ diag(source_fir[:, lag]) @ encoder
 ```
 
-is diagonal for every lag, up to declared numerical tolerance. The builder
-fails closed if projected off-diagonal relative Frobenius energy exceeds its
-authenticated gate. Its receipt proves balanced capacities, exact once-only
-source assignment, numerical participation by every source, zero dropped or
-pruned channels, exact-dual error, target FIR, and per-lag commutator residual.
+diagonal for every lag. That projected off-diagonal fact is necessary but
+vacuous for a disjoint-support grouping: it does not prove that one child FIR
+coefficient reproduces all source FIR coefficients assigned to the group.
 
-This basis makes the target depthwise operator representable; it does not by
-itself prove that grouping distortion is behaviorally acceptable. That
-requires the real selection and validation replay.
+The real representability test is the intertwining residual
+
+```text
+||diag(source_fir[:, lag]) @ encoder
+  - encoder @ diag(target_fir[:, lag])||_F
+/ ||diag(source_fir[:, lag]) @ encoder||_F
+```
+
+for every lag. `maximum_per_lag_commutator_relative_frobenius` is an
+authenticated policy limit and the builder fails closed when the maximum
+observed residual exceeds it. The strict default is `1e-12`; a production
+compiler that chooses a looser approximation must state and fingerprint that
+tolerance explicitly. The report preserves projected off-diagonal energy as a
+diagnostic, explicitly says it is insufficient for a commuting claim, and
+binds the per-lag values, maximum value, real gate, and pass/fail result.
+
+Passing the commutator gate proves only representability within the declared
+numerical tolerance. It does not by itself prove that the tolerance is
+behaviorally acceptable; that still requires real selection and validation
+replay.
 
 ## Every-accepted-edge interpolation
 
@@ -154,9 +179,11 @@ The focused local suite covers:
   rejection;
 - ill-conditioned and null-column ridge systems;
 - exact intercept recovery and independent same-unit trust bounds;
+- uncentered no-intercept recovery when the physical bias is an encoded design
+  coordinate, plus rejection of a hidden separate bias;
 - row-duplication and column-scale invariance;
 - balanced deterministic all-channel FIR grouping, exact dual, zero pruning,
-  and the off-diagonal gate; and
+  projected off-diagonal diagnostics, and real commutator-gate pass/fail; and
 - authenticated complete interpolation coverage over multiple accepted edges.
 
 The remaining orchestration work is to bind these primitives into the new v5

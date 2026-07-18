@@ -775,8 +775,9 @@ class Lfm2CpcfV5RidgePolicy:
             "effect_trust_radius": self.effect_trust_radius,
             "parameter_reference_floor": self.parameter_reference_floor,
             "effect_reference_floor": self.effect_reference_floor,
-            "separate_intercept": True,
-            "case_balanced_centering": True,
+            "fit_intercept_modes": ["separate_unpenalized", "absent_frozen_zero"],
+            "case_balanced_centering": "separate_unpenalized_intercept_only",
+            "no_intercept_uses_uncentered_system": True,
             "column_equilibration": True,
             "nullspace_preserves_prior": True,
             "execution": {
@@ -800,7 +801,7 @@ class Lfm2CpcfV5RidgeResult:
     """One condition-cap candidate and its fully bound numerical receipt."""
 
     weight: Any
-    bias: Any
+    bias: Any | None
     diagnostics: Mapping[str, Any]
 
     def __post_init__(self) -> None:
@@ -809,11 +810,12 @@ class Lfm2CpcfV5RidgeResult:
             "weight",
             _snapshot_tensor(self.weight, "ridge_result.weight", dimensions=2),
         )
-        object.__setattr__(
-            self,
-            "bias",
-            _snapshot_tensor(self.bias, "ridge_result.bias", dimensions=1),
-        )
+        if self.bias is not None:
+            object.__setattr__(
+                self,
+                "bias",
+                _snapshot_tensor(self.bias, "ridge_result.bias", dimensions=1),
+            )
         object.__setattr__(
             self,
             "diagnostics",
@@ -825,8 +827,21 @@ class Lfm2CpcfV5RidgeResult:
             verify_lfm2_cpcf_short_conv_v5_report(self.diagnostics)
             and self.diagnostics.get("solution_weight_sha256")
             == _tensor_sha256(self.weight, "ridge_result.weight")
-            and self.diagnostics.get("solution_bias_sha256")
-            == _tensor_sha256(self.bias, "ridge_result.bias")
+            and (
+                (
+                    self.bias is None
+                    and self.diagnostics.get("solution_bias_sha256") is None
+                    and self.diagnostics.get("bias_contract") == "absent_frozen_zero"
+                    and self.diagnostics.get("bias_effect_is_frozen_zero") is True
+                )
+                or (
+                    self.bias is not None
+                    and self.diagnostics.get("solution_bias_sha256")
+                    == _tensor_sha256(self.bias, "ridge_result.bias")
+                    and self.diagnostics.get("bias_contract")
+                    == "separate_unpenalized_intercept"
+                )
+            )
         )
 
 
@@ -882,7 +897,8 @@ def _solve_equilibrated_candidate(
     *,
     rows: tuple[tuple[str, str, Any, Any], ...],
     prior_weight: Any,
-    prior_bias: Any,
+    prior_bias: Any | None,
+    fit_intercept: bool,
     condition_cap: float,
     policy: Lfm2CpcfV5RidgePolicy,
 ) -> Lfm2CpcfV5RidgeResult:
@@ -891,35 +907,46 @@ def _solve_equilibrated_candidate(
     feature_width = int(rows[0][2].shape[1])
     output_width = int(rows[0][3].shape[1])
 
-    residual_rows = [
-        target - (design @ prior_weight + prior_bias)
-        for _case_id, _case_sha, design, target in rows
-    ]
-    design_mean = (
-        sum(
-            (design.mean(dim=0) for _case_id, _case_sha, design, _target in rows),
-            torch.zeros(feature_width, dtype=torch.float64),
+    residual_rows = []
+    for _case_id, _case_sha, design, target in rows:
+        prior_effect = design @ prior_weight
+        if fit_intercept:
+            assert prior_bias is not None
+            prior_effect = prior_effect + prior_bias
+        residual_rows.append(target - prior_effect)
+    design_mean = None
+    residual_mean = None
+    if fit_intercept:
+        design_mean = (
+            sum(
+                (design.mean(dim=0) for _case_id, _case_sha, design, _target in rows),
+                torch.zeros(feature_width, dtype=torch.float64),
+            )
+            / case_count
         )
-        / case_count
-    )
-    residual_mean = (
-        sum(
-            (residual.mean(dim=0) for residual in residual_rows),
-            torch.zeros(output_width, dtype=torch.float64),
+        residual_mean = (
+            sum(
+                (residual.mean(dim=0) for residual in residual_rows),
+                torch.zeros(output_width, dtype=torch.float64),
+            )
+            / case_count
         )
-        / case_count
-    )
 
-    centered_design = []
-    centered_residual = []
+    balanced_design = []
+    balanced_residual = []
     case_receipts = []
     for (case_id, case_sha, design, target), residual in zip(rows, residual_rows):
         row_count = int(design.shape[0])
         case_scale = 1.0 / math.sqrt(case_count * row_count)
-        x_centered = design - design_mean
-        r_centered = residual - residual_mean
-        centered_design.append(x_centered * case_scale)
-        centered_residual.append(r_centered * case_scale)
+        if fit_intercept:
+            assert design_mean is not None and residual_mean is not None
+            solve_design = design - design_mean
+            solve_residual = residual - residual_mean
+        else:
+            solve_design = design
+            solve_residual = residual
+        balanced_design.append(solve_design * case_scale)
+        balanced_residual.append(solve_residual * case_scale)
         case_receipts.append(
             {
                 "case_id": case_id,
@@ -934,9 +961,9 @@ def _solve_equilibrated_candidate(
                 ),
             }
         )
-    x_centered = torch.cat(centered_design, dim=0)
-    r_centered = torch.cat(centered_residual, dim=0)
-    column_rms = x_centered.square().sum(dim=0).sqrt()
+    solve_design = torch.cat(balanced_design, dim=0)
+    solve_residual = torch.cat(balanced_residual, dim=0)
+    column_rms = solve_design.square().sum(dim=0).sqrt()
     maximum_column_rms = float(column_rms.max().item())
     column_threshold = (
         maximum_column_rms * policy.rank_relative_tolerance
@@ -949,10 +976,10 @@ def _solve_equilibrated_candidate(
         column_rms,
         torch.ones_like(column_rms),
     )
-    equilibrated_design = x_centered / equilibration_scale
+    equilibrated_design = solve_design / equilibration_scale
     gram = equilibrated_design.T @ equilibrated_design
     gram = 0.5 * (gram + gram.T)
-    right = equilibrated_design.T @ r_centered
+    right = equilibrated_design.T @ solve_residual
     eigenvalues, eigenvectors = torch.linalg.eigh(gram)
     eigenvalues = eigenvalues.clamp(min=0.0)
     maximum_eigenvalue = float(eigenvalues.max().item())
@@ -974,12 +1001,19 @@ def _solve_equilibrated_candidate(
     raw_equilibrated_delta = eigenvectors @ raw_eigen_delta
     raw_weight_delta = raw_equilibrated_delta / equilibration_scale.unsqueeze(-1)
     raw_weight_delta[~active_columns, :] = 0.0
-    raw_bias_delta = residual_mean - design_mean @ raw_weight_delta
+    raw_bias_delta = None
+    if fit_intercept:
+        assert design_mean is not None and residual_mean is not None
+        raw_bias_delta = residual_mean - design_mean @ raw_weight_delta
 
-    raw_parameter_delta = torch.cat(
-        (raw_weight_delta.reshape(-1), raw_bias_delta.reshape(-1))
-    )
-    prior_parameters = torch.cat((prior_weight.reshape(-1), prior_bias.reshape(-1)))
+    raw_parameter_parts = [raw_weight_delta.reshape(-1)]
+    prior_parameter_parts = [prior_weight.reshape(-1)]
+    if fit_intercept:
+        assert raw_bias_delta is not None and prior_bias is not None
+        raw_parameter_parts.append(raw_bias_delta.reshape(-1))
+        prior_parameter_parts.append(prior_bias.reshape(-1))
+    raw_parameter_delta = torch.cat(raw_parameter_parts)
+    prior_parameters = torch.cat(prior_parameter_parts)
     raw_parameter_correction_rms = _rms(raw_parameter_delta)
     parameter_reference_rms = max(
         _rms(prior_parameters),
@@ -996,8 +1030,14 @@ def _solve_equilibrated_candidate(
     targets = []
     for _case_id, _case_sha, design, target in rows:
         case_scale = 1.0 / math.sqrt(case_count * int(design.shape[0]))
-        raw_effects.append((design @ raw_weight_delta + raw_bias_delta) * case_scale)
-        prior_effects.append((design @ prior_weight + prior_bias) * case_scale)
+        raw_effect = design @ raw_weight_delta
+        prior_effect = design @ prior_weight
+        if fit_intercept:
+            assert raw_bias_delta is not None and prior_bias is not None
+            raw_effect = raw_effect + raw_bias_delta
+            prior_effect = prior_effect + prior_bias
+        raw_effects.append(raw_effect * case_scale)
+        prior_effects.append(prior_effect * case_scale)
         targets.append(target * case_scale)
     raw_effect = torch.cat(raw_effects, dim=0)
     prior_effect = torch.cat(prior_effects, dim=0)
@@ -1013,9 +1053,14 @@ def _solve_equilibrated_candidate(
     accepted_scale = min(1.0, parameter_scale, effect_scale)
 
     accepted_weight_delta = raw_weight_delta * accepted_scale
-    accepted_bias_delta = raw_bias_delta * accepted_scale
+    accepted_bias_delta = (
+        None if raw_bias_delta is None else raw_bias_delta * accepted_scale
+    )
     solution_weight = (prior_weight + accepted_weight_delta).contiguous()
-    solution_bias = (prior_bias + accepted_bias_delta).contiguous()
+    solution_bias = None
+    if fit_intercept:
+        assert prior_bias is not None and accepted_bias_delta is not None
+        solution_bias = (prior_bias + accepted_bias_delta).contiguous()
     accepted_effect = raw_effect * accepted_scale
     accepted_parameter_rms = raw_parameter_correction_rms * accepted_scale
     accepted_effect_rms = raw_effect_correction_rms * accepted_scale
@@ -1042,14 +1087,30 @@ def _solve_equilibrated_candidate(
         "case_receipts": case_receipts,
         "feature_width": feature_width,
         "output_width": output_width,
-        "separate_unpenalized_intercept": True,
-        "design_mean_sha256": _tensor_sha256(
-            design_mean,
-            "ridge.design_mean",
+        "fit_intercept": fit_intercept,
+        "bias_contract": (
+            "separate_unpenalized_intercept" if fit_intercept else "absent_frozen_zero"
         ),
-        "prior_residual_mean_sha256": _tensor_sha256(
-            residual_mean,
-            "ridge.prior_residual_mean",
+        "separate_unpenalized_intercept": fit_intercept,
+        "bias_value_is_absent": not fit_intercept,
+        "bias_effect_is_frozen_zero": not fit_intercept,
+        "centering_applied": fit_intercept,
+        "no_intercept_uses_uncentered_system": not fit_intercept,
+        "design_mean_sha256": (
+            None
+            if design_mean is None
+            else _tensor_sha256(
+                design_mean,
+                "ridge.design_mean",
+            )
+        ),
+        "prior_residual_mean_sha256": (
+            None
+            if residual_mean is None
+            else _tensor_sha256(
+                residual_mean,
+                "ridge.prior_residual_mean",
+            )
         ),
         "column_equilibrated": True,
         "column_rms": [float(value) for value in column_rms.tolist()],
@@ -1063,13 +1124,37 @@ def _solve_equilibrated_candidate(
             equilibration_scale,
             "ridge.equilibration_scale",
         ),
-        "centered_case_balanced_design_sha256": _tensor_sha256(
-            x_centered,
-            "ridge.centered_case_balanced_design",
+        "centered_case_balanced_design_sha256": (
+            _tensor_sha256(
+                solve_design,
+                "ridge.centered_case_balanced_design",
+            )
+            if fit_intercept
+            else None
         ),
-        "centered_case_balanced_prior_residual_sha256": _tensor_sha256(
-            r_centered,
-            "ridge.centered_case_balanced_prior_residual",
+        "centered_case_balanced_prior_residual_sha256": (
+            _tensor_sha256(
+                solve_residual,
+                "ridge.centered_case_balanced_prior_residual",
+            )
+            if fit_intercept
+            else None
+        ),
+        "uncentered_case_balanced_design_sha256": (
+            None
+            if fit_intercept
+            else _tensor_sha256(
+                solve_design,
+                "ridge.uncentered_case_balanced_design",
+            )
+        ),
+        "uncentered_case_balanced_prior_residual_sha256": (
+            None
+            if fit_intercept
+            else _tensor_sha256(
+                solve_residual,
+                "ridge.uncentered_case_balanced_prior_residual",
+            )
         ),
         "equilibrated_design_sha256": _tensor_sha256(
             equilibrated_design,
@@ -1115,14 +1200,22 @@ def _solve_equilibrated_candidate(
             prior_weight,
             "ridge.prior_weight",
         ),
-        "prior_bias_sha256": _tensor_sha256(prior_bias, "ridge.prior_bias"),
+        "prior_bias_sha256": (
+            None
+            if prior_bias is None
+            else _tensor_sha256(prior_bias, "ridge.prior_bias")
+        ),
         "raw_weight_delta_sha256": _tensor_sha256(
             raw_weight_delta,
             "ridge.raw_weight_delta",
         ),
-        "raw_bias_delta_sha256": _tensor_sha256(
-            raw_bias_delta,
-            "ridge.raw_bias_delta",
+        "raw_bias_delta_sha256": (
+            None
+            if raw_bias_delta is None
+            else _tensor_sha256(
+                raw_bias_delta,
+                "ridge.raw_bias_delta",
+            )
         ),
         "raw_eigen_delta_sha256": _tensor_sha256(
             raw_eigen_delta,
@@ -1136,9 +1229,13 @@ def _solve_equilibrated_candidate(
             solution_weight,
             "ridge_result.weight",
         ),
-        "solution_bias_sha256": _tensor_sha256(
-            solution_bias,
-            "ridge_result.bias",
+        "solution_bias_sha256": (
+            None
+            if solution_bias is None
+            else _tensor_sha256(
+                solution_bias,
+                "ridge_result.bias",
+            )
         ),
         "parameter_space_trust": {
             "units": "coefficient_parameter_units",
@@ -1194,16 +1291,25 @@ def condition_capped_equilibrated_prior_residual_ridge_frontier(
     cases: Sequence[Lfm2CpcfV5RidgeCase],
     *,
     prior_weight: Any,
-    prior_bias: Any,
+    prior_bias: Any | None,
+    fit_intercept: bool = True,
     policy: Lfm2CpcfV5RidgePolicy | None = None,
 ) -> Mapping[str, Lfm2CpcfV5RidgeResult]:
-    """Return the frozen ``kappa=1e3`` and ``kappa=1e4`` fit candidates."""
+    """Return the frozen ``kappa=1e3`` and ``kappa=1e4`` fit candidates.
+
+    ``fit_intercept=False`` is the physical-parameter mode for FIR and B/C/x
+    designs that already encode every installable bias coordinate.  It solves
+    the uncentered system and returns ``bias=None`` under a sealed
+    absent/frozen-zero intercept contract.
+    """
 
     ridge_policy = policy or Lfm2CpcfV5RidgePolicy()
     if not isinstance(ridge_policy, Lfm2CpcfV5RidgePolicy):
         raise TypeError("policy must be Lfm2CpcfV5RidgePolicy.")
     if not ridge_policy.verify_authentication():
         raise Lfm2CpcfShortConvV5Error("Ridge policy failed authentication.")
+    if type(fit_intercept) is not bool:
+        raise TypeError("fit_intercept must be boolean.")
     rows = _canonical_ridge_rows(cases)
     feature_width = int(rows[0][2].shape[1])
     output_width = int(rows[0][3].shape[1])
@@ -1212,18 +1318,34 @@ def condition_capped_equilibrated_prior_residual_ridge_frontier(
         "prior_weight",
         dimensions=2,
     )
-    prior_bias_value = _snapshot_tensor(prior_bias, "prior_bias", dimensions=1)
     if tuple(prior_weight_value.shape) != (feature_width, output_width):
         raise Lfm2CpcfShortConvV5Error(
             "prior_weight must have shape [features, outputs]."
         )
-    if tuple(prior_bias_value.shape) != (output_width,):
-        raise Lfm2CpcfShortConvV5Error("prior_bias must have shape [outputs].")
+    prior_bias_value = None
+    if fit_intercept:
+        if prior_bias is None:
+            raise Lfm2CpcfShortConvV5Error(
+                "fit_intercept=True requires prior_bias with shape [outputs]."
+            )
+        prior_bias_value = _snapshot_tensor(
+            prior_bias,
+            "prior_bias",
+            dimensions=1,
+        )
+        if tuple(prior_bias_value.shape) != (output_width,):
+            raise Lfm2CpcfShortConvV5Error("prior_bias must have shape [outputs].")
+    elif prior_bias is not None:
+        raise Lfm2CpcfShortConvV5Error(
+            "fit_intercept=False requires prior_bias=None so the separate "
+            "intercept is explicitly absent and frozen at zero."
+        )
     results = {
         f"kappa-{int(cap):05d}": _solve_equilibrated_candidate(
             rows=rows,
             prior_weight=prior_weight_value,
             prior_bias=prior_bias_value,
+            fit_intercept=fit_intercept,
             condition_cap=cap,
             policy=ridge_policy,
         )
@@ -1307,6 +1429,7 @@ class Lfm2CpcfV5FirBasisPolicy:
     endpoint_descriptor_weight: float = 1.0
     energy_floor_relative: float = 1e-12
     maximum_projected_fir_offdiagonal_relative_frobenius: float = 1e-12
+    maximum_per_lag_commutator_relative_frobenius: float = 1e-12
     authentication_sha256: str = ""
 
     def __post_init__(self) -> None:
@@ -1330,6 +1453,15 @@ class Lfm2CpcfV5FirBasisPolicy:
                 allow_zero=True,
             ),
         )
+        object.__setattr__(
+            self,
+            "maximum_per_lag_commutator_relative_frobenius",
+            _positive_float(
+                self.maximum_per_lag_commutator_relative_frobenius,
+                "maximum_per_lag_commutator_relative_frobenius",
+                allow_zero=True,
+            ),
+        )
         expected = _sha256(self.authentication_body())
         supplied = str(self.authentication_sha256).strip().lower()
         if supplied and supplied != expected:
@@ -1349,6 +1481,11 @@ class Lfm2CpcfV5FirBasisPolicy:
             "maximum_projected_fir_offdiagonal_relative_frobenius": (
                 self.maximum_projected_fir_offdiagonal_relative_frobenius
             ),
+            "maximum_per_lag_commutator_relative_frobenius": (
+                self.maximum_per_lag_commutator_relative_frobenius
+            ),
+            "commuting_claim_requires_intertwining_residual_gate": True,
+            "projected_offdiagonal_is_not_sufficient_for_commuting_claim": True,
             "seed_method": "deterministic_farthest_first",
             "assignment_method": "capacity_balanced_farthest_first",
             "energy_weighting": "sqrt_group_energy_share",
@@ -1618,11 +1755,9 @@ def build_fir_commuting_balanced_all_channel_basis(
         projected_norm,
         torch.finfo(torch.float64).eps,
     )
-    gate = basis_policy.maximum_projected_fir_offdiagonal_relative_frobenius
-    if offdiagonal_relative > gate:
-        raise Lfm2CpcfShortConvV5Error(
-            "Projected FIR off-diagonal energy exceeds the declared gate."
-        )
+    projected_offdiagonal_gate = (
+        basis_policy.maximum_projected_fir_offdiagonal_relative_frobenius
+    )
     target_fir_kernel = projected_diagonal.T.contiguous()
     commutator_residuals = []
     for lag in range(int(fir.shape[1])):
@@ -1635,6 +1770,20 @@ def build_fir_commuting_balanced_all_channel_basis(
         )
         commutator_residuals.append(
             float(torch.linalg.vector_norm(residual).item()) / denominator
+        )
+    maximum_commutator_residual = max(commutator_residuals)
+    commutator_gate = basis_policy.maximum_per_lag_commutator_relative_frobenius
+    projected_offdiagonal_gate_passed = (
+        offdiagonal_relative <= projected_offdiagonal_gate
+    )
+    commutator_gate_passed = maximum_commutator_residual <= commutator_gate
+    if not projected_offdiagonal_gate_passed:
+        raise Lfm2CpcfShortConvV5Error(
+            "Projected FIR off-diagonal energy exceeds the declared gate."
+        )
+    if not commutator_gate_passed:
+        raise Lfm2CpcfShortConvV5Error(
+            "Maximum per-lag FIR commutator residual exceeds the declared gate."
         )
 
     row_participation = encoder.abs().sum(dim=1)
@@ -1697,10 +1846,19 @@ def build_fir_commuting_balanced_all_channel_basis(
         "maximum_dual_identity_error": dual_error,
         "exact_dual": dual_error <= 64.0 * torch.finfo(torch.float64).eps,
         "projected_fir_offdiagonal_relative_frobenius": offdiagonal_relative,
-        "projected_fir_offdiagonal_gate": gate,
-        "projected_fir_offdiagonal_gate_passed": (offdiagonal_relative <= gate),
-        "depthwise_fir_representable_in_target_basis": (offdiagonal_relative <= gate),
+        "projected_fir_offdiagonal_gate": projected_offdiagonal_gate,
+        "projected_fir_offdiagonal_gate_passed": (projected_offdiagonal_gate_passed),
+        "projected_offdiagonal_is_not_sufficient_for_commuting_claim": True,
         "per_lag_commutator_relative_frobenius": commutator_residuals,
+        "maximum_per_lag_commutator_relative_frobenius": (maximum_commutator_residual),
+        "maximum_per_lag_commutator_relative_frobenius_gate": (commutator_gate),
+        "maximum_per_lag_commutator_relative_frobenius_gate_passed": (
+            commutator_gate_passed
+        ),
+        "commuting_claim_uses_actual_intertwining_residual": True,
+        "depthwise_fir_representable_in_target_basis": (
+            projected_offdiagonal_gate_passed and commutator_gate_passed
+        ),
         "state_sha256": _state_sha256(state, "fir_commuting_basis"),
         "execution": {
             **_ZERO_TRAINING_EXECUTION,
